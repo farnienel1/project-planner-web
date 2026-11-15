@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.50.0
+# iOS follow-on — rulebook 1.51.0
 
 Generated 2026-11-15 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.49.0 → 1.50.0
-Packed hash: 42329d4b4bdd4da77df1a1e84786ca88e02023d8fbe02b5206e64599cb3cdb4b
-Rulebook sha256: fce2b099e2cb773cb6949b2ba7bdc6000bf61ab9cc823d2202e1b68ce22896b2
+Rulebook version: 1.51.0 → 1.51.0
+Packed hash: 84d71b13fa5652d6dfbe91d7e7d7495cf53b7d49b0423be3e43ed84e62af6ef4
+Rulebook sha256: 1864e69ed1acf19ee7593f5562c7d98a10a692a8899b9c7c898a555c79dd7b46
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,51 +22,53 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: b89ca87595a18b7f0230fa13dcc81d65dcaea44e65912d499a31ce5df7670dd4
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: PHOTO_TOO_LARGE_TO_PREPARE_MESSAGE, PHOTO_TOO_MANY_PIXELS_MESSAGE, UPLOAD_ALLOWED_TYPES, UPLOAD_CSV_CONTENT_TYPE, UPLOAD_DEFAULT_MAX_BYTES, UPLOAD_DIMENSION_HEAD_BYTES, UPLOAD_HEAD_BYTES, UPLOAD_KINDS, UPLOAD_PDF_CONTENT_TYPE, UPLOAD_PHOTO_CONTENT_TYPES, UPLOAD_PHOTO_MAX_PIXELS, UPLOAD_PHOTO_PICK_MAX_BYTES, detectUploadContentType, imageDimensionsFromHeader, isUploadKind, normalizeUploadContentType, photoPrepareRefusal, safeExternalUrl, uploadAcceptAttribute, uploadAllowed, uploadAllowedHint, uploadFileExtension, uploadKindForStoragePath, uploadRefusalMessage
+Exports added: payrollPolicyHistoryRows
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/uploadPolicy.ts, storage.rules
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/payrollPolicyHistoryRows.ts
 Done when:
-- [ ] Packed hash in iOS equals 42329d4b4bdd4da77df1a1e84786ca88e02023d8fbe02b5206e64599cb3cdb4b
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 fce2b099e2cb773cb6949b2ba7bdc6000bf61ab9cc823d2202e1b68ce22896b2)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.50.0)
+- [ ] Packed hash in iOS equals 84d71b13fa5652d6dfbe91d7e7d7495cf53b7d49b0423be3e43ed84e62af6ef4
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 1864e69ed1acf19ee7593f5562c7d98a10a692a8899b9c7c898a555c79dd7b46)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.51.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.50.0
+## What changed in 1.51.0
 
-- **What may be uploaded** (§24, owner decisions 15 Nov; new `lib/canonical/uploadPolicy.ts`): photos (JPEG, PNG, HEIC/HEIF, WebP) and PDFs per kind, CSV for the catalogue import only; no SVG, GIF, Word, Excel (`.xlsm` included), ZIP or `application/octet-stream`. `UPLOAD_ALLOWED_TYPES`, `UPLOAD_KINDS`, `uploadAllowed` (size, claimed type, extension, then the first bytes against both), `detectUploadContentType` (magic numbers), `normalizeUploadContentType`, `uploadRefusalMessage`, `uploadAllowedHint`, `uploadAcceptAttribute`, `uploadFileExtension`, `uploadKindForStoragePath`, `UPLOAD_HEAD_BYTES`. Variation evidence caps at 10 MB (was 20 MB); certificates take every photo type (were PDF and JPEG).
-- **Links** (§24): `safeExternalUrl` — only `https:` URLs become links (`http:` to localhost / 127.0.0.1 / [::1] for the emulator, and plain `http:` for a material supplier `websiteURL` only, `allowHttp`); used for every stored or typed URL web renders as a link (tasks, site audits, deadlines, variations, certificates, material websites, health & safety files).
-- Review fixes: markup is checked before `%PDF-` (polyglots refused); a photo over 40 MB or 50 megapixels is refused before it is decoded (`photoPrepareRefusal`, `imageDimensionsFromHeader`, `UPLOAD_PHOTO_PICK_MAX_BYTES`, `UPLOAD_PHOTO_MAX_PIXELS`, `UPLOAD_DIMENSION_HEAD_BYTES`); JPEG re-encodes are drawn on white; logos never become JPEG; certificate photos are sent as JPEG until the 1.50.0 Storage rules are published (the live rules take PDF and JPEG only); no hard-coded content-type fallbacks (the bytes decide). Exports and downloads (weekly report PDF / XLSX / HTML, invoices, timesheet PDFs, company data export) are not uploads and are not changed.
-- Web: every upload goes through one check (`assertUploadAllowed` in `uploadFile` / `uploadVariationEvidenceFile`) and is written with the detected type; photos are redrawn and scaled (2560 px, about 2.5 MB); the toolbox talk Excel only fills in the fields and is no longer stored; a photo picked as a task file is redrawn too.
-- `storage.rules`: per-path photo / PDF allow-lists (`isPhoto`, `isPdf`, `isPhotoOrPdf`) replace `image/.*` and the work-file list; variation paths 10 MB.
+- **Weekly report rework** (§7, owner decisions 15 Nov, Q1–Q4; new `lib/canonical/weeklyReportPay.ts`): `weeklyReportPayRows` — the Pay Summary in rows per person, rate period and kind of hours (Person | Role | Dates | Line | Hours | Days | Rate | Pay; `WEEKLY_REPORT_PAY_COLUMNS`, `weeklyReportDatesText`, `weeklyReportDayText`, `WEEKLY_REPORT_RATE_NOT_SET`), each person's total and invoice check line (`WEEKLY_REPORT_TIMESHEET_STATE_LABELS`), the grand total (`reportPayForViewer` inside) and every booking's paid hours and days (`bookingPaidDays`). Money unchanged (pay rounded per booking line, 1.46.0; owner fortnight £3,141.76 in the fixture). Web: `weeklyReportPayroll.ts`'s `labourPaySlices`, `paySliceDisplay`, `bookingDayUnits` and `formatDays` and the pay bucketing in `weeklyReportData.ts` removed; the screen, PDF, HTML and Excel render one table builder (`weeklyReportSections`), so every export shows the same rows (the Excel file gains the People column it lacked).
+- **Annual leave** (Q4b): `weeklyReportLeaveRows`, `leaveRecordsWithoutPerson` (Settings → Data health "Leave not linked to a person"), `WEEKLY_REPORT_PERSON_NOT_FOUND`.
+- **Sub contractors** (Q4c): `subcontractorDayValue` takes `{ hours, standardDayHours }` — custom hours are hours worked ÷ the paid day (was always 0.5).
+- **Warnings** (Q4d): `WEEKLY_REPORT_WARNING_OPEN`, `weeklyReportClashDetail`.
+- **Project Breakdown** (Q4a): Hours and Paid days from `paidDays` (was booked-day units capped at 1.5).
+- **Money change** (review of #329, owner confirmed 15 Nov): a manager site booking off a job (Office, Working from home, Site survey, custom) is priced at its own `otMultiplierOverride`, as the timesheet and invoice already were — office 16:00–19:00 at ×2 on £250/day: £132.35 → £176.47 (+£44.12). Every other figure is unchanged.
+- **Working hours history** (§4.3, owner decision 15 Nov): `payrollPolicyHistoryRows` — Settings → Working hours, read-only, admins; the same rows on iOS.
+- **Check line, review of #329:** like with like, run by run (labour against labour; price work and expenses only for approved runs, otherwise "+ £… awaiting sign-off"); one run per person when two users documents share it; "no timesheet yet" (`WEEKLY_REPORT_NO_TIMESHEET`); with no viewer pay is hidden unless `showAllPay: true`.
 
-## iOS work for 1.50.0
+## iOS work for 1.51.0
 
-**Sync first.** 1.50.0 (owner decisions 15 Nov): **upload hardening**. Photos (JPEG, PNG, HEIC/HEIF, WebP) and PDFs only per kind; CSV only for the catalogue import (never stored). **No SVG, GIF, Word, Excel (`.xlsm` included), ZIP or `application/octet-stream`.** Stored or typed URLs become links only through `safeExternalUrl`.
-- **Storage rules change.** The owner publishes `storage.rules` **after** `minimumIosBuild` is raised to the iOS build that ships this hand-off (platform guardrail 4). After that publish, an older iPhone's upload of any refused type, a 10–20 MB variation file, or an octet-stream retry fails.
-- **Not changed:** no Firestore rules, index or Functions change; nothing migrated. Files already stored are never touched and keep opening.
-- **Base:** web `origin/main` 1.49.0 + this PR. The local iOS checkout this note was written from was at `ios-1.37` (`c818203`), older than web 1.49, so **every file and line below is a pointer to check on your branch**, not a fact.
+**Sync first.** 1.51.0 (owner decisions 15 Nov, Q1–Q4): **weekly report rework.** The Pay Summary, each person's invoice check line, the grand total and every booking's paid hours / days are one rule, `weeklyReportPayRows`; iOS renders it and keeps no weekly-report pricing of its own. Money is unchanged (pay rounded per booking line, 1.46.0).
+- **Not changed:** no Firestore rules, index, Storage or Functions change; nothing migrated; `minimumIosBuild` unchanged.
+- **Base:** web `origin/main` 1.50.0 + this PR. Line numbers below are from iOS `origin/main` at `1571142` (15 Nov); check them on your branch.
+- **Money change (owner confirmed 15 Nov):** a manager site booking off a job (Office, WFH, Site survey, custom) is now priced at its own `otMultiplierOverride` on the weekly report, as on the timesheet and invoice (office 16:00–19:00 at ×2 on £250/day: +£44.12 against before).
 
-1. **Sync.** Run `WEB_REPO=<web worktree> bash scripts/sync-rulebook-from-web.sh`, then commit the mirrored files.
-2. **One check before every upload.** Never fall back to a hard-coded content type; pass the file's own type (blank is fine — the bytes decide). Before each `putData` / `putFile`, call `CanonicalBusinessEngine.uploadAllowed({ kind, fileName, contentType, sizeBytes, headBytes })`:
-   - `kind` = `uploadKindForStoragePath(storagePath)` (or the `StoredFileKind` you already know).
-   - `headBytes` = the first `UPLOAD_HEAD_BYTES` (1024) bytes of the data **as you will upload it** (after any redraw), as an array of numbers.
-   - Refused → show `message` and do not upload. Allowed → set `StorageMetadata.contentType` to the returned `contentType`. Never `application/octet-stream`, never `nil` metadata.
-   - Likely call sites (from the stale checkout; grep `putData` / `putFile`): `Project Planner/FirebaseBackend.swift` (~2896, ~2977, ~3014, ~3055, ~3104, ~3150, ~3185, ~3222), `Core/FirebaseBackend+Variations.swift` (~531–562: **delete the retry with `application/octet-stream`**), `Core/FirebaseBackend+PayeClaims.swift` (~232).
-3. **Delete iOS's own type lists.** `Core/StorageUploadPolicy.swift` keeps SVG / GIF as passthrough (~44–51, ~276–287), allows `xls`, `xlsx`, `xlsm`, `doc`, `docx`, `csv`, `zip` (~51, ~63, ~73) and its own size caps. Replace them with `UPLOAD_ALLOWED_TYPES[kind]` (`contentTypes`, `extensions`, `maxBytes`) and `uploadAllowed`. Remove SVG and GIF passthrough. Keep the existing PDF magic check only if it calls the engine (`detectUploadContentType`).
-   - Pickers (`UIDocumentPickerViewController` / `PhotosPicker` content types) should offer only the kind's types: photos (`.jpeg`, `.png`, `.heic`, `.heif`, `.webp`) and `.pdf` where the kind allows PDF. Likely: `Views/Variations/VariationEditorSheet.swift` (~1762 returns octet-stream), `Views/Overtime/PayeClaimFormComponents.swift`, `Views/OperativeQualificationsEditorView.swift`, `Views/ProjectDetailView.swift` (tasks, H&S, deadlines), `Views/CompanyDetailsEditView.swift`, `Views/ManageUserProfileChrome.swift`.
-   - Caps: profile 2 MB, logo 5 MB, **variation evidence 10 MB (was 20 MB)**, everything else 10 MB. Certificates now take every photo type and PDF (were JPEG and PDF).
-3a. **Certificates until the Storage rules are published.** The live rules take PDF and JPEG only for certificates. Until the 1.50.0 rules are published, send certificate photos as JPEG (redraw HEIC / PNG / WebP to JPEG); never send PNG, HEIC or WebP there yet.
-4. **Photos.** Refuse before decoding a photo over `UPLOAD_PHOTO_PICK_MAX_BYTES` (40 MB) or over `UPLOAD_PHOTO_MAX_PIXELS` (50 MP) by `imageDimensionsFromHeader` on the first `UPLOAD_DIMENSION_HEAD_BYTES`, with `photoPrepareRefusal`'s message (use `CGImageSourceCopyPropertiesAtIndex` for the size if the header reader returns null). Fill white before any JPEG encode; never turn a company logo into a JPEG. Keep redrawing to JPEG / PNG (drops EXIF / GPS) and scale to at most 2560 px on the long edge, about 2.5 MB (web: `lib/security/stripPhotoLocation.ts`). Site audit and claim photos stay 1280 px JPEG. Name the object with the redrawn type's extension (`storedFileObjectName`).
-5. **Links.** Every stored or typed URL opened from the app goes through `CanonicalBusinessEngine.safeExternalUrl(url)`; null → no link / no open. `https:` only, plus `http:` to localhost / 127.0.0.1 / [::1]; pass `{ allowHttp: true }` only for a material supplier `websiteURL`. Likely: `Models/HealthSafetyModels.swift` (~125, ~146, ~158), `Views/Variations/VariationDetailView.swift` (~311), task attachment and completion files, site audit and deadline photos, certificates, material `websiteURL` (`Views/WholesalersRevampViews.swift`, `Views/ProjectDetailView.swift`, `Views/OperativesView.swift`). Grep `URL(string:` on any stored field and `openURL` / `UIApplication.shared.open`.
-6. **Catalogue CSV import** keeps its 1.48.0 checks (`materialCatalogueCsvFileError`, `materialCatalogueCsvTextError`); `UPLOAD_ALLOWED_TYPES.material_catalogue_import` lists it (CSV, 2 MB) for the one table.
-7. **Tests** (`ProjectPlannerTests`): call `uploadAllowed` through the engine for an SVG, an `.xlsm`, an octet-stream PDF and a 10 MB + 1 variation PDF; replace `StorageUploadPolicyTests` expectations that allowed Office / SVG / GIF / 20 MB.
+1. **Sync.** `WEB_REPO=<web worktree> bash scripts/sync-rulebook-from-web.sh`, then commit the mirrored files.
+2. **Pay Summary = `weeklyReportPayRows`.** In `Project Planner/Views/WeeklyReportView.swift` replace `payrollPersonSummaries()` (~1780), `payrollSummaryForViewer()` (~1659), `struct PayrollRateLine` (~2258) / `struct PayrollPersonSummary` (~2280) with one call, and **delete `enum WeeklyReportPayRows` (~2095) and both `formatDays` helpers (~2006, ~2111)** with their tests:
+   - `people`: each person `{ id, name, role, ids, operativeIds, user, operative, ghost, hasLineManager, paySubject }` — `ids` from `overtimePersonIds` plus the roster fold's same-email ids, and each booking's stored person id that your existing person matching resolves to them; a catalogue `operatives` row with no account is its own person (`user: null`).
+   - `bookings`: every labour and manager site booking in the range (`dayKey` organisation zone, slot, clock times, `isBreakRemoved`, `otMultiplierOverride`, `status`, `jobId`, `jobNumber`, `jobName`, `locationKind`) — manager site bookings filtered by `includesManagerScheduleLocation` as today.
+   - `timesheetWeeks`: the approved-timesheet feed (`Core/WeeklyReportTimesheetFeed.swift`, merged weeks).
+   - `sheets`: for each self-employed person and each payment run overlapping the range: `{ personId, startDayKey, endDayKey, sheet (stored fields: weeklyReportOverride, payrollLineReviews, extraEntryReviews, priceWorkEntries, expenseEntries, managerSignedAt), status (parseTimesheetStatusFields), change (signedTimesheetBookingChanges: reopened, changed, waitingFor), payrollLines (your TimesheetPayrollCollector lines for that run), entryFingerprints }` — `sheet: null` when there is none.
+   - `organization`: the working-hours state; `payRateHistory`: every `operativeDayRateHistory` row; `range` `{ start, end }` day keys; `timeZone`; `viewer` (the signed-in user, with `isPlatformOwner`); `roster`; `currency`. **Never pass `showAllPay`** in the app: with no viewer every figure is hidden.
+   - One `sheets` entry per users record per run is fine: the rule keeps one per person per run (own id first). Unsigned sheets' price work and expenses show as "+ £… awaiting sign-off", never amber.
+   - Render `result.people[].lines` with the columns `WEEKLY_REPORT_PAY_COLUMNS` (Person | Role | Dates | Line | Hours | Days | Rate | Pay): `dates`, `line`, `hours` ("12.5h"), `days` (2 dp; blank on price work / expenses, `source == "claim"`), `rateText`, `payLabel ?? formatMoney(pay)`; then "<name> total" with `personTotalLabel ?? personTotal`; then `check.label` (amber when `check.tone == "warn"`); then Grand Total `result.grandTotal` and `PAY_HIDDEN_NOTE` when `hiddenPeople > 0`. Do not apply `reportPayForViewer` again (it is inside).
+3. **Project Breakdown and Additional Schedule (Q4a).** Build them from `result.paidDays` (`hours`, `days`, `jobId` / `jobNumber` / `jobName`, `locationKind`, `bookingId`, `time`, `personId`): columns Hours and **Paid days** (uncapped), not booked-day units. Delete the `reportDayValue` day units used there.
+4. **Annual leave (Q4b).** Replace `annualLeaveRows()` (~1350) with `weeklyReportLeaveRows({ records, people, range, timeZone })` (people = every account with all its ids and its email, plus `operatives` rows with no account). Rows are per person; nobody → "Person not found (id …)".
+5. **Sub contractors (Q4c).** Change `CanonicalBusinessEngine.subcontractorDayValue(_:)` (`Canonical/CanonicalBusinessEngine.swift` ~1291) to take the hours too (`subcontractorDayValue(timeSlot, { hours, standardDayHours })`), and `subcontractorDayValue(from:)` in `WeeklyReportView.swift` (~1553) passes `{ hours: payrollHoursResult(...) for that booking and day, standardDayHours: weekdayPaidHours(policy that day) }` — custom hours become hours worked ÷ the paid day (07:00–20:00 = 1.47), not 0.5.
+6. **Warnings (Q4d).** Status `WEEKLY_REPORT_WARNING_OPEN` ("Open") everywhere — `clashExportCells(warning, status: "Active")` at ~948, ~954, ~1123, ~1129 and the unbooked rows. Clash Detail = `weeklyReportClashDetail({ dayText: "10 Nov 2026", places: [{ label, time }] })` from the clash's bookings, never the Warnings screen message with "Approve if it's intentional…".
+7. **Exports.** The share-sheet PDF / Excel and the screen show the same rows (web uses one table builder, `lib/weekly-report/weeklyReportSections.ts`); the Excel export stays.
+8. **Working hours history (owner decision 15 Nov).** In `Project Planner/Views/OrganisationWorkingHoursView.swift` (after the Scheduled change section, ~272), admins only, add a read-only "Working hours history" list from `payrollPolicyHistoryRows({ state, todayKey })` (the parsed working-hours state, today's organisation-zone day key): per row the `dates` heading with an "In effect today" badge when `inEffectToday` and "Scheduled" when `scheduled`, then "Monday–Friday: {weekday} · {overtime}", "Saturday: {saturday}", "Sunday: {sunday}". Display only; no writes; no text built in Swift.
+9. **Tests** (`ProjectPlannerTests`): through the engine, the owner fortnight (Test Admin 1–15 Nov, £250 → £240 on 14 Nov): five rows, "Weekday overtime ×1.5 (12h × 1.5 = 18h)", "Saturday 14 Nov window (counts as a full day)", total £3,141.76; a PAYE person has no rows; a non-admin viewer sees "—". Remove tests of the deleted Swift pricing.
 
-## New rulebook sections
-
-- 1.50.0 — 2026-11-15
 
 ## Workflow for the iOS agent
 

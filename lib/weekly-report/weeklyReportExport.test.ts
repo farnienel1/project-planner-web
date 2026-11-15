@@ -39,16 +39,20 @@ test('weekly report spreadsheet includes iOS section titles and named sub contra
     expenseTotal: 0,
     paySummary: [
       {
+        personId: 'a',
         person: 'Alice',
         role: 'Engineer',
-        lines: [{ rateType: 'Day', days: 2, rate: 200, pay: 400 }],
+        lines: [{ kind: 'weekdayStandard', payBasis: 'day', dates: '14–20 Sep', startDayKey: '2026-09-14', endDayKey: '2026-09-20', line: 'Weekday standard', hours: 17, days: 2, rate: 200, rateText: '£200.00/day', pay: 400, source: 'live', divisor: 8.5, multiplier: null }],
         personTotal: 400,
+        check: { state: 'signed', label: 'Timesheet: Signed · Invoice £400.00 ✓', tone: 'good', invoiceTotal: 400, reportTotal: 400, matches: true, changedSinceSigned: false, partialRun: false },
       },
       {
+        personId: 'b',
         person: 'Bob',
         role: 'Engineer',
-        lines: [{ rateType: 'Day', days: 1, rate: 180, pay: 180 }],
+        lines: [{ kind: 'weekdayStandard', payBasis: 'day', dates: '14–20 Sep', startDayKey: '2026-09-14', endDayKey: '2026-09-20', line: 'Weekday standard', hours: 8.5, days: 1, rate: 180, rateText: '£180.00/day', pay: 180, source: 'live', divisor: 8.5, multiplier: null }],
         personTotal: 180,
+        check: { state: 'signed', label: 'Timesheet: Signed · Invoice £150.00 · report £180.00', tone: 'warn', invoiceTotal: 150, reportTotal: 180, matches: false, changedSinceSigned: false, partialRun: false },
       },
     ],
     grandTotal: 580,
@@ -60,18 +64,25 @@ test('weekly report spreadsheet includes iOS section titles and named sub contra
   assert.match(xml, /Warnings Summary/)
   assert.match(xml, /Project Breakdown/)
   assert.match(xml, /Sub Contractors/)
-  assert.equal(xml.includes('People'), false)
-  assert.equal(xml.includes('Jane Smith'), false)
+  // Rulebook 1.51.0 (Q4f): the Excel file shows the same rows as the screen and PDF (People included).
+  assert.match(xml, /People/)
+  assert.match(xml, /Jane Smith/)
   assert.match(xml, /Pay Summary/)
+  // Q1 columns and the Q2 check line.
+  assert.match(xml, /<Data ss:Type="String">Dates<\/Data>/)
+  assert.match(xml, /Timesheet: Signed · Invoice £400\.00 ✓/)
+  assert.match(xml, /Invoice £150\.00 · report £180\.00/)
+  const html = buildWeeklyReportHtml(data)
+  assert.match(html, /<tr class="warn">.*Invoice £150\.00 · report £180\.00/)
   // Rulebook 1.29.0 §7: the PAYE overtime section (hours only).
-  assert.match(xml, /PAYE OVERTIME/)
+  assert.match(xml, /PAYE overtime/)
   assert.match(xml, /Sam Paye/)
   assert.match(xml, /1\.5h/)
   const pay = xml.split('Pay Summary')[1] || ''
   const alice = pay.indexOf('Alice total')
   const bob = pay.indexOf('>Bob<')
   assert.ok(alice >= 0 && bob > alice)
-  assert.match(pay.slice(alice, bob), /<Data ss:Type="String"><\/Data>/)
+  assert.match(pay.slice(alice, bob), /Timesheet: Signed/)
 })
 
 test('weekly report pdf downloads as a coloured PDF document', async () => {

@@ -1,12 +1,11 @@
 import { format } from 'date-fns'
 import { formatReportPeriodLabel } from '@/lib/weekly-report/invoicingPeriodUtils'
-import { formatDays } from '@/lib/weekly-report/weeklyReportPayroll'
-import { formatMoney, PAY_HIDDEN_NOTE } from '@/lib/canonical'
 import type { WeeklyReportData } from '@/lib/weekly-report/weeklyReportData'
+import { APPROVED_CLASH_HEADERS, WEEKLY_REPORT_SECTION_ICONS, weeklyReportSections } from '@/lib/weekly-report/weeklyReportSections'
 import { escapeHtml } from '@/lib/security/htmlEscape'
 import { neutralizeSpreadsheetFormula } from '@/lib/security/spreadsheetCell'
 
-function renderTable(headers: string[], rows: string[][], emptyMessage: string): string {
+function renderTable(headers: string[], rows: string[][], emptyMessage: string, tones: ReadonlyArray<string | null> = []): string {
   if (rows.length === 0) {
     return `<p class="empty">${escapeHtml(emptyMessage)}</p>`
   }
@@ -17,132 +16,38 @@ function renderTable(headers: string[], rows: string[][], emptyMessage: string):
       </thead>
       <tbody>
         ${rows
-          .map((row) =>
+          .map((row, index) =>
             row.every((cell) => cell === '')
               ? `<tr class="gap">${row.map(() => '<td></td>').join('')}</tr>`
-              : `<tr>${row.map((cell) => `<td>${cell}</td>`).join('')}</tr>`
+              : `<tr${tones[index] ? ` class="${tones[index]}"` : ''}>${row.map((cell) => `<td>${cell}</td>`).join('')}</tr>`
           )
           .join('')}
       </tbody>
     </table>`
 }
 
-/** Header and rows of the Approved clashes section (screen, PDF, HTML and Excel use the same columns). */
-export const APPROVED_CLASH_HEADERS = ['Date', 'Priority', 'Type', 'Person', 'Detail']
+export { APPROVED_CLASH_HEADERS }
 
 export function approvedClashCells(data: WeeklyReportData): string[][] {
   return (data.approvedClashes ?? []).map((row) => [row.date, row.priority, row.type, row.person, row.detail])
 }
 
 export function buildWeeklyReportHtml(data: WeeklyReportData): string {
-  const money = (amount: number) => formatMoney(amount, data.currencyCode)
   const periodLabel = formatReportPeriodLabel(data.reportPeriod.start, data.reportPeriod.end)
   const generatedLabel = format(data.generatedAt, "d MMM yyyy 'at' HH:mm")
-
-  const warningRows =
-    data.warnings.length === 0
-      ? [['No warnings in period', '', '', '', '', '', '']]
-      : data.warnings.map((warning) => [
-          escapeHtml(warning.status),
-          escapeHtml(warning.priority),
-          escapeHtml(warning.type),
-          escapeHtml(warning.date),
-          escapeHtml(warning.description),
-          escapeHtml(warning.detail),
-          escapeHtml(warning.forPerson),
-        ])
-
-  const projectSections = data.projectGroups
-    .map((group) => {
-      const rows = group.rows.map((row) => [
-        escapeHtml(group.projectName),
-        escapeHtml(group.jobNumber),
-        escapeHtml(row.person),
-        escapeHtml(row.trade),
-        escapeHtml(row.role),
-        formatDays(row.days),
-      ])
-      rows.push(['', '', '', '', '<strong>Project Total</strong>', `<strong>${formatDays(group.projectTotal)}</strong>`])
-      return renderTable(
-        ['Project', 'Job No.', 'Person', 'Trade', 'Role', 'Days'],
-        rows,
-        ''
-      )
-    })
-    .join('')
-
-  const subRows =
-    data.subContractorRows.length === 0
-      ? [['—', '—', '—', '—', '—', '—']]
-      : data.subContractorRows.map((row) => [
-          escapeHtml(row.projectName),
-          escapeHtml(row.jobNumber),
-          escapeHtml(row.subContractor),
-          escapeHtml(row.type),
-          escapeHtml(row.time),
-          formatDays(row.days),
-        ])
-
-  const leaveRows =
-    data.annualLeaveRows.length === 0
-      ? []
-      : [
-          ...data.annualLeaveRows.map((row) => [
-            escapeHtml(row.person),
-            escapeHtml(row.role),
-            formatDays(row.days),
-            escapeHtml(row.type),
-          ]),
-          ['', '', `<strong>${formatDays(data.annualLeaveTotal)}</strong>`, '<strong>Annual Leave Total</strong>'],
-        ]
-
-  const managerRows =
-    data.managerScheduleRows.length === 0
-      ? []
-      : [
-          ...data.managerScheduleRows.map((row) => [
-            escapeHtml(row.person),
-            escapeHtml(row.role),
-            escapeHtml(row.location),
-            escapeHtml(row.time),
-            formatDays(row.days),
-          ]),
-          ['', '', '', '<strong>Total</strong>', `<strong>${formatDays(data.managerScheduleTotal)}</strong>`],
-        ]
-
-  // Rulebook 1.29.0 §7: PAYE overtime per person per job (hours only).
-  const payeRows =
-    data.payeOvertimeRows.length === 0
-      ? []
-      : [
-          ...data.payeOvertimeRows.map((row) => [escapeHtml(row.person), escapeHtml(row.jobNumber), escapeHtml(row.jobName), escapeHtml(row.hoursCell ?? `${row.overtimeHours}h`)]),
-          ['', '', '<strong>Total</strong>', `<strong>${data.payeOvertimeTotal}h</strong>`],
-        ]
-
-  const payRows: string[][] = []
-  for (const person of data.paySummary) {
-    for (const line of person.lines) {
-      payRows.push([
-        escapeHtml(person.person),
-        escapeHtml(person.role),
-        escapeHtml(line.rateType),
-        escapeHtml(line.quantityText ?? formatDays(line.days)),
-        escapeHtml(line.rateText ?? money(line.rate)),
-        line.payLabel ?? money(line.pay),
-      ])
-    }
-    payRows.push([
-      `<strong>${escapeHtml(person.person)} total</strong>`,
-      '',
-      '',
-      '',
-      '',
-      `<strong>${person.personTotalLabel ?? money(person.personTotal)}</strong>`,
-    ])
-    payRows.push(['', '', '', '', '', ''])
-  }
-  payRows.push(['', '', '', '', '<strong>Grand Total</strong>', `<strong>${money(data.grandTotal)}</strong>`])
-  if (data.payHiddenPeople) payRows.push([escapeHtml(PAY_HIDDEN_NOTE), '', '', '', '', ''])
+  // Rulebook 1.51.0 (Q4f): the same sections and rows as the screen, the PDF and the Excel file.
+  const sectionsHtml = weeklyReportSections(data)
+    .map(
+      (section) =>
+        `<h2>${WEEKLY_REPORT_SECTION_ICONS[section.key]} ${escapeHtml(section.title)}</h2>
+  ${renderTable(
+    section.headers,
+    section.rows.map((row, index) => row.map((cell) => (section.tones?.[index] === 'total' && cell ? `<strong>${escapeHtml(cell)}</strong>` : escapeHtml(cell)))),
+    section.empty,
+    section.tones ?? []
+  )}${section.note ? `<p class="empty">${escapeHtml(section.note)}</p>` : ''}`
+    )
+    .join('\n  ')
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -184,6 +89,8 @@ export function buildWeeklyReportHtml(data: WeeklyReportData): string {
     tbody tr:nth-child(even) td { background: #f8fafc; }
     td strong { color: #14532d; }
     tr.gap td { border: none; background: transparent; height: 14px; padding: 0; }
+    tr.warn td { background: #fef3c7; color: #92400e; font-weight: 600; }
+    tr.good td { color: #14532d; }
     .empty { color: #64748b; font-style: italic; }
     .footer { margin-top: 24px; font-size: 10px; color: #64748b; }
     @media print {
@@ -204,80 +111,7 @@ export function buildWeeklyReportHtml(data: WeeklyReportData): string {
     </div>
   </div>
 
-  <h2>⚠ Warnings Summary</h2>
-  ${renderTable(
-    ['Status', 'Priority', 'Type', 'Date', 'Description', 'Detail', 'For'],
-    warningRows,
-    'No warnings in period'
-  )}
-
-  <h2>✅ Approved clashes</h2>
-  ${renderTable(
-    APPROVED_CLASH_HEADERS,
-    approvedClashCells(data).map((row) => row.map((cell) => escapeHtml(cell))),
-    'No clashes approved in this period'
-  )}
-
-  <h2>🏗 Project Breakdown</h2>
-  ${projectSections || '<p class="empty">No project bookings in this period.</p>'}
-  <table>
-    <tbody>
-      <tr>
-        <td colspan="5"><strong>All Project Work</strong></td>
-        <td><strong>${formatDays(data.allProjectWorkTotal)}</strong></td>
-      </tr>
-    </tbody>
-  </table>
-
-  <h2>🔧 Sub Contractors</h2>
-  ${renderTable(
-    ['Project', 'Job No.', 'Sub Contractor', 'Type', 'Time', 'Days'],
-    subRows,
-    'No sub contractor bookings'
-  )}
-  <table><tbody><tr><td colspan="5"><strong>Sub Contractor</strong></td><td><strong>${formatDays(data.subContractorTotal)}</strong></td></tr></tbody></table>
-
-  <h2>🌴 Annual Leave</h2>
-  ${renderTable(['Person', 'Role', 'Days', 'Type'], leaveRows, 'No annual leave in this period')}
-
-  <h2>📅 Manager / Admin Additional Schedule</h2>
-  ${renderTable(['Person', 'Role', 'Location', 'Time', 'Days'], managerRows, 'No additional manager schedule in this period')}
-
-  <h2>⏱️ PAYE overtime</h2>
-  ${renderTable(['Person', 'Job Number', 'Job', 'Overtime (hours × rate)'], payeRows, 'No PAYE overtime in this period')}
-
-  <h2>🧱 Price Work</h2>
-  ${renderTable(
-    ['Person', 'Title', 'Job No.', 'Date', 'Details', 'Amount'],
-    data.priceWorkRows.map((row) => [
-      escapeHtml(row.person),
-      escapeHtml(row.title),
-      escapeHtml(row.jobNumber),
-      escapeHtml(row.date),
-      escapeHtml(row.details),
-      escapeHtml(money(row.amount)),
-    ]),
-    'No price work in this period'
-  )}
-  <table><tbody><tr><td colspan="5"><strong>Price Work Total</strong></td><td><strong>${money(data.priceWorkTotal)}</strong></td></tr></tbody></table>
-
-  <h2>🧾 Expenses</h2>
-  ${renderTable(
-    ['Person', 'Title', 'Job No.', 'Date', 'Details', 'Amount'],
-    data.expenseRows.map((row) => [
-      escapeHtml(row.person),
-      escapeHtml(row.title),
-      escapeHtml(row.jobNumber),
-      escapeHtml(row.date),
-      escapeHtml(row.details),
-      escapeHtml(money(row.amount)),
-    ]),
-    'No expenses in this period'
-  )}
-  <table><tbody><tr><td colspan="5"><strong>Expenses Total</strong></td><td><strong>${money(data.expenseTotal)}</strong></td></tr></tbody></table>
-
-  <h2>💷 Pay Summary</h2>
-  ${renderTable(['Person', 'Role', 'Rate Type', 'Hours / Days', 'Rate', 'Pay'], payRows, 'No pay data for this period')}
+  ${sectionsHtml}
 
   <div class="footer">Generated by Project Planner</div>
 </body>
@@ -340,101 +174,19 @@ function spreadsheetTable(headers: string[], rows: string[][]): string {
 
 /** Excel SpreadsheetML matching the iOS weekly report sections and columns. */
 export function buildWeeklyReportSpreadsheetXml(data: WeeklyReportData): string {
-  const money = (amount: number) => formatMoney(amount, data.currencyCode)
   const periodLabel = formatReportPeriodLabel(data.reportPeriod.start, data.reportPeriod.end)
   const generatedLabel = format(data.generatedAt, "d MMM yyyy 'at' HH:mm")
-
-  const warningRows =
-    data.warnings.length === 0
-      ? [['No warnings in period', '', '', '', '', '', '']]
-      : data.warnings.map((warning) => [
-          warning.status,
-          warning.priority,
-          warning.type,
-          warning.date,
-          warning.description,
-          warning.detail,
-          warning.forPerson,
-        ])
-
-  const projectChunks: string[] = []
-  for (const group of data.projectGroups) {
-    const rows = group.rows.map((row) => [
-      group.projectName,
-      group.jobNumber,
-      row.person,
-      row.trade,
-      row.role,
-      formatDays(row.days),
-    ])
-    rows.push(['', '', '', '', 'Project Total', formatDays(group.projectTotal)])
-    projectChunks.push(
-      spreadsheetRow([`Project Breakdown — ${group.projectName}`]),
-      spreadsheetTable(['Project', 'Job No.', 'Person', 'Trade', 'Role', 'Days'], rows)
+  // Rulebook 1.51.0 (Q4f): the Excel download is kept (owner decision) and shows the same rows as the screen and PDF.
+  const body = weeklyReportSections(data)
+    .map((section) =>
+      [
+        spreadsheetRow([section.title]),
+        spreadsheetTable(section.headers, section.rows.length ? section.rows : [[section.empty, ...section.headers.slice(1).map(() => '')]]),
+        section.note ? spreadsheetRow([section.note]) : '',
+        spreadsheetRow(['']),
+      ].join('')
     )
-  }
-  projectChunks.push(spreadsheetRow(['All Project Work', formatDays(data.allProjectWorkTotal)]))
-
-  const subRows =
-    data.subContractorRows.length === 0
-      ? [['—', '—', '—', '—', '—', '—']]
-      : data.subContractorRows.map((row) => [
-          row.projectName,
-          row.jobNumber,
-          row.subContractor,
-          row.type,
-          row.time,
-          formatDays(row.days),
-        ])
-  subRows.push(['', '', '', '', 'Sub Contractor total', formatDays(data.subContractorTotal)])
-
-  const leaveRows =
-    data.annualLeaveRows.length === 0
-      ? [['No annual leave in this period', '', '', '']]
-      : [
-          ...data.annualLeaveRows.map((row) => [row.person, row.role, formatDays(row.days), row.type]),
-          ['', 'Annual Leave Total', formatDays(data.annualLeaveTotal), ''],
-        ]
-
-  const managerRows =
-    data.managerScheduleRows.length === 0
-      ? [['No additional manager schedule', '', '', '', '']]
-      : [
-          ...data.managerScheduleRows.map((row) => [
-            row.person,
-            row.role,
-            row.location,
-            row.time,
-            formatDays(row.days),
-          ]),
-          ['', '', '', 'Total', formatDays(data.managerScheduleTotal)],
-        ]
-
-  const payeRows =
-    data.payeOvertimeRows.length === 0
-      ? [['No PAYE overtime in this period', '', '', '']]
-      : [
-          ...data.payeOvertimeRows.map((row) => [row.person, row.jobNumber, row.jobName, row.hoursCell ?? `${row.overtimeHours}h`]),
-          ['', '', 'Total', `${data.payeOvertimeTotal}h`],
-        ]
-
-  const payRows: string[][] = []
-  for (const person of data.paySummary) {
-    for (const line of person.lines) {
-      payRows.push([
-        person.person,
-        person.role,
-        line.rateType,
-        line.quantityText ?? formatDays(line.days),
-        line.rateText ?? money(line.rate),
-        line.payLabel ?? money(line.pay),
-      ])
-    }
-    payRows.push([`${person.person} total`, '', '', '', '', person.personTotalLabel ?? money(person.personTotal)])
-    payRows.push(['', '', '', '', '', ''])
-  }
-  payRows.push(['', '', '', '', 'Grand Total', money(data.grandTotal)])
-  if (data.payHiddenPeople) payRows.push([PAY_HIDDEN_NOTE, '', '', '', '', ''])
+    .join('')
 
   return `<?xml version="1.0"?>
 <?mso-application progid="Excel.Sheet"?>
@@ -451,71 +203,7 @@ export function buildWeeklyReportSpreadsheetXml(data: WeeklyReportData): string 
    ${spreadsheetRow(['Invoicing period', data.invoicingPeriodLabel])}
    ${spreadsheetRow(['Generated', generatedLabel])}
    ${spreadsheetRow([''])}
-   ${spreadsheetRow(['Warnings Summary'])}
-   ${spreadsheetTable(['Status', 'Priority', 'Type', 'Date', 'Description', 'Detail', 'For'], warningRows)}
-   ${spreadsheetRow([''])}
-   ${spreadsheetRow(['Approved clashes'])}
-   ${spreadsheetTable(
-     APPROVED_CLASH_HEADERS,
-     approvedClashCells(data).length > 0 ? approvedClashCells(data) : [['No clashes approved in this period', '', '', '', '']]
-   )}
-   ${spreadsheetRow([''])}
-   ${spreadsheetRow(['Project Breakdown'])}
-   ${projectChunks.join('')}
-   ${spreadsheetRow([''])}
-   ${spreadsheetRow(['Sub Contractors'])}
-   ${spreadsheetTable(
-     ['Project', 'Job No.', 'Sub Contractor', 'Type', 'Time', 'Days'],
-     subRows
-   )}
-   ${spreadsheetRow([''])}
-   ${spreadsheetRow(['Annual Leave'])}
-   ${spreadsheetTable(['Person', 'Role', 'Days', 'Type'], leaveRows)}
-   ${spreadsheetRow([''])}
-   ${spreadsheetRow(['Manager / Admin Additional Schedule'])}
-   ${spreadsheetTable(['Person', 'Role', 'Location', 'Time', 'Days'], managerRows)}
-   ${spreadsheetRow([''])}
-   ${spreadsheetRow(['PAYE OVERTIME'])}
-   ${spreadsheetTable(['Person', 'Job Number', 'Job', 'Overtime (hours × rate)'], payeRows)}
-   ${spreadsheetRow([''])}
-   ${spreadsheetRow(['PRICE WORK'])}
-   ${spreadsheetTable(
-     ['Person', 'Title', 'Job Number', 'Date', 'Details', 'Amount'],
-     data.priceWorkRows.length === 0
-       ? [['No price work in this period', '', '', '', '', '']]
-       : [
-           ...data.priceWorkRows.map((row) => [
-             row.person,
-             row.title,
-             row.jobNumber,
-             row.date,
-             row.details,
-             money(row.amount),
-           ]),
-           ['', '', '', '', 'Price Work Total', money(data.priceWorkTotal)],
-         ]
-   )}
-   ${spreadsheetRow([''])}
-   ${spreadsheetRow(['EXPENSES'])}
-   ${spreadsheetTable(
-     ['Person', 'Title', 'Job Number', 'Date', 'Details', 'Amount'],
-     data.expenseRows.length === 0
-       ? [['No expenses in this period', '', '', '', '', '']]
-       : [
-           ...data.expenseRows.map((row) => [
-             row.person,
-             row.title,
-             row.jobNumber,
-             row.date,
-             row.details,
-             money(row.amount),
-           ]),
-           ['', '', '', '', 'Expenses Total', money(data.expenseTotal)],
-         ]
-   )}
-   ${spreadsheetRow([''])}
-   ${spreadsheetRow(['Pay Summary'])}
-   ${spreadsheetTable(['Person', 'Role', 'Rate Type', 'Hours / Days', 'Rate', 'Pay'], payRows.length ? payRows : [['No pay data for this period', '', '', '', '', '']])}
+   ${body}
   </Table>
  </Worksheet>
 </Workbook>`

@@ -2097,3 +2097,43 @@ export type {
   SignedTimesheetSheet,
   SignedTimesheetWaitingFor,
 } from './timesheetBookingChanges'
+
+// Rulebook 1.51.0 §7: the Weekly Report Pay Summary, check lines, paid days, leave rows and warning detail.
+export {
+  bookingPaidDays,
+  leaveRecordsWithoutPerson,
+  weeklyReportClashDetail,
+  weeklyReportDatesText,
+  weeklyReportDayKey,
+  weeklyReportDayText,
+  weeklyReportLeaveRows,
+  weeklyReportPayRows,
+  WEEKLY_REPORT_NO_TIMESHEET,
+  WEEKLY_REPORT_PAY_COLUMNS,
+  WEEKLY_REPORT_PERSON_NOT_FOUND,
+  WEEKLY_REPORT_RATE_NOT_SET,
+  WEEKLY_REPORT_TIMESHEET_STATE_LABELS,
+  WEEKLY_REPORT_WARNING_OPEN,
+} from './weeklyReportPay'
+export type {
+  WeeklyReportCheckLine,
+  WeeklyReportLeavePerson,
+  WeeklyReportLeaveRecord,
+  WeeklyReportLeaveRow,
+  WeeklyReportPaidDay,
+  WeeklyReportPayBooking,
+  WeeklyReportPayInput,
+  WeeklyReportPayPerson,
+  WeeklyReportPayPersonRow,
+  WeeklyReportPayResult,
+  WeeklyReportPayRow,
+  WeeklyReportPayRowKind,
+  WeeklyReportPaySheet,
+  WeeklyReportPaySignedLine,
+  WeeklyReportPayWeek,
+  WeeklyReportTimesheetState,
+} from './weeklyReportPay'
+
+// Rulebook 1.51.0 §4.3: Settings → Working hours "Working hours history" (read-only, admins).
+export { payrollPolicyHistoryRows } from './payrollPolicyHistoryRows'
+export type { PayrollPolicyHistoryRow } from './payrollPolicyHistoryRows'

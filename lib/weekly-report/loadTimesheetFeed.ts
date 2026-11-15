@@ -18,7 +18,11 @@ import { listTimesheetStates } from '@/lib/timesheets/timesheetStorage'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import { findUserAndOperative, resolveDisplayName, resolvePersonRole, resolvePersonTrade } from '@/lib/weekly-report/weeklyReportPayroll'
 import { mergeDuplicatePersonWeeks, type ApprovedTimesheetWeek } from '@/lib/weekly-report/timesheetFeed'
-import type { PayrollTimePolicyState } from '@/lib/canonical'
+import type { PayrollTimePolicyState, WeeklyReportPaySheet } from '@/lib/canonical'
+import { timesheetEntryFingerprintMap } from '@/lib/canonical'
+import { collectTimesheetPayroll } from '@/lib/timesheets/timesheetPayrollCollector'
+import { timesheetSheetFields } from '@/lib/timesheets/timesheetAdjustments'
+import { timesheetStatusFieldsFromDraft } from '@/lib/timesheets/timesheetHubStats'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 /** Rulebook 1.11.0: `timesheetParticipant` over the whole period (`showsMyTimesheets`) — self-employed on a day of it. */
@@ -77,9 +81,13 @@ export async function loadWeeklyReportTimesheetFeed({
   payrollPolicyState?: PayrollTimePolicyState | null
   scheduleOptions?: MyScheduleOptions
   timeZone?: string
-}): Promise<ApprovedTimesheetWeek[]> {
+}): Promise<WeeklyReportTimesheetLoad> {
   const periods = payPeriodsOverlapping(rangeStart, rangeEnd, invoicing, timeZone)
   const weeks: ApprovedTimesheetWeek[] = []
+  // Rulebook 1.51.0 §7 (Q2): every payment run of every self-employed person in the range, for the check line
+  // (`weeklyReportPayRows` `sheets`): the stored sheet (or none), its status, its booking changes and the live payroll
+  // lines the timesheet collector builds for it (the input of `timesheetInvoiceRows`).
+  const sheets: WeeklyReportPaySheet[] = []
   // Rulebook 1.45.0: evidence per price work / expense entry (by id), shared by every week so a merged week keeps it.
   const evidenceCounts: Record<string, number> = {}
 
@@ -88,34 +96,63 @@ export async function loadWeeklyReportTimesheetFeed({
     const rows = await listTimesheetStates(organizationId, user.id, 80)
     const byStart = new Map(rows.map((row) => [dayKey(row.weekStart, timeZone), row.draft]))
     const { operative } = findUserAndOperative(users, operatives, { userId: user.id })
+    const aliasUserIds = users
+      .filter((row) => row.email.trim().toLowerCase() === user.email.trim().toLowerCase())
+      .map((row) => row.id)
     for (const period of periods) {
+      if (!participatesInPeriod(user, period, timeZone)) continue
       const draft = byStart.get(dayKey(period.start, timeZone))
+      const catalogue = {
+        users,
+        liveLoaded: true,
+        // Only when the loaded window holds this pay run (a booking outside it is not deleted).
+        coversPeriod: (p: { start: Date; end: Date }) => bookingsCoverFrom(dayKey(p.start, timeZone)),
+        bookings,
+        managerSiteBookings,
+        operatives,
+        projects,
+        smallWorks,
+        history,
+        payrollPolicy,
+        payrollPolicyPrior,
+        payrollPolicyEffectiveFrom,
+        payrollPolicyState,
+        scheduleOptions,
+        timeZone,
+      }
+      const checkChange = draft ? periodBookingChanges(catalogue, user, draft, period) : null
+      const payroll = collectTimesheetPayroll({
+        user,
+        bookings,
+        managerSiteBookings,
+        operatives,
+        projects,
+        smallWorks,
+        periodStart: period.start,
+        periodEnd: period.end,
+        payrollPolicy,
+        payrollPolicyPrior,
+        payrollPolicyEffectiveFrom,
+        payrollPolicyState,
+        timeZone,
+        history,
+        scheduleOptions,
+        aliasUserIds,
+      })
+      sheets.push({
+        personId: user.id,
+        startDayKey: dayKey(period.start, timeZone),
+        endDayKey: dayKey(period.end, timeZone),
+        sheet: draft ? timesheetSheetFields(draft) : null,
+        status: draft ? timesheetStatusFieldsFromDraft(draft) : null,
+        change: checkChange ? { reopened: checkChange.reopened, changed: checkChange.changed, waitingFor: checkChange.waitingFor } : null,
+        payrollLines: payroll.lineItems,
+        entryFingerprints: draft ? timesheetEntryFingerprintMap([...draft.priceWorkEntries, ...draft.expenseEntries]) : null,
+      })
       if (!draft || !isTimesheetFullyApproved(draft, user, users)) continue
       // Rulebook 1.47.0 §8: a signed, unexported sheet whose bookings changed since it was signed is not approved until
       // it is signed (and counter-signed) again — the report shows its live bookings, never the stale snapshot.
-      const change = periodBookingChanges(
-        {
-          users,
-          liveLoaded: true,
-          // Only when the loaded window holds this pay run (a booking outside it is not deleted).
-          coversPeriod: (p) => bookingsCoverFrom(dayKey(p.start, timeZone)),
-          bookings,
-          managerSiteBookings,
-          operatives,
-          projects,
-          smallWorks,
-          history,
-          payrollPolicy,
-          payrollPolicyPrior,
-          payrollPolicyEffectiveFrom,
-          payrollPolicyState,
-          scheduleOptions,
-          timeZone,
-        },
-        user,
-        draft,
-        period
-      )
+      const change = checkChange
       if (change?.reopened) continue
       let working = draft
       if (!working.weeklyReportOverride) {
@@ -131,9 +168,7 @@ export async function loadWeeklyReportTimesheetFeed({
           projects,
           smallWorks,
           history,
-          aliasUserIds: users
-            .filter((row) => row.email.trim().toLowerCase() === user.email.trim().toLowerCase())
-            .map((row) => row.id),
+          aliasUserIds,
           payrollPolicy,
           payrollPolicyPrior,
           payrollPolicyEffectiveFrom,
@@ -171,9 +206,15 @@ export async function loadWeeklyReportTimesheetFeed({
       (preferredIds.has(week.userId) ? 0 : 2) + (week.trade && week.trade !== 'General' ? 0 : 1)
     return score(a) - score(b)
   })
-  return mergeDuplicatePersonWeeks(
-    ordered,
-    users.map((user) => ({ id: user.id, email: user.email })),
-    timeZone
-  )
+  return {
+    weeks: mergeDuplicatePersonWeeks(
+      ordered,
+      users.map((user) => ({ id: user.id, email: user.email })),
+      timeZone
+    ),
+    sheets,
+  }
 }
+
+/** Rulebook 1.51.0: the approved-timesheet feed and the payment runs behind each self-employed person's check line. */
+export type WeeklyReportTimesheetLoad = { weeks: ApprovedTimesheetWeek[]; sheets: WeeklyReportPaySheet[] }
