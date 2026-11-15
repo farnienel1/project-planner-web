@@ -33,7 +33,13 @@ import {
   userTimesheetSelfSigned,
 } from '@/lib/timesheets/timesheetApprovalPolicy'
 import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride'
-import { draftBookingChanges, draftForFigures, draftSignedBookingRecord, timesheetPersonIds } from '@/lib/timesheets/timesheetBookingChanges'
+import {
+  clearSignedBookingsPending,
+  draftBookingChanges,
+  draftForFigures,
+  draftSignedBookingRecord,
+  timesheetPersonIds,
+} from '@/lib/timesheets/timesheetBookingChanges'
 import { BookingsChangedWarning } from '@/components/timesheets/BookingsChangedWarning'
 import { signedTimesheetActions, SIGNED_TIMESHEET_CHANGED_MESSAGE } from '@/lib/canonical'
 import { staffAccountRole, userTimesheetSubjectIds } from '@/lib/permissions'
@@ -410,7 +416,9 @@ export function TimesheetPeriodPage({
     managerSiteBookings,
     timeZone,
     personIds: timesheetPersonIds(subjectUser, users, operatives),
-    liveLoaded: bookingsLoaded && !bookingsFailed,
+    // Third review #325: the person's ids come from the operatives list too, so wait for it (a booking under their
+    // operatives row id must never briefly read as removed).
+    liveLoaded: bookingsLoaded && !bookingsFailed && operativesLoaded,
     selfSigned: sheetSelfSigned,
   })
   const changeActions = signedTimesheetActions(bookingChange)
@@ -509,10 +517,14 @@ export function TimesheetPeriodPage({
         access: { reviewer, subjectHasLineManager: !userTimesheetSelfSigned(subjectUser, users) },
       })
       // 1.47.0: the record's server time was written once with this save; later saves never re-stamp it.
-      const saved = withOverride.operativeSignedBookingsAtPending ? { ...withOverride, operativeSignedBookingsAtPending: false } : withOverride
+      // Third review #325: cleared on the draft as it is now, also when it changed during this save.
+      const signedInstant = withOverride.operativeSignedBookingsAtPending ? withOverride.operativeSignedBookingsSignedAt ?? null : null
+      const saved = clearSignedBookingsPending(withOverride, signedInstant)
       baseDraft.current = saved
-      if (saved !== withOverride || reviews !== (withOverride.extraEntryReviews ?? null)) {
-        setDraft((current) => (current === withOverride ? { ...saved, extraEntryReviews: reviews } : current))
+      if (signedInstant || reviews !== (withOverride.extraEntryReviews ?? null)) {
+        setDraft((current) =>
+          clearSignedBookingsPending(current === withOverride ? { ...saved, extraEntryReviews: reviews } : current, signedInstant)
+        )
       }
     },
     [

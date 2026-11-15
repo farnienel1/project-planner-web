@@ -88,6 +88,9 @@ import {
 } from '@/lib/timesheets/timesheetExportRun'
 import type { PayrollTimePolicyState } from '@/lib/canonical'
 import { SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE, signedTimesheetActions } from '@/lib/canonical'
+
+/** Third review #325: Export left a sheet out because the bookings or pay inputs were still loading. */
+const EXPORT_INPUTS_LOADING_SKIPPED_MESSAGE = 'Not exported — the bookings or pay settings were still loading; export again.'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 export type TeamTimesheetTab = 'awaiting' | 'signed' | 'exported'
@@ -285,6 +288,8 @@ export function TimesheetsScreen({
   const changeCatalogueRef = useRef(changeCatalogue)
   // Review #325 nit: the people Export left out because their bookings changed since they signed.
   const changedSkippedRef = useRef<string[]>([])
+  // Third review #325: the people Export left out because the bookings or pay inputs were still loading.
+  const inputsSkippedRef = useRef<string[]>([])
   changeCatalogueRef.current = changeCatalogue
   const visible = useMemo(
     () =>
@@ -356,7 +361,11 @@ export function TimesheetsScreen({
     if (!full.operativeSignedAt) return null
     // Second review #325: never export when the booking change cannot be read (bookings or pay inputs not loaded —
     // `periodBookingChanges` is then null, which must not count as "unchanged").
-    if (!payInputsRef.current.ready || !changeCatalogueRef.current.liveLoaded) return null
+    if (!payInputsRef.current.ready || !changeCatalogueRef.current.liveLoaded) {
+      // Third review #325: never silently — the summary names who was left out and why.
+      inputsSkippedRef.current.push(displayName(member))
+      return null
+    }
     // Rulebook 1.47.0 §8 (`signedTimesheetActions`): never export a sheet whose bookings changed since it was signed —
     // its snapshot is stale until the person signs again and the line manager counter-signs again.
     if (!signedTimesheetActions(periodBookingChanges(changeCatalogueRef.current, member, full, { start: periodStart, end: periodEnd })).mayExport) {
@@ -513,6 +522,7 @@ export function TimesheetsScreen({
     let stampedCount = 0
     const exportedAt = new Date()
     changedSkippedRef.current = []
+    inputsSkippedRef.current = []
     const reasonOf = (error: unknown) => (error instanceof Error && error.message ? error.message : 'unknown error')
     try {
       const run = await runTimesheetExport({
@@ -578,6 +588,7 @@ export function TimesheetsScreen({
         return
       }
       const changedSkipped = changedSkippedRef.current
+      const inputsSkipped = inputsSkippedRef.current
       setExportMessage(
         [
           exportSummaryMessage({
@@ -591,6 +602,7 @@ export function TimesheetsScreen({
           stampError: run.stopped?.reason === 'stamp' ? reasonOf(run.stopped.error) : null,
           }),
           changedSkipped.length > 0 ? `${SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE} (${changedSkipped.join(', ')})` : '',
+          inputsSkipped.length > 0 ? `${EXPORT_INPUTS_LOADING_SKIPPED_MESSAGE} (${inputsSkipped.join(', ')})` : '',
         ]
           .filter(Boolean)
           .join(' ')

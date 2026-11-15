@@ -5,7 +5,14 @@ import { DEFAULT_MY_SCHEDULE, DEFAULT_PAYROLL_POLICY } from '../settings/organiz
 import { emptyTimesheetDraft, type TimesheetDraft } from './timesheetDraft.ts'
 import { applyWeeklyReportOverride } from './weeklyReportOverride.ts'
 import { collectTimesheetPayroll } from './timesheetPayrollCollector.ts'
-import { draftBookingChanges, draftForFigures, draftSignedBookingRecord, periodBookingChanges, timesheetPersonIds } from './timesheetBookingChanges.ts'
+import {
+  clearSignedBookingsPending,
+  draftBookingChanges,
+  draftForFigures,
+  draftSignedBookingRecord,
+  periodBookingChanges,
+  timesheetPersonIds,
+} from './timesheetBookingChanges.ts'
 import { draftFromFirestoreMap, draftToFirestoreMap } from './timesheetStorage.ts'
 import { signedTimesheetActions } from '../canonical/index.ts'
 import type { ManagerSiteBooking } from '../scheduling/managerSiteBookingUtils.ts'
@@ -269,5 +276,19 @@ test('1.47.0 web (second review 3): the record time is written as the server tim
   // While pending, the comparison falls back to the device signature less the window (conservative).
   const fresh = [booking(), booking({ id: 'b2', date: new Date('2026-09-17T08:00:00Z'), createdAt: new Date('2026-09-18T08:55:00Z'), updatedAt: new Date('2026-09-18T08:55:00Z') })]
   assert.deepEqual(changes(sheet, fresh).addedBookingIds, ['b2'])
+})
+
+test('1.47.0 web (third review 1): the pending server-time flag clears on the draft as it is now, for that signature only', () => {
+  const signedAt = new Date('2026-09-18T09:00:00Z')
+  const pending = { ...emptyTimesheetDraft(), operativeSignedBookingsSignedAt: signedAt, operativeSignedBookingsAtPending: true }
+  // The draft changed during the save (a note typed): still the same signature — cleared.
+  const edited = { ...pending, managerNote: 'typed during the save' }
+  assert.equal(clearSignedBookingsPending(edited, signedAt).operativeSignedBookingsAtPending, false)
+  assert.equal(clearSignedBookingsPending(edited, signedAt).managerNote, 'typed during the save')
+  // A newer signature keeps its own flag.
+  const newer = { ...pending, operativeSignedBookingsSignedAt: new Date('2026-09-18T09:05:00Z') }
+  assert.equal(clearSignedBookingsPending(newer, signedAt).operativeSignedBookingsAtPending, true)
+  // Nothing to clear: the same object back.
+  assert.equal(clearSignedBookingsPending(edited, null), edited)
 })
 

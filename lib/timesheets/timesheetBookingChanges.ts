@@ -260,3 +260,17 @@ export function periodBookingChanges(
   memo.set(key, change)
   return change
 }
+
+/**
+ * Third review #325 item 1: once the signing save has written the record's server time, clear the local "write it as
+ * the server time" flag on whatever the draft is now — also when it changed during the save — so a later save never
+ * re-stamps `operativeSignedBookingsAt` with a later time (an addition in between would then be missed). Only the
+ * draft of that same signature (`operativeSignedBookingsSignedAt`) is cleared; a newer signature keeps its own flag.
+ */
+export function clearSignedBookingsPending(current: TimesheetDraft, signedAt: Date | null | undefined): TimesheetDraft {
+  if (!current.operativeSignedBookingsAtPending || !(signedAt instanceof Date)) return current
+  const held = current.operativeSignedBookingsSignedAt
+  if (!(held instanceof Date) || held.getTime() !== signedAt.getTime()) return current
+  return { ...current, operativeSignedBookingsAtPending: false }
+}
+
