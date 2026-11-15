@@ -2,7 +2,6 @@ import {
   DEFAULT_ANNUAL_LEAVE,
   DEFAULT_INVOICING,
   DEFAULT_MY_SCHEDULE,
-  DEFAULT_PAYROLL_POLICY,
   DEFAULT_PAYMENT_RUN_DATE_RANGES,
   DEFAULT_WARNING_DETECTION,
   invoicingToFirestore,
@@ -33,7 +32,7 @@ import {
   organizationCurrencyWriteFields,
 } from '@/lib/canonical'
 import type { NotificationPreferences } from '@/lib/settings/notificationPreferences'
-import { organizationTimeZone, payePaydayWriteFields } from '@/lib/canonical'
+import { newOrganizationPayrollPolicy, organizationTimeZone, payePaydayWriteFields } from '@/lib/canonical'
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { COMPANY_LOGO_MAX_BYTES, uploadLimitError } from '@/lib/security/uploadLimits'
 
@@ -109,11 +108,9 @@ export function createDefaultIdentitySetup(): OrganisationIdentitySetup {
 
 export function createDefaultFeaturesSetup(): OrganisationFeaturesSetup {
   return {
-    payrollTimePolicy: {
-      ...DEFAULT_PAYROLL_POLICY,
-      saturday: { ...DEFAULT_PAYROLL_POLICY.saturday },
-      sunday: { ...DEFAULT_PAYROLL_POLICY.sunday },
-    },
+    // Rulebook 1.49.0 §4.3 (owner answer 15 Nov, 1b): new organisations start with weekend "Counts as" on
+    // "Same as Monday–Friday" (`newOrganizationPayrollPolicy`).
+    payrollTimePolicy: newOrganizationPayrollPolicy(),
     annualLeaveDefaults: { ...DEFAULT_ANNUAL_LEAVE },
     myScheduleOptions: { ...DEFAULT_MY_SCHEDULE, customItemEnabled: {} },
     warningDetection: { ...DEFAULT_WARNING_DETECTION, excludedUserIdsFromUnbookedWarnings: [] },

@@ -19,6 +19,13 @@ import {
   formatClockMinutes,
   weekendBreakFor,
   weekendLunchBreakCopy,
+  weekendCountsAsCopy,
+  weekendCountsAsHours,
+  weekdayDayRateNote,
+  weekendDayRateNote,
+  WEEKEND_COUNTS_AS_STEP_HOURS,
+  weekendCountsAsMax,
+  weekendCountsAsStep,
   weekdayPaidDayPreview,
   weekdayPaidHours,
   withDerivedWeekdayPaidHours,
@@ -208,6 +215,10 @@ function WeekdayPaidDayLine({ policy }: { policy: OrgPayrollTimePolicy }) {
         {valid ? weekdayPaidDayPreview(policy).line : 'Enter valid 24h times to see the paid day.'}
       </p>
       <p className="mt-1 text-[12px] text-[var(--ink3)]">Worked out from the start, finish and lunch break below.</p>
+      {/* Rulebook 1.49.0 §4.3: the approved day-rate note (`weekdayDayRateNote`), identical on iOS. */}
+      <p className="mt-2 text-[12.5px] text-[var(--ink2)]" data-testid="weekday-day-rate-note">
+        {weekdayDayRateNote(policy)}
+      </p>
     </div>
   )
 }
@@ -230,6 +241,12 @@ function WeekendDayPreview({ policy, day }: { policy: OrgPayrollTimePolicy; day:
         {preview.summary}
       </p>
       <BookingDayBreakdownRows rows={preview.rows} title={`${name} example · ${preview.start}–${preview.end}`} />
+      {/* Rulebook 1.49.0 §4.3: the approved day-rate note (`weekendDayRateNote`), identical on iOS. */}
+      {weekendDayRateNote(policy, day) ? (
+        <p className="text-[12.5px] text-[var(--ink2)]" data-testid={`${day}-day-rate-note`}>
+          {weekendDayRateNote(policy, day)}
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -439,6 +456,45 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
                 />
               </FormField>
             </div>
+            {/* Rulebook 1.49.0 §4.3 (owner answers 15 Nov, 1b and 2): "Same as Monday–Friday" (`countsAsFollowsWeekday`)
+                follows the weekday paid day; off, the number beneath it (half-hour steps, 1h up to the weekday paid day,
+                `validatePayrollTimePolicy`). Saved with the rest of the working hours. */}
+            <ToggleRow
+              title={weekendCountsAsCopy(key).sameAsWeekdayLabel}
+              description={
+                settings.countsAsFollowsWeekday === true
+                  ? `${weekendCountsAsCopy(key).label} ${weekendCountsAsHours(settings, draft)}h, the Monday–Friday paid day.`
+                  : undefined
+              }
+              checked={settings.countsAsFollowsWeekday === true}
+              onChange={(on) =>
+                patchWeekend(
+                  key,
+                  on
+                    ? { countsAsFollowsWeekday: true, countsAsStandardHours: weekendCountsAsHours({ countsAsFollowsWeekday: true }, draft) }
+                    : {
+                        countsAsFollowsWeekday: false,
+                        countsAsStandardHours: weekendCountsAsMax(draft),
+                      }
+                )
+              }
+            />
+            {settings.countsAsFollowsWeekday !== true ? (
+              <Stepper
+                label={weekendCountsAsCopy(key).label}
+                value={weekendCountsAsHours(settings, draft)}
+                // Review of #327 (round 2): every press lands on the half-hour grid within 1h and the cap
+                // (`weekendCountsAsStep`); a stored off-grid or above-cap value steps to the nearest valid one.
+                onChange={(value) => {
+                  const current = weekendCountsAsHours(settings, draft)
+                  patchWeekend(key, { countsAsStandardHours: weekendCountsAsStep(current, value > current ? 1 : -1, draft) })
+                }}
+                min={PAYROLL_POLICY_LIMITS.paidHours.min}
+                max={weekendCountsAsMax(draft)}
+                step={WEEKEND_COUNTS_AS_STEP_HOURS}
+                format={(value) => `${value}h`}
+              />
+            ) : null}
             <MultiplierInput
               label="Rate outside the window"
               hint="Hours inside the window count as standard hours."

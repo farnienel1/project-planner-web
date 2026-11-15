@@ -85,6 +85,15 @@ export type PayrollHoursResult = {
   /** Rulebook 1.19.0: the unpaid break taken off this booking (hours, before any multiplier). 0 when none. */
   unpaidBreakHours: number
   segments: PayrollHoursSegment[]
+  /**
+   * Rulebook 1.49.0 §8 (owner decision 15 Nov, option A): the hours a day rate is divided by for `standardHours` on
+   * this booking's day — that Saturday's or Sunday's own "counts as" hours on a set-window weekend day (a full window
+   * is exactly one day), else the weekday paid day (`weekdayPaidHours`). Set by `payrollHoursResult`
+   * (`payrollDayRateHours`). Missing on a result built by hand: the caller's weekday paid day.
+   */
+  standardPartDayHours?: number
+  /** Rulebook 1.49.0 §8: the hours a day rate is divided by for `outsideHours` — always the weekday paid day. */
+  overtimePartDayHours?: number
 }
 
 const HALF_WINDOW_TOLERANCE = 20
@@ -100,9 +109,10 @@ function standardPaid(policy: OrgPayrollTimePolicy): number {
   return Math.max(Number(weekdayPaidHours(policy)) || 0, 0)
 }
 
-function countsAs(weekend: WeekendPayrollSettings): number {
-  // 1.44.0: one fallback with the reader (`weekendCountsAsHours`: stored, else 8), never the weekday paid day.
-  return weekendCountsAsHours(weekend)
+function countsAs(weekend: WeekendPayrollSettings, policy: OrgPayrollTimePolicy): number {
+  // 1.44.0 / 1.49.0: the one reader (`weekendCountsAsHours`): "Same as Monday–Friday" → this policy's weekday paid
+  // day; else stored, else 8.
+  return weekendCountsAsHours(weekend, policy)
 }
 
 function dayInput(policy: OrgPayrollTimePolicy) {
@@ -369,7 +379,7 @@ function isHalfDayPaid(booking: PayrollHoursBooking, policy: OrgPayrollTimePolic
 }
 
 function halfDayPaid(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, weekend: WeekendPayrollSettings | null, multiplier: number): PayrollHoursResult {
-  const paid = weekend && !weekend.allHoursAtMultiplierMode ? Math.max(countsAs(weekend), 0) / 2 : standardPaid(policy) / 2
+  const paid = weekend && !weekend.allHoursAtMultiplierMode ? Math.max(countsAs(weekend, policy), 0) / 2 : standardPaid(policy) / 2
   const span = interval(booking, policy)
   return result([segment('standardWindow', paid, 1, span?.start, span?.end)], multiplier)
 }
@@ -631,31 +641,43 @@ function weekendDay(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, 
     const wall = wallHours(booking, policy)
     return result([segment('allHoursMultiplier', wall, multiplier, booking.workStartTime ?? undefined, booking.workEndTime ?? undefined)], multiplier)
   }
-  if (isHalfDayPaid(booking, policy, false)) return halfDayPaid(booking, policy, weekend, multiplier)
-  const credit = countsAs(weekend)
+  // Review of #327 (round 2): only a stored AM / PM is a half day on a set-window weekend day — custom hours are never
+  // snapped to one (as Monday–Friday since 1.44.0); every part of the window is the worked-minutes share (decision 3).
+  if (isHalfDayPaid(booking, policy, false, true)) return halfDayPaid(booking, policy, weekend, multiplier)
+  const credit = countsAs(weekend, policy)
   const rows: PayrollHoursSegment[] = []
   const overlapStart = Math.max(span.start, ws)
   const overlapEnd = Math.min(span.end, we)
-  // The deduction is taken first from the part of the break inside the window (off the credited hours), and the rest
-  // from the outside hours the booking works there (hours always match the clock), before the multiplier.
+  // The break deduction is allocated first to the part of the break inside the window, the rest to the outside hours
+  // the booking works there (1.20.3: multiplied, then the break off as plain hours).
   let breakLeft = totalBreak
   if (overlapEnd > overlapStart) {
-    const credited = overlapStart <= ws && overlapEnd >= we ? credit : credit * ((overlapEnd - overlapStart) / (we - ws))
+    // Rulebook 1.49.0 §4.3 / §8 (owner answer 15 Nov, 3): the unpaid break is already allowed for in "counts as". A
+    // booking that covers the whole window credits exactly "counts as" — paid, unpaid or removed break alike. A part of
+    // the window credits pro rata (so a booking only inside an unpaid break credits 0).
+    // Review of #327 (round 3, option (a)): with the company break unpaid the share is always over the window minutes
+    // outside the break window, and "No unpaid break" on the booking has NO effect inside the window — the break is
+    // already allowed for in "counts as", so removing it is the unpaid case: never lower, split bookings add up to the
+    // whole window, and a short booking cannot reach a full day. (Round 2 added the covered break minutes as worked,
+    // which let 07:30–13:30 credit 8h and a split day 8.67h.) Outside the window the 1.20.3 rule stays (`totalBreak`).
+    // A company whose break is paid credits over the clock minutes (its full window is all paid time).
+    const covered = overlapEnd - overlapStart
+    const windowMinutes = we - ws
+    const breakUnpaid = weekendBreakUnpaid(policy, weekend) && !isNamedHalf(booking)
+    const breakInWindow = breakUnpaid ? breakOverlapMinutes(dayBreak, { start: ws, end: we }) : 0
+    const breakCovered = breakUnpaid ? breakOverlapMinutes(dayBreak, { start: overlapStart, end: overlapEnd }) : 0
+    const fullCover = overlapStart <= ws && overlapEnd >= we
+    const workedShare = Math.max(0, covered - breakCovered)
+    const credited = fullCover
+      ? credit
+      : breakUnpaid && windowMinutes - breakInWindow > 0
+        ? Math.min(credit, credit * (workedShare / (windowMinutes - breakInWindow)))
+        : credit * (covered / windowMinutes)
     const inside = Math.min(breakLeft, breakOverlapMinutes(dayBreak, { start: overlapStart, end: overlapEnd }))
     breakLeft -= inside
     const insideHours = inside / 60
-    // A weekend window credits a set number of hours; the time worked is the clock time.
-    rows.push(
-      segment(
-        'standardWindow',
-        Math.max(0, credited - insideHours),
-        1,
-        overlapStart,
-        overlapEnd,
-        Math.max(0, (overlapEnd - overlapStart) / 60 - insideHours),
-        insideHours
-      )
-    )
+    // A weekend window credits a set number of hours; the time worked is the clock time less the unpaid break.
+    rows.push(segment('standardWindow', Math.max(0, credited), 1, overlapStart, overlapEnd, Math.max(0, covered / 60 - insideHours), 0))
   }
   for (const part of outsideIntervals(span, ws, we)) {
     const taken = Math.min(breakLeft, breakOverlapMinutes(dayBreak, part))
@@ -670,6 +692,39 @@ function weekendDay(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, 
   return result(rows, multiplier)
 }
 
+/** True when a weekend day credits its set window at its "counts as" hours (not every hour at N×, a valid window). */
+function weekendCreditsWindow(policy: OrgPayrollTimePolicy, weekend: WeekendPayrollSettings | null): weekend is WeekendPayrollSettings {
+  if (!weekend || weekend.allHoursAtMultiplierMode) return false
+  const ws = parseClockMinutes(weekend.definedWindowStart ?? policy.standardDayStart)
+  const we = parseClockMinutes(weekend.definedWindowEnd ?? '13:00')
+  return ws != null && we != null && we > ws
+}
+
+/**
+ * Rulebook 1.49.0 §8 (owner decision 15 Nov, option A): what a day rate is divided by on this day, per part of a
+ * booking. `standardDayHours` — the divisor of the standard part (`payrollHoursResult.standardHours`): on a Saturday or
+ * Sunday that credits a set window ("standard window + overtime"), THAT day's own "counts as" hours
+ * (`weekendCountsAsHours`, from the policy in effect that day), so a full window is exactly one day and pays exactly
+ * the day rate; partial windows stay pro rata. Everywhere else (Monday–Friday, a weekend day paid every hour at N×) the
+ * weekday paid day (`weekdayPaidHours`). `overtimeDayHours` — the divisor of the hours at a multiplier (weekday
+ * overtime, a set-window day's outside hours, an every-hour weekend day): always the weekday paid day. A "counts as"
+ * below 1 hour (its credited hours are 0 anyway) falls back to the weekday paid day. Hourly pay ignores both.
+ */
+export function payrollDayRateHours(input: { policy: OrgPayrollTimePolicy; dayKey: string; timeZone?: string | null }): {
+  standardDayHours: number
+  overtimeDayHours: number
+} {
+  const zone = zoneOrLondon(input.timeZone)
+  const iso = isoWeekdayInZone(dateFromDayKeyInZone(input.dayKey, zone), zone)
+  return dayRateHoursFor(input.policy, weekendFor(iso, input.policy))
+}
+
+function dayRateHoursFor(policy: OrgPayrollTimePolicy, weekend: WeekendPayrollSettings | null) {
+  const weekdayDay = standardPaid(policy)
+  const credit = weekendCreditsWindow(policy, weekend) ? countsAs(weekend, policy) : null
+  return { standardDayHours: credit != null && credit >= 1 ? credit : weekdayDay, overtimeDayHours: weekdayDay }
+}
+
 /** Paid hours for one booking on its organisation-zone day. */
 export function payrollHoursResult(input: PayrollHoursInput): PayrollHoursResult {
   const zone = zoneOrLondon(input.timeZone)
@@ -678,16 +733,43 @@ export function payrollHoursResult(input: PayrollHoursInput): PayrollHoursResult
   const booking = input.booking || {}
   const multiplier = payrollOutsideMultiplier(booking, iso, policy)
   const weekend = weekendFor(iso, policy)
-  return weekend ? weekendDay(booking, policy, weekend, multiplier) : weekday(booking, policy, multiplier)
+  const hours = weekend ? weekendDay(booking, policy, weekend, multiplier) : weekday(booking, policy, multiplier)
+  // 1.49.0 §8: the day-rate divisor of each part (`payrollDayRateHours`). A weekend booking with no clock span is paid
+  // by `legacySlot` on the weekday paid day, so its standard part keeps the weekday divisor.
+  const divisors = dayRateHoursFor(policy, weekend)
+  // The same span the pay rule uses (a FULL DAY with no clock times is the window, `weekendFullDayWindow`).
+  const span = weekend ? (weekendFullDayOnly(booking) ? weekendFullDayWindow(policy, weekend) : null) ?? interval(booking, policy) : null
+  const credited = weekend && span != null ? divisors.standardDayHours : divisors.overtimeDayHours
+  hours.standardPartDayHours = credited
+  hours.overtimePartDayHours = divisors.overtimeDayHours
+  return hours
 }
 
 /**
  * Weekly-report day units for a staff booking: weighted paid hours over the
  * standard paid day, capped at 1.5 (an AM is 0.5, a plain full day is 1).
  */
-export function reportDayValue(input: { totalPaidHours: number; standardPaidHours: number }): number {
+export function reportDayValue(input: {
+  totalPaidHours: number
+  standardPaidHours: number
+  /**
+   * Rulebook 1.49.0 §7/§8: with `standardHours` and `standardPartDayHours` (`payrollHoursResult`), the standard part
+   * counts in days of its own divisor (a full Saturday window = 1) and the rest in days of `standardPaidHours`.
+   * Missing: every hour over `standardPaidHours`, as before.
+   */
+  standardHours?: number | null
+  standardPartDayHours?: number | null
+}): number {
   const standard = Math.max(Number(input.standardPaidHours) || 0, 0.01)
-  return Math.min(1.5, Math.max(0, Number(input.totalPaidHours) || 0) / standard)
+  const total = Math.max(0, Number(input.totalPaidHours) || 0)
+  const partDay = Number(input.standardPartDayHours)
+  const stdHours = Number(input.standardHours)
+  // Review of #327 (a): split only when the standard part's divisor differs, so weekday day units are unchanged.
+  if (input.standardHours != null && Number.isFinite(stdHours) && partDay >= 1 && Math.abs(partDay - standard) > 1e-9) {
+    const own = Math.min(total, Math.max(0, stdHours))
+    return Math.min(1.5, own / partDay + (total - own) / standard)
+  }
+  return Math.min(1.5, total / standard)
 }
 
 /** Weekly-report day units for a subcontractor booking: a full day is 1, anything else 0.5. */

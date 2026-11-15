@@ -11491,11 +11491,13 @@
             "paidHours": 8,
             "workedHours": 6.5
           }
-        ]
+        ],
+        "standardPartDayHours": 8,
+        "overtimePartDayHours": 8
       }
     },
     {
-      "name": "1.19.0 owner: Saturday window, break unpaid (12:00–12:30) → 7.5h",
+      "name": "1.19.0 / 1.49.0 owner: Saturday window, break unpaid (12:00–12:30) → 8h (allowed for in counts as; was 7.5h)",
       "function": "payrollHoursResult",
       "args": [
         {
@@ -11538,28 +11540,29 @@
         }
       ],
       "expected": {
-        "totalPaidHours": 7.5,
-        "standardHours": 7.5,
+        "totalPaidHours": 8,
+        "standardHours": 8,
         "outsideHours": 0,
         "outsideMultiplier": 1.5,
         "workedHours": 6,
-        "unpaidBreakHours": 0.5,
+        "unpaidBreakHours": 0,
         "segments": [
           {
             "kind": "standardWindow",
             "clockStart": "07:30",
             "clockEnd": "14:00",
-            "baseHours": 7.5,
+            "baseHours": 8,
             "multiplier": 1,
-            "paidHours": 7.5,
-            "workedHours": 6,
-            "unpaidBreakHours": 0.5
+            "paidHours": 8,
+            "workedHours": 6
           }
-        ]
+        ],
+        "standardPartDayHours": 8,
+        "overtimePartDayHours": 8
       }
     },
     {
-      "name": "1.19.0 owner: Saturday unpaid, booked 07:30–11:00 → pro-rated 4.3077h, no deduction",
+      "name": "1.19.0 / 1.49.0 owner: Saturday unpaid, booked 07:30–11:00 → 8 × 3.5 / 6 = 4.67h (worked-minutes share; was 4.3077h)",
       "function": "payrollHoursResult",
       "args": [
         {
@@ -11602,8 +11605,8 @@
         }
       ],
       "expected": {
-        "totalPaidHours": 4.3076923076923075,
-        "standardHours": 4.3076923076923075,
+        "totalPaidHours": 4.666666666666667,
+        "standardHours": 4.666666666666667,
         "outsideHours": 0,
         "outsideMultiplier": 1.5,
         "workedHours": 3.5,
@@ -11613,12 +11616,14 @@
             "kind": "standardWindow",
             "clockStart": "07:30",
             "clockEnd": "11:00",
-            "baseHours": 4.3076923076923075,
+            "baseHours": 4.666666666666667,
             "multiplier": 1,
-            "paidHours": 4.3076923076923075,
+            "paidHours": 4.666666666666667,
             "workedHours": 3.5
           }
-        ]
+        ],
+        "standardPartDayHours": 8,
+        "overtimePartDayHours": 8
       }
     },
     {
@@ -11681,7 +11686,9 @@
             "paidHours": 13,
             "workedHours": 6.5
           }
-        ]
+        ],
+        "standardPartDayHours": 8,
+        "overtimePartDayHours": 8
       }
     },
     {
@@ -11745,7 +11752,9 @@
             "workedHours": 6,
             "unpaidBreakHours": 0.5
           }
-        ]
+        ],
+        "standardPartDayHours": 8,
+        "overtimePartDayHours": 8
       }
     },
     {
@@ -11809,11 +11818,13 @@
             "paidHours": 13,
             "workedHours": 6.5
           }
-        ]
+        ],
+        "standardPartDayHours": 8,
+        "overtimePartDayHours": 8
       }
     },
     {
-      "name": "1.19.0 / 1.20.3 owner: weekend breakdown rows with an unpaid break (Sunday 13h − 0.5h = 12.5h)",
+      "name": "1.19.0 / 1.20.3 / 1.49.0 owner: weekend breakdown rows with an unpaid break (Saturday full window 8h; Sunday 13h − 0.5h = 12.5h)",
       "function": "weekendBookingBreakdown",
       "args": [
         {
@@ -11861,13 +11872,13 @@
           "start": "07:30",
           "end": "14:00",
           "workedHours": 6,
-          "countsAsHours": 7.5,
-          "standardHours": 7.5,
+          "countsAsHours": 8,
+          "standardHours": 8,
           "overtimeHours": 0,
           "multiplier": 1.5,
-          "paidHoursEquivalent": 7.5,
-          "unpaidBreakHours": 0.5,
-          "line": "Saturday 07:30–14:00 = 8h − 0.5h unpaid break = 7.5h",
+          "paidHoursEquivalent": 8,
+          "unpaidBreakHours": 0,
+          "line": "Saturday 07:30–14:00 = 8h (counts as a full day)",
           "lines": [
             {
               "kind": "standard",
@@ -11875,20 +11886,15 @@
               "value": "8h"
             },
             {
-              "kind": "break",
-              "label": "Unpaid break",
-              "value": "−0.5h"
-            },
-            {
               "kind": "total",
               "label": "Total paid hours",
-              "value": "7.5h"
+              "value": "8h"
             }
           ],
           "explanation": {
             "rule": "Saturday full day: 07:30–14:00 counts as 8h, hours outside it at 1.5×, unpaid break 12:00–12:30 (30 min)",
             "steps": [
-              "07:30–14:00 = 7.5h (full day 8h, less 30 min unpaid break)"
+              "07:30–14:00 = 8h (full day, unpaid break allowed for)"
             ]
           }
         },
@@ -12561,7 +12567,7 @@
       }
     },
     {
-      "name": "1.19.0 owner: Saturday own break 45 min 11:30–12:15 unpaid → 8 − 0.75 = 7.25h",
+      "name": "1.19.0 / 1.49.0 owner: Saturday own break 45 min 11:30–12:15 unpaid, full window → 8h (was 7.25h)",
       "function": "payrollHoursResult",
       "args": [
         {
@@ -12607,24 +12613,25 @@
         }
       ],
       "expected": {
-        "totalPaidHours": 7.25,
-        "standardHours": 7.25,
+        "totalPaidHours": 8,
+        "standardHours": 8,
         "outsideHours": 0,
         "outsideMultiplier": 1.5,
         "workedHours": 5.75,
-        "unpaidBreakHours": 0.75,
+        "unpaidBreakHours": 0,
         "segments": [
           {
             "kind": "standardWindow",
             "clockStart": "07:30",
             "clockEnd": "14:00",
-            "baseHours": 7.25,
+            "baseHours": 8,
             "multiplier": 1,
-            "paidHours": 7.25,
-            "workedHours": 5.75,
-            "unpaidBreakHours": 0.75
+            "paidHours": 8,
+            "workedHours": 5.75
           }
-        ]
+        ],
+        "standardPartDayHours": 8,
+        "overtimePartDayHours": 8
       }
     },
     {
@@ -12984,7 +12991,9 @@
             "workedHours": 7.25,
             "unpaidBreakHours": 0.75
           }
-        ]
+        ],
+        "standardPartDayHours": 7.25,
+        "overtimePartDayHours": 7.25
       }
     },
     {
@@ -13050,7 +13059,9 @@
             "workedHours": 4.75,
             "unpaidBreakHours": 0.75
           }
-        ]
+        ],
+        "standardPartDayHours": 7.25,
+        "overtimePartDayHours": 7.25
       }
     },
     {
@@ -13115,7 +13126,9 @@
             "paidHours": 3.5,
             "workedHours": 3.5
           }
-        ]
+        ],
+        "standardPartDayHours": 7.25,
+        "overtimePartDayHours": 7.25
       }
     },
     {
@@ -13190,7 +13203,9 @@
             "paidHours": 3,
             "workedHours": 2
           }
-        ]
+        ],
+        "standardPartDayHours": 7.25,
+        "overtimePartDayHours": 7.25
       }
     },
     {
@@ -13253,7 +13268,9 @@
             "workedHours": 8,
             "unpaidBreakHours": 0.5
           }
-        ]
+        ],
+        "standardPartDayHours": 8,
+        "overtimePartDayHours": 8
       }
     },
     {
@@ -13315,7 +13332,9 @@
             "paidHours": 4,
             "workedHours": 4
           }
-        ]
+        ],
+        "standardPartDayHours": 8,
+        "overtimePartDayHours": 8
       }
     },
     {
@@ -13949,6 +13968,35 @@
           "standardPaidHours": 8,
           "breakWindowStart": "10:00",
           "breakWindowEnd": "10:45",
+          "weekdayOutsideStandardMultiplier": 1.5,
+          "saturday": {
+            "allHoursAtMultiplierMode": false,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "14:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 1.5,
+            "sameAsSaturday": false,
+            "breakPaid": false
+          },
+          "sunday": {
+            "allHoursAtMultiplierMode": true,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "16:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false,
+            "breakPaid": false
+          }
+        },
+        {
+          "standardDayStart": "07:30",
+          "standardDayEnd": "16:00",
+          "unpaidBreakMinutes": 45,
+          "standardPaidHours": 8,
+          "breakWindowStart": "12:00",
+          "breakWindowEnd": "12:45",
           "weekdayOutsideStandardMultiplier": 1.5,
           "saturday": {
             "allHoursAtMultiplierMode": false,

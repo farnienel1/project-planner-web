@@ -1,5 +1,5 @@
 import type { OrgPayrollTimePolicy, WeekendPayrollSettings } from '@/lib/settings/organizationSettings'
-import { weekdayPaidHours, withDerivedWeekdayPaidHours } from '@/lib/canonical'
+import { weekdayPaidHours, weekendCountsAsHours, withDerivedWeekdayPaidHours } from '@/lib/canonical'
 
 /** Parse "HH:mm" to minutes from midnight. */
 export function timeToMinutes(time: string): number {
@@ -104,13 +104,14 @@ export function effectiveWeekendSettings(
   return settings
 }
 
-export function weekendHoursLabel(settings: WeekendPayrollSettings, weekdayMultiplier: number): string {
+export function weekendHoursLabel(settings: WeekendPayrollSettings, weekdayMultiplier: number, policy?: OrgPayrollTimePolicy): string {
   if (settings.allHoursAtMultiplierMode) {
     return `All hours ×${settings.allHoursMultiplier.toFixed(1)}`
   }
   const start = settings.definedWindowStart ?? '07:30'
   const end = settings.definedWindowEnd ?? '16:00'
-  const hours = settings.countsAsStandardHours ?? 8
+  // 1.49.0: the one reader (`weekendCountsAsHours`: "Same as Monday–Friday" → the weekday paid day; else stored; else 8).
+  const hours = weekendCountsAsHours(settings, policy)
   const outside = settings.outsideWindowMultiplier ?? weekdayMultiplier
   return `${formatTime12h(start)} – ${formatTime12h(end)} · ${hours}h standard · outside ×${outside.toFixed(1)}`
 }
@@ -122,6 +123,7 @@ export function defaultDefinedWeekendSettings(policy: OrgPayrollTimePolicy): Wee
     definedWindowStart: policy.standardDayStart,
     definedWindowEnd: policy.standardDayEnd,
     countsAsStandardHours: weekdayPaidHours(policy),
+    countsAsFollowsWeekday: true,
     outsideWindowMultiplier: 1.5,
     sameAsSaturday: false,
   }

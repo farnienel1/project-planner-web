@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { FormInput, FormLabel } from '@/components/forms/FormShell'
 import {
   SetupCard,
@@ -27,6 +28,12 @@ import {
   weekdayPaidDayPreview,
   weekendBreakFor,
   weekendCountsAsHours,
+  weekendCountsAsCopy,
+  weekendDayRateNote,
+  weekdayDayRateNote,
+  WEEKEND_COUNTS_AS_STEP_HOURS,
+  weekendCountsAsMax,
+  weekendCountsAsSnap,
   weekendLunchBreakCopy,
 } from '@/lib/canonical'
 
@@ -104,14 +111,14 @@ function WeekAtAGlance({ policy }: { policy: OrgPayrollTimePolicy }) {
     {
       dot: 'bg-yellow-400',
       label: 'Saturday',
-      value: weekendHoursLabel(sat, policy.weekdayOutsideStandardMultiplier),
+      value: weekendHoursLabel(sat, policy.weekdayOutsideStandardMultiplier, policy),
     },
     {
       dot: 'bg-orange-500',
       label: 'Sunday',
       value: policy.sunday.sameAsSaturday
         ? 'Same as Saturday'
-        : weekendHoursLabel(sun, policy.weekdayOutsideStandardMultiplier),
+        : weekendHoursLabel(sun, policy.weekdayOutsideStandardMultiplier, policy),
     },
   ]
 
@@ -155,6 +162,8 @@ function MonFriPaidDayInfographic({ policy }: { policy: OrgPayrollTimePolicy }) 
           <span className="text-lg font-extrabold">{paidHours}h</span>
         </div>
         <p className="text-xs text-violet-700">{weekdayPaidDayPreview(policy).line}</p>
+        {/* Rulebook 1.49.0 §4.3: the approved day-rate note, identical on Settings and iOS. */}
+        <p className="text-xs text-violet-700">{weekdayDayRateNote(policy)}</p>
       </div>
     </div>
   )
@@ -180,6 +189,9 @@ function WeekendSection({
   // from the weekday break (`weekendBreakFor`), on 15-minute steps, as on Settings → Working hours.
   const dayBreak = weekendBreakFor(policy, effective)
   const lunch = weekendLunchBreakCopy(policy, dayKey)
+  // Review of #327 (round 3): the "Counts as" text as typed; it is snapped onto the half-hour grid on blur
+  // (`weekendCountsAsSnap`), never on each keystroke. Null = show the stored value.
+  const [countsAsText, setCountsAsText] = useState<string | null>(null)
 
   function patchWeekend(partial: Partial<WeekendPayrollSettings>) {
     const nextDay = { ...settings, ...partial }
@@ -223,7 +235,7 @@ function WeekendSection({
                     effective.definedWindowStart ?? policy.standardDayStart,
                   definedWindowEnd: effective.definedWindowEnd ?? policy.standardDayEnd,
                   countsAsStandardHours:
-                    weekendCountsAsHours(effective),
+                    weekendCountsAsHours(effective, policy),
                   outsideWindowMultiplier:
                     effective.outsideWindowMultiplier ?? policy.weekdayOutsideStandardMultiplier,
                 })
@@ -255,21 +267,48 @@ function WeekendSection({
                   </div>
                 </div>
                 <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-                  <p className="text-sm font-semibold text-slate-900">Counts as</p>
-                  <div className="mt-2 flex items-center justify-between">
-                    <span className="text-xs text-slate-500">Standard hours inside the defined window</span>
-                    <input
-                      type="number"
-                      step={0.5}
-                      min={0}
-                      max={24}
-                      value={effective.countsAsStandardHours ?? 8}
-                      onChange={(e) =>
-                        patchWeekend({ countsAsStandardHours: parseFloat(e.target.value) || 0 })
-                      }
-                      className="w-16 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-center text-sm font-bold text-blue-600 outline-none"
-                    />
-                  </div>
+                  {/* Rulebook 1.49.0 §4.3 (owner answers 15 Nov, 1b and 2): the same toggle, number and limits as
+                      Settings → Working hours; new organisations start on "Same as Monday–Friday". */}
+                  <SetupToggle
+                    label={weekendCountsAsCopy(isSunday ? 'sunday' : 'saturday').sameAsWeekdayLabel}
+                    description={`${weekendCountsAsCopy(isSunday ? 'sunday' : 'saturday').label} ${weekendCountsAsHours(effective, policy)}h`}
+                    checked={effective.countsAsFollowsWeekday === true}
+                    onChange={(on) =>
+                      patchWeekend(
+                        on
+                          ? { countsAsFollowsWeekday: true, countsAsStandardHours: weekendCountsAsHours({ countsAsFollowsWeekday: true }, policy) }
+                          : {
+                              countsAsFollowsWeekday: false,
+                              countsAsStandardHours: weekendCountsAsMax(policy),
+                            }
+                      )
+                    }
+                  />
+                  {effective.countsAsFollowsWeekday !== true ? (
+                    <div className="mt-2 flex items-center justify-between">
+                      <span className="text-sm font-semibold text-slate-900">{weekendCountsAsCopy(isSunday ? 'sunday' : 'saturday').label}</span>
+                      <input
+                        type="number"
+                        step={WEEKEND_COUNTS_AS_STEP_HOURS}
+                        min={PAYROLL_POLICY_LIMITS.paidHours.min}
+                        max={weekendCountsAsMax(policy)}
+                        value={countsAsText ?? String(weekendCountsAsHours(effective, policy))}
+                        // Review of #327 (rounds 2–3): the raw text while typing; on blur it lands on the half-hour
+                        // grid within 1h and the cap (`weekendCountsAsSnap`).
+                        onChange={(e) => setCountsAsText(e.target.value)}
+                        onBlur={() => {
+                          if (countsAsText != null) patchWeekend({ countsAsStandardHours: weekendCountsAsSnap(countsAsText, policy) })
+                          setCountsAsText(null)
+                        }}
+                        className="w-16 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-center text-sm font-bold text-blue-600 outline-none"
+                      />
+                    </div>
+                  ) : null}
+                  {weekendDayRateNote({ ...policy, [isSunday ? 'sunday' : 'saturday']: effective }, isSunday ? 'sunday' : 'saturday') ? (
+                    <p className="mt-2 text-xs text-slate-500">
+                      {weekendDayRateNote({ ...policy, [isSunday ? 'sunday' : 'saturday']: effective }, isSunday ? 'sunday' : 'saturday')}
+                    </p>
+                  ) : null}
                   <div className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                     <div>
                       <p className="text-sm font-medium text-slate-700">Outside window × multiplier</p>

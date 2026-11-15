@@ -54,6 +54,10 @@ export type TimesheetPayrollLineItem = {
   payrollBasis: PayrollRateBasis
   dayRate: number
   hourlyRate?: number | null
+  /**
+   * What a day rate is divided by on this line (rulebook 1.49.0 `payrollDayRateHours`): the weekday paid day in effect
+   * that day, or on a set-window Saturday or Sunday's standard line that day's "counts as" hours (a full window = 1 day).
+   */
   standardDayHours: number
   otMultiplier?: number | null
   /**
@@ -317,6 +321,10 @@ export function collectTimesheetPayroll({
     const standardDayHours = orgDayHours(weekdayPaidHours(policy))
     // One rulebook result (`payrollHoursResult`), the same figures the iOS collector uses.
     const hours = bookingHoursOnDay(date, timeSlot, workStartTime, workEndTime, policy, isBreakRemoved, otMultiplierOverride, zone)
+    // 1.49.0 §8 (`payrollDayRateHours`, on the result): the standard part divides by its own day — a set-window
+    // Saturday or Sunday's "counts as" hours, so a full window is one day rate; the overtime part by the weekday day.
+    const standardPartDayHours = orgDayHours(hours.standardPartDayHours ?? standardDayHours)
+    const overtimePartDayHours = orgDayHours(hours.overtimePartDayHours ?? standardDayHours)
     const paidHours = hours.totalPaidHours
     const otHours = hours.outsideHours
     const normalHours = Math.max(0, hours.standardHours)
@@ -366,7 +374,7 @@ export function collectTimesheetPayroll({
       otMultiplierOverride: otMultiplierOverride ?? null,
     })
     paidBookings.push({ id: lineBookingId, dayKey: lineDayKey, timeSlot, workStartTime, workEndTime })
-    const normalAmount = payForHours(resolved, normalHours, standardDayHours)
+    const normalAmount = payForHours(resolved, normalHours, standardPartDayHours)
     baseAmount += normalAmount
     lineItems.push({
       id: `${idPrefix}-${bookingId}-normal`,
@@ -378,7 +386,7 @@ export function collectTimesheetPayroll({
       payrollBasis: resolved.basis,
       dayRate: resolved.dayRate ?? 0,
       hourlyRate: resolved.hourlyRate,
-      standardDayHours,
+      standardDayHours: standardPartDayHours,
       bookingPaidHours: paidHours,
       bookingOvertimeHours: multiplied ? multiplied.clockHours : otHours,
       amount: normalAmount,
@@ -395,7 +403,7 @@ export function collectTimesheetPayroll({
       dayKey: lineDayKey,
     })
     if (otHours > TIMESHEET_OVERTIME_LINE_MIN_HOURS) {
-      const otAmount = payForHours(resolved, otHours, standardDayHours, otMultiplier)
+      const otAmount = payForHours(resolved, otHours, overtimePartDayHours, otMultiplier)
       overtimeAmount += otAmount
       const otRates = overtimeDisplayRates(resolved, otMultiplier)
       lineItems.push({
@@ -409,7 +417,7 @@ export function collectTimesheetPayroll({
         payrollBasis: resolved.basis,
         dayRate: otRates.dayRate,
         hourlyRate: otRates.hourlyRate,
-        standardDayHours,
+        standardDayHours: overtimePartDayHours,
         otMultiplier,
         amount: otAmount,
         isPayeDay: isPaye,

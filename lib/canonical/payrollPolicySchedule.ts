@@ -26,7 +26,9 @@ import {
   derivedWeekdayPaidHours,
   parsePayrollPolicy,
   payrollPolicyToFirestore,
+  weekdayPaidHours,
   weekendBreakFor,
+  weekendCountsAsHours,
   withDerivedWeekdayPaidHours,
   type OrgPayrollTimePolicy,
   type WeekendPayrollSettings,
@@ -562,7 +564,81 @@ function payrollPolicyTimeStepError(policy: OrgPayrollTimePolicy, previous?: Org
  */
 export function validatePayrollTimePolicy(policy: OrgPayrollTimePolicy, previous?: OrgPayrollTimePolicy | null): string | null {
   const error = validatePayrollTimePolicyFields(policy)
-  return error ?? payrollPolicyTimeStepError(policy, previous)
+  return error ?? payrollPolicyTimeStepError(policy, previous) ?? weekendCountsAsError(policy, previous)
+}
+
+/** Rulebook 1.49.0 §4.3: the step of a weekend "counts as" number (half an hour). */
+export const WEEKEND_COUNTS_AS_STEP_HOURS = 0.5
+
+/**
+ * Rulebook 1.49.0 §4.3 (owner answers 15 Nov, 2): a set-window weekend day's "counts as" number must be on a half-hour
+ * step and no more than the Monday–Friday paid day in effect (`weekdayPaidHours` of this policy). "Same as
+ * Monday–Friday" (`countsAsFollowsWeekday`) is the weekday day itself, so it is never refused. A stored number that
+ * breaks either rule passes while it and the Monday–Friday day are unchanged (`previous`, as the step rules) and is read
+ * as stored — never clamped or re-priced. Review of #327 (round 2): when the Monday–Friday paid day changes, the cap is
+ * checked again for an unchanged number (not the step), and the save is refused naming the day.
+ */
+function weekendCountsAsError(policy: OrgPayrollTimePolicy, previous?: OrgPayrollTimePolicy | null): string | null {
+  const cap = weekdayPaidHours(policy)
+  const capText = `${Math.round(cap * 100) / 100}h`
+  const weekdayChanged = previous != null && Math.abs(weekdayPaidHours(previous) - cap) > 1e-9
+  const days: Array<[string, 'saturday' | 'sunday']> = [['Saturday', 'saturday']]
+  if (!policy.sunday?.sameAsSaturday) days.push(['Sunday', 'sunday'])
+  for (const [name, key] of days) {
+    const settings = policy[key]
+    if (!settings || settings.allHoursAtMultiplierMode || settings.countsAsFollowsWeekday === true) continue
+    const value = weekendCountsAsHours(settings)
+    const before = previous?.[key]
+    const unchanged =
+      before != null &&
+      before.countsAsFollowsWeekday !== true &&
+      Math.abs(weekendCountsAsHours(before) - value) < 1e-9
+    if (unchanged) {
+      if (weekdayChanged && value > cap + 1e-9) {
+        return `${name} counts as ${Math.round(value * 100) / 100}h, more than the new Monday–Friday day of ${capText}. Lower ${name}'s Counts as or turn on Same as Monday–Friday.`
+      }
+      continue
+    }
+    const steps = value / WEEKEND_COUNTS_AS_STEP_HOURS
+    if (Math.abs(steps - Math.round(steps)) > 1e-9) return `${name} counts-as hours use half-hour steps (e.g. 7.5).`
+    if (value > cap + 1e-9) {
+      return `${name} counts-as hours can't be more than the Monday–Friday paid day (${capText}).`
+    }
+  }
+  return null
+}
+
+/**
+ * Rulebook 1.49.0 §4.3 (review of #327, round 2): the largest "counts as" number the Working hours stepper offers — the
+ * Monday–Friday paid day rounded down to the half hour, never below 1h (`PAYROLL_POLICY_LIMITS.paidHours.min`).
+ */
+export function weekendCountsAsMax(policy: OrgPayrollTimePolicy): number {
+  const grid = Math.floor(weekdayPaidHours(policy) / WEEKEND_COUNTS_AS_STEP_HOURS + 1e-9) * WEEKEND_COUNTS_AS_STEP_HOURS
+  return Math.max(PAYROLL_POLICY_LIMITS.paidHours.min, grid)
+}
+
+/**
+ * Rulebook 1.49.0 §4.3 (review of #327, round 2): the "counts as" number a stepper press gives (`direction` +1 or −1):
+ * the next half-hour value above or below `current` — so a stored off-grid 7.25 steps to 7.5 or 7 — kept within 1h and
+ * `weekendCountsAsMax` (a stored 8 above a 7.25h day steps down to 7). Both apps' steppers call it.
+ */
+export function weekendCountsAsStep(current: number, direction: 1 | -1, policy: OrgPayrollTimePolicy): number {
+  const step = WEEKEND_COUNTS_AS_STEP_HOURS
+  const value = Number(current)
+  const base = Number.isFinite(value) ? value : weekendCountsAsMax(policy)
+  const next = direction > 0 ? Math.floor(base / step + 1e-9) * step + step : Math.ceil(base / step - 1e-9) * step - step
+  return Math.min(weekendCountsAsMax(policy), Math.max(PAYROLL_POLICY_LIMITS.paidHours.min, next))
+}
+
+/**
+ * Rulebook 1.49.0 §4.3 (review of #327, round 2): a typed "counts as" number snapped to the nearest half hour and kept
+ * within 1h and `weekendCountsAsMax` (the setup wizard's number input). Blank or not a number → the max.
+ */
+export function weekendCountsAsSnap(value: unknown, policy: OrgPayrollTimePolicy): number {
+  const n = Number(value)
+  if (!Number.isFinite(n) || (typeof value === 'string' && value.trim() === '')) return weekendCountsAsMax(policy)
+  const snapped = Math.round(n / WEEKEND_COUNTS_AS_STEP_HOURS) * WEEKEND_COUNTS_AS_STEP_HOURS
+  return Math.min(weekendCountsAsMax(policy), Math.max(PAYROLL_POLICY_LIMITS.paidHours.min, snapped))
 }
 
 function validatePayrollTimePolicyFields(policy: OrgPayrollTimePolicy): string | null {
