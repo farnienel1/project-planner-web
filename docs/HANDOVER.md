@@ -20,7 +20,14 @@ Live launch checklist (the owner ticks items there; Claude updates rows as work 
 
 **iOS `main` = `b967bf1`**: #234 (1.47–1.49, owner built **build 5**) and #235 (1.50–1.53, **build 6 not archived yet**).
 
-**Open PRs:** only Dependabot (web #280–#283, #310, #323; iOS #204–#206, #229) and two stale iOS drafts (#192, #194 — the owner may close them). Nothing of ours is waiting.
+**Open PRs from the night of 15 Nov (all drafts, CI green, independently reviewed):**
+- web **#332** — this handover (docs only).
+- web **#333** — Storage rules 1.50 live: removes the temporary pre-1.50 upload guard so certificates take every photo type. **Merge only after the owner has published `storage.rules` (step 6).**
+- web **#334** — Firestore rules 1.53.1 hardening: admin path type-checked, `members` values tightened, nobody switches their own self-manage toggles off. Review found one regression (a legacy founder's Super Admin transfer was refused); fixed with permanent tests. Compile cost 230,031. **Before publishing, the owner runs `npm run test:rules` on the Mac** — CI only type-checks the rules, and the main users/organisation suite cannot run in the cloud sandbox. Publish after the 1.52 rules (step 7); then iOS syncs 1.53.1 (`scripts/sync-rulebook-from-web.sh`, small PR).
+
+**Dependabot triage:** take web #323 (fixes a moderate fflate advisory; Next 16.4.3→16.4.6) and #310, iOS #204–#206 and #229 (tooling only); leave web #283 (pdfjs major) and #280–#282 (failing majors) until after launch. Awaiting the owner's yes.
+
+**Older open PRs:** Dependabot (web #280–#283, #310, #323; iOS #204–#206, #229) and two stale iOS drafts (#192, #194 — the owner may close them). Nothing of ours is waiting.
 
 ### Owner steps outstanding (in this order — do not skip)
 
