@@ -1,31 +1,36 @@
 import { collection, doc, getDocs, limit, query, Timestamp, writeBatch } from 'firebase/firestore'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
-import { parseCatalogueCsv } from '@/lib/materials/materialCatalogCSV'
+import { materialCatalogueItemFields, parseMaterialCatalogueCsv, starterCollectionShouldSeed } from '@/lib/canonical'
 import { STARTER_MATERIAL_CATALOGUE_CSV } from '@/lib/materials/starter/starterCatalogueCsv'
-import type { MaterialCatalogItem } from '@/types'
+import type { MaterialCatalogItem, MaterialUnit } from '@/types'
 
 export const STARTER_CATALOGUE_FILENAME = 'material_catalogue_starter.csv'
-export const STARTER_CATALOGUE_VERSION = 1
+/** 2: rulebook 1.48.0 order units, cleaned starter list (scripts/materials/build-starter-catalogue.ts). */
+export const STARTER_CATALOGUE_VERSION = 2
 const SEED_BATCH_SIZE = 400
 
+/** The built-in starter list as the CSV people download (1.48.0 columns). */
 export function starterCatalogueCsv(): string {
   return STARTER_MATERIAL_CATALOGUE_CSV
 }
 
+/** The starter list as catalogue items, read with the rulebook CSV reader (`parseMaterialCatalogueCsv`). */
 export function starterCatalogueItems(
   createdByUserId: string,
   createdByName: string,
   createdAt = new Date()
 ): MaterialCatalogItem[] {
-  return parseCatalogueCsv(STARTER_MATERIAL_CATALOGUE_CSV).rows.map((row) => ({
+  return parseMaterialCatalogueCsv(STARTER_MATERIAL_CATALOGUE_CSV).rows.map((row) => ({
     id: row.id,
     name: row.name,
-    brand: row.brand || 'Custom',
-    productCode: row.productCode,
-    defaultUnit: row.defaultUnit,
-    size: row.size,
-    length: row.length,
-    lengthUnit: row.lengthUnit,
+    brand: row.brand,
+    productCode: row.productCode || undefined,
+    // The old unit is written by `materialCatalogueItemFields` from the order unit.
+    defaultUnit: 'Number' as MaterialUnit,
+    orderUnit: row.orderUnit,
+    contentAmount: row.contentAmount ?? undefined,
+    contentMeasure: row.contentMeasure ?? undefined,
+    size: row.size || undefined,
     category: row.category || 'Other',
     createdAt,
     createdByUserId,
@@ -33,30 +38,28 @@ export function starterCatalogueItems(
   }))
 }
 
-function payload(item: MaterialCatalogItem): Record<string, unknown> {
-  const body: Record<string, unknown> = {
+/** The stored shape of one starter item (`materialCatalogueItemFields`, the same writer as every catalogue save). */
+export function starterCataloguePayload(item: MaterialCatalogItem): Record<string, unknown> {
+  return materialCatalogueItemFields({
     id: item.id,
-    name: item.name.trim(),
-    brand: item.brand.trim() || 'Custom',
-    defaultUnit: item.defaultUnit,
-    category: item.category.trim() || 'Other',
+    name: item.name,
+    brand: item.brand,
+    productCode: item.productCode ?? null,
+    orderUnit: item.orderUnit,
+    contentAmount: item.contentAmount ?? null,
+    contentMeasure: item.contentMeasure ?? null,
+    size: item.size ?? null,
+    category: item.category,
     createdAt: Timestamp.fromDate(item.createdAt),
     createdByUserId: item.createdByUserId,
     createdByName: item.createdByName,
-  }
-  if (item.productCode?.trim()) body.productCode = item.productCode.trim()
-  if (item.size?.trim()) body.size = item.size.trim()
-  if (item.length?.trim()) {
-    body.length = item.length.trim()
-    body.sizeOrLength = item.length.trim()
-  }
-  if (item.lengthUnit) body.lengthUnit = item.lengthUnit
-  return body
+  })
 }
 
 /**
- * Writes the starter catalogue into organizations/{orgId}/materialCatalogue.
- * Skips when the collection already has a row. Failures must not block org create.
+ * Writes the starter catalogue into organizations/{orgId}/materialCatalogue for a new organisation.
+ * Rulebook §1 (`starterCollectionShouldSeed`): only when the collection is empty — it never overwrites or adds to a
+ * catalogue that has a row. Failures must not block org create.
  */
 export async function seedStarterMaterialCatalogue(input: {
   organizationId: string
@@ -66,13 +69,13 @@ export async function seedStarterMaterialCatalogue(input: {
   const db = getFirebaseDb()
   const ref = collection(db, 'organizations', input.organizationId, 'materialCatalogue')
   const existing = await getDocs(query(ref, limit(1)))
-  if (!existing.empty) return { seeded: 0, skipped: true }
+  if (!starterCollectionShouldSeed(existing.size)) return { seeded: 0, skipped: true }
 
   const items = starterCatalogueItems(input.createdByUserId, input.createdByName)
   for (let i = 0; i < items.length; i += SEED_BATCH_SIZE) {
     const batch = writeBatch(db)
     for (const item of items.slice(i, i + SEED_BATCH_SIZE)) {
-      batch.set(doc(db, 'organizations', input.organizationId, 'materialCatalogue', item.id), payload(item))
+      batch.set(doc(db, 'organizations', input.organizationId, 'materialCatalogue', item.id), starterCataloguePayload(item))
     }
     await batch.commit()
   }

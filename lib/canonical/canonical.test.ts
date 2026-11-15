@@ -4107,7 +4107,7 @@ test('materialWhatsAppRows writes the order message and the wa.me number per rec
       'Required delivery: Wednesday 28 October at 08:00',
       '',
       'ORDER DETAILS',
-      '• 2 × Pipe (Lengths) — Code P1 · 3 m',
+      '• Pipe — 2no 3m lengths · Code P1',
       '',
       'Please can you confirm availability and the expected delivery date?',
       '',
@@ -4157,7 +4157,7 @@ test('materialWhatsAppRows refuses a UK landline and summarises a long list', ()
   assert.equal(row.ok, false)
   assert.equal(row.reason, 'This looks like a landline. WhatsApp needs a mobile number.')
   assert.ok(!row.message.includes('Required delivery'))
-  assert.ok(row.message.includes('• 1 × Item 0\n'))
+  assert.ok(row.message.includes('• Item 0 — 1no\n'))
   assert.ok(row.message.includes('• …and 2 more items. We can send the full list by email.'))
   assert.equal(materialQuantityLabel('box', 2), 'Boxes')
   assert.equal(materialQuantityLabel('', 1), 'Number')
@@ -6940,7 +6940,7 @@ test('1.8.0 send records, wholesalers and site audits keep non-UUID ids and the 
   assert.equal(record.requestType, 'quote')
   assert.equal(record.deliveryRequiredAtMs, null)
   assert.equal(record.recipients.length, 1)
-  assert.deepEqual(record.lines[0], { materialId: 'web-line-1', name: 'Clips', quantity: 4, unit: 'Box', brand: null, productCode: null, lengthDisplay: null })
+  assert.deepEqual(record.lines[0], { materialId: 'web-line-1', name: 'Clips', quantity: 4, unit: 'Box', brand: null, productCode: null, lengthDisplay: null, quantityText: null })
   const create = materialSendRecordCreateFields({ id: 'R', projectId: 'P', requestType: 'quote', sentAt: 1, sentBy: 'S', deliveryRequiredAt: 2, recipients: [], lines: [] })
   assert.equal(create.requestType, 'Quote')
   assert.equal('deliveryRequiredAt' in create, false)

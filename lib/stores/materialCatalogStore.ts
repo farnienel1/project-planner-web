@@ -39,6 +39,9 @@ function mapMaterialCatalogItem(docId: string, data: Record<string, unknown>): M
     brand: parsed.brand,
     productCode: parsed.productCode ?? undefined,
     defaultUnit: parsed.defaultUnit as MaterialUnit,
+    orderUnit: parsed.orderUnit,
+    contentAmount: parsed.contentAmount ?? undefined,
+    contentMeasure: parsed.contentMeasure ?? undefined,
     size: parsed.size ?? undefined,
     length: parsed.length ?? undefined,
     lengthUnit: (parsed.lengthUnit ?? undefined) as MaterialLengthUnit | undefined,
@@ -51,13 +54,19 @@ function mapMaterialCatalogItem(docId: string, data: Record<string, unknown>): M
 
 type CatalogueItemInput = Omit<MaterialCatalogItem, 'createdAt'> & { createdAt?: Date }
 
-/** The stored shape (`materialCatalogueItemFields`); creator fields and `createdAt` are only written on create. */
+/**
+ * The stored shape (`materialCatalogueItemFields`); creator fields and `createdAt` are only written on create.
+ * Rulebook 1.48.0: the order unit and what is in one are written with the old unit and length for older builds.
+ */
 function materialPayload(item: CatalogueItemInput): Record<string, unknown> {
   return materialCatalogueItemFields({
     ...item,
+    contentAmount: item.contentAmount ?? null,
+    contentMeasure: item.contentMeasure ?? null,
     createdAt: Timestamp.fromDate(item.createdAt || new Date()),
   })
 }
+
 
 interface MaterialCatalogState {
   items: MaterialCatalogItem[]

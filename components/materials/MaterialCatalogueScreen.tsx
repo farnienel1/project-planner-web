@@ -7,34 +7,27 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { CubeIcon } from '@heroicons/react/24/solid'
-import type { MaterialCatalogItem, MaterialLengthUnit, MaterialUnit } from '@/types'
+import type { MaterialCatalogItem } from '@/types'
+import { MATERIAL_ORDER_UNIT_DETAILS, materialContentText, materialSizeText } from '@/lib/canonical'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { MATERIAL_UNITS, useMaterialCatalogStore } from '@/lib/stores/materialCatalogStore'
+import { useMaterialCatalogStore } from '@/lib/stores/materialCatalogStore'
+import { OrderUnitFields, orderUnitDraftFrom, orderUnitDraftValues, type OrderUnitDraft } from '@/components/materials/OrderUnitFields'
 import { canManageMaterialCatalogue } from '@/lib/permissions'
 import { consumeCreateQuery } from '@/lib/navigation/createMenu'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { duplicateKey, filterCatalogueItems } from '@/lib/materials/materialCatalogSearch'
-import { formatLengthSpecification } from '@/lib/materials/materialLength'
 import {
   CATALOGUE_CSV_FILENAME,
-  CATALOGUE_CSV_MAX_BYTES,
   CATALOGUE_TEMPLATE_FILENAME,
   downloadTextFile,
   exportCatalogueCsv,
   exportCatalogueTemplateCsv,
   parseCatalogueCsv,
+  readCatalogueCsvFile,
 } from '@/lib/materials/materialCatalogCSV'
 import { STARTER_CATALOGUE_FILENAME, starterCatalogueCsv } from '@/lib/materials/starterCatalogue'
 import { EmptyState, IosFormModal, PageHeader } from '@/components/ios/primitives'
 import { MATERIAL_CATEGORY_SUGGESTIONS } from '@/lib/materials/materialCategorySuggestions'
-
-const TYPE_HINTS: Record<MaterialUnit, string> = {
-  Number: 'Each / piece',
-  Length: 'Metres / runs',
-  Box: 'Pack of 100',
-  Drum: 'Cable drum',
-  Pallet: 'Pallet load',
-}
 
 const emptyDraft = (): Omit<MaterialCatalogItem, 'createdAt'> => ({
   id: newUuid(),
@@ -42,9 +35,8 @@ const emptyDraft = (): Omit<MaterialCatalogItem, 'createdAt'> => ({
   brand: '',
   productCode: '',
   defaultUnit: 'Number',
+  orderUnit: 'Each',
   size: '',
-  length: '',
-  lengthUnit: undefined,
   category: '',
   createdByUserId: '',
   createdByName: '',
@@ -188,7 +180,7 @@ export function MaterialCatalogueScreen() {
           </div>
           <div className="space-y-2 border-t border-[#E5E5EA] px-3 py-3">
             {filtered.map((item) => {
-              const lengthLabel = formatLengthSpecification(item.length, item.lengthUnit)
+              const [lengthLabel, sizeLabel] = [materialContentText(item), materialSizeText(item.size)]
               return (
                 <button
                   key={item.id}
@@ -212,16 +204,16 @@ export function MaterialCatalogueScreen() {
                         </span>
                       ) : null}
                       <span className="rounded bg-[var(--soft)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--ink3)]">
-                        {item.defaultUnit}
+                        {MATERIAL_ORDER_UNIT_DETAILS[item.orderUnit].label}
                       </span>
-                      {item.size ? (
+                      {sizeLabel ? (
                         <span className="rounded bg-[var(--soft)] px-1.5 py-0.5 text-[11px] text-[var(--ink3)]">
-                          Size: {item.size}
+                          Size: {sizeLabel}
                         </span>
                       ) : null}
                       {lengthLabel ? (
                         <span className="rounded bg-[var(--soft)] px-1.5 py-0.5 text-[11px] text-[var(--ink3)]">
-                          Length: {lengthLabel}
+                          In one: {lengthLabel}
                         </span>
                       ) : null}
                     </div>
@@ -254,7 +246,7 @@ export function MaterialCatalogueScreen() {
                 {open ? (
                   <div className="space-y-2 border-t border-[#E5E5EA] px-3 py-3">
                     {rows.map((item) => {
-                      const lengthLabel = formatLengthSpecification(item.length, item.lengthUnit)
+                      const [lengthLabel, sizeLabel] = [materialContentText(item), materialSizeText(item.size)]
                       return (
                       <button
                         key={item.id}
@@ -278,16 +270,16 @@ export function MaterialCatalogueScreen() {
                               </span>
                             ) : null}
                             <span className="rounded bg-[var(--soft)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--ink3)]">
-                              {item.defaultUnit}
+                              {MATERIAL_ORDER_UNIT_DETAILS[item.orderUnit].label}
                             </span>
-                            {item.size ? (
+                            {sizeLabel ? (
                               <span className="rounded bg-[var(--soft)] px-1.5 py-0.5 text-[11px] text-[var(--ink3)]">
-                                Size: {item.size}
+                                Size: {sizeLabel}
                               </span>
                             ) : null}
                             {lengthLabel ? (
                               <span className="rounded bg-[var(--soft)] px-1.5 py-0.5 text-[11px] text-[var(--ink3)]">
-                                Length: {lengthLabel}
+                                In one: {lengthLabel}
                               </span>
                             ) : null}
                           </div>
@@ -354,15 +346,25 @@ export function MaterialCatalogueScreen() {
           onClose={() => setCsvOpen(false)}
           onUpdate={async (mode, file) => {
             if (!organization?.id || !user) return
-            if (file.size > CATALOGUE_CSV_MAX_BYTES) {
-              window.alert('Import error: maximum 5MB.')
+            // Rulebook 1.48.0 §28: .csv only, at most 2 MB, UTF-8 text with no binary data; read in the browser and
+            // never uploaded. Then the rulebook parser (field caps, plain text, old and new columns).
+            const read = await readCatalogueCsvFile(file)
+            if ('error' in read) {
+              window.alert(read.error)
               return
             }
-            const text = await file.text()
-            const parsed = parseCatalogueCsv(text)
+            const parsed = parseCatalogueCsv(read.text)
             if (parsed.errors.length > 0 && parsed.rows.length === 0) {
-              window.alert(parsed.errors[0])
+              window.alert(parsed.errors.slice(0, 10).join('\n'))
               return
+            }
+            if (parsed.errors.length > 0) {
+              const ok = window.confirm(
+                `${parsed.errors.length} row${parsed.errors.length === 1 ? '' : 's'} could not be read and will be left out:\n\n${parsed.errors
+                  .slice(0, 10)
+                  .join('\n')}${parsed.errors.length > 10 ? `\n…and ${parsed.errors.length - 10} more` : ''}\n\nImport the other ${parsed.rows.length} rows?`
+              )
+              if (!ok) return
             }
             const actor = { createdByUserId: user.id, createdByName: `${user.firstName} ${user.surname}`.trim() || user.email }
             if (parsed.rows.length === 0) {
@@ -382,11 +384,12 @@ export function MaterialCatalogueScreen() {
                     newUuid(),
                   name: row.name,
                   brand: row.brand,
-                  productCode: row.productCode,
-                  defaultUnit: row.defaultUnit,
-                  size: row.size,
-                  length: row.length,
-                  lengthUnit: row.lengthUnit,
+                  productCode: row.productCode || undefined,
+                  defaultUnit: 'Number',
+                  orderUnit: row.orderUnit,
+                  contentAmount: row.contentAmount ?? undefined,
+                  contentMeasure: row.contentMeasure ?? undefined,
+                  size: row.size || undefined,
                   category: row.category,
                   ...actor,
                 }))
@@ -404,11 +407,12 @@ export function MaterialCatalogueScreen() {
                   id,
                   name: row.name,
                   brand: row.brand,
-                  productCode: row.productCode,
-                  defaultUnit: row.defaultUnit,
-                  size: row.size,
-                  length: row.length,
-                  lengthUnit: row.lengthUnit,
+                  productCode: row.productCode || undefined,
+                  defaultUnit: 'Number',
+                  orderUnit: row.orderUnit,
+                  contentAmount: row.contentAmount ?? undefined,
+                  contentMeasure: row.contentMeasure ?? undefined,
+                  size: row.size || undefined,
                   category: row.category,
                   createdAt: existing?.createdAt,
                   createdByUserId: existing?.createdByUserId || actor.createdByUserId,
@@ -450,13 +454,27 @@ function MaterialEditor({
   onDelete?: () => Promise<void>
 }) {
   const [form, setForm] = useState(draft)
+  const [quantityDraft, setQuantityDraft] = useState<OrderUnitDraft>(() => orderUnitDraftFrom(draft))
+  const [formError, setFormError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     if (!form.name.trim()) return
+    // Rulebook 1.48.0 §28: the order unit and what is in one; the old unit and length are written from them.
+    const values = orderUnitDraftValues(quantityDraft)
+    if ('error' in values) {
+      setFormError(values.error)
+      return
+    }
+    setFormError(null)
     setSaving(true)
     try {
-      await onSave(form)
+      await onSave({
+        ...form,
+        orderUnit: quantityDraft.orderUnit,
+        contentAmount: values.contentAmount ?? undefined,
+        contentMeasure: values.contentMeasure ?? undefined,
+      })
     } finally {
       setSaving(false)
     }
@@ -488,44 +506,17 @@ function MaterialEditor({
           Product code
           <input value={form.productCode || ''} onChange={(e) => setForm({ ...form, productCode: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2" />
         </label>
-        <p className="text-[11px] font-semibold uppercase text-[var(--ink3)]">Default type</p>
-        <div className="flex flex-wrap gap-2">
-          {MATERIAL_UNITS.map((unit) => (
-            <button
-              key={unit}
-              type="button"
-              onClick={() => setForm({ ...form, defaultUnit: unit })}
-              className={`rounded-full px-3 py-1.5 text-[13px] font-medium ${
-                form.defaultUnit === unit ? 'bg-[var(--blue-t)] text-[var(--blue)]' : 'bg-[var(--soft)] text-[var(--ink)]'
-              }`}
-            >
-              {unit}
-            </button>
-          ))}
-        </div>
-        <p className="text-[12px] text-[var(--ink3)]">{TYPE_HINTS[form.defaultUnit]}</p>
+        <OrderUnitFields draft={quantityDraft} onChange={setQuantityDraft} label="Default order unit" />
         <label className="block text-sm font-medium">
           Size
-          <input value={form.size || ''} onChange={(e) => setForm({ ...form, size: e.target.value })} placeholder="Optional" className="mt-1 w-full rounded-lg border px-3 py-2" />
+          <input
+            value={materialSizeText(form.size)}
+            onChange={(e) => setForm({ ...form, size: e.target.value })}
+            placeholder="Optional, e.g. 2400x1200mm or 25kg"
+            className="mt-1 w-full rounded-lg border px-3 py-2"
+          />
         </label>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block text-sm font-medium">
-            Length
-            <input value={form.length || ''} onChange={(e) => setForm({ ...form, length: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2" />
-          </label>
-          <label className="block text-sm font-medium">
-            Length unit
-            <select
-              value={form.lengthUnit || ''}
-              onChange={(e) => setForm({ ...form, lengthUnit: (e.target.value || undefined) as MaterialLengthUnit | undefined })}
-              className="mt-1 w-full rounded-lg border px-3 py-2"
-            >
-              <option value="">—</option>
-              <option value="M">M</option>
-              <option value="MM">MM</option>
-            </select>
-          </label>
-        </div>
+        {formError ? <p className="text-sm text-red-600">{formError}</p> : null}
         {onDelete ? (
           <button type="button" onClick={() => void onDelete()} className="text-sm font-semibold text-red-600">
             Remove
@@ -686,7 +677,12 @@ function CsvSheet({
               Edit on a laptop if you can, then save as .csv and upload here. Leave Catalogue ID blank for brand new
               rows.
             </p>
-            <p className="text-[var(--ink3)]">Max 5MB · 5,000 items</p>
+            <p className="text-[var(--ink3)]">
+              .csv files only (UTF-8) · max 2 MB · 10,000 items. The file is read on this device and never uploaded.
+              Columns: Order unit is Each, Box, Pack, Drum, Reel, Coil, Pallet, Length or Metre; Contents amount and
+              Contents measure (m, mm or pcs) say what is in one. Older files with Default Type and Length still work.
+            </p>
+
           </>
         )}
       </div>

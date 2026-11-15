@@ -6,8 +6,9 @@
 
 import { format } from 'date-fns'
 import { escapeHtml } from '@/lib/security/htmlEscape'
-import { quantityLabel, supplierGreeting } from '@/lib/materials/sendListLogic'
+import { supplierGreeting } from '@/lib/materials/sendListLogic'
 import { materialRequestEmailSubject } from '@/lib/canonical/materialOrderAccess'
+import { materialLineText } from '@/lib/canonical/materialQuantity'
 
 export type MaterialRequestLine = {
   material: string
@@ -16,7 +17,12 @@ export type MaterialRequestLine = {
   brand?: string
   productCode?: string
   notes?: string
+  /** Pre-1.48.0 length text (older iOS builds send it); read by `materialLineText` when no order unit is sent. */
   lengthDisplay?: string
+  /** Rulebook 1.48.0 §28: the order unit and what is in one. */
+  orderUnit?: string
+  contentAmount?: number
+  contentMeasure?: string
 }
 
 export type MaterialRequestEmailContext = {
@@ -83,25 +89,22 @@ function itemsTableHTML(materials: MaterialRequestLine[], isQuote: boolean): str
       const partHTML = part
         ? ` · Part: <span class="mr-muted" style="color:#475569;font-weight:600;">${escapeHtml(part)}</span>`
         : ''
-      const lengthSpec = trim(material.lengthDisplay)
-      const lengthHTML = lengthSpec
-        ? ` · Length: <span class="mr-muted" style="color:#475569;font-weight:600;">${escapeHtml(lengthSpec)}</span>`
-        : ''
       const notes = trim(material.notes)
       const notesHTML = notes
         ? `<div class="mr-label" style="font-size:12.5px;color:#5B6B82;margin-top:3px;line-height:18px;font-style:italic;">${escapeHtml(notes)}</div>`
         : ''
-      const qtyLabel = escapeHtml(quantityLabel(material.unit, material.quantity))
+      // Rulebook 1.48.0 §28: "2no 50m drums", "100m" — the length is part of the quantity text.
+      const qtyLabel = escapeHtml(materialLineText(material))
       return `<tr><td class="mr-row" bgcolor="#ffffff" style="padding:14px 16px;border-bottom:1px solid #eef1f6;background:#ffffff;background-color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
           <tr>
             <td style="vertical-align:top;">
               <div class="mr-ink" style="font-size:15px;font-weight:700;color:#0b1220;line-height:20px;">${name}</div>
-              <div class="mr-label" style="font-size:12.5px;color:#5B6B82;margin-top:3px;line-height:18px;">Manufacturer: <span class="mr-muted" style="color:#475569;font-weight:600;">${manufacturer}</span>${partHTML}${lengthHTML}</div>
+              <div class="mr-label" style="font-size:12.5px;color:#5B6B82;margin-top:3px;line-height:18px;">Manufacturer: <span class="mr-muted" style="color:#475569;font-weight:600;">${manufacturer}</span>${partHTML}</div>
               ${notesHTML}
             </td>
             <td align="right" style="vertical-align:top;padding-left:14px;white-space:nowrap;">
-              <span style="display:inline-block;background:${badge.bg};color:${badge.fg};font-size:13px;font-weight:800;padding:6px 12px;border-radius:999px;">${material.quantity} ${qtyLabel}</span>
+              <span style="display:inline-block;background:${badge.bg};color:${badge.fg};font-size:13px;font-weight:800;padding:6px 12px;border-radius:999px;">${qtyLabel}</span>
             </td>
           </tr>
         </table>
@@ -158,12 +161,12 @@ export function buildPlainTextEmail(context: MaterialRequestEmailContext, isQuot
       ? '- (No materials listed)'
       : context.materials
           .map((item, index) => {
-            const qty = `${item.quantity} ${quantityLabel(item.unit, item.quantity)}`
+            const qty = materialLineText(item)
             const details = [
               trim(item.brand) ? `Brand: ${trim(item.brand)}` : '',
               trim(item.productCode) ? `Code: ${trim(item.productCode)}` : '',
-              trim(item.lengthDisplay) ? `Length: ${trim(item.lengthDisplay)}` : '',
               trim(item.notes) ? `Details: ${trim(item.notes)}` : '',
+
             ].filter(Boolean)
             const prefix = `${index + 1}. ${item.material} — qty ${qty}`
             return details.length ? `${prefix}\n   ${details.join('; ')}` : prefix

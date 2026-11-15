@@ -18,7 +18,8 @@ import {
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useMaterialProjectStore } from '@/lib/stores/materialProjectStore'
 import { useWholesalerStore } from '@/lib/stores/wholesalerStore'
-import { formatLengthSpecification } from '@/lib/materials/materialLength'
+import { materialSendQuantityFields } from '@/lib/materials/sendListLogic'
+
 import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { formatSiteAddress } from '@/lib/maps/siteAddress'
@@ -203,12 +204,10 @@ export function MaterialsSendListSheet({
       countryCode,
       materials: selectedMaterials.map((item) => ({
         material: item.material,
-        quantity: item.quantity,
-        unit: item.unit,
+        ...materialSendQuantityFields(item),
         brand: item.brand,
         productCode: item.productCode,
         notes: item.notes,
-        lengthDisplay: formatLengthSpecification(item.length, item.lengthUnit) || undefined,
       })),
       recipients: [
         {
@@ -345,8 +344,7 @@ export function MaterialsSendListSheet({
           recipients: recipients.map((row) => ({ name: row.name, email: row.email })),
           materials: items.map((item) => ({
             material: item.material,
-            quantity: item.quantity,
-            unit: item.unit,
+            ...materialSendQuantityFields(item),
             brand: item.brand,
             productCode: item.productCode,
             notes: item.notes,
@@ -396,8 +394,7 @@ export function MaterialsSendListSheet({
           lines: items.map((item) => ({
             materialId: item.id,
             name: item.material,
-            quantity: item.quantity,
-            unit: item.unit,
+            ...materialSendQuantityFields(item),
             brand: item.brand,
             productCode: item.productCode,
           })),

@@ -32,6 +32,10 @@ function mapMaterialLine(docId: string, data: Record<string, unknown>): ProjectM
     id: parsed.id,
     quantity: parsed.quantity,
     unit: parsed.unit,
+    orderUnit: parsed.orderUnit,
+    contentAmount: parsed.contentAmount ?? undefined,
+    contentMeasure: parsed.contentMeasure ?? undefined,
+    quantityText: parsed.quantityText,
     material: parsed.material,
     addedBy: parsed.addedBy,
     projectId: parsed.projectId,
@@ -83,6 +87,7 @@ function mapSendRecord(docId: string, data: Record<string, unknown>): MaterialSe
       brand: line.brand ?? undefined,
       productCode: line.productCode ?? undefined,
       lengthDisplay: line.lengthDisplay ?? undefined,
+      quantityText: line.quantityText ?? undefined,
     })),
   }
 }
@@ -90,7 +95,10 @@ function mapSendRecord(docId: string, data: Record<string, unknown>): MaterialSe
 export type SaveMaterialLineInput = {
   id?: string
   quantity: number
-  unit: string
+  /** Rulebook 1.48.0: the order unit and what is in one; the old unit and length are written from them. */
+  orderUnit: string
+  contentAmount?: number | null
+  contentMeasure?: string | null
   material: string
   addedBy: string
   addedByUserId: string
@@ -105,8 +113,6 @@ export type SaveMaterialLineInput = {
   catalogueItemId?: string
   notes?: string
   size?: string
-  length?: string
-  lengthUnit?: string
   websiteURL?: string
 }
 
@@ -373,7 +379,9 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
         id,
         projectId: line.projectId,
         quantity: line.quantity,
-        unit: line.unit,
+        orderUnit: line.orderUnit,
+        contentAmount: line.contentAmount ?? null,
+        contentMeasure: line.contentMeasure ?? null,
         material: line.material,
         dayKey,
         status: line.status,
@@ -386,9 +394,8 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
         category: line.category ?? null,
         notes: line.notes ?? null,
         size: line.size ?? null,
-        length: line.length ?? null,
-        lengthUnit: line.lengthUnit ?? null,
         websiteURL: line.websiteURL ?? null,
+
       },
       zone
     )

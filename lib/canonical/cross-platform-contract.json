@@ -1834,6 +1834,9 @@
             "material": "Plasterboard",
             "quantity": 10,
             "unit": "Number",
+            "orderUnit": "Each",
+            "contentAmount": null,
+            "contentMeasure": null,
             "status": "not_ordered",
             "date": {
               "seconds": 1793750400,
@@ -1860,6 +1863,10 @@
             "projectId": "a1b2c3d4-0000-4000-8000-00000000000a",
             "quantity": 10,
             "unit": "Number",
+            "orderUnit": "Each",
+            "contentAmount": null,
+            "contentMeasure": null,
+            "quantityText": "10no",
             "material": "Plasterboard",
             "addedBy": "Ada Admin",
             "addedByUserId": "user-web-1",
@@ -1915,6 +1922,10 @@
             "projectId": "A1B2C3D4-0000-4000-8000-00000000000B",
             "quantity": 2,
             "unit": "Box",
+            "orderUnit": "Box",
+            "contentAmount": null,
+            "contentMeasure": null,
+            "quantityText": "2no boxes",
             "material": "Screws",
             "addedBy": "Ian Ios",
             "addedByUserId": "USER-IOS-1",
@@ -1972,7 +1983,8 @@
                 "materialId": "M-1",
                 "name": "Plasterboard",
                 "quantity": 10,
-                "unit": "Number"
+                "unit": "Number",
+                "quantityText": "10no"
               }
             ]
           },
@@ -2000,7 +2012,8 @@
                 "unit": "Number",
                 "brand": null,
                 "productCode": null,
-                "lengthDisplay": null
+                "lengthDisplay": null,
+                "quantityText": "10no"
               }
             ]
           }
@@ -2056,7 +2069,8 @@
                 "unit": "Box",
                 "brand": null,
                 "productCode": null,
-                "lengthDisplay": null
+                "lengthDisplay": null,
+                "quantityText": null
               }
             ]
           }
@@ -2075,7 +2089,10 @@
           "data": {
             "id": "CAT-1",
             "name": "Plasterboard 12.5mm",
-            "defaultUnit": "Number",
+            "defaultUnit": "Box",
+            "orderUnit": "Pack",
+            "contentAmount": 10,
+            "contentMeasure": "pcs",
             "brand": "Gyproc",
             "productCode": "PB125",
             "organizationId": "ORG-1",
@@ -2094,7 +2111,10 @@
             "name": "Plasterboard 12.5mm",
             "brand": "Gyproc",
             "productCode": "PB125",
-            "defaultUnit": "Number",
+            "defaultUnit": "Box",
+            "orderUnit": "Pack",
+            "contentAmount": 10,
+            "contentMeasure": "pcs",
             "size": null,
             "length": null,
             "lengthUnit": null,
@@ -2126,6 +2146,9 @@
             "brand": "Custom",
             "productCode": null,
             "defaultUnit": "Box",
+            "orderUnit": "Box",
+            "contentAmount": null,
+            "contentMeasure": null,
             "size": null,
             "length": null,
             "lengthUnit": null,

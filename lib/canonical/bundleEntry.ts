@@ -1496,3 +1496,63 @@ export type {
 export { payrollLineBookingKey } from './reportPay'
 // Rulebook 1.46.0: one slot spelling in booking fingerprints, compared canonically across apps.
 export { bookingFingerprintSlot, overtimeFingerprintKey, overtimeFingerprintsMatch } from './bookingFingerprint'
+// Rulebook 1.48.0 §28: the material quantity model, its one wording and the catalogue CSV rule.
+export {
+  formatMaterialAmount,
+  MATERIAL_CONTENT_MEASURES,
+  MATERIAL_CONTENT_MESSAGE,
+  MATERIAL_ORDER_UNIT_DETAILS,
+  MATERIAL_ORDER_UNITS,
+  MATERIAL_QUANTITY_FIELDS,
+  MATERIAL_QUANTITY_MAX,
+  MATERIAL_QUANTITY_POSITIVE_MESSAGE,
+  MATERIAL_QUANTITY_WHOLE_MESSAGE,
+  materialContentError,
+  materialContentText,
+  materialLineText,
+  materialQuantityError,
+  materialQuantityModel,
+  materialQuantityModelsEqual,
+  materialQuantityWriteFields,
+  materialSendLineText,
+  materialSizeText,
+  normalizeMaterialContentMeasure,
+  normalizeMaterialOrderUnit,
+  parseMaterialMeasure,
+  tidyMaterialAmount,
+} from './materialQuantity'
+export type {
+  MaterialContentMeasure,
+  MaterialLegacyUnit,
+  MaterialLineTextInput,
+  MaterialOrderUnit,
+  MaterialOrderUnitDetail,
+  MaterialQuantityInput,
+  MaterialQuantityModel,
+} from './materialQuantity'
+export {
+  MATERIAL_CATALOGUE_CSV_BINARY_MESSAGE,
+  MATERIAL_CATALOGUE_CSV_COLUMNS,
+  MATERIAL_CATALOGUE_CSV_EMPTY_MESSAGE,
+  MATERIAL_CATALOGUE_CSV_ENCODING_MESSAGE,
+  MATERIAL_CATALOGUE_CSV_FIELD_MAX,
+  MATERIAL_CATALOGUE_CSV_HEADER,
+  MATERIAL_CATALOGUE_CSV_HEADER_MESSAGE,
+  MATERIAL_CATALOGUE_CSV_LEGACY_HEADER,
+  MATERIAL_CATALOGUE_CSV_MAX_BYTES,
+  MATERIAL_CATALOGUE_CSV_MAX_ROWS,
+  MATERIAL_CATALOGUE_CSV_NOT_CSV_MESSAGE,
+  MATERIAL_CATALOGUE_CSV_TOO_BIG_MESSAGE,
+  MATERIAL_CATALOGUE_CSV_TOO_MANY_ROWS_MESSAGE,
+  materialCatalogueCsvCell,
+  materialCatalogueCsvExport,
+  materialCatalogueCsvFileError,
+  materialCatalogueCsvTextError,
+  parseMaterialCatalogueCsv,
+  splitCsvRecords,
+} from './materialCatalogueCsv'
+export type { MaterialCatalogueCsvItem, MaterialCatalogueCsvParse, MaterialCatalogueCsvRow } from './materialCatalogueCsv'
+export {
+  MATERIAL_CATALOGUE_QUANTITY_WRITE_GROUP,
+  MATERIAL_LINE_QUANTITY_WRITE_GROUP,
+} from './operationsDocuments'

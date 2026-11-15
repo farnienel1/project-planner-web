@@ -11,6 +11,7 @@
  */
 
 import { formatMaterialDeliveryRequired, materialOrderIncludesDeliveryRequired } from './materialDelivery'
+import { materialLineText } from './materialQuantity'
 
 /** Lines listed in the message; the rest are summarised as "…and N more items". */
 export const MATERIAL_WHATSAPP_ITEM_LIMIT = 30
@@ -23,6 +24,12 @@ export type MaterialWhatsAppLine = {
   productCode?: string | null
   notes?: string | null
   lengthDisplay?: string | null
+  /** 1.48.0: the order unit and what is in one (`materialLineText`). */
+  orderUnit?: string | null
+  contentAmount?: number | null
+  contentMeasure?: string | null
+  length?: string | null
+  lengthUnit?: string | null
 }
 
 export type MaterialWhatsAppRecipient = {
@@ -93,7 +100,10 @@ function callingCodeForCountry(countryCode?: string | null): string {
   return CALLING_CODES[code] || '44'
 }
 
-/** Singular or plural unit name the material emails and WhatsApp message print. */
+/**
+ * Singular or plural pre-1.48.0 unit name. Kept for older builds; emails and WhatsApp print `materialLineText` from
+ * 1.48.0 and past send records keep their own text (`materialSendLineText`).
+ */
 export function materialQuantityLabel(unit: string, quantity: number): string {
   const raw = trim(unit) || 'Number'
   const key = raw.toLowerCase()
@@ -140,16 +150,15 @@ function orderItemLines(materials: readonly MaterialWhatsAppLine[]): string {
   if (materials.length === 0) return '• (No materials listed)'
   const shown = materials.slice(0, MATERIAL_WHATSAPP_ITEM_LIMIT)
   const lines = shown.map((item) => {
-    const qty = `${item.quantity} × ${item.material}`
+    // Rulebook 1.48.0: the quantity is `materialLineText` ("2no 50m drums"), so the length is not repeated.
     const extras = [
+      materialLineText(item),
       trim(item.brand),
       trim(item.productCode) ? `Code ${trim(item.productCode)}` : '',
-      trim(item.lengthDisplay),
       trim(item.notes),
     ].filter(Boolean)
-    const unit = materialQuantityLabel(item.unit, item.quantity)
-    const unitBit = unit && unit.toLowerCase() !== 'number' && unit.toLowerCase() !== 'numbers' ? ` (${unit})` : ''
-    return extras.length ? `• ${qty}${unitBit} — ${extras.join(' · ')}` : `• ${qty}${unitBit}`
+    return `• ${item.material} — ${extras.join(' · ')}`
+
   })
   const remaining = materials.length - shown.length
   if (remaining > 0) {

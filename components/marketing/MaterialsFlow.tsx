@@ -54,10 +54,10 @@ const WA_TICKS = [
 ]
 
 const ORDER_LINES = [
-  '600mm Cable Tray × 10 Lengths',
-  '2.5mm² Twin & Earth 6242B × 2 Drums',
-  '20mm Galvanised Conduit × 30 Lengths',
-  'Hilti HUS3-H 8×75 Anchors × 4 Boxes',
+  '600mm Cable Tray — 10no 3m lengths',
+  '2.5mm² Twin & Earth 6242B — 2no 100m drums',
+  '20mm Galvanised Conduit — 30no 3.75m lengths',
+  'Hilti HUS3-H 8×75 Anchors — 4no boxes of 100',
 ]
 
 export function MaterialsFlow() {

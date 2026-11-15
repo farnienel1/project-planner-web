@@ -11,8 +11,9 @@
 const canonical = require('../loadCanonical')
 const { escapeHtml } = require('./text')
 
-function quantityLabel(unit, quantity) {
-  return canonical.materialQuantityLabel(unit, quantity)
+/** Rulebook 1.48.0 §28 `materialLineText` ("2no 50m drums", "100m"), from the packed rulebook copy. */
+function lineText(material) {
+  return canonical.materialLineText(material)
 }
 
 /** Web `supplierGreeting` (lib/materials/sendListLogic.ts). */
@@ -60,21 +61,19 @@ function itemsTableHTML(materials, isQuote) {
     const manufacturer = escapeHtml(trim(material.brand) || "\u2014");
     const part = trim(material.productCode);
     const partHTML = part ? ` \xB7 Part: <span class="mr-muted" style="color:#475569;font-weight:600;">${escapeHtml(part)}</span>` : "";
-    const lengthSpec = trim(material.lengthDisplay);
-    const lengthHTML = lengthSpec ? ` \xB7 Length: <span class="mr-muted" style="color:#475569;font-weight:600;">${escapeHtml(lengthSpec)}</span>` : "";
     const notes = trim(material.notes);
     const notesHTML = notes ? `<div class="mr-label" style="font-size:12.5px;color:#5B6B82;margin-top:3px;line-height:18px;font-style:italic;">${escapeHtml(notes)}</div>` : "";
-    const qtyLabel = escapeHtml(quantityLabel(material.unit, material.quantity));
+    const qtyLabel = escapeHtml(lineText(material));
     return `<tr><td class="mr-row" bgcolor="#ffffff" style="padding:14px 16px;border-bottom:1px solid #eef1f6;background:#ffffff;background-color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
           <tr>
             <td style="vertical-align:top;">
               <div class="mr-ink" style="font-size:15px;font-weight:700;color:#0b1220;line-height:20px;">${name}</div>
-              <div class="mr-label" style="font-size:12.5px;color:#5B6B82;margin-top:3px;line-height:18px;">Manufacturer: <span class="mr-muted" style="color:#475569;font-weight:600;">${manufacturer}</span>${partHTML}${lengthHTML}</div>
+              <div class="mr-label" style="font-size:12.5px;color:#5B6B82;margin-top:3px;line-height:18px;">Manufacturer: <span class="mr-muted" style="color:#475569;font-weight:600;">${manufacturer}</span>${partHTML}</div>
               ${notesHTML}
             </td>
             <td align="right" style="vertical-align:top;padding-left:14px;white-space:nowrap;">
-              <span style="display:inline-block;background:${badge.bg};color:${badge.fg};font-size:13px;font-weight:800;padding:6px 12px;border-radius:999px;">${material.quantity} ${qtyLabel}</span>
+              <span style="display:inline-block;background:${badge.bg};color:${badge.fg};font-size:13px;font-weight:800;padding:6px 12px;border-radius:999px;">${qtyLabel}</span>
             </td>
           </tr>
         </table>
@@ -114,11 +113,10 @@ function buildPlainTextEmail(context, isQuote) {
   const lead = isQuote ? "Can I get a quote for the items below?" : "Please can I place an order for the items below?";
   const confirm = isQuote ? phone ? `Once the quote is ready, please can you confirm lead times. Please note, this is only a quote request. My number is ${phone}.` : "Once the quote is ready, please can you confirm lead times. Please note, this is only a quote request." : phone ? `Please confirm any long lead times before processing this order. My number is ${phone}.` : "Please confirm any long lead times before processing this order.";
   const materialLines = context.materials.length === 0 ? "- (No materials listed)" : context.materials.map((item, index) => {
-    const qty = `${item.quantity} ${quantityLabel(item.unit, item.quantity)}`;
+    const qty = lineText(item);
     const details = [
       trim(item.brand) ? `Brand: ${trim(item.brand)}` : "",
       trim(item.productCode) ? `Code: ${trim(item.productCode)}` : "",
-      trim(item.lengthDisplay) ? `Length: ${trim(item.lengthDisplay)}` : "",
       trim(item.notes) ? `Details: ${trim(item.notes)}` : ""
     ].filter(Boolean);
     const prefix = `${index + 1}. ${item.material} \u2014 qty ${qty}`;

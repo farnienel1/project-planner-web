@@ -17,8 +17,12 @@ import { ErrorBanner, LoadingSpinner } from '@/components/dashboard/PageShell'
 import { MaterialsAddSheet } from '@/components/projects/materials/MaterialsAddSheet'
 import { MaterialsSendListSheet } from '@/components/projects/materials/MaterialsSendListSheet'
 import { materialStatusLabel } from '@/lib/maps/siteLocation'
-import { formatLengthSpecification } from '@/lib/materials/materialLength'
-import { canViewMaterialOrderHistory, formatMaterialDeliveryRequired } from '@/lib/canonical'
+import {
+  canViewMaterialOrderHistory,
+  formatMaterialDeliveryRequired,
+  materialSendLineText,
+  materialSizeText,
+} from '@/lib/canonical'
 import { staffAccountRole } from '@/lib/permissions'
 import type { Project, ProjectMaterialLine } from '@/types'
 import {
@@ -58,8 +62,7 @@ function MaterialLineCard({
   const extras = [
     line.brand,
     line.productCode,
-    line.size,
-    formatLengthSpecification(line.length, line.lengthUnit) || null,
+    materialSizeText(line.size),
     line.category,
   ]
     .filter(Boolean)
@@ -70,8 +73,9 @@ function MaterialLineCard({
         <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
           <p className="text-sm font-semibold text-slate-900">{line.material}</p>
           <p className="mt-0.5 text-xs text-slate-500">
-            {line.quantity} {line.unit}
+            {line.quantityText}
             {extras ? ` · ${extras}` : ''}
+
           </p>
           {line.websiteURL ? (
             <a
@@ -364,10 +368,9 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
                       <ul className="mt-2 space-y-1 border-t border-slate-100 pt-2">
                         {record.lines.map((line) => (
                           <li key={line.materialId || line.name} className="text-[13px] text-slate-700">
-                            {line.quantity} {line.unit} · {line.name}
+                            {line.name} · {materialSendLineText(line)}
                             {line.brand ? ` · ${line.brand}` : ''}
                             {line.productCode ? ` · ${line.productCode}` : ''}
-                            {line.lengthDisplay ? ` · ${line.lengthDisplay}` : ''}
                           </li>
                         ))}
                         {record.lines.length === 0 ? (

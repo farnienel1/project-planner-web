@@ -4,7 +4,6 @@
  */
 
 import type { ProjectMaterialLine, Wholesaler } from '@/types'
-import { materialQuantityLabel } from '@/lib/canonical'
 
 export type MaterialSendRequestType = 'quote' | 'order'
 
@@ -38,10 +37,6 @@ export function isDraftStatus(status: string): boolean {
   return status.trim().toLowerCase().includes('draft') || (!isQuotedStatus(status) && !isOrderedStatus(status))
 }
 
-/** Unit name the email prints, from the rulebook (`materialQuantityLabel`, also used by `materialWhatsAppRows`). */
-export function quantityLabel(unit: string, quantity: number): string {
-  return materialQuantityLabel(unit, quantity)
-}
 
 export function wholesalerIdsForSelectedContacts(
   wholesalers: Pick<Wholesaler, 'id' | 'contacts'>[],
@@ -145,3 +140,21 @@ export function supplierGreeting(contactName: string, sendAsPlainText: boolean):
 }
 
 export const MULTIPLE_WHOLESALER_ORDER_MESSAGE = 'Orders can only go to one wholesaler at a time.'
+
+/**
+ * Rulebook 1.48.0 §28: the quantity fields a send carries for one line — the order unit and what is in one (for
+ * `materialLineText` in the email, WhatsApp and the send record), plus the old unit and length text for older
+ * readers of the payload.
+ */
+export function materialSendQuantityFields(
+  item: Pick<ProjectMaterialLine, 'quantity' | 'unit' | 'orderUnit' | 'contentAmount' | 'contentMeasure' | 'quantityText'>
+) {
+  return {
+    quantity: item.quantity,
+    unit: item.unit,
+    orderUnit: item.orderUnit,
+    contentAmount: item.contentAmount,
+    contentMeasure: item.contentMeasure,
+    quantityText: item.quantityText,
+  }
+}

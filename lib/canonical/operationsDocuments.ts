@@ -27,6 +27,17 @@ import { zoneOrLondon } from './dayKeys'
 import { derivedRowId } from './derivedIds'
 import { materialOrderIncludesDeliveryRequired } from './materialDelivery'
 import {
+  MATERIAL_QUANTITY_FIELDS,
+  materialLineText,
+  materialQuantityModel,
+  materialQuantityModelsEqual,
+  materialQuantityWriteFields,
+  normalizeMaterialOrderUnit,
+  parseMaterialMeasure,
+  type MaterialContentMeasure,
+  type MaterialOrderUnit,
+} from './materialQuantity'
+import {
   documentBool,
   documentInstantMs,
   documentNumber,
@@ -174,7 +185,14 @@ export type MaterialLineDocument = {
   id: string
   projectId: string
   quantity: number
+  /** The pre-1.48.0 unit (older builds read it). */
   unit: MaterialUnitToken
+  /** 1.48.0 (`materialQuantityModel`): the order unit, from `orderUnit` or read from the old fields. */
+  orderUnit: MaterialOrderUnit
+  contentAmount: number | null
+  contentMeasure: MaterialContentMeasure | null
+  /** `materialLineText`, e.g. "2no 50m drums". */
+  quantityText: string
   /** `material`, else `name`. */
   material: string
   addedBy: string
@@ -221,11 +239,16 @@ export function parseMaterialLineDocument(
   const zone = zoneOrLondon(options?.timeZone)
   const dateMs = documentInstantMs(row.date)
   const lengthValue = materialLength(row)
+  const model = materialQuantityModel(row)
   return {
     id,
     projectId,
     quantity: materialQuantity(row.quantity),
     unit: normalizeMaterialUnit(row.unit),
+    orderUnit: model.orderUnit,
+    contentAmount: model.contentAmount,
+    contentMeasure: model.contentMeasure,
+    quantityText: materialLineText(row),
     material,
     addedBy: text(row.addedBy),
     addedByUserId: optionalText(row.addedByUserId),
@@ -271,7 +294,12 @@ export type MaterialLineFieldsInput = {
   id: string
   projectId: string
   quantity: number
-  unit: unknown
+  /** Pre-1.48.0 unit; read only when `orderUnit` is not given. */
+  unit?: unknown
+  /** 1.48.0: the order unit and what is in one (`MATERIAL_ORDER_UNITS`). */
+  orderUnit?: unknown
+  contentAmount?: unknown
+  contentMeasure?: unknown
   material: string
   /** The materials day, `YYYY-MM-DD` in the organisation zone. */
   dayKey: string
@@ -295,6 +323,27 @@ export type MaterialLineFieldsInput = {
 }
 
 /**
+ * The quantity fields of a line or catalogue item (rulebook 1.48.0, `materialQuantityWriteFields`): from `orderUnit` /
+ * `contentAmount` / `contentMeasure` when given, else read from the old `unit` (or `defaultUnit`) and length. The new
+ * fields and the old ones are both written. An old length that is not a number ("3m x 2") is kept as given.
+ */
+function quantityFields(input: unknown, unitField: 'unit' | 'defaultUnit'): Record<string, unknown> {
+  const row = record(input)
+  if (normalizeMaterialOrderUnit(row.orderUnit)) {
+    return materialQuantityWriteFields(row, { unitField })
+  }
+  const legacy: Record<string, unknown> = { [unitField]: row[unitField], length: row.length, lengthUnit: row.lengthUnit }
+  const out = materialQuantityWriteFields(materialQuantityModel(legacy), { unitField })
+  const length = text(row.length)
+  if (length && !parseMaterialMeasure(length, row.lengthUnit)) {
+    out.length = length
+    out.sizeOrLength = length
+    out.lengthUnit = normalizeMaterialLengthUnit(row.lengthUnit)
+  }
+  return out
+}
+
+/**
  * The stored shape of a material line, the same on every platform. `date` is the epoch ms of organisation-zone
  * midnight of `dayKey` (the app turns it into a Timestamp) and `dayKey` is stored too, so no device midnight is ever
  * read back as a day. `material` and `name` carry the same text; `length` and `sizeOrLength` the same length (older
@@ -302,12 +351,11 @@ export type MaterialLineFieldsInput = {
  */
 export function materialLineFields(input: MaterialLineFieldsInput, timeZone?: string | null): Record<string, unknown> {
   const material = text(input?.material)
-  const length = text(input?.length)
   const out: Record<string, unknown> = {
     id: text(input?.id),
     projectId: text(input?.projectId),
     quantity: materialQuantity(input?.quantity),
-    unit: normalizeMaterialUnit(input?.unit),
+    ...quantityFields(input, 'unit'),
     material,
     name: material,
     dayKey: text(input?.dayKey),
@@ -318,9 +366,6 @@ export function materialLineFields(input: MaterialLineFieldsInput, timeZone?: st
     productCode: blankToNull(input?.productCode),
     category: blankToNull(input?.category),
     size: blankToNull(input?.size),
-    length: length || null,
-    sizeOrLength: length || null,
-    lengthUnit: length ? normalizeMaterialLengthUnit(input?.lengthUnit) : null,
     websiteURL: blankToNull(input?.websiteURL),
     notes: blankToNull(input?.notes),
   }
@@ -334,11 +379,39 @@ export function materialLineFields(input: MaterialLineFieldsInput, timeZone?: st
 }
 
 export const MATERIAL_LENGTH_WRITE_GROUP = ['length', 'sizeOrLength', 'lengthUnit'] as const
+/** 1.48.0: the order unit, what is in one and the old unit and length are written together. */
+export const MATERIAL_LINE_QUANTITY_WRITE_GROUP = [...MATERIAL_QUANTITY_FIELDS, 'unit', ...MATERIAL_LENGTH_WRITE_GROUP] as const
+export const MATERIAL_CATALOGUE_QUANTITY_WRITE_GROUP = [
+  ...MATERIAL_QUANTITY_FIELDS,
+  'defaultUnit',
+  ...MATERIAL_LENGTH_WRITE_GROUP,
+] as const
 export const MATERIAL_NAME_WRITE_GROUP = ['material', 'name'] as const
 export const MATERIAL_DAY_WRITE_GROUP = ['dayKey', 'date'] as const
 
 /**
- * Partial update of `materials/{id}` (§1): only changed fields; the name pair, the length trio and the day pair are
+ * 1.48.0: a document stored before the order-unit fields whose quantity meaning a save does not change (the same
+ * order unit and what is in one, `materialQuantityModel`) keeps its stored quantity fields — so an edit of the name,
+ * or a catalogue import, never rewrites every older document just to add `orderUnit` or tidy "2.4000000000000004".
+ */
+function keepUnchangedLegacyQuantity(
+  before: Record<string, unknown> | null | undefined,
+  next: Record<string, unknown>,
+  group: readonly string[]
+): Record<string, unknown> {
+  if (!before || normalizeMaterialOrderUnit(before.orderUnit)) return next
+  if (!materialQuantityModelsEqual(materialQuantityModel(before), materialQuantityModel(next))) return next
+  const out = { ...next }
+  for (const field of group) {
+    if (field in before) out[field] = before[field]
+    else delete out[field]
+  }
+  return out
+}
+
+/**
+ * Partial update of `materials/{id}` (§1)
+: only changed fields; the name pair, the length trio and the day pair are
  * each written together. `id`, `createdAt`, `organizationId`, `addedAt`, `addedBy` and `addedByUserId` are never
  * rewritten (claiming a legacy line's owner is its own one-field write). With `before` null the line is created.
  */
@@ -346,8 +419,8 @@ export function materialLineWriteFields(
   before: Record<string, unknown> | null | undefined,
   next: Record<string, unknown>
 ): DocumentWriteFields {
-  return documentWriteFields(before, next, {
-    together: [MATERIAL_LENGTH_WRITE_GROUP, MATERIAL_NAME_WRITE_GROUP, MATERIAL_DAY_WRITE_GROUP],
+  return documentWriteFields(before, keepUnchangedLegacyQuantity(before, next, MATERIAL_LINE_QUANTITY_WRITE_GROUP), {
+    together: [MATERIAL_LINE_QUANTITY_WRITE_GROUP, MATERIAL_NAME_WRITE_GROUP, MATERIAL_DAY_WRITE_GROUP],
     createOnly: [...CREATE_ONLY, 'addedAt', 'addedBy', 'addedByUserId'],
   })
 }
@@ -376,7 +449,12 @@ export type MaterialCatalogueDocument = {
   /** Missing → "Custom" (web; iOS showed blank). */
   brand: string
   productCode: string | null
+  /** The pre-1.48.0 unit (older builds read it). */
   defaultUnit: MaterialUnitToken
+  /** 1.48.0 (`materialQuantityModel`): the default order unit and what is in one. */
+  orderUnit: MaterialOrderUnit
+  contentAmount: number | null
+  contentMeasure: MaterialContentMeasure | null
   size: string | null
   length: string | null
   lengthUnit: MaterialLengthUnitToken | null
@@ -399,12 +477,16 @@ export function parseMaterialCatalogueDocument(
   const name = text(row.name)
   if (!name) return null
   const length = materialLength(row)
+  const model = materialQuantityModel(row)
   return {
     id,
     name,
     brand: text(row.brand) || 'Custom',
     productCode: optionalText(row.productCode),
     defaultUnit: normalizeMaterialUnit(row.defaultUnit),
+    orderUnit: model.orderUnit,
+    contentAmount: model.contentAmount,
+    contentMeasure: model.contentMeasure,
     size: optionalText(row.size),
     length,
     lengthUnit: length ? normalizeMaterialLengthUnit(row.lengthUnit) : null,
@@ -421,7 +503,12 @@ export type MaterialCatalogueItemInput = {
   name: string
   brand?: string | null
   productCode?: string | null
+  /** Pre-1.48.0 unit; read only when `orderUnit` is not given. */
   defaultUnit?: unknown
+  /** 1.48.0: the default order unit and what is in one. */
+  orderUnit?: unknown
+  contentAmount?: unknown
+  contentMeasure?: unknown
   size?: string | null
   length?: string | null
   lengthUnit?: unknown
@@ -433,18 +520,14 @@ export type MaterialCatalogueItemInput = {
 
 /** The stored shape of a catalogue item on every platform (blank optionals null; `length` mirrored to `sizeOrLength`). */
 export function materialCatalogueItemFields(item: MaterialCatalogueItemInput): Record<string, unknown> {
-  const length = text(item?.length)
   const out: Record<string, unknown> = {
     id: text(item?.id),
     name: text(item?.name),
     brand: text(item?.brand) || 'Custom',
-    defaultUnit: normalizeMaterialUnit(item?.defaultUnit),
+    ...quantityFields(item, 'defaultUnit'),
     category: text(item?.category) || 'Other',
     productCode: blankToNull(item?.productCode) ?? null,
     size: blankToNull(item?.size) ?? null,
-    length: length || null,
-    sizeOrLength: length || null,
-    lengthUnit: length ? normalizeMaterialLengthUnit(item?.lengthUnit) : null,
   }
   if (item?.createdAt !== undefined) out.createdAt = item.createdAt
   if (item?.createdByUserId !== undefined) out.createdByUserId = text(item.createdByUserId)
@@ -457,8 +540,8 @@ export function materialCatalogueItemWriteFields(
   before: Record<string, unknown> | null | undefined,
   next: Record<string, unknown>
 ): DocumentWriteFields {
-  return documentWriteFields(before, next, {
-    together: [MATERIAL_LENGTH_WRITE_GROUP],
+  return documentWriteFields(before, keepUnchangedLegacyQuantity(before, next, MATERIAL_CATALOGUE_QUANTITY_WRITE_GROUP), {
+    together: [MATERIAL_CATALOGUE_QUANTITY_WRITE_GROUP],
     createOnly: [...CREATE_ONLY, 'createdByUserId', 'createdByName'],
   })
 }
@@ -516,6 +599,8 @@ export type MaterialSendLineDocument = {
   brand: string | null
   productCode: string | null
   lengthDisplay: string | null
+  /** 1.48.0: the text the line was sent with (`materialLineText`); null on records sent before 1.48.0. */
+  quantityText: string | null
 }
 
 export type MaterialSendRecordDocument = {
@@ -569,6 +654,7 @@ export function parseMaterialSendRecordDocument(
       brand: optionalText(entry.brand),
       productCode: optionalText(entry.productCode),
       lengthDisplay: optionalText(entry.lengthDisplay),
+      quantityText: optionalText(entry.quantityText),
     })
   }
   return {
@@ -609,6 +695,11 @@ export function materialSendRecordCreateFields(input: {
     brand?: string | null
     productCode?: string | null
     lengthDisplay?: string | null
+    /** 1.48.0: the order unit and what is in one; `quantityText` is `materialLineText` of the line when not given. */
+    orderUnit?: unknown
+    contentAmount?: unknown
+    contentMeasure?: unknown
+    quantityText?: string | null
   }>
 }): Record<string, unknown> {
   const requestType = normalizeMaterialRequestType(input?.requestType) ?? 'Quote'
@@ -637,7 +728,9 @@ export function materialSendRecordCreateFields(input: {
         if (text(line.brand)) out.brand = text(line.brand)
         if (text(line.productCode)) out.productCode = text(line.productCode)
         if (text(line.lengthDisplay)) out.lengthDisplay = text(line.lengthDisplay)
+        out.quantityText = text(line.quantityText) || materialLineText(line as Record<string, unknown>)
         return out
+
       }),
   }
   if (input?.materialsDate != null) out.materialsDate = input.materialsDate

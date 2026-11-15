@@ -333,7 +333,10 @@ test('handler: material request — admins and managers only (1.15.0 canSendMate
         siteName: 'High St',
         siteAddress: '1 High St',
         deliveryRequiredAt: '2026-11-04T08:00:00Z',
-        materials: [{ material: '22mm pipe', quantity: 4, unit: 'length' }],
+        materials: [
+          { material: '22mm pipe', quantity: 4, unit: 'length' },
+          { material: 'Arctic flex', quantity: 2, unit: 'Drum', orderUnit: 'Reel', contentAmount: 50, contentMeasure: 'm' },
+        ],
       },
     },
   })
@@ -343,7 +346,9 @@ test('handler: material request — admins and managers only (1.15.0 canSendMate
   assert.equal(sent[1].subject, 'Copy: Material order request — J-100 — Acme <Builders> Ltd')
   assert.equal(sent[0].reply_to, 'manager@example.com')
   assert.ok(sent[0].html.includes('Hi Wendy,'))
-  assert.ok(sent[0].html.includes('4 Lengths'))
+  assert.ok(sent[0].html.includes('4no lengths'))
+  // Rulebook 1.48.0: the new payload fields reach `materialLineText` through the sanitiser.
+  assert.ok(sent[0].html.includes('2no 50m reels'))
   assert.ok(sent[0].html.includes('Wednesday 4 November at 08:00'))
   assert.ok(sent[0].html.includes('Tuesday, 3 November 2026 at 09:15'))
 })
