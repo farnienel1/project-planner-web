@@ -645,6 +645,7 @@ UI only, web only (`docs/design/user-profile-ui/user-profile-ui-spec.md`; branch
 | 15 Nov | The Storage rules do not yet require the generated `{uid}_{ms}` object name at create (§24 never did); kept as it is and listed as a follow-up. | follow-up |
 | 15 Nov | Review M1: until the 1.50.0 Storage rules are published, certificate photos are redrawn to JPEG and a photo that cannot be redrawn (HEIC in Chrome) is refused with a message, because the live rules take PDF and JPEG only for certificates. A web guard (`STORAGE_RULES_1_50_PUBLISHED = false`, `pre150RulesAccept`) keeps every upload inside what the old rules accept; flip it in the release after the publish. | done, owner to confirm; flip ready (`w-storage-150-live`, merge after the Storage rules publish) |
 | 15 Nov | Review L4: a photo over 40 MB, or over 50 megapixels by its header, is refused before it is decoded. | done, owner to confirm |
+| 15 Nov | After the 1.50.0 Storage rules are live (PR #333): a certificate photo the browser cannot redraw (HEIC in Chrome or Firefox) is stored as HEIC; it may not open in those browsers' "View certificate" (Safari and iPhone open it). Before, it was refused. | ready (#333), owner to confirm |
 
 ## 15 Nov decisions (for 1.51, weekly report rework)
 

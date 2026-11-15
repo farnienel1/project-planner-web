@@ -54,13 +54,9 @@ export function drawPhoto(bitmap: ImageBitmap, scale: number, opaque: boolean): 
 /**
  * How a redrawn photo is encoded.
  * - `auto`: a PNG stays a PNG unless it is still over the target, then JPEG; everything else JPEG.
- * - `jpeg`: always JPEG; a photo the browser cannot redraw is refused unless it already is a JPEG.
  * - `logo`: never turned into a JPEG — a JPEG stays a JPEG, anything else becomes a PNG (transparency kept, L5).
  */
-export type PhotoOutput = 'auto' | 'jpeg' | 'logo'
-
-export const PHOTO_NOT_CONVERTIBLE_MESSAGE =
-  'This photo could not be converted to a JPEG in this browser. Save it as a JPEG or PDF and try again.'
+export type PhotoOutput = 'auto' | 'logo'
 
 function isJpeg(file: File): boolean {
   const type = (file.type || '').toLowerCase()
@@ -69,28 +65,24 @@ function isJpeg(file: File): boolean {
 
 /**
  * Redraw an image so EXIF/GPS is not uploaded, scaled down when large. Throws `UploadRefusedError` for a photo over
- * 40 MB or 50 megapixels (checked before it is decoded), and in `jpeg` mode for a photo that cannot be converted.
+ * 40 MB or 50 megapixels (checked before it is decoded). A photo the browser cannot redraw is returned as it is.
  */
 export async function stripPhotoLocation(file: File, output: PhotoOutput = 'auto'): Promise<File> {
   if (!shouldStripPhotoLocation(file)) return file
   await assertPhotoPreparable(file)
-  const cannotRedraw = (): File => {
-    if (output === 'jpeg' && !isJpeg(file)) throw new UploadRefusedError(PHOTO_NOT_CONVERTIBLE_MESSAGE, 'content_unknown')
-    return file
-  }
-  if (typeof createImageBitmap !== 'function') return cannotRedraw()
+  if (typeof createImageBitmap !== 'function') return file
   let bitmap: ImageBitmap
   try {
     bitmap = await createImageBitmap(file)
   } catch {
-    return cannotRedraw()
+    return file
   }
   try {
     assertBitmapPreparable(bitmap.width, bitmap.height)
     const inputType = (file.type || '').toLowerCase()
     const inputPng = inputType === 'image/png'
     let outType: 'image/png' | 'image/jpeg' =
-      output === 'jpeg' ? 'image/jpeg' : output === 'logo' ? (isJpeg(file) ? 'image/jpeg' : 'image/png') : inputPng ? 'image/png' : 'image/jpeg'
+      output === 'logo' ? (isJpeg(file) ? 'image/jpeg' : 'image/png') : inputPng ? 'image/png' : 'image/jpeg'
     let blob: Blob | null = null
     if (outType === 'image/png') {
       const canvas = drawPhoto(bitmap, photoScale(bitmap.width, bitmap.height), false)
@@ -110,7 +102,7 @@ export async function stripPhotoLocation(file: File, output: PhotoOutput = 'auto
         if (second && second.size < blob.size) blob = second
       }
     }
-    if (!blob) return cannotRedraw()
+    if (!blob) return file
     const ext = outType === 'image/png' ? 'png' : 'jpg'
     return new File([blob], `photo.${ext}`, { type: outType, lastModified: file.lastModified })
   } finally {
