@@ -156,8 +156,10 @@ export const OFFLINE_DELETE_CHANGED_MESSAGE = 'Changed on another device — not
 /** Shown when a queued delete is refused because the person may no longer delete the booking; the booking is back. */
 export const OFFLINE_DELETE_REFUSED_MESSAGE = 'Not deleted — you can no longer delete this booking, so it is back on the schedule'
 /** Deleting a booking on a day inside a signed timesheet warns but is allowed; the signed sheet never changes. */
+// Rulebook 1.47.0 §8: an unexported signed sheet goes back to the person to sign again when its bookings change; an
+// exported one never changes.
 export const BOOKING_DELETE_SIGNED_TIMESHEET_WARNING =
-  'This day is on a signed timesheet. Deleting the booking does not change the signed timesheet.'
+  'This day is on a signed timesheet. If it has not been exported, it goes back to the person to review and sign again. An exported timesheet does not change.'
 
 export const OFFLINE_DELETE_REPLAY_DECISIONS = ['apply', 'dropLocal', 'alreadyGone', 'refuseChanged', 'refusePermission'] as const
 export type OfflineDeleteReplayDecision = (typeof OFFLINE_DELETE_REPLAY_DECISIONS)[number]

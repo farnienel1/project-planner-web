@@ -35,6 +35,7 @@ import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride
 import { exportedTimesheetRosterGroups, subjectForUser, timesheetRosterGroups, userIdsSharingEmail } from '@/lib/timesheets/timesheetWeekUtils'
 import { formatPaymentPeriodLine, listSelectablePayPeriods, periodStartKey } from '@/lib/timesheets/paymentRunCopy'
 import { collectTimesheetPayroll } from '@/lib/timesheets/timesheetPayrollCollector'
+import { periodBookingChanges, type BookingChangeCatalogue } from '@/lib/timesheets/timesheetBookingChanges'
 import {
   invoiceLinesForTimesheet,
   invoiceLinesTotal,
@@ -86,6 +87,7 @@ import {
   runTimesheetExport,
 } from '@/lib/timesheets/timesheetExportRun'
 import type { PayrollTimePolicyState } from '@/lib/canonical'
+import { signedTimesheetActions } from '@/lib/canonical'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 export type TeamTimesheetTab = 'awaiting' | 'signed' | 'exported'
@@ -262,9 +264,37 @@ export function TimesheetsScreen({
   }, [teamTab, organization?.id, user?.id, periodStart, periodEnd, timeZone])
   const ownSheetNotice = ownSheet ? timesheetExportOwnSheetNotice({ ownSheetSigned: ownSheet.signed, ownSheetExported: ownSheet.exported }) : null
 
+  // Rulebook 1.47.0 §8 (`signedTimesheetBookingChanges`): a signed, unexported sheet whose bookings changed is back
+  // with the person (not Awaiting or Signed off) until they sign again; then it is Awaiting the counter-signature again.
+  const bookingsReady = payInputs.ready
+  const changeCatalogue: BookingChangeCatalogue = {
+    users,
+    liveLoaded: bookingsReady,
+    bookings,
+    managerSiteBookings,
+    operatives,
+    projects,
+    smallWorks,
+    payrollPolicy,
+    payrollPolicyPrior,
+    payrollPolicyEffectiveFrom,
+    payrollPolicyState,
+    timeZone,
+    history,
+    scheduleOptions,
+  }
+  const changeCatalogueRef = useRef(changeCatalogue)
+  changeCatalogueRef.current = changeCatalogue
   const visible = useMemo(
-    () => (teamTab === 'exported' ? [] : currentPeriodTimesheetMembers(groups, drafts, teamTab, users)),
-    [groups, drafts, teamTab, users]
+    () =>
+      teamTab === 'exported'
+        ? []
+        : currentPeriodTimesheetMembers(groups, drafts, teamTab, users, (member, draft) =>
+            periodBookingChanges(changeCatalogueRef.current, member, draft, { start: periodStart, end: periodEnd })
+          ),
+    // The catalogue is read through a ref; re-run when the bookings or pay inputs change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [groups, drafts, teamTab, users, bookings, managerSiteBookings, bookingsReady, periodStart, periodEnd]
   )
 
   const summaryFor = (member: User, draft: TimesheetDraft | undefined, start: Date, end: Date) => {
@@ -317,6 +347,9 @@ export function TimesheetsScreen({
     const full = await loadTimesheetDraft(organization.id, member.id, periodStart, timeZone, periodEnd)
     if (full.exportedAt) return { skip: 'exported' }
     if (!full.operativeSignedAt) return null
+    // Rulebook 1.47.0 §8 (`signedTimesheetActions`): never export a sheet whose bookings changed since it was signed —
+    // its snapshot is stale until the person signs again and the line manager counter-signs again.
+    if (!signedTimesheetActions(periodBookingChanges(changeCatalogueRef.current, member, full, { start: periodStart, end: periodEnd })).mayExport) return null
     const built = applyWeeklyReportOverride({
       draft: { ...full, exportedAt: null },
       user: member,

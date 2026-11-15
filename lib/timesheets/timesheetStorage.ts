@@ -308,6 +308,19 @@ function mapReviews(raw: unknown): Record<string, TimesheetPayrollLineReview> {
   return output
 }
 
+/** Rulebook 1.47.0 §8: `operativeSignedBookings` as stored (null when missing or not a list; bad rows dropped). */
+function parseOperativeSignedBookings(raw: unknown): TimesheetDraft['operativeSignedBookings'] {
+  if (!Array.isArray(raw)) return null
+  return raw
+    .filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === 'object')
+    .map((row) => ({
+      bookingId: typeof row.bookingId === 'string' ? row.bookingId : '',
+      collection: typeof row.collection === 'string' ? row.collection : 'bookings',
+      fingerprint: typeof row.fingerprint === 'string' ? row.fingerprint : '',
+    }))
+    .filter((row) => row.bookingId !== '')
+}
+
 export function draftFromFirestoreMap(
   data: Record<string, unknown>,
   options?: { includeSignatures?: boolean; sheetDocId?: string | null; timeZone?: string | null; ownerUserIds?: ReadonlyArray<string> | null }
@@ -321,6 +334,8 @@ export function draftFromFirestoreMap(
     operativeSignedAt: status.operativeSignedAtMs ? new Date(status.operativeSignedAtMs) : null,
     operativeSignedByName: status.operativeSignedByName || null,
     operativeSignatureImageBase64: includeSignatures ? status.operativeSignatureImageBase64 || null : null,
+    // Rulebook 1.47.0 §8: what the person signed (missing before 1.47.0).
+    operativeSignedBookings: parseOperativeSignedBookings(data.operativeSignedBookings),
     managerSignedAt: status.managerSignedAtMs ? new Date(status.managerSignedAtMs) : null,
     managerSignedByName: status.managerSignedByName || null,
     managerSignedByUserId: status.managerSignedByUserId || null,
@@ -340,6 +355,12 @@ export function draftToFirestoreMap(draft: TimesheetDraft): Record<string, unkno
     operativeSignedAt: draft.operativeSignedAt ? Timestamp.fromDate(draft.operativeSignedAt) : null,
     operativeSignedByName: draft.operativeSignedByName || '',
     operativeSignatureImageBase64: draft.operativeSignatureImageBase64 || '',
+    // Rulebook 1.47.0: written only when the draft has it, so a sheet signed before 1.47.0 keeps its stored shape.
+    ...(Array.isArray(draft.operativeSignedBookings)
+      ? { operativeSignedBookings: draft.operativeSignedBookings.map((row) => ({ ...row })) }
+      : draft.operativeSignedBookings === null
+        ? { operativeSignedBookings: null }
+        : {}),
     managerSignedAt: draft.managerSignedAt ? Timestamp.fromDate(draft.managerSignedAt) : null,
     managerSignedByName: draft.managerSignedByName || '',
     managerSignedByUserId: draft.managerSignedByUserId || '',

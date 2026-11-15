@@ -140,7 +140,18 @@ export type PayrunSnapshotPerson = LeaveSelfBookUser & {
 }
 
 /** One self-employed timesheet document (`settings/timesheet_*`), as `parsePayrunSnapshotSheet` reads it. */
-export type PayrunSnapshotSheet = { userId: string; startDayKey: string; endDayKey: string; status: TimesheetStatusFields }
+export type PayrunSnapshotSheet = {
+  userId: string
+  startDayKey: string
+  endDayKey: string
+  status: TimesheetStatusFields
+  /**
+   * Rulebook 1.47.0 §8: the sheet's `signedTimesheetBookingChanges` when the caller has the period's live bookings — a
+   * reopened sheet reads Not started (back with the person) or Submitted (waiting for the line manager again). Missing =
+   * as before 1.47.0.
+   */
+  bookingsChange?: { reopened?: boolean | null; waitingFor?: 'person' | 'lineManager' | null } | null
+}
 
 /** The request fields the Snapshot reads (`parseOvertimeRequestDocument`). */
 export type PayrunSnapshotOvertimeRequest = { userId: string; rangeStart: string; rangeEnd: string; status: string }
@@ -340,7 +351,7 @@ function timesheetCell(
       theirs.map((sheet) => ({ startDayKey: sheet.startDayKey, endDayKey: sheet.endDayKey || null })),
       run
     )
-    const bucket = index < 0 ? 'unsigned' : timesheetListBucket(theirs[index].status, lineManager)
+    const bucket = index < 0 ? 'unsigned' : timesheetListBucket(theirs[index].status, lineManager, theirs[index].bookingsChange)
     const state: TimesheetState = bucket === 'signed' || bucket === 'exported' ? 'signed' : bucket === 'awaiting' ? 'submitted' : 'notStarted'
     return { run, state }
   })

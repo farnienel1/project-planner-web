@@ -13,6 +13,7 @@ import { isTimesheetFullyApproved } from '@/lib/timesheets/timesheetApprovalPoli
 import { normalizeDocumentId, timesheetParticipant } from '@/lib/canonical'
 import { payPeriodsOverlapping } from '@/lib/timesheets/timesheetPayrollPolicy'
 import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride'
+import { periodBookingChanges } from '@/lib/timesheets/timesheetBookingChanges'
 import { listTimesheetStates } from '@/lib/timesheets/timesheetStorage'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import { findUserAndOperative, resolveDisplayName, resolvePersonRole, resolvePersonTrade } from '@/lib/weekly-report/weeklyReportPayroll'
@@ -84,6 +85,31 @@ export async function loadWeeklyReportTimesheetFeed({
     for (const period of periods) {
       const draft = byStart.get(dayKey(period.start, timeZone))
       if (!draft || !isTimesheetFullyApproved(draft, user, users)) continue
+      // Rulebook 1.47.0 §8: a signed, unexported sheet whose bookings changed since it was signed is not approved until
+      // it is signed (and counter-signed) again — the report shows its live bookings, never the stale snapshot.
+      const change = periodBookingChanges(
+        {
+          users,
+          // The report is built from the bookings it was given (the caller loads the range first).
+          liveLoaded: true,
+          bookings,
+          managerSiteBookings,
+          operatives,
+          projects,
+          smallWorks,
+          history,
+          payrollPolicy,
+          payrollPolicyPrior,
+          payrollPolicyEffectiveFrom,
+          payrollPolicyState,
+          scheduleOptions,
+          timeZone,
+        },
+        user,
+        draft,
+        period
+      )
+      if (change?.reopened) continue
       let working = draft
       if (!working.weeklyReportOverride) {
         working = applyWeeklyReportOverride({

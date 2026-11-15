@@ -15454,3 +15454,229 @@ test('1.46.0 cross-platform: an Edit hours review written on web (CUSTOM) is not
     R112.payrollLineReviewKey(R112.payrollLineReview(older, 'op-b1-normal'))
   )
 })
+
+// MARK: - 1.47.0 a signed timesheet reopens when its bookings change
+
+function reopen147Fp(over: Record<string, unknown> = {}): string {
+  return R112.overtimeBookingFingerprint({
+    id: 'b1',
+    personId: '',
+    dayKey: '2026-11-18',
+    timeSlot: 'CUSTOM',
+    workStartTime: '07:00',
+    workEndTime: '16:00',
+    ...over,
+  } as Parameters<typeof R112.overtimeBookingFingerprint>[0])
+}
+function reopen147Live(fp: string, id = 'b1', extra: Record<string, unknown> = {}) {
+  return { id: `op-${id}-normal`, bookingCollection: 'bookings', bookingFingerprint: fp, paidHours: 8.5, ...extra }
+}
+function reopen147Signed(lines: Array<Record<string, unknown>>, over: Record<string, unknown> = {}) {
+  return {
+    operativeSignedAt: '2026-11-20T09:00:00Z',
+    managerSignedAt: '2026-11-20T10:00:00Z',
+    weeklyReportOverride: { approvedAt: '2026-11-20T10:00:00Z', lines },
+    ...over,
+  }
+}
+function reopen147SnapshotLine(fp: string | null, id = 'b1', extra: Record<string, unknown> = {}) {
+  return { id: `op-${id}-normal`, bookingId: id, paidHours: 8.5, isPayeDay: false, isLeave: false, ...(fp ? { bookingFingerprint: fp } : {}), ...extra }
+}
+
+test('1.47.0: an unchanged signed sheet is not reopened', () => {
+  const fp = reopen147Fp()
+  const r = R112.signedTimesheetBookingChanges({ sheet: reopen147Signed([reopen147SnapshotLine(fp)]), liveLines: [reopen147Live(fp)], liveLoaded: true })
+  assert.equal(r.changed, false)
+  assert.equal(r.reopened, false)
+  assert.equal(r.waitingFor, null)
+  assert.equal(r.message, null)
+})
+
+test('1.47.0: a booking time changed after signing reopens the sheet for the person, with the owner text', () => {
+  const r = R112.signedTimesheetBookingChanges({
+    sheet: reopen147Signed([reopen147SnapshotLine(reopen147Fp())]),
+    liveLines: [reopen147Live(reopen147Fp({ workEndTime: '18:00' }))],
+    liveLoaded: true,
+  })
+  assert.equal(r.changed, true)
+  assert.equal(r.reopened, true)
+  assert.equal(r.waitingFor, 'person')
+  assert.equal(r.basis, 'fingerprint')
+  assert.deepEqual(r.changedBookingIds, ['b1'])
+  assert.equal(
+    r.message,
+    "One or more bookings have changed since you signed your timesheet. Please review and sign again, or speak to your line manager if something isn't correct."
+  )
+  assert.equal(r.reviewerMessage, R112.SIGNED_TIMESHEET_CHANGED_REVIEWER_MESSAGE)
+  const actions = R112.signedTimesheetActions(r)
+  assert.equal(actions.personMaySignAgain, true)
+  assert.equal(actions.lineManagerMayCounterSign, false)
+  assert.equal(actions.mayExport, false)
+  assert.equal(actions.mayGenerateInvoice, false)
+})
+
+test('1.47.0: a booking added to or removed from the period reopens the sheet', () => {
+  const fp = reopen147Fp()
+  const added = R112.signedTimesheetBookingChanges({
+    sheet: reopen147Signed([reopen147SnapshotLine(fp)]),
+    liveLines: [reopen147Live(fp), reopen147Live(reopen147Fp({ id: 'b2', dayKey: '2026-11-19' }), 'b2')],
+    liveLoaded: true,
+  })
+  assert.equal(added.reopened, true)
+  assert.deepEqual(added.addedBookingIds, ['b2'])
+  const removed = R112.signedTimesheetBookingChanges({
+    sheet: reopen147Signed([reopen147SnapshotLine(fp), reopen147SnapshotLine(reopen147Fp({ id: 'b2' }), 'b2')]),
+    liveLines: [reopen147Live(fp)],
+    liveLoaded: true,
+  })
+  assert.equal(removed.reopened, true)
+  assert.deepEqual(removed.removedBookingIds, ['b2'])
+})
+
+test('1.47.0: an exported sheet stays frozen — a warning for the reviewer only', () => {
+  const r = R112.signedTimesheetBookingChanges({
+    sheet: reopen147Signed([reopen147SnapshotLine(reopen147Fp())], { exportedAt: '2026-11-21T09:00:00Z' }),
+    liveLines: [reopen147Live(reopen147Fp({ workEndTime: '18:00' }))],
+    liveLoaded: true,
+  })
+  assert.equal(r.exported, true)
+  assert.equal(r.changed, true)
+  assert.equal(r.reopened, false)
+  assert.equal(r.waitingFor, null)
+  assert.equal(r.message, null)
+  assert.equal(r.reviewerMessage, R112.SIGNED_TIMESHEET_EXPORTED_CHANGED_MESSAGE)
+  assert.equal(R112.signedTimesheetActions(r).mayExport, true)
+  const fields = R112.parseTimesheetStatusFields({
+    operativeSignedAt: '2026-11-20T09:00:00Z',
+    operativeSignedByName: 'Sam',
+    managerSignedAt: '2026-11-20T10:00:00Z',
+    exportedAt: '2026-11-21T09:00:00Z',
+  })
+  assert.equal(R112.timesheetListBucket(fields, true, r), 'exported')
+})
+
+test('1.47.0: a sheet signed before 1.46.0 (no fingerprints) reopens only for an added or removed booking, never for hours', () => {
+  const old = reopen147Signed([reopen147SnapshotLine(null, 'b1', { paidHours: 8 })])
+  // Live hours differ (e.g. the 1.44.0 derived paid day) and the times changed: not detectable, not reopened.
+  const same = R112.signedTimesheetBookingChanges({
+    sheet: old,
+    liveLines: [reopen147Live(reopen147Fp({ workEndTime: '18:00' }), 'b1', { paidHours: 10.5 })],
+    liveLoaded: true,
+  })
+  assert.equal(same.changed, false)
+  const added = R112.signedTimesheetBookingChanges({
+    sheet: old,
+    liveLines: [reopen147Live(reopen147Fp()), reopen147Live(reopen147Fp({ id: 'b2' }), 'b2')],
+    liveLoaded: true,
+  })
+  assert.equal(added.reopened, true)
+  assert.equal(added.basis, 'bookingIds')
+  // Signed lines that name no booking at all are never compared.
+  const keyless = R112.signedTimesheetBookingChanges({
+    sheet: reopen147Signed([{ id: 'legacy-row', paidHours: 8 }]),
+    liveLines: [reopen147Live(reopen147Fp())],
+    liveLoaded: true,
+  })
+  assert.equal(keyless.changed, false)
+  // A person signature with neither a record nor a snapshot (before 1.47.0, waiting for the line manager): never.
+  const waiting = R112.signedTimesheetBookingChanges({
+    sheet: { operativeSignedAt: '2026-11-20T09:00:00Z' },
+    liveLines: [reopen147Live(reopen147Fp())],
+    liveLoaded: true,
+  })
+  assert.equal(waiting.changed, false)
+})
+
+test('1.47.0: CUSTOM vs CUSTOM HOURS / CUSTOM_HOURS spelling is the same booking (not changed)', () => {
+  for (const spelling of ['CUSTOM_HOURS', 'CUSTOM HOURS', 'custom_hours']) {
+    const r = R112.signedTimesheetBookingChanges({
+      sheet: reopen147Signed([reopen147SnapshotLine(reopen147Fp({ timeSlot: 'CUSTOM' }))]),
+      liveLines: [reopen147Live(reopen147Fp({ timeSlot: spelling }))],
+      liveLoaded: true,
+    })
+    assert.equal(r.changed, false, spelling)
+  }
+  // A record written with one spelling against live lines of the other.
+  const sheet = {
+    operativeSignedAt: '2026-11-20T09:00:00Z',
+    operativeSignedBookings: [{ bookingId: 'B1', collection: 'bookings', fingerprint: '2026-11-18|CUSTOM HOURS|07:00|16:00|||confirmed' }],
+  }
+  const live = [reopen147Live('2026-11-18|CUSTOM|07:00|16:00|||confirmed')]
+  assert.equal(R112.signedTimesheetBookingChanges({ sheet, liveLines: live, liveLoaded: true }).changed, false)
+})
+
+test('1.47.0: nothing reads as changed until the bookings have loaded; leave and PAYE-only live lines are not additions', () => {
+  const fp = reopen147Fp()
+  const sheet = reopen147Signed([reopen147SnapshotLine(fp)])
+  assert.equal(R112.signedTimesheetBookingChanges({ sheet, liveLines: [], liveLoaded: false }).changed, false)
+  const r = R112.signedTimesheetBookingChanges({
+    sheet,
+    liveLines: [reopen147Live(fp), reopen147Live(reopen147Fp({ id: 'b9' }), 'b9', { isPayeDay: true }), { id: 'leave-1', isLeave: true, bookingId: 'x' }],
+    liveLoaded: true,
+  })
+  assert.equal(r.changed, false)
+})
+
+test('1.47.0: the person signs again (record), then the line manager counter-signs again', () => {
+  const before = reopen147Fp()
+  const after = reopen147Fp({ workEndTime: '18:00' })
+  const live = [reopen147Live(after)]
+  const record = R112.signedTimesheetBookingRecord(live)
+  assert.deepEqual(record, [{ bookingId: 'b1', collection: 'bookings', fingerprint: after }])
+  // The person signed again over the old manager signature: waiting for the line manager.
+  const resigned = reopen147Signed([reopen147SnapshotLine(before)], { operativeSignedAt: '2026-11-22T09:00:00Z', operativeSignedBookings: record })
+  const r = R112.signedTimesheetBookingChanges({ sheet: resigned, liveLines: live, liveLoaded: true })
+  assert.equal(r.reopened, true)
+  assert.equal(r.waitingFor, 'lineManager')
+  assert.equal(r.message, null)
+  assert.equal(r.reviewerMessage, R112.SIGNED_TIMESHEET_CHANGED_COUNTERSIGN_MESSAGE)
+  assert.equal(R112.signedTimesheetActions(r).lineManagerMayCounterSign, true)
+  assert.equal(R112.signedTimesheetActions(r).mayExport, false)
+  assert.equal(R112.signedTimesheetActions(r).rebuildSnapshot, true)
+  const fields = R112.parseTimesheetStatusFields({ operativeSignedAt: '2026-11-22T09:00:00Z', operativeSignedByName: 'Sam', managerSignedAt: '2026-11-20T10:00:00Z' })
+  assert.equal(R112.timesheetListBucket(fields, true), 'signed')
+  assert.equal(R112.timesheetListBucket(fields, true, r), 'awaiting')
+  const stale = R112.signedTimesheetBookingChanges({ sheet: reopen147Signed([reopen147SnapshotLine(before)]), liveLines: live, liveLoaded: true })
+  assert.equal(R112.timesheetListBucket(fields, true, stale), 'unsigned')
+  // Counter-signed again with a fresh snapshot: nothing changed.
+  const done = reopen147Signed([reopen147SnapshotLine(after)], { operativeSignedBookings: record })
+  assert.equal(R112.signedTimesheetBookingChanges({ sheet: done, liveLines: live, liveLoaded: true }).changed, false)
+  // A self-signed person's stale snapshot is theirs to sign again.
+  assert.equal(R112.signedTimesheetBookingChanges({ sheet: resigned, liveLines: live, liveLoaded: true, selfSigned: true }).waitingFor, 'person')
+})
+
+test('1.47.0: a person signed (1.47 record) and waiting for the line manager reopens when a booking changes', () => {
+  const live = [reopen147Live(reopen147Fp())]
+  const sheet = { operativeSignedAt: '2026-11-20T09:00:00Z', operativeSignedBookings: R112.signedTimesheetBookingRecord(live) }
+  assert.equal(R112.signedTimesheetBookingChanges({ sheet, liveLines: live, liveLoaded: true }).changed, false)
+  const r = R112.signedTimesheetBookingChanges({ sheet, liveLines: [reopen147Live(reopen147Fp({ dayKey: '2026-11-19' }))], liveLoaded: true })
+  assert.equal(r.waitingFor, 'person')
+  const fields = R112.parseTimesheetStatusFields({ operativeSignedAt: '2026-11-20T09:00:00Z', operativeSignedByName: 'Sam' })
+  assert.equal(R112.timesheetListBucket(fields, true, r), 'unsigned')
+})
+
+test('1.47.0: a snapshot frozen empty by the 1.43.0 loading bug is repaired, not reopened', () => {
+  const sheet = reopen147Signed([])
+  const r = R112.signedTimesheetBookingChanges({
+    sheet,
+    liveLines: [reopen147Live(reopen147Fp(), 'b1', { bookingCreatedAt: '2026-11-18T08:00:00Z', bookingUpdatedAt: '2026-11-18T08:00:00Z' })],
+    liveLoaded: true,
+  })
+  assert.equal(r.changed, false)
+  // A booking created after the approval is a real addition.
+  const later = R112.signedTimesheetBookingChanges({
+    sheet,
+    liveLines: [reopen147Live(reopen147Fp(), 'b1', { bookingCreatedAt: '2026-11-21T08:00:00Z', bookingUpdatedAt: '2026-11-21T08:00:00Z' })],
+    liveLoaded: true,
+  })
+  assert.equal(later.reopened, true)
+})
+
+test('1.47.0: buckets and payrun snapshot cells follow a reopened sheet', () => {
+  const status = R112.parseTimesheetStatusFields({ operativeSignedAt: '2026-11-20T09:00:00Z', operativeSignedByName: 'Sam', managerSignedAt: '2026-11-20T10:00:00Z' })
+  assert.equal(R112.timesheetListBucket(status, true, { reopened: true, waitingFor: 'person' }), 'unsigned')
+  assert.equal(R112.timesheetListBucket(status, true, { reopened: true, waitingFor: 'lineManager' }), 'awaiting')
+  assert.equal(R112.timesheetListBucket(status, true, { reopened: false, waitingFor: null }), 'signed')
+  // Self-signed (no counter-signature): a reopened sheet is back with the person.
+  assert.equal(R112.timesheetListBucket(status, false, { reopened: true, waitingFor: 'lineManager' }), 'unsigned')
+})

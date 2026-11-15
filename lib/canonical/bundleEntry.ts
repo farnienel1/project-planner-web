@@ -1496,3 +1496,16 @@ export type {
 export { payrollLineBookingKey } from './reportPay'
 // Rulebook 1.46.0: one slot spelling in booking fingerprints, compared canonically across apps.
 export { bookingFingerprintSlot, overtimeFingerprintKey, overtimeFingerprintsMatch } from './bookingFingerprint'
+// Rulebook 1.47.0 §8: a signed timesheet reopens when its bookings change (exported sheets stay frozen).
+export {
+  SIGNED_TIMESHEET_CHANGED_COUNTERSIGN_MESSAGE,
+  SIGNED_TIMESHEET_CHANGED_LABEL,
+  SIGNED_TIMESHEET_CHANGED_MESSAGE,
+  SIGNED_TIMESHEET_CHANGED_REVIEWER_MESSAGE,
+  SIGNED_TIMESHEET_CHANGED_STATUS,
+  SIGNED_TIMESHEET_EXPORTED_CHANGED_MESSAGE,
+  signedTimesheetActions,
+  signedTimesheetBookingChanges,
+  signedTimesheetBookingRecord,
+  signedTimesheetLineBookingKey,
+} from './timesheetBookingChanges'

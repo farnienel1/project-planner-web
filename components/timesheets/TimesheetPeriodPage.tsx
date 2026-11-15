@@ -32,6 +32,9 @@ import {
   userTimesheetSelfSigned,
 } from '@/lib/timesheets/timesheetApprovalPolicy'
 import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride'
+import { draftBookingChanges, draftForFigures, signedTimesheetLiveLines } from '@/lib/timesheets/timesheetBookingChanges'
+import { BookingsChangedWarning } from '@/components/timesheets/BookingsChangedWarning'
+import { signedTimesheetActions, signedTimesheetBookingRecord, SIGNED_TIMESHEET_CHANGED_MESSAGE } from '@/lib/canonical'
 import { staffAccountRole, userTimesheetSubjectIds } from '@/lib/permissions'
 import {
   SENSITIVE_EXPORT_OPTION_LABEL,
@@ -390,17 +393,33 @@ export function TimesheetPeriodPage({
     subjectLineManagerIds: lineManagerUserIds(subjectUser, users),
     roster: rulebookRoster(users),
   })
+  // Rulebook 1.47.0 §8 (`signedTimesheetBookingChanges`): a signed, unexported sheet whose bookings changed is back for
+  // signing — the person signs the live bookings again, then the line manager counter-signs again. Exported: frozen.
+  const sheetSelfSigned = userTimesheetSelfSigned(subjectUser, users)
+  const bookingChange = draftBookingChanges({
+    draft,
+    lines: payroll.lineItems,
+    liveLoaded: bookingsLoaded && !bookingsFailed,
+    selfSigned: sheetSelfSigned,
+  })
+  const changeActions = signedTimesheetActions(bookingChange)
+  const waitingForPerson = bookingChange.waitingFor === 'person'
+  const canCounterSignAgain = bookingChange.waitingFor === 'lineManager'
   const canManagerReview = (() => {
     if (mode !== 'review' || !viewer || !viewerIsReviewer) return false
+    if (waitingForPerson) return false
     if (draft.exportedAt) {
       // `userTimesheetSubjects`: admins see everyone, a manager the people they line-manage under any of their ids.
       const inScope = userTimesheetSubjectIds(viewer, users).includes(subjectUser.id)
       return inScope && isTimesheetFullyApproved(draft, subjectUser, users)
     }
-    return needsCounterSign && !draft.managerSignedAt && Boolean(draft.operativeSignedAt)
+    return needsCounterSign && (!draft.managerSignedAt || canCounterSignAgain) && Boolean(draft.operativeSignedAt)
   })()
   const managerHasSigned = Boolean(draft.managerSignedAt)
-  const fullyApproved = isTimesheetFullyApproved(draft, subjectUser, users)
+  // 1.47.0: a reopened sheet is not signed off until it is signed (and counter-signed) again.
+  const fullyApproved = isTimesheetFullyApproved(draft, subjectUser, users) && !bookingChange.reopened
+  // 1.47.0: a reopened sheet's figures are the live bookings — its stale signed snapshot is never shown or invoiced.
+  const figuresDraft = draftForFigures(draft, bookingChange)
   // Rulebook 1.43.0 §8: the person adds price work or expenses only until their line manager signs (a self-signed
   // sheet stays open; adding asks them to sign again).
   const extrasAllowed = timesheetOwnerCanAddExtras(draft, { selfSigned: userTimesheetSelfSigned(subjectUser, users) })
@@ -410,7 +429,7 @@ export function TimesheetPeriodPage({
   const sheetDays = subjectUser ? timesheetDayKeysForPeriod(subjectUser, periodStart, periodEnd, timeZone) : null
   const totals = draftTimesheetTotals({
     lines: payroll.lineItems,
-    draft,
+    draft: figuresDraft,
     decided: managerHasSigned || canManagerReview,
     reviewing: canManagerReview,
     timesheetDays: sheetDays,
@@ -423,7 +442,7 @@ export function TimesheetPeriodPage({
   const hoursSubtotal = totals.standardLabour
 
   const persist = useCallback(
-    async (next: TimesheetDraft) => {
+    async (next: TimesheetDraft, options: { rebuildSnapshot?: boolean } = {}) => {
       if (!organization?.id) return
       // 1.43.0: never save over a sheet that could not be loaded (a second copy under another id).
       if (loadFailed) throw new Error(TIMESHEET_HISTORY_LOAD_FAILED_MESSAGE)
@@ -433,6 +452,8 @@ export function TimesheetPeriodPage({
       lastPersistAt.current = Date.now()
       const withOverride = applyWeeklyReportOverride({
         draft: next,
+        // Rulebook 1.47.0: a fresh signature on changed bookings rebuilds the snapshot from the live bookings.
+        rebuildSnapshot: options.rebuildSnapshot === true,
         user: subjectUser,
         users,
         viewer,
@@ -792,11 +813,14 @@ export function TimesheetPeriodPage({
           operativeSignedAt: new Date(),
           operativeSignedByName: name,
           operativeSignatureImageBase64: signature,
+          // Rulebook 1.47.0 §8: what the person signed, so a later booking change reopens the sheet.
+          operativeSignedBookings: signedTimesheetBookingRecord(signedTimesheetLiveLines(payroll.lineItems)),
         },
         subjectUser,
         users
       )
-      await persist(next)
+      // A self-signed person's signature on changed bookings rebuilds their snapshot (1.47.0).
+      await persist(next, { rebuildSnapshot: bookingChange.reopened && sheetSelfSigned })
       if (organization?.id && requiresLineManagerCounterSign(subjectUser, users)) {
         try {
           await notifyTimesheetPendingManagerSignoff({
@@ -820,8 +844,8 @@ export function TimesheetPeriodPage({
   }
 
   const handleManagerSign = async () => {
-    // Rulebook 1.30.2: never a counter-signature on one's own sheet.
-    if (!viewer || !signature || !viewerIsReviewer) return
+    // Rulebook 1.30.2: never a counter-signature on one's own sheet. 1.47.0: never while the person must sign again.
+    if (!viewer || !signature || !viewerIsReviewer || waitingForPerson) return
     if (!payInputs.ready) {
       setError(payInputs.message)
       return
@@ -835,13 +859,17 @@ export function TimesheetPeriodPage({
     setBusy(true)
     try {
       const name = `${viewer.firstName} ${viewer.surname}`.trim() || viewer.email
-      await persist({
+      await persist(
+        {
         ...draft,
         managerSignedAt: new Date(),
         managerSignedByName: name,
         managerSignedByUserId: viewer.id,
         managerSignatureImageBase64: signature,
-      })
+        },
+        // Rulebook 1.47.0: counter-signing a reopened sheet rebuilds the snapshot from the live bookings.
+        { rebuildSnapshot: bookingChange.reopened }
+      )
       if (organization?.id) {
         try {
           await notifyTimesheetSignedByManager({
@@ -1115,7 +1143,7 @@ export function TimesheetPeriodPage({
         eyebrow={`${heading} · ${mode === 'review' ? 'Breakdown' : 'This period'}`}
         title={mode === 'review' ? reviewName : periodTitle}
         subtitle={mode === 'review' ? periodTitle : undefined}
-        actions={mode === 'review' ? <ReviewStatusCapsule signed={Boolean(draft.operativeSignedAt)} /> : undefined}
+        actions={mode === 'review' ? <ReviewStatusCapsule signed={Boolean(draft.operativeSignedAt) && !waitingForPerson} /> : undefined}
         aside={
           <>
             <span>{totalLabel}</span>
@@ -1352,9 +1380,23 @@ export function TimesheetPeriodPage({
 
               <Note tone="red">{hoursWarningCopy(subjectUser, users)}</Note>
 
-              {!draft.operativeSignedAt ? (
+              {waitingForPerson ? (
+                <Note tone="amber" icon={<BookingsChangedWarning />}>
+                  {SIGNED_TIMESHEET_CHANGED_MESSAGE}
+                </Note>
+              ) : canCounterSignAgain ? (
+                <Note tone="amber">Signed again — waiting for your line manager to counter-sign the new figures.</Note>
+              ) : bookingChange.exported && bookingChange.changed ? (
+                <Note tone="info">{bookingChange.reviewerMessage}</Note>
+              ) : null}
+
+              {!draft.operativeSignedAt || changeActions.personMaySignAgain ? (
                 <PuButton variant="primary" block disabled={!payInputs.ready} onClick={() => setSignOpen(true)}>
-                  {!payInputs.ready && snapshotState.message && !snapshotState.ready ? snapshotState.message : 'Continue to sign'}
+                  {!payInputs.ready && snapshotState.message && !snapshotState.ready
+                    ? snapshotState.message
+                    : changeActions.personMaySignAgain
+                      ? 'Review and sign again'
+                      : 'Continue to sign'}
                 </PuButton>
               ) : (
                 <SignedBlock
@@ -1363,7 +1405,7 @@ export function TimesheetPeriodPage({
                 />
               )}
 
-              {needsCounterSign && draft.managerSignedAt ? (
+              {needsCounterSign && draft.managerSignedAt && !bookingChange.reopened ? (
                 <SignedBlock
                   base64={draft.managerSignatureImageBase64}
                   caption={`Manager: ${draft.managerSignedByName || 'Line manager'} · ${signedStamp(draft.managerSignedAt, timeZone)}`}
@@ -1389,7 +1431,11 @@ export function TimesheetPeriodPage({
                     Generate Invoice
                   </PuButton>
                   <p className="pu-sub" style={{ textAlign: 'center' }}>
-                    {!draft.operativeSignedAt
+                    {bookingChange.reopened
+                      ? waitingForPerson
+                        ? 'Bookings changed since you signed — review and sign again to unlock Generate Invoice.'
+                        : 'Timesheet pending manager signature — Generate Invoice unlocks after your line manager counter-signs again.'
+                      : !draft.operativeSignedAt
                       ? needsCounterSign
                         ? 'Add any expenses or price work, then sign your timesheet. Your line manager will counter-sign before you can invoice.'
                         : 'Add any expenses or price work, then confirm and approve your timesheet to unlock Generate Invoice.'
@@ -1412,8 +1458,11 @@ export function TimesheetPeriodPage({
                   ) : (
                     <Note tone="amber">Operative has not signed this week yet.</Note>
                   )}
+                  {bookingChange.reviewerMessage ? (
+                    <Note tone={bookingChange.exported ? 'info' : 'amber'}>{bookingChange.reviewerMessage}</Note>
+                  ) : null}
                   {needsCounterSign ? (
-                    draft.managerSignedAt ? (
+                    draft.managerSignedAt && !bookingChange.reopened ? (
                       <SignedBlock
                         base64={draft.managerSignatureImageBase64}
                         caption={`Manager approved: ${draft.managerSignedByName || 'Manager'} · ${signedStamp(draft.managerSignedAt, timeZone)}`}
@@ -1433,7 +1482,7 @@ export function TimesheetPeriodPage({
                   </Note>
                   <p className="pu-sub">{SIGNED_OFF_EDIT_NOTE}</p>
                 </>
-              ) : needsCounterSign && !draft.managerSignedAt ? (
+              ) : needsCounterSign && (!draft.managerSignedAt || canCounterSignAgain) && !waitingForPerson ? (
                 <>
                   {extrasPendingReview(draft) && (draft.expenseEntries.length > 0 || draft.priceWorkEntries.length > 0) ? (
                     <Note tone="amber">Approve, decline or edit every expense and price-work line before signing off.</Note>
