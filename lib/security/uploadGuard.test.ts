@@ -59,32 +59,10 @@ test('review L1: a HEIC with a blank file.type is allowed and written as image/h
   assert.equal(await assertUploadAllowed(path('siteAudits/a1/images/u1_1.heic'), new File([HEIC], 'x.heic')), 'image/heic')
 })
 
-test('review M1: certificates send only PDF or JPEG while the pre-1.50.0 Storage rules are live', async () => {
-  const { STORAGE_RULES_1_50_PUBLISHED, CERTIFICATE_JPEG_OR_PDF_MESSAGE } = await import('./uploadGuard.ts')
-  assert.equal(STORAGE_RULES_1_50_PUBLISHED, false)
+test('1.50.0 Storage rules live: certificates accept every allowed photo type', async () => {
   const cert = (name: string) => path(`operatives/o1/qualifications/q1/certificates/u1_1.${name}`)
   assert.equal(await assertUploadAllowed(cert('jpg'), new File([JPEG], 'card.jpg', { type: 'image/jpeg' })), 'image/jpeg')
   assert.equal(await assertUploadAllowed(cert('pdf'), new File([PDF], 'card.pdf', { type: 'application/pdf' })), 'application/pdf')
-  await assert.rejects(assertUploadAllowed(cert('png'), new File([PNG], 'card.png', { type: 'image/png' })), { message: CERTIFICATE_JPEG_OR_PDF_MESSAGE })
-  await assert.rejects(assertUploadAllowed(cert('heic'), new File([HEIC], 'card.heic', { type: '' })), { message: CERTIFICATE_JPEG_OR_PDF_MESSAGE })
-})
-
-test('review M1: everything the 1.50.0 rulebook allows per kind is accepted by the pre-1.50.0 Storage rules, except certificate photos', async () => {
-  const { PRE_150_STORAGE_RULES, pre150RulesAccept } = await import('./uploadGuard.ts')
-  const { UPLOAD_ALLOWED_TYPES, STORED_FILE_KINDS } = await import('../canonical/index.ts')
-  const outside: string[] = []
-  for (const kind of STORED_FILE_KINDS) {
-    const policy = UPLOAD_ALLOWED_TYPES[kind]
-    // The rulebook cap is never above the old rules' cap.
-    assert.ok(policy.maxBytes <= PRE_150_STORAGE_RULES[kind].maxBytes, kind)
-    for (const type of policy.contentTypes) {
-      if (!pre150RulesAccept(kind, type, policy.maxBytes)) outside.push(`${kind} ${type}`)
-    }
-  }
-  assert.deepEqual(outside, [
-    'qualification_certificate image/png',
-    'qualification_certificate image/heic',
-    'qualification_certificate image/heif',
-    'qualification_certificate image/webp',
-  ])
+  assert.equal(await assertUploadAllowed(cert('png'), new File([PNG], 'card.png', { type: 'image/png' })), 'image/png')
+  assert.equal(await assertUploadAllowed(cert('heic'), new File([HEIC], 'card.heic', { type: '' })), 'image/heic')
 })
