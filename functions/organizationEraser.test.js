@@ -51,6 +51,11 @@ function fakeWorld() {
     async membershipOrgIds(uid) {
       return [...docs.keys()].filter((key) => key.startsWith(`users/${uid}/orgMemberships/`)).map((key) => key.split('/')[3])
     },
+    async listingOrgIds(uid) {
+      return [...docs.entries()]
+        .filter(([key, data]) => /^organizations\/[^/]+$/.test(key) && ((data.members && uid in data.members) || data.creatorUserId === uid))
+        .map(([key]) => key.split('/')[1])
+    },
     async invitationsOfOrganization(orgId) {
       return [...docs.entries()].filter(([key, data]) => key.startsWith('invitations/') && data.organizationId === orgId).map(([key]) => key)
     },
@@ -131,4 +136,28 @@ test('eraser: with the kill switch off (or unreadable) every run is a dry run th
     assert.equal(world.storage.size, 2)
     assert.ok(logs.some(([message, meta]) => /dry run/.test(message) && meta.orgId === 'DUE' && meta.name === 'Due Ltd'))
   }
+})
+
+test('1.54.1 eraser: a person who belongs elsewhere only through a members map entry or as its creator keeps their account', async () => {
+  const world = fakeWorld()
+  // Their users document names DUE and no membership document exists anywhere (an older founder, or a timed-out write).
+  world.docs.set('users/FOUNDER', { email: 'founder@x.com', organizationId: 'DUE' })
+  world.docs.set('users/LISTED', { email: 'listed@x.com', organizationId: 'DUE' })
+  world.docs.set('organizations/NEWCO', { name: 'New Co', creatorUserId: 'FOUNDER', members: {} })
+  world.docs.get('organizations/LIVE').members = { LISTED: 'operative' }
+  await eraseDueOrganizations(world.deps)
+  const keys = [...world.docs.keys()]
+  assert.ok(keys.includes('users/FOUNDER'))
+  assert.ok(keys.includes('users/LISTED'))
+  assert.ok(!keys.includes('users/SOLE'))
+  assert.deepEqual(world.authDeleted, ['SOLE'])
+  // Being listed only on the organisation being erased never keeps anyone.
+  assert.ok(!world.authDeleted.includes('FOUNDER') && !world.authDeleted.includes('LISTED'))
+})
+
+test('1.54.1 eraser: a store without listingOrgIds still works (memberships only)', async () => {
+  const world = fakeWorld()
+  delete world.deps.store.listingOrgIds
+  await eraseDueOrganizations(world.deps)
+  assert.deepEqual(world.authDeleted, ['SOLE'])
 })

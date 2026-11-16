@@ -1745,11 +1745,14 @@ service cloud.firestore {
         }
         function timesheetOwnerKeepsSubject() {
           let next = request.resource.data.get('userId', null);
-          return (next == null || timesheetIdIsCallers(next)) && (
-            resource == null ||
-            next == resource.data.get('userId', null) ||
-            (resource.data.get('userId', null) == null && next is string && settingId.matches('^timesheet_' + next + '_.*'))
-          );
+          return next == null || timesheetIdIsCallers(next);
+        }
+        function timesheetSubjectFiled() {
+          let next = request.resource.data.get('userId', null);
+          let stored = resource == null ? null : resource.data.get('userId', null);
+          return resource == null
+            ? settingId.matches('^timesheet_' + (next is string ? next : request.auth.uid) + '_.*')
+            : (next == stored || (stored == null && next is string && settingId.matches('^timesheet_' + next + '_.*')));
         }
         function timesheetSelfSignedOwnerWrite() {
           let uid = timesheetSubjectUid();
@@ -1845,7 +1848,7 @@ service cloud.firestore {
         allow create, update, delete: if canAccessOrganization(organizationId) && (
           (request.method != 'delete') ? ((
           (settingId.matches('^timesheet_.*'))
-            ? (isPlatformOwner() || (timesheetCallerIsSubject() ? (
+            ? (isPlatformOwner() || (timesheetSubjectFiled() && (timesheetCallerIsSubject() ? (
             timesheetOwnerKeepsSubject() && (
               ((timesheetSameInstant('managerSignedAt') &&
             timesheetSame('managerSignedByName') &&
@@ -1856,7 +1859,7 @@ service cloud.firestore {
             timesheetSameInstant('exportedAt')) && timesheetOwnerReviewFieldsUnchanged()) ||
               timesheetSelfSignedOwnerWrite()
             )
-          ) : (timesheetReviewerOfOthers() && timesheetReviewerKeepsExportedLate())))
+          ) : (timesheetReviewerOfOthers() && timesheetReviewerKeepsExportedLate()))))
             : (request.resource.data.get('userId', null) == (resource == null ? null : resource.data.get('userId', null)) &&
               ((settingId.matches('^deadlines_.*') ||
             settingId == 'deadlineAssignments' ||

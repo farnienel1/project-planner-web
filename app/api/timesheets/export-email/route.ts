@@ -1,5 +1,8 @@
 import { NextRequest } from 'next/server'
-import { bearerToken } from '@/lib/owner/firestoreRest'
+import { randomUUID } from 'node:crypto'
+import { bearerToken, firestoreGet, restFieldsToPlain } from '@/lib/owner/firestoreRest'
+import { safeExternalUrl } from '@/lib/canonical'
+import { timesheetExportRecipientCheck } from '@/lib/timesheets/exportEmailRecipients'
 import { sendProjectPlannerEmail, type ProjectPlannerEmailAttachment } from '@/lib/email/resendClient'
 import { managerExportEmailHTML } from '@/lib/timesheets/timesheetExport'
 import {
@@ -63,9 +66,26 @@ export async function POST(request: NextRequest) {
   const access = await requireOrgAccess(request, body.value.organizationId, 'staff')
   if (!access.ok) return access.response
 
-  const recipientEmail = clampString(body.value.recipientEmail, 254)
+  // Rulebook 1.54.1 (platform scan 16 Nov): the export (every person's invoice PDF) goes to the signed-in user's own
+  // email only — never an address the request names (`timesheetExportRecipientCheck`).
+  const recipient = timesheetExportRecipientCheck({
+    requested: clampString(body.value.recipientEmail, 254),
+    callerEmail: access.user.email,
+  })
+  if (!recipient.allowed) return jsonError(recipient.message, 403)
+  const recipientEmail = recipient.recipient
   const recipientName = clampString(body.value.recipientName, 120) || 'there'
-  const organizationName = clampString(body.value.organizationName, 200)
+  // The organisation's own name, never one the request gives (it is in the subject and body).
+  let storedName: string | null = null
+  try {
+    const token = bearerToken(request)
+    const orgDoc = token ? await firestoreGet(token, `organizations/${access.organizationId}`) : null
+    const plain = orgDoc ? restFieldsToPlain(orgDoc.fields) : {}
+    storedName = clampString(plain.name, 200)
+  } catch {
+    storedName = null
+  }
+  const organizationName = storedName || 'Organisation'
   const weekTitle = clampString(body.value.weekTitle, 120)
   const paymentRunStamp = clampString(body.value.paymentRunStamp, 80)
   if (!recipientEmail || !isValidEmail(recipientEmail) || !organizationName || !weekTitle || !paymentRunStamp) {
@@ -81,8 +101,10 @@ export async function POST(request: NextRequest) {
         .map((link) => {
           const fileName = clampString(link.fileName, 200)
           const url = clampString(link.url, 2000)
-          if (!fileName || !url || !/^https?:\/\//i.test(url)) return null
-          return { fileName, url }
+          // 1.50.0 §24: only an https link is put in the email (`safeExternalUrl`).
+          const safe = url ? safeExternalUrl(url) : null
+          if (!fileName || !safe) return null
+          return { fileName, url: safe }
         })
         .filter((link): link is { fileName: string; url: string } => Boolean(link))
     : []
@@ -110,6 +132,8 @@ export async function POST(request: NextRequest) {
     html,
     orgId: access.organizationId,
     idToken: bearerToken(request),
+    // One id for the send and its retry, so a first attempt that did send is never delivered twice.
+    requestId: randomUUID(),
   }
 
   try {

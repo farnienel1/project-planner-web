@@ -1,5 +1,6 @@
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
 import { qualificationCertificateStoragePath } from '@/lib/canonical/operativeQualifications'
+import { timesheetExportStoragePath } from '@/lib/canonical/timesheetPeriod'
 import { storage, auth } from '@/lib/firebase/config'
 import { withTimeout } from '@/lib/client/withTimeout'
 import { generatedStorageFileName } from '@/lib/security/uploadLimits'
@@ -219,9 +220,13 @@ export function profilePhotoPath(organizationId: string, userId: string): string
   return `organizations/${organizationId}/userProfiles/${uid}/profile.jpg`
 }
 
+/**
+ * Rulebook 1.54.1 §24 (`timesheetExportStoragePath`): `{uid}_{seconds}_{file}`, so the Storage rules let the exporter
+ * (and admins) read it back; exports are invoices, never readable by every manager.
+ */
 export function timesheetExportPath(organizationId: string, fileName: string): string {
   const stamp = Math.floor(Date.now() / 1000)
-  return `organizations/${organizationId}/timesheetExports/${stamp}_${sanitizeFileName(fileName)}`
+  return timesheetExportStoragePath(organizationId, sanitizeFileName(fileName), stamp, auth?.currentUser?.uid ?? null)
 }
 
 export function taskAttachmentPath(

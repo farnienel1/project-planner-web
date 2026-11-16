@@ -4,7 +4,10 @@
  * Daily eraser for organisations deleted 60+ days ago (rulebook 1.15.0 §20, `organizationEraseDue`).
  *
  * For each `organizations/{orgId}` whose `deletion.status` is `scheduled` and whose `eraseAfter` has passed:
- *   1. users whose users document names this organisation and who have no membership in another organisation:
+ *   1. users whose users document names this organisation and who belong to no other organisation — no
+ *      membership document there, no entry in another organisation's `members` map and not another organisation's
+ *      creator (1.54.1: the last two count too, as the auth claims already read them, so a founder whose membership
+ *      document was never written keeps their account):
  *      their tax ids, memberships and users document are deleted and their Firebase Auth account removed (never the
  *      platform owner); people who also belong elsewhere keep their account and lose only this membership;
  *   2. every `users/{uid}/orgMemberships/{orgId}` for this organisation (collection group, by `organizationId`);
@@ -45,6 +48,7 @@ function orgIdOf(value) {
  *   usersOfOrganization(orgId) → [{ id, data }]           (users where organizationId == orgId)
  *   membershipsOfOrganization(orgId) → [{ uid, path }]     (collection group orgMemberships for orgId)
  *   membershipOrgIds(uid) → [orgId]                        (ids of users/{uid}/orgMemberships)
+ *   listingOrgIds(uid) → [orgId]                           (organisations whose members map lists uid, or created by uid)
  *   invitationsOfOrganization(orgId) → [path]
  *   deleteDocument(path), deleteRecursive(path), setDocument(path, fields)
  * @param {(prefix: string) => Promise<void>} deps.deleteStoragePrefix
@@ -89,7 +93,10 @@ async function eraseOrganization(org, deps) {
   await act(`set ${auditPath} (erasing)`, () => deps.store.setDocument(auditPath, { ...audit, status: 'erasing' }))
 
   for (const user of await deps.store.usersOfOrganization(orgId)) {
-    const otherOrgs = (await deps.store.membershipOrgIds(user.id)).filter((id) => orgIdOf(id) !== orgIdOf(orgId))
+    // 1.54.1: belonging elsewhere is a membership document, a `members` entry or being the creator (authClaims reads
+    // the same three). A store without `listingOrgIds` (older callers) counts memberships only.
+    const listed = deps.store.listingOrgIds ? await deps.store.listingOrgIds(user.id) : []
+    const otherOrgs = [...(await deps.store.membershipOrgIds(user.id)), ...listed].filter((id) => orgIdOf(id) !== orgIdOf(orgId))
     if (otherOrgs.length > 0) {
       counts.usersKept += 1
       continue
@@ -129,6 +136,8 @@ async function eraseOrganization(org, deps) {
 
 /** The Firestore access for `eraseDueOrganizations`, from the admin SDK. */
 function createAdminEraserStore(db) {
+  // Required here, not at the top: the unit tests load this file without the functions' node_modules.
+  const { FieldPath } = require('firebase-admin/firestore')
   return {
     async erasureEnabled() {
       const snap = await db.doc('platformConfig/app').get()
@@ -154,6 +163,14 @@ function createAdminEraserStore(db) {
     async membershipOrgIds(uid) {
       const snap = await db.collection('users').doc(uid).collection('orgMemberships').get()
       return snap.docs.map((row) => row.id)
+    },
+    async listingOrgIds(uid) {
+      // The same two queries as authClaims `organizationsListing`: a `members` map entry, or the creator.
+      const [listed, created] = await Promise.all([
+        db.collection('organizations').orderBy(new FieldPath('members', uid)).get(),
+        db.collection('organizations').where('creatorUserId', '==', uid).get(),
+      ])
+      return [...new Set([...listed.docs, ...created.docs].map((row) => row.id))]
     },
     async invitationsOfOrganization(orgId) {
       const snap = await db.collection('invitations').where('organizationId', '==', orgId).get()

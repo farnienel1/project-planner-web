@@ -4567,11 +4567,13 @@ var ProjectPlannerCanonical = (() => {
       weekEndKey: trimmed2(input.endDayKey)
     };
   }
-  function timesheetExportStoragePath(organizationId, fileName, stampSeconds) {
+  function timesheetExportStoragePath(organizationId, fileName, stampSeconds, uploaderUid) {
     const org = trimmed2(organizationId);
     const safe = trimmed2(fileName).replace(/\s+/g, "_");
     const stamp = Math.max(0, Math.floor(Number(stampSeconds) || 0));
-    return `organizations/${org}/${TIMESHEET_EXPORT_STORAGE_FOLDER}/${stamp}_${safe}`;
+    const uid = trimmed2(uploaderUid ?? "");
+    const prefix = uid && !/[/_\s]/.test(uid) ? `${uid}_` : "";
+    return `organizations/${org}/${TIMESHEET_EXPORT_STORAGE_FOLDER}/${prefix}${stamp}_${safe}`;
   }
   function timesheetStatusWriteFields(fields) {
     const managerMs = fields.managerSignedAtMs;
@@ -13531,8 +13533,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.54.0" : "",
-      sha256: true ? "fac1f5c91946a99096f33231722e4916735702a2b1ea48338cf6513b35b2dde2" : ""
+      version: true ? "1.54.1" : "",
+      sha256: true ? "3682a17a7a7edefe48de5f9b082a0f9a6a04b6ea3b2f936d6d57e59013f66bd6" : ""
     };
   }
   function rulebookVersionLabel(version) {

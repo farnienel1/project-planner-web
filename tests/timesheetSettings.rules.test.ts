@@ -200,3 +200,31 @@ test('1.45.0 the owner saves price work and expense entries with evidence; the l
   const other = await db(OTHER)
   await assertFails(updateDoc(doc(other, 'organizations', ORG, 'settings', id), { expenseEntries: [] }))
 })
+
+test("1.54.1 nobody creates a sheet whose id names someone else (timesheet_OTHER_x filed under themself is refused)", async () => {
+  const fs = await db(OP)
+  const settings = (id: string) => doc(fs, 'organizations', ORG, 'settings', id)
+  // The scan's attack: an operative pre-creates a colleague's sheet id, filed under their own userId.
+  await assertFails(setDoc(settings(`timesheet_${OTHER}_1764460800`), sheet(OP, '2026-11-30')))
+  await assertFails(setDoc(settings(`timesheet_${OTHER}_1764460801`), { weekStartKey: '2026-11-30', expenseEntries: [] }))
+  // A normal create of one's own sheet still works, with or without userId.
+  await assertSucceeds(setDoc(settings(`timesheet_${OP}_1764460800`), sheet(OP, '2026-11-30')))
+  await assertSucceeds(setDoc(settings(`timesheet_${OP}_1764460801`), { weekStartKey: '2026-11-30' }))
+  // A reviewer (the line manager, an admin) creates a report's sheet only under that report's id.
+  const lm = await db(LM)
+  await assertFails(setDoc(doc(lm, 'organizations', ORG, 'settings', `timesheet_${OTHER}_1764460802`), sheet(OP, '2026-11-30')))
+  await assertSucceeds(setDoc(doc(lm, 'organizations', ORG, 'settings', `timesheet_${OP}_1764460802`), sheet(OP, '2026-11-30')))
+  const admin = await db(ADMIN)
+  await assertFails(setDoc(doc(admin, 'organizations', ORG, 'settings', `timesheet_${OTHER}_1764460803`), sheet(OP, '2026-11-30')))
+})
+
+test('1.54.1 a reviewer never changes a sheet\'s userId (refiling it under someone else)', async () => {
+  const lm = await db(LM)
+  const ref = doc(lm, 'organizations', ORG, 'settings', `timesheet_${OP}_1763251200`)
+  await assertFails(updateDoc(ref, { userId: LM }))
+  await assertFails(updateDoc(ref, { userId: OTHER }))
+  const admin = await db(ADMIN)
+  await assertFails(updateDoc(doc(admin, 'organizations', ORG, 'settings', `timesheet_${OP}_1763251200`), { userId: ADMIN }))
+  // An ordinary review write with the same userId still passes.
+  await assertSucceeds(updateDoc(ref, { userId: OP, managerNote: 'checked' }))
+})
