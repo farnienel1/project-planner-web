@@ -13,6 +13,7 @@ import { isoWeekdayInZone } from '@/lib/orgTime/zoneTime'
 import { labourPersonFromUser, labourRosterOperative } from '@/lib/warnings/unbookedLabourWarnings'
 import { orgDailyOverviewScope } from '@/lib/warnings/warningScopeRoster'
 import { findUserByAnyId, rosterDisplayName } from '@/lib/staff/userRosterUtils'
+import { bookingRowUserId } from '@/lib/daily-overview/bookingRowUser'
 import { addLondonDays, coversCalendarDay, dayKey, isSameLondonDay } from '@/lib/ios-parity/londonTime'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import {
@@ -439,9 +440,10 @@ export function buildDailyOverview(params: {
       const shown = bookingHoursLabel(priced)
       const ot = payrollMultipliedHours(priced)
       const hours = shown.hours
-      const linkedUser = op
-        ? params.users.find((row) => row.email.trim().toLowerCase() === op.email.trim().toLowerCase())
-        : userById.get(b.operativeId)
+      // Guardrail 1: the account is resolved by the rulebook (`resolveBookingPerson`): the row's `linkedUserId`,
+      // then a users document under the stored id, then a non-blank email. A row with a blank email and no link
+      // names no account (never the first users document with an empty email).
+      const linkedUserId = bookingRowUserId(b.operativeId, { operatives: params.operatives, users: params.users, userIdAliases })
       rows.push({
         id: `op-${b.id}`,
         personKey: operativeIdentity(b.operativeId),
@@ -457,7 +459,7 @@ export function buildDailyOverview(params: {
         kind: 'operative',
         bookingId: b.id,
         operativeId: b.operativeId,
-        userId: linkedUser?.id,
+        userId: linkedUserId,
         projectId: b.projectId,
         timeSlotRaw: String(b.timeSlot || 'FULL DAY'),
         workStartTime: b.workStartTime,

@@ -879,6 +879,7 @@ export function parseOperative(
     lastName: doc.lastName,
     email: doc.email,
     phone: doc.phone ?? undefined,
+    linkedUserId: doc.linkedUserId ?? undefined,
     startDate: msDate(doc.startDateMs) || new Date(),
     payBasis: doc.payBasis ?? undefined,
     dayRate: doc.dayRate ?? undefined,

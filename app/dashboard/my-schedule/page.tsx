@@ -278,7 +278,16 @@ function MySchedulePageContent() {
           : 'Scheduled work'
         // Rulebook 1.20.2: the times and the pay rule's hours for that day ("Custom 07:30–14:00 · 8h").
         const detail = bookingRowText(booking, booking.date, payrollPolicy)
-        return { id: booking.id, date: booking.date, title, detail }
+        return {
+          id: booking.id,
+          date: booking.date,
+          title,
+          detail,
+          timeSlot: String(booking.timeSlot ?? ''),
+          workStartTime: booking.workStartTime ?? null,
+          workEndTime: booking.workEndTime ?? null,
+          status: booking.status == null ? null : String(booking.status),
+        }
       })
   )
 

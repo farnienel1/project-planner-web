@@ -45,27 +45,6 @@ export function isTaskOverdue(task: ProjectTask, now = new Date()): boolean {
   return canonicalIsTaskOverdue({ status: task.status, dueDate: task.dueDate ?? null }, now.getTime(), organizationZoneOr())
 }
 
-export function isAssignedToUser(
-  task: ProjectTask,
-  userEmail: string | undefined,
-  operatives: Pick<Operative, 'id' | 'email'>[],
-  managers: Pick<Manager, 'id' | 'email'>[],
-  operativeMode: boolean
-): boolean {
-  const raw = normalizedEmail(userEmail)
-  if (!raw) return false
-  if (operativeMode) {
-    const ids = operatives.filter((row) => normalizedEmail(row.email) === raw).map((row) => row.id)
-    const assigned = allAssignedOperativeIds(task)
-    return ids.some((id) => assigned.includes(id))
-  }
-  const mgr = managers.find((row) => normalizedEmail(row.email) === raw)
-  if (mgr && allAssignedManagerIds(task).includes(mgr.id)) return true
-  const op = operatives.find((row) => normalizedEmail(row.email) === raw)
-  if (op && allAssignedOperativeIds(task).includes(op.id)) return true
-  return false
-}
-
 export function isCreatedByCurrentUser(task: ProjectTask, user: Pick<User, 'email' | 'firstName' | 'surname'> | null): boolean {
   if (!user) return false
   const by = task.createdBy.trim().toLowerCase()
@@ -103,20 +82,20 @@ export function emptyCopyForScope(scope: ProjectTaskListScope): { title: string;
   }
 }
 
+/**
+ * `assignedTaskIds`: the tasks assigned to the viewer, from the rulebook (`tasksAssignedToViewer`, via
+ * `tasksAssignedToUser` in `taskUtils.ts`) — every id the viewer goes by (users id, former and same-email ids,
+ * `operatives` and `managers` rows on their email), never one row picked by email (guardrail 1).
+ */
 export function filterTasksForScope(
   tasks: ProjectTask[],
   scope: ProjectTaskListScope,
   opts: {
-    userEmail?: string
-    user: Pick<User, 'email' | 'firstName' | 'surname'> | null
-    operatives: Pick<Operative, 'id' | 'email'>[]
-    managers: Pick<Manager, 'id' | 'email'>[]
-    operativeMode: boolean
+    assignedTaskIds: ReadonlySet<string>
     now?: Date
   }
 ): ProjectTask[] {
-  const assigned = (task: ProjectTask) =>
-    isAssignedToUser(task, opts.userEmail, opts.operatives, opts.managers, opts.operativeMode)
+  const assigned = (task: ProjectTask) => opts.assignedTaskIds.has(task.id)
 
   switch (scope) {
     case 'assignedToMe':

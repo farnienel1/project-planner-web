@@ -8,10 +8,10 @@ import { usePendingNavigation } from '@/lib/navigation/usePendingNavigation'
 import { EditUserSkeleton } from '@/components/users/profile-ui/skeletons'
 import { format } from 'date-fns'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { resendInvitationEmail } from '@/lib/orgSetup/resendInvitation'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore, useRosterDocuments } from '@/lib/stores/siteAuditStore'
 import { useUserStore } from '@/lib/stores/userStore'
-import { useInviteStore } from '@/lib/stores/inviteStore'
 import { loadSentInvitation, type SentInvitation } from '@/lib/orgSetup/openInvitation'
 import { findOperativeForUser, operativeRecordForUser } from '@/lib/operatives/operativeRosterUtils'
 import { personRateHistoryIds } from '@/lib/pay/personRateHistoryIds'
@@ -301,7 +301,6 @@ export function EditUserProfile({
   // Rulebook 1.30.3 / 1.31.0 (audit finding 1): every write builder gets every users document of the organisation (the
   // unfolded roster), so a same-email copy is never missed by a type change, deactivation or the transfer.
   const rosterDocs = useRosterDocuments(organization?.id)
-  const { inviteUser } = useInviteStore()
   const { bookings: holidayBookings, loadBookings: loadHolidays } = useHolidayStore()
 
   const [target, setTarget] = useState<User | null>(null)
@@ -935,21 +934,14 @@ export function EditUserProfile({
     if (!target || !organization?.id) return
     setBusyAction('invite')
     try {
-      await inviteUser({
-        email: target.email,
+      // Sends the existing invitation again (as iOS); never re-runs Add User or rewrites the placeholder.
+      await resendInvitationEmail({
         organizationId: organization.id,
-        organizationName: organization.name,
-        firstName: target.firstName,
-        surname: target.surname,
-        mobileNumber: target.mobileNumber,
-        permissions: target.permissions,
-        assignedManagerUserId: target.assignedManagerUserId,
-        dayRate: target.dayRate,
-        tradeTypePreset: target.tradeTypePreset,
-        tradeTypeCustom: target.tradeTypeCustom,
+        organizationName: organization.name || '',
+        person: target,
+        actor: currentUser,
       })
       setSuccess(`Sign-up email sent to ${target.email}.`)
-      loadUsers(organization.id)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to send sign-up email')
     } finally {

@@ -89,6 +89,22 @@ export default function WarningsPage() {
   const markDecision = useCallback((source: keyof WarningDecisionFailures, failed: boolean) => {
     setDecisionFailures((current) => (current[source] === failed ? current : { ...current, [source]: failed }))
   }, [])
+  // Which decision lists have had a live snapshot for which organisation (scan 16 Nov): a one-shot read that resolves
+  // after a live snapshot never overwrites it, and a read for the previous organisation is dropped after a switch.
+  const liveDecisions = useRef<{ orgId: string | null; kinds: Set<keyof WarningDecisionFailures> }>({ orgId: null, kinds: new Set() })
+  const currentOrgId = useRef<string | null>(organization?.id ?? null)
+  useEffect(() => {
+    currentOrgId.current = organization?.id ?? null
+  }, [organization?.id])
+  const noteLiveDecision = useCallback((orgId: string, kind: keyof WarningDecisionFailures) => {
+    if (liveDecisions.current.orgId !== orgId) liveDecisions.current = { orgId, kinds: new Set() }
+    liveDecisions.current.kinds.add(kind)
+  }, [])
+  /** True when a one-shot result for `orgId` may still be applied: the organisation is open and no live snapshot came. */
+  const oneShotApplies = useCallback((orgId: string, kind: keyof WarningDecisionFailures) => {
+    if (currentOrgId.current !== orgId) return false
+    return !(liveDecisions.current.orgId === orgId && liveDecisions.current.kinds.has(kind))
+  }, [])
   const [orgDetails, setOrgDetails] = useState<OrganizationDetails | null>(null)
   const [detectionSettled, setDetectionSettled] = useState(false)
   const [liveOrgReadSettled, setLiveOrgReadSettled] = useState(false)
@@ -213,29 +229,38 @@ export default function WarningsPage() {
     void Promise.all([
       loadAcceptedBookingClashes(orgId)
         .then((rows) => {
-          setAcceptedClashes(rows)
+          if (cancelled) return
+          if (oneShotApplies(orgId, 'accepted')) setAcceptedClashes(rows)
           markDecision('accepted', false)
         })
-        .catch(() => markDecision('accepted', true)),
+        .catch(() => {
+          if (!cancelled && oneShotApplies(orgId, 'accepted')) markDecision('accepted', true)
+        }),
       loadDismissedWarnings(orgId)
         .then((rows) => {
-          setDismissedWarnings(rows)
+          if (cancelled) return
+          if (oneShotApplies(orgId, 'dismissed')) setDismissedWarnings(rows)
           markDecision('dismissed', false)
         })
-        .catch(() => markDecision('dismissed', true)),
+        .catch(() => {
+          if (!cancelled && oneShotApplies(orgId, 'dismissed')) markDecision('dismissed', true)
+        }),
       loadResolvedWarningKeys(orgId)
         .then((keys) => {
-          setResolvedKeys(keys)
+          if (cancelled) return
+          if (oneShotApplies(orgId, 'resolved')) setResolvedKeys(keys)
           markDecision('resolved', false)
         })
-        .catch(() => markDecision('resolved', true)),
+        .catch(() => {
+          if (!cancelled && oneShotApplies(orgId, 'resolved')) markDecision('resolved', true)
+        }),
     ]).finally(() => {
       if (!cancelled) setDecisionsOrgId(orgId)
     })
     return () => {
       cancelled = true
     }
-  }, [organization?.id, decisionsAttempt, markDecision])
+  }, [organization?.id, decisionsAttempt, markDecision, oneShotApplies])
 
   // Rulebook 1.8.0 §5: an approval or removal on any device updates this page live.
   useEffect(() => {
@@ -244,12 +269,13 @@ export default function WarningsPage() {
     return watchResolvedWarningKeys(
       orgId,
       (keys) => {
+        noteLiveDecision(orgId, 'resolved')
         setResolvedKeys(keys)
         markDecision('resolved', false)
       },
       () => markDecision('resolved', true)
     )
-  }, [organization?.id, decisionsAttempt, markDecision])
+  }, [organization?.id, decisionsAttempt, markDecision, noteLiveDecision])
 
   // Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): accepted clashes and dismissed warnings are live too, so an approval or a
   // dismissal on iOS clears the row here without reopening the page.
@@ -259,6 +285,7 @@ export default function WarningsPage() {
     const stopAccepted = watchAcceptedBookingClashes(
       orgId,
       (rows) => {
+        noteLiveDecision(orgId, 'accepted')
         setAcceptedClashes(rows)
         markDecision('accepted', false)
       },
@@ -267,6 +294,7 @@ export default function WarningsPage() {
     const stopDismissed = watchDismissedWarnings(
       orgId,
       (rows) => {
+        noteLiveDecision(orgId, 'dismissed')
         setDismissedWarnings(rows)
         markDecision('dismissed', false)
       },
@@ -276,16 +304,30 @@ export default function WarningsPage() {
       stopAccepted()
       stopDismissed()
     }
-  }, [organization?.id, decisionsAttempt, markDecision])
+  }, [organization?.id, decisionsAttempt, markDecision, noteLiveDecision])
 
   // Global Refresh: stores reload themselves; this page also re-reads what it keeps locally.
   useEffect(() => {
     const orgId = organization?.id
     if (!orgId) return
     const onRefreshed = () => {
-      loadAcceptedBookingClashes(orgId).then(setAcceptedClashes).catch(() => {})
-      loadDismissedWarnings(orgId).then(setDismissedWarnings).catch(() => {})
-      loadResolvedWarningKeys(orgId).then(setResolvedKeys).catch(() => {})
+      // The live listeners keep these current; a refresh read only fills a list no snapshot has reached yet, and is
+      // dropped when the organisation has changed meanwhile.
+      loadAcceptedBookingClashes(orgId)
+        .then((rows) => {
+          if (oneShotApplies(orgId, 'accepted')) setAcceptedClashes(rows)
+        })
+        .catch(() => {})
+      loadDismissedWarnings(orgId)
+        .then((rows) => {
+          if (oneShotApplies(orgId, 'dismissed')) setDismissedWarnings(rows)
+        })
+        .catch(() => {})
+      loadResolvedWarningKeys(orgId)
+        .then((keys) => {
+          if (oneShotApplies(orgId, 'resolved')) setResolvedKeys(keys)
+        })
+        .catch(() => {})
       void loadOrganizationDetails(orgId, { fromServer: true, allowCacheFallback: true })
         .then((details) => {
           if (!details || details.id !== orgId) return
@@ -295,7 +337,7 @@ export default function WarningsPage() {
     }
     window.addEventListener(ORG_DATA_REFRESHED_EVENT, onRefreshed)
     return () => window.removeEventListener(ORG_DATA_REFRESHED_EVENT, onRefreshed)
-  }, [organization?.id])
+  }, [organization?.id, oneShotApplies])
 
   // Each snapshot of the organisation document (any device) re-reads the parsed details from it.
   useEffect(() => {
