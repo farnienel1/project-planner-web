@@ -737,7 +737,8 @@ function MineTimesheetsList({
                 <td>
                   {needsSigningAgain(period) ? (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                      <BookingsChangedWarning />
+                      {/* 1.54.0: the message names bookings, or price work / expenses when only those changed. */}
+                      <BookingsChangedWarning message={changeOf(period)?.message ?? undefined} />
                       <Chip tone="amber">{SIGNED_TIMESHEET_CHANGED_STATUS}</Chip>
                     </span>
                   ) : (

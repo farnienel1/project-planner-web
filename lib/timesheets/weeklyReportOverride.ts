@@ -10,6 +10,7 @@ import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtil
 import type { MyScheduleOptions, OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_MY_SCHEDULE, DEFAULT_PAYROLL_POLICY, orgPayrollPolicyForDay } from '@/lib/settings/organizationSettings'
 import { isTimesheetFullyApproved, userTimesheetSelfSigned } from '@/lib/timesheets/timesheetApprovalPolicy'
+import { draftExtrasChanges } from '@/lib/timesheets/timesheetBookingChanges'
 import {
   effectiveExpenseAmount,
   effectivePayrollAmount,
@@ -143,6 +144,8 @@ function moneyLines(
     date: entry.startDate,
     amount: effectivePriceWorkAmount(entry, managerHasSigned, true),
     decision: agreedDecision(entry.managerDecision),
+    // Rulebook 1.54.0 §8: what was signed, so a later change to the entry reopens the sheet.
+    ...(entry.reviewFingerprint ? { entryFingerprint: entry.reviewFingerprint } : {}),
   }))
   const expenses = draft.expenseEntries.map((entry) => ({
     id: entry.id,
@@ -152,6 +155,7 @@ function moneyLines(
     date: entry.date,
     amount: effectiveExpenseAmount(entry, managerHasSigned, true),
     decision: agreedDecision(entry.managerDecision),
+    ...(entry.reviewFingerprint ? { entryFingerprint: entry.reviewFingerprint } : {}),
   }))
   return { priceWork, expenses }
 }
@@ -261,7 +265,13 @@ function makeOverride(input: WeeklyReportOverrideInput, prepared?: ReturnType<ty
 
 function reapplyReviews(existing: WeeklyReportOverride, input: WeeklyReportOverrideInput): WeeklyReportOverride {
   const managerHasSigned = Boolean(input.draft.managerSignedAt)
-  const money = moneyLines(input.draft, managerHasSigned)
+  // Rulebook 1.54.0 §8: while price work or expenses differ from what was counter-signed, the signed snapshot keeps its
+  // signed money rows — a reviewer's routine save never slips a new or changed entry into it; only the counter-signature
+  // again (`rebuildSnapshot`) takes the live entries.
+  const extras = draftExtrasChanges(input.draft, userTimesheetSelfSigned(input.user, input.users ?? []))
+  const money = extras.snapshotChanged
+    ? { priceWork: existing.priceWork, expenses: existing.expenses }
+    : moneyLines(input.draft, managerHasSigned)
   const viewerName = personName(input.viewer)
   const existingIds = new Set(existing.lines.map((line) => line.id.toLowerCase()))
   // 1.46.0 (reviews of #324): a signed line is never re-priced by an Edit hours review that is stale against the sheet

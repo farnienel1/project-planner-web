@@ -1335,6 +1335,8 @@ export const NOTIFICATION_RELATED_ID: Readonly<Record<string, NotificationRelate
   holiday_booked_for_you: 'holidayBooking',
   timesheet_pending_manager_signoff: 'none',
   timesheet_signed_by_manager: 'none',
+  // 1.54.0: identified by deepLinkUserId + dayKey (the pay run's first day), like the other timesheet notices.
+  timesheet_bookings_changed: 'none',
   line_manager_peer_update: 'holidayBookingOrNone',
   timesheet_submission_reminder: 'paymentDayKey',
   material_order_placed: 'job',

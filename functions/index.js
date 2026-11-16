@@ -49,6 +49,7 @@ const { consumeRateLimit } = require('./email/rateLimit')
 const { createAdminRequestDedupe } = require('./email/requestDedupe')
 const { FieldPath, FieldValue } = require('firebase-admin/firestore')
 const { createAuthClaimsSync, createAdminAuthClaimsStore } = require('./authClaims')
+const { createTimesheetBookingNotice, createAdminTimesheetNoticeStore } = require('./timesheetBookingNotice')
 
 initializeApp()
 
@@ -369,3 +370,50 @@ exports.authClaimsOnOrganizationWrite = onDocumentWritten(
     if (changed.length > 0) logger.info('auth claims updated', { orgId: event.params.orgId, changed, source: 'organization' })
   }
 )
+
+/**
+ * Rulebook 1.54.0 §8 / §13 (owner decision 16 Nov): "Your signed timesheet has changed" — when a labour or manager site
+ * booking write reopens a person's signed, not-exported timesheet (`timesheetBookingChangeNotice`), the person gets one
+ * inbox row (and, through `sendDevicePushOnNotificationCreate`, a push) per sheet per signature. Written here because the
+ * booking's editor may not be able to read the person's timesheet. `timesheetBookingNotice.js` holds the reads.
+ */
+let timesheetNotice = null
+function timesheetBookingNoticeHandler() {
+  if (timesheetNotice) return timesheetNotice
+  timesheetNotice = createTimesheetBookingNotice({
+    store: createAdminTimesheetNoticeStore(getFirestore()),
+    canonical,
+    logger,
+    serverTimestamp: () => FieldValue.serverTimestamp(),
+  })
+  return timesheetNotice
+}
+
+for (const [exportName, collection] of [
+  ['timesheetBookingsChangedNotice', 'bookings'],
+  ['timesheetManagerBookingsChangedNotice', 'managerSiteBookings'],
+]) {
+  exports[exportName] = onDocumentWritten(
+    { document: `organizations/{orgId}/${collection}/{bookingId}`, region: 'us-central1' },
+    async (event) => {
+      const before = eventDocData(event.data && event.data.before)
+      const after = eventDocData(event.data && event.data.after)
+      try {
+        await timesheetBookingNoticeHandler().handle({
+          orgId: event.params.orgId,
+          collection,
+          bookingId: event.params.bookingId,
+          before,
+          after,
+        })
+      } catch (error) {
+        logger.error('timesheet bookings changed notice failed', {
+          orgId: event.params.orgId,
+          collection,
+          bookingId: event.params.bookingId,
+          message: (error && error.message) || String(error),
+        })
+      }
+    }
+  )
+}

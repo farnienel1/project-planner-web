@@ -220,7 +220,7 @@ test('1.47.0 web: operativeSignedBookings round-trips through storage; an older 
   assert.equal(draftFromFirestoreMap({ operativeSignedAt: new Date() }).operativeSignedBookings, null)
 })
 
-test('1.47.0 web (review #325 blocker 1): switching Office off in schedule options does not reopen; deleting it does', () => {
+test('1.47.0 / 1.54.0 web (review #325 blocker 1): switching Office off in schedule options does not reopen; deleting it does', () => {
   const office = {
     id: 'm1',
     userId: 'u1',
@@ -235,7 +235,8 @@ test('1.47.0 web (review #325 blocker 1): switching Office off in schedule optio
   const sheet = signedSheet([booking()], [office])
   assert.ok(sheet.operativeSignedBookings?.some((row) => row.collection === 'managerSiteBookings'))
   const officeOff = linesFor([booking()], [office], { scheduleOptions: { ...DEFAULT_MY_SCHEDULE, showOffice: false } })
-  assert.equal(officeOff.some((line) => line.id.startsWith('mgr-')), false, 'the collector drops the office booking')
+  // 1.54.0 (owner decision 16 Nov): a switched-off option no longer takes the booking off the sheet — it is paid.
+  assert.equal(officeOff.some((line) => line.id.startsWith('mgr-')), true, 'the collector keeps the office booking')
   assert.equal(changes(sheet, [booking()], [office], officeOff).changed, false)
   // A real delete (the document is gone) reopens.
   const deleted = changes(sheet, [booking()], [], linesFor([booking()], []))
@@ -290,5 +291,45 @@ test('1.47.0 web (third review 1): the pending server-time flag clears on the dr
   assert.equal(clearSignedBookingsPending(newer, signedAt).operativeSignedBookingsAtPending, true)
   // Nothing to clear: the same object back.
   assert.equal(clearSignedBookingsPending(edited, null), edited)
+})
+
+test('1.54.0 web: an expense added after the counter-signature reopens the sheet; a reviewer save keeps the signed money rows', () => {
+  const sheet = signedSheet([booking()])
+  assert.equal(changes(sheet, [booking()]).changed, false)
+  const expense = {
+    id: 'E1',
+    title: 'Parking',
+    details: '',
+    jobNumber: 'J-1',
+    date: day,
+    amount: 12,
+    receiptName: null,
+    evidence: [],
+    reviewFingerprint: 'fp-e1',
+    managerDecision: 'approved' as const,
+    managerRevisedAmount: null,
+  }
+  const withExpense: TimesheetDraft = { ...sheet, expenseEntries: [expense] }
+  const reopened = changes(withExpense, [booking()])
+  assert.equal(reopened.reopened, true)
+  assert.equal(reopened.waitingFor, 'person')
+  assert.equal(signedTimesheetActions(reopened).mayExport, false)
+  const base = { ...collectorBase, user: person, users, weekStart: period.start, weekEnd: period.end, bookings: [booking()], managerSiteBookings: [] }
+  // The line manager's routine save never slips the new expense into the signed snapshot.
+  const saved = applyWeeklyReportOverride({ ...base, draft: withExpense })
+  assert.equal(saved.weeklyReportOverride?.expenses.length, 0)
+  // Counter-signed again (rebuildSnapshot): the snapshot takes it, with its fingerprint.
+  const rebuilt = applyWeeklyReportOverride({ ...base, draft: withExpense, rebuildSnapshot: true })
+  assert.equal(rebuilt.weeklyReportOverride?.expenses[0]?.entryFingerprint, 'fp-e1')
+  // The stored shape round-trips the record and the fingerprint.
+  const stored = draftFromFirestoreMap(
+    draftToFirestoreMap({
+      ...rebuilt,
+      operativeSignedExtras: [{ kind: 'expense', entryId: 'E1', fingerprint: 'fp-e1' }],
+      operativeSignedExtrasSignedAt: new Date('2026-09-19T09:00:00Z'),
+    }) as Record<string, unknown>
+  )
+  assert.deepEqual(stored.operativeSignedExtras, [{ kind: 'expense', entryId: 'E1', fingerprint: 'fp-e1' }])
+  assert.equal(stored.weeklyReportOverride?.expenses[0]?.entryFingerprint, 'fp-e1')
 })
 

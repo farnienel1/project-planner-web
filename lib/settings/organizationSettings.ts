@@ -179,31 +179,6 @@ export function asSettingsRecord(value: unknown): Record<string, unknown> | unde
   return value as Record<string, unknown>
 }
 
-/** iOS MyScheduleOptions.includesManagerScheduleLocation — project/small work always count. */
-export function includesManagerScheduleLocation(
-  options: MyScheduleOptions,
-  booking: { locationType: string; customLocationName?: string }
-): boolean {
-  switch (booking.locationType) {
-    case 'project':
-    case 'small_work':
-      return true
-    case 'office':
-      return options.showOffice
-    case 'working_from_home':
-      return options.showWorkingFromHome
-    case 'site_survey':
-      return options.showSiteSurvey
-    case 'custom': {
-      const name = booking.customLocationName?.trim() || ''
-      if (!name) return false
-      return options.customItems.some((item) => item.trim().toLowerCase() === name.toLowerCase())
-    }
-    default:
-      return true
-  }
-}
-
 /** Today's organisation-zone day key for an organisation document. */
 export function organizationTodayKey(data: Record<string, unknown> | null | undefined, now: Date = new Date()): string {
   const country = typeof data?.countryCode === 'string' ? data.countryCode : null

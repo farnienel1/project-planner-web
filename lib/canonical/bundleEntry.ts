@@ -1436,6 +1436,7 @@ export {
   annualLeaveAdjustmentDaysForYear,
   annualLeaveBalanceNotes,
   annualLeaveEmploymentInput,
+  annualLeaveReportYearMonths,
   balanceHasAllowance,
   leaveAllowanceForWindow,
   type AnnualLeaveBalanceNotes,
@@ -1668,3 +1669,34 @@ export type {
 // Rulebook 1.51.0 §4.3: Settings → Working hours "Working hours history" (read-only, admins).
 export { payrollPolicyHistoryRows } from './payrollPolicyHistoryRows'
 export type { PayrollPolicyHistoryRow } from './payrollPolicyHistoryRows'
+
+// Rulebook 1.54.0 §8: price work and expenses after the line manager signs reopen the sheet (until exported); one
+// changed-since-signed answer for bookings and extras.
+export {
+  SIGNED_TIMESHEET_EXTRAS_CHANGED_COUNTERSIGN_MESSAGE,
+  SIGNED_TIMESHEET_EXTRAS_CHANGED_MESSAGE,
+  SIGNED_TIMESHEET_EXTRAS_CHANGED_REVIEWER_MESSAGE,
+  SIGNED_TIMESHEET_EXTRAS_REOPEN_CONFIRM_MESSAGE,
+  signedTimesheetChanges,
+  signedTimesheetExtrasBaselineFields,
+  signedTimesheetExtrasChanges,
+  signedTimesheetExtrasRecord,
+} from './timesheetExtrasChanges'
+export { TIMESHEET_EXPORTED_EXTRAS_MESSAGE } from './timesheetSnapshot'
+// Rulebook 1.54.0 §8 / §13: "Your signed timesheet has changed" (written by the server).
+export {
+  TIMESHEET_BOOKINGS_CHANGED_NOTICE_MESSAGE,
+  TIMESHEET_BOOKINGS_CHANGED_NOTICE_TITLE,
+  TIMESHEET_BOOKINGS_CHANGED_NOTICE_TYPE,
+  timesheetBookingChangeNotice,
+  timesheetBookingWriteMatters,
+  timesheetBookingsChangedNoticeId,
+  timesheetBookingsChangedRecipients,
+} from './timesheetBookingNotice'
+// Rulebook 1.54.0 §8 / §11: Settings → Data health "Timesheets half signed".
+export {
+  TIMESHEETS_HALF_SIGNED_HEADING,
+  TIMESHEETS_HALF_SIGNED_HELP,
+  TIMESHEETS_HALF_SIGNED_NONE,
+  timesheetsHalfSigned,
+} from './timesheetHalfSigned'

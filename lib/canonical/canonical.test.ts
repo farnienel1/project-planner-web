@@ -14397,17 +14397,20 @@ test('1.43.0 timesheetSnapshotNeedsRebuild: only a snapshot frozen empty while i
   assert.equal(R112.timesheetSnapshotNeedsRebuild(null, [before]), false)
 })
 
-test('1.43.0 timesheetOwnerCanAddExtras: no price work or expenses once the line manager has signed', () => {
+test('1.54.0 timesheetOwnerCanAddExtras: open until exported (replaces the 1.43.0 block at the line manager\'s signature)', () => {
   const signed = { managerSignedAt: new Date('2026-11-10T09:00:00Z') }
-  assert.deepEqual(R112.timesheetOwnerCanAddExtras(signed), { allowed: false, message: R112.TIMESHEET_SIGNED_OFF_EXTRAS_MESSAGE })
-  assert.equal(R112.TIMESHEET_SIGNED_OFF_EXTRAS_MESSAGE, 'This timesheet is signed off — add it to your next timesheet.')
-  // The older approval field counts the same (the security rules test both).
-  assert.equal(R112.timesheetOwnerCanAddExtras({ approvedAt: 1762765200000 }).allowed, false)
-  // Not signed by the line manager yet (or only by the person): still open.
+  // Signed by the line manager: still open — the change reopens the sheet (`signedTimesheetExtrasChanges`).
+  assert.deepEqual(R112.timesheetOwnerCanAddExtras(signed), { allowed: true, message: null })
+  assert.equal(R112.timesheetOwnerCanAddExtras({ approvedAt: 1762765200000 }).allowed, true)
   assert.equal(R112.timesheetOwnerCanAddExtras({ managerSignedAt: null }).allowed, true)
   assert.equal(R112.timesheetOwnerCanAddExtras(null).allowed, true)
-  // A self-signed sheet stays open (the person signs it again).
-  assert.equal(R112.timesheetOwnerCanAddExtras(signed, { selfSigned: true }).allowed, true)
+  // Exported: closed, with the 1.54.0 wording (self-signed or not).
+  const exported = { ...signed, exportedAt: new Date('2026-11-11T09:00:00Z') }
+  assert.deepEqual(R112.timesheetOwnerCanAddExtras(exported), { allowed: false, message: R112.TIMESHEET_EXPORTED_EXTRAS_MESSAGE })
+  assert.equal(R112.TIMESHEET_EXPORTED_EXTRAS_MESSAGE, 'This timesheet has been exported — add it to your next timesheet.')
+  assert.equal(R112.timesheetOwnerCanAddExtras(exported, { selfSigned: true }).allowed, false)
+  // The older wording stays exported for older app builds.
+  assert.equal(R112.TIMESHEET_SIGNED_OFF_EXTRAS_MESSAGE, 'This timesheet is signed off — add it to your next timesheet.')
 })
 
 test('1.43.0 subcontractorScheduleCell: only the working window, never paid hours or an overtime split', () => {
@@ -14695,15 +14698,16 @@ test('1.45.0 timesheetOwnerEntriesError: new/edited expenses need evidence, pric
   assert.deepEqual(r145.timesheetOwnerTouchedEntries([oldExpense], [oldExpense, fresh], 'expense').map((row) => row.id), ['E-NEW'])
 })
 
-test('1.45.0 canEditTimesheetEntry: the owner only, until the line manager signs (a self-signed sheet stays open)', () => {
+test('1.45.0 / 1.54.0 canEditTimesheetEntry: the owner only, until the sheet is exported', () => {
   assert.deepEqual(r145.canEditTimesheetEntry({}, { viewerIsOwner: true }), { allowed: true, message: null })
   assert.deepEqual(r145.canEditTimesheetEntry({}, { viewerIsOwner: false }), { allowed: false, message: null })
-  assert.deepEqual(r145.canEditTimesheetEntry({ managerSignedAt: '2026-11-12T10:00:00Z' }, { viewerIsOwner: true }), {
+  // 1.54.0: the line manager's signature no longer closes it (the edit reopens the sheet for signing).
+  assert.deepEqual(r145.canEditTimesheetEntry({ managerSignedAt: '2026-11-12T10:00:00Z' }, { viewerIsOwner: true }), { allowed: true, message: null })
+  assert.equal(r145.canEditTimesheetEntry({ approvedAt: 1 }, { viewerIsOwner: true }).allowed, true)
+  assert.deepEqual(r145.canEditTimesheetEntry({ managerSignedAt: '2026-11-12T10:00:00Z', exportedAt: '2026-11-13T10:00:00Z' }, { viewerIsOwner: true }), {
     allowed: false,
-    message: r145.TIMESHEET_SIGNED_OFF_EXTRAS_MESSAGE,
+    message: r145.TIMESHEET_EXPORTED_EXTRAS_MESSAGE,
   })
-  assert.equal(r145.canEditTimesheetEntry({ approvedAt: 1 }, { viewerIsOwner: true }).allowed, false)
-  assert.equal(r145.canEditTimesheetEntry({ managerSignedAt: '2026-11-12T10:00:00Z' }, { viewerIsOwner: true, selfSigned: true }).allowed, true)
 })
 
 test('1.45.0 timesheetEntryEvidenceToDelete: only files gone from every entry and uploaded by the viewer within the undo window', () => {

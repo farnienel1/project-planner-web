@@ -171,6 +171,8 @@ function mapMoneyLine(row: Record<string, unknown>): WeeklyReportMoneyLine | nul
     date: parseFirestoreDate(row.date) || new Date(),
     amount: finiteNumber(row.amount),
     decision: asDecision(row.decision),
+    // Rulebook 1.54.0: the entry's fingerprint at signing (missing on rows written before 1.54.0).
+    ...(typeof row.entryFingerprint === 'string' && row.entryFingerprint ? { entryFingerprint: row.entryFingerprint } : {}),
   }
 }
 
@@ -237,6 +239,7 @@ export function weeklyReportOverrideToFirestore(override: WeeklyReportOverride):
     date: Timestamp.fromDate(line.date),
     amount: line.amount,
     decision: line.decision,
+    ...(line.entryFingerprint ? { entryFingerprint: line.entryFingerprint } : {}),
   })
   return {
     approvedAt: Timestamp.fromDate(override.approvedAt),
@@ -308,6 +311,21 @@ function mapReviews(raw: unknown): Record<string, TimesheetPayrollLineReview> {
   return output
 }
 
+/** Rulebook 1.54.0 §8: `operativeSignedExtras` as stored (null when missing or not a list; bad rows dropped). */
+function parseOperativeSignedExtras(raw: unknown): TimesheetDraft['operativeSignedExtras'] {
+  if (!Array.isArray(raw)) return null
+  return raw
+    .filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === 'object')
+    .map((row) => ({
+      kind: row.kind === 'priceWork' ? ('priceWork' as const) : ('expense' as const),
+      entryId: typeof row.entryId === 'string' ? row.entryId : '',
+      fingerprint: typeof row.fingerprint === 'string' ? row.fingerprint : '',
+      validKind: row.kind === 'priceWork' || row.kind === 'expense',
+    }))
+    .filter((row) => row.entryId !== '' && row.validKind)
+    .map(({ kind, entryId, fingerprint }) => ({ kind, entryId, fingerprint }))
+}
+
 /** Rulebook 1.47.0 §8: `operativeSignedBookings` as stored (null when missing or not a list; bad rows dropped). */
 function parseOperativeSignedBookings(raw: unknown): TimesheetDraft['operativeSignedBookings'] {
   if (!Array.isArray(raw)) return null
@@ -341,6 +359,9 @@ export function draftFromFirestoreMap(
     operativeSignedBookings: parseOperativeSignedBookings(data.operativeSignedBookings),
     operativeSignedBookingsAt: parseSharedFirestoreDate(data.operativeSignedBookingsAt) ?? null,
     operativeSignedBookingsSignedAt: parseSharedFirestoreDate(data.operativeSignedBookingsSignedAt) ?? null,
+    // Rulebook 1.54.0 §8: the price work and expenses the person signed (missing before 1.54.0).
+    operativeSignedExtras: parseOperativeSignedExtras(data.operativeSignedExtras),
+    operativeSignedExtrasSignedAt: parseSharedFirestoreDate(data.operativeSignedExtrasSignedAt) ?? null,
     managerSignedAt: status.managerSignedAtMs ? new Date(status.managerSignedAtMs) : null,
     managerSignedByName: status.managerSignedByName || null,
     managerSignedByUserId: status.managerSignedByUserId || null,
@@ -379,6 +400,17 @@ export function draftToFirestoreMap(draft: TimesheetDraft): Record<string, unkno
       ? { operativeSignedBookingsSignedAt: Timestamp.fromDate(draft.operativeSignedBookingsSignedAt) }
       : draft.operativeSignedBookingsSignedAt === null
         ? { operativeSignedBookingsSignedAt: null }
+        : {}),
+    // Rulebook 1.54.0: written only when the draft has it, so a sheet signed before 1.54.0 keeps its stored shape.
+    ...(Array.isArray(draft.operativeSignedExtras)
+      ? { operativeSignedExtras: draft.operativeSignedExtras.map((row) => ({ ...row })) }
+      : draft.operativeSignedExtras === null
+        ? { operativeSignedExtras: null }
+        : {}),
+    ...(draft.operativeSignedExtrasSignedAt instanceof Date
+      ? { operativeSignedExtrasSignedAt: Timestamp.fromDate(draft.operativeSignedExtrasSignedAt) }
+      : draft.operativeSignedExtrasSignedAt === null
+        ? { operativeSignedExtrasSignedAt: null }
         : {}),
     managerSignedAt: draft.managerSignedAt ? Timestamp.fromDate(draft.managerSignedAt) : null,
     managerSignedByName: draft.managerSignedByName || '',

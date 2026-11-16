@@ -402,6 +402,16 @@ function balanceYearMonths(input: AnnualLeaveYearInput): { startMonth: number; e
   }
 }
 
+/**
+ * Rulebook 1.54.0 §9 (owner decision 16 Nov, web Annual leave report parity with iOS): the leave-year months the
+ * Annual leave report (`leaveReportRows` / `leaveReportYears`, pass its `startMonth`) uses — exactly the year
+ * `annualLeaveBalance` counts on the same page: the person's own leave year (`startMonth` / `endMonth`) while they have
+ * an allowance on `onDayKey`, else the organisation's (`orgStartMonth` / `orgEndMonth`). Never a screen's own pick.
+ */
+export function annualLeaveReportYearMonths(input: AnnualLeaveYearInput): { startMonth: number; endMonth: number } {
+  return balanceYearMonths(input)
+}
+
 /** The fields of `AnnualLeaveBalanceInput` that decide which leave year a day is in. */
 export type AnnualLeaveYearInput = Pick<
   AnnualLeaveBalanceInput,

@@ -5,11 +5,16 @@
  */
 import {
   bookingIdsForAccount,
+  signedTimesheetChanges,
+  signedTimesheetExtrasChanges,
   signedTimesheetBookingChanges,
   signedTimesheetBookingRecord,
   type SignedTimesheetBooking,
   type SignedTimesheetBookingChanges,
   type SignedTimesheetBookingDocument,
+  type SignedTimesheetChanges,
+  type SignedTimesheetExtrasChanges,
+  type SignedTimesheetExtrasSheet,
   type SignedTimesheetLine,
   type SignedTimesheetSheet,
 } from '@/lib/canonical'
@@ -38,6 +43,29 @@ export function signedTimesheetSheetFromDraft(draft: TimesheetDraft): SignedTime
         }
       : null,
   }
+}
+
+/** Rulebook 1.54.0 §8: the draft in the extras rule's sheet shape (records, signatures, the snapshot's money rows). */
+export function signedTimesheetExtrasSheetFromDraft(draft: TimesheetDraft): SignedTimesheetExtrasSheet {
+  return {
+    operativeSignedAt: draft.operativeSignedAt ?? null,
+    operativeSignedExtras: draft.operativeSignedExtras ?? null,
+    operativeSignedExtrasSignedAt: draft.operativeSignedExtrasSignedAt ?? null,
+    managerSignedAt: draft.managerSignedAt ?? null,
+    exportedAt: draft.exportedAt ?? null,
+    weeklyReportOverride: draft.weeklyReportOverride
+      ? { priceWork: draft.weeklyReportOverride.priceWork, expenses: draft.weeklyReportOverride.expenses }
+      : null,
+  }
+}
+
+/** Rulebook 1.54.0 §8: `signedTimesheetExtrasChanges` for one web draft (its entries as loaded, with their fingerprints). */
+export function draftExtrasChanges(draft: TimesheetDraft, selfSigned: boolean): SignedTimesheetExtrasChanges {
+  return signedTimesheetExtrasChanges({
+    sheet: signedTimesheetExtrasSheetFromDraft(draft),
+    entries: { priceWorkEntries: draft.priceWorkEntries, expenseEntries: draft.expenseEntries },
+    selfSigned,
+  })
 }
 
 /** The collector's lines in the rulebook's line shape. */
@@ -141,8 +169,9 @@ export function draftBookingChanges(input: {
   /** The period's bookings have arrived from the server (`timesheetSnapshotReady`); nothing reads as changed before. */
   liveLoaded: boolean
   selfSigned: boolean
-}): SignedTimesheetBookingChanges {
-  return signedTimesheetBookingChanges({
+}): SignedTimesheetChanges {
+  // Rulebook 1.54.0: one answer for bookings (1.47.0) and price work / expenses (`signedTimesheetChanges`).
+  const bookingChange = signedTimesheetBookingChanges({
     sheet: signedTimesheetSheetFromDraft(input.draft),
     liveLines: signedTimesheetLiveLines(input.lines),
     liveBookings:
@@ -153,6 +182,7 @@ export function draftBookingChanges(input: {
     liveLoaded: input.liveLoaded,
     selfSigned: input.selfSigned,
   })
+  return signedTimesheetChanges(bookingChange, draftExtrasChanges(input.draft, input.selfSigned))
 }
 
 /**
@@ -187,6 +217,19 @@ export function bookingCoverageCoversDay(
   return Boolean(coverage.fromDayKey && coverage.fromDayKey <= startDayKey)
 }
 
+const EMPTY_BOOKING_CHANGE: SignedTimesheetBookingChanges = {
+  changed: false,
+  exported: false,
+  reopened: false,
+  waitingFor: null,
+  basis: 'none',
+  changedBookingIds: [],
+  addedBookingIds: [],
+  removedBookingIds: [],
+  message: null,
+  reviewerMessage: null,
+}
+
 const objectIds = new WeakMap<object, number>()
 let nextObjectId = 1
 /** A stable number per object (or 0 for none), so a cache key changes whenever an input object is replaced. */
@@ -212,9 +255,13 @@ export function periodBookingChanges(
   draft: TimesheetDraft | null | undefined,
   period: { start: Date; end: Date }
 ): SignedTimesheetBookingChanges | null {
-  if (!draft || (!draft.operativeSignedAt && !draft.weeklyReportOverride)) return null
+  if (!draft || (!draft.operativeSignedAt && !draft.weeklyReportOverride && !draft.managerSignedAt)) return null
   const { users, liveLoaded, coversPeriod, ...collector } = catalogue
-  if (!liveLoaded || (coversPeriod && !coversPeriod(period))) return null
+  if (!liveLoaded || (coversPeriod && !coversPeriod(period))) {
+    // Rulebook 1.54.0: price work and expenses need no bookings — their change still reopens the sheet.
+    const extras = draftExtrasChanges(draft, userTimesheetSelfSigned(user, [...users]))
+    return extras.changed ? signedTimesheetChanges(EMPTY_BOOKING_CHANGE, extras) : null
+  }
   // Memoised per loaded bookings, manager site bookings and draft (each a new object when it changes).
   // Second review nit: every input that decides the lines (schedule options, rate history, working hours, operatives,
   // roster, projects) is part of the key by object identity.

@@ -131,5 +131,6 @@ test('post-sign extras copy distinguishes line-manager counter-sign', () => {
   // 1.28.0: Timesheet self-sign off, so their line manager counter-signs.
   const operative = user({ id: 'op', assignedManagerUserIds: ['mgr'], permissions: { ...admin.permissions, timesheetSelfSign: false } })
   const countersigned = { ...signed, managerSignedAt: new Date() }
-  assert.match(postSignExtraWarningCopy(operative, countersigned), /yourself and your line manager/)
+  // 1.54.0: the rulebook's words (`SIGNED_TIMESHEET_EXTRAS_REOPEN_CONFIRM_MESSAGE`).
+  assert.match(postSignExtraWarningCopy(operative, countersigned), /you sign it again, then your line manager counter-signs it again/)
 })

@@ -1,7 +1,7 @@
 /**
  * iOS parity: Models/TimesheetDraftModels.swift
  */
-import type { PayeClaimEvidence, SignedTimesheetBooking, TimesheetEntryReview } from '@/lib/canonical'
+import type { PayeClaimEvidence, SignedTimesheetBooking, SignedTimesheetExtra, TimesheetEntryReview } from '@/lib/canonical'
 
 export type TimesheetManagerDecision = 'pending' | 'approved' | 'declined' | 'edited'
 
@@ -101,6 +101,11 @@ export type WeeklyReportMoneyLine = {
   date: Date
   amount: number
   decision: TimesheetManagerDecision
+  /**
+   * Rulebook 1.54.0 §8: the entry's `reviewFingerprint` when the snapshot was built, so a later change to the entry is
+   * seen (`signedTimesheetExtrasChanges`). Missing on rows written before 1.54.0.
+   */
+  entryFingerprint?: string
 }
 
 /**
@@ -139,6 +144,14 @@ export type TimesheetDraft = {
   operativeSignedBookingsSignedAt?: Date | null
   /** Local only: write `operativeSignedBookingsAt` as the server time on the next save. Never stored. */
   operativeSignedBookingsAtPending?: boolean
+  /**
+   * Rulebook 1.54.0 §8: the price work and expenses the person signed (`signedTimesheetExtrasRecord`), written with
+   * every operative signature — or, the first time they change an extra after their line manager signed, the entries
+   * as stored before the change (`signedTimesheetExtrasBaselineFields`). Missing before 1.54.0.
+   */
+  operativeSignedExtras?: SignedTimesheetExtra[] | null
+  /** The `operativeSignedAt` the extras record belongs to (the same value). */
+  operativeSignedExtrasSignedAt?: Date | null
   managerSignedAt?: Date | null
   managerSignedByName?: string | null
   managerSignedByUserId?: string | null

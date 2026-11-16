@@ -38,10 +38,16 @@ import {
   draftBookingChanges,
   draftForFigures,
   draftSignedBookingRecord,
+  signedTimesheetExtrasSheetFromDraft,
   timesheetPersonIds,
 } from '@/lib/timesheets/timesheetBookingChanges'
 import { BookingsChangedWarning } from '@/components/timesheets/BookingsChangedWarning'
-import { signedTimesheetActions, SIGNED_TIMESHEET_CHANGED_MESSAGE } from '@/lib/canonical'
+import {
+  signedTimesheetActions,
+  signedTimesheetExtrasBaselineFields,
+  signedTimesheetExtrasRecord,
+  SIGNED_TIMESHEET_CHANGED_MESSAGE,
+} from '@/lib/canonical'
 import { staffAccountRole, userTimesheetSubjectIds } from '@/lib/permissions'
 import {
   SENSITIVE_EXPORT_OPTION_LABEL,
@@ -441,8 +447,25 @@ export function TimesheetPeriodPage({
   const fullyApproved = isTimesheetFullyApproved(draft, subjectUser, users) && !bookingChange.reopened
   // 1.47.0: a reopened sheet's figures are the live bookings — its stale signed snapshot is never shown or invoiced.
   const figuresDraft = draftForFigures(draft, bookingChange)
-  // Rulebook 1.43.0 §8: the person adds price work or expenses only until their line manager signs (a self-signed
-  // sheet stays open; adding asks them to sign again).
+  // Rulebook 1.54.0 §8 (owner decision 16 Nov): the person adds, edits and deletes price work or expenses until the sheet
+  // is exported. After their line manager has signed, a change reopens the sheet (`signedTimesheetExtrasChanges`): they
+  // sign again, then the line manager counter-signs again. No stored signature is ever cleared for it.
+  const extrasReopen = !sheetSelfSigned && needsCounterSign && Boolean(draft.managerSignedAt) && !draft.exportedAt
+  const withExtrasBaseline = (next: TimesheetDraft): TimesheetDraft => {
+    if (!extrasReopen) return next
+    const baseline = signedTimesheetExtrasBaselineFields({
+      sheet: signedTimesheetExtrasSheetFromDraft(draft),
+      storedEntries: { priceWorkEntries: draft.priceWorkEntries, expenseEntries: draft.expenseEntries },
+      selfSigned: sheetSelfSigned,
+    })
+    if (!baseline) return next
+    const signedAt = baseline.operativeSignedExtrasSignedAt
+    return {
+      ...next,
+      operativeSignedExtras: baseline.operativeSignedExtras,
+      operativeSignedExtrasSignedAt: signedAt instanceof Date ? signedAt : draft.operativeSignedAt ?? null,
+    }
+  }
   const extrasAllowed = timesheetOwnerCanAddExtras(draft, { selfSigned: userTimesheetSelfSigned(subjectUser, users) })
   // Rulebook 1.45.0 §8 (`canEditTimesheetEntry`): the owner edits or deletes their own entries until the line manager signs.
   const entryAccess = canEditTimesheetEntry(draft, { viewerIsOwner: mode === 'mine', selfSigned: userTimesheetSelfSigned(subjectUser, users) })
@@ -651,7 +674,7 @@ export function TimesheetPeriodPage({
       setError(extrasAllowed.message)
       return
     }
-    if (fullyApproved) {
+    if (fullyApproved || extrasReopen) {
       setPendingExtraMode(kind)
       return
     }
@@ -665,7 +688,9 @@ export function TimesheetPeriodPage({
    */
   const saveEntryChange = async (next: TimesheetDraft): Promise<boolean> => {
     const before = draft
-    const changed = fullyApproved ? clearSignatures(next) : next
+    // 1.54.0: after the line manager signed, keep every signature and record what was signed (the sheet reopens);
+    // a self-signed sheet keeps its own flow (the person signs it again).
+    const changed = extrasReopen ? withExtrasBaseline(next) : fullyApproved ? clearSignatures(next) : next
     try {
       await persist(changed)
     } catch (err: unknown) {
@@ -685,7 +710,7 @@ export function TimesheetPeriodPage({
       setError(entryAccess.message)
       return
     }
-    if (fullyApproved && !window.confirm(postSignExtraWarningCopy(subjectUser, draft, users))) return
+    if ((fullyApproved || extrasReopen) && !window.confirm(postSignExtraWarningCopy(subjectUser, draft, users))) return
     setEditingEntryId(id)
     setExtraMode(kind)
   }
@@ -695,7 +720,7 @@ export function TimesheetPeriodPage({
       setError(entryAccess.message)
       return
     }
-    const prompt = fullyApproved
+    const prompt = fullyApproved || extrasReopen
       ? `${TIMESHEET_ENTRY_DELETE_CONFIRM_MESSAGE}\n\n${postSignExtraWarningCopy(subjectUser, draft, users)}`
       : TIMESHEET_ENTRY_DELETE_CONFIRM_MESSAGE
     if (!window.confirm(prompt)) return
@@ -712,6 +737,12 @@ export function TimesheetPeriodPage({
     if (!extrasAllowed.allowed) {
       setPendingExtraMode(null)
       setError(extrasAllowed.message)
+      return
+    }
+    if (extrasReopen) {
+      // 1.54.0: nothing is saved yet; the entry's own save keeps the signatures and records what was signed.
+      setPendingExtraMode(null)
+      setExtraMode(kind)
       return
     }
     try {
@@ -854,6 +885,9 @@ export function TimesheetPeriodPage({
           operativeSignedBookingsAt: null,
           operativeSignedBookingsAtPending: true,
           operativeSignedBookingsSignedAt: signedAt,
+          // Rulebook 1.54.0 §8: the price work and expenses signed, so a later change reopens the sheet.
+          operativeSignedExtras: signedTimesheetExtrasRecord({ priceWorkEntries: draft.priceWorkEntries, expenseEntries: draft.expenseEntries }),
+          operativeSignedExtrasSignedAt: signedAt,
         },
         subjectUser,
         users
@@ -1432,7 +1466,7 @@ export function TimesheetPeriodPage({
 
               {waitingForPerson ? (
                 <Note tone="amber" icon={<BookingsChangedWarning />}>
-                  {SIGNED_TIMESHEET_CHANGED_MESSAGE}
+                  {bookingChange.message ?? SIGNED_TIMESHEET_CHANGED_MESSAGE}
                 </Note>
               ) : canCounterSignAgain ? (
                 <Note tone="amber">Signed again — waiting for your line manager to counter-sign the new figures.</Note>
@@ -1600,7 +1634,7 @@ export function TimesheetPeriodPage({
               if (!ok) return false
             } else {
               try {
-                await persist(next)
+                await persist(withExtrasBaseline(next))
               } catch (err: unknown) {
                 setError(err instanceof Error ? err.message : 'Could not save the timesheet')
                 return false

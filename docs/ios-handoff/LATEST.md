@@ -1,6 +1,6 @@
-# iOS follow-on — rulebook 1.53.0
+# iOS follow-on — rulebook 1.54.0
 
-Generated 2026-11-15 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
+Generated 2026-11-16 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
 
 ```
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.53.0 → 1.53.0
-Packed hash: 886912f48ae0df430399846731fb62d1262d120cda6804b4408a1c65984038b2
-Rulebook sha256: 5f2cf18d718bd5468675d24e129cb79589e33d65d1c24fa6a870112ad05c12a8
+Rulebook version: 1.53.0 → 1.54.0
+Packed hash: 9fddef81df679e4626081802eaaf57f4b02517a4fe998fc949dc63750ec575ca
+Rulebook sha256: 827bc8d96794f454fbe425d0c8b38be673830b4e372350e45ecc13d987c85cfe
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,73 +22,53 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 5a8a7e4e6f56b91cb18f71e79207782b8840fccf0b63b695826c47e18e59a32e
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: VARIATION_COST_MAX, VARIATION_COST_MESSAGE, VARIATION_EVIDENCE_MAX_FILES, VARIATION_EXPORT_COST_KEYS, VARIATION_EXPORT_LINE_COLUMNS, VARIATION_EXPORT_SUMMARY_COLUMNS, VARIATION_LINE_NAME_MESSAGE, VARIATION_MATERIAL_UNITS, VARIATION_ORDER_LOCKED_MESSAGE, VARIATION_PINNED_MESSAGE, VARIATION_QUANTITY_MAX, VARIATION_QUANTITY_MESSAGE, VARIATION_QUANTITY_MIN, VARIATION_RENUMBER_STALE_MESSAGE, VARIATION_STATUS_LABELS, VARIATION_TRACKER_ORDER_LOCK_FIELDS, canRenumberVariations, canSeeVariationCosts, normalizeVariationMaterialUnit, parseVariationCustomLines, parseVariationMaterialQuantity, parseVariationSubcontractorLines, variationCustomLineError, variationCustomLineFields, variationDateText, variationEvidenceAddWriteFields, variationEvidenceKeys, variationExportFileName, variationExportRows, variationExtraLineId, variationIsPinned, variationLabourCrew, variationLabourLineFields, variationLabourText, variationLineTotal, variationListTotals, variationMaterialLineFields, variationMaterialQuantity, variationMaterialQuantityError, variationMaterialQuantityText, variationPreviousNumbers, variationRenumberConflict, variationRenumberMissingRefusal, variationRenumberPlan, variationSubcontractorLineError, variationSubcontractorLineFields, variationTotals
+Exports added: SIGNED_TIMESHEET_EXTRAS_CHANGED_COUNTERSIGN_MESSAGE, SIGNED_TIMESHEET_EXTRAS_CHANGED_MESSAGE, SIGNED_TIMESHEET_EXTRAS_CHANGED_REVIEWER_MESSAGE, SIGNED_TIMESHEET_EXTRAS_REOPEN_CONFIRM_MESSAGE, TIMESHEETS_HALF_SIGNED_HEADING, TIMESHEETS_HALF_SIGNED_HELP, TIMESHEETS_HALF_SIGNED_NONE, TIMESHEET_BOOKINGS_CHANGED_NOTICE_MESSAGE, TIMESHEET_BOOKINGS_CHANGED_NOTICE_TITLE, TIMESHEET_BOOKINGS_CHANGED_NOTICE_TYPE, TIMESHEET_EXPORTED_EXTRAS_MESSAGE, annualLeaveReportYearMonths, signedTimesheetChanges, signedTimesheetExtrasBaselineFields, signedTimesheetExtrasChanges, signedTimesheetExtrasRecord, timesheetBookingChangeNotice, timesheetBookingWriteMatters, timesheetBookingsChangedNoticeId, timesheetBookingsChangedRecipients, timesheetsHalfSigned
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/cross-platform-contract.json, lib/canonical/crossPlatformContract.samples.ts, lib/canonical/index.ts, lib/canonical/recordsDocuments.ts, lib/canonical/variations.test.ts, lib/canonical/variations.ts, storage.rules
+Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/annualLeaveBalance.ts, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/notificationPreferences.ts, lib/canonical/notificationRecipients.ts, lib/canonical/recordsDocuments.ts, lib/canonical/timesheet154.test.ts, lib/canonical/timesheetBookingNotice.ts, lib/canonical/timesheetEntryEvidence.ts, lib/canonical/timesheetExtrasChanges.ts, lib/canonical/timesheetHalfSigned.ts, lib/canonical/timesheetSnapshot.ts
 Done when:
-- [ ] Packed hash in iOS equals 886912f48ae0df430399846731fb62d1262d120cda6804b4408a1c65984038b2
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 5f2cf18d718bd5468675d24e129cb79589e33d65d1c24fa6a870112ad05c12a8)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.53.0)
+- [ ] Packed hash in iOS equals 9fddef81df679e4626081802eaaf57f4b02517a4fe998fc949dc63750ec575ca
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 827bc8d96794f454fbe425d0c8b38be673830b4e372350e45ecc13d987c85cfe)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.54.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.53.0
+## What changed in 1.54.0
 
-- **Calculation sweep** (read-only sweeps 15 Nov; owner test 17 Nov). Rulebook: `weeklyReportPayRows` signed lines follow their own `isPayeDay` and the check line counts their days (A1); `timesheetTotals.hours` skips declined labour lines (A2); `LeavePerson.aliasUserIds` and labour bookings under a users id in `leaveCoverageRows` (A3); `clashPairKey` orders by lower-case id, new `legacyClashPairKey` and `clashDocumentsToRemove` (undo matches ignoring case and order), pair keys compare in either order (A4); `unverifiedOperativeRows` skips inactive rows (A5); new `homeUpNextRows` (A6, §23); new `dailyOverviewLeaveRows` (A7, §6); `WEEKLY_REPORT_DAYS_DISPLAY`, `WEEKLY_REPORT_DAYS_ROUNDED_NOTE`, `weeklyReportDaysText`, `weeklyReportPaySummaryNote`, `WeeklyReportPayRow.daysExact` (A9, owner confirmed); Daily Overview counts switched-off schedule locations (A10, owner confirmed, §6 statement); new `userLevelLabel` (Payrun Snapshot and weekly report Role). Review of #331: `timesheetTotals` per-booking declined parts, never below 0; a £0 unflagged signed line on a PAYE day is left out; `clashDocumentsToRemove` (undo by matching ignoring case and order); `bookingRequestClashIds` checks a new night shift against the next morning.
-- Web: Book labour and the Schedule wizard's "already booked" use `isSameBookingRequest` (A8); My Schedule self-booking clashes via `bookingRequestClashIds` with the day before and the policy state (B1); clash rows dated on the group day in the organisation zone (B2); My Schedule clock text from `slotInterval` / `bookingStandardDayOn` (B3); Schedule wizard "No unpaid break" toggle and lunch warning (B4); `managers` rows to `warningScopeFor` on Warnings and Home (B5); weekly report warnings with aliases and `isWarningActive` (B6); bank holidays on the weekly report, the leave calendars, Home and Daily Overview (B7); orphan manager site bookings priced (B8); organisation-zone dates and real-date sorting (B9); Role = `userLevelLabel` (B10); manager site bookings matched without case in the timesheet collector (B11); owner invoice `decided` once signed (B12); admin leave calendar waits for the leave-year settings (B13); Project Breakdown per person (B14); timesheet hours from `timesheetTotals.hours` (B15).
-- No security rules change.
+- **Switched-off schedule places are paid** (§4.8, §8, owner decision 16 Nov): the timesheet collector and the weekly report no longer leave out Office, Working from home, Site survey and custom-item bookings when that option is switched off (web `includesManagerScheduleLocation` removed). **Pay change** for unsigned timesheets and the weekly report; raise `minimumIosBuild`.
+- **Price work and expenses after the line manager signs, until exported** (§8, §16, owner decision 16 Nov, replaces 1.43.0's block): `timesheetOwnerCanAddExtras` / `canEditTimesheetEntry` refuse only an exported sheet (`TIMESHEET_EXPORTED_EXTRAS_MESSAGE`); the change reopens the sheet like a booking change — new `signedTimesheetExtrasChanges`, `signedTimesheetExtrasRecord`, `signedTimesheetExtrasBaselineFields`, `signedTimesheetChanges`, `SIGNED_TIMESHEET_EXTRAS_CHANGED_MESSAGE`, `SIGNED_TIMESHEET_EXTRAS_CHANGED_REVIEWER_MESSAGE`, `SIGNED_TIMESHEET_EXTRAS_CHANGED_COUNTERSIGN_MESSAGE`, `SIGNED_TIMESHEET_EXTRAS_REOPEN_CONFIRM_MESSAGE`; new owner fields `operativeSignedExtras` + `operativeSignedExtrasSignedAt`; snapshot money rows carry `entryFingerprint`. No signature is cleared. Security rules: the owner's extras write is refused from `exportedAt` (was `managerSignedAt` / `approvedAt`).
+- **"Your signed timesheet has changed"** (§8, §13, owner decision 16 Nov): new notice type `timesheet_bookings_changed` (push, toggle `timesheetSignOff`, opens My Timesheets), written by two new Cloud Functions on booking writes; `timesheetBookingChangeNotice`, `timesheetBookingWriteMatters`, `timesheetBookingsChangedRecipients`, `timesheetBookingsChangedNoticeId`, `TIMESHEET_BOOKINGS_CHANGED_NOTICE_*`. Replaces the 1.47.0 "no notification is sent".
+- **Annual leave report = the balance's leave year** (§9, owner decision 16 Nov, web Annual leave report parity with iOS; review of web PR #335): new `annualLeaveReportYearMonths` (the months `annualLeaveBalance` uses — the person's own leave year with an allowance, else the organisation's), passed to `leaveReportRows` / `leaveReportYears`; "Holiday Report" renamed "Annual leave report" in §9. iOS `HolidayReportView` must call it.
+- **Data health "Timesheets half signed"** (§8, owner decision 16 Nov, (a) + (c)): `timesheetsHalfSigned`, `TIMESHEETS_HALF_SIGNED_HEADING` / `_HELP` / `_NONE`. Read only.
 
-## iOS work for 1.53.0
+## iOS work for 1.54.0
 
-**Sync first.** 1.53.0 (calculation sweep, 15 Nov; owner test 17 Nov): fixes from the read-only sweeps of both apps. iOS calls the rules below through `CanonicalBusinessEngine` and deletes its own copies.
-- **Not changed:** no Firestore rules, index, Storage or Functions change; nothing migrated; `minimumIosBuild` not needed (the weekly report is built on the device; old clash keys are still read).
-- **Base:** web `origin/main` 1.52.0 (#330, variations, merged) + this PR. **Do the 1.52.0 hand-off first** (`docs/ios-handoff/v1.52.0.md`); this file covers 1.52 → 1.53 only. The 1.52 hand-off covers iOS variation maths: `VariationEditorSheet.swift:100,126,230`, `VariationModels.swift:144`, `VariationsListView.swift:171`). Line numbers below are from iOS `origin/main` at `1571142` (15 Nov); check them on your branch.
-- **Owner confirmed 15 Nov:** A9 (weekly report note "Days are rounded; Pay is worked out from the exact hours.") and A10 (Daily Overview still counts Office / WFH / Site survey / custom bookings when that option is switched off).
-- **Figures that change** (web, and iOS once it follows): A1 weekly report — a priced signed line on a day the person is PAYE now is paid (owner example £500.00 → £632.35; a £0 line with no PAYE flag stays out); B8 weekly report — a manager site booking whose job was deleted is paid, "Deleted job"; B11 timesheet — a manager site booking whose `userId` differs only in letter case is on the live timesheet (live pay and the unsigned invoice rise); B12 owner's invoice — `decided` once the line manager signed; B14 Project Breakdown per person; A2 / B15 declined labour lines count no hours (per booking, never below 0); weekly report Role words.
+**Sync first.** 1.54.0 (timesheet owner answers, 16 Nov). iOS calls the rules below through `CanonicalBusinessEngine` and keeps no copy of its own. Line numbers are from iOS `main` (shallow clone, 16 Nov); check them on your branch.
+- **Pay change — `minimumIosBuild` is raised before the web merge**: an older iPhone leaves switched-off schedule places out of pay and blocks extras after the line manager signs.
+- **Base:** web 1.53.0 (#331) + this PR. Do the 1.53.0 hand-off first (it already stops Daily Overview filtering by `scheduleOptions`).
 
 1. **Sync.** `WEB_REPO=<web worktree> bash scripts/sync-rulebook-from-web.sh`, then commit the mirrored files.
-2. **Overnight clashes when booking.** Copy the approach of `Core/ScheduleBookingConflictSupport.swift` (existing bookings of the booked day **and the day before**, `bookingRequestClashIds` under the policy state) in:
-   - `Views/BookLabourFlowView.swift:2153-2201` (`managerWouldClash`, `operativeWouldClash` use `ManagerScheduleInterval.bookingsOverlap` / `OperativeBookingInterval.bookingsOverlap` on the same day only);
-   - `Views/MyScheduleView.swift:1357-1360` (`wouldClashProbe`);
-   - `Core/ScheduleWeekGrid.swift:312-321`;
-   - `Views/ScheduleOperativeView.swift:1760-1766`.
-   A weekend Full day is that day's own window (`bookingStandardDayOn`), never `slotInterval(policy)`.
-3. **Business dates from the organisation zone, never `Calendar.current`.**
-   - `Views/WarningsDetailView.swift:1451-1457` (`IdentifiableDay` start of day);
-   - `Views/OrgSitesMapView.swift:13,128,138,192`;
-   - `Views/HomeUpNextSupport.swift:26` — **replace the whole matcher with `homeUpNextRows({ nowMs, timeZone, viewer: { id, email, formerUserIds, sameEmailUserIds }, roster, operatives, bookings: [{ id, personId: operativeId, dayKey, status, timeSlot, workStartTime, workEndTime }], managerSiteBookings: [{ id, personId: userId, dayKey, timeSlot, workStartTime, workEndTime }], policy: <working-hours state> })`**; draw `result.days` (day key → heading) and each row's `startText` / `timeRange`; add only titles. Today's bookings stay all day; Completed shows; ids match without case under every id.
-   - `Views/MyScheduleView.swift:2482-2488,2685-2695`: build times from wall-clock minutes in the organisation zone, so a clock-change day is right.
-4. **Warnings inputs.**
-   - Pass **all** operatives (not `.filter(\.isActive)`) in `Core/WarningsRefreshHelper.swift:487,590` and `Views/WeeklyReportView.swift:819` — the rules skip inactive people themselves (A5: `unverifiedOperativeRows` now takes `isActive` on operatives and people; pass it).
-   - Pass people one per email, with the same-email ids in `formerIds`; delete `orderedPeopleForUnbookedScript` (~1003-1050) and `shareCoverageAcrossEmail` (~893).
-   - Leave cover: each `LeavePerson` gets `aliasUserIds` (former + same-email ids) (A3).
-   - Date clash rows from the group's `dayKey` (organisation zone) and include the previous day in the bookings scanned (`Core/WarningsService.swift:555`, `Core/WarningsComputation.swift:500-503,577,616`).
-   - Pass the working-hours state, never `NSNull` (~1376).
-   - Clash keys (A4): `clashPairKey` now orders by lower-case id; approvals saved under the old order still count (`isClashApproved` / `isClashGroupApproved` / `isWarningActive`). Undo deletes by **matching ignoring case and order**: call `clashDocumentsToRemove(clash, { acceptedClashes, resolutions })` with the documents the store listens to and delete every id it returns, in both collections — `Core/WarningResolutionStore.swift:415-424` today deletes `warningResolutions` only on an exact key match. Old device-only legacy keys (`Core/WarningResolutionStore.swift:595`) must not override `isClashGroupApproved`.
-   - Pass the `managers` rows to `warningScopeFor` wherever the scope is built.
-5. **Daily Overview (A10, owner confirmed).** Stop filtering by `scheduleOptions` in `Views/DailyOverviewView.swift:200-205,262-276` (`visibleOfficeBookings` etc.): every booking counts. "On annual leave" = `dailyOverviewLeaveRows(records, dayKey, timeZone, bankHolidayDayKeys)` (A7); the Home on-leave figures pass the same bank holidays to `homeOverviewMetrics` (`nonWorkingDayKeys`).
-6. **Weekly report.**
-   - Signed PAYE lines follow fix A1 (inside `weeklyReportPayRows`; nothing to do once you call it).
-   - Show `weeklyReportPaySummaryNote(rows)` under the Pay Summary (A9) and Days with `weeklyReportDaysText(row.daysExact ?? row.days, row.kind)`.
-   - Keep subcontractor rows for deleted jobs and firms (`bookingJobLabel`, "Deleted job").
-   - Role column = `userLevelLabel(person)` (Admin / Manager / Operative, "Admin (Super Admin)").
-   - Key rows by person id, never `name|role`.
-   - Leave rows: pass the region's bank holidays as `nonWorkingDayKeys` to `weeklyReportLeaveRows`.
-   - Delete the dead `buildCSV()` in `Views/WeeklyReportView.swift:1110`.
-7. **Timesheets.**
-   - Manager site bookings: match `booking.userId` without case under every id (`Core/TimesheetPayrollCollector.swift:304-306`, `normalizeDocumentId`).
-   - `extrasMode` `decided` once the line manager has signed (`Views/InvoicingView.swift:6879`, `TimesheetInvoiceRows.rows(...)`).
-   - Invoice totals with `roundPennies`; `shiftCount` excludes PAYE lines (`InvoicingView.swift:2330,5833`).
-   - Hours shown from `timesheetTotals(...).hours` (A2: a declined labour line counts no hours).
-8. **Dead fallback.** Remove `Core/Rulebook+WeekdayPaidDay.swift:46-53`'s stale `?? policy.standardPaidHours` fallback (fail visibly when the script does not answer) and its tests.
-9. **Tests** (`ProjectPlannerTests`, through the engine): A1 (£632.35 run with a later PAYE switch), A4 (old-order key still approves), A6 (`homeUpNextRows` ids and today), A7 (bank holiday inside leave), an overnight booking clashing the next morning in Book labour.
+2. **Switched-off schedule places are paid** (§4.8, §8). Stop using `MyScheduleOptions.includesManagerScheduleLocation` for pay:
+   - `Core/TimesheetPayrollCollector.swift:315` — delete the `guard scheduleOptions.includesManagerScheduleLocation(booking) else { continue }`;
+   - `Views/WeeklyReportView.swift:1194` and `Core/WeeklyReportPayInputs.swift:39` — `includesManagerBooking` always true (or remove the parameter);
+   - then delete `Models/MyScheduleOptions+ScheduleLocations.swift:73` `includesManagerScheduleLocation` if nothing else calls it (pickers use `enabledScheduleLocations`).
+   Figures that change: unsigned timesheets, their invoices and totals, and the weekly report gain Office / WFH / Site survey / custom-item bookings made while that option is switched off. Signed and exported sheets do not change.
+3. **Price work and expenses after the line manager signs, until exported** (§8).
+   - `Views/InvoicingView.swift:2698, 3199-3210` (`timesheetOwnerCanAddExtras`) and `3446-3460` (`canEditTimesheetEntry`): the rule now refuses only an exported sheet (`TIMESHEET_EXPORTED_EXTRAS_MESSAGE`); show its message as before.
+   - Adding / editing / deleting an entry on a sheet the line manager signed (not self-signed): confirm with `SIGNED_TIMESHEET_EXTRAS_REOPEN_CONFIRM_MESSAGE`, **never clear any signature** (no `clearSignatures` on this path), and when `signedTimesheetExtrasBaselineFields({ sheet, storedEntries, selfSigned })` returns fields, write them (`operativeSignedExtras`, `operativeSignedExtrasSignedAt`) in the same save. A self-signed sheet keeps today's flow.
+   - Every operative signature (a re-signature included) writes `operativeSignedExtras = signedTimesheetExtrasRecord({ priceWorkEntries, expenseEntries })` (entries with `id` and the reader's `reviewFingerprint`) and `operativeSignedExtrasSignedAt` = that `operativeSignedAt`, next to `operativeSignedBookings` (`InvoicingView.swift` sign handler; clear both where `operativeSignedBookings` is cleared, ~810).
+   - `Models/TimesheetDraftModels.swift`: read and write `operativeSignedExtras` / `operativeSignedExtrasSignedAt` (keep them on every save — an older build dropping them only makes a change read from the snapshot); snapshot money lines (`TimesheetWeeklyReportMoneyLine`) read and write `entryFingerprint` (the entry's `reviewFingerprint` when built, `Core/TimesheetWeeklyReportOverrideBuilder.swift`).
+   - Reopen state: where `Core/Rulebook+SignedTimesheetChanges.swift` calls `signedTimesheetBookingChanges`, also call `signedTimesheetExtrasChanges({ sheet, entries, selfSigned })` and combine with `signedTimesheetChanges(bookingChange, extrasChange)`; use the combined answer everywhere the booking answer is used today (triangle, re-sign, counter-sign again, export guard, lists, Payrun Snapshot, weekly report feed). The popup text is the combined `message`.
+   - `TimesheetWeeklyReportOverrideBuilder`: on a routine reviewer save, while `signedTimesheetExtrasChanges(...).snapshotChanged`, keep the snapshot's money rows; only the counter-signature again (rebuild) takes the live entries.
+4. **New notice type `timesheet_bookings_changed`** (§13). Written by the server; iOS only reads it. `Models/NotificationModel.swift:38` — add the case; route it with `notificationDestination` (kind `timesheetMine`, `dayKey` = the pay run's first day, `deepLinkUserId` the person) to My Timesheets for that period; push toggle `timesheetSignOff`.
+5. **Annual leave report = the balance's leave year** (§9). `Views/HolidayReportView.swift:77, 118` pass `user.annualLeaveYearStartMonth` whatever the allowance; call `annualLeaveReportYearMonths({ annualLeaveEnabled, startMonth, endMonth, orgStartMonth, orgEndMonth, onDayKey, timeZone, employment })` (the same inputs as the balance on that screen) and pass its `startMonth` to `leaveReportRows` / `leaveReportYears`. Rename the screen title "Annual leave report" if it says "Holiday Report".
+6. **Data health "Timesheets half signed"** — web only (iOS has no Data health screen); nothing to do.
+7. **Tests:** a `Rulebook1540Tests` covering: Office booking with `showOffice: false` paid by the collector; an expense added after the counter-signature → `waitingFor: person`, no signature cleared; re-sign → `lineManager`; the new type decodes and routes; the leave report for an April–March person in a January–December company equals the balance's `taken` (2 Feb, 4 May, 2 Nov 2026 → 2 days).
 
 ## New rulebook sections
 
-- 22. Variations: numbers, line items, totals, export and the tracker (1.22.0, 1.52.0)
-- 1.52.0 — 2026-11-15
+- 1.54.0 — 2026-11-16
 
 ## Workflow for the iOS agent
 

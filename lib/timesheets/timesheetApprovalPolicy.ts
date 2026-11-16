@@ -8,6 +8,7 @@
 import type { User } from '@/types'
 import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import {
+  SIGNED_TIMESHEET_EXTRAS_REOPEN_CONFIRM_MESSAGE,
   isTimesheetAwaitingSignOff,
   lineManagerIds,
   isTimesheetFullySigned,
@@ -102,6 +103,8 @@ export function clearSignatures(draft: TimesheetDraft): TimesheetDraft {
     operativeSignedBookingsAt: null,
     operativeSignedBookingsSignedAt: null,
     operativeSignedBookingsAtPending: false,
+    operativeSignedExtras: null,
+    operativeSignedExtrasSignedAt: null,
     managerSignedAt: null,
     managerSignedByName: null,
     managerSignedByUserId: null,
@@ -135,7 +138,8 @@ export const SIGNED_OFF_EDIT_NOTE =
 /** iOS MyTimesheetView.postSignWarningMessage — only used once the sheet is fully approved. */
 export function postSignExtraWarningCopy(user: User, draft: TimesheetDraft, users: Roster = []): string {
   if (requiresLineManagerCounterSign(user, users) && draft.managerSignedAt) {
-    return 'You have already signed your timesheet and your line manager has signed it off. If you add price work or expenses, you will need to have your timesheet signed again by yourself and your line manager.'
+    // Rulebook 1.54.0 §8: the same words on both apps.
+    return SIGNED_TIMESHEET_EXTRAS_REOPEN_CONFIRM_MESSAGE
   }
   return 'You have already signed your timesheet. If you add price work or expenses, you will need to sign it again before generating an invoice.'
 }
