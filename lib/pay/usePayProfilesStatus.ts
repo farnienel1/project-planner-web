@@ -9,6 +9,7 @@ import { useMemo, useSyncExternalStore } from 'react'
 import {
   onPayProfilesStatusChange,
   payProfileFailedSubjectIds,
+  payProfilesRetryNeeded,
   payProfileStateVersion,
   payProfilesStatusFor,
   payProfilesStatusForPerson,
@@ -20,7 +21,7 @@ import { retrySecuritySwitches, securitySwitchesTimedOut } from '@/lib/access/se
 import type { OwnPayStatus } from '@/lib/pay/ownPayRecord'
 
 /** Shown where a report waits for pay that could not be read (refused, or offline with nothing read before). */
-export const PAY_PROFILES_FAILED_MESSAGE = 'Could not load pay details, so this report cannot be built yet. Try again.'
+export { PAY_PROFILES_FAILED_MESSAGE } from '@/lib/pay/reportPayGate'
 
 /** `payProfilesStatusFor(organizationId)`, re-rendered when it changes. */
 export function usePayProfilesStatus(organizationId: string | null | undefined): PayProfilesStatus {
@@ -69,9 +70,13 @@ export function retryPayProfiles(organizationId: string | null | undefined, own:
   // Re-review #342 item 4: the settings did not load in time — read them again.
   if (securitySwitchesTimedOut()) retrySecuritySwitches()
   if (!organizationId) return
-  // Retry whenever anything failed: the whole organisation, the roster read, or one person's read.
-  if (payProfilesStatusFor(organizationId) !== 'failed' && payProfileFailedSubjectIds(organizationId).length === 0) return
   void import('@/lib/stores/siteAuditStore')
-    .then(({ useOrgUserStore }) => useOrgUserStore.getState().loadUsers(organizationId, { force: true }))
+    .then(({ useOrgUserStore }) => {
+      // Retry whenever anything failed (the whole organisation, the roster read, one person's read) — or (final check
+      // #342 item 2) someone on the roster is still waiting for a first pay read.
+      const users = useOrgUserStore.getState().users
+      if (!payProfilesRetryNeeded(organizationId, users)) return undefined
+      return useOrgUserStore.getState().loadUsers(organizationId, { force: true })
+    })
     .catch(() => undefined)
 }

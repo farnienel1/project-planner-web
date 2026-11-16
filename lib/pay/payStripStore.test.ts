@@ -316,3 +316,78 @@ test('re-review #342 item 4: a settings read that never answers turns into "fail
   setPlatformConfigSubscriberForTests(null)
   setSecuritySwitchConfigForTests(null)
 })
+
+// ---- Final check of #342 ----
+
+test("final check #342 item 1: an admin's offline whole-collection fallback never marks people added since as ready", async () => {
+  resetPayProfilesForTests()
+  on()
+  const adminRoster = [admin, lineManager, reportA]
+  await refreshPayProfiles(ORG, admin as never, adminRoster as never, reader({ collection: 'ok' }))
+  notePayRosterOverlaid(ORG, payProfileCacheVersion())
+  assert.equal(payProfilesStatusForPerson(ORG, reportA), 'ready')
+  // B joins; the next whole-collection read is offline and falls back to the earlier answer.
+  const grown = [...adminRoster, reportB]
+  await refreshPayProfiles(ORG, admin as never, grown as never, reader({ collection: 'offline' }))
+  notePayRosterOverlaid(ORG, payProfileCacheVersion())
+  assert.equal(payProfilesStatusFor(ORG), 'ready')
+  assert.equal(payProfilesStatusForPerson(ORG, reportA), 'ready')
+  // The earlier answer was read before B existed: B stays unknown, never "ready" on a stripped record.
+  assert.equal(payProfilesStatusForPerson(ORG, reportB), 'loading')
+  // Back online: B is covered.
+  await refreshPayProfiles(ORG, admin as never, grown as never, reader({ collection: 'ok' }))
+  notePayRosterOverlaid(ORG, payProfileCacheVersion())
+  assert.equal(payProfilesStatusForPerson(ORG, reportB), 'ready')
+  setSecuritySwitchConfigForTests(null)
+})
+
+test('final check #342 item 2: Retry has work to do while someone is still waiting for a first pay read', async () => {
+  const { payProfilesRetryNeeded } = await import('./payProfileOverlay.ts')
+  resetPayProfilesForTests()
+  on()
+  await refreshPayProfiles(ORG, lineManager as never, [lineManager, reportA] as never, reader({}))
+  notePayRosterOverlaid(ORG, payProfileCacheVersion())
+  assert.equal(payProfilesRetryNeeded(ORG, [lineManager, reportA]), false)
+  // Nothing failed, but B (added since) is loading: Retry must re-read.
+  assert.equal(payProfilesRetryNeeded(ORG, roster), true)
+  await refreshPayProfiles(ORG, lineManager as never, roster as never, reader({ refuse: ['b'] }))
+  notePayRosterOverlaid(ORG, payProfileCacheVersion())
+  assert.equal(payProfilesRetryNeeded(ORG, roster), true)
+  setSecuritySwitchConfigForTests(null)
+})
+
+test('final check #342 item 3: the weekly report and Payrun Snapshot wait for every person, naming who is not ready', async () => {
+  const { reportPayGate, PAY_PROFILES_FAILED_MESSAGE } = await import('./reportPayGate.ts')
+  const people = [
+    { id: 'a', name: 'Ann' },
+    { id: 'b', name: 'Bob' },
+    { id: 'c', name: 'Cat' },
+  ]
+  const statuses: Record<string, 'ready' | 'loading' | 'failed'> = { a: 'ready', b: 'loading', c: 'ready' }
+  const gate = (organizationStatus: 'ready' | 'loading' | 'failed') =>
+    reportPayGate({ organizationStatus, people, statusOf: (p) => statuses[p.id], nameOf: (p) => p.name })
+  assert.equal(gate('ready').status, 'loading')
+  assert.match(String(gate('ready').message), /Waiting for pay details for Bob/)
+  statuses.c = 'failed'
+  assert.equal(gate('ready').status, 'failed')
+  assert.match(String(gate('ready').message), /Could not load pay details for Cat/)
+  statuses.b = 'ready'
+  statuses.c = 'ready'
+  assert.deepEqual(gate('ready'), { status: 'ready', loadingNames: [], failedNames: [], message: null })
+  assert.equal(gate('failed').message, PAY_PROFILES_FAILED_MESSAGE)
+  assert.equal(gate('loading').status, 'loading')
+  // Store level: someone added since the read blocks the report until they are read.
+  resetPayProfilesForTests()
+  on()
+  await refreshPayProfiles(ORG, admin as never, [admin, reportA] as never, reader({ collection: 'ok' }))
+  notePayRosterOverlaid(ORG, payProfileCacheVersion())
+  const store = reportPayGate({
+    organizationStatus: payProfilesStatusFor(ORG),
+    people: [admin, reportA, reportB],
+    statusOf: (p) => payProfilesStatusForPerson(ORG, p),
+    nameOf: (p) => p.id,
+  })
+  assert.deepEqual(store.loadingNames, ['b'])
+  assert.equal(store.status, 'loading')
+  setSecuritySwitchConfigForTests(null)
+})

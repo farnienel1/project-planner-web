@@ -7,7 +7,8 @@
  * `payrunSnapshotPeriods`; this component only draws them. Read-only, no export.
  */
 import Link from 'next/link'
-import { PAY_PROFILES_FAILED_MESSAGE, retryPayProfiles, usePayProfilesStatus } from '@/lib/pay/usePayProfilesStatus'
+import { PAY_PROFILES_FAILED_MESSAGE, retryPayProfiles, usePayProfilesStatus, usePayStatusOf } from '@/lib/pay/usePayProfilesStatus'
+import { reportPayGate } from '@/lib/pay/reportPayGate'
 import { useEffect, useMemo, useState } from 'react'
 import {
   PAYRUN_SNAPSHOT_COLUMNS,
@@ -141,7 +142,17 @@ export function PayrunSnapshot({
       }
     : null
   // Pay strip: each person's employment type is pay data — wait for the pay laid over the roster (privatePay on).
-  const payStatus = usePayProfilesStatus(organizationId)
+  // Final check #342 item 3: built only when every person in it has known pay — refused, naming who is still loading or
+  // could not be read (`reportPayGate`), never priced from a stripped record.
+  const payStatusOrg = usePayProfilesStatus(organizationId)
+  const payStatusOf = usePayStatusOf(organizationId)
+  const payGate = reportPayGate({
+    organizationStatus: payStatusOrg,
+    people: users,
+    statusOf: payStatusOf,
+    nameOf: (person) => `${person.firstName ?? ''} ${person.surname ?? ''}`.trim() || person.email || person.id,
+  })
+  const payStatus = payGate.status
   const payReady = payStatus === 'ready'
   const rows = useMemo(
     () =>
@@ -203,10 +214,19 @@ export function PayrunSnapshot({
           {period ? ` · ${PAYRUN_SNAPSHOT_EMPLOYMENT_NOTE}` : ''}
         </p>
         {error ? <p className="banner" data-hue="red">{error}</p> : null}
-        {(!loaded || payStatus === 'loading') && !error ? <p className="muted small">Loading…</p> : null}
+        {(!loaded || payStatus === 'loading') && !error ? (
+          <p className="muted small">
+            {loaded && payGate.message ? payGate.message : 'Loading…'}{' '}
+            {loaded && payGate.message ? (
+              <button type="button" className="btn" onClick={() => retryPayProfiles(organizationId, 'ready')}>
+                Retry
+              </button>
+            ) : null}
+          </p>
+        ) : null}
         {payStatus === 'failed' && !error ? (
           <p className="small" style={{ color: 'var(--red)' }}>
-            {PAY_PROFILES_FAILED_MESSAGE}{' '}
+            {payGate.message ?? PAY_PROFILES_FAILED_MESSAGE}{' '}
             <button type="button" className="btn" onClick={() => retryPayProfiles(organizationId, 'ready')}>
               Retry
             </button>

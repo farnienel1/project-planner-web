@@ -278,6 +278,17 @@ export function payProfileUncoveredIds(
 }
 
 /**
+ * Whether Retry has anything to read again for `organizationId` (final check #342 item 2): the organisation or roster
+ * failed, a person's read failed, or someone on `roster` has had no pay read yet.
+ */
+export function payProfilesRetryNeeded(organizationId: string, roster: ReadonlyArray<{ id?: string | null }>): boolean {
+  if (!organizationId) return false
+  if (payProfilesStatusFor(organizationId) === 'failed') return true
+  if (payProfileFailedSubjectIds(organizationId).length > 0) return true
+  return payProfileUncoveredIds(organizationId, roster).length > 0
+}
+
+/**
  * Re-review #342 item 2: the live roster brought people the last pay read did not plan for — read again (the read
  * plan decides whose pay the viewer may read). Nothing while `privatePay` is off or everyone is covered.
  */
@@ -496,7 +507,7 @@ export async function refreshPayProfiles(
     // 1.27.0: the catalogue operatives too, so a manager with the Operatives toggle reads `payProfiles/{rowId}`.
     const subjects = payPlanSubjects(organizationId, roster)
     const plan = payProfileReadPlan(viewer, subjects, roster as never)
-    const covered = new Set<string>([...roster.map((row) => personKey(String(row.id ?? ''))), ...subjects.map((row) => personKey(String(row.id ?? '')))])
+    let covered = new Set<string>([...roster.map((row) => personKey(String(row.id ?? ''))), ...subjects.map((row) => personKey(String(row.id ?? '')))])
     covered.delete('')
     // Pay strip: what is cached for this organisation from an earlier read that answered (the offline fallback).
     const previous = loadedOrganizationId === organizationId && cacheOrganizationId === organizationId ? profiles : null
@@ -513,6 +524,9 @@ export async function refreshPayProfiles(
         outcomes.push({ kind, planned: true, id: '*' })
         // Offline only: keep the earlier answer. Never after a refusal.
         if (kind === 'offline' && previous) for (const [id, profile] of previous) next.set(id, profile)
+        // Final check #342 item 1: the earlier answer covers only the people it was read for — someone added since is
+        // still unknown (loading), never "ready" on their stripped document.
+        covered = coveredSubjects.organizationId === organizationId ? new Set(coveredSubjects.ids) : new Set<string>()
       }
     } else {
       const byId = new Map(roster.map((person) => [String(person.id ?? ''), person]))

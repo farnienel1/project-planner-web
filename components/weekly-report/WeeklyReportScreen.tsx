@@ -22,7 +22,8 @@ import {
 } from '@/lib/weekly-report/invoicingPeriodUtils'
 import { invoicingQuickSelectLabel } from '@/lib/weekly-report/invoicingRead'
 import { buildWeeklyReportData } from '@/lib/weekly-report/weeklyReportData'
-import { PAY_PROFILES_FAILED_MESSAGE, retryPayProfiles, usePayProfilesStatus } from '@/lib/pay/usePayProfilesStatus'
+import { PAY_PROFILES_FAILED_MESSAGE, retryPayProfiles, usePayProfilesStatus, usePayStatusOf } from '@/lib/pay/usePayProfilesStatus'
+import { reportPayGate } from '@/lib/pay/reportPayGate'
 import { useOrgBankHolidays } from '@/components/annual-leave/useOrgBankHolidays'
 import type {
   SubcontractorBookingRow,
@@ -241,7 +242,17 @@ export function WeeklyReportScreen({
   const bankHolidayDayKeys = useMemo(() => bank.holidays.map((holiday) => holiday.date), [bank.holidays])
   // Pay strip: pay and employment types are read from the pay profiles while `privatePay` is on; the report waits for
   // the pay laid over the roster (`payProfilesStatusFor`), never pricing a stripped users document.
-  const payStatus = usePayProfilesStatus(organizationId)
+  // Final check #342 item 3: built only when every person in it has known pay — refused, naming who is still loading or
+  // could not be read (`reportPayGate`), never priced from a stripped record.
+  const payStatusOrg = usePayProfilesStatus(organizationId)
+  const payStatusOf = usePayStatusOf(organizationId)
+  const payGate = reportPayGate({
+    organizationStatus: payStatusOrg,
+    people: users,
+    statusOf: payStatusOf,
+    nameOf: (person) => `${person.firstName ?? ''} ${person.surname ?? ''}`.trim() || person.email || person.id,
+  })
+  const payStatus = payGate.status
   const payReady = payStatus === 'ready'
   const builtReport = useMemo(() => {
     if (!period || !bank.loaded || !payReady) return null
@@ -650,12 +661,17 @@ export function WeeklyReportScreen({
             </button>
             {period && payStatus === 'loading' ? (
               <p className="muted small" style={{ marginTop: 8 }}>
-                Loading…
+                {payGate.message ?? 'Loading…'}{' '}
+                {payGate.message ? (
+                  <button type="button" className="btn" onClick={() => retryPayProfiles(organizationId, 'ready')}>
+                    Retry
+                  </button>
+                ) : null}
               </p>
             ) : null}
             {period && payStatus === 'failed' ? (
               <p className="small" style={{ marginTop: 8, color: 'var(--red)' }}>
-                {PAY_PROFILES_FAILED_MESSAGE}{' '}
+                {payGate.message ?? PAY_PROFILES_FAILED_MESSAGE}{' '}
                 <button type="button" className="btn" onClick={() => retryPayProfiles(organizationId, 'ready')}>
                   Retry
                 </button>
