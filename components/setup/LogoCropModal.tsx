@@ -15,9 +15,10 @@ type LogoCropModalProps = {
 }
 
 async function loadPdfJs() {
-  // The package main build (pdfjs-dist 6). The worker is copied from the same install by next.config.js,
+  // The legacy build of pdfjs-dist 6 (the main build needs very new browser APIs, e.g. Map.getOrInsertComputed,
+  // so a PDF logo failed on older Safari). The worker is copied from the same install by next.config.js,
   // so API and worker versions always match.
-  const pdfjs = await import('pdfjs-dist/build/pdf.mjs' as 'pdfjs-dist')
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs' as 'pdfjs-dist')
   pdfjs.GlobalWorkerOptions.workerSrc = '/pdfjs/pdf.worker.min.mjs'
   return pdfjs
 }
