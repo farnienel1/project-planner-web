@@ -21,7 +21,7 @@ Loaded automatically through `CLAUDE.md`. These were given by the owner over sev
 
 ## Hard constraints
 - Never hand-edit `canonical-business.js`, its `.sha256`, `canonical-manifest.json` or the iOS `docs/RULEBOOK.md` mirror; iOS syncs with `scripts/sync-rulebook-from-web.sh`.
-- Firebase rules and functions are deployed **only by the owner, by hand** (console publish preferred), when Claude says so. No automated deploys.
+- Firestore rules, Storage rules and Firestore indexes are published through the **Firebase rules deploy** GitHub Actions workflow (`docs/firebase-rules-deploy.md`, owner decision 16 Nov), only from `main` and only after the full rules bar under "Every change" passes; it checks the live release matches `main`. Cloud Functions are still deployed **only by the owner, by hand**, when Claude says so. No other automated deploys.
 - Never touch production data, billing, signing, TestFlight or the App Store (App Store work is parked until the owner says "lets get ready to launch to app store").
 - No model identifier in commits, PRs or code. Commit trailers: `Co-Authored-By` plus the chat's `Claude-Session:` URL; PR bodies end with the Claude Code line and session URL; GitHub comments end with the Claude Code footer.
 - Never use a bare `git stash`. Keep secrets out of chat and code. Never revoke push key BSA6D294ZA.
