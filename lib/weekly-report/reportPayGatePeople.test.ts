@@ -132,3 +132,56 @@ test('review #342: the Payrun Snapshot waits only for the people who have a row'
   statuses.booked = 'failed'
   assert.equal(reportPayGate({ organizationStatus: 'ready', people, statusOf: (p) => statuses[p.id], nameOf }).status, 'failed')
 })
+
+const reportInput = (extra: Record<string, unknown>) => ({
+  showAllPay: true,
+  organizationName: 'Acme',
+  period: { start: new Date('2026-10-05T00:00:00Z'), end: new Date('2026-10-11T00:00:00Z'), label: 'week' },
+  bookings: [] as Booking[],
+  managerSiteBookings: [],
+  subcontractorBookings: [],
+  subcontractors: [],
+  operatives: [] as Operative[],
+  users: [booked, idle],
+  projects: [project],
+  smallWorks: [],
+  holidays: [],
+  orgDetails: null,
+  ...extra,
+})
+
+test('review #342: a booking whose person id differs only in letter case is priced and waited for', () => {
+  const manager = user('abc', 'abc@x.com', { role: 'manager', operativeMode: false } as Partial<User>)
+  const site = { id: 'm1', userId: 'ABC', date: day, timeSlot: 'FULL DAY', locationType: 'project' as const, locationId: 'proj1', createdAt: day, updatedAt: day }
+  const report = buildWeeklyReportData(reportInput({ users: [manager, idle], managerSiteBookings: [site] }) as never)
+  assert.ok(report.paySummary.some((row) => row.personTotal > 0), 'priced')
+  assert.deepEqual(report.pricedUserIds, ['abc'])
+  // Labour booking in upper case too.
+  const labour = buildWeeklyReportData(reportInput({ bookings: [{ ...booking, operativeId: 'BOOKED' }] }) as never)
+  assert.deepEqual(labour.pricedUserIds, ['booked'])
+})
+
+test('review #342: a booking under a former id in another letter case is priced and waited for', () => {
+  const moved = user('new1', 'moved@x.com', { formerUserIds: ['old1'] } as Partial<User>)
+  const report = buildWeeklyReportData(reportInput({ users: [moved, idle], bookings: [{ ...booking, operativeId: 'OLD1' }] }) as never)
+  assert.ok(report.paySummary.some((row) => row.personTotal > 0), 'priced')
+  assert.deepEqual(report.pricedUserIds, ['new1'])
+})
+
+test('review #342: a timesheet week or sheet in another letter case brings its person in', () => {
+  const report = buildWeeklyReportData(
+    reportInput({
+      timesheetSheets: [{ personId: 'IDLE', startDayKey: '2026-10-05', endDayKey: '2026-10-11' }],
+    }) as never
+  )
+  assert.deepEqual(report.pricedUserIds, ['idle'])
+})
+
+test('review #342: a PAYE person with overtime in range is waited for (their employment type is read)', () => {
+  const paye = user('pat', 'pat@x.com', { employmentType: 'paye' } as Partial<User>)
+  const late = { ...booking, id: 'ot', operativeId: 'PAT', timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '18:00' } as Booking
+  const report = buildWeeklyReportData(reportInput({ users: [paye, idle], bookings: [late] }) as never)
+  assert.equal(report.payeOvertimeRows.length, 1)
+  assert.ok(report.pricedUserIds.includes('pat'))
+  assert.ok(!report.pricedUserIds.includes('idle'))
+})
