@@ -75,13 +75,15 @@ export function ownPayState(input: {
   user: User | null
   rawDocument: Record<string, unknown> | null
   switchesLoaded: boolean
+  /** Re-review #342 item 4: the switches were not read in time — `failed` (Retry), never decided as "off". */
+  switchesFailed?: boolean
   privatePay: boolean
   /** The own pay-profile read for this person and organisation, or null while it has not answered. */
   read: OwnPayRead | null
 }): OwnPayState {
   const { user } = input
   if (!user) return { user: null, status: 'loading', overlaid: false }
-  if (!input.switchesLoaded) return { user, status: 'loading', overlaid: false }
+  if (!input.switchesLoaded) return { user, status: input.switchesFailed ? 'failed' : 'loading', overlaid: false }
   if (!input.privatePay) return { user, status: 'ready', overlaid: false }
   if (!input.read) return { user, status: 'loading', overlaid: false }
   // Never decide from the stripped users document: a read that did not answer is `failed`.

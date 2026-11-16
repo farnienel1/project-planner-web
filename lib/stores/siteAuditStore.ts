@@ -54,7 +54,9 @@ import {
   onPayProfileCacheChange,
   overlayRosterPay,
   payProfileCacheVersion,
+  payProfileUncoveredIds,
   refreshPayProfiles,
+  refreshPayProfilesForNewPeople,
 } from '@/lib/pay/payProfileOverlay'
 
 /** `siteAudits/{id}` through the rulebook reader `parseSiteAuditDocument` (rulebook 1.8.0). */
@@ -684,6 +686,15 @@ function applyLiveRosterRows(organizationId: string, rows: User[]): void {
     users: sorted,
     userIdAliases: { ...state.userIdAliases, ...aliasIdsForRoster(users) },
   })
+  // Re-review #342 item 2: a person the last pay read did not plan for (added since) has unknown pay — read for them.
+  // A change re-reads the roster through the cache-change listener; until the read answers they read `loading`.
+  if (payProfileUncoveredIds(organizationId, sorted).length > 0) {
+    void import('@/lib/stores/authStore')
+      .then(({ useAuthStore }) =>
+        refreshPayProfilesForNewPeople(organizationId, useAuthStore.getState().user as never, useOrgUserStore.getState().users as never)
+      )
+      .catch(() => undefined)
+  }
 }
 
 function startLiveRoster(organizationId: string, fallbackIds: string[]): void {

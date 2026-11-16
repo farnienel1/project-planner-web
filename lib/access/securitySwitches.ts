@@ -41,8 +41,38 @@ function markLoaded() {
 }
 
 let retryTimer: ReturnType<typeof setTimeout> | null = null
-let retryDelayMs = 2000
-const RETRY_MAX_MS = 60_000
+let retryBaseMs = 2000
+let retryMaxMs = 60_000
+let retryDelayMs = retryBaseMs
+// Re-review #342 item 4: the first read has not arrived after this long — pay screens say "couldn't load settings"
+// with Retry instead of waiting with nothing to press. Never read as "off".
+let firstReadTimeoutMs = 10_000
+let firstReadTimer: ReturnType<typeof setTimeout> | null = null
+let timedOut = false
+
+/** One snapshot of `platformConfig/app` as the listener sees it. */
+export type PlatformConfigSnapshot = { exists: boolean; fromCache: boolean; data: Record<string, unknown> | null }
+type PlatformConfigSubscriber = (onNext: (snapshot: PlatformConfigSnapshot) => void, onError: () => void) => () => void
+let subscriberForTests: PlatformConfigSubscriber | null = null
+
+function firestoreSubscriber(): PlatformConfigSubscriber | null {
+  if (!db) return null
+  const firestore = db
+  const [collectionName, documentId] = PLATFORM_CONFIG_APP_PATH.split('/')
+  return (onNext, onError) =>
+    onSnapshot(
+      doc(firestore, collectionName, documentId),
+      // Metadata changes too, so the server's confirmation of a cached copy (or of a missing document) is seen.
+      { includeMetadataChanges: true },
+      (snap) =>
+        onNext({
+          exists: snap.exists(),
+          fromCache: snap.metadata.fromCache,
+          data: snap.exists() ? ((snap.data() ?? {}) as Record<string, unknown>) : null,
+        }),
+      () => onError()
+    )
+}
 
 /**
  * Review #342 item 2: whether a snapshot of `platformConfig/app` tells what the switches are. A server answer does (a
@@ -57,39 +87,82 @@ export function platformConfigSnapshotIsKnown(snapshot: { exists: boolean; fromC
 function scheduleRetry(): void {
   if (retryTimer || holdUnreadForTests) return
   const delay = retryDelayMs
-  retryDelayMs = Math.min(retryDelayMs * 2, RETRY_MAX_MS)
+  retryDelayMs = Math.min(retryDelayMs * 2, retryMaxMs)
   retryTimer = setTimeout(() => {
     retryTimer = null
     start()
   }, delay)
 }
 
+function startFirstReadTimer(): void {
+  if (loaded || firstReadTimer || timedOut) return
+  firstReadTimer = setTimeout(() => {
+    firstReadTimer = null
+    if (loaded) return
+    timedOut = true
+    notifyConfigListeners()
+  }, firstReadTimeoutMs)
+  ;(firstReadTimer as { unref?: () => void }).unref?.()
+}
+
 function start(): void {
   if (holdUnreadForTests) return
-  if (unsubscribe || !db) {
-    if (!db) markLoaded()
+  // Re-review #342 item 3: while a retry is waiting, nothing re-subscribes early — the backoff holds.
+  if (unsubscribe || retryTimer) return
+  const subscribe = subscriberForTests ?? firestoreSubscriber()
+  if (!subscribe) {
+    markLoaded()
     return
   }
-  const [collectionName, documentId] = PLATFORM_CONFIG_APP_PATH.split('/')
-  unsubscribe = onSnapshot(
-    doc(db, collectionName, documentId),
-    // Metadata changes too, so the server's confirmation of a cached copy (or of a missing document) is seen.
-    { includeMetadataChanges: true },
+  startFirstReadTimer()
+  let errored = false
+  const stop = subscribe(
     (snap) => {
-      if (!platformConfigSnapshotIsKnown({ exists: snap.exists(), fromCache: snap.metadata.fromCache })) return
-      retryDelayMs = 2000
+      if (!platformConfigSnapshotIsKnown(snap)) return
+      retryDelayMs = retryBaseMs
       const previous = config
-      config = snap.exists() ? ((snap.data() ?? {}) as Record<string, unknown>) : null
+      config = snap.exists ? snap.data ?? {} : null
+      timedOut = false
+      if (firstReadTimer) {
+        clearTimeout(firstReadTimer)
+        firstReadTimer = null
+      }
       markLoaded()
       notifyChanges(previous, config)
       notifyConfigListeners()
     },
     () => {
       // Review #342 item 2: an error is "unknown", never "off": keep the last value read (if any) and try again.
+      errored = true
+      unsubscribe?.()
       unsubscribe = null
       scheduleRetry()
     }
   )
+  unsubscribe = errored ? null : stop
+  if (errored) stop()
+}
+
+/** Re-review #342 item 4: the first read timed out (see `retrySecuritySwitches`). Never means "off". */
+export function securitySwitchesTimedOut(): boolean {
+  start()
+  return !loaded && timedOut
+}
+
+/** Retry now (the "couldn't load settings — Retry" button): drop the waiting retry and subscribe again. */
+export function retrySecuritySwitches(): void {
+  if (retryTimer) {
+    clearTimeout(retryTimer)
+    retryTimer = null
+  }
+  retryDelayMs = retryBaseMs
+  if (!loaded) {
+    timedOut = false
+    unsubscribe?.()
+    unsubscribe = null
+  }
+  notifyConfigListeners()
+  start()
 }
 
 function notifyChanges(previous: Record<string, unknown> | null, next: Record<string, unknown> | null) {
@@ -202,6 +275,31 @@ export function setSecuritySwitchConfigForTests(next: Record<string, unknown> | 
   markLoaded()
   notifyChanges(previous, next)
   notifyConfigListeners()
+}
+
+/**
+ * Tests only: a stand-in for the `platformConfig/app` listener, short retry / time-out delays, and a fresh unread state.
+ * Pass null to go back to Firestore.
+ */
+export function setPlatformConfigSubscriberForTests(
+  subscriber: PlatformConfigSubscriber | null,
+  delays?: { retryBaseMs?: number; retryMaxMs?: number; firstReadTimeoutMs?: number }
+): void {
+  unsubscribe?.()
+  unsubscribe = null
+  if (retryTimer) clearTimeout(retryTimer)
+  retryTimer = null
+  if (firstReadTimer) clearTimeout(firstReadTimer)
+  firstReadTimer = null
+  timedOut = false
+  holdUnreadForTests = false
+  loaded = false
+  config = null
+  subscriberForTests = subscriber
+  retryBaseMs = delays?.retryBaseMs ?? 2000
+  retryMaxMs = delays?.retryMaxMs ?? 60_000
+  firstReadTimeoutMs = delays?.firstReadTimeoutMs ?? 10_000
+  retryDelayMs = retryBaseMs
 }
 
 /** Tests only: `platformConfig/app` not read yet (every switch unknown). */

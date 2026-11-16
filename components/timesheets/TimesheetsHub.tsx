@@ -58,8 +58,7 @@ import {
 } from '@/lib/timesheets/timesheetApprovalPolicy'
 import { retryOwnPayRead, useOwnPayUser } from '@/lib/pay/useOwnPayUser'
 import { withOwnPay } from '@/lib/pay/ownPayRecord'
-import { retryPayProfiles, usePayProfileFailedIds, usePayProfilesStatus } from '@/lib/pay/usePayProfilesStatus'
-import { personPayStatus } from '@/lib/pay/payProfileOverlay'
+import { retryPayProfiles, usePayProfilesStatus, usePayStatusOf } from '@/lib/pay/usePayProfilesStatus'
 import { OWN_PAY_FAILED_MESSAGE, OWN_PAY_LOADING_MESSAGE, PayStatusNotice } from '@/components/pay/PayStatusNotice'
 import { canAccessMyTimesheetsWithPolicy, shouldAppearInOperativeTimesheetRoster, timesheetDayKeysForPeriod } from '@/lib/timesheets/timesheetPayrollPolicy'
 import { exportedTimesheetRosterGroups, timesheetRosterGroups } from '@/lib/timesheets/timesheetWeekUtils'
@@ -169,7 +168,7 @@ export function TimesheetsHub() {
   const ownPay = useOwnPayUser()
   const me = ownPay.status === 'ready' ? ownPay.user : null
   const payProfilesStatus = usePayProfilesStatus(organization?.id)
-  const payProfileFailedIds = usePayProfileFailedIds(organization?.id)
+  const payStatusOf = usePayStatusOf(organization?.id)
   const showMine = me ? canAccessMyTimesheetsWithPolicy(me, invoicing, new Date(), timeZone) : false
   const showTeam = canAccessOperativeTimesheets(user, usersLoading, users)
   const showDisabled = me ? shouldShowTimesheetsDisabledMessage(me, showMine) : false
@@ -480,7 +479,7 @@ export function TimesheetsHub() {
             {...periodPageProps}
             // Review #342 item 1: the reviewed person's own pay decides; another person's refused read never does.
             payInputs={payInputsFor(
-              payProfilesInputLoad(personPayStatus(payProfilesStatus, payProfileFailedIds, selectedUser), 'ready')
+              payProfilesInputLoad(payStatusOf(selectedUser), 'ready')
             )}
             subjectUser={selectedUser}
             mode="review"
@@ -530,8 +529,9 @@ export function TimesheetsHub() {
               // Rulebook 1.43.0 (review r318): export stamps and freezes the signed snapshot, so it waits for the
               // server-confirmed bookings as signing does (`withBookingsGate` → `timesheetSnapshotReady`).
               payInputs={withBookingsGate(payInputs, { bookingsLoaded, bookingsFailed })}
-              // Review #342 item 1: people whose pay could not be read are marked on the list and skipped by Export.
-              payUnknownIds={payProfileFailedIds}
+              // Review #342 item 1: people whose pay is not known (loading or failed) show no figures and are skipped by
+              // Export and Download PDF.
+              payStatusOf={payStatusOf}
             />
           </>
         )}

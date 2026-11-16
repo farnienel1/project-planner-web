@@ -8,8 +8,8 @@
  * `range` current | past | custom; `start` / `end` day keys.
  */
 import { retryOwnPayRead, useOwnPayUser } from '@/lib/pay/useOwnPayUser'
-import { personPayStatus, type PayProfilesStatus } from '@/lib/pay/payProfileOverlay'
-import { retryPayProfiles, usePayProfileFailedIds, usePayProfilesStatus } from '@/lib/pay/usePayProfilesStatus'
+import type { PayProfilesStatus } from '@/lib/pay/payProfileOverlay'
+import { retryPayProfiles, usePayStatusOf } from '@/lib/pay/usePayProfilesStatus'
 import {
   OWN_PAY_FAILED_MESSAGE,
   OWN_PAY_LOADING_MESSAGE,
@@ -152,8 +152,7 @@ export function OvertimeScreen() {
   // Pay strip: the viewer's own employment type is pay data — from their own pay profile (`useOwnPayUser`).
   const ownPay = useOwnPayUser()
   // Review #342 item 7: each person's employment type is pay data — known only once their pay was read.
-  const rosterPayStatus = usePayProfilesStatus(organization?.id)
-  const rosterPayFailedIds = usePayProfileFailedIds(organization?.id)
+  const payStatusOf = usePayStatusOf(organization?.id)
   const viewer = useMemo(
     () => (user ? rulebookPerson(withOwnPay(users.find((row) => row.id === user.id) || user, ownPay), users) : null),
     [user, users, ownPay]
@@ -210,7 +209,7 @@ export function OvertimeScreen() {
         <NavBar title={OVERTIME_USERS_LABEL} back={{ label: OVERTIME_HUB_LABEL, href: overtimeHref({}) }} />
         <UsersList
           users={users.filter((row) => subjectIds.includes(row.id))}
-          payStatusOf={(row) => personPayStatus(rosterPayStatus, rosterPayFailedIds, row)}
+          payStatusOf={payStatusOf}
           onOpen={(id) => router.push(overtimeHref({ scope: 'users', user: id }))} />
       </PageShell>
     )
@@ -222,7 +221,7 @@ export function OvertimeScreen() {
   }
   // Review #342 item 7: someone else's overtime, price work and expenses depend on their employment type — while
   // their pay is loading or could not be read, say so (with Retry) instead of the stripped record's answer.
-  const subjectPayStatus = mine ? 'ready' : personPayStatus(rosterPayStatus, rosterPayFailedIds, subject)
+  const subjectPayStatus = mine ? 'ready' : payStatusOf(subject)
   if (subjectPayStatus !== 'ready') {
     return (
       <PageShell>

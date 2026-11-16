@@ -197,3 +197,122 @@ test('review #342 item 2: a cached "missing" config is unknown; a server answer 
   assert.equal(payProfilesStatusFor(ORG), 'ready')
   setSecuritySwitchConfigForTests(null)
 })
+
+// ---- Re-review of #342 ----
+
+test('re-review #342 item 1: Exported "Download PDF" is refused while a person\'s pay is loading or unknown', async () => {
+  const { exportedPdfPayRefusal } = await import('../timesheets/exportPayGate.ts')
+  resetPayProfilesForTests()
+  on()
+  await refreshPayProfiles(ORG, lineManager as never, roster as never, reader({ refuse: ['b'] }))
+  notePayRosterOverlaid(ORG, payProfileCacheVersion())
+  assert.equal(exportedPdfPayRefusal(payProfilesStatusForPerson(ORG, reportA), 'A'), null)
+  assert.match(String(exportedPdfPayRefusal(payProfilesStatusForPerson(ORG, reportB), 'B')), /Couldn't load B's pay details/)
+  assert.match(String(exportedPdfPayRefusal('loading', 'C')), /still loading/)
+  setSecuritySwitchConfigForTests(null)
+})
+
+test('re-review #342 item 2: someone added to the roster after the pay read is loading until a read covers them', async () => {
+  const { payProfileUncoveredIds, refreshPayProfilesForNewPeople } = await import('./payProfileOverlay.ts')
+  resetPayProfilesForTests()
+  on()
+  const firstRoster = [lineManager, reportA]
+  await refreshPayProfiles(ORG, lineManager as never, firstRoster as never, reader({}))
+  notePayRosterOverlaid(ORG, payProfileCacheVersion())
+  assert.equal(payProfilesStatusForPerson(ORG, reportA), 'ready')
+  // B arrives through the live roster: no read covered them — not "ready" on their stripped document.
+  assert.deepEqual(payProfileUncoveredIds(ORG, roster), ['b'])
+  assert.equal(payProfilesStatusForPerson(ORG, reportB), 'loading')
+  const reads: string[] = []
+  const counting = reader({})
+  const tracking: PayProfileReader = {
+    readCollection: counting.readCollection,
+    readDocument: async (org, id) => {
+      reads.push(id)
+      return counting.readDocument(org, id)
+    },
+  }
+  // Nothing new: no read.
+  assert.equal(await refreshPayProfilesForNewPeople(ORG, lineManager as never, firstRoster as never, tracking), false)
+  assert.deepEqual(reads, [])
+  await refreshPayProfilesForNewPeople(ORG, lineManager as never, roster as never, tracking)
+  assert.ok(reads.includes('b'))
+  notePayRosterOverlaid(ORG, payProfileCacheVersion())
+  assert.equal(payProfilesStatusForPerson(ORG, reportB), 'ready')
+  // privatePay off: nothing is uncovered, nobody waits.
+  setSecuritySwitchConfigForTests({ privatePayOrganizationIds: ['org-other'] })
+  assert.deepEqual(payProfileUncoveredIds(ORG, [{ id: 'z' }]), [])
+  assert.equal(payProfilesStatusForPerson(ORG, { id: 'z' }), 'ready')
+  setSecuritySwitchConfigForTests(null)
+})
+
+test('re-review #342 items 3 and 7: a listener error is unknown and retried with backoff — no early re-subscribe', async () => {
+  const { setPlatformConfigSubscriberForTests, securitySwitchesTimedOut } = await import('../access/securitySwitches.ts')
+  let calls = 0
+  setPlatformConfigSubscriberForTests(
+    (onNext, onError) => {
+      calls += 1
+      const call = calls
+      setTimeout(() => {
+        if (call === 1) onError()
+        else {
+          onNext({ exists: false, fromCache: true, data: null })
+          onNext({ exists: true, fromCache: false, data: { privatePayOrganizationIds: [ORG] } })
+        }
+      }, 0)
+      return () => undefined
+    },
+    { retryBaseMs: 40, firstReadTimeoutMs: 10_000 }
+  )
+  assert.equal(securitySwitchesLoaded(), false)
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  // Errored: unknown, never "off".
+  assert.equal(securitySwitchesLoaded(), false)
+  assert.equal(securitySwitchesTimedOut(), false)
+  assert.equal(payProfilesStatusFor(ORG), 'loading')
+  // Every switch read calls `start()`: none re-subscribes while the retry waits.
+  for (let i = 0; i < 5; i += 1) securitySwitchesLoaded()
+  assert.equal(calls, 1)
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  assert.equal(calls, 2)
+  assert.equal(securitySwitchesLoaded(), true)
+  setPlatformConfigSubscriberForTests(null)
+  setSecuritySwitchConfigForTests(null)
+})
+
+test('re-review #342 item 4: a settings read that never answers turns into "failed" (Retry), never "off"', async () => {
+  const { setPlatformConfigSubscriberForTests, securitySwitchesTimedOut, retrySecuritySwitches } = await import(
+    '../access/securitySwitches.ts'
+  )
+  const { ownPayState } = await import('./ownPayRecord.ts')
+  resetPayProfilesForTests()
+  let answer = false
+  let calls = 0
+  setPlatformConfigSubscriberForTests(
+    (onNext) => {
+      calls += 1
+      if (answer) setTimeout(() => onNext({ exists: true, fromCache: false, data: {} }), 0)
+      return () => undefined
+    },
+    { firstReadTimeoutMs: 20 }
+  )
+  assert.equal(payProfilesStatusFor(ORG), 'loading')
+  await new Promise((resolve) => setTimeout(resolve, 40))
+  assert.equal(securitySwitchesTimedOut(), true)
+  assert.equal(payProfilesStatusFor(ORG), 'failed')
+  const user = { id: 'u', permissions: {} } as never
+  assert.equal(
+    ownPayState({ user, rawDocument: null, switchesLoaded: securitySwitchesLoaded(), switchesFailed: true, privatePay: false, read: null }).status,
+    'failed'
+  )
+  // Retry subscribes again; once the server answers (privatePay off here), nobody waits.
+  answer = true
+  retrySecuritySwitches()
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  assert.equal(calls, 2)
+  assert.equal(securitySwitchesLoaded(), true)
+  assert.equal(securitySwitchesTimedOut(), false)
+  assert.equal(payProfilesStatusFor(ORG), 'ready')
+  setPlatformConfigSubscriberForTests(null)
+  setSecuritySwitchConfigForTests(null)
+})

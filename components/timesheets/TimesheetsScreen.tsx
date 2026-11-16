@@ -78,8 +78,9 @@ import {
   type DataColumn,
 } from '@/components/ui/page'
 import { EXPORT_STOPPED_MESSAGE, type TimesheetInputsState } from '@/lib/timesheets/timesheetInputs'
-import { personPayStatus } from '@/lib/pay/payProfileOverlay'
+import type { PayProfilesStatus } from '@/lib/pay/payProfileOverlay'
 import { PAY_DETAILS_NOT_LOADED_LABEL } from '@/components/pay/PayStatusNotice'
+import { EXPORT_PAY_UNKNOWN_SKIPPED_MESSAGE, exportedPdfPayRefusal } from '@/lib/timesheets/exportPayGate'
 import {
   EXPORT_REBUILT_CONFIRM,
   EXPORT_RECOVER_HINT,
@@ -92,7 +93,6 @@ import type { PayrollTimePolicyState } from '@/lib/canonical'
 import { SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE, signedTimesheetActions } from '@/lib/canonical'
 
 /** Third review #325: Export left a sheet out because the bookings or pay inputs were still loading. */
-const EXPORT_PAY_UNKNOWN_SKIPPED_MESSAGE = "Not exported — their pay details couldn't be loaded; press Retry, then export again."
 const EXPORT_INPUTS_LOADING_SKIPPED_MESSAGE = 'Not exported — the bookings or pay settings were still loading; export again.'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
@@ -129,11 +129,14 @@ export function TimesheetsScreen({
   history = emptyDayRateHistory(),
   scheduleOptions = DEFAULT_MY_SCHEDULE,
   payInputs,
-  payUnknownIds,
+  payStatusOf,
 }: {
   payInputs: TimesheetInputsState
-  /** Review #342 item 1: people whose pay could not be read (lower-case ids) — marked on the list, skipped by Export. */
-  payUnknownIds?: ReadonlySet<string>
+  /**
+   * Review #342 items 1, 5 and re-review 1–2: each person's pay status. Not `ready` (loading or failed): no figures on
+   * their row, skipped by Export, Download PDF refused. Missing: everyone ready (privatePay off, as before).
+   */
+  payStatusOf?: (member: User) => PayProfilesStatus
   bookings: Booking[]
   managerSiteBookings: ManagerSiteBooking[]
   operatives: Operative[]
@@ -350,8 +353,8 @@ export function TimesheetsScreen({
   // before each person — `coverage` can drop mid-export (a re-plan, a network blip).
   const payInputsRef = useRef(payInputs)
   payInputsRef.current = payInputs
-  const payUnknownFor = (member: User): boolean =>
-    personPayStatus('ready', payUnknownIds ?? new Set<string>(), member) === 'failed'
+  const payStatusFor = (member: User): PayProfilesStatus => (payStatusOf ? payStatusOf(member) : 'ready')
+  const payUnknownFor = (member: User): boolean => payStatusFor(member) !== 'ready'
 
   /**
    * Rulebook 1.43.0 (review r318): one sheet of an export, prepared without writing anything — re-read fresh (the
@@ -495,6 +498,12 @@ export function TimesheetsScreen({
       setExportMessage(payInputs.message)
       return
     }
+    // Re-review #342 item 1: a PDF is never rebuilt from a record whose pay is not known (it would be the stripped one).
+    const refusal = exportedPdfPayRefusal(payStatusFor(row.user), displayName(row.user))
+    if (refusal) {
+      setExportMessage(refusal)
+      return
+    }
     try {
       const full = await loadTimesheetDraft(organization.id, row.user.id, period.start, timeZone, period.end)
       const sheet = full.exportedAt ? full : row.draft
@@ -532,7 +541,13 @@ export function TimesheetsScreen({
     changedSkippedRef.current = []
     inputsSkippedRef.current = []
     // Review #342 item 1: a person whose pay could not be read is never exported on a stripped record; named below.
-    const payUnknownSkipped = visible.filter((member) => drafts.has(member.id) && payUnknownFor(member)).map((member) => displayName(member))
+    const payUnknownSkipped = visible
+      .filter((member) => drafts.has(member.id) && payStatusFor(member) === 'failed')
+      .map((member) => displayName(member))
+    // Re-review #342 item 5: pay still loading — skipped as "still loading" (export again), never exported stripped.
+    for (const member of visible) {
+      if (drafts.has(member.id) && payStatusFor(member) === 'loading') inputsSkippedRef.current.push(displayName(member))
+    }
     const reasonOf = (error: unknown) => (error instanceof Error && error.message ? error.message : 'unknown error')
     try {
       const run = await runTimesheetExport({
@@ -681,6 +696,7 @@ export function TimesheetsScreen({
         users={users}
         viewer={user}
         onDownload={(row, period) => void downloadExportedPdf(row, period)}
+        payStatusOf={payStatusFor}
         onOpen={(row, period) =>
           router.push(
             timesheetsTeamHref({
@@ -726,7 +742,7 @@ export function TimesheetsScreen({
               pill={teamTab === 'signed' ? 'Signed off' : 'Pending'}
               pillHue={teamTab === 'signed' ? 'green' : 'warn'}
               summary={summary}
-              payUnknown={payUnknownFor(member)}
+              payStatus={payStatusFor(member)}
               onClick={() =>
                 router.push(
                   timesheetsTeamHref({
@@ -803,7 +819,7 @@ function MemberRow({
   timeZone,
   onClick,
   onDownload,
-  payUnknown = false,
+  payStatus = 'ready',
 }: {
   member: User
   users: User[]
@@ -816,10 +832,11 @@ function MemberRow({
   timeZone?: string
   onClick: () => void
   onDownload?: () => void
-  /** Review #342 items 1 and 7: this person's pay could not be read — no figures, a red chip instead. */
-  payUnknown?: boolean
+  /** Review #342 items 1, 5 and 7: this person's pay — not `ready`: no figures; `failed`: a red chip too. */
+  payStatus?: PayProfilesStatus
 }) {
   const currency = useOrganizationCurrency()
+  const payUnknown = payStatus !== 'ready'
   const role = member.permissions.operativeMode ? 'Operative' : hasAdminAccess(member) ? 'Admin' : 'Manager'
   const lineManager = (() => {
     if (!hasAdminAccess(viewer)) return null
@@ -865,7 +882,7 @@ function MemberRow({
       {lineManager != null ? <td>{lineManager}</td> : null}
       <td>
         <Chip tone={pillHue === 'warn' ? 'amber' : pillHue === 'green' ? 'green' : 'slate'}>{pill}</Chip>
-        {payUnknown ? (
+        {payStatus === 'failed' ? (
           <span style={{ marginLeft: 8 }}>
             <Chip tone="red">{PAY_DETAILS_NOT_LOADED_LABEL}</Chip>
           </span>
@@ -922,6 +939,7 @@ function ExportedTimesheetsList({
   viewer,
   onOpen,
   onDownload,
+  payStatusOf,
 }: {
   rows: ExportedTimesheetHistoryRow[]
   invoicing: OrgInvoicingSettings
@@ -945,6 +963,8 @@ function ExportedTimesheetsList({
   onOpen: (row: ExportedTimesheetHistoryRow, period: { start: Date; end: Date }) => void
   /** Rebuild and download the PDF of an exported sheet from its stored snapshot (rulebook 1.43.0, review r318). */
   onDownload?: (row: ExportedTimesheetHistoryRow, period: { start: Date; end: Date }) => void
+  /** Re-review #342 item 1: a person whose pay is not known shows no figures (Download PDF refuses too). */
+  payStatusOf?: (member: User) => PayProfilesStatus
 }) {
   const observed = rows.map((row) => exportedRowPeriod(row, invoicing, timeZone))
   const runs = listSelectablePayPeriods(invoicing, new Date(), 120, timeZone, observed)
@@ -1042,6 +1062,7 @@ function ExportedTimesheetsList({
                 timeZone={timeZone}
                 onClick={() => onOpen(row, period)}
                 onDownload={onDownload ? () => onDownload(row, period) : undefined}
+                payStatus={payStatusOf ? payStatusOf(row.user) : 'ready'}
               />
             )
           })}

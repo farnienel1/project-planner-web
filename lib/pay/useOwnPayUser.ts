@@ -8,8 +8,10 @@ import { useEffect, useMemo, useSyncExternalStore } from 'react'
 import {
   onPlatformConfigChange,
   privatePayFor,
+  retrySecuritySwitches,
   securitySwitchesLoaded,
   securitySwitchesReady,
+  securitySwitchesTimedOut,
 } from '@/lib/access/securitySwitches'
 import { readPayProfile } from '@/lib/pay/payProfileService'
 import { ownPayReadAfter, ownPayState, readOwnPayProfile, type OwnPayRead, type OwnPayState } from '@/lib/pay/ownPayRecord'
@@ -77,6 +79,8 @@ function currentRead(organizationId: string, user: User): OwnPayRead | null {
 
 /** Forgets the own pay-profile read (a failed one included) so the next screen that asks reads again. */
 export function retryOwnPayRead(): void {
+  // Re-review #342 item 4: the settings themselves did not load — read them again too.
+  if (securitySwitchesTimedOut()) retrySecuritySwitches()
   entry = { key: '', read: null, promise: null }
   notify()
 }
@@ -110,6 +114,7 @@ export function useOwnPayUser(): OwnPayState {
         user,
         rawDocument,
         switchesLoaded: securitySwitchesLoaded(),
+        switchesFailed: securitySwitchesTimedOut(),
         privatePay,
         read: organizationId && user ? currentRead(organizationId, user) : null,
       }),

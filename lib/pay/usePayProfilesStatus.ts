@@ -9,11 +9,14 @@ import { useMemo, useSyncExternalStore } from 'react'
 import {
   onPayProfilesStatusChange,
   payProfileFailedSubjectIds,
+  payProfileStateVersion,
   payProfilesStatusFor,
+  payProfilesStatusForPerson,
   personPayStatus,
   type PayProfilesStatus,
 } from '@/lib/pay/payProfileOverlay'
 import { retryOwnPayRead } from '@/lib/pay/useOwnPayUser'
+import { retrySecuritySwitches, securitySwitchesTimedOut } from '@/lib/access/securitySwitches'
 import type { OwnPayStatus } from '@/lib/pay/ownPayRecord'
 
 /** Shown where a report waits for pay that could not be read (refused, or offline with nothing read before). */
@@ -48,9 +51,23 @@ export function usePersonPayStatus(
   return personPayStatus(status, failed, person)
 }
 
+/**
+ * Each person's pay status (`payProfilesStatusForPerson`: the organisation, their own read, and — re-review #342 item 2 —
+ * `loading` for someone added to the roster after the last read), as a function re-rendered when anything changes.
+ */
+export function usePayStatusOf(
+  organizationId: string | null | undefined
+): (person: { id: string; formerUserIds?: ReadonlyArray<string> | null } | null | undefined) => PayProfilesStatus {
+  const version = useSyncExternalStore(onPayProfilesStatusChange, payProfileStateVersion, () => 0)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  return useMemo(() => (person) => payProfilesStatusForPerson(organizationId, person), [organizationId, version])
+}
+
 /** Retry after a failed pay-profile read: the own read, and the roster (which reads the pay profiles again). */
 export function retryPayProfiles(organizationId: string | null | undefined, own: OwnPayStatus): void {
   if (own === 'failed') retryOwnPayRead()
+  // Re-review #342 item 4: the settings did not load in time — read them again.
+  if (securitySwitchesTimedOut()) retrySecuritySwitches()
   if (!organizationId) return
   // Retry whenever anything failed: the whole organisation, the roster read, or one person's read.
   if (payProfilesStatusFor(organizationId) !== 'failed' && payProfileFailedSubjectIds(organizationId).length === 0) return
