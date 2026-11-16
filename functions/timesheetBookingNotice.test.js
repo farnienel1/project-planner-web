@@ -102,10 +102,35 @@ test('1.54.0: a signed booking whose times change tells the person once per sign
   assert.equal(again.written, 0)
 })
 
-test('1.54.0: no notice for an exported sheet, a write that changes nothing the rule reads, or the person\'s own change', async () => {
-  const exported = storeWith({ sheets: [signedSheet({ exportedAt: new Date(signedAt + 7200_000) })], users })
+test('1.55.0: an exported sheet whose booking changes makes a revision due — one "update" row per exported version', async () => {
+  const exportedAt = new Date(signedAt + 7200_000)
+  const exported = storeWith({ sheets: [signedSheet({ exportedAt })], users })
   const n1 = createTimesheetBookingNotice({ store: exported, canonical, logger: { info() {}, error() {} } })
-  assert.equal((await n1.handle({ orgId: ORG, collection: 'bookings', bookingId: 'B1', before: booking(), after: booking({ workEndTime: '18:00' }) })).written, 0)
+  assert.equal((await n1.handle({ orgId: ORG, collection: 'bookings', bookingId: 'B1', before: booking(), after: booking({ workEndTime: '18:00' }) })).written, 1)
+  const [row] = [...exported.created.values()]
+  assert.equal(row.type, 'timesheet_revision_to_sign')
+  assert.equal(row.title, canonical.TIMESHEET_REVISION_DUE_NOTICE_TITLE)
+  assert.equal(row.userId, PERSON)
+  assert.equal((await n1.handle({ orgId: ORG, collection: 'bookings', bookingId: 'B1', before: booking({ workEndTime: '18:00' }), after: booking({ workEndTime: '19:00' }) })).written, 0, 'once per exported version')
+  // The person's own change: nothing.
+  const own = storeWith({ sheets: [signedSheet({ exportedAt })], users })
+  const n3 = createTimesheetBookingNotice({ store: own, canonical, logger: { info() {}, error() {} } })
+  assert.equal((await n3.handle({ orgId: ORG, collection: 'bookings', bookingId: 'B1', before: booking(), after: booking({ workEndTime: '18:00', updatedBy: PERSON }) })).written, 0)
+})
+
+test('1.55.0: only the latest version of a pay run is judged — an open revision follows the 1.47.0 rule, the exported original is ignored', async () => {
+  const exportedAt = new Date(signedAt + 7200_000)
+  const original = signedSheet({ exportedAt })
+  // REV 1, signed by the person, not exported.
+  const rev = { id: `${original.id}_rev1`, data: { ...signedSheet().data, managerSignedAt: null, revisionOf: original.id, revision: 1 } }
+  const store = storeWith({ sheets: [original, rev], users })
+  const notice = createTimesheetBookingNotice({ store, canonical, logger: { info() {}, error() {} } })
+  assert.equal((await notice.handle({ orgId: ORG, collection: 'bookings', bookingId: 'B1', before: booking(), after: booking({ workEndTime: '18:00' }) })).written, 1)
+  const [row] = [...store.created.values()]
+  assert.equal(row.type, 'timesheet_bookings_changed', 'the open revision reopens; no "update to an exported sheet"')
+})
+
+test('1.54.0: no notice for a write that changes nothing the rule reads, or the person\'s own change', async () => {
 
   const plain = storeWith({ sheets: [signedSheet()], users })
   const n2 = createTimesheetBookingNotice({ store: plain, canonical, logger: { info() {}, error() {} } })

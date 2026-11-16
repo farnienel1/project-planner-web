@@ -64,6 +64,10 @@ export type InvoicePdfContext = {
   emptyStateMessage?: string
   /** Organisation currency (`formatMoney`). Defaults to the open company's. */
   currencyCode?: string
+  /** Rulebook 1.55.0: `timesheetInvoiceNumberForRevision` ("TS-20261101-6A9632-REV1"). */
+  invoiceNumber?: string
+  /** Rulebook 1.55.0: "REV 1 · +£44.12 from the previous version". */
+  revisionNote?: string
 }
 
 /**
@@ -195,6 +199,11 @@ export function buildTimesheetInvoicePdf(input: InvoicePdfContext): Uint8Array {
   stream += meta('Generated', generated, MARGIN, y)
   stream += meta(input.periodMetaLabel || 'INVOICE PERIOD', period, MARGIN + col + 14, y)
   y += 40
+  if (input.invoiceNumber || input.revisionNote) {
+    if (input.invoiceNumber) stream += meta('Invoice no.', input.invoiceNumber, MARGIN, y)
+    if (input.revisionNote) stream += meta('Revision', money(input.revisionNote), MARGIN + col + 14, y)
+    y += 40
+  }
   if (input.vatNumber) stream += meta('VAT number', input.vatNumber, MARGIN, y)
   if (input.utrNumber) stream += meta('UTR number', input.utrNumber, MARGIN + col + 14, y)
   if (input.vatNumber || input.utrNumber) y += 40

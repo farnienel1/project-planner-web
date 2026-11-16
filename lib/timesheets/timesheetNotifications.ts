@@ -5,7 +5,12 @@
 import { saveInboxNotification } from '@/lib/firebase/notifyInbox'
 import {
   TIMESHEET_PENDING_NOTICE_TYPE,
+  TIMESHEET_REVISION_NOTICE_MESSAGE,
+  TIMESHEET_REVISION_NOTICE_TITLE,
+  TIMESHEET_REVISION_NOTICE_TYPE,
   TIMESHEET_SIGNED_NOTICE_TYPE,
+  timesheetRevisionNoticeKey,
+  timesheetRevisionToSignRecipients,
   lineManagerPeerRecipients,
   notificationDestination,
   timesheetNotificationDedupeKey,
@@ -172,4 +177,45 @@ export function timesheetNotificationHref(
     return timesheetsTeamHref({ tab: 'signed', user: dest.userId || null, period: dest.dayKey || null })
   }
   return null
+}
+
+/**
+ * Rulebook 1.55.0 §8 / §13: `timesheet_revision_to_sign` when an admin or line manager creates a revision of the
+ * person's exported timesheet ("Your timesheet has a revision to sign"). One row per revision
+ * (`timesheetRevisionNoticeKey`); never the person who created it (`timesheetRevisionToSignRecipients`). When a
+ * booking change made the revision due, the server already told the person, and a revision they create themself
+ * notifies nobody.
+ */
+export async function notifyTimesheetRevisionToSign({
+  organizationId,
+  subjectUser,
+  actorUserId,
+  users,
+  revisionDocumentId,
+  weekStart,
+}: {
+  organizationId: string
+  subjectUser: User
+  actorUserId: string
+  users: ReadonlyArray<User>
+  revisionDocumentId: string
+  weekStart: Date
+}): Promise<void> {
+  const key = timesheetRevisionNoticeKey(revisionDocumentId)
+  if (!key) return
+  const roster = rulebookRoster(users)
+  const actorUser = users.find((member) => member.id === actorUserId)
+  const actor = actorUser ? rulebookPerson(actorUser, users) : actorUserId
+  for (const recipientId of timesheetRevisionToSignRecipients(rulebookPerson(subjectUser, users), actor, roster)) {
+    await saveInboxNotification({
+      id: await syntheticUuidFromKey(`${key}|${recipientId}`),
+      organizationId,
+      type: TIMESHEET_REVISION_NOTICE_TYPE,
+      title: TIMESHEET_REVISION_NOTICE_TITLE,
+      message: TIMESHEET_REVISION_NOTICE_MESSAGE,
+      userId: recipientId,
+      deepLinkUserId: subjectUser.id,
+      deepLinkWeekStart: weekStart,
+    })
+  }
 }

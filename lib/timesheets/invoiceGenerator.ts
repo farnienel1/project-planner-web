@@ -44,6 +44,8 @@ export function buildTimesheetInvoiceHtml({
   totalLabel = 'Total invoice amount',
   notes = [],
   currencyCode = currentOrganizationCurrency(),
+  invoiceNumber = '',
+  revisionNote = '',
 }: {
   organizationName: string
   subject: TimesheetSubject
@@ -65,6 +67,10 @@ export function buildTimesheetInvoiceHtml({
   notes?: string[]
   /** Organisation currency (`formatMoney`). */
   currencyCode?: string
+  /** Rulebook 1.55.0: `timesheetInvoiceNumberForRevision` ("TS-20261101-6A9632-REV1"). */
+  invoiceNumber?: string
+  /** Rulebook 1.55.0: "REV 1 · +£44.12 from the previous version" (`timesheetRevisionLabel`, `timesheetRevisionDifference`). */
+  revisionNote?: string
 }): string {
   const period = formatPaymentPeriodLine(weekStart, weekEnd, timeZone)
   const generated = formatStampInZone(generatedAt, timeZone)
@@ -167,6 +173,8 @@ export function buildTimesheetInvoiceHtml({
     <div><div class="label">Name</div><div class="value">${escapeHtml(subject.name)}</div></div>
     <div><div class="label">Generated</div><div class="value">${escapeHtml(generated)}</div></div>
     <div><div class="label">${escapeHtml(periodMetaLabel)}</div><div class="value">${escapeHtml(period)}</div></div>
+    ${invoiceNumber ? `<div><div class="label">Invoice no.</div><div class="value">${escapeHtml(invoiceNumber)}</div></div>` : ''}
+    ${revisionNote ? `<div><div class="label">Revision</div><div class="value">${escapeHtml(revisionNote)}</div></div>` : ''}
     ${vatNumber ? `<div><div class="label">VAT number</div><div class="value">${escapeHtml(vatNumber)}</div></div>` : ''}
     ${utrNumber ? `<div><div class="label">UTR number</div><div class="value">${escapeHtml(utrNumber)}</div></div>` : ''}
   </div>

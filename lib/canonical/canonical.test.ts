@@ -16793,3 +16793,241 @@ test('1.53.0 review: a new night shift clashes with the next morning\'s early bo
   // A day shift never reaches the next day.
   assert.deepEqual(R112.bookingRequestClashIds({ request: { dayKey: '2026-11-02', timeSlot: 'FULL DAY' }, existing, day: { standardDayStart: '07:30', standardDayEnd: '16:00' } }), [])
 })
+
+// Rulebook 1.55.0 §8 / §13 (owner decisions 16 Nov): timesheet revisions — REV 1, REV 2, …
+{
+  const R = R112
+  const SUBJECT = 'sub-1'
+  const LM = 'lm-1'
+  const ADMIN = 'adm-1'
+  const ORIGINAL = 'timesheet_sub-1_1761955200'
+  const exportedAt = { seconds: 1763200000, nanoseconds: 0 }
+  const LATE_APPROVED = { kind: 'expense', id: 'late1', title: 'Parking', details: '', jobNumber: 'J1', amount: 5, date: '2026-11-05' }
+  const LATE_PENDING = { kind: 'expense', id: 'late2', title: 'Tolls', details: '', jobNumber: 'J1', amount: 7, date: '2026-11-06' }
+  const signedAt = { seconds: 1763100000, nanoseconds: 0 }
+  const original = {
+    userId: SUBJECT,
+    weekStart: { seconds: 1761955200, nanoseconds: 0 },
+    weekEnd: { seconds: 1763164800, nanoseconds: 0 },
+    weekStartKey: '2026-11-01',
+    weekEndKey: '2026-11-15',
+    operativeSignedAt: signedAt,
+    managerSignedAt: signedAt,
+    exportedAt,
+    managerNote: 'note',
+    priceWorkEntries: [{ title: 'Fix', amount: 100, jobNumber: 'J1', startDate: '2026-11-03' }],
+    expenseEntries: [{ id: 'e1', title: 'Fuel', amount: 20, date: '2026-11-04' }],
+    lateExtras: [LATE_APPROVED, LATE_PENDING],
+    extraEntryReviews: {
+      e1: { decision: 'declined' },
+      late1: { decision: 'approved', revisedAmount: null, reviewedAmount: 5, reviewedFingerprint: R.timesheetEntryFingerprint(LATE_APPROVED, 'expense'), lateExtra: true },
+      gone: { decision: 'approved' },
+    },
+    payrollLineReviews: { 'op-b1': { decision: 'edited', revisedAmount: 50 } },
+    weeklyReportOverride: {
+      lines: [{ id: 'op-b1', amount: 250, days: 1, hours: 8.5 }],
+      priceWork: [{ id: 'p', amount: 100 }],
+      expenses: [{ id: 'late1', amount: 5, lateExtra: true }],
+    },
+  }
+
+  test('1.55.0 revision ids: parse, build, label, subject', () => {
+    assert.deepEqual(R.parseTimesheetRevisionDocId(ORIGINAL), { documentId: ORIGINAL, baseDocumentId: ORIGINAL, revision: 0 })
+    assert.deepEqual(R.parseTimesheetRevisionDocId(`${ORIGINAL}_rev2`), { documentId: `${ORIGINAL}_rev2`, baseDocumentId: ORIGINAL, revision: 2 })
+    assert.equal(R.parseTimesheetRevisionDocId('variations_x'), null)
+    assert.equal(R.parseTimesheetRevisionDocId(`${ORIGINAL}_rev100`), null)
+    assert.equal(R.isTimesheetRevisionDocId(`${ORIGINAL}_rev1`), true)
+    assert.equal(R.isTimesheetRevisionDocId(ORIGINAL), false)
+    assert.equal(R.timesheetRevisionDocId(ORIGINAL, 1), `${ORIGINAL}_rev1`)
+    assert.equal(R.timesheetRevisionDocId(ORIGINAL, 0), ORIGINAL)
+    assert.equal(R.timesheetRevisionDocId(`${ORIGINAL}_rev1`, 2), '', 'only an original is a base')
+    assert.equal(R.timesheetRevisionDocId(ORIGINAL, 100), '')
+    assert.equal(R.timesheetRevisionLabel(1), 'REV 1')
+    assert.equal(R.timesheetRevisionLabel(0), '')
+    assert.equal(R.timesheetDocumentSubjectId(`${ORIGINAL}_rev3`), SUBJECT)
+    assert.equal(R.timesheetDocumentSubjectId(ORIGINAL), SUBJECT)
+  })
+
+  test('1.55.0 invoice numbers: derived from the pay run and the person, "-REV1" for a revision', () => {
+    const base = R.timesheetInvoiceNumber({ subjectId: '6a9632ba-x', startDayKey: '2026-11-01' })
+    assert.equal(base, 'TS-20261101-6A9632')
+    assert.equal(R.timesheetInvoiceNumberForRevision(base, 1), 'TS-20261101-6A9632-REV1')
+    assert.equal(R.timesheetInvoiceNumberForRevision(base, 2), 'TS-20261101-6A9632-REV2')
+    assert.equal(R.timesheetInvoiceNumberForRevision(base, 0), base)
+    assert.equal(R.timesheetInvoiceNumber({ subjectId: '', startDayKey: '2026-11-01' }), '')
+  })
+
+  test('1.55.0 difference: "+£44.12", "-£10.00", "£0.00"', () => {
+    assert.deepEqual(R.timesheetRevisionDifference({ total: 676.47, previousTotal: 632.35, currency: 'GBP' }), { amount: 44.12, text: '+£44.12' })
+    assert.deepEqual(R.timesheetRevisionDifference({ total: 90, previousTotal: 100, currency: 'GBP' }), { amount: -10, text: '-£10.00' })
+    assert.equal(R.timesheetRevisionDifference({ total: 5, previousTotal: 5, currency: 'GBP' })?.text, '£0.00')
+    assert.equal(R.timesheetRevisionDifference({ total: 5, previousTotal: null, currency: 'GBP' }), null)
+  })
+
+  const reviewerInput = (writer: string, extra: Record<string, unknown> = {}) => ({
+    writerUserId: writer,
+    subjectUserId: SUBJECT,
+    writerIsAdmin: writer === ADMIN,
+    subjectLineManagerIds: [LM],
+    ...extra,
+  })
+
+  test('1.55.0 who may create a revision: admins and the line manager, never the person; only on an exported latest version', () => {
+    const chain = R.timesheetVersionsForPeriod([{ documentId: ORIGINAL, data: original }])[0]
+    const admin = R.canCreateTimesheetRevision({ reviewer: reviewerInput(ADMIN), chain })
+    assert.equal(admin.allowed, true)
+    assert.equal(admin.nextRevision, 1)
+    assert.equal(admin.documentId, `${ORIGINAL}_rev1`)
+    assert.equal(R.canCreateTimesheetRevision({ reviewer: reviewerInput(LM), chain }).allowed, true)
+    assert.equal(R.canCreateTimesheetRevision({ reviewer: reviewerInput('other-manager'), chain }).reason, 'not-reviewer')
+    assert.equal(R.canCreateTimesheetRevision({ reviewer: reviewerInput(SUBJECT, { writerIsAdmin: true }), chain }).reason, 'not-reviewer')
+    // The owner refinement (16 Nov): the person creates it themself with "Review and sign again".
+    assert.equal(R.canCreateTimesheetRevision({ reviewer: reviewerInput(SUBJECT), chain, writerIsSubject: true }).allowed, true)
+    const open = R.timesheetVersionsForPeriod([{ documentId: ORIGINAL, data: { ...original, exportedAt: null } }])[0]
+    assert.equal(R.canCreateTimesheetRevision({ reviewer: reviewerInput(ADMIN), chain: open }).reason, 'not-exported')
+    const withOpenRev = R.timesheetVersionsForPeriod([
+      { documentId: `${ORIGINAL}_rev1`, data: { userId: SUBJECT, revision: 1 } },
+      { documentId: ORIGINAL, data: original },
+    ])[0]
+    assert.equal(R.canCreateTimesheetRevision({ reviewer: reviewerInput(ADMIN), chain: withOpenRev }).reason, 'revision-open')
+    const exportedRev = R.timesheetVersionsForPeriod([
+      { documentId: ORIGINAL, data: original },
+      { documentId: `${ORIGINAL}_rev1`, data: { userId: SUBJECT, revision: 1, exportedAt } },
+    ])[0]
+    const next = R.canCreateTimesheetRevision({ reviewer: reviewerInput(LM), chain: exportedRev })
+    assert.equal(next.nextRevision, 2)
+    assert.equal(next.documentId, `${ORIGINAL}_rev2`)
+  })
+
+  test('1.55.0 versions: latest for lists, latest exported or signed off for reports', () => {
+    const chain = R.timesheetVersionsForPeriod([
+      { documentId: `${ORIGINAL}_rev1`, data: { userId: SUBJECT, exportedAt } },
+      { documentId: ORIGINAL, data: original },
+      { documentId: `${ORIGINAL}_rev2`, data: { userId: SUBJECT } },
+      { documentId: 'deadlines_x', data: {} },
+    ])
+    assert.equal(chain.length, 1)
+    assert.deepEqual(chain[0].map((v) => v.revision), [0, 1, 2])
+    assert.equal(R.timesheetLatestVersion(chain[0])?.revision, 2)
+    assert.equal(R.timesheetReportVersion(chain[0])?.revision, 1, 'the open REV 2 leaves REV 1 in force')
+    assert.deepEqual(R.timesheetEarlierVersions(chain[0]).map((v) => v.revision), [1, 0])
+    const signed = R.timesheetVersionsForPeriod([
+      { documentId: ORIGINAL, data: original },
+      { documentId: `${ORIGINAL}_rev1`, data: { userId: SUBJECT, operativeSignedAt: signedAt, managerSignedAt: signedAt } },
+    ])[0]
+    assert.equal(R.timesheetReportVersion(signed)?.revision, 1, 'a counter-signed revision is used before export')
+  })
+
+  test('1.55.0 pickTimesheetRowForPeriod reads an original and its revisions as one row', () => {
+    const rows = [
+      { startDayKey: '2026-11-01', endDayKey: '2026-11-15', hasActivity: true, documentId: ORIGINAL, exported: true },
+      { startDayKey: '2026-11-01', endDayKey: '2026-11-15', hasActivity: false, documentId: `${ORIGINAL}_rev1` },
+    ]
+    const period = { startDayKey: '2026-11-01', endDayKey: '2026-11-15' }
+    assert.equal(R.pickTimesheetRowForPeriod(rows, period), 1, 'the latest version, even with no activity yet')
+    assert.equal(R.pickTimesheetRowForPeriod(rows, period, { versions: 'reports' }), 0)
+    assert.equal(R.pickTimesheetRowForPeriod(rows.map(({ documentId: _d, ...row }) => row), period), 0, 'without ids: as before')
+  })
+
+  test('1.55.0 revision create fields: period, entries, late extras and reviews copied exactly; no signatures or figures', () => {
+    const made = R.timesheetRevisionCreateFields({ previous: { documentId: ORIGINAL, data: original }, writerUserId: LM })
+    assert.ok(made)
+    assert.equal(made!.documentId, `${ORIGINAL}_rev1`)
+    const f = made!.fields
+    assert.deepEqual(Object.keys(f).sort(), [
+      'expenseEntries', 'extraEntryReviews', 'lateExtras', 'payrollLineReviews', 'previousVersionId', 'priceWorkEntries',
+      'revision', 'revisionCreatedBy', 'revisionOf', 'userId', 'weekEnd', 'weekEndKey', 'weekStart', 'weekStartKey',
+    ])
+    assert.equal(f.revisionOf, ORIGINAL)
+    assert.equal(f.previousVersionId, ORIGINAL)
+    assert.equal(f.revision, 1)
+    assert.equal(f.revisionCreatedBy, LM)
+    for (const key of R.TIMESHEET_REVISION_COPIED_FIELDS) {
+      if (key in original) assert.deepEqual(f[key], (original as Record<string, unknown>)[key], key)
+    }
+    for (const key of ['operativeSignedAt', 'managerSignedAt', 'exportedAt', 'weeklyReportOverride', 'managerNote', 'previousExportedTotal']) assert.equal(key in f, false)
+    // An entry stored without an id keeps its derived id on the revision, so its review still matches.
+    assert.equal(
+      R.timesheetEntryId(`${ORIGINAL}_rev1`, 'priceWork', 0, original.priceWorkEntries[0]),
+      R.timesheetEntryId(ORIGINAL, 'priceWork', 0, original.priceWorkEntries[0])
+    )
+    // The approved late extra keeps paying on the revision; the exported total is what the difference starts from.
+    assert.equal(R.timesheetExportedTotal(original), 355)
+    const rev2 = R.timesheetRevisionCreateFields({ previous: { documentId: `${ORIGINAL}_rev1`, data: { ...f, exportedAt } }, writerUserId: SUBJECT })
+    assert.equal(rev2!.documentId, `${ORIGINAL}_rev2`)
+    assert.equal(rev2!.fields.previousVersionId, `${ORIGINAL}_rev1`)
+    assert.equal(rev2!.fields.revisionOf, ORIGINAL)
+    assert.equal(R.timesheetRevisionCreateFields({ previous: { documentId: ORIGINAL, data: { ...original, exportedAt: null } }, writerUserId: LM }), null)
+  })
+
+  test('1.55.0 timesheet_revision_to_sign: push, toggle, opens My Timesheets, the person never the actor', () => {
+    assert.equal(R.TIMESHEET_REVISION_NOTICE_TYPE, 'timesheet_revision_to_sign')
+    assert.equal(R.TIMESHEET_REVISION_NOTICE_MESSAGE, 'Your timesheet has a revision to sign')
+    assert.ok(R.KNOWN_NOTIFICATION_TYPES.includes('timesheet_revision_to_sign'))
+    assert.equal(R.notificationDeliversDevicePush('timesheet_revision_to_sign'), true)
+    assert.equal(R.notificationCatalogRow('timesheet_revision_to_sign')?.recipients, 'timesheetRevisionToSignRecipients')
+    assert.deepEqual(
+      R.notificationDestination({ type: 'timesheet_revision_to_sign', dayKey: '2026-11-01', deepLinkUserId: SUBJECT, role: 'operative' } as never),
+      { kind: 'timesheetMine', userId: SUBJECT, dayKey: '2026-11-01' }
+    )
+    const roster = [
+      { id: SUBJECT, email: 's@x.com', isActive: true, passwordSet: true },
+      { id: LM, email: 'l@x.com', isActive: true, passwordSet: true },
+    ]
+    assert.deepEqual(R.timesheetRevisionToSignRecipients(SUBJECT, LM, roster as never), [SUBJECT])
+    assert.deepEqual(R.timesheetRevisionToSignRecipients(SUBJECT, SUBJECT, roster as never), [])
+    assert.equal(R.timesheetRevisionNoticeKey(`${ORIGINAL}_rev1`), `timesheetRevision|${ORIGINAL}_rev1`)
+    assert.equal(R.timesheetRevisionNoticeKey(ORIGINAL), null)
+  })
+
+  test('1.55.0 revision due: an exported latest version whose bookings changed; never before export', () => {
+    const chain = R.timesheetVersionsForPeriod([{ documentId: ORIGINAL, data: original }])[0]
+    const due = R.timesheetRevisionDue({ chain, change: { changed: true, exported: true } })
+    assert.equal(due.due, true)
+    assert.equal(due.label, 'REV 1')
+    assert.equal(due.documentId, `${ORIGINAL}_rev1`)
+    assert.equal(due.message, R.TIMESHEET_REVISION_DUE_MESSAGE)
+    assert.equal(R.timesheetRevisionDue({ chain, change: { changed: false, exported: true } }).due, false)
+    const open = R.timesheetVersionsForPeriod([{ documentId: ORIGINAL, data: { ...original, exportedAt: null } }])[0]
+    assert.equal(R.timesheetRevisionDue({ chain: open, change: { changed: true, exported: false } }).due, false, 'before export: 1.47.0 reopen, no REV')
+    const withRev = R.timesheetVersionsForPeriod([
+      { documentId: ORIGINAL, data: original },
+      { documentId: `${ORIGINAL}_rev1`, data: { userId: SUBJECT, exportedAt } },
+    ])[0]
+    assert.equal(R.timesheetRevisionDue({ chain: withRev, change: { changed: true, exported: true } }).label, 'REV 2')
+  })
+
+  test('1.55.0 the booking notice also fires for an exported sheet when asked, once per exported version', () => {
+    const booking = (start: string) => ({ bookingId: 'b1', collection: 'bookings', personId: SUBJECT, dayKey: '2026-11-03', timeSlot: 'CUSTOM_HOURS', workStartTime: start, workEndTime: '16:00', status: 'Confirmed', projectId: 'j1' })
+    const before = booking('07:00')
+    const sheet = {
+      userId: SUBJECT,
+      operativeSignedAt: 1763100000000,
+      managerSignedAt: 1763100000000,
+      exportedAt: 1763200000000,
+      weeklyReportOverride: { approvedAt: 1763100000000, lines: [{ id: 'op-b1', bookingId: 'b1', collection: 'bookings', bookingFingerprint: R.overtimeBookingFingerprint({ ...before, date: '2026-11-03' } as never, 'Europe/London') }] },
+    }
+    const input = { sheet, periodStartDayKey: '2026-11-01', periodEndDayKey: '2026-11-15', before, after: booking('06:00'), personIds: [SUBJECT], timeZone: 'Europe/London', nowMs: 1763300000000 }
+    assert.equal(R.timesheetBookingChangeNotice(input as never).reason, 'exported', 'unchanged for callers that do not ask')
+    const decision = R.timesheetBookingChangeNotice({ ...input, includeExported: true } as never)
+    assert.equal(decision.notify, true)
+    assert.equal(decision.exported, true)
+    const id = R.timesheetRevisionDueNoticeId(ORIGINAL, sheet as never)
+    assert.ok(id)
+    assert.equal(R.timesheetRevisionDueNoticeId(ORIGINAL, sheet as never), id)
+    assert.notEqual(R.timesheetRevisionDueNoticeId(ORIGINAL, { ...sheet, exportedAt: 1763200001000 } as never), id)
+    assert.equal(R.timesheetRevisionDueNoticeId(ORIGINAL, { ...sheet, exportedAt: null } as never), null)
+  })
+}
+
+test('1.55.0 weekly report check line names the revision used ("· REV 1")', () => {
+  const sheet = {
+    operativeSignedAt: new Date('2026-11-16T10:00:00Z'),
+    operativeSignedByName: 'Test Admin',
+    operativeSignatureImageBase64: 'x',
+    weeklyReportOverride: { lines: [{ id: 'op-b02-normal', date: '2026-11-02', amount: 250, paidHours: 8.5, days: 1, isOvertime: false }], priceWork: [], expenses: [] },
+  }
+  const base = { personId: 'u-admin', startDayKey: '2026-11-01', endDayKey: '2026-11-15', sheet, payrollLines: [] }
+  assert.equal(wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...base, revision: 1 }] }).people[0].check?.label, 'Timesheet: Signed · REV 1 · Invoice £250.00 ✓')
+  assert.equal(wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [base] }).people[0].check?.label, 'Timesheet: Signed · Invoice £250.00 ✓')
+})

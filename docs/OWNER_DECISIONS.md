@@ -785,6 +785,30 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 | 16 Nov | The 2FA cookie check also covers the register-interest owner routes (`/api/interest/registrations`), which use the same owner check. | done, owner OK 16 Nov |
 | 16 Nov | "Delete unfinished sign-up" also refuses a ghost operative, and anyone whose unfinished organisation has other members (half-set-up organisations with other people in them). | done, owner OK 16 Nov |
 
+## 16 Nov decisions (for 1.55, timesheet revisions)
+
+| Date | Decision | Status |
+|---|---|---|
+| 16 Nov | **Lock all.** Once a timesheet is exported nobody changes it, admins included. | rules in PR #334 (1.54.1, w-rules-hardening); 1.55.0 adds the revision locks (an exported revision, and an exported original that has a revision) |
+| 16 Nov | **Corrections go through revisions** (REV 1, REV 2, …): the original and each exported revision never change; a revision goes through normal signing (person, then line manager; a self-signed person alone); on export it shows "REV N" and the difference from the previous version (e.g. "+£44.12"); the next correction is REV N + 1. | done web + rulebook + rules (1.55.0, w155-timesheet-revisions); iOS open (hand-off v1.55.0) |
+| 16 Nov | **Refined: a revision is caused by a booking change**, never by editing a timesheet. Before export nothing changes from 1.47 (the sheet reopens, no REV). After export a booking change (the 1.47 rule) leaves the sheet frozen and makes a revision due, derived from the latest exported version and the live bookings (`timesheetRevisionDue`), never written by whoever edits the booking. The person gets "update to your already exported timesheet" and the yellow triangle, presses "Review and sign again" (their own write creates the revision), signs the live figures; the line manager counter-signs. | done web + rulebook + rules + functions (1.55.0); iOS open |
+| 16 Nov | **Notice**: the 1.54 booking-notice functions also fire for exported sheets, once per exported version, never the actor — one type `timesheet_revision_to_sign` ("Update to your exported timesheet"; "Your timesheet has a revision to sign" when a reviewer creates one). | done (1.55.0); functions deploy pending |
+| 16 Nov | **Manual "Create revision"** for admins and line managers kept (cheap) — for corrections a booking did not cause. | done web (1.55.0); iOS open |
+| 16 Nov | **Price work and expenses after export**: "add it to your next timesheet" still; a revision carries the period's entries and late extras. | done (1.55.0) |
+| 16 Nov | **Invoice number**: the original's number plus "-REV1", "-REV2". | done (1.55.0: invoices had no number — a derived `TS-{YYYYMMDD}-{person}` is introduced, judgement call J3) |
+| 16 Nov | Build now, before the 25 Nov launch; full test 20 Nov. | in progress |
+
+## 1.55.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 16 Nov | J1 A revision copies the late extras exactly as stored (the rules check the copy is exact, so the person cannot add approvals); a late extra still pending stays pending and can now be decided on the revision. | done, owner to confirm |
+| 16 Nov | J2 The rules cannot see whether a booking really changed: the person could create a revision with nothing changed — it shows "+£0.00" and still needs the line manager's counter-signature. | done, owner to confirm |
+| 16 Nov | J3 Invoices had no number before 1.55.0; every invoice (old sheets included) now shows a derived number `TS-{pay run first day}-{first 6 letters/digits of the person's id}`, revisions "-REV1". | done, owner to confirm |
+| 16 Nov | J4 While a revision is open (not yet signed off), the weekly report and Payrun Snapshot keep using the previous exported version. | done, owner to confirm |
+| 16 Nov | J5 The difference is not stored: it is worked out from the previous (frozen) version when shown, so it cannot be forged. | done |
+| 16 Nov | J6 An open revision can be deleted by a reviewer (admin or line manager), never by the person. No screen offers it yet. | done (rules), owner to confirm |
+
 ## Open questions for the owner
 
 | Date | Question |

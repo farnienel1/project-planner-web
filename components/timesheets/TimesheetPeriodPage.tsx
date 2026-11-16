@@ -56,6 +56,7 @@ import {
 import { loadTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
 import {
   notifyTimesheetPendingManagerSignoff,
+  notifyTimesheetRevisionToSign,
   notifyTimesheetSignedByManager,
 } from '@/lib/timesheets/timesheetNotifications'
 import {
@@ -80,11 +81,29 @@ import {
 import {
   draftFromFirestoreMap,
   draftToFirestoreMap,
+  createTimesheetRevision,
   loadTimesheetDraft,
   saveTimesheetDraft,
   timesheetDocId,
   timesheetSourceDocumentId,
+  timesheetVersionChain,
 } from '@/lib/timesheets/timesheetStorage'
+import { timesheetRevisionCopy } from '@/lib/timesheets/timesheetRevisionCopy'
+import {
+  TIMESHEET_CREATE_REVISION_HELP,
+  TIMESHEET_CREATE_REVISION_LABEL,
+  TIMESHEET_EARLIER_VERSIONS_LABEL,
+  TIMESHEET_ORIGINAL_VERSION_LABEL,
+  TIMESHEET_REVIEW_AND_SIGN_REVISION_LABEL,
+  canCreateTimesheetRevision,
+  timesheetEarlierVersions,
+  timesheetExportedTotal,
+  timesheetInvoiceRows,
+  timesheetLatestVersion,
+  timesheetRevisionDue,
+  timesheetRevisionLabel,
+  type TimesheetVersion,
+} from '@/lib/canonical'
 import { watchOrgDocument } from '@/lib/firebase/watchOrgQuery'
 import { invoiceLinesForTimesheet, invoiceLinesTotal, invoiceRateChangeNotes } from '@/lib/timesheets/timesheetExport'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
@@ -284,6 +303,8 @@ export function TimesheetPeriodPage({
   const payInputs: TimesheetInputsState = withBookingsGate(payInputsProp, { bookingsLoaded, bookingsFailed })
   const [draft, setDraft] = useState<TimesheetDraft>(emptyTimesheetDraft())
   const sourceDocumentId = useRef<string | null>(null)
+  // Rulebook 1.55.0 §8: every stored version of this pay run (original, REV 1, …), oldest first.
+  const [versionChain, setVersionChain] = useState<TimesheetVersion[]>([])
   // Rulebook 1.9.0 §1: the open sheet is live. A sign-off or edit on another device replaces the draft — unless this
   // screen holds an unsaved edit or an open editor, when it waits and says so (never overwriting what is typed).
   const localEdits = useRef(false)
@@ -435,6 +456,23 @@ export function TimesheetPeriodPage({
     selfSigned: sheetSelfSigned,
   })
   const changeActions = signedTimesheetActions(bookingChange)
+  // Rulebook 1.55.0 §8: after export a booking change never reopens the frozen sheet — a revision becomes due
+  // (derived from the latest exported version and the live bookings; nobody writes it).
+  const revisionDue = timesheetRevisionDue({ chain: versionChain, change: bookingChange })
+  const latestVersion = timesheetLatestVersion(versionChain)
+  const revisionCheck = canCreateTimesheetRevision({
+    reviewer: {
+      writerUserId: viewer?.id,
+      subjectUserId: subjectUser.id,
+      writerIsAdmin: Boolean(viewer && seesEveryUserTimesheet(staffAccountRole(viewer))),
+      writerFormerIds: viewer?.formerUserIds ?? [],
+      writerAliasIds: viewer ? userIdsSharingEmail(viewer, users) : [],
+      subjectLineManagerIds: lineManagerUserIds(subjectUser, users),
+      roster: rulebookRoster(users),
+    },
+    chain: versionChain,
+    writerIsSubject: mode === 'mine',
+  })
   // Review #325 item 8: everything the sheet (and the record of what is signed) is built from has loaded.
   const signInputsLoaded = payInputs.ready && users.length > 0 && operativesLoaded
   const waitingForPerson = bookingChange.waitingFor === 'person'
@@ -479,6 +517,16 @@ export function TimesheetPeriodPage({
   const extrasTotal = totals.priceWork
   const expensesAmount = totals.expenses
   const total = totals.total
+  // Rulebook 1.55.0: REV label, invoice number ("…-REV1") and the difference from the previous exported version.
+  const revisionCopy = timesheetRevisionCopy({
+    subjectId: subjectUser.id,
+    periodStart,
+    timeZone,
+    revision: draft.revision,
+    chain: versionChain,
+    total,
+    currency,
+  })
   const overtimeAmount = totals.overtimeLabour
   const hoursSubtotal = totals.standardLabour
 
@@ -598,6 +646,7 @@ export function TimesheetPeriodPage({
       .then((loaded) => {
         if (cancelled) return
         sourceDocumentId.current = timesheetSourceDocumentId(loaded)
+        setVersionChain(timesheetVersionChain(loaded))
         baseDraft.current = sourceDocumentId.current ? loaded : null
         setDraft(applySelfApprovalIfNoLineManager(loaded, subjectRef.current, usersRef.current))
       })
@@ -1019,6 +1068,34 @@ export function TimesheetPeriodPage({
     }
   }
 
+  // Rulebook 1.55.0 §8: create the next revision — the person's own write ("Review and sign again", when a booking
+  // change made it due) or a reviewer's ("Create revision"). One transaction creates only the new document; the page then
+  // opens it like any open sheet. A reviewer's revision tells the person (`timesheet_revision_to_sign`).
+  const handleCreateRevision = async () => {
+    if (!organization?.id || !latestVersion || !revisionCheck.allowed || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      const result = await createTimesheetRevision({ organizationId: organization.id, previousDocumentId: latestVersion.documentId })
+      if (result.status === 'created' && viewer && viewer.id !== subjectUser.id) {
+        await notifyTimesheetRevisionToSign({
+          organizationId: organization.id,
+          subjectUser,
+          actorUserId: viewer.id,
+          users,
+          revisionDocumentId: result.documentId,
+          weekStart: periodStart,
+        }).catch(() => undefined)
+      }
+      if (result.status === 'not-exported' || result.status === 'missing') setError(revisionCheck.message || 'This timesheet could not be revised.')
+      setLoadAttempt((attempt) => attempt + 1)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to create the revision')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   // Download only — iOS Generate Invoice does not set exportedAt. Email and export does.
   const runInvoiceGeneration = (taxIds: { utrNumber?: string; vatNumber?: string } = invoiceTaxIds) => {
     if (!organization || !fullyApproved || !payInputs.ready) return
@@ -1069,6 +1146,8 @@ export function TimesheetPeriodPage({
       lines,
       notes,
       currencyCode: currency,
+      invoiceNumber: revisionCopy.invoiceNumber,
+      revisionNote: revisionCopy.note,
     })
     const pdf = buildTimesheetInvoicePdf({
       organizationName: organization.name || 'Organisation',
@@ -1082,6 +1161,8 @@ export function TimesheetPeriodPage({
       lines,
       notes,
       currencyCode: currency,
+      invoiceNumber: revisionCopy.invoiceNumber,
+      revisionNote: revisionCopy.note,
     })
     setInvoiceHtml(html)
     setInvoicePdf(pdf)
@@ -1275,7 +1356,7 @@ export function TimesheetPeriodPage({
     <>
       <PageBand
         back={back}
-        eyebrow={`${heading} · ${mode === 'review' ? 'Breakdown' : 'This period'}`}
+        eyebrow={`${heading} · ${mode === 'review' ? 'Breakdown' : 'This period'}${revisionCopy.label ? ` · ${revisionCopy.label}` : ''}`}
         title={mode === 'review' ? reviewName : periodTitle}
         subtitle={mode === 'review' ? periodTitle : undefined}
         actions={mode === 'review' ? <ReviewStatusCapsule signed={Boolean(draft.operativeSignedAt) && !waitingForPerson} /> : undefined}
@@ -1302,6 +1383,19 @@ export function TimesheetPeriodPage({
           rows={managerAdjustmentRows(draft)}
         />
       ) : null}
+
+      <TimesheetRevisionPanel
+        mode={mode}
+        revisionLabel={revisionCopy.label}
+        differenceText={revisionCopy.differenceText}
+        due={revisionDue}
+        canCreate={revisionCheck.allowed && (mode === 'mine' ? revisionDue.due : true)}
+        busy={busy || !signInputsLoaded}
+        earlier={timesheetEarlierVersions(versionChain)}
+        timeZone={timeZone}
+        currency={currency}
+        onCreate={() => void handleCreateRevision()}
+      />
 
       <div className="pu-grid2">
         <div className="pu-col">
@@ -1554,7 +1648,7 @@ export function TimesheetPeriodPage({
                 </Note>
               ) : canCounterSignAgain ? (
                 <Note tone="amber">Signed again — waiting for your line manager to counter-sign the new figures.</Note>
-              ) : bookingChange.exported && bookingChange.changed ? (
+              ) : bookingChange.exported && bookingChange.changed && !revisionDue.due ? (
                 <Note tone="info">{bookingChange.reviewerMessage}</Note>
               ) : null}
 
@@ -1628,7 +1722,7 @@ export function TimesheetPeriodPage({
                   ) : (
                     <Note tone="amber">Operative has not signed this week yet.</Note>
                   )}
-                  {bookingChange.reviewerMessage ? (
+                  {bookingChange.reviewerMessage && !revisionDue.due ? (
                     <Note tone={bookingChange.exported ? 'info' : 'amber'}>{bookingChange.reviewerMessage}</Note>
                   ) : null}
                   {needsCounterSign ? (
@@ -3049,4 +3143,85 @@ function ExtraForm({
  */
 function subjectEvidenceOwnerIds(subject: User, users: ReadonlyArray<User>): string[] {
   return personIdSet(rulebookPerson(subject, users) as never, rulebookRoster(users as User[]) as never)
+}
+
+/**
+ * Rulebook 1.55.0 §8: the revision state of a pay run — the REV label and difference of an open or exported revision,
+ * "an update to your already exported timesheet" (the yellow triangle) with "Review and sign again" for the person, the
+ * reviewer's note and "Create revision", and the earlier versions read-only.
+ */
+function TimesheetRevisionPanel({
+  mode,
+  revisionLabel,
+  differenceText,
+  due,
+  canCreate,
+  busy,
+  earlier,
+  timeZone,
+  currency,
+  onCreate,
+}: {
+  mode: 'mine' | 'review'
+  revisionLabel: string
+  differenceText: string | null
+  due: ReturnType<typeof timesheetRevisionDue>
+  canCreate: boolean
+  busy: boolean
+  earlier: TimesheetVersion[]
+  timeZone: string
+  currency: string
+  onCreate: () => void
+}) {
+  if (!revisionLabel && !due.due && !canCreate && earlier.length === 0) return null
+  return (
+    <>
+      {revisionLabel ? (
+        <Note tone="info">
+          <b>{revisionLabel}</b>
+          {differenceText ? ` · ${differenceText} from the previous version` : ''}
+        </Note>
+      ) : null}
+      {due.due ? (
+        <Note tone="amber" icon={<BookingsChangedWarning message={due.message ?? undefined} />}>
+          {mode === 'mine' ? due.message : due.reviewerMessage}
+        </Note>
+      ) : null}
+      {canCreate ? (
+        <div className="pu-col" style={{ gap: 6 }}>
+          <PuButton variant="primary" block disabled={busy} onClick={onCreate}>
+            {mode === 'mine' ? TIMESHEET_REVIEW_AND_SIGN_REVISION_LABEL : `${TIMESHEET_CREATE_REVISION_LABEL}${due.label ? ` (${due.label})` : ''}`}
+          </PuButton>
+          {mode === 'review' ? <p className="pu-sub">{TIMESHEET_CREATE_REVISION_HELP}</p> : null}
+        </div>
+      ) : null}
+      {earlier.length > 0 ? (
+        <details className="pu-card" style={{ padding: 12 }}>
+          <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
+            {TIMESHEET_EARLIER_VERSIONS_LABEL} ({earlier.length})
+          </summary>
+          {earlier.map((version) => {
+            const rows = timesheetInvoiceRows({ sheet: version.data, payrollLines: [], extrasMode: 'decided' })
+            const exportedMs = version.data.exportedAt ? new Date(Number((version.data.exportedAt as { seconds?: number }).seconds ?? 0) * 1000) : null
+            return (
+              <div key={version.documentId} style={{ marginTop: 10 }}>
+                <p>
+                  <b>{timesheetRevisionLabel(version.revision) || TIMESHEET_ORIGINAL_VERSION_LABEL}</b>
+                  {exportedMs && exportedMs.getTime() > 0 ? ` · exported ${formatStampInZone(exportedMs, timeZone)}` : ''} ·{' '}
+                  {money(timesheetExportedTotal(version.data), currency)}
+                </p>
+                <ul className="pu-sub" style={{ margin: '4px 0 0 16px' }}>
+                  {rows.map((row) => (
+                    <li key={`${row.kind}-${row.id}`}>
+                      {String((row.stored as Record<string, unknown> | null)?.title ?? (row.stored as Record<string, unknown> | null)?.description ?? row.kind)} — {money(row.amount, currency)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )
+          })}
+        </details>
+      ) : null}
+    </>
+  )
 }

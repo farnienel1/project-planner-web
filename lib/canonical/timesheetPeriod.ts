@@ -165,7 +165,8 @@ export function timesheetDocumentId(userId: string, startDayKey: string, timeZon
 export function timesheetDocumentSubjectId(documentId: unknown): string {
   const id = typeof documentId === 'string' ? documentId.trim() : ''
   if (!id.startsWith(TIMESHEET_DOCUMENT_PREFIX)) return ''
-  const match = /^(.+)_(-?\d+)$/.exec(id.slice(TIMESHEET_DOCUMENT_PREFIX.length))
+  // 1.55.0: a revision id (`…_rev{N}`, §8) names the same person as the original it corrects.
+  const match = /^(.+)_(-?\d+)$/.exec(id.slice(TIMESHEET_DOCUMENT_PREFIX.length).replace(/_rev[1-9]\d*$/, ''))
   return match ? match[1] : ''
 }
 
@@ -399,21 +400,70 @@ export type TimesheetPeriodCandidateRow = {
   startDayKey: string
   endDayKey?: string | null
   hasActivity?: boolean
+  /** 1.55.0: the stored document id, so revisions (`…_rev{N}`, §8) of one sheet are read as one row. */
+  documentId?: string | null
+  /** 1.55.0: `exportedAt` stored (only read with `versions: 'reports'`). */
+  exported?: boolean | null
+  /** 1.55.0: signed off (only read with `versions: 'reports'`). */
+  signedOff?: boolean | null
+}
+
+/**
+ * 1.55.0 §8: of the rows that are versions of one sheet (an original and its `…_rev{N}` revisions), only one stays a
+ * candidate — the latest version (`latest`, lists and the period page), or the latest exported or signed-off version
+ * (`reports`, the weekly report and Payrun Snapshot; `timesheetReportVersion`). Rows without a document id, and sheets
+ * without revisions, are untouched.
+ */
+function versionCandidateIndexes(rows: readonly TimesheetPeriodCandidateRow[], versions: 'latest' | 'reports'): Set<number> {
+  const keep = new Set<number>()
+  const chains = new Map<string, Array<{ index: number; revision: number }>>()
+  rows.forEach((row, index) => {
+    const id = trimmed(row.documentId)
+    const match = /^(timesheet_.+)_rev([1-9]\d*)$/.exec(id)
+    if (!id) {
+      keep.add(index)
+      return
+    }
+    const base = match ? match[1] : id
+    const revision = match ? Number(match[2]) : 0
+    const chain = chains.get(base) ?? []
+    chain.push({ index, revision })
+    chains.set(base, chain)
+  })
+  for (const chain of chains.values()) {
+    chain.sort((a, b) => a.revision - b.revision)
+    let picked = chain[chain.length - 1]
+    if (versions === 'reports') {
+      for (let at = chain.length - 1; at >= 0; at -= 1) {
+        const row = rows[chain[at].index]
+        if (chain[at].revision === 0 || row.exported === true || row.signedOff === true) {
+          picked = chain[at]
+          break
+        }
+      }
+    }
+    keep.add(picked.index)
+  }
+  return keep
 }
 
 /**
  * Which stored row is this pay-run period. Exact start+end wins. A start-only
  * leftover matches only the period that still starts on that day. A sheet whose
  * stored end disagrees (historical 1–7 vs live 1–15) is never promoted.
+ * 1.55.0: rows that are versions of one sheet count as one row (`versions`, default the latest).
  */
 export function pickTimesheetRowForPeriod(
   rows: readonly TimesheetPeriodCandidateRow[],
-  period: { startDayKey: string; endDayKey: string }
+  period: { startDayKey: string; endDayKey: string },
+  options?: { versions?: 'latest' | 'reports' } | null
 ): number {
   if (rows.length === 0) return -1
+  const candidates = versionCandidateIndexes(rows, options?.versions === 'reports' ? 'reports' : 'latest')
   const exact: number[] = []
   const startOnly: number[] = []
   for (let index = 0; index < rows.length; index += 1) {
+    if (!candidates.has(index)) continue
     const row = rows[index]
     if (trimmed(row.startDayKey) !== period.startDayKey) continue
     const end = trimmed(row.endDayKey)

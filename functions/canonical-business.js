@@ -522,8 +522,11 @@ var ProjectPlannerCanonical = (() => {
     TIMESHEET_BOOKINGS_CHANGED_NOTICE_TYPE: () => TIMESHEET_BOOKINGS_CHANGED_NOTICE_TYPE,
     TIMESHEET_CLOSE_OF_PLAY_HOUR: () => TIMESHEET_CLOSE_OF_PLAY_HOUR,
     TIMESHEET_CLOSE_OF_PLAY_MINUTE: () => TIMESHEET_CLOSE_OF_PLAY_MINUTE,
+    TIMESHEET_CREATE_REVISION_HELP: () => TIMESHEET_CREATE_REVISION_HELP,
+    TIMESHEET_CREATE_REVISION_LABEL: () => TIMESHEET_CREATE_REVISION_LABEL,
     TIMESHEET_DEADLINE_DAYS_BEFORE_PAYMENT: () => TIMESHEET_DEADLINE_DAYS_BEFORE_PAYMENT,
     TIMESHEET_DOCUMENT_PREFIX: () => TIMESHEET_DOCUMENT_PREFIX,
+    TIMESHEET_EARLIER_VERSIONS_LABEL: () => TIMESHEET_EARLIER_VERSIONS_LABEL,
     TIMESHEET_ENTRY_ARRAY_FIELDS: () => TIMESHEET_ENTRY_ARRAY_FIELDS,
     TIMESHEET_ENTRY_DECISIONS: () => TIMESHEET_ENTRY_DECISIONS,
     TIMESHEET_ENTRY_DELETE_CONFIRM_MESSAGE: () => TIMESHEET_ENTRY_DELETE_CONFIRM_MESSAGE,
@@ -551,9 +554,27 @@ var ProjectPlannerCanonical = (() => {
     TIMESHEET_NOTIFY_DAYS_BEFORE_PAYMENT: () => TIMESHEET_NOTIFY_DAYS_BEFORE_PAYMENT,
     TIMESHEET_NOTIFY_HOUR: () => TIMESHEET_NOTIFY_HOUR,
     TIMESHEET_NOTIFY_MINUTE: () => TIMESHEET_NOTIFY_MINUTE,
+    TIMESHEET_ORIGINAL_VERSION_LABEL: () => TIMESHEET_ORIGINAL_VERSION_LABEL,
     TIMESHEET_PAY_INPUTS_LOADING_MESSAGE: () => TIMESHEET_PAY_INPUTS_LOADING_MESSAGE,
     TIMESHEET_PENDING_NOTICE_TYPE: () => TIMESHEET_PENDING_NOTICE_TYPE,
     TIMESHEET_REVIEWER_ONLY_FIELDS: () => TIMESHEET_REVIEWER_ONLY_FIELDS,
+    TIMESHEET_REVIEW_AND_SIGN_REVISION_LABEL: () => TIMESHEET_REVIEW_AND_SIGN_REVISION_LABEL,
+    TIMESHEET_REVISION_COPIED_FIELDS: () => TIMESHEET_REVISION_COPIED_FIELDS,
+    TIMESHEET_REVISION_DUE_MESSAGE: () => TIMESHEET_REVISION_DUE_MESSAGE,
+    TIMESHEET_REVISION_DUE_NOTICE_MESSAGE: () => TIMESHEET_REVISION_DUE_NOTICE_MESSAGE,
+    TIMESHEET_REVISION_DUE_NOTICE_TITLE: () => TIMESHEET_REVISION_DUE_NOTICE_TITLE,
+    TIMESHEET_REVISION_DUE_REVIEWER_MESSAGE: () => TIMESHEET_REVISION_DUE_REVIEWER_MESSAGE,
+    TIMESHEET_REVISION_DUE_STATUS: () => TIMESHEET_REVISION_DUE_STATUS,
+    TIMESHEET_REVISION_FIELDS: () => TIMESHEET_REVISION_FIELDS,
+    TIMESHEET_REVISION_LIMIT_MESSAGE: () => TIMESHEET_REVISION_LIMIT_MESSAGE,
+    TIMESHEET_REVISION_MAX: () => TIMESHEET_REVISION_MAX,
+    TIMESHEET_REVISION_NOTICE_MESSAGE: () => TIMESHEET_REVISION_NOTICE_MESSAGE,
+    TIMESHEET_REVISION_NOTICE_TITLE: () => TIMESHEET_REVISION_NOTICE_TITLE,
+    TIMESHEET_REVISION_NOTICE_TYPE: () => TIMESHEET_REVISION_NOTICE_TYPE,
+    TIMESHEET_REVISION_NOT_EXPORTED_MESSAGE: () => TIMESHEET_REVISION_NOT_EXPORTED_MESSAGE,
+    TIMESHEET_REVISION_NOT_REVIEWER_MESSAGE: () => TIMESHEET_REVISION_NOT_REVIEWER_MESSAGE,
+    TIMESHEET_REVISION_OPEN_MESSAGE: () => TIMESHEET_REVISION_OPEN_MESSAGE,
+    TIMESHEET_REVISION_SUFFIX: () => TIMESHEET_REVISION_SUFFIX,
     TIMESHEET_SELF_SIGNED_OWNER_FIELDS: () => TIMESHEET_SELF_SIGNED_OWNER_FIELDS,
     TIMESHEET_SELF_SIGN_PAYE_NOTE: () => TIMESHEET_SELF_SIGN_PAYE_NOTE,
     TIMESHEET_SIGNED_AFTER_MS: () => TIMESHEET_SIGNED_AFTER_MS,
@@ -745,6 +766,7 @@ var ProjectPlannerCanonical = (() => {
     canChangePersonPay: () => canChangePersonPay,
     canCreateGhost: () => canCreateGhost,
     canCreateJob: () => canCreateJob,
+    canCreateTimesheetRevision: () => canCreateTimesheetRevision,
     canDecideLeave: () => canDecideLeave,
     canDecideOvertimeRequest: () => canDecideOvertimeRequest,
     canDeleteBooking: () => canDeleteBooking,
@@ -995,6 +1017,7 @@ var ProjectPlannerCanonical = (() => {
     isTimesheetFullySigned: () => isTimesheetFullySigned,
     isTimesheetManagerSigned: () => isTimesheetManagerSigned,
     isTimesheetOperativeSigned: () => isTimesheetOperativeSigned,
+    isTimesheetRevisionDocId: () => isTimesheetRevisionDocId,
     isTombstonedBookingCollection: () => isTombstonedBookingCollection,
     isUploadKind: () => isUploadKind,
     isVerifiedPlatformOwner: () => isVerifiedPlatformOwner,
@@ -1370,6 +1393,7 @@ var ProjectPlannerCanonical = (() => {
     parseTimesheetEntryDecision: () => parseTimesheetEntryDecision,
     parseTimesheetEntryReviews: () => parseTimesheetEntryReviews,
     parseTimesheetLateExtras: () => parseTimesheetLateExtras,
+    parseTimesheetRevisionDocId: () => parseTimesheetRevisionDocId,
     parseTimesheetStatusFields: () => parseTimesheetStatusFields,
     parseTimesheetSubmissionEntry: () => parseTimesheetSubmissionEntry,
     parseTimesheetSubmissionList: () => parseTimesheetSubmissionList,
@@ -1634,6 +1658,7 @@ var ProjectPlannerCanonical = (() => {
     timesheetDaysForPerson: () => timesheetDaysForPerson,
     timesheetDocumentId: () => timesheetDocumentId,
     timesheetDocumentSubjectId: () => timesheetDocumentSubjectId,
+    timesheetEarlierVersions: () => timesheetEarlierVersions,
     timesheetEntryDecision: () => timesheetEntryDecision,
     timesheetEntryEffectiveAmount: () => timesheetEntryEffectiveAmount,
     timesheetEntryEvidenceToDelete: () => timesheetEntryEvidenceToDelete,
@@ -1651,9 +1676,12 @@ var ProjectPlannerCanonical = (() => {
     timesheetExportStoragePath: () => timesheetExportStoragePath,
     timesheetExportWriteFields: () => timesheetExportWriteFields,
     timesheetExportedFieldSet: () => timesheetExportedFieldSet,
+    timesheetExportedTotal: () => timesheetExportedTotal,
     timesheetFeedCovers: () => timesheetFeedCovers,
     timesheetFeedLabourLines: () => timesheetFeedLabourLines,
     timesheetFeedMoneyLines: () => timesheetFeedMoneyLines,
+    timesheetInvoiceNumber: () => timesheetInvoiceNumber,
+    timesheetInvoiceNumberForRevision: () => timesheetInvoiceNumberForRevision,
     timesheetInvoiceRows: () => timesheetInvoiceRows,
     timesheetLateExtraDecision: () => timesheetLateExtraDecision,
     timesheetLateExtraFingerprintKey: () => timesheetLateExtraFingerprintKey,
@@ -1665,6 +1693,7 @@ var ProjectPlannerCanonical = (() => {
     timesheetLateExtraRows: () => timesheetLateExtraRows,
     timesheetLateExtrasSnapshotRows: () => timesheetLateExtrasSnapshotRows,
     timesheetLateExtrasSummary: () => timesheetLateExtrasSummary,
+    timesheetLatestVersion: () => timesheetLatestVersion,
     timesheetLeaveLabel: () => timesheetLeaveLabel,
     timesheetLeaveLines: () => timesheetLeaveLines,
     timesheetLineClockText: () => timesheetLineClockText,
@@ -1683,7 +1712,16 @@ var ProjectPlannerCanonical = (() => {
     timesheetPeriodMatches: () => timesheetPeriodMatches,
     timesheetPeriodWriteFields: () => timesheetPeriodWriteFields,
     timesheetPriceWorkJobNumberError: () => timesheetPriceWorkJobNumberError,
+    timesheetReportVersion: () => timesheetReportVersion,
     timesheetRequiresManagerCounterSign: () => timesheetRequiresManagerCounterSign,
+    timesheetRevisionCreateFields: () => timesheetRevisionCreateFields,
+    timesheetRevisionDifference: () => timesheetRevisionDifference,
+    timesheetRevisionDocId: () => timesheetRevisionDocId,
+    timesheetRevisionDue: () => timesheetRevisionDue,
+    timesheetRevisionDueNoticeId: () => timesheetRevisionDueNoticeId,
+    timesheetRevisionLabel: () => timesheetRevisionLabel,
+    timesheetRevisionNoticeKey: () => timesheetRevisionNoticeKey,
+    timesheetRevisionToSignRecipients: () => timesheetRevisionToSignRecipients,
     timesheetSelfSigned: () => timesheetSelfSigned,
     timesheetSignOffWriteFields: () => timesheetSignOffWriteFields,
     timesheetSignedEntryKeys: () => timesheetSignedEntryKeys,
@@ -1702,6 +1740,7 @@ var ProjectPlannerCanonical = (() => {
     timesheetTimestampMs: () => timesheetTimestampMs,
     timesheetTotals: () => timesheetTotals,
     timesheetTrustedFingerprint: () => timesheetTrustedFingerprint,
+    timesheetVersionsForPeriod: () => timesheetVersionsForPeriod,
     timesheetWriterIsReviewer: () => timesheetWriterIsReviewer,
     timesheetsHalfSigned: () => timesheetsHalfSigned,
     tokenizeMaterialSearch: () => tokenizeMaterialSearch,
@@ -2106,8 +2145,8 @@ var ProjectPlannerCanonical = (() => {
     if (typeof value === "number") {
       return Number.isFinite(value) && value >= 0 && value <= 24 * 60 ? Math.round(value) : null;
     }
-    const text46 = String(value ?? "").trim();
-    const match = /^(\d{1,2}):(\d{2})$/.exec(text46);
+    const text47 = String(value ?? "").trim();
+    const match = /^(\d{1,2}):(\d{2})$/.exec(text47);
     if (!match) return null;
     const hours2 = Number(match[1]);
     const minutes = Number(match[2]);
@@ -3201,11 +3240,11 @@ var ProjectPlannerCanonical = (() => {
     const note = text(value);
     return note ? note : null;
   }
-  function leaveRecordDayKeys(record16, timeZone, nonWorkingDayKeys) {
+  function leaveRecordDayKeys(record17, timeZone, nonWorkingDayKeys) {
     const zone3 = zoneOrLondon(timeZone);
-    const start = text(record16.startDayKey);
+    const start = text(record17.startDayKey);
     if (!DAY_KEY.test(start)) return [];
-    const endRaw = text(record16.endDayKey);
+    const endRaw = text(record17.endDayKey);
     const end = DAY_KEY.test(endRaw) && endRaw >= start ? endRaw : start;
     if (end === start) return [start];
     const skip = new Set((nonWorkingDayKeys || []).map(text));
@@ -3214,12 +3253,12 @@ var ProjectPlannerCanonical = (() => {
       return iso !== 6 && iso !== 7 && !skip.has(key5);
     });
   }
-  function leaveDaysInRange(record16, range, timeZone, nonWorkingDayKeys) {
+  function leaveDaysInRange(record17, range, timeZone, nonWorkingDayKeys) {
     const from = text(range?.startDayKey);
     const to = text(range?.endDayKey);
     if (!DAY_KEY.test(from) || !DAY_KEY.test(to) || to < from) return 0;
-    const each = normalizeHolidayTimeSlot(record16?.timeSlot) === "FULL DAY" ? 1 : 0.5;
-    const days = leaveRecordDayKeys(record16, timeZone, nonWorkingDayKeys).filter((key5) => key5 >= from && key5 <= to);
+    const each = normalizeHolidayTimeSlot(record17?.timeSlot) === "FULL DAY" ? 1 : 0.5;
+    const days = leaveRecordDayKeys(record17, timeZone, nonWorkingDayKeys).filter((key5) => key5 >= from && key5 <= to);
     return Math.round(days.length * each * 100) / 100;
   }
   function holidayRequestRanges(picks, timeZone) {
@@ -4444,7 +4483,7 @@ var ProjectPlannerCanonical = (() => {
   function timesheetDocumentSubjectId(documentId2) {
     const id2 = typeof documentId2 === "string" ? documentId2.trim() : "";
     if (!id2.startsWith(TIMESHEET_DOCUMENT_PREFIX)) return "";
-    const match = /^(.+)_(-?\d+)$/.exec(id2.slice(TIMESHEET_DOCUMENT_PREFIX.length));
+    const match = /^(.+)_(-?\d+)$/.exec(id2.slice(TIMESHEET_DOCUMENT_PREFIX.length).replace(/_rev[1-9]\d*$/, ""));
     return match ? match[1] : "";
   }
   function timesheetPeriodKey(period) {
@@ -4588,11 +4627,45 @@ var ProjectPlannerCanonical = (() => {
       exportedAtMs: fields.exportedAtMs
     };
   }
-  function pickTimesheetRowForPeriod(rows3, period) {
+  function versionCandidateIndexes(rows3, versions) {
+    const keep = /* @__PURE__ */ new Set();
+    const chains = /* @__PURE__ */ new Map();
+    rows3.forEach((row2, index) => {
+      const id2 = trimmed2(row2.documentId);
+      const match = /^(timesheet_.+)_rev([1-9]\d*)$/.exec(id2);
+      if (!id2) {
+        keep.add(index);
+        return;
+      }
+      const base = match ? match[1] : id2;
+      const revision = match ? Number(match[2]) : 0;
+      const chain = chains.get(base) ?? [];
+      chain.push({ index, revision });
+      chains.set(base, chain);
+    });
+    for (const chain of chains.values()) {
+      chain.sort((a, b) => a.revision - b.revision);
+      let picked = chain[chain.length - 1];
+      if (versions === "reports") {
+        for (let at = chain.length - 1; at >= 0; at -= 1) {
+          const row2 = rows3[chain[at].index];
+          if (chain[at].revision === 0 || row2.exported === true || row2.signedOff === true) {
+            picked = chain[at];
+            break;
+          }
+        }
+      }
+      keep.add(picked.index);
+    }
+    return keep;
+  }
+  function pickTimesheetRowForPeriod(rows3, period, options) {
     if (rows3.length === 0) return -1;
+    const candidates = versionCandidateIndexes(rows3, options?.versions === "reports" ? "reports" : "latest");
     const exact = [];
     const startOnly = [];
     for (let index = 0; index < rows3.length; index += 1) {
+      if (!candidates.has(index)) continue;
       const row2 = rows3[index];
       if (trimmed2(row2.startDayKey) !== period.startDayKey) continue;
       const end = trimmed2(row2.endDayKey);
@@ -5191,46 +5264,46 @@ var ProjectPlannerCanonical = (() => {
     if (mode === "endOfWorkingWeek" || mode === "week") return "endOfWorkingWeek";
     return DEFAULT_WARNING_DETECTION.clashLookaheadMode;
   }
-  function excludedUnbookedUserIds(record16) {
-    if (Array.isArray(record16.excludedUserIdsFromUnbookedWarnings)) {
-      return stringIdList(record16.excludedUserIdsFromUnbookedWarnings);
+  function excludedUnbookedUserIds(record17) {
+    if (Array.isArray(record17.excludedUserIdsFromUnbookedWarnings)) {
+      return stringIdList(record17.excludedUserIdsFromUnbookedWarnings);
     }
     for (const key5 of ["excludedUserIds", "excludedUsers", "excludedUserIdsFromWarnings", "unbookedWarningExcludedUserIds"]) {
-      if (Array.isArray(record16[key5])) return stringIdList(record16[key5]);
+      if (Array.isArray(record17[key5])) return stringIdList(record17[key5]);
     }
     return [];
   }
   function parseWarningDetection(data) {
-    const record16 = asSettingsRecord(data);
-    if (!record16) return { ...DEFAULT_WARNING_DETECTION, excludedUserIdsFromUnbookedWarnings: [] };
-    const daysRaw = record16.clashLookaheadDays ?? record16.lookaheadDays ?? record16.lookAheadDays ?? record16.numberOfDays ?? record16.daysAhead;
+    const record17 = asSettingsRecord(data);
+    if (!record17) return { ...DEFAULT_WARNING_DETECTION, excludedUserIdsFromUnbookedWarnings: [] };
+    const daysRaw = record17.clashLookaheadDays ?? record17.lookaheadDays ?? record17.lookAheadDays ?? record17.numberOfDays ?? record17.daysAhead;
     const days = daysRaw === void 0 || daysRaw === null ? DEFAULT_WARNING_DETECTION.clashLookaheadDays : daysRaw;
     const clashLookaheadMode = parseClashLookaheadMode(
-      record16.clashLookaheadMode ?? record16.lookAheadMode ?? record16.lookaheadMode
+      record17.clashLookaheadMode ?? record17.lookAheadMode ?? record17.lookaheadMode
     );
     const fallback = lookaheadDaysFallback(daysRaw);
     const parsed = {
-      detectClashes: record16.detectClashes !== false,
+      detectClashes: record17.detectClashes !== false,
       clashLookaheadMode,
       clashLookaheadDays: fallback ? DEFAULT_WARNING_DETECTION.clashLookaheadDays : clampClashLookaheadDays(days),
-      includeWeekendsForUnbookedLabour: Boolean(record16.includeWeekendsForUnbookedLabour),
-      excludedUserIdsFromUnbookedWarnings: excludedUnbookedUserIds(record16),
-      weekendCoverage: parseWeekendCoverage(record16.weekendCoverage, Boolean(record16.includeWeekendsForUnbookedLabour))
+      includeWeekendsForUnbookedLabour: Boolean(record17.includeWeekendsForUnbookedLabour),
+      excludedUserIdsFromUnbookedWarnings: excludedUnbookedUserIds(record17),
+      weekendCoverage: parseWeekendCoverage(record17.weekendCoverage, Boolean(record17.includeWeekendsForUnbookedLabour))
     };
     if (fallback && clashLookaheadMode === "numberOfDays") parsed.clashLookaheadDaysFallback = fallback;
     return parsed;
   }
   var COVERAGE_CLOCK_RE = /^\d{1,2}:\d{2}$/;
   function clockMinutesOf(value) {
-    const text46 = coverageClock(value);
-    if (!text46) return null;
-    const [h3, m] = text46.split(":").map(Number);
+    const text47 = coverageClock(value);
+    if (!text47) return null;
+    const [h3, m] = text47.split(":").map(Number);
     return h3 * 60 + m;
   }
   function coverageClock(value) {
-    const text46 = typeof value === "string" ? value.trim() : "";
-    if (!COVERAGE_CLOCK_RE.test(text46)) return null;
-    const [h3, m] = text46.split(":").map(Number);
+    const text47 = typeof value === "string" ? value.trim() : "";
+    if (!COVERAGE_CLOCK_RE.test(text47)) return null;
+    const [h3, m] = text47.split(":").map(Number);
     return h3 >= 0 && h3 < 24 && m >= 0 && m < 60 ? `${String(h3).padStart(2, "0")}:${String(m).padStart(2, "0")}` : null;
   }
   function parseWeekendCoverage(value, includeWeekends) {
@@ -5562,8 +5635,8 @@ var ProjectPlannerCanonical = (() => {
     const total = plainHoursText(Math.max(0, clock4 * n - brk));
     return roundHundredths(brk) > 0 ? `${multiplied} \u2212 ${plainHoursText(brk)} break = ${total}` : `${multiplied} = ${total}`;
   }
-  function parseMultipliedHoursText(text46) {
-    const match = /(\d+(?:\.\d+)?)h × (\d+(?:\.\d+)?)(?: − (\d+(?:\.\d+)?)h break)? = \d+(?:\.\d+)?h/.exec(String(text46 ?? ""));
+  function parseMultipliedHoursText(text47) {
+    const match = /(\d+(?:\.\d+)?)h × (\d+(?:\.\d+)?)(?: − (\d+(?:\.\d+)?)h break)? = \d+(?:\.\d+)?h/.exec(String(text47 ?? ""));
     if (!match) return null;
     const clockHours = Number(match[1]);
     const multiplier = Number(match[2]);
@@ -5603,9 +5676,9 @@ var ProjectPlannerCanonical = (() => {
     return { standard, overtime, standardText: standard.join(" + "), overtimeText: overtime.join(" + ") };
   }
   function timesheetLineClockText(details) {
-    const text46 = String(details ?? "").trim();
-    const cut = text46.indexOf(" \xB7 OT ");
-    return cut >= 0 ? text46.slice(0, cut).trim() : text46;
+    const text47 = String(details ?? "").trim();
+    const cut = text47.indexOf(" \xB7 OT ");
+    return cut >= 0 ? text47.slice(0, cut).trim() : text47;
   }
   function result(segments, outsideMultiplier) {
     let total = 0;
@@ -6815,8 +6888,8 @@ var ProjectPlannerCanonical = (() => {
   }
   function formatHours(hours2) {
     const rounded = Math.round(hours2 * 4) / 4;
-    const text46 = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, "");
-    return `${text46} hour${rounded === 1 ? "" : "s"}`;
+    const text47 = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, "");
+    return `${text47} hour${rounded === 1 ? "" : "s"}`;
   }
   function joinRanges(intervals) {
     const labels = intervals.map(rangeLabel);
@@ -6826,7 +6899,7 @@ var ProjectPlannerCanonical = (() => {
   function leaveCoverageRows(input) {
     const timeZone = zoneOrLondon(input.timeZone);
     const excluded = new Set((input.excludedUserIds || []).map(idKey).filter(Boolean));
-    const approvedLeave = input.leave.filter((record16) => record16.approved && record16.startDayKey && record16.endDayKey);
+    const approvedLeave = input.leave.filter((record17) => record17.approved && record17.startDayKey && record17.endDayKey);
     if (approvedLeave.length === 0) return [];
     const peopleByUserId = /* @__PURE__ */ new Map();
     const peopleByOperativeId = /* @__PURE__ */ new Map();
@@ -6843,10 +6916,10 @@ var ProjectPlannerCanonical = (() => {
         if (key5 && !peopleByOperativeId.has(key5)) peopleByOperativeId.set(key5, person);
       }
     }
-    const personForLeave = (record16) => {
-      const userId = idKey(record16.userId);
+    const personForLeave = (record17) => {
+      const userId = idKey(record17.userId);
       if (userId && peopleByUserId.has(userId)) return peopleByUserId.get(userId);
-      const operativeId = idKey(record16.operativeId);
+      const operativeId = idKey(record17.operativeId);
       if (operativeId && peopleByOperativeId.has(operativeId)) return peopleByOperativeId.get(operativeId);
       return void 0;
     };
@@ -6872,20 +6945,20 @@ var ProjectPlannerCanonical = (() => {
       const day = bookingStandardDayOn(input.day, dayKey);
       const windows = leaveHalfDayWindows(day);
       const lunch = standardBreakWindow(day);
-      for (const record16 of approvedLeave) {
-        if (dayKey < record16.startDayKey || dayKey > record16.endDayKey) continue;
-        const person = personForLeave(record16);
+      for (const record17 of approvedLeave) {
+        if (dayKey < record17.startDayKey || dayKey > record17.endDayKey) continue;
+        const person = personForLeave(record17);
         if (!person) continue;
-        const dedupe = `${person.personKey}|${dayKey}|${record16.id}`;
+        const dedupe = `${person.personKey}|${dayKey}|${record17.id}`;
         if (seen.has(dedupe)) continue;
         seen.add(dedupe);
-        const leaveSlot2 = leaveSlotKind(record16.timeSlot);
+        const leaveSlot2 = leaveSlotKind(record17.timeSlot);
         const leaveWindow = leaveSlot2 === "AM" ? windows.am : leaveSlot2 === "PM" ? windows.pm : windows.day;
         const dayBookings = bookingsByPersonDay.get(`${person.personKey}|${dayKey}`) || [];
         const intervals = dayBookings.map((booking) => ({ booking, interval: leaveComparableInterval(booking, day) })).filter((entry) => entry.interval !== null);
         const personName = String(person.name || "").trim() || person.personKey;
         const userId = String(person.userId || "").trim() || void 0;
-        const operativeId = String(record16.operativeId || person.operativeIds?.[0] || "").trim() || void 0;
+        const operativeId = String(record17.operativeId || person.operativeIds?.[0] || "").trim() || void 0;
         const longDay = formatLongDayKey(dayKey, timeZone);
         const leaveLabel = leaveLabelFor(leaveSlot2);
         const clashes = intervals.filter(({ interval: interval2 }) => intervalsOverlap(interval2, leaveWindow)).map(({ booking, interval: interval2 }) => ({
@@ -6901,14 +6974,14 @@ var ProjectPlannerCanonical = (() => {
           const bookedText = clashes.map((clash) => `${clash.label} ${formatClockMinutes(clash.start)}\u2013${formatClockMinutes(clash.end)}`).join(", ");
           const leaveText = leaveSlot2 === "FULL_DAY" ? "full-day annual leave" : `${leaveLabel} annual leave (${rangeLabel(leaveWindow)})`;
           rows3.push({
-            id: `leave-clash-${dayKey}-${person.personKey}-${record16.id}`,
+            id: `leave-clash-${dayKey}-${person.personKey}-${record17.id}`,
             kind: "leave_clash",
             personKey: person.personKey,
             personName,
             userId,
             operativeId,
             dayKey,
-            leaveId: record16.id,
+            leaveId: record17.id,
             leaveSlot: leaveSlot2,
             leaveLabel,
             leaveWindow: { ...leaveWindow },
@@ -6941,14 +7014,14 @@ var ProjectPlannerCanonical = (() => {
         const bookedHours = hoursOf(bookedInWorking);
         const message = bookedHours > 0 ? `${personName} has ${leaveLabel} annual leave on ${longDay}. The ${workingLabel} (${rangeLabel(workingWindow)}) is only booked ${joinRanges(bookedInWorking)}; ${joinRanges(missing)} (${formatHours(missingHours)}) is not booked.` : `${personName} has ${leaveLabel} annual leave on ${longDay} but is not booked for the ${workingLabel} (${rangeLabel(workingWindow)}, ${formatHours(missingHours)}).`;
         rows3.push({
-          id: `leave-cover-${dayKey}-${person.personKey}-${record16.id}`,
+          id: `leave-cover-${dayKey}-${person.personKey}-${record17.id}`,
           kind: "leave_cover",
           personKey: person.personKey,
           personName,
           userId,
           operativeId,
           dayKey,
-          leaveId: record16.id,
+          leaveId: record17.id,
           leaveSlot: leaveSlot2,
           leaveLabel,
           leaveWindow: { ...leaveWindow },
@@ -7054,6 +7127,8 @@ var ProjectPlannerCanonical = (() => {
     timesheet_signed_by_manager: "timesheetSignOff",
     // 1.54.0 (§8, §13, owner decision 16 Nov): written by the server when a booking on the person's signed sheet changes.
     timesheet_bookings_changed: "timesheetSignOff",
+    // 1.55.0 (§8, §13, owner decision 16 Nov): a revision of the person's exported timesheet to sign.
+    timesheet_revision_to_sign: "timesheetSignOff",
     qualification_expiry: "qualificationExpiry",
     line_manager_peer_update: "lineManagerPeerUpdates",
     [TIMESHEET_SUBMISSION_NOTICE_TYPE]: "timesheetSubmissionReminder",
@@ -7227,6 +7302,8 @@ var ProjectPlannerCanonical = (() => {
     "timesheet_signed_by_manager",
     // 1.54.0: "Your signed timesheet has changed" (written by the timesheetBookingsChangedNotice Cloud Function).
     "timesheet_bookings_changed",
+    // 1.55.0: "Your timesheet has a revision to sign".
+    "timesheet_revision_to_sign",
     "toolbox_talk_issued",
     "hs_toolbox_reminder",
     "material_order_placed",
@@ -7417,6 +7494,9 @@ var ProjectPlannerCanonical = (() => {
         return { kind: "timesheetMine", userId, dayKey };
       // 1.54.0: the person's own changed sheet — My Timesheets on that pay run (dayKey = its first day).
       case "timesheet_bookings_changed":
+        return { kind: "timesheetMine", userId, dayKey };
+      // 1.55.0: a revision to sign — My Timesheets on that pay run, which opens its latest version (the revision).
+      case "timesheet_revision_to_sign":
         return { kind: "timesheetMine", userId, dayKey };
       case "line_manager_peer_update":
         if (userId || dayKey) return { kind: "timesheetTeamSigned", userId, dayKey };
@@ -7727,16 +7807,16 @@ var ProjectPlannerCanonical = (() => {
   }
   function annualLeaveEmploymentInput(input) {
     const person = input.person ?? {};
-    let record16 = person;
+    let record17 = person;
     if (input.privatePay) {
       if (!input.payProfileRead) return null;
-      if (input.payProfile) record16 = { ...person, ...input.payProfile.fields };
+      if (input.payProfile) record17 = { ...person, ...input.payProfile.fields };
     }
     const str = (value) => typeof value === "string" && value.trim() ? value : null;
-    const at = record16.employmentTypeEffectiveAt;
+    const at = record17.employmentTypeEffectiveAt;
     return {
-      employmentType: str(record16.employmentType),
-      employmentTypeTransitionFrom: str(record16.employmentTypeTransitionFrom),
+      employmentType: str(record17.employmentType),
+      employmentTypeTransitionFrom: str(record17.employmentTypeTransitionFrom),
       employmentTypeEffectiveAt: at instanceof Date || typeof at === "string" || typeof at === "number" ? at : documentInstant(at)
     };
   }
@@ -7840,22 +7920,22 @@ var ProjectPlannerCanonical = (() => {
     }
     return null;
   }
-  function recordFields(record16) {
+  function recordFields(record17) {
     return {
-      name: fieldTokens(record16.name),
-      brand: fieldTokens(record16.brand),
-      code: fieldTokens(record16.productCode),
+      name: fieldTokens(record17.name),
+      brand: fieldTokens(record17.brand),
+      code: fieldTokens(record17.productCode),
       extra: [
-        ...fieldTokens(record16.category),
-        ...fieldTokens(record16.size),
-        ...fieldTokens(record16.length)
+        ...fieldTokens(record17.category),
+        ...fieldTokens(record17.size),
+        ...fieldTokens(record17.length)
       ]
     };
   }
-  function materialSearchScore(query, record16) {
+  function materialSearchScore(query, record17) {
     const tokens = tokenizeMaterialSearch(query);
     if (tokens.length === 0) return 1;
-    const fields = recordFields(record16);
+    const fields = recordFields(record17);
     const all = [...fields.name, ...fields.brand, ...fields.code, ...fields.extra];
     let score = 0;
     for (const token of tokens) {
@@ -7871,7 +7951,7 @@ var ProjectPlannerCanonical = (() => {
       if (coded) score += 18;
       if (named) score += 8;
     }
-    const name = normalizeMaterialSearchText(record16.name);
+    const name = normalizeMaterialSearchText(record17.name);
     const joined = tokens.join(" ");
     if (name.startsWith(joined)) score += 24;
     else if (name.includes(joined)) score += 10;
@@ -7879,8 +7959,8 @@ var ProjectPlannerCanonical = (() => {
     if (nameLength > 0) score += Math.max(0, 20 - Math.floor(nameLength / 8));
     return score;
   }
-  function materialRecordMatches(query, record16) {
-    return materialSearchScore(query, record16) > 0;
+  function materialRecordMatches(query, record17) {
+    return materialSearchScore(query, record17) > 0;
   }
   function rankMaterialRecords(query, records, limit) {
     const tokens = tokenizeMaterialSearch(query);
@@ -7966,22 +8046,22 @@ var ProjectPlannerCanonical = (() => {
     }
     return null;
   }
-  function recordFields2(record16) {
+  function recordFields2(record17) {
     return {
-      name: fieldTokens2(record16.name),
-      code: fieldTokens2(record16.code),
-      body: fieldTokens2(record16.awardingBody),
+      name: fieldTokens2(record17.name),
+      code: fieldTokens2(record17.code),
+      body: fieldTokens2(record17.awardingBody),
       extra: [
-        ...fieldTokens2(record16.section),
-        ...fieldTokens2(record16.subsection),
-        ...fieldTokens2(record16.notes)
+        ...fieldTokens2(record17.section),
+        ...fieldTokens2(record17.subsection),
+        ...fieldTokens2(record17.notes)
       ]
     };
   }
-  function qualificationSearchScore(query, record16) {
+  function qualificationSearchScore(query, record17) {
     const tokens = tokenizeQualificationSearch(query);
     if (tokens.length === 0) return 1;
-    const fields = recordFields2(record16);
+    const fields = recordFields2(record17);
     const all = [...fields.name, ...fields.code, ...fields.body, ...fields.extra];
     let score = 0;
     for (const token of tokens) {
@@ -7997,20 +8077,20 @@ var ProjectPlannerCanonical = (() => {
       if (coded) score += 18;
       if (named) score += 8;
     }
-    const name = normalizeQualificationSearchText(record16.name);
+    const name = normalizeQualificationSearchText(record17.name);
     const joined = tokens.join(" ");
     if (name.startsWith(joined)) score += 24;
     else if (name.includes(joined)) score += 10;
     if (name.length > 0) score += Math.max(0, 20 - Math.floor(name.length / 8));
     return score;
   }
-  function qualificationRecordMatches(query, record16) {
-    return qualificationSearchScore(query, record16) > 0;
+  function qualificationRecordMatches(query, record17) {
+    return qualificationSearchScore(query, record17) > 0;
   }
-  function qualificationMatchesSection(record16, section) {
+  function qualificationMatchesSection(record17, section) {
     const wanted = String(section || "").trim();
     if (!wanted || wanted === QUALIFICATION_FILTER_ALL) return true;
-    const value = String(record16.section || "").trim();
+    const value = String(record17.section || "").trim();
     if (wanted === QUALIFICATION_FILTER_OTHER) return value.length === 0;
     return value === wanted;
   }
@@ -8021,8 +8101,8 @@ var ProjectPlannerCanonical = (() => {
   function qualificationLibraryFilterChips(records) {
     const counts = /* @__PURE__ */ new Map();
     let other = 0;
-    for (const record16 of records) {
-      const section = String(record16.section || "").trim();
+    for (const record17 of records) {
+      const section = String(record17.section || "").trim();
       if (!section) {
         other += 1;
         continue;
@@ -9942,16 +10022,16 @@ var ProjectPlannerCanonical = (() => {
       return Number.isNaN(parsed) ? null : parsed;
     }
     if (typeof value === "object") {
-      const record16 = value;
-      if (typeof record16.toDate === "function") {
+      const record17 = value;
+      if (typeof record17.toDate === "function") {
         try {
-          const parsed = record16.toDate();
+          const parsed = record17.toDate();
           const ms = timestampMs(parsed);
           if (ms != null) return ms;
         } catch {
         }
       }
-      const seconds = typeof record16.seconds === "number" ? record16.seconds : record16._seconds;
+      const seconds = typeof record17.seconds === "number" ? record17.seconds : record17._seconds;
       if (typeof seconds === "number" && Number.isFinite(seconds)) return Math.round(seconds * 1e3);
     }
     return null;
@@ -10669,7 +10749,7 @@ var ProjectPlannerCanonical = (() => {
     const email = emailKey2(account?.email);
     if (email) ids.add(email);
     const has2 = (value) => typeof value === "string" && value.trim() !== "" && ids.has(value.trim().toLowerCase());
-    return (records || []).filter((record16) => has2(record16?.userId) || has2(record16?.operativeId));
+    return (records || []).filter((record17) => has2(record17?.userId) || has2(record17?.operativeId));
   }
 
   // lib/canonical/lineManagers.ts
@@ -11026,8 +11106,8 @@ var ProjectPlannerCanonical = (() => {
     return typeof value === "string" ? value.trim().toLowerCase() : "";
   }
   function dayKeyText(value) {
-    const text46 = typeof value === "string" ? value.trim() : "";
-    return DAY_KEY2.test(text46) ? text46 : null;
+    const text47 = typeof value === "string" ? value.trim() : "";
+    return DAY_KEY2.test(text47) ? text47 : null;
   }
   function compareText(a, b) {
     if (a === b) return 0;
@@ -11155,8 +11235,8 @@ var ProjectPlannerCanonical = (() => {
   function personDayItems(input) {
     const managerIdByKey = /* @__PURE__ */ new Map();
     for (const id2 of input?.managerIds || []) {
-      const text46 = idText2(id2);
-      if (text46) managerIdByKey.set(text46.toLowerCase(), text46);
+      const text47 = idText2(id2);
+      if (text47) managerIdByKey.set(text47.toLowerCase(), text47);
     }
     const people = input?.people || { accounts: [], operatives: [] };
     const managerIdByEmail = /* @__PURE__ */ new Map();
@@ -11257,9 +11337,9 @@ var ProjectPlannerCanonical = (() => {
     return [idText2(bookingAId), idText2(bookingBId)].sort(compareText).join("|");
   }
   function comparableKey(key5) {
-    const text46 = normalizeDocumentId(key5);
-    const parts3 = text46.split("|");
-    return parts3.length === 2 && parts3[0] && parts3[1] ? [...parts3].sort(compareText).join("|") : text46;
+    const text47 = normalizeDocumentId(key5);
+    const parts3 = text47.split("|");
+    return parts3.length === 2 && parts3[0] && parts3[1] ? [...parts3].sort(compareText).join("|") : text47;
   }
   function isClashAccepted(bookingAId, bookingBId, accepted) {
     const a = idKey6(bookingAId);
@@ -11308,11 +11388,11 @@ var ProjectPlannerCanonical = (() => {
   }
   function warningResolutionKeys(records, statuses) {
     const keys = /* @__PURE__ */ new Map();
-    for (const record16 of records || []) {
-      if (!record16) continue;
-      const status = typeof record16.status === "string" ? record16.status.trim().toLowerCase() : "";
+    for (const record17 of records || []) {
+      if (!record17) continue;
+      const status = typeof record17.status === "string" ? record17.status.trim().toLowerCase() : "";
       if (!statuses.includes(status)) continue;
-      const key5 = idText2(record16.resolutionKey) || idText2(record16.id);
+      const key5 = idText2(record17.resolutionKey) || idText2(record17.id);
       if (key5 && !keys.has(normalizeDocumentId(key5))) keys.set(normalizeDocumentId(key5), key5);
     }
     return [...keys.values()].sort(compareText);
@@ -11817,8 +11897,8 @@ var ProjectPlannerCanonical = (() => {
       let id2 = "";
       if (typeof item === "string") id2 = item.trim();
       else if (item && typeof item === "object") {
-        const record16 = item;
-        id2 = text11(record16.id) || text11(record16.contactId);
+        const record17 = item;
+        id2 = text11(record17.id) || text11(record17.contactId);
       }
       const key5 = normalizeDocumentId(id2);
       if (!id2 || seen.has(key5)) continue;
@@ -12054,7 +12134,7 @@ var ProjectPlannerCanonical = (() => {
     if (stored) return stored;
     const when = documentInstantMs(kind === "expense" ? row2.date : row2.startDate);
     const source = [
-      text11(sheetDocId),
+      text11(sheetDocId).replace(/_rev[1-9]\d*$/, ""),
       ENTRY_ARRAY_FIELD[kind],
       String(Math.max(0, Math.floor(Number(index) || 0))),
       rawText(row2.title),
@@ -13084,11 +13164,11 @@ var ProjectPlannerCanonical = (() => {
   }
   function payEditorStartingValues(person, profile, options) {
     const overlaid = options?.privatePay === true && profile ? overlayPayProfile(person, profile) : person;
-    const record16 = overlaid || {};
-    const pay = readStoredRates(record16);
+    const record17 = overlaid || {};
+    const pay = readStoredRates(record17);
     const rate = pay.payBasis === "hourly" ? pay.hourlyRate : pay.dayRate;
-    const employmentType = Object.prototype.hasOwnProperty.call(record16, "employmentType") ? record16.employmentType ?? null : null;
-    return { record: record16, pay, rate, employmentType, source: overlaid !== person ? "payProfile" : "users" };
+    const employmentType = Object.prototype.hasOwnProperty.call(record17, "employmentType") ? record17.employmentType ?? null : null;
+    return { record: record17, pay, rate, employmentType, source: overlaid !== person ? "payProfile" : "users" };
   }
 
   // lib/canonical/reportPay.ts
@@ -13531,8 +13611,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.54.0" : "",
-      sha256: true ? "fac1f5c91946a99096f33231722e4916735702a2b1ea48338cf6513b35b2dde2" : ""
+      version: true ? "1.55.0" : "",
+      sha256: true ? "71c25b8f7b38173d0b58672b02bf66daa3f007ef425d51299d90cb1a58e0b4d2" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -13663,15 +13743,15 @@ var ProjectPlannerCanonical = (() => {
     }
     return out;
   }
-  function labourHolidayInput(record16) {
+  function labourHolidayInput(record17) {
     return {
-      id: record16.id,
-      userId: record16.userId,
-      operativeId: record16.operativeId,
-      startDayKey: record16.startDayKey,
-      endDayKey: record16.endDayKey,
-      timeSlot: record16.timeSlot,
-      approved: record16.approved
+      id: record17.id,
+      userId: record17.userId,
+      operativeId: record17.operativeId,
+      startDayKey: record17.startDayKey,
+      endDayKey: record17.endDayKey,
+      timeSlot: record17.timeSlot,
+      approved: record17.approved
     };
   }
 
@@ -13730,18 +13810,18 @@ var ProjectPlannerCanonical = (() => {
     const end = String(period?.endDayKey || "").trim();
     if (!start || !end || start > end) return [];
     const byDay = /* @__PURE__ */ new Map();
-    for (const record16 of leaveRecords || []) {
-      if (!record16) continue;
-      const approved = record16.approved === true || record16.approved == null && normalizeHolidayStatus(record16.status) === "approved";
+    for (const record17 of leaveRecords || []) {
+      if (!record17) continue;
+      const approved = record17.approved === true || record17.approved == null && normalizeHolidayStatus(record17.status) === "approved";
       if (!approved) continue;
-      const slot = normalizeHolidayTimeSlot(record16.timeSlot);
-      for (const dayKey of leaveRecordDayKeys(record16, timeZone, nonWorkingDayKeys)) {
+      const slot = normalizeHolidayTimeSlot(record17.timeSlot);
+      for (const dayKey of leaveRecordDayKeys(record17, timeZone, nonWorkingDayKeys)) {
         if (dayKey < start || dayKey > end) continue;
         const list = byDay.get(dayKey) || [];
         if (list.some((line2) => line2.timeSlot === slot || line2.timeSlot === "FULL DAY")) continue;
         const line = {
-          id: `leave-${String(record16.id)}-${dayKey}`,
-          leaveId: String(record16.id),
+          id: `leave-${String(record17.id)}-${dayKey}`,
+          leaveId: String(record17.id),
           dayKey,
           timeSlot: slot,
           label: timesheetLeaveLabel(slot)
@@ -14265,9 +14345,9 @@ var ProjectPlannerCanonical = (() => {
     return "apply";
   }
   function offlineDeleteRefusalDecision(code) {
-    const text46 = errorCodeText(code);
-    if (text46 === "not-found" || text46 === "5") return "alreadyGone";
-    if (text46 === "permission-denied" || text46 === "7") return "refusePermission";
+    const text47 = errorCodeText(code);
+    if (text47 === "not-found" || text47 === "5") return "alreadyGone";
+    if (text47 === "permission-denied" || text47 === "7") return "refusePermission";
     return "retry";
   }
   function bookingDeleteSignedTimesheetWarning(dayKey, sheets) {
@@ -15041,13 +15121,13 @@ var ProjectPlannerCanonical = (() => {
   }
   function orderedMaterialIds(records) {
     const ids = /* @__PURE__ */ new Set();
-    for (const record16 of records || []) {
-      if (!record16 || normalizeMaterialRequestType(record16.requestType) !== "Order") continue;
-      for (const id2 of record16.materialIds || []) {
+    for (const record17 of records || []) {
+      if (!record17 || normalizeMaterialRequestType(record17.requestType) !== "Order") continue;
+      for (const id2 of record17.materialIds || []) {
         const value = normalizeDocumentId(id2);
         if (value) ids.add(value);
       }
-      for (const line of record16.lines || []) {
+      for (const line of record17.lines || []) {
         const value = normalizeDocumentId(line?.materialId);
         if (value) ids.add(value);
       }
@@ -15376,6 +15456,13 @@ var ProjectPlannerCanonical = (() => {
       "timesheetBookingsChangedRecipients",
       ["function"],
       "written by the timesheetBookingsChangedNotice Cloud Function (timesheetBookingChangeNotice), one row per sheet per signature (timesheetBookingsChangedNoticeId); deepLinkUserId = the person, dayKey = the pay run's first day; opens My Timesheets for that period. Toggle: timesheetSignOff. iOS: accept the type and route it to My Timesheets."
+    ),
+    row(
+      "timesheet_revision_to_sign",
+      "An admin or line manager creates a revision of the person's exported timesheet (1.55.0)",
+      "timesheetRevisionToSignRecipients",
+      ["web", "ios"],
+      "one row per revision (timesheetRevisionNoticeKey); deepLinkUserId = the person, dayKey = the pay run's first day; opens My Timesheets for that period, which shows the revision. Toggle: timesheetSignOff."
     ),
     row(
       "line_manager_peer_update",
@@ -16917,6 +17004,8 @@ var ProjectPlannerCanonical = (() => {
     timesheet_signed_by_manager: "none",
     // 1.54.0: identified by deepLinkUserId + dayKey (the pay run's first day), like the other timesheet notices.
     timesheet_bookings_changed: "none",
+    // 1.55.0: identified by deepLinkUserId + dayKey (the pay run's first day); the period page opens the latest version.
+    timesheet_revision_to_sign: "none",
     line_manager_peer_update: "holidayBookingOrNone",
     timesheet_submission_reminder: "paymentDayKey",
     material_order_placed: "job",
@@ -18439,10 +18528,10 @@ var ProjectPlannerCanonical = (() => {
   var WEEKEND_TIME_SLOTS = ["CUSTOM"];
   function isoWeekdayOf(day, timeZone) {
     if (typeof day === "number") return day;
-    const text46 = String(day || "").trim().toLowerCase();
-    if (text46 === "saturday") return 6;
-    if (text46 === "sunday") return 7;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(text46)) return isoWeekdayOfDayKey(text46, zoneOrLondon(timeZone));
+    const text47 = String(day || "").trim().toLowerCase();
+    if (text47 === "saturday") return 6;
+    if (text47 === "sunday") return 7;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text47)) return isoWeekdayOfDayKey(text47, zoneOrLondon(timeZone));
     return 0;
   }
   function isWeekendDayKey(dayKey, timeZone) {
@@ -18813,8 +18902,8 @@ var ProjectPlannerCanonical = (() => {
     return round4(brk) > 0 ? `${h2(clock4)} OT \xD7 ${round4(n)} \u2212 ${h2(brk)} break = ${total}` : `${h2(clock4)} OT \xD7 ${round4(n)} = ${total}`;
   }
   function overtimeIncludedText(input) {
-    const text46 = overtimeTotalText(input);
-    return text46 ? `incl. ${text46}` : "";
+    const text47 = overtimeTotalText(input);
+    return text47 ? `incl. ${text47}` : "";
   }
   function bookedWithOvertimeText(input) {
     const booked = `${h2(Math.max(0, Number(input?.bookedHours) || 0))} booked`;
@@ -19902,8 +19991,8 @@ var ProjectPlannerCanonical = (() => {
   }
 
   // lib/canonical/leaveReport.ts
-  function leaveReportDayCount(record16, range, timeZone, nonWorkingDayKeys) {
-    return snapLeaveDays(leaveDaysInRange(record16, range, timeZone, nonWorkingDayKeys));
+  function leaveReportDayCount(record17, range, timeZone, nonWorkingDayKeys) {
+    return snapLeaveDays(leaveDaysInRange(record17, range, timeZone, nonWorkingDayKeys));
   }
   function leaveReportRows(input) {
     const zone3 = zoneOrLondon(input.timeZone);
@@ -19913,18 +20002,18 @@ var ProjectPlannerCanonical = (() => {
     const nonWorking = input.nonWorkingDayKeys ?? [];
     const range = { startDayKey: year.startDayKey, endDayKey: year.endDayKey };
     const rows3 = [];
-    for (const record16 of input.records || []) {
-      if (!record16) continue;
-      const mine = record16.userId != null && ids.has(normalizeDocumentId(record16.userId)) || record16.operativeId != null && ids.has(normalizeDocumentId(record16.operativeId));
+    for (const record17 of input.records || []) {
+      if (!record17) continue;
+      const mine = record17.userId != null && ids.has(normalizeDocumentId(record17.userId)) || record17.operativeId != null && ids.has(normalizeDocumentId(record17.operativeId));
       if (!mine) continue;
-      const status = normalizeHolidayStatus(record16.status);
+      const status = normalizeHolidayStatus(record17.status);
       if (!statuses.has(status)) continue;
-      const start = String(record16.startDayKey || "").trim();
-      const endRaw = String(record16.endDayKey || "").trim();
+      const start = String(record17.startDayKey || "").trim();
+      const endRaw = String(record17.endDayKey || "").trim();
       const end = endRaw && endRaw >= start ? endRaw : start;
       if (!start || end < range.startDayKey || start > range.endDayKey) continue;
-      const days = leaveReportDayCount({ startDayKey: start, endDayKey: end, timeSlot: record16.timeSlot }, range, zone3, nonWorking);
-      rows3.push({ id: String(record16.id ?? ""), startDayKey: start, endDayKey: end, timeSlot: normalizeHolidayTimeSlot(record16.timeSlot), status, days });
+      const days = leaveReportDayCount({ startDayKey: start, endDayKey: end, timeSlot: record17.timeSlot }, range, zone3, nonWorking);
+      rows3.push({ id: String(record17.id ?? ""), startDayKey: start, endDayKey: end, timeSlot: normalizeHolidayTimeSlot(record17.timeSlot), status, days });
     }
     rows3.sort((a, b) => a.startDayKey === b.startDayKey ? a.id.localeCompare(b.id) : a.startDayKey < b.startDayKey ? 1 : -1);
     return {
@@ -20496,24 +20585,24 @@ var ProjectPlannerCanonical = (() => {
   function leaveDayKind(records, dayKey, timeZone, nonWorkingDayKeys) {
     let best = "none";
     let recordId = null;
-    for (const record16 of records || []) {
-      if (!record16) continue;
-      const status = normalizeHolidayStatus(record16.status);
+    for (const record17 of records || []) {
+      if (!record17) continue;
+      const status = normalizeHolidayStatus(record17.status);
       if (status !== "approved" && status !== "pending") continue;
-      if (!leaveRecordDayKeys(record16, timeZone, nonWorkingDayKeys).includes(dayKey)) continue;
-      const slot = normalizeHolidayTimeSlot(record16.timeSlot);
+      if (!leaveRecordDayKeys(record17, timeZone, nonWorkingDayKeys).includes(dayKey)) continue;
+      const slot = normalizeHolidayTimeSlot(record17.timeSlot);
       const half = slot === "AM" || slot === "PM";
       const kind = status === "pending" ? half ? "pendingHalf" : "pendingFull" : half ? "approvedHalf" : "approvedFull";
       if (RANK[kind] > RANK[best]) {
         best = kind;
-        recordId = String(record16.id ?? "").trim() || null;
+        recordId = String(record17.id ?? "").trim() || null;
       }
     }
     return { kind: best, recordId, isLocked: best === "approvedFull" || best === "pendingFull" };
   }
   function dailyOverviewLeaveRows(records, dayKey, timeZone, nonWorkingDayKeys) {
     return (records || []).filter(
-      (record16) => Boolean(record16) && normalizeHolidayStatus(record16.status) === "approved" && leaveRecordDayKeys(record16, timeZone, nonWorkingDayKeys).includes(dayKey)
+      (record17) => Boolean(record17) && normalizeHolidayStatus(record17.status) === "approved" && leaveRecordDayKeys(record17, timeZone, nonWorkingDayKeys).includes(dayKey)
     );
   }
 
@@ -20602,11 +20691,11 @@ var ProjectPlannerCanonical = (() => {
         }
         const pending = kind === "pendingFull" || kind === "pendingHalf";
         const half = kind === "approvedHalf" || kind === "pendingHalf";
-        const record16 = (result2.recordId ? mine.find((h3) => String(h3.id ?? "").trim() === result2.recordId) : void 0) ?? mine.find((h3) => {
+        const record17 = (result2.recordId ? mine.find((h3) => String(h3.id ?? "").trim() === result2.recordId) : void 0) ?? mine.find((h3) => {
           const slot2 = normalizeHolidayTimeSlot(h3.timeSlot);
           return half ? slot2 !== "FULL DAY" : slot2 === "FULL DAY";
         });
-        const slot = mixedSlot ?? (half ? normalizeHolidayTimeSlot(record16?.timeSlot) === "PM" ? "PM" : "AM" : "FULL DAY");
+        const slot = mixedSlot ?? (half ? normalizeHolidayTimeSlot(record17?.timeSlot) === "PM" ? "PM" : "AM" : "FULL DAY");
         const base = pending ? JOB_SCHEDULE_LEAVE_PENDING_LABEL : JOB_SCHEDULE_LEAVE_LABEL;
         const dayInput2 = standardDayOn(input?.day, dayKey);
         const state = pending ? "pending" : "approved";
@@ -20873,7 +20962,7 @@ var ProjectPlannerCanonical = (() => {
   function splitCsvRecords(textValue) {
     const records = [];
     let field = "";
-    let record16 = [];
+    let record17 = [];
     let quoted = false;
     const value = textValue.replace(/^﻿/, "");
     for (let i = 0; i < value.length; i += 1) {
@@ -20894,21 +20983,21 @@ var ProjectPlannerCanonical = (() => {
       if (char === '"') {
         quoted = true;
       } else if (char === ",") {
-        record16.push(field);
+        record17.push(field);
         field = "";
       } else if (char === "\n" || char === "\r") {
         if (char === "\r" && value[i + 1] === "\n") i += 1;
-        record16.push(field);
-        records.push(record16);
-        record16 = [];
+        record17.push(field);
+        records.push(record17);
+        record17 = [];
         field = "";
       } else {
         field += char;
       }
     }
-    if (field !== "" || record16.length > 0) {
-      record16.push(field);
-      records.push(record16);
+    if (field !== "" || record17.length > 0) {
+      record17.push(field);
+      records.push(record17);
     }
     return records;
   }
@@ -21267,13 +21356,13 @@ var ProjectPlannerCanonical = (() => {
     if (startsWith(bytes, [208, 207, 17, 224, 161, 177, 26, 225])) return "application/x-ole-storage";
     if (startsWith(bytes, [66, 77])) return "image/bmp";
     if (startsWith(bytes, [73, 73, 42, 0]) || startsWith(bytes, [77, 77, 0, 42])) return "image/tiff";
-    const text46 = ascii(bytes, 0, bytes.length);
-    const lead = text46.replace(/^(\uFEFF|\xEF\xBB\xBF)/, "").trimStart().toLowerCase();
+    const text47 = ascii(bytes, 0, bytes.length);
+    const lead = text47.replace(/^(\uFEFF|\xEF\xBB\xBF)/, "").trimStart().toLowerCase();
     if (lead.startsWith("<")) {
       return lead.includes("<svg") ? "image/svg+xml" : "text/html";
     }
-    const pdfAt = text46.indexOf("%PDF-");
-    if (pdfAt >= 0 && !text46.slice(0, pdfAt).includes("<")) return "application/pdf";
+    const pdfAt = text47.indexOf("%PDF-");
+    if (pdfAt >= 0 && !text47.slice(0, pdfAt).includes("<")) return "application/pdf";
     if (!bytes.includes(0)) {
       if (lead.includes("<svg")) return "image/svg+xml";
       if (lead.includes("<html") || lead.includes("<script")) return "text/html";
@@ -24590,7 +24679,7 @@ var ProjectPlannerCanonical = (() => {
     if (!userId || !DAY_KEY11.test(startDayKey)) return null;
     const endKey = text41(row2.weekEndKey);
     const endDayKey = DAY_KEY11.test(endKey) ? endKey : timesheetStoredStartDayKey(row2.weekEnd, timeZone);
-    return { userId, startDayKey, endDayKey: DAY_KEY11.test(endDayKey) ? endDayKey : "", status: parseTimesheetStatusFields(row2) };
+    return { userId, startDayKey, endDayKey: DAY_KEY11.test(endDayKey) ? endDayKey : "", status: parseTimesheetStatusFields(row2), documentId: text41(docId) };
   }
   var TIMESHEET_ORDER = { notStarted: 0, submitted: 1, signed: 2 };
   function payRunsInPeriod(organization, period, sheets, timeZone) {
@@ -24627,8 +24716,16 @@ var ProjectPlannerCanonical = (() => {
     const lineManager = hasActiveLineManager(person, roster);
     const states = runs.map((run) => {
       const index = pickTimesheetRowForPeriod(
-        theirs.map((sheet) => ({ startDayKey: sheet.startDayKey, endDayKey: sheet.endDayKey || null })),
-        run
+        // 1.55.0: of an original and its revisions, the latest exported or signed-off version (`timesheetReportVersion`).
+        theirs.map((sheet) => ({
+          startDayKey: sheet.startDayKey,
+          endDayKey: sheet.endDayKey || null,
+          documentId: sheet.documentId ?? null,
+          exported: sheet.status.exportedAtMs != null,
+          signedOff: sheet.status.managerSignedAtMs != null
+        })),
+        run,
+        { versions: "reports" }
       );
       const bucket = index < 0 ? "unsigned" : timesheetListBucket(theirs[index].status, lineManager, theirs[index].bookingsChange);
       const state = bucket === "signed" || bucket === "exported" ? "signed" : bucket === "awaiting" ? "submitted" : "notStarted";
@@ -24875,10 +24972,10 @@ var ProjectPlannerCanonical = (() => {
     if (!isPlainMap(perms)) return false;
     return truthy(get(perms, kind, get(m, kind, false)));
   }
-  function utf8Bytes2(text46) {
+  function utf8Bytes2(text47) {
     let bytes = 0;
-    for (let i = 0; i < text46.length; i += 1) {
-      const code = text46.charCodeAt(i);
+    for (let i = 0; i < text47.length; i += 1) {
+      const code = text47.charCodeAt(i);
       if (code < 128) bytes += 1;
       else if (code < 2048) bytes += 2;
       else if (code >= 55296 && code <= 56319) {
@@ -26014,8 +26111,8 @@ var ProjectPlannerCanonical = (() => {
     return Math.round(value * 1e4) / 1e4;
   }
   function basisOf(value) {
-    const text46 = String(value ?? "").trim().toLowerCase();
-    return text46 === "hourly" || text46 === "hour" ? "hourly" : "day";
+    const text47 = String(value ?? "").trim().toLowerCase();
+    return text47 === "hourly" || text47 === "hour" ? "hourly" : "day";
   }
   var PAYROLL_LINE_EDIT_TIMES_MESSAGE = "Enter a start and a finish time that are different.";
   function clockMinutes(value) {
@@ -26377,10 +26474,10 @@ var ProjectPlannerCanonical = (() => {
     const recordAtMs = realMs(sheet.operativeSignedBookingsAt);
     const recordSignedAtMs = realMs(sheet.operativeSignedBookingsSignedAt);
     const recordCurrent = operativeSignedMs != null && (recordSignedAtMs != null ? Math.abs(operativeSignedMs - recordSignedAtMs) <= RECORD_SIGNED_AT_MATCH_MS : recordAtMs != null && operativeSignedMs <= recordAtMs + RECORD_SIGNATURE_TOLERANCE_MS);
-    const record16 = recordCurrent ? recordSide(sheet.operativeSignedBookings) : null;
+    const record17 = recordCurrent ? recordSide(sheet.operativeSignedBookings) : null;
     const recordReferenceMs = recordAtMs ?? operativeSignedMs;
     const recordAddedAfter = recordReferenceMs == null ? null : recordReferenceMs - SIGNED_TIMESHEET_ADDITION_WINDOW_MS;
-    const personDiff = record16 ? diffSides(record16, live, documents, recordAddedAfter) : snapshotDiff;
+    const personDiff = record17 ? diffSides(record17, live, documents, recordAddedAfter) : snapshotDiff;
     const personChanged = operativeSignedMs != null || override ? !isEmptyDiff(personDiff) : false;
     const snapshotChanged = !isEmptyDiff(snapshotDiff);
     if (!personChanged && !snapshotChanged) return base;
@@ -26422,7 +26519,8 @@ var ProjectPlannerCanonical = (() => {
     const none = { reopens: false, kind: null, reference: "none" };
     const sheet = input.sheet;
     if (!sheet) return none;
-    if (resolveTimesheetExportedAtMs(sheet) != null || realMs(sheet.exportedAtMs) != null) return none;
+    const exported = resolveTimesheetExportedAtMs(sheet) != null || realMs(sheet.exportedAtMs) != null;
+    if (exported && input.includeExported !== true) return none;
     const operativeSignedMs = realMs(sheet.operativeSignedAt) ?? realMs(sheet.operativeSignedAtMs);
     const override = sheet.weeklyReportOverride && typeof sheet.weeklyReportOverride === "object" ? sheet.weeklyReportOverride : null;
     if (operativeSignedMs == null && !override) return none;
@@ -26430,12 +26528,12 @@ var ProjectPlannerCanonical = (() => {
     const recordAtMs = realMs(sheet.operativeSignedBookingsAt);
     const recordSignedAtMs = realMs(sheet.operativeSignedBookingsSignedAt);
     const recordCurrent = operativeSignedMs != null && (recordSignedAtMs != null ? Math.abs(operativeSignedMs - recordSignedAtMs) <= RECORD_SIGNED_AT_MATCH_MS : recordAtMs != null && operativeSignedMs <= recordAtMs + RECORD_SIGNATURE_TOLERANCE_MS);
-    const record16 = recordCurrent ? recordSide(sheet.operativeSignedBookings) : null;
+    const record17 = recordCurrent ? recordSide(sheet.operativeSignedBookings) : null;
     let reference = null;
     let addedAfter = null;
     let used = "none";
-    if (record16) {
-      reference = record16;
+    if (record17) {
+      reference = record17;
       used = "record";
       const referenceMs = recordAtMs ?? operativeSignedMs;
       addedAfter = referenceMs == null ? null : referenceMs - SIGNED_TIMESHEET_ADDITION_WINDOW_MS;
@@ -26930,12 +27028,14 @@ var ProjectPlannerCanonical = (() => {
     let changedSinceSigned = false;
     let compared = false;
     const states = [];
+    let revision = 0;
     for (const row2 of [...runs.values()].sort((a, b) => a.startDayKey.localeCompare(b.startDayKey))) {
       if (!stored(row2)) {
         states.push("notStarted");
         continue;
       }
       if (row2.startDayKey < start || row2.endDayKey > end) partialRun = true;
+      if (typeof row2.revision === "number" && Number.isInteger(row2.revision) && row2.revision > revision) revision = row2.revision;
       const fields = row2.status ?? parseTimesheetStatusFields(row2.sheet ?? null);
       const bucket = timesheetListBucket(fields, person.hasLineManager === true, row2.change ?? null);
       states.push(bucket === "exported" ? "exported" : bucket === "signed" ? "signed" : bucket === "awaiting" ? "submitted" : "notStarted");
@@ -26959,7 +27059,7 @@ var ProjectPlannerCanonical = (() => {
     if (states.length === 0) states.push("notStarted");
     const least = states.reduce((a, b) => STATE_ORDER[b] < STATE_ORDER[a] ? b : a);
     const signedCount = states.filter((state) => state === "signed" || state === "exported").length;
-    const stateLabel = `Timesheet: ${WEEKLY_REPORT_TIMESHEET_STATE_LABELS[least]}${states.length > 1 ? ` \xB7 ${signedCount} of ${states.length} signed` : ""}`;
+    const stateLabel = `Timesheet: ${WEEKLY_REPORT_TIMESHEET_STATE_LABELS[least]}${states.length > 1 ? ` \xB7 ${signedCount} of ${states.length} signed` : ""}${revision > 0 ? ` \xB7 REV ${revision}` : ""}`;
     const awaiting = [
       awaitingPriceWork > 1e-4 ? `+ ${money2(roundPennies(awaitingPriceWork))} price work awaiting sign-off` : "",
       awaitingExpenses > 1e-4 ? `+ ${money2(roundPennies(awaitingExpenses))} expenses awaiting sign-off` : ""
@@ -27004,20 +27104,20 @@ var ProjectPlannerCanonical = (() => {
     const personFor = leavePersonMatcher(input.people);
     const rows3 = /* @__PURE__ */ new Map();
     const unmatched = [];
-    for (const record16 of input.records || []) {
-      if (!record16 || String(record16.status ?? "approved").toLowerCase() !== "approved") continue;
+    for (const record17 of input.records || []) {
+      if (!record17 || String(record17.status ?? "approved").toLowerCase() !== "approved") continue;
       const days = leaveDaysInRange(
-        { startDayKey: record16.startDayKey, endDayKey: record16.endDayKey, timeSlot: record16.timeSlot ?? "FULL DAY" },
+        { startDayKey: record17.startDayKey, endDayKey: record17.endDayKey, timeSlot: record17.timeSlot ?? "FULL DAY" },
         { startDayKey: input.range.start, endDayKey: input.range.end },
         zone3,
         input.nonWorkingDayKeys ?? null
       );
       if (!(days > 0)) continue;
-      const person = personFor(record16);
+      const person = personFor(record17);
       if (!person) {
-        const missingId = String(record16.userId || record16.operativeId || record16.id || "").trim();
-        unmatched.push({ recordId: record16.id, userId: record16.userId ?? null, operativeId: record16.operativeId ?? null });
-        const stored = String(record16.userName ?? "").trim();
+        const missingId = String(record17.userId || record17.operativeId || record17.id || "").trim();
+        unmatched.push({ recordId: record17.id, userId: record17.userId ?? null, operativeId: record17.operativeId ?? null });
+        const stored = String(record17.userName ?? "").trim();
         const name = stored || `${WEEKLY_REPORT_PERSON_NOT_FOUND} (id ${missingId})`;
         const key5 = `missing:${idKey8(missingId)}`;
         const row3 = rows3.get(key5) ?? { personId: null, person: name, role: "\u2014", days: 0, type: "Approved", found: false };
@@ -27041,11 +27141,11 @@ var ProjectPlannerCanonical = (() => {
         if (key5 && !byId.has(key5)) byId.set(key5, person);
       }
     }
-    return (record16) => byId.get(idKey8(record16.userId)) ?? byId.get(idKey8(record16.operativeId)) ?? null;
+    return (record17) => byId.get(idKey8(record17.userId)) ?? byId.get(idKey8(record17.operativeId)) ?? null;
   }
   function leaveRecordsWithoutPerson(input) {
     const personFor = leavePersonMatcher(input.people);
-    return (input.records || []).filter((record16) => record16 && !personFor(record16));
+    return (input.records || []).filter((record17) => record17 && !personFor(record17));
   }
   var WEEKLY_REPORT_WARNING_OPEN = "Open";
   function weeklyReportClashDetail(input) {
@@ -27167,9 +27267,8 @@ var ProjectPlannerCanonical = (() => {
     if (!sheet) return { notify: false, reason: "not-signed" };
     const signed = present2(sheet.operativeSignedAt) || present2(sheet.operativeSignedAtMs) || present2(sheet.managerSignedAt) || present2(sheet.approvedAt);
     if (!signed) return { notify: false, reason: "not-signed" };
-    if (resolveTimesheetExportedAtMs(sheet) != null || realMs2(sheet.exportedAtMs) != null) {
-      return { notify: false, reason: "exported" };
-    }
+    const exported = resolveTimesheetExportedAtMs(sheet) != null || realMs2(sheet.exportedAtMs) != null;
+    if (exported && input.includeExported !== true) return { notify: false, reason: "exported" };
     if (!timesheetBookingWriteMatters(input.before, input.after)) return { notify: false, reason: "no-change" };
     const ids = new Set(input.personIds.map((id2) => normalizeDocumentId(text44(id2))).filter(Boolean));
     const start = text44(input.periodStartDayKey);
@@ -27196,11 +27295,12 @@ var ProjectPlannerCanonical = (() => {
       after: input.after ?? null,
       afterOnSheet: now === "yes",
       personIds: input.personIds,
+      includeExported: exported,
       nowMs: typeof input.nowMs === "number" && Number.isFinite(input.nowMs) ? input.nowMs : Date.now()
     });
     if (decision.reference === "none") return { notify: false, reason: "nothing-signed-to-compare" };
     if (!decision.reopens) return { notify: false, reason: "booking-not-signed" };
-    return { notify: true, reason: decision.kind === "added" ? "booking-added" : "signed-booking-changed" };
+    return { notify: true, ...exported ? { exported: true } : {}, reason: decision.kind === "added" ? "booking-added" : "signed-booking-changed" };
   }
   function timesheetBookingsChangedRecipients(subject, actor, roster) {
     const id2 = typeof subject === "string" ? text44(subject) : text44(subject?.id);
@@ -27211,6 +27311,12 @@ var ProjectPlannerCanonical = (() => {
     const signedMs = realMs2(sheet?.operativeSignedAt) ?? realMs2(sheet?.operativeSignedAtMs) ?? realMs2(sheet?.managerSignedAt) ?? realMs2(sheet?.approvedAt);
     if (!id2 || signedMs == null) return null;
     return derivedDocumentId(`timesheetBookingsChanged|${id2}|${signedMs}`);
+  }
+  function timesheetRevisionDueNoticeId(sheetDocId, sheet) {
+    const id2 = text44(sheetDocId);
+    const exportedMs = realMs2(sheet?.exportedAt) ?? realMs2(sheet?.exportedAtMs);
+    if (!id2 || exportedMs == null) return null;
+    return derivedDocumentId(`timesheetRevisionDue|${id2}|${exportedMs}`);
   }
 
   // lib/canonical/timesheetHalfSigned.ts
@@ -27238,6 +27344,202 @@ var ProjectPlannerCanonical = (() => {
       });
     }
     return rows3.sort((a, b) => (a.startDayKey || a.sheetId).localeCompare(b.startDayKey || b.sheetId));
+  }
+
+  // lib/canonical/timesheetRevisions.ts
+  var TIMESHEET_REVISION_SUFFIX = "_rev";
+  var TIMESHEET_REVISION_MAX = 99;
+  var TIMESHEET_REVISION_NOTICE_TYPE = "timesheet_revision_to_sign";
+  var TIMESHEET_REVISION_NOTICE_TITLE = "Timesheet revision";
+  var TIMESHEET_REVISION_NOTICE_MESSAGE = "Your timesheet has a revision to sign";
+  var TIMESHEET_REVISION_DUE_NOTICE_TITLE = "Update to your exported timesheet";
+  var TIMESHEET_REVISION_DUE_NOTICE_MESSAGE = "There is an update to your already exported timesheet: a booking has changed. Please review and sign the update, or speak to your line manager if something isn't correct.";
+  var TIMESHEET_REVISION_DUE_MESSAGE = "A booking has changed since this timesheet was exported. The exported timesheet stays as it was; please review and sign the update (a revision), or speak to your line manager if something isn't correct.";
+  var TIMESHEET_REVISION_DUE_STATUS = "Update to sign";
+  var TIMESHEET_REVISION_DUE_REVIEWER_MESSAGE = "Bookings have changed since this timesheet was exported. The exported timesheet stays as it was; the person signs an update (a revision), then you counter-sign it.";
+  var TIMESHEET_REVIEW_AND_SIGN_REVISION_LABEL = "Review and sign again";
+  var TIMESHEET_CREATE_REVISION_LABEL = "Create revision";
+  var TIMESHEET_CREATE_REVISION_HELP = "This timesheet is exported and cannot be changed. A revision is a new version built from the live bookings, price work and expenses for this pay run. The person signs it, then their line manager counter-signs it.";
+  var TIMESHEET_REVISION_OPEN_MESSAGE = "A revision of this timesheet is already open. Finish and export it first.";
+  var TIMESHEET_REVISION_NOT_EXPORTED_MESSAGE = "Only an exported timesheet can have a revision.";
+  var TIMESHEET_REVISION_NOT_REVIEWER_MESSAGE = "Only the person, an admin or the person\u2019s line manager can create a revision of this timesheet.";
+  var TIMESHEET_REVISION_LIMIT_MESSAGE = "This pay run has reached the most revisions allowed.";
+  var TIMESHEET_EARLIER_VERSIONS_LABEL = "Earlier versions";
+  var TIMESHEET_ORIGINAL_VERSION_LABEL = "Original";
+  var TIMESHEET_REVISION_FIELDS = [
+    "revisionOf",
+    "revision",
+    "previousVersionId",
+    "revisionCreatedBy",
+    "revisionCreatedAt"
+  ];
+  function text46(value) {
+    return typeof value === "string" ? value.trim() : "";
+  }
+  function record16(value) {
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  }
+  function parseTimesheetRevisionDocId(documentId2) {
+    const id2 = text46(documentId2);
+    if (!id2.startsWith(TIMESHEET_DOCUMENT_PREFIX)) return null;
+    const match = /^(.+)_rev([1-9]\d*)$/.exec(id2);
+    if (!match) return { documentId: id2, baseDocumentId: id2, revision: 0 };
+    const revision = Number(match[2]);
+    if (!Number.isInteger(revision) || revision > TIMESHEET_REVISION_MAX) return null;
+    if (!match[1].startsWith(TIMESHEET_DOCUMENT_PREFIX)) return null;
+    return { documentId: id2, baseDocumentId: match[1], revision };
+  }
+  function isTimesheetRevisionDocId(documentId2) {
+    return (parseTimesheetRevisionDocId(documentId2)?.revision ?? 0) > 0;
+  }
+  function timesheetRevisionDocId(baseDocumentId, revision) {
+    const base = parseTimesheetRevisionDocId(baseDocumentId);
+    if (!base || base.revision !== 0) return "";
+    if (revision === 0) return base.documentId;
+    if (!Number.isInteger(revision) || revision < 1 || revision > TIMESHEET_REVISION_MAX) return "";
+    return `${base.documentId}${TIMESHEET_REVISION_SUFFIX}${revision}`;
+  }
+  function timesheetRevisionLabel(revision) {
+    const n = typeof revision === "number" ? revision : Number(revision);
+    return Number.isInteger(n) && n > 0 ? `REV ${n}` : "";
+  }
+  function timesheetInvoiceNumber(input) {
+    const day = text46(input?.startDayKey);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return "";
+    const person = text46(input?.subjectId).replace(/[^A-Za-z0-9]/g, "").slice(0, 6).toUpperCase();
+    if (!person) return "";
+    return `TS-${day.replace(/-/g, "")}-${person}`;
+  }
+  function timesheetInvoiceNumberForRevision(baseInvoiceNumber, revision) {
+    const base = text46(baseInvoiceNumber);
+    if (!base) return "";
+    const n = typeof revision === "number" ? revision : Number(revision);
+    return Number.isInteger(n) && n > 0 ? `${base}-REV${n}` : base;
+  }
+  function timesheetRevisionDifference(input) {
+    const total = typeof input?.total === "number" ? input.total : Number(input?.total);
+    const previous = typeof input?.previousTotal === "number" ? input.previousTotal : Number(input?.previousTotal);
+    if (input?.previousTotal == null || input?.total == null || !Number.isFinite(total) || !Number.isFinite(previous)) return null;
+    const amount = roundPennies(total - previous);
+    const money2 = formatMoney(Math.abs(amount), input.currency);
+    return { amount, text: amount > 0 ? `+${money2}` : amount < 0 ? `-${money2}` : money2 };
+  }
+  function realSigned(value) {
+    const ms = timesheetTimestampMs(value);
+    return ms != null && ms > TIMESHEET_SIGNED_AFTER_MS;
+  }
+  function versionOf(documentId2, data) {
+    const ref = parseTimesheetRevisionDocId(documentId2);
+    if (!ref) return null;
+    const managerSigned = realSigned(data.managerSignedAt) || realSigned(data.approvedAt);
+    const snapshot = data.weeklyReportOverride != null && typeof data.weeklyReportOverride === "object";
+    return {
+      ...ref,
+      exported: timesheetExportedFieldSet(data.exportedAt),
+      signedOff: managerSigned || realSigned(data.operativeSignedAt) && snapshot,
+      data
+    };
+  }
+  function timesheetVersionsForPeriod(documents) {
+    const chains = /* @__PURE__ */ new Map();
+    for (const row2 of documents ?? []) {
+      const version = versionOf(text46(row2?.documentId), record16(row2?.data));
+      if (!version) continue;
+      const chain = chains.get(version.baseDocumentId) ?? [];
+      if (!chain.some((existing) => existing.revision === version.revision)) chain.push(version);
+      chains.set(version.baseDocumentId, chain);
+    }
+    return Array.from(chains.values()).map((chain) => chain.sort((a, b) => a.revision - b.revision));
+  }
+  function timesheetLatestVersion(chain) {
+    const list = chain ?? [];
+    return list.length > 0 ? list[list.length - 1] : null;
+  }
+  function timesheetReportVersion(chain) {
+    const list = chain ?? [];
+    for (let index = list.length - 1; index >= 0; index -= 1) {
+      if (list[index].revision === 0 || list[index].exported || list[index].signedOff) return list[index];
+    }
+    return timesheetLatestVersion(list);
+  }
+  function timesheetEarlierVersions(chain) {
+    const list = [...chain ?? []];
+    list.pop();
+    return list.reverse();
+  }
+  function timesheetRevisionDue(input) {
+    const latest = timesheetLatestVersion(input.chain);
+    const none = { due: false, nextRevision: null, documentId: "", label: "", message: null, reviewerMessage: null };
+    if (!latest || !latest.exported || input.change?.changed !== true || input.change?.exported !== true) return none;
+    const next = latest.revision + 1;
+    const documentId2 = timesheetRevisionDocId(latest.baseDocumentId, next);
+    if (!documentId2) return none;
+    return {
+      due: true,
+      nextRevision: next,
+      documentId: documentId2,
+      label: timesheetRevisionLabel(next),
+      message: TIMESHEET_REVISION_DUE_MESSAGE,
+      reviewerMessage: TIMESHEET_REVISION_DUE_REVIEWER_MESSAGE
+    };
+  }
+  function canCreateTimesheetRevision(input) {
+    const latest = timesheetLatestVersion(input.chain);
+    const refuse = (reason, message) => ({
+      allowed: false,
+      reason,
+      nextRevision: null,
+      documentId: "",
+      message
+    });
+    if (input.writerIsSubject !== true && !timesheetWriterIsReviewer(input.reviewer)) return refuse("not-reviewer", TIMESHEET_REVISION_NOT_REVIEWER_MESSAGE);
+    if (!latest) return refuse("no-sheet", TIMESHEET_REVISION_NOT_EXPORTED_MESSAGE);
+    if (!latest.exported) {
+      return latest.revision > 0 ? refuse("revision-open", TIMESHEET_REVISION_OPEN_MESSAGE) : refuse("not-exported", TIMESHEET_REVISION_NOT_EXPORTED_MESSAGE);
+    }
+    const next = latest.revision + 1;
+    const documentId2 = timesheetRevisionDocId(latest.baseDocumentId, next);
+    if (!documentId2) return refuse("limit", TIMESHEET_REVISION_LIMIT_MESSAGE);
+    return { allowed: true, reason: "ok", nextRevision: next, documentId: documentId2, message: "" };
+  }
+  function timesheetExportedTotal(data) {
+    return timesheetTotals({ sheet: record16(data), payrollLines: [], extrasMode: "decided" }).total;
+  }
+  var TIMESHEET_REVISION_COPIED_FIELDS = [
+    "userId",
+    "weekStart",
+    "weekEnd",
+    "weekStartKey",
+    "weekEndKey",
+    "priceWorkEntries",
+    "expenseEntries",
+    "lateExtras",
+    "extraEntryReviews",
+    "payrollLineReviews"
+  ];
+  function timesheetRevisionCreateFields(input) {
+    const ref = parseTimesheetRevisionDocId(input?.previous?.documentId);
+    const data = record16(input?.previous?.data);
+    const writer = text46(input?.writerUserId);
+    if (!ref || !writer || !timesheetExportedFieldSet(data.exportedAt) || !text46(data.userId) || data.weekStart == null) return null;
+    const revision = ref.revision + 1;
+    const documentId2 = timesheetRevisionDocId(ref.baseDocumentId, revision);
+    if (!documentId2) return null;
+    const fields = {};
+    for (const key5 of TIMESHEET_REVISION_COPIED_FIELDS) if (data[key5] !== void 0 && data[key5] !== null) fields[key5] = data[key5];
+    fields.revisionOf = ref.baseDocumentId;
+    fields.revision = revision;
+    fields.previousVersionId = ref.documentId;
+    fields.revisionCreatedBy = writer;
+    return { documentId: documentId2, revision, fields };
+  }
+  function timesheetRevisionToSignRecipients(subject, actor, roster) {
+    const id2 = typeof subject === "string" ? text46(subject) : text46(subject?.id);
+    return id2 ? excludeActor([id2], actor, roster) : [];
+  }
+  function timesheetRevisionNoticeKey(revisionDocumentId) {
+    const ref = parseTimesheetRevisionDocId(revisionDocumentId);
+    return ref && ref.revision > 0 ? `timesheetRevision|${ref.documentId}` : null;
   }
   return __toCommonJS(bundleEntry_exports);
 })();

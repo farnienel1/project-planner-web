@@ -1347,3 +1347,29 @@ Interest registrations are created only by the website Admin API. Clients cannot
 ### match `/emailSuppressions/{email}`
 
 Marketing suppression list. Admin API only — no client reads or writes. There is no root catch-all; this match is explicit so the collection is never world-readable.
+
+## 1.55.0 revisions
+
+Rulebook 1.55.0 §8 / §16: timesheet revisions. In `match /settings/{settingId}`:
+
+- `tsRevCreate()` — the only way to create a document `timesheet_…_rev{N}` (the allow sends every create of such an id
+  there and nowhere else). Keys are exactly the copied fields (`TIMESHEET_REVISION_COPIED_FIELDS`), the revision fields
+  and write metadata; `revision` is an int 1–99; `revisionOf` is an original id (no `_rev`); the document id is
+  `revisionOf + '_rev' + revision`; `previousVersionId` is the original (N = 1) or `_rev{N-1}`; `revisionCreatedBy` is
+  the caller and `revisionCreatedAt` the request time. The previous version must be exported (`tsInstantIn(prev,
+  'exportedAt')`) — so a second open revision is impossible — and every copied field must equal it
+  (`!d.diff(prev).affectedKeys().hasAny(copied)`), so the person can never create a revision with self-approved reviews
+  or changed entries. The caller is the subject (`tsIdIsCallers`) or a reviewer of the subject (`tsReviewer`). One
+  `get` (the previous version).
+- `tsRevKept()` — on every update and delete of a timesheet document: an exported revision never changes; an exported
+  original whose `_rev1` exists never changes or is deleted (one `exists`, only when the stored sheet is exported); a
+  revision's revision fields never change; an unexported revision is deleted only by a reviewer, never the subject.
+- Byte budget: the settings match's helpers were renamed `timesheet…` → `ts…` (65 occurrences), the read rule's
+  inner own-sheet block that its first clause already covers was removed (a read never has `request.method ==
+  'create'`, and `resource.data.userId == uid` on a `timesheet_` id is already allowed by the first clause), the
+  deadline / health & safety id tests were merged into one regular expression (`matches` is a whole-string match), and
+  the two 1.54.0 comment lines below moved here. No allow/deny change from those.
+  - 1.54.0: `lateExtras` (paid only once reviewed) only after the line manager signed and until exported.
+  - 1.54.0: once exported, no reviewer writes `lateExtras` or moves `exportedAt`; with late extras, nor reviews or
+    snapshot.
+- PR #334 (1.54.1 "lock all") locks every exported sheet for everyone; `tsRevKept` stays correct with or without it.

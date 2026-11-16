@@ -183,3 +183,25 @@ test('1.45.0 evidence on a sheet filed under a former id is kept with the person
   assert.equal(withIds.expenseEntries[0]?.evidence?.[0]?.path, evidence[0].path)
   assert.equal(withIds.priceWorkEntries[0]?.evidence?.length, 1)
 })
+
+test('1.55.0: an original and its revision are one pay run — the period opens the latest version (REV 1)', () => {
+  const start = new Date('2026-11-01T00:00:00Z')
+  const end = new Date('2026-11-15T00:00:00Z')
+  const original = draftFromFirestoreMap(
+    { exportedAt: stamp('2026-11-16T10:00:00Z'), operativeSignedAt: stamp('2026-11-15T10:00:00Z') },
+    { sheetDocId: 'timesheet_u1_1761955200' }
+  )
+  const revision = draftFromFirestoreMap({}, { sheetDocId: 'timesheet_u1_1761955200_rev1' })
+  assert.equal(original.revision, 0)
+  assert.equal(revision.revision, 1)
+  const picked = pickTimesheetDraftForPeriod(
+    [
+      { weekStart: start, endDayKey: '2026-11-15', draft: original, documentId: 'timesheet_u1_1761955200' },
+      { weekStart: start, endDayKey: '2026-11-15', draft: revision, documentId: 'timesheet_u1_1761955200_rev1' },
+    ],
+    start,
+    end,
+    'Europe/London'
+  )
+  assert.equal(picked?.documentId, 'timesheet_u1_1761955200_rev1')
+})

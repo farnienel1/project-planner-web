@@ -181,6 +181,11 @@ export type TimesheetDraft = {
    * from it by `timesheetEntryDecision`; this copy only lets a reviewer save write what changed.
    */
   extraEntryReviews?: Record<string, TimesheetEntryReview> | null
+  /**
+   * Rulebook 1.55.0 §8: the version this draft was read from — 0 for the original, N for REV N (from the document id,
+   * `parseTimesheetRevisionDocId`). Read only, never written.
+   */
+  revision?: number
 }
 
 export function emptyTimesheetDraft(): TimesheetDraft {

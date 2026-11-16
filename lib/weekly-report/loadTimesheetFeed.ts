@@ -92,7 +92,7 @@ export async function loadWeeklyReportTimesheetFeed({
 
   for (const user of users) {
     if (!periods.some((period) => participatesInPeriod(user, period, timeZone))) continue
-    const rows = await listTimesheetStates(organizationId, user.id, 80)
+    const rows = await listTimesheetStates(organizationId, user.id, 80, 'reports')
     const byStart = new Map(rows.map((row) => [dayKey(row.weekStart, timeZone), row.draft]))
     const { operative } = findUserAndOperative(users, operatives, { userId: user.id })
     const aliasUserIds = users
@@ -148,6 +148,8 @@ export async function loadWeeklyReportTimesheetFeed({
         change: checkChange ? { reopened: checkChange.reopened, changed: checkChange.changed, waitingFor: checkChange.waitingFor } : null,
         payrollLines: payroll.lineItems,
         entryFingerprints: draft ? draftEntryFingerprints(draft) : null,
+        // Rulebook 1.55.0: the version used (latest exported or signed off) — the check line reads "· REV N".
+        revision: draft?.revision ?? 0,
       })
       if (!draft || !isTimesheetFullyApproved(draft, user, users)) continue
       // Rulebook 1.47.0 §8: a signed, unexported sheet whose bookings changed since it was signed is not approved until
