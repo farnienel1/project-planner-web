@@ -132,3 +132,33 @@ export function deltaCopy(current: number, previous: number): { text: string; di
   const direction = pct > 0 ? 'up' : 'down'
   return { text: `${pct > 0 ? '▲' : '▼'} ${Math.abs(pct)}% vs comparison`, direction }
 }
+
+/**
+ * Owner console PR 1 (spec §2, audit §3): the console store downloads product events and sessions only for the page's
+ * period — from the start of its comparison period — and never more than CONSOLE_EVENTS_CAP of each (newest first).
+ * "To date" has no start, so it is the newest CONSOLE_EVENTS_CAP; a capped load is shown as such, never as complete.
+ */
+export const CONSOLE_EVENTS_CAP = 5000
+
+/** The first instant the store must load events from for this period; null means "no lower bound" (To date). */
+export function consoleEventsSince(period: ConsolePeriodId, now = new Date(), timeZone = LONDON_TIME_ZONE): Date | null {
+  if (period === 'to_date') return null
+  const range = resolveConsolePeriod(period, now, timeZone)
+  return range.previousStart.getTime() < range.start.getTime() ? range.previousStart : range.start
+}
+
+/** True when the loaded events cover every instant from `from` onwards (so a count over it is complete). */
+export function consoleEventsCover(
+  loaded: { since: Date | null; truncated: boolean } | null,
+  from: Date
+): boolean {
+  if (!loaded || loaded.truncated) return false
+  return loaded.since === null || loaded.since.getTime() <= from.getTime()
+}
+
+/** True when a load from `loadedSince` already covers what `wanted` needs (no download needed). */
+export function consoleEventsLoadCovers(loadedSince: Date | null | undefined, wanted: Date | null): boolean {
+  if (loadedSince === undefined) return false
+  if (loadedSince === null) return true
+  return wanted !== null && loadedSince.getTime() <= wanted.getTime()
+}

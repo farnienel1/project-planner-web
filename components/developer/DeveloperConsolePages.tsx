@@ -7,7 +7,7 @@ import { billingLabel } from '@/lib/stripe/billing'
 import { formatGbpFromPence } from '@/lib/analytics/consolePeriod'
 import { ANNUAL_PENCE, MONTHLY_PENCE } from '@/lib/stripe/plans'
 import { inRange } from '@/lib/analytics/aggregations'
-import { resolveConsolePeriod } from '@/lib/analytics/consolePeriod'
+import { consoleEventsSince, resolveConsolePeriod } from '@/lib/analytics/consolePeriod'
 import { MetricCard } from '@/components/developer/DeveloperShell'
 
 export function DeveloperPlaceholderScreen({
@@ -30,8 +30,9 @@ export function DeveloperPlaceholderScreen({
 
 export function DeveloperGrowthScreen() {
   const { events, users, organisations, load } = useAnalyticsStore()
+  // This page always shows this year: it loads this year's events (owner console PR 1, bounded to the page's period).
   useEffect(() => {
-    void load()
+    void load(consoleEventsSince('year'))
   }, [load])
   const year = resolveConsolePeriod('year')
   const counts = useMemo(() => {

@@ -18,7 +18,7 @@ import {
 import { METRIC_DEFINITIONS, type DateRangePreset } from '@/lib/analytics/events'
 import { DeveloperShell, DeveloperStatus, MetricCard, MiniBars } from '@/components/developer/DeveloperShell'
 import { EmptyState, LoadingSpinner } from '@/components/dashboard/PageShell'
-import { CONSOLE_PERIODS, type ConsolePeriodId, deltaCopy, formatCount, formatGbpFromPence, resolveConsolePeriod } from '@/lib/analytics/consolePeriod'
+import { CONSOLE_EVENTS_CAP, CONSOLE_PERIODS, consoleEventsCover, deltaCopy, formatCount, formatGbpFromPence, resolveConsolePeriod } from '@/lib/analytics/consolePeriod'
 import { useConsolePrefs } from '@/lib/analytics/consolePrefs'
 import { isTestOrganisation, isTestPerson, testOrganisationIds } from '@/lib/owner/testData'
 import { loadSignedTimesheetValueTotals, otherCurrenciesNote, type SignedTimesheetValueTotals } from '@/lib/owner/signedTimesheetValue'
@@ -81,9 +81,14 @@ function countEvents(
 }
 
 export function DeveloperOverviewScreen() {
-  const [period, setPeriod] = useState<ConsolePeriodId>('to_date')
+  const period = useConsolePrefs((state) => state.period)
   const periodRange = useMemo(() => resolveConsolePeriod(period), [period])
-  const { events, sessions, users, organisations, loading, error, loadedAt, load, refresh } = useAnalyticsStore()
+  const { events, sessions, users, organisations, loading, error, loadedAt, load, refresh, eventsSince, eventsTruncated } =
+    useAnalyticsStore()
+  const eventsLoaded = useMemo(
+    () => (eventsSince === undefined ? null : { since: eventsSince, truncated: eventsTruncated }),
+    [eventsSince, eventsTruncated]
+  )
   const { suggestions, votes, loadBoard } = useFeedbackStore()
   const includeTestData = useConsolePrefs((state) => state.includeTestData)
   const testOrgIds = useMemo(() => testOrganisationIds(organisations), [organisations])
@@ -161,10 +166,14 @@ export function DeveloperOverviewScreen() {
 
   const scoreboard = useMemo(() => {
     const columns = CONSOLE_PERIODS.map((item) => ({ id: item.id, label: item.label, range: resolveConsolePeriod(item.id) }))
-    const rows: { label: string; values: number[]; money?: boolean }[] = [
+    // Event rows count only periods the loaded events fully cover (PR 1: events load for the chosen period only).
+    const covered = columns.map((col) => consoleEventsCover(eventsLoaded, col.range.start))
+    const eventValues = (names: string[]) =>
+      columns.map((col, index) => (covered[index] ? countEvents(events, names, col.range.start, col.range.end) : null))
+    const rows: { label: string; values: (number | null)[]; money?: boolean }[] = [
       {
         label: 'Logins',
-        values: columns.map((col) => countEvents(events, ['login', 'user_logged_in'], col.range.start, col.range.end)),
+        values: eventValues(['login', 'user_logged_in']),
       },
       {
         label: 'New users',
@@ -176,23 +185,23 @@ export function DeveloperOverviewScreen() {
       },
       {
         label: 'Projects created',
-        values: columns.map((col) => countEvents(events, ['project_created'], col.range.start, col.range.end)),
+        values: eventValues(['project_created']),
       },
       {
         label: 'Small works created',
-        values: columns.map((col) => countEvents(events, ['small_work_created'], col.range.start, col.range.end)),
+        values: eventValues(['small_work_created']),
       },
       {
         label: 'Tasks completed',
-        values: columns.map((col) => countEvents(events, ['task_completed'], col.range.start, col.range.end)),
+        values: eventValues(['task_completed']),
       },
       {
         label: 'Timesheets signed (events)',
-        values: columns.map((col) => countEvents(events, ['timesheet_signed', 'timesheet_approved'], col.range.start, col.range.end)),
+        values: eventValues(['timesheet_signed', 'timesheet_approved']),
       },
     ]
     return { columns, rows }
-  }, [events, visibleUsers, visibleOrgs])
+  }, [events, visibleUsers, visibleOrgs, eventsLoaded])
 
   const revenue = useMemo(() => {
     let mrr = 0
@@ -296,19 +305,11 @@ export function DeveloperOverviewScreen() {
         </div>
       }
     >
-      <div className="pills flex flex-wrap gap-1 rounded-2xl border border-[var(--line)] bg-white p-1">
-        {CONSOLE_PERIODS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            aria-pressed={period === item.id}
-            className={`rounded-[10px] px-3 py-2 text-sm font-semibold ${period === item.id ? 'bg-[var(--blue)] text-white' : 'text-[var(--ink3)]'}`}
-            onClick={() => setPeriod(item.id)}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
+      {eventsTruncated ? (
+        <p className="text-xs text-[var(--ink3)]">
+          Showing the newest {CONSOLE_EVENTS_CAP.toLocaleString('en-GB')} product events only. Pick a shorter period for complete event counts.
+        </p>
+      ) : null}
       <div className="grid gap-3 lg:grid-cols-[1.2fr_2fr]">
         <div className="card pad text-white" style={{ background: 'linear-gradient(160deg,#1D4ED8,#0F2447)' }}>
           <p className="text-sm font-bold text-white/80">Timesheet value signed · {periodRange.label}</p>
@@ -383,7 +384,7 @@ export function DeveloperOverviewScreen() {
             className="btn sm ghost"
             onClick={() => {
               const header = ['Metric', ...scoreboard.columns.map((col) => col.label)].map(csvEscapeCell).join(',')
-              const lines = scoreboard.rows.map((row) => [row.label, ...row.values].map(csvEscapeCell).join(','))
+              const lines = scoreboard.rows.map((row) => [row.label, ...row.values.map((value) => (value === null ? '' : value))].map(csvEscapeCell).join(','))
               const blob = new Blob([[header, ...lines].join('\n')], { type: 'text/csv' })
               const url = URL.createObjectURL(blob)
               const link = document.createElement('a')
@@ -416,7 +417,11 @@ export function DeveloperOverviewScreen() {
                     key={scoreboard.columns[index].id}
                     className={`px-2 py-2 text-right ${scoreboard.columns[index].id === period ? 'bg-[var(--soft)] font-bold' : ''}`}
                   >
-                    {formatCount(value)}
+                    {value === null ? (
+                      <span title="Not loaded for this period. Choose it in the period selector to count it.">—</span>
+                    ) : (
+                      formatCount(value)
+                    )}
                   </td>
                 ))}
               </tr>

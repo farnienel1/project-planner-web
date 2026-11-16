@@ -26,16 +26,24 @@ import { EmptyState, LoadingSpinner } from '@/components/dashboard/PageShell'
 import { useFeedbackStore } from '@/lib/feedback/feedbackStore'
 import { formatOwnerWhen } from '@/lib/analytics/ownerDirectory'
 
+function pageEventsSince(range: { preset: string; previousStart: Date; start: Date }): Date | null {
+  if (range.preset === 'all_time') return null
+  return range.previousStart.getTime() < range.start.getTime() ? range.previousStart : range.start
+}
+
 export function DeveloperAnalyticsScreen() {
   const [preset, setPreset] = useState<DateRangePreset>('all_time')
   const range = useMemo(() => resolveDateRange(preset), [preset])
   const { events, sessions, users, organisations, loading, error, load, refresh } = useAnalyticsStore()
   const { suggestions, loadBoard } = useFeedbackStore()
 
+  // Owner console PR 1: this page's own range bounds the events it loads ("All time" is the newest capped set).
   useEffect(() => {
-    void load()
+    void load(pageEventsSince(range))
+  }, [load, range])
+  useEffect(() => {
     void loadBoard(true)
-  }, [load, loadBoard])
+  }, [loadBoard])
 
   const hasEvents = events.length > 0
   const eventActive = dailyActiveUsers(events, range)
@@ -219,8 +227,8 @@ export function DeveloperUsageScreen() {
   const { events, users, organisations, loading, error, load, refresh } = useAnalyticsStore()
 
   useEffect(() => {
-    void load()
-  }, [load])
+    void load(pageEventsSince(range))
+  }, [load, range])
 
   const rows = featureUsageRows(events, range, { start: range.previousStart, end: range.previousEnd })
 
