@@ -32,6 +32,7 @@ import {
   timesheetStoredStartDayKey,
   type TimesheetEntryDecision,
   type TimesheetEntryReview,
+  timesheetExportedFieldSet,
 } from '@/lib/canonical'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import {
@@ -367,6 +368,7 @@ export function draftFromFirestoreMap(
     managerSignedByUserId: status.managerSignedByUserId || null,
     managerSignatureImageBase64: includeSignatures ? status.managerSignatureImageBase64 || null : null,
     exportedAt: status.exportedAtMs ? new Date(status.exportedAtMs) : null,
+    exportedAtStored: timesheetExportedFieldSet(data.exportedAt),
     expenseEntries: entries.expenseEntries,
     priceWorkEntries: entries.priceWorkEntries,
     payrollLineReviews: mapReviews(data.payrollLineReviews),

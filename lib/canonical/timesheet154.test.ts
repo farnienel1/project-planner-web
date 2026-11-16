@@ -106,14 +106,77 @@ test('1.54.0 signedTimesheetExtrasChanges: a sheet counter-signed before 1.54.0 
     approvedAt: COUNTER.getTime(),
     weeklyReportOverride: { priceWork: [snapshotRow('P1', null)], expenses: [snapshotRow('E1', null, { decision: 'edited', amount: 15 })] },
   }
-  // Untouched (the edited expense's snapshot amount is its revised amount — never compared): not changed.
-  assert.equal(R.signedTimesheetExtrasChanges({ sheet: old, entries: unchanged }).changed, false)
+  // Untouched: the edited expense still carries the line manager's inline edit (£15) it was signed with.
+  const e1 = ex('E1', 'fp-e1', { managerDecision: 'edited', managerRevisedAmount: 15 })
+  const oldUnchanged = { ...unchanged, expenseEntries: [e1] }
+  assert.equal(R.signedTimesheetExtrasChanges({ sheet: old, entries: oldUnchanged }).changed, false)
   // An added entry, a new title or a new amount on an agreed row: changed.
-  assert.equal(R.signedTimesheetExtrasChanges({ sheet: old, entries: { ...unchanged, expenseEntries: [ex('E1', 'x'), ex('E9', 'y')] } }).waitingFor, 'person')
-  assert.deepEqual(R.signedTimesheetExtrasChanges({ sheet: old, entries: { ...unchanged, priceWorkEntries: [pw('P1', 'z', { amount: 150 })] } }).changedEntryIds, ['P1'])
+  assert.equal(R.signedTimesheetExtrasChanges({ sheet: old, entries: { ...oldUnchanged, expenseEntries: [e1, ex('E9', 'y')] } }).waitingFor, 'person')
+  assert.deepEqual(R.signedTimesheetExtrasChanges({ sheet: old, entries: { ...oldUnchanged, priceWorkEntries: [pw('P1', 'z', { amount: 150 })] } }).changedEntryIds, ['P1'])
   // An entry stored without an id (derived id differs from the snapshot's): matched by title and job number.
   const legacy = { ...old, weeklyReportOverride: { priceWork: [snapshotRow('RANDOM-ID', null, { title: 'PW P1', jobNumber: 'J-1', amount: 100 })], expenses: old.weeklyReportOverride.expenses } }
-  assert.equal(R.signedTimesheetExtrasChanges({ sheet: legacy, entries: unchanged }).changed, false)
+  assert.equal(R.signedTimesheetExtrasChanges({ sheet: legacy, entries: oldUnchanged }).changed, false)
+})
+
+test('1.54.0 review of #337 (1a): a pre-1.54 signed declined or edited row whose money moves is a change', () => {
+  const sheet = {
+    operativeSignedAt: SIGNED,
+    managerSignedAt: COUNTER,
+    weeklyReportOverride: {
+      priceWork: [],
+      expenses: [
+        { id: 'E1', title: 'Hotel', jobNumber: 'J1', amount: 0, decision: 'declined' },
+        { id: 'E2', title: 'Fuel', jobNumber: 'J1', amount: 60, decision: 'edited' },
+      ],
+    },
+  }
+  // The reviewer's case: no inline decisions on the entries any more, amounts raised to £500 and £1,000.
+  const raised = R.signedTimesheetExtrasChanges({
+    sheet,
+    entries: { expenseEntries: [{ id: 'E1', title: 'Hotel', jobNumber: 'J1', amount: 500, reviewFingerprint: 'x' }, { id: 'E2', title: 'Fuel', jobNumber: 'J1', amount: 1000, reviewFingerprint: 'y' }] },
+  })
+  assert.equal(raised.changed, true)
+  assert.equal(raised.waitingFor, 'person')
+  assert.deepEqual(raised.changedEntryIds, ['E1', 'E2'])
+  // Inline decisions kept as signed and only the description changed: still a change.
+  const described = R.signedTimesheetExtrasChanges({
+    sheet: { ...sheet, weeklyReportOverride: { priceWork: [], expenses: [{ id: 'E1', title: 'Hotel', jobNumber: 'J1', details: 'one night', amount: 0, decision: 'declined' }] } },
+    entries: { expenseEntries: [{ id: 'E1', title: 'Hotel', jobNumber: 'J1', details: 'two nights', amount: 500, managerDecision: 'declined', reviewFingerprint: 'x' }] },
+  })
+  assert.deepEqual(described.changedEntryIds, ['E1'])
+  // Rounding to the penny is not a change.
+  const rounded = R.signedTimesheetExtrasChanges({
+    sheet: { ...sheet, weeklyReportOverride: { priceWork: [], expenses: [{ id: 'E3', title: 'A', jobNumber: '', amount: 12.35, decision: 'approved' }] } },
+    entries: { expenseEntries: [{ id: 'E3', title: 'A', jobNumber: '', amount: 12.345, reviewFingerprint: 'z' }] },
+  })
+  assert.equal(rounded.changed, false)
+  // A line manager's own later review (the review map, not stale) is not the person's change.
+  const reviewed = R.signedTimesheetExtrasChanges({
+    sheet: { ...sheet, extraEntryReviews: { E2: { decision: 'declined', reviewedAmount: 75 } }, weeklyReportOverride: { priceWork: [], expenses: [{ id: 'E2', title: 'Fuel', jobNumber: 'J1', amount: 75, decision: 'approved' }] } },
+    entries: { expenseEntries: [{ id: 'E2', title: 'Fuel', jobNumber: 'J1', amount: 75, reviewFingerprint: 'y' }] },
+  })
+  assert.equal(reviewed.changed, false)
+})
+
+test('1.54.0 review of #337 (1b): an inline decision counts on a signed sheet only while it is the one signed', () => {
+  const sheet = {
+    managerSignedAt: COUNTER,
+    weeklyReportOverride: { priceWork: [], expenses: [{ id: 'E1', amount: 0, decision: 'declined' }, { id: 'E2', amount: 60, decision: 'edited' }] },
+  }
+  // As signed: the line manager's inline decisions count.
+  assert.deepEqual(R.timesheetEntryDecision(sheet, { id: 'E1', amount: 500, managerDecision: 'declined' }, 'expense'), {
+    decision: 'declined',
+    revisedAmount: null,
+    source: 'legacy-inline',
+  })
+  assert.equal(R.timesheetEntryDecision(sheet, { id: 'E2', amount: 90, managerDecision: 'edited', managerRevisedAmount: 60 }, 'expense').decision, 'edited')
+  // The person turned the decline into an approval, or raised the edit: pending, never approved.
+  assert.equal(R.timesheetEntryDecision(sheet, { id: 'E1', amount: 500, managerDecision: 'approved' }, 'expense').decision, 'pending')
+  assert.equal(R.timesheetEntryDecision(sheet, { id: 'E2', amount: 90, managerDecision: 'edited', managerRevisedAmount: 1000 }, 'expense').decision, 'pending')
+  // An entry added after the signature has no signed row: never trusted inline.
+  assert.equal(R.timesheetEntryDecision(sheet, { id: 'E9', amount: 40, managerDecision: 'approved' }, 'expense').source, 'stale-review')
+  // An inline value that only lowers what is paid still counts.
+  assert.equal(R.timesheetEntryDecision(sheet, { id: 'E9', amount: 40, managerDecision: 'declined' }, 'expense').decision, 'declined')
 })
 
 test('1.54.0 signedTimesheetExtrasBaselineFields: the stored entries, once, tied to the current signature', () => {
@@ -182,10 +245,21 @@ const doc = (extra: Record<string, unknown> = {}) => ({
   projectId: 'j1',
   ...extra,
 })
+const FP_B1 = R.overtimeBookingFingerprint({
+  id: 'B1',
+  personId: '',
+  dayKey: '2026-11-10',
+  timeSlot: 'CUSTOM_HOURS',
+  workStartTime: '07:00',
+  workEndTime: '16:00',
+  isBreakRemoved: false,
+  otMultiplierOverride: null,
+  status: 'Confirmed',
+} as never)
 const sheet = (extra: Record<string, unknown> = {}) => ({
   userId: PERSON,
   operativeSignedAt: SIGNED,
-  operativeSignedBookings: [{ bookingId: 'B1', collection: 'bookings', fingerprint: '', personId: PERSON, place: 'job|j1' }],
+  operativeSignedBookings: [{ bookingId: 'B1', collection: 'bookings', fingerprint: FP_B1, personId: PERSON, place: 'job|j1' }],
   operativeSignedBookingsSignedAt: SIGNED,
   ...extra,
 })
@@ -211,6 +285,28 @@ test('1.54.0 timesheetBookingChangeNotice: a signed booking changed, deleted or 
   assert.equal(notice({ after: doc({ dayKey: '2026-11-20' }) }).notify, true)
 })
 
+test('1.54.0 review of #337 (3): the notice follows the app — no fingerprint (pre-1.46) or no place (pre-1.47) never notifies a time or job change', () => {
+  const pre146 = sheet({ operativeSignedBookings: [{ bookingId: 'B1', collection: 'bookings', fingerprint: '', personId: PERSON, place: 'job|j1' }] })
+  assert.equal(notice({ sheet: pre146 }).notify, false)
+  assert.equal(notice({ sheet: pre146, after: null }).notify, true)
+  assert.equal(notice({ sheet: pre146, after: doc({ status: 'Cancelled' }) }).notify, true)
+  const pre147 = { userId: PERSON, operativeSignedAt: SIGNED, managerSignedAt: COUNTER, weeklyReportOverride: { lines: [{ id: 'op-B1-normal', bookingId: 'B1', bookingFingerprint: FP_B1 }] } }
+  assert.equal(notice({ sheet: pre147, after: doc({ projectId: 'j2' }) }).notify, false)
+  assert.equal(notice({ sheet: pre147 }).notify, true)
+  // The same booking write, read by the app's rule (`signedTimesheetBookingChanges`): the same answers.
+  const appSays = (signedSheet: Record<string, unknown>, after: ReturnType<typeof doc>) =>
+    R.signedTimesheetBookingChanges({
+      sheet: signedSheet,
+      liveLines: [{ id: 'op-B1-normal', bookingId: 'B1', bookingCollection: 'bookings', bookingFingerprint: R.overtimeBookingFingerprint({ ...after, id: 'B1', personId: '' } as never) }],
+      liveLoaded: true,
+      liveBookings: [after],
+      personIds: [PERSON],
+    }).reopened
+  assert.equal(appSays(pre146, doc({ workEndTime: '18:00' })), false)
+  assert.equal(appSays(pre147, doc({ projectId: 'j2' })), false)
+  assert.equal(appSays(sheet(), doc({ workEndTime: '18:00' })), true)
+})
+
 test('1.54.0 timesheetBookingChangeNotice: a new booking on the sheet is an addition', () => {
   assert.deepEqual(notice({ before: null, after: doc({ bookingId: 'B2' }) }), { notify: true, reason: 'booking-added' })
 })
@@ -223,15 +319,16 @@ test('1.54.0 timesheetBookingChangeNotice: never for a write the rule ignores, a
   assert.equal(notice({ personIds: ['someone-else'] }).reason, 'not-this-person')
   assert.equal(notice({ before: doc({ dayKey: '2026-11-20' }), after: doc({ dayKey: '2026-11-21' }) }).reason, 'outside-period')
   assert.equal(notice({ person: { id: PERSON, employmentType: 'paye', isActive: true } }).reason, 'paye-day')
-  // On the sheet's days but never signed (a filter left it off): not a change.
-  assert.equal(notice({ before: doc({ bookingId: 'B7' }), after: doc({ bookingId: 'B7', workEndTime: '18:00' }) }).reason, 'booking-not-signed')
+  // On the sheet's days but not signed, written now: the app reads it as added (1.47.0), so the notice does too.
+  assert.equal(notice({ before: doc({ bookingId: 'B7' }), after: doc({ bookingId: 'B7', workEndTime: '18:00' }) }).reason, 'booking-added')
+  // Signed, and the write leaves it as signed (only a write the rule reads differently): no notice.
+  assert.equal(notice({ before: doc({ workEndTime: '18:00' }), after: doc() }).notify, false)
   // Signed before 1.47.0 (neither a record nor a snapshot): never on a guess.
   assert.equal(notice({ sheet: { userId: PERSON, operativeSignedAt: SIGNED } }).reason, 'nothing-signed-to-compare')
-  // The snapshot's lines count as signed bookings too.
-  assert.equal(
-    notice({ sheet: { userId: PERSON, operativeSignedAt: SIGNED, managerSignedAt: COUNTER, weeklyReportOverride: { lines: [{ id: 'op-B1-normal', bookingId: 'B1' }] } } }).notify,
-    true
-  )
+  // The snapshot's lines count as signed bookings too (a line with no fingerprint: only a delete reopens).
+  const snapshotOnly = { userId: PERSON, operativeSignedAt: SIGNED, managerSignedAt: COUNTER, weeklyReportOverride: { lines: [{ id: 'op-B1-normal', bookingId: 'B1' }] } }
+  assert.equal(notice({ sheet: snapshotOnly }).notify, false)
+  assert.equal(notice({ sheet: snapshotOnly, after: null }).notify, true)
 })
 
 test('1.54.0 timesheetBookingsChangedRecipients and notice id: the person, never the actor; one id per sheet per signature', () => {
@@ -311,4 +408,34 @@ test('1.54.0 timesheetsHalfSigned: the line manager signed, the person\'s signat
   )
   // These are exactly the sheets `timesheetListBucket` reads as `unsigned` though the line manager signed.
   assert.equal(R.timesheetListBucket(R.parseTimesheetStatusFields({ managerSignedAt: COUNTER }), true), 'unsigned')
+})
+
+test('1.54.0 review of #337 (2): a newly paid Office / WFH / Site survey / custom booking never repairs a signed snapshot', () => {
+  const sheet = { weeklyReportOverride: { lines: [], approvedAt: COUNTER }, managerSignedAt: COUNTER }
+  const office = { isPayeDay: false, bookingCreatedAt: SIGNED, bookingUpdatedAt: SIGNED, scheduleOptionPlace: true }
+  assert.equal(R.timesheetSnapshotNeedsRebuild(sheet, [office]), false)
+  // A job booking that was there when it was signed still repairs a snapshot frozen empty (1.43.0).
+  assert.equal(R.timesheetSnapshotNeedsRebuild(sheet, [office, { ...office, scheduleOptionPlace: false }]), true)
+})
+
+test('1.54.0 review of #337 (5): "exported" for the add control is the stored field the rules test', () => {
+  assert.equal(R.timesheetExportedFieldSet(Date.parse('2026-11-12T10:00:00Z')), true)
+  assert.equal(R.timesheetExportedFieldSet({ seconds: 1, nanoseconds: 0 }), true)
+  assert.equal(R.timesheetExportedFieldSet(new Date(0)), true)
+  assert.equal(R.timesheetExportedFieldSet(null), false)
+  // An app's in-memory date text counts too (stricter than the rules, never looser); junk does not.
+  assert.equal(R.timesheetExportedFieldSet('2026-11-12'), true)
+  assert.equal(R.timesheetExportedFieldSet(''), false)
+  assert.equal(R.timesheetExportedFieldSet('soon'), false)
+  // An export leftover the lists read as not exported is still refused by the rules: no add control either.
+  assert.equal(R.timesheetOwnerCanAddExtras({ exportedAt: null, exportedAtStored: true }).allowed, false)
+  assert.equal(R.timesheetOwnerCanAddExtras({ exportedAt: new Date(), exportedAtStored: false }).allowed, true)
+  // The reopen rule treats such a sheet as exported (warning only).
+  assert.equal(R.signedTimesheetExtrasChanges({ sheet: counterSigned({ exportedAtStored: true }), entries: { ...unchanged, expenseEntries: [] } }).reopened, false)
+})
+
+test('1.54.0 review of #337 (5): signedTimesheetChanges says whether bookings changed (extras-only rebuilds money rows only)', () => {
+  const extras = R.signedTimesheetExtrasChanges({ sheet: counterSigned(), entries: { ...unchanged, expenseEntries: [] } })
+  assert.equal(R.signedTimesheetChanges(noBookingChange, extras).bookingsChanged, false)
+  assert.equal(R.signedTimesheetChanges({ ...noBookingChange, changed: true, reopened: true, waitingFor: 'person' }, extras).bookingsChanged, true)
 })

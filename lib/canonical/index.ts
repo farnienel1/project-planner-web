@@ -2093,6 +2093,7 @@ export {
   signedTimesheetBookingChanges,
   signedTimesheetBookingPlace,
   signedTimesheetBookingRecord,
+  signedTimesheetBookingWriteReopens,
   signedTimesheetLineBookingKey,
 } from './timesheetBookingChanges'
 export type {
@@ -2161,7 +2162,7 @@ export {
   signedTimesheetExtrasChanges,
   signedTimesheetExtrasRecord,
 } from './timesheetExtrasChanges'
-export { TIMESHEET_EXPORTED_EXTRAS_MESSAGE } from './timesheetSnapshot'
+export { TIMESHEET_EXPORTED_EXTRAS_MESSAGE, timesheetExportedFieldSet } from './timesheetSnapshot'
 // Rulebook 1.54.0 §8 / §13: "Your signed timesheet has changed" (written by the server).
 export {
   TIMESHEET_BOOKINGS_CHANGED_NOTICE_MESSAGE,

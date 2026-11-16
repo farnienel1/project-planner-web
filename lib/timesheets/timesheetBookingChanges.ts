@@ -53,6 +53,9 @@ export function signedTimesheetExtrasSheetFromDraft(draft: TimesheetDraft): Sign
     operativeSignedExtrasSignedAt: draft.operativeSignedExtrasSignedAt ?? null,
     managerSignedAt: draft.managerSignedAt ?? null,
     exportedAt: draft.exportedAt ?? null,
+    exportedAtStored: draft.exportedAtStored ?? null,
+    // Review of #337 (1a): each entry is decided as its invoice row is (the review map, the signed snapshot's rows).
+    extraEntryReviews: draft.extraEntryReviews ?? null,
     weeklyReportOverride: draft.weeklyReportOverride
       ? { priceWork: draft.weeklyReportOverride.priceWork, expenses: draft.weeklyReportOverride.expenses }
       : null,
@@ -77,6 +80,7 @@ export function signedTimesheetLiveLines(lines: ReadonlyArray<TimesheetPayrollLi
     isPayeDay: line.isPayeDay === true,
     bookingCreatedAt: line.bookingCreatedAt ?? null,
     bookingUpdatedAt: line.bookingUpdatedAt ?? null,
+    scheduleOptionPlace: line.scheduleOptionPlace === true,
   }))
 }
 

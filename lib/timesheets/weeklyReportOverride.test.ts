@@ -198,6 +198,9 @@ test('later schedule changes do not rebuild stored labour lines', () => {
     draft: {
       ...first,
       payrollLineReviews: { 'op-b1-normal': { decision: 'edited', revisedAmount: 50 } },
+      // Review of #337 (1b): a reviewer's change after signing is a review-map entry; an inline decision that differs
+      // from the signed snapshot is not trusted.
+      extraEntryReviews: { pw1: { decision: 'edited', revisedAmount: 40, reviewedAmount: 80, reviewedByUserId: 'm1', reviewedAtMs: 1 } },
       priceWorkEntries: first.priceWorkEntries.map((entry) => ({
         ...entry,
         managerDecision: 'edited' as const,

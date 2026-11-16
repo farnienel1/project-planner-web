@@ -152,6 +152,11 @@ export type TimesheetDraft = {
   operativeSignedExtras?: SignedTimesheetExtra[] | null
   /** The `operativeSignedAt` the extras record belongs to (the same value). */
   operativeSignedExtrasSignedAt?: Date | null
+  /**
+   * Rulebook 1.54.0 (review of #337): the stored `exportedAt` is set as the security rules test it
+   * (`timesheetExportedFieldSet`), whatever `exportedAt` above resolved to. Read only, never written.
+   */
+  exportedAtStored?: boolean
   managerSignedAt?: Date | null
   managerSignedByName?: string | null
   managerSignedByUserId?: string | null

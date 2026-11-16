@@ -333,3 +333,60 @@ test('1.54.0 web: an expense added after the counter-signature reopens the sheet
   assert.equal(stored.weeklyReportOverride?.expenses[0]?.entryFingerprint, 'fp-e1')
 })
 
+const office154 = {
+  id: 'm1',
+  userId: 'u1',
+  date: day,
+  timeSlot: 'CUSTOM',
+  locationType: 'office',
+  workStartTime: '07:00',
+  workEndTime: '16:00',
+  createdAt: new Date('2026-09-10T08:00:00Z'),
+  updatedAt: new Date('2026-09-10T08:00:00Z'),
+} as ManagerSiteBooking
+
+test('1.54.0 review of #337 (2): a sheet signed while Office was off is never "repaired" with the newly paid Office pay', () => {
+  // Signed with only Office bookings while Office was switched off: the snapshot froze with no labour lines.
+  const signed = signedSheet([], [office154])
+  const frozen: TimesheetDraft = { ...signed, weeklyReportOverride: { ...signed.weeklyReportOverride!, lines: [] } }
+  const base = { ...collectorBase, user: person, users, weekStart: period.start, weekEnd: period.end, bookings: [] as Booking[], managerSiteBookings: [office154] }
+  const saved = applyWeeklyReportOverride({ ...base, draft: frozen })
+  assert.equal(saved.weeklyReportOverride?.lines.length, 0, 'signed is final: no Office lines enter the snapshot')
+  // And the change rule does not read it as a frozen-empty repair either: nothing changed.
+  assert.equal(changes(frozen, [], [office154]).changed, false)
+})
+
+test('1.54.0 review of #337 (1a): a reviewer save never moves a pre-1.54 declined expense raised by the person into the snapshot', () => {
+  const sheet = signedSheet([booking()])
+  const signedOld: TimesheetDraft = {
+    ...sheet,
+    expenseEntries: [
+      { id: 'E1', title: 'Hotel', details: '', jobNumber: 'J1', date: day, amount: 500, receiptName: null, evidence: [], reviewFingerprint: 'raised', managerDecision: 'approved', managerRevisedAmount: null },
+    ],
+    weeklyReportOverride: {
+      ...sheet.weeklyReportOverride!,
+      expenses: [{ id: 'E1', title: 'Hotel', details: '', jobNumber: 'J1', date: day, amount: 0, decision: 'declined' }],
+    },
+  }
+  assert.equal(changes(signedOld, [booking()]).reopened, true)
+  const base = { ...collectorBase, user: person, users, weekStart: period.start, weekEnd: period.end, bookings: [booking()], managerSiteBookings: [] }
+  const saved = applyWeeklyReportOverride({ ...base, draft: signedOld })
+  assert.equal(saved.weeklyReportOverride?.expenses[0]?.amount, 0)
+  assert.equal(saved.weeklyReportOverride?.expenses[0]?.decision, 'declined')
+})
+
+test('1.54.0 review of #337 (5): an extras-only counter-signature rebuilds money rows and keeps the signed labour rows', () => {
+  const sheet = signedSheet([booking()])
+  const signedLines = sheet.weeklyReportOverride!.lines
+  const withExpense: TimesheetDraft = {
+    ...sheet,
+    expenseEntries: [{ id: 'E2', title: 'Parking', details: '', jobNumber: 'J1', date: day, amount: 12, receiptName: null, evidence: [], reviewFingerprint: 'fp-e2', managerDecision: 'approved', managerRevisedAmount: null }],
+  }
+  // Today's booking now runs later: an extras-only rebuild must not re-price the signed labour.
+  const later = booking({ workEndTime: '19:00' })
+  const base = { ...collectorBase, user: person, users, weekStart: period.start, weekEnd: period.end, bookings: [later], managerSiteBookings: [] }
+  const rebuilt = applyWeeklyReportOverride({ ...base, draft: withExpense, rebuildSnapshot: true, rebuildMoneyOnly: true })
+  assert.deepEqual(rebuilt.weeklyReportOverride?.lines.map((line) => [line.id, line.amount]), signedLines.map((line) => [line.id, line.amount]))
+  assert.equal(rebuilt.weeklyReportOverride?.expenses[0]?.id, 'E2')
+})
+

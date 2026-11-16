@@ -450,7 +450,7 @@ export function TimesheetPeriodPage({
   // Rulebook 1.54.0 §8 (owner decision 16 Nov): the person adds, edits and deletes price work or expenses until the sheet
   // is exported. After their line manager has signed, a change reopens the sheet (`signedTimesheetExtrasChanges`): they
   // sign again, then the line manager counter-signs again. No stored signature is ever cleared for it.
-  const extrasReopen = !sheetSelfSigned && needsCounterSign && Boolean(draft.managerSignedAt) && !draft.exportedAt
+  const extrasReopen = !sheetSelfSigned && needsCounterSign && Boolean(draft.managerSignedAt) && !draft.exportedAt && draft.exportedAtStored !== true
   const withExtrasBaseline = (next: TimesheetDraft): TimesheetDraft => {
     if (!extrasReopen) return next
     const baseline = signedTimesheetExtrasBaselineFields({
@@ -486,7 +486,7 @@ export function TimesheetPeriodPage({
   const hoursSubtotal = totals.standardLabour
 
   const persist = useCallback(
-    async (next: TimesheetDraft, options: { rebuildSnapshot?: boolean } = {}) => {
+    async (next: TimesheetDraft, options: { rebuildSnapshot?: boolean; rebuildMoneyOnly?: boolean } = {}) => {
       if (!organization?.id) return
       // 1.43.0: never save over a sheet that could not be loaded (a second copy under another id).
       if (loadFailed) throw new Error(TIMESHEET_HISTORY_LOAD_FAILED_MESSAGE)
@@ -498,6 +498,7 @@ export function TimesheetPeriodPage({
         draft: next,
         // Rulebook 1.47.0: a fresh signature on changed bookings rebuilds the snapshot from the live bookings.
         rebuildSnapshot: options.rebuildSnapshot === true,
+        rebuildMoneyOnly: options.rebuildMoneyOnly === true,
         user: subjectUser,
         users,
         viewer,
@@ -941,7 +942,9 @@ export function TimesheetPeriodPage({
         managerSignatureImageBase64: signature,
         },
         // Rulebook 1.47.0: counter-signing a reopened sheet rebuilds the snapshot from the live bookings.
-        { rebuildSnapshot: bookingChange.reopened }
+        // 1.54.0 (review of #337): when only price work or expenses changed, the counter-signature rebuilds the money
+        // rows and keeps the signed labour rows exactly as signed (never re-priced at today's rates or hours).
+        { rebuildSnapshot: bookingChange.reopened, rebuildMoneyOnly: bookingChange.reopened && !bookingChange.bookingsChanged }
       )
       if (organization?.id) {
         try {

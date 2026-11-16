@@ -47,7 +47,7 @@ const { createSendEmailHandler, resendBatchSender, resendSender } = require('./e
 const { createFirestoreReader } = require('./email/firestoreReader')
 const { consumeRateLimit } = require('./email/rateLimit')
 const { createAdminRequestDedupe } = require('./email/requestDedupe')
-const { FieldPath, FieldValue } = require('firebase-admin/firestore')
+const { FieldPath, FieldValue, Timestamp } = require('firebase-admin/firestore')
 const { createAuthClaimsSync, createAdminAuthClaimsStore } = require('./authClaims')
 const { createTimesheetBookingNotice, createAdminTimesheetNoticeStore } = require('./timesheetBookingNotice')
 
@@ -381,7 +381,7 @@ let timesheetNotice = null
 function timesheetBookingNoticeHandler() {
   if (timesheetNotice) return timesheetNotice
   timesheetNotice = createTimesheetBookingNotice({
-    store: createAdminTimesheetNoticeStore(getFirestore()),
+    store: createAdminTimesheetNoticeStore(getFirestore(), Timestamp),
     canonical,
     logger,
     serverTimestamp: () => FieldValue.serverTimestamp(),

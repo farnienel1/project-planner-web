@@ -77,50 +77,80 @@ function plainSheet(data) {
   return out
 }
 
+/** The fields of a booking the 1.47.0 rule reads (raw), so a write that changes none of them costs no read at all. */
+const READ_FIELDS = ['date', 'timeSlot', 'workStartTime', 'workEndTime', 'isBreakRemoved', 'otMultiplierOverride', 'status', 'operativeId', 'userId', 'projectId', 'locationType', 'locationId', 'customLocationName']
+
+function rawSame(before, after) {
+  if (!before || !after) return false
+  return READ_FIELDS.every((key) => {
+    const a = before[key]
+    const b = after[key]
+    if (key === 'date') return millis(a) === millis(b)
+    return (a ?? null) === (b ?? null)
+  })
+}
+
+/** How far before the booking day a sheet's stored `weekEnd` may sit (zone offsets, end-of-day instants). */
+const WEEK_END_SLACK_MS = 2 * 24 * 60 * 60 * 1000
+
 /**
  * `store`:
  *   organization(orgId) → data | null
  *   user(uid) → data | null
  *   operative(orgId, id) → data | null
  *   userEmailClaim(orgId, email) → data | null            (organizations/{orgId}/userEmails/{email})
- *   usersListingId(field, id) → [{ id, data }]             (users where `field` array-contains id)
+ *   usersListingFormerId(id) → [{ id, data }]             (users where formerUserIds array-contains id, at most 5)
  *   operativesByEmail(orgId, email) → [{ id, data }]
- *   timesheets(orgId, uid) → [{ id, data }]                (settings where userId == uid)
+ *   timesheetsCovering(orgId, userIds, fromMs) → [{ id, data }]
+ *     (settings where userId in userIds (at most 10) and weekEnd >= fromMs, oldest first, at most 4 — the sheets whose
+ *      pay run can hold the booking day; composite index settings userId ASC, weekEnd ASC)
  *   tombstone(orgId, bookingId) → data | null              (deletedBookings/{bookingId})
  *   createNotification(orgId, id, fields) → 'created' | 'exists'
+ *
+ * Reads per booking write (review of #337, item 4): 0 when the write changes none of the fields the rule reads; else
+ * the organisation (1), the booking person's users document (1) and one sheets query (1 query, at most 4 documents
+ * per changed day — usually 1). A labour booking filed under an `operatives` row adds that row, its email claim and the
+ * account (3); a booking under a former invite id adds one `formerUserIds` query instead; a delete adds its tombstone
+ * (1); a booking given to another person adds the `operatives` rows on the person's email (1 query). Known limit: a
+ * sheet stored without `userId` (very old web sheets) is not found and gets no notice (the triangle still shows).
  */
-function createTimesheetBookingNotice({ store, canonical, logger = console, serverTimestamp = () => new Date() }) {
+function createTimesheetBookingNotice({ store, canonical, logger = console, serverTimestamp = () => new Date(), now = () => Date.now() }) {
   async function personAccounts(orgId, personId) {
     const out = new Map()
     if (!personId) return out
     const direct = await store.user(personId)
-    if (direct && sameOrganization(direct, orgId)) out.set(personId, direct)
+    if (direct && sameOrganization(direct, orgId)) {
+      out.set(personId, direct)
+      return out
+    }
     const operative = await store.operative(orgId, personId)
     const email = trimmed(operative && operative.email).toLowerCase()
     if (email) {
       const claim = await store.userEmailClaim(orgId, email)
       const uid = trimmed(claim && claim.userId)
-      if (uid && !out.has(uid)) {
+      if (uid) {
         const user = await store.user(uid)
         if (user && sameOrganization(user, orgId)) out.set(uid, user)
       }
+      return out
     }
-    for (const field of ['formerUserIds', 'sameEmailUserIds']) {
-      for (const row of await store.usersListingId(field, personId)) {
-        if (!out.has(row.id) && sameOrganization(row.data, orgId)) out.set(row.id, row.data)
-      }
+    // A booking filed under an old invite id: the account that lists it.
+    for (const row of await store.usersListingFormerId(personId)) {
+      if (sameOrganization(row.data, orgId)) out.set(row.id, row.data)
     }
     return out
   }
 
-  async function personIdsOf(orgId, uid, user) {
-    const ids = new Set([uid, ...(Array.isArray(user.formerUserIds) ? user.formerUserIds : []), ...(Array.isArray(user.sameEmailUserIds) ? user.sameEmailUserIds : [])])
+  async function personIdsOf(orgId, uid, user, bookingPersonIds, personChanged) {
+    const ids = new Set([uid, ...bookingPersonIds, ...(Array.isArray(user.formerUserIds) ? user.formerUserIds : []), ...(Array.isArray(user.sameEmailUserIds) ? user.sameEmailUserIds : [])])
     const email = trimmed(user.email).toLowerCase()
-    if (email) for (const row of await store.operativesByEmail(orgId, email)) ids.add(row.id)
+    // Only needed to tell "given to someone else" from "moved to another of their own operatives rows".
+    if (personChanged && email) for (const row of await store.operativesByEmail(orgId, email)) ids.add(row.id)
     return [...ids].map(trimmed).filter(Boolean)
   }
 
   async function handle({ orgId, collection, bookingId, before, after }) {
+    if (rawSame(before, after)) return { written: 0, reason: 'no change the rule reads' }
     const org = await store.organization(orgId)
     if (!org) return { written: 0, reason: 'organisation missing' }
     const timeZone = canonical.organizationTimeZone(org.countryCode)
@@ -134,14 +164,26 @@ function createTimesheetBookingNotice({ store, canonical, logger = console, serv
       actor = trimmed(tombstone && tombstone.deletedBy) || trimmed(before && before.updatedBy)
     }
 
+    const bookingPersonIds = [...new Set([beforeDoc && beforeDoc.personId, afterDoc && afterDoc.personId].filter(Boolean))]
+    const personChanged = bookingPersonIds.length > 1
     const accounts = new Map()
-    for (const personId of new Set([beforeDoc && beforeDoc.personId, afterDoc && afterDoc.personId].filter(Boolean))) {
+    for (const personId of bookingPersonIds) {
       for (const [uid, user] of await personAccounts(orgId, personId)) accounts.set(uid, user)
     }
+    const dayMs = [before, after].map((row) => (row ? millis(row.date) : null)).filter((ms) => ms != null)
+    if (accounts.size === 0 || dayMs.length === 0) return { written: 0, reason: 'no account or day' }
+    const fromMs = Math.min(...dayMs) - WEEK_END_SLACK_MS
+    const latestMs = Math.max(...dayMs) + WEEK_END_SLACK_MS
     let written = 0
     for (const [uid, user] of accounts) {
-      const personIds = await personIdsOf(orgId, uid, user)
-      const sheets = (await store.timesheets(orgId, uid)).filter((row) => row.id.startsWith('timesheet_'))
+      const personIds = await personIdsOf(orgId, uid, user, bookingPersonIds, personChanged)
+      // Sheets filed under the account and its former invite ids (an `in` query holds at most 10).
+      const sheetOwners = [uid, ...(Array.isArray(user.formerUserIds) ? user.formerUserIds : [])].map(trimmed).filter(Boolean).slice(0, 10)
+      const sheets = (await store.timesheetsCovering(orgId, sheetOwners, fromMs)).filter((row) => {
+        if (!row.id.startsWith('timesheet_')) return false
+        const startMs = millis((row.data || {}).weekStart)
+        return startMs == null || startMs <= latestMs
+      })
       for (const sheetRow of sheets) {
         const sheet = plainSheet(sheetRow.data || {})
         const startMs = millis((sheetRow.data || {}).weekStart)
@@ -158,6 +200,7 @@ function createTimesheetBookingNotice({ store, canonical, logger = console, serv
           personIds,
           person: { ...user, id: uid },
           timeZone,
+          nowMs: now(),
         })
         if (!decision.notify) continue
         const recipients = canonical.timesheetBookingsChangedRecipients(uid, actor || null, [{ ...user, id: uid }])
@@ -190,23 +233,30 @@ function createTimesheetBookingNotice({ store, canonical, logger = console, serv
 }
 
 /** The admin-SDK store for `createTimesheetBookingNotice`. */
-function createAdminTimesheetNoticeStore(db) {
+function createAdminTimesheetNoticeStore(db, Timestamp) {
   const data = (snap) => (snap.exists ? snap.data() : null)
   return {
     organization: async (orgId) => data(await db.doc(`organizations/${orgId}`).get()),
     user: async (uid) => (uid && !uid.includes('/') ? data(await db.doc(`users/${uid}`).get()) : null),
     operative: async (orgId, id) => (id && !id.includes('/') ? data(await db.doc(`organizations/${orgId}/operatives/${id}`).get()) : null),
     userEmailClaim: async (orgId, email) => (email && !email.includes('/') ? data(await db.doc(`organizations/${orgId}/userEmails/${email}`).get()) : null),
-    usersListingId: async (field, id) => {
-      const snap = await db.collection('users').where(field, 'array-contains', id).limit(20).get()
+    usersListingFormerId: async (id) => {
+      const snap = await db.collection('users').where('formerUserIds', 'array-contains', id).limit(5).get()
       return snap.docs.map((doc) => ({ id: doc.id, data: doc.data() }))
     },
     operativesByEmail: async (orgId, email) => {
-      const snap = await db.collection(`organizations/${orgId}/operatives`).where('email', '==', email).limit(20).get()
+      const snap = await db.collection(`organizations/${orgId}/operatives`).where('email', '==', email).limit(10).get()
       return snap.docs.map((doc) => ({ id: doc.id, data: doc.data() }))
     },
-    timesheets: async (orgId, uid) => {
-      const snap = await db.collection(`organizations/${orgId}/settings`).where('userId', '==', uid).get()
+    timesheetsCovering: async (orgId, userIds, fromMs) => {
+      if (!userIds.length) return []
+      const snap = await db
+        .collection(`organizations/${orgId}/settings`)
+        .where('userId', 'in', userIds)
+        .where('weekEnd', '>=', Timestamp.fromMillis(fromMs))
+        .orderBy('weekEnd', 'asc')
+        .limit(4)
+        .get()
       return snap.docs.map((doc) => ({ id: doc.id, data: doc.data() }))
     },
     tombstone: async (orgId, bookingId) => data(await db.doc(`organizations/${orgId}/deletedBookings/${bookingId}`).get()),

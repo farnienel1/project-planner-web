@@ -1,6 +1,20 @@
 {
   "indexes": [
     {
+      "collectionGroup": "settings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "weekEnd",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "variations",
       "queryScope": "COLLECTION",
       "fields": [

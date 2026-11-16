@@ -15,16 +15,26 @@ function day(key) {
 
 function storeWith({ sheets, users = {}, operatives = {}, tombstones = {} }) {
   const created = new Map()
+  const reads = { count: 0, queries: [] }
+  const read = (value) => {
+    reads.count += 1
+    return value
+  }
   return {
     created,
-    organization: async () => ({ countryCode: 'GB' }),
-    user: async (uid) => users[uid] ?? null,
-    operative: async (_org, id) => operatives[id] ?? null,
-    userEmailClaim: async () => null,
-    usersListingId: async () => [],
-    operativesByEmail: async () => [],
-    timesheets: async (_org, uid) => (uid === PERSON ? sheets : []),
-    tombstone: async (_org, id) => tombstones[id] ?? null,
+    reads,
+    organization: async () => read({ countryCode: 'GB' }),
+    user: async (uid) => read(users[uid] ?? null),
+    operative: async (_org, id) => read(operatives[id] ?? null),
+    userEmailClaim: async () => read(null),
+    usersListingFormerId: async () => read([]),
+    operativesByEmail: async () => read([]),
+    // Only the sheets whose pay run can hold the day (weekEnd on or after it), as the indexed query returns them.
+    timesheetsCovering: async (_org, uids, fromMs) => {
+      reads.queries.push({ uids, fromMs })
+      return read(uids.includes(PERSON) ? sheets.filter((row) => !row.data.weekEnd || row.data.weekEnd.getTime() >= fromMs).slice(0, 4) : [])
+    },
+    tombstone: async (_org, id) => read(tombstones[id] ?? null),
     createNotification: async (_org, id, fields) => {
       if (created.has(id)) return 'exists'
       created.set(id, fields)
@@ -33,6 +43,17 @@ function storeWith({ sheets, users = {}, operatives = {}, tombstones = {} }) {
   }
 }
 
+const FP_B1 = canonical.overtimeBookingFingerprint({
+  id: 'B1',
+  personId: '',
+  dayKey: '2026-11-10',
+  timeSlot: 'CUSTOM_HOURS',
+  workStartTime: '07:00',
+  workEndTime: '16:00',
+  isBreakRemoved: false,
+  otMultiplierOverride: null,
+  status: 'Confirmed',
+})
 const signedAt = Date.parse('2026-11-12T10:00:00Z')
 const signedSheet = (extra = {}) => ({
   id: `timesheet_${PERSON}_1762300800`,
@@ -41,9 +62,10 @@ const signedSheet = (extra = {}) => ({
     weekStartKey: '2026-11-01',
     weekEndKey: '2026-11-15',
     weekStart: day('2026-11-01'),
+    weekEnd: day('2026-11-15'),
     operativeSignedAt: new Date(signedAt),
     managerSignedAt: new Date(signedAt + 3600_000),
-    operativeSignedBookings: [{ bookingId: 'B1', collection: 'bookings', fingerprint: '', personId: PERSON, place: 'job|j1' }],
+    operativeSignedBookings: [{ bookingId: 'B1', collection: 'bookings', fingerprint: FP_B1, personId: PERSON, place: 'job|j1' }],
     operativeSignedBookingsSignedAt: new Date(signedAt),
     weeklyReportOverride: { lines: [{ id: 'op-B1-normal', bookingId: 'B1', bookingCollection: 'bookings' }] },
     ...extra,
@@ -102,4 +124,19 @@ test('1.54.0: a new booking in the period is an addition; a deleted signed booki
   const store3 = storeWith({ sheets: [signedSheet()], users })
   const notice3 = createTimesheetBookingNotice({ store: store3, canonical, logger: { info() {}, error() {} } })
   assert.equal((await notice3.handle({ orgId: ORG, collection: 'bookings', bookingId: 'B9', before: null, after: booking({ date: day('2026-11-20') }) })).written, 0)
+})
+
+test('1.54.0 review of #337 (4): reads per write — none for a write the rule ignores, three for a usual change', async () => {
+  const store = storeWith({ sheets: [signedSheet()], users })
+  const notice = createTimesheetBookingNotice({ store, canonical, logger: { info() {}, error() {} } })
+  await notice.handle({ orgId: ORG, collection: 'bookings', bookingId: 'B1', before: booking(), after: booking({ updatedAt: new Date(), notes: 'x' }) })
+  assert.equal(store.reads.count, 0)
+  await notice.handle({ orgId: ORG, collection: 'bookings', bookingId: 'B1', before: booking(), after: booking({ workEndTime: '18:00' }) })
+  // Organisation, the person's users document, one sheets query.
+  assert.equal(store.reads.count, 3)
+  assert.equal(store.reads.queries.length, 1)
+  assert.deepEqual(store.reads.queries[0].uids, [PERSON])
+  // The query asks only for sheets whose pay run can still hold the booking day.
+  assert.ok(store.reads.queries[0].fromMs <= day('2026-11-10').getTime())
+  assert.ok(store.reads.queries[0].fromMs >= day('2026-11-07').getTime())
 })

@@ -100,6 +100,12 @@ export type TimesheetPayrollLineItem = {
   bookingHasOvertimeLine?: boolean
   /** Rulebook 1.46.0 (never stored): the booking's collection, so a labour and a manager site booking never group. */
   bookingCollection?: string
+  /**
+   * Rulebook 1.54.0 (review of #337, never stored): a manager site booking at Office, Working from home, Site survey or
+   * a custom place — paid from 1.54.0 whatever Schedule options say, but before 1.54.0 left off when that option was
+   * switched off, so it never triggers or enters the repair of an already-signed snapshot (`timesheetSnapshotNeedsRebuild`).
+   */
+  scheduleOptionPlace?: boolean
   /** Rulebook 1.43.0 (rebuild check only, never stored): when the line's booking was created and last written. */
   bookingCreatedAt?: Date
   bookingUpdatedAt?: Date
@@ -462,6 +468,7 @@ export function collectTimesheetPayroll({
   for (const booking of managerSiteBookings) {
     if (!managerUserIds.has(normalizeDocumentId(booking.userId))) continue
     // Rulebook 1.54.0: every manager site booking is paid — a switched-off schedule option never takes it off the sheet.
+    const firstLine = lineItems.length
     pushBooking(
       'mgr',
       booking.id,
@@ -477,6 +484,9 @@ export function collectTimesheetPayroll({
       toDateOrNull(booking.createdAt),
       toDateOrNull(booking.updatedAt)
     )
+    if (booking.locationType !== 'project' && booking.locationType !== 'small_work') {
+      for (let index = firstLine; index < lineItems.length; index += 1) lineItems[index].scheduleOptionPlace = true
+    }
   }
 
   // Every booking is paid; overlapping ones are only flagged (`overlappingBookingIds`).

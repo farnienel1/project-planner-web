@@ -265,6 +265,61 @@ export function timesheetEntryEffectiveAmount(
   return amount
 }
 
+type SignedMoneyRow = { decision: string; amount: number | null }
+
+/**
+ * 1.54.0: the signed snapshot's money row for an entry id (ids without case): undefined when the sheet has no signed
+ * snapshot with money rows, null when it has one but no row for this id.
+ */
+function snapshotMoneyRow(
+  sheet: Record<string, unknown> | null | undefined,
+  id: string,
+  entry: Record<string, unknown>
+): SignedMoneyRow | null | undefined {
+  const override = sheet && typeof sheet === 'object' ? (sheet as Record<string, unknown>).weeklyReportOverride : null
+  if (!override || typeof override !== 'object') return undefined
+  const o = override as Record<string, unknown>
+  if (!Array.isArray(o.priceWork) && !Array.isArray(o.expenses)) return undefined
+  const key = normalizeDocumentId(id)
+  if (!key) return null
+  for (const list of [o.priceWork, o.expenses]) {
+    if (!Array.isArray(list)) continue
+    for (const raw of list) {
+      if (!raw || typeof raw !== 'object') continue
+      const row = raw as Record<string, unknown>
+      if (normalizeDocumentId(row.id) === key) {
+        return { decision: text(row.decision).toLowerCase() || 'approved', amount: finite(row.amount) }
+      }
+    }
+  }
+  // A row signed before entries stored ids (its id was random, the entry's is derived now): the one row with the same
+  // title and job number (two or more such rows: none).
+  const title = text(entry.title).toLowerCase()
+  const job = text(entry.jobNumber).toLowerCase()
+  if (!title) return null
+  const matches: Record<string, unknown>[] = []
+  for (const list of [o.priceWork, o.expenses]) {
+    if (!Array.isArray(list)) continue
+    for (const raw of list) {
+      if (raw && typeof raw === 'object' && text((raw as Record<string, unknown>).title).toLowerCase() === title && text((raw as Record<string, unknown>).jobNumber).toLowerCase() === job) {
+        matches.push(raw as Record<string, unknown>)
+      }
+    }
+  }
+  return matches.length === 1 ? { decision: text(matches[0].decision).toLowerCase() || 'approved', amount: finite(matches[0].amount) } : null
+}
+
+/** 1.54.0: an inline decision is the one the line manager signed (decision, and the money it pays, to the penny). */
+function inlineMatchesSignedRow(inline: TimesheetEntryDecisionResult, amount: number, signed: SignedMoneyRow): boolean {
+  const decision = inline.decision === 'pending' ? 'approved' : inline.decision
+  const signedDecision = signed.decision === 'pending' ? 'approved' : signed.decision
+  if (decision !== signedDecision) return false
+  if (decision === 'declined') return true
+  if (signed.amount == null) return false
+  const paid = timesheetEntryEffectiveAmount(inline.decision, inline.revisedAmount, amount)
+  return Math.abs(roundPennies(paid) - roundPennies(signed.amount)) < AMOUNT_EPSILON
+}
+
 /**
  * The decision in effect for one price work or expense entry. `sheet` is the
  * stored timesheet document (its `extraEntryReviews` and `managerSignedAt`),
@@ -298,8 +353,24 @@ export function timesheetEntryDecision(
     // Legacy sheet. Inline values are trusted once the line manager has signed: the rules then
     // stop the owner changing the entries, and the manager signed with these decisions on screen.
     const managerSigned = parseTimesheetStatusFields(sheet || {}).managerSignedAtMs != null
-    if (managerSigned) return inline
-    base = { decision: 'approved', revisedAmount: null, source: 'unreviewed' }
+    if (managerSigned) {
+      // 1.54.0 (review of #337, 1b): the person may now change their entries after the line manager signs (until
+      // exported), inline values included, so an inline decision counts only while it is the one the line manager
+      // signed — the signed snapshot's row for this entry (same decision; an edit's revised amount, or an agreed
+      // row's amount, the same to the penny). Anything else is the person's change: pending (paid at its own amount
+      // only once the sheet is signed again), never approved. A sheet signed with no snapshot keeps only an inline
+      // value that lowers what is paid (below).
+      const signedRow = snapshotMoneyRow(sheet, id, row)
+      if (signedRow === undefined) {
+        base = { decision: 'approved', revisedAmount: null, source: 'unreviewed' }
+      } else if (signedRow && inlineMatchesSignedRow(inline, amount, signedRow)) {
+        return inline
+      } else {
+        base = { decision: 'pending', revisedAmount: null, source: 'stale-review' }
+      }
+    } else {
+      base = { decision: 'approved', revisedAmount: null, source: 'unreviewed' }
+    }
   } else {
     const review = id ? reviewFor(reviews, id) : undefined
     if (!review) {

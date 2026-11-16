@@ -78,6 +78,12 @@ export type TimesheetLiveLabourLine = {
    * before approval but moved into the period later is caught by this. Missing = unknown: never counted.
    */
   bookingUpdatedAt?: InstantLike
+  /**
+   * 1.54.0 (review of #337): a manager site booking at Office / Working from home / Site survey / a custom place. Such
+   * a booking was left off sheets signed while that schedule option was switched off, so it never makes a signed
+   * snapshot read as frozen empty (signed is final): it is ignored here and never enters the repaired snapshot.
+   */
+  scheduleOptionPlace?: boolean | null
 }
 
 /**
@@ -103,7 +109,7 @@ export function timesheetSnapshotNeedsRebuild(
     documentInstantMs(override.approvedAt) ?? documentInstantMs(sheet?.managerSignedAt) ?? documentInstantMs(sheet?.approvedAt)
   if (approvedMs == null) return false
   return (liveLabourLines ?? []).some((line) => {
-    if (!line || line.isPayeDay === true) return false
+    if (!line || line.isPayeDay === true || line.scheduleOptionPlace === true) return false
     const created = documentInstantMs(line.bookingCreatedAt)
     const updated = documentInstantMs(line.bookingUpdatedAt)
     if (created == null || updated == null) return false
@@ -114,8 +120,33 @@ export function timesheetSnapshotNeedsRebuild(
 export type TimesheetExtrasSheet = {
   managerSignedAt?: InstantLike
   approvedAt?: InstantLike
-  /** 1.54.0: the only field that stops the person changing price work or expenses. */
+  /** 1.54.0: the only field that stops the person changing price work or expenses (as stored, see below). */
   exportedAt?: InstantLike
+  /**
+   * 1.54.0 (review of #337): whether the stored document's `exportedAt` is set as the security rules test it
+   * (`timesheetExportedFieldSet`). Pass it when `exportedAt` above is a value an app resolved (an export leftover
+   * of an invoice reads as not exported in the lists), so the add control and the rules always agree.
+   */
+  exportedAtStored?: boolean | null
+}
+
+/**
+ * Rulebook 1.54.0 (review of #337): a stored `exportedAt` the security rules count as set — a timestamp or a number
+ * (`resource.data.exportedAt is timestamp || is number`). The person's price work and expense writes are refused from
+ * then on, so the screens offer no add, edit or delete control.
+ */
+export function timesheetExportedFieldSet(value: unknown): boolean {
+  if (value == null) return false
+  if (typeof value === 'number') return Number.isFinite(value)
+  if (value instanceof Date) return !Number.isNaN(value.getTime())
+  if (typeof value === 'object') {
+    const row = value as Record<string, unknown>
+    return typeof row.toMillis === 'function' || typeof row.seconds === 'number' || typeof row._seconds === 'number'
+  }
+  // A date text (an app's in-memory copy of the stamp) counts too: the add control may be stricter than the rules,
+  // never looser.
+  if (typeof value === 'string') return value.trim() !== '' && !Number.isNaN(Date.parse(value))
+  return false
 }
 
 /**
@@ -129,6 +160,7 @@ export function timesheetOwnerCanAddExtras(
   sheet: TimesheetExtrasSheet | null | undefined,
   options: { selfSigned?: boolean | null } = {}
 ): { allowed: boolean; message: string | null } {
-  if (present(sheet?.exportedAt)) return { allowed: false, message: TIMESHEET_EXPORTED_EXTRAS_MESSAGE }
+  const exported = typeof sheet?.exportedAtStored === 'boolean' ? sheet.exportedAtStored : timesheetExportedFieldSet(sheet?.exportedAt)
+  if (exported) return { allowed: false, message: TIMESHEET_EXPORTED_EXTRAS_MESSAGE }
   return { allowed: true, message: null }
 }

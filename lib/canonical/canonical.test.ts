@@ -5210,10 +5210,17 @@ test('timesheet entry decisions: the reviewer map wins; the owner-written inline
     timesheetEntryDecision({}, { ...entry, managerDecision: 'edited', managerRevisedAmount: 999 }),
     { decision: 'approved', revisedAmount: null, source: 'unreviewed' }
   )
-  // Legacy sheet the line manager signed: inline is what they signed (rules freeze the owner's entries).
+  // Legacy sheet the line manager signed: inline counts while it is what they signed (1.54.0, review of #337: the
+  // person may change entries until export, so the signed snapshot's row decides).
+  const signedRow = { weeklyReportOverride: { priceWork: [], expenses: [{ id: 'e1', amount: 70, decision: 'edited' }] } }
+  assert.deepEqual(
+    timesheetEntryDecision({ managerSignedAt: signedAt, ...signedRow }, { ...entry, managerDecision: 'edited', managerRevisedAmount: 70 }),
+    { decision: 'edited', revisedAmount: 70, source: 'legacy-inline' }
+  )
+  // Signed with no snapshot to compare: an inline raise no longer counts (only a lowering does).
   assert.deepEqual(
     timesheetEntryDecision({ managerSignedAt: signedAt }, { ...entry, managerDecision: 'edited', managerRevisedAmount: 70 }),
-    { decision: 'edited', revisedAmount: 70, source: 'legacy-inline' }
+    { decision: 'approved', revisedAmount: null, source: 'unreviewed' }
   )
   assert.equal(parseTimesheetEntryReviews({}), null)
   assert.deepEqual(parseTimesheetEntryReviews({ extraEntryReviews: {} }), {})

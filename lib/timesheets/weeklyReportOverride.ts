@@ -63,6 +63,11 @@ export type WeeklyReportOverrideInput = {
    * signatures. Never for an exported sheet (it stays frozen). Any other save keeps the stored lines.
    */
   rebuildSnapshot?: boolean
+  /**
+   * Rulebook 1.54.0 (review of #337): with `rebuildSnapshot`, only price work or expenses changed — the snapshot's
+   * money rows are rebuilt from the live entries and its labour rows stay exactly as signed.
+   */
+  rebuildMoneyOnly?: boolean
 }
 
 function personName(user: User | null | undefined): string {
@@ -269,7 +274,9 @@ function reapplyReviews(existing: WeeklyReportOverride, input: WeeklyReportOverr
   // signed money rows — a reviewer's routine save never slips a new or changed entry into it; only the counter-signature
   // again (`rebuildSnapshot`) takes the live entries.
   const extras = draftExtrasChanges(input.draft, userTimesheetSelfSigned(input.user, input.users ?? []))
-  const money = extras.snapshotChanged
+  // Review of #337 (1a): never while the extras read as changed at all (the person has not signed them, or the line
+  // manager has not counter-signed them) — only the counter-signature again (`rebuildSnapshot`) moves money rows.
+  const money = extras.changed
     ? { priceWork: existing.priceWork, expenses: existing.expenses }
     : moneyLines(input.draft, managerHasSigned)
   const viewerName = personName(input.viewer)
@@ -404,6 +411,11 @@ export function applyWeeklyReportOverride(input: WeeklyReportOverrideInput): Tim
     return { ...input.draft, weeklyReportOverride: null }
   }
   const existing = input.draft.weeklyReportOverride
+  if (existing && input.rebuildSnapshot === true && input.rebuildMoneyOnly === true && !input.draft.exportedAt) {
+    const kept = reapplyReviews(existing, input)
+    const money = moneyLines(input.draft, Boolean(input.draft.managerSignedAt))
+    return { ...input.draft, weeklyReportOverride: { ...kept, lines: existing.lines, priceWork: money.priceWork, expenses: money.expenses } }
+  }
   if (existing && input.rebuildSnapshot === true && !input.draft.exportedAt) {
     return { ...input.draft, weeklyReportOverride: makeOverride(input) }
   }
@@ -420,9 +432,12 @@ export function applyWeeklyReportOverride(input: WeeklyReportOverrideInput): Tim
         isPayeDay: line.isPayeDay,
         bookingCreatedAt: line.bookingCreatedAt ?? null,
         bookingUpdatedAt: line.bookingUpdatedAt ?? null,
+        scheduleOptionPlace: line.scheduleOptionPlace === true,
       }))
       if (timesheetSnapshotNeedsRebuild(input.draft, live)) {
-        const fresh = makeOverride(input, summary)
+        // 1.54.0 (review of #337): Office / WFH / Site survey / custom bookings, newly paid in 1.54.0, never enter a
+        // repaired signed snapshot (a sheet signed while that option was switched off never had them).
+        const fresh = makeOverride(input, { ...summary, lineItems: summary.lineItems.filter((line) => line.scheduleOptionPlace !== true) })
         return {
           ...input.draft,
           weeklyReportOverride: {

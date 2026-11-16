@@ -27,9 +27,10 @@ import { overtimeFingerprintKey } from './bookingFingerprint'
 import { overtimeBookingFingerprint } from './payeOvertime'
 import {
   signedTimesheetBookingPlace,
-  signedTimesheetLineBookingKey,
+  signedTimesheetBookingWriteReopens,
   type SignedTimesheetBookingDocument,
   type SignedTimesheetLine,
+  type SignedTimesheetSheet,
 } from './timesheetBookingChanges'
 import { resolveTimesheetExportedAtMs, timesheetTimestampMs, TIMESHEET_SIGNED_AFTER_MS } from './timesheetPeriod'
 import { bookingOccupiesDay } from './warningRows'
@@ -114,39 +115,6 @@ export function timesheetBookingWriteMatters(
   return occupies(before) !== occupies(after)
 }
 
-/** The bookings a signed sheet names: the person's current record, and the signed snapshot's lines. */
-function signedBookingKeys(sheet: TimesheetBookingNoticeSheet): { keys: Set<string>; anyReference: boolean } {
-  const keys = new Set<string>()
-  let anyReference = false
-  const signedMs = realMs(sheet.operativeSignedAt) ?? realMs(sheet.operativeSignedAtMs)
-  const recordSignedMs = realMs(sheet.operativeSignedBookingsSignedAt)
-  const recordAtMs = realMs(sheet.operativeSignedBookingsAt)
-  const recordCurrent =
-    signedMs != null &&
-    (recordSignedMs != null ? Math.abs(signedMs - recordSignedMs) <= 1000 : recordAtMs != null && signedMs <= recordAtMs + 5 * 60 * 1000)
-  if (recordCurrent && Array.isArray(sheet.operativeSignedBookings)) {
-    anyReference = true
-    for (const row of sheet.operativeSignedBookings) {
-      if (!row || typeof row !== 'object') continue
-      const r = row as Record<string, unknown>
-      const key = signedTimesheetLineBookingKey({ bookingId: r.bookingId, bookingCollection: r.collection })
-      if (key) keys.add(key)
-    }
-  }
-  const lines = sheet.weeklyReportOverride && Array.isArray(sheet.weeklyReportOverride.lines) ? sheet.weeklyReportOverride.lines : null
-  if (lines) {
-    for (const line of lines) {
-      if (!line || line.isLeave === true || line.isPayeDay === true) continue
-      const key = signedTimesheetLineBookingKey(line)
-      if (key) {
-        keys.add(key)
-        anyReference = true
-      }
-    }
-  }
-  return { keys, anyReference }
-}
-
 /**
  * Rulebook 1.54.0: whether one booking write should tell this sheet's person that their signed timesheet changed.
  * `before` / `after` are the booking document before and after the write (null for a create / delete), in the
@@ -164,6 +132,8 @@ export function timesheetBookingChangeNotice(input: {
   personIds: ReadonlyArray<string | null | undefined>
   person?: TimesheetPerson | null
   timeZone?: string | null
+  /** The write's server time (additions are judged against the signature less the 1.47.0 window). */
+  nowMs?: number | null
 }): TimesheetBookingNoticeDecision {
   const sheet = input.sheet
   if (!sheet) return { notify: false, reason: 'not-signed' }
@@ -193,15 +163,20 @@ export function timesheetBookingChangeNotice(input: {
     const reason = was === 'no-paye' || now === 'no-paye' ? 'paye-day' : was === 'no-period' || now === 'no-period' ? 'outside-period' : 'not-this-person'
     return { notify: false, reason }
   }
-  const { keys, anyReference } = signedBookingKeys(sheet)
-  if (!anyReference) return { notify: false, reason: 'nothing-signed-to-compare' }
-  const doc = (input.before ?? input.after) as SignedTimesheetBookingDocument
-  const key = signedTimesheetLineBookingKey({ bookingId: doc.bookingId, bookingCollection: doc.collection || 'bookings' })
-  if (was === 'yes') {
-    return keys.has(key) ? { notify: true, reason: 'signed-booking-changed' } : { notify: false, reason: 'booking-not-signed' }
-  }
-  // Newly on the sheet (created, moved into the period, back on its day, given to this person): an addition.
-  return keys.has(key) ? { notify: true, reason: 'signed-booking-changed' } : { notify: true, reason: 'booking-added' }
+  // Review of #337 (item 3): exactly the app's decision (`signedTimesheetBookingWriteReopens`, the 1.47.0 comparison
+  // restricted to this booking), so a notice goes out only when the person will see the triangle.
+  const doc = (input.after ?? input.before) as SignedTimesheetBookingDocument
+  const decision = signedTimesheetBookingWriteReopens({
+    sheet: sheet as SignedTimesheetSheet,
+    booking: { collection: doc.collection || 'bookings', bookingId: doc.bookingId },
+    after: input.after ?? null,
+    afterOnSheet: now === 'yes',
+    personIds: input.personIds,
+    nowMs: typeof input.nowMs === 'number' && Number.isFinite(input.nowMs) ? input.nowMs : Date.now(),
+  })
+  if (decision.reference === 'none') return { notify: false, reason: 'nothing-signed-to-compare' }
+  if (!decision.reopens) return { notify: false, reason: 'booking-not-signed' }
+  return { notify: true, reason: decision.kind === 'added' ? 'booking-added' : 'signed-booking-changed' }
 }
 
 /** `timesheet_bookings_changed`: the sheet's person (an account), never the person who changed the booking. */
