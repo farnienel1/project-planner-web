@@ -28,7 +28,7 @@ export type TimesheetExportRecipientCheck =
   | { allowed: false; reason: 'no_caller_email' | 'not_caller'; message: string }
 
 /**
- * `requested` is the address the screen sent; `callerEmail` the verified token email of the signed-in user. Allowed
+ * `requested` is the address the screen sent; `callerEmail` the email on the signed-in user's ID token (not checked as verified). Allowed
  * only when they are the same address (case and spaces ignored); the recipient is then the caller's own address.
  */
 export function timesheetExportRecipientCheck(input: {

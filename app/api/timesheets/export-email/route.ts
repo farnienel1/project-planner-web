@@ -66,8 +66,9 @@ export async function POST(request: NextRequest) {
   const access = await requireOrgAccess(request, body.value.organizationId, 'staff')
   if (!access.ok) return access.response
 
-  // Rulebook 1.54.1 (platform scan 16 Nov): the export (every person's invoice PDF) goes to the signed-in user's own
-  // email only — never an address the request names (`timesheetExportRecipientCheck`).
+  // Rulebook 1.54.1 (platform scan 16 Nov): the export (every person's invoice PDF) is sent to the email on the caller's
+  // ID token (their sign-in address; whether it is verified is not checked) — never another address the request names
+  // (`timesheetExportRecipientCheck` refuses one that differs).
   const recipient = timesheetExportRecipientCheck({
     requested: clampString(body.value.recipientEmail, 254),
     callerEmail: access.user.email,

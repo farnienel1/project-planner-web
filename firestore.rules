@@ -1751,12 +1751,17 @@ service cloud.firestore {
           let next = request.resource.data.get('userId', null);
           let stored = resource == null ? null : resource.data.get('userId', null);
           return resource == null
-            ? settingId.matches('^timesheet_' + (next is string ? next : request.auth.uid) + '_.*')
-            : (next == stored || (stored == null && next is string && settingId.matches('^timesheet_' + next + '_.*')));
+            ? timesheetIdNames(next is string ? next : request.auth.uid)
+            : (next == stored || (stored == null && next is string && timesheetIdNames(next)));
+        }
+        function timesheetIdNames(id) {
+          let p = settingId.split('_');
+          let q = id.split('_');
+          return p.size() > q.size() + 1 && p[0] == 'timesheet' && p[1:q.size() + 1] == q;
         }
         function timesheetSelfSignedOwnerWrite() {
           let uid = timesheetSubjectUid();
-          return uid is string && settingId.matches('^timesheet_' + uid + '_.*') && (orgCreatorIs(organizationId, uid) || orgSelfManageFlag(uid, organizationId, 'timesheetSelfSign', true));
+          return uid is string && timesheetIdNames(uid) && (orgCreatorIs(organizationId, uid) || orgSelfManageFlag(uid, organizationId, 'timesheetSelfSign', true));
         }
 
         function timesheetReviewerOfOthers() {
@@ -1823,14 +1828,18 @@ service cloud.firestore {
             ) : !('lateExtras' in written));
         }
         function timesheetStoredExported() {
-          return resource.data.get('exportedAt', null) is timestamp || resource.data.get('exportedAt', null) is number;
+          let d = resource.data;
+          let et = d.get('exportedAt', null) is timestamp ? d.exportedAt.toMillis() : 0;
+          let en = d.get('exportedAt', null) is number ? d.exportedAt : 0;
+          let it = d.get('invoiceGeneratedAt', null) is timestamp ? d.invoiceGeneratedAt.toMillis() : 0;
+          let n = d.get('invoiceGeneratedAt', null) is number ? d.invoiceGeneratedAt : 0;
+          let e = et + (en < 1000000000000 ? en * 1000 : en);
+          let i = it + (n < 1000000000000 ? n * 1000 : n);
+          return e > 1577836800000 && (i <= 1577836800000 || math.abs(e - i) > 60000);
         }
         function timesheetExportedFrozen() {
-          return resource == null || !timesheetStoredExported() || (timesheetSameInstant('exportedAt') &&
-            timesheetSameInstant('managerSignedAt') && timesheetSameInstant('approvedAt') && timesheetSameInstant('operativeSignedAt') &&
-            !writtenKeys().hasAny(['lateExtras', 'weeklyReportOverride', 'payrollLineReviews', 'extraEntryReviews', 'userId',
-              'managerSignedByName', 'managerSignedByUserId', 'managerSignatureImageBase64', 'approvedByName', 'operativeSignedByName',
-              'operativeSignatureImageBase64', 'operativeSignedBookings', 'managerSignedAtMs', 'approvedAtMs', 'operativeSignedAtMs', 'exportedAtMs']));
+          return resource == null || !timesheetStoredExported() ||
+            (writtenKeys().hasOnly(['updatedAt', 'updatedBy', 'updatedFrom', 'exportedAt']) && timesheetSameInstant('exportedAt'));
         }
 
         allow read: if canAccessOrganization(organizationId) && ((resource.data.get('userId', null) == request.auth.uid && (request.method == 'list' || settingId.matches('^timesheet_.*'))) ||

@@ -1879,7 +1879,9 @@ test('timesheets: the owner cannot change line reviews, entry decisions or the a
   await assertFails(updateDoc(ref(lm), { 'extraEntryReviews.L1': { decision: 'declined', reviewedAmount: 30, lateExtra: true, reviewedFingerprint: 'x', reviewedByUserId: LM_A, reviewedAtMs: 3 } }))
   await assertFails(updateDoc(ref(lm), { 'weeklyReportOverride.expenses': [] }))
   await assertFails(updateDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com')), { 'extraEntryReviews.E1': { decision: 'declined', reviewedAmount: 50, reviewedByUserId: ADMIN_A, reviewedAtMs: 4 } }))
-  await assertSucceeds(updateDoc(ref(lm), { managerNote: 'Filed' }))
+  // Review of #334: lock all is a whole-sheet freeze; a note is refused too, write metadata alone passes.
+  await assertFails(updateDoc(ref(lm), { managerNote: 'Filed' }))
+  await assertSucceeds(updateDoc(ref(lm), { updatedAt: Timestamp.now(), updatedBy: LM_A, updatedFrom: 'web' }))
   // Fourth review of #337: a reviewer cannot unfreeze it by removing or emptying the late extras first.
   await assertFails(updateDoc(ref(lm), { lateExtras: deleteField() }))
   await assertFails(updateDoc(ref(lm), { lateExtras: [] }))
@@ -1889,7 +1891,8 @@ test('timesheets: the owner cannot change line reviews, entry decisions or the a
   await assertFails(updateDoc(ref(lm), { exportedAt: 'x' }))
   await assertFails(updateDoc(ref(lm), { exportedAt: null }))
   await assertFails(updateDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com')), { exportedAt: Timestamp.fromMillis(exported.toMillis() + 1000) }))
-  await assertSucceeds(setDoc(ref(lm), { exportedAt: exported, managerNote: 'Filed again' }, { merge: true }))
+  await assertFails(setDoc(ref(lm), { exportedAt: exported, managerNote: 'Filed again' }, { merge: true }))
+  await assertSucceeds(setDoc(ref(lm), { exportedAt: exported, updatedAt: Timestamp.now() }, { merge: true }))
   // Verification of #337: the same instant within a second passes (as the owner rule); a reviewer never deletes an
   // exported sheet (it could be recreated without exportedAt), admins included; an unexported sheet still can be.
   await assertSucceeds(setDoc(ref(lm), { exportedAt: Timestamp.fromMillis(exported.toMillis() + 300) }, { merge: true }))

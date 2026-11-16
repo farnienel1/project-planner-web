@@ -513,7 +513,7 @@ test('1.25.0 profile photo: the person or an admin deletes it, nobody else', asy
 })
 
 test('1.25.0 timesheet exports and the logo: admins delete, managers do not', async () => {
-  const exportPath = `organizations/${ORG_A}/timesheetExports/${Math.floor(Date.now() / 1000)}_Mo_timesheet.pdf`
+  const exportPath = `organizations/${ORG_A}/timesheetExports/${MGR_A}_${Math.floor(Date.now() / 1000)}_Mo_timesheet.pdf`
   await assertSucceeds(put(MGR_A, EMAIL[MGR_A], exportPath, 512, 'application/pdf'))
   await assertFails(del(MGR_A, exportPath))
   await assertFails(put(MGR_A, EMAIL[MGR_A], exportPath, 512, 'application/pdf'))
@@ -675,7 +675,39 @@ test('1.54.1 timesheet export PDFs: admins read every export; the exporter reads
   await assertSucceeds(put(ADMIN_A, EMAIL[ADMIN_A], admins, 64, 'application/pdf'))
   await assertFails(read(MGR_A, admins))
   const legacy = `organizations/${ORG_A}/timesheetExports/${stamp}_Old_timesheet.pdf`
-  await assertSucceeds(put(MGR_A, EMAIL[MGR_A], legacy, 64, 'application/pdf'))
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await uploadBytes(ref(ctx.storage(), legacy), new Uint8Array(16), { contentType: 'application/pdf' })
+  })
   await assertFails(read(MGR_A, legacy))
   await assertSucceeds(read(ADMIN_A, legacy))
+})
+
+test('1.54.1 review: an export\'s name must start with the uploader\'s own uid, unless an admin uploads it', async () => {
+  await seed154()
+  const stamp = Math.floor(Date.now() / 1000)
+  // A manager cannot plant a file under an admin's uid, nor use the pre-1.54.1 name.
+  await assertFails(put(MGR_A, EMAIL[MGR_A], `organizations/${ORG_A}/timesheetExports/${ADMIN_A}_${stamp}_z.pdf`, 64, 'application/pdf'))
+  await assertFails(put(MGR_A, EMAIL[MGR_A], `organizations/${ORG_A}/timesheetExports/${stamp}_z.pdf`, 64, 'application/pdf'))
+  await assertSucceeds(put(MGR_A, EMAIL[MGR_A], `organizations/${ORG_A}/timesheetExports/${MGR_A}_${stamp}_z.pdf`, 64, 'application/pdf'))
+  // An admin may upload any name (older iPhone builds name exports {seconds}_{file}).
+  await assertSucceeds(put(ADMIN_A, EMAIL[ADMIN_A], `organizations/${ORG_A}/timesheetExports/${stamp}_admin_z.pdf`, 64, 'application/pdf'))
+})
+
+test('1.54.1 review: the platform owner is never locked out by a lapsed or scheduled-for-deletion organisation', async () => {
+  await seed154()
+  const OWNER = 'platform-owner-uid'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'organizations', ORG_LAPSED), { members: { [OWNER]: 'admin' } }, { merge: true })
+    await setDoc(doc(db, 'users', OWNER), { email: 'info@projectplanner.us', organizationId: ORG_B, role: 'admin', adminAccess: true })
+  })
+  const file = `organizations/${ORG_LAPSED}/tasks/t1/${LAPSED_ADMIN}_${Date.now()}.pdf`
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await uploadBytes(ref(ctx.storage(), file), new Uint8Array(16), { contentType: 'application/pdf' })
+  })
+  const owner = env.authenticatedContext(OWNER, { email: 'info@projectplanner.us', email_verified: true }).storage()
+  await assertSucceeds(getBytes(ref(owner, file)))
+  // The same email unverified is not the platform owner.
+  const unverified = env.authenticatedContext(OWNER, { email: 'info@projectplanner.us', email_verified: false }).storage()
+  await assertFails(getBytes(ref(unverified, file)))
 })
