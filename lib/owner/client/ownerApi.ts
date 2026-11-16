@@ -7,13 +7,30 @@ import type { OwnerSearchResult } from '@/lib/owner/directory'
 
 /**
  * The server keeps directory rows for 60 s per instance and clears them on owner changes, but another instance may
- * still hold old rows. After an owner change the next directory or search request asks for fresh rows (`refresh=1`)
- * (re-review of #348).
+ * still hold old rows. After an owner change each directory route and search asks once for fresh rows (`refresh=1`),
+ * per path: the first request to one path never clears the flag for another (re-review of #348, final check).
  */
-let directoryStale = false
+let directoryGeneration = 0
+const refreshedGeneration = new Map<string, number>()
 
 export function markOwnerDirectoryStale(): void {
-  directoryStale = true
+  directoryGeneration += 1
+}
+
+/** True when this path has not yet asked for fresh rows since the last owner change. */
+export function ownerPathNeedsRefresh(path: string): boolean {
+  return readsOwnerDirectory(path) && (refreshedGeneration.get(path) ?? 0) < directoryGeneration
+}
+
+/** Records that this path read fresh rows for the given owner change (only after a successful answer). */
+export function ownerPathRefreshed(path: string, generation: number): void {
+  if ((refreshedGeneration.get(path) ?? 0) < generation) refreshedGeneration.set(path, generation)
+}
+
+/** Tests only. */
+export function resetOwnerDirectoryStaleForTests(): void {
+  directoryGeneration = 0
+  refreshedGeneration.clear()
 }
 
 /** True for the routes that read the cached directory. */
@@ -21,7 +38,7 @@ export function readsOwnerDirectory(path: string): boolean {
   return path.startsWith('/api/owner/directory/') || path === '/api/owner/search'
 }
 
-/** The query for a request: `refresh` is added once after an owner change, for the directory routes only. */
+/** The query for a request: `refresh` is added once per path after an owner change, for the directory routes only. */
 export function ownerQueryParams(
   path: string,
   params: Record<string, string | number | boolean | undefined>,
@@ -32,8 +49,9 @@ export function ownerQueryParams(
 
 /** GET an owner route with the signed-in owner's token and the MFA cookie. Throws the route's own message. */
 export async function ownerGet<T>(path: string, rawParams: Record<string, string | number | boolean | undefined> = {}, signal?: AbortSignal): Promise<T> {
-  const usedStale = directoryStale && readsOwnerDirectory(path)
-  const params = ownerQueryParams(path, rawParams, directoryStale)
+  const generation = directoryGeneration
+  const usedStale = ownerPathNeedsRefresh(path)
+  const params = ownerQueryParams(path, rawParams, usedStale)
   const query = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
     if (value === undefined || value === '' || value === false) continue
@@ -47,7 +65,7 @@ export async function ownerGet<T>(path: string, rawParams: Record<string, string
   })
   const data = (await response.json().catch(() => ({}))) as T & { error?: string }
   if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`)
-  if (usedStale) directoryStale = false
+  if (usedStale) ownerPathRefreshed(path, generation)
   return data
 }
 

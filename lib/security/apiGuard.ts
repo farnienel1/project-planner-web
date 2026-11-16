@@ -18,13 +18,31 @@ export function parseAuthCreatedAtMs(value: unknown): number | null {
   return Number.isFinite(raw) && raw > 0 ? raw : null
 }
 
+/** True for a plain IPv4 or IPv6 address (no port, no brackets, no other text). */
+export function looksLikeIpAddress(value: string): boolean {
+  if (/^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/.test(value)) return true
+  if (value.length > 45 || !value.includes(':') || !/^[0-9a-fA-F:.]+$/.test(value)) return false
+  const doubleColons = value.split('::').length - 1
+  if (doubleColons > 1) return false
+  const groups = value.split(':')
+  const last = groups[groups.length - 1]
+  const tailIsV4 = last.includes('.')
+  if (tailIsV4 && !looksLikeIpAddress(last)) return false
+  const hexGroups = (tailIsV4 ? groups.slice(0, -1) : groups).filter((group) => group !== '')
+  if (!hexGroups.every((group) => /^[0-9a-fA-F]{1,4}$/.test(group))) return false
+  const width = hexGroups.length + (tailIsV4 ? 2 : 0)
+  return doubleColons === 1 ? width < 8 : width === 8
+}
+
 /**
  * The caller's address for rate limits and audit rows. On Netlify `x-nf-client-connection-ip` is set by the edge from
- * the connection itself, so a client cannot choose it (re-review of #348); `x-forwarded-for` is the fallback elsewhere.
+ * the connection itself; its last comma-separated part is used, and only when it is an IPv4 or IPv6 address
+ * (final check of #348). Otherwise `x-forwarded-for` and `x-real-ip` as before.
  */
 export function clientIp(request: NextRequest): string {
+  const edge = request.headers.get('x-nf-client-connection-ip')?.split(',').pop()?.trim() ?? ''
   return (
-    request.headers.get('x-nf-client-connection-ip')?.trim() ||
+    (looksLikeIpAddress(edge) ? edge : '') ||
     request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
     request.headers.get('x-real-ip')?.trim() ||
     'unknown'
