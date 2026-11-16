@@ -159,3 +159,86 @@ export function bearerToken(request: { headers: { get(name: string): string | nu
   const header = request.headers.get('authorization') || ''
   return header.startsWith('Bearer ') ? header.slice(7).trim() : ''
 }
+
+// MARK: - Structured queries and aggregations (owner console PR 1, PLAN §3.1–3.2)
+
+export type RestValue =
+  | { stringValue: string }
+  | { booleanValue: boolean }
+  | { integerValue: string }
+  | { arrayValue: { values: RestValue[] } }
+
+export type RestFilter = Record<string, unknown>
+
+/** `field == value` (string, boolean or number). */
+export function restEqual(field: string, value: string | boolean | number): RestFilter {
+  const restValue: RestValue =
+    typeof value === 'boolean' ? { booleanValue: value } : typeof value === 'number' ? { integerValue: String(value) } : { stringValue: value }
+  return { fieldFilter: { field: { fieldPath: field }, op: 'EQUAL', value: restValue } }
+}
+
+/** `field in [values]` — at most 30 values (Firestore's limit). */
+export function restIn(field: string, values: readonly string[]): RestFilter {
+  return {
+    fieldFilter: {
+      field: { fieldPath: field },
+      op: 'IN',
+      value: { arrayValue: { values: values.slice(0, 30).map((value) => ({ stringValue: value })) } },
+    },
+  }
+}
+
+export function restAnd(filters: RestFilter[]): RestFilter | undefined {
+  if (!filters.length) return undefined
+  if (filters.length === 1) return filters[0]
+  return { compositeFilter: { op: 'AND', filters } }
+}
+
+export function structuredQuery(collectionId: string, where?: RestFilter, extra: Record<string, unknown> = {}) {
+  return { from: [{ collectionId }], ...(where ? { where } : {}), ...extra }
+}
+
+function restPath(parentPath: string) {
+  const base = firestoreDocumentsBase()
+  return parentPath ? `${base}/${parentPath}` : base
+}
+
+/** Runs a structured query; returns `{ id, fields }` per document. Throws when the query is refused. */
+export async function firestoreRunQuery(
+  idToken: string,
+  query: Record<string, unknown>,
+  parentPath = ''
+): Promise<{ id: string; path: string; fields?: Record<string, unknown> }[]> {
+  const response = await fetch(`${restPath(parentPath)}:runQuery`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ structuredQuery: query }),
+  })
+  if (!response.ok) throw new Error(`Query refused (${response.status})`)
+  const rows = (await response.json().catch(() => [])) as { document?: { name?: string; fields?: Record<string, unknown> } }[]
+  const out: { id: string; path: string; fields?: Record<string, unknown> }[] = []
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const name = row.document?.name || ''
+    if (!name) continue
+    const marker = '/documents/'
+    const index = name.indexOf(marker)
+    out.push({ id: name.slice(name.lastIndexOf('/') + 1), path: index >= 0 ? name.slice(index + marker.length) : name, fields: row.document?.fields })
+  }
+  return out
+}
+
+/** `count()` of a structured query — one read per 1,000 documents counted. Throws when refused. */
+export async function firestoreCount(idToken: string, query: Record<string, unknown>, parentPath = ''): Promise<number> {
+  const response = await fetch(`${restPath(parentPath)}:runAggregationQuery`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      structuredAggregationQuery: { structuredQuery: query, aggregations: [{ alias: 'n', count: {} }] },
+    }),
+  })
+  if (!response.ok) throw new Error(`Count refused (${response.status})`)
+  const rows = (await response.json().catch(() => [])) as { result?: { aggregateFields?: { n?: { integerValue?: string } } } }[]
+  const raw = (Array.isArray(rows) ? rows : []).find((row) => row.result)?.result?.aggregateFields?.n?.integerValue
+  const value = Number(raw ?? 0)
+  return Number.isFinite(value) ? value : 0
+}

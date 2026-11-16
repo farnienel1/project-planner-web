@@ -1,0 +1,38 @@
+{
+  "_note": "Worked out by hand from seedData.mjs (README.md shows the sums). lib/owner/ownerConsoleSeed.test.ts checks the code against these numbers; the e2e suite checks the screens and routes against them.",
+  "organisations": {
+    "rows": 7,
+    "rowsWithoutTest": 6,
+    "test": 1,
+    "scheduled": 1,
+    "lapsed": 1,
+    "unfinished": 1,
+    "largeMembers": 110
+  },
+  "people": {
+    "rows": 125,
+    "rowsWithoutTest": 122,
+    "test": 3,
+    "active": 113,
+    "inactive": 6,
+    "pending": 6,
+    "activeWithoutTest": 110,
+    "dualPersonOrganisations": ["org-eur", "org-small"]
+  },
+  "counts": {
+    "organisations": 7,
+    "organisationsWithoutTest": 6,
+    "testOrganisations": 1,
+    "scheduledForDeletion": 1,
+    "accounts": 126,
+    "accountsWithoutTest": 123,
+    "testAccounts": 3,
+    "inactiveAccounts": 5,
+    "pendingInvitations": 3
+  },
+  "search": {
+    "large": { "organisations": ["org-large"] },
+    "dee@dual": { "people": ["dual-1"] },
+    "test valley": { "people": ["op-small-1"], "organisations": [] }
+  }
+}
