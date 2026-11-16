@@ -1820,10 +1820,10 @@ service cloud.firestore {
         function timesheetStoredExported() {
           return resource.data.get('exportedAt', null) is timestamp || resource.data.get('exportedAt', null) is number;
         }
-        // 1.54.0: once exported, no reviewer writes `lateExtras` or `exportedAt`; with late extras, nor reviews or snapshot.
+        // 1.54.0: once exported, no reviewer writes `lateExtras` or moves `exportedAt`; with late extras, nor reviews or snapshot.
         function timesheetReviewerKeepsExportedLate() {
           let w = writtenKeys();
-          return resource == null || !timesheetStoredExported() || (!w.hasAny(['lateExtras', 'exportedAt']) &&
+          return resource == null || !timesheetStoredExported() || (!('lateExtras' in w) && timesheetSameInstant('exportedAt') &&
             (resource.data.get('lateExtras', null) in [null, []] || !w.hasAny(['extraEntryReviews', 'weeklyReportOverride'])));
         }
 
@@ -1866,7 +1866,7 @@ service cloud.firestore {
             resource.data.get('exportedAt', null) == null &&
             timesheetEmptyish(resource.data.get('payrollLineReviews', null)) &&
             timesheetEmptyish(resource.data.get('extraEntryReviews', null))
-          ) : timesheetReviewerOfOthers()))
+          ) : (timesheetReviewerOfOthers() && !timesheetStoredExported())))
             : ((settingId.matches('^deadlines_.*') ||
             settingId == 'deadlineAssignments' ||
             settingId.matches('^healthSafety_.*')) || (!settingId.matches('^variation(s|Item)_.*') && canAccessVariationsStaff(organizationId)))

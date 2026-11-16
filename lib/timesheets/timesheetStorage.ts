@@ -1002,7 +1002,7 @@ export async function saveTimesheetDraft({
         reviewedAtMs: Date.now(),
         exported: draftStoredExported(draft),
         // Fourth review of #337: the writer derives the signed ids itself (the loaded entries carry their derived ids).
-        sheet: { priceWorkEntries: draft.priceWorkEntries, expenseEntries: draft.expenseEntries },
+        sheet: { priceWorkEntries: draft.priceWorkEntries, expenseEntries: draft.expenseEntries, lateExtras: draft.lateExtras ?? [] },
       })
     : {}
   const hasReviewFields = Object.keys(reviewFields).length > 0

@@ -451,6 +451,8 @@ export function timesheetEntryReviewWriteFields(input: {
   sheet?: Record<string, unknown> | null
   sheetDocId?: string | null
 }): Record<string, Record<string, unknown>> {
+  // Verification of #337: without `sheet.lateExtras`, each late entry in `entries` must carry its stored `title` (a
+  // late entry without a usable title and id is never written, as the reader ignores it).
   const stored = input.stored || {}
   const reviewer = text(input.reviewedByUserId)
   const output: Record<string, Record<string, unknown>> = {}
@@ -469,15 +471,27 @@ export function timesheetEntryReviewWriteFields(input: {
     const key = normalizeDocumentId(entry.id)
     if (key) signedIds.add(key)
   }
+  // Verification of #337: the stored late extras (`sheet.lateExtras`), first row of each id (as the reader keeps it).
+  // A late entry is judged on that stored row — its title and id — so a caller need not pass the title, and a duplicate
+  // whose first row cannot be reviewed is never written either (`timesheetLateExtraRowProblem`, the reader's test).
+  const storedLate = new Map<string, Record<string, unknown>>()
+  const lateRows = input.sheet && Array.isArray(input.sheet.lateExtras) ? (input.sheet.lateExtras as unknown[]) : []
+  for (const raw of lateRows) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
+    const key = normalizeDocumentId((raw as Record<string, unknown>).id)
+    if (key && !storedLate.has(key)) storedLate.set(key, raw as Record<string, unknown>)
+  }
   const lateSeen = new Set<string>()
   for (const entry of input.entries) {
     const id = text(entry.id)
     if (!id || !timesheetEntryReviewKeyUsable(id)) continue
     if (entry.lateExtra === true) {
-      if (timesheetLateExtraRowProblem(entry)) continue
       const key = normalizeDocumentId(id)
-      if (input.exported === true || signedIds.has(key) || lateSeen.has(key)) continue
+      // The first row of an id decides for every row of it (seen before the problem check).
+      const firstSeen = lateSeen.has(key)
       lateSeen.add(key)
+      if (input.exported === true || signedIds.has(key) || firstSeen) continue
+      if (timesheetLateExtraRowProblem(storedLate.get(key) ?? entry)) continue
     }
     const decision = parseTimesheetEntryDecision(entry.managerDecision)
     const revisedAmount = decision === 'edited' ? finite(entry.managerRevisedAmount) : null
@@ -507,7 +521,7 @@ export function timesheetEntryReviewWriteFields(input: {
     // decision and revised amount are unchanged is never rewritten (its reviewer, time and stored fields stay, an
     // older review is not stamped with a fingerprint); an entry still pending with no current review has nothing to
     // record.
-    if (input.stored && prior && priorCurrent && prior.lateExtra === late && prior.decision === decision && sameNumber(prior.revisedAmount, revisedAmount)) continue
+    if (input.stored && prior && priorCurrent && (prior.lateExtra === true) === late && prior.decision === decision && sameNumber(prior.revisedAmount, revisedAmount)) continue
     if (input.stored && decision === 'pending' && !priorCurrent) continue
     // A review stored under the id in another letter case is updated under that key, never a second one.
     output[`${TIMESHEET_ENTRY_REVIEWS_FIELD}.${storedKey ?? id}`] = {

@@ -645,3 +645,47 @@ test('1.54.0 final check of #337 (4): a raw stored review map behaves as the par
   })
   assert.deepEqual(Object.keys(fields), ['extraEntryReviews.E1'])
 })
+
+// Verification of #337: the writer judges a late entry on its stored row (title and id), first row of an id.
+test('1.54.0 verification of #337 (2, 3): the writer finds the stored late row by id; a duplicate behind an untitled first row is never written', () => {
+  const late = lateExpense('L1', 25)
+  const sheet = counterSignedSheet({ lateExtras: [late] })
+  // The caller passes no title: the stored row's is used, so the approval is written.
+  const { title: _omit, ...noTitle } = late
+  void _omit
+  const fields = R.timesheetEntryReviewWriteFields({
+    stored: R.parseTimesheetEntryReviews(sheet),
+    entries: [{ ...noTitle, managerDecision: 'approved', reviewFingerprint: fpOf(late), lateExtra: true }] as never,
+    reviewedByUserId: LM,
+    reviewedAtMs: 1,
+    sheet,
+  })
+  assert.deepEqual(Object.keys(fields), ['extraEntryReviews.L1'])
+  // Without the sheet, an untitled late entry is not written (callers must pass the stored title).
+  assert.deepEqual(
+    R.timesheetEntryReviewWriteFields({
+      stored: {},
+      entries: [{ ...noTitle, managerDecision: 'approved', reviewFingerprint: fpOf(late), lateExtra: true }] as never,
+      reviewedByUserId: LM,
+      reviewedAtMs: 1,
+    }),
+    {}
+  )
+  // Duplicate id with an untitled FIRST row: the reader ignores both, and the writer never writes the second.
+  const untitled = { ...lateExpense('D1', 5), title: '' }
+  const second = { ...lateExpense('d1', 7), title: 'Real' }
+  const dup = counterSignedSheet({ lateExtras: [untitled, second] })
+  assert.deepEqual(R.timesheetLateExtraRows(dup).map((row) => row.decision.state), ['ignored', 'ignored'])
+  const asEntry = (row: Record<string, unknown>) => ({ ...row, managerDecision: 'approved', reviewFingerprint: fpOf(row), lateExtra: true })
+  for (const options of [{ sheet: dup }, {}]) {
+    assert.deepEqual(
+      R.timesheetEntryReviewWriteFields({ stored: {}, entries: [asEntry(untitled), asEntry(second)] as never, reviewedByUserId: LM, reviewedAtMs: 1, ...options }),
+      {}
+    )
+  }
+  // With the sheet, even a caller passing only the second row writes nothing.
+  assert.deepEqual(
+    R.timesheetEntryReviewWriteFields({ stored: {}, entries: [asEntry(second)] as never, reviewedByUserId: LM, reviewedAtMs: 1, sheet: dup }),
+    {}
+  )
+})

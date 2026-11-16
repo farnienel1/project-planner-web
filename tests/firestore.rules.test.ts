@@ -1890,6 +1890,16 @@ test('timesheets: the owner cannot change line reviews, entry decisions or the a
   await assertFails(updateDoc(ref(lm), { exportedAt: null }))
   await assertFails(updateDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com')), { exportedAt: Timestamp.fromMillis(exported.toMillis() + 1000) }))
   await assertSucceeds(setDoc(ref(lm), { exportedAt: exported, managerNote: 'Filed again' }, { merge: true }))
+  // Verification of #337: the same instant within a second passes (as the owner rule); a reviewer never deletes an
+  // exported sheet (it could be recreated without exportedAt), admins included; an unexported sheet still can be.
+  await assertSucceeds(setDoc(ref(lm), { exportedAt: Timestamp.fromMillis(exported.toMillis() + 300) }, { merge: true }))
+  await assertFails(deleteDoc(ref(lm)))
+  await assertFails(deleteDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com'))))
+  const idOpen = `timesheet_${REPORT_A}_1770200000`
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG_A, 'settings', idOpen), { userId: REPORT_A, managerSignedAt: signed })
+  })
+  await assertSucceeds(deleteDoc(doc(lm, 'organizations', ORG_A, 'settings', idOpen)))
   // An exported sheet whose `lateExtras` is stored as null (or empty) has no late extras: reviews behave as before 1.54.0.
   const idNull = `timesheet_${REPORT_A}_1770100000`
   await env.withSecurityRulesDisabled(async (ctx) => {
