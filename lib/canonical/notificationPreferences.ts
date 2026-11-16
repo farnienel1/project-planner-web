@@ -119,6 +119,8 @@ const TYPE_TO_PREFERENCE: Record<string, NotificationPreferenceKey> = {
   hs_toolbox_reminder: 'toolboxTalkIssued',
   timesheet_pending_manager_signoff: 'timesheetSignOff',
   timesheet_signed_by_manager: 'timesheetSignOff',
+  // 1.54.0 (§8, §13, owner decision 16 Nov): written by the server when a booking on the person's signed sheet changes.
+  timesheet_bookings_changed: 'timesheetSignOff',
   qualification_expiry: 'qualificationExpiry',
   line_manager_peer_update: 'lineManagerPeerUpdates',
   [TIMESHEET_SUBMISSION_NOTICE_TYPE]: 'timesheetSubmissionReminder',
@@ -433,6 +435,8 @@ export const DEVICE_PUSH_NOTIFICATION_TYPES = [
   'holiday_booked_for_you',
   'timesheet_pending_manager_signoff',
   'timesheet_signed_by_manager',
+  // 1.54.0: "Your signed timesheet has changed" (written by the timesheetBookingsChangedNotice Cloud Function).
+  'timesheet_bookings_changed',
   'toolbox_talk_issued',
   'hs_toolbox_reminder',
   'material_order_placed',
@@ -707,6 +711,9 @@ export function notificationDestination(input: NotificationDestinationInput): No
     case 'timesheet_pending_manager_signoff':
       return { kind: 'timesheetTeamAwaiting', userId, dayKey }
     case 'timesheet_signed_by_manager':
+      return { kind: 'timesheetMine', userId, dayKey }
+    // 1.54.0: the person's own changed sheet — My Timesheets on that pay run (dayKey = its first day).
+    case 'timesheet_bookings_changed':
       return { kind: 'timesheetMine', userId, dayKey }
     case 'line_manager_peer_update':
       if (userId || dayKey) return { kind: 'timesheetTeamSigned', userId, dayKey }

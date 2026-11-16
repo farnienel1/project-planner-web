@@ -723,3 +723,23 @@ test('1.46.0 review 6: every snapshot line carries isPayeDay and isLeave, at sig
   const paye = weeklyReportOverrideFromFirestore({ ...stored, lines: [{ ...stored.lines[0], isPayeDay: true }] })
   assert.equal(paye?.lines[0].isPayeDay, true)
 })
+
+test('1.54.0 third review of #337 (2): an exported sheet with late extras is frozen — its snapshot never changes', () => {
+  const signed = applyWeeklyReportOverride({
+    ...base,
+    draft: {
+      ...emptyTimesheetDraft(),
+      operativeSignedAt: day,
+      operativeSignedByName: 'Ada Booked',
+      managerSignedAt: day,
+      managerSignedByUserId: 'mgr',
+    },
+  })
+  const late = { kind: 'expense' as const, id: 'L1', title: 'Taxi', details: '', jobNumber: 'J-1', date: day, amount: 25, managerDecision: 'pending' as const }
+  const exported = { ...signed, exportedAt: day, exportedAtStored: true, lateExtras: [late], payrollLineReviews: { 'op-b1-normal': { decision: 'declined' as const } } }
+  const after = applyWeeklyReportOverride({ ...base, draft: exported })
+  assert.equal(after.weeklyReportOverride, exported.weeklyReportOverride)
+  // Without late extras an exported sheet behaves as before 1.54.0 (the decline still re-prices its snapshot).
+  const legacy = applyWeeklyReportOverride({ ...base, draft: { ...exported, lateExtras: undefined } })
+  assert.equal(legacy.weeklyReportOverride?.lines.find((row) => row.id === 'op-b1-normal')?.decision, 'declined')
+})

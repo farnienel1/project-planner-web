@@ -18,7 +18,7 @@ import { computeOperativeBookingClashWarnings } from '@/lib/scheduling/bookingCl
 import { managerSiteBookingDisplayTitle } from '@/lib/scheduling/managerSiteBookingUtils'
 import { getActiveOperativesForScheduling } from '@/lib/operatives/operativeRosterUtils'
 import type { OrganizationDetails } from '@/lib/settings/organizationSettings'
-import { DEFAULT_PAYROLL_POLICY, includesManagerScheduleLocation, orgPayrollPolicyForDay } from '@/lib/settings/organizationSettings'
+import { DEFAULT_PAYROLL_POLICY, orgPayrollPolicyForDay } from '@/lib/settings/organizationSettings'
 import { ORPHAN_BOOKING_LABEL, organizationTimeZone } from '@/lib/canonical'
 import { computeManagerBookingClashWarnings } from '@/lib/warnings/managerClashWarnings'
 import {
@@ -322,11 +322,9 @@ export function buildWeeklyReportData({
     )
 
   const periodOperativeBookings = bookings.filter((booking) => isDateWithinReportPeriod(booking.date, period))
-  const periodManagerBookings = managerSiteBookings.filter((booking) => {
-    if (!isDateWithinReportPeriod(booking.date, period)) return false
-    const options = orgDetails?.myScheduleOptions
-    return options ? includesManagerScheduleLocation(options, booking) : true
-  })
+  // Rulebook 1.54.0 (owner decision 16 Nov): a switched-off schedule option never takes a booking off the report — it
+  // only hides the option from pickers (§4.8), as on Daily Overview (1.53.0 A10) and the timesheets.
+  const periodManagerBookings = managerSiteBookings.filter((booking) => isDateWithinReportPeriod(booking.date, period))
   const periodSubBookings = subcontractorBookings.filter((booking) =>
     isDateWithinReportPeriod(booking.date, period)
   )

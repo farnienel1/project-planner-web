@@ -1798,6 +1798,8 @@ test('timesheets: the owner cannot change line reviews, entry decisions or the a
   await assertFails(setDoc(ref(rep), { extraEntryReviews: { E1: { decision: 'approved', reviewedAmount: 50 } } }, { merge: true }))
   await assertFails(updateDoc(ref(rep), { 'extraEntryReviews.E1': { decision: 'edited', revisedAmount: 999, reviewedAmount: 50 } }))
   await assertFails(setDoc(ref(rep), { weeklyReportOverride: { approvedByUserId: REPORT_A, selfSigned: true, lines: [] } }, { merge: true }))
+  // 1.54.0 (third review of #337): late extras only once the line manager has signed — before that, the ordinary entries.
+  await assertFails(setDoc(ref(rep), { lateExtras: [{ kind: 'expense', id: 'L0', title: 'Taxi', details: '', jobNumber: 'J1', date: Timestamp.now(), amount: 5 }] }, { merge: true }))
 
   // The line manager reviews: a line decision, and an entry decision as a dotted update.
   await assertSucceeds(setDoc(ref(lm), { payrollLineReviews: { 'op-1': { decision: 'declined', revisedAmount: null } } }, { merge: true }))
@@ -1841,6 +1843,73 @@ test('timesheets: the owner cannot change line reviews, entry decisions or the a
   }, { merge: true }))
   // The line manager still can.
   await assertSucceeds(setDoc(ref(lm), { expenseEntries: [expense(50, 'edited', 30)] }, { merge: true }))
+
+  // Rulebook 1.54.0 (review of #337, redesign): after the counter-signature the signed entries stay frozen — the £50
+  // expense cannot be raised to £1,000, nor its decision forged — but the person may add, edit and delete late extras
+  // (`lateExtras`) until the sheet is exported. Late extras pay only once a reviewer approves them in the review map,
+  // which the person can never write.
+  await assertFails(setDoc(ref(rep), { ...signedResend, expenseEntries: [expense(1000, 'edited', 1000)] }, { merge: true }))
+  await assertFails(updateDoc(ref(rep), { expenseEntries: [expense(50, 'approved', null)] }))
+  const late = (amount: number) => ({ kind: 'expense', id: 'L1', title: 'Taxi', details: '', jobNumber: 'J1', date: Timestamp.now(), amount })
+  await assertSucceeds(setDoc(ref(rep), { ...signedResend, lateExtras: [late(25)] }, { merge: true }))
+  await assertSucceeds(updateDoc(ref(rep), { lateExtras: [late(30)] }))
+  // Final check of #337: `lateExtras` is a list (or null), never a map or other junk.
+  await assertFails(updateDoc(ref(rep), { lateExtras: { L1: late(30) } }))
+  await assertFails(updateDoc(ref(rep), { lateExtras: 'x' }))
+  await assertSucceeds(updateDoc(ref(rep), { lateExtras: null }))
+  await assertSucceeds(updateDoc(ref(rep), { lateExtras: [late(30)] }))
+  await assertFails(updateDoc(ref(rep), { 'extraEntryReviews.L1': { decision: 'approved', reviewedAmount: 30, lateExtra: true, reviewedFingerprint: 'x' } }))
+  await assertSucceeds(updateDoc(ref(rep), { lateExtras: [] }))
+  // The person clearing their own signature never clears the line manager's or the snapshot.
+  await assertFails(updateDoc(ref(rep), { operativeSignedAt: null, managerSignedAt: null }))
+  await assertFails(updateDoc(ref(rep), { operativeSignedAt: null, weeklyReportOverride: null }))
+  // The line manager approves a late extra in the review map.
+  await assertSucceeds(updateDoc(ref(lm), { 'extraEntryReviews.L1': { decision: 'approved', reviewedAmount: 30, lateExtra: true, reviewedFingerprint: 'x', reviewedByUserId: LM_A, reviewedAtMs: 2 } }))
+  // Exported: no more late extras.
+  await assertSucceeds(updateDoc(ref(rep), { lateExtras: [late(30)] }))
+  const exported = Timestamp.fromMillis(Date.parse('2026-10-20T10:00:00Z'))
+  await assertSucceeds(setDoc(ref(lm), {
+    exportedAt: exported,
+    weeklyReportOverride: { approvedByUserId: LM_A, selfSigned: false, lines: [], priceWork: [], expenses: [{ id: 'L1', amount: 30, lateExtra: true }] },
+  }, { merge: true }))
+  await assertFails(updateDoc(ref(rep), { lateExtras: [late(40)] }))
+  await assertFails(updateDoc(ref(rep), { lateExtras: [] }))
+  // Third review of #337: an exported sheet with late extras is frozen for reviewers too — no review and no snapshot
+  // change (the line manager and admins alike); other fields (a note) still pass.
+  await assertFails(updateDoc(ref(lm), { 'extraEntryReviews.L1': { decision: 'declined', reviewedAmount: 30, lateExtra: true, reviewedFingerprint: 'x', reviewedByUserId: LM_A, reviewedAtMs: 3 } }))
+  await assertFails(updateDoc(ref(lm), { 'weeklyReportOverride.expenses': [] }))
+  await assertFails(updateDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com')), { 'extraEntryReviews.E1': { decision: 'declined', reviewedAmount: 50, reviewedByUserId: ADMIN_A, reviewedAtMs: 4 } }))
+  await assertSucceeds(updateDoc(ref(lm), { managerNote: 'Filed' }))
+  // Fourth review of #337: a reviewer cannot unfreeze it by removing or emptying the late extras first.
+  await assertFails(updateDoc(ref(lm), { lateExtras: deleteField() }))
+  await assertFails(updateDoc(ref(lm), { lateExtras: [] }))
+  await assertFails(updateDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com')), { lateExtras: null }))
+  // Final check of #337: no reviewer removes or changes a stored exportedAt (delete / re-price / restore); the same value passes.
+  await assertFails(updateDoc(ref(lm), { exportedAt: deleteField() }))
+  await assertFails(updateDoc(ref(lm), { exportedAt: 'x' }))
+  await assertFails(updateDoc(ref(lm), { exportedAt: null }))
+  await assertFails(updateDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com')), { exportedAt: Timestamp.fromMillis(exported.toMillis() + 1000) }))
+  await assertSucceeds(setDoc(ref(lm), { exportedAt: exported, managerNote: 'Filed again' }, { merge: true }))
+  // Verification of #337: the same instant within a second passes (as the owner rule); a reviewer never deletes an
+  // exported sheet (it could be recreated without exportedAt), admins included; an unexported sheet still can be.
+  await assertSucceeds(setDoc(ref(lm), { exportedAt: Timestamp.fromMillis(exported.toMillis() + 300) }, { merge: true }))
+  await assertFails(deleteDoc(ref(lm)))
+  await assertFails(deleteDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com'))))
+  const idOpen = `timesheet_${REPORT_A}_1770200000`
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG_A, 'settings', idOpen), { userId: REPORT_A, managerSignedAt: signed })
+  })
+  await assertSucceeds(deleteDoc(doc(lm, 'organizations', ORG_A, 'settings', idOpen)))
+  // An exported sheet whose `lateExtras` is stored as null (or empty) has no late extras: reviews behave as before 1.54.0.
+  const idNull = `timesheet_${REPORT_A}_1770100000`
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG_A, 'settings', idNull), {
+      userId: REPORT_A, managerSignedAt: signed, approvedAt: signed, exportedAt: exported, lateExtras: null,
+      weeklyReportOverride: { approvedByUserId: LM_A, selfSigned: false, lines: [], priceWork: [], expenses: [] },
+    })
+  })
+  await assertSucceeds(updateDoc(doc(lm, 'organizations', ORG_A, 'settings', idNull), { 'extraEntryReviews.E1': { decision: 'declined', reviewedAmount: 50, reviewedByUserId: LM_A, reviewedAtMs: 5 } }))
+  await assertFails(updateDoc(doc(lm, 'organizations', ORG_A, 'settings', idNull), { lateExtras: [] }))
 })
 
 test('timesheets: 1.28.0 a person with no line manager signs but never writes a self-signed snapshot or reviews', async () => {

@@ -13,15 +13,14 @@ import { isTimesheetFullyApproved } from '@/lib/timesheets/timesheetApprovalPoli
 import { normalizeDocumentId, timesheetParticipant } from '@/lib/canonical'
 import { payPeriodsOverlapping } from '@/lib/timesheets/timesheetPayrollPolicy'
 import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride'
-import { periodBookingChanges } from '@/lib/timesheets/timesheetBookingChanges'
+import { draftWithCurrentLateRows, periodBookingChanges } from '@/lib/timesheets/timesheetBookingChanges'
 import { listTimesheetStates } from '@/lib/timesheets/timesheetStorage'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import { findUserAndOperative, resolveDisplayName, resolvePersonRole, resolvePersonTrade } from '@/lib/weekly-report/weeklyReportPayroll'
 import { mergeDuplicatePersonWeeks, type ApprovedTimesheetWeek } from '@/lib/weekly-report/timesheetFeed'
 import type { PayrollTimePolicyState, WeeklyReportPaySheet } from '@/lib/canonical'
-import { timesheetEntryFingerprintMap } from '@/lib/canonical'
 import { collectTimesheetPayroll } from '@/lib/timesheets/timesheetPayrollCollector'
-import { timesheetSheetFields } from '@/lib/timesheets/timesheetAdjustments'
+import { draftEntryFingerprints, timesheetSheetFields } from '@/lib/timesheets/timesheetAdjustments'
 import { timesheetStatusFieldsFromDraft } from '@/lib/timesheets/timesheetHubStats'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
@@ -143,17 +142,20 @@ export async function loadWeeklyReportTimesheetFeed({
         personId: user.id,
         startDayKey: dayKey(period.start, timeZone),
         endDayKey: dayKey(period.end, timeZone),
-        sheet: draft ? timesheetSheetFields(draft) : null,
+        // Fourth review of #337: the check line reads the snapshot's late rows only while still approved.
+        sheet: draft ? timesheetSheetFields(draftWithCurrentLateRows(draft)) : null,
         status: draft ? timesheetStatusFieldsFromDraft(draft) : null,
         change: checkChange ? { reopened: checkChange.reopened, changed: checkChange.changed, waitingFor: checkChange.waitingFor } : null,
         payrollLines: payroll.lineItems,
-        entryFingerprints: draft ? timesheetEntryFingerprintMap([...draft.priceWorkEntries, ...draft.expenseEntries]) : null,
+        entryFingerprints: draft ? draftEntryFingerprints(draft) : null,
       })
       if (!draft || !isTimesheetFullyApproved(draft, user, users)) continue
       // Rulebook 1.47.0 §8: a signed, unexported sheet whose bookings changed since it was signed is not approved until
       // it is signed (and counter-signed) again — the report shows its live bookings, never the stale snapshot.
       const change = checkChange
-      if (change?.reopened) continue
+      // 1.54.0: late extras waiting for the line manager never take a signed sheet out of the feed (its signed money
+      // stands; only approved late extras are in its snapshot).
+      if (change?.reopened && change.bookingsChanged !== false) continue
       let working = draft
       if (!working.weeklyReportOverride) {
         working = applyWeeklyReportOverride({
@@ -179,6 +181,9 @@ export async function loadWeeklyReportTimesheetFeed({
         // Never written back (M7): the report only reads timesheets.
       }
       if (!working.weeklyReportOverride) continue
+      // Rulebook 1.54.0 (third review of #337): a snapshot's late-extra rows count only while that late extra is still
+      // approved at the same amount (`timesheetSnapshotMoneyRowsCurrent`); an exported sheet stays as signed.
+      const override = draftWithCurrentLateRows(working).weeklyReportOverride ?? working.weeklyReportOverride
       for (const entry of [...working.priceWorkEntries, ...working.expenseEntries]) {
         const count = entry.evidence?.length ?? 0
         if (count > 0) evidenceCounts[normalizeDocumentId(entry.id)] = count
@@ -190,7 +195,7 @@ export async function loadWeeklyReportTimesheetFeed({
         trade: resolvePersonTrade(user, operative),
         weekStart: period.start,
         weekEnd: period.end,
-        override: working.weeklyReportOverride,
+        override,
         evidenceCounts,
       })
     }

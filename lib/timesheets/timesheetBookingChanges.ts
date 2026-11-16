@@ -7,7 +7,12 @@ import {
   bookingIdsForAccount,
   signedTimesheetBookingChanges,
   signedTimesheetBookingRecord,
+  timesheetChangesWithLateExtras,
+  timesheetLateExtrasSummary,
+  timesheetSnapshotMoneyRowsCurrent,
   type SignedTimesheetBooking,
+  type TimesheetChanges,
+  type TimesheetLateExtrasSummary,
   type SignedTimesheetBookingChanges,
   type SignedTimesheetBookingDocument,
   type SignedTimesheetLine,
@@ -19,6 +24,7 @@ import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import { collectTimesheetPayroll, type TimesheetPayrollLineItem } from '@/lib/timesheets/timesheetPayrollCollector'
 import { userTimesheetSelfSigned } from '@/lib/timesheets/timesheetApprovalPolicy'
 import { userIdsSharingEmail } from '@/lib/timesheets/timesheetWeekUtils'
+import { draftEntryFingerprints, draftStoredExported, timesheetSheetFields } from '@/lib/timesheets/timesheetAdjustments'
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
@@ -49,6 +55,7 @@ export function signedTimesheetLiveLines(lines: ReadonlyArray<TimesheetPayrollLi
     isPayeDay: line.isPayeDay === true,
     bookingCreatedAt: line.bookingCreatedAt ?? null,
     bookingUpdatedAt: line.bookingUpdatedAt ?? null,
+    scheduleOptionPlace: line.scheduleOptionPlace === true,
   }))
 }
 
@@ -141,8 +148,9 @@ export function draftBookingChanges(input: {
   /** The period's bookings have arrived from the server (`timesheetSnapshotReady`); nothing reads as changed before. */
   liveLoaded: boolean
   selfSigned: boolean
-}): SignedTimesheetBookingChanges {
-  return signedTimesheetBookingChanges({
+}): TimesheetChanges {
+  // Rulebook 1.54.0: one answer for the bookings (1.47.0) and late extras (`timesheetChangesWithLateExtras`).
+  const bookingChange = signedTimesheetBookingChanges({
     sheet: signedTimesheetSheetFromDraft(input.draft),
     liveLines: signedTimesheetLiveLines(input.lines),
     liveBookings:
@@ -153,15 +161,48 @@ export function draftBookingChanges(input: {
     liveLoaded: input.liveLoaded,
     selfSigned: input.selfSigned,
   })
+  return timesheetChangesWithLateExtras(bookingChange, draftLateExtrasSummary(input.draft)) as TimesheetChanges
+}
+
+/**
+ * Rulebook 1.54.0 §8: where the draft's late extras stand (`timesheetLateExtrasSummary`) — pending ones, and whether
+ * the signed snapshot holds exactly the approved ones.
+ */
+export function draftLateExtrasSummary(draft: TimesheetDraft): TimesheetLateExtrasSummary {
+  return timesheetLateExtrasSummary(timesheetSheetFields(draft), {
+    entryFingerprints: draftEntryFingerprints(draft),
+    exportedAtStored: draft.exportedAtStored === true || Boolean(draft.exportedAt),
+  })
 }
 
 /**
  * Rulebook 1.47.0 §8: the figures of a reopened (changed, unexported) sheet are the live bookings — its stale signed
  * snapshot is never shown, invoiced or exported. Any other sheet is returned as it is.
  */
-export function draftForFigures(draft: TimesheetDraft, change: Pick<SignedTimesheetBookingChanges, 'reopened'> | null | undefined): TimesheetDraft {
-  if (!change?.reopened || !draft.weeklyReportOverride) return draft
+export function draftForFigures(
+  draft: TimesheetDraft,
+  change: (Pick<SignedTimesheetBookingChanges, 'reopened'> & { bookingsChanged?: boolean }) | null | undefined
+): TimesheetDraft {
+  // 1.54.0: late extras alone never discard the snapshot — its signed figures stand; only approved late extras join it,
+  // and (fourth review of #337) only while still approved at that amount (`draftWithCurrentLateRows`).
+  if (!change?.reopened || change.bookingsChanged === false || !draft.weeklyReportOverride) return draftWithCurrentLateRows(draft)
   return { ...draft, weeklyReportOverride: null }
+}
+
+/**
+ * Rulebook 1.54.0 (fourth review of #337): the draft with its signed snapshot's late-extra money rows only while each
+ * late extra is still approved at that amount (`timesheetSnapshotMoneyRowsCurrent`) — an edited (stale), deleted or
+ * declined late extra leaves the figures at once, before the reviewer's next save. Exported sheets stay as signed.
+ */
+export function draftWithCurrentLateRows(draft: TimesheetDraft): TimesheetDraft {
+  const signed = draft.weeklyReportOverride
+  if (!signed) return draft
+  const fields = timesheetSheetFields(draft)
+  const options = { entryFingerprints: draftEntryFingerprints(draft), exportedAtStored: draftStoredExported(draft) }
+  const priceWork = timesheetSnapshotMoneyRowsCurrent(fields, signed.priceWork, options)
+  const expenses = timesheetSnapshotMoneyRowsCurrent(fields, signed.expenses, options)
+  if (priceWork.length === signed.priceWork.length && expenses.length === signed.expenses.length) return draft
+  return { ...draft, weeklyReportOverride: { ...signed, priceWork, expenses } }
 }
 
 /** What a list needs to price a person's live payroll lines for any period (the collector's inputs). */
@@ -199,7 +240,7 @@ function objectId(value: unknown): number {
   return id
 }
 
-const periodCache = new WeakMap<object, WeakMap<object, WeakMap<object, Map<string, SignedTimesheetBookingChanges | null>>>>()
+const periodCache = new WeakMap<object, WeakMap<object, WeakMap<object, Map<string, TimesheetChanges | null>>>>()
 
 /**
  * `signedTimesheetBookingChanges` for one person's sheet in one period (list rows, counts, the hub entry). A sheet
@@ -211,10 +252,11 @@ export function periodBookingChanges(
   user: User,
   draft: TimesheetDraft | null | undefined,
   period: { start: Date; end: Date }
-): SignedTimesheetBookingChanges | null {
-  if (!draft || (!draft.operativeSignedAt && !draft.weeklyReportOverride)) return null
+): TimesheetChanges | null {
+  if (!draft || (!draft.operativeSignedAt && !draft.weeklyReportOverride && !draft.managerSignedAt)) return null
   const { users, liveLoaded, coversPeriod, ...collector } = catalogue
-  if (!liveLoaded || (coversPeriod && !coversPeriod(period))) return null
+  // 1.54.0: late extras need no bookings — waiting ones still put the sheet with the line manager.
+  if (!liveLoaded || (coversPeriod && !coversPeriod(period))) return timesheetChangesWithLateExtras(null, draftLateExtrasSummary(draft))
   // Memoised per loaded bookings, manager site bookings and draft (each a new object when it changes).
   // Second review nit: every input that decides the lines (schedule options, rate history, working hours, operatives,
   // roster, projects) is part of the key by object identity.
@@ -232,11 +274,11 @@ export function periodBookingChanges(
     objectId(collector.payrollPolicy),
     objectId(collector.payrollPolicyState),
   ].join('|')
-  const byManager = periodCache.get(collector.bookings) ?? new WeakMap<object, WeakMap<object, Map<string, SignedTimesheetBookingChanges | null>>>()
+  const byManager = periodCache.get(collector.bookings) ?? new WeakMap<object, WeakMap<object, Map<string, TimesheetChanges | null>>>()
   periodCache.set(collector.bookings, byManager)
-  const byDraft = byManager.get(collector.managerSiteBookings) ?? new WeakMap<object, Map<string, SignedTimesheetBookingChanges | null>>()
+  const byDraft = byManager.get(collector.managerSiteBookings) ?? new WeakMap<object, Map<string, TimesheetChanges | null>>()
   byManager.set(collector.managerSiteBookings, byDraft)
-  const memo = byDraft.get(draft) ?? new Map<string, SignedTimesheetBookingChanges | null>()
+  const memo = byDraft.get(draft) ?? new Map<string, TimesheetChanges | null>()
   byDraft.set(draft, memo)
   const cached = memo.get(key)
   if (cached !== undefined) return cached
