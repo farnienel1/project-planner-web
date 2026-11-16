@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.55.0 → 1.55.0
-Packed hash: f0c88bca37d8765270a2959087fcf4503303e77625cac36a103629d74f17d67e
-Rulebook sha256: 4f55faaaad6e963a05eb6258695d72a03443f4d9f410aa6654c7a9b2cf45560b
+Rulebook version: 1.54.2 → 1.55.0
+Packed hash: 263e8ba84666bc2de7f7b707957dd4296749dfa17e0d1e34e0798ca73396b2bf
+Rulebook sha256: 080efa017700745dcceaa59b0fd49a875eb0f06c74101dc54312fbc0ef3d03f7
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,12 +22,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 5a8a7e4e6f56b91cb18f71e79207782b8840fccf0b63b695826c47e18e59a32e
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: TIMESHEET_REVISION_DUE_REPORT_LABEL, timesheetRevisionLabourReviews, timesheetRevisionReportState, timesheetRevisionWaitingLabel
-Exports removed: timesheetReportVersion
-Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/payrunSnapshot.ts, lib/canonical/timesheetPeriod.ts, lib/canonical/timesheetRevisions.ts, lib/canonical/weeklyReportPay.ts
+Exports added: TIMESHEET_CREATE_REVISION_HELP, TIMESHEET_CREATE_REVISION_LABEL, TIMESHEET_EARLIER_VERSIONS_LABEL, TIMESHEET_ORIGINAL_VERSION_LABEL, TIMESHEET_REVIEW_AND_SIGN_REVISION_LABEL, TIMESHEET_REVISION_COPIED_FIELDS, TIMESHEET_REVISION_DIFFERENCE_UNKNOWN, TIMESHEET_REVISION_DUE_MESSAGE, TIMESHEET_REVISION_DUE_NOTICE_MESSAGE, TIMESHEET_REVISION_DUE_NOTICE_TITLE, TIMESHEET_REVISION_DUE_REPORT_LABEL, TIMESHEET_REVISION_DUE_REVIEWER_MESSAGE, TIMESHEET_REVISION_DUE_STATUS, TIMESHEET_REVISION_EXTRAS_MESSAGE, TIMESHEET_REVISION_FIELDS, TIMESHEET_REVISION_LIMIT_MESSAGE, TIMESHEET_REVISION_MAX, TIMESHEET_REVISION_NOTICE_MESSAGE, TIMESHEET_REVISION_NOTICE_TITLE, TIMESHEET_REVISION_NOTICE_TYPE, TIMESHEET_REVISION_NOT_EXPORTED_MESSAGE, TIMESHEET_REVISION_NOT_REVIEWER_MESSAGE, TIMESHEET_REVISION_OPEN_MESSAGE, TIMESHEET_REVISION_SUFFIX, canCreateTimesheetRevision, isTimesheetRevisionDocId, parseTimesheetRevisionDocId, timesheetEarlierVersions, timesheetExportedTotal, timesheetInvoiceNumber, timesheetInvoiceNumberForRevision, timesheetLatestVersion, timesheetRevisionCreateFields, timesheetRevisionDifference, timesheetRevisionDocId, timesheetRevisionDue, timesheetRevisionDueNoticeId, timesheetRevisionLabel, timesheetRevisionLabourReviews, timesheetRevisionNoticeKey, timesheetRevisionReportState, timesheetRevisionToSignRecipients, timesheetRevisionWaitingLabel, timesheetSheetIsRevision, timesheetVersionSignedOff, timesheetVersionsForPeriod
+Exports removed: none
+Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/notificationPreferences.ts, lib/canonical/notificationRecipients.ts, lib/canonical/payrunSnapshot.ts, lib/canonical/recordsDocuments.ts, lib/canonical/timesheetBookingChanges.ts, lib/canonical/timesheetBookingNotice.ts, lib/canonical/timesheetLateExtras.ts, lib/canonical/timesheetPeriod.ts, lib/canonical/timesheetRevisions.ts, lib/canonical/timesheetSnapshot.ts, lib/canonical/weeklyReportPay.ts, lib/canonical/workDocumentReaders.ts
 Done when:
-- [ ] Packed hash in iOS equals f0c88bca37d8765270a2959087fcf4503303e77625cac36a103629d74f17d67e
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 4f55faaaad6e963a05eb6258695d72a03443f4d9f410aa6654c7a9b2cf45560b)
+- [ ] Packed hash in iOS equals 263e8ba84666bc2de7f7b707957dd4296749dfa17e0d1e34e0798ca73396b2bf
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 080efa017700745dcceaa59b0fd49a875eb0f06c74101dc54312fbc0ef3d03f7)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.55.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -41,7 +41,7 @@ Done when:
 - New notice type `timesheet_revision_to_sign` (push, toggle timesheetSignOff, opens My Timesheets).
 - **Owner answers 16 Nov** (same release): J4 changed — the weekly report and Payrun Snapshot use the latest version and the latest bookings; a revision due or open is not approved (`timesheetRevisionReportState`, `TIMESHEET_REVISION_DUE_REPORT_LABEL`, `timesheetRevisionWaitingLabel`; `timesheetReportVersion` and `pickTimesheetRowForPeriod`'s `versions` option removed). Finding 6 = (a): labour decisions are kept on a revision only for unchanged bookings (`timesheetRevisionLabourReviews`, `TimesheetRevisionLiveLine`, `timesheetRevisionCreateFields` `liveLines`); rules: a revision's `payrollLineReviews` may only drop entries of the previous version's.
 - **Review of #344** (before merge): the person never changes a revision's price work, expenses or late extras (rules `tsRevKept`; `timesheetOwnerCanAddExtras` / `canEditTimesheetEntry` / `timesheetOwnerCanAddLateExtras` refuse a revision, `timesheetSheetIsRevision`, `TIMESHEET_REVISION_EXTRAS_MESSAGE`); `timesheetExportedTotal` is null without a signed snapshot and the difference reads `TIMESHEET_REVISION_DIFFERENCE_UNKNOWN`; revisions are priced `decided`; stored nulls copied exactly; a pending late extra on an unsigned revision is with the person (`timesheetLateExtrasSummary`); versions are exported by the rules' test (`resolveTimesheetExportedAtMs`, invoice leftover rule); `timesheetVersionSignedOff` (self-signed with a snapshot) for `timesheetReportVersion` and the Payrun Snapshot; `timesheetInvoiceNumber({ documentId, userId })` from the stored original; `parseTimesheetRevisionDocId` (in `timesheetPeriod.ts`, used by `pickTimesheetRowForPeriod`) refuses `_rev0` / `_rev01`; the notice function completes a version chain cut by its query limit (`sheet` store read).
-- Security rules (on top of 1.54.1): `tsRevCreate` (the previous version exported by the 1.54.1 leftover rule, `tsExportedIn`), `tsRevKept`; the settings match's helpers renamed `timesheet…` → `ts…` and a few equivalent simplifications for the byte budget (`docs/firestore-rules-notes.md` "1.55.0 revisions"); no other allow/deny change.
+- Security rules (on top of 1.54.2): `tsRevCreate` (the previous version exported by the 1.54.1 leftover rule, `tsExportedIn`), `tsRevKept`; the settings match's helpers renamed `timesheet…` → `ts…` and a few equivalent simplifications for the byte budget (`docs/firestore-rules-notes.md` "1.55.0 revisions"); no other allow/deny change.
 
 ## iOS work for 1.55.0
 
@@ -65,6 +65,9 @@ Timesheet revisions (REV 1, REV 2, …), rulebook §8 "Timesheet revisions", §1
    - "Exported" for revisions is `resolveTimesheetExportedAtMs(data) != null` (invoice leftover rule), via `timesheetVersionsForPeriod`.
    - `parseTimesheetRevisionDocId` refuses `_rev0` / `_rev01` (treat such an id as no version).
 
+## New rulebook sections
+
+- 1.55.0 — 2026-11-16
 
 ## Workflow for the iOS agent
 

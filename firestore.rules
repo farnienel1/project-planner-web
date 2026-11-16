@@ -1720,9 +1720,17 @@ service cloud.firestore {
 
       match /settings/{settingId} {
 
+        function tsId() {
+          return settingId.matches('^timesheet_.*');
+        }
+        function tsOwn() {
+          return settingId.matches('^timesheet_' + request.auth.uid + '_.*');
+        }
         function tsUid() {
           return resource != null && resource.data.get('userId', null) is string
             ? resource.data.userId
+            : resource == null && request.method == 'get'
+            ? settingId.split('_')[1:settingId.split('_').size() - (settingId.matches('.*_rev[1-9][0-9]?$') ? 2 : 1)].join('_')
             : request.resource.data.get('userId', null);
         }
         function tsIdIsCallers(id) {
@@ -1733,14 +1741,11 @@ service cloud.firestore {
           return (home.get('formerUserIds', []) is list && id in home.get('formerUserIds', [])) ||
             (home.get('sameEmailUserIds', []) is list && id in home.get('sameEmailUserIds', []));
         }
-
         function tsIsSubject() {
           return (request.auth != null && (
             (resource != null && 'userId' in resource.data && resource.data.userId == request.auth.uid) ||
-            (request.method == 'create' &&
-             'userId' in request.resource.data &&
-             request.resource.data.userId == request.auth.uid) ||
-            settingId.matches('^timesheet_' + request.auth.uid + '_.*')
+            (request.method == 'create' && 'userId' in request.resource.data && request.resource.data.userId == request.auth.uid) ||
+            tsOwn()
           )) || (tsUid() is string && tsIdIsCallers(tsUid()));
         }
         function tsKeepsSubject() {
@@ -1763,47 +1768,24 @@ service cloud.firestore {
           let uid = tsUid();
           return uid is string && timesheetIdNames(uid) && (orgCreatorIs(organizationId, uid) || orgSelfManageFlag(uid, organizationId, 'timesheetSelfSign', true));
         }
-
         function tsReviewer() {
           let hp0 = /databases/(default)/documents/users/$(tsUid());
-          return (
-            orgAdminEither(organizationId) || (
-              !callerHomeIsOperative() &&
-              tsUid() is string &&
-              exists(hp0) &&
-              lineManagerIdList(get(hp0).data).hasAny(
-                [request.auth.uid].concat(
-                  callerHomeData().get('formerUserIds', []) is list && homeOrgIs(callerHomeData(), organizationId)
-                    ? callerHomeData().get('formerUserIds', [])
-                    : []
-                )
-              )
-            )
-          );
+          return orgAdminEither(organizationId) || (!callerHomeIsOperative() && tsUid() is string && exists(hp0) &&
+            lineManagerIdList(get(hp0).data).hasAny([request.auth.uid].concat(
+              callerHomeData().get('formerUserIds', []) is list && homeOrgIs(callerHomeData(), organizationId) ? callerHomeData().get('formerUserIds', []) : [])));
         }
         function tsSame(key) {
-          return sameLooseValue(
-            request.resource.data.get(key, null),
-            resource == null ? '' : resource.data.get(key, null)
-          );
+          return sameLooseValue(request.resource.data.get(key, null), resource == null ? '' : resource.data.get(key, null));
         }
         function tsSameInstant(key) {
-          return resource == null ? request.resource.data.get(key, null) == null : sameInstantValue(
-            request.resource.data.get(key, null),
-            resource.data.get(key, null)
-          );
+          return resource == null ? request.resource.data.get(key, null) == null : sameInstantValue(request.resource.data.get(key, null), resource.data.get(key, null));
         }
-
         function tsEmptyish(value) {
           return value == null || value == {};
         }
         function tsOwnerLeaves(key, written) {
-          return !(key in written) || (
-            tsEmptyish(request.resource.data.get(key, null)) &&
-            (resource == null || tsEmptyish(resource.data.get(key, null)))
-          );
+          return !(key in written) || (tsEmptyish(request.resource.data.get(key, null)) && (resource == null || tsEmptyish(resource.data.get(key, null))));
         }
-
         function tsOwnerReviewsKept() {
           let written = writtenKeys();
           return tsOwnerLeaves('payrollLineReviews', written) &&
@@ -1863,25 +1845,23 @@ service cloud.firestore {
             (writtenKeys().hasOnly(['updatedAt', 'updatedBy', 'updatedFrom', 'exportedAt']) && tsSameInstant('exportedAt'));
         }
 
-        allow read: if canAccessOrganization(organizationId) && ((resource.data.get('userId', null) == request.auth.uid && (request.method == 'list' || settingId.matches('^timesheet_.*'))) ||
+        allow read: if canAccessOrganization(organizationId) && (resource == null && tsId() ? (!privatePayOn(organizationId) ||
+          tsOwn() || orgAdminEither(organizationId) || isPlatformOwner() ||
+          tsReviewer() || canViewPayOfAsMember(tsUid())) : (resource.data.get('userId', null) == request.auth.uid && (request.method == 'list' || tsId())) ||
           (!settingId.matches('^variation(s|Item)_.*') || canAccessVariationsStaff(organizationId)) &&
-          (!settingId.matches('^timesheet_.*') || (!privatePayOn(organizationId) || (request.auth != null &&
-            settingId.matches('^timesheet_' + request.auth.uid + '_.*')) ||
+          (!tsId() || (!privatePayOn(organizationId) || (request.auth != null &&
+            tsOwn()) ||
             orgAdminEither(organizationId) || isPlatformOwner() ||
             (tsUid() is string && canViewPayOfAsMember(tsUid())) ||
             (!tsIsSubject() && tsReviewer()))));
         allow create, update, delete: if canAccessOrganization(organizationId) && ((request.method == 'create' && settingId.matches('^timesheet_.+_rev[1-9][0-9]?$')) ? tsRevCreate() : (
           (request.method == 'create' || tsRevKept()) ? (
           (request.method != 'delete') ? ((
-          (settingId.matches('^timesheet_.*'))
+          tsId()
             ? (isPlatformOwner() || (timesheetSubjectFiled() && timesheetExportedFrozen() && (tsIsSubject() ? (
             tsKeepsSubject() && (
-              ((tsSameInstant('managerSignedAt') &&
-            tsSame('managerSignedByName') &&
-            tsSame('managerSignedByUserId') &&
-            tsSame('managerSignatureImageBase64') &&
-            tsSameInstant('approvedAt') &&
-            tsSame('approvedByName') &&
+              ((tsSameInstant('managerSignedAt') && tsSame('managerSignedByName') && tsSame('managerSignedByUserId') &&
+            tsSame('managerSignatureImageBase64') && tsSameInstant('approvedAt') && tsSame('approvedByName') &&
             tsSameInstant('exportedAt')) && tsOwnerReviewsKept()) ||
               tsSelfSignedWrite()
             )
@@ -1889,13 +1869,11 @@ service cloud.firestore {
             : (request.resource.data.get('userId', null) == (resource == null ? null : resource.data.get('userId', null)) &&
               (settingId.matches('(deadlines_|healthSafety_).*|deadlineAssignments') || canAccessVariationsStaff(organizationId)))
         )) : ((
-          (settingId.matches('^timesheet_.*'))
+          tsId()
             ? (isPlatformOwner() || (tsIsSubject() ? (
             (resource.data.get('userId', null) == null || (tsUid() is string && tsIdIsCallers(tsUid()))) &&
-            resource.data.get('managerSignedAt', null) == null &&
-            resource.data.get('exportedAt', null) == null &&
-            tsEmptyish(resource.data.get('payrollLineReviews', null)) &&
-            tsEmptyish(resource.data.get('extraEntryReviews', null))
+            resource.data.get('managerSignedAt', null) == null && resource.data.get('exportedAt', null) == null &&
+            tsEmptyish(resource.data.get('payrollLineReviews', null)) && tsEmptyish(resource.data.get('extraEntryReviews', null))
           ) : (tsReviewer() && !timesheetStoredExported())))
             : (settingId.matches('(deadlines_|healthSafety_).*|deadlineAssignments') || (!settingId.matches('^variation(s|Item)_.*') && canAccessVariationsStaff(organizationId)))
         ))) : false));
