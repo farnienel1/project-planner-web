@@ -158,7 +158,7 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
       set({ loading: false })
     } catch (error: unknown) {
       set({
-        error: error instanceof Error ? error.message : 'Failed to load holiday bookings',
+        error: error instanceof Error ? error.message : 'Failed to load annual leave',
         loading: false,
         loadedOrgId: organizationId,
       })
