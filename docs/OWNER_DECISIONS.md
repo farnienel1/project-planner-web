@@ -847,7 +847,7 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 | 16 Nov | J2 The rules cannot see whether a booking really changed: the person could create a revision with nothing changed — it shows "+£0.00" and still needs the line manager's counter-signature. | done, owner to confirm |
 | 16 Nov | J3 Invoices had no number before 1.55.0; every invoice (old sheets included) now shows a derived number `TS-{pay run first day}-{first 6 letters/digits of the person's id}`, revisions "-REV1". | done, owner to confirm |
 | 16 Nov | J4 While a revision is open (not yet signed off), the weekly report and Payrun Snapshot keep using the previous exported version. | done, owner to confirm |
-| 16 Nov | J5 The difference is not stored: it is worked out from the previous (frozen) version when shown, so it cannot be forged. | done |
+| 16 Nov | J5 The difference is not stored (the brief suggested a stored `previousExportedTotal`): it is worked out from the previous (frozen) version when shown, so it cannot be forged. | done, owner to confirm |
 | 16 Nov | J6 An open revision can be deleted by a reviewer (admin or line manager), never by the person. No screen offers it yet. | done (rules), owner to confirm |
 
 ## Open questions for the owner
