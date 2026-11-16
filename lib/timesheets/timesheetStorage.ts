@@ -1065,7 +1065,7 @@ export async function stampTimesheetExport({
   userId,
   weekStart,
   draft,
-  timeZone = LONDON_TIME_ZONE,
+  timeZone,
   documentId = null,
 }: {
   organizationId: string
@@ -1073,7 +1073,8 @@ export async function stampTimesheetExport({
   weekStart: Date
   /** The prepared sheet: its `weeklyReportOverride` and `exportedAt` are written. */
   draft: TimesheetDraft
-  timeZone?: string
+  /** The organisation's business time zone (required: never a London default). */
+  timeZone: string
   documentId?: string | null
 }): Promise<TimesheetExportStampResult> {
   const writerId = auth?.currentUser?.uid || ''
