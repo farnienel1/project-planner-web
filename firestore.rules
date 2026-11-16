@@ -1723,6 +1723,8 @@ service cloud.firestore {
         function timesheetSubjectUid() {
           return resource != null && resource.data.get('userId', null) is string
             ? resource.data.userId
+            : resource == null && request.method == 'get'
+            ? settingId.split('_')[1:settingId.split('_').size() - 1].join('_')
             : request.resource.data.get('userId', null);
         }
         function timesheetIdIsCallers(id) {
@@ -1842,7 +1844,9 @@ service cloud.firestore {
             (writtenKeys().hasOnly(['updatedAt', 'updatedBy', 'updatedFrom', 'exportedAt']) && timesheetSameInstant('exportedAt'));
         }
 
-        allow read: if canAccessOrganization(organizationId) && ((resource.data.get('userId', null) == request.auth.uid && (request.method == 'list' || settingId.matches('^timesheet_.*'))) ||
+        allow read: if canAccessOrganization(organizationId) && (resource == null && settingId.matches('^timesheet_.*') ? (!privatePayOn(organizationId) ||
+          settingId.matches('^timesheet_' + request.auth.uid + '_.*') || orgAdminEither(organizationId) || isPlatformOwner() ||
+          timesheetReviewerOfOthers() || canViewPayOfAsMember(timesheetSubjectUid())) : (resource.data.get('userId', null) == request.auth.uid && (request.method == 'list' || settingId.matches('^timesheet_.*'))) ||
           (!(settingId.matches('^variations_.*') || settingId.matches('^variationItem_.*')) || canAccessVariationsStaff(organizationId)) &&
           (!settingId.matches('^timesheet_.*') || (!privatePayOn(organizationId) || (request.auth != null && (
             (resource != null && 'userId' in resource.data && resource.data.userId == request.auth.uid) ||

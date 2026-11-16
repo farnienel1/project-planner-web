@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.54.1
+# iOS follow-on — rulebook 1.54.2
 
 Generated 2026-11-16 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.54.0 → 1.54.1
-Packed hash: d4d2e9205092be779dbe25d3a37e5d3f6091a04ecfec9eb2308d5a6379e5a3f0
-Rulebook sha256: 3069636d7acb9d0cae97c530a7c63781a7c4b41657d87e4e7bce178b9b0dc02c
+Rulebook version: 1.54.1 → 1.54.2
+Packed hash: a7c8ceea7ccd6bcad182c6a8ff344226ab003a45478dec684f2fa60e73f046f9
+Rulebook sha256: 7153b29f8f62d01e1b1ff933d9306b99ee4eef7f7fc2c198e3eb892ffc08b5a0
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -24,41 +24,24 @@ Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e
 Call: CanonicalBusinessEngine — no second calculator in Swift.
 Exports added: none
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/canonical.test.ts, lib/canonical/timesheetPeriod.ts, storage.rules
+Web files that changed the rules: docs/RULEBOOK.md, firestore.rules
 Done when:
-- [ ] Packed hash in iOS equals d4d2e9205092be779dbe25d3a37e5d3f6091a04ecfec9eb2308d5a6379e5a3f0
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 3069636d7acb9d0cae97c530a7c63781a7c4b41657d87e4e7bce178b9b0dc02c)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.54.1)
+- [ ] Packed hash in iOS equals a7c8ceea7ccd6bcad182c6a8ff344226ab003a45478dec684f2fa60e73f046f9
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 7153b29f8f62d01e1b1ff933d9306b99ee4eef7f7fc2c198e3eb892ffc08b5a0)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.54.2)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.54.1
+## What changed in 1.54.2
 
-- **Measurements:** static compile cost 230,289 (main, 1.54.0) → **231,835** (CI budget 245,000); `firestore.rules` 147,533 bytes, `firestoreRulesMaxBytes` raised 147,456 → 148,480 (no comment left to move; reason in `scripts/rules-budget.json`); emulator type check 0 issues; `RULES_STRICT_BUDGET=1` the same 6 limit refusals as main.
-- **Review of #334** (before merge): ids compared part by part (`timesheetIdNames`, never a regex built from `userId`); a timesheet export's name must start with the uploader's own uid unless an admin uploads it; Storage never locks the platform owner out of a lapsed or scheduled-for-deletion organisation (§19); the export email goes to the token's email (the screen sends `auth.currentUser.email`). The email function's `timesheet_export` template sends only to the caller's own sign-in email (recipient rule `self`; it allowed up to 5 active members; iOS sends only to the exporter, `InvoicingView` `to: [exporter email]`).
-- **Timesheets filed under the person they name** (§16, platform scan 16 Nov, HIGH): `timesheetSubjectFiled` — a create's id must start `timesheet_{userId}_` for the `userId` written (else the caller's id), owners and reviewers alike; an update never changes `userId` except adding a missing one the id names. Before, any member could create `timesheet_{colleague}_{period}` under their own `userId`, blocking the colleague's sheet and showing injected entries as theirs; a reviewer could refile a sheet under someone else (LOW). Emulator tests in `tests/timesheetSettings.rules.test.ts`.
-- **Storage roles per organisation, deactivation, billing and deletion** (§16, §24, HIGH / MEDIUM): `storage.rules` `orgMember`, `adminLike`, `isOperativeHere`, `staffLike`, `orgFileAdmin`, `claimAdmin` read the users-document flags only on the users document of this organisation, else the `members` entry; `orgOpen` and `membershipActive` refuse a deactivated person and a lapsed or scheduled-for-deletion organisation.
-- **Timesheet export PDFs** (§8, §16, §24, HIGH): read by admins and the exporter only; `timesheetExportStoragePath` takes the exporter's uid (`{uid}_{seconds}_{file}`; web `timesheetExportPath` now calls it).
-- **Eraser** (§20, MEDIUM): a person whose users document names the erased organisation is kept when another organisation's `members` map lists them or they created it, not only when they have a membership document there (`functions/organizationEraser.js` `listingOrgIds`).
-- **Export email** (§16, MEDIUM): the web route sends to the signed-in user's own email only (`timesheetExportRecipientCheck`), with the stored organisation name, `safeExternalUrl` links and one `requestId` for the send and its retry.
-- **Exported timesheets locked** (§8, §16, MEDIUM; separate commit, owner to confirm; whole-sheet freeze after the review of #334): `timesheetExportedFrozen` replaces `timesheetReviewerKeepsExportedLate` — once a sheet is exported nobody but the platform owner changes any field except `updatedAt`, `updatedBy`, `updatedFrom` (and `exportedAt` resent as the same instant within a second), owners and reviewers alike, late extras or not. **Exported** follows the apps (`resolveTimesheetExportedAtMs`): `timesheetStoredExported` ignores an `exportedAt` within a minute of `invoiceGeneratedAt` (an old web build's copy) or before 2020, and reads a number below 10¹² as seconds.
-- **Notifications create** (§16, LOW): not tightened — see `docs/firestore-rules-notes.md` "1.54.1".
-- **Security rules hardening** (§16; pre-launch follow-ups from 1.31.1; built as 1.53.1, never released, folded in here). (1) An admin's update of another person's users document checks privilege values like the create and operatives-manager paths (the person's own update keeps its own no-raise checks) (`privilegeWriteTyped`: a written or changed privilege key, top level or `permissions`, is a bool or null; a written role is one the apps write); one check now serves the admin and the operatives-manager paths. (2) `members` on the organisation document: a written value is a role word; a legacy value stored on one entry can no longer be copied onto another (`membersValuesTyped` counts the non-role values). (3) Nobody switches their own Annual Leave Management or Timesheet self-sign off, non-admins included (admins since 1.31.1; the value in effect is compared, so a save writing it back passes). (4) A redundant platform-owner test in the settings read rule is removed (same decision). The Super Admin's own document (the creator, or a stored `isSuperAdmin`) keeps its exemption, so a Super Admin transfer from a legacy founder document still saves. New suite `tests/rulesHardening.rules.test.ts`. Static compile cost for the whole of 1.54.1: see the first bullet.
-
-## iOS work for 1.54.1
-
-**Sync first.** 1.54.1 (pre-launch hardening, platform scan 16 Nov). Rules, Storage rules, the eraser and a web route; iOS has two small changes. Line numbers are from iOS `main` (16 Nov); check them on your branch.
-
-1. **Sync.** `WEB_REPO=<web worktree> bash scripts/sync-rulebook-from-web.sh`, then commit the mirrored files.
-2. **Timesheet export file name** (§24, §16): `FirebaseBackend.swift` `uploadTimesheetExportPDF` (~3306) calls `CanonicalBusinessEngine.timesheetExportStoragePath(organizationId:fileName:stampSeconds:)`; pass the signed-in uid as the new 4th argument (`uploaderUid: Auth.auth().currentUser?.uid`; the wrapper in `Canonical/CanonicalBusinessEngine.swift` ~2319 adds the parameter). The Storage rules now let only admins and the exporter read an export, so without it a line manager who is not an admin gets "backup skipped" (no download link in the email; the PDF is still attached and stored).
-3. **Notifications carry the actor** (§13, groundwork for a later rules release): `FirebaseBackend.saveNotification` (~6960) defaults `actorUserId` to nil and many callers leave it out. Pass the signed-in uid on every row the person causes; leave it out only for the scheduled types (`timesheet_submission_reminder`, `deadline_reminder`, `deadline_due`). The rules do not require it yet.
-4. **Nothing else changes on iOS.** Timesheet saves already file a sheet under the `userId` they write (`timesheetDocumentId(userId:…)` with `periodFields.userId`), so the new create check never refuses an iPhone save; reviewers never write `userId`.
+- **A missing timesheet is decided by its id** (§16, hotfix; `privatePay` is on for every company): `timesheetSubjectUid` on a read of a document that does not exist takes the person from the id (`timesheet_{uid}_{period}`), and the settings read rule decides a missing `timesheet_*` id on its own branch — `!privatePayOn` (every member, as before), the id's own person, admins, the platform owner, the person's line managers (`timesheetReviewerOfOthers`) and pay viewers (`canViewPayOfAsMember`). Before, the read dereferenced the missing document (`request.resource`), so with `privatePay` on a line manager's read of a report's not-yet-created sheet was refused. Web `loadTimesheetDraftByCandidates` reads several candidate ids in parallel and throws on any refusal, so line managers could not open any report's timesheet on web (and Export stopped); iOS `loadTimesheetState` reads one id, so a report's period with no sheet yet showed "Couldn't load this timesheet". Admins and the person themselves were never affected. Nothing else is opened: an existing sheet keeps its rule, and a missing sheet of someone the caller does not line-manage (or an id naming no users document) stays refused.
+- **Measurements:** static compile cost 231,835 → **234,997** (CI budget 245,000); `firestore.rules` 147,533 → 147,978 bytes (budget 148,480, unchanged); emulator type check 0 issues; suites all pass on a fresh emulator per suite (new suite 10/10); `RULES_STRICT_BUDGET=1` 5 limit refusals against main's 6 (1.13.0 Q1's privatePay timesheet read is now a logical denial), none new.
 
 ## New rulebook sections
 
-- 1.54.1 — 2026-11-16
+- 1.54.2 — 2026-11-16
 
 ## Workflow for the iOS agent
 
