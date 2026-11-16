@@ -25,6 +25,8 @@ import type { SignedTimesheetBookingChanges } from './timesheetBookingChanges'
 import {
   parseTimesheetEntryReviews,
   timesheetEntryEffectiveAmount,
+  timesheetEntryReviewKeyUsable,
+  timesheetSignedEntryKeys,
   timesheetEntryFingerprint,
   timesheetEntryReviewFor,
   type TimesheetEntryDecision,
@@ -50,6 +52,8 @@ export const TIMESHEET_LATE_EXTRA_DECLINED_LABEL = 'Added after sign-off — dec
  * paid and never reviewed; both sides see this instead of a decision.
  */
 export const TIMESHEET_LATE_EXTRA_ID_TAKEN_LABEL = "Can't be reviewed — same reference as a signed item"
+/** Fourth review of #337: a late extra whose id cannot be a review key (`timesheetEntryReviewKeyUsable`). */
+export const TIMESHEET_LATE_EXTRA_ID_UNUSABLE_LABEL = "Can't be reviewed — delete it and add it again"
 /** The reviewer's prompt while late extras wait for them. */
 export const TIMESHEET_LATE_EXTRAS_REVIEWER_MESSAGE =
   'Price work or expenses were added after this timesheet was signed. Approve or decline each one — only what you approve is paid.'
@@ -90,7 +94,7 @@ export type TimesheetLateExtraDecisionResult = {
   revisedAmount: number | null
   /** What it pays now (0 unless approved). */
   paid: number
-  reason: 'review' | 'no-review' | 'stale-review' | 'not-late-review' | 'id-taken' | 'no-kind' | 'no-id'
+  reason: 'review' | 'no-review' | 'stale-review' | 'not-late-review' | 'id-taken' | 'id-unusable' | 'no-kind' | 'no-id'
 }
 
 /**
@@ -115,17 +119,6 @@ export function timesheetLateExtraFingerprintMap(
   return out
 }
 
-function signedEntryIds(sheet: Record<string, unknown>): Set<string> {
-  const ids = new Set<string>()
-  for (const key of ['priceWorkEntries', 'expenseEntries']) {
-    for (const row of rowsOf(sheet[key])) {
-      const id = normalizeDocumentId(row.id)
-      if (id) ids.add(id)
-    }
-  }
-  return ids
-}
-
 /**
  * The decision in effect for ONE late extra (`entry`, as stored in `lateExtras`) on `sheet` (the stored document):
  * only a review in `extraEntryReviews` written for a late extra (`lateExtra: true`) with a `reviewedFingerprint` equal to
@@ -136,7 +129,12 @@ function signedEntryIds(sheet: Record<string, unknown>): Set<string> {
 export function timesheetLateExtraDecision(
   sheet: Record<string, unknown> | null | undefined,
   entry: Record<string, unknown> | null | undefined,
-  trustedFingerprint?: string | null
+  trustedFingerprint?: string | null,
+  /**
+   * Fourth review of #337: the sheet's document id, so a signed entry stored without an id is matched by its derived id
+   * (`timesheetSignedEntryKeys`). An app's loaded copy already carries the derived ids.
+   */
+  options: { sheetDocId?: string | null } = {}
 ): TimesheetLateExtraDecisionResult {
   const row = entry || {}
   const pending = (reason: TimesheetLateExtraDecisionResult['reason']): TimesheetLateExtraDecisionResult => ({
@@ -158,7 +156,10 @@ export function timesheetLateExtraDecision(
   const id = text(row.id)
   if (!id) return ignored('no-id')
   const data = sheet && typeof sheet === 'object' ? sheet : {}
-  if (signedEntryIds(data).has(normalizeDocumentId(id))) return ignored('id-taken')
+  // Fourth review of #337: a late extra nobody can decide is ignored, never left waiting — an id that cannot be a review
+  // key, or one that matches a signed entry's stored or derived id (without case). The writer refuses both too.
+  if (!timesheetEntryReviewKeyUsable(id)) return ignored('id-unusable')
+  if (timesheetSignedEntryKeys(data, options.sheetDocId).has(normalizeDocumentId(id))) return ignored('id-taken')
   const review = timesheetEntryReviewFor(parseTimesheetEntryReviews(data), id)
   if (!review) return pending('no-review')
   if (!review.lateExtra || !review.reviewedFingerprint) return pending('not-late-review')
@@ -186,7 +187,7 @@ export type TimesheetLateExtraRow = {
  */
 export function timesheetLateExtraRows(
   sheet: Record<string, unknown> | null | undefined,
-  options: { entryFingerprints?: Record<string, string> | null } = {}
+  options: { entryFingerprints?: Record<string, string> | null; sheetDocId?: string | null } = {}
 ): TimesheetLateExtraRow[] {
   const data = sheet && typeof sheet === 'object' ? sheet : {}
   const seen = new Set<string>()
@@ -199,7 +200,7 @@ export function timesheetLateExtraRows(
     const trusted = options.entryFingerprints ? options.entryFingerprints[timesheetLateExtraFingerprintKey(id)] ?? null : null
     const decision = seen.has(key)
       ? ({ state: 'ignored', decision: 'pending', revisedAmount: null, paid: 0, reason: 'id-taken' } as const)
-      : timesheetLateExtraDecision(data, row, trusted)
+      : timesheetLateExtraDecision(data, row, trusted, { sheetDocId: options.sheetDocId })
     seen.add(key)
     out.push({ id, kind, row, decision })
   }
@@ -221,7 +222,7 @@ export function parseTimesheetLateExtras(
   options?: { timeZone?: string | null; organizationId?: string | null; ownerUserIds?: ReadonlyArray<unknown> | null } | null
 ): TimesheetLateExtraEntryDocument[] {
   const data = sheet && typeof sheet === 'object' ? sheet : {}
-  const rows = timesheetLateExtraRows(data)
+  const rows = timesheetLateExtraRows(data, { sheetDocId })
   const byId = new Map(rows.map((row) => [normalizeDocumentId(row.id), row]))
   const raw = rowsOf(data[TIMESHEET_LATE_EXTRAS_FIELD]).filter((row) => timesheetLateExtraKind(row) && text(row.id))
   const parsed = parseTimesheetEntries(
@@ -271,7 +272,7 @@ export type TimesheetLateExtrasSnapshotRow = {
 /** The signed snapshot's money rows for the approved late extras (what the reviewer's approving save writes). */
 export function timesheetLateExtrasSnapshotRows(
   sheet: Record<string, unknown> | null | undefined,
-  options: { entryFingerprints?: Record<string, string> | null } = {}
+  options: { entryFingerprints?: Record<string, string> | null; sheetDocId?: string | null } = {}
 ): { priceWork: TimesheetLateExtrasSnapshotRow[]; expenses: TimesheetLateExtrasSnapshotRow[] } {
   const priceWork: TimesheetLateExtrasSnapshotRow[] = []
   const expenses: TimesheetLateExtrasSnapshotRow[] = []
@@ -304,7 +305,7 @@ export function timesheetLateExtrasSnapshotRows(
 export function timesheetSnapshotMoneyRowsCurrent<R extends { id?: unknown; amount?: unknown; lateExtra?: unknown }>(
   sheet: Record<string, unknown> | null | undefined,
   rows: ReadonlyArray<R>,
-  options: { entryFingerprints?: Record<string, string> | null; exportedAtStored?: boolean | null } = {}
+  options: { entryFingerprints?: Record<string, string> | null; exportedAtStored?: boolean | null; sheetDocId?: string | null } = {}
 ): R[] {
   const data = sheet && typeof sheet === 'object' ? sheet : {}
   const exported = typeof options.exportedAtStored === 'boolean' ? options.exportedAtStored : timesheetExportedFieldSet(data.exportedAt)
@@ -338,7 +339,7 @@ export type TimesheetLateExtrasSummary = {
  */
 export function timesheetLateExtrasSummary(
   sheet: Record<string, unknown> | null | undefined,
-  options: { entryFingerprints?: Record<string, string> | null; exportedAtStored?: boolean | null } = {}
+  options: { entryFingerprints?: Record<string, string> | null; exportedAtStored?: boolean | null; sheetDocId?: string | null } = {}
 ): TimesheetLateExtrasSummary {
   const data = sheet && typeof sheet === 'object' ? sheet : {}
   const rows = timesheetLateExtraRows(data, options)
@@ -431,6 +432,7 @@ export function timesheetLateExtraLabel(
   if (decision.state === 'approved') return TIMESHEET_LATE_EXTRA_APPROVED_LABEL
   if (decision.state === 'declined') return TIMESHEET_LATE_EXTRA_DECLINED_LABEL
   if (decision.state === 'pending') return TIMESHEET_LATE_EXTRA_WAITING_LABEL
+  if (decision.state === 'ignored' && decision.reason === 'id-unusable') return TIMESHEET_LATE_EXTRA_ID_UNUSABLE_LABEL
   if (decision.state === 'ignored' && (decision.reason == null || decision.reason === 'id-taken')) return TIMESHEET_LATE_EXTRA_ID_TAKEN_LABEL
   return null
 }

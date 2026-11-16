@@ -544,6 +544,7 @@ var ProjectPlannerCanonical = (() => {
     TIMESHEET_LATE_EXTRA_APPROVED_LABEL: () => TIMESHEET_LATE_EXTRA_APPROVED_LABEL,
     TIMESHEET_LATE_EXTRA_DECLINED_LABEL: () => TIMESHEET_LATE_EXTRA_DECLINED_LABEL,
     TIMESHEET_LATE_EXTRA_ID_TAKEN_LABEL: () => TIMESHEET_LATE_EXTRA_ID_TAKEN_LABEL,
+    TIMESHEET_LATE_EXTRA_ID_UNUSABLE_LABEL: () => TIMESHEET_LATE_EXTRA_ID_UNUSABLE_LABEL,
     TIMESHEET_LATE_EXTRA_WAITING_LABEL: () => TIMESHEET_LATE_EXTRA_WAITING_LABEL,
     TIMESHEET_MANAGER_SIGN_OFF_FIELDS: () => TIMESHEET_MANAGER_SIGN_OFF_FIELDS,
     TIMESHEET_NOTIFY_DAYS_BEFORE_PAYMENT: () => TIMESHEET_NOTIFY_DAYS_BEFORE_PAYMENT,
@@ -1640,6 +1641,7 @@ var ProjectPlannerCanonical = (() => {
     timesheetEntryFingerprintMap: () => timesheetEntryFingerprintMap,
     timesheetEntryId: () => timesheetEntryId,
     timesheetEntryReviewFor: () => timesheetEntryReviewFor,
+    timesheetEntryReviewKeyUsable: () => timesheetEntryReviewKeyUsable,
     timesheetEntryReviewWriteFields: () => timesheetEntryReviewWriteFields,
     timesheetEntryReviewsAfterWrite: () => timesheetEntryReviewsAfterWrite,
     timesheetEvidenceOwnerIds: () => timesheetEvidenceOwnerIds,
@@ -1682,6 +1684,7 @@ var ProjectPlannerCanonical = (() => {
     timesheetRequiresManagerCounterSign: () => timesheetRequiresManagerCounterSign,
     timesheetSelfSigned: () => timesheetSelfSigned,
     timesheetSignOffWriteFields: () => timesheetSignOffWriteFields,
+    timesheetSignedEntryKeys: () => timesheetSignedEntryKeys,
     timesheetSignedRecipients: () => timesheetSignedRecipients,
     timesheetSnapshotMoneyRowsCurrent: () => timesheetSnapshotMoneyRowsCurrent,
     timesheetSnapshotNeedsRebuild: () => timesheetSnapshotNeedsRebuild,
@@ -11541,6 +11544,724 @@ var ProjectPlannerCanonical = (() => {
     return left !== "" && left === overtimeFingerprintKey(b);
   }
 
+  // lib/canonical/storedFiles.ts
+  var FILE_UNDO_WINDOW_MINUTES = 15;
+  var FILE_UNDO_WINDOW_MS = FILE_UNDO_WINDOW_MINUTES * 60 * 1e3;
+  var FILE_KEPT_ON_REMOVE_COPY = "Removed from this list. The file itself is kept so an admin can restore it.";
+  var FILE_RECOVERY_RETENTION_DAYS = 30;
+  var DELETED_DATA_RETENTION_NOTICE = "A deleted company can be restored for 30 days, after which its data is erased. Deleted files, including the files of an erased company, are kept for up to 30 days so they can be recovered, then permanently removed.";
+  var STORED_FILE_KINDS = [
+    "profile_photo",
+    "company_logo",
+    "timesheet_export",
+    "qualification_certificate",
+    "variation_evidence",
+    "site_audit_photo",
+    "task_attachment",
+    "health_safety",
+    // 1.30.0 (§26): PAYE price work / expense evidence, and personal site audit photos (owner only).
+    "paye_claim_evidence",
+    "personal_site_audit"
+  ];
+  function text9(value) {
+    return typeof value === "string" ? value.trim() : "";
+  }
+  function storedFileKind(storagePath) {
+    const path = text9(storagePath);
+    if (!path || path.startsWith("/") || path.includes("..") || path.includes("//")) return null;
+    const parts3 = path.split("/");
+    if (parts3.length < 4 || parts3[0] !== "organizations" || !parts3[1]) return null;
+    const organizationId = parts3[1];
+    const objectName = parts3[parts3.length - 1];
+    if (!objectName) return null;
+    const rest = parts3.slice(2);
+    const base = { organizationId, objectName, ownerUserId: null };
+    if (rest.length === 3 && rest[0] === "userProfiles" && rest[2] === "profile.jpg" && rest[1]) {
+      return { ...base, kind: "profile_photo", ownerUserId: rest[1] };
+    }
+    if (rest.length === 3 && rest[0] === "branding" && rest[1] === "company_logo") return { ...base, kind: "company_logo" };
+    if (rest.length === 2 && rest[0] === "timesheetExports") return { ...base, kind: "timesheet_export" };
+    if (rest.length === 6 && rest[0] === "operatives" && rest[2] === "qualifications" && rest[4] === "certificates") {
+      return { ...base, kind: "qualification_certificate" };
+    }
+    if (rest.length === 4 && rest[0] === "healthSafety" && (rest[2] === "variations" || rest[2] === "variationEvidence")) {
+      return { ...base, kind: "variation_evidence" };
+    }
+    if (rest.length === 3 && rest[0] === "variations") return { ...base, kind: "variation_evidence" };
+    if (rest.length >= 2 && rest[0] === "siteAudits") return { ...base, kind: "site_audit_photo" };
+    if (rest.length >= 2 && rest[0] === "tasks") return { ...base, kind: "task_attachment" };
+    if (rest.length >= 2 && rest[0] === "healthSafety") return { ...base, kind: "health_safety" };
+    if (rest.length === 3 && rest[0] === "payeClaims" && rest[1]) return { ...base, kind: "paye_claim_evidence", ownerUserId: rest[1] };
+    if (rest.length >= 3 && rest[0] === "personalSiteAudits" && rest[1]) return { ...base, kind: "personal_site_audit", ownerUserId: rest[1] };
+    return null;
+  }
+  var UID_PATTERN = /^[A-Za-z0-9-]+$/;
+  function storedFileObjectName(input) {
+    const uid = text9(input.uid);
+    if (!uid || !UID_PATTERN.test(uid)) return null;
+    const ms = Math.floor(Number(input.unixMs));
+    if (!Number.isFinite(ms) || ms < 0) return null;
+    const ext = text9(input.extension).toLowerCase().replace(/^\.+/, "").replace(/[^a-z0-9]/g, "");
+    return ext ? `${uid}_${ms}.${ext}` : `${uid}_${ms}`;
+  }
+  function storedFileUploader(storagePath) {
+    const parsed = storedFileKind(storagePath);
+    if (!parsed) return null;
+    if (parsed.kind === "profile_photo") return parsed.ownerUserId ? { uploaderUserId: parsed.ownerUserId, uploadedAtMs: null } : null;
+    if (parsed.kind === "timesheet_export") return null;
+    const match = parsed.objectName.match(/^([A-Za-z0-9-]+)_([0-9]{1,16})(?:\.[A-Za-z0-9]+)?$/);
+    if (!match) return null;
+    return { uploaderUserId: match[1], uploadedAtMs: Number(match[2]) };
+  }
+  function isFileAdmin(role) {
+    if (!role || role.isOperativeMode) return false;
+    return role.isSuperAdmin === true || role.isAdmin === true;
+  }
+  function fileDeletePermission(input) {
+    const viewer = text9(input.viewerUserId);
+    const deny = (reason, undoEndsAtMs2 = null) => ({
+      allowed: false,
+      reason,
+      undoEndsAtMs: undoEndsAtMs2
+    });
+    if (!viewer) return deny("signed_out");
+    const parsed = storedFileKind(input.storagePath);
+    if (!parsed) return deny("unknown_path");
+    const org = text9(input.organizationId);
+    if (!org || parsed.organizationId.toLowerCase() !== org.toLowerCase()) return deny("other_organization");
+    if (parsed.kind === "personal_site_audit" && parsed.ownerUserId !== viewer) return deny("owner_only");
+    if (parsed.kind !== "personal_site_audit" && isFileAdmin(input.viewerRole)) return { allowed: true, reason: "admin", undoEndsAtMs: null };
+    if (parsed.kind === "profile_photo") {
+      return parsed.ownerUserId === viewer ? { allowed: true, reason: "own_profile_photo", undoEndsAtMs: null } : deny("not_uploader");
+    }
+    if (parsed.kind === "company_logo" || parsed.kind === "timesheet_export") return deny("admin_only");
+    const uploader = storedFileUploader(input.storagePath);
+    if (!uploader || uploader.uploaderUserId !== viewer) return deny("not_uploader");
+    const given = Number(input.uploadedAtMs);
+    const uploadedAtMs = input.uploadedAtMs != null && Number.isFinite(given) ? given : uploader.uploadedAtMs;
+    if (uploadedAtMs == null) return deny("undo_expired");
+    const undoEndsAtMs = uploadedAtMs + FILE_UNDO_WINDOW_MS;
+    if (Number(input.nowMs) < undoEndsAtMs) return { allowed: true, reason: "uploader_undo", undoEndsAtMs };
+    return deny("undo_expired", undoEndsAtMs);
+  }
+
+  // lib/canonical/claimEvidence.ts
+  function text10(value) {
+    return value == null ? "" : String(value).trim();
+  }
+  function record3(value) {
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  }
+  var PAYE_CLAIM_EVIDENCE_FOLDER = "payeClaims";
+  var EXPENSE_EVIDENCE_REQUIRED_MESSAGE = "Add at least one piece of evidence (a file, photo or personal site audit).";
+  var PAYE_CLAIM_EVIDENCE_LIMIT_MESSAGE = "Up to 20 pieces of evidence.";
+  var PAYE_CLAIM_EVIDENCE_INVALID_MESSAGE = "Evidence must be uploaded to your own claim folder.";
+  var PAYE_CLAIM_EVIDENCE_NOT_DRAWN_NOTE = "This file type cannot be shown in the PDF. Open it in the app.";
+  var PAYE_CLAIM_EVIDENCE_UNREADABLE_NOTE = "This file could not be read when the report was made. Open it in the app.";
+  var PAYE_CLAIM_EVIDENCE_MAX = 20;
+  var CLAIM_EVIDENCE_NAME_MAX = 200;
+  var PAYE_CLAIM_EVIDENCE_KINDS = ["file", "photo", "personalSiteAudit"];
+  function payeClaimEvidencePath(input) {
+    const org = text10(input.organizationId);
+    const user = text10(input.userId);
+    if (!org || !user || org.includes("/") || user.includes("/")) return null;
+    const name = storedFileObjectName({ uid: user, unixMs: input.unixMs, extension: input.extension });
+    return name ? `organizations/${org}/${PAYE_CLAIM_EVIDENCE_FOLDER}/${user}/${name}` : null;
+  }
+  function payeClaimEvidencePathBelongsTo(path, organizationId, userId) {
+    const parsed = storedFileKind(text10(path));
+    if (!parsed || parsed.kind !== "paye_claim_evidence") return false;
+    return parsed.organizationId === text10(organizationId) && parsed.ownerUserId === text10(userId);
+  }
+  function evidenceKind(value) {
+    const raw = text10(value);
+    return raw === "photo" || raw === "personalSiteAudit" ? raw : "file";
+  }
+  function parsePayeClaimEvidence(value, owner) {
+    const list = Array.isArray(value) ? value : [];
+    const out = [];
+    const owners = new Set([text10(owner?.userId), ...(owner?.userIds || []).map(text10)].filter(Boolean));
+    const organizationId = text10(owner?.organizationId);
+    for (const raw of list) {
+      const row2 = record3(raw);
+      const path = text10(row2.path);
+      if (!path) continue;
+      if (owner) {
+        const parsed = storedFileKind(path);
+        if (!parsed || parsed.kind !== "paye_claim_evidence" || !parsed.ownerUserId || !owners.has(parsed.ownerUserId)) continue;
+        if (organizationId && parsed.organizationId !== organizationId) continue;
+      }
+      out.push({
+        path,
+        name: text10(row2.name) || path.split("/").pop() || "Evidence",
+        kind: evidenceKind(row2.kind),
+        contentType: text10(row2.contentType),
+        auditId: text10(row2.auditId) || null
+      });
+    }
+    return out;
+  }
+  function payeClaimEvidenceWriteFields(entry) {
+    const out = {
+      path: text10(entry.path),
+      name: text10(entry.name).slice(0, CLAIM_EVIDENCE_NAME_MAX) || text10(entry.path).split("/").pop() || "Evidence",
+      kind: evidenceKind(entry.kind)
+    };
+    if (text10(entry.contentType)) out.contentType = text10(entry.contentType);
+    if (text10(entry.auditId)) out.auditId = text10(entry.auditId);
+    return out;
+  }
+  function payeClaimEvidenceDrawAs(entry) {
+    const type = text10(entry.contentType).toLowerCase();
+    const name = `${text10(entry.name)} ${text10(entry.path)}`.toLowerCase();
+    if (type === "application/pdf" || /\.pdf(\s|$)/.test(name)) return "pdf";
+    if (type === "image/jpeg" || type === "image/jpg" || type === "image/pjpeg" || type === "image/png") return "image";
+    if (!type && /\.(jpe?g|png)(\s|$)/.test(name)) return "image";
+    return "listed";
+  }
+  function payeClaimEvidenceToDelete(evidence, input) {
+    const out = [];
+    for (const entry of evidence || []) {
+      const path = text10(entry?.path);
+      if (!path || !payeClaimEvidencePathBelongsTo(path, input.organizationId, input.viewerUserId) || out.includes(path)) continue;
+      const permission = fileDeletePermission({
+        storagePath: path,
+        organizationId: input.organizationId,
+        viewerUserId: input.viewerUserId,
+        viewerRole: null,
+        nowMs: input.nowMs,
+        uploadedAtMs: input.uploadedAtMs?.[path] ?? null
+      });
+      if (permission.allowed && permission.reason === "uploader_undo") out.push(path);
+    }
+    return out;
+  }
+  var CLAIM_EVIDENCE_ADD_PHOTO_LABEL = "Add photo";
+  var CLAIM_EVIDENCE_ADD_SITE_AUDIT_LABEL = "Add site audit";
+  var CLAIM_EVIDENCE_ADD_FILE_LABEL = "Add file";
+  var CLAIM_EVIDENCE_TAKE_PHOTO_LABEL = "Take photo";
+  var CLAIM_EVIDENCE_CHOOSE_PHOTO_LABEL = "Choose photo";
+  var CLAIM_EVIDENCE_HEADING = "Evidence";
+  var CLAIM_EVIDENCE_NONE_TEXT = "No evidence";
+  var CLAIM_EVIDENCE_HELP_TEXT = "Photos and PDFs up to 10MB.";
+  var CLAIM_EVIDENCE_SITE_AUDIT_NOTE = "A frozen copy (PDF) is attached; your line managers and admins see the copy, never your list.";
+  var CLAIM_EVIDENCE_LEGACY_RECEIPT_NOTE = "Receipt noted before files were stored \u2014 no file to open";
+  function claimEvidenceCountText(count) {
+    const n = Math.max(0, Math.floor(Number(count) || 0));
+    if (n === 0) return "";
+    return n === 1 ? "1 piece of evidence" : `${n} pieces of evidence`;
+  }
+  function claimEvidenceRemoved(before, after) {
+    const kept = new Set((after || []).map((entry) => text10(entry?.path)).filter(Boolean));
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const entry of before || []) {
+      const path = text10(entry?.path);
+      if (!path || kept.has(path) || seen.has(path)) continue;
+      seen.add(path);
+      out.push(entry);
+    }
+    return out;
+  }
+  function claimEvidenceSameList(a, b) {
+    const left = (a || []).map((entry) => text10(entry?.path));
+    const right = (b || []).map((entry) => text10(entry?.path));
+    return left.length === right.length && left.every((path, index) => path === right[index]);
+  }
+  function claimEvidenceListError(evidence, context) {
+    const list = evidence || [];
+    if (context.required && list.length === 0) return EXPENSE_EVIDENCE_REQUIRED_MESSAGE;
+    if (list.length > PAYE_CLAIM_EVIDENCE_MAX) return PAYE_CLAIM_EVIDENCE_LIMIT_MESSAGE;
+    const owners = (context.ownerUserIds || []).map(text10).filter(Boolean);
+    if (context.organizationId != null && owners.length > 0) {
+      for (const entry of list) {
+        if (!owners.some((owner) => payeClaimEvidencePathBelongsTo(entry?.path, context.organizationId, owner))) {
+          return PAYE_CLAIM_EVIDENCE_INVALID_MESSAGE;
+        }
+      }
+    }
+    return null;
+  }
+
+  // lib/canonical/workDocumentReaders.ts
+  function text11(value) {
+    return typeof value === "string" ? value.trim() : "";
+  }
+  function rawText(value) {
+    return typeof value === "string" ? value : "";
+  }
+  function firstText2(row2, keys) {
+    for (const key5 of keys) {
+      const value = text11(row2[key5]);
+      if (value) return value;
+    }
+    return "";
+  }
+  function textOrNumber(value) {
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+    return text11(value);
+  }
+  function optionalText2(value) {
+    return text11(value) || null;
+  }
+  function dayKeyOf2(ms, zone3) {
+    return ms == null ? null : dayKeyInZone(new Date(ms), zone3);
+  }
+  function idList3(value) {
+    if (!Array.isArray(value)) return [];
+    const seen = /* @__PURE__ */ new Set();
+    const out = [];
+    for (const item of value) {
+      let id2 = "";
+      if (typeof item === "string") id2 = item.trim();
+      else if (item && typeof item === "object") {
+        const record16 = item;
+        id2 = text11(record16.id) || text11(record16.contactId);
+      }
+      const key5 = normalizeDocumentId(id2);
+      if (!id2 || seen.has(key5)) continue;
+      seen.add(key5);
+      out.push(id2);
+    }
+    return out;
+  }
+  function nameList(value) {
+    if (!Array.isArray(value)) return [];
+    const seen = /* @__PURE__ */ new Set();
+    const out = [];
+    for (const item of value) {
+      let name = "";
+      if (typeof item === "string") name = item.trim();
+      else if (item && typeof item === "object") name = text11(item.name);
+      if (!name || seen.has(name.toLowerCase())) continue;
+      seen.add(name.toLowerCase());
+      out.push(name);
+    }
+    return out;
+  }
+  function record4(value) {
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  }
+  var WRITE_CREATE_ONLY = ["id", "createdAt", "organizationId"];
+  var JOB_COLLECTIONS = { project: "projects", smallWork: "smallWorks" };
+  function jobClientId(jobDocId, clientName) {
+    const name = text11(clientName).toLowerCase();
+    return name ? derivedRowId(jobDocId, "client", 0, [name]) : "";
+  }
+  function storedJobIdForKey(key5, jobIds) {
+    const wanted = normalizeDocumentId(key5);
+    if (!wanted) return null;
+    for (const id2 of jobIds || []) if (normalizeDocumentId(id2) === wanted) return text11(id2);
+    return null;
+  }
+  function jobKind2(raw) {
+    return raw === "smallWork" || raw === "smallWorks" ? "smallWork" : "project";
+  }
+  function parseJobDocument(docId, data, options) {
+    const id2 = text11(docId);
+    if (!id2 || isLegacyPlaceholderDocumentId(id2)) return null;
+    const row2 = record4(data);
+    const zone3 = zoneOrLondon(options?.timeZone);
+    const kind = jobKind2(options?.kind);
+    const clientRow = record4(row2.client);
+    const managerIdsStored = idList3(row2.managerIds);
+    const managerIdStored = text11(row2.managerId);
+    const managerIds = managerIdsStored.length > 0 ? managerIdsStored : managerIdStored ? [managerIdStored] : [];
+    const startMs = documentInstantMs(row2.startDate) ?? documentInstantMs(row2.createdAt);
+    const endMs = documentInstantMs(row2.endDate) ?? startMs;
+    const addressLine1 = text11(row2.addressLine1);
+    const addressLine2 = optionalText2(row2.addressLine2);
+    const townCity = text11(row2.townCity);
+    const postcode = text11(row2.postcode);
+    const siteAddress = text11(row2.siteAddress) || [addressLine1, addressLine2, townCity, postcode].filter(Boolean).join(", ");
+    const managerName = text11(row2.manager);
+    return {
+      id: id2,
+      kind,
+      collection: JOB_COLLECTIONS[kind],
+      jobNumber: textOrNumber(row2.jobNumber),
+      siteName: text11(row2.siteName),
+      addressLine1,
+      addressLine2,
+      townCity,
+      postcode,
+      siteAddress,
+      client: {
+        id: text11(clientRow.id) || text11(row2.clientId) || jobClientId(id2, clientRow.name),
+        idStored: Boolean(text11(clientRow.id) || text11(row2.clientId)),
+        name: text11(clientRow.name),
+        email: optionalText2(clientRow.email),
+        phone: optionalText2(clientRow.phone)
+      },
+      startMs,
+      startDayKey: dayKeyOf2(startMs, zone3),
+      endMs,
+      endDayKey: dayKeyOf2(endMs, zone3),
+      jobType: text11(row2.jobType),
+      customJobType: optionalText2(row2.customJobType),
+      managerName: managerName && managerName.toLowerCase() !== "custom" ? managerName : null,
+      managerId: managerIdStored || managerIds[0] || null,
+      managerIds,
+      // 1.31.0: an older job stored its account ids as `assignedManagerUserIds` only (`jobManagerIds` already reads it).
+      managerUserIds: idList3(row2.managerUserIds).length > 0 ? idList3(row2.managerUserIds) : idList3(row2.assignedManagerUserIds),
+      isLive: documentBool(row2.isLive) !== false,
+      description: optionalText2(row2.description),
+      notes: optionalText2(row2.notes),
+      latitude: documentNumber(row2.latitude),
+      longitude: documentNumber(row2.longitude),
+      usesMapPinForLocation: documentBool(row2.usesMapPinForLocation) === true,
+      // 1.33.0 (owner decision 6 Nov): the operatives' hide list stays; the managers' (`hiddenManagerUserIds`) is not read.
+      hiddenOperativeUserIds: idList3(row2.hiddenOperativeUserIds),
+      status: optionalText2(row2.status),
+      organizationId: optionalText2(row2.organizationId),
+      createdAtMs: documentInstantMs(row2.createdAt),
+      updatedAtMs: documentInstantMs(row2.updatedAt)
+    };
+  }
+  function parseProjectDocument(docId, data, options) {
+    return parseJobDocument(docId, data, { kind: "project", timeZone: options?.timeZone });
+  }
+  function parseSmallWorkDocument(docId, data, options) {
+    return parseJobDocument(docId, data, { kind: "smallWork", timeZone: options?.timeZone });
+  }
+  var JOB_MANAGER_WRITE_GROUP = ["managerId", "managerIds", "managerUserIds"];
+  var JOB_ADDRESS_WRITE_GROUP = ["addressLine1", "addressLine2", "townCity", "postcode", "siteAddress"];
+  var JOB_PIN_WRITE_GROUP = ["latitude", "longitude", "usesMapPinForLocation"];
+  function jobWriteFields(before, next) {
+    return documentWriteFields(before, next, {
+      together: [JOB_MANAGER_WRITE_GROUP, JOB_ADDRESS_WRITE_GROUP, JOB_PIN_WRITE_GROUP],
+      createOnly: WRITE_CREATE_ONLY
+    });
+  }
+  var BOOKING_SLOT_WRITE_GROUP = ["timeSlot", "workStartTime", "workEndTime", "isBreakRemoved"];
+  var BOOKING_JOB_WRITE_GROUP = ["projectId", "jobCollection"];
+  function bookingUpdateWriteFields(before, next) {
+    if (!before) return { set: {}, remove: [] };
+    return documentWriteFields(before, next, {
+      together: [BOOKING_SLOT_WRITE_GROUP, BOOKING_JOB_WRITE_GROUP],
+      createOnly: [...WRITE_CREATE_ONLY, "bookedBy"]
+    });
+  }
+  var MANAGER_SITE_BOOKING_LOCATION_WRITE_GROUP = ["locationType", "locationId", "customLocationName", "jobCollection"];
+  function managerSiteBookingUpdateWriteFields(before, next) {
+    if (!before) return { set: {}, remove: [] };
+    return documentWriteFields(before, next, {
+      together: [BOOKING_SLOT_WRITE_GROUP, MANAGER_SITE_BOOKING_LOCATION_WRITE_GROUP],
+      createOnly: [...WRITE_CREATE_ONLY]
+    });
+  }
+  var SUBCONTRACTOR_BOOKING_DOCUMENT_KEYS = {
+    subcontractorId: ["subcontractorId", "subContractorId", "subcontractorID"],
+    projectId: ["projectId", "projectID"],
+    bookedContactIds: ["bookedContactIds", "contactIds", "bookedContacts", "operativeIds"],
+    bookedOperativeNames: ["bookedOperativeNames", "operativeNames", "bookedNames", "contactNames"]
+  };
+  function firstPresent2(row2, keys) {
+    for (const key5 of keys) {
+      if (row2[key5] !== void 0 && row2[key5] !== null) return row2[key5];
+    }
+    return void 0;
+  }
+  function parseSubcontractorBookingDocument(docId, data, options) {
+    const id2 = text11(docId);
+    if (!id2 || isLegacyPlaceholderDocumentId(id2)) return null;
+    const row2 = record4(data);
+    const zone3 = zoneOrLondon(options?.timeZone);
+    const subcontractorId = firstText2(row2, SUBCONTRACTOR_BOOKING_DOCUMENT_KEYS.subcontractorId);
+    const projectId = firstText2(row2, SUBCONTRACTOR_BOOKING_DOCUMENT_KEYS.projectId);
+    const dateMs = documentInstantMs(row2.date);
+    if (!subcontractorId || !projectId || dateMs == null) return null;
+    const rawStatus = text11(row2.status);
+    const status = rawStatus ? normalizeBookingStatus(rawStatus) : "Confirmed";
+    const rawSlot = text11(row2.timeSlot);
+    const timeSlot = rawSlot ? normalizeBookingTimeSlot(rawSlot) : "FULL DAY";
+    if (!status || !timeSlot) return null;
+    const bookedContactIds = idList3(firstPresent2(row2, SUBCONTRACTOR_BOOKING_DOCUMENT_KEYS.bookedContactIds));
+    return {
+      id: id2,
+      subcontractorId,
+      projectId,
+      dateMs,
+      dayKey: dayKeyInZone(new Date(dateMs), zone3),
+      timeSlot,
+      workStartTime: bookingClock(row2.workStartTime, zone3) ?? null,
+      workEndTime: bookingClock(row2.workEndTime, zone3) ?? null,
+      isBreakRemoved: documentBool(row2.isBreakRemoved) === true,
+      bookedBy: text11(row2.bookedBy),
+      status,
+      bookedContactIds,
+      bookedOperativeNames: nameList(firstPresent2(row2, SUBCONTRACTOR_BOOKING_DOCUMENT_KEYS.bookedOperativeNames)),
+      createdAtMs: documentInstantMs(row2.createdAt),
+      updatedAtMs: documentInstantMs(row2.updatedAt),
+      jobCollection: normalizeBookingJobCollection(row2.jobCollection),
+      idsAreUuid: [id2, subcontractorId, projectId, ...bookedContactIds].every((value) => isBookingUuid(value))
+    };
+  }
+  function subcontractorBookingCreateFields(input) {
+    const errors = [];
+    const id2 = text11(input?.id);
+    const subcontractorId = text11(input?.subcontractorId);
+    const projectId = text11(input?.projectId);
+    const dateMs = typeof input?.dateMs === "number" && Number.isFinite(input.dateMs) ? input.dateMs : null;
+    const timeSlot = normalizeBookingTimeSlot(input?.timeSlot);
+    const status = text11(input?.status) ? normalizeBookingStatus(input?.status) : "Confirmed";
+    if (!id2) errors.push("missing_id");
+    if (!subcontractorId) errors.push("missing_subcontractor_id");
+    if (!projectId) errors.push("missing_project_id");
+    if (dateMs == null) errors.push("missing_date");
+    if (!timeSlot) errors.push("bad_time_slot");
+    if (!status) errors.push("bad_status");
+    if (errors.length > 0 || dateMs == null || !timeSlot || !status) return { ok: false, errors };
+    const createdAtMs = typeof input.createdAtMs === "number" && Number.isFinite(input.createdAtMs) ? input.createdAtMs : dateMs;
+    const fields = {
+      id: id2,
+      subcontractorId,
+      projectId,
+      date: dateMs,
+      timeSlot,
+      isBreakRemoved: input.isBreakRemoved === true,
+      bookedBy: text11(input.bookedBy),
+      status,
+      bookedContactIds: idList3(input.bookedContactIds ?? []),
+      bookedOperativeNames: nameList(input.bookedOperativeNames ?? []),
+      createdAt: createdAtMs,
+      updatedAt: createdAtMs
+    };
+    const start = bookingClock(input.workStartTime);
+    const end = bookingClock(input.workEndTime);
+    if (start) fields.workStartTime = start;
+    if (end) fields.workEndTime = end;
+    Object.assign(fields, bookingJobCollectionFields({ collection: "subcontractorBookings", jobCollection: input.jobCollection }));
+    return { ok: true, fields };
+  }
+  var SUBCONTRACTOR_BOOKING_PEOPLE_WRITE_GROUP = ["bookedContactIds", "bookedOperativeNames"];
+  function subcontractorBookingWriteFields(before, next) {
+    if (!before) return { set: {}, remove: [] };
+    return documentWriteFields(before, next, {
+      together: [BOOKING_SLOT_WRITE_GROUP, SUBCONTRACTOR_BOOKING_PEOPLE_WRITE_GROUP, BOOKING_JOB_WRITE_GROUP],
+      createOnly: [...WRITE_CREATE_ONLY, "bookedBy"]
+    });
+  }
+  var ENTRY_ARRAY_FIELD = {
+    expense: "expenseEntries",
+    priceWork: "priceWorkEntries"
+  };
+  function timesheetEntryId(sheetDocId, kind, index, entry) {
+    const row2 = record4(entry);
+    const stored = text11(row2.id);
+    if (stored) return stored;
+    const when = documentInstantMs(kind === "expense" ? row2.date : row2.startDate);
+    const source = [
+      text11(sheetDocId),
+      ENTRY_ARRAY_FIELD[kind],
+      String(Math.max(0, Math.floor(Number(index) || 0))),
+      rawText(row2.title),
+      String(documentNumber(row2.amount) ?? 0),
+      when == null ? "" : String(when)
+    ].join("|");
+    return derivedDocumentId(source);
+  }
+  function timesheetEvidenceOwnerIds(sheetDocId, sheet, extra) {
+    const out = [];
+    for (const value of [record4(sheet).userId, timesheetDocumentSubjectId(sheetDocId), ...extra || []]) {
+      const id2 = text11(value);
+      if (id2 && !out.includes(id2)) out.push(id2);
+    }
+    return out;
+  }
+  function entryBase(sheetDocId, sheet, kind, index, row2, owner) {
+    const title = text11(row2.title);
+    if (!title) return null;
+    const id2 = timesheetEntryId(sheetDocId, kind, index, row2);
+    const amount = documentNumber(row2.amount) ?? 0;
+    const fingerprintKind = kind === "priceWork" ? "priceWork" : "expense";
+    const reviewFingerprint = timesheetEntryFingerprint(row2, fingerprintKind);
+    const decision = timesheetEntryDecision(sheet, { ...row2, id: id2, amount }, fingerprintKind);
+    return {
+      id: id2,
+      idStored: Boolean(text11(row2.id)),
+      title,
+      details: rawText(row2.details),
+      jobNumber: textOrNumber(row2.jobNumber),
+      amount,
+      managerDecision: decision.decision,
+      managerRevisedAmount: decision.revisedAmount,
+      decisionSource: decision.source,
+      reviewFingerprint,
+      evidence: parsePayeClaimEvidence(row2.evidence, { userIds: owner.userIds, organizationId: owner.organizationId })
+    };
+  }
+  function parseTimesheetEntries(sheetDocId, sheet, options) {
+    const data = record4(sheet);
+    const zone3 = zoneOrLondon(options?.timeZone);
+    const owner = { userIds: timesheetEvidenceOwnerIds(sheetDocId, data, options?.ownerUserIds), organizationId: options?.organizationId ?? null };
+    const expenseEntries = [];
+    const priceWorkEntries = [];
+    const expenses = Array.isArray(data.expenseEntries) ? data.expenseEntries : [];
+    expenses.forEach((raw, index) => {
+      const row2 = record4(raw);
+      const base = entryBase(sheetDocId, data, "expense", index, row2, owner);
+      if (!base) return;
+      const dateMs = documentInstantMs(row2.date);
+      expenseEntries.push({
+        ...base,
+        dateMs,
+        dayKey: dayKeyOf2(dateMs, zone3),
+        receiptName: optionalText2(row2.receiptName)
+      });
+    });
+    const priceWork = Array.isArray(data.priceWorkEntries) ? data.priceWorkEntries : [];
+    priceWork.forEach((raw, index) => {
+      const row2 = record4(raw);
+      const base = entryBase(sheetDocId, data, "priceWork", index, row2, owner);
+      if (!base) return;
+      const startMs = documentInstantMs(row2.startDate) ?? documentInstantMs(row2.date);
+      const endMs = documentInstantMs(row2.endDate);
+      priceWorkEntries.push({
+        ...base,
+        agreedManagerName: text11(row2.agreedManagerName) || "Manager",
+        startMs,
+        startDayKey: dayKeyOf2(startMs, zone3),
+        endMs,
+        endDayKey: dayKeyOf2(endMs, zone3)
+      });
+    });
+    return { expenseEntries, priceWorkEntries };
+  }
+  var DEADLINE_ASSIGNMENTS_DOCUMENT_ID = "deadlineAssignments";
+  var DEADLINE_STATUSES = ["notStarted", "inProgress", "blocked", "complete"];
+  function deadlineProjectKey(projectId) {
+    return text11(projectId).toUpperCase();
+  }
+  function deadlinesDocumentId(projectId, isSmallWorks) {
+    return `deadlines_${isSmallWorks ? "smallWorks" : "projects"}_${deadlineProjectKey(projectId)}`;
+  }
+  function deadlineStatus(raw) {
+    const value = text11(raw);
+    return DEADLINE_STATUSES.includes(value) ? value : "notStarted";
+  }
+  var DEADLINE_CHANGE_TYPES = [
+    "created",
+    "rescheduled",
+    "progress",
+    "status",
+    "note",
+    "completed",
+    "assigned",
+    "fileAttached",
+    "siteAuditAttached"
+  ];
+  function parseDeadlineChange(raw) {
+    const row2 = record4(raw);
+    const id2 = text11(row2.id);
+    if (!id2) return null;
+    const storedType = text11(row2.type) || "note";
+    const known = DEADLINE_CHANGE_TYPES.includes(storedType);
+    const type = known ? storedType : "note";
+    const progress = documentNumber(row2.progress);
+    return {
+      id: id2,
+      atMs: documentInstantMs(row2.at),
+      author: text11(row2.author),
+      type,
+      dueMs: documentInstantMs(row2.due),
+      fromMs: documentInstantMs(row2.from),
+      toMs: documentInstantMs(row2.to),
+      reason: optionalText2(row2.reason),
+      progress: progress == null ? null : Math.round(progress),
+      status: text11(row2.status) ? deadlineStatus(row2.status) : null,
+      note: known ? optionalText2(row2.note) : storedType,
+      completedOnMs: documentInstantMs(row2.completedOn),
+      assignedTo: optionalText2(row2.assignedTo),
+      name: optionalText2(row2.name)
+    };
+  }
+  function stringList(value) {
+    return Array.isArray(value) ? value.filter((item) => typeof item === "string" && item.trim() !== "").map((item) => item.trim()) : [];
+  }
+  function parseDeadlineItem(raw, options) {
+    const row2 = record4(raw);
+    const id2 = text11(row2.id);
+    if (!id2) return null;
+    const zone3 = zoneOrLondon(options?.timeZone);
+    const startMs = documentInstantMs(row2.start);
+    const dueMs = documentInstantMs(row2.due);
+    const reminder = documentNumber(row2.reminderDaysBefore);
+    const history = Array.isArray(row2.history) ? row2.history.map(parseDeadlineChange).filter((change) => change !== null) : [];
+    return {
+      id: id2,
+      title: text11(row2.title) || "Untitled deadline",
+      location: optionalText2(row2.location),
+      trade: optionalText2(row2.trade),
+      detail: optionalText2(row2.detail),
+      startMs,
+      startDayKey: dayKeyOf2(startMs, zone3),
+      dueMs,
+      dueDayKey: dayKeyOf2(dueMs, zone3),
+      completedAtMs: documentInstantMs(row2.completedAt),
+      assignees: stringList(row2.assignees),
+      assigneeUserIds: idList3(row2.assigneeUserIds),
+      company: optionalText2(row2.company),
+      status: deadlineStatus(row2.status),
+      progress: documentNumber(row2.progress) ?? 0,
+      isCritical: documentBool(row2.isCritical) === true,
+      dependsOn: idList3(row2.dependsOn),
+      blockedReason: optionalText2(row2.blockedReason),
+      reminderDaysBefore: reminder == null ? null : Math.round(reminder),
+      originalDueMs: documentInstantMs(row2.originalDue),
+      history,
+      contextKind: text11(row2.contextKind) || "Project",
+      projectId: text11(row2.projectId) || text11(options?.projectId),
+      createdByUserId: text11(row2.createdByUserId),
+      fileURL: optionalText2(row2.fileURL),
+      fileName: optionalText2(row2.fileName),
+      siteAuditId: optionalText2(row2.siteAuditId),
+      siteAuditTitle: optionalText2(row2.siteAuditTitle)
+    };
+  }
+  function parseDeadlineDocument(docId, data, options) {
+    const id2 = text11(docId);
+    const row2 = record4(data);
+    const match = /^deadlines_(projects|smallWorks)_(.+)$/.exec(id2);
+    const projectId = text11(row2.projectId) || text11(options?.projectId) || (match ? match[2] : "");
+    const items = (Array.isArray(row2.items) ? row2.items : []).map((item) => parseDeadlineItem(item, { projectId, timeZone: options?.timeZone })).filter((item) => item !== null).sort((a, b) => {
+      const left = a.dueMs ?? Number.MAX_SAFE_INTEGER;
+      const right = b.dueMs ?? Number.MAX_SAFE_INTEGER;
+      return left - right || a.id.localeCompare(b.id);
+    });
+    return {
+      id: id2,
+      collection: match ? match[1] : null,
+      projectId,
+      items,
+      updatedAtMs: documentInstantMs(row2.updatedAt)
+    };
+  }
+  function parseDeadlineAssignments(data) {
+    const row2 = record4(data);
+    const out = {};
+    for (const [key5, value] of Object.entries(row2)) {
+      if (!key5.startsWith("projects.")) continue;
+      const projectKey = key5.slice("projects.".length).trim();
+      if (projectKey && Array.isArray(value)) out[projectKey] = idList3(value);
+    }
+    for (const [key5, value] of Object.entries(record4(row2.projects))) {
+      if (key5.trim() && Array.isArray(value)) out[key5.trim()] = idList3(value);
+    }
+    return out;
+  }
+  function deadlineAssignedProjectIds(data, personIds, jobIds) {
+    const ids = new Set((Array.isArray(personIds) ? personIds : [personIds]).map(normalizeDocumentId).filter(Boolean));
+    if (ids.size === 0) return [];
+    return Object.entries(parseDeadlineAssignments(data)).filter(([, assignees]) => assignees.some((id2) => ids.has(normalizeDocumentId(id2)))).map(([key5]) => jobIds ? storedJobIdForKey(key5, jobIds) : key5).filter((key5) => Boolean(key5)).filter((key5, index, all) => all.indexOf(key5) === index).sort();
+  }
+  function deadlineAssignmentWriteFields(input) {
+    const key5 = deadlineProjectKey(input?.projectId);
+    if (!key5) return null;
+    const value = idList3(input.assigneeUserIds ?? []).sort((a, b) => a.localeCompare(b));
+    return { fieldPath: ["projects", key5], value, createFields: { projects: { [key5]: value } } };
+  }
+
   // lib/canonical/timesheetEntryReviews.ts
   var TIMESHEET_ENTRY_DECISIONS = ["pending", "approved", "declined", "edited"];
   var TIMESHEET_ENTRY_REVIEWS_FIELD = "extraEntryReviews";
@@ -11564,7 +12285,7 @@ var ProjectPlannerCanonical = (() => {
     const number = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;
     return Number.isFinite(number) ? number : null;
   }
-  function text9(value) {
+  function text12(value) {
     return typeof value === "string" ? value.trim() : "";
   }
   function parseTimesheetEntryDecision(raw) {
@@ -11578,9 +12299,9 @@ var ProjectPlannerCanonical = (() => {
       decision,
       revisedAmount: decision === "edited" ? finite(row2.revisedAmount) : null,
       reviewedAmount: finite(row2.reviewedAmount),
-      reviewedByUserId: text9(row2.reviewedByUserId),
+      reviewedByUserId: text12(row2.reviewedByUserId),
       reviewedAtMs: finite(row2.reviewedAtMs),
-      reviewedFingerprint: text9(row2.reviewedFingerprint) || null,
+      reviewedFingerprint: text12(row2.reviewedFingerprint) || null,
       lateExtra: row2.lateExtra === true
     };
   }
@@ -11618,13 +12339,13 @@ var ProjectPlannerCanonical = (() => {
     return fallback;
   }
   function rowFingerprint(row2, kind, trusted) {
-    return text9(trusted) || timesheetEntryFingerprint(row2, kind);
+    return text12(trusted) || timesheetEntryFingerprint(row2, kind);
   }
   function timesheetEntryFingerprintMap(entries) {
     const out = {};
     for (const entry of entries || []) {
-      const id2 = text9(entry?.id);
-      const fingerprint = text9(entry?.reviewFingerprint);
+      const id2 = text12(entry?.id);
+      const fingerprint = text12(entry?.reviewFingerprint);
       if (id2 && fingerprint) out[normalizeDocumentId(id2)] = fingerprint;
     }
     return out;
@@ -11648,8 +12369,27 @@ var ProjectPlannerCanonical = (() => {
     return key5 == null ? void 0 : reviews[key5];
   }
   function timesheetEntryReviewFor(reviews, entryId) {
-    const id2 = text9(entryId);
+    const id2 = text12(entryId);
     return reviews && id2 ? reviewFor(reviews, id2) : void 0;
+  }
+  function timesheetEntryReviewKeyUsable(id2) {
+    const value = text12(id2);
+    return value !== "" && !/[.`~*/[\]]/.test(value);
+  }
+  function timesheetSignedEntryKeys(sheet, sheetDocId) {
+    const keys = /* @__PURE__ */ new Set();
+    if (!sheet || typeof sheet !== "object") return keys;
+    for (const [field, kind] of [["priceWorkEntries", "priceWork"], ["expenseEntries", "expense"]]) {
+      const rows3 = Array.isArray(sheet[field]) ? sheet[field] : [];
+      rows3.forEach((raw, index) => {
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+        const row2 = raw;
+        const stored = normalizeDocumentId(row2.id);
+        if (stored) keys.add(stored);
+        else if (text12(sheetDocId)) keys.add(normalizeDocumentId(timesheetEntryId(text12(sheetDocId), kind, index, row2)));
+      });
+    }
+    return keys;
   }
   function reviewKeyFor(reviews, entryId) {
     if (Object.prototype.hasOwnProperty.call(reviews, entryId)) return entryId;
@@ -11666,7 +12406,7 @@ var ProjectPlannerCanonical = (() => {
   }
   function timesheetEntryDecision(sheet, entry, kind, trustedFingerprint) {
     const row2 = entry || {};
-    const id2 = text9(row2.id);
+    const id2 = text12(row2.id);
     const amount = finite(row2.amount) ?? 0;
     const inlineDecision = parseTimesheetEntryDecision(row2.managerDecision);
     const inline = {
@@ -11707,13 +12447,14 @@ var ProjectPlannerCanonical = (() => {
   }
   function timesheetEntryReviewWriteFields(input) {
     const stored = input.stored || {};
-    const reviewer = text9(input.reviewedByUserId);
+    const reviewer = text12(input.reviewedByUserId);
     const output = {};
     const signedIds = /* @__PURE__ */ new Set();
     for (const raw of input.signedEntryIds ?? []) {
       const key5 = normalizeDocumentId(raw);
       if (key5) signedIds.add(key5);
     }
+    for (const key5 of timesheetSignedEntryKeys(input.sheet, input.sheetDocId)) signedIds.add(key5);
     for (const entry of input.entries) {
       if (entry.lateExtra === true) continue;
       const key5 = normalizeDocumentId(entry.id);
@@ -11721,8 +12462,8 @@ var ProjectPlannerCanonical = (() => {
     }
     const lateSeen = /* @__PURE__ */ new Set();
     for (const entry of input.entries) {
-      const id2 = text9(entry.id);
-      if (!id2 || /[.`~*/[\]]/.test(id2)) continue;
+      const id2 = text12(entry.id);
+      if (!id2 || !timesheetEntryReviewKeyUsable(id2)) continue;
       if (entry.lateExtra === true) {
         const key5 = normalizeDocumentId(id2);
         if (input.exported === true || signedIds.has(key5) || lateSeen.has(key5)) continue;
@@ -11731,12 +12472,16 @@ var ProjectPlannerCanonical = (() => {
       const decision = parseTimesheetEntryDecision(entry.managerDecision);
       const revisedAmount = decision === "edited" ? finite(entry.managerRevisedAmount) : null;
       const amount = finite(entry.amount) ?? 0;
-      const fingerprint = text9(entry.reviewFingerprint) || null;
+      const fingerprint = text12(entry.reviewFingerprint) || null;
       const late = entry.lateExtra === true;
       if (late && fingerprint == null) continue;
-      const storedKey = input.stored ? reviewKeyFor(stored, id2) : void 0;
-      const prior = storedKey != null ? stored[storedKey] : void 0;
-      if (prior && prior.lateExtra !== late) continue;
+      let storedKey = input.stored ? reviewKeyFor(stored, id2) : void 0;
+      let prior = storedKey != null ? stored[storedKey] : void 0;
+      if (prior && prior.lateExtra !== late) {
+        if (late) continue;
+        if (storedKey !== id2) storedKey = void 0;
+        prior = void 0;
+      }
       const priorCurrent = prior != null && (prior.reviewedFingerprint != null && fingerprint != null ? prior.reviewedFingerprint === fingerprint : prior.reviewedAmount == null || sameNumber(prior.reviewedAmount, amount));
       if (input.stored && prior && priorCurrent && prior.lateExtra === late && prior.decision === decision && sameNumber(prior.revisedAmount, revisedAmount)) continue;
       if (input.stored && decision === "pending" && !priorCurrent) continue;
@@ -11764,23 +12509,23 @@ var ProjectPlannerCanonical = (() => {
     return output;
   }
   function timesheetWriterIsReviewer(input) {
-    const writer = text9(input.writerUserId).toLowerCase();
+    const writer = text12(input.writerUserId).toLowerCase();
     if (!writer) return false;
     const writerIds = personIdSet(
       {
-        id: text9(input.writerUserId),
+        id: text12(input.writerUserId),
         formerUserIds: input.writerFormerIds ?? [],
         sameEmailUserIds: input.writerAliasIds ?? []
       },
       input.roster ?? []
     );
-    const keys = new Set([writer, ...writerIds.map((id2) => text9(id2).toLowerCase())].filter(Boolean));
-    if (keys.has(text9(input.subjectUserId).toLowerCase())) return false;
+    const keys = new Set([writer, ...writerIds.map((id2) => text12(id2).toLowerCase())].filter(Boolean));
+    if (keys.has(text12(input.subjectUserId).toLowerCase())) return false;
     if (input.writerIsAdmin === true) return true;
     const managerKeys = new Set(
-      [writer, ...(input.writerFormerIds ?? []).map((id2) => text9(id2).toLowerCase())].filter(Boolean)
+      [writer, ...(input.writerFormerIds ?? []).map((id2) => text12(id2).toLowerCase())].filter(Boolean)
     );
-    return (input.subjectLineManagerIds ?? []).some((id2) => managerKeys.has(text9(id2).toLowerCase()));
+    return (input.subjectLineManagerIds ?? []).some((id2) => managerKeys.has(text12(id2).toLowerCase()));
   }
   function timesheetOwnerWriteFields(fields, input) {
     const output = { ...fields };
@@ -11936,730 +12681,13 @@ var ProjectPlannerCanonical = (() => {
     return { allowed: true, message: null };
   }
 
-  // lib/canonical/storedFiles.ts
-  var FILE_UNDO_WINDOW_MINUTES = 15;
-  var FILE_UNDO_WINDOW_MS = FILE_UNDO_WINDOW_MINUTES * 60 * 1e3;
-  var FILE_KEPT_ON_REMOVE_COPY = "Removed from this list. The file itself is kept so an admin can restore it.";
-  var FILE_RECOVERY_RETENTION_DAYS = 30;
-  var DELETED_DATA_RETENTION_NOTICE = "A deleted company can be restored for 30 days, after which its data is erased. Deleted files, including the files of an erased company, are kept for up to 30 days so they can be recovered, then permanently removed.";
-  var STORED_FILE_KINDS = [
-    "profile_photo",
-    "company_logo",
-    "timesheet_export",
-    "qualification_certificate",
-    "variation_evidence",
-    "site_audit_photo",
-    "task_attachment",
-    "health_safety",
-    // 1.30.0 (§26): PAYE price work / expense evidence, and personal site audit photos (owner only).
-    "paye_claim_evidence",
-    "personal_site_audit"
-  ];
-  function text10(value) {
-    return typeof value === "string" ? value.trim() : "";
-  }
-  function storedFileKind(storagePath) {
-    const path = text10(storagePath);
-    if (!path || path.startsWith("/") || path.includes("..") || path.includes("//")) return null;
-    const parts3 = path.split("/");
-    if (parts3.length < 4 || parts3[0] !== "organizations" || !parts3[1]) return null;
-    const organizationId = parts3[1];
-    const objectName = parts3[parts3.length - 1];
-    if (!objectName) return null;
-    const rest = parts3.slice(2);
-    const base = { organizationId, objectName, ownerUserId: null };
-    if (rest.length === 3 && rest[0] === "userProfiles" && rest[2] === "profile.jpg" && rest[1]) {
-      return { ...base, kind: "profile_photo", ownerUserId: rest[1] };
-    }
-    if (rest.length === 3 && rest[0] === "branding" && rest[1] === "company_logo") return { ...base, kind: "company_logo" };
-    if (rest.length === 2 && rest[0] === "timesheetExports") return { ...base, kind: "timesheet_export" };
-    if (rest.length === 6 && rest[0] === "operatives" && rest[2] === "qualifications" && rest[4] === "certificates") {
-      return { ...base, kind: "qualification_certificate" };
-    }
-    if (rest.length === 4 && rest[0] === "healthSafety" && (rest[2] === "variations" || rest[2] === "variationEvidence")) {
-      return { ...base, kind: "variation_evidence" };
-    }
-    if (rest.length === 3 && rest[0] === "variations") return { ...base, kind: "variation_evidence" };
-    if (rest.length >= 2 && rest[0] === "siteAudits") return { ...base, kind: "site_audit_photo" };
-    if (rest.length >= 2 && rest[0] === "tasks") return { ...base, kind: "task_attachment" };
-    if (rest.length >= 2 && rest[0] === "healthSafety") return { ...base, kind: "health_safety" };
-    if (rest.length === 3 && rest[0] === "payeClaims" && rest[1]) return { ...base, kind: "paye_claim_evidence", ownerUserId: rest[1] };
-    if (rest.length >= 3 && rest[0] === "personalSiteAudits" && rest[1]) return { ...base, kind: "personal_site_audit", ownerUserId: rest[1] };
-    return null;
-  }
-  var UID_PATTERN = /^[A-Za-z0-9-]+$/;
-  function storedFileObjectName(input) {
-    const uid = text10(input.uid);
-    if (!uid || !UID_PATTERN.test(uid)) return null;
-    const ms = Math.floor(Number(input.unixMs));
-    if (!Number.isFinite(ms) || ms < 0) return null;
-    const ext = text10(input.extension).toLowerCase().replace(/^\.+/, "").replace(/[^a-z0-9]/g, "");
-    return ext ? `${uid}_${ms}.${ext}` : `${uid}_${ms}`;
-  }
-  function storedFileUploader(storagePath) {
-    const parsed = storedFileKind(storagePath);
-    if (!parsed) return null;
-    if (parsed.kind === "profile_photo") return parsed.ownerUserId ? { uploaderUserId: parsed.ownerUserId, uploadedAtMs: null } : null;
-    if (parsed.kind === "timesheet_export") return null;
-    const match = parsed.objectName.match(/^([A-Za-z0-9-]+)_([0-9]{1,16})(?:\.[A-Za-z0-9]+)?$/);
-    if (!match) return null;
-    return { uploaderUserId: match[1], uploadedAtMs: Number(match[2]) };
-  }
-  function isFileAdmin(role) {
-    if (!role || role.isOperativeMode) return false;
-    return role.isSuperAdmin === true || role.isAdmin === true;
-  }
-  function fileDeletePermission(input) {
-    const viewer = text10(input.viewerUserId);
-    const deny = (reason, undoEndsAtMs2 = null) => ({
-      allowed: false,
-      reason,
-      undoEndsAtMs: undoEndsAtMs2
-    });
-    if (!viewer) return deny("signed_out");
-    const parsed = storedFileKind(input.storagePath);
-    if (!parsed) return deny("unknown_path");
-    const org = text10(input.organizationId);
-    if (!org || parsed.organizationId.toLowerCase() !== org.toLowerCase()) return deny("other_organization");
-    if (parsed.kind === "personal_site_audit" && parsed.ownerUserId !== viewer) return deny("owner_only");
-    if (parsed.kind !== "personal_site_audit" && isFileAdmin(input.viewerRole)) return { allowed: true, reason: "admin", undoEndsAtMs: null };
-    if (parsed.kind === "profile_photo") {
-      return parsed.ownerUserId === viewer ? { allowed: true, reason: "own_profile_photo", undoEndsAtMs: null } : deny("not_uploader");
-    }
-    if (parsed.kind === "company_logo" || parsed.kind === "timesheet_export") return deny("admin_only");
-    const uploader = storedFileUploader(input.storagePath);
-    if (!uploader || uploader.uploaderUserId !== viewer) return deny("not_uploader");
-    const given = Number(input.uploadedAtMs);
-    const uploadedAtMs = input.uploadedAtMs != null && Number.isFinite(given) ? given : uploader.uploadedAtMs;
-    if (uploadedAtMs == null) return deny("undo_expired");
-    const undoEndsAtMs = uploadedAtMs + FILE_UNDO_WINDOW_MS;
-    if (Number(input.nowMs) < undoEndsAtMs) return { allowed: true, reason: "uploader_undo", undoEndsAtMs };
-    return deny("undo_expired", undoEndsAtMs);
-  }
-
-  // lib/canonical/claimEvidence.ts
-  function text11(value) {
-    return value == null ? "" : String(value).trim();
-  }
-  function record3(value) {
-    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
-  }
-  var PAYE_CLAIM_EVIDENCE_FOLDER = "payeClaims";
-  var EXPENSE_EVIDENCE_REQUIRED_MESSAGE = "Add at least one piece of evidence (a file, photo or personal site audit).";
-  var PAYE_CLAIM_EVIDENCE_LIMIT_MESSAGE = "Up to 20 pieces of evidence.";
-  var PAYE_CLAIM_EVIDENCE_INVALID_MESSAGE = "Evidence must be uploaded to your own claim folder.";
-  var PAYE_CLAIM_EVIDENCE_NOT_DRAWN_NOTE = "This file type cannot be shown in the PDF. Open it in the app.";
-  var PAYE_CLAIM_EVIDENCE_UNREADABLE_NOTE = "This file could not be read when the report was made. Open it in the app.";
-  var PAYE_CLAIM_EVIDENCE_MAX = 20;
-  var CLAIM_EVIDENCE_NAME_MAX = 200;
-  var PAYE_CLAIM_EVIDENCE_KINDS = ["file", "photo", "personalSiteAudit"];
-  function payeClaimEvidencePath(input) {
-    const org = text11(input.organizationId);
-    const user = text11(input.userId);
-    if (!org || !user || org.includes("/") || user.includes("/")) return null;
-    const name = storedFileObjectName({ uid: user, unixMs: input.unixMs, extension: input.extension });
-    return name ? `organizations/${org}/${PAYE_CLAIM_EVIDENCE_FOLDER}/${user}/${name}` : null;
-  }
-  function payeClaimEvidencePathBelongsTo(path, organizationId, userId) {
-    const parsed = storedFileKind(text11(path));
-    if (!parsed || parsed.kind !== "paye_claim_evidence") return false;
-    return parsed.organizationId === text11(organizationId) && parsed.ownerUserId === text11(userId);
-  }
-  function evidenceKind(value) {
-    const raw = text11(value);
-    return raw === "photo" || raw === "personalSiteAudit" ? raw : "file";
-  }
-  function parsePayeClaimEvidence(value, owner) {
-    const list = Array.isArray(value) ? value : [];
-    const out = [];
-    const owners = new Set([text11(owner?.userId), ...(owner?.userIds || []).map(text11)].filter(Boolean));
-    const organizationId = text11(owner?.organizationId);
-    for (const raw of list) {
-      const row2 = record3(raw);
-      const path = text11(row2.path);
-      if (!path) continue;
-      if (owner) {
-        const parsed = storedFileKind(path);
-        if (!parsed || parsed.kind !== "paye_claim_evidence" || !parsed.ownerUserId || !owners.has(parsed.ownerUserId)) continue;
-        if (organizationId && parsed.organizationId !== organizationId) continue;
-      }
-      out.push({
-        path,
-        name: text11(row2.name) || path.split("/").pop() || "Evidence",
-        kind: evidenceKind(row2.kind),
-        contentType: text11(row2.contentType),
-        auditId: text11(row2.auditId) || null
-      });
-    }
-    return out;
-  }
-  function payeClaimEvidenceWriteFields(entry) {
-    const out = {
-      path: text11(entry.path),
-      name: text11(entry.name).slice(0, CLAIM_EVIDENCE_NAME_MAX) || text11(entry.path).split("/").pop() || "Evidence",
-      kind: evidenceKind(entry.kind)
-    };
-    if (text11(entry.contentType)) out.contentType = text11(entry.contentType);
-    if (text11(entry.auditId)) out.auditId = text11(entry.auditId);
-    return out;
-  }
-  function payeClaimEvidenceDrawAs(entry) {
-    const type = text11(entry.contentType).toLowerCase();
-    const name = `${text11(entry.name)} ${text11(entry.path)}`.toLowerCase();
-    if (type === "application/pdf" || /\.pdf(\s|$)/.test(name)) return "pdf";
-    if (type === "image/jpeg" || type === "image/jpg" || type === "image/pjpeg" || type === "image/png") return "image";
-    if (!type && /\.(jpe?g|png)(\s|$)/.test(name)) return "image";
-    return "listed";
-  }
-  function payeClaimEvidenceToDelete(evidence, input) {
-    const out = [];
-    for (const entry of evidence || []) {
-      const path = text11(entry?.path);
-      if (!path || !payeClaimEvidencePathBelongsTo(path, input.organizationId, input.viewerUserId) || out.includes(path)) continue;
-      const permission = fileDeletePermission({
-        storagePath: path,
-        organizationId: input.organizationId,
-        viewerUserId: input.viewerUserId,
-        viewerRole: null,
-        nowMs: input.nowMs,
-        uploadedAtMs: input.uploadedAtMs?.[path] ?? null
-      });
-      if (permission.allowed && permission.reason === "uploader_undo") out.push(path);
-    }
-    return out;
-  }
-  var CLAIM_EVIDENCE_ADD_PHOTO_LABEL = "Add photo";
-  var CLAIM_EVIDENCE_ADD_SITE_AUDIT_LABEL = "Add site audit";
-  var CLAIM_EVIDENCE_ADD_FILE_LABEL = "Add file";
-  var CLAIM_EVIDENCE_TAKE_PHOTO_LABEL = "Take photo";
-  var CLAIM_EVIDENCE_CHOOSE_PHOTO_LABEL = "Choose photo";
-  var CLAIM_EVIDENCE_HEADING = "Evidence";
-  var CLAIM_EVIDENCE_NONE_TEXT = "No evidence";
-  var CLAIM_EVIDENCE_HELP_TEXT = "Photos and PDFs up to 10MB.";
-  var CLAIM_EVIDENCE_SITE_AUDIT_NOTE = "A frozen copy (PDF) is attached; your line managers and admins see the copy, never your list.";
-  var CLAIM_EVIDENCE_LEGACY_RECEIPT_NOTE = "Receipt noted before files were stored \u2014 no file to open";
-  function claimEvidenceCountText(count) {
-    const n = Math.max(0, Math.floor(Number(count) || 0));
-    if (n === 0) return "";
-    return n === 1 ? "1 piece of evidence" : `${n} pieces of evidence`;
-  }
-  function claimEvidenceRemoved(before, after) {
-    const kept = new Set((after || []).map((entry) => text11(entry?.path)).filter(Boolean));
-    const out = [];
-    const seen = /* @__PURE__ */ new Set();
-    for (const entry of before || []) {
-      const path = text11(entry?.path);
-      if (!path || kept.has(path) || seen.has(path)) continue;
-      seen.add(path);
-      out.push(entry);
-    }
-    return out;
-  }
-  function claimEvidenceSameList(a, b) {
-    const left = (a || []).map((entry) => text11(entry?.path));
-    const right = (b || []).map((entry) => text11(entry?.path));
-    return left.length === right.length && left.every((path, index) => path === right[index]);
-  }
-  function claimEvidenceListError(evidence, context) {
-    const list = evidence || [];
-    if (context.required && list.length === 0) return EXPENSE_EVIDENCE_REQUIRED_MESSAGE;
-    if (list.length > PAYE_CLAIM_EVIDENCE_MAX) return PAYE_CLAIM_EVIDENCE_LIMIT_MESSAGE;
-    const owners = (context.ownerUserIds || []).map(text11).filter(Boolean);
-    if (context.organizationId != null && owners.length > 0) {
-      for (const entry of list) {
-        if (!owners.some((owner) => payeClaimEvidencePathBelongsTo(entry?.path, context.organizationId, owner))) {
-          return PAYE_CLAIM_EVIDENCE_INVALID_MESSAGE;
-        }
-      }
-    }
-    return null;
-  }
-
-  // lib/canonical/workDocumentReaders.ts
-  function text12(value) {
-    return typeof value === "string" ? value.trim() : "";
-  }
-  function rawText(value) {
-    return typeof value === "string" ? value : "";
-  }
-  function firstText2(row2, keys) {
-    for (const key5 of keys) {
-      const value = text12(row2[key5]);
-      if (value) return value;
-    }
-    return "";
-  }
-  function textOrNumber(value) {
-    if (typeof value === "number" && Number.isFinite(value)) return String(value);
-    return text12(value);
-  }
-  function optionalText2(value) {
-    return text12(value) || null;
-  }
-  function dayKeyOf2(ms, zone3) {
-    return ms == null ? null : dayKeyInZone(new Date(ms), zone3);
-  }
-  function idList3(value) {
-    if (!Array.isArray(value)) return [];
-    const seen = /* @__PURE__ */ new Set();
-    const out = [];
-    for (const item of value) {
-      let id2 = "";
-      if (typeof item === "string") id2 = item.trim();
-      else if (item && typeof item === "object") {
-        const record16 = item;
-        id2 = text12(record16.id) || text12(record16.contactId);
-      }
-      const key5 = normalizeDocumentId(id2);
-      if (!id2 || seen.has(key5)) continue;
-      seen.add(key5);
-      out.push(id2);
-    }
-    return out;
-  }
-  function nameList(value) {
-    if (!Array.isArray(value)) return [];
-    const seen = /* @__PURE__ */ new Set();
-    const out = [];
-    for (const item of value) {
-      let name = "";
-      if (typeof item === "string") name = item.trim();
-      else if (item && typeof item === "object") name = text12(item.name);
-      if (!name || seen.has(name.toLowerCase())) continue;
-      seen.add(name.toLowerCase());
-      out.push(name);
-    }
-    return out;
-  }
-  function record4(value) {
-    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
-  }
-  var WRITE_CREATE_ONLY = ["id", "createdAt", "organizationId"];
-  var JOB_COLLECTIONS = { project: "projects", smallWork: "smallWorks" };
-  function jobClientId(jobDocId, clientName) {
-    const name = text12(clientName).toLowerCase();
-    return name ? derivedRowId(jobDocId, "client", 0, [name]) : "";
-  }
-  function storedJobIdForKey(key5, jobIds) {
-    const wanted = normalizeDocumentId(key5);
-    if (!wanted) return null;
-    for (const id2 of jobIds || []) if (normalizeDocumentId(id2) === wanted) return text12(id2);
-    return null;
-  }
-  function jobKind2(raw) {
-    return raw === "smallWork" || raw === "smallWorks" ? "smallWork" : "project";
-  }
-  function parseJobDocument(docId, data, options) {
-    const id2 = text12(docId);
-    if (!id2 || isLegacyPlaceholderDocumentId(id2)) return null;
-    const row2 = record4(data);
-    const zone3 = zoneOrLondon(options?.timeZone);
-    const kind = jobKind2(options?.kind);
-    const clientRow = record4(row2.client);
-    const managerIdsStored = idList3(row2.managerIds);
-    const managerIdStored = text12(row2.managerId);
-    const managerIds = managerIdsStored.length > 0 ? managerIdsStored : managerIdStored ? [managerIdStored] : [];
-    const startMs = documentInstantMs(row2.startDate) ?? documentInstantMs(row2.createdAt);
-    const endMs = documentInstantMs(row2.endDate) ?? startMs;
-    const addressLine1 = text12(row2.addressLine1);
-    const addressLine2 = optionalText2(row2.addressLine2);
-    const townCity = text12(row2.townCity);
-    const postcode = text12(row2.postcode);
-    const siteAddress = text12(row2.siteAddress) || [addressLine1, addressLine2, townCity, postcode].filter(Boolean).join(", ");
-    const managerName = text12(row2.manager);
-    return {
-      id: id2,
-      kind,
-      collection: JOB_COLLECTIONS[kind],
-      jobNumber: textOrNumber(row2.jobNumber),
-      siteName: text12(row2.siteName),
-      addressLine1,
-      addressLine2,
-      townCity,
-      postcode,
-      siteAddress,
-      client: {
-        id: text12(clientRow.id) || text12(row2.clientId) || jobClientId(id2, clientRow.name),
-        idStored: Boolean(text12(clientRow.id) || text12(row2.clientId)),
-        name: text12(clientRow.name),
-        email: optionalText2(clientRow.email),
-        phone: optionalText2(clientRow.phone)
-      },
-      startMs,
-      startDayKey: dayKeyOf2(startMs, zone3),
-      endMs,
-      endDayKey: dayKeyOf2(endMs, zone3),
-      jobType: text12(row2.jobType),
-      customJobType: optionalText2(row2.customJobType),
-      managerName: managerName && managerName.toLowerCase() !== "custom" ? managerName : null,
-      managerId: managerIdStored || managerIds[0] || null,
-      managerIds,
-      // 1.31.0: an older job stored its account ids as `assignedManagerUserIds` only (`jobManagerIds` already reads it).
-      managerUserIds: idList3(row2.managerUserIds).length > 0 ? idList3(row2.managerUserIds) : idList3(row2.assignedManagerUserIds),
-      isLive: documentBool(row2.isLive) !== false,
-      description: optionalText2(row2.description),
-      notes: optionalText2(row2.notes),
-      latitude: documentNumber(row2.latitude),
-      longitude: documentNumber(row2.longitude),
-      usesMapPinForLocation: documentBool(row2.usesMapPinForLocation) === true,
-      // 1.33.0 (owner decision 6 Nov): the operatives' hide list stays; the managers' (`hiddenManagerUserIds`) is not read.
-      hiddenOperativeUserIds: idList3(row2.hiddenOperativeUserIds),
-      status: optionalText2(row2.status),
-      organizationId: optionalText2(row2.organizationId),
-      createdAtMs: documentInstantMs(row2.createdAt),
-      updatedAtMs: documentInstantMs(row2.updatedAt)
-    };
-  }
-  function parseProjectDocument(docId, data, options) {
-    return parseJobDocument(docId, data, { kind: "project", timeZone: options?.timeZone });
-  }
-  function parseSmallWorkDocument(docId, data, options) {
-    return parseJobDocument(docId, data, { kind: "smallWork", timeZone: options?.timeZone });
-  }
-  var JOB_MANAGER_WRITE_GROUP = ["managerId", "managerIds", "managerUserIds"];
-  var JOB_ADDRESS_WRITE_GROUP = ["addressLine1", "addressLine2", "townCity", "postcode", "siteAddress"];
-  var JOB_PIN_WRITE_GROUP = ["latitude", "longitude", "usesMapPinForLocation"];
-  function jobWriteFields(before, next) {
-    return documentWriteFields(before, next, {
-      together: [JOB_MANAGER_WRITE_GROUP, JOB_ADDRESS_WRITE_GROUP, JOB_PIN_WRITE_GROUP],
-      createOnly: WRITE_CREATE_ONLY
-    });
-  }
-  var BOOKING_SLOT_WRITE_GROUP = ["timeSlot", "workStartTime", "workEndTime", "isBreakRemoved"];
-  var BOOKING_JOB_WRITE_GROUP = ["projectId", "jobCollection"];
-  function bookingUpdateWriteFields(before, next) {
-    if (!before) return { set: {}, remove: [] };
-    return documentWriteFields(before, next, {
-      together: [BOOKING_SLOT_WRITE_GROUP, BOOKING_JOB_WRITE_GROUP],
-      createOnly: [...WRITE_CREATE_ONLY, "bookedBy"]
-    });
-  }
-  var MANAGER_SITE_BOOKING_LOCATION_WRITE_GROUP = ["locationType", "locationId", "customLocationName", "jobCollection"];
-  function managerSiteBookingUpdateWriteFields(before, next) {
-    if (!before) return { set: {}, remove: [] };
-    return documentWriteFields(before, next, {
-      together: [BOOKING_SLOT_WRITE_GROUP, MANAGER_SITE_BOOKING_LOCATION_WRITE_GROUP],
-      createOnly: [...WRITE_CREATE_ONLY]
-    });
-  }
-  var SUBCONTRACTOR_BOOKING_DOCUMENT_KEYS = {
-    subcontractorId: ["subcontractorId", "subContractorId", "subcontractorID"],
-    projectId: ["projectId", "projectID"],
-    bookedContactIds: ["bookedContactIds", "contactIds", "bookedContacts", "operativeIds"],
-    bookedOperativeNames: ["bookedOperativeNames", "operativeNames", "bookedNames", "contactNames"]
-  };
-  function firstPresent2(row2, keys) {
-    for (const key5 of keys) {
-      if (row2[key5] !== void 0 && row2[key5] !== null) return row2[key5];
-    }
-    return void 0;
-  }
-  function parseSubcontractorBookingDocument(docId, data, options) {
-    const id2 = text12(docId);
-    if (!id2 || isLegacyPlaceholderDocumentId(id2)) return null;
-    const row2 = record4(data);
-    const zone3 = zoneOrLondon(options?.timeZone);
-    const subcontractorId = firstText2(row2, SUBCONTRACTOR_BOOKING_DOCUMENT_KEYS.subcontractorId);
-    const projectId = firstText2(row2, SUBCONTRACTOR_BOOKING_DOCUMENT_KEYS.projectId);
-    const dateMs = documentInstantMs(row2.date);
-    if (!subcontractorId || !projectId || dateMs == null) return null;
-    const rawStatus = text12(row2.status);
-    const status = rawStatus ? normalizeBookingStatus(rawStatus) : "Confirmed";
-    const rawSlot = text12(row2.timeSlot);
-    const timeSlot = rawSlot ? normalizeBookingTimeSlot(rawSlot) : "FULL DAY";
-    if (!status || !timeSlot) return null;
-    const bookedContactIds = idList3(firstPresent2(row2, SUBCONTRACTOR_BOOKING_DOCUMENT_KEYS.bookedContactIds));
-    return {
-      id: id2,
-      subcontractorId,
-      projectId,
-      dateMs,
-      dayKey: dayKeyInZone(new Date(dateMs), zone3),
-      timeSlot,
-      workStartTime: bookingClock(row2.workStartTime, zone3) ?? null,
-      workEndTime: bookingClock(row2.workEndTime, zone3) ?? null,
-      isBreakRemoved: documentBool(row2.isBreakRemoved) === true,
-      bookedBy: text12(row2.bookedBy),
-      status,
-      bookedContactIds,
-      bookedOperativeNames: nameList(firstPresent2(row2, SUBCONTRACTOR_BOOKING_DOCUMENT_KEYS.bookedOperativeNames)),
-      createdAtMs: documentInstantMs(row2.createdAt),
-      updatedAtMs: documentInstantMs(row2.updatedAt),
-      jobCollection: normalizeBookingJobCollection(row2.jobCollection),
-      idsAreUuid: [id2, subcontractorId, projectId, ...bookedContactIds].every((value) => isBookingUuid(value))
-    };
-  }
-  function subcontractorBookingCreateFields(input) {
-    const errors = [];
-    const id2 = text12(input?.id);
-    const subcontractorId = text12(input?.subcontractorId);
-    const projectId = text12(input?.projectId);
-    const dateMs = typeof input?.dateMs === "number" && Number.isFinite(input.dateMs) ? input.dateMs : null;
-    const timeSlot = normalizeBookingTimeSlot(input?.timeSlot);
-    const status = text12(input?.status) ? normalizeBookingStatus(input?.status) : "Confirmed";
-    if (!id2) errors.push("missing_id");
-    if (!subcontractorId) errors.push("missing_subcontractor_id");
-    if (!projectId) errors.push("missing_project_id");
-    if (dateMs == null) errors.push("missing_date");
-    if (!timeSlot) errors.push("bad_time_slot");
-    if (!status) errors.push("bad_status");
-    if (errors.length > 0 || dateMs == null || !timeSlot || !status) return { ok: false, errors };
-    const createdAtMs = typeof input.createdAtMs === "number" && Number.isFinite(input.createdAtMs) ? input.createdAtMs : dateMs;
-    const fields = {
-      id: id2,
-      subcontractorId,
-      projectId,
-      date: dateMs,
-      timeSlot,
-      isBreakRemoved: input.isBreakRemoved === true,
-      bookedBy: text12(input.bookedBy),
-      status,
-      bookedContactIds: idList3(input.bookedContactIds ?? []),
-      bookedOperativeNames: nameList(input.bookedOperativeNames ?? []),
-      createdAt: createdAtMs,
-      updatedAt: createdAtMs
-    };
-    const start = bookingClock(input.workStartTime);
-    const end = bookingClock(input.workEndTime);
-    if (start) fields.workStartTime = start;
-    if (end) fields.workEndTime = end;
-    Object.assign(fields, bookingJobCollectionFields({ collection: "subcontractorBookings", jobCollection: input.jobCollection }));
-    return { ok: true, fields };
-  }
-  var SUBCONTRACTOR_BOOKING_PEOPLE_WRITE_GROUP = ["bookedContactIds", "bookedOperativeNames"];
-  function subcontractorBookingWriteFields(before, next) {
-    if (!before) return { set: {}, remove: [] };
-    return documentWriteFields(before, next, {
-      together: [BOOKING_SLOT_WRITE_GROUP, SUBCONTRACTOR_BOOKING_PEOPLE_WRITE_GROUP, BOOKING_JOB_WRITE_GROUP],
-      createOnly: [...WRITE_CREATE_ONLY, "bookedBy"]
-    });
-  }
-  var ENTRY_ARRAY_FIELD = {
-    expense: "expenseEntries",
-    priceWork: "priceWorkEntries"
-  };
-  function timesheetEntryId(sheetDocId, kind, index, entry) {
-    const row2 = record4(entry);
-    const stored = text12(row2.id);
-    if (stored) return stored;
-    const when = documentInstantMs(kind === "expense" ? row2.date : row2.startDate);
-    const source = [
-      text12(sheetDocId),
-      ENTRY_ARRAY_FIELD[kind],
-      String(Math.max(0, Math.floor(Number(index) || 0))),
-      rawText(row2.title),
-      String(documentNumber(row2.amount) ?? 0),
-      when == null ? "" : String(when)
-    ].join("|");
-    return derivedDocumentId(source);
-  }
-  function timesheetEvidenceOwnerIds(sheetDocId, sheet, extra) {
-    const out = [];
-    for (const value of [record4(sheet).userId, timesheetDocumentSubjectId(sheetDocId), ...extra || []]) {
-      const id2 = text12(value);
-      if (id2 && !out.includes(id2)) out.push(id2);
-    }
-    return out;
-  }
-  function entryBase(sheetDocId, sheet, kind, index, row2, owner) {
-    const title = text12(row2.title);
-    if (!title) return null;
-    const id2 = timesheetEntryId(sheetDocId, kind, index, row2);
-    const amount = documentNumber(row2.amount) ?? 0;
-    const fingerprintKind = kind === "priceWork" ? "priceWork" : "expense";
-    const reviewFingerprint = timesheetEntryFingerprint(row2, fingerprintKind);
-    const decision = timesheetEntryDecision(sheet, { ...row2, id: id2, amount }, fingerprintKind);
-    return {
-      id: id2,
-      idStored: Boolean(text12(row2.id)),
-      title,
-      details: rawText(row2.details),
-      jobNumber: textOrNumber(row2.jobNumber),
-      amount,
-      managerDecision: decision.decision,
-      managerRevisedAmount: decision.revisedAmount,
-      decisionSource: decision.source,
-      reviewFingerprint,
-      evidence: parsePayeClaimEvidence(row2.evidence, { userIds: owner.userIds, organizationId: owner.organizationId })
-    };
-  }
-  function parseTimesheetEntries(sheetDocId, sheet, options) {
-    const data = record4(sheet);
-    const zone3 = zoneOrLondon(options?.timeZone);
-    const owner = { userIds: timesheetEvidenceOwnerIds(sheetDocId, data, options?.ownerUserIds), organizationId: options?.organizationId ?? null };
-    const expenseEntries = [];
-    const priceWorkEntries = [];
-    const expenses = Array.isArray(data.expenseEntries) ? data.expenseEntries : [];
-    expenses.forEach((raw, index) => {
-      const row2 = record4(raw);
-      const base = entryBase(sheetDocId, data, "expense", index, row2, owner);
-      if (!base) return;
-      const dateMs = documentInstantMs(row2.date);
-      expenseEntries.push({
-        ...base,
-        dateMs,
-        dayKey: dayKeyOf2(dateMs, zone3),
-        receiptName: optionalText2(row2.receiptName)
-      });
-    });
-    const priceWork = Array.isArray(data.priceWorkEntries) ? data.priceWorkEntries : [];
-    priceWork.forEach((raw, index) => {
-      const row2 = record4(raw);
-      const base = entryBase(sheetDocId, data, "priceWork", index, row2, owner);
-      if (!base) return;
-      const startMs = documentInstantMs(row2.startDate) ?? documentInstantMs(row2.date);
-      const endMs = documentInstantMs(row2.endDate);
-      priceWorkEntries.push({
-        ...base,
-        agreedManagerName: text12(row2.agreedManagerName) || "Manager",
-        startMs,
-        startDayKey: dayKeyOf2(startMs, zone3),
-        endMs,
-        endDayKey: dayKeyOf2(endMs, zone3)
-      });
-    });
-    return { expenseEntries, priceWorkEntries };
-  }
-  var DEADLINE_ASSIGNMENTS_DOCUMENT_ID = "deadlineAssignments";
-  var DEADLINE_STATUSES = ["notStarted", "inProgress", "blocked", "complete"];
-  function deadlineProjectKey(projectId) {
-    return text12(projectId).toUpperCase();
-  }
-  function deadlinesDocumentId(projectId, isSmallWorks) {
-    return `deadlines_${isSmallWorks ? "smallWorks" : "projects"}_${deadlineProjectKey(projectId)}`;
-  }
-  function deadlineStatus(raw) {
-    const value = text12(raw);
-    return DEADLINE_STATUSES.includes(value) ? value : "notStarted";
-  }
-  var DEADLINE_CHANGE_TYPES = [
-    "created",
-    "rescheduled",
-    "progress",
-    "status",
-    "note",
-    "completed",
-    "assigned",
-    "fileAttached",
-    "siteAuditAttached"
-  ];
-  function parseDeadlineChange(raw) {
-    const row2 = record4(raw);
-    const id2 = text12(row2.id);
-    if (!id2) return null;
-    const storedType = text12(row2.type) || "note";
-    const known = DEADLINE_CHANGE_TYPES.includes(storedType);
-    const type = known ? storedType : "note";
-    const progress = documentNumber(row2.progress);
-    return {
-      id: id2,
-      atMs: documentInstantMs(row2.at),
-      author: text12(row2.author),
-      type,
-      dueMs: documentInstantMs(row2.due),
-      fromMs: documentInstantMs(row2.from),
-      toMs: documentInstantMs(row2.to),
-      reason: optionalText2(row2.reason),
-      progress: progress == null ? null : Math.round(progress),
-      status: text12(row2.status) ? deadlineStatus(row2.status) : null,
-      note: known ? optionalText2(row2.note) : storedType,
-      completedOnMs: documentInstantMs(row2.completedOn),
-      assignedTo: optionalText2(row2.assignedTo),
-      name: optionalText2(row2.name)
-    };
-  }
-  function stringList(value) {
-    return Array.isArray(value) ? value.filter((item) => typeof item === "string" && item.trim() !== "").map((item) => item.trim()) : [];
-  }
-  function parseDeadlineItem(raw, options) {
-    const row2 = record4(raw);
-    const id2 = text12(row2.id);
-    if (!id2) return null;
-    const zone3 = zoneOrLondon(options?.timeZone);
-    const startMs = documentInstantMs(row2.start);
-    const dueMs = documentInstantMs(row2.due);
-    const reminder = documentNumber(row2.reminderDaysBefore);
-    const history = Array.isArray(row2.history) ? row2.history.map(parseDeadlineChange).filter((change) => change !== null) : [];
-    return {
-      id: id2,
-      title: text12(row2.title) || "Untitled deadline",
-      location: optionalText2(row2.location),
-      trade: optionalText2(row2.trade),
-      detail: optionalText2(row2.detail),
-      startMs,
-      startDayKey: dayKeyOf2(startMs, zone3),
-      dueMs,
-      dueDayKey: dayKeyOf2(dueMs, zone3),
-      completedAtMs: documentInstantMs(row2.completedAt),
-      assignees: stringList(row2.assignees),
-      assigneeUserIds: idList3(row2.assigneeUserIds),
-      company: optionalText2(row2.company),
-      status: deadlineStatus(row2.status),
-      progress: documentNumber(row2.progress) ?? 0,
-      isCritical: documentBool(row2.isCritical) === true,
-      dependsOn: idList3(row2.dependsOn),
-      blockedReason: optionalText2(row2.blockedReason),
-      reminderDaysBefore: reminder == null ? null : Math.round(reminder),
-      originalDueMs: documentInstantMs(row2.originalDue),
-      history,
-      contextKind: text12(row2.contextKind) || "Project",
-      projectId: text12(row2.projectId) || text12(options?.projectId),
-      createdByUserId: text12(row2.createdByUserId),
-      fileURL: optionalText2(row2.fileURL),
-      fileName: optionalText2(row2.fileName),
-      siteAuditId: optionalText2(row2.siteAuditId),
-      siteAuditTitle: optionalText2(row2.siteAuditTitle)
-    };
-  }
-  function parseDeadlineDocument(docId, data, options) {
-    const id2 = text12(docId);
-    const row2 = record4(data);
-    const match = /^deadlines_(projects|smallWorks)_(.+)$/.exec(id2);
-    const projectId = text12(row2.projectId) || text12(options?.projectId) || (match ? match[2] : "");
-    const items = (Array.isArray(row2.items) ? row2.items : []).map((item) => parseDeadlineItem(item, { projectId, timeZone: options?.timeZone })).filter((item) => item !== null).sort((a, b) => {
-      const left = a.dueMs ?? Number.MAX_SAFE_INTEGER;
-      const right = b.dueMs ?? Number.MAX_SAFE_INTEGER;
-      return left - right || a.id.localeCompare(b.id);
-    });
-    return {
-      id: id2,
-      collection: match ? match[1] : null,
-      projectId,
-      items,
-      updatedAtMs: documentInstantMs(row2.updatedAt)
-    };
-  }
-  function parseDeadlineAssignments(data) {
-    const row2 = record4(data);
-    const out = {};
-    for (const [key5, value] of Object.entries(row2)) {
-      if (!key5.startsWith("projects.")) continue;
-      const projectKey = key5.slice("projects.".length).trim();
-      if (projectKey && Array.isArray(value)) out[projectKey] = idList3(value);
-    }
-    for (const [key5, value] of Object.entries(record4(row2.projects))) {
-      if (key5.trim() && Array.isArray(value)) out[key5.trim()] = idList3(value);
-    }
-    return out;
-  }
-  function deadlineAssignedProjectIds(data, personIds, jobIds) {
-    const ids = new Set((Array.isArray(personIds) ? personIds : [personIds]).map(normalizeDocumentId).filter(Boolean));
-    if (ids.size === 0) return [];
-    return Object.entries(parseDeadlineAssignments(data)).filter(([, assignees]) => assignees.some((id2) => ids.has(normalizeDocumentId(id2)))).map(([key5]) => jobIds ? storedJobIdForKey(key5, jobIds) : key5).filter((key5) => Boolean(key5)).filter((key5, index, all) => all.indexOf(key5) === index).sort();
-  }
-  function deadlineAssignmentWriteFields(input) {
-    const key5 = deadlineProjectKey(input?.projectId);
-    if (!key5) return null;
-    const value = idList3(input.assigneeUserIds ?? []).sort((a, b) => a.localeCompare(b));
-    return { fieldPath: ["projects", key5], value, createFields: { projects: { [key5]: value } } };
-  }
-
   // lib/canonical/timesheetLateExtras.ts
   var TIMESHEET_LATE_EXTRAS_FIELD = "lateExtras";
   var TIMESHEET_LATE_EXTRA_WAITING_LABEL = "Added after sign-off \u2014 waiting for your line manager";
   var TIMESHEET_LATE_EXTRA_APPROVED_LABEL = "Added after sign-off \u2014 approved";
   var TIMESHEET_LATE_EXTRA_DECLINED_LABEL = "Added after sign-off \u2014 declined";
   var TIMESHEET_LATE_EXTRA_ID_TAKEN_LABEL = "Can't be reviewed \u2014 same reference as a signed item";
+  var TIMESHEET_LATE_EXTRA_ID_UNUSABLE_LABEL = "Can't be reviewed \u2014 delete it and add it again";
   var TIMESHEET_LATE_EXTRAS_REVIEWER_MESSAGE = "Price work or expenses were added after this timesheet was signed. Approve or decline each one \u2014 only what you approve is paid.";
   var TIMESHEET_LATE_EXTRAS_EXPORT_SKIPPED_MESSAGE = "Not exported \u2014 price work or expenses added after sign-off are waiting for the line manager.";
   var TIMESHEET_LATE_EXTRA_ADD_CONFIRM_MESSAGE = "Your timesheet is already signed off. This will be sent to your line manager to approve; it is paid only once they approve it.";
@@ -12690,17 +12718,7 @@ var ProjectPlannerCanonical = (() => {
     }
     return out;
   }
-  function signedEntryIds(sheet) {
-    const ids = /* @__PURE__ */ new Set();
-    for (const key5 of ["priceWorkEntries", "expenseEntries"]) {
-      for (const row2 of rowsOf(sheet[key5])) {
-        const id2 = normalizeDocumentId(row2.id);
-        if (id2) ids.add(id2);
-      }
-    }
-    return ids;
-  }
-  function timesheetLateExtraDecision(sheet, entry, trustedFingerprint) {
+  function timesheetLateExtraDecision(sheet, entry, trustedFingerprint, options = {}) {
     const row2 = entry || {};
     const pending = (reason) => ({
       state: "pending",
@@ -12721,7 +12739,8 @@ var ProjectPlannerCanonical = (() => {
     const id2 = text13(row2.id);
     if (!id2) return ignored("no-id");
     const data = sheet && typeof sheet === "object" ? sheet : {};
-    if (signedEntryIds(data).has(normalizeDocumentId(id2))) return ignored("id-taken");
+    if (!timesheetEntryReviewKeyUsable(id2)) return ignored("id-unusable");
+    if (timesheetSignedEntryKeys(data, options.sheetDocId).has(normalizeDocumentId(id2))) return ignored("id-taken");
     const review = timesheetEntryReviewFor(parseTimesheetEntryReviews(data), id2);
     if (!review) return pending("no-review");
     if (!review.lateExtra || !review.reviewedFingerprint) return pending("not-late-review");
@@ -12744,7 +12763,7 @@ var ProjectPlannerCanonical = (() => {
       if (!kind || !id2) continue;
       const key5 = normalizeDocumentId(id2);
       const trusted = options.entryFingerprints ? options.entryFingerprints[timesheetLateExtraFingerprintKey(id2)] ?? null : null;
-      const decision = seen.has(key5) ? { state: "ignored", decision: "pending", revisedAmount: null, paid: 0, reason: "id-taken" } : timesheetLateExtraDecision(data, row2, trusted);
+      const decision = seen.has(key5) ? { state: "ignored", decision: "pending", revisedAmount: null, paid: 0, reason: "id-taken" } : timesheetLateExtraDecision(data, row2, trusted, { sheetDocId: options.sheetDocId });
       seen.add(key5);
       out.push({ id: id2, kind, row: row2, decision });
     }
@@ -12752,7 +12771,7 @@ var ProjectPlannerCanonical = (() => {
   }
   function parseTimesheetLateExtras(sheetDocId, sheet, options) {
     const data = sheet && typeof sheet === "object" ? sheet : {};
-    const rows3 = timesheetLateExtraRows(data);
+    const rows3 = timesheetLateExtraRows(data, { sheetDocId });
     const byId = new Map(rows3.map((row2) => [normalizeDocumentId(row2.id), row2]));
     const raw = rowsOf(data[TIMESHEET_LATE_EXTRAS_FIELD]).filter((row2) => timesheetLateExtraKind(row2) && text13(row2.id));
     const parsed = parseTimesheetEntries(
@@ -12885,6 +12904,7 @@ var ProjectPlannerCanonical = (() => {
     if (decision.state === "approved") return TIMESHEET_LATE_EXTRA_APPROVED_LABEL;
     if (decision.state === "declined") return TIMESHEET_LATE_EXTRA_DECLINED_LABEL;
     if (decision.state === "pending") return TIMESHEET_LATE_EXTRA_WAITING_LABEL;
+    if (decision.state === "ignored" && decision.reason === "id-unusable") return TIMESHEET_LATE_EXTRA_ID_UNUSABLE_LABEL;
     if (decision.state === "ignored" && (decision.reason == null || decision.reason === "id-taken")) return TIMESHEET_LATE_EXTRA_ID_TAKEN_LABEL;
     return null;
   }
@@ -13490,7 +13510,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.54.0" : "",
-      sha256: true ? "1cf737f14f5731cfbcb0110b9cb8c2199f3a4b1d8fa5d396135b0e96628895e7" : ""
+      sha256: true ? "37516de31916c661c14706b741f0c10e57e58dca72ac2428f91378be13792eca" : ""
     };
   }
   function rulebookVersionLabel(version) {

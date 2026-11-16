@@ -128,6 +128,7 @@ export function timesheetSheetFields(draft: TimesheetDraft, options: { reviewerP
       reviewedByUserId: '',
       reviewedAtMs: 0,
       exported: draftStoredExported(draft),
+      sheet: { priceWorkEntries: draft.priceWorkEntries, expenseEntries: draft.expenseEntries },
     })
     extraEntryReviews = timesheetEntryReviewsAfterWrite(extraEntryReviews, written)
   }

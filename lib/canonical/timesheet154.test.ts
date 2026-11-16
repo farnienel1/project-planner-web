@@ -466,16 +466,17 @@ test('1.54.0 third review of #337 (1): a late extra colliding with a signed entr
     }),
     {}
   )
-  // The reverse: a signed entry never overwrites a stored late review either.
+  // The reverse: a signed entry never overwrites a stored late review either — it writes under its own exact id
+  // (fourth review of #337: so its decision still applies).
   const lateStored = { e9: { ...lateReview(lateExpense('e9', 10)) } }
   assert.deepEqual(
-    R.timesheetEntryReviewWriteFields({
+    Object.keys(R.timesheetEntryReviewWriteFields({
       stored: R.parseTimesheetEntryReviews({ extraEntryReviews: lateStored }),
       entries: [{ id: 'E9', title: 'X', amount: 10, managerDecision: 'declined' }] as never,
       reviewedByUserId: LM,
       reviewedAtMs: 9,
-    }),
-    {}
+    })),
+    ['extraEntryReviews.E9']
   )
   // Had a late review been written under E1 (the bug), the signed £1000 entry never takes it as its own approval.
   const overwritten = { ...sheet, lateExtras: [], extraEntryReviews: { E1: lateReview({ ...late, id: 'E1' }) } }
@@ -524,4 +525,67 @@ test('1.54.0 third review of #337 (4): a report counts a snapshot late row only 
   // Deleted: out too. Exported: kept as signed.
   assert.deepEqual(R.timesheetSnapshotMoneyRowsCurrent({ ...approved, lateExtras: [] }, rows).map((row) => row.id), ['E1'])
   assert.deepEqual(R.timesheetSnapshotMoneyRowsCurrent({ ...edited, exportedAt: new Date() }, rows).map((row) => row.id), ['E1', 'L1'])
+})
+
+// Fourth review of #337, finding 1: a late extra nobody can decide never blocks export — it is ignored ("can't be
+// reviewed") on both sides, never left pending.
+test('1.54.0 fourth review of #337 (1): an undecidable late extra (unusable id, or a signed entry\'s derived id) is ignored, never pending', () => {
+  // A £0.01 extra with id `a.b`: the writer can never store its review, so the reader ignores it.
+  const dotted = lateExpense('a.b', 0.01)
+  const sheet = counterSignedSheet({ lateExtras: [dotted] })
+  const decision = R.timesheetLateExtraDecision(sheet, dotted)
+  assert.deepEqual([decision.state, decision.reason], ['ignored', 'id-unusable'])
+  assert.equal(R.timesheetLateExtraLabel(decision), R.TIMESHEET_LATE_EXTRA_ID_UNUSABLE_LABEL)
+  assert.equal(R.timesheetLateExtrasSummary(sheet).waitingForLineManager, false)
+  for (const bad of ['a/b', 'a[b', 'a*b', 'a~b', 'a`b']) {
+    assert.equal(R.timesheetLateExtraDecision(counterSignedSheet({ lateExtras: [lateExpense(bad, 1)] }), lateExpense(bad, 1)).reason, 'id-unusable', bad)
+  }
+  // A signed entry stored without an id has a derived id (`timesheetEntryId`); a late extra using it, in any case, is taken.
+  const noId = { title: 'Fuel', details: '', jobNumber: 'J-1', date: SIGNED, amount: 60 }
+  const sheetDocId = 'timesheet_u_1'
+  const derived = R.timesheetEntryId(sheetDocId, 'expense', 0, noId)
+  const copy = lateExpense(derived.toLowerCase(), 5)
+  const stored = { userId: 'u', operativeSignedAt: SIGNED, managerSignedAt: COUNTER, expenseEntries: [noId], priceWorkEntries: [], lateExtras: [copy] }
+  assert.equal(R.timesheetLateExtraDecision(stored, copy, null, { sheetDocId }).reason, 'id-taken')
+  assert.equal(R.timesheetLateExtrasSummary(stored, { sheetDocId }).waitingForLineManager, false)
+  const parsed = R.parseTimesheetLateExtras(sheetDocId, stored)
+  assert.deepEqual(parsed.map((row) => [row.lateDecision.state, row.lateDecision.reason]), [['ignored', 'id-taken']])
+  // ...and the writer refuses it from the stored sheet alone.
+  assert.deepEqual(
+    R.timesheetEntryReviewWriteFields({
+      stored: {},
+      entries: [{ ...copy, managerDecision: 'approved', reviewFingerprint: fpOf(copy), lateExtra: true }] as never,
+      reviewedByUserId: LM,
+      reviewedAtMs: 1,
+      sheet: stored,
+      sheetDocId,
+    }),
+    {}
+  )
+})
+
+// Fourth review of #337, finding 3: the writer never depends on `signedEntryIds`; the probe.
+test('1.54.0 fourth review of #337 (3): unreviewed signed E1, only late e1 passed — never under E1, and a later decline of E1 applies', () => {
+  const signed1 = { id: 'E1', title: 'Hotel', details: '', jobNumber: 'J-1', date: SIGNED, amount: 1000 }
+  const late = lateExpense('e1', 40)
+  const sheet = { operativeSignedAt: SIGNED, managerSignedAt: COUNTER, expenseEntries: [signed1], priceWorkEntries: [], lateExtras: [late] }
+  const lateOnly = [{ ...late, managerDecision: 'approved', reviewFingerprint: fpOf(late), lateExtra: true }] as never
+  // With the stored sheet: nothing is written.
+  assert.deepEqual(R.timesheetEntryReviewWriteFields({ stored: {}, entries: lateOnly, reviewedByUserId: LM, reviewedAtMs: 1, sheet }), {})
+  // Even a caller that passes neither the sheet nor the signed ids (the worst case) cannot block the signed entry: the
+  // late review lands under `e1` (that late extra is ignored for pay anyway)...
+  const first = R.timesheetEntryReviewWriteFields({ stored: {}, entries: lateOnly, reviewedByUserId: LM, reviewedAtMs: 1 })
+  assert.deepEqual(Object.keys(first), ['extraEntryReviews.e1'])
+  const storedReviews = R.timesheetEntryReviewsAfterWrite({}, first)
+  // ...and a later decline of E1 is written under E1's own key and applies.
+  const decline = R.timesheetEntryReviewWriteFields({
+    stored: storedReviews,
+    entries: [{ ...signed1, managerDecision: 'declined', reviewFingerprint: R.timesheetEntryFingerprint(signed1, 'expense') }] as never,
+    reviewedByUserId: LM,
+    reviewedAtMs: 2,
+  })
+  assert.deepEqual(Object.keys(decline), ['extraEntryReviews.E1'])
+  const after = { ...sheet, extraEntryReviews: R.timesheetEntryReviewsAfterWrite(storedReviews, decline) }
+  assert.equal(R.timesheetEntryDecision(after, signed1, 'expense').decision, 'declined')
+  assert.equal(invoiceTotal(after), 0)
 })

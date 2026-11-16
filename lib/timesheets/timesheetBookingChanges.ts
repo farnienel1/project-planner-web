@@ -9,6 +9,7 @@ import {
   signedTimesheetBookingRecord,
   timesheetChangesWithLateExtras,
   timesheetLateExtrasSummary,
+  timesheetSnapshotMoneyRowsCurrent,
   type SignedTimesheetBooking,
   type TimesheetChanges,
   type TimesheetLateExtrasSummary,
@@ -23,7 +24,7 @@ import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import { collectTimesheetPayroll, type TimesheetPayrollLineItem } from '@/lib/timesheets/timesheetPayrollCollector'
 import { userTimesheetSelfSigned } from '@/lib/timesheets/timesheetApprovalPolicy'
 import { userIdsSharingEmail } from '@/lib/timesheets/timesheetWeekUtils'
-import { draftEntryFingerprints, timesheetSheetFields } from '@/lib/timesheets/timesheetAdjustments'
+import { draftEntryFingerprints, draftStoredExported, timesheetSheetFields } from '@/lib/timesheets/timesheetAdjustments'
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
@@ -182,9 +183,26 @@ export function draftForFigures(
   draft: TimesheetDraft,
   change: (Pick<SignedTimesheetBookingChanges, 'reopened'> & { bookingsChanged?: boolean }) | null | undefined
 ): TimesheetDraft {
-  // 1.54.0: late extras alone never discard the snapshot — its signed figures stand; only approved late extras join it.
-  if (!change?.reopened || change.bookingsChanged === false || !draft.weeklyReportOverride) return draft
+  // 1.54.0: late extras alone never discard the snapshot — its signed figures stand; only approved late extras join it,
+  // and (fourth review of #337) only while still approved at that amount (`draftWithCurrentLateRows`).
+  if (!change?.reopened || change.bookingsChanged === false || !draft.weeklyReportOverride) return draftWithCurrentLateRows(draft)
   return { ...draft, weeklyReportOverride: null }
+}
+
+/**
+ * Rulebook 1.54.0 (fourth review of #337): the draft with its signed snapshot's late-extra money rows only while each
+ * late extra is still approved at that amount (`timesheetSnapshotMoneyRowsCurrent`) — an edited (stale), deleted or
+ * declined late extra leaves the figures at once, before the reviewer's next save. Exported sheets stay as signed.
+ */
+export function draftWithCurrentLateRows(draft: TimesheetDraft): TimesheetDraft {
+  const signed = draft.weeklyReportOverride
+  if (!signed) return draft
+  const fields = timesheetSheetFields(draft)
+  const options = { entryFingerprints: draftEntryFingerprints(draft), exportedAtStored: draftStoredExported(draft) }
+  const priceWork = timesheetSnapshotMoneyRowsCurrent(fields, signed.priceWork, options)
+  const expenses = timesheetSnapshotMoneyRowsCurrent(fields, signed.expenses, options)
+  if (priceWork.length === signed.priceWork.length && expenses.length === signed.expenses.length) return draft
+  return { ...draft, weeklyReportOverride: { ...signed, priceWork, expenses } }
 }
 
 /** What a list needs to price a person's live payroll lines for any period (the collector's inputs). */

@@ -1819,10 +1819,11 @@ service cloud.firestore {
         function timesheetStoredExported() {
           return resource.data.get('exportedAt', null) is timestamp || resource.data.get('exportedAt', null) is number;
         }
-        // 1.54.0: an exported sheet with late extras is frozen: no reviewer changes its reviews or snapshot.
+        // 1.54.0: once exported, no reviewer writes `lateExtras`; with late extras stored, nor its reviews or snapshot.
         function timesheetReviewerKeepsExportedLate() {
-          return resource == null || resource.data.get('lateExtras', []) == [] || !timesheetStoredExported() ||
-            !writtenKeys().hasAny(['extraEntryReviews', 'weeklyReportOverride']);
+          let w = writtenKeys();
+          return resource == null || !timesheetStoredExported() || (!('lateExtras' in w) &&
+            (resource.data.get('lateExtras', null) in [null, []] || !w.hasAny(['extraEntryReviews', 'weeklyReportOverride'])));
         }
 
         allow read: if canAccessOrganization(organizationId) && ((resource.data.get('userId', null) == request.auth.uid && (request.method == 'list' || settingId.matches('^timesheet_.*'))) ||

@@ -2160,6 +2160,7 @@ export {
   TIMESHEET_LATE_EXTRA_APPROVED_LABEL,
   TIMESHEET_LATE_EXTRA_DECLINED_LABEL,
   TIMESHEET_LATE_EXTRA_ID_TAKEN_LABEL,
+  TIMESHEET_LATE_EXTRA_ID_UNUSABLE_LABEL,
   TIMESHEET_LATE_EXTRA_WAITING_LABEL,
   parseTimesheetLateExtras,
   timesheetChangesWithLateExtras,
@@ -2179,7 +2180,7 @@ export {
   timesheetExportedFieldSet,
   timesheetOwnerCanAddLateExtras,
 } from './timesheetSnapshot'
-export { timesheetEntryReviewFor } from './timesheetEntryReviews'
+export { timesheetEntryReviewFor, timesheetEntryReviewKeyUsable, timesheetSignedEntryKeys } from './timesheetEntryReviews'
 // Rulebook 1.54.0 §8 / §13: "Your signed timesheet has changed" (written by the server).
 export {
   TIMESHEET_BOOKINGS_CHANGED_NOTICE_MESSAGE,

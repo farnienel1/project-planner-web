@@ -1001,6 +1001,8 @@ export async function saveTimesheetDraft({
         reviewedByUserId: writerId,
         reviewedAtMs: Date.now(),
         exported: draftStoredExported(draft),
+        // Fourth review of #337: the writer derives the signed ids itself (the loaded entries carry their derived ids).
+        sheet: { priceWorkEntries: draft.priceWorkEntries, expenseEntries: draft.expenseEntries },
       })
     : {}
   const hasReviewFields = Object.keys(reviewFields).length > 0
@@ -1099,7 +1101,7 @@ export async function stampTimesheetExport({
       const loaded = draftFromFirestoreMap(stored, { includeSignatures: false, sheetDocId: snap.id, timeZone })
       const late = timesheetLateExtrasSummary(
         { ...stored, weeklyReportOverride: fields.weeklyReportOverride },
-        { entryFingerprints: draftEntryFingerprints(loaded), exportedAtStored: false }
+        { entryFingerprints: draftEntryFingerprints(loaded), exportedAtStored: false, sheetDocId: snap.id }
       )
       if (late.waitingForLineManager) return 'late-extras-waiting'
     }

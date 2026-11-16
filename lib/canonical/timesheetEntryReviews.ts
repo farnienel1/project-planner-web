@@ -37,6 +37,9 @@ import { parseTimesheetStatusFields } from './timesheetPeriod'
 import { documentInstantMs, documentWriteFields, type DocumentWriteFields } from './peopleDocuments'
 import { roundPennies } from './payRate'
 import { overtimeFingerprintKey, overtimeFingerprintsMatch } from './bookingFingerprint'
+// 1.54.0 (fourth review of #337): the derived id of an entry stored without one (call-time use only; the two modules
+// import each other's functions, never values at load).
+import { timesheetEntryId } from './workDocumentReaders'
 
 export type TimesheetEntryDecision = 'pending' | 'approved' | 'declined' | 'edited'
 
@@ -257,6 +260,36 @@ export function timesheetEntryReviewFor(
   return reviews && id ? reviewFor(reviews, id) : undefined
 }
 
+/**
+ * 1.54.0 (fourth review of #337): whether an entry id can be a key of the review map (`extraEntryReviews.{id}` as a
+ * dotted field path): never blank, never with `.`, `/`, `[`, `]`, `*`, `~` or a backtick. A late extra with such an id is
+ * ignored (`timesheetLateExtraDecision`), so it never waits for a decision nobody can write.
+ */
+export function timesheetEntryReviewKeyUsable(id: unknown): boolean {
+  const value = text(id)
+  return value !== '' && !/[.`~*/[\]]/.test(value)
+}
+
+/**
+ * 1.54.0 (fourth review of #337): the signed entries' ids on a stored sheet, without case — each row's stored id, or the
+ * derived id (`timesheetEntryId`, with `sheetDocId`) of a row stored without one, as every reader gives it.
+ */
+export function timesheetSignedEntryKeys(sheet: Record<string, unknown> | null | undefined, sheetDocId?: string | null): Set<string> {
+  const keys = new Set<string>()
+  if (!sheet || typeof sheet !== 'object') return keys
+  for (const [field, kind] of [['priceWorkEntries', 'priceWork'], ['expenseEntries', 'expense']] as const) {
+    const rows = Array.isArray(sheet[field]) ? (sheet[field] as unknown[]) : []
+    rows.forEach((raw, index) => {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return
+      const row = raw as Record<string, unknown>
+      const stored = normalizeDocumentId(row.id)
+      if (stored) keys.add(stored)
+      else if (text(sheetDocId)) keys.add(normalizeDocumentId(timesheetEntryId(text(sheetDocId), kind, index, row)))
+    })
+  }
+  return keys
+}
+
 /** The stored key of an entry's review: the exact id, else one that differs only by letter case. */
 function reviewKeyFor(reviews: Record<string, TimesheetEntryReview>, entryId: string): string | undefined {
   if (Object.prototype.hasOwnProperty.call(reviews, entryId)) return entryId
@@ -388,6 +421,13 @@ export function timesheetEntryReviewWriteFields(input: {
    * does not list them all. The signed entries in `entries` always count.
    */
   signedEntryIds?: ReadonlyArray<unknown> | null
+  /**
+   * 1.54.0 (fourth review of #337): the stored sheet (its `priceWorkEntries` / `expenseEntries`) and its document id. The
+   * writer derives the signed entries' ids from it itself — stored ids, and the derived id (`timesheetEntryId`) of an
+   * entry stored without one — so a late review is never written under a signed entry's key whatever `entries` lists.
+   */
+  sheet?: Record<string, unknown> | null
+  sheetDocId?: string | null
 }): Record<string, Record<string, unknown>> {
   const stored = input.stored || {}
   const reviewer = text(input.reviewedByUserId)
@@ -401,6 +441,7 @@ export function timesheetEntryReviewWriteFields(input: {
     const key = normalizeDocumentId(raw)
     if (key) signedIds.add(key)
   }
+  for (const key of timesheetSignedEntryKeys(input.sheet, input.sheetDocId)) signedIds.add(key)
   for (const entry of input.entries) {
     if (entry.lateExtra === true) continue
     const key = normalizeDocumentId(entry.id)
@@ -409,7 +450,7 @@ export function timesheetEntryReviewWriteFields(input: {
   const lateSeen = new Set<string>()
   for (const entry of input.entries) {
     const id = text(entry.id)
-    if (!id || /[.`~*/[\]]/.test(id)) continue
+    if (!id || !timesheetEntryReviewKeyUsable(id)) continue
     if (entry.lateExtra === true) {
       const key = normalizeDocumentId(id)
       if (input.exported === true || signedIds.has(key) || lateSeen.has(key)) continue
@@ -422,9 +463,17 @@ export function timesheetEntryReviewWriteFields(input: {
     const late = entry.lateExtra === true
     // 1.54.0: a late extra's decision counts only against the fingerprint it was made on.
     if (late && fingerprint == null) continue
-    const storedKey = input.stored ? reviewKeyFor(stored, id) : undefined
-    const prior = storedKey != null ? stored[storedKey] : undefined
-    if (prior && prior.lateExtra !== late) continue
+    let storedKey = input.stored ? reviewKeyFor(stored, id) : undefined
+    let prior = storedKey != null ? stored[storedKey] : undefined
+    if (prior && prior.lateExtra !== late) {
+      // A late review never replaces a signed entry's. A signed entry whose id matches a stored late review only
+      // without case writes its own review under its exact id (fourth review of #337: a later decision of the signed
+      // entry still applies); one stored under its exact id was never a valid late review (that late extra is ignored)
+      // and is replaced.
+      if (late) continue
+      if (storedKey !== id) storedKey = undefined
+      prior = undefined
+    }
     // Whether the stored review still applies to the entry as stored (the reader's rule, `timesheetEntryDecision`).
     const priorCurrent =
       prior != null &&

@@ -14,7 +14,7 @@ import {
   timesheetPersonIds,
 } from './timesheetBookingChanges.ts'
 import { draftFromFirestoreMap, draftToFirestoreMap } from './timesheetStorage.ts'
-import { signedTimesheetActions } from '../canonical/index.ts'
+import { signedTimesheetActions, timesheetEntryFingerprint } from '../canonical/index.ts'
 import type { ManagerSiteBooking } from '../scheduling/managerSiteBookingUtils.ts'
 
 // Rulebook 1.47.0 §8: a signed timesheet reopens when its bookings change (web wiring over the rulebook).
@@ -374,3 +374,27 @@ test('1.54.0 review of #337 (2): a sheet signed while Office was off is never "r
   assert.equal(changes(frozen, [], [office154]).changed, false)
 })
 
+
+test('1.54.0 fourth review of #337 (5): a stale late extra leaves the figures at once; an exported sheet stays as signed', () => {
+  const day = new Date('2026-11-12T10:00:00Z')
+  const late = { kind: 'expense' as const, id: 'L1', title: 'Taxi', details: '', jobNumber: 'J', date: day, amount: 25, managerDecision: 'approved' as const }
+  const stored = { kind: 'expense', id: 'L1', title: 'Taxi', details: '', jobNumber: 'J', date: day, amount: 25 }
+  const signed: TimesheetDraft = {
+    ...emptyTimesheetDraft(),
+    managerSignedAt: day,
+    lateExtras: [late],
+    extraEntryReviews: {
+      L1: { decision: 'approved', revisedAmount: null, reviewedAmount: 25, reviewedFingerprint: timesheetEntryFingerprint(stored, 'expense'), reviewedByUserId: 'lm', reviewedAtMs: 1, lateExtra: true },
+    },
+    weeklyReportOverride: {
+      approvedAt: day, approvedByUserId: 'lm', approvedByName: 'Lou', selfSigned: false, lines: [], priceWork: [],
+      expenses: [{ id: 'L1', title: 'Taxi', details: '', jobNumber: 'J', date: day, amount: 25, decision: 'approved', lateExtra: true }],
+    },
+  }
+  const waiting = { reopened: true, bookingsChanged: false }
+  assert.equal(draftForFigures(signed, waiting).weeklyReportOverride?.expenses.length, 1)
+  // The person edits it to £900: the review is stale, so the old £25 row is no longer shown.
+  const edited = { ...signed, lateExtras: [{ ...late, amount: 900 }] }
+  assert.equal(draftForFigures(edited, waiting).weeklyReportOverride?.expenses.length, 0)
+  assert.equal(draftForFigures({ ...edited, exportedAt: day, exportedAtStored: true }, null).weeklyReportOverride?.expenses.length, 1)
+})

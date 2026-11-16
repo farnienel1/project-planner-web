@@ -13,15 +13,14 @@ import { isTimesheetFullyApproved } from '@/lib/timesheets/timesheetApprovalPoli
 import { normalizeDocumentId, timesheetParticipant } from '@/lib/canonical'
 import { payPeriodsOverlapping } from '@/lib/timesheets/timesheetPayrollPolicy'
 import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride'
-import { periodBookingChanges } from '@/lib/timesheets/timesheetBookingChanges'
+import { draftWithCurrentLateRows, periodBookingChanges } from '@/lib/timesheets/timesheetBookingChanges'
 import { listTimesheetStates } from '@/lib/timesheets/timesheetStorage'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import { findUserAndOperative, resolveDisplayName, resolvePersonRole, resolvePersonTrade } from '@/lib/weekly-report/weeklyReportPayroll'
 import { mergeDuplicatePersonWeeks, type ApprovedTimesheetWeek } from '@/lib/weekly-report/timesheetFeed'
 import type { PayrollTimePolicyState, WeeklyReportPaySheet } from '@/lib/canonical'
-import { timesheetSnapshotMoneyRowsCurrent } from '@/lib/canonical'
 import { collectTimesheetPayroll } from '@/lib/timesheets/timesheetPayrollCollector'
-import { draftEntryFingerprints, draftStoredExported, timesheetSheetFields } from '@/lib/timesheets/timesheetAdjustments'
+import { draftEntryFingerprints, timesheetSheetFields } from '@/lib/timesheets/timesheetAdjustments'
 import { timesheetStatusFieldsFromDraft } from '@/lib/timesheets/timesheetHubStats'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
@@ -143,7 +142,8 @@ export async function loadWeeklyReportTimesheetFeed({
         personId: user.id,
         startDayKey: dayKey(period.start, timeZone),
         endDayKey: dayKey(period.end, timeZone),
-        sheet: draft ? timesheetSheetFields(draft) : null,
+        // Fourth review of #337: the check line reads the snapshot's late rows only while still approved.
+        sheet: draft ? timesheetSheetFields(draftWithCurrentLateRows(draft)) : null,
         status: draft ? timesheetStatusFieldsFromDraft(draft) : null,
         change: checkChange ? { reopened: checkChange.reopened, changed: checkChange.changed, waitingFor: checkChange.waitingFor } : null,
         payrollLines: payroll.lineItems,
@@ -183,14 +183,7 @@ export async function loadWeeklyReportTimesheetFeed({
       if (!working.weeklyReportOverride) continue
       // Rulebook 1.54.0 (third review of #337): a snapshot's late-extra rows count only while that late extra is still
       // approved at the same amount (`timesheetSnapshotMoneyRowsCurrent`); an exported sheet stays as signed.
-      const signed = working.weeklyReportOverride
-      const currentOptions = { entryFingerprints: draftEntryFingerprints(working), exportedAtStored: draftStoredExported(working) }
-      const signedFields = timesheetSheetFields(working)
-      const override = {
-        ...signed,
-        priceWork: timesheetSnapshotMoneyRowsCurrent(signedFields, signed.priceWork, currentOptions),
-        expenses: timesheetSnapshotMoneyRowsCurrent(signedFields, signed.expenses, currentOptions),
-      }
+      const override = draftWithCurrentLateRows(working).weeklyReportOverride ?? working.weeklyReportOverride
       for (const entry of [...working.priceWorkEntries, ...working.expenseEntries]) {
         const count = entry.evidence?.length ?? 0
         if (count > 0) evidenceCounts[normalizeDocumentId(entry.id)] = count
