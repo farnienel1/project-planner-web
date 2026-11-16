@@ -1,0 +1,131 @@
+name: Firebase rules deploy
+
+# The rules publish button (docs/firebase-rules-deploy.md; owner decision 16 Nov, docs/OWNER_DECISIONS.md).
+# Publishes Firestore rules, Storage rules and/or Firestore indexes to project-planner-f986c — nothing else:
+# never Cloud Functions, hosting, data or billing. Runs only by hand, only on main, only after the same rules
+# guards CI runs, and fails unless the live release afterwards matches the file on main byte for byte.
+#
+# Every workflow input reaches a script through an environment variable only, never interpolated into a shell
+# line. The service-account key is written to a file under $RUNNER_TEMP (mode 600), never printed, and deleted
+# in the last step whatever happened.
+
+on:
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: What to publish
+        required: true
+        type: choice
+        options:
+          - firestore-rules
+          - storage-rules
+          - indexes
+          - firestore-rules+storage-rules
+          - all-rules
+      confirm:
+        description: Type publish to confirm
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firebase-rules-deploy
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: project-planner-f986c
+  STORAGE_BUCKET: project-planner-f986c.firebasestorage.app
+  FIREBASE_TOOLS_VERSION: 15.34.2
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check the request (main only, confirmed)
+        env:
+          REF: ${{ github.ref }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::The rules deploy runs only on main (this run is on $REF)."
+            exit 1
+          fi
+          if [ "$CONFIRM" != "publish" ]; then
+            echo "::error::Type publish in the confirm box to run the deploy."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Plan the targets
+        id: plan
+        env:
+          TARGETS: ${{ inputs.targets }}
+        run: node scripts/firebase-rules-deploy.mjs plan
+
+      - run: npm ci
+
+      - name: Rules guard tests
+        run: node --test scripts/firebase-rules-deploy.test.mjs scripts/check-rules-budget.test.mjs
+
+      - name: Security rules size and compile-cost budget
+        run: npm run check:rules-budget
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Firestore rules type check (emulator)
+        run: npx -y "firebase-tools@${FIREBASE_TOOLS_VERSION}" emulators:exec --only firestore --project demo-rules-typecheck "node scripts/check-rules-typecheck.mjs"
+
+      - name: Write the service-account key
+        env:
+          SA_KEY: ${{ secrets.FIREBASE_DEPLOY_SA_KEY }}
+        run: |
+          if [ -z "$SA_KEY" ]; then
+            echo "::error::The FIREBASE_DEPLOY_SA_KEY secret is not set (docs/firebase-rules-deploy.md)."
+            exit 1
+          fi
+          umask 077
+          key="$RUNNER_TEMP/sa.json"
+          printf '%s' "$SA_KEY" > "$key"
+          node -e 'const k=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(k.type!=="service_account"||!k.client_email||!k.private_key||k.project_id!==process.env.PROJECT_ID){console.error("::error::FIREBASE_DEPLOY_SA_KEY is not a service-account key of "+process.env.PROJECT_ID); process.exit(1)}' "$key"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$key" >> "$GITHUB_ENV"
+
+      - name: Deploy
+        env:
+          ONLY: ${{ steps.plan.outputs.only }}
+        run: |
+          echo "Deploying --only $ONLY to $PROJECT_ID from $GITHUB_SHA"
+          npx -y "firebase-tools@${FIREBASE_TOOLS_VERSION}" deploy --only "$ONLY" --project "$PROJECT_ID" --non-interactive
+
+      - name: Check what is really live
+        env:
+          VERIFY_FIRESTORE: ${{ steps.plan.outputs.firestore }}
+          VERIFY_STORAGE: ${{ steps.plan.outputs.storage }}
+          ONLY: ${{ steps.plan.outputs.only }}
+        run: |
+          {
+            echo "## Firebase rules deploy"
+            echo ""
+            echo "- Deployed: \`--only $ONLY\` to \`$PROJECT_ID\`"
+            echo "- Commit: \`$GITHUB_SHA\`"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+          node scripts/firebase-rules-deploy.mjs verify
+
+      - name: Delete the key
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/sa.json" firebase-debug.log firebase-debug.*.log
