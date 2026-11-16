@@ -88,6 +88,50 @@ export async function adminLookupAuthEmail(uid: string): Promise<string | null> 
   return email ? email.trim().toLowerCase() : null
 }
 
+/**
+ * The Firebase Auth creation time of one account, with the server key. `null` when there is no Auth account;
+ * throws when the lookup itself fails (callers refuse rather than guess).
+ */
+export async function adminLookupAuthCreatedAtMs(uid: string): Promise<number | null> {
+  const { token, projectId } = await googleAccessToken([
+    'https://www.googleapis.com/auth/identitytoolkit',
+    'https://www.googleapis.com/auth/firebase',
+  ])
+  if (!projectId) throw new Error('Firebase project id is missing.')
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/accounts:lookup`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ localId: [uid] }),
+    }
+  )
+  if (!response.ok) throw new Error('Could not look up the Auth account.')
+  const data = (await response.json().catch(() => null)) as { users?: { localId?: string; createdAt?: string }[] } | null
+  if (!data) throw new Error('Could not read the Auth account.')
+  const user = data.users?.find((row) => row.localId === uid)
+  if (!user) return null
+  const createdAt = typeof user.createdAt === 'string' && /^\d+$/.test(user.createdAt) ? Number(user.createdAt) : NaN
+  if (!Number.isFinite(createdAt) || createdAt <= 0) throw new Error('The Auth account has no creation time.')
+  return createdAt
+}
+
+/** How many documents one collection holds, up to `limit`, read with the server key (rules do not apply). */
+export async function adminCountCollection(collectionPath: string, limit = 1): Promise<number> {
+  const { token, projectId } = await googleAccessToken(['https://www.googleapis.com/auth/datastore'])
+  if (!projectId) throw new Error('Firebase project id is missing.')
+  const url = new URL(
+    `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents/${collectionPath}`
+  )
+  url.searchParams.set('pageSize', String(Math.max(1, limit)))
+  const response = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' })
+  if (response.status === 404) return 0
+  if (!response.ok) throw new Error(`Could not list ${collectionPath}`)
+  const body = (await response.json().catch(() => null)) as { documents?: unknown[] } | null
+  if (!body) throw new Error(`Could not read ${collectionPath}`)
+  return (body.documents || []).length
+}
+
 export async function adminLookupAuthUserByEmail(email: string): Promise<{ uid: string } | null> {
   const emailLower = email.trim().toLowerCase()
   if (!emailLower) return null

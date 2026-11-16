@@ -716,6 +716,45 @@ UI only, web only (`docs/design/user-profile-ui/user-profile-ui-spec.md`; branch
 | 15 Nov | B7: the weekly report waits for the region's bank holidays before it can be generated (as My Profile); Daily Overview and Home use them as soon as they load (before that, the old count for at most a moment). | done, owner to confirm |
 | 15 Nov | Not changed: the timesheet collector and the weekly report still leave out switched-off schedule locations (`includesManagerScheduleLocation`), unlike Daily Overview after A10. Follow-up question: should timesheets and the weekly report follow A10 too (a pay change)? | question |
 
+## Owner console rebuild
+
+| Date | Decision | Status |
+|---|---|---|
+| 16 Nov | **16 Nov: go PR 0 incl. C3.** Every 2FA skip on `grant-setup` (owner, `accountConfirmed: false`, a just-used invitation, a just-created organisation) applies only while the caller's own Firebase Auth account is under 24 hours old, read on the server from Firebase Auth (C1, C2, C3); every owner API route checks the signed 2FA cookie for the same account (H1), and a signed cookie now carries its purpose, so a code-request (challenge) cookie can never pass as a passed 2FA check (review of #340; everyone enters the code once after the deploy); "Delete unfinished sign-up" re-checks on the server (memberships and the login's age read with the server key; refused with a clear message until it is set up), refuses live people, and writes its audit entry before deleting (H2). Rules hardening for C2 / C3 is a follow-up after #334. Nothing else from the console plan is approved yet. | done web (PR #340); iOS n/a (uses none of these routes) |
+
+## Owner console decisions (16 Nov)
+
+The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommendations agreed except D8) and the rules-space question.
+
+| Date | Decision | Status |
+|---|---|---|
+| 16 Nov | **D1 — what "active" means:** **Seen** (`lastSeenAt`) in the period, web or iPhone; one person counts once; an org is active when one of its people is. Past days come from the daily rollup, so history starts the day it ships. | decided |
+| 16 Nov | **D2 — which month signed money belongs to:** The **sign-off** month. Reopened sheets are listed and **not** counted until re-signed. Optional second view "by work period". **Extra clause for 1.54:** a late extra (price work or expense) approved after sign-off counts in the month it was approved. | decided |
+| 16 Nov | **D3 — PAYE on the money page:** Self-employed £ only (PAYE has no timesheet £, rulebook §8); PAYE shows overtime **hours** from overtime reports. | decided |
+| 16 Nov | **D4 — churn history before the rollup:** Accept "from today"; a read-only Stripe call may follow later. | decided |
+| 16 Nov | **D5 — delete / restore organisation touches Stripe:** Allow it: the rulebook §20 deletion **is** the cancel (or resume) at period end. The dialog says so, and it is audited. | decided |
+| 16 Nov | **D6 — platform and app version on each person:** **Yes**: new users fields and an iOS change; the only source for web vs iOS and app versions. | decided |
+| 16 Nov | **D7 — errors source:** A small sampled `clientErrors` collection (web + iOS, at most 20 per user per day, message + route + build, no personal data); "Not connected" until built. No third-party tool. | decided |
+| 16 Nov | **D8 — website stats source:** **Don't do it** (the recommendation, Plausible later, is **not** agreed). No website stats source; the console shows nothing for it, or the panel is left out. | decided |
+| 16 Nov | **D9 — email bounces:** `emailLog` now with a 180-day TTL on `emailLog.expireAt`; the Resend bounce webhook later. | decided |
+| 16 Nov | **D10 — audit rows written only by the server:** Yes, once the service-account key is set; until then the owner token writes them with the strict shape rule. | decided |
+| 16 Nov | **D11 — GDPR org export format:** Reuse the existing ZIP (CSV per area + JSON), generated server-side and downloaded once. | decided |
+| 16 Nov | **D12 — test-data rule:** Only `isInternal` / `isTest` flags count, never a name guess; the owner marks their test orgs once with Mark test. Guardrail 3: real people with "test" in their name **reappear** in counts. | decided |
+| 16 Nov | **D13 — rollup path name:** `ownerOrgStats/{orgId}/monthly/{yyyy-mm}` (root, owner-only). | decided |
+| 16 Nov | **D14 — "Reset MFA":** Not needed (emailed code); use Sign out everywhere. | decided |
+| 16 Nov | **D15 — erase now (skip the 30 days):** No. | decided |
+| 16 Nov | **D16 — feedback copies in customers' users docs (`ppIdea*`):** Stop writing them, keep reading for one release, then a clean-up script; a separate PR after the console. | decided |
+| 16 Nov | **D17 — releases & switches editing:** Read-only now; editing later with confirm + audit, one switch at a time. | decided |
+| 16 Nov | **Rules space:** **Reclaim**: make room in `firestore.rules` by deleting dead rules and moving long comments to `docs/`. The byte limit is **not** raised. | decided |
+
+## PR 0 judgement calls
+
+| Date | Choice | Status |
+|---|---|---|
+| 16 Nov | An existing account (over 24 hours old) that accepts an invitation to another company or founds a second company now enters the emailed code once, like any other sign-in. | done, owner OK 16 Nov |
+| 16 Nov | The 2FA cookie check also covers the register-interest owner routes (`/api/interest/registrations`), which use the same owner check. | done, owner OK 16 Nov |
+| 16 Nov | "Delete unfinished sign-up" also refuses a ghost operative, and anyone whose unfinished organisation has other members (half-set-up organisations with other people in them). | done, owner OK 16 Nov |
+
 ## Open questions for the owner
 
 | Date | Question |
