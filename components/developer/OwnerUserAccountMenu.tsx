@@ -171,13 +171,17 @@ export function OwnerUserAccountMenu({
                   setBusy('email')
                   setError('')
                   try {
-                    await ownerChangeUserEmail({
+                    const result = await ownerChangeUserEmail({
                       uid: user.id,
                       newEmail: email,
                       reason,
                       sendReset,
                     })
-                    onDone(`Login email updated for ${ownerPersonName(user)}.`)
+                    onDone(
+                      result.incomplete.length > 0
+                        ? `Login email updated for ${ownerPersonName(user)}, but these could not be updated: ${result.incomplete.join(', ')}.`
+                        : `Login email updated for ${ownerPersonName(user)}.`
+                    )
                     close()
                   } catch (err) {
                     setError(err instanceof Error ? err.message : 'Could not change that email.')

@@ -18,4 +18,9 @@ if (typeof canonical.authClaimsForPerson !== 'function' || typeof canonical.auth
   throw new Error('packed rulebook missing auth-claims helpers (run npm run build:canonical)')
 }
 
+// Rulebook 1.54.0: the "Your signed timesheet has changed" trigger (timesheetBookingNotice.js) needs its rule.
+if (typeof canonical.timesheetBookingChangeNotice !== 'function' || typeof canonical.timesheetBookingWriteMatters !== 'function') {
+  throw new Error('packed rulebook missing timesheet booking notice helpers (run npm run build:canonical)')
+}
+
 module.exports = canonical

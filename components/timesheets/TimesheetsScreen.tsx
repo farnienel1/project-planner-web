@@ -13,7 +13,7 @@ import {
   loadTimesheetDraft,
   loadTimesheetDraftsByUserHistory,
   mergeListedTimesheetDrafts,
-  saveTimesheetDraft,
+  stampTimesheetExport,
   timesheetSourceDocumentId,
   type ExportedTimesheetHistoryRow,
 } from '@/lib/timesheets/timesheetStorage'
@@ -90,7 +90,7 @@ import {
   runTimesheetExport,
 } from '@/lib/timesheets/timesheetExportRun'
 import type { PayrollTimePolicyState } from '@/lib/canonical'
-import { SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE, signedTimesheetActions } from '@/lib/canonical'
+import { SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE, TIMESHEET_LATE_EXTRAS_EXPORT_SKIPPED_MESSAGE, signedTimesheetActions } from '@/lib/canonical'
 
 /** Third review #325: Export left a sheet out because the bookings or pay inputs were still loading. */
 const EXPORT_INPUTS_LOADING_SKIPPED_MESSAGE = 'Not exported — the bookings or pay settings were still loading; export again.'
@@ -297,6 +297,7 @@ export function TimesheetsScreen({
   const changeCatalogueRef = useRef(changeCatalogue)
   // Review #325 nit: the people Export left out because their bookings changed since they signed.
   const changedSkippedRef = useRef<string[]>([])
+  const lateSkippedRef = useRef<string[]>([])
   // Third review #325: the people Export left out because the bookings or pay inputs were still loading.
   const inputsSkippedRef = useRef<string[]>([])
   changeCatalogueRef.current = changeCatalogue
@@ -379,8 +380,10 @@ export function TimesheetsScreen({
     }
     // Rulebook 1.47.0 §8 (`signedTimesheetActions`): never export a sheet whose bookings changed since it was signed —
     // its snapshot is stale until the person signs again and the line manager counter-signs again.
-    if (!signedTimesheetActions(periodBookingChanges(changeCatalogueRef.current, member, full, { start: periodStart, end: periodEnd })).mayExport) {
-      changedSkippedRef.current.push(displayName(member))
+    // 1.54.0: nor one whose late extras (added after sign-off) wait for the line manager.
+    const change = periodBookingChanges(changeCatalogueRef.current, member, full, { start: periodStart, end: periodEnd })
+    if (!signedTimesheetActions(change).mayExport) {
+      ;(change?.bookingsChanged === false ? lateSkippedRef : changedSkippedRef).current.push(displayName(member))
       return null
     }
     const built = applyWeeklyReportOverride({
@@ -406,18 +409,21 @@ export function TimesheetsScreen({
     return { draft: { ...built, exportedAt }, documentId: timesheetSourceDocumentId(full), member }
   }
 
-  const stampExport = async (sheet: { draft: TimesheetDraft; documentId: string | null; member: User }) => {
-    if (!organization?.id) return
-    await saveTimesheetDraft({
+  const stampExport = async (sheet: { draft: TimesheetDraft; documentId: string | null; member: User }): Promise<boolean> => {
+    if (!organization?.id) return false
+    // Rulebook 1.54.0 (third review of #337): only the export fields, in a transaction that re-reads the sheet — a late
+    // extra added, edited or deleted since it was prepared is never written back over, and such a sheet is not stamped.
+    const result = await stampTimesheetExport({
       organizationId: organization.id,
       userId: sheet.member.id,
       weekStart: periodStart,
-      weekEnd: periodEnd,
       draft: sheet.draft,
       timeZone,
       documentId: sheet.documentId,
-      access: { subjectHasLineManager: !userTimesheetSelfSigned(sheet.member, users) },
     })
+    if (result === 'stamped') return true
+    if (result === 'late-extras-waiting') lateSkippedRef.current.push(displayName(sheet.member))
+    return false
   }
 
   /**
@@ -539,6 +545,7 @@ export function TimesheetsScreen({
     let stampedCount = 0
     const exportedAt = new Date()
     changedSkippedRef.current = []
+    lateSkippedRef.current = []
     inputsSkippedRef.current = []
     // Review #342 item 1: a person whose pay could not be read is never exported on a stripped record; named below.
     const payUnknownSkipped = visible
@@ -613,6 +620,7 @@ export function TimesheetsScreen({
         return
       }
       const changedSkipped = changedSkippedRef.current
+      const lateSkipped = lateSkippedRef.current
       const inputsSkipped = inputsSkippedRef.current
       setExportMessage(
         [
@@ -627,6 +635,7 @@ export function TimesheetsScreen({
           stampError: run.stopped?.reason === 'stamp' ? reasonOf(run.stopped.error) : null,
           }),
           changedSkipped.length > 0 ? `${SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE} (${changedSkipped.join(', ')})` : '',
+          lateSkipped.length > 0 ? `${TIMESHEET_LATE_EXTRAS_EXPORT_SKIPPED_MESSAGE} (${lateSkipped.join(', ')})` : '',
           inputsSkipped.length > 0 ? `${EXPORT_INPUTS_LOADING_SKIPPED_MESSAGE} (${inputsSkipped.join(', ')})` : '',
           payUnknownSkipped.length > 0 ? `${EXPORT_PAY_UNKNOWN_SKIPPED_MESSAGE} (${payUnknownSkipped.join(', ')})` : '',
         ]

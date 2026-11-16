@@ -13,6 +13,7 @@ import { isoWeekdayInZone } from '@/lib/orgTime/zoneTime'
 import { labourPersonFromUser, labourRosterOperative } from '@/lib/warnings/unbookedLabourWarnings'
 import { orgDailyOverviewScope } from '@/lib/warnings/warningScopeRoster'
 import { findUserByAnyId, rosterDisplayName } from '@/lib/staff/userRosterUtils'
+import { bookingRowUserResolver } from '@/lib/daily-overview/bookingRowUser'
 import { addLondonDays, coversCalendarDay, dayKey, isSameLondonDay } from '@/lib/ios-parity/londonTime'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import {
@@ -327,6 +328,8 @@ export function buildDailyOverview(params: {
   // A booking saved under an invite placeholder id still names the person after sign-up.
   const userIdAliases = { ...formerIdAliases(labourPeople), ...(params.userIdAliases || {}) }
   const operativeById = new Map(params.operatives.map((operative) => [operative.id, operative]))
+  // Guardrail 1: who each labour booking's account is (`resolveBookingPerson`), with the people input built once.
+  const bookingRowUser = bookingRowUserResolver({ operatives: params.operatives, users: params.users, userIdAliases })
   const userById = new Map(params.users.map((user) => [user.id, user]))
   for (const [aliasId, keptId] of Object.entries(userIdAliases)) {
     const kept = userById.get(keptId)
@@ -439,9 +442,10 @@ export function buildDailyOverview(params: {
       const shown = bookingHoursLabel(priced)
       const ot = payrollMultipliedHours(priced)
       const hours = shown.hours
-      const linkedUser = op
-        ? params.users.find((row) => row.email.trim().toLowerCase() === op.email.trim().toLowerCase())
-        : userById.get(b.operativeId)
+      // Guardrail 1: the account is resolved by the rulebook (`resolveBookingPerson`): the row's `linkedUserId`,
+      // then a users document under the stored id, then a non-blank email. A row with a blank email and no link
+      // names no account (never the first users document with an empty email).
+      const linkedUserId = bookingRowUser(b.operativeId)
       rows.push({
         id: `op-${b.id}`,
         personKey: operativeIdentity(b.operativeId),
@@ -457,7 +461,7 @@ export function buildDailyOverview(params: {
         kind: 'operative',
         bookingId: b.id,
         operativeId: b.operativeId,
-        userId: linkedUser?.id,
+        userId: linkedUserId,
         projectId: b.projectId,
         timeSlotRaw: String(b.timeSlot || 'FULL DAY'),
         workStartTime: b.workStartTime,

@@ -98,6 +98,8 @@ export type SignedTimesheetLine = {
   reviewPartOf?: unknown
   bookingCreatedAt?: unknown
   bookingUpdatedAt?: unknown
+  /** 1.54.0: an Office / WFH / Site survey / custom-place manager site booking (never repairs a signed snapshot). */
+  scheduleOptionPlace?: unknown
 }
 
 /**
@@ -464,6 +466,7 @@ export function signedTimesheetBookingChanges(input: {
         isPayeDay: line?.isPayeDay === true,
         bookingCreatedAt: line?.bookingCreatedAt,
         bookingUpdatedAt: line?.bookingUpdatedAt,
+        scheduleOptionPlace: line?.scheduleOptionPlace === true,
       }))
     )
     const snapshotAtMs = realMs(override.approvedAt) ?? realMs(sheet.managerSignedAt) ?? realMs(sheet.approvedAt) ?? operativeSignedMs
@@ -538,4 +541,81 @@ export function signedTimesheetActions(change: Pick<SignedTimesheetBookingChange
     mayGenerateInvoice: false,
     rebuildSnapshot: true,
   }
+}
+
+/**
+ * Rulebook 1.54.0 (review of #337, item 3): whether ONE booking write makes the person's reference — the current
+ * `operativeSignedBookings` record, else the signed snapshot's lines — differ for that booking, decided by the very
+ * same comparison `signedTimesheetBookingChanges` makes (`diffSides`), restricted to that booking. The server uses it
+ * for the "Your signed timesheet has changed" notice, so a notice is sent exactly when the app would show the person
+ * the triangle for that booking: a sheet signed before 1.46.0 reopens only on a delete, cancel or addition, one signed
+ * before 1.47.0 never on a job or place change alone. `after` is the booking as written (null when deleted);
+ * `afterOnSheet` whether it is now one of the sheet's lines (the person's, in the pay run, on a self-employed day,
+ * occupying its day); `nowMs` the write's server time. Exported and unsigned sheets: `reopens: false`.
+ */
+export function signedTimesheetBookingWriteReopens(input: {
+  sheet: SignedTimesheetSheet | null | undefined
+  booking: { collection: string; bookingId: string }
+  after: SignedTimesheetBookingDocument | null | undefined
+  afterOnSheet: boolean
+  personIds?: ReadonlyArray<string | null | undefined> | null
+  nowMs: number
+}): { reopens: boolean; kind: 'changed' | 'removed' | 'added' | null; reference: 'record' | 'snapshot' | 'none' } {
+  const none = { reopens: false, kind: null, reference: 'none' as const }
+  const sheet = input.sheet
+  if (!sheet) return none
+  if (resolveTimesheetExportedAtMs(sheet as Record<string, unknown>) != null || realMs(sheet.exportedAtMs) != null) return none
+  const operativeSignedMs = realMs(sheet.operativeSignedAt) ?? realMs(sheet.operativeSignedAtMs)
+  const override = sheet.weeklyReportOverride && typeof sheet.weeklyReportOverride === 'object' ? sheet.weeklyReportOverride : null
+  if (operativeSignedMs == null && !override) return none
+  const bookingKey = keyOf(text(input.booking.collection) || 'bookings', text(input.booking.bookingId))
+
+  const recordAtMs = realMs(sheet.operativeSignedBookingsAt)
+  const recordSignedAtMs = realMs(sheet.operativeSignedBookingsSignedAt)
+  const recordCurrent =
+    operativeSignedMs != null &&
+    (recordSignedAtMs != null
+      ? Math.abs(operativeSignedMs - recordSignedAtMs) <= RECORD_SIGNED_AT_MATCH_MS
+      : recordAtMs != null && operativeSignedMs <= recordAtMs + RECORD_SIGNATURE_TOLERANCE_MS)
+  const record = recordCurrent ? recordSide(sheet.operativeSignedBookings) : null
+  let reference: Side | null = null
+  let addedAfter: number | null = null
+  let used: 'record' | 'snapshot' | 'none' = 'none'
+  if (record) {
+    reference = record
+    used = 'record'
+    const referenceMs = recordAtMs ?? operativeSignedMs
+    addedAfter = referenceMs == null ? null : referenceMs - SIGNED_TIMESHEET_ADDITION_WINDOW_MS
+  } else if (override) {
+    const lines = Array.isArray(override.lines) ? override.lines : []
+    const grouped = groupLines(lines)
+    // Signed lines that name no booking cannot be compared (as `signedTimesheetBookingChanges`).
+    if (grouped.byKey.size === 0 && grouped.keyless > 0) return none
+    reference = grouped.byKey
+    used = 'snapshot'
+    const snapshotAtMs = realMs(override.approvedAt) ?? realMs(sheet.managerSignedAt) ?? realMs(sheet.approvedAt) ?? operativeSignedMs
+    addedAfter = snapshotAtMs == null ? null : snapshotAtMs - SIGNED_TIMESHEET_ADDITION_WINDOW_MS
+  }
+  if (!reference) return none
+  const signed: Side = new Map()
+  const held = reference.get(bookingKey)
+  if (held) signed.set(bookingKey, held)
+  const live: Side = new Map()
+  if (input.after && input.afterOnSheet) {
+    live.set(bookingKey, {
+      bookingId: text(input.booking.bookingId),
+      fingerprint: documentFingerprint(input.after),
+      personId: '',
+      place: '',
+      writtenMs: input.nowMs,
+    })
+  }
+  const byKey = new Map<string, SignedTimesheetBookingDocument>()
+  if (input.after) byKey.set(bookingKey, input.after)
+  const personIds = Array.isArray(input.personIds)
+    ? new Set(input.personIds.map((id) => normalizeDocumentId(text(id))).filter(Boolean))
+    : null
+  const found = diffSides(signed, live, { byKey, tombstoned: new Set(), personIds }, addedAfter)
+  const kind = found.changed.length > 0 ? 'changed' : found.removed.length > 0 ? 'removed' : found.added.length > 0 ? 'added' : null
+  return { reopens: kind != null, kind, reference: used }
 }

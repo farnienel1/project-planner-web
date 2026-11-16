@@ -12,7 +12,9 @@
  *    never re-priced.
  * 3. `timesheetOwnerCanAddExtras`: once the line manager has signed (or the sheet was approved), the person cannot
  *    change price work or expenses (the security rules refuse it). Adding them used to clear only the person's own
- *    signature and leave the sheet half signed; the screens now say so and offer nothing.
+ *    signature and leave the sheet half signed; the screens now say so and offer nothing. 1.54.0 (owner decision 16 Nov):
+ *    after that, until the sheet is exported, the person adds "late extras" instead (`timesheetOwnerCanAddLateExtras`,
+ *    `timesheetLateExtras.ts`) — never the signed entries — and they pay only once a reviewer approves them.
  */
 
 import { documentInstantMs } from './peopleDocuments'
@@ -22,6 +24,8 @@ export const TIMESHEET_SNAPSHOT_FAILED_MESSAGE =
   'Could not load the bookings for this timesheet, so it cannot be signed yet. Check your connection and try again.'
 export const TIMESHEET_PAY_INPUTS_LOADING_MESSAGE = 'Loading pay settings and rate history…'
 export const TIMESHEET_SIGNED_OFF_EXTRAS_MESSAGE = 'This timesheet is signed off — add it to your next timesheet.'
+/** 1.54.0: shown instead of the late-extras add controls once the sheet is exported. */
+export const TIMESHEET_EXPORTED_EXTRAS_MESSAGE = 'This timesheet has been exported — add it to your next timesheet.'
 
 export type TimesheetSnapshotReadyInput = {
   /** The period's labour and manager site bookings have arrived (the whole archive the screen asked for). */
@@ -74,6 +78,12 @@ export type TimesheetLiveLabourLine = {
    * before approval but moved into the period later is caught by this. Missing = unknown: never counted.
    */
   bookingUpdatedAt?: InstantLike
+  /**
+   * 1.54.0 (review of #337): a manager site booking at Office / Working from home / Site survey / a custom place. Such
+   * a booking was left off sheets signed while that schedule option was switched off, so it never makes a signed
+   * snapshot read as frozen empty (signed is final): it is ignored here and never enters the repaired snapshot.
+   */
+  scheduleOptionPlace?: boolean | null
 }
 
 /**
@@ -99,7 +109,7 @@ export function timesheetSnapshotNeedsRebuild(
     documentInstantMs(override.approvedAt) ?? documentInstantMs(sheet?.managerSignedAt) ?? documentInstantMs(sheet?.approvedAt)
   if (approvedMs == null) return false
   return (liveLabourLines ?? []).some((line) => {
-    if (!line || line.isPayeDay === true) return false
+    if (!line || line.isPayeDay === true || line.scheduleOptionPlace === true) return false
     const created = documentInstantMs(line.bookingCreatedAt)
     const updated = documentInstantMs(line.bookingUpdatedAt)
     if (created == null || updated == null) return false
@@ -110,6 +120,33 @@ export function timesheetSnapshotNeedsRebuild(
 export type TimesheetExtrasSheet = {
   managerSignedAt?: InstantLike
   approvedAt?: InstantLike
+  /** 1.54.0: stops the person adding late extras (as stored, see below). */
+  exportedAt?: InstantLike
+  /**
+   * 1.54.0 (review of #337): whether the stored document's `exportedAt` is set as the security rules test it
+   * (`timesheetExportedFieldSet`). Pass it when `exportedAt` above is a value an app resolved (an export leftover
+   * of an invoice reads as not exported in the lists), so the add control and the rules always agree.
+   */
+  exportedAtStored?: boolean | null
+}
+
+/**
+ * Rulebook 1.54.0 (review of #337): a stored `exportedAt` the security rules count as set — a timestamp or a number
+ * (`resource.data.exportedAt is timestamp || is number`). The person's late-extras writes are refused from then on,
+ * so the screens offer no add, edit or delete control.
+ */
+export function timesheetExportedFieldSet(value: unknown): boolean {
+  if (value == null) return false
+  if (typeof value === 'number') return Number.isFinite(value)
+  if (value instanceof Date) return !Number.isNaN(value.getTime())
+  if (typeof value === 'object') {
+    const row = value as Record<string, unknown>
+    return typeof row.toMillis === 'function' || typeof row.seconds === 'number' || typeof row._seconds === 'number'
+  }
+  // A date text (an app's in-memory copy of the stamp) counts too: the add control may be stricter than the rules,
+  // never looser.
+  if (typeof value === 'string') return value.trim() !== '' && !Number.isNaN(Date.parse(value))
+  return false
 }
 
 /**
@@ -117,6 +154,7 @@ export type TimesheetExtrasSheet = {
  * manager has signed it (`managerSignedAt`, or the older `approvedAt` — the fields the security rules test); then
  * `message` is `TIMESHEET_SIGNED_OFF_EXTRAS_MESSAGE` and the screen offers no add control and clears no signature. A
  * self-signed sheet (`selfSigned`: no line manager signs it) stays open: adding asks the person to sign it again.
+ * 1.54.0: after the line manager has signed, `timesheetOwnerCanAddLateExtras` decides the late-extras control.
  */
 export function timesheetOwnerCanAddExtras(
   sheet: TimesheetExtrasSheet | null | undefined,
@@ -126,5 +164,23 @@ export function timesheetOwnerCanAddExtras(
   if (present(sheet?.managerSignedAt) || present(sheet?.approvedAt)) {
     return { allowed: false, message: TIMESHEET_SIGNED_OFF_EXTRAS_MESSAGE }
   }
+  return { allowed: true, message: null }
+}
+
+/**
+ * Rulebook 1.54.0 §8 (owner decision 16 Nov, "allow adding after sign-off so they can re-issue"): whether the person
+ * may add, edit or delete **late extras** (`lateExtras`) on their own sheet — only once the line manager has signed
+ * (before that they use the ordinary entries; a self-signed sheet keeps its own flow) and until the sheet is exported
+ * (`exportedAtStored`, else `timesheetExportedFieldSet(exportedAt)`; then `TIMESHEET_EXPORTED_EXTRAS_MESSAGE`). The
+ * signed entries never change; a late extra pays only once a reviewer approves it (`timesheetLateExtraDecision`).
+ */
+export function timesheetOwnerCanAddLateExtras(
+  sheet: TimesheetExtrasSheet | null | undefined,
+  options: { selfSigned?: boolean | null } = {}
+): { allowed: boolean; message: string | null } {
+  if (options.selfSigned === true) return { allowed: false, message: null }
+  if (!present(sheet?.managerSignedAt) && !present(sheet?.approvedAt)) return { allowed: false, message: null }
+  const exported = typeof sheet?.exportedAtStored === 'boolean' ? sheet.exportedAtStored : timesheetExportedFieldSet(sheet?.exportedAt)
+  if (exported) return { allowed: false, message: TIMESHEET_EXPORTED_EXTRAS_MESSAGE }
   return { allowed: true, message: null }
 }

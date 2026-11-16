@@ -81,6 +81,11 @@ export type AssignedScheduleBooking = {
   date: Date
   title: string
   detail: string
+  /** The stored slot, clock times and status, for the self-booking clash check (rulebook §5, labour or manager schedule). */
+  timeSlot?: string
+  workStartTime?: string | null
+  workEndTime?: string | null
+  status?: string | null
 }
 
 type JobFilter = 'all' | 'active' | 'upcoming' | 'completed'
@@ -201,6 +206,7 @@ export function MyScheduleSelfBookingScreen({
   organizationName,
   payrollPolicy = DEFAULT_PAYROLL_POLICY,
   assignedBookings = [],
+  labourClashBookings,
   canEditBookings = false,
   clashMarkers,
 }: {
@@ -209,6 +215,8 @@ export function MyScheduleSelfBookingScreen({
   organizationName: string
   payrollPolicy?: OrgPayrollTimePolicy
   assignedBookings?: AssignedScheduleBooking[]
+  /** The viewer's labour bookings that occupy their day (`bookingOccupiesDay`), for the clash check. */
+  labourClashBookings?: AssignedScheduleBooking[]
   /** Same gate as Daily Overview editing (`canBookWork`). Opens the shared BookingEditSheet. */
   canEditBookings?: boolean
   /** Rulebook 1.39.0 §10: the clash marker per booking id (`myScheduleClashMarkers`). */
@@ -462,7 +470,13 @@ export function MyScheduleSelfBookingScreen({
       // overnight booking ending this morning clashes too.
       const key = orgDayKey(day, zone)
       // The day before (a night shift ending this morning) and the day after (a new night shift reaching it).
-      const candidates = [...myBookingsOn(addDaysInZone(day, -1, zone)), ...myBookingsOn(day), ...myBookingsOn(addDaysInZone(day, 1, zone))]
+      const nearby = [addDaysInZone(day, -1, zone), day, addDaysInZone(day, 1, zone)]
+      const candidates = nearby.flatMap((d) => myBookingsOn(d))
+      // Rulebook §5: "labour or manager schedule" — the viewer's own labour bookings (under every id they go by,
+      // `bookingIdsForAccount` on the page) are checked too, not only their manager schedule bookings.
+      const labourCandidates = nearby.flatMap((d) =>
+        (labourClashBookings ?? assignedBookings).filter((b) => coversCalendarDay(b.date, d))
+      )
       const clashing = new Set(
         bookingRequestClashIds({
           request: {
@@ -471,18 +485,31 @@ export function MyScheduleSelfBookingScreen({
             workStartTime: args.timeSlot === 'CUSTOM_HOURS' ? customStart : null,
             workEndTime: args.timeSlot === 'CUSTOM_HOURS' ? customEnd : null,
           },
-          existing: candidates.map((row) => ({
-            id: row.id,
-            dayKey: orgDayKey(row.date, zone),
-            timeSlot: String(row.timeSlot ?? ''),
-            workStartTime: row.workStartTime ?? null,
-            workEndTime: row.workEndTime ?? null,
-          })),
+          existing: [
+            ...candidates.map((row) => ({
+              id: `m:${row.id}`,
+              dayKey: orgDayKey(row.date, zone),
+              timeSlot: String(row.timeSlot ?? ''),
+              workStartTime: row.workStartTime ?? null,
+              workEndTime: row.workEndTime ?? null,
+            })),
+            ...labourCandidates.map((row) => ({
+              id: `o:${row.id}`,
+              dayKey: orgDayKey(row.date, zone),
+              timeSlot: String(row.timeSlot ?? ''),
+              workStartTime: row.workStartTime ?? null,
+              workEndTime: row.workEndTime ?? null,
+              status: row.status ?? null,
+            })),
+          ],
           day: policyState ?? payrollPolicy,
         })
       )
-      const existing = candidates.filter((booking) => clashing.has(booking.id))
-      if (existing.length === 0) return []
+      const existing = candidates.filter((booking) => clashing.has(`m:${booking.id}`))
+      const existingLabour = labourCandidates.filter(
+        (booking, index, all) => clashing.has(`o:${booking.id}`) && all.findIndex((other) => other.id === booking.id) === index
+      )
+      if (existing.length === 0 && existingLabour.length === 0) return []
       return [
         {
           key: conflictRowKey(userId, key, 'double_booking'),
@@ -491,7 +518,10 @@ export function MyScheduleSelfBookingScreen({
           kind: 'double_booking' as const,
           personName: 'You',
           dayLabel: format(day, 'EEE d MMM yyyy'),
-          detail: `Already booked · ${existing.map((b) => `${slotLabel(b, payrollPolicy)} — ${locationName(b)}`).join(', ')}`,
+          detail: `Already booked · ${[
+            ...existing.map((b) => `${slotLabel(b, payrollPolicy)} — ${locationName(b)}`),
+            ...existingLabour.map((b) => `${b.detail} — ${b.title}`),
+          ].join(', ')}`,
         },
       ]
     })

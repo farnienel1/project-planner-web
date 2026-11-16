@@ -29,7 +29,6 @@ import {
   type ScheduleLocationPick,
 } from '@/lib/settings/organizationSettings'
 import {
-  conflictRowKey,
   useBookingConflictGate,
   type BookingConflictRow,
 } from '@/components/scheduling/BookingConflictRows'
@@ -39,17 +38,12 @@ import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { bookingRequestIdentity, isSameBookingRequest } from '@/lib/canonical/bookingSlots'
 import { managerBookingIdentity, operativeBookingIdentityInput } from '@/lib/scheduling/bookingRequestIdentity'
 import { bookingOccupiesDay } from '@/lib/canonical'
-import { bookingRequestClashIds, type BookingReplaceRef, type PayrollTimePolicyState } from '@/lib/canonical'
-import { rowReplaceOffer } from '@/lib/scheduling/bookingReplaceOffer'
-
-type ReplaceJobs = Parameters<typeof rowReplaceOffer>[0]['jobs']
+import { type BookingReplaceRef, type PayrollTimePolicyState } from '@/lib/canonical'
 import { samePersonBookingIds } from '@/lib/bookings/bookingPeople'
 import { dateFromDayKey, dayKey, parseHhMm } from '@/lib/ios-parity/londonTime'
 import { IosWriteValidationError } from '@/lib/ios-parity/firestoreCodec'
 import { initialsFrom } from '@/lib/daily-overview/buildDailyOverview'
-import { clockText } from '@/lib/warnings/clashIntervals'
 import {
-  managerSiteBookingDisplayTitle,
   type ManagerLocationType,
   type ManagerSiteBooking,
 } from '@/lib/scheduling/managerSiteBookingUtils'
@@ -65,7 +59,7 @@ import { confirmCustomHoursBreak, slotOfferedOnDate, weekendNotesForDates } from
 import { useCustomHoursPrefillOnKindChange } from '@/lib/scheduling/useOrganizationPayrollPolicy'
 import { CustomOtherLocationField } from '@/components/scheduling/CustomOtherLocationField'
 import { PanelHeader } from '@/components/settings/primitives'
-import { ORPHAN_BOOKING_LABEL, canBookOtherLocationsFor } from '@/lib/canonical'
+import { canBookOtherLocationsFor } from '@/lib/canonical'
 import { CreateOvertimeRateField, useCreateOvertimeRateFields } from '@/components/overtime/OvertimeRateField'
 import { useOrganizationDocument, useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { webJobAccessViewer } from '@/lib/access/readPlan'
@@ -502,76 +496,6 @@ export function BookLabourFlowScreen({
     )
   }
 
-  /** Rulebook 1.23.1 §5 `bookingRequestClashIds`: the ids of `existing` the slot clashes with on the booked day's hours. */
-  function clashIdsOnDay(
-    existing: ReadonlyArray<{ id: string; date: Date | string; timeSlot?: unknown; workStartTime?: string; workEndTime?: string; status?: unknown }>,
-    slot: string,
-    workStart?: string,
-    workEnd?: string
-  ): Set<string> {
-    return new Set(
-      bookingRequestClashIds({
-        request: { dayKey: dayKey(day), timeSlot: slot, workStartTime: workStart ?? null, workEndTime: workEnd ?? null },
-        existing: existing.map((row) => ({
-          id: row.id,
-          dayKey: dayKey(new Date(row.date)),
-          timeSlot: String(row.timeSlot ?? ''),
-          workStartTime: clockText(row.workStartTime),
-          workEndTime: clockText(row.workEndTime),
-          status: row.status == null ? null : String(row.status),
-        })),
-        day: payrollState ?? payroll,
-      })
-    )
-  }
-
-  /** The manager's own bookings that clash with this slot on the booked day (`bookingRequestClashIds`), as labels. */
-  /**
-   * The person's overlapping manager schedule bookings as text, and Replace when the viewer may delete every one of
-   * them (rulebook 1.41.0 §5, `bookingReplaceOffer`).
-   */
-  function managerClashLines(
-    userId: string,
-    slot: ManagerSlot,
-    workStart?: string,
-    workEnd?: string
-  ): { lines: string[]; replace?: { bookings: BookingReplaceRef[] } } | null {
-    const existing = managerSiteBookings.filter((booking) => booking.userId === userId)
-    if (existing.length === 0) return null
-    const clashing = clashIdsOnDay(existing, slot, workStart, workEnd)
-    const overlapping = existing.filter((row) => clashing.has(row.id))
-    if (overlapping.length === 0) return null
-    const titles = new Map(allWorks.map((work) => [work.id, `${work.jobNumber ?? ''} ${work.siteName ?? ''}`.trim() || work.id]))
-    return {
-      lines: overlapping.map((row) => `${row.timeSlot} · ${managerSiteBookingDisplayTitle(row, titles)}`),
-      ...rowReplaceOffer({ user, managers, jobs: allWorks as unknown as ReplaceJobs, labour: [], manager: overlapping }),
-    }
-  }
-
-  function operativeClashLines(
-    operativeId: string,
-    _projectId: string,
-    slot: OperativeSlot,
-    workStart?: string,
-    workEnd?: string,
-    _breakOff?: boolean
-  ): { lines: string[]; replace?: { bookings: BookingReplaceRef[] } } | null {
-    const personIds = samePersonBookingIds(operativeId, users, operatives)
-    const existing = bookings.filter((booking) => personIds.has(String(booking.operativeId || '').toLowerCase()))
-    if (existing.length === 0) return null
-    const clashing = clashIdsOnDay(existing, slot, workStart, workEnd)
-    const overlapping = existing.filter((row) => clashing.has(row.id))
-    if (overlapping.length === 0) return null
-    return {
-      lines: overlapping.map((booking) => {
-        const project = allWorks.find((p) => p.id === booking.projectId)
-        const label = project ? `${project.jobNumber} ${project.siteName}` : ORPHAN_BOOKING_LABEL
-        return `${booking.timeSlot} · ${label}`
-      }),
-      ...rowReplaceOffer({ user, managers, jobs: allWorks as unknown as ReplaceJobs, labour: overlapping, manager: [] }),
-    }
-  }
-
   async function savePartyBookings(args: {
     slot: ManagerSlot
     locationType: ManagerLocationType
@@ -600,8 +524,9 @@ export function BookLabourFlowScreen({
       for (const person of people) {
         // Rulebook 1.16.0 §5 (owner: clashes as orange rows everywhere): a manager's overlapping booking is an orange
         // row to tick or drop, like an operative's — never a blocking banner.
-        if (!usesOperativePath(person, args.locationType, resolvedProject)) {
-          if (duplicateManager(
+        if (
+          !usesOperativePath(person, args.locationType, resolvedProject) &&
+          duplicateManager(
             person.user.id,
             args.slot,
             args.locationType,
@@ -610,47 +535,30 @@ export function BookLabourFlowScreen({
             args.workStart,
             args.workEnd,
             args.breakRemoved
-          )) {
-            continue
-          }
-          const managerLines = managerClashLines(person.user.id, args.slot, args.workStart, args.workEnd)
-          if (managerLines) {
-            rows.push({
-              key: conflictRowKey(person.user.id, key, 'double_booking'),
-              personId: person.user.id,
-              dayKey: key,
-              kind: 'double_booking',
-              personName: person.displayName,
-              dayLabel: dayLine,
-              detail: `Already booked · ${managerLines.lines.join(', ')}`,
-              ...(managerLines.replace ? { replace: managerLines.replace } : {}),
-            })
-          }
+          )
+        ) {
           continue
         }
-        if (!resolvedProject) {
-          continue
-        }
-        const lines = operativeClashLines(
-          person.bookingOperativeId,
-          resolvedProject.id,
-          operativeSlot,
-          args.workStart,
-          args.workEnd,
-          args.breakRemoved
+        const operativePath = usesOperativePath(person, args.locationType, resolvedProject)
+        if (operativePath && !resolvedProject) continue
+        // Rulebook §5 (`bookingRequestClashIds`; 1.53.0 overnight): the person's labour AND manager schedule bookings,
+        // under every id they go by, the day before, the day and the day after are checked — the same check every
+        // other booking sheet uses (`useLeaveConflictCheck.clashRowsFor`), whichever path this booking is written by.
+        rows.push(
+          ...leaveCheck
+            .clashRowsFor(
+              {
+                id: person.user.id,
+                userId: person.user.id,
+                operativeIds: [person.bookingOperativeId],
+                email: person.user.email ?? null,
+                name: person.displayName,
+              },
+              key,
+              { timeSlot: operativePath ? operativeSlot : args.slot, workStartTime: args.workStart, workEndTime: args.workEnd }
+            )
+            .map((row) => ({ ...row, dayLabel: dayLine }))
         )
-        if (lines) {
-          rows.push({
-            key: conflictRowKey(person.user.id, key, 'double_booking'),
-            personId: person.user.id,
-            dayKey: key,
-            kind: 'double_booking',
-            personName: person.displayName,
-            dayLabel: dayLine,
-            detail: `Already booked · ${lines.lines.join(', ')}`,
-            ...(lines.replace ? { replace: lines.replace } : {}),
-          })
-        }
       }
       // Annual leave on this day (`bookingLeaveConflicts`), for every person in the party.
       rows.push(

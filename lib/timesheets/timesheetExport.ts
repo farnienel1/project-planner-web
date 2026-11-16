@@ -1,7 +1,7 @@
 /**
  * iOS parity: InvoicingView.TimesheetExportHelper / ResendEmailService.sendTimesheetExportEmail.
  */
-import { timesheetSheetFields } from '@/lib/timesheets/timesheetAdjustments'
+import { draftEntryFingerprints, timesheetSheetFields } from '@/lib/timesheets/timesheetAdjustments'
 import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import type { TimesheetPayrollSummary } from '@/lib/timesheets/timesheetPayrollCollector'
 import { timesheetLabourDetails } from '@/lib/timesheets/timesheetPayrollCollector'
@@ -16,7 +16,6 @@ import type { OperativeDayRateHistoryCollection, OperativeDayRateHistoryEntry } 
 import { formatMoney } from '@/lib/canonical/money'
 import { parseMultipliedHoursText, timesheetLineClockText } from '@/lib/canonical/payrollHours'
 import { timesheetInvoiceRows } from '@/lib/canonical/reportPay'
-import { timesheetEntryFingerprintMap } from '@/lib/canonical/timesheetEntryReviews'
 import { priceWorkJobNumberText } from '@/lib/canonical/priceWorkJobNumber'
 import { emailDocument, emailHeading, emailLink, emailList, emailStrong, emailText } from '@/lib/email/emailTheme'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
@@ -188,7 +187,7 @@ export function invoiceLinesForTimesheet({
     timesheetDays: timesheetDays ?? null,
     timeZone,
     // Rulebook 1.45.0: the draft is the loaded copy; its entries carry the reader's fingerprints.
-    entryFingerprints: timesheetEntryFingerprintMap([...draft.priceWorkEntries, ...draft.expenseEntries]),
+    entryFingerprints: draftEntryFingerprints(draft),
   })
   const rows: TimesheetInvoiceLine[] = []
   for (const row of decided) {

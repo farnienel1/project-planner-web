@@ -397,6 +397,8 @@ export const NOTIFICATION_CATALOG: ReadonlyArray<NotificationCatalogRow> = [
   row('timesheet_pending_manager_signoff', 'Owner signs their timesheet (not self-signed)', 'timesheetSubmittedRecipients', ['web', 'ios'],
     'both: use timesheetSubmittedRecipients and timesheetNotificationDedupeKey.'),
   row('timesheet_signed_by_manager', 'Line manager or admin signs a timesheet', 'timesheetSignedRecipients', ['web', 'ios']),
+  row('timesheet_bookings_changed', 'A booking on the person\'s signed, not exported timesheet changes so the sheet reopens (1.54.0)', 'timesheetBookingsChangedRecipients', ['function'],
+    'written by the timesheetBookingsChangedNotice Cloud Function (timesheetBookingChangeNotice), one row per sheet per signature (timesheetBookingsChangedNoticeId); deepLinkUserId = the person, dayKey = the pay run\'s first day; opens My Timesheets for that period. Toggle: timesheetSignOff. iOS: accept the type and route it to My Timesheets.'),
   row('line_manager_peer_update', 'One line manager signs a timesheet or decides leave for a shared report', 'lineManagerPeerRecipients', ['web', 'ios'],
     'web: not written for leave decisions (iOS is).'),
   row('timesheet_submission_reminder', 'Scheduled reminder before the submit deadline', 'dueTimesheetSubmissionNotices (schedule); recipients are each participating user', ['web', 'ios'],

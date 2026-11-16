@@ -16,6 +16,9 @@ import {
   effectivePriceWorkAmount,
   isPayrollLineRemoved,
   draftPayrollLineReview,
+  draftEntryFingerprints,
+  draftStoredExported,
+  timesheetSheetFields,
 } from '@/lib/timesheets/timesheetAdjustments'
 import { bookingIdFromLineId } from '@/lib/timesheets/payrollLineBookingLookup'
 import {
@@ -25,7 +28,14 @@ import {
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import { orgDayHours } from '@/lib/timesheets/payBasis'
 import type { PayrollTimePolicyState } from '@/lib/canonical'
-import { payrollLineReviewKey, payrollLineReviewSnapshotParts, timesheetSnapshotNeedsRebuild, weekdayPaidHours } from '@/lib/canonical'
+import {
+  payrollLineReviewKey,
+  payrollLineReviewSnapshotParts,
+  timesheetLateExtrasSnapshotRows,
+  timesheetSnapshotNeedsRebuild,
+  weekdayPaidHours,
+  type TimesheetLateExtrasSnapshotRow,
+} from '@/lib/canonical'
 import type {
   TimesheetDraft,
   TimesheetManagerDecision,
@@ -153,7 +163,26 @@ function moneyLines(
     amount: effectiveExpenseAmount(entry, managerHasSigned, true),
     decision: agreedDecision(entry.managerDecision),
   }))
-  return { priceWork, expenses }
+  // Rulebook 1.54.0 §8: the late extras a reviewer approved (`timesheetLateExtrasSnapshotRows`) join the money rows,
+  // marked `lateExtra`; unapproved ones never do. Labour rows are never touched by them.
+  // The reviewer's decisions on screen are laid over the stored reviews exactly as their save writes them (the snapshot
+  // is written in the same save); only a reviewer (or a self-signed owner) ever writes the snapshot (security rules).
+  const late = timesheetLateExtrasSnapshotRows(timesheetSheetFields(draft, { reviewerPreview: true }), { entryFingerprints: draftEntryFingerprints(draft) })
+  const lateRow = (row: TimesheetLateExtrasSnapshotRow): WeeklyReportMoneyLine => {
+    const ms = row.date instanceof Date ? row.date.getTime() : null
+    return {
+      id: row.id,
+      title: row.title,
+      details: row.details,
+      jobNumber: row.jobNumber,
+      date: ms != null && Number.isFinite(ms) ? new Date(ms) : new Date(),
+      amount: row.amount,
+      decision: row.decision,
+      lateExtra: true,
+      entryFingerprint: row.entryFingerprint,
+    }
+  }
+  return { priceWork: [...priceWork, ...late.priceWork.map(lateRow)], expenses: [...expenses, ...late.expenses.map(lateRow)] }
 }
 
 function payrollSummaryFor(input: WeeklyReportOverrideInput) {
@@ -394,6 +423,9 @@ export function applyWeeklyReportOverride(input: WeeklyReportOverrideInput): Tim
     return { ...input.draft, weeklyReportOverride: null }
   }
   const existing = input.draft.weeklyReportOverride
+  // Rulebook 1.54.0 (third review of #337): an exported sheet with late extras is frozen — no review re-prices its
+  // snapshot and no late extra joins or leaves it (the security rules refuse those writes once `exportedAt` is stored).
+  if (existing && draftStoredExported(input.draft) && (input.draft.lateExtras?.length ?? 0) > 0) return input.draft
   if (existing && input.rebuildSnapshot === true && !input.draft.exportedAt) {
     return { ...input.draft, weeklyReportOverride: makeOverride(input) }
   }
@@ -410,9 +442,12 @@ export function applyWeeklyReportOverride(input: WeeklyReportOverrideInput): Tim
         isPayeDay: line.isPayeDay,
         bookingCreatedAt: line.bookingCreatedAt ?? null,
         bookingUpdatedAt: line.bookingUpdatedAt ?? null,
+        scheduleOptionPlace: line.scheduleOptionPlace === true,
       }))
       if (timesheetSnapshotNeedsRebuild(input.draft, live)) {
-        const fresh = makeOverride(input, summary)
+        // 1.54.0 (review of #337): Office / WFH / Site survey / custom bookings, newly paid in 1.54.0, never enter a
+        // repaired signed snapshot (a sheet signed while that option was switched off never had them).
+        const fresh = makeOverride(input, { ...summary, lineItems: summary.lineItems.filter((line) => line.scheduleOptionPlace !== true) })
         return {
           ...input.draft,
           weeklyReportOverride: {

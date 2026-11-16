@@ -25,7 +25,7 @@ import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
-import { bookingRequestClashIds, ORPHAN_BOOKING_LABEL, type PayrollTimePolicyState } from '@/lib/canonical'
+import { bookingRequestClashIds, ORPHAN_BOOKING_LABEL, personIdSet, type PayrollTimePolicyState } from '@/lib/canonical'
 import { rowReplaceOffer } from '@/lib/scheduling/bookingReplaceOffer'
 import { samePersonBookingIds } from '@/lib/bookings/bookingPeople'
 import { clockText } from '@/lib/warnings/clashIntervals'
@@ -108,13 +108,19 @@ export function useLeaveConflictCheck(payrollOverride?: OrgPayrollTimePolicy | P
     ): BookingConflictRow[] => {
       const timeZone = organizationZoneOr()
       const excluded = new Set(excludeBookingIds.map((id) => String(id || '').toLowerCase()).filter(Boolean))
+      // Guardrail 1 (rulebook §5 `bookingRequestClashIds`, "labour or manager schedule, under every id the person goes
+      // by"): the person's account ids are `personIdSet` over the roster (own id, former and same-email ids); labour
+      // bookings are looked up under those and under every id their catalogue rows name (`bookingIdsForPerson`).
+      const accountIds = [person.userId, person.operativeIds?.length ? null : person.id]
+        .filter((id): id is string => Boolean(id))
+        .flatMap((id) => personIdSet({ id, email: person.email ?? null }, users))
       const operativeIds = new Set<string>()
-      for (const id of person.operativeIds ?? []) {
+      for (const id of [...(person.operativeIds ?? []), ...accountIds]) {
         if (!id) continue
         operativeIds.add(id.toLowerCase())
         for (const alias of samePersonBookingIds(id, users, operatives)) operativeIds.add(alias)
       }
-      const userIds = new Set([person.userId, person.operativeIds?.length ? null : person.id].filter(Boolean).map((id) => String(id).toLowerCase()))
+      const userIds = new Set(accountIds.map((id) => id.toLowerCase()))
       const titles = new Map(
         [...projects, ...smallWorks].map((work) => [work.id, `${work.jobNumber ?? ''} ${work.siteName ?? ''}`.trim() || work.id])
       )

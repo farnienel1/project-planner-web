@@ -1,7 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { emptyTimesheetDraft } from './timesheetDraft.ts'
-import { managerAdjustmentRows, showsTimesheetAdjustment } from './timesheetAdjustments.ts'
+import { draftEntryFingerprints, draftReviewEntries, extrasPendingReview, managerAdjustmentRows, showsTimesheetAdjustment } from './timesheetAdjustments.ts'
+import { timesheetLateExtraFingerprintKey } from '../canonical/timesheetLateExtras.ts'
 
 test('showsTimesheetAdjustment only after sign-off or live review', () => {
   assert.equal(
@@ -88,4 +89,16 @@ test('payroll line reviews are found without case, as on the invoice (payrollLin
   }
   assert.equal(isPayrollLineRemoved(line, declined, true), true)
   assert.equal(effectivePayrollAmount(line, declined, true), 0)
+})
+
+test('1.54.0 third review of #337 (1): an ignored late extra is never decided, never waits, and keeps its own fingerprint key', () => {
+  const day = new Date('2026-11-12T10:00:00Z')
+  const signed = { id: 'E1', title: 'Hotel', details: '', jobNumber: 'J', date: day, amount: 1000, reviewFingerprint: 'signed-fp', managerDecision: 'declined' as const }
+  const late = { kind: 'expense' as const, id: 'e1', title: 'Taxi', details: '', jobNumber: 'J', date: day, amount: 40, reviewFingerprint: 'late-fp', managerDecision: 'pending' as const, lateState: 'ignored' as const, lateReason: 'id-taken' as const }
+  const draft = { ...emptyTimesheetDraft(), expenseEntries: [signed], lateExtras: [late] }
+  assert.deepEqual(draftReviewEntries(draft).map((entry) => entry.id), ['E1'])
+  assert.equal(extrasPendingReview({ ...draft, expenseEntries: [] }), false)
+  const map = draftEntryFingerprints(draft)
+  assert.equal(map.e1, 'signed-fp')
+  assert.equal(map[timesheetLateExtraFingerprintKey('e1')], 'late-fp')
 })
