@@ -4,33 +4,63 @@ import { clientIp, enforceRateLimit, isFirebaseUser, jsonError, readJsonBody } f
 import { requireOwner, writeAuditLog } from '@/lib/owner/requireOwner'
 import { isValidEmail } from '@/lib/security/validation'
 import { maskEmail } from '@/lib/auth/maskEmail'
-import { adminUpdateAuthEmail, firebaseAdminConfigured } from '@/lib/owner/identityToolkitAdmin'
+import { adminListDocumentIds, adminUpdateAuthEmail, firebaseAdminConfigured } from '@/lib/owner/identityToolkitAdmin'
 import {
   bearerToken,
   firestoreDelete,
   firestoreGet,
   firestorePatch,
-  firestoreQueryEqual,
+  firestoreListCollection,
   readString,
+  restFieldsToPlain,
   stringField,
 } from '@/lib/owner/firestoreRest'
+import { orgEmailPointerUserId } from '@/lib/orgSetup/staleOrgEmailPointer'
+import {
+  CHANGE_EMAIL_CLAIM_TAKEN_MESSAGE,
+  CHANGE_EMAIL_HOME_ONLY_NOTE,
+  changeEmailOrganizations,
+  claimMoves,
+  readMembershipIds,
+  rosterRowsOnEmail,
+  type ClaimState,
+} from '@/lib/owner/changeEmailPlan'
+import { documentOrganizationId } from '@/lib/canonical/peopleDocuments'
 import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
 
 export const runtime = 'nodejs'
 
-async function syncRosterEmail(token: string, organizationId: string, oldEmail: string, newEmail: string) {
-  if (!token || !oldEmail) return
-  const parent = `organizations/${organizationId}`
+/** Roster rows on the old email in any letter case (`rosterRowsOnEmail`); failures are returned, never swallowed. */
+async function syncRosterEmail(token: string, organizationId: string, oldEmail: string, newEmail: string): Promise<string[]> {
+  const failed: string[] = []
+  if (!token || !oldEmail) return failed
   for (const collectionId of ['operatives', 'managers']) {
-    const paths = await firestoreQueryEqual(token, parent, collectionId, 'email', oldEmail)
-    await Promise.all(
-      paths.map((path) =>
-        firestorePatch(token, path, { email: stringField(newEmail) }, ['email']).catch((error) => {
-          console.error('[owner/change-email] roster', path, error)
-        })
-      )
-    )
+    const collectionPath = `organizations/${organizationId}/${collectionId}`
+    let rows: { id: string; email: string }[] = []
+    try {
+      rows = (await firestoreListCollection(token, collectionPath, 5000)).map((row) => ({
+        id: row.id,
+        email: readString(row.fields, 'email'),
+      }))
+    } catch (error) {
+      console.error('[owner/change-email] roster list', collectionPath, error)
+      failed.push(`${collectionPath} (could not be read)`)
+      continue
+    }
+    for (const row of rosterRowsOnEmail(rows, oldEmail)) {
+      const path = `${collectionPath}/${row.id}`
+      await firestorePatch(token, path, { email: stringField(newEmail) }, ['email']).catch((error) => {
+        console.error('[owner/change-email] roster', path, error)
+        failed.push(path)
+      })
+    }
   }
+  return failed
+}
+
+async function claimUserId(token: string, organizationId: string, email: string): Promise<string> {
+  const claim = await firestoreGet(token, `organizations/${organizationId}/userEmails/${encodeURIComponent(email)}`)
+  return claim ? orgEmailPointerUserId(restFieldsToPlain(claim.fields)) : ''
 }
 
 export async function POST(request: NextRequest) {
@@ -58,7 +88,6 @@ export async function POST(request: NextRequest) {
   const userDoc = await firestoreGet(token, `users/${uid}`)
   if (!userDoc) return jsonError('That user record was not found.', 404)
   const oldEmail = readString(userDoc.fields, 'email').toLowerCase()
-  const organizationId = readString(userDoc.fields, 'organizationId')
   if (isPlatformOwnerEmail(oldEmail)) {
     return jsonError('The owner login email cannot be changed from this console.', 400)
   }
@@ -66,26 +95,45 @@ export async function POST(request: NextRequest) {
     return jsonError('That is already the login email.', 400)
   }
 
+  // Every organisation the person belongs to: the home company (an id, a path or a reference, rulebook
+  // `documentOrganizationId`) and each membership. Memberships are listed with the server key: the security rules let
+  // only the person list `users/{uid}/orgMemberships`. If that fails, the home company alone, said in the response.
+  const membershipRead = await readMembershipIds([
+    () => adminListDocumentIds(`users/${uid}/orgMemberships`, 500),
+    async () => (await firestoreListCollection(token, `users/${uid}/orgMemberships`, 500)).map((row) => row.id),
+  ])
+  const homeRaw = restFieldsToPlain(userDoc.fields).organizationId
+  const homeOrgId = documentOrganizationId(homeRaw) || ''
+  const organizationIds = changeEmailOrganizations(homeRaw, membershipRead.ids)
+  const organizationId = organizationIds[0] || ''
+  let moves: ReturnType<typeof claimMoves>
+  try {
+    const claims: ClaimState[] = []
+    for (const orgId of organizationIds) {
+      claims.push({
+        orgId,
+        oldOwner: oldEmail ? await claimUserId(token, orgId, oldEmail) : null,
+        newOwner: await claimUserId(token, orgId, newEmail),
+      })
+    }
+    // The new claim goes only to the home company and where the old claim names this person; a new claim that names
+    // someone else there (e.g. a pending invite placeholder, which has no Auth account, so Auth does not refuse the
+    // email) refuses the whole change before Auth or Firestore is touched.
+    moves = claimMoves({ uid, homeOrgId, claims })
+  } catch {
+    return jsonError('Could not check who holds this email. Nothing was changed.', 503)
+  }
+  if (moves.refuse) return jsonError(CHANGE_EMAIL_CLAIM_TAKEN_MESSAGE, 409)
+
   try {
     await adminUpdateAuthEmail(uid, newEmail)
   } catch (error) {
     return jsonError(error instanceof Error ? error.message : 'Could not update the Firebase login email.', 502)
   }
 
+  const incomplete: string[] = []
   try {
     await firestorePatch(token, `users/${uid}`, { email: stringField(newEmail) }, ['email'])
-    if (organizationId && oldEmail) {
-      await firestoreDelete(token, `organizations/${organizationId}/userEmails/${encodeURIComponent(oldEmail)}`).catch(() => undefined)
-    }
-    if (organizationId) {
-      await firestorePatch(
-        token,
-        `organizations/${organizationId}/userEmails/${encodeURIComponent(newEmail)}`,
-        { userId: stringField(uid) },
-        ['userId']
-      ).catch(() => undefined)
-      await syncRosterEmail(token, organizationId, oldEmail, newEmail)
-    }
   } catch (error) {
     console.error('[owner/change-email] firestore', error)
     return jsonError(
@@ -93,6 +141,25 @@ export async function POST(request: NextRequest) {
       502
     )
   }
+  for (const orgId of moves.writes) {
+    const newClaimPath = `organizations/${orgId}/userEmails/${encodeURIComponent(newEmail)}`
+    await firestorePatch(token, newClaimPath, { userId: stringField(uid) }, ['userId']).catch((error) => {
+      console.error('[owner/change-email] claim', newClaimPath, error)
+      incomplete.push(newClaimPath)
+    })
+  }
+  for (const orgId of moves.deletes) {
+    if (!oldEmail) break
+    const oldClaimPath = `organizations/${orgId}/userEmails/${encodeURIComponent(oldEmail)}`
+    await firestoreDelete(token, oldClaimPath).catch((error) => {
+      console.error('[owner/change-email] old claim', oldClaimPath, error)
+      incomplete.push(oldClaimPath)
+    })
+  }
+  for (const orgId of organizationIds) {
+    incomplete.push(...(await syncRosterEmail(token, orgId, oldEmail, newEmail)))
+  }
+  if (!membershipRead.complete) incomplete.push(CHANGE_EMAIL_HOME_ONLY_NOTE)
 
   if (sendReset) {
     const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY
@@ -112,8 +179,9 @@ export async function POST(request: NextRequest) {
     targetUserId: uid,
     targetOrgId: organizationId || undefined,
     before: { email: maskEmail(oldEmail) },
-    after: { email: maskEmail(newEmail), reason, sendReset },
+    after: { email: maskEmail(newEmail), reason, sendReset, organizations: organizationIds.length, membershipsRead: membershipRead.complete, incomplete: incomplete.length },
     ip: clientIp(request),
   })
-  return NextResponse.json({ ok: true, uid, email: newEmail })
+  // Writes that failed are reported (the Auth email already changed), never swallowed.
+  return NextResponse.json({ ok: true, uid, email: newEmail, incomplete, membershipsRead: membershipRead.complete })
 }

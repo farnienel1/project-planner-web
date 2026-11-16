@@ -24,8 +24,10 @@ export async function ownerChangeUserEmail(input: {
     headers: await jsonAuthHeaders(),
     body: JSON.stringify(input),
   })
-  const data = (await response.json().catch(() => ({}))) as { error?: string }
+  const data = (await response.json().catch(() => ({}))) as { error?: string; incomplete?: string[] }
   if (!response.ok) throw new Error(data.error || 'Could not change that login email.')
+  // The login email changed; any claim or roster row that could not be moved is reported, never hidden.
+  return { incomplete: Array.isArray(data.incomplete) ? data.incomplete : [] }
 }
 
 export async function ownerSendPasswordReset(uid: string, email?: string) {
@@ -67,4 +69,16 @@ export async function ownerDeleteUnfinishedUser(uid: string) {
   })
   const data = (await response.json().catch(() => ({}))) as { error?: string }
   if (!response.ok) throw new Error(data.error || 'Could not delete that unfinished account.')
+}
+
+/** Rulebook §20 (`canRestoreOrganization`): the platform owner restores a company scheduled for erasure. */
+export async function ownerRestoreOrganisation(orgId: string): Promise<{ message: string; stripe?: string }> {
+  const response = await fetch('/api/owner/restore-organisation', {
+    method: 'POST',
+    headers: await jsonAuthHeaders(),
+    body: JSON.stringify({ orgId }),
+  })
+  const data = (await response.json().catch(() => ({}))) as { error?: string; message?: string; stripe?: string }
+  if (!response.ok) throw new Error(data.error || 'Could not restore that organisation.')
+  return { message: data.message || 'Organisation restored.', stripe: data.stripe }
 }

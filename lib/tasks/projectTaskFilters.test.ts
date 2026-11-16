@@ -4,7 +4,6 @@ import {
   applyJobTaskFilter,
   emptyCopyForScope,
   filterTasksForScope,
-  isAssignedToUser,
   isTaskOverdue,
   jobTaskFilterDescription,
   taskStatCounts,
@@ -24,20 +23,16 @@ function task(partial: Partial<ProjectTask> & { id: string; title: string }): Pr
   }
 }
 
-test('isAssignedToUser matches operative catalogue id by email', () => {
-  const row = task({
-    id: '1',
-    title: 'Fit board',
-    assignedOperativeId: 'OP-1',
-  })
-  assert.equal(
-    isAssignedToUser(row, 'op@example.com', [{ id: 'OP-1', email: 'op@example.com' }], [], true),
-    true
+test('assignedToMe uses the rulebook assigned set (no own email match)', () => {
+  const rows = [
+    task({ id: '1', title: 'Mine', assignedOperativeId: 'OP-1' }),
+    task({ id: '2', title: 'Not mine', assignedOperativeId: 'OP-2' }),
+  ]
+  assert.deepEqual(
+    filterTasksForScope(rows, 'assignedToMe', { assignedTaskIds: new Set(['1']) }).map((row) => row.id),
+    ['1']
   )
-  assert.equal(
-    isAssignedToUser(row, 'other@example.com', [{ id: 'OP-1', email: 'op@example.com' }], [], true),
-    false
-  )
+  assert.deepEqual(filterTasksForScope(rows, 'assignedToMe', { assignedTaskIds: new Set() }), [])
 })
 
 test('isTaskOverdue is exclusive of today and completed', () => {
@@ -73,14 +68,7 @@ test('scopes and stats follow iOS To do / In progress / Overdue / Done', () => {
     task({ id: '2', title: 'Doing', status: 'In Progress', dueDate: new Date('2026-09-18') }),
     task({ id: '3', title: 'Done', status: 'Completed' }),
   ]
-  const opts = {
-    userEmail: 'mgr@example.com',
-    user: { email: 'mgr@example.com', firstName: 'Ada', surname: 'Lovelace' },
-    operatives: [],
-    managers: [{ id: 'MGR-1', email: 'mgr@example.com' }],
-    operativeMode: false,
-    now,
-  }
+  const opts = { assignedTaskIds: new Set(['1']), now }
   assert.equal(filterTasksForScope(tasks, 'assignedToMe', opts).map((row) => row.id).join(), '1')
   assert.equal(filterTasksForScope(tasks, 'active', opts).length, 2)
   assert.equal(filterTasksForScope(tasks, 'overdue', opts).map((row) => row.id).join(), '2')
@@ -92,13 +80,7 @@ test('scopes and stats follow iOS To do / In progress / Overdue / Done', () => {
 })
 
 test('assigned to me excludes completed tasks like iOS', () => {
-  const opts = {
-    userEmail: 'mgr@example.com',
-    user: { email: 'mgr@example.com', firstName: 'Ada', surname: 'Lovelace' },
-    operatives: [],
-    managers: [{ id: 'MGR-1', email: 'mgr@example.com' }],
-    operativeMode: false,
-  }
+  const opts = { assignedTaskIds: new Set(['open', 'done']) }
   const tasks = [
     task({ id: 'open', title: 'Open', assignedManagerId: 'MGR-1', status: 'To Do' }),
     task({ id: 'done', title: 'Done', assignedManagerId: 'MGR-1', status: 'Completed' }),
@@ -143,3 +125,22 @@ test('job task filter matches operative, manager, and date range', () => {
   assert.equal(jobTaskFilterDescription({ type: 'all' }, [], []), 'Showing all tasks')
 })
 
+
+test('scan 16 Nov: the job page "Assigned to me" finds a task under the users id and a former id', async () => {
+  const { tasksAssignedToUser } = await import('./taskUtils.ts')
+  const viewer = { id: 'u-ada', email: 'ada@x.com', formerUserIds: ['INVITE-ADA'], permissions: {} } as never
+  const rows = [
+    task({ id: 'users-id', title: 'A', assignedOperativeIds: ['u-ada'] }),
+    task({ id: 'former-id', title: 'B', assignedManagerIds: ['invite-ada'] }),
+    task({ id: 'row', title: 'C', assignedOperativeId: 'op-ada' }),
+    task({ id: 'other', title: 'D', assignedOperativeId: 'op-bob' }),
+  ]
+  const assigned = new Set(
+    tasksAssignedToUser(rows, viewer, [{ id: 'op-ada', email: 'ada@x.com' }, { id: 'op-bob', email: 'bob@x.com' }] as never, [], [])
+      .map((row) => row.id)
+  )
+  assert.deepEqual(
+    filterTasksForScope(rows, 'assignedToMe', { assignedTaskIds: assigned }).map((row) => row.id).sort(),
+    ['former-id', 'row', 'users-id']
+  )
+})

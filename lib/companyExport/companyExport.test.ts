@@ -151,6 +151,10 @@ test('every plain OPERATIONAL_COLLECTION_PATHS collection is read; templated one
   for (const name of operationalCollectionNames()) if (!EXCLUDED_COLLECTIONS[name]) assert.ok(read.includes(name), `${name} is read`)
   assert.ok(EXCLUDED_COLLECTIONS.personalSiteAudits)
   for (const name of ['priceWorkItems', 'expenseItems', 'payeClaimReports']) assert.ok(read.includes(name), `${name} is read`)
+  // Scan 16 Nov: the price work / expense review decisions are exported, and leave adjustments have their own file.
+  const reads = organizationCollectionReads({ includeNotifications: false })
+  assert.equal(reads.find((entry) => entry.collection === 'payeClaimReviews')?.file, 'payeClaimReviews')
+  assert.equal(reads.find((entry) => entry.collection === 'annualLeaveAdjustments')?.file, 'annualLeaveAdjustments')
   for (const [key, path] of Object.entries(OPERATIONAL_COLLECTION_PATHS)) {
     const plain = /^organizations\/\{orgId\}\/[A-Za-z]+$/.test(path)
     const inSettings = path.startsWith('organizations/{orgId}/settings/')
