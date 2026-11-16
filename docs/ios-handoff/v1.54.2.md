@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.54.1 → 1.54.2
-Packed hash: a7c8ceea7ccd6bcad182c6a8ff344226ab003a45478dec684f2fa60e73f046f9
-Rulebook sha256: 7153b29f8f62d01e1b1ff933d9306b99ee4eef7f7fc2c198e3eb892ffc08b5a0
+Packed hash: a32fb9ccef1e2fad891fc66bdd192db24133443bcec0c02f706f46eb185ba969
+Rulebook sha256: 6664e93690300aa0a7b14ef76dd10fbc36146fcfdf859bf8b29d202cb43793b3
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -26,8 +26,8 @@ Exports added: none
 Exports removed: none
 Web files that changed the rules: docs/RULEBOOK.md, firestore.rules
 Done when:
-- [ ] Packed hash in iOS equals a7c8ceea7ccd6bcad182c6a8ff344226ab003a45478dec684f2fa60e73f046f9
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 7153b29f8f62d01e1b1ff933d9306b99ee4eef7f7fc2c198e3eb892ffc08b5a0)
+- [ ] Packed hash in iOS equals a32fb9ccef1e2fad891fc66bdd192db24133443bcec0c02f706f46eb185ba969
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 6664e93690300aa0a7b14ef76dd10fbc36146fcfdf859bf8b29d202cb43793b3)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.54.2)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
