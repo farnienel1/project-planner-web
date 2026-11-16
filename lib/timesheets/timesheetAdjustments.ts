@@ -19,6 +19,8 @@ import {
   type PayrollLineReview,
 } from '@/lib/canonical/timesheetEntryReviews'
 import { timesheetTotals, type TimesheetTotals } from '@/lib/canonical/timesheetTotals'
+import { timesheetLateExtraFingerprintMap } from '@/lib/canonical/timesheetLateExtras'
+import type { TimesheetEntryReviewInput } from '@/lib/canonical/timesheetEntryReviews'
 
 /**
  * The line manager's review of a payroll line (canonical `payrollLineReview`): the line id as stored, then without
@@ -84,7 +86,9 @@ export function effectivePriceWorkAmount(
 export function extrasPendingReview(draft: TimesheetDraft): boolean {
   return (
     draft.expenseEntries.some((entry) => entry.managerDecision === 'pending') ||
-    draft.priceWorkEntries.some((entry) => entry.managerDecision === 'pending')
+    draft.priceWorkEntries.some((entry) => entry.managerDecision === 'pending') ||
+    // Rulebook 1.54.0: a late extra waiting for the line manager's decision (an ignored one, id taken, never waits).
+    (draft.lateExtras ?? []).some((entry) => entry.managerDecision === 'pending' && entry.lateState !== 'ignored')
   )
 }
 
@@ -93,14 +97,38 @@ export function extrasPendingReview(draft: TimesheetDraft): boolean {
  * `reviewerPreview`: the line manager's screen before their save lands — the entry decisions on screen are laid over
  * the stored reviews exactly as their save will write them (`timesheetEntryReviewWriteFields`).
  */
+/**
+ * Rulebook 1.54.0 (third review of #337): the stored document's `exportedAt` is set (as the security rules test it) —
+ * the sheet's late extras are frozen.
+ */
+export function draftStoredExported(draft: TimesheetDraft): boolean {
+  return draft.exportedAtStored === true || Boolean(draft.exportedAt)
+}
+
+/**
+ * Rulebook 1.54.0: the entries a reviewer's save decides (`timesheetEntryReviewWriteFields` `entries`): the signed
+ * entries, and the late extras marked `lateExtra` — never an ignored one (third review of #337: its id is a signed
+ * entry's, so its decision would replace that entry's review). The rulebook refuses those too; this keeps the screen and
+ * the save the same.
+ */
+export function draftReviewEntries(draft: TimesheetDraft): TimesheetEntryReviewInput[] {
+  return [
+    ...draft.priceWorkEntries,
+    ...draft.expenseEntries,
+    ...(draft.lateExtras ?? []).filter((entry) => entry.lateState !== 'ignored').map((entry) => ({ ...entry, lateExtra: true })),
+  ] as TimesheetEntryReviewInput[]
+}
+
 export function timesheetSheetFields(draft: TimesheetDraft, options: { reviewerPreview?: boolean } = {}): Record<string, unknown> {
   let extraEntryReviews = draft.extraEntryReviews ?? null
   if (options.reviewerPreview) {
     const written = timesheetEntryReviewWriteFields({
       stored: extraEntryReviews,
-      entries: [...draft.priceWorkEntries, ...draft.expenseEntries],
+      entries: draftReviewEntries(draft),
       reviewedByUserId: '',
       reviewedAtMs: 0,
+      exported: draftStoredExported(draft),
+      sheet: { priceWorkEntries: draft.priceWorkEntries, expenseEntries: draft.expenseEntries, lateExtras: draft.lateExtras ?? [] },
     })
     extraEntryReviews = timesheetEntryReviewsAfterWrite(extraEntryReviews, written)
   }
@@ -110,7 +138,22 @@ export function timesheetSheetFields(draft: TimesheetDraft, options: { reviewerP
     extraEntryReviews,
     priceWorkEntries: draft.priceWorkEntries,
     expenseEntries: draft.expenseEntries,
+    // Rulebook 1.54.0: late extras as the rulebook reads them (kind on each row; decisions only from the review map).
+    ...(draft.lateExtras ? { lateExtras: draft.lateExtras } : {}),
     managerSignedAt: draft.managerSignedAt ?? null,
+  }
+}
+
+/**
+ * Rulebook 1.45.0 / 1.54.0: the reader's fingerprints for every entry of the loaded draft — the signed entries and the
+ * late extras — so the rulebook never fingerprints a display copy.
+ */
+export function draftEntryFingerprints(draft: TimesheetDraft): Record<string, string> {
+  // Third review of #337: late extras under their own keys (`timesheetLateExtraFingerprintKey`), so a late extra whose id
+  // differs from a signed entry's only by letter case never replaces that entry's fingerprint.
+  return {
+    ...timesheetEntryFingerprintMap([...draft.priceWorkEntries, ...draft.expenseEntries]),
+    ...timesheetLateExtraFingerprintMap(draft.lateExtras ?? []),
   }
 }
 
@@ -136,7 +179,7 @@ export function draftTimesheetTotals(input: {
     timesheetDays: input.timesheetDays ?? null,
     timeZone: input.timeZone ?? null,
     // Rulebook 1.45.0: the draft is the loaded copy; its entries carry the reader's fingerprints.
-    entryFingerprints: timesheetEntryFingerprintMap([...input.draft.priceWorkEntries, ...input.draft.expenseEntries]),
+    entryFingerprints: draftEntryFingerprints(input.draft),
   })
 }
 

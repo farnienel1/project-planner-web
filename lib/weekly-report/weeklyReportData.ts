@@ -18,7 +18,7 @@ import { computeOperativeBookingClashWarnings } from '@/lib/scheduling/bookingCl
 import { managerSiteBookingDisplayTitle } from '@/lib/scheduling/managerSiteBookingUtils'
 import { getActiveOperativesForScheduling } from '@/lib/operatives/operativeRosterUtils'
 import type { OrganizationDetails } from '@/lib/settings/organizationSettings'
-import { DEFAULT_PAYROLL_POLICY, includesManagerScheduleLocation, orgPayrollPolicyForDay } from '@/lib/settings/organizationSettings'
+import { DEFAULT_PAYROLL_POLICY, orgPayrollPolicyForDay } from '@/lib/settings/organizationSettings'
 import { ORPHAN_BOOKING_LABEL, organizationTimeZone } from '@/lib/canonical'
 import { computeManagerBookingClashWarnings } from '@/lib/warnings/managerClashWarnings'
 import {
@@ -208,6 +208,11 @@ export type WeeklyReportData = {
    */
   payeOvertimeRows: WeeklyReportPayeOvertimeRow[]
   payeOvertimeTotal: number
+  /**
+   * Pay strip (review #342): the users documents whose pay (rate, employment type) this report reads — the people of its
+   * bookings, approved timesheet weeks and timesheets in the range. The screen waits for exactly these people's pay.
+   */
+  pricedUserIds: string[]
 }
 
 /** 1.32.0: `hoursCell` is the multiplier figure ("2h at ×1.5 = 3h"), with the changed-rate mark on an edited row. */
@@ -317,11 +322,9 @@ export function buildWeeklyReportData({
     )
 
   const periodOperativeBookings = bookings.filter((booking) => isDateWithinReportPeriod(booking.date, period))
-  const periodManagerBookings = managerSiteBookings.filter((booking) => {
-    if (!isDateWithinReportPeriod(booking.date, period)) return false
-    const options = orgDetails?.myScheduleOptions
-    return options ? includesManagerScheduleLocation(options, booking) : true
-  })
+  // Rulebook 1.54.0 (owner decision 16 Nov): a switched-off schedule option never takes a booking off the report — it
+  // only hides the option from pickers (§4.8), as on Daily Overview (1.53.0 A10) and the timesheets.
+  const periodManagerBookings = managerSiteBookings.filter((booking) => isDateWithinReportPeriod(booking.date, period))
   const periodSubBookings = subcontractorBookings.filter((booking) =>
     isDateWithinReportPeriod(booking.date, period)
   )
@@ -445,6 +448,24 @@ export function buildWeeklyReportData({
     })
   }
   for (const week of timesheetWeeks) claim(week.userId, personForBooking({ userId: week.userId }))
+  // Pay strip (review #342): the users whose pay the Pay Summary reads, matched exactly as `weeklyReportPayRows` matches
+  // them — every id each person goes by (`person.ids`), without case (`normalizeDocumentId`), first person wins — for
+  // every booking, approved timesheet week and timesheet (the invoice check line) in the range.
+  const pricedUserIds = new Set<string>()
+  const pricedOwner = new Map<string, CanonicalPayPerson>()
+  for (const person of people) {
+    for (const id of [person.id, ...(person.ids ?? [])]) {
+      const key = normalizeDocumentId(id)
+      if (key && !pricedOwner.has(key)) pricedOwner.set(key, person)
+    }
+  }
+  const notePriced = (id: string | null | undefined) => {
+    const person = pricedOwner.get(normalizeDocumentId(id))
+    if (person?.user) pricedUserIds.add(person.id)
+  }
+  payBookings.forEach((booking) => notePriced(booking.personId))
+  timesheetWeeks.forEach((week) => notePriced(week.userId))
+  timesheetSheets.forEach((sheet) => notePriced(sheet.personId))
 
   // Rulebook 1.51.0 §7 (Q1–Q3): the Pay Summary, check lines and every booking's paid hours and days.
   const history2 = [...Object.values(history.byUserId).flat(), ...Object.values(history.byOperativeId).flat()]
@@ -844,21 +865,28 @@ export function buildWeeklyReportData({
         jobName: jobFor(booking.locationId)?.siteName ?? '',
       })),
   ]
+  const payePeople = users
+    .filter((user) => !isAnonymisedDeletedProfile(user))
+    .map((user) => {
+      const operative = findOperativeForUser(user, operatives)
+      return {
+        id: user.id,
+        name: resolveDisplayName(user, operative),
+        // 1.32.0: the one all-records-per-person rule (`overtimePersonIds`), plus the roster fold's aliases.
+        ids: [...overtimePersonIds({ person: user, roster: users as never, operatives }), ...aliasIdsFor(user.id)],
+        employmentType: user.employmentType ?? null,
+        employmentTypeTransitionFrom: user.employmentTypeTransitionFrom ?? null,
+        employmentTypeEffectiveAt: user.employmentTypeEffectiveAt ?? null,
+      }
+    })
+  // Pay strip (review #342): the PAYE overtime section reads the employment type of every person with a booking in the
+  // range (matched by their `ids`, without case, as `payeOvertimeLines` does), so their pay is waited for too.
+  const overtimeBookingKeys = new Set(overtimeBookings.map((booking) => normalizeDocumentId(booking.personId)).filter(Boolean))
+  for (const person of payePeople) {
+    if (person.ids.some((id) => overtimeBookingKeys.has(normalizeDocumentId(id)))) pricedUserIds.add(person.id)
+  }
   const payeOvertimeRows: WeeklyReportPayeOvertimeRow[] = weeklyReportPayeOvertime({
-    people: users
-      .filter((user) => !isAnonymisedDeletedProfile(user))
-      .map((user) => {
-        const operative = findOperativeForUser(user, operatives)
-        return {
-          id: user.id,
-          name: resolveDisplayName(user, operative),
-          // 1.32.0: the one all-records-per-person rule (`overtimePersonIds`), plus the roster fold's aliases.
-          ids: [...overtimePersonIds({ person: user, roster: users as never, operatives }), ...aliasIdsFor(user.id)],
-          employmentType: user.employmentType ?? null,
-          employmentTypeTransitionFrom: user.employmentTypeTransitionFrom ?? null,
-          employmentTypeEffectiveAt: user.employmentTypeEffectiveAt ?? null,
-        }
-      }),
+    people: payePeople,
     bookings: overtimeBookings,
     organization: policyState,
     timeZone,
@@ -877,6 +905,7 @@ export function buildWeeklyReportData({
   return {
     payeOvertimeRows,
     payeOvertimeTotal,
+    pricedUserIds: [...pricedUserIds].sort(),
     organizationName,
     companyLogoURL,
     reportPeriod: period,

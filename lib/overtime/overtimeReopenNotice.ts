@@ -8,6 +8,7 @@ import { collection, getDocs, query, where } from 'firebase/firestore'
 import {
   OVERTIME_REQUEST_REVIEWED_TYPE,
   OVERTIME_REQUEST_SUBMITTED_TYPE,
+  normalizeEmploymentType,
   notificationRecipientAccountId,
   overtimeLineReopened,
   overtimeReopenedMessage,
@@ -18,11 +19,32 @@ import {
   type OvertimeOrganization,
   type OvertimeRequestRecord,
   type OvertimeReviewRecord,
+  type PayProfileDocument,
 } from '@/lib/canonical'
+import { privatePayFor, securitySwitchesLoaded } from '@/lib/access/securitySwitches'
+import { cachedPayProfileFor } from '@/lib/pay/payProfileOverlay'
 import { auth, db } from '@/lib/firebase/config'
 import { saveInboxNotification } from '@/lib/firebase/notifyInbox'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import type { User } from '@/types'
+
+/**
+ * Pay strip: whether the roster row says enough to skip the reopen check. While `privatePay` is off, the row's
+ * employment type (as before). While it is on, the employment type is pay data: when this editor read the person's pay
+ * profile, that profile's employment type decides; when they could not (a manager who is not the person's line
+ * manager, after the strip) the row reads self-employed whatever the truth, so the check is left to
+ * `overtimeLineReopened` (`unknown`). Before the switches are read the caller passes `privatePay: true` (unknown is not
+ * off), so the check is never skipped on a stripped row.
+ */
+export function reopenPayePreCheck(input: {
+  privatePay: boolean
+  person: { employmentType?: string | null }
+  profile: PayProfileDocument | null
+}): 'paye' | 'notPaye' | 'unknown' {
+  if (!input.privatePay) return String(input.person.employmentType ?? '').toLowerCase() === 'paye' ? 'paye' : 'notPaye'
+  if (!input.profile || !Object.prototype.hasOwnProperty.call(input.profile.fields, 'employmentType')) return 'unknown'
+  return normalizeEmploymentType(input.profile.fields.employmentType) === 'paye' ? 'paye' : 'notPaye'
+}
 
 async function readOrNull<T>(work: () => Promise<T>): Promise<T | null> {
   try {
@@ -49,7 +71,8 @@ export async function notifyOvertimeLineReopened(input: {
   const accountId = notificationRecipientAccountId(input.before.personId, roster, catalogue as never)
   if (!accountId) return
   const person = input.users.find((row) => row.id === accountId)
-  if (!person || String(person.employmentType ?? '').toLowerCase() !== 'paye') return
+  if (!person) return
+  if (reopenPayePreCheck({ privatePay: !securitySwitchesLoaded() || privatePayFor(input.organizationId), person, profile: cachedPayProfileFor(input.organizationId, person) }) === 'notPaye') return
   const orgId = input.organizationId
   const reviews = await readOrNull<OvertimeReviewRecord[]>(async () => {
     const snap = await getDocs(query(collection(db, 'organizations', orgId, 'overtimeReviews'), where('userId', '==', accountId)))

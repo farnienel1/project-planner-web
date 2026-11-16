@@ -1901,6 +1901,7 @@ export {
   annualLeaveAdjustmentDaysForYear,
   annualLeaveBalanceNotes,
   annualLeaveEmploymentInput,
+  annualLeaveReportYearMonths,
   balanceHasAllowance,
   leaveAllowanceForWindow,
   type AnnualLeaveBalanceNotes,
@@ -2092,6 +2093,7 @@ export {
   signedTimesheetBookingChanges,
   signedTimesheetBookingPlace,
   signedTimesheetBookingRecord,
+  signedTimesheetBookingWriteReopens,
   signedTimesheetLineBookingKey,
 } from './timesheetBookingChanges'
 export type {
@@ -2147,3 +2149,70 @@ export type {
 // Rulebook 1.51.0 §4.3: Settings → Working hours "Working hours history" (read-only, admins).
 export { payrollPolicyHistoryRows } from './payrollPolicyHistoryRows'
 export type { PayrollPolicyHistoryRow } from './payrollPolicyHistoryRows'
+
+// Rulebook 1.54.0 §8: late extras — price work and expenses added after the line manager signs (until exported); they
+// pay only once a reviewer approves them in the review map.
+export {
+  TIMESHEET_LATE_EXTRAS_FIELD,
+  TIMESHEET_LATE_EXTRAS_EXPORT_SKIPPED_MESSAGE,
+  TIMESHEET_LATE_EXTRAS_REVIEWER_MESSAGE,
+  TIMESHEET_LATE_EXTRA_ADD_CONFIRM_MESSAGE,
+  TIMESHEET_LATE_EXTRA_APPROVED_LABEL,
+  TIMESHEET_LATE_EXTRA_DECLINED_LABEL,
+  TIMESHEET_LATE_EXTRA_ID_TAKEN_LABEL,
+  TIMESHEET_LATE_EXTRA_ID_UNUSABLE_LABEL,
+  TIMESHEET_LATE_EXTRA_WAITING_LABEL,
+  parseTimesheetLateExtras,
+  timesheetChangesWithLateExtras,
+  timesheetLateExtraDecision,
+  timesheetLateExtraFingerprintKey,
+  timesheetLateExtraFingerprintMap,
+  timesheetLateExtraKind,
+  timesheetLateExtraLabel,
+  timesheetLateExtraReviewable,
+  timesheetLateExtraRows,
+  timesheetLateExtrasSnapshotRows,
+  timesheetLateExtrasSummary,
+  timesheetSnapshotMoneyRowsCurrent,
+} from './timesheetLateExtras'
+export {
+  TIMESHEET_EXPORTED_EXTRAS_MESSAGE,
+  timesheetExportedFieldSet,
+  timesheetOwnerCanAddLateExtras,
+} from './timesheetSnapshot'
+export {
+  TIMESHEET_ENTRY_ID_MAX_LENGTH,
+  timesheetEntryReviewFor,
+  timesheetEntryReviewKeyUsable,
+  timesheetLateExtraRowProblem,
+  timesheetSignedEntryKeys,
+} from './timesheetEntryReviews'
+// Rulebook 1.54.0 §8 / §13: "Your signed timesheet has changed" (written by the server).
+export {
+  TIMESHEET_BOOKINGS_CHANGED_NOTICE_MESSAGE,
+  TIMESHEET_BOOKINGS_CHANGED_NOTICE_TITLE,
+  TIMESHEET_BOOKINGS_CHANGED_NOTICE_TYPE,
+  timesheetBookingChangeNotice,
+  timesheetBookingWriteMatters,
+  timesheetBookingsChangedNoticeId,
+  timesheetBookingsChangedRecipients,
+} from './timesheetBookingNotice'
+// Rulebook 1.54.0 §8 / §11: Settings → Data health "Timesheets half signed".
+export {
+  TIMESHEETS_HALF_SIGNED_HEADING,
+  TIMESHEETS_HALF_SIGNED_HELP,
+  TIMESHEETS_HALF_SIGNED_NONE,
+  timesheetsHalfSigned,
+} from './timesheetHalfSigned'
+export type {
+  TimesheetChanges,
+  TimesheetLateExtraDecisionResult,
+  TimesheetLateExtraEntryDocument,
+  TimesheetLateExtraKind,
+  TimesheetLateExtraRow,
+  TimesheetLateExtraState,
+  TimesheetLateExtrasSnapshotRow,
+  TimesheetLateExtrasSummary,
+} from './timesheetLateExtras'
+export type { TimesheetBookingNoticeDecision, TimesheetBookingNoticeSheet } from './timesheetBookingNotice'
+export type { TimesheetHalfSignedRow } from './timesheetHalfSigned'

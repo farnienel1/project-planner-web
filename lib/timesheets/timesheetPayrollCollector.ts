@@ -6,9 +6,7 @@ import type { Booking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { managerSiteBookingDisplayTitle } from '@/lib/scheduling/managerSiteBookingUtils'
 import {
-  DEFAULT_MY_SCHEDULE,
   DEFAULT_PAYROLL_POLICY,
-  includesManagerScheduleLocation,
   orgPayrollPolicyForDay,
   type MyScheduleOptions,
   type OrgPayrollTimePolicy,
@@ -102,6 +100,12 @@ export type TimesheetPayrollLineItem = {
   bookingHasOvertimeLine?: boolean
   /** Rulebook 1.46.0 (never stored): the booking's collection, so a labour and a manager site booking never group. */
   bookingCollection?: string
+  /**
+   * Rulebook 1.54.0 (review of #337, never stored): a manager site booking at Office, Working from home, Site survey or
+   * a custom place — paid from 1.54.0 whatever Schedule options say, but before 1.54.0 left off when that option was
+   * switched off, so it never triggers or enters the repair of an already-signed snapshot (`timesheetSnapshotNeedsRebuild`).
+   */
+  scheduleOptionPlace?: boolean
   /** Rulebook 1.43.0 (rebuild check only, never stored): when the line's booking was created and last written. */
   bookingCreatedAt?: Date
   bookingUpdatedAt?: Date
@@ -223,7 +227,6 @@ export function collectTimesheetPayroll({
   payrollPolicyState = null,
   timeZone,
   history = emptyDayRateHistory(),
-  scheduleOptions = DEFAULT_MY_SCHEDULE,
   aliasUserIds = [],
 }: {
   user: User
@@ -247,6 +250,11 @@ export function collectTimesheetPayroll({
   payrollPolicyState?: PayrollTimePolicyState | null
   timeZone?: string
   history?: OperativeDayRateHistoryCollection
+  /**
+   * Rulebook 1.54.0 (owner decision 16 Nov): no longer read. Office, Working from home, Site survey and custom-item
+   * bookings are paid whether or not that option is switched on in Schedule options (§4.8 only hides it from pickers).
+   * Kept on the input so callers and memo keys need not change.
+   */
   scheduleOptions?: MyScheduleOptions
   aliasUserIds?: string[]
 }): TimesheetPayrollSummary {
@@ -459,7 +467,8 @@ export function collectTimesheetPayroll({
   const managerUserIds = new Set([user.id, ...aliasUserIds, ...(user.formerUserIds ?? [])].map((id) => normalizeDocumentId(id)).filter(Boolean))
   for (const booking of managerSiteBookings) {
     if (!managerUserIds.has(normalizeDocumentId(booking.userId))) continue
-    if (!includesManagerScheduleLocation(scheduleOptions, booking)) continue
+    // Rulebook 1.54.0: every manager site booking is paid — a switched-off schedule option never takes it off the sheet.
+    const firstLine = lineItems.length
     pushBooking(
       'mgr',
       booking.id,
@@ -475,6 +484,9 @@ export function collectTimesheetPayroll({
       toDateOrNull(booking.createdAt),
       toDateOrNull(booking.updatedAt)
     )
+    if (booking.locationType !== 'project' && booking.locationType !== 'small_work') {
+      for (let index = firstLine; index < lineItems.length; index += 1) lineItems[index].scheduleOptionPlace = true
+    }
   }
 
   // Every booking is paid; overlapping ones are only flagged (`overlappingBookingIds`).

@@ -8,6 +8,7 @@
  * Whether a person is PAYE on a day is `employmentTypeOnDay` (userProfile.ts).
  */
 
+import { timesheetLateExtraRows } from './timesheetLateExtras'
 import { normalizeEmploymentType } from './userProfile'
 import { canViewPersonPay } from './payProfile'
 import { permissionLevelOf } from './permissionLevels'
@@ -302,6 +303,14 @@ export function timesheetInvoiceRows<L extends InvoiceLineInput & { id: string; 
       }
       rows.push({ kind, id: String(entry.id ?? '').trim(), amount, source: 'live', line: null, stored: entry, jobNumber: jobNumberOf(entry.jobNumber) })
     }
+  }
+  // 1.54.0 §8: late extras (added after the line manager signed) pay only once a reviewer approved them
+  // (`timesheetLateExtraDecision`), in either mode — never at their own amount, never by an inline decision. A signed
+  // snapshot already holds the approved ones (rows marked `lateExtra`, above).
+  for (const late of timesheetLateExtraRows(sheet, { entryFingerprints: input.entryFingerprints })) {
+    if (late.decision.state !== 'approved' || late.decision.paid <= INVOICE_AMOUNT_EPSILON) continue
+    if (!onCountedDay(entryDay(late.row))) continue
+    rows.push({ kind: late.kind, id: late.id, amount: late.decision.paid, source: 'live', line: null, stored: late.row, jobNumber: jobNumberOf(late.row.jobNumber) })
   }
   return rows
 }

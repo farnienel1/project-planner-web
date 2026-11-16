@@ -10,7 +10,7 @@ import {
 } from '@/lib/security/apiGuard'
 import { buildMfaEmailHtml, mfaEmailSubject } from '@/lib/auth/mfa/mfaEmail'
 import {
-  decodeSigned,
+  decodeMfaChallenge,
   encodeSigned,
   generateMfaCode,
   hashMfaCode,
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
   const uid = isFirebaseUser(signedIn) ? signedIn.uid : ''
   const email = isFirebaseUser(signedIn) ? (signedIn.email || '').toLowerCase() : ''
 
-  const challenge = decodeSigned<MfaChallenge>(readMfaCookie(request, 'challenge'))
+  const challenge = decodeMfaChallenge(readMfaCookie(request, 'challenge'))
   const active = challenge && challenge.exp > Date.now() ? challenge : null
   if (!active && !email) {
     return jsonError('Sign in again to receive a new verification code.', 401)
@@ -58,6 +58,7 @@ export async function POST(request: NextRequest) {
       idToken: uid ? bearerToken(request) : null,
     })
     const next: MfaChallenge = {
+      kind: 'challenge',
       uid: targetUid,
       email: targetEmail,
       codeHash: hashMfaCode(code, targetUid),

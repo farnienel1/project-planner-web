@@ -52,6 +52,22 @@ export type TimesheetPriceWorkEntry = {
   managerRevisedAmount?: number | null
 }
 
+/**
+ * Rulebook 1.54.0 §8: a price work or expense entry added after the line manager signed (`lateExtras`). Its
+ * `managerDecision` is the reviewer's decision from the review map only (`timesheetLateExtraDecision`); it is never
+ * written to the entry. It pays only once approved.
+ */
+export type TimesheetLateExtra =
+  | (TimesheetPriceWorkEntry & { kind: 'priceWork'; lateState?: TimesheetLateExtraState; lateReason?: TimesheetLateExtraReason })
+  | (TimesheetExpenseEntry & { kind: 'expense'; lateState?: TimesheetLateExtraState; lateReason?: TimesheetLateExtraReason })
+
+/**
+ * Rulebook 1.54.0 (third review of #337): where a loaded late extra stands (`timesheetLateExtraDecision`) — `ignored`
+ * (its id is a signed entry's or an earlier late extra's) is never paid and never offered for review. Read only.
+ */
+export type TimesheetLateExtraState = 'approved' | 'declined' | 'pending' | 'ignored'
+export type TimesheetLateExtraReason = 'review' | 'no-review' | 'stale-review' | 'not-late-review' | 'id-taken' | 'id-unusable' | 'no-title' | 'no-kind' | 'no-id'
+
 /** Shared with iOS `TimesheetWeeklyReportLabourLine`. `bookingId` is "" when unknown. */
 export type WeeklyReportLabourLine = {
   id: string
@@ -101,6 +117,10 @@ export type WeeklyReportMoneyLine = {
   date: Date
   amount: number
   decision: TimesheetManagerDecision
+  /** Rulebook 1.54.0: an approved late extra (`timesheetLateExtrasSnapshotRows`); missing on every other row. */
+  lateExtra?: boolean
+  /** Rulebook 1.54.0: the late extra's fingerprint when it was approved. */
+  entryFingerprint?: string
 }
 
 /**
@@ -120,6 +140,11 @@ export type WeeklyReportOverride = {
 export type TimesheetDraft = {
   expenseEntries: TimesheetExpenseEntry[]
   priceWorkEntries: TimesheetPriceWorkEntry[]
+  /**
+   * Rulebook 1.54.0 §8: price work and expenses the person added after the line manager signed (until exported). The
+   * signed entries above never change after that. Missing when the stored sheet has none.
+   */
+  lateExtras?: TimesheetLateExtra[]
   payrollLineReviews: Record<string, TimesheetPayrollLineReview>
   managerNote: string
   operativeSignedAt?: Date | null
@@ -139,6 +164,11 @@ export type TimesheetDraft = {
   operativeSignedBookingsSignedAt?: Date | null
   /** Local only: write `operativeSignedBookingsAt` as the server time on the next save. Never stored. */
   operativeSignedBookingsAtPending?: boolean
+  /**
+   * Rulebook 1.54.0 (review of #337): the stored `exportedAt` is set as the security rules test it
+   * (`timesheetExportedFieldSet`), whatever `exportedAt` above resolved to. Read only, never written.
+   */
+  exportedAtStored?: boolean
   managerSignedAt?: Date | null
   managerSignedByName?: string | null
   managerSignedByUserId?: string | null

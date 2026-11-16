@@ -47,7 +47,17 @@ import { effectivePermissions } from '@/lib/canonical/permissionLevels'
 import { savePartialDocument } from '@/lib/firebase/partialWrite'
 import { inboxActorUserId } from '@/lib/firebase/notifyInbox'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
-import { overlayRosterPay, refreshPayProfiles } from '@/lib/pay/payProfileOverlay'
+import { rerunWhenViewerArrives } from '@/lib/pay/rosterViewerWait'
+import {
+  notePayRosterLoadFailed,
+  notePayRosterOverlaid,
+  onPayProfileCacheChange,
+  overlayRosterPay,
+  payProfileCacheVersion,
+  payProfileUncoveredIds,
+  refreshPayProfiles,
+  refreshPayProfilesForNewPeople,
+} from '@/lib/pay/payProfileOverlay'
 
 /** `siteAudits/{id}` through the rulebook reader `parseSiteAuditDocument` (rulebook 1.8.0). */
 function mapSiteAudit(docId: string, data: Record<string, unknown>): SiteAudit | null {
@@ -676,6 +686,15 @@ function applyLiveRosterRows(organizationId: string, rows: User[]): void {
     users: sorted,
     userIdAliases: { ...state.userIdAliases, ...aliasIdsForRoster(users) },
   })
+  // Re-review #342 item 2: a person the last pay read did not plan for (added since) has unknown pay — read for them.
+  // A change re-reads the roster through the cache-change listener; until the read answers they read `loading`.
+  if (payProfileUncoveredIds(organizationId, sorted).length > 0) {
+    void import('@/lib/stores/authStore')
+      .then(({ useAuthStore }) =>
+        refreshPayProfilesForNewPeople(organizationId, useAuthStore.getState().user as never, useOrgUserStore.getState().users as never)
+      )
+      .catch(() => undefined)
+  }
 }
 
 function startLiveRoster(organizationId: string, fallbackIds: string[]): void {
@@ -801,6 +820,27 @@ let listedUserRevision = 0
 let listedRosterOrgId = ''
 let rosterLoadGeneration = 0
 const ORG_USER_LOAD_KEY = 'orgUserStore:users'
+// Pay strip: the pay-profile cache version the listed roster was parsed with, and the version a re-read was last
+// started for (one re-read per cache change).
+let rosterParsedVersion = { organizationId: '', version: -1 }
+let rosterRereadForVersion = -1
+
+/** Reads the roster again so every row is laid over with the pay-profile cache as it is now (once per cache version). */
+function rereadRosterForPay(organizationId: string): Promise<void> | undefined {
+  const version = payProfileCacheVersion()
+  if (rosterRereadForVersion === version) return undefined
+  rosterRereadForVersion = version
+  return useOrgUserStore.getState().loadUsers(organizationId, { force: true }).catch(() => undefined)
+}
+
+// Another store's pay-profile read (the operatives rows, a switch change) changed the cache after the roster was
+// parsed: read the roster again, so its pay is never the stripped users document's.
+onPayProfileCacheChange((organizationId) => {
+  if (listedRosterOrgId !== organizationId) return
+  if (rosterParsedVersion.organizationId !== organizationId) return
+  if (rosterParsedVersion.version === payProfileCacheVersion()) return
+  void rereadRosterForPay(organizationId)
+})
 
 function rosterStorageKey(organizationId: string): string {
   return `pp.roster:${organizationId}`
@@ -909,6 +949,8 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
       organizationId,
       async (attempt) => {
         const generation = ++rosterLoadGeneration
+        // Pay strip: the pay-profile cache version this read is parsed with (`overlayRosterPay`).
+        const versionAtFetch = payProfileCacheVersion()
         const inMemory = listedRosterOrgId === organizationId ? get().users : []
         const previous = inMemory.length > 0 ? inMemory : readStoredRoster(organizationId)
         const applyLoaded = async (loaded: Awaited<ReturnType<typeof fetchOrganisationRoster>>) => {
@@ -952,13 +994,28 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
           startLiveRoster(organizationId, loaded.fallbackIds)
           // Rulebook 1.26.0 §8: read the pay profiles this viewer may read; when they changed, read the roster again
           // so every person's pay is laid over (`payProfileReadPlan`, `overlayPayProfile`).
+          // Pay strip: the roster counts as laid over only when it was parsed with the cache as it is after this read
+          // (another store's read may have changed the cache meanwhile — then it is read again).
+          rosterParsedVersion = { organizationId, version: versionAtFetch }
           void import('@/lib/stores/authStore')
-            .then(({ useAuthStore }) => refreshPayProfiles(organizationId, useAuthStore.getState().user as never, users as never))
-            .then((changed) => {
-              if (changed && listedRosterOrgId === organizationId) {
-                return get().loadUsers(organizationId, { force: true })
+            .then(({ useAuthStore }) => {
+              // Review #342 item 4: no signed-in person yet — nothing can be read for them. Read the roster again as
+              // soon as they are known, so the overlay runs (the gate stays `loading` until then, never `ready`).
+              rerunWhenViewerArrives({
+                organizationId,
+                authStore: useAuthStore as never,
+                stillListed: () => listedRosterOrgId === organizationId,
+                reload: () => void useOrgUserStore.getState().loadUsers(organizationId, { force: true }).catch(() => undefined),
+              })
+              return refreshPayProfiles(organizationId, useAuthStore.getState().user as never, users as never)
+            })
+            .then(() => {
+              if (listedRosterOrgId !== organizationId || generation !== rosterLoadGeneration) return undefined
+              if (versionAtFetch === payProfileCacheVersion()) {
+                notePayRosterOverlaid(organizationId, versionAtFetch)
+                return undefined
               }
-              return undefined
+              return rereadRosterForPay(organizationId)
             })
             .catch(() => undefined)
         }
@@ -970,6 +1027,9 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
           } catch (error: unknown) {
             if (!isTimeoutError(error) || generation !== rosterLoadGeneration) throw error
             // Leave the error on screen instead of spinning, then take the list if the read finishes.
+            // Review #342 item 4: a timed-out roster is not laid over — the pay gate reads `failed` (with Retry) until
+            // the late read lands.
+            notePayRosterLoadFailed(organizationId)
             set({
               error: error instanceof Error ? error.message : 'The user list did not finish loading.',
               loading: false,
@@ -997,6 +1057,7 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
           if (generation !== rosterLoadGeneration) throw new OrgLoadNotCached()
           // runOrgLoad retries auth-token races; keep "Loading users..." up until the last attempt fails.
           if (!attempt.final && isRetryableAuthLoadError(error)) throw error
+          notePayRosterLoadFailed(organizationId)
           set({
             error: error instanceof Error ? error.message : 'Failed to load users',
             loading: false,

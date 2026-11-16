@@ -84,3 +84,18 @@ test('review r318: Download PDF warns only for an exported sheet with no saved s
   assert.equal(exportRebuiltPdfNote('14 Nov 2026'), 'Rebuilt on 14 Nov 2026 — may differ from the original export.')
   assert.match(EXPORT_REBUILT_CONFIRM, /rebuilt from today's bookings and rates/)
 })
+
+test('1.54.0 third review of #337 (3): a stamp that returns false (late extras changed) is not stamped and the export goes on', async () => {
+  const { log, input } = harness()
+  const result = await runTimesheetExport({
+    ...input,
+    stamp: async (row: { memberId: string }) => {
+      if (row.memberId === 'a') return false
+      log.push(`stamp:${row.memberId}`)
+      return true
+    },
+  })
+  assert.deepEqual(result.stamped.map((row) => row.memberId), ['c'])
+  assert.equal(result.stopped, null)
+  assert.ok(log.includes('deliver:sheet-c'))
+})
