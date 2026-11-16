@@ -103,6 +103,7 @@ export async function POST(request: NextRequest) {
 
   const response = NextResponse.json({ ok: true, skipped: true })
   writeMfaCookie(response.cookies, request, 'challenge', '', 0)
+  // No `iat`: a granted skip is never a "fresh" second step for destructive owner actions (review of #348).
   writeMfaCookie(response.cookies, request, 'ok', encodeMfaOk(user.uid, Date.now() + MFA_OK_TTL_MS), MFA_OK_TTL_MS)
   return response
 }

@@ -6,12 +6,14 @@ import { useAnalyticsStore } from '@/lib/analytics/analyticsStore'
 import { useFeedbackStore } from '@/lib/feedback/feedbackStore'
 import { directoryActiveUsers, organisationActivityRows } from '@/lib/analytics/aggregations'
 import { resolveDateRange } from '@/lib/analytics/dateRange'
+import { rangeEventsSince } from '@/lib/analytics/consolePeriod'
 import { formatOwnerWhen, matchesOwnerSearch } from '@/lib/analytics/ownerDirectory'
 import type { DateRangePreset } from '@/lib/analytics/events'
 import { DateRangePicker } from '@/components/developer/DeveloperOverview'
 import { DeveloperShell, DeveloperStatus, MetricCard } from '@/components/developer/DeveloperShell'
 import { EmptyState, LoadingSpinner, SearchField } from '@/components/dashboard/PageShell'
-import { isTestRecord, useConsolePrefs } from '@/lib/analytics/consolePrefs'
+import { useConsolePrefs } from '@/lib/analytics/consolePrefs'
+import { isTestOrganisation } from '@/lib/owner/testData'
 import { billingLabel, billingStatusLabel } from '@/lib/stripe/billing'
 
 export function DeveloperOrganisationsScreen() {
@@ -22,10 +24,13 @@ export function DeveloperOrganisationsScreen() {
   const { suggestions, loadBoard } = useFeedbackStore()
   const { includeTestData, jumpQuery } = useConsolePrefs()
 
+  // This page's own range bounds the events it loads (review of #348, M2).
   useEffect(() => {
-    void load()
+    void load(rangeEventsSince(range))
+  }, [load, range])
+  useEffect(() => {
     void loadBoard(true)
-  }, [load, loadBoard])
+  }, [loadBoard])
 
   const rows = useMemo(
     () =>
@@ -44,10 +49,10 @@ export function DeveloperOrganisationsScreen() {
   const visible = useMemo(
     () =>
       rows.filter((row) => {
-        if (!includeTestData && isTestRecord(row)) return false
+        if (!includeTestData && isTestOrganisation(orgById.get(row.id))) return false
         return matchesOwnerSearch([row.name, row.id], query || jumpQuery)
       }),
-    [rows, query, jumpQuery, includeTestData]
+    [rows, query, jumpQuery, includeTestData, orgById]
   )
 
   if (loading && organisations.length === 0 && users.length === 0 && !error) {
@@ -57,6 +62,7 @@ export function DeveloperOrganisationsScreen() {
   return (
     <DeveloperShell
       title="Organisations"
+      eventsFrom={rangeEventsSince(range)}
       actions={
         <button type="button" className="btn sm ghost" onClick={() => void refresh()} disabled={loading}>
           {loading ? 'Refreshing…' : 'Refresh'}

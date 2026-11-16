@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isPlatformOwnerEmail } from '@/lib/platform/owner'
-import { clientIp, enforceRateLimit, isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
-import { requireOwner, writeAuditLog } from '@/lib/owner/requireOwner'
+import { enforceRateLimit, isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
+import { requireOwner } from '@/lib/owner/requireOwner'
+import { clearOwnerDirectoryCache } from '@/lib/owner/directoryServer'
+import { OWNER_AUDIT_UNAVAILABLE_MESSAGE, beginOwnerAudit, type OwnerAuditRun } from '@/lib/owner/ownerAudit'
 import { isValidEmail } from '@/lib/security/validation'
-import { maskEmail } from '@/lib/auth/maskEmail'
 import { adminListDocumentIds, adminUpdateAuthEmail, firebaseAdminConfigured } from '@/lib/owner/identityToolkitAdmin'
 import {
   bearerToken,
@@ -85,7 +86,13 @@ export async function POST(request: NextRequest) {
   }
 
   const token = bearerToken(request)
-  const userDoc = await firestoreGet(token, `users/${uid}`)
+  let userDoc: Awaited<ReturnType<typeof firestoreGet>>
+  try {
+    userDoc = await firestoreGet(token, `users/${uid}`)
+  } catch (error) {
+    console.error('[owner/change-email] read user', error)
+    return jsonError('Could not read that user record, so nothing was changed. Try again.', 503)
+  }
   if (!userDoc) return jsonError('That user record was not found.', 404)
   const oldEmail = readString(userDoc.fields, 'email').toLowerCase()
   if (isPlatformOwnerEmail(oldEmail)) {
@@ -125,9 +132,25 @@ export async function POST(request: NextRequest) {
   }
   if (moves.refuse) return jsonError(CHANGE_EMAIL_CLAIM_TAKEN_MESSAGE, 409)
 
+  // Owner console PLAN A4: `requested` is stored before Auth or Firestore is touched, or nothing changes.
+  let audit: OwnerAuditRun
+  try {
+    audit = await beginOwnerAudit(request, owner.uid, {
+      action: 'ownerChangeUserEmail',
+      targetUserId: uid,
+      targetOrgId: organizationId || undefined,
+      reason: reason || undefined,
+      before: { email: oldEmail },
+      after: { email: newEmail, sendReset, organizations: organizationIds.length },
+    })
+  } catch {
+    return jsonError(OWNER_AUDIT_UNAVAILABLE_MESSAGE, 502)
+  }
+
   try {
     await adminUpdateAuthEmail(uid, newEmail)
   } catch (error) {
+    await audit.fail(error, { step: 'auth' })
     return jsonError(error instanceof Error ? error.message : 'Could not update the Firebase login email.', 502)
   }
 
@@ -136,6 +159,7 @@ export async function POST(request: NextRequest) {
     await firestorePatch(token, `users/${uid}`, { email: stringField(newEmail) }, ['email'])
   } catch (error) {
     console.error('[owner/change-email] firestore', error)
+    await audit.fail(error, { step: 'users document', authEmailChanged: true })
     return jsonError(
       'Firebase Auth email was updated, but the user record could not be saved. Try again or contact support with the user id.',
       502
@@ -173,15 +197,14 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  await writeAuditLog(request, {
-    action: 'ownerChangeUserEmail',
-    actorUid: owner.uid,
-    targetUserId: uid,
-    targetOrgId: organizationId || undefined,
-    before: { email: maskEmail(oldEmail) },
-    after: { email: maskEmail(newEmail), reason, sendReset, organizations: organizationIds.length, membershipsRead: membershipRead.complete, incomplete: incomplete.length },
-    ip: clientIp(request),
+  clearOwnerDirectoryCache()
+  await audit.complete({
+    email: newEmail,
+    sendReset,
+    organizations: organizationIds.length,
+    membershipsRead: membershipRead.complete,
+    incomplete: incomplete.length,
   })
   // Writes that failed are reported (the Auth email already changed), never swallowed.
-  return NextResponse.json({ ok: true, uid, email: newEmail, incomplete, membershipsRead: membershipRead.complete })
+  return NextResponse.json({ ok: true, uid, email: newEmail, incomplete, membershipsRead: membershipRead.complete, requestId: audit.requestId })
 }

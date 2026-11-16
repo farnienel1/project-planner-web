@@ -14,7 +14,8 @@ import { EmptyState, LoadingSpinner, SearchField } from '@/components/dashboard/
 import type { DateRangePreset } from '@/lib/analytics/events'
 import { MaskedEmail } from '@/components/developer/MaskedEmail'
 import { emailTypoHint } from '@/lib/auth/emailTypo'
-import { isTestRecord, useConsolePrefs } from '@/lib/analytics/consolePrefs'
+import { useConsolePrefs } from '@/lib/analytics/consolePrefs'
+import { isTestPerson, testOrganisationIds } from '@/lib/owner/testData'
 import { unfinishedSetupLabel } from '@/lib/owner/unfinishedSetup'
 import { auditOwnerAction } from '@/lib/owner/ownerActions'
 import { OwnerUserAccountMenu } from '@/components/developer/OwnerUserAccountMenu'
@@ -44,9 +45,10 @@ export function DeveloperUsersScreen() {
   }, [organisations, showFullEmails])
 
   const filteredUsers = useMemo(() => {
-    const source = includeTestData ? users : users.filter((user) => !isTestRecord(user))
+    const testOrgIds = testOrganisationIds(organisations)
+    const source = includeTestData ? users : users.filter((user) => !isTestPerson(user, testOrgIds))
     return collapseDirectoryUsers(source).users
-  }, [includeTestData, users])
+  }, [includeTestData, users, organisations])
 
   const visible = useMemo(() => {
     const needle = (query || jumpQuery).trim()
@@ -117,7 +119,8 @@ export function DeveloperUsersScreen() {
       ) : visible.length === 0 ? (
         <EmptyState title="No matching users" description="Try a different name, email or organisation." />
       ) : (
-        <div className="card overflow-visible">
+        // The row menu is a portal (fixed), so the table can scroll sideways on a phone instead of the whole page.
+        <div className="card overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="bg-[var(--soft)] text-xs uppercase text-[var(--ink3)]">
               <tr>

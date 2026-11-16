@@ -54,3 +54,9 @@ test('review #340: an ok cookie can never be used as a challenge', () => {
   const challenge = { kind: 'challenge', uid: 'u1', email: 'a@example.com', codeHash: 'h', exp: now + 60_000, attempts: 0, lastSentAt: now }
   assert.deepEqual(decodeMfaChallenge(encodeSigned(challenge)), challenge)
 })
+
+test('owner console PR 1: an ok cookie carries iat when given, and only then', () => {
+  const now = Date.now()
+  assert.deepEqual(decodeMfaOk(encodeMfaOk('u1', now + 60_000, now - 5), now), { kind: 'ok', uid: 'u1', exp: now + 60_000, iat: now - 5 })
+  assert.equal('iat' in (decodeMfaOk(encodeMfaOk('u1', now + 60_000), now) || {}), false)
+})

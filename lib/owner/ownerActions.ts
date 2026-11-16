@@ -1,4 +1,5 @@
 import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
+import { markOwnerDirectoryStale } from '@/lib/owner/client/ownerApi'
 
 export async function auditOwnerAction(action: string, payload: Record<string, unknown> = {}) {
   try {
@@ -26,6 +27,7 @@ export async function ownerChangeUserEmail(input: {
   })
   const data = (await response.json().catch(() => ({}))) as { error?: string; incomplete?: string[] }
   if (!response.ok) throw new Error(data.error || 'Could not change that login email.')
+  markOwnerDirectoryStale()
   // The login email changed; any claim or roster row that could not be moved is reported, never hidden.
   return { incomplete: Array.isArray(data.incomplete) ? data.incomplete : [] }
 }
@@ -59,6 +61,7 @@ export async function ownerMarkInternal(input: { orgId?: string; uid?: string; i
   })
   const data = (await response.json().catch(() => ({}))) as { error?: string }
   if (!response.ok) throw new Error(data.error || 'Could not update the internal flag.')
+  markOwnerDirectoryStale()
 }
 
 export async function ownerDeleteUnfinishedUser(uid: string) {
@@ -69,6 +72,7 @@ export async function ownerDeleteUnfinishedUser(uid: string) {
   })
   const data = (await response.json().catch(() => ({}))) as { error?: string }
   if (!response.ok) throw new Error(data.error || 'Could not delete that unfinished account.')
+  markOwnerDirectoryStale()
 }
 
 /** Rulebook §20 (`canRestoreOrganization`): the platform owner restores a company scheduled for erasure. */
@@ -80,5 +84,6 @@ export async function ownerRestoreOrganisation(orgId: string): Promise<{ message
   })
   const data = (await response.json().catch(() => ({}))) as { error?: string; message?: string; stripe?: string }
   if (!response.ok) throw new Error(data.error || 'Could not restore that organisation.')
+  markOwnerDirectoryStale()
   return { message: data.message || 'Organisation restored.', stripe: data.stripe }
 }

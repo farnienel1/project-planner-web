@@ -1,5 +1,6 @@
 import type { FirebaseApp } from 'firebase/app'
 import { getFirestore, initializeFirestore, memoryLocalCache, type Firestore } from 'firebase/firestore'
+import { withFirestoreEmulator } from './emulators'
 
 /**
  * The one Firestore instance for an app. `initializeFirestore` may run only once per app, so
@@ -24,6 +25,7 @@ export function firestoreFor(app: FirebaseApp): Firestore {
     // Already initialised (hot reload, or another bundle copy): reuse that instance.
     instance = getFirestore(app)
   }
+  withFirestoreEmulator(instance)
   instances.set(app, instance)
   scheduleOldCacheCleanup()
   return instance

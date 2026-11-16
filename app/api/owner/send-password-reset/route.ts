@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { clientIp, enforceRateLimit, isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
-import { requireOwner, writeAuditLog } from '@/lib/owner/requireOwner'
+import { enforceRateLimit, isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
+import { requireOwner } from '@/lib/owner/requireOwner'
+import { OWNER_AUDIT_UNAVAILABLE_MESSAGE, beginOwnerAudit, type OwnerAuditRun } from '@/lib/owner/ownerAudit'
 import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
 import { isValidEmail } from '@/lib/security/validation'
-import { maskEmail } from '@/lib/auth/maskEmail'
 import { sendProjectPlannerEmail } from '@/lib/email/resendClient'
 import { adminLookupAuthEmail, adminPasswordResetLink, firebaseAdminConfigured } from '@/lib/owner/identityToolkitAdmin'
 import { bearerToken, firestoreGet, readString } from '@/lib/owner/firestoreRest'
@@ -71,6 +71,17 @@ export async function POST(request: NextRequest) {
 
   const settings = passwordResetActionSettings(email)
 
+  let audit: OwnerAuditRun
+  try {
+    audit = await beginOwnerAudit(request, owner.uid, {
+      action: 'ownerSendPasswordReset',
+      targetUserId: uid || undefined,
+      after: { email },
+    })
+  } catch {
+    return jsonError(OWNER_AUDIT_UNAVAILABLE_MESSAGE, 502)
+  }
+
   try {
     let sent = false
     if (firebaseAdminConfigured()) {
@@ -92,16 +103,11 @@ export async function POST(request: NextRequest) {
       await sendOobViaApiKey(email, settings.url)
     }
     lastSent.set(`${uid}:${email}`, Date.now())
-    await writeAuditLog(request, {
-      action: 'ownerSendPasswordReset',
-      actorUid: owner.uid,
-      targetUserId: uid || undefined,
-      after: { email: maskEmail(email) },
-      ip: clientIp(request),
-    })
-    return NextResponse.json({ ok: true, email })
+    await audit.complete()
+    return NextResponse.json({ ok: true, email, requestId: audit.requestId })
   } catch (error) {
     console.error('[owner/send-password-reset]', error)
+    await audit.fail(error)
     return jsonError(error instanceof Error ? error.message : 'Could not send a password reset email.', 502)
   }
 }

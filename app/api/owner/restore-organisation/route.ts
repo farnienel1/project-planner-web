@@ -1,8 +1,10 @@
 import { NextRequest } from 'next/server'
 import { bearerToken, firestoreGet, firestorePatch, restFieldsToPlain, stringField } from '@/lib/owner/firestoreRest'
-import { clientIp, enforceRateLimit, isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
+import { enforceRateLimit, isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
 import { parseOrganizationId } from '@/lib/security/requireOrgAccess'
-import { requireOwner, writeAuditLog } from '@/lib/owner/requireOwner'
+import { requireOwner } from '@/lib/owner/requireOwner'
+import { clearOwnerDirectoryCache } from '@/lib/owner/directoryServer'
+import { OWNER_AUDIT_UNAVAILABLE_MESSAGE, beginOwnerAudit, type OwnerAuditRun } from '@/lib/owner/ownerAudit'
 import { ORGANIZATION_RESTORED_MESSAGE, canRestoreOrganization } from '@/lib/canonical/organizationDeletion'
 import { resumeSubscription } from '@/lib/organizationDeletion/server'
 
@@ -32,6 +34,17 @@ export async function POST(request: NextRequest) {
   if (!canRestoreOrganization({ org, viewerIsPlatformOwner: true })) {
     return jsonError('This organisation is not scheduled for deletion, so there is nothing to restore.', 409)
   }
+  let audit: OwnerAuditRun
+  try {
+    audit = await beginOwnerAudit(request, owner.uid, {
+      action: 'ownerRestoreOrganisation',
+      targetOrgId: organizationId,
+      before: { deletion: 'scheduled' },
+      after: { deletion: 'removed' },
+    })
+  } catch {
+    return jsonError(OWNER_AUDIT_UNAVAILABLE_MESSAGE, 502)
+  }
   try {
     await firestorePatch(
       token,
@@ -41,15 +54,14 @@ export async function POST(request: NextRequest) {
     )
   } catch (error) {
     console.error('[owner/restore-organisation]', error)
+    await audit.fail(error)
     return jsonError('Could not restore the organisation.', 502)
   }
+  clearOwnerDirectoryCache()
   const stripe = await resumeSubscription(org)
-  await writeAuditLog(request, {
-    action: 'ownerRestoreOrganisation',
-    actorUid: owner.uid,
-    targetOrgId: organizationId,
-    after: { stripe },
-    ip: clientIp(request),
-  })
-  return Response.json({ ok: true, message: ORGANIZATION_RESTORED_MESSAGE, stripe }, { headers: { 'Cache-Control': 'no-store' } })
+  await audit.complete({ deletion: 'removed', stripe })
+  return Response.json(
+    { ok: true, message: ORGANIZATION_RESTORED_MESSAGE, stripe, requestId: audit.requestId },
+    { headers: { 'Cache-Control': 'no-store' } }
+  )
 }

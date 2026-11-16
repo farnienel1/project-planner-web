@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useAnalyticsStore } from '@/lib/analytics/analyticsStore'
+import { ConsoleEventsNotice } from '@/components/developer/ConsoleEventsNotice'
 import { useFeedbackStore } from '@/lib/feedback/feedbackStore'
 import { relatedFeatureUsage } from '@/lib/analytics/aggregations'
 import { resolveDateRange } from '@/lib/analytics/dateRange'
@@ -109,6 +110,7 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
       </p>
       <p className="whitespace-pre-wrap text-sm text-[var(--ink2)]">{suggestion.details}</p>
 
+      <ConsoleEventsNotice from={range.start} />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="card pad">
           <p className="eyebrow">Customer demand</p>

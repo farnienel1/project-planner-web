@@ -68,3 +68,7 @@ __pycache__/
 
 # scripts/ui-audit output (dev only)
 /ui-audit-out/
+
+# Owner console e2e (Playwright)
+/test-results/
+/playwright-report/

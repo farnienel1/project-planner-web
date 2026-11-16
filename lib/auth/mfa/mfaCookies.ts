@@ -51,6 +51,8 @@ export type MfaOk = {
   kind: 'ok'
   uid: string
   exp: number
+  /** When the emailed code was accepted (ms). Owner console "fresh" checks read it; cookies signed before it have none. */
+  iat?: number
 }
 
 function sign(payload: string): string {
@@ -77,8 +79,8 @@ export function decodeSigned<T>(raw?: string | null): T | null {
   }
 }
 
-export function encodeMfaOk(uid: string, exp: number): string {
-  const ok: MfaOk = { kind: 'ok', uid, exp }
+export function encodeMfaOk(uid: string, exp: number, iat?: number): string {
+  const ok: MfaOk = typeof iat === 'number' && Number.isFinite(iat) ? { kind: 'ok', uid, exp, iat } : { kind: 'ok', uid, exp }
   return encodeSigned(ok)
 }
 
@@ -88,6 +90,7 @@ export function decodeMfaOk(raw: string | null | undefined, nowMs = Date.now()):
   if (!value || value.kind !== 'ok') return null
   if (typeof value.uid !== 'string' || !value.uid) return null
   if (typeof value.exp !== 'number' || !(value.exp > nowMs)) return null
+  if (typeof value.iat === 'number' && Number.isFinite(value.iat)) return { kind: 'ok', uid: value.uid, exp: value.exp, iat: value.iat }
   return { kind: 'ok', uid: value.uid, exp: value.exp }
 }
 
