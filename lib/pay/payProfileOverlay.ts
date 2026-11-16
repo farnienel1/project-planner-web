@@ -229,6 +229,8 @@ export function payProfilesStatusFor(organizationId: string | null | undefined):
 /** The people of `organizationId` whose pay could not be read (lower-case ids; see `payProfileReadFailures`). */
 export function payProfileFailedSubjectIds(organizationId: string | null | undefined): string[] {
   if (!organizationId || failedSubjects.organizationId !== organizationId) return []
+  // Review #342: off → nobody's pay read can have failed (no pay-profile read at all).
+  if (securitySwitchesLoaded() && !privatePayFor(organizationId)) return []
   return [...failedSubjects.ids].sort()
 }
 
@@ -498,6 +500,10 @@ export async function refreshPayProfiles(
     const had = cacheOrganizationId === organizationId && profiles.size > 0
     cacheOrganizationId = organizationId
     profiles = new Map()
+    // Review #342: a per-person failure or "not read yet" left from while the switch was on never blocks anyone once
+    // it is off (the users documents hold the pay).
+    if (failedSubjects.organizationId === organizationId) failedSubjects = { organizationId: '', ids: new Set() }
+    if (coveredSubjects.organizationId === organizationId) coveredSubjects = { organizationId: '', ids: new Set() }
     if (had) bumpVersion(organizationId)
     notifyStatus()
     return had

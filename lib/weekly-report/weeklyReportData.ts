@@ -208,6 +208,11 @@ export type WeeklyReportData = {
    */
   payeOvertimeRows: WeeklyReportPayeOvertimeRow[]
   payeOvertimeTotal: number
+  /**
+   * Pay strip (review #342): the users documents whose pay (rate, employment type) this report reads — the people of its
+   * bookings, approved timesheet weeks and timesheets in the range. The screen waits for exactly these people's pay.
+   */
+  pricedUserIds: string[]
 }
 
 /** 1.32.0: `hoursCell` is the multiplier figure ("2h at ×1.5 = 3h"), with the changed-rate mark on an edited row. */
@@ -393,8 +398,10 @@ export function buildWeeklyReportData({
     return person
   }
   // Each booking's person exactly as before (`findUserAndOperative`): its stored id joins that person's ids.
+  const pricedUserIds = new Set<string>()
   const claim = (personId: string | undefined, person: CanonicalPayPerson | null) => {
     if (!personId || !person) return
+    if (person.user) pricedUserIds.add(person.id)
     if (!(person.ids ?? []).some((id) => normalizeDocumentId(id) === normalizeDocumentId(personId))) {
       person.ids = [...(person.ids ?? []), personId]
     }
@@ -445,6 +452,11 @@ export function buildWeeklyReportData({
     })
   }
   for (const week of timesheetWeeks) claim(week.userId, personForBooking({ userId: week.userId }))
+  // A timesheet in the range (the invoice check line) reads its person's pay too.
+  for (const sheet of timesheetSheets) {
+    const { user } = findUserAndOperative(users, operatives, { userId: sheet.personId, aliases: userIdAliases })
+    if (user) pricedUserIds.add(keptUserId(user.id))
+  }
 
   // Rulebook 1.51.0 §7 (Q1–Q3): the Pay Summary, check lines and every booking's paid hours and days.
   const history2 = [...Object.values(history.byUserId).flat(), ...Object.values(history.byOperativeId).flat()]
@@ -877,6 +889,7 @@ export function buildWeeklyReportData({
   return {
     payeOvertimeRows,
     payeOvertimeTotal,
+    pricedUserIds: [...pricedUserIds].sort(),
     organizationName,
     companyLogoURL,
     reportPeriod: period,

@@ -23,7 +23,7 @@ import {
 import { invoicingQuickSelectLabel } from '@/lib/weekly-report/invoicingRead'
 import { buildWeeklyReportData } from '@/lib/weekly-report/weeklyReportData'
 import { PAY_PROFILES_FAILED_MESSAGE, retryPayProfiles, usePayProfilesStatus, usePayStatusOf } from '@/lib/pay/usePayProfilesStatus'
-import { reportPayGate } from '@/lib/pay/reportPayGate'
+import { reportGatePeople, reportPayGate } from '@/lib/pay/reportPayGate'
 import { useOrgBankHolidays } from '@/components/annual-leave/useOrgBankHolidays'
 import type {
   SubcontractorBookingRow,
@@ -246,16 +246,12 @@ export function WeeklyReportScreen({
   // could not be read (`reportPayGate`), never priced from a stripped record.
   const payStatusOrg = usePayProfilesStatus(organizationId)
   const payStatusOf = usePayStatusOf(organizationId)
-  const payGate = reportPayGate({
-    organizationStatus: payStatusOrg,
-    people: users,
-    statusOf: payStatusOf,
-    nameOf: (person) => `${person.firstName ?? ''} ${person.surname ?? ''}`.trim() || person.email || person.id,
-  })
-  const payStatus = payGate.status
-  const payReady = payStatus === 'ready'
-  const builtReport = useMemo(() => {
-    if (!period || !bank.loaded || !payReady) return null
+  // Review #342: the report is worked out once the organisation's pay status is ready, then only the people it actually
+  // prices (`pricedUserIds`: its bookings, approved weeks and timesheets in the range) are waited for. Someone with no
+  // bookings in the range (offline, added since the last read) never blocks it.
+  const orgPayReady = payStatusOrg === 'ready'
+  const candidateReport = useMemo(() => {
+    if (!period || !bank.loaded || !orgPayReady) return null
     return buildWeeklyReportData({
       bankHolidayDayKeys,
       organizationName,
@@ -281,7 +277,7 @@ export function WeeklyReportScreen({
       viewer: viewer ? ({ ...viewer, isPlatformOwner: isPlatformOwnerEmail(viewer.email) } as never) : null,
     })
   }, [
-    payReady,
+    orgPayReady,
     bank.loaded,
     bankHolidayDayKeys,
     timesheetSheets,
@@ -304,6 +300,16 @@ export function WeeklyReportScreen({
     rateHistory,
     warningDecisions,
   ])
+  const pricedPeople = useMemo(() => reportGatePeople(users, candidateReport?.pricedUserIds ?? []), [candidateReport, users])
+  const payGate = reportPayGate({
+    organizationStatus: payStatusOrg,
+    people: pricedPeople,
+    statusOf: payStatusOf,
+    nameOf: (person) => `${person.firstName ?? ''} ${person.surname ?? ''}`.trim() || person.email || person.id,
+  })
+  const payStatus = payGate.status
+  const payReady = payStatus === 'ready'
+  const builtReport = payReady ? candidateReport : null
   const report = builtReport
 
   const loadWarningDecisions = async (): Promise<WeeklyReportWarningDecisions | null> => {

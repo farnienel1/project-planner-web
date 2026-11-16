@@ -46,3 +46,12 @@ export function reportPayGate<P>(input: {
   }
   return { status: 'ready', loadingNames, failedNames, message: null }
 }
+
+/**
+ * Review #342: the people a report waits for — only those it prices or lists (`ids`: the weekly report's
+ * `pricedUserIds`, the Payrun Snapshot's row people). Someone with no rows never blocks it.
+ */
+export function reportGatePeople<P extends { id: string }>(users: ReadonlyArray<P>, ids: Iterable<string>): P[] {
+  const wanted = new Set(ids)
+  return users.filter((user) => wanted.has(user.id))
+}

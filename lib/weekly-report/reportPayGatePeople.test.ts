@@ -1,0 +1,134 @@
+/**
+ * Pay strip, review #342: the weekly report and the Payrun Snapshot wait only for the pay of the people they actually
+ * price or list. Someone with no rows (offline, added since the last pay read) never blocks them; someone with rows does.
+ */
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import type { Booking, Operative, Project, User } from '../../types/index.ts'
+import { buildWeeklyReportData } from './weeklyReportData.ts'
+import { payrunSnapshotRows } from '../canonical/index.ts'
+import { reportGatePeople, reportPayGate } from '../pay/reportPayGate.ts'
+
+const day = new Date('2026-10-08T08:00:00Z')
+
+function user(id: string, email: string, extra: Partial<User> = {}): User {
+  return {
+    id,
+    email,
+    firstName: id.toUpperCase(),
+    surname: 'Person',
+    organizationId: 'org',
+    role: 'operative',
+    operativeMode: true,
+    passwordSet: true,
+    policyAccepted: true,
+    isSuperAdmin: false,
+    isActive: true,
+    createdAt: day,
+    updatedAt: day,
+    dayRate: 200,
+    employmentType: 'self_employed',
+    ...extra,
+  } as unknown as User
+}
+
+const booked = user('booked', 'booked@x.com')
+const idle = user('idle', 'idle@x.com')
+
+const project: Project = {
+  id: 'proj1',
+  jobNumber: 'J-1',
+  siteName: 'Site One',
+  addressLine1: '1 Road',
+  townCity: 'London',
+  postcode: 'E1 1AA',
+  client: { id: 'c1', name: 'Client', createdAt: day, updatedAt: day },
+  startDate: day,
+  endDate: day,
+  jobType: 'CAT A',
+  manager: { name: 'Custom', email: '' },
+  isLive: true,
+  createdAt: day,
+  updatedAt: day,
+}
+
+const booking: Booking = {
+  id: 'b1',
+  operativeId: 'booked',
+  projectId: 'proj1',
+  date: day,
+  timeSlot: 'FULL DAY',
+  bookedBy: 'Admin',
+  status: 'Confirmed',
+  createdAt: day,
+  updatedAt: day,
+}
+
+const nameOf = (person: User) => person.id
+
+test('review #342: the weekly report prices only the people of its bookings, and waits only for them', () => {
+  const report = buildWeeklyReportData({
+    showAllPay: true,
+    organizationName: 'Acme',
+    period: { start: new Date('2026-10-05T00:00:00Z'), end: new Date('2026-10-11T00:00:00Z'), label: 'week' },
+    bookings: [booking],
+    managerSiteBookings: [],
+    subcontractorBookings: [],
+    subcontractors: [],
+    operatives: [] as Operative[],
+    users: [booked, idle],
+    projects: [project],
+    smallWorks: [],
+    holidays: [],
+    orgDetails: null,
+  })
+  assert.deepEqual(report.pricedUserIds, ['booked'])
+  const people = reportGatePeople([booked, idle], report.pricedUserIds)
+  // Idle (no bookings) still loading or failed: does not block.
+  for (const idleStatus of ['loading', 'failed'] as const) {
+    const statuses = { booked: 'ready', idle: idleStatus } as const
+    const gate = reportPayGate({ organizationStatus: 'ready', people, statusOf: (p) => statuses[p.id as 'booked' | 'idle'], nameOf })
+    assert.equal(gate.status, 'ready')
+  }
+  // The booked person's pay still loading or failed: blocks, naming them.
+  for (const bookedStatus of ['loading', 'failed'] as const) {
+    const statuses = { booked: bookedStatus, idle: 'ready' } as const
+    const gate = reportPayGate({ organizationStatus: 'ready', people, statusOf: (p) => statuses[p.id as 'booked' | 'idle'], nameOf })
+    assert.equal(gate.status, bookedStatus)
+    assert.match(String(gate.message), /booked/)
+  }
+  // The organisation itself still loading: "Loading…" (no names).
+  assert.deepEqual(reportPayGate({ organizationStatus: 'loading', people, statusOf: () => 'ready', nameOf }), {
+    status: 'loading',
+    loadingNames: [],
+    failedNames: [],
+    message: null,
+  })
+})
+
+test('review #342: the Payrun Snapshot waits only for the people who have a row', () => {
+  // An inactive person with no records in the period has no row (`payrunSnapshotRows`).
+  const gone = user('gone', 'gone@x.com', { isActive: false })
+  const users = [booked, gone]
+  // The same selection the screen gets from `payrunSnapshotRowsFor` (the rulebook's `payrunSnapshotRows`).
+  const rows = payrunSnapshotRows({
+    roster: users as never,
+    organization: {},
+    period: { start: '2026-11-01', end: '2026-11-15' },
+    timeZone: 'Europe/London',
+    sheets: [],
+    overtimeRequests: [],
+    overtimeReports: [],
+    payeClaimReports: [],
+    priceWork: [],
+    expenses: [],
+  } as never)
+  assert.deepEqual(rows.map((row) => row.personId), ['booked'])
+  const people = reportGatePeople(users, rows.map((row) => row.personId))
+  const statuses: Record<string, 'ready' | 'loading' | 'failed'> = { booked: 'ready', gone: 'failed' }
+  assert.equal(reportPayGate({ organizationStatus: 'ready', people, statusOf: (p) => statuses[p.id], nameOf }).status, 'ready')
+  statuses.booked = 'loading'
+  assert.equal(reportPayGate({ organizationStatus: 'ready', people, statusOf: (p) => statuses[p.id], nameOf }).status, 'loading')
+  statuses.booked = 'failed'
+  assert.equal(reportPayGate({ organizationStatus: 'ready', people, statusOf: (p) => statuses[p.id], nameOf }).status, 'failed')
+})

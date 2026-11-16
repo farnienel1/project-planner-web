@@ -391,3 +391,21 @@ test('final check #342 item 3: the weekly report and Payrun Snapshot wait for ev
   assert.equal(store.status, 'loading')
   setSecuritySwitchConfigForTests(null)
 })
+
+test('review #342: a pay read that failed while private pay was on never blocks anyone once it is switched off', async () => {
+  resetPayProfilesForTests()
+  on()
+  await refreshPayProfiles(ORG, lineManager as never, roster as never, reader({ refuse: ['b'] }))
+  notePayRosterOverlaid(ORG, payProfileCacheVersion())
+  assert.equal(payProfilesStatusForPerson(ORG, reportB), 'failed')
+  // Switched off: B's pay is on the users document again.
+  setSecuritySwitchConfigForTests({})
+  assert.deepEqual(payProfileFailedSubjectIds(ORG), [])
+  assert.equal(payProfilesStatusForPerson(ORG, reportB), 'ready')
+  await refreshPayProfiles(ORG, lineManager as never, roster as never, reader({}))
+  assert.equal(payProfilesStatusForPerson(ORG, reportB), 'ready')
+  // Switched on again with no fresh read: the old failure is gone (cleared by the off refresh), not resurrected.
+  on()
+  assert.deepEqual(payProfileFailedSubjectIds(ORG), [])
+  setSecuritySwitchConfigForTests(null)
+})

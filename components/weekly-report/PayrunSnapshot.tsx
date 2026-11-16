@@ -8,7 +8,7 @@
  */
 import Link from 'next/link'
 import { PAY_PROFILES_FAILED_MESSAGE, retryPayProfiles, usePayProfilesStatus, usePayStatusOf } from '@/lib/pay/usePayProfilesStatus'
-import { reportPayGate } from '@/lib/pay/reportPayGate'
+import { reportGatePeople, reportPayGate } from '@/lib/pay/reportPayGate'
 import { useEffect, useMemo, useState } from 'react'
 import {
   PAYRUN_SNAPSHOT_COLUMNS,
@@ -146,17 +146,13 @@ export function PayrunSnapshot({
   // could not be read (`reportPayGate`), never priced from a stripped record.
   const payStatusOrg = usePayProfilesStatus(organizationId)
   const payStatusOf = usePayStatusOf(organizationId)
-  const payGate = reportPayGate({
-    organizationStatus: payStatusOrg,
-    people: users,
-    statusOf: payStatusOf,
-    nameOf: (person) => `${person.firstName ?? ''} ${person.surname ?? ''}`.trim() || person.email || person.id,
-  })
-  const payStatus = payGate.status
-  const payReady = payStatus === 'ready'
-  const rows = useMemo(
+  // Review #342: the rows are chosen without pay (active people, plus anyone else with records in the period —
+  // `payrunSnapshotRows`), so they are worked out once the organisation's pay status is ready, and only the people who
+  // have a row are waited for. Someone with no row (offline, added since the last read) never blocks the Snapshot.
+  const orgPayReady = payStatusOrg === 'ready'
+  const candidateRows = useMemo(
     () =>
-      payReady && loaded && period
+      orgPayReady && loaded && period
         ? payrunSnapshotRowsFor({
             loaded,
             users,
@@ -177,8 +173,18 @@ export function PayrunSnapshot({
               : undefined,
           })
         : [],
-    [payReady, loaded, period?.start, period?.end, users, organization, timeZone, overtimeBookings, operativeRows, bookings, managerSiteBookings, changeInputs] // eslint-disable-line react-hooks/exhaustive-deps
+    [orgPayReady, loaded, period?.start, period?.end, users, organization, timeZone, overtimeBookings, operativeRows, bookings, managerSiteBookings, changeInputs] // eslint-disable-line react-hooks/exhaustive-deps
   )
+  const rowPeople = useMemo(() => reportGatePeople(users, candidateRows.map((row) => row.personId)), [candidateRows, users])
+  const payGate = reportPayGate({
+    organizationStatus: payStatusOrg,
+    people: rowPeople,
+    statusOf: payStatusOf,
+    nameOf: (person) => `${person.firstName ?? ''} ${person.surname ?? ''}`.trim() || person.email || person.id,
+  })
+  const payStatus = payGate.status
+  const payReady = payStatus === 'ready'
+  const rows = payReady ? candidateRows : []
 
   const choice = (value: PayrunSnapshotPeriodKind, disabled: boolean, sub: string | null) => (
     <button key={value} type="button" className={kind === value ? 'on' : ''} disabled={disabled} title={sub ?? undefined} onClick={() => setKind(value)}>
