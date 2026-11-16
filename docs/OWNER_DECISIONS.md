@@ -849,6 +849,10 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 | 16 Nov | J4 While a revision is open (not yet signed off), the weekly report and Payrun Snapshot keep using the previous exported version. | done, owner to confirm |
 | 16 Nov | J5 The difference is not stored (the brief suggested a stored `previousExportedTotal`): it is worked out from the previous (frozen) version when shown, so it cannot be forged. | done, owner to confirm |
 | 16 Nov | J6 An open revision can be deleted by a reviewer (admin or line manager), never by the person. No screen offers it yet. | done (rules), owner to confirm |
+| 16 Nov | Review of #344: the person never adds, edits or deletes price work, expenses or late extras on a revision (after export they go on the next timesheet); the line manager still decides the copied ones. | done (1.55.0) |
+| 16 Nov | Review of #344: when the previous version has no signed snapshot (exported before snapshots were kept) the difference reads "Difference not available (older export)", on screen and on the invoice. | done (1.55.0), owner to confirm |
+| 16 Nov | Review of #344: the invoice number is built from the stored original sheet (its id and stored `userId`): `TS-{the id's stamp}-{6 of the person's id}`, e.g. TS-1761955200-6A9632-REV1 (replaces the J3 form `TS-{YYYYMMDD}-…`). | done (1.55.0), owner to confirm |
+| 16 Nov | Review of #344 finding 6 (copied labour decisions on a revision never going stale) is an owner question, left as is. Finding 5 (privatePay read of a missing settings doc) is fixed separately (`w-hotfix-settings-read`). | open (owner question / separate branch) |
 
 ## Open questions for the owner
 

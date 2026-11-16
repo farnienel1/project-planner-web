@@ -35,6 +35,7 @@ function storeWith({ sheets, users = {}, operatives = {}, tombstones = {} }) {
       return read(uids.includes(PERSON) ? sheets.filter((row) => !row.data.weekEnd || row.data.weekEnd.getTime() >= fromMs).slice(0, 4) : [])
     },
     tombstone: async (_org, id) => read(tombstones[id] ?? null),
+    sheet: async (_org, id) => read(sheets.find((row) => row.id === id)?.data ?? null),
     createNotification: async (_org, id, fields) => {
       if (created.has(id)) return 'exists'
       created.set(id, fields)
@@ -164,4 +165,18 @@ test('1.54.0 review of #337 (4): reads per write — none for a write the rule i
   // The query asks only for sheets whose pay run can still hold the booking day.
   assert.ok(store.reads.queries[0].fromMs <= day('2026-11-10').getTime())
   assert.ok(store.reads.queries[0].fromMs >= day('2026-11-07').getTime())
+})
+
+test('1.55.0 (review of #344): a version chain cut by the query limit is completed by id — the open revision is judged', async () => {
+  const exportedAt = new Date(signedAt + 7200_000)
+  const original = signedSheet({ exportedAt })
+  const rev1 = { id: `${original.id}_rev1`, data: { ...signedSheet().data, exportedAt, revisionOf: original.id, revision: 1 } }
+  const rev2 = { id: `${original.id}_rev2`, data: { ...signedSheet().data, managerSignedAt: null, revisionOf: original.id, revision: 2 } }
+  const store = storeWith({ sheets: [original, rev1, rev2], users })
+  // The covering query returns only the original (as if the limit cut the chain).
+  store.timesheetsCovering = async () => [original]
+  const notice = createTimesheetBookingNotice({ store, canonical, logger: { info() {}, error() {} } })
+  assert.equal((await notice.handle({ orgId: ORG, collection: 'bookings', bookingId: 'B1', before: booking(), after: booking({ workEndTime: '18:00' }) })).written, 1)
+  const [row] = [...store.created.values()]
+  assert.equal(row.type, 'timesheet_bookings_changed', 'the open REV 2 is the latest version: it reopens, no "update to an exported sheet"')
 })

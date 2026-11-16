@@ -26,6 +26,19 @@ export const TIMESHEET_PAY_INPUTS_LOADING_MESSAGE = 'Loading pay settings and ra
 export const TIMESHEET_SIGNED_OFF_EXTRAS_MESSAGE = 'This timesheet is signed off — add it to your next timesheet.'
 /** 1.54.0: shown instead of the late-extras add controls once the sheet is exported. */
 export const TIMESHEET_EXPORTED_EXTRAS_MESSAGE = 'This timesheet has been exported — add it to your next timesheet.'
+/**
+ * Rulebook 1.55.0 §8 (review of #344): a revision of an exported timesheet carries the entries exactly as exported; the
+ * person never adds, edits or deletes price work, expenses or late extras on it — after export they go on the next
+ * timesheet.
+ */
+export const TIMESHEET_REVISION_EXTRAS_MESSAGE =
+  'This is a revision of an exported timesheet — add price work or expenses to your next timesheet.'
+
+/** 1.55.0: whether the sheet is a revision (`revision` above 0, or a stored `revisionOf`). */
+export function timesheetSheetIsRevision(sheet: { revision?: unknown; revisionOf?: unknown } | null | undefined): boolean {
+  const n = typeof sheet?.revision === 'number' ? sheet.revision : Number(sheet?.revision)
+  return (Number.isFinite(n) && n > 0) || (typeof sheet?.revisionOf === 'string' && sheet.revisionOf.trim() !== '')
+}
 
 export type TimesheetSnapshotReadyInput = {
   /** The period's labour and manager site bookings have arrived (the whole archive the screen asked for). */
@@ -128,6 +141,10 @@ export type TimesheetExtrasSheet = {
    * of an invoice reads as not exported in the lists), so the add control and the rules always agree.
    */
   exportedAtStored?: boolean | null
+  /** 1.55.0: REV N (0 or missing for an original) — a revision never takes owner extras. */
+  revision?: number | null
+  /** 1.55.0: the stored `revisionOf` of a revision document. */
+  revisionOf?: string | null
 }
 
 /**
@@ -160,6 +177,7 @@ export function timesheetOwnerCanAddExtras(
   sheet: TimesheetExtrasSheet | null | undefined,
   options: { selfSigned?: boolean | null } = {}
 ): { allowed: boolean; message: string | null } {
+  if (timesheetSheetIsRevision(sheet)) return { allowed: false, message: TIMESHEET_REVISION_EXTRAS_MESSAGE }
   if (options.selfSigned === true) return { allowed: true, message: null }
   if (present(sheet?.managerSignedAt) || present(sheet?.approvedAt)) {
     return { allowed: false, message: TIMESHEET_SIGNED_OFF_EXTRAS_MESSAGE }
@@ -178,6 +196,7 @@ export function timesheetOwnerCanAddLateExtras(
   sheet: TimesheetExtrasSheet | null | undefined,
   options: { selfSigned?: boolean | null } = {}
 ): { allowed: boolean; message: string | null } {
+  if (timesheetSheetIsRevision(sheet)) return { allowed: false, message: TIMESHEET_REVISION_EXTRAS_MESSAGE }
   if (options.selfSigned === true) return { allowed: false, message: null }
   if (!present(sheet?.managerSignedAt) && !present(sheet?.approvedAt)) return { allowed: false, message: null }
   const exported = typeof sheet?.exportedAtStored === 'boolean' ? sheet.exportedAtStored : timesheetExportedFieldSet(sheet?.exportedAt)

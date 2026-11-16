@@ -1375,8 +1375,10 @@ Rulebook 1.55.0 §8 / §16: timesheet revisions, on top of 1.54.1 (`timesheetIdN
   (`!d.diff(prev).affectedKeys().hasAny(copied)`), so the person can never create a revision with self-approved reviews
   or changed entries. The caller is the subject (`tsIdIsCallers`) or a reviewer of the subject (`tsReviewer`). One
   `get` (the previous version).
-- `tsRevKept()` — on every update and delete of a revision: its revision fields never change; an unexported revision is
-  deleted only by a reviewer, never the subject. An exported revision, like the exported original, is frozen by 1.54.1
+- `tsRevKept()` — on every update and delete of a revision: its revision fields never change; the subject never changes
+  its `priceWorkEntries`, `expenseEntries` or `lateExtras` (review of #344: a probe raised a copied expense from £20 to
+  £2,000 — after export, corrections go on the next timesheet); an unexported revision is deleted only by a reviewer,
+  never the subject. The id test is `_rev[1-9][0-9]?$` (1–99, as `parseTimesheetRevisionDocId`). An exported revision, like the exported original, is frozen by 1.54.1
   `timesheetExportedFrozen` (only `updatedAt/By/From` and `exportedAt` resent within a second), and an exported sheet is
   never deleted by the existing delete branches.
 - Byte budget (148,480): the settings match's older helpers were renamed `timesheet…` → `ts…` (the 1.54.1 names `timesheetSubjectFiled`, `timesheetIdNames`, `timesheetStoredExported`, `timesheetExportedFrozen` are kept); `timesheetStoredExported`'s body

@@ -196,3 +196,28 @@ test('an ordinary timesheet without revisions works as before', async () => {
   await reset()
   await assertSucceeds(updateDoc(doc(await db(OP), 'organizations', ORG, 'settings', OPEN_ORIGINAL), { managerNote: 'hello' }))
 })
+
+test('review of #344: on an open revision the person never changes the copied price work, expenses or late extras', async () => {
+  await reset()
+  const rev1 = revisionPayload(ORIGINAL, originalData, LM)
+  await assertSucceeds(setDoc(doc(await db(LM), 'organizations', ORG, 'settings', rev1.id), rev1.data))
+  const opRef = doc(await db(OP), 'organizations', ORG, 'settings', rev1.id)
+  // The probe: an expense raised from £20 to £2,000.
+  await assertFails(updateDoc(opRef, { expenseEntries: [{ id: 'e1', title: 'Fuel', amount: 2000 }] }))
+  await assertFails(updateDoc(opRef, { priceWorkEntries: [{ id: 'p1', title: 'Extra', amount: 500 }] }))
+  await assertFails(updateDoc(opRef, { lateExtras: [{ kind: 'expense', id: 'l1', title: 'Tolls', amount: 7 }] }))
+  // Signing and the note to the manager still work.
+  await assertSucceeds(updateDoc(opRef, { operativeSignedAt: signedAt, operativeSignedByName: 'Op', managerNote: 'checked' }))
+  // On an original the person still edits entries before sign-off (unchanged).
+  await assertSucceeds(updateDoc(doc(await db(OP), 'organizations', ORG, 'settings', OPEN_ORIGINAL), { expenseEntries: [{ id: 'e2', title: 'Fuel', amount: 30 }] }))
+})
+
+test('review of #344: a stored null in a copied field is copied as null and the revision can be created', async () => {
+  await reset()
+  const withNull = { ...originalData, lateExtras: null }
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG, 'settings', ORIGINAL), withNull)
+  })
+  const rev = revisionPayload(ORIGINAL, withNull, OP)
+  await assertSucceeds(setDoc(doc(await db(OP), 'organizations', ORG, 'settings', rev.id), rev.data))
+})

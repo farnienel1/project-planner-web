@@ -1851,9 +1851,9 @@ service cloud.firestore {
           return ['revisionOf', 'revision', 'previousVersionId', 'revisionCreatedBy', 'revisionCreatedAt'];
         }
         function tsRevKept() {
-          return !settingId.matches('^timesheet_.+_rev[1-9][0-9]*$') || (request.method == 'delete'
+          return !settingId.matches('^timesheet_.+_rev[1-9][0-9]?$') || (request.method == 'delete'
             ? !tsIsSubject() && tsReviewer()
-            : !request.resource.data.diff(resource.data).affectedKeys().hasAny(tsRevKeys()));
+            : !request.resource.data.diff(resource.data).affectedKeys().hasAny(tsIsSubject() ? tsRevKeys().concat(['priceWorkEntries', 'expenseEntries', 'lateExtras']) : tsRevKeys()));
         }
         function timesheetExportedFrozen() {
           return resource == null || !timesheetStoredExported() ||
@@ -1867,7 +1867,7 @@ service cloud.firestore {
             orgAdminEither(organizationId) || isPlatformOwner() ||
             (tsUid() is string && canViewPayOfAsMember(tsUid())) ||
             (!tsIsSubject() && tsReviewer()))));
-        allow create, update, delete: if canAccessOrganization(organizationId) && ((request.method == 'create' && settingId.matches('^timesheet_.+_rev[1-9][0-9]*$')) ? tsRevCreate() : (
+        allow create, update, delete: if canAccessOrganization(organizationId) && ((request.method == 'create' && settingId.matches('^timesheet_.+_rev[1-9][0-9]?$')) ? tsRevCreate() : (
           (request.method == 'create' || tsRevKept()) && (
           (request.method != 'delete') ? ((
           (settingId.matches('^timesheet_.*'))

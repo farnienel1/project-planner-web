@@ -15,6 +15,7 @@ import {
   loadTimesheetDraftsByUserHistory,
   mergeListedTimesheetDrafts,
   stampTimesheetExport,
+  timesheetDocId,
   timesheetSourceDocumentId,
   type ExportedTimesheetHistoryRow,
   timesheetVersionChain,
@@ -508,12 +509,15 @@ export function TimesheetsScreen({
       currencyCode: currency,
       // Rulebook 1.55.0: "TS-…-REV1" and "REV 1 · +£44.12 from the previous version".
       ...(() => {
+        const chain = timesheetVersionChain(agreed).length > 0 ? timesheetVersionChain(agreed) : timesheetVersionChainFor(documentId)
+        // Review of #344: the invoice number comes from the stored sheet of this version, never the current users id.
         const copy = timesheetRevisionCopy({
-          subjectId: member.id,
-          periodStart: start,
-          timeZone,
-          revision: agreed.revision,
-          chain: timesheetVersionChain(agreed).length > 0 ? timesheetVersionChain(agreed) : timesheetVersionChainFor(documentId),
+          documentId:
+            documentId ||
+            timesheetSourceDocumentId(agreed) ||
+            chain.find((version) => version.revision === (agreed.revision ?? 0))?.documentId ||
+            timesheetDocId(member.id, start, timeZone),
+          chain,
           total: invoiceLinesTotal(lines),
           currency,
         })

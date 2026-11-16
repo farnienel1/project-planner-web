@@ -166,7 +166,7 @@ export function timesheetDocumentSubjectId(documentId: unknown): string {
   const id = typeof documentId === 'string' ? documentId.trim() : ''
   if (!id.startsWith(TIMESHEET_DOCUMENT_PREFIX)) return ''
   // 1.55.0: a revision id (`…_rev{N}`, §8) names the same person as the original it corrects.
-  const match = /^(.+)_(-?\d+)$/.exec(id.slice(TIMESHEET_DOCUMENT_PREFIX.length).replace(/_rev[1-9]\d*$/, ''))
+  const match = /^(.+)_(-?\d+)$/.exec(id.slice(TIMESHEET_DOCUMENT_PREFIX.length).replace(/_rev[1-9]\d?$/, ''))
   return match ? match[1] : ''
 }
 
@@ -406,6 +406,34 @@ export function timesheetStatusWriteFields(fields: TimesheetStatusFields): Recor
   }
 }
 
+/**
+ * Rulebook 1.55.0 §8: a stored version is signed off — the line manager counter-signed (`managerSignedAt` /
+ * `approvedAt`), or a self-signed person signed with the signed snapshot written. The weekly report and Payrun Snapshot
+ * use the latest version that is exported or signed off (`timesheetReportVersion`).
+ */
+export function timesheetVersionSignedOff(data: Record<string, unknown> | null | undefined): boolean {
+  const row = data && typeof data === 'object' ? data : {}
+  const snapshot = row.weeklyReportOverride != null && typeof row.weeklyReportOverride === 'object'
+  return realSignatureMs(row.managerSignedAt) != null || realSignatureMs(row.approvedAt) != null || (realSignatureMs(row.operativeSignedAt) != null && snapshot)
+}
+
+/** A version reference read from a document id: the original's id and the revision number (0 = the original). */
+export type TimesheetVersionRef = { documentId: string; baseDocumentId: string; revision: number }
+
+/**
+ * Rulebook 1.55.0 §8: `timesheet_{uid}_{stamp}` → revision 0; `timesheet_{uid}_{stamp}_rev3` → revision 3 of
+ * `timesheet_{uid}_{stamp}`. Null when the id is not a timesheet id, or ends in a revision suffix that is not 1–99
+ * written without a leading zero (`_rev0`, `_rev01`, `_rev100`) — such an id is neither an original nor a revision.
+ */
+export function parseTimesheetRevisionDocId(documentId: unknown): TimesheetVersionRef | null {
+  const id = trimmed(documentId)
+  if (!id.startsWith(TIMESHEET_DOCUMENT_PREFIX)) return null
+  const suffix = /^(.+)_rev(\d+)$/.exec(id)
+  if (!suffix) return { documentId: id, baseDocumentId: id, revision: 0 }
+  if (!/^[1-9]\d?$/.test(suffix[2]) || !suffix[1].startsWith(TIMESHEET_DOCUMENT_PREFIX)) return null
+  return { documentId: id, baseDocumentId: suffix[1], revision: Number(suffix[2]) }
+}
+
 export type TimesheetPeriodCandidateRow = {
   startDayKey: string
   endDayKey?: string | null
@@ -428,17 +456,14 @@ function versionCandidateIndexes(rows: readonly TimesheetPeriodCandidateRow[], v
   const keep = new Set<number>()
   const chains = new Map<string, Array<{ index: number; revision: number }>>()
   rows.forEach((row, index) => {
-    const id = trimmed(row.documentId)
-    const match = /^(timesheet_.+)_rev([1-9]\d*)$/.exec(id)
-    if (!id) {
+    const ref = parseTimesheetRevisionDocId(row.documentId)
+    if (!ref) {
       keep.add(index)
       return
     }
-    const base = match ? match[1] : id
-    const revision = match ? Number(match[2]) : 0
-    const chain = chains.get(base) ?? []
-    chain.push({ index, revision })
-    chains.set(base, chain)
+    const chain = chains.get(ref.baseDocumentId) ?? []
+    chain.push({ index, revision: ref.revision })
+    chains.set(ref.baseDocumentId, chain)
   })
   for (const chain of chains.values()) {
     chain.sort((a, b) => a.revision - b.revision)

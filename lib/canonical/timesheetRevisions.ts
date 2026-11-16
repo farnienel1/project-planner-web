@@ -17,8 +17,16 @@
 import { formatMoney } from './money'
 import { roundPennies } from './payRate'
 import { timesheetTotals } from './timesheetTotals'
-import { timesheetExportedFieldSet } from './timesheetSnapshot'
-import { TIMESHEET_DOCUMENT_PREFIX, timesheetTimestampMs, TIMESHEET_SIGNED_AFTER_MS } from './timesheetPeriod'
+import {
+  parseTimesheetRevisionDocId,
+  resolveTimesheetExportedAtMs,
+  timesheetDocumentSubjectId,
+  timesheetVersionSignedOff,
+  timesheetTimestampMs,
+  TIMESHEET_DOCUMENT_PREFIX,
+  TIMESHEET_SIGNED_AFTER_MS,
+  type TimesheetVersionRef,
+} from './timesheetPeriod'
 import { excludeActor, type NotificationPerson } from './notificationRecipients'
 import { timesheetWriterIsReviewer } from './timesheetEntryReviews'
 
@@ -75,23 +83,8 @@ function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
 }
 
-/** A version reference read from a document id: the original's id and the revision number (0 = the original). */
-export type TimesheetVersionRef = { documentId: string; baseDocumentId: string; revision: number }
-
-/**
- * `timesheet_{uid}_{stamp}` → revision 0; `timesheet_{uid}_{stamp}_rev3` → revision 3 of `timesheet_{uid}_{stamp}`.
- * Null when the id is not a timesheet id, or names revision 0 / above `TIMESHEET_REVISION_MAX` (`_rev0`, `_rev01`).
- */
-export function parseTimesheetRevisionDocId(documentId: unknown): TimesheetVersionRef | null {
-  const id = text(documentId)
-  if (!id.startsWith(TIMESHEET_DOCUMENT_PREFIX)) return null
-  const match = /^(.+)_rev([1-9]\d*)$/.exec(id)
-  if (!match) return { documentId: id, baseDocumentId: id, revision: 0 }
-  const revision = Number(match[2])
-  if (!Number.isInteger(revision) || revision > TIMESHEET_REVISION_MAX) return null
-  if (!match[1].startsWith(TIMESHEET_DOCUMENT_PREFIX)) return null
-  return { documentId: id, baseDocumentId: match[1], revision }
-}
+export type { TimesheetVersionRef } from './timesheetPeriod'
+export { parseTimesheetRevisionDocId, timesheetVersionSignedOff } from './timesheetPeriod'
 
 /** True when the id names a revision (REV 1 or later). */
 export function isTimesheetRevisionDocId(documentId: unknown): boolean {
@@ -114,16 +107,24 @@ export function timesheetRevisionLabel(revision: unknown): string {
 }
 
 /**
- * The invoice number of a pay run's original timesheet: `TS-{YYYYMMDD}-{first 6 letters / digits of the person's id,
- * upper case}` — the pay run's first day (organisation zone) and the person. Before 1.55.0 invoices carried no number;
- * this is derived, never stored, so both apps print the same one for every sheet, old or new. '' when not usable.
+ * The invoice number of a pay run's original timesheet, built only from what is stored on that original (review of
+ * #344): `TS-{the id's stamp}-{first 6 letters / digits of the person's id, upper case}` — the id's part after
+ * `timesheet_{userId}_` (digits only) and the stored `userId` (else the person the id names,
+ * `timesheetDocumentSubjectId`). Before 1.55.0 invoices carried no number; this is derived, never stored, so both apps
+ * print the same one for every sheet, old or new, whoever views it. Pass the ORIGINAL's id for every version (a
+ * revision's `revisionOf`); '' when not usable.
  */
-export function timesheetInvoiceNumber(input: { subjectId: unknown; startDayKey: unknown }): string {
-  const day = text(input?.startDayKey)
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return ''
-  const person = text(input?.subjectId).replace(/[^A-Za-z0-9]/g, '').slice(0, 6).toUpperCase()
-  if (!person) return ''
-  return `TS-${day.replace(/-/g, '')}-${person}`
+export function timesheetInvoiceNumber(input: { documentId: unknown; userId?: unknown }): string {
+  const ref = parseTimesheetRevisionDocId(input?.documentId)
+  if (!ref) return ''
+  const base = ref.baseDocumentId
+  const stored = text(input?.userId)
+  const subject = stored && base.startsWith(`${TIMESHEET_DOCUMENT_PREFIX}${stored}_`) ? stored : timesheetDocumentSubjectId(base)
+  if (!subject) return ''
+  const stamp = base.slice(`${TIMESHEET_DOCUMENT_PREFIX}${subject}_`.length).replace(/[^0-9]/g, '')
+  const person = subject.replace(/[^A-Za-z0-9]/g, '').slice(0, 6).toUpperCase()
+  if (!stamp || !person) return ''
+  return `TS-${stamp}-${person}`
 }
 
 /** The original invoice number plus "-REV1", "-REV2" … so accounts can match them; the number unchanged for 0. */
@@ -153,7 +154,7 @@ export function timesheetRevisionDifference(input: { total: unknown; previousTot
 
 /** One stored version of a pay run's timesheet, as `timesheetVersionsForPeriod` reads it. */
 export type TimesheetVersion = TimesheetVersionRef & {
-  /** `exportedAt` stored (the field the security rules test). */
+  /** Exported as the security rules read it (`resolveTimesheetExportedAtMs`: an `exportedAt` an invoice left is not). */
   exported: boolean
   /** Signed off: the line manager counter-signed, or a self-signed person signed with the signed snapshot written. */
   signedOff: boolean
@@ -168,12 +169,11 @@ function realSigned(value: unknown): boolean {
 function versionOf(documentId: string, data: Record<string, unknown>): TimesheetVersion | null {
   const ref = parseTimesheetRevisionDocId(documentId)
   if (!ref) return null
-  const managerSigned = realSigned(data.managerSignedAt) || realSigned(data.approvedAt)
-  const snapshot = data.weeklyReportOverride != null && typeof data.weeklyReportOverride === 'object'
   return {
     ...ref,
-    exported: timesheetExportedFieldSet(data.exportedAt),
-    signedOff: managerSigned || (realSigned(data.operativeSignedAt) && snapshot),
+    // Review of #344: the security rules' exported test, the invoice leftover rule included (`timesheetStoredExported`).
+    exported: resolveTimesheetExportedAtMs(data) != null,
+    signedOff: timesheetVersionSignedOff(data),
     data,
   }
 }
@@ -292,10 +292,19 @@ export function canCreateTimesheetRevision(input: {
   return { allowed: true, reason: 'ok', nextRevision: next, documentId, message: '' }
 }
 
-/** The exported total of a stored version: its signed snapshot's invoice total (`timesheetTotals`, `decided`). */
-export function timesheetExportedTotal(data: Record<string, unknown> | null | undefined): number {
-  return timesheetTotals({ sheet: record(data), payrollLines: [], extrasMode: 'decided' }).total
+/**
+ * The exported total of a stored version: its signed snapshot's invoice total (`timesheetTotals`, `decided`). Null when
+ * the version has no signed snapshot (an older export): its labour cannot be priced from the document alone, so the
+ * difference is unknown (`TIMESHEET_REVISION_DIFFERENCE_UNKNOWN`) — never a total without its labour.
+ */
+export function timesheetExportedTotal(data: Record<string, unknown> | null | undefined): number | null {
+  const sheet = record(data)
+  if (!sheet.weeklyReportOverride || typeof sheet.weeklyReportOverride !== 'object') return null
+  return timesheetTotals({ sheet, payrollLines: [], extrasMode: 'decided' }).total
 }
+
+/** Review of #344: the difference cannot be worked out (the previous version has no signed snapshot). */
+export const TIMESHEET_REVISION_DIFFERENCE_UNKNOWN = 'Difference not available (older export)'
 
 /**
  * The fields a revision copies from the version it corrects, exactly as stored (the security rules check each one is
@@ -331,12 +340,13 @@ export function timesheetRevisionCreateFields(input: {
   const ref = parseTimesheetRevisionDocId(input?.previous?.documentId)
   const data = record(input?.previous?.data)
   const writer = text(input?.writerUserId)
-  if (!ref || !writer || !timesheetExportedFieldSet(data.exportedAt) || !text(data.userId) || data.weekStart == null) return null
+  if (!ref || !writer || resolveTimesheetExportedAtMs(data) == null || !text(data.userId) || data.weekStart == null) return null
   const revision = ref.revision + 1
   const documentId = timesheetRevisionDocId(ref.baseDocumentId, revision)
   if (!documentId) return null
   const fields: Record<string, unknown> = {}
-  for (const key of TIMESHEET_REVISION_COPIED_FIELDS) if (data[key] !== undefined && data[key] !== null) fields[key] = data[key]
+  // Review of #344: a stored null is copied as null (the rules compare each copied field with the version it corrects).
+  for (const key of TIMESHEET_REVISION_COPIED_FIELDS) if (data[key] !== undefined) fields[key] = data[key]
   fields.revisionOf = ref.baseDocumentId
   fields.revision = revision
   fields.previousVersionId = ref.documentId

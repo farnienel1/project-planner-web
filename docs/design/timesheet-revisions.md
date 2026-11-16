@@ -48,8 +48,8 @@ revision is caused by a booking change, never by someone editing a timesheet. Ru
 7. **Late extras, PAYE days, pay privacy.** After export, price work and expenses still go on the next timesheet. A
    revision carries the late extras as stored (approved ones keep paying). PAYE days are left out exactly as on any
    sheet (`timesheetDaysForPerson`). The revision is a `timesheet_` document, so the `privatePay` read rules apply.
-8. **Numbering and difference.** `timesheetInvoiceNumber` (`TS-{YYYYMMDD}-{6 of the person's id}`, derived — invoices
-   had no number before) + `timesheetInvoiceNumberForRevision` ("-REV1"); `timesheetRevisionDifference` from
+8. **Numbering and difference.** `timesheetInvoiceNumber` (`TS-{original id's stamp}-{6 of the stored userId}`, derived —
+   invoices had no number before) + `timesheetInvoiceNumberForRevision` ("-REV1"); `timesheetRevisionDifference` from
    `timesheetExportedTotal` of the previous version.
 9. **Notice.** One type, `timesheet_revision_to_sign`: the 1.54 booking-notice functions now also judge the latest
    version when it is exported and write "Update to your exported timesheet" once per exported version
@@ -71,3 +71,16 @@ revision is caused by a booking change, never by someone editing a timesheet. Ru
 - J3 Invoice numbers are derived (`TS-20261101-6A9632`), shown on every invoice from 1.55.0, old sheets included.
 - J4 Manual "Create revision" kept for admins and line managers (cheap).
 - J5 While a revision is open the weekly report and Payrun Snapshot keep using the previous exported version.
+
+## Review of #344 (16 Nov)
+
+- HIGH 1: the person never changes a revision's `priceWorkEntries`, `expenseEntries` or `lateExtras` (rules `tsRevKept`;
+  rulebook `timesheetOwnerCanAddExtras` / `canEditTimesheetEntry` / `timesheetOwnerCanAddLateExtras` refuse a revision).
+- 2: no signed snapshot on the previous version → difference "Difference not available (older export)".
+- 3: revisions priced `decided` everywhere. 4: stored nulls copied exactly.
+- 7: a pending late extra on an unsigned revision is with the person. 8: "exported" uses the rules' leftover rule.
+- 9: Payrun Snapshot signed off = `timesheetVersionSignedOff`. 10: invoice number from the stored original id + userId
+  (`TS-{stamp}-{person}`). 11: the notice function completes a chain cut by its query limit.
+  12: `parseTimesheetRevisionDocId` (one parser, in `timesheetPeriod.ts`) refuses `_rev0` / `_rev01`; the hub calls
+  `timesheetRevisionDue`.
+- Not here: finding 5 (hotfix branch `w-hotfix-settings-read`), finding 6 (owner question).

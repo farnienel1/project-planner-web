@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.55.0 → 1.55.0
-Packed hash: b3a5ee7bd158824a24b8187b0b1a02bf0224a34972a948275c85ef905586a885
-Rulebook sha256: 009814bf5003fbe881d356da650d23d88c694b1cc1cceae942872804f9c0b39d
+Packed hash: 4163190f314d6c8443605167098f22b99e4b52b6eeb582d443e14dba6b6befc2
+Rulebook sha256: f81f6fe10d1cc0b62ed74a5e49a7c9c96a0f47f415bdd664d4de4eaf8b62c224
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,12 +22,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 5a8a7e4e6f56b91cb18f71e79207782b8840fccf0b63b695826c47e18e59a32e
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: none
+Exports added: TIMESHEET_REVISION_DIFFERENCE_UNKNOWN, TIMESHEET_REVISION_EXTRAS_MESSAGE, timesheetSheetIsRevision, timesheetVersionSignedOff
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/canonical.test.ts, lib/canonical/timesheetPeriod.ts, storage.rules
+Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/payrunSnapshot.ts, lib/canonical/timesheetLateExtras.ts, lib/canonical/timesheetPeriod.ts, lib/canonical/timesheetRevisions.ts, lib/canonical/timesheetSnapshot.ts, lib/canonical/workDocumentReaders.ts
 Done when:
-- [ ] Packed hash in iOS equals b3a5ee7bd158824a24b8187b0b1a02bf0224a34972a948275c85ef905586a885
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 009814bf5003fbe881d356da650d23d88c694b1cc1cceae942872804f9c0b39d)
+- [ ] Packed hash in iOS equals 4163190f314d6c8443605167098f22b99e4b52b6eeb582d443e14dba6b6befc2
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 f81f6fe10d1cc0b62ed74a5e49a7c9c96a0f47f415bdd664d4de4eaf8b62c224)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.55.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -39,6 +39,7 @@ Done when:
 - **Timesheet revisions** (§8, §13, §16, owner decisions 16 Nov, refined the same day; new `lib/canonical/timesheetRevisions.ts`): after export a booking change makes a revision due (`timesheetRevisionDue`, derived; before export 1.47.0 is unchanged); the person creates `settings/{original}_rev{N}` with "Review and sign again" (or a reviewer with Create revision), signs the live figures, the line manager counter-signs, Export shows REV N. New: `TIMESHEET_REVISION_*` copy, `TIMESHEET_REVISION_FIELDS`, `TIMESHEET_REVISION_COPIED_FIELDS`, `parseTimesheetRevisionDocId`, `isTimesheetRevisionDocId`, `timesheetRevisionDocId`, `timesheetRevisionLabel`, `timesheetInvoiceNumber`, `timesheetInvoiceNumberForRevision`, `timesheetRevisionDifference`, `timesheetExportedTotal`, `timesheetVersionsForPeriod`, `timesheetLatestVersion`, `timesheetReportVersion`, `timesheetEarlierVersions`, `canCreateTimesheetRevision`, `timesheetRevisionCreateFields`, `timesheetRevisionToSignRecipients`, `timesheetRevisionNoticeKey`, `timesheetRevisionDueNoticeId`.
 - Changed: `pickTimesheetRowForPeriod` (rows with `documentId`: one per original; `versions`), `timesheetDocumentSubjectId` and `timesheetEntryId` (a revision id reads as its original), `signedTimesheetBookingWriteReopens` / `timesheetBookingChangeNotice` (`includeExported`; the decision carries `exported`), `PayrunSnapshotSheet.documentId` (`parsePayrunSnapshotSheet`), `WeeklyReportPaySheet.revision` (check line "· REV N").
 - New notice type `timesheet_revision_to_sign` (push, toggle timesheetSignOff, opens My Timesheets).
+- **Review of #344** (before merge): the person never changes a revision's price work, expenses or late extras (rules `tsRevKept`; `timesheetOwnerCanAddExtras` / `canEditTimesheetEntry` / `timesheetOwnerCanAddLateExtras` refuse a revision, `timesheetSheetIsRevision`, `TIMESHEET_REVISION_EXTRAS_MESSAGE`); `timesheetExportedTotal` is null without a signed snapshot and the difference reads `TIMESHEET_REVISION_DIFFERENCE_UNKNOWN`; revisions are priced `decided`; stored nulls copied exactly; a pending late extra on an unsigned revision is with the person (`timesheetLateExtrasSummary`); versions are exported by the rules' test (`resolveTimesheetExportedAtMs`, invoice leftover rule); `timesheetVersionSignedOff` (self-signed with a snapshot) for `timesheetReportVersion` and the Payrun Snapshot; `timesheetInvoiceNumber({ documentId, userId })` from the stored original; `parseTimesheetRevisionDocId` (in `timesheetPeriod.ts`, used by `pickTimesheetRowForPeriod`) refuses `_rev0` / `_rev01`; the notice function completes a version chain cut by its query limit (`sheet` store read).
 - Security rules (on top of 1.54.1): `tsRevCreate` (the previous version exported by the 1.54.1 leftover rule, `tsExportedIn`), `tsRevKept`; the settings match's helpers renamed `timesheet…` → `ts…` and a few equivalent simplifications for the byte budget (`docs/firestore-rules-notes.md` "1.55.0 revisions"); no other allow/deny change.
 
 ## iOS work for 1.55.0
@@ -54,9 +55,15 @@ Timesheet revisions (REV 1, REV 2, …), rulebook §8 "Timesheet revisions", §1
 7. **Notifications** (`Models/NotificationModel.swift`, `Views/NotificationsView.swift`): accept `timesheet_revision_to_sign` (push; toggle timesheetSignOff; `notificationDestination` → `timesheetMine` with dayKey) and route it to My Timesheets for that pay run (which opens the latest version).
 8. **Release**: `minimumIosBuild` is raised to this build before revisions are used (an older build opens only the frozen original).
 
-## New rulebook sections
+9. **Review of #344** (same release):
+   - Entries on a revision are frozen for the person: `timesheetOwnerCanAddExtras`, `canEditTimesheetEntry`, `timesheetOwnerCanAddLateExtras` refuse a revision — pass the sheet with `revision` (from the document id) or its stored `revisionOf` (`timesheetSheetIsRevision`); show `TIMESHEET_REVISION_EXTRAS_MESSAGE`. The rules refuse the person's change to `priceWorkEntries`, `expenseEntries`, `lateExtras` on a `_rev` document.
+   - Price a revision in `decided` mode for everyone (list rows, the person's sheet, the sign sheet, the invoice).
+   - `timesheetExportedTotal` can be null (no signed snapshot): show `TIMESHEET_REVISION_DIFFERENCE_UNKNOWN` on screen and on the invoice instead of a figure.
+   - Copy stored nulls exactly when creating a revision (`timesheetRevisionCreateFields` now keeps them) — never drop or default a copied field.
+   - Invoice number: `timesheetInvoiceNumber({ documentId: <the original's stored id>, userId: <its stored userId> })` — never the signed-in or current users id, never a recomputed id; for a revision pass its `revisionOf` / the chain's original.
+   - "Exported" for revisions is `resolveTimesheetExportedAtMs(data) != null` (invoice leftover rule), via `timesheetVersionsForPeriod`.
+   - `parseTimesheetRevisionDocId` refuses `_rev0` / `_rev01` (treat such an id as no version).
 
-- 1.54.1 — 2026-11-16
 
 ## Workflow for the iOS agent
 

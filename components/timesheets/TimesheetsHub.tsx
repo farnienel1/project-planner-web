@@ -49,6 +49,7 @@ import {
   loadTimesheetDrafts,
   loadTimesheetDraftsForStarts,
   listTimesheetStates,
+  timesheetSourceDocumentId,
 } from '@/lib/timesheets/timesheetStorage'
 import { timesheetReviewerHubStats } from '@/lib/timesheets/timesheetHubStats'
 import { emptyTimesheetDraft, type TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
@@ -88,7 +89,14 @@ import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import { OVERTIME_PATH } from '@/components/overtime/OvertimeScreen'
 import { BookingsChangedWarning } from '@/components/timesheets/BookingsChangedWarning'
 import { bookingCoverageCoversDay, periodBookingChanges, type BookingChangeCatalogue } from '@/lib/timesheets/timesheetBookingChanges'
-import { SIGNED_TIMESHEET_CHANGED_STATUS, TIMESHEET_REVISION_DUE_MESSAGE, TIMESHEET_REVISION_DUE_STATUS, timesheetRevisionLabel } from '@/lib/canonical'
+import {
+  SIGNED_TIMESHEET_CHANGED_STATUS,
+  TIMESHEET_REVISION_DUE_MESSAGE,
+  TIMESHEET_REVISION_DUE_STATUS,
+  timesheetRevisionDue,
+  timesheetRevisionLabel,
+  timesheetVersionsForPeriod,
+} from '@/lib/canonical'
 import {
   ActionCard,
   Card,
@@ -737,7 +745,7 @@ function MineTimesheetsList({
     periodBookingChanges(changeCatalogue, subject, drafts.get(periodKey(period)), period)
   const needsSigningAgain = (period: { start: Date; end: Date }) => changeOf(period)?.waitingFor === 'person'
   // Rulebook 1.55.0 §8: the listed (latest) version is exported and a booking changed — an update (revision) to sign.
-  const revisionDue = (period: { start: Date; end: Date }) => revisionDueOf(changeOf(period))
+  const revisionDue = (period: { start: Date; end: Date }) => revisionDueOf(drafts.get(periodKey(period)), changeOf(period))
   const currentChanged = needsSigningAgain(currentPeriod) || revisionDue(currentPeriod)
   const pending = [currentPeriod, ...discoveredPast].filter((period) => {
     const draft = drafts.get(periodKey(period))
@@ -834,11 +842,19 @@ function MineTimesheetsList({
 }
 
 /**
- * Rulebook 1.55.0 §8: a revision is due when the listed (latest) version is exported and its bookings changed since
- * (`signedTimesheetBookingChanges`: `exported` and `changed`; `timesheetRevisionDue` on the period page).
+ * Rulebook 1.55.0 §8 (`timesheetRevisionDue`): the listed draft is the period's latest version; it is passed as a
+ * one-version chain (its stored id and its resolved `exportedAt`, the leftover rule already applied), with its
+ * `signedTimesheetBookingChanges`.
  */
-function revisionDueOf(change: { exported?: boolean | null; changed?: boolean | null } | null | undefined): boolean {
-  return change?.exported === true && change?.changed === true
+function revisionDueOf(
+  draft: TimesheetDraft | undefined,
+  change: { exported?: boolean | null; changed?: boolean | null } | null | undefined
+): boolean {
+  if (!draft) return false
+  const documentId = timesheetSourceDocumentId(draft)
+  if (!documentId) return false
+  const chain = timesheetVersionsForPeriod([{ documentId, data: { exportedAt: draft.exportedAt ?? null } }])[0] ?? []
+  return timesheetRevisionDue({ chain, change }).due
 }
 
 /** Rulebook 1.55.0: the "REV N" badge of a listed version (nothing for an original). */
@@ -947,7 +963,7 @@ function MineChangedIndicator({
   // Only the pay runs the loaded window holds (`coversPeriod`, the last HUB_CHANGE_SCAN_RUNS); memoised per period.
   const show = rows.some((row) => {
     const change = periodBookingChanges(catalogue, subject, row.draft, row.period)
-    return change?.waitingFor === 'person' || revisionDueOf(change)
+    return change?.waitingFor === 'person' || revisionDueOf(row.draft, change)
   })
   return <WithChangedTriangle show={show}>{children}</WithChangedTriangle>
 }

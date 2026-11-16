@@ -32,6 +32,7 @@ import {
   type TimesheetEntryDecision,
 } from './timesheetEntryReviews'
 import { timesheetExportedFieldSet } from './timesheetSnapshot'
+import { timesheetTimestampMs } from './timesheetPeriod'
 import {
   parseTimesheetEntries,
   type TimesheetExpenseEntryDocument,
@@ -377,7 +378,10 @@ export function timesheetLateExtrasSummary(
     declined: count('declined'),
     snapshotInStep,
     exported,
-    waitingForLineManager: !exported && (pending > 0 || !snapshotInStep),
+    // 1.55.0 (review of #344): late extras wait for the line manager only once they have signed. On an open revision
+    // (copied late extras, nobody has signed yet) the sheet is still with the person — never "Awaiting".
+    waitingForLineManager:
+      !exported && (timesheetTimestampMs(data.managerSignedAt) != null || timesheetTimestampMs(data.approvedAt) != null) && (pending > 0 || !snapshotInStep),
   }
 }
 

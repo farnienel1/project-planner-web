@@ -16847,6 +16847,10 @@ test('1.53.0 review: a new night shift clashes with the next morning\'s early bo
     assert.deepEqual(R.parseTimesheetRevisionDocId(`${ORIGINAL}_rev2`), { documentId: `${ORIGINAL}_rev2`, baseDocumentId: ORIGINAL, revision: 2 })
     assert.equal(R.parseTimesheetRevisionDocId('variations_x'), null)
     assert.equal(R.parseTimesheetRevisionDocId(`${ORIGINAL}_rev100`), null)
+    // Review of #344: `_rev0` and `_rev01` are neither an original nor a revision.
+    assert.equal(R.parseTimesheetRevisionDocId(`${ORIGINAL}_rev0`), null)
+    assert.equal(R.parseTimesheetRevisionDocId(`${ORIGINAL}_rev01`), null)
+    assert.equal(R.pickTimesheetRowForPeriod([{ startDayKey: '2026-11-01', endDayKey: '2026-11-15', documentId: `${ORIGINAL}_rev01` }], { startDayKey: '2026-11-01', endDayKey: '2026-11-15' }), 0, 'an unparsable id stays a plain row')
     assert.equal(R.isTimesheetRevisionDocId(`${ORIGINAL}_rev1`), true)
     assert.equal(R.isTimesheetRevisionDocId(ORIGINAL), false)
     assert.equal(R.timesheetRevisionDocId(ORIGINAL, 1), `${ORIGINAL}_rev1`)
@@ -16859,13 +16863,16 @@ test('1.53.0 review: a new night shift clashes with the next morning\'s early bo
     assert.equal(R.timesheetDocumentSubjectId(ORIGINAL), SUBJECT)
   })
 
-  test('1.55.0 invoice numbers: derived from the pay run and the person, "-REV1" for a revision', () => {
-    const base = R.timesheetInvoiceNumber({ subjectId: '6a9632ba-x', startDayKey: '2026-11-01' })
-    assert.equal(base, 'TS-20261101-6A9632')
-    assert.equal(R.timesheetInvoiceNumberForRevision(base, 1), 'TS-20261101-6A9632-REV1')
-    assert.equal(R.timesheetInvoiceNumberForRevision(base, 2), 'TS-20261101-6A9632-REV2')
+  test('1.55.0 invoice numbers: from the stored original (its id and stored userId), "-REV1" for a revision', () => {
+    const base = R.timesheetInvoiceNumber({ documentId: 'timesheet_6a9632ba-x_1761955200', userId: '6a9632ba-x' })
+    assert.equal(base, 'TS-1761955200-6A9632')
+    assert.equal(R.timesheetInvoiceNumber({ documentId: 'timesheet_6a9632ba-x_1761955200_rev2', userId: '6a9632ba-x' }), base, 'a revision id gives its original number')
+    assert.equal(R.timesheetInvoiceNumber({ documentId: 'timesheet_6a9632ba-x_1761955200' }), base, 'without userId: the person the id names')
+    assert.equal(R.timesheetInvoiceNumber({ documentId: 'timesheet_u_1_2026-11-01', userId: 'u_1' }), 'TS-20261101-U1', 'legacy day-key ids')
+    assert.equal(R.timesheetInvoiceNumberForRevision(base, 1), 'TS-1761955200-6A9632-REV1')
+    assert.equal(R.timesheetInvoiceNumberForRevision(base, 2), 'TS-1761955200-6A9632-REV2')
     assert.equal(R.timesheetInvoiceNumberForRevision(base, 0), base)
-    assert.equal(R.timesheetInvoiceNumber({ subjectId: '', startDayKey: '2026-11-01' }), '')
+    assert.equal(R.timesheetInvoiceNumber({ documentId: 'deadlines_x' }), '')
   })
 
   test('1.55.0 difference: "+£44.12", "-£10.00", "£0.00"', () => {
@@ -16964,6 +16971,20 @@ test('1.53.0 review: a new night shift clashes with the next morning\'s early bo
     )
     // The approved late extra keeps paying on the revision; the exported total is what the difference starts from.
     assert.equal(R.timesheetExportedTotal(original), 355)
+    // Review of #344: no signed snapshot (an older export) → the total, and so the difference, is unknown.
+    const { weeklyReportOverride: _snapshot, ...older } = original
+    void _snapshot
+    assert.equal(R.timesheetExportedTotal(older), null)
+    assert.equal(R.TIMESHEET_REVISION_DIFFERENCE_UNKNOWN, 'Difference not available (older export)')
+    // Review of #344: a stored null is copied as null (the rules compare it with the original).
+    const withNull = R.timesheetRevisionCreateFields({ previous: { documentId: ORIGINAL, data: { ...original, lateExtras: null } }, writerUserId: LM })
+    assert.equal(withNull!.fields.lateExtras, null)
+    assert.ok('lateExtras' in withNull!.fields)
+    // Review of #344: an exportedAt an invoice left (within 60 s) is not an export — no revision.
+    assert.equal(
+      R.timesheetRevisionCreateFields({ previous: { documentId: ORIGINAL, data: { ...original, invoiceGeneratedAt: { seconds: 1763200010, nanoseconds: 0 } } }, writerUserId: LM }),
+      null
+    )
     const rev2 = R.timesheetRevisionCreateFields({ previous: { documentId: `${ORIGINAL}_rev1`, data: { ...f, exportedAt } }, writerUserId: SUBJECT })
     assert.equal(rev2!.documentId, `${ORIGINAL}_rev2`)
     assert.equal(rev2!.fields.previousVersionId, `${ORIGINAL}_rev1`)
@@ -17028,6 +17049,31 @@ test('1.53.0 review: a new night shift clashes with the next morning\'s early bo
     assert.equal(R.timesheetRevisionDueNoticeId(ORIGINAL, sheet as never), id)
     assert.notEqual(R.timesheetRevisionDueNoticeId(ORIGINAL, { ...sheet, exportedAt: 1763200001000 } as never), id)
     assert.equal(R.timesheetRevisionDueNoticeId(ORIGINAL, { ...sheet, exportedAt: null } as never), null)
+  })
+  test('1.55.0 review of #344: a revision never takes owner price work, expenses or late extras', () => {
+    const revision = { revision: 1, revisionOf: ORIGINAL }
+    assert.deepEqual(R.timesheetOwnerCanAddExtras(revision), { allowed: false, message: R.TIMESHEET_REVISION_EXTRAS_MESSAGE })
+    assert.equal(R.timesheetOwnerCanAddExtras(revision, { selfSigned: true }).allowed, false, 'self-signed too')
+    assert.equal(R.canEditTimesheetEntry(revision, { viewerIsOwner: true }).allowed, false)
+    assert.equal(R.timesheetOwnerCanAddLateExtras({ ...revision, managerSignedAt: 1763100000000 }).allowed, false)
+    assert.equal(R.timesheetOwnerCanAddExtras({ revisionOf: ORIGINAL }).allowed, false)
+    assert.equal(R.timesheetOwnerCanAddExtras({}).allowed, true, 'an original is unchanged')
+    assert.equal(R.timesheetSheetIsRevision({ revision: 0 }), false)
+  })
+
+  test('1.55.0 review of #344: a pending late extra on an unsigned revision is with the person, not the line manager', () => {
+    const rev = { lateExtras: [LATE_PENDING], expenseEntries: [], priceWorkEntries: [] }
+    assert.equal(R.timesheetLateExtrasSummary(rev).waitingForLineManager, false)
+    assert.equal(R.timesheetLateExtrasSummary({ ...rev, managerSignedAt: 1763100000000 }).waitingForLineManager, true)
+  })
+
+  test('1.55.0 review of #344: signed off includes a self-signed sheet with its snapshot; the Payrun Snapshot reads it', () => {
+    assert.equal(R.timesheetVersionSignedOff({ operativeSignedAt: 1763100000000, weeklyReportOverride: { lines: [] } }), true)
+    assert.equal(R.timesheetVersionSignedOff({ operativeSignedAt: 1763100000000 }), false)
+    assert.equal(R.timesheetVersionSignedOff({ managerSignedAt: 1763100000000 }), true)
+    const sheet = R.parsePayrunSnapshotSheet(`${ORIGINAL}_rev1`, { userId: SUBJECT, weekStartKey: '2026-11-01', weekEndKey: '2026-11-15', operativeSignedAt: 1763100000000, weeklyReportOverride: { lines: [] } })
+    assert.equal(sheet?.signedOff, true)
+    assert.equal(sheet?.documentId, `${ORIGINAL}_rev1`)
   })
 }
 

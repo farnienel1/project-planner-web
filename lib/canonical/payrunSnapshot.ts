@@ -54,6 +54,7 @@ import {
   timesheetListBucket,
   timesheetPaymentRunPeriodsFromWindow,
   timesheetStoredStartDayKey,
+  timesheetVersionSignedOff,
   type TimesheetStatusFields,
 } from './timesheetPeriod'
 import { isAnonymisedDeletedProfile, isGhostUser, rosterPersonName, rosterSegment } from './userRosterSegment'
@@ -162,6 +163,8 @@ export type PayrunSnapshotSheet = {
   bookingsChange?: { reopened?: boolean | null; waitingFor?: 'person' | 'lineManager' | null } | null
   /** 1.55.0 §8: the stored document id, so an original and its revisions (`…_rev{N}`) count as one sheet. */
   documentId?: string | null
+  /** 1.55.0 (review of #344): `timesheetVersionSignedOff` of the stored sheet (a self-signed sheet with its snapshot too). */
+  signedOff?: boolean | null
 }
 
 /** The request fields the Snapshot reads (`parseOvertimeRequestDocument`). */
@@ -303,7 +306,7 @@ export function parsePayrunSnapshotSheet(docId: string, data: Record<string, unk
   if (!userId || !DAY_KEY.test(startDayKey)) return null
   const endKey = text(row.weekEndKey)
   const endDayKey = DAY_KEY.test(endKey) ? endKey : timesheetStoredStartDayKey(row.weekEnd, timeZone)
-  return { userId, startDayKey, endDayKey: DAY_KEY.test(endDayKey) ? endDayKey : '', status: parseTimesheetStatusFields(row), documentId: text(docId) }
+  return { userId, startDayKey, endDayKey: DAY_KEY.test(endDayKey) ? endDayKey : '', status: parseTimesheetStatusFields(row), documentId: text(docId), signedOff: timesheetVersionSignedOff(row) }
 }
 
 // MARK: - Rows
@@ -365,7 +368,7 @@ function timesheetCell(
         endDayKey: sheet.endDayKey || null,
         documentId: sheet.documentId ?? null,
         exported: sheet.status.exportedAtMs != null,
-        signedOff: sheet.status.managerSignedAtMs != null,
+        signedOff: sheet.signedOff ?? sheet.status.managerSignedAtMs != null,
       })),
       run,
       { versions: 'reports' }

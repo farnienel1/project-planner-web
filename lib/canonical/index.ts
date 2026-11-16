@@ -2177,7 +2177,9 @@ export {
 } from './timesheetLateExtras'
 export {
   TIMESHEET_EXPORTED_EXTRAS_MESSAGE,
+  TIMESHEET_REVISION_EXTRAS_MESSAGE,
   timesheetExportedFieldSet,
+  timesheetSheetIsRevision,
   timesheetOwnerCanAddLateExtras,
 } from './timesheetSnapshot'
 export {
@@ -2239,6 +2241,7 @@ export {
   TIMESHEET_REVISION_DUE_NOTICE_MESSAGE,
   TIMESHEET_REVISION_DUE_NOTICE_TITLE,
   TIMESHEET_REVISION_DUE_REVIEWER_MESSAGE,
+  TIMESHEET_REVISION_DIFFERENCE_UNKNOWN,
   TIMESHEET_REVISION_DUE_STATUS,
   canCreateTimesheetRevision,
   isTimesheetRevisionDocId,
@@ -2257,5 +2260,6 @@ export {
   timesheetRevisionNoticeKey,
   timesheetRevisionToSignRecipients,
   timesheetVersionsForPeriod,
+  timesheetVersionSignedOff,
 } from './timesheetRevisions'
 export type { TimesheetRevisionCheck, TimesheetRevisionDifference, TimesheetVersion, TimesheetVersionRef } from './timesheetRevisions'

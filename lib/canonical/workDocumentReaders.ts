@@ -562,7 +562,7 @@ export function timesheetEntryId(
   if (stored) return stored
   const when = documentInstantMs(kind === 'expense' ? row.date : row.startDate)
   const source = [
-    text(sheetDocId).replace(/_rev[1-9]\d*$/, ''),
+    text(sheetDocId).replace(/_rev[1-9]\d?$/, ''),
     ENTRY_ARRAY_FIELD[kind],
     String(Math.max(0, Math.floor(Number(index) || 0))),
     rawText(row.title),

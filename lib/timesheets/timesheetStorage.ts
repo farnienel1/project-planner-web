@@ -1355,7 +1355,8 @@ export async function listTimesheetStates(
         userId,
         weekStart,
         endDayKey: storedEndDayKey(data, LONDON_TIME_ZONE),
-        draft: draftFromFirestoreMap(data, { ...LIST_DRAFT_OPTIONS, sheetDocId: entry.id }),
+        // 1.55.0 (review of #344): the stored id travels with the draft (`timesheetSourceDocumentId`).
+        draft: rememberSource(draftFromFirestoreMap(data, { ...LIST_DRAFT_OPTIONS, sheetDocId: entry.id }), entry.id),
       })
     }
     const collapsed = versions === 'all' ? rows : collapseVersionRows(rows, (row) => stored.get(row.documentId) || {}, versions)

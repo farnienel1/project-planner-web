@@ -111,6 +111,7 @@ const WEEK_END_SLACK_MS = 2 * 24 * 60 * 60 * 1000
  *     (settings where userId in userIds (at most 10) and weekEnd >= fromMs, oldest first, at most 8 — the sheets whose
  *      pay run can hold the booking day; composite index settings userId ASC, weekEnd ASC)
  *   tombstone(orgId, bookingId) → data | null              (deletedBookings/{bookingId})
+ *   sheet(orgId, id) → data | null                         (settings/{id}: 1.55.0, the rest of a version chain)
  *   createNotification(orgId, id, fields) → 'created' | 'exists'
  *
  * Reads per booking write (review of #337, item 4): 0 when the write changes none of the fields the rule reads; else
@@ -190,6 +191,27 @@ function createTimesheetBookingNotice({ store, canonical, logger = console, serv
         const startMs = millis((row.data || {}).weekStart)
         return startMs == null || startMs <= latestMs
       })
+      // 1.55.0 (review of #344): the query's limit can cut a version chain. For each original whose highest version
+      // found is exported, read the following revisions by id until one is missing, so the latest version is judged.
+      const highest = new Map()
+      for (const row of sheets) {
+        const ref = canonical.parseTimesheetRevisionDocId(row.id)
+        if (!ref) continue
+        const held = highest.get(ref.baseDocumentId)
+        if (!held || ref.revision > held.revision) highest.set(ref.baseDocumentId, { revision: ref.revision, row })
+      }
+      for (const [base, held] of highest) {
+        let row = held.row
+        let n = held.revision
+        while (canonical.resolveTimesheetExportedAtMs(plainSheet(row.data || {})) != null) {
+          const id = canonical.timesheetRevisionDocId(base, n + 1)
+          const data = id ? await store.sheet(orgId, id) : null
+          if (!data) break
+          row = { id, data }
+          sheets.push(row)
+          n += 1
+        }
+      }
       // 1.55.0: one row per pay run — the latest version of each original's chain.
       const latestIds = new Set(
         canonical
@@ -280,6 +302,8 @@ function createAdminTimesheetNoticeStore(db, Timestamp) {
       return snap.docs.map((doc) => ({ id: doc.id, data: doc.data() }))
     },
     tombstone: async (orgId, bookingId) => data(await db.doc(`organizations/${orgId}/deletedBookings/${bookingId}`).get()),
+    // 1.55.0: one timesheet document by id (the rest of a version chain).
+    sheet: async (orgId, id) => (id && !id.includes('/') ? data(await db.doc(`organizations/${orgId}/settings/${id}`).get()) : null),
     createNotification: async (orgId, id, fields) => {
       try {
         await db.doc(`organizations/${orgId}/notifications/${id}`).create(fields)

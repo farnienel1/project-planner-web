@@ -95,6 +95,8 @@ import {
   TIMESHEET_EARLIER_VERSIONS_LABEL,
   TIMESHEET_ORIGINAL_VERSION_LABEL,
   TIMESHEET_REVIEW_AND_SIGN_REVISION_LABEL,
+  timesheetSheetIsRevision,
+  TIMESHEET_REVISION_DIFFERENCE_UNKNOWN,
   canCreateTimesheetRevision,
   timesheetEarlierVersions,
   timesheetExportedTotal,
@@ -456,6 +458,8 @@ export function TimesheetPeriodPage({
     selfSigned: sheetSelfSigned,
   })
   const changeActions = signedTimesheetActions(bookingChange)
+  // Rulebook 1.55.0: this page shows a revision (REV N) — its entries are frozen and it is priced as `decided`.
+  const isRevision = timesheetSheetIsRevision(draft)
   // Rulebook 1.55.0 §8: after export a booking change never reopens the frozen sheet — a revision becomes due
   // (derived from the latest exported version and the live bookings; nobody writes it).
   const revisionDue = timesheetRevisionDue({ chain: versionChain, change: bookingChange })
@@ -509,7 +513,8 @@ export function TimesheetPeriodPage({
   const totals = draftTimesheetTotals({
     lines: payroll.lineItems,
     draft: figuresDraft,
-    decided: managerHasSigned || canManagerReview,
+    // Review of #344: a revision is priced in `decided` mode for everyone (its copied entries carry their decisions).
+    decided: managerHasSigned || canManagerReview || isRevision,
     reviewing: canManagerReview,
     timesheetDays: sheetDays,
     timeZone,
@@ -518,11 +523,9 @@ export function TimesheetPeriodPage({
   const expensesAmount = totals.expenses
   const total = totals.total
   // Rulebook 1.55.0: REV label, invoice number ("…-REV1") and the difference from the previous exported version.
+  // Review of #344: the invoice number comes from the stored sheet (the version this page shows), never the viewer.
   const revisionCopy = timesheetRevisionCopy({
-    subjectId: subjectUser.id,
-    periodStart,
-    timeZone,
-    revision: draft.revision,
+    documentId: latestVersion?.documentId ?? timesheetDocId(subjectUser.id, periodStart, timeZone),
     chain: versionChain,
     total,
     currency,
@@ -1106,7 +1109,7 @@ export function TimesheetPeriodPage({
       timeZone,
       // Rulebook 1.53.0 (B12): once the line manager has signed, the invoice applies their decisions (`decided`),
       // even before a signed snapshot is written — the same invoice the summary shows.
-      extrasMode: draft.managerSignedAt ? 'export' : 'raw',
+      extrasMode: draft.managerSignedAt || isRevision ? 'export' : 'raw',
       standardDayHours: weekdayPaidHours(payrollPolicy),
       standardDayHoursOn: (date: Date) => weekdayPaidHours(policyOnDay(date)),
       currencyCode: currency,
@@ -1116,7 +1119,7 @@ export function TimesheetPeriodPage({
     const invoiceHours = draftTimesheetTotals({
       lines: payroll.lineItems,
       draft,
-      decided: Boolean(draft.managerSignedAt),
+      decided: Boolean(draft.managerSignedAt) || isRevision,
       timesheetDays: subjectUser ? timesheetDayKeysForPeriod(subjectUser, periodStart, periodEnd, timeZone) : [],
       timeZone,
     }).hours
@@ -1275,7 +1278,7 @@ export function TimesheetPeriodPage({
     const signTotals = draftTimesheetTotals({
       lines: payroll.lineItems,
       draft,
-      decided: managerHasSigned || managerSignOpen,
+      decided: managerHasSigned || managerSignOpen || isRevision,
       reviewing: managerSignOpen,
       timesheetDays: sheetDays,
       timeZone,
@@ -3208,7 +3211,10 @@ function TimesheetRevisionPanel({
                 <p>
                   <b>{timesheetRevisionLabel(version.revision) || TIMESHEET_ORIGINAL_VERSION_LABEL}</b>
                   {exportedMs && exportedMs.getTime() > 0 ? ` · exported ${formatStampInZone(exportedMs, timeZone)}` : ''} ·{' '}
-                  {money(timesheetExportedTotal(version.data), currency)}
+                  {(() => {
+                    const exportedTotal = timesheetExportedTotal(version.data)
+                    return exportedTotal == null ? TIMESHEET_REVISION_DIFFERENCE_UNKNOWN.replace('Difference', 'Total') : money(exportedTotal, currency)
+                  })()}
                 </p>
                 <ul className="pu-sub" style={{ margin: '4px 0 0 16px' }}>
                   {rows.map((row) => (
