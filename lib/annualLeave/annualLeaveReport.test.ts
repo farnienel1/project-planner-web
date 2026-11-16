@@ -6,6 +6,8 @@ import {
   annualLeaveReportDaysText,
   annualLeaveReportYears,
   annualLeaveReportYearTitle,
+  annualLeaveReportLeaveState,
+  ANNUAL_LEAVE_REPORT_LOAD_ERROR,
 } from './annualLeaveReport.ts'
 import { userLeaveBalance, userLeaveReportYearMonths } from './leaveBalance.ts'
 
@@ -141,4 +143,18 @@ test('1.54.0: the report counts the same leave year as the balance on the page (
     userLeaveReportYearMonths({ user: noAllowance, employment: null, orgDefaults, now, timeZone: ZONE }),
     { startMonth: 1, endMonth: 12 }
   )
+})
+
+test('annual leave report waits for the leave records: never 0 days while loading or after a failed load', () => {
+  // Nothing loaded yet for this organisation (or another company's records still in the store).
+  assert.deepEqual(annualLeaveReportLeaveState({ organizationId: 'org', loading: false, error: null, loadedOrgId: null }), { status: 'loading' })
+  assert.deepEqual(annualLeaveReportLeaveState({ organizationId: 'org', loading: true, error: null, loadedOrgId: 'other' }), { status: 'loading' })
+  assert.deepEqual(annualLeaveReportLeaveState({ organizationId: null, loading: false, error: null, loadedOrgId: null }), { status: 'loading' })
+  // A failed load is an error, never an empty report.
+  const failed = { status: 'error', message: ANNUAL_LEAVE_REPORT_LOAD_ERROR }
+  assert.deepEqual(annualLeaveReportLeaveState({ organizationId: 'org', loading: false, error: 'denied', loadedOrgId: 'org' }), failed)
+  assert.deepEqual(annualLeaveReportLeaveState({ organizationId: 'org', loading: false, error: 'denied', loadedOrgId: null }), failed)
+  // Reloading the same organisation.
+  assert.deepEqual(annualLeaveReportLeaveState({ organizationId: 'org', loading: true, error: null, loadedOrgId: 'org' }), { status: 'loading' })
+  assert.deepEqual(annualLeaveReportLeaveState({ organizationId: 'org', loading: false, error: null, loadedOrgId: 'org' }), { status: 'ready' })
 })

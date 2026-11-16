@@ -12,6 +12,28 @@ import { holidayBookingDayKeys } from '@/lib/annualLeave/holidayDayKeys'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import type { HolidayBooking } from '@/types'
 
+/**
+ * Whether the person's leave records have loaded for the open organisation (the holiday store's state). The report
+ * shows no figure until they have: never "0 days approved" while loading or after a failed load.
+ */
+export type AnnualLeaveReportLeaveState = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready' }
+
+export const ANNUAL_LEAVE_REPORT_LOAD_ERROR = "Couldn't load annual leave — try again."
+
+export function annualLeaveReportLeaveState(input: {
+  organizationId: string | null | undefined
+  loading: boolean
+  error: string | null
+  loadedOrgId: string | null
+}): AnnualLeaveReportLeaveState {
+  if (!input.organizationId || input.loadedOrgId !== input.organizationId) {
+    return input.error && !input.loading ? { status: 'error', message: ANNUAL_LEAVE_REPORT_LOAD_ERROR } : { status: 'loading' }
+  }
+  if (input.error) return { status: 'error', message: ANNUAL_LEAVE_REPORT_LOAD_ERROR }
+  if (input.loading) return { status: 'loading' }
+  return { status: 'ready' }
+}
+
 export type AnnualLeaveReportYear = { startDayKey: string; endDayKey: string; yearKey: string }
 
 /** A loaded booking as the rulebook's `LeaveReportRecord` (its organisation-zone day keys, never recomputed). */

@@ -19,6 +19,7 @@ import {
   annualLeaveReportDaysText,
   annualLeaveReportYears,
   annualLeaveReportYearTitle,
+  type AnnualLeaveReportLeaveState,
 } from '@/lib/annualLeave/annualLeaveReport'
 import { calendarDateOfKey } from '@/lib/orgTime/organizationWeek'
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
@@ -41,6 +42,8 @@ export function AnnualLeaveReportButton(props: {
   personIds: ReadonlyArray<string>
   startMonth: number
   employmentStartDayKey?: string | null
+  /** The person's leave records: no figure until they have loaded (`annualLeaveReportLeaveState`). */
+  leaveState: AnnualLeaveReportLeaveState
   /** False until the organisation's leave-year settings have loaded (never a report on the default year first). */
   ready?: boolean
 }) {
@@ -77,6 +80,7 @@ export function AnnualLeaveReportDialog({
   personIds,
   startMonth,
   employmentStartDayKey,
+  leaveState,
   onClose,
 }: {
   personName: string
@@ -85,6 +89,7 @@ export function AnnualLeaveReportDialog({
   personIds: ReadonlyArray<string>
   startMonth: number
   employmentStartDayKey?: string | null
+  leaveState: AnnualLeaveReportLeaveState
   onClose: () => void
 }) {
   const titleId = useId()
@@ -161,7 +166,11 @@ export function AnnualLeaveReportDialog({
         </div>
 
         <div className="space-y-4 overflow-y-auto p-4">
-          {!bank.loaded ? (
+          {leaveState.status === 'error' ? (
+            <p role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-4 py-6 text-center text-sm text-red-700">
+              {leaveState.message}
+            </p>
+          ) : leaveState.status === 'loading' || !bank.loaded ? (
             <p className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">Loading…</p>
           ) : (
             <>

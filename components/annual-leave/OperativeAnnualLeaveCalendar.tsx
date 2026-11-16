@@ -34,6 +34,7 @@ import type { HolidayBooking, HolidayTimeSlot } from '@/types'
 import { AnnualLeaveLegend, LeaveDayCalendar } from './LeaveDayCalendar'
 import { useOrgBankHolidays } from './useOrgBankHolidays'
 import { AnnualLeaveReportButton } from './AnnualLeaveReport'
+import { annualLeaveReportLeaveState } from '@/lib/annualLeave/annualLeaveReport'
 import { feedback } from '@/lib/feedbackSounds/feedback'
 
 function dayFromKey(key: string): Date {
@@ -144,6 +145,16 @@ export function OperativeAnnualLeaveCalendar({
 
   // Rulebook 1.40.0: this person's balance (PAYE days only), their adjustments, and who may adjust them.
   const timeZone = useOrganizationTimeZone()
+  // The report waits for the person's leave records (never "0 days" while loading or after a failed load).
+  const holidayLoading = useHolidayStore((state) => state.loading)
+  const holidayError = useHolidayStore((state) => state.error)
+  const holidayLoadedOrgId = useHolidayStore((state) => state.loadedOrgId)
+  const reportLeaveState = annualLeaveReportLeaveState({
+    organizationId: organization?.id,
+    loading: holidayLoading,
+    error: holidayError,
+    loadedOrgId: holidayLoadedOrgId,
+  })
   const subject = useMemo(() => (person.userId ? users.find((row) => row.id === person.userId) ?? null : null), [person.userId, users])
   const [orgLeaveDefaults, setOrgLeaveDefaults] = useState<OrgAnnualLeaveDefaults>(DEFAULT_ANNUAL_LEAVE)
   // Rulebook 1.53.0 (B13): no balance until this organisation's leave-year settings are read (or the read failed) —
@@ -462,6 +473,7 @@ export function OperativeAnnualLeaveCalendar({
           bookings={personBookings}
           personIds={reportPersonIds}
           startMonth={reportYearMonths.startMonth}
+          leaveState={reportLeaveState}
           employmentStartDayKey={subject?.employmentStartDate ?? null}
           ready={leaveDefaultsLoaded && (!subject || leaveEmployment.ready)}
         />
