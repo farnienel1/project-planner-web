@@ -217,11 +217,23 @@ test("recipients: an invite goes only to its invitation's email, for an unused i
 })
 
 test('recipients: member templates reach active members of this organisation only', async () => {
-  const rows = await recipients('timesheet_export', ['OP@example.com'])
+  const rows = await recipients('leave_cancelled', ['OP@example.com'])
   assert.equal(rows[0].userId, 'O')
-  await assert.rejects(recipients('timesheet_export', ['gone@example.com']), /not an active member/)
-  await assert.rejects(recipients('timesheet_export', ['stranger@example.com']), /not an active member/)
-  await assert.rejects(recipients('timesheet_export', ['nobody@example.com']), /not an active member/)
+  await assert.rejects(recipients('leave_cancelled', ['gone@example.com']), /not an active member/)
+  await assert.rejects(recipients('leave_cancelled', ['stranger@example.com']), /not an active member/)
+  await assert.rejects(recipients('leave_cancelled', ['nobody@example.com']), /not an active member/)
+})
+
+test("1.54.1 recipients: a timesheet export goes to the caller's own sign-in email only", async () => {
+  const rows = await recipients('timesheet_export', ['Manager@Example.com'])
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].email, 'manager@example.com')
+  // Another active member, an outsider, or the caller plus someone else: refused.
+  await assert.rejects(recipients('timesheet_export', ['OP@example.com']), /own sign-in email/)
+  await assert.rejects(recipients('timesheet_export', ['stranger@example.com']), /own sign-in email/)
+  await assert.rejects(recipients('timesheet_export', ['manager@example.com', 'op@example.com']), /At most 1|own sign-in email/)
+  // No email on the token: nothing is sent.
+  await assert.rejects(recipients('timesheet_export', ['manager@example.com'], {}, ''), /no sign-in email/)
 })
 
 test("recipients: a material request reaches the organisation's wholesaler contacts and the sender's own copy", async () => {
@@ -367,6 +379,8 @@ test('handler: timesheet export — staff only, a member recipient, PDF attachme
   assert.equal(sent[0].attachments[0].content_type, 'application/pdf')
   assert.ok(sent[0].html.includes('Hello Max,'))
   assert.equal((await call(handler, { headers: auth('O'), body })).code, 403)
+  // 1.54.1: never another member's address, only the caller's own.
+  assert.equal((await call(handler, { headers: auth('M'), body: { ...body, to: ['op@example.com'] } })).code, 403)
   const phishing = await call(handler, {
     headers: auth('M'),
     body: { ...body, data: { ...body.data, downloadLinks: [{ fileName: 'x.pdf', url: 'https://evil.example/x.pdf' }] } },

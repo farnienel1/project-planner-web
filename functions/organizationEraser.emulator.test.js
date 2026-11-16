@@ -40,7 +40,7 @@ test('eraser on the emulator: switch off changes nothing; on erases only org A; 
     'organizations/ORG-A/bookings/b1': { operativeId: 'ONLY-A' },
     'organizations/ORG-A/userEmails/only-a@x.com': { userId: 'ONLY-A' },
     'organizations/ORG-A/userEmails/both@x.com': { userId: 'BOTH' },
-    'organizations/ORG-B': { name: 'Beta Ltd', creatorUserId: 'ONLY-B', members: { 'ONLY-B': 'admin', BOTH: 'operative' } },
+    'organizations/ORG-B': { name: 'Beta Ltd', creatorUserId: 'ONLY-B', members: { 'ONLY-B': 'admin', BOTH: 'operative', 'LISTED-B': 'operative' } },
     'organizations/ORG-B/clients/c1': { name: 'B client' },
     'organizations/ORG-B/userEmails/both@x.com': { userId: 'BOTH' },
     'users/ONLY-A': { email: 'only-a@x.com', organizationId: 'ORG-A' },
@@ -51,6 +51,10 @@ test('eraser on the emulator: switch off changes nothing; on erases only org A; 
     'users/BOTH/orgMemberships/ORG-B': { organizationId: 'ORG-B', role: 'operative' },
     'users/ONLY-B': { email: 'only-b@x.com', organizationId: 'ORG-B' },
     'users/ONLY-B/orgMemberships/ORG-B': { organizationId: 'ORG-B', role: 'admin' },
+    // 1.54.1: name ORG-A, no membership documents, but belong to ORG-C as its creator / on ORG-B's members map.
+    'organizations/ORG-C': { name: 'Gamma Ltd', creatorUserId: 'FOUNDER-C', members: {} },
+    'users/FOUNDER-C': { email: 'founder-c@x.com', organizationId: 'ORG-A' },
+    'users/LISTED-B': { email: 'listed-b@x.com', organizationId: 'ORG-A' },
     'invitations/inv-a': { organizationId: 'ORG-A', email: 'new-a@x.com' },
     'invitations/inv-b': { organizationId: 'ORG-B', email: 'new-b@x.com' },
   }
@@ -84,7 +88,7 @@ test('eraser on the emulator: switch off changes nothing; on erases only org A; 
     if (value !== undefined) await db.doc('platformConfig/app').set({ organizationErasureEnabled: value })
     const report = await eraseDueOrganizations(deps)
     assert.deepEqual(report.map((row) => [row.orgId, row.name, row.dryRun]), [['ORG-A', 'Alpha Ltd', true]])
-    assert.deepEqual(report[0].counts, { usersDeleted: 1, usersKept: 1, memberships: 2, invitations: 1 })
+    assert.deepEqual(report[0].counts, { usersDeleted: 1, usersKept: 3, memberships: 2, invitations: 1 })
     assert.deepEqual(await snapshot(), before)
     assert.deepEqual(storageCalls, [])
     assert.deepEqual(authCalls, [])

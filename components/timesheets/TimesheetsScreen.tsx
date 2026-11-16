@@ -5,6 +5,7 @@ import { useOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { auth } from '@/lib/firebase/config'
 import { hasAdminAccess } from '@/lib/navigation/menuPermissions'
 import {
   forgetExportedTimesheetHistory,
@@ -532,7 +533,9 @@ export function TimesheetsScreen({
       setExportMessage(payInputs.message)
       return
     }
-    const recipientEmail = user.email?.trim()
+    // Rulebook 1.54.1 (§16): the export email goes to the signed-in sign-in (Firebase Auth) address — the one the
+    // route sends to — never the profile copy, which can differ while an email change waits for verification.
+    const recipientEmail = (auth?.currentUser?.email || user.email)?.trim()
     setExporting(true)
     setExportMessage(null)
     const stamp = paymentRunDateStamp(periodStart, periodEnd, timeZone)

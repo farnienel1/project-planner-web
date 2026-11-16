@@ -106,11 +106,13 @@ service cloud.firestore {
   }
 
   function membersValuesTyped(next, prev) {
-    let nm = next.get('members', {});
-    let pm = prev.get('members', {}) is map ? prev.get('members', {}) : {};
+    let nm = next.get('members', {}) is map ? next.get('members', {}).values() : ['-'];
+    let pm = prev.get('members', {}) is map ? prev.get('members', {}).values() : [];
+    let ok = ['admin', 'manager', 'operative', 'member'];
     return !next.diff(prev).affectedKeys().hasAny(['members']) ? true : (
-      nm is map && nm.values().toSet().difference(pm.values().toSet().union(['admin', 'manager', 'operative', 'member'].toSet())).size() == 0);
+      nm.removeAll(ok).size() <= pm.removeAll(ok).size() && nm.toSet().difference(pm.toSet()).hasOnly(ok));
   }
+
   function privilegeFlag(d, key) {
     return truthyBool(d.get(key, false)) ||
       (d.get('permissions', {}) is map && truthyBool(d.get('permissions', {}).get(key, false)));
@@ -556,7 +558,7 @@ service cloud.firestore {
       changed.hasAny(['permissions', 'manager', 'operatives', 'qualifications', 'projects', 'smallWorks',
                       'annualLeaveSelfBook', 'timesheetSelfSign', 'weeklyReports', 'subContractors', 'dailyOverview',
                       'wholesalersOrderHistory', 'materials', 'siteAudit', 'operativeMode', 'role'])
-        ? selfPermissionsNotRaised(next, prev, changed) : true
+        ? (selfPermissionsNotRaised(next, prev, changed) && selfManageFlagsEqual(next, prev)) : true
       ) : false) : false) : false) : false) : false) : false
     );
   }
@@ -873,9 +875,9 @@ service cloud.firestore {
         writeMetadataValidWhenPresent()
       ) : false)
     ) : false)
-            ? privilegeWriteTyped(request.resource.data, resource.data, true) : false) : false) ||
+            ) : false) ||
           (userUpdateCallerAdmin(targetAdmin) ? ((request.auth.uid != userId ? true : (
-            (targetAdmin ? toggles : selfManageTogglesUnchanged(request.resource.data, resource.data)) &&
+            (targetAdmin ? toggles : (orgCreatorIs(docOrganizationId(resource.data), request.auth.uid) ? true : (staffFlag(resource.data, 'isSuperAdmin') ? true : selfManageFlagsEqual(request.resource.data, resource.data)))) &&
             selfUpdateKeepsIdentityLinks())) ? (
           isAdminOfCompany(resource.data.organizationId) ? (
             adminUpdateKeepsTopAccount(userId) ? (
@@ -895,7 +897,8 @@ service cloud.firestore {
               isAdminOfCompany(request.resource.data.organizationId)
             ) : false
           ))
-        )) && payStaysPrivate(resource.data.get('organizationId', ''))) : false);
+        )) && payStaysPrivate(resource.data.get('organizationId', '')) &&
+          (isSelf || privilegeWriteTyped(request.resource.data, resource.data, true))) : false);
       }
 
       function userUpdateCallerAdmin(targetAdmin) {
@@ -1742,15 +1745,23 @@ service cloud.firestore {
         }
         function timesheetOwnerKeepsSubject() {
           let next = request.resource.data.get('userId', null);
-          return (next == null || timesheetIdIsCallers(next)) && (
-            resource == null ||
-            next == resource.data.get('userId', null) ||
-            (resource.data.get('userId', null) == null && next is string && settingId.matches('^timesheet_' + next + '_.*'))
-          );
+          return next == null || timesheetIdIsCallers(next);
+        }
+        function timesheetSubjectFiled() {
+          let next = request.resource.data.get('userId', null);
+          let stored = resource == null ? null : resource.data.get('userId', null);
+          return resource == null
+            ? timesheetIdNames(next is string ? next : request.auth.uid)
+            : (next == stored || (stored == null && next is string && timesheetIdNames(next)));
+        }
+        function timesheetIdNames(id) {
+          let p = settingId.split('_');
+          let q = id.split('_');
+          return p.size() > q.size() + 1 && p[0] == 'timesheet' && p[1:q.size() + 1] == q;
         }
         function timesheetSelfSignedOwnerWrite() {
           let uid = timesheetSubjectUid();
-          return uid is string && settingId.matches('^timesheet_' + uid + '_.*') && (orgCreatorIs(organizationId, uid) || orgSelfManageFlag(uid, organizationId, 'timesheetSelfSign', true));
+          return uid is string && timesheetIdNames(uid) && (orgCreatorIs(organizationId, uid) || orgSelfManageFlag(uid, organizationId, 'timesheetSelfSign', true));
         }
 
         function timesheetReviewerOfOthers() {
@@ -1798,7 +1809,6 @@ service cloud.firestore {
           return timesheetOwnerLeaves('payrollLineReviews', written) &&
             timesheetOwnerLeaves('extraEntryReviews', written) &&
             timesheetOwnerLeaves('weeklyReportOverride', written) &&
-            // 1.54.0: `lateExtras` (paid only once reviewed) only after the line manager signed and until exported.
             ((resource != null && (
             resource.data.get('managerSignedAt', null) is timestamp ||
             resource.data.get('managerSignedAt', null) is number ||
@@ -1818,13 +1828,18 @@ service cloud.firestore {
             ) : !('lateExtras' in written));
         }
         function timesheetStoredExported() {
-          return resource.data.get('exportedAt', null) is timestamp || resource.data.get('exportedAt', null) is number;
+          let d = resource.data;
+          let et = d.get('exportedAt', null) is timestamp ? d.exportedAt.toMillis() : 0;
+          let en = d.get('exportedAt', null) is number ? d.exportedAt : 0;
+          let it = d.get('invoiceGeneratedAt', null) is timestamp ? d.invoiceGeneratedAt.toMillis() : 0;
+          let n = d.get('invoiceGeneratedAt', null) is number ? d.invoiceGeneratedAt : 0;
+          let e = et + (en < 1000000000000 ? en * 1000 : en);
+          let i = it + (n < 1000000000000 ? n * 1000 : n);
+          return e > 1577836800000 && (i <= 1577836800000 || math.abs(e - i) > 60000);
         }
-        // 1.54.0: once exported, no reviewer writes `lateExtras` or moves `exportedAt`; with late extras, nor reviews or snapshot.
-        function timesheetReviewerKeepsExportedLate() {
-          let w = writtenKeys();
-          return resource == null || !timesheetStoredExported() || (!('lateExtras' in w) && timesheetSameInstant('exportedAt') &&
-            (resource.data.get('lateExtras', null) in [null, []] || !w.hasAny(['extraEntryReviews', 'weeklyReportOverride'])));
+        function timesheetExportedFrozen() {
+          return resource == null || !timesheetStoredExported() ||
+            (writtenKeys().hasOnly(['updatedAt', 'updatedBy', 'updatedFrom', 'exportedAt']) && timesheetSameInstant('exportedAt'));
         }
 
         allow read: if canAccessOrganization(organizationId) && ((resource.data.get('userId', null) == request.auth.uid && (request.method == 'list' || settingId.matches('^timesheet_.*'))) ||
@@ -1838,11 +1853,11 @@ service cloud.firestore {
           )) ||
             orgAdminEither(organizationId) || isPlatformOwner() ||
             (timesheetSubjectUid() is string && canViewPayOfAsMember(timesheetSubjectUid())) ||
-            (isPlatformOwner() || (!timesheetCallerIsSubject() && timesheetReviewerOfOthers())))));
+            (!timesheetCallerIsSubject() && timesheetReviewerOfOthers()))));
         allow create, update, delete: if canAccessOrganization(organizationId) && (
           (request.method != 'delete') ? ((
           (settingId.matches('^timesheet_.*'))
-            ? (isPlatformOwner() || (timesheetCallerIsSubject() ? (
+            ? (isPlatformOwner() || (timesheetSubjectFiled() && timesheetExportedFrozen() && (timesheetCallerIsSubject() ? (
             timesheetOwnerKeepsSubject() && (
               ((timesheetSameInstant('managerSignedAt') &&
             timesheetSame('managerSignedByName') &&
@@ -1853,7 +1868,7 @@ service cloud.firestore {
             timesheetSameInstant('exportedAt')) && timesheetOwnerReviewFieldsUnchanged()) ||
               timesheetSelfSignedOwnerWrite()
             )
-          ) : (timesheetReviewerOfOthers() && timesheetReviewerKeepsExportedLate())))
+          ) : timesheetReviewerOfOthers())))
             : (request.resource.data.get('userId', null) == (resource == null ? null : resource.data.get('userId', null)) &&
               ((settingId.matches('^deadlines_.*') ||
             settingId == 'deadlineAssignments' ||

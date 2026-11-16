@@ -369,8 +369,9 @@ const TEMPLATES = Object.freeze({
   },
   timesheet_export: {
     minRole: 'staff',
-    recipients: 'member',
-    maxRecipients: 5,
+    // Rulebook 1.54.1 §16: the exporter's own sign-in email only (was any 5 active members).
+    recipients: 'self',
+    maxRecipients: 1,
     attachments: ['pdf', 'xlsx', 'csv'],
     render: renderTimesheetExport,
   },

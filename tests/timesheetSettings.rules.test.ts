@@ -200,3 +200,110 @@ test('1.45.0 the owner saves price work and expense entries with evidence; the l
   const other = await db(OTHER)
   await assertFails(updateDoc(doc(other, 'organizations', ORG, 'settings', id), { expenseEntries: [] }))
 })
+
+test("1.54.1 nobody creates a sheet whose id names someone else (timesheet_OTHER_x filed under themself is refused)", async () => {
+  const fs = await db(OP)
+  const settings = (id: string) => doc(fs, 'organizations', ORG, 'settings', id)
+  // The scan's attack: an operative pre-creates a colleague's sheet id, filed under their own userId.
+  await assertFails(setDoc(settings(`timesheet_${OTHER}_1764460800`), sheet(OP, '2026-11-30')))
+  await assertFails(setDoc(settings(`timesheet_${OTHER}_1764460801`), { weekStartKey: '2026-11-30', expenseEntries: [] }))
+  // A normal create of one's own sheet still works, with or without userId.
+  await assertSucceeds(setDoc(settings(`timesheet_${OP}_1764460800`), sheet(OP, '2026-11-30')))
+  await assertSucceeds(setDoc(settings(`timesheet_${OP}_1764460801`), { weekStartKey: '2026-11-30' }))
+  // A reviewer (the line manager, an admin) creates a report's sheet only under that report's id.
+  const lm = await db(LM)
+  await assertFails(setDoc(doc(lm, 'organizations', ORG, 'settings', `timesheet_${OTHER}_1764460802`), sheet(OP, '2026-11-30')))
+  await assertSucceeds(setDoc(doc(lm, 'organizations', ORG, 'settings', `timesheet_${OP}_1764460802`), sheet(OP, '2026-11-30')))
+  const admin = await db(ADMIN)
+  await assertFails(setDoc(doc(admin, 'organizations', ORG, 'settings', `timesheet_${OTHER}_1764460803`), sheet(OP, '2026-11-30')))
+})
+
+test('1.54.1 a reviewer never changes a sheet\'s userId (refiling it under someone else)', async () => {
+  const lm = await db(LM)
+  const ref = doc(lm, 'organizations', ORG, 'settings', `timesheet_${OP}_1763251200`)
+  await assertFails(updateDoc(ref, { userId: LM }))
+  await assertFails(updateDoc(ref, { userId: OTHER }))
+  const admin = await db(ADMIN)
+  await assertFails(updateDoc(doc(admin, 'organizations', ORG, 'settings', `timesheet_${OP}_1763251200`), { userId: ADMIN }))
+  // An ordinary review write with the same userId still passes.
+  await assertSucceeds(updateDoc(ref, { userId: OP, managerNote: 'checked' }))
+})
+
+test('1.54.1 lock all: once exported, nobody changes the snapshot, review maps, signatures or userId', async () => {
+  const id = `timesheet_${OP}_1760400000`
+  const exportedAt = Timestamp.fromMillis(Date.parse('2026-10-20T09:00:00Z'))
+  const signedAt = Timestamp.fromMillis(Date.parse('2026-10-19T09:00:00Z'))
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG, 'settings', id), {
+      ...sheet(OP, '2026-10-13'),
+      operativeSignedAt: signedAt,
+      operativeSignedByName: 'Op',
+      managerSignedAt: signedAt,
+      managerSignedByName: 'Lm',
+      managerSignedByUserId: LM,
+      approvedAt: signedAt,
+      exportedAt,
+      weeklyReportOverride: { lines: [{ id: 'l1', amount: 100 }] },
+      payrollLineReviews: { l1: { decision: 'approved' } },
+      extraEntryReviews: {},
+    })
+  })
+  for (const uid of [LM, ADMIN]) {
+    const ref = doc(await db(uid), 'organizations', ORG, 'settings', id)
+    await assertFails(updateDoc(ref, { weeklyReportOverride: { lines: [{ id: 'l1', amount: 900 }] } }))
+    await assertFails(updateDoc(ref, { 'payrollLineReviews.l1': { decision: 'declined' } }))
+    await assertFails(updateDoc(ref, { 'extraEntryReviews.e1': { decision: 'approved', reviewedAmount: 5 } }))
+    await assertFails(updateDoc(ref, { managerSignedByName: 'Someone else' }))
+    await assertFails(updateDoc(ref, { managerSignedAt: Timestamp.fromMillis(Date.parse('2026-10-21T09:00:00Z')) }))
+    await assertFails(updateDoc(ref, { userId: OTHER }))
+    // Review of #334: the whole sheet is frozen, not only the listed fields.
+    await assertFails(updateDoc(ref, { expenseEntries: [{ id: 'E9', title: 'Late', amount: 500 }] }))
+    await assertFails(updateDoc(ref, { priceWorkEntries: [{ id: 'P9', title: 'Late', amount: 500, jobNumber: 'J1' }] }))
+    await assertFails(updateDoc(ref, { weekStartKey: '2026-10-20' }))
+    await assertFails(updateDoc(ref, { operativeSignedBookingsAt: Timestamp.now() }))
+    await assertFails(updateDoc(ref, { invoiceGeneratedAt: Timestamp.now() }))
+    await assertFails(updateDoc(ref, { managerNote: `seen by ${uid}` }))
+    // Only write metadata may change; the same exportedAt resent (within a second) is not a change.
+    await assertSucceeds(updateDoc(ref, { exportedAt, updatedAt: Timestamp.now(), updatedBy: uid, updatedFrom: 'web' }))
+  }
+  const own = doc(await db(OP), 'organizations', ORG, 'settings', id)
+  await assertFails(updateDoc(own, { operativeSignedAt: Timestamp.fromMillis(Date.parse('2026-10-22T09:00:00Z')) }))
+  await assertFails(updateDoc(own, { operativeSignatureImageBase64: 'abc' }))
+})
+
+test('1.54.1 review: a userId that is a regex (".*") never matches another person\'s sheet id', async () => {
+  const admin = await db(ADMIN)
+  // An admin may create a sheet only under the id that names the userId written; ".*" names no one.
+  await assertFails(setDoc(doc(admin, 'organizations', ORG, 'settings', `timesheet_${OTHER}_1764460900`), sheet('.*', '2026-11-30')))
+  await assertFails(setDoc(doc(admin, 'organizations', ORG, 'settings', `timesheet_${OP}_1764460900`), sheet('tss-.*', '2026-11-30')))
+  // A userId with an underscore still files under its own id.
+  await assertSucceeds(setDoc(doc(admin, 'organizations', ORG, 'settings', 'timesheet_a_b_1764460900'), sheet('a_b', '2026-11-30')))
+})
+
+test('1.54.1 review: an exportedAt within a minute of invoiceGeneratedAt (an old web build\'s copy) is not an export', async () => {
+  const id = `timesheet_${OP}_1760500000`
+  const at = Timestamp.fromMillis(Date.parse('2026-10-25T09:00:00Z'))
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG, 'settings', id), {
+      ...sheet(OP, '2026-10-20'),
+      managerSignedAt: at,
+      invoiceGeneratedAt: at,
+      exportedAt: Timestamp.fromMillis(at.toMillis() + 20_000),
+      payrollLineReviews: {},
+    })
+  })
+  // Not frozen: the line manager still reviews it (as the apps, which read it as not exported).
+  const lm = doc(await db(LM), 'organizations', ORG, 'settings', id)
+  await assertSucceeds(updateDoc(lm, { 'payrollLineReviews.l1': { decision: 'approved' } }))
+  // A real export (more than a minute apart) is frozen.
+  const id2 = `timesheet_${OP}_1760600000`
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG, 'settings', id2), {
+      ...sheet(OP, '2026-10-21'),
+      managerSignedAt: at,
+      invoiceGeneratedAt: at,
+      exportedAt: Timestamp.fromMillis(at.toMillis() + 120_000),
+    })
+  })
+  await assertFails(updateDoc(doc(await db(LM), 'organizations', ORG, 'settings', id2), { 'payrollLineReviews.l1': { decision: 'approved' } }))
+})
