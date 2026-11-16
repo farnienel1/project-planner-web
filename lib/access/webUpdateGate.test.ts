@@ -16,3 +16,12 @@ test('scan 16 Nov: web forced update follows platformConfig/app.minimumWebVersio
   assert.equal(webUpdateRequiredFor('1.0.0'), false, 'the iOS minimum never blocks web')
   setSecuritySwitchConfigForTests(null)
 })
+
+test('review L1: the verified platform owner never sees the reload gate', async () => {
+  const { webUpdateGateShown } = await import('../app/webUpdateGate.ts')
+  assert.equal(webUpdateGateShown(true, { email: 'someone@x.com', emailVerified: true }), true)
+  assert.equal(webUpdateGateShown(true, null), true)
+  assert.equal(webUpdateGateShown(true, { email: 'info@projectplanner.us', emailVerified: true }), false)
+  assert.equal(webUpdateGateShown(true, { email: 'info@projectplanner.us', emailVerified: false }), true)
+  assert.equal(webUpdateGateShown(false, { email: 'someone@x.com', emailVerified: true }), false)
+})

@@ -10,7 +10,7 @@ import { userBookingRemoveAction, userCanWriteBooking } from '@/lib/access/booki
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { rosterDisplayName, samePersonIds } from '@/lib/staff/userRosterUtils'
 import { useProjectStore } from '@/lib/stores/projectStore'
-import { bookingIdsForAccount } from '@/lib/canonical'
+import { bookingIdsForAccount, bookingOccupiesDay } from '@/lib/canonical'
 import {
   findOperativeForUser,
   getActiveOperativesForScheduling,
@@ -264,32 +264,37 @@ function MySchedulePageContent() {
     )
   }
 
-  const assignedBookings: AssignedScheduleBooking[] = linkedOperativeIds.flatMap((operativeId) =>
-    bookings
-      .filter((booking) => {
-        if (String(booking.operativeId || '').toLowerCase() !== operativeId.toLowerCase()) return false
-        const status = normalizeBookingStatus(booking.status)
-        return status !== 'Cancelled' && status !== 'Completed'
-      })
-      .map((booking) => {
-        const project = [...projects, ...smallWorks].find((row) => row.id === booking.projectId)
-        const title = project
-          ? `${project.jobNumber ?? ''} ${project.siteName ?? ''}`.trim() || project.siteName || 'Scheduled work'
-          : 'Scheduled work'
-        // Rulebook 1.20.2: the times and the pay rule's hours for that day ("Custom 07:30–14:00 · 8h").
-        const detail = bookingRowText(booking, booking.date, payrollPolicy)
-        return {
-          id: booking.id,
-          date: booking.date,
-          title,
-          detail,
-          timeSlot: String(booking.timeSlot ?? ''),
-          workStartTime: booking.workStartTime ?? null,
-          workEndTime: booking.workEndTime ?? null,
-          status: booking.status == null ? null : String(booking.status),
-        }
-      })
-  )
+  const assignedRow = (booking: (typeof bookings)[number]): AssignedScheduleBooking => {
+    const project = [...projects, ...smallWorks].find((row) => row.id === booking.projectId)
+    const title = project
+      ? `${project.jobNumber ?? ''} ${project.siteName ?? ''}`.trim() || project.siteName || 'Scheduled work'
+      : 'Scheduled work'
+    // Rulebook 1.20.2: the times and the pay rule's hours for that day ("Custom 07:30–14:00 · 8h").
+    const detail = bookingRowText(booking, booking.date, payrollPolicy)
+    return {
+      id: booking.id,
+      date: booking.date,
+      title,
+      detail,
+      timeSlot: String(booking.timeSlot ?? ''),
+      workStartTime: booking.workStartTime ?? null,
+      workEndTime: booking.workEndTime ?? null,
+      status: booking.status == null ? null : String(booking.status),
+    }
+  }
+  const linkedIdKeys = new Set(linkedOperativeIds.map((id) => id.toLowerCase()))
+  const myLabourBookings = bookings.filter((booking) => linkedIdKeys.has(String(booking.operativeId || '').toLowerCase()))
+  const assignedBookings: AssignedScheduleBooking[] = myLabourBookings
+    .filter((booking) => {
+      const status = normalizeBookingStatus(booking.status)
+      return status !== 'Cancelled' && status !== 'Completed'
+    })
+    .map(assignedRow)
+  // Review L4: the self-booking clash check counts every labour booking that occupies its day (`bookingOccupiesDay`,
+  // Completed included), not only the ones listed above.
+  const labourClashBookings: AssignedScheduleBooking[] = myLabourBookings
+    .filter((booking) => bookingOccupiesDay(booking.status))
+    .map(assignedRow)
 
   // Review #342 item 3: only a manager's self-booking depends on their pay (a missing `timesheetsEnabled` follows the
   // employment type). While their own pay is loading or failed, show that — never decide from the stripped record.
@@ -314,6 +319,7 @@ function MySchedulePageContent() {
         organizationName={organization.name || 'your organisation'}
         payrollPolicy={payrollPolicy}
         assignedBookings={assignedBookings}
+        labourClashBookings={labourClashBookings}
         canEditBookings={canBookWork(user)}
         clashMarkers={clashMarkers}
       />

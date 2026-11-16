@@ -205,6 +205,7 @@ export function MyScheduleSelfBookingScreen({
   organizationName,
   payrollPolicy = DEFAULT_PAYROLL_POLICY,
   assignedBookings = [],
+  labourClashBookings,
   canEditBookings = false,
   clashMarkers,
 }: {
@@ -213,6 +214,8 @@ export function MyScheduleSelfBookingScreen({
   organizationName: string
   payrollPolicy?: OrgPayrollTimePolicy
   assignedBookings?: AssignedScheduleBooking[]
+  /** The viewer's labour bookings that occupy their day (`bookingOccupiesDay`), for the clash check. */
+  labourClashBookings?: AssignedScheduleBooking[]
   /** Same gate as Daily Overview editing (`canBookWork`). Opens the shared BookingEditSheet. */
   canEditBookings?: boolean
   /** Rulebook 1.39.0 §10: the clash marker per booking id (`myScheduleClashMarkers`). */
@@ -467,7 +470,9 @@ export function MyScheduleSelfBookingScreen({
       const candidates = nearby.flatMap((d) => myBookingsOn(d))
       // Rulebook §5: "labour or manager schedule" — the viewer's own labour bookings (under every id they go by,
       // `bookingIdsForAccount` on the page) are checked too, not only their manager schedule bookings.
-      const labourCandidates = nearby.flatMap((d) => assignedOn(d))
+      const labourCandidates = nearby.flatMap((d) =>
+        (labourClashBookings ?? assignedBookings).filter((b) => coversCalendarDay(b.date, d))
+      )
       const clashing = new Set(
         bookingRequestClashIds({
           request: {

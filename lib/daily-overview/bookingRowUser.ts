@@ -27,16 +27,26 @@ export function bookingRowPeople(input: BookingRowUserInput): BookingPersonInput
   }
 }
 
+/**
+ * A resolver for many bookings: the people input is built once (review L3), then each stored `operativeId` is
+ * resolved to the account it names, or undefined when it names no account.
+ */
+export function bookingRowUserResolver(input: BookingRowUserInput): (operativeId: string | null | undefined) => string | undefined {
+  const people = bookingRowPeople(input)
+  const rowsById = new Map(input.operatives.map((entry) => [normalizeDocumentId(entry.id), entry]))
+  return (operativeId) => {
+    const stored = (operativeId || '').trim()
+    if (!stored) return undefined
+    const linked = (rowsById.get(normalizeDocumentId(stored))?.linkedUserId || '').trim()
+    if (linked) {
+      const viaLink = resolveBookingPerson(linked, people).accountId
+      if (viaLink) return viaLink
+    }
+    return resolveBookingPerson(stored, people).accountId ?? undefined
+  }
+}
+
 /** The account id the booking's stored `operativeId` names, or undefined when it names no account. */
 export function bookingRowUserId(operativeId: string | null | undefined, input: BookingRowUserInput): string | undefined {
-  const stored = (operativeId || '').trim()
-  if (!stored) return undefined
-  const people = bookingRowPeople(input)
-  const row = input.operatives.find((entry) => normalizeDocumentId(entry.id) === normalizeDocumentId(stored))
-  const linked = (row?.linkedUserId || '').trim()
-  if (linked) {
-    const viaLink = resolveBookingPerson(linked, people).accountId
-    if (viaLink) return viaLink
-  }
-  return resolveBookingPerson(stored, people).accountId ?? undefined
+  return bookingRowUserResolver(input)(operativeId)
 }

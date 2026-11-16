@@ -224,6 +224,9 @@ export default function WarningsPage() {
     const orgId = organization?.id
     if (!orgId) return
     let cancelled = false
+    // Review L5: a retry (or a new organisation) starts again with no live snapshot recorded; the listeners below
+    // re-subscribe in the same commit and record theirs as they arrive.
+    liveDecisions.current = { orgId, kinds: new Set() }
     setDecisionsOrgId(null)
     setDecisionFailures(NO_WARNING_DECISION_FAILURES)
     void Promise.all([

@@ -45,3 +45,47 @@ export function rosterRowsOnEmail<T extends { email?: string | null }>(rows: Rea
   if (!key) return []
   return rows.filter((row) => (row.email || '').trim().toLowerCase() === key)
 }
+
+/**
+ * The person's memberships, read with the server key first (the security rules let only the person list
+ * `users/{uid}/orgMemberships`, so the owner's own token is refused). When that read fails too, the change goes on in
+ * the home company only and says so (`complete: false`), never a 503 for everyone.
+ */
+export async function readMembershipIds(readers: ReadonlyArray<() => Promise<string[]>>): Promise<{ ids: string[]; complete: boolean }> {
+  for (const read of readers) {
+    try {
+      return { ids: await read(), complete: true }
+    } catch {
+      // try the next reader
+    }
+  }
+  return { ids: [], complete: false }
+}
+
+export const CHANGE_EMAIL_HOME_ONLY_NOTE =
+  'Could not read this person’s other organisations, so only the home company’s email claim was moved.'
+
+export type ClaimState = { orgId: string; oldOwner: string | null | undefined; newOwner: string | null | undefined }
+
+/**
+ * Where the email claim moves. The new claim is written only in the home company and in companies whose old claim
+ * names this person — never where the old claim names someone else (an invite placeholder) or where there was none.
+ * The change is refused when the new claim already names someone else in a company it would be written in. The old
+ * claim is deleted only where it names this person.
+ */
+export function claimMoves(input: { uid: string; homeOrgId: string; claims: ReadonlyArray<ClaimState> }): {
+  refuse: boolean
+  writes: string[]
+  deletes: string[]
+} {
+  const writes: string[] = []
+  const deletes: string[] = []
+  for (const claim of input.claims) {
+    const theirs = oldClaimIsTheirs(claim.oldOwner, input.uid)
+    if (theirs) deletes.push(claim.orgId)
+    if (!theirs && claim.orgId !== input.homeOrgId) continue
+    if (claimBelongsToSomeoneElse(claim.newOwner, input.uid)) return { refuse: true, writes: [], deletes: [] }
+    writes.push(claim.orgId)
+  }
+  return { refuse: false, writes, deletes }
+}
