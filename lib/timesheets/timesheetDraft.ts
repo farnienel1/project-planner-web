@@ -151,6 +151,13 @@ export type TimesheetDraft = {
    * reader skips is never silently lost (16 Nov scan). Missing when every stored row was read.
    */
   lateExtrasUnread?: Record<string, unknown>[]
+  /**
+   * Review of #347: the stored order of `lateExtras` when some rows were kept unread — each slot either a read row (its
+   * id without case) or a kept row (`lateExtraRowKey`). A save writes the rows back in this order, so an unrelated save
+   * never moves a row (the reader takes a late extra's decision from the first stored row of an id). Missing when every
+   * stored row was read.
+   */
+  lateExtrasLayout?: Array<{ read: string } | { unread: string }>
   payrollLineReviews: Record<string, TimesheetPayrollLineReview>
   managerNote: string
   operativeSignedAt?: Date | null

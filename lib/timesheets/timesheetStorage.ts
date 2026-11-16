@@ -213,8 +213,61 @@ function mapLateExtras(
  * id was not returned is never counted as read.
  */
 export function unreadLateExtraRows(data: Record<string, unknown>, read: ReadonlyArray<{ id: string }>): Record<string, unknown>[] {
+  const { rows, readIndexes } = lateExtraReadIndexes(data, read)
+  return rows.flatMap((row, index) => (row && !readIndexes.has(index) ? [row] : []))
+}
+
+/** A kept late-extra row's identity for `lateExtrasLayout` (its stored content; identical rows are interchangeable). */
+export function lateExtraRowKey(row: Record<string, unknown>): string {
+  return JSON.stringify(row)
+}
+
+/**
+ * Review of #347: the stored order of `lateExtras` — each stored row in place, as a read row (its id without case) or a
+ * kept row (`lateExtraRowKey`). Not-a-record entries are left out (they were never kept).
+ */
+export function lateExtrasStoredLayout(
+  data: Record<string, unknown>,
+  read: ReadonlyArray<{ id: string }>
+): Array<{ read: string } | { unread: string }> {
+  const { rows, readIndexes } = lateExtraReadIndexes(data, read)
+  return rows.flatMap((row, index) => {
+    if (!row) return []
+    return [readIndexes.has(index) ? { read: normalizeDocumentId(row.id) } : { unread: lateExtraRowKey(row) }]
+  })
+}
+
+/**
+ * Review of #347: the `lateExtras` list a save writes — read rows and kept rows each in their own stored slot
+ * (`layout`), a row the person deleted left out, and new rows appended after. Without a layout: shown rows, then kept.
+ */
+export function lateExtrasForWrite(
+  shown: ReadonlyArray<Record<string, unknown>>,
+  unread: ReadonlyArray<Record<string, unknown>>,
+  layout: ReadonlyArray<{ read: string } | { unread: string }> | null | undefined
+): Record<string, unknown>[] {
+  if (!layout || layout.length === 0) return [...shown, ...unread]
+  const shownLeft = [...shown]
+  const unreadLeft = [...unread]
+  const out: Record<string, unknown>[] = []
+  for (const slot of layout) {
+    if ('read' in slot) {
+      const at = shownLeft.findIndex((row) => normalizeDocumentId(row.id) === slot.read)
+      if (at >= 0) out.push(...shownLeft.splice(at, 1))
+    } else {
+      const at = unreadLeft.findIndex((row) => lateExtraRowKey(row) === slot.unread)
+      if (at >= 0) out.push(...unreadLeft.splice(at, 1))
+    }
+  }
+  return [...out, ...shownLeft, ...unreadLeft]
+}
+
+function lateExtraReadIndexes(
+  data: Record<string, unknown>,
+  read: ReadonlyArray<{ id: string }>
+): { rows: Array<Record<string, unknown> | null>; readIndexes: Set<number> } {
   const stored = data[TIMESHEET_LATE_EXTRAS_FIELD]
-  if (!Array.isArray(stored)) return []
+  if (!Array.isArray(stored)) return { rows: [], readIndexes: new Set() }
   const returned = new Set(read.map((entry) => normalizeDocumentId(entry.id)))
   const str = (value: unknown) => (typeof value === 'string' ? value.trim() : '')
   const kindOf = (row: Record<string, unknown>) => (row.kind === 'priceWork' || row.kind === 'expense' ? row.kind : null)
@@ -235,7 +288,7 @@ export function unreadLateExtraRows(data: Record<string, unknown>, read: Readonl
     readIndexes.add(index)
     seen.add(key)
   })
-  return rows.flatMap((row, index) => (row && !readIndexes.has(index) ? [row] : []))
+  return { rows, readIndexes }
 }
 
 /**
@@ -250,7 +303,15 @@ export function lateExtrasUnreadAfter(
 ): Record<string, unknown>[] {
   const kept = new Set(next.map((entry) => normalizeDocumentId(entry.id)))
   const deleted = new Set((before ?? []).map((entry) => normalizeDocumentId(entry.id)).filter((key) => key && !kept.has(key)))
-  return (unread ?? []).filter((row) => !deleted.has(normalizeDocumentId(row.id)))
+  // Second review of #347: only a kept row the reader could later show goes (kind exactly priceWork / expense, a string
+  // id, a non-blank title); a row it can never show (blank title, no or padded kind, no string id) is kept as stored.
+  const couldShow = (row: Record<string, unknown>) =>
+    (row.kind === 'priceWork' || row.kind === 'expense') &&
+    typeof row.id === 'string' &&
+    row.id.trim() !== '' &&
+    typeof row.title === 'string' &&
+    row.title.trim() !== ''
+  return (unread ?? []).filter((row) => !(couldShow(row) && deleted.has(normalizeDocumentId(row.id))))
 }
 
 /**
@@ -508,7 +569,9 @@ export function draftFromFirestoreMap(
       const lateExtras = mapLateExtras(data, options?.sheetDocId?.trim() || '', organizationZoneOr(options?.timeZone), options?.ownerUserIds ?? [])
       if (!lateExtras) return {}
       const lateExtrasUnread = unreadLateExtraRows(data, lateExtras)
-      return lateExtrasUnread.length > 0 ? { lateExtras, lateExtrasUnread } : { lateExtras }
+      return lateExtrasUnread.length > 0
+        ? { lateExtras, lateExtrasUnread, lateExtrasLayout: lateExtrasStoredLayout(data, lateExtras) }
+        : { lateExtras }
     })(),
     payrollLineReviews: mapReviews(data.payrollLineReviews),
     weeklyReportOverride: weeklyReportOverrideFromFirestore(data.weeklyReportOverride),
@@ -579,10 +642,13 @@ export function draftToFirestoreMap(draft: TimesheetDraft): Record<string, unkno
     // 16 Nov scan: rows the reader skipped (`lateExtrasUnread`) are written back exactly as stored, never dropped.
     ...(Array.isArray(draft.lateExtras) || (draft.lateExtrasUnread?.length ?? 0) > 0
       ? {
-          [TIMESHEET_LATE_EXTRAS_FIELD]: [
-            ...(draft.lateExtras ?? []).map(lateExtraToFirestore),
-            ...(draft.lateExtrasUnread ?? []),
-          ],
+          // Review of #347: every row back in its own stored slot (new rows appended), so an unrelated save never
+          // reorders the list (the reader takes a late extra's decision from the first stored row of an id).
+          [TIMESHEET_LATE_EXTRAS_FIELD]: lateExtrasForWrite(
+            (draft.lateExtras ?? []).map(lateExtraToFirestore),
+            draft.lateExtrasUnread ?? [],
+            draft.lateExtrasLayout
+          ),
         }
       : {}),
     payrollLineReviews: Object.fromEntries(

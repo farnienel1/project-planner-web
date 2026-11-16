@@ -444,5 +444,46 @@ test('review of #347: the read row is the first titled row of an id (without cas
   assert.deepEqual(loaded.lateExtrasUnread, [blank])
   const saved = (draftToFirestoreMap(loaded) as Record<string, unknown>).lateExtras as Record<string, unknown>[]
   assert.equal(saved.length, 2)
-  assert.deepEqual(saved.map((row) => [row.id, row.title, row.amount]), [['x1', 'Real', 7], ['X1', '  ', 30]])
+  // Second review of #347: every row stays in its stored slot, so the decision of "Real" does not change.
+  assert.deepEqual(saved.map((row) => [row.id, row.title, row.amount]), [['X1', '  ', 30], ['x1', 'Real', 7]])
+  const reloaded = draftFromFirestoreMap({ ...(draftToFirestoreMap(sheet) as Record<string, unknown>), lateExtras: saved })
+  assert.deepEqual(reloaded.lateExtras!.map((entry) => [entry.id, entry.lateState]), loaded.lateExtras!.map((entry) => [entry.id, entry.lateState]))
+  assert.deepEqual((draftToFirestoreMap(reloaded) as Record<string, unknown>).lateExtras, saved)
+})
+
+test('second review of #347: an unrelated save keeps the stored order of late extras and their decisions', () => {
+  const sheet = signedSheet([booking()])
+  const base = draftToFirestoreMap(sheet) as Record<string, unknown>
+  const blank = { kind: 'expense', id: 'X1', title: ' ', amount: 30 }
+  const real = { kind: 'expense', id: 'x1', title: 'Real', jobNumber: 'J-1', amount: 7, date: day }
+  const other = { kind: 'expense', id: 'Y1', title: 'Other', jobNumber: 'J-2', amount: 4, date: day }
+  const junk = { id: 'Z', title: 'No kind', amount: 2 }
+  const stored = [blank, other, junk, real]
+  const loaded = draftFromFirestoreMap({ ...base, lateExtras: stored })
+  const states = loaded.lateExtras!.map((entry) => [entry.id, entry.lateState])
+  // An unrelated change (the manager note) writes the list back in its stored order.
+  const saved = (draftToFirestoreMap({ ...loaded, managerNote: 'note' }) as Record<string, unknown>).lateExtras as Record<string, unknown>[]
+  assert.deepEqual(saved.map((row) => row.id), ['X1', 'Y1', 'Z', 'x1'])
+  const reloaded = draftFromFirestoreMap({ ...base, lateExtras: saved })
+  assert.deepEqual(reloaded.lateExtras!.map((entry) => [entry.id, entry.lateState]), states)
+  // Editing a shown row keeps its slot; a new row is appended; a deleted shown row leaves its slot empty.
+  const edited = loaded.lateExtras!.map((entry) => (entry.id === 'Y1' ? { ...entry, amount: 9 } : entry))
+  const added = { ...loaded.lateExtras![0], id: 'N1', title: 'New' }
+  const withNew = (draftToFirestoreMap({ ...loaded, lateExtras: [...edited, added] }) as Record<string, unknown>).lateExtras as Record<string, unknown>[]
+  assert.deepEqual(withNew.map((row) => [row.id, row.amount]), [['X1', 30], ['Y1', 9], ['Z', 2], ['x1', 7], ['N1', 7]])
+  const nextLate = loaded.lateExtras!.filter((entry) => entry.id !== 'Y1')
+  const unread = lateExtrasUnreadAfter(loaded.lateExtrasUnread, loaded.lateExtras, nextLate)
+  const deleted = (draftToFirestoreMap({ ...loaded, lateExtras: nextLate, lateExtrasUnread: unread }) as Record<string, unknown>).lateExtras as Record<string, unknown>[]
+  assert.deepEqual(deleted.map((row) => row.id), ['X1', 'Z', 'x1'])
+})
+
+test('second review of #347: deleting a late extra drops only kept rows the reader could show', () => {
+  const blank = { kind: 'expense', id: 'l1', title: '  ', amount: 30 }
+  const padded = { kind: ' expense ', id: 'L1', title: 'Padded', amount: 3 }
+  const noKind = { id: 'L1', title: 'No kind', amount: 4 }
+  const numericId = { kind: 'expense', id: 5, title: 'Number', amount: 5 }
+  const copy = { kind: 'priceWork', id: 'l1', title: 'Shown copy', amount: 6 }
+  const unread = [blank, padded, noKind, numericId, copy]
+  const kept = lateExtrasUnreadAfter(unread, [{ id: 'L1' }, { id: '5' }], [])
+  assert.deepEqual(kept, [blank, padded, noKind, numericId])
 })
