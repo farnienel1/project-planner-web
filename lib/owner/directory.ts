@@ -219,15 +219,41 @@ function personDoc(doc: PlainDoc): PersonDoc | null {
 }
 
 /**
+ * The organisations each users document id is listed in through `organizations/{id}.members` (the members map every
+ * organisation document keeps; the owner can read it, unlike a person's membership subcollection).
+ */
+export function organisationMembership(orgDocs: readonly PlainDoc[]): Map<string, string[]> {
+  const out = new Map<string, string[]>()
+  for (const org of orgDocs) {
+    if (!org.id || isPlatformOwnerSentinelOrg(org.id)) continue
+    const members = org.data?.members
+    if (!members || typeof members !== 'object') continue
+    for (const uid of Object.keys(members as object)) {
+      const list = out.get(uid) || []
+      list.push(org.id)
+      out.set(uid, list)
+    }
+  }
+  return out
+}
+
+/**
  * One row per person across every organisation: users documents on one email are one person (`rosterPeople`), with
- * every organisation any of them names. Inactive, pending, ghost and anonymised deleted people all stay (guardrail 3).
+ * every organisation any of them names or is a member of (`members` maps, when `orgDocs` is given). Inactive, pending,
+ * ghost and anonymised deleted people all stay (guardrail 3).
+ *
+ * Test data (D12, review of #348 L6): a person is hidden by default only when **every** users document of theirs is
+ * flagged `isInternal`, or when **every** organisation they belong to (home organisation or member) is a test one. A
+ * member of a real company stays visible.
  */
 export function ownerPeopleRows(
   userDocs: readonly PlainDoc[],
-  orgRows: readonly Pick<OwnerOrgRow, 'id' | 'name' | 'isTest'>[]
+  orgRows: readonly Pick<OwnerOrgRow, 'id' | 'name' | 'isTest'>[],
+  orgDocs: readonly PlainDoc[] = []
 ): OwnerPersonRow[] {
   const docs = userDocs.map(personDoc).filter((doc): doc is PersonDoc => Boolean(doc))
   const { people, userIdAliases } = rosterPeople(docs)
+  const memberOf = organisationMembership(orgDocs)
   const orgName = new Map(orgRows.map((org) => [org.id, org.name]))
   const testOrgIds = new Set(orgRows.filter((org) => org.isTest).map((org) => org.id))
   const byKept = new Map<string, PersonDoc[]>()
@@ -239,7 +265,9 @@ export function ownerPeopleRows(
   }
   return people.map((person) => {
     const group = byKept.get(person.id) || [person]
-    const organizationIds = [...new Set(group.map((doc) => doc.organizationId).filter(Boolean))].sort()
+    const organizationIds = [
+      ...new Set(group.flatMap((doc) => [doc.organizationId, ...(memberOf.get(doc.id) || [])]).filter(Boolean)),
+    ].sort()
     const lastSeen = group.map((doc) => timeMs(doc.data.lastSeenAt)).filter((ms): ms is number => ms != null)
     const created = group.map((doc) => timeMs(doc.data.createdAt)).filter((ms): ms is number => ms != null)
     const name = rosterPersonName(person.data) || person.email || 'Unknown person'
@@ -255,17 +283,20 @@ export function ownerPeopleRows(
       lastSeenAtMs: lastSeen.length ? Math.max(...lastSeen) : null,
       createdAtMs: created.length ? Math.min(...created) : null,
       ghost: person.data.ghost === true,
-      isTest: isTestPerson({ isInternal: group.some((doc) => doc.data.isInternal === true), organizationIds }, testOrgIds),
-      // Used by search only; never returned (see stripPersonSearchKey).
-      _search: [name, person.email, ...group.map((doc) => doc.id), ...organizationIds].join(' ').toLowerCase(),
-    } as OwnerPersonRow & { _search: string }
+      isTest: isTestPerson({ isInternal: group.every((doc) => doc.data.isInternal === true), organizationIds }, testOrgIds),
+      // Used by search only; never returned (see stripPersonSearchKey). Emails are matched from their start only
+      // (review of #348 L5), never as a substring of the hidden address.
+      _search: [name, ...group.map((doc) => doc.id), ...organizationIds].join(' ').toLowerCase(),
+      _emails: [...new Set(group.map((doc) => doc.email).filter(Boolean))],
+    } as OwnerPersonRow & { _search: string; _emails: string[] }
   })
 }
 
 /** The response row without the server-only search text (which holds the full email). */
 export function stripPersonSearchKey(row: OwnerPersonRow): OwnerPersonRow {
-  const copy = { ...row } as OwnerPersonRow & { _search?: string }
+  const copy = { ...row } as OwnerPersonRow & { _search?: string; _emails?: string[] }
   delete copy._search
+  delete copy._emails
   return copy
 }
 
@@ -277,8 +308,11 @@ function personMatchesFilter(row: OwnerPersonRow, filter: OwnerPeopleFilter): bo
 
 function personMatchesQuery(row: OwnerPersonRow, needle: string): boolean {
   if (!needle) return true
-  const key = (row as OwnerPersonRow & { _search?: string })._search
-  return (key || `${row.name} ${row.id}`.toLowerCase()).includes(needle) || row.organizationNames.some((name) => name.toLowerCase().includes(needle))
+  const hidden = row as OwnerPersonRow & { _search?: string; _emails?: string[] }
+  if ((hidden._search || `${row.name} ${row.id}`.toLowerCase()).includes(needle)) return true
+  if (row.organizationNames.some((name) => name.toLowerCase().includes(needle))) return true
+  // An email matches only from its start: a whole local part, the whole address, or a prefix of it.
+  return (hidden._emails || []).some((email) => email.startsWith(needle))
 }
 
 export function selectOwnerPeople(

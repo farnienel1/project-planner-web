@@ -3,6 +3,7 @@ import { bearerToken, firestoreGet, firestorePatch, restFieldsToPlain, stringFie
 import { enforceRateLimit, isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
 import { parseOrganizationId } from '@/lib/security/requireOrgAccess'
 import { requireOwner } from '@/lib/owner/requireOwner'
+import { clearOwnerDirectoryCache } from '@/lib/owner/directoryServer'
 import { OWNER_AUDIT_UNAVAILABLE_MESSAGE, beginOwnerAudit, type OwnerAuditRun } from '@/lib/owner/ownerAudit'
 import { ORGANIZATION_RESTORED_MESSAGE, canRestoreOrganization } from '@/lib/canonical/organizationDeletion'
 import { resumeSubscription } from '@/lib/organizationDeletion/server'
@@ -56,6 +57,7 @@ export async function POST(request: NextRequest) {
     await audit.fail(error)
     return jsonError('Could not restore the organisation.', 502)
   }
+  clearOwnerDirectoryCache()
   const stripe = await resumeSubscription(org)
   await audit.complete({ deletion: 'removed', stripe })
   return Response.json(

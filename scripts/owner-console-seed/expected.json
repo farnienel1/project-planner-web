@@ -1,5 +1,5 @@
 {
-  "_note": "Worked out by hand from seedData.mjs (README.md shows the sums). lib/owner/ownerConsoleSeed.test.ts checks the code against these numbers; the e2e suite checks the screens and routes against them.",
+  "_note": "Worked out by hand from seedData.mjs. lib/owner/ownerConsoleSeed.test.ts checks the code against these numbers; the e2e suite checks the screens and routes against them.",
   "organisations": {
     "rows": 7,
     "rowsWithoutTest": 6,
@@ -10,13 +10,13 @@
     "largeMembers": 110
   },
   "people": {
-    "rows": 125,
-    "rowsWithoutTest": 122,
+    "rows": 126,
+    "rowsWithoutTest": 123,
     "test": 3,
-    "active": 113,
+    "active": 114,
     "inactive": 6,
     "pending": 6,
-    "activeWithoutTest": 110,
+    "activeWithoutTest": 111,
     "dualPersonOrganisations": [
       "org-eur",
       "org-small"
@@ -27,9 +27,9 @@
     "organisationsWithoutTest": 6,
     "testOrganisations": 1,
     "scheduledForDeletion": 1,
-    "accounts": 126,
-    "accountsWithoutTest": 123,
-    "testAccounts": 3,
+    "accounts": 127,
+    "accountsWithoutTest": 122,
+    "testAccounts": 5,
     "inactiveAccounts": 5
   },
   "search": {
@@ -48,6 +48,20 @@
         "op-small-1"
       ],
       "organisations": []
+    },
+    "large.example": {
+      "people": [],
+      "organisations": []
+    },
+    "dee@": {
+      "people": [
+        "dual-1"
+      ]
+    },
+    "del demo": {
+      "people": [
+        "demo-3"
+      ]
     }
   }
 }

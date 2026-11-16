@@ -112,15 +112,17 @@ export function buildOwnerConsoleSeed() {
     id: 'org-small',
     data: {
       name: 'Small Sparks', countryCode: 'GB', createdAt: at(60), creatorUserId: 'adm-small',
-      members: { 'adm-small': 'admin', 'op-small-1': 'operative', 'dual-1': 'manager', 'ghost-small': 'operative', 'intern-1': 'operative' },
+      members: { 'adm-small': 'admin', 'op-small-1': 'operative', 'dual-1': 'manager', 'ghost-small': 'operative', 'intern-1': 'operative', 'demo-3': 'operative' },
       billing: { status: 'trialing', trialEnd: at(-5) },
     },
   })
 
   // 3. Test / internal company.
-  orgs.push({ id: 'org-test', data: { name: 'Demo Co (internal)', isInternal: true, isTest: true, createdAt: at(90), members: { 'demo-1': 'admin', 'demo-2': 'operative' } } })
+  orgs.push({ id: 'org-test', data: { name: 'Demo Co (internal)', isInternal: true, isTest: true, createdAt: at(90), members: { 'demo-1': 'admin', 'demo-2': 'operative', 'demo-3': 'operative' } } })
   users.push(person('demo-1', 'org-test', { email: 'demo1@demo.example', firstName: 'Dana', surname: 'Demo', role: 'admin', adminAccess: true, lastSeenAt: at(1) }))
   users.push(person('demo-2', 'org-test', { email: 'demo2@demo.example', firstName: 'Dan', surname: 'Demo', role: 'operative', lastSeenAt: at(1) }))
+  // Home is the test company, but also a member of a real one (Small Sparks): stays visible (review of #348 L6).
+  users.push(person('demo-3', 'org-test', { email: 'demo3@demo.example', firstName: 'Del', surname: 'Demo', role: 'operative', lastSeenAt: at(1) }))
 
   // 4. Setup unfinished (no name stored).
   orgs.push({ id: 'org-unfinished', data: { createdAt: at(30), members: { 'unf-1': 'admin' } } })
@@ -150,7 +152,8 @@ export function buildOwnerConsoleSeed() {
   // 7. Non-GBP (Ireland, EUR). dual-2 is the second users document of Dee Dual.
   orgs.push({ id: 'org-eur', data: { name: 'Dublin Fitters', countryCode: 'IE', currencyCode: 'EUR', createdAt: at(150), members: { 'eur-1': 'admin', 'dual-2': 'manager' }, billing: { status: 'active', mrrPence: 4900 } } })
   users.push(person('eur-1', 'org-eur', { email: 'eoin@dublin.example', firstName: 'Eoin', surname: 'Fitter', role: 'admin', lastSeenAt: at(8) }))
-  users.push(person('dual-2', 'org-eur', { email: 'Dee@Dual.example', firstName: 'Dee', surname: 'Dual', role: 'manager', updatedAt: at(50), lastSeenAt: at(9) }))
+  // One of Dee's two documents is flagged internal: the person stays visible (only every document flagged hides them).
+  users.push(person('dual-2', 'org-eur', { email: 'Dee@Dual.example', firstName: 'Dee', surname: 'Dual', role: 'manager', updatedAt: at(50), lastSeenAt: at(9), isInternal: true }))
 
   // Product events and sessions over 14 months, web and iOS (the store loads only the page's period of these).
   const productEvents = []

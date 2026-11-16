@@ -3,7 +3,7 @@ import { isFirebaseUser, jsonError } from '@/lib/security/apiGuard'
 import { bearerToken } from '@/lib/owner/firestoreRest'
 import { OWNER_ORG_FILTERS, OWNER_ORG_SORTS, oneOf, selectOwnerOrgs } from '@/lib/owner/directory'
 import { loadOwnerOrganisations } from '@/lib/owner/directoryServer'
-import { OWNER_READ_FAILED_MESSAGE, includeTestDataParam, ownerJson, ownerReadGuard, searchParam } from '@/lib/owner/ownerReadRoute'
+import { OWNER_READ_FAILED_MESSAGE, includeTestDataParam, ownerJson, ownerReadGuard, refreshParam, searchParam } from '@/lib/owner/ownerReadRoute'
 
 export const runtime = 'nodejs'
 
@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   if (q instanceof NextResponse) return q
   const params = request.nextUrl.searchParams
   try {
-    const data = await loadOwnerOrganisations(bearerToken(request))
+    const data = await loadOwnerOrganisations(bearerToken(request), { refresh: refreshParam(request) })
     const page = selectOwnerOrgs(data.orgRows, {
       q,
       filter: oneOf(params.get('filter'), OWNER_ORG_FILTERS, 'all'),
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
       cursor: params.get('cursor'),
       limit: Number(params.get('limit') || 0),
     })
-    return ownerJson({ ...page, truncated: data.truncated, documentsRead: data.documentsRead })
+    return ownerJson({ ...page, truncated: data.truncated, documentsRead: data.fromCache ? 0 : data.documentsRead, fromCache: data.fromCache, cachedAt: data.cachedAt })
   } catch (error) {
     console.error('[owner/directory/orgs]', error)
     return jsonError(OWNER_READ_FAILED_MESSAGE, 502)

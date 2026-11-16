@@ -19,6 +19,12 @@ export function includeTestDataParam(request: NextRequest): boolean {
   return raw === '1' || raw === 'true'
 }
 
+/** `refresh=1` reads the collections again instead of the 60-second server cache (review of #348, M1). */
+export function refreshParam(request: NextRequest): boolean {
+  const raw = request.nextUrl.searchParams.get('refresh') || ''
+  return raw === '1' || raw === 'true'
+}
+
 export const OWNER_QUERY_MAX = 200
 
 /** The search text, or a 400 when it is too long. */

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { enforceRateLimit, isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
 import { requireOwner } from '@/lib/owner/requireOwner'
+import { clearOwnerDirectoryCache } from '@/lib/owner/directoryServer'
 import { OWNER_AUDIT_UNAVAILABLE_MESSAGE, beginOwnerAudit, type OwnerAuditRun } from '@/lib/owner/ownerAudit'
 import { bearerToken, firestoreDelete, firestoreGet, restFieldsToPlain } from '@/lib/owner/firestoreRest'
 import {
@@ -109,6 +110,7 @@ export async function POST(request: NextRequest) {
 
   try {
     await firestoreDelete(token, `users/${uid}`)
+    clearOwnerDirectoryCache()
     await audit.complete({ deleted: `users/${uid}` })
     return NextResponse.json({ ok: true, requestId: audit.requestId })
   } catch (error) {

@@ -11,6 +11,7 @@ import { encodeMfaOk } from '../auth/mfa/mfaCookies.ts'
 import { mfaCookieName, shouldSecureMfaCookies } from '../auth/mfa/mfaCookiePolicy.ts'
 import { buildOwnerConsoleSeed } from '../../scripts/owner-console-seed/seedData.mjs'
 import { installFakeFirestore } from './fakeFirestoreRest.ts'
+import { clearOwnerDirectoryCache } from './directoryServer.ts'
 import { GET as orgsGET } from '../../app/api/owner/directory/orgs/route.ts'
 import { GET as peopleGET } from '../../app/api/owner/directory/people/route.ts'
 import { GET as searchGET } from '../../app/api/owner/search/route.ts'
@@ -24,6 +25,7 @@ const ENV = ['NEXT_PUBLIC_FIREBASE_API_KEY', 'NEXT_PUBLIC_FIREBASE_PROJECT_ID'] 
 const realEnv = Object.fromEntries(ENV.map((name) => [name, process.env[name]]))
 const realFetch = globalThis.fetch
 afterEach(() => {
+  clearOwnerDirectoryCache()
   globalThis.fetch = realFetch
   for (const name of ENV) {
     if (realEnv[name] === undefined) delete process.env[name]
@@ -149,4 +151,31 @@ test('counts: aggregation results equal the fixtures, with and without test data
   // Counts never list a collection: every Firestore call is an aggregation, a flag query or one document read.
   const listed = backend.calls.filter((call) => call.method === 'GET' && /\/documents\/(users|organizations)(\?|$)/.test(call.url))
   assert.equal(listed.length, 0)
+})
+
+test('review #348 M1: a second directory read within 60 s reads nothing; a refresh or an owner change reads again', async () => {
+  clearOwnerDirectoryCache()
+  const backend = installFakeFirestore(collections, owner)
+  const listed = () => backend.calls.filter((call) => call.method === 'GET' && /\/documents\/(users|organizations)(\?|$)/.test(call.url)).length
+  const first = (await (await peopleGET(get('/api/owner/directory/people'))).json()) as { fromCache: boolean; total: number }
+  assert.equal(first.fromCache, false)
+  const afterFirst = listed()
+  assert.ok(afterFirst >= 2)
+  const second = (await (await searchGET(get('/api/owner/search?q=large'))).json()) as { fromCache?: boolean }
+  const third = (await (await peopleGET(get('/api/owner/directory/people?q=dee'))).json()) as { fromCache: boolean }
+  assert.equal(third.fromCache, true)
+  assert.ok(second)
+  assert.equal(listed(), afterFirst)
+  await peopleGET(get('/api/owner/directory/people?refresh=1'))
+  assert.equal(listed(), afterFirst * 2)
+  clearOwnerDirectoryCache()
+  await peopleGET(get('/api/owner/directory/people'))
+  assert.equal(listed(), afterFirst * 3)
+})
+
+test('review #348 M1: search allows 60 requests a minute from one address, then 429', async () => {
+  installFakeFirestore(collections, owner)
+  let last = 0
+  for (let i = 0; i < 61; i += 1) last = (await searchGET(get('/api/owner/search?q=la', { ip: '203.0.113.201' }))).status
+  assert.equal(last, 429)
 })

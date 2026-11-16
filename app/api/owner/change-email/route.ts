@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { isPlatformOwnerEmail } from '@/lib/platform/owner'
 import { enforceRateLimit, isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
 import { requireOwner } from '@/lib/owner/requireOwner'
+import { clearOwnerDirectoryCache } from '@/lib/owner/directoryServer'
 import { OWNER_AUDIT_UNAVAILABLE_MESSAGE, beginOwnerAudit, type OwnerAuditRun } from '@/lib/owner/ownerAudit'
 import { isValidEmail } from '@/lib/security/validation'
 import { adminListDocumentIds, adminUpdateAuthEmail, firebaseAdminConfigured } from '@/lib/owner/identityToolkitAdmin'
@@ -190,6 +191,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  clearOwnerDirectoryCache()
   await audit.complete({
     email: newEmail,
     sendReset,

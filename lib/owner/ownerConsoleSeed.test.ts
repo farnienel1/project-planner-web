@@ -12,7 +12,7 @@ import { ownerCountsFromParts } from './ownerCounts.ts'
 const expected = JSON.parse(readFileSync(new URL('../../scripts/owner-console-seed/expected.json', import.meta.url), 'utf8'))
 const seed = buildOwnerConsoleSeed()
 const orgRows = ownerOrgRows(seed.orgs, SEED_NOW_MS)
-const peopleRows = ownerPeopleRows(seed.users, orgRows)
+const peopleRows = ownerPeopleRows(seed.users, orgRows, seed.orgs)
 
 test('seed: organisation rows, with and without test data, and each filter', () => {
   const e = expected.organisations
@@ -42,6 +42,17 @@ test('seed: people are one per email across organisations, every segment kept (g
   assert.deepEqual(dee?.userIds, ['dual-1', 'dual-2'])
   assert.equal(peopleRows.some((row) => row.id === 'dual-2'), false)
   assert.equal(peopleRows.some((row) => row.id === 'owner-uid'), false)
+})
+
+test('seed, review of #348 L6: who test data hides by default', () => {
+  const hidden = peopleRows.filter((row) => row.isTest).map((row) => row.id).sort()
+  // Flagged on their only document (intern-1); every organisation they belong to is a test one (demo-1, demo-2).
+  assert.deepEqual(hidden, ['demo-1', 'demo-2', 'intern-1'])
+  // Home is the test company but also a member of a real one: visible.
+  assert.equal(peopleRows.find((row) => row.id === 'demo-3')?.isTest, false)
+  assert.deepEqual(peopleRows.find((row) => row.id === 'demo-3')?.organizationIds, ['org-small', 'org-test'])
+  // One of two documents flagged internal: visible.
+  assert.equal(peopleRows.find((row) => row.id === 'dual-1')?.isTest, false)
 })
 
 test('seed: old shapes read (organisation stored as a path, createdAt as a map or text)', () => {

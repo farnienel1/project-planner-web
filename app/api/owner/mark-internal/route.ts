@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { enforceRateLimit, isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
 import { requireOwner } from '@/lib/owner/requireOwner'
+import { clearOwnerDirectoryCache } from '@/lib/owner/directoryServer'
 import { OWNER_AUDIT_UNAVAILABLE_MESSAGE, beginOwnerAudit, type OwnerAuditRun } from '@/lib/owner/ownerAudit'
 import { bearerToken, boolField, firestoreGet, firestorePatch, readBool } from '@/lib/owner/firestoreRest'
 
@@ -54,6 +55,7 @@ export async function POST(request: NextRequest) {
     if (uid) {
       await firestorePatch(token, `users/${uid}`, { isInternal: boolField(isInternal) }, ['isInternal'])
     }
+    clearOwnerDirectoryCache()
     await audit.complete()
     return NextResponse.json({ ok: true, requestId: audit.requestId })
   } catch (error) {
