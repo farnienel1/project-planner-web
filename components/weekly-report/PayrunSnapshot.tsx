@@ -7,6 +7,8 @@
  * `payrunSnapshotPeriods`; this component only draws them. Read-only, no export.
  */
 import Link from 'next/link'
+import { PAY_PROFILES_FAILED_MESSAGE, retryPayProfiles, usePayProfilesStatus, usePayStatusOf } from '@/lib/pay/usePayProfilesStatus'
+import { reportGatePeople, reportPayGate } from '@/lib/pay/reportPayGate'
 import { useEffect, useMemo, useState } from 'react'
 import {
   PAYRUN_SNAPSHOT_COLUMNS,
@@ -139,9 +141,18 @@ export function PayrunSnapshot({
         timeZone,
       }
     : null
-  const rows = useMemo(
+  // Pay strip: each person's employment type is pay data — wait for the pay laid over the roster (privatePay on).
+  // Final check #342 item 3: built only when every person in it has known pay — refused, naming who is still loading or
+  // could not be read (`reportPayGate`), never priced from a stripped record.
+  const payStatusOrg = usePayProfilesStatus(organizationId)
+  const payStatusOf = usePayStatusOf(organizationId)
+  // Review #342: the rows are chosen without pay (active people, plus anyone else with records in the period —
+  // `payrunSnapshotRows`), so they are worked out once the organisation's pay status is ready, and only the people who
+  // have a row are waited for. Someone with no row (offline, added since the last read) never blocks the Snapshot.
+  const orgPayReady = payStatusOrg === 'ready'
+  const candidateRows = useMemo(
     () =>
-      loaded && period
+      orgPayReady && loaded && period
         ? payrunSnapshotRowsFor({
             loaded,
             users,
@@ -162,8 +173,18 @@ export function PayrunSnapshot({
               : undefined,
           })
         : [],
-    [loaded, period?.start, period?.end, users, organization, timeZone, overtimeBookings, operativeRows, bookings, managerSiteBookings, changeInputs] // eslint-disable-line react-hooks/exhaustive-deps
+    [orgPayReady, loaded, period?.start, period?.end, users, organization, timeZone, overtimeBookings, operativeRows, bookings, managerSiteBookings, changeInputs] // eslint-disable-line react-hooks/exhaustive-deps
   )
+  const rowPeople = useMemo(() => reportGatePeople(users, candidateRows.map((row) => row.personId)), [candidateRows, users])
+  const payGate = reportPayGate({
+    organizationStatus: payStatusOrg,
+    people: rowPeople,
+    statusOf: payStatusOf,
+    nameOf: (person) => `${person.firstName ?? ''} ${person.surname ?? ''}`.trim() || person.email || person.id,
+  })
+  const payStatus = payGate.status
+  const payReady = payStatus === 'ready'
+  const rows = payReady ? candidateRows : []
 
   const choice = (value: PayrunSnapshotPeriodKind, disabled: boolean, sub: string | null) => (
     <button key={value} type="button" className={kind === value ? 'on' : ''} disabled={disabled} title={sub ?? undefined} onClick={() => setKind(value)}>
@@ -199,9 +220,26 @@ export function PayrunSnapshot({
           {period ? ` · ${PAYRUN_SNAPSHOT_EMPLOYMENT_NOTE}` : ''}
         </p>
         {error ? <p className="banner" data-hue="red">{error}</p> : null}
-        {!loaded && !error ? <p className="muted small">Loading…</p> : null}
-        {loaded && period && rows.length === 0 ? <p className="muted small">{PAYRUN_SNAPSHOT_EMPTY_MESSAGE}</p> : null}
-        {loaded && period && rows.length > 0 ? (
+        {(!loaded || payStatus === 'loading') && !error ? (
+          <p className="muted small">
+            {loaded && payGate.message ? payGate.message : 'Loading…'}{' '}
+            {loaded && payGate.message ? (
+              <button type="button" className="btn" onClick={() => retryPayProfiles(organizationId, 'ready')}>
+                Retry
+              </button>
+            ) : null}
+          </p>
+        ) : null}
+        {payStatus === 'failed' && !error ? (
+          <p className="small" style={{ color: 'var(--red)' }}>
+            {payGate.message ?? PAY_PROFILES_FAILED_MESSAGE}{' '}
+            <button type="button" className="btn" onClick={() => retryPayProfiles(organizationId, 'ready')}>
+              Retry
+            </button>
+          </p>
+        ) : null}
+        {payReady && loaded && period && rows.length === 0 ? <p className="muted small">{PAYRUN_SNAPSHOT_EMPTY_MESSAGE}</p> : null}
+        {payReady && loaded && period && rows.length > 0 ? (
           <div className="tablewrap">
             <table className="t">
               <thead>

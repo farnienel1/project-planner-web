@@ -22,6 +22,8 @@ import {
 } from '@/lib/weekly-report/invoicingPeriodUtils'
 import { invoicingQuickSelectLabel } from '@/lib/weekly-report/invoicingRead'
 import { buildWeeklyReportData } from '@/lib/weekly-report/weeklyReportData'
+import { PAY_PROFILES_FAILED_MESSAGE, retryPayProfiles, usePayProfilesStatus, usePayStatusOf } from '@/lib/pay/usePayProfilesStatus'
+import { reportGatePeople, reportPayGate } from '@/lib/pay/reportPayGate'
 import { useOrgBankHolidays } from '@/components/annual-leave/useOrgBankHolidays'
 import type {
   SubcontractorBookingRow,
@@ -238,8 +240,18 @@ export function WeeklyReportScreen({
   const bankRangeEnd = period?.end ?? bankRangeStart
   const bank = useOrgBankHolidays(bankRangeStart, bankRangeEnd)
   const bankHolidayDayKeys = useMemo(() => bank.holidays.map((holiday) => holiday.date), [bank.holidays])
-  const builtReport = useMemo(() => {
-    if (!period || !bank.loaded) return null
+  // Pay strip: pay and employment types are read from the pay profiles while `privatePay` is on; the report waits for
+  // the pay laid over the roster (`payProfilesStatusFor`), never pricing a stripped users document.
+  // Final check #342 item 3: built only when every person in it has known pay — refused, naming who is still loading or
+  // could not be read (`reportPayGate`), never priced from a stripped record.
+  const payStatusOrg = usePayProfilesStatus(organizationId)
+  const payStatusOf = usePayStatusOf(organizationId)
+  // Review #342: the report is worked out once the organisation's pay status is ready, then only the people it actually
+  // prices (`pricedUserIds`: its bookings, approved weeks and timesheets in the range) are waited for. Someone with no
+  // bookings in the range (offline, added since the last read) never blocks it.
+  const orgPayReady = payStatusOrg === 'ready'
+  const candidateReport = useMemo(() => {
+    if (!period || !bank.loaded || !orgPayReady) return null
     return buildWeeklyReportData({
       bankHolidayDayKeys,
       organizationName,
@@ -265,6 +277,7 @@ export function WeeklyReportScreen({
       viewer: viewer ? ({ ...viewer, isPlatformOwner: isPlatformOwnerEmail(viewer.email) } as never) : null,
     })
   }, [
+    orgPayReady,
     bank.loaded,
     bankHolidayDayKeys,
     timesheetSheets,
@@ -287,6 +300,16 @@ export function WeeklyReportScreen({
     rateHistory,
     warningDecisions,
   ])
+  const pricedPeople = useMemo(() => reportGatePeople(users, candidateReport?.pricedUserIds ?? []), [candidateReport, users])
+  const payGate = reportPayGate({
+    organizationStatus: payStatusOrg,
+    people: pricedPeople,
+    statusOf: payStatusOf,
+    nameOf: (person) => `${person.firstName ?? ''} ${person.surname ?? ''}`.trim() || person.email || person.id,
+  })
+  const payStatus = payGate.status
+  const payReady = payStatus === 'ready'
+  const builtReport = payReady ? candidateReport : null
   const report = builtReport
 
   const loadWarningDecisions = async (): Promise<WeeklyReportWarningDecisions | null> => {
@@ -642,6 +665,24 @@ export function WeeklyReportScreen({
             >
               {generating ? 'Generating report…' : 'Generate Report'}
             </button>
+            {period && payStatus === 'loading' ? (
+              <p className="muted small" style={{ marginTop: 8 }}>
+                {payGate.message ?? 'Loading…'}{' '}
+                {payGate.message ? (
+                  <button type="button" className="btn" onClick={() => retryPayProfiles(organizationId, 'ready')}>
+                    Retry
+                  </button>
+                ) : null}
+              </p>
+            ) : null}
+            {period && payStatus === 'failed' ? (
+              <p className="small" style={{ marginTop: 8, color: 'var(--red)' }}>
+                {payGate.message ?? PAY_PROFILES_FAILED_MESSAGE}{' '}
+                <button type="button" className="btn" onClick={() => retryPayProfiles(organizationId, 'ready')}>
+                  Retry
+                </button>
+              </p>
+            ) : null}
           </section>
 
       {downloadOpen && report && period ? (
