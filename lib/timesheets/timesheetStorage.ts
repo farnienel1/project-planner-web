@@ -1215,9 +1215,12 @@ export async function createTimesheetRevision({
   organizationId,
   previousDocumentId,
   liveLines,
+  writerIsSubject = false,
 }: {
   organizationId: string
   previousDocumentId: string
+  /** Review of #344 (M1): the person's own revision copies `payrollLineReviews` exactly (the rules require it). */
+  writerIsSubject?: boolean
   /**
    * Owner decision 16 Nov (finding 6 = a): the period's live payroll lines — labour decisions are kept only for bookings
    * unchanged since the previous version (`timesheetRevisionLabourReviews`).
@@ -1232,6 +1235,7 @@ export async function createTimesheetRevision({
     const made = timesheetRevisionCreateFields({
       previous: { documentId: previous.id, data: previous.data() as Record<string, unknown> },
       writerUserId: writerId,
+      writerIsSubject,
       liveLines,
     })
     if (!made) return { status: 'not-exported', documentId: null, revision: null }

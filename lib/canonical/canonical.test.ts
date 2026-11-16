@@ -5748,6 +5748,19 @@ test('1.3.0 B: timesheet notice de-dupe keys use the organisation-zone day', () 
   assert.equal(rulebook.timesheetNotificationDedupeKey({ type: 'timesheet_signed_by_manager', subjectId: 'OP', periodStartDayKey: 'bad' }), null)
 })
 
+test('1.55.0 review of #344 (L4): a revision\'s timesheet notices have their own de-dupe key', () => {
+  const base = { subjectId: 'OP', periodStartDayKey: '2026-10-01', timeZone: 'Europe/London' }
+  const seconds = Date.parse('2026-09-30T23:00:00Z') / 1000
+  const pending = (revision?: number | null) => rulebook.timesheetNotificationDedupeKey({ ...base, type: 'timesheet_pending_manager_signoff', recipientId: 'LM', revision })
+  const signed = (revision?: number | null) => rulebook.timesheetNotificationDedupeKey({ ...base, type: 'timesheet_signed_by_manager', revision })
+  assert.equal(pending(), `timesheetPending|OP|LM|${seconds}`, 'the original keeps its key')
+  assert.equal(pending(0), pending())
+  assert.equal(pending(1), `timesheetPending|OP|LM|${seconds}|rev1`)
+  assert.equal(signed(2), `timesheetSigned|OP|${seconds}|rev2`)
+  assert.notEqual(signed(1), signed())
+  assert.equal(signed(100), signed(), 'not a revision number: the original key')
+})
+
 test('1.4.0: bank-holiday regions are one list per country, and a country change asks for the region', () => {
   const ids = (country: string) => rulebook.bankHolidayRegionsForCountry(country).map((region) => region.id)
   assert.deepEqual(ids('GB'), ['GB-ENG-WLS', 'GB-SCT', 'GB-NIR', 'GB'])
@@ -17103,6 +17116,19 @@ test('1.53.0 review: a new night shift clashes with the next morning\'s early bo
     const made = R.timesheetRevisionCreateFields({ previous: { documentId: ORIGINAL, data: previous }, writerUserId: LM, liveLines: [{ id: 'op-b1', bookingFingerprint: fp('07:00') }] })
     assert.deepEqual(made!.fields.payrollLineReviews, { 'op-b1': { decision: 'declined' } })
     assert.equal(R.timesheetRevisionLabourReviews({ previous: { lateExtras: [] }, liveLines: [] }), undefined)
+  })
+
+  test('1.55.0 review of #344 (M1): the person\'s own revision copies every labour decision exactly', () => {
+    const previous = {
+      userId: SUBJECT, weekStart: { seconds: 1761955200, nanoseconds: 0 }, weekStartKey: '2026-11-01', exportedAt: { seconds: 1763200000, nanoseconds: 0 },
+      payrollLineReviews: { 'op-b1': { decision: 'declined' }, 'op-b2': { decision: 'edited', revisedAmount: 120 } },
+    }
+    const mine = R.timesheetRevisionCreateFields({ previous: { documentId: ORIGINAL, data: previous }, writerUserId: SUBJECT, writerIsSubject: true, liveLines: [] })
+    assert.deepEqual(mine!.fields.payrollLineReviews, previous.payrollLineReviews, 'never dropped by the person, whatever the live lines say')
+    const theirs = R.timesheetRevisionCreateFields({ previous: { documentId: ORIGINAL, data: previous }, writerUserId: LM, liveLines: [] })
+    assert.deepEqual(theirs!.fields.payrollLineReviews, {}, 'a reviewer\'s revision still drops decisions it cannot match (finding 6 = a)')
+    const nullMap = R.timesheetRevisionCreateFields({ previous: { documentId: ORIGINAL, data: { ...previous, payrollLineReviews: null } }, writerUserId: SUBJECT, writerIsSubject: true })
+    assert.equal(nullMap!.fields.payrollLineReviews, null)
   })
 
   test('1.55.0 J4: a revision due or open is not approved; signed off it counts', () => {

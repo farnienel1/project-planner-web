@@ -420,6 +420,14 @@ export function timesheetRevisionCreateFields(input: {
   previous: { documentId: string; data: Record<string, unknown> | null | undefined }
   writerUserId: string
   /**
+   * Review of #344 (M1): the writer is the sheet's own person. Their revision copies `payrollLineReviews` exactly, so the
+   * person can never drop a line manager's declined or edited decision (the rules require the copy); only a reviewer's
+   * revision drops the decisions of changed bookings (finding 6 = a). On the person's revision, an "Edit hours" review
+   * made from 1.46.0 on a booking that changed still reads as stale (`reviewedBookingFingerprint`); an approve or decline
+   * stays until the line manager changes it before counter-signing.
+   */
+  writerIsSubject?: boolean
+  /**
    * Owner decision 16 Nov (finding 6 = a): the period's live payroll lines (id, `bookingFingerprint`, amount, paid
    * hours) — the labour decisions are kept only for unchanged bookings (`timesheetRevisionLabourReviews`). Missing:
    * every labour decision is dropped (pending again).
@@ -437,7 +445,11 @@ export function timesheetRevisionCreateFields(input: {
   // Review of #344: a stored null is copied as null (the rules compare each copied field with the version it corrects).
   for (const key of TIMESHEET_REVISION_COPIED_FIELDS) if (data[key] !== undefined) fields[key] = data[key]
   // Finding 6 (a): labour decisions only for bookings unchanged since this version (a part of the stored map).
-  if (data.payrollLineReviews !== undefined) fields.payrollLineReviews = timesheetRevisionLabourReviews({ previous: data, liveLines: input.liveLines })
+  if (data.payrollLineReviews !== undefined) {
+    fields.payrollLineReviews = input.writerIsSubject === true
+      ? data.payrollLineReviews
+      : timesheetRevisionLabourReviews({ previous: data, liveLines: input.liveLines })
+  }
   fields.revisionOf = ref.baseDocumentId
   fields.revision = revision
   fields.previousVersionId = ref.documentId

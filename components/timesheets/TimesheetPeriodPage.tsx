@@ -1004,6 +1004,7 @@ export function TimesheetPeriodPage({
             users,
             weekStart: periodStart,
             timeZone,
+            revision: draft.revision ?? null,
           })
         } catch {
           // Signature is already saved; inbox delivery is best-effort like iOS Task {}.
@@ -1057,6 +1058,7 @@ export function TimesheetPeriodPage({
             weekStart: periodStart,
             weekEnd: periodEnd,
             timeZone,
+            revision: draft.revision ?? null,
           })
         } catch {
           // Counter-sign is already saved; inbox delivery is best-effort.
@@ -1084,6 +1086,8 @@ export function TimesheetPeriodPage({
       const result = await createTimesheetRevision({
         organizationId: organization.id,
         previousDocumentId: latestVersion.documentId,
+        // Review of #344 (M1): the person's own revision copies every labour decision exactly.
+        writerIsSubject: mode === 'mine',
         liveLines: payroll.lineItems.map((line) => ({ id: line.id, bookingFingerprint: line.bookingFingerprint ?? null, amount: line.amount, paidHours: line.paidHours })),
       })
       if (result.status === 'created' && viewer && viewer.id !== subjectUser.id) {
@@ -1094,6 +1098,7 @@ export function TimesheetPeriodPage({
           users,
           revisionDocumentId: result.documentId,
           weekStart: periodStart,
+          timeZone,
         }).catch(() => undefined)
       }
       if (result.status === 'not-exported' || result.status === 'missing') setError(revisionCheck.message || 'This timesheet could not be revised.')

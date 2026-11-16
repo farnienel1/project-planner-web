@@ -222,18 +222,63 @@ test('review of #344: a stored null in a copied field is copied as null and the 
   await assertSucceeds(setDoc(doc(await db(OP), 'organizations', ORG, 'settings', rev.id), rev.data))
 })
 
-test('owner decision 16 Nov (finding 6 = a): a revision may drop copied labour decisions, never add or alter one', async () => {
+test('owner decision 16 Nov (finding 6 = a): a revision may drop copied labour decisions, never add or alter one (a reviewer\'s revision; review of #344 M1: the person\'s copies them exactly)', async () => {
   await reset()
   const withReviews = { ...originalData, payrollLineReviews: { 'op-b1': { decision: 'declined' }, 'op-b2': { decision: 'approved' } } }
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'organizations', ORG, 'settings', ORIGINAL), withReviews)
   })
-  const fs = await db(OP)
+  const fs = await db(LM)
   const id = `${ORIGINAL}_rev1`
   // Adding a decision: refused.
-  await assertFails(setDoc(doc(fs, 'organizations', ORG, 'settings', id), revisionPayload(ORIGINAL, withReviews, OP, { payrollLineReviews: { ...withReviews.payrollLineReviews, 'op-b3': { decision: 'approved' } } }).data))
+  await assertFails(setDoc(doc(fs, 'organizations', ORG, 'settings', id), revisionPayload(ORIGINAL, withReviews, LM, { payrollLineReviews: { ...withReviews.payrollLineReviews, 'op-b3': { decision: 'approved' } } }).data))
   // Altering one (a declined line approved): refused.
-  await assertFails(setDoc(doc(fs, 'organizations', ORG, 'settings', id), revisionPayload(ORIGINAL, withReviews, OP, { payrollLineReviews: { 'op-b1': { decision: 'approved' } } }).data))
+  await assertFails(setDoc(doc(fs, 'organizations', ORG, 'settings', id), revisionPayload(ORIGINAL, withReviews, LM, { payrollLineReviews: { 'op-b1': { decision: 'approved' } } }).data))
   // Dropping the changed booking's decision (pending again): allowed.
-  await assertSucceeds(setDoc(doc(fs, 'organizations', ORG, 'settings', id), revisionPayload(ORIGINAL, withReviews, OP, { payrollLineReviews: { 'op-b1': { decision: 'declined' } } }).data))
+  await assertSucceeds(setDoc(doc(fs, 'organizations', ORG, 'settings', id), revisionPayload(ORIGINAL, withReviews, LM, { payrollLineReviews: { 'op-b1': { decision: 'declined' } } }).data))
+})
+
+test("review of #344 (M1): the person's own revision copies the line manager's labour decisions exactly", async () => {
+  await reset()
+  const decided = { ...originalData, payrollLineReviews: { 'op-b1': { decision: 'declined' }, 'op-b2': { decision: 'edited', revisedAmount: 120 } } }
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG, 'settings', ORIGINAL), decided)
+  })
+  const fs = await db(OP)
+  const meta = { revisionCreatedAt: serverTimestamp(), updatedBy: OP, updatedFrom: 'web', updatedAt: serverTimestamp() }
+  const made = timesheetRevisionCreateFields({ previous: { documentId: ORIGINAL, data: decided }, writerUserId: OP, writerIsSubject: true })!
+  const ref = doc(fs, 'organizations', ORG, 'settings', made.documentId)
+  // Wiping or dropping the decisions is refused for the person.
+  await assertFails(setDoc(ref, { ...made.fields, ...meta, payrollLineReviews: {} }))
+  await assertFails(setDoc(ref, { ...made.fields, ...meta, payrollLineReviews: { 'op-b2': decided.payrollLineReviews['op-b2'] } }))
+  await assertFails(setDoc(ref, { ...made.fields, ...meta, payrollLineReviews: null }))
+  // The rulebook's create for the person copies them exactly, and is accepted.
+  await assertSucceeds(setDoc(ref, { ...made.fields, ...meta }))
+})
+
+test('review of #344 (M1): a reviewer may still drop labour decisions on their revision', async () => {
+  await reset()
+  const decided = { ...originalData, payrollLineReviews: { 'op-b1': { decision: 'declined' }, 'op-b2': { decision: 'approved' } } }
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG, 'settings', ORIGINAL), decided)
+  })
+  const rev = revisionPayload(ORIGINAL, decided, LM, { payrollLineReviews: { 'op-b1': { decision: 'declined' } } })
+  await assertSucceeds(setDoc(doc(await db(LM), 'organizations', ORG, 'settings', rev.id), rev.data))
+})
+
+test('review of #344 (L3): no revision-shaped id or revision field on the ordinary path', async () => {
+  await reset()
+  const fs = await db(OP)
+  const plain = { userId: OP, weekStartKey: '2026-12-01', weekStart: Timestamp.fromMillis(Date.parse('2026-12-01T00:00:00Z')), updatedBy: OP, updatedFrom: 'web' }
+  for (const suffix of ['_rev0', '_rev01', '_rev100']) {
+    await assertFails(setDoc(doc(fs, 'organizations', ORG, 'settings', `timesheet_${OP}_1764547200${suffix}`), plain))
+  }
+  const id = `timesheet_${OP}_1764547200`
+  await assertFails(setDoc(doc(fs, 'organizations', ORG, 'settings', id), { ...plain, revision: 1, revisionOf: ORIGINAL }))
+  await assertFails(setDoc(doc(fs, 'organizations', ORG, 'settings', id), { ...plain, previousVersionId: ORIGINAL }))
+  await assertSucceeds(setDoc(doc(fs, 'organizations', ORG, 'settings', id), plain))
+  await assertFails(updateDoc(doc(fs, 'organizations', ORG, 'settings', id), { revisionCreatedBy: OP }))
+  await assertSucceeds(updateDoc(doc(fs, 'organizations', ORG, 'settings', id), { managerNote: 'hello' }))
+  // A non-timesheet settings document is unaffected.
+  await assertSucceeds(setDoc(doc(await db(LM), 'organizations', ORG, 'settings', 'deadlines_J9'), { revision: 3 }))
 })

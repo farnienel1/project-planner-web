@@ -5,6 +5,7 @@
 import { saveInboxNotification } from '@/lib/firebase/notifyInbox'
 import {
   TIMESHEET_PENDING_NOTICE_TYPE,
+  dayKeyInOrganizationZone,
   TIMESHEET_REVISION_NOTICE_MESSAGE,
   TIMESHEET_REVISION_NOTICE_TITLE,
   TIMESHEET_REVISION_NOTICE_TYPE,
@@ -29,12 +30,14 @@ function displayName(user: User): string {
 }
 
 /** The document id for a timesheet notice: the synthetic UUID of `timesheetNotificationDedupeKey`. */
-async function timesheetNoticeId(input: {
+export async function timesheetNoticeId(input: {
   type: string
   subjectId: string
   weekStart: Date
   timeZone: string
   recipientId?: string
+  /** Rulebook 1.55.0: REV N (0 / missing = the original) — a revision's notices are never de-duped with the original's. */
+  revision?: number | null
 }): Promise<string | null> {
   const key = timesheetNotificationDedupeKey({
     type: input.type,
@@ -43,6 +46,7 @@ async function timesheetNoticeId(input: {
     periodStartDayKey: dayKey(input.weekStart, input.timeZone),
     timeZone: input.timeZone,
     recipientId: input.recipientId ?? null,
+    revision: input.revision ?? null,
   })
   return key ? syntheticUuidFromKey(key) : null
 }
@@ -57,6 +61,7 @@ export async function notifyTimesheetPendingManagerSignoff({
   users,
   weekStart,
   timeZone,
+  revision,
 }: {
   organizationId: string
   signedByUser: User
@@ -64,6 +69,8 @@ export async function notifyTimesheetPendingManagerSignoff({
   users: ReadonlyArray<User>
   weekStart: Date
   timeZone: string
+  /** Rulebook 1.55.0: the sheet's revision number (REV N), so its notice is not swallowed by the original's. */
+  revision?: number | null
 }): Promise<void> {
   const roster = rulebookRoster(users)
   const recipients = timesheetSubmittedRecipients(rulebookPerson(signedByUser, users), roster)
@@ -75,6 +82,7 @@ export async function notifyTimesheetPendingManagerSignoff({
       weekStart,
       timeZone,
       recipientId: managerId,
+      revision,
     })
     if (!id) continue
     await saveInboxNotification({
@@ -103,6 +111,7 @@ export async function notifyTimesheetSignedByManager({
   weekStart,
   weekEnd,
   timeZone,
+  revision,
 }: {
   organizationId: string
   subjectUser: User
@@ -113,6 +122,8 @@ export async function notifyTimesheetSignedByManager({
   weekStart: Date
   weekEnd: Date
   timeZone: string
+  /** Rulebook 1.55.0: the sheet's revision number (REV N), so its notice is not swallowed by the original's. */
+  revision?: number | null
 }): Promise<void> {
   const roster = rulebookRoster(users)
   const subject = rulebookPerson(subjectUser, users)
@@ -124,6 +135,7 @@ export async function notifyTimesheetSignedByManager({
       subjectId: subjectUser.id,
       weekStart,
       timeZone,
+      revision,
     })
     if (!signedId) continue
     await saveInboxNotification({
@@ -186,6 +198,20 @@ export function timesheetNotificationHref(
  * booking change made the revision due, the server already told the person, and a revision they create themself
  * notifies nobody.
  */
+/**
+ * The link fields of a `timesheet_revision_to_sign` row (review of iOS #243, L5): the person, the pay run's start
+ * instant, and `dayKey` — the pay run's first day in the organisation zone, as §13 and the booking-change notice
+ * (`functions/timesheetBookingNotice.js`) carry it — so `parseNotificationDocument` / `notificationDestination` open
+ * My Timesheets on that pay run without deriving it from the instant.
+ */
+export function timesheetRevisionToSignLinkFields(subjectUserId: string, weekStart: Date, timeZone: string | null | undefined) {
+  return {
+    deepLinkUserId: subjectUserId,
+    deepLinkWeekStart: weekStart,
+    dayKey: dayKeyInOrganizationZone(weekStart.toISOString(), timeZone),
+  }
+}
+
 export async function notifyTimesheetRevisionToSign({
   organizationId,
   subjectUser,
@@ -193,6 +219,7 @@ export async function notifyTimesheetRevisionToSign({
   users,
   revisionDocumentId,
   weekStart,
+  timeZone,
 }: {
   organizationId: string
   subjectUser: User
@@ -200,6 +227,7 @@ export async function notifyTimesheetRevisionToSign({
   users: ReadonlyArray<User>
   revisionDocumentId: string
   weekStart: Date
+  timeZone: string | null | undefined
 }): Promise<void> {
   const key = timesheetRevisionNoticeKey(revisionDocumentId)
   if (!key) return
@@ -214,8 +242,7 @@ export async function notifyTimesheetRevisionToSign({
       title: TIMESHEET_REVISION_NOTICE_TITLE,
       message: TIMESHEET_REVISION_NOTICE_MESSAGE,
       userId: recipientId,
-      deepLinkUserId: subjectUser.id,
-      deepLinkWeekStart: weekStart,
+      ...timesheetRevisionToSignLinkFields(subjectUser.id, weekStart, timeZone),
     })
   }
 }

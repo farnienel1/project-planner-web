@@ -1296,13 +1296,6 @@ service cloud.firestore {
           (exists(hp0) &&
             jobListsCaller(get(hp0).data));
       }
-      function callerManagesJob(jobId) {
-        return jobId is string && jobId.size() > 0 && !jobId.matches('.*/.*') && (
-          callerManagesJobAt(jobId) ||
-          (jobId != jobId.upper() && callerManagesJobAt(jobId.upper())) ||
-          (jobId != jobId.lower() && callerManagesJobAt(jobId.lower()))
-        );
-      }
       function callerManagesJobInAt(kind, jobId) {
         let path = /databases/(default)/documents/organizations/$(organizationId)/$(kind)/$(jobId);
         return exists(path) && jobListsCaller(get(path).data);
@@ -1327,10 +1320,12 @@ service cloud.firestore {
           (data.jobCollection in ['projects', 'smallWorks'] && bookingHasJob(collection, data));
       }
       function managerMayWriteBookingData(collection, data) {
+        let jobId = bookingJobId(collection, data);
         return bookingHasJob(collection, data)
           ? ('jobCollection' in data
-              ? callerManagesJobIn(data.jobCollection, bookingJobId(collection, data))
-              : callerManagesJob(bookingJobId(collection, data)))
+              ? callerManagesJobIn(data.jobCollection, jobId)
+              : jobId is string && jobId.size() > 0 && !jobId.matches('.*/.*') && (callerManagesJobAt(jobId) ||
+                (jobId != jobId.upper() && callerManagesJobAt(jobId.upper())) || (jobId != jobId.lower() && callerManagesJobAt(jobId.lower()))))
           : data.get('userId', '') == request.auth.uid;
       }
       function bookingWriteAllowed(collection, op) {
@@ -1734,11 +1729,8 @@ service cloud.firestore {
             : request.resource.data.get('userId', null);
         }
         function tsIdIsCallers(id) {
-          return id == request.auth.uid || tsIdIsAlias(id);
-        }
-        function tsIdIsAlias(id) {
           let home = callerHomeData();
-          return (home.get('formerUserIds', []) is list && id in home.get('formerUserIds', [])) ||
+          return id == request.auth.uid || (home.get('formerUserIds', []) is list && id in home.get('formerUserIds', [])) ||
             (home.get('sameEmailUserIds', []) is list && id in home.get('sameEmailUserIds', []));
         }
         function tsIsSubject() {
@@ -1747,10 +1739,6 @@ service cloud.firestore {
             (request.method == 'create' && 'userId' in request.resource.data && request.resource.data.userId == request.auth.uid) ||
             tsOwn()
           )) || (tsUid() is string && tsIdIsCallers(tsUid()));
-        }
-        function tsKeepsSubject() {
-          let next = request.resource.data.get('userId', null);
-          return next == null || tsIdIsCallers(next);
         }
         function timesheetSubjectFiled() {
           let next = request.resource.data.get('userId', null);
@@ -1763,10 +1751,6 @@ service cloud.firestore {
           let p = settingId.split('_');
           let q = id.split('_');
           return p.size() > q.size() + 1 && p[0] == 'timesheet' && p[1:q.size() + 1] == q;
-        }
-        function tsSelfSignedWrite() {
-          let uid = tsUid();
-          return uid is string && timesheetIdNames(uid) && (orgCreatorIs(organizationId, uid) || orgSelfManageFlag(uid, organizationId, 'timesheetSelfSign', true));
         }
         function tsReviewer() {
           let hp0 = /databases/(default)/documents/users/$(tsUid());
@@ -1783,28 +1767,18 @@ service cloud.firestore {
         function tsEmptyish(value) {
           return value == null || value == {};
         }
-        function tsOwnerLeaves(key, written) {
-          return !(key in written) || (tsEmptyish(request.resource.data.get(key, null)) && (resource == null || tsEmptyish(resource.data.get(key, null))));
-        }
-        function tsOwnerReviewsKept() {
+        function tsOwnerReviewFieldsUnchanged() {
           let written = writtenKeys();
-          return tsOwnerLeaves('payrollLineReviews', written) &&
-            tsOwnerLeaves('extraEntryReviews', written) &&
+          return tsOwnerLeaves('payrollLineReviews', written) && tsOwnerLeaves('extraEntryReviews', written) &&
             tsOwnerLeaves('weeklyReportOverride', written) &&
-            ((resource != null && (tsInstantIn(resource.data, 'managerSignedAt') || tsInstantIn(resource.data, 'approvedAt'))) ? (
-              tsListLeft('expenseEntries', written) && tsListLeft('priceWorkEntries', written) &&
-              (!('lateExtras' in written) || (!timesheetStoredExported() &&
+            ((resource != null && (resource.data.get('managerSignedAt', null) is timestamp || resource.data.get('managerSignedAt', null) is number || resource.data.get('approvedAt', null) is timestamp || resource.data.get('approvedAt', null) is number)) ? (
+              (!('expenseEntries' in written) || (request.resource.data.get('expenseEntries', null) in [null, []] && resource.data.get('expenseEntries', null) in [null, []])) && (!('priceWorkEntries' in written) || (request.resource.data.get('priceWorkEntries', null) in [null, []] && resource.data.get('priceWorkEntries', null) in [null, []])) &&
+              (!('lateExtras' in written) || (!tsExportedIn(resource.data) &&
                 (request.resource.data.get('lateExtras', null) == null || request.resource.data.lateExtras is list)))
             ) : !('lateExtras' in written));
         }
-        function tsInstantIn(m, k) {
-          return m.get(k, null) is timestamp || m.get(k, null) is number;
-        }
-        function tsListLeft(k, written) {
-          return !(k in written) || (request.resource.data.get(k, null) in [null, []] && resource.data.get(k, null) in [null, []]);
-        }
-        function timesheetStoredExported() {
-          return tsExportedIn(resource.data);
+        function tsOwnerLeaves(key, written) {
+          return !(key in written) || (tsEmptyish(request.resource.data.get(key, null)) && (resource == null || tsEmptyish(resource.data.get(key, null))));
         }
         function tsExportedIn(d) {
           let et = d.get('exportedAt', null) is timestamp ? d.exportedAt.toMillis() : 0;
@@ -1825,24 +1799,12 @@ service cloud.firestore {
           let copied = ['userId','weekStart','weekEnd','weekStartKey','weekEndKey','priceWorkEntries','expenseEntries','lateExtras','extraEntryReviews'];
           let nr = d.get('payrollLineReviews', null);
           let pr = prev.get('payrollLineReviews', null);
-          return (d.keys().hasOnly(copied.concat(tsRevKeys()).concat(['payrollLineReviews','updatedAt','updatedBy','updatedFrom'])) && n is int && n > 0 && n < 100 &&
+          return (d.keys().hasOnly(copied.concat(['payrollLineReviews','updatedAt','updatedBy','updatedFrom','revisionOf','revision','previousVersionId','revisionCreatedBy','revisionCreatedAt'])) && n is int && n > 0 && n < 100 &&
             base.matches('^timesheet_.+') && !base.matches('.*_rev[0-9]+$') && settingId == base + '_rev' + string(n) && d.get('previousVersionId', '') == prevId &&
             d.get('revisionCreatedBy', '') == request.auth.uid && d.get('revisionCreatedAt', null) == request.time && d.get('userId', null) is string)
-            ? (writeMetadataKeysValid(d.keys().toSet()) && timesheetIdNames(d.userId) && tsExportedIn(prev) && !d.diff(prev).affectedKeys().hasAny(copied) &&
-              (nr == pr || (nr is map && pr is map && nr.diff(pr).addedKeys().union(nr.diff(pr).changedKeys()).size() == 0))
-              ? tsIdIsCallers(d.userId) || tsReviewer() : false) : false;
-        }
-        function tsRevKeys() {
-          return ['revisionOf', 'revision', 'previousVersionId', 'revisionCreatedBy', 'revisionCreatedAt'];
-        }
-        function tsRevKept() {
-          return !settingId.matches('^timesheet_.+_rev[1-9][0-9]?$') || (request.method == 'delete'
-            ? !tsIsSubject() && tsReviewer()
-            : !request.resource.data.diff(resource.data).affectedKeys().hasAny(tsIsSubject() ? tsRevKeys().concat(['priceWorkEntries', 'expenseEntries', 'lateExtras']) : tsRevKeys()));
-        }
-        function timesheetExportedFrozen() {
-          return resource == null || !timesheetStoredExported() ||
-            (writtenKeys().hasOnly(['updatedAt', 'updatedBy', 'updatedFrom', 'exportedAt']) && tsSameInstant('exportedAt'));
+            ? (writeMetadataKeysValid(d.keys().toSet()) && timesheetIdNames(d.userId) && tsExportedIn(prev) && !d.diff(prev).affectedKeys().hasAny(copied)
+              ? (tsIdIsCallers(d.userId) ? nr == pr : (nr == pr || (nr is map && pr is map && nr.diff(pr).addedKeys().union(nr.diff(pr).changedKeys()).size() == 0)) && tsReviewer())
+              : false) : false;
         }
 
         allow read: if canAccessOrganization(organizationId) && (resource == null && tsId() ? (!privatePayOn(organizationId) ||
@@ -1855,15 +1817,15 @@ service cloud.firestore {
             (tsUid() is string && canViewPayOfAsMember(tsUid())) ||
             (!tsIsSubject() && tsReviewer()))));
         allow create, update, delete: if canAccessOrganization(organizationId) && ((request.method == 'create' && settingId.matches('^timesheet_.+_rev[1-9][0-9]?$')) ? tsRevCreate() : (
-          (request.method == 'create' || tsRevKept()) ? (
+(
           (request.method != 'delete') ? ((
           tsId()
-            ? (isPlatformOwner() || (timesheetSubjectFiled() && timesheetExportedFrozen() && (tsIsSubject() ? (
-            tsKeepsSubject() && (
+            ? (isPlatformOwner() || (timesheetSubjectFiled() && (resource == null || !tsExportedIn(resource.data) || (writtenKeys().hasOnly(['updatedAt', 'updatedBy', 'updatedFrom', 'exportedAt']) && tsSameInstant('exportedAt'))) && (tsIsSubject() ? (
+            (request.resource.data.get('userId', null) == null || tsIdIsCallers(request.resource.data.get('userId', null))) && (
               ((tsSameInstant('managerSignedAt') && tsSame('managerSignedByName') && tsSame('managerSignedByUserId') &&
             tsSame('managerSignatureImageBase64') && tsSameInstant('approvedAt') && tsSame('approvedByName') &&
-            tsSameInstant('exportedAt')) && tsOwnerReviewsKept()) ||
-              tsSelfSignedWrite()
+            tsSameInstant('exportedAt')) && tsOwnerReviewFieldsUnchanged()) ||
+              (tsUid() is string && timesheetIdNames(tsUid()) && (orgCreatorIs(organizationId, tsUid()) || orgSelfManageFlag(tsUid(), organizationId, 'timesheetSelfSign', true)))
             )
           ) : tsReviewer())))
             : (request.resource.data.get('userId', null) == (resource == null ? null : resource.data.get('userId', null)) &&
@@ -1874,9 +1836,11 @@ service cloud.firestore {
             (resource.data.get('userId', null) == null || (tsUid() is string && tsIdIsCallers(tsUid()))) &&
             resource.data.get('managerSignedAt', null) == null && resource.data.get('exportedAt', null) == null &&
             tsEmptyish(resource.data.get('payrollLineReviews', null)) && tsEmptyish(resource.data.get('extraEntryReviews', null))
-          ) : (tsReviewer() && !timesheetStoredExported())))
+          ) : (tsReviewer() && !tsExportedIn(resource.data))))
             : (settingId.matches('(deadlines_|healthSafety_).*|deadlineAssignments') || (!settingId.matches('^variation(s|Item)_.*') && canAccessVariationsStaff(organizationId)))
-        ))) : false));
+        ))) ? (!tsId() || (settingId.matches('.*_rev[0-9]+$') ? (settingId.matches('.*_rev[1-9][0-9]?$') && (request.method == 'delete' ? !tsIdIsCallers(resource.data.userId)
+            : !request.resource.data.diff(resource.data).affectedKeys().hasAny(['revisionOf', 'revision', 'previousVersionId', 'revisionCreatedBy', 'revisionCreatedAt'].concat(tsIdIsCallers(resource.data.userId) ? ['priceWorkEntries', 'expenseEntries', 'lateExtras'] : []))))
+            : request.method == 'delete' || !request.resource.data.keys().hasAny(['revisionOf', 'revision', 'previousVersionId', 'revisionCreatedBy', 'revisionCreatedAt']))) : false));
       }
 
       match /tasks/{taskId} {
