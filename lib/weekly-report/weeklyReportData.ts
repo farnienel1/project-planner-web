@@ -213,6 +213,11 @@ export type WeeklyReportData = {
    * bookings, approved timesheet weeks and timesheets in the range. The screen waits for exactly these people's pay.
    */
   pricedUserIds: string[]
+  /**
+   * 16 Nov scan (rulebook §8, `catalogueOperativePaySubjects`): the catalogue `operatives` rows (no app account) this
+   * report prices — their pay is read from `payProfiles/{rowId}` while `privatePay` is on, so the screen waits for it too.
+   */
+  pricedCatalogueOperativeIds: string[]
 }
 
 /** 1.32.0: `hoursCell` is the multiplier figure ("2h at ×1.5 = 3h"), with the changed-rate mark on an edited row. */
@@ -452,6 +457,7 @@ export function buildWeeklyReportData({
   // them — every id each person goes by (`person.ids`), without case (`normalizeDocumentId`), first person wins — for
   // every booking, approved timesheet week and timesheet (the invoice check line) in the range.
   const pricedUserIds = new Set<string>()
+  const pricedCatalogueOperativeIds = new Set<string>()
   const pricedOwner = new Map<string, CanonicalPayPerson>()
   for (const person of people) {
     for (const id of [person.id, ...(person.ids ?? [])]) {
@@ -462,6 +468,7 @@ export function buildWeeklyReportData({
   const notePriced = (id: string | null | undefined) => {
     const person = pricedOwner.get(normalizeDocumentId(id))
     if (person?.user) pricedUserIds.add(person.id)
+    else if (person?.operative) pricedCatalogueOperativeIds.add(person.id)
   }
   payBookings.forEach((booking) => notePriced(booking.personId))
   timesheetWeeks.forEach((week) => notePriced(week.userId))
@@ -906,6 +913,7 @@ export function buildWeeklyReportData({
     payeOvertimeRows,
     payeOvertimeTotal,
     pricedUserIds: [...pricedUserIds].sort(),
+    pricedCatalogueOperativeIds: [...pricedCatalogueOperativeIds].sort(),
     organizationName,
     companyLogoURL,
     reportPeriod: period,

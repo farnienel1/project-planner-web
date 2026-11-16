@@ -185,3 +185,21 @@ test('review #342: a PAYE person with overtime in range is waited for (their emp
   assert.ok(report.pricedUserIds.includes('pat'))
   assert.ok(!report.pricedUserIds.includes('idle'))
 })
+
+test('16 Nov scan: a booking of a catalogue operative (no account) is priced and that row is waited for', () => {
+  const row = { id: 'row1', firstName: 'Cat', lastName: 'Row', email: '', dayRate: 180, payBasis: 'day', skills: [], qualifications: [], isActive: true } as unknown as Operative
+  const report = buildWeeklyReportData(
+    reportInput({ operatives: [row], bookings: [{ ...booking, id: 'cb', operativeId: 'row1' }] }) as never
+  )
+  assert.deepEqual(report.pricedCatalogueOperativeIds, ['row1'])
+  assert.deepEqual(report.pricedUserIds, [])
+  // The gate waits for it while its pay is loading, and names it.
+  const gate = reportPayGate({
+    organizationStatus: 'ready',
+    people: [{ id: 'row1', name: 'Cat Row' }],
+    statusOf: () => 'loading',
+    nameOf: (person) => person.name,
+  })
+  assert.equal(gate.status, 'loading')
+  assert.deepEqual(gate.loadingNames, ['Cat Row'])
+})

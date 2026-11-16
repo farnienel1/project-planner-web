@@ -5,6 +5,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  noteOperativeRows,
+  notePayOperativesOverlaid,
+  payProfilesStatusForCatalogueOperative,
   notePayRosterLoadFailed,
   notePayRosterOverlaid,
   payProfileCacheVersion,
@@ -407,5 +410,34 @@ test('review #342: a pay read that failed while private pay was on never blocks 
   // Switched on again with no fresh read: the old failure is gone (cleared by the off refresh), not resurrected.
   on()
   assert.deepEqual(payProfileFailedSubjectIds(ORG), [])
+  setSecuritySwitchConfigForTests(null)
+})
+
+test('16 Nov scan: a catalogue operative is priced only once its row is in the pay read and re-read with it', async () => {
+  resetPayProfilesForTests()
+  on()
+  const opsManager = { ...lineManager, operatives: true, permissions: { operatives: true } }
+  const staff = [opsManager, reportA]
+  // The pay read happened before the operatives rows arrived: the catalogue row was not in the plan — loading.
+  await refreshPayProfiles(ORG, opsManager as never, staff as never, reader({}))
+  notePayRosterOverlaid(ORG, payProfileCacheVersion())
+  assert.equal(payProfilesStatusFor(ORG), 'ready')
+  assert.equal(payProfilesStatusForCatalogueOperative(ORG, 'row1'), 'loading')
+  // The rows arrive (row1 has no account): read again with it in the plan.
+  assert.equal(noteOperativeRows(ORG, [{ id: 'row1', email: 'nobody@firm.test' }]), true)
+  await refreshPayProfiles(ORG, opsManager as never, staff as never, reader({}))
+  notePayRosterOverlaid(ORG, payProfileCacheVersion())
+  // Still loading until the operatives rows were parsed with that read (they still hold their stripped pay).
+  assert.equal(payProfilesStatusForCatalogueOperative(ORG, 'row1'), 'loading')
+  notePayOperativesOverlaid(ORG, payProfileCacheVersion())
+  assert.equal(payProfilesStatusForCatalogueOperative(ORG, 'ROW1'), 'ready')
+  // Its own read refused: failed.
+  await refreshPayProfiles(ORG, opsManager as never, staff as never, reader({ refuse: ['row1'] }))
+  notePayRosterOverlaid(ORG, payProfileCacheVersion())
+  notePayOperativesOverlaid(ORG, payProfileCacheVersion())
+  assert.equal(payProfilesStatusForCatalogueOperative(ORG, 'row1'), 'failed')
+  // privatePay off: the row holds the pay — ready with the organisation.
+  setSecuritySwitchConfigForTests({ privatePayOrganizationIds: ['org-other'] })
+  assert.equal(payProfilesStatusForCatalogueOperative(ORG, 'row9'), 'ready')
   setSecuritySwitchConfigForTests(null)
 })

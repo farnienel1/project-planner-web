@@ -300,12 +300,27 @@ export function WeeklyReportScreen({
     rateHistory,
     warningDecisions,
   ])
-  const pricedPeople = useMemo(() => reportGatePeople(users, candidateReport?.pricedUserIds ?? []), [candidateReport, users])
+  // 16 Nov scan (rulebook §8, `catalogueOperativePaySubjects`): the catalogue operatives it prices are waited for too.
+  const pricedPeople = useMemo(
+    () => [
+      ...reportGatePeople(users, candidateReport?.pricedUserIds ?? []).map((person) => ({
+        id: person.id,
+        formerUserIds: person.formerUserIds,
+        name: `${person.firstName ?? ''} ${person.surname ?? ''}`.trim() || person.email || person.id,
+      })),
+      ...reportGatePeople(operatives, candidateReport?.pricedCatalogueOperativeIds ?? []).map((row) => ({
+        id: row.id,
+        catalogueOperative: true,
+        name: `${row.firstName ?? ''} ${row.lastName ?? ''}`.trim() || row.email || row.id,
+      })),
+    ],
+    [candidateReport, users, operatives]
+  )
   const payGate = reportPayGate({
     organizationStatus: payStatusOrg,
     people: pricedPeople,
     statusOf: payStatusOf,
-    nameOf: (person) => `${person.firstName ?? ''} ${person.surname ?? ''}`.trim() || person.email || person.id,
+    nameOf: (person) => person.name,
   })
   const payStatus = payGate.status
   const payReady = payStatus === 'ready'
