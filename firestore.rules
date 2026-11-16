@@ -1804,7 +1804,6 @@ service cloud.firestore {
           return timesheetOwnerLeaves('payrollLineReviews', written) &&
             timesheetOwnerLeaves('extraEntryReviews', written) &&
             timesheetOwnerLeaves('weeklyReportOverride', written) &&
-            // 1.54.0: `lateExtras` (paid only once reviewed) only after the line manager signed and until exported.
             ((resource != null && (
             resource.data.get('managerSignedAt', null) is timestamp ||
             resource.data.get('managerSignedAt', null) is number ||
@@ -1826,11 +1825,12 @@ service cloud.firestore {
         function timesheetStoredExported() {
           return resource.data.get('exportedAt', null) is timestamp || resource.data.get('exportedAt', null) is number;
         }
-        // 1.54.0: once exported, no reviewer writes `lateExtras` or moves `exportedAt`; with late extras, nor reviews or snapshot.
-        function timesheetReviewerKeepsExportedLate() {
-          let w = writtenKeys();
-          return resource == null || !timesheetStoredExported() || (!('lateExtras' in w) && timesheetSameInstant('exportedAt') &&
-            (resource.data.get('lateExtras', null) in [null, []] || !w.hasAny(['extraEntryReviews', 'weeklyReportOverride'])));
+        function timesheetExportedFrozen() {
+          return resource == null || !timesheetStoredExported() || (timesheetSameInstant('exportedAt') &&
+            timesheetSameInstant('managerSignedAt') && timesheetSameInstant('approvedAt') && timesheetSameInstant('operativeSignedAt') &&
+            !writtenKeys().hasAny(['lateExtras', 'weeklyReportOverride', 'payrollLineReviews', 'extraEntryReviews', 'userId',
+              'managerSignedByName', 'managerSignedByUserId', 'managerSignatureImageBase64', 'approvedByName', 'operativeSignedByName',
+              'operativeSignatureImageBase64', 'operativeSignedBookings', 'managerSignedAtMs', 'approvedAtMs', 'operativeSignedAtMs', 'exportedAtMs']));
         }
 
         allow read: if canAccessOrganization(organizationId) && ((resource.data.get('userId', null) == request.auth.uid && (request.method == 'list' || settingId.matches('^timesheet_.*'))) ||
@@ -1848,7 +1848,7 @@ service cloud.firestore {
         allow create, update, delete: if canAccessOrganization(organizationId) && (
           (request.method != 'delete') ? ((
           (settingId.matches('^timesheet_.*'))
-            ? (isPlatformOwner() || (timesheetSubjectFiled() && (timesheetCallerIsSubject() ? (
+            ? (isPlatformOwner() || (timesheetSubjectFiled() && timesheetExportedFrozen() && (timesheetCallerIsSubject() ? (
             timesheetOwnerKeepsSubject() && (
               ((timesheetSameInstant('managerSignedAt') &&
             timesheetSame('managerSignedByName') &&
@@ -1859,7 +1859,7 @@ service cloud.firestore {
             timesheetSameInstant('exportedAt')) && timesheetOwnerReviewFieldsUnchanged()) ||
               timesheetSelfSignedOwnerWrite()
             )
-          ) : (timesheetReviewerOfOthers() && timesheetReviewerKeepsExportedLate()))))
+          ) : timesheetReviewerOfOthers())))
             : (request.resource.data.get('userId', null) == (resource == null ? null : resource.data.get('userId', null)) &&
               ((settingId.matches('^deadlines_.*') ||
             settingId == 'deadlineAssignments' ||

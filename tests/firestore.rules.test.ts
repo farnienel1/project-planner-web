@@ -1900,7 +1900,8 @@ test('timesheets: the owner cannot change line reviews, entry decisions or the a
     await setDoc(doc(ctx.firestore(), 'organizations', ORG_A, 'settings', idOpen), { userId: REPORT_A, managerSignedAt: signed })
   })
   await assertSucceeds(deleteDoc(doc(lm, 'organizations', ORG_A, 'settings', idOpen)))
-  // An exported sheet whose `lateExtras` is stored as null (or empty) has no late extras: reviews behave as before 1.54.0.
+  // An exported sheet whose `lateExtras` is stored as null (or empty) has no late extras. 1.54.1 lock all: its reviews are
+  // frozen too (before 1.54.1 a reviewer could still change them).
   const idNull = `timesheet_${REPORT_A}_1770100000`
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'organizations', ORG_A, 'settings', idNull), {
@@ -1908,7 +1909,7 @@ test('timesheets: the owner cannot change line reviews, entry decisions or the a
       weeklyReportOverride: { approvedByUserId: LM_A, selfSigned: false, lines: [], priceWork: [], expenses: [] },
     })
   })
-  await assertSucceeds(updateDoc(doc(lm, 'organizations', ORG_A, 'settings', idNull), { 'extraEntryReviews.E1': { decision: 'declined', reviewedAmount: 50, reviewedByUserId: LM_A, reviewedAtMs: 5 } }))
+  await assertFails(updateDoc(doc(lm, 'organizations', ORG_A, 'settings', idNull), { 'extraEntryReviews.E1': { decision: 'declined', reviewedAmount: 50, reviewedByUserId: LM_A, reviewedAtMs: 5 } }))
   await assertFails(updateDoc(doc(lm, 'organizations', ORG_A, 'settings', idNull), { lateExtras: [] }))
 })
 

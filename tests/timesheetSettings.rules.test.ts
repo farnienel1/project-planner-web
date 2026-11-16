@@ -228,3 +228,38 @@ test('1.54.1 a reviewer never changes a sheet\'s userId (refiling it under someo
   // An ordinary review write with the same userId still passes.
   await assertSucceeds(updateDoc(ref, { userId: OP, managerNote: 'checked' }))
 })
+
+test('1.54.1 lock all: once exported, nobody changes the snapshot, review maps, signatures or userId', async () => {
+  const id = `timesheet_${OP}_1760400000`
+  const exportedAt = Timestamp.fromMillis(Date.parse('2026-10-20T09:00:00Z'))
+  const signedAt = Timestamp.fromMillis(Date.parse('2026-10-19T09:00:00Z'))
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG, 'settings', id), {
+      ...sheet(OP, '2026-10-13'),
+      operativeSignedAt: signedAt,
+      operativeSignedByName: 'Op',
+      managerSignedAt: signedAt,
+      managerSignedByName: 'Lm',
+      managerSignedByUserId: LM,
+      approvedAt: signedAt,
+      exportedAt,
+      weeklyReportOverride: { lines: [{ id: 'l1', amount: 100 }] },
+      payrollLineReviews: { l1: { decision: 'approved' } },
+      extraEntryReviews: {},
+    })
+  })
+  for (const uid of [LM, ADMIN]) {
+    const ref = doc(await db(uid), 'organizations', ORG, 'settings', id)
+    await assertFails(updateDoc(ref, { weeklyReportOverride: { lines: [{ id: 'l1', amount: 900 }] } }))
+    await assertFails(updateDoc(ref, { 'payrollLineReviews.l1': { decision: 'declined' } }))
+    await assertFails(updateDoc(ref, { 'extraEntryReviews.e1': { decision: 'approved', reviewedAmount: 5 } }))
+    await assertFails(updateDoc(ref, { managerSignedByName: 'Someone else' }))
+    await assertFails(updateDoc(ref, { managerSignedAt: Timestamp.fromMillis(Date.parse('2026-10-21T09:00:00Z')) }))
+    await assertFails(updateDoc(ref, { userId: OTHER }))
+    // The same exportedAt resent (within a second) with a harmless field still saves.
+    await assertSucceeds(updateDoc(ref, { exportedAt, managerNote: `seen by ${uid}` }))
+  }
+  const own = doc(await db(OP), 'organizations', ORG, 'settings', id)
+  await assertFails(updateDoc(own, { operativeSignedAt: Timestamp.fromMillis(Date.parse('2026-10-22T09:00:00Z')) }))
+  await assertFails(updateDoc(own, { operativeSignatureImageBase64: 'abc' }))
+})

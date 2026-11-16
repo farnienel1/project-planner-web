@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.54.0 → 1.54.1
-Packed hash: ac117be6ab8708b87bff1932e4b57841e6b9321c51d215cf15bbc345bcb16fda
-Rulebook sha256: 3682a17a7a7edefe48de5f9b082a0f9a6a04b6ea3b2f936d6d57e59013f66bd6
+Packed hash: 64f2a9f1490694a7b4ed13c97ba7a0bf8e92e3a8365a243f44e24e9ec2cfdb78
+Rulebook sha256: f382c0511b6c6cfe316c2a5c340b25af03025b7931325b01331ade3b23ef6d54
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -26,8 +26,8 @@ Exports added: none
 Exports removed: none
 Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/canonical.test.ts, lib/canonical/timesheetPeriod.ts, storage.rules
 Done when:
-- [ ] Packed hash in iOS equals ac117be6ab8708b87bff1932e4b57841e6b9321c51d215cf15bbc345bcb16fda
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 3682a17a7a7edefe48de5f9b082a0f9a6a04b6ea3b2f936d6d57e59013f66bd6)
+- [ ] Packed hash in iOS equals 64f2a9f1490694a7b4ed13c97ba7a0bf8e92e3a8365a243f44e24e9ec2cfdb78
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 f382c0511b6c6cfe316c2a5c340b25af03025b7931325b01331ade3b23ef6d54)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.54.1)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -41,6 +41,7 @@ Done when:
 - **Timesheet export PDFs** (§8, §16, §24, HIGH): read by admins and the exporter only; `timesheetExportStoragePath` takes the exporter's uid (`{uid}_{seconds}_{file}`; web `timesheetExportPath` now calls it).
 - **Eraser** (§20, MEDIUM): a person whose users document names the erased organisation is kept when another organisation's `members` map lists them or they created it, not only when they have a membership document there (`functions/organizationEraser.js` `listingOrgIds`).
 - **Export email** (§16, MEDIUM): the web route sends to the signed-in user's own email only (`timesheetExportRecipientCheck`), with the stored organisation name, `safeExternalUrl` links and one `requestId` for the send and its retry.
+- **Exported timesheets locked** (§8, §16, MEDIUM; separate commit, owner to confirm): `timesheetExportedFrozen` replaces `timesheetReviewerKeepsExportedLate` — once `exportedAt` is stored nobody changes the snapshot, the review maps, `lateExtras`, `userId` or the signatures, owners and reviewers alike, late extras or not.
 - **Notifications create** (§16, LOW): not tightened — see `docs/firestore-rules-notes.md` "1.54.1".
 - **Security rules hardening** (§16; pre-launch follow-ups from 1.31.1; built as 1.53.1, never released, folded in here). (1) An admin's update of another person's users document checks privilege values like every other users write path (`privilegeWriteTyped`: a written or changed privilege key, top level or `permissions`, is a bool or null; a written role is one the apps write); one check now serves the admin and the operatives-manager paths. (2) `members` on the organisation document: a written value is a role word; a legacy value stored on one entry can no longer be copied onto another (`membersValuesTyped` counts the non-role values). (3) Nobody switches their own Annual Leave Management or Timesheet self-sign off, non-admins included (admins since 1.31.1; the value in effect is compared, so a save writing it back passes). (4) A redundant platform-owner test in the settings read rule is removed (same decision). The Super Admin's own document (the creator, or a stored `isSuperAdmin`) keeps its exemption, so a Super Admin transfer from a legacy founder document still saves. Static compile cost 229,614 → 230,031; emulator type check 0 issues; new suite `tests/rulesHardening.rules.test.ts`.
 
