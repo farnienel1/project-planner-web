@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.54.0 → 1.54.0
-Packed hash: b3b7d870ef861436c9ebab0d507e4b5b9c32332d5cd466b09400d4a3a396bbfa
-Rulebook sha256: cefb5ec109829a1f9375a58d72a19ee591a656287303eac12b1c1732e56174ba
+Packed hash: 9fd5ebceae37ab22b7242b715731617103e0276acb88a5eafab22e3ff851cff7
+Rulebook sha256: fac1f5c91946a99096f33231722e4916735702a2b1ea48338cf6513b35b2dde2
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -24,10 +24,10 @@ Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e
 Call: CanonicalBusinessEngine — no second calculator in Swift.
 Exports added: none
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/timesheet154.test.ts, lib/canonical/timesheetEntryReviews.ts
+Web files that changed the rules: docs/RULEBOOK.md, firestore.rules
 Done when:
-- [ ] Packed hash in iOS equals b3b7d870ef861436c9ebab0d507e4b5b9c32332d5cd466b09400d4a3a396bbfa
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 cefb5ec109829a1f9375a58d72a19ee591a656287303eac12b1c1732e56174ba)
+- [ ] Packed hash in iOS equals 9fd5ebceae37ab22b7242b715731617103e0276acb88a5eafab22e3ff851cff7
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 fac1f5c91946a99096f33231722e4916735702a2b1ea48338cf6513b35b2dde2)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.54.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -84,6 +84,9 @@ Done when:
    - **Verification:** pass `sheet` with the stored `lateExtras` (and the signed entries) to `timesheetEntryReviewWriteFields`; the writer then judges each late entry on its stored row. If you cannot pass `sheet.lateExtras`, every late entry in `entries` **must include its `title`** (an entry without one is never written). Never delete an exported sheet.
 8. **Tests:** a `Rulebook1540Tests` covering: Office booking with `showOffice: false` paid by the collector; a late extra after the counter-signature pays 0 until a `lateExtra` review with its fingerprint approves it, then exactly the approved amount; editing the signed expense is refused by the app; an inline `managerDecision` on a late extra never pays; a late extra copying a signed entry's id is ignored; the new type decodes and routes; the leave report for an April–March person in a January–December company equals the balance's `taken` (2 Feb, 4 May, 2 Nov 2026 → 2 days).
 
+## New rulebook sections
+
+- 1.53.1 — 2026-11-15
 
 ## Workflow for the iOS agent
 

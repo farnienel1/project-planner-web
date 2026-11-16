@@ -106,11 +106,13 @@ service cloud.firestore {
   }
 
   function membersValuesTyped(next, prev) {
-    let nm = next.get('members', {});
-    let pm = prev.get('members', {}) is map ? prev.get('members', {}) : {};
+    let nm = next.get('members', {}) is map ? next.get('members', {}).values() : ['-'];
+    let pm = prev.get('members', {}) is map ? prev.get('members', {}).values() : [];
+    let ok = ['admin', 'manager', 'operative', 'member'];
     return !next.diff(prev).affectedKeys().hasAny(['members']) ? true : (
-      nm is map && nm.values().toSet().difference(pm.values().toSet().union(['admin', 'manager', 'operative', 'member'].toSet())).size() == 0);
+      nm.removeAll(ok).size() <= pm.removeAll(ok).size() && nm.toSet().difference(pm.toSet()).hasOnly(ok));
   }
+
   function privilegeFlag(d, key) {
     return truthyBool(d.get(key, false)) ||
       (d.get('permissions', {}) is map && truthyBool(d.get('permissions', {}).get(key, false)));
@@ -556,7 +558,7 @@ service cloud.firestore {
       changed.hasAny(['permissions', 'manager', 'operatives', 'qualifications', 'projects', 'smallWorks',
                       'annualLeaveSelfBook', 'timesheetSelfSign', 'weeklyReports', 'subContractors', 'dailyOverview',
                       'wholesalersOrderHistory', 'materials', 'siteAudit', 'operativeMode', 'role'])
-        ? selfPermissionsNotRaised(next, prev, changed) : true
+        ? (selfPermissionsNotRaised(next, prev, changed) && selfManageFlagsEqual(next, prev)) : true
       ) : false) : false) : false) : false) : false) : false
     );
   }
@@ -873,9 +875,9 @@ service cloud.firestore {
         writeMetadataValidWhenPresent()
       ) : false)
     ) : false)
-            ? privilegeWriteTyped(request.resource.data, resource.data, true) : false) : false) ||
+            ) : false) ||
           (userUpdateCallerAdmin(targetAdmin) ? ((request.auth.uid != userId ? true : (
-            (targetAdmin ? toggles : selfManageTogglesUnchanged(request.resource.data, resource.data)) &&
+            (targetAdmin ? toggles : (orgCreatorIs(docOrganizationId(resource.data), request.auth.uid) ? true : (staffFlag(resource.data, 'isSuperAdmin') ? true : selfManageFlagsEqual(request.resource.data, resource.data)))) &&
             selfUpdateKeepsIdentityLinks())) ? (
           isAdminOfCompany(resource.data.organizationId) ? (
             adminUpdateKeepsTopAccount(userId) ? (
@@ -895,7 +897,8 @@ service cloud.firestore {
               isAdminOfCompany(request.resource.data.organizationId)
             ) : false
           ))
-        )) && payStaysPrivate(resource.data.get('organizationId', ''))) : false);
+        )) && payStaysPrivate(resource.data.get('organizationId', '')) &&
+          (isSelf || privilegeWriteTyped(request.resource.data, resource.data, true))) : false);
       }
 
       function userUpdateCallerAdmin(targetAdmin) {
@@ -1838,7 +1841,7 @@ service cloud.firestore {
           )) ||
             orgAdminEither(organizationId) || isPlatformOwner() ||
             (timesheetSubjectUid() is string && canViewPayOfAsMember(timesheetSubjectUid())) ||
-            (isPlatformOwner() || (!timesheetCallerIsSubject() && timesheetReviewerOfOthers())))));
+            (!timesheetCallerIsSubject() && timesheetReviewerOfOthers()))));
         allow create, update, delete: if canAccessOrganization(organizationId) && (
           (request.method != 'delete') ? ((
           (settingId.matches('^timesheet_.*'))
