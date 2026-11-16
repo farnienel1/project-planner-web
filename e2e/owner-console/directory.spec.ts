@@ -29,12 +29,14 @@ test('header counts link to their lists and follow Include test data; search ope
   await signInOwner(page, baseURL as string)
   const counts = page.getByTestId('console-counts')
   await expect(counts).toContainText(`${expected.counts.organisationsWithoutTest} organisations`)
-  await expect(counts).toContainText(`${expected.counts.accountsWithoutTest} accounts`)
+  await expect(counts).not.toContainText('accounts')
   await page.getByTestId('include-test-data').click()
   await expect(counts).toContainText(`${expected.counts.organisations} organisations`)
   await page.getByTestId('include-test-data').click()
   await counts.getByRole('link', { name: /organisations/ }).click()
   await page.waitForURL(/\/developer\/organisations$/)
+  // The linked page's headline equals the header figure (useful-only rule).
+  await expect(page.locator('main .card', { hasText: /^Organisations/ }).first()).toContainText(String(expected.counts.organisationsWithoutTest))
 
   await page.keyboard.press('Control+k')
   await expect(page.getByTestId('owner-search')).toBeFocused()

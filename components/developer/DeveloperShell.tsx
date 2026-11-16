@@ -175,16 +175,17 @@ export function DeveloperAppShell({ children }: { children: ReactNode }) {
                   <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition ${includeTestData ? 'left-4' : 'left-0.5'}`} />
                 </span>
               </button>
-              {/* Useful-only rule: each count opens the list it counts. */}
+              {/*
+                Useful-only rule: each count opens the list it counts and equals its headline there. A people count
+                returns with PR 5, when the People page reads the same directory (review of #348: the accounts count
+                did not match the People page's fold).
+              */}
               {counts ? (
                 <span className="flex flex-wrap items-center gap-2" data-testid="console-counts">
                   <Link href="/developer/organisations" className="underline-offset-2 hover:underline" title={OWNER_COUNT_HINTS.organisations}>
                     <b className="font-semibold text-[var(--dash-ink)]">{counts.organisations}</b> organisations
                   </Link>
-                  <span aria-hidden>·</span>
-                  <Link href="/developer/users" className="underline-offset-2 hover:underline" title={OWNER_COUNT_HINTS.accounts}>
-                    <b className="font-semibold text-[var(--dash-ink)]">{counts.accounts}</b> accounts
-                  </Link>
+
                 </span>
               ) : countsError ? (
                 <span className="text-[var(--dash-warn-ink)]" title={countsError}>
@@ -232,8 +233,6 @@ export function DeveloperAppShell({ children }: { children: ReactNode }) {
 export const OWNER_COUNT_HINTS = {
   organisations:
     'Organisation documents (count() on the server), without the platform-owner profile. Test companies (isInternal / isTest) are left out unless Include test data is on. Refreshed every 60 seconds.',
-  accounts:
-    'Users documents (accounts), not folded people: one person with two documents counts twice here. Accounts flagged internal or in test companies are left out unless Include test data is on.',
 } as const
 
 export function DeveloperShell({
