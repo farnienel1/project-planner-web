@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { enforceRateLimit, isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
 import { requireOwner } from '@/lib/owner/requireOwner'
+import { isPlatformOwnerSentinelOrg } from '@/lib/platform/owner'
 import { clearOwnerDirectoryCache } from '@/lib/owner/directoryServer'
 import { OWNER_AUDIT_UNAVAILABLE_MESSAGE, beginOwnerAudit, type OwnerAuditRun } from '@/lib/owner/ownerAudit'
 import { bearerToken, boolField, firestoreGet, firestorePatch, readBool } from '@/lib/owner/firestoreRest'
@@ -18,6 +19,8 @@ export async function POST(request: NextRequest) {
   const orgId = (body.value.orgId || '').trim()
   const uid = (body.value.uid || '').trim()
   if (!orgId && !uid) return jsonError('orgId or uid is required', 400)
+  // The owner's own profile organisation is never a customer, so it is never marked (review of #348).
+  if (isPlatformOwnerSentinelOrg(orgId)) return jsonError('The owner account organisation cannot be marked.', 400)
   const token = bearerToken(request)
   // The values before the change (changed fields only, PLAN A4). An unreadable record is left out, never guessed.
   const before: Record<string, unknown> = {}

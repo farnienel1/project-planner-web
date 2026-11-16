@@ -10,13 +10,15 @@ import { clientIp } from '@/lib/security/apiGuard'
  * - `requested` (with a `requestId`) is written **before** the action; if it cannot be stored the action is refused.
  * - `completed` or `failed` follows with the same `requestId`.
  * - `before` / `after` hold changed fields only, emails masked, and never a pay rate, tax id, password or token.
- * Nothing edits or deletes an entry (the security rules refuse update and delete).
+ * Nothing edits or deletes an entry: the live security rules have no update or delete rule for `adminAuditLog` (so
+ * both are refused today). The shape check on create (OWNER_AUDIT_FIELDS, the phases, actorUid = the caller) is NOT
+ * live yet: it arrives with the PR 1 rules commit and is published by the owner.
  */
 
 export const OWNER_AUDIT_PHASES = ['requested', 'completed', 'failed'] as const
 export type OwnerAuditPhase = (typeof OWNER_AUDIT_PHASES)[number]
 
-/** Every field an `adminAuditLog` entry may hold (the rules' shape check lists the same). */
+/** Every field an `adminAuditLog` entry may hold (the PR 1 rules commit's shape check lists the same; not live yet). */
 export const OWNER_AUDIT_FIELDS = [
   'requestId',
   'action',
@@ -61,7 +63,13 @@ export type OwnerAuditEntry = OwnerAuditInput & {
   atIso: string
 }
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+/** Any email address inside a text (review of #348, L7: masked wherever it appears, not only as the whole value). */
+const EMAIL_ANYWHERE_RE = /[^\s@<>"'(),;:[\]]+@[^\s@<>"'(),;:[\]]+\.[A-Za-z]{2,}/g
+
+/** Masks every email address inside a text. */
+export function maskEmailsInText(text: string): string {
+  return text.replace(EMAIL_ANYWHERE_RE, (match) => maskEmail(match))
+}
 /** Keys never written into an audit entry, at any depth (compared without case). */
 const HIDDEN_KEYS = new Set([
   'rate',
@@ -90,7 +98,7 @@ function hiddenKey(key: string): boolean {
 /** Masks every email-looking string and drops pay, tax and secret keys, recursively. */
 export function sanitizeAuditDetail(value: unknown, depth = 0): unknown {
   if (depth > 6) return '[deep]'
-  if (typeof value === 'string') return EMAIL_RE.test(value.trim()) ? maskEmail(value) : value
+  if (typeof value === 'string') return maskEmailsInText(value)
   if (Array.isArray(value)) return value.slice(0, 50).map((item) => sanitizeAuditDetail(item, depth + 1))
   if (value && typeof value === 'object' && !(value instanceof Date)) {
     const out: Record<string, unknown> = {}
@@ -126,7 +134,7 @@ export function ownerAuditDocumentFields(entry: OwnerAuditEntry): Record<string,
   const userId = cleanId(entry.targetUserId)
   if (orgId) fields.targetOrgId = { stringValue: orgId }
   if (userId) fields.targetUserId = { stringValue: userId }
-  const reason = (entry.reason || '').trim()
+  const reason = maskEmailsInText((entry.reason || '').trim())
   if (reason) fields.reason = { stringValue: clip(reason, OWNER_AUDIT_LIMITS.reason) }
   if (entry.before && Object.keys(entry.before).length) {
     fields.before = { stringValue: clip(JSON.stringify(sanitizeAuditDetail(entry.before)), OWNER_AUDIT_LIMITS.detail) }
@@ -176,7 +184,7 @@ function requestContext(request: NextRequest) {
 
 function errorText(error: unknown): string {
   const text = error instanceof Error ? error.message : typeof error === 'string' ? error : 'failed'
-  return clip(text, 300)
+  return clip(maskEmailsInText(text), 300)
 }
 
 /**
@@ -215,17 +223,20 @@ export async function beginOwnerAudit(
   }
 }
 
-/** A one-entry record for something that is not a change (a masked field revealed). Throws when not stored. */
+/**
+ * A one-entry record for something that is not a change: a masked field revealed (`completed`), or an action refused
+ * before it started, such as a blocked organisation delete (`failed`). Throws when not stored.
+ */
 export async function recordOwnerEvent(
   request: NextRequest,
   actorUid: string,
   input: OwnerAuditInput,
-  options: { requestId?: string; now?: () => Date } = {}
+  options: { requestId?: string; now?: () => Date; phase?: 'completed' | 'failed' } = {}
 ): Promise<string> {
   const requestId = options.requestId || randomUUID()
   const at = (options.now || (() => new Date()))().toISOString()
   try {
-    await writeOwnerAuditEntry(request, { ...input, requestId, actorUid, ...requestContext(request), phase: 'completed', atIso: at })
+    await writeOwnerAuditEntry(request, { ...input, requestId, actorUid, ...requestContext(request), phase: options.phase || 'completed', atIso: at })
   } catch (error) {
     throw new OwnerAuditUnavailableError(error)
   }

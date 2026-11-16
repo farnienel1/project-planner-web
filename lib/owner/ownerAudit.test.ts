@@ -145,3 +145,25 @@ test('A4: long fields are clipped and the phase list is the three phases', () =>
   assert.equal('targetOrgId' in fields, false)
   assert.deepEqual([...OWNER_AUDIT_PHASES], ['requested', 'completed', 'failed'])
 })
+
+test('review #348 L7: emails are masked anywhere inside a text, in details, reason and the failure text', async () => {
+  assert.deepEqual(sanitizeAuditDetail({ note: 'moved from jane.smith@example.com to bob@example.co.uk today' }), {
+    note: 'moved from j•••@example.com to b•••@example.co.uk today',
+  })
+  const fields = ownerAuditDocumentFields({
+    requestId: 'r', action: 'x', phase: 'requested', actorUid: 'u', atIso: '2026-11-16T10:00:00.000Z',
+    reason: 'customer jane@acme.co.uk asked',
+  }) as Record<string, { stringValue: string }>
+  assert.equal(fields.reason.stringValue, 'customer j•••@acme.co.uk asked')
+  const writes = captureWrites()
+  const run = await beginOwnerAudit(request(), 'owner-uid', { action: 'x' }, { requestId: 'r', now: fixedNow })
+  await run.fail(new Error('EMAIL_EXISTS for someone@else.example'))
+  assert.match(String(writes[1].fields.after.stringValue), /s•••@else\.example/)
+  assert.doesNotMatch(String(writes[1].fields.after.stringValue), /someone@/)
+})
+
+test('review #348: a refused action can be recorded as failed', async () => {
+  const writes = captureWrites()
+  await recordOwnerEvent(request(), 'owner-uid', { action: 'ownerDeleteOrganisation.blocked' }, { phase: 'failed' })
+  assert.equal(writes[0].fields.phase.stringValue, 'failed')
+})

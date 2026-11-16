@@ -1,15 +1,17 @@
 /**
  * Base URLs for the Google REST APIs the server routes call. In production these are always Google's hosts.
- * The standard emulator variables (`FIRESTORE_EMULATOR_HOST`, `FIREBASE_AUTH_EMULATOR_HOST`) switch them to the local
- * emulators; they are set only by the owner-console end-to-end harness (scripts/owner-e2e) and never on Netlify.
+ * They switch to the local emulators only when BOTH the harness switch `NEXT_PUBLIC_USE_EMULATORS=1` is set AND the
+ * standard emulator variable (`FIRESTORE_EMULATOR_HOST`, `FIREBASE_AUTH_EMULATOR_HOST`) names a loopback host
+ * (127.0.0.1, localhost or [::1]) with a port (review of #348, L4). Only the owner-console e2e harness sets them.
  */
 
 const projectId = () => process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || ''
 
-function emulatorHost(name: 'FIRESTORE_EMULATOR_HOST' | 'FIREBASE_AUTH_EMULATOR_HOST'): string {
+export function emulatorHost(name: 'FIRESTORE_EMULATOR_HOST' | 'FIREBASE_AUTH_EMULATOR_HOST'): string {
+  if (process.env.NEXT_PUBLIC_USE_EMULATORS !== '1') return ''
   const value = (process.env[name] || '').trim()
-  // host:port only; anything else is ignored rather than turned into a URL.
-  return /^[A-Za-z0-9.-]+:\d{2,5}$/.test(value) ? value : ''
+  // A loopback host and a port only; anything else is ignored rather than turned into a URL.
+  return /^(127\.0\.0\.1|localhost|\[::1\]):\d{2,5}$/.test(value) ? value : ''
 }
 
 /** `.../v1/projects/{project}/databases/(default)/documents` (no trailing slash). */
