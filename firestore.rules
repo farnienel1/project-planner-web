@@ -2451,9 +2451,17 @@ service cloud.firestore {
       allow read: if isPlatformOwner() || (request.auth != null && resource.data.userId == request.auth.uid);
     }
 
+    // Owner console A4: create only, in its shape, by the owner as actorUid; never update or delete.
     match /adminAuditLog/{id} {
       allow read: if isPlatformOwner();
-      allow create: if isPlatformOwner();
+      allow create: if isPlatformOwner() && request.resource.data.keys().hasOnly(['requestId', 'action', 'phase', 'actorUid', 'targetOrgId', 'targetUserId', 'reason', 'before', 'after', 'ip', 'userAgent', 'at']) &&
+        request.resource.data.actorUid == request.auth.uid && request.resource.data.phase in ['requested', 'completed', 'failed'] &&
+        request.resource.data.requestId is string && request.resource.data.action is string && request.resource.data.action.size() > 0 &&
+        request.resource.data.at is timestamp;
+    }
+
+    match /ownerNotes/{id} {
+      allow read, write: if isPlatformOwner();
     }
 
     match /supportRequests/{id} {
@@ -2469,27 +2477,11 @@ service cloud.firestore {
       allow read: if true;
     }
 
-    match /analyticsDaily/{id} {
-      allow read: if isPlatformOwner();
-    }
-
-    match /analyticsMonthly/{id} {
-      allow read: if isPlatformOwner();
-    }
-
-    match /analyticsTotals/{id} {
-      allow read: if isPlatformOwner();
-    }
-
-    match /ownerAlerts/{id} {
-      allow read: if isPlatformOwner();
-    }
-
     match /adminJobs/{id} {
       allow read: if isPlatformOwner();
     }
 
-    match /deletedOrganisations/{id} {
+    match /erasedOrganizations/{id} {
       allow read: if isPlatformOwner();
     }
 
