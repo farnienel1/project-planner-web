@@ -6,7 +6,10 @@
  *   - 'invitation'          the email stored on `invitations/{data.invitationId}`, an unused invitation of this
  *                           organisation (invite set-up, password reset link).
  *   - 'member'              an active member of the organisation (`organizationMemberActive`), found by their users
- *                           document email (timesheet export, leave cancelled).
+ *                           document email (leave cancelled).
+ *   - 'self'                the caller's own sign-in email from the ID token only, an active member of the
+ *                           organisation (timesheet export; rulebook 1.54.1 §16, the web route's
+ *                           `timesheetExportRecipientCheck` rule: exported invoices go to the exporter only).
  *   - 'wholesaler_or_self'  a contact email on one of the organisation's `wholesalers` documents
  *                           (`parseWholesalerDocument`), the caller's own email for their copy, and at most 3 typed
  *                           addresses not saved on a wholesaler (`materialOrderRecipientCheck`, rulebook 1.15.0)
@@ -116,6 +119,15 @@ async function wholesalerOrSelfRecipients(emails, ctx) {
   return recipients
 }
 
+async function selfRecipients(emails, ctx) {
+  const self = normalizeEmail(ctx.caller && ctx.caller.email)
+  if (!self) throw new RecipientError('Your account has no sign-in email address', 400)
+  if (emails.length !== 1 || emails[0] !== self) {
+    throw new RecipientError('This email is sent to your own sign-in email address only')
+  }
+  return memberRecipients(emails, ctx)
+}
+
 async function serverRecipients(emails) {
   return emails.map((email) => ({ email }))
 }
@@ -123,6 +135,7 @@ async function serverRecipients(emails) {
 const RULES = Object.freeze({
   invitation: invitationRecipients,
   member: memberRecipients,
+  self: selfRecipients,
   wholesaler_or_self: wholesalerOrSelfRecipients,
   server: serverRecipients,
 })

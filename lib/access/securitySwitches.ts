@@ -11,6 +11,7 @@
 import { doc, onSnapshot, type Unsubscribe } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import {
+  appUpdateRequired,
   currentOrganizationId,
   ghostAccountsEnabled,
   dataCheckPanelEnabled,
@@ -251,6 +252,15 @@ export function ghostAccountsEnabledFor(organizationId?: string | null): boolean
 export function dataCheckPanelEnabledFor(organizationId?: string | null): boolean {
   start()
   return dataCheckPanelEnabled(config, organizationId ?? currentOrganizationId())
+}
+
+/**
+ * Rulebook §18 (`appUpdateRequired`): whether this web build is older than `platformConfig/app.minimumWebVersion`.
+ * False before the first read, with no document or field, or an unreadable version — the gate never blocks by mistake.
+ */
+export function webUpdateRequiredFor(runningBuild: string | null | undefined): boolean {
+  start()
+  return appUpdateRequired({ platform: 'web', runningBuild: runningBuild ?? '' }, config)
 }
 
 /** Called on every read of `platformConfig/app` (any field). Returns the unsubscribe. */

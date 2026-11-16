@@ -23,6 +23,7 @@ import { HoursBreakdownCard } from '@/components/schedule/HoursBreakdownCard'
 import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { formatClockMinutes, halfDayWindows } from '@/lib/canonical'
 import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
+import { feedback } from '@/lib/feedbackSounds/feedback'
 
 export type QuickAddBookingValues = {
   timeSlot: string
@@ -139,8 +140,10 @@ export function QuickAddBookingSheet({
         notes: notes.trim(),
       }, { replaces: allReplacedBookings(choices) })
       onClose()
+      feedback('bookingSaved')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to add booking')
+      feedback('actionRefused')
     }
   }
 

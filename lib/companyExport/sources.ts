@@ -66,6 +66,8 @@ export const EXPORT_FILES = {
   priceWorkItems: { file: 'price-work.csv', title: 'PAYE price work', description: 'PAYE price work items with their approver and evidence paths (priceWorkItems, rulebook 1.30.0).' },
   expenseItems: { file: 'expenses.csv', title: 'PAYE expenses', description: 'PAYE expenses with their evidence paths (expenseItems, rulebook 1.30.0).' },
   payeClaimReports: { file: 'price-work-and-expense-reports.csv', title: 'Price work and expense reports', description: 'Saved PAYE price work and expenses report copies (payeClaimReports), as sent.' },
+  payeClaimReviews: { file: 'price-work-and-expense-reviews.csv', title: 'Price work and expense reviews', description: 'Line manager and admin approve / reject decisions on PAYE price work and expenses (payeClaimReviews, rulebook 1.32.0 §26).' },
+  annualLeaveAdjustments: { file: 'annual-leave-adjustments.csv', title: 'Annual leave adjustments', description: 'Manual annual leave adjustments: days added or taken off, the reason, the leave year and who made them (annualLeaveAdjustments, rulebook 1.40.0 §4.4).' },
 } as const satisfies Record<string, ExportFile>
 
 export type ExportFileKey = keyof typeof EXPORT_FILES
@@ -131,6 +133,8 @@ const FILE_FOR_COLLECTION: Record<string, ExportFileKey> = {
   priceWorkItems: 'priceWorkItems',
   expenseItems: 'expenseItems',
   payeClaimReports: 'payeClaimReports',
+  payeClaimReviews: 'payeClaimReviews',
+  annualLeaveAdjustments: 'annualLeaveAdjustments',
 }
 
 const ADDITIONAL_COLLECTIONS = [
@@ -148,6 +152,8 @@ const ADDITIONAL_COLLECTIONS = [
   'warningResolutions',
   'acceptedBookingClashes',
   'settings',
+  // Rulebook 1.32.0 §26: the review decisions on PAYE price work and expenses (not in OPERATIONAL_COLLECTION_PATHS).
+  'payeClaimReviews',
   'notifications',
 ] as const
 

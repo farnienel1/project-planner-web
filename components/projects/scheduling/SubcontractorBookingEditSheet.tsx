@@ -10,6 +10,7 @@ import { hoursBreakdown } from '@/lib/scheduling/paidHours'
 import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import type { Subcontractor } from '@/types'
 import { bookingDayKey, customHoursPrefillForDate, policyForBookingDate } from '@/lib/scheduling/bookingSlotRules'
+import { feedback } from '@/lib/feedbackSounds/feedback'
 
 export type DiarySubBooking = {
   id: string
@@ -106,8 +107,10 @@ export function SubcontractorBookingEditSheet({
         booking.projectId
       )
       onSaved(next)
+      feedback('bookingEdited')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not update this booking')
+      feedback('actionRefused')
     } finally {
       setSaving(false)
     }
@@ -125,8 +128,10 @@ export function SubcontractorBookingEditSheet({
       // Rulebook 1.10.0: subcontractor bookings are tombstoned like labour and manager bookings (§2).
       await deleteBookingWithTombstone(db, { organizationId, collection: 'subcontractorBookings', bookingId: booking.id })
       onSaved('deleted')
+      feedback('bookingDeleted')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not delete this booking')
+      feedback('actionRefused')
     } finally {
       setSaving(false)
     }

@@ -30,6 +30,7 @@ import {
 import { hasAdminAccess, isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
 import type { HolidayBooking, ProjectTask, ProjectTaskStatus } from '@/types'
+import { feedback } from '@/lib/feedbackSounds/feedback'
 
 const STATUS_STYLES: Record<ProjectTaskStatus, { badge: string; label: string }> = {
   'To Do': { badge: 'bg-slate-100 text-slate-700', label: 'To Do' },
@@ -243,9 +244,14 @@ export function TasksScreen() {
   const approveHoliday = async (request: HolidayBooking) => {
     if (!organization?.id || !user) return
     setActionId(request.id)
+    let saved = false
     try {
       if (isCancellationRequest(request)) {
         await deleteBooking(organization.id, request.id)
+        saved = true
+        // The approver's decision: accepting a request or a cancellation request is leaveApproved, played once it is
+        // saved (before the notice).
+        feedback('leaveApproved')
         // Rulebook §9 / 1.9.0: the requester hears the cancellation was accepted (`holidayDecisionRecipients`).
         await notifyHolidayRequestDecisionToUser({
           organizationId: organization.id,
@@ -259,6 +265,8 @@ export function TasksScreen() {
         })
       } else {
         await decideBooking(organization.id, request, { status: 'approved', approverUid: user.id })
+        saved = true
+        feedback('leaveApproved')
         await notifyHolidayRequestDecisionToUser({
           organizationId: organization.id,
           booking: request,
@@ -269,6 +277,11 @@ export function TasksScreen() {
           operatives,
         })
       }
+    } catch (error) {
+      // Owner decision 8: the refusal sound, then the error goes where it went before. Once the decision is saved a
+      // failed notice plays nothing more (one sound per action).
+      if (!saved) feedback('actionRefused')
+      throw error
     } finally {
       setActionId(null)
     }
@@ -277,6 +290,7 @@ export function TasksScreen() {
   const declineHoliday = async (request: HolidayBooking) => {
     if (!organization?.id || !user) return
     setActionId(request.id)
+    let saved = false
     try {
       if (isCancellationRequest(request)) {
         await saveBooking(organization.id, {
@@ -285,6 +299,10 @@ export function TasksScreen() {
           cancellationRequestedByUserId: undefined,
           updatedAt: new Date(),
         })
+        saved = true
+        // The approver's decision: declining a request or a cancellation request is leaveDeclined, played once it is
+        // saved (before the notice).
+        feedback('leaveDeclined')
         await notifyHolidayRequestDecisionToUser({
           organizationId: organization.id,
           booking: request,
@@ -297,6 +315,8 @@ export function TasksScreen() {
         })
       } else {
         await decideBooking(organization.id, request, { status: 'rejected', approverUid: user.id })
+        saved = true
+        feedback('leaveDeclined')
         await notifyHolidayRequestDecisionToUser({
           organizationId: organization.id,
           booking: request,
@@ -307,6 +327,11 @@ export function TasksScreen() {
           operatives,
         })
       }
+    } catch (error) {
+      // Owner decision 8: the refusal sound, then the error goes where it went before. Once the decision is saved a
+      // failed notice plays nothing more (one sound per action).
+      if (!saved) feedback('actionRefused')
+      throw error
     } finally {
       setActionId(null)
     }

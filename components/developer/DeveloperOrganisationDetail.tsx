@@ -16,6 +16,7 @@ import { MaskedEmail } from '@/components/developer/MaskedEmail'
 import { unfinishedSetupLabel } from '@/lib/owner/unfinishedSetup'
 import { auditOwnerAction, ownerDeleteOrganisation } from '@/lib/owner/ownerActions'
 import { OwnerUserAccountMenu } from '@/components/developer/OwnerUserAccountMenu'
+import { OwnerRestoreOrganisation } from '@/components/developer/OwnerRestoreOrganisation'
 import { collapseDirectoryUsers } from '@/lib/owner/collapseDirectoryUsers'
 import { useConsolePrefs } from '@/lib/analytics/consolePrefs'
 
@@ -150,6 +151,7 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
           <Link href="/developer/users">All users</Link>
         </p>
       </section>
+      <OwnerRestoreOrganisation organisationId={organisationId} onRestored={setNotice} />
       <section className="card pad space-y-3">
         <h2 className="h2">Danger zone</h2>
         <p className="text-sm text-[var(--ink2)]">

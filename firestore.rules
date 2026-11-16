@@ -1745,15 +1745,23 @@ service cloud.firestore {
         }
         function tsKeepsSubject() {
           let next = request.resource.data.get('userId', null);
-          return (next == null || tsIdIsCallers(next)) && (
-            resource == null ||
-            next == resource.data.get('userId', null) ||
-            (resource.data.get('userId', null) == null && next is string && settingId.matches('^timesheet_' + next + '_.*'))
-          );
+          return next == null || tsIdIsCallers(next);
+        }
+        function timesheetSubjectFiled() {
+          let next = request.resource.data.get('userId', null);
+          let stored = resource == null ? null : resource.data.get('userId', null);
+          return resource == null
+            ? timesheetIdNames(next is string ? next : request.auth.uid)
+            : (next == stored || (stored == null && next is string && timesheetIdNames(next)));
+        }
+        function timesheetIdNames(id) {
+          let p = settingId.split('_');
+          let q = id.split('_');
+          return p.size() > q.size() + 1 && p[0] == 'timesheet' && p[1:q.size() + 1] == q;
         }
         function tsSelfSignedWrite() {
           let uid = tsUid();
-          return uid is string && settingId.matches('^timesheet_' + uid + '_.*') && (orgCreatorIs(organizationId, uid) || orgSelfManageFlag(uid, organizationId, 'timesheetSelfSign', true));
+          return uid is string && timesheetIdNames(uid) && (orgCreatorIs(organizationId, uid) || orgSelfManageFlag(uid, organizationId, 'timesheetSelfSign', true));
         }
 
         function tsReviewer() {
@@ -1803,9 +1811,27 @@ service cloud.firestore {
             tsOwnerLeaves('weeklyReportOverride', written) &&
             ((resource != null && (tsInstantIn(resource.data, 'managerSignedAt') || tsInstantIn(resource.data, 'approvedAt'))) ? (
               tsListLeft('expenseEntries', written) && tsListLeft('priceWorkEntries', written) &&
-              (!('lateExtras' in written) || (!tsStoredExported() &&
+              (!('lateExtras' in written) || (!timesheetStoredExported() &&
                 (request.resource.data.get('lateExtras', null) == null || request.resource.data.lateExtras is list)))
             ) : !('lateExtras' in written));
+        }
+        function tsInstantIn(m, k) {
+          return m.get(k, null) is timestamp || m.get(k, null) is number;
+        }
+        function tsListLeft(k, written) {
+          return !(k in written) || (request.resource.data.get(k, null) in [null, []] && resource.data.get(k, null) in [null, []]);
+        }
+        function timesheetStoredExported() {
+          return tsExportedIn(resource.data);
+        }
+        function tsExportedIn(d) {
+          let et = d.get('exportedAt', null) is timestamp ? d.exportedAt.toMillis() : 0;
+          let en = d.get('exportedAt', null) is number ? d.exportedAt : 0;
+          let it = d.get('invoiceGeneratedAt', null) is timestamp ? d.invoiceGeneratedAt.toMillis() : 0;
+          let n = d.get('invoiceGeneratedAt', null) is number ? d.invoiceGeneratedAt : 0;
+          let e = et + (en < 1000000000000 ? en * 1000 : en);
+          let i = it + (n < 1000000000000 ? n * 1000 : n);
+          return e > 1577836800000 && (i <= 1577836800000 || math.abs(e - i) > 60000);
         }
         // 1.55.0 §8 revisions: docs/firestore-rules-notes.md
         function tsRevCreate() {
@@ -1818,29 +1844,20 @@ service cloud.firestore {
           return d.keys().hasOnly(copied.concat(tsRevKeys()).concat(['updatedAt', 'updatedBy', 'updatedFrom'])) && n is int && n > 0 && n < 100 &&
             base.matches('^timesheet_.+') && !base.matches('.*_rev[0-9]+$') && settingId == base + '_rev' + string(n) && d.get('previousVersionId', '') == prevId &&
             d.get('revisionCreatedBy', '') == request.auth.uid && d.get('revisionCreatedAt', null) == request.time && writeMetadataKeysValid(d.keys().toSet()) &&
-            d.get('userId', null) is string && tsInstantIn(prev, 'exportedAt') && !d.diff(prev).affectedKeys().hasAny(copied) && (tsIdIsCallers(d.userId) || tsReviewer());
+            d.get('userId', null) is string && timesheetIdNames(d.userId) && tsExportedIn(prev) && !d.diff(prev).affectedKeys().hasAny(copied) &&
+            (tsIdIsCallers(d.userId) || tsReviewer());
         }
         function tsRevKeys() {
           return ['revisionOf', 'revision', 'previousVersionId', 'revisionCreatedBy', 'revisionCreatedAt'];
         }
         function tsRevKept() {
-          let rev = settingId.matches('^timesheet_.+_rev[1-9][0-9]*$');
-          return !settingId.matches('^timesheet_.*') || (!(tsStoredExported() && (rev || exists(/databases/(default)/documents/organizations/$(organizationId)/settings/$(settingId + '_rev1')))) &&
-            (!rev || (request.method == 'delete' ? !tsIsSubject() && tsReviewer() : !request.resource.data.diff(resource.data).affectedKeys().hasAny(tsRevKeys()))));
+          return !settingId.matches('^timesheet_.+_rev[1-9][0-9]*$') || (request.method == 'delete'
+            ? !tsIsSubject() && tsReviewer()
+            : !request.resource.data.diff(resource.data).affectedKeys().hasAny(tsRevKeys()));
         }
-        function tsStoredExported() {
-          return tsInstantIn(resource.data, 'exportedAt');
-        }
-        function tsInstantIn(m, k) {
-          return m.get(k, null) is timestamp || m.get(k, null) is number;
-        }
-        function tsListLeft(k, written) {
-          return !(k in written) || (request.resource.data.get(k, null) in [null, []] && resource.data.get(k, null) in [null, []]);
-        }
-        function tsReviewerExportOk() {
-          let w = writtenKeys();
-          return resource == null || !tsStoredExported() || (!('lateExtras' in w) && tsSameInstant('exportedAt') &&
-            (resource.data.get('lateExtras', null) in [null, []] || !w.hasAny(['extraEntryReviews', 'weeklyReportOverride'])));
+        function timesheetExportedFrozen() {
+          return resource == null || !timesheetStoredExported() ||
+            (writtenKeys().hasOnly(['updatedAt', 'updatedBy', 'updatedFrom', 'exportedAt']) && tsSameInstant('exportedAt'));
         }
 
         allow read: if canAccessOrganization(organizationId) && ((resource.data.get('userId', null) == request.auth.uid && (request.method == 'list' || settingId.matches('^timesheet_.*'))) ||
@@ -1854,7 +1871,7 @@ service cloud.firestore {
           (request.method == 'create' || tsRevKept()) && (
           (request.method != 'delete') ? ((
           (settingId.matches('^timesheet_.*'))
-            ? (isPlatformOwner() || (tsIsSubject() ? (
+            ? (isPlatformOwner() || (timesheetSubjectFiled() && timesheetExportedFrozen() && (tsIsSubject() ? (
             tsKeepsSubject() && (
               ((tsSameInstant('managerSignedAt') &&
             tsSame('managerSignedByName') &&
@@ -1865,7 +1882,7 @@ service cloud.firestore {
             tsSameInstant('exportedAt')) && tsOwnerReviewsKept()) ||
               tsSelfSignedWrite()
             )
-          ) : (tsReviewer() && tsReviewerExportOk())))
+          ) : tsReviewer())))
             : (request.resource.data.get('userId', null) == (resource == null ? null : resource.data.get('userId', null)) &&
               (settingId.matches('(deadlines_|healthSafety_).*|deadlineAssignments') || canAccessVariationsStaff(organizationId)))
         )) : ((
@@ -1876,7 +1893,7 @@ service cloud.firestore {
             resource.data.get('exportedAt', null) == null &&
             tsEmptyish(resource.data.get('payrollLineReviews', null)) &&
             tsEmptyish(resource.data.get('extraEntryReviews', null))
-          ) : (tsReviewer() && !tsStoredExported())))
+          ) : (tsReviewer() && !timesheetStoredExported())))
             : (settingId.matches('(deadlines_|healthSafety_).*|deadlineAssignments') || (!settingId.matches('^variation(s|Item)_.*') && canAccessVariationsStaff(organizationId)))
         )))));
       }

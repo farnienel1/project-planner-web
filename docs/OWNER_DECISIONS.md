@@ -746,6 +746,37 @@ UI only, web only (`docs/design/user-profile-ui/user-profile-ui-spec.md`; branch
 | 16 Nov | Review of #337 (2): an Office / WFH / Site survey / custom booking that is newly paid (switched-off option) never triggers or enters the 1.43.0 empty-snapshot repair; a sheet signed while the option was off stays as signed. | done |
 | 16 Nov | The Data health list reads only sheets that are not exported (an exported half-signed sheet stays frozen and is not listed). Review of #337: it checks the last six pay runs (as the Timesheets hub) and each row opens the sheet itself. | done, owner to confirm |
 
+## 16 Nov decisions (feedback sounds, web)
+
+Not a rulebook change (rulebook §15, platform-specific): sounds change no data, payload, calculation, permission or flow. Spec `docs/design/feedback/feedback-sounds-haptics-guide.md` (v1.1); module `lib/feedbackSounds/feedback.ts`.
+
+| Date | Decision | Status |
+|---|---|---|
+| 16 Nov | **1** Sounds are **on** by default. Web toggle in Settings → Personal card: "Sounds", "Applies to this browser only.", and a "Play a sample" button (`localStorage` `pp.feedback.sounds`, this browser only). | done web (w-feedback-sounds) |
+| 16 Nov | **2** The guide's booking-request events have no feature; reuse their sounds for overtime "Send for approval" (sent), "Return overtime" (approved) and the price work / expense review Approve (approved / declined as decided). Owner: "a nice to have … should ping when a button is pressed or action has been done. I don't want sounds going off randomly" — a sound only after the person's own action, never from listeners, other people's changes, page load or autosave. Events `overtimeSent`, `overtimeReturned`, `claimsApproved`, `claimsDeclined` (guide v1.1 §4). | done web |
+| 16 Nov | **3** A partly saved bulk action plays the error sound. | done web |
+| 16 Nov | **4** "Nothing new to save" plays no sound. | done web |
+| 16 Nov | **5** Self-booked or manager-booked approved leave plays leaveBooked. A cancellation request, a leave removal or a leave edit plays the saved / removed sounds (`leaveEdited` success, `leaveRemoved` removed; guide v1.1). | done web for the manager calendar; the person's own leave screen (cancellation request, self-booked leave) waits for #335 — see follow-ups |
+| 16 Nov | **6** (iOS only.) | n/a web |
+| 16 Nov | **7** (iOS only.) | n/a web |
+| 16 Nov | **8** Web handlers with no catch may get a catch-and-rethrow so `actionRefused` plays; behaviour otherwise identical and the error reaches the same place. | done web (warnings page, Warnings clash delete, leave calendar, Tasks leave approvals, team leave decisions) |
+| 16 Nov | **9** Module path `lib/feedbackSounds/feedback.ts` (`lib/feedback/` is the ideas board). | done web |
+| 16 Nov | **10** An invite saved whose email failed still plays userInvited. A ghost create plays userInvited. | done web |
+| 16 Nov | **11** `allWarningsClear` means the viewer's own scoped Warnings list reached zero, after their own action. | done web (`activeOrgWarnings(...).coreCount` after the approve / dismiss) |
+| 16 Nov | **12** Web gain 0.35. | done web |
+| 16 Nov | **13** Everything is actioned, except `components/timesheets/TimesheetPeriodPage.tsx` (open #337) and `components/annual-leave/PersonalLeave.tsx` (open #335), wired after those merge. | done web except the two files (PR follow-ups list) |
+
+## Feedback sounds judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 16 Nov | Six new event names in the guide (v1.1) rather than reusing the booking-request names in code: `leaveEdited`, `leaveRemoved`, `overtimeSent`, `overtimeReturned`, `claimsApproved`, `claimsDeclined`. Same sounds as decided; iOS copies the guide again. | done, owner to confirm |
+| 16 Nov | An approver accepting a leave **cancellation request** plays leaveApproved; refusing it plays leaveDeclined (the approver's decision, as for a leave request). | done, owner to confirm |
+| 16 Nov | Overtime ✓ / ✕ / ⚙ saved directly (no line manager) plays timesheetSaved; "That change is not allowed on this booking" plays the error sound. | done, owner to confirm |
+| 16 Nov | Silent on success (no event in the guide): overtime "Withdraw request" and deleting a price work / expense item. Dismissing a materials cut-off warning plays `warningResolved` (it only hides the card on this device, so it never plays `allWarningsClear`). A failed withdraw plays the error sound (the shared overtime error path). | done, owner to confirm |
+| 16 Nov | Price work / expense Approve with a mix of ✓ and ✕ plays approved; only ✕ plays declined. | done, owner to confirm |
+| 16 Nov | A sound whose file has not loaded within 1 s of the action is skipped (never played late). | done, owner to confirm |
+
 ## Owner console rebuild
 
 | Date | Decision | Status |
@@ -785,11 +816,21 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 | 16 Nov | The 2FA cookie check also covers the register-interest owner routes (`/api/interest/registrations`), which use the same owner check. | done, owner OK 16 Nov |
 | 16 Nov | "Delete unfinished sign-up" also refuses a ghost operative, and anyone whose unfinished organisation has other members (half-set-up organisations with other people in them). | done, owner OK 16 Nov |
 
+## 1.54.1 platform scan fixes (16 Nov) — choices for the owner to confirm
+
+| Date | Choice | Status |
+|---|---|---|
+| 16 Nov | **Lock all exported timesheets** (owner leaning yes, to confirm): once a sheet is exported the whole sheet is frozen: nobody but the platform owner — the person, their line manager or an admin, with or without late extras — changes any field except the write metadata (review of #334). An `exportedAt` an old web build copied from Generate Invoice (within a minute of `invoiceGeneratedAt`) is not an export, as in the apps. Built as its own commit on PR #334 (`Rules 1.54.1: lock exported timesheets for everyone`) so it can be reverted if the answer is "leave as is". Who notices: a reviewer who changed a review or the snapshot of an exported sheet without late extras is now refused (no app does it). | done (1.54.1), **owner to confirm** |
+| 16 Nov | Timesheet export PDFs in Storage are read by **admins and the person who exported the file** (their uid now leads the file name); exports stored before 1.54.1 are admins only. A line manager keeps reading what they export (rulebook §8: they see their reports' pay on the timesheets they review). Guardrail 3 — who loses access: every non-admin manager loses read of exports someone else made, and of their own exports made before 1.54.1 (only the email's download link used them; the PDF was also attached, and Exported → Download PDF rebuilds it). Until iOS 1.54.1 names the file, an iPhone line manager's export email has the PDF attached but no link ("backup skipped"). | done (1.54.1), owner to confirm |
+| 16 Nov | The signed timesheets export email goes to the **signed-in user's own email only**; no typed address (the screen never offered one), no organisation accounts or finance address (organisations store none), not the exported people. | done (1.54.1), owner to confirm |
+| 16 Nov | Storage, outside a person's home company, follows the organisation's `members` map: listed `admin` / `manager` is staff there, `operative` / `member` is not. Guardrail 3: someone listed `manager` in another company whose own users document says operative now gets staff Storage access there (variation evidence, exports they made) — the same role the Firestore rules give them through the auth claims. | done (1.54.1), owner to confirm |
+| 16 Nov | **Notifications create not tightened** (scan LOW): requiring `actorUserId` would refuse iPhone notices today (`saveNotification` leaves it out by default). iOS 1.54.1 hand-off asks iOS to always pass it; then a later rules release can require it (except the three scheduled types). | question (owner: tighten after iOS?) |
+
 ## 16 Nov decisions (for 1.55, timesheet revisions)
 
 | Date | Decision | Status |
 |---|---|---|
-| 16 Nov | **Lock all.** Once a timesheet is exported nobody changes it, admins included. | rules in PR #334 (1.54.1, w-rules-hardening); 1.55.0 adds the revision locks (an exported revision, and an exported original that has a revision) |
+| 16 Nov | **Lock all.** Once a timesheet is exported nobody changes it, admins included. | done (rules 1.54.1, PR #334, `timesheetExportedFrozen`); 1.55.0 keeps it — an exported original and an exported revision stay frozen |
 | 16 Nov | **Corrections go through revisions** (REV 1, REV 2, …): the original and each exported revision never change; a revision goes through normal signing (person, then line manager; a self-signed person alone); on export it shows "REV N" and the difference from the previous version (e.g. "+£44.12"); the next correction is REV N + 1. | done web + rulebook + rules (1.55.0, w155-timesheet-revisions); iOS open (hand-off v1.55.0) |
 | 16 Nov | **Refined: a revision is caused by a booking change**, never by editing a timesheet. Before export nothing changes from 1.47 (the sheet reopens, no REV). After export a booking change (the 1.47 rule) leaves the sheet frozen and makes a revision due, derived from the latest exported version and the live bookings (`timesheetRevisionDue`), never written by whoever edits the booking. The person gets "update to your already exported timesheet" and the yellow triangle, presses "Review and sign again" (their own write creates the revision), signs the live figures; the line manager counter-signs. | done web + rulebook + rules + functions (1.55.0); iOS open |
 | 16 Nov | **Notice**: the 1.54 booking-notice functions also fire for exported sheets, once per exported version, never the actor — one type `timesheet_revision_to_sign` ("Update to your exported timesheet"; "Your timesheet has a revision to sign" when a reviewer creates one). | done (1.55.0); functions deploy pending |

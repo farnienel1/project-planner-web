@@ -4606,11 +4606,13 @@ var ProjectPlannerCanonical = (() => {
       weekEndKey: trimmed2(input.endDayKey)
     };
   }
-  function timesheetExportStoragePath(organizationId, fileName, stampSeconds) {
+  function timesheetExportStoragePath(organizationId, fileName, stampSeconds, uploaderUid) {
     const org = trimmed2(organizationId);
     const safe = trimmed2(fileName).replace(/\s+/g, "_");
     const stamp = Math.max(0, Math.floor(Number(stampSeconds) || 0));
-    return `organizations/${org}/${TIMESHEET_EXPORT_STORAGE_FOLDER}/${stamp}_${safe}`;
+    const uid = trimmed2(uploaderUid ?? "");
+    const prefix = uid && !/[/_\s]/.test(uid) ? `${uid}_` : "";
+    return `organizations/${org}/${TIMESHEET_EXPORT_STORAGE_FOLDER}/${prefix}${stamp}_${safe}`;
   }
   function timesheetStatusWriteFields(fields) {
     const managerMs = fields.managerSignedAtMs;
@@ -13612,7 +13614,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.55.0" : "",
-      sha256: true ? "71c25b8f7b38173d0b58672b02bf66daa3f007ef425d51299d90cb1a58e0b4d2" : ""
+      sha256: true ? "009814bf5003fbe881d356da650d23d88c694b1cc1cceae942872804f9c0b39d" : ""
     };
   }
   function rulebookVersionLabel(version) {

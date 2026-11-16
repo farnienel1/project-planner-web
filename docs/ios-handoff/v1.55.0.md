@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.54.0 → 1.55.0
-Packed hash: 9a9c0fb94d6b910a208286aff6d9156d0af3015677093515b0503883db72dd64
-Rulebook sha256: 71c25b8f7b38173d0b58672b02bf66daa3f007ef425d51299d90cb1a58e0b4d2
+Rulebook version: 1.55.0 → 1.55.0
+Packed hash: b3a5ee7bd158824a24b8187b0b1a02bf0224a34972a948275c85ef905586a885
+Rulebook sha256: 009814bf5003fbe881d356da650d23d88c694b1cc1cceae942872804f9c0b39d
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,12 +22,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 5a8a7e4e6f56b91cb18f71e79207782b8840fccf0b63b695826c47e18e59a32e
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: TIMESHEET_CREATE_REVISION_HELP, TIMESHEET_CREATE_REVISION_LABEL, TIMESHEET_EARLIER_VERSIONS_LABEL, TIMESHEET_ORIGINAL_VERSION_LABEL, TIMESHEET_REVIEW_AND_SIGN_REVISION_LABEL, TIMESHEET_REVISION_COPIED_FIELDS, TIMESHEET_REVISION_DUE_MESSAGE, TIMESHEET_REVISION_DUE_NOTICE_MESSAGE, TIMESHEET_REVISION_DUE_NOTICE_TITLE, TIMESHEET_REVISION_DUE_REVIEWER_MESSAGE, TIMESHEET_REVISION_DUE_STATUS, TIMESHEET_REVISION_FIELDS, TIMESHEET_REVISION_LIMIT_MESSAGE, TIMESHEET_REVISION_MAX, TIMESHEET_REVISION_NOTICE_MESSAGE, TIMESHEET_REVISION_NOTICE_TITLE, TIMESHEET_REVISION_NOTICE_TYPE, TIMESHEET_REVISION_NOT_EXPORTED_MESSAGE, TIMESHEET_REVISION_NOT_REVIEWER_MESSAGE, TIMESHEET_REVISION_OPEN_MESSAGE, TIMESHEET_REVISION_SUFFIX, canCreateTimesheetRevision, isTimesheetRevisionDocId, parseTimesheetRevisionDocId, timesheetEarlierVersions, timesheetExportedTotal, timesheetInvoiceNumber, timesheetInvoiceNumberForRevision, timesheetLatestVersion, timesheetReportVersion, timesheetRevisionCreateFields, timesheetRevisionDifference, timesheetRevisionDocId, timesheetRevisionDue, timesheetRevisionDueNoticeId, timesheetRevisionLabel, timesheetRevisionNoticeKey, timesheetRevisionToSignRecipients, timesheetVersionsForPeriod
+Exports added: none
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/notificationPreferences.ts, lib/canonical/notificationRecipients.ts, lib/canonical/payrunSnapshot.ts, lib/canonical/recordsDocuments.ts, lib/canonical/timesheetBookingChanges.ts, lib/canonical/timesheetBookingNotice.ts, lib/canonical/timesheetPeriod.ts, lib/canonical/timesheetRevisions.ts, lib/canonical/weeklyReportPay.ts, lib/canonical/workDocumentReaders.ts
+Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/canonical.test.ts, lib/canonical/timesheetPeriod.ts, storage.rules
 Done when:
-- [ ] Packed hash in iOS equals 9a9c0fb94d6b910a208286aff6d9156d0af3015677093515b0503883db72dd64
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 71c25b8f7b38173d0b58672b02bf66daa3f007ef425d51299d90cb1a58e0b4d2)
+- [ ] Packed hash in iOS equals b3a5ee7bd158824a24b8187b0b1a02bf0224a34972a948275c85ef905586a885
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 009814bf5003fbe881d356da650d23d88c694b1cc1cceae942872804f9c0b39d)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.55.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -39,7 +39,7 @@ Done when:
 - **Timesheet revisions** (§8, §13, §16, owner decisions 16 Nov, refined the same day; new `lib/canonical/timesheetRevisions.ts`): after export a booking change makes a revision due (`timesheetRevisionDue`, derived; before export 1.47.0 is unchanged); the person creates `settings/{original}_rev{N}` with "Review and sign again" (or a reviewer with Create revision), signs the live figures, the line manager counter-signs, Export shows REV N. New: `TIMESHEET_REVISION_*` copy, `TIMESHEET_REVISION_FIELDS`, `TIMESHEET_REVISION_COPIED_FIELDS`, `parseTimesheetRevisionDocId`, `isTimesheetRevisionDocId`, `timesheetRevisionDocId`, `timesheetRevisionLabel`, `timesheetInvoiceNumber`, `timesheetInvoiceNumberForRevision`, `timesheetRevisionDifference`, `timesheetExportedTotal`, `timesheetVersionsForPeriod`, `timesheetLatestVersion`, `timesheetReportVersion`, `timesheetEarlierVersions`, `canCreateTimesheetRevision`, `timesheetRevisionCreateFields`, `timesheetRevisionToSignRecipients`, `timesheetRevisionNoticeKey`, `timesheetRevisionDueNoticeId`.
 - Changed: `pickTimesheetRowForPeriod` (rows with `documentId`: one per original; `versions`), `timesheetDocumentSubjectId` and `timesheetEntryId` (a revision id reads as its original), `signedTimesheetBookingWriteReopens` / `timesheetBookingChangeNotice` (`includeExported`; the decision carries `exported`), `PayrunSnapshotSheet.documentId` (`parsePayrunSnapshotSheet`), `WeeklyReportPaySheet.revision` (check line "· REV N").
 - New notice type `timesheet_revision_to_sign` (push, toggle timesheetSignOff, opens My Timesheets).
-- Security rules: `tsRevCreate`, `tsRevKept`; the settings match's helpers renamed `timesheet…` → `ts…` and three comment lines moved to `docs/firestore-rules-notes.md` (byte budget); no other allow/deny change.
+- Security rules (on top of 1.54.1): `tsRevCreate` (the previous version exported by the 1.54.1 leftover rule, `tsExportedIn`), `tsRevKept`; the settings match's helpers renamed `timesheet…` → `ts…` and a few equivalent simplifications for the byte budget (`docs/firestore-rules-notes.md` "1.55.0 revisions"); no other allow/deny change.
 
 ## iOS work for 1.55.0
 
@@ -56,7 +56,7 @@ Timesheet revisions (REV 1, REV 2, …), rulebook §8 "Timesheet revisions", §1
 
 ## New rulebook sections
 
-- 1.55.0 — 2026-11-16
+- 1.54.1 — 2026-11-16
 
 ## Workflow for the iOS agent
 

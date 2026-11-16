@@ -54,6 +54,8 @@ export interface Operative {
   lastName: string;
   email: string;
   phone?: string;
+  /** The account this row belongs to, when stored (`linkedUserId` / `userId` / `uid`, rulebook `parseOperativeDocument`). Read only. */
+  linkedUserId?: string;
   startDate: Date;
   hourlyRate: number;
   dayRate?: number;

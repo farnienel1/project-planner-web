@@ -20,8 +20,8 @@
   {
     "path": "components/daily-overview/DailyOverviewBookingSheet.tsx",
     "pattern": "findOperativeForUser",
-    "count": 2,
-    "reason": "FU-5: resolves which account a booking row belongs to via one catalogue row; should be resolveBookingPerson. Ids now compare without case."
+    "count": 1,
+    "reason": "FU-5: the booking's account is resolveBookingPerson (bookingRowUserId, scan 16 Nov); one hit left picks the catalogue row a manager site booking moves onto a job under (follow-up)."
   },
   {
     "path": "components/daily-overview/DailyOverviewScreen.tsx",

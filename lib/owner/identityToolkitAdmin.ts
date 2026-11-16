@@ -132,6 +132,34 @@ export async function adminCountCollection(collectionPath: string, limit = 1): P
   return (body.documents || []).length
 }
 
+/** Document ids of one collection, read with the server key (rules do not apply). Throws when the list fails. */
+export async function adminListDocumentIds(collectionPath: string, limit = 500): Promise<string[]> {
+  const { token, projectId } = await googleAccessToken(['https://www.googleapis.com/auth/datastore'])
+  if (!projectId) throw new Error('Firebase project id is missing.')
+  const ids: string[] = []
+  let pageToken = ''
+  while (ids.length < limit) {
+    const url = new URL(
+      `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents/${collectionPath}`
+    )
+    url.searchParams.set('pageSize', String(Math.min(300, limit - ids.length)))
+    url.searchParams.set('mask.fieldPaths', '__name__')
+    if (pageToken) url.searchParams.set('pageToken', pageToken)
+    const response = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' })
+    if (response.status === 404) break
+    if (!response.ok) throw new Error(`Could not list ${collectionPath}`)
+    const body = (await response.json().catch(() => null)) as { documents?: { name?: string }[]; nextPageToken?: string } | null
+    if (!body) throw new Error(`Could not read ${collectionPath}`)
+    for (const row of body.documents || []) {
+      const name = row.name || ''
+      ids.push(name.slice(name.lastIndexOf('/') + 1))
+    }
+    if (!body.nextPageToken) break
+    pageToken = body.nextPageToken
+  }
+  return ids
+}
+
 export async function adminLookupAuthUserByEmail(email: string): Promise<{ uid: string } | null> {
   const emailLower = email.trim().toLowerCase()
   if (!emailLower) return null

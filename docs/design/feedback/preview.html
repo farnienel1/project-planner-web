@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feedback sounds preview</title>
+<style>
+  :root { color-scheme: light dark; --bg: #f7f8fa; --card: #fff; --ink: #172033; --muted: #5a6478; --line: #dde2ea; --blue: #2563eb; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0f1420; --card: #171e2d; --ink: #e8ecf3; --muted: #a3adbf; --line: #2a3346; --blue: #6ea0ff; } }
+  body { margin: 0; padding: 24px 16px; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  p.lead { color: var(--muted); margin: 0 0 20px; }
+  .row { display: flex; gap: 14px; align-items: flex-start; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 10px; }
+  button { flex: none; min-width: 84px; padding: 8px 14px; border-radius: 9px; border: 0; background: var(--blue); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+  button:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+  .name { font-weight: 700; }
+  .meta { color: var(--muted); font-size: 13px; }
+  code { font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Project Planner feedback sounds</h1>
+  <p class="lead">Open this file in a browser and press Play. These are the masters (<code>sounds/pp-*.wav</code>); the app plays the same sounds from <code>public/sounds/</code> at a lower volume (gain 0.35). Spec: <code>feedback-sounds-haptics-guide.md</code>. To change a sound, change <code>scripts/feedback-sounds/make_feedback_sounds.py</code> and regenerate.</p>
+  <div id="list"></div>
+</main>
+<script>
+  // Sound → feel, length and the events that play it (guide §2 and §4).
+  const SOUNDS = [
+    ['success', 'Soft rising two-note chime (E5 → B5)', '400 ms', 'bookingSaved, bookingEdited, leaveBooked, leaveEdited, timesheetSaved'],
+    ['sent', 'Light upward "pop": sent off for someone else to decide', '160 ms', 'leaveRequested, userInvited, overtimeSent (bookingRequested: no feature yet)'],
+    ['approved', 'Bright four-note rising arpeggio (C–E–G–C)', '620 ms', 'leaveApproved, allWarningsClear, timesheetSigned, overtimeReturned, claimsApproved (bookingApproved: no feature yet)'],
+    ['resolved', 'Gentle falling two-note "settle" (G5 → D5)', '460 ms', 'warningResolved'],
+    ['removed', 'Single soft low note, neutral', '240 ms', 'bookingDeleted, leaveDeclined, leaveRemoved, claimsDeclined (bookingDeclined: no feature yet)'],
+    ['error', 'Two soft low tones: refused or failed', '280 ms', 'actionRefused'],
+    ['queued', 'Tiny tick: saved on this device (iPhone offline only)', '90 ms', 'savedOffline (iOS only)'],
+  ]
+  const list = document.getElementById('list')
+  for (const [name, feel, length, events] of SOUNDS) {
+    const row = document.createElement('div')
+    row.className = 'row'
+    const audio = new Audio(`sounds/pp-${name}.wav`)
+    audio.volume = 0.35
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.textContent = 'Play'
+    button.setAttribute('aria-label', `Play ${name}`)
+    button.addEventListener('click', () => { audio.currentTime = 0; audio.play() })
+    const text = document.createElement('div')
+    text.innerHTML = `<div class="name">${name} <span class="meta">· ${length}</span></div><div>${feel}</div><div class="meta">Used for: ${events}</div>`
+    row.append(button, text)
+    list.append(row)
+  }
+</script>
+</body>
+</html>

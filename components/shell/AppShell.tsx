@@ -76,6 +76,7 @@ import { createMenuItems } from '@/lib/navigation/createMenu'
 import { cn } from '@/lib/ui/cn'
 import { UserAvatar } from '@/components/users/UserAvatar'
 import { inboxOwnerIds } from '@/lib/staff/rulebookPeople'
+import { FeedbackSoundsUnlock } from '@/components/client/FeedbackSoundsUnlock'
 
 function NavGlyph({ path, className }: { path: string; className?: string }) {
   return (
@@ -712,6 +713,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <ToastProvider>
       <AppShellInner>{children}</AppShellInner>
       <BookingDeleteNotice />
+      <FeedbackSoundsUnlock />
     </ToastProvider>
   )
 }
