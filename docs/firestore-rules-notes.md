@@ -1362,30 +1362,44 @@ Marketing suppression list. Admin API only — no client reads or writes. There 
 
 ## 1.55.0 revisions
 
-Rulebook 1.55.0 §8 / §16: timesheet revisions, on top of 1.54.1 (`timesheetIdNames`, `timesheetSubjectFiled`,
-`timesheetExportedFrozen`). In `match /settings/{settingId}`:
+Rulebook 1.55.0 §8 / §16: timesheet revisions, on top of 1.54.1 (`timesheetIdNames`, `timesheetSubjectFiled` and the
+exported-sheet freeze, which at head is inlined in the settings write rule and tests `tsExportedIn`). In
+`match /settings/{settingId}`:
 
 - `tsRevCreate()` — the only way to create a document `timesheet_…_rev{N}` (the allow sends every create of such an id
   there and nowhere else). Keys are exactly the copied fields (`TIMESHEET_REVISION_COPIED_FIELDS`), the revision fields
   and write metadata; `revision` is an int 1–99; `revisionOf` is an original id (no `_rev`); the document id is
   `revisionOf + '_rev' + revision`; `previousVersionId` is the original (N = 1) or `_rev{N-1}`; `revisionCreatedBy` is
   the caller and `revisionCreatedAt` the request time; the id names the `userId` written (`timesheetIdNames`: a revision id `timesheet_{uid}_{stamp}_rev{N}` has the person's id as its second part, so the split
-  comparison accepts it). The previous version must be exported by the same leftover rule as `timesheetStoredExported`
+  comparison accepts it). The previous version must be exported by the 1.54.1 leftover rule
   (`tsExportedIn(prev)`) — so a second open revision is impossible — and every copied field must equal it
   (`!d.diff(prev).affectedKeys().hasAny(copied)`), so the person can never create a revision with self-approved reviews
   or changed entries. `payrollLineReviews` is the exception (owner decision 16 Nov, finding 6 = a): the create's map must
   be the previous version's, or a part of it (`nr.diff(pr)` has no added or changed keys) — labour decisions on changed
-  bookings are dropped, never added or altered. The caller is the subject (`tsIdIsCallers`) or a reviewer of the subject (`tsReviewer`). One
+  bookings are dropped, never added or altered — and when the caller is the subject (`tsIdIsCallers`) it must be exactly
+  the previous version's (final review of #344, M1). The caller is the subject (`tsIdIsCallers`) or a reviewer of the subject (`tsReviewer`). One
   `get` (the previous version).
-- `tsRevKept()` — on every update and delete of a revision: its revision fields never change; the subject never changes
+- The revision update / delete checks (inlined as the guard of the settings write rule,
+  evaluated after the write checks: `BODY ? GUARD : false`, so a refused write never pays for it) — on every update and
+  delete of a revision: its revision fields never change; the subject never changes
   its `priceWorkEntries`, `expenseEntries` or `lateExtras` (review of #344: a probe raised a copied expense from £20 to
   £2,000 — after export, corrections go on the next timesheet); an unexported revision is deleted only by a reviewer,
-  never the subject. The id test is `_rev[1-9][0-9]?$` (1–99, as `parseTimesheetRevisionDocId`). An exported revision, like the exported original, is frozen by 1.54.1
-  `timesheetExportedFrozen` (only `updatedAt/By/From` and `exportedAt` resent within a second), and an exported sheet is
-  never deleted by the existing delete branches.
-- Byte budget (148,480): the settings match's older helpers were renamed `timesheet…` → `ts…` (the 1.54.1 names `timesheetSubjectFiled`, `timesheetIdNames`, `timesheetStoredExported`, `timesheetExportedFrozen` are kept); `timesheetStoredExported`'s body
-  became `tsExportedIn(d)` (same logic, reused for the previous version); the manager-signed and empty-list tests in
-  `tsOwnerReviewsKept` use `tsInstantIn` / `tsListLeft` (same tests); the read rule's inner own-sheet block that its
+  never the subject — and the platform owner, whose `isPlatformOwner()` branch of the write rule allows any timesheet
+  write or delete, may delete a revision too (exported or not; before the final review only a reviewer could). The id test is `_rev[1-9][0-9]?$` (1–99, as `parseTimesheetRevisionDocId`). An exported revision, like the exported original, is frozen by the 1.54.1
+  freeze (`tsExportedIn`; only `updatedAt/By/From` and `exportedAt` resent within a second), and an exported sheet is
+  never deleted by the subject or reviewer delete branches.
+- The ordinary path (any `timesheet_` id that is not a revision id; final review of #344, L3): an id ending `_rev` + digits
+  that is not `_rev1`–`_rev99` is refused, and no create or update writes `revisionOf`, `revision`, `previousVersionId`,
+  `revisionCreatedBy` or `revisionCreatedAt` (`request.resource.data.keys().hasAny(…)`). One regular expression on an
+  ordinary id.
+- Expression budget: the owner's review-field check computes the written keys once (`tsOwnerReviewFieldsUnchanged`,
+  `let written = writtenKeys()`, as main already did). With the guard evaluated before the
+  write checks and that helper folded into its caller, two refusals on main's paths reached the 1,000-expression limit
+  under `RULES_STRICT_BUDGET=1`; at head the strict refusals are main's 5.
+- Byte budget (148,480): the settings match's older helpers were renamed `timesheet…` → `ts…` (`timesheetSubjectFiled`
+  and `timesheetIdNames` keep their names); the 1.54.1 export test became `tsExportedIn(d)` (same logic, reused for the
+  previous version), and the single-use helpers (the export freeze, the owner's subject and self-sign tests) were
+  inlined into their one caller; the read rule's inner own-sheet block that its
   first clause already covers was removed (a read never has `request.method == 'create'`, and `resource.data.userId ==
   uid` on a `timesheet_` id is already allowed by the first clause); the variation and deadline / health & safety id
   tests became one regular expression each (`matches` is a whole-string match). No allow/deny change from those.
