@@ -205,26 +205,75 @@ function mapLateExtras(
 }
 
 /**
- * The stored `lateExtras` rows the reader did not return (16 Nov scan): `parseTimesheetLateExtras` skips a row with a
- * blank title, no id or no kind, and every row after the first of an id. Matched by id without case, the first stored
- * row of each id read counts as read; every other row is kept exactly as stored so the next save writes it back.
+ * The stored `lateExtras` rows the reader did not return (16 Nov scan), kept exactly as stored so the next save writes
+ * them back. A row counts as read only when it passes the reader's own tests (`parseTimesheetLateExtras`): a kind and
+ * an id, and — per id, without case, in stored order — the first row whose kind's entries hold a row of that id with a
+ * title (`parseTimesheetEntries` keeps titled rows only), which is the row returned. Every other row (a blank title,
+ * no id, no kind, a later copy of an id) is kept. `read` (the entries the reader returned) is a safety net: a row whose
+ * id was not returned is never counted as read.
  */
 export function unreadLateExtraRows(data: Record<string, unknown>, read: ReadonlyArray<{ id: string }>): Record<string, unknown>[] {
   const stored = data[TIMESHEET_LATE_EXTRAS_FIELD]
   if (!Array.isArray(stored)) return []
-  const pending = new Set(read.map((entry) => normalizeDocumentId(entry.id)))
-  const out: Record<string, unknown>[] = []
-  for (const raw of stored) {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
-    const row = raw as Record<string, unknown>
-    const key = normalizeDocumentId(row.id)
-    if (key && pending.has(key)) {
-      pending.delete(key)
-      continue
-    }
-    out.push(row)
-  }
-  return out
+  const returned = new Set(read.map((entry) => normalizeDocumentId(entry.id)))
+  const str = (value: unknown) => (typeof value === 'string' ? value.trim() : '')
+  const kindOf = (row: Record<string, unknown>) => (row.kind === 'priceWork' || row.kind === 'expense' ? row.kind : null)
+  const rows = stored.map((raw) => (raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : null))
+  const readIndexes = new Set<number>()
+  const seen = new Set<string>()
+  rows.forEach((row) => {
+    if (!row) return
+    const kind = kindOf(row)
+    const id = str(row.id)
+    if (!kind || !id) return
+    const key = normalizeDocumentId(id)
+    if (seen.has(key) || !returned.has(key)) return
+    const index = rows.findIndex(
+      (other) => other != null && kindOf(other) === kind && str(other.id) !== '' && normalizeDocumentId(other.id) === key && str(other.title) !== ''
+    )
+    if (index < 0) return
+    readIndexes.add(index)
+    seen.add(key)
+  })
+  return rows.flatMap((row, index) => (row && !readIndexes.has(index) ? [row] : []))
+}
+
+/**
+ * 16 Nov scan (review of #347): the kept rows after the person's late-extras change from `before` to `next` — a kept row
+ * that shares an id (without case) with a late extra the person deleted in that change goes with it, so a hidden copy
+ * never comes back as a visible late extra.
+ */
+export function lateExtrasUnreadAfter(
+  unread: ReadonlyArray<Record<string, unknown>> | null | undefined,
+  before: ReadonlyArray<{ id: string }> | null | undefined,
+  next: ReadonlyArray<{ id: string }>
+): Record<string, unknown>[] {
+  const kept = new Set(next.map((entry) => normalizeDocumentId(entry.id)))
+  const deleted = new Set((before ?? []).map((entry) => normalizeDocumentId(entry.id)).filter((key) => key && !kept.has(key)))
+  return (unread ?? []).filter((row) => !deleted.has(normalizeDocumentId(row.id)))
+}
+
+/**
+ * Rulebook 1.54.0: the owner's late extras follow the entry rules (job number, evidence), checked by kind against the
+ * sheet as this editor loaded it (`base`; none: every late extra counts as new). Review of #347: only the person's own
+ * late extras (the draft's), never the rows kept as stored (`lateExtrasUnread`) — they are written back untouched and
+ * are not the person's edit (a second stored copy of an id would otherwise always read as an edit and refuse the save).
+ */
+export function ownerLateExtrasError(input: {
+  base: TimesheetDraft | null
+  draft: TimesheetDraft
+  organizationId: string
+  ownerUserIds: ReadonlyArray<string>
+}): string | null {
+  const lateOf = (rows: Record<string, unknown>[] | undefined, kind: string) => (rows ?? []).filter((row) => row.kind === kind)
+  const previousLate = input.base ? (input.base.lateExtras ?? []).map(lateExtraToFirestore) : undefined
+  const nextLate = (input.draft.lateExtras ?? []).map(lateExtraToFirestore)
+  return timesheetOwnerEntriesError({
+    previous: { priceWorkEntries: lateOf(previousLate, 'priceWork'), expenseEntries: lateOf(previousLate, 'expense') },
+    next: { priceWorkEntries: lateOf(nextLate, 'priceWork'), expenseEntries: lateOf(nextLate, 'expense') },
+    organizationId: input.organizationId,
+    ownerUserIds: [...input.ownerUserIds],
+  })
 }
 
 /** Rulebook 1.54.0: a late extra as stored — the entry's own fields and kind, never a decision. */
@@ -1006,15 +1055,7 @@ export async function saveTimesheetDraft({
     })
     if (entriesError) throw new Error(entriesError)
     // Rulebook 1.54.0: late extras follow the same entry rules (job number, evidence), checked by kind.
-    const lateOf = (source: unknown, kind: string) =>
-      (Array.isArray(source) ? source : []).filter((row) => row && typeof row === 'object' && (row as Record<string, unknown>).kind === kind)
-    const previousLate = base ? draftToFirestoreMap(base)[TIMESHEET_LATE_EXTRAS_FIELD] : undefined
-    const lateError = timesheetOwnerEntriesError({
-      previous: { priceWorkEntries: lateOf(previousLate, 'priceWork'), expenseEntries: lateOf(previousLate, 'expense') },
-      next: { priceWorkEntries: lateOf(next[TIMESHEET_LATE_EXTRAS_FIELD], 'priceWork'), expenseEntries: lateOf(next[TIMESHEET_LATE_EXTRAS_FIELD], 'expense') },
-      organizationId,
-      ownerUserIds,
-    })
+    const lateError = ownerLateExtrasError({ base: base ?? null, draft, organizationId, ownerUserIds })
     if (lateError) throw new Error(lateError)
   }
   // Who and where (`writeMetadataFields`) plus the server time, on every timesheet save.

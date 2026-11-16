@@ -68,7 +68,7 @@ import {
   resolveSubcontractorBookingPeople,
 } from '@/lib/subcontractors/bookingPeople'
 import { bookingJobLabel, weekdayPaidHours, weeklyReportPayeOvertime, OVERTIME_RATE_CHANGED_MARK, overtimePersonIds, type OvertimeBookingInput, type PayrollTimePolicyState } from '@/lib/canonical'
-import { normalizeDocumentId } from '@/lib/canonical'
+import { catalogueOperativePaySubjects, normalizeDocumentId } from '@/lib/canonical'
 
 export type WeeklyReportWarningRow = {
   status: string
@@ -468,8 +468,16 @@ export function buildWeeklyReportData({
   const notePriced = (id: string | null | undefined) => {
     const person = pricedOwner.get(normalizeDocumentId(id))
     if (person?.user) pricedUserIds.add(person.id)
-    else if (person?.operative) pricedCatalogueOperativeIds.add(person.id)
+    else if (person?.operative && catalogueSubjectKeys.has(normalizeDocumentId(person.id))) pricedCatalogueOperativeIds.add(person.id)
   }
+  // Review of #347: only the rows the rulebook reads pay for as catalogue operatives (`catalogueOperativePaySubjects`: no
+  // stored account link, not a roster id or email) are waited for — a row linked to a missing account is never read.
+  const catalogueSubjectKeys = new Set(
+    catalogueOperativePaySubjects(
+      operatives.map((row) => ({ id: row.id, email: row.email ?? '', linkedUserId: row.linkedUserId ?? '' })),
+      users as never
+    ).map((subject) => normalizeDocumentId(subject.id))
+  )
   payBookings.forEach((booking) => notePriced(booking.personId))
   timesheetWeeks.forEach((week) => notePriced(week.userId))
   timesheetSheets.forEach((sheet) => notePriced(sheet.personId))

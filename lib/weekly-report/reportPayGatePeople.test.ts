@@ -203,3 +203,11 @@ test('16 Nov scan: a booking of a catalogue operative (no account) is priced and
   assert.equal(gate.status, 'loading')
   assert.deepEqual(gate.loadingNames, ['Cat Row'])
 })
+
+test('review of #347: a row linked to a missing account is not waited for (the rulebook never reads its pay profile)', () => {
+  const linked = { id: 'row2', firstName: 'Linked', lastName: 'Row', email: '', linkedUserId: 'gone', dayRate: 150, payBasis: 'day', skills: [], qualifications: [], isActive: true } as unknown as Operative
+  const report = buildWeeklyReportData(
+    reportInput({ operatives: [linked], bookings: [{ ...booking, id: 'lb', operativeId: 'row2' }] }) as never
+  )
+  assert.deepEqual(report.pricedCatalogueOperativeIds, [])
+})

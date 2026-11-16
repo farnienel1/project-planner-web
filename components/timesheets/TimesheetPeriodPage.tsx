@@ -81,6 +81,7 @@ import {
 import {
   draftFromFirestoreMap,
   draftToFirestoreMap,
+  lateExtrasUnreadAfter,
   loadTimesheetDraft,
   saveTimesheetDraft,
   timesheetDocId,
@@ -740,7 +741,12 @@ export function TimesheetPeriodPage({
   /** Rulebook 1.54.0: save a change to the person's late extras (no signature is cleared; the signed entries stay). */
   const saveLateChange = async (nextLate: TimesheetLateExtra[]): Promise<boolean> => {
     const before = draft
-    const next = { ...draft, lateExtras: nextLate }
+    // Review of #347: a kept stored row (`lateExtrasUnread`) with the id of a late extra deleted here goes with it.
+    const next = {
+      ...draft,
+      lateExtras: nextLate,
+      lateExtrasUnread: lateExtrasUnreadAfter(draft.lateExtrasUnread, draft.lateExtras, nextLate),
+    }
     try {
       await persist(next)
     } catch (err: unknown) {
@@ -794,6 +800,13 @@ export function TimesheetPeriodPage({
     priceWork?: TimesheetDraft['priceWorkEntries'][number]
     expense?: TimesheetDraft['expenseEntries'][number]
   }): Promise<boolean> => {
+    // Nothing is saved without an organisation (`persist` returns early), so no sound and the form stays open.
+    if (!organization?.id) return false
+    // Review of #347: still loading the pay inputs is not a refusal — the message `persist` would give, no sound.
+    if (!loadFailed && !payInputs.ready) {
+      setError(new TimesheetInputsNotReadyError(payInputs.message ?? undefined).message)
+      return false
+    }
     // Rulebook 1.45.0 §8: an edit replaces the entry (same id); an add appends it.
     const replace = <T extends { id: string }>(list: T[], row: T) =>
       editingEntryId ? list.map((existing) => (existing.id === editingEntryId ? row : existing)) : [...list, row]

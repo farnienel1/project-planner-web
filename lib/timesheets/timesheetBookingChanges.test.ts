@@ -13,7 +13,7 @@ import {
   periodBookingChanges,
   timesheetPersonIds,
 } from './timesheetBookingChanges.ts'
-import { draftFromFirestoreMap, draftToFirestoreMap } from './timesheetStorage.ts'
+import { draftFromFirestoreMap, draftToFirestoreMap, lateExtrasUnreadAfter, ownerLateExtrasError } from './timesheetStorage.ts'
 import { signedTimesheetActions, timesheetEntryFingerprint } from '../canonical/index.ts'
 import type { ManagerSiteBooking } from '../scheduling/managerSiteBookingUtils.ts'
 
@@ -408,9 +408,41 @@ test('16 Nov scan: a stored late extra the reader skips (blank title, duplicate 
   const loaded = draftFromFirestoreMap(raw)
   assert.deepEqual(loaded.lateExtras!.map((entry) => entry.id), ['L1'], 'only the readable row is shown')
   assert.deepEqual(loaded.lateExtrasUnread, [blank, duplicate])
-  // The person deletes their readable late extra: the skipped rows stay, exactly as stored.
-  const saved = draftToFirestoreMap({ ...loaded, lateExtras: [] }) as Record<string, unknown>
-  assert.deepEqual(saved.lateExtras, [blank, duplicate])
+  // An unchanged save writes the kept rows back exactly as stored.
+  const unchanged = draftToFirestoreMap(loaded) as Record<string, unknown>
+  assert.deepEqual((unchanged.lateExtras as Record<string, unknown>[]).slice(1), [blank, duplicate])
+  // Review of #347: the person deletes L1 — its hidden same-id copy goes with it; the blank row stays as stored.
+  const unread = lateExtrasUnreadAfter(loaded.lateExtrasUnread, loaded.lateExtras, [])
+  assert.deepEqual(unread, [blank])
+  const saved = draftToFirestoreMap({ ...loaded, lateExtras: [], lateExtrasUnread: unread }) as Record<string, unknown>
+  assert.deepEqual(saved.lateExtras, [blank])
+  // Editing L1 (same id) keeps every kept row.
+  assert.deepEqual(lateExtrasUnreadAfter(loaded.lateExtrasUnread, loaded.lateExtras, [{ ...loaded.lateExtras![0], amount: 13 }]), [blank, duplicate])
   // A sheet whose rows were all read carries no unread list.
   assert.equal(draftFromFirestoreMap(stored).lateExtrasUnread, undefined)
+})
+
+test('review of #347: an unchanged owner save passes the late-extras check even with kept rows (no evidence, same id)', () => {
+  const sheet = signedSheet([booking()])
+  const stored = draftToFirestoreMap({ ...sheet, lateExtras: [lateExpense154] }) as Record<string, unknown>
+  const duplicate = { kind: 'expense', id: 'l1', title: 'Second copy', jobNumber: 'J-1', amount: 5 }
+  const blank = { kind: 'expense', id: 'L2', title: '', amount: 30 }
+  const loaded = draftFromFirestoreMap({ ...stored, lateExtras: [...(stored.lateExtras as Record<string, unknown>[]), duplicate, blank] })
+  assert.equal(ownerLateExtrasError({ base: loaded, draft: loaded, organizationId: 'org', ownerUserIds: ['u1'] }), null)
+  // A new expense of the person's own without evidence is still refused (the rule is unchanged for their edits).
+  const added = { ...lateExpense154, id: 'L9', title: 'Taxi', evidence: [] }
+  const withNew = { ...loaded, lateExtras: [...loaded.lateExtras!, { ...added, kind: 'expense' as const }] }
+  assert.ok(ownerLateExtrasError({ base: loaded, draft: withNew, organizationId: 'org', ownerUserIds: ['u1'] }))
+})
+
+test('review of #347: the read row is the first titled row of an id (without case); a blank row before it is kept', () => {
+  const sheet = signedSheet([booking()])
+  const blank = { kind: 'expense', id: 'X1', title: '  ', amount: 30 }
+  const real = { kind: 'expense', id: 'x1', title: 'Real', jobNumber: 'J-1', amount: 7, date: day }
+  const loaded = draftFromFirestoreMap({ ...(draftToFirestoreMap(sheet) as Record<string, unknown>), lateExtras: [blank, real] })
+  assert.deepEqual(loaded.lateExtras!.map((entry) => [entry.id, entry.title, entry.amount]), [['x1', 'Real', 7]])
+  assert.deepEqual(loaded.lateExtrasUnread, [blank])
+  const saved = (draftToFirestoreMap(loaded) as Record<string, unknown>).lateExtras as Record<string, unknown>[]
+  assert.equal(saved.length, 2)
+  assert.deepEqual(saved.map((row) => [row.id, row.title, row.amount]), [['x1', 'Real', 7], ['X1', '  ', 30]])
 })
