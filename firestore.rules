@@ -1798,26 +1798,31 @@ service cloud.firestore {
           return timesheetOwnerLeaves('payrollLineReviews', written) &&
             timesheetOwnerLeaves('extraEntryReviews', written) &&
             timesheetOwnerLeaves('weeklyReportOverride', written) &&
-            // 1.54.0: extras added after sign-off (`lateExtras`) until exported; they pay only once reviewed (`extraEntryReviews`).
-            (!('lateExtras' in written) || resource == null || !(
-            resource.data.get('exportedAt', null) is timestamp ||
-            resource.data.get('exportedAt', null) is number
-          )) &&
-            (!(resource != null && (
+            // 1.54.0: `lateExtras` (paid only once reviewed) only after the line manager signed and until exported.
+            ((resource != null && (
             resource.data.get('managerSignedAt', null) is timestamp ||
             resource.data.get('managerSignedAt', null) is number ||
             resource.data.get('approvedAt', null) is timestamp ||
             resource.data.get('approvedAt', null) is number
-          )) || (
+          )) ? (
               (!('expenseEntries' in written) || (
             (request.resource.data.get('expenseEntries', null) == null || request.resource.data.get('expenseEntries', null) == []) &&
-            (resource == null || resource.data.get('expenseEntries', null) == null || resource.data.get('expenseEntries', null) == [])
+            (resource.data.get('expenseEntries', null) == null || resource.data.get('expenseEntries', null) == [])
           )) &&
               (!('priceWorkEntries' in written) || (
             (request.resource.data.get('priceWorkEntries', null) == null || request.resource.data.get('priceWorkEntries', null) == []) &&
-            (resource == null || resource.data.get('priceWorkEntries', null) == null || resource.data.get('priceWorkEntries', null) == [])
-          ))
-            ));
+            (resource.data.get('priceWorkEntries', null) == null || resource.data.get('priceWorkEntries', null) == [])
+          )) &&
+              (!('lateExtras' in written) || !timesheetStoredExported())
+            ) : !('lateExtras' in written));
+        }
+        function timesheetStoredExported() {
+          return resource.data.get('exportedAt', null) is timestamp || resource.data.get('exportedAt', null) is number;
+        }
+        // 1.54.0: an exported sheet with late extras is frozen: no reviewer changes its reviews or snapshot.
+        function timesheetReviewerKeepsExportedLate() {
+          return resource == null || resource.data.get('lateExtras', []) == [] || !timesheetStoredExported() ||
+            !writtenKeys().hasAny(['extraEntryReviews', 'weeklyReportOverride']);
         }
 
         allow read: if canAccessOrganization(organizationId) && ((resource.data.get('userId', null) == request.auth.uid && (request.method == 'list' || settingId.matches('^timesheet_.*'))) ||
@@ -1846,7 +1851,7 @@ service cloud.firestore {
             timesheetSameInstant('exportedAt')) && timesheetOwnerReviewFieldsUnchanged()) ||
               timesheetSelfSignedOwnerWrite()
             )
-          ) : timesheetReviewerOfOthers()))
+          ) : (timesheetReviewerOfOthers() && timesheetReviewerKeepsExportedLate())))
             : (request.resource.data.get('userId', null) == (resource == null ? null : resource.data.get('userId', null)) &&
               ((settingId.matches('^deadlines_.*') ||
             settingId == 'deadlineAssignments' ||

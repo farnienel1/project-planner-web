@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.54.0 → 1.54.0
-Packed hash: aa7ce65462370d3f1f5d03955f35a85cbb5108b9c47a085cf2397424e03bc0ff
-Rulebook sha256: c749568f63aebd2fb801f49fd365304dac366d321dcbf80f92cf01564ab80dd8
+Packed hash: 985440e78c93d5660d71c33e44e53540f4dfe944b4628aacdfe447456fdc5201
+Rulebook sha256: 1cf737f14f5731cfbcb0110b9cb8c2199f3a4b1d8fa5d396135b0e96628895e7
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,12 +22,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 5a8a7e4e6f56b91cb18f71e79207782b8840fccf0b63b695826c47e18e59a32e
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: TIMESHEET_LATE_EXTRA_ID_TAKEN_LABEL, timesheetLateExtraFingerprintKey, timesheetLateExtraFingerprintMap, timesheetLateExtraReviewable, timesheetSnapshotMoneyRowsCurrent
+Exports added: none
 Exports removed: none
-Web files that changed the rules: lib/canonical/bundleEntry.ts, lib/canonical/index.ts, lib/canonical/timesheetEntryReviews.ts, lib/canonical/timesheetLateExtras.ts
+Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/timesheet154.test.ts
 Done when:
-- [ ] Packed hash in iOS equals aa7ce65462370d3f1f5d03955f35a85cbb5108b9c47a085cf2397424e03bc0ff
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 c749568f63aebd2fb801f49fd365304dac366d321dcbf80f92cf01564ab80dd8)
+- [ ] Packed hash in iOS equals 985440e78c93d5660d71c33e44e53540f4dfe944b4628aacdfe447456fdc5201
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 1cf737f14f5731cfbcb0110b9cb8c2199f3a4b1d8fa5d396135b0e96628895e7)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.54.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -42,6 +42,8 @@ Done when:
 - **Review of #337 fixes** (before merge): the notice shares the app's decision (`signedTimesheetBookingWriteReopens`) and queries only the sheets covering the booking day (new composite index `settings` userId + weekEnd); switched-off places never repair a signed snapshot (`scheduleOptionPlace`); `timesheetExportedFieldSet` (the stored `exportedAt` the rules test); Data health checks the last six pay runs and links to the sheet.
 - **Annual leave report = the balance's leave year** (§9, owner decision 16 Nov, web Annual leave report parity with iOS; review of web PR #335): new `annualLeaveReportYearMonths` (the months `annualLeaveBalance` uses — the person's own leave year with an allowance, else the organisation's), passed to `leaveReportRows` / `leaveReportYears`; "Holiday Report" renamed "Annual leave report" in §9. iOS `HolidayReportView` must call it.
 - **Data health "Timesheets half signed"** (§8, owner decision 16 Nov, (a) + (c)): `timesheetsHalfSigned`, `TIMESHEETS_HALF_SIGNED_HEADING` / `_HELP` / `_NONE`. Read only.
+- **Third review of #337** (before merge): (1) a late extra whose id is a signed entry's (another letter case) is flagged and never reviewed — `timesheetLateExtraReviewable`, `TIMESHEET_LATE_EXTRA_ID_TAKEN_LABEL`, `timesheetLateExtraLabel` takes the reason; `timesheetEntryReviewWriteFields` never writes a late review under a signed entry's key (new `signedEntryIds`) or across kinds, and `timesheetEntryDecision` never reads a `lateExtra` review as a signed entry's (before: approving late `e1` replaced signed `E1`'s declined £1000 review, so £1000 read as pending); late fingerprints under their own key (`timesheetLateExtraFingerprintKey`, `timesheetLateExtraFingerprintMap`). (2) An exported sheet's late extras are frozen: no review offered or written (`exported`), and a sheet with late extras is not re-priced after export; rules refuse reviewer changes to `extraEntryReviews` / `weeklyReportOverride` once `exportedAt` is stored on a sheet with late extras. (3) Export stamps only `weeklyReportOverride` and `exportedAt` in a transaction that refuses when late extras now wait. (4) The reviewer's save writes the sheet and its reviews in one update; the weekly report feed counts a snapshot's late rows only while still approved (`timesheetSnapshotMoneyRowsCurrent`). (5) Rules: `lateExtras` only after the line manager signs. Static compile cost 229,698 → 229,929.
+- **§24 Storage rules 1.50.0 are live** (web PR #333 merged): certificates take every allowed photo type and PDF as `UPLOAD_ALLOWED_TYPES` lists them; the "until published" JPEG redraw text is removed.
 
 ## iOS work for 1.54.0
 
@@ -66,7 +68,15 @@ Done when:
 4. **New notice type `timesheet_bookings_changed`** (§13). Written by the server (it decides with `signedTimesheetBookingWriteReopens`, the same comparison as the app's triangle); iOS only reads it. `Models/NotificationModel.swift:38` — add the case; route it with `notificationDestination` (kind `timesheetMine`, `dayKey` = the pay run's first day, `deepLinkUserId` the person) to My Timesheets for that period; push toggle `timesheetSignOff`.
 5. **Annual leave report = the balance's leave year** (§9). `Views/HolidayReportView.swift:77, 118` pass `user.annualLeaveYearStartMonth` whatever the allowance; call `annualLeaveReportYearMonths({ annualLeaveEnabled, startMonth, endMonth, orgStartMonth, orgEndMonth, onDayKey, timeZone, employment })` (the same inputs as the balance on that screen) and pass its `startMonth` to `leaveReportRows` / `leaveReportYears`. Rename the screen title "Annual leave report" if it says "Holiday Report".
 6. **Data health "Timesheets half signed"** — web only (iOS has no Data health screen); nothing to do.
-7. **Tests:** a `Rulebook1540Tests` covering: Office booking with `showOffice: false` paid by the collector; a late extra after the counter-signature pays 0 until a `lateExtra` review with its fingerprint approves it, then exactly the approved amount; editing the signed expense is refused by the app; an inline `managerDecision` on a late extra never pays; a late extra copying a signed entry's id is ignored; the new type decodes and routes; the leave report for an April–March person in a January–December company equals the balance's `taken` (2 Feb, 4 May, 2 Nov 2026 → 2 days).
+7. **Third review of #337 (late extras):**
+   - Late extras whose `lateDecision.state` is `ignored` (id taken by a signed entry, any letter case) are shown with `timesheetLateExtraLabel` (`TIMESHEET_LATE_EXTRA_ID_TAKEN_LABEL`) and **never** get ✓ ✕ ⚙ (`timesheetLateExtraReviewable(decision, { exported })`); leave them out of the entries passed to `timesheetEntryReviewWriteFields`, and pass `exported: timesheetExportedFieldSet(stored exportedAt)` (and `signedEntryIds` if you pass late entries alone).
+   - Fingerprint map: build signed entries with `timesheetEntryFingerprintMap` and late extras with `timesheetLateExtraFingerprintMap` (their own `late:` keys) — never one map of both.
+   - After export: no review of late extras offered; a sheet with late extras is not re-priced (the rules refuse reviewer writes to `extraEntryReviews` / `weeklyReportOverride` once `exportedAt` is stored on such a sheet).
+   - The reviewer's save writes the sheet fields and the review map entries in **one** update.
+   - Export stamp: write only `weeklyReportOverride` and `exportedAt`, in a transaction that re-reads the sheet and skips it when `timesheetLateExtrasSummary` (with the snapshot about to be written) says late extras wait.
+   - The weekly report feed counts a snapshot's money rows through `timesheetSnapshotMoneyRowsCurrent`.
+   - Owner screen: late extras are writable only after the line manager signs (the rules now refuse earlier).
+8. **Tests:** a `Rulebook1540Tests` covering: Office booking with `showOffice: false` paid by the collector; a late extra after the counter-signature pays 0 until a `lateExtra` review with its fingerprint approves it, then exactly the approved amount; editing the signed expense is refused by the app; an inline `managerDecision` on a late extra never pays; a late extra copying a signed entry's id is ignored; the new type decodes and routes; the leave report for an April–March person in a January–December company equals the balance's `taken` (2 Feb, 4 May, 2 Nov 2026 → 2 days).
 
 
 ## Workflow for the iOS agent
