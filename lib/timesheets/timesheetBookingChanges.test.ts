@@ -398,3 +398,19 @@ test('1.54.0 fourth review of #337 (5): a stale late extra leaves the figures at
   assert.equal(draftForFigures(edited, waiting).weeklyReportOverride?.expenses.length, 0)
   assert.equal(draftForFigures({ ...edited, exportedAt: day, exportedAtStored: true }, null).weeklyReportOverride?.expenses.length, 1)
 })
+
+test('16 Nov scan: a stored late extra the reader skips (blank title, duplicate id) is written back unchanged, never dropped', () => {
+  const sheet = signedSheet([booking()])
+  const stored = draftToFirestoreMap({ ...sheet, lateExtras: [lateExpense154] }) as Record<string, unknown>
+  const blank = { kind: 'expense', id: 'L2', title: '   ', details: 'from an older iPhone', jobNumber: 'J-1', amount: 30 }
+  const duplicate = { kind: 'expense', id: 'l1', title: 'Second copy', jobNumber: 'J-1', amount: 5 }
+  const raw = { ...stored, lateExtras: [...(stored.lateExtras as Record<string, unknown>[]), blank, duplicate] }
+  const loaded = draftFromFirestoreMap(raw)
+  assert.deepEqual(loaded.lateExtras!.map((entry) => entry.id), ['L1'], 'only the readable row is shown')
+  assert.deepEqual(loaded.lateExtrasUnread, [blank, duplicate])
+  // The person deletes their readable late extra: the skipped rows stay, exactly as stored.
+  const saved = draftToFirestoreMap({ ...loaded, lateExtras: [] }) as Record<string, unknown>
+  assert.deepEqual(saved.lateExtras, [blank, duplicate])
+  // A sheet whose rows were all read carries no unread list.
+  assert.equal(draftFromFirestoreMap(stored).lateExtrasUnread, undefined)
+})

@@ -145,6 +145,12 @@ export type TimesheetDraft = {
    * signed entries above never change after that. Missing when the stored sheet has none.
    */
   lateExtras?: TimesheetLateExtra[]
+  /**
+   * Stored `lateExtras` rows the rulebook reader does not return (a row with a blank title, no id, no kind, or a second
+   * row of an id), exactly as stored. Never shown, edited or paid; written back unchanged on every save so a row the
+   * reader skips is never silently lost (16 Nov scan). Missing when every stored row was read.
+   */
+  lateExtrasUnread?: Record<string, unknown>[]
   payrollLineReviews: Record<string, TimesheetPayrollLineReview>
   managerNote: string
   operativeSignedAt?: Date | null

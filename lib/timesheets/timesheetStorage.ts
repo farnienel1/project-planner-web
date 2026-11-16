@@ -37,6 +37,7 @@ import {
   parseTimesheetLateExtras,
   TIMESHEET_LATE_EXTRAS_FIELD,
   TIMESHEET_ENTRY_REVIEWS_FIELD,
+  normalizeDocumentId,
 } from '@/lib/canonical'
 import { draftEntryFingerprints, draftReviewEntries, draftStoredExported } from '@/lib/timesheets/timesheetAdjustments'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
@@ -201,6 +202,29 @@ function mapLateExtras(
       receiptName: entry.receiptName,
     }
   })
+}
+
+/**
+ * The stored `lateExtras` rows the reader did not return (16 Nov scan): `parseTimesheetLateExtras` skips a row with a
+ * blank title, no id or no kind, and every row after the first of an id. Matched by id without case, the first stored
+ * row of each id read counts as read; every other row is kept exactly as stored so the next save writes it back.
+ */
+export function unreadLateExtraRows(data: Record<string, unknown>, read: ReadonlyArray<{ id: string }>): Record<string, unknown>[] {
+  const stored = data[TIMESHEET_LATE_EXTRAS_FIELD]
+  if (!Array.isArray(stored)) return []
+  const pending = new Set(read.map((entry) => normalizeDocumentId(entry.id)))
+  const out: Record<string, unknown>[] = []
+  for (const raw of stored) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
+    const row = raw as Record<string, unknown>
+    const key = normalizeDocumentId(row.id)
+    if (key && pending.has(key)) {
+      pending.delete(key)
+      continue
+    }
+    out.push(row)
+  }
+  return out
 }
 
 /** Rulebook 1.54.0: a late extra as stored — the entry's own fields and kind, never a decision. */
@@ -433,7 +457,9 @@ export function draftFromFirestoreMap(
     priceWorkEntries: entries.priceWorkEntries,
     ...(() => {
       const lateExtras = mapLateExtras(data, options?.sheetDocId?.trim() || '', organizationZoneOr(options?.timeZone), options?.ownerUserIds ?? [])
-      return lateExtras ? { lateExtras } : {}
+      if (!lateExtras) return {}
+      const lateExtrasUnread = unreadLateExtraRows(data, lateExtras)
+      return lateExtrasUnread.length > 0 ? { lateExtras, lateExtrasUnread } : { lateExtras }
     })(),
     payrollLineReviews: mapReviews(data.payrollLineReviews),
     weeklyReportOverride: weeklyReportOverrideFromFirestore(data.weeklyReportOverride),
@@ -501,7 +527,15 @@ export function draftToFirestoreMap(draft: TimesheetDraft): Record<string, unkno
       managerRevisedAmount: entry.managerRevisedAmount ?? null,
     })),
     // Rulebook 1.54.0: written only when the draft has the list, so a sheet without late extras keeps its stored shape.
-    ...(Array.isArray(draft.lateExtras) ? { [TIMESHEET_LATE_EXTRAS_FIELD]: draft.lateExtras.map(lateExtraToFirestore) } : {}),
+    // 16 Nov scan: rows the reader skipped (`lateExtrasUnread`) are written back exactly as stored, never dropped.
+    ...(Array.isArray(draft.lateExtras) || (draft.lateExtrasUnread?.length ?? 0) > 0
+      ? {
+          [TIMESHEET_LATE_EXTRAS_FIELD]: [
+            ...(draft.lateExtras ?? []).map(lateExtraToFirestore),
+            ...(draft.lateExtrasUnread ?? []),
+          ],
+        }
+      : {}),
     payrollLineReviews: Object.fromEntries(
       Object.entries(draft.payrollLineReviews).map(([key, review]) => [
         key,
