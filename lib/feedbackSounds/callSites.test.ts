@@ -56,7 +56,7 @@ const SITES: Site[] = [
   { file: 'components/projects/scheduling/SubcontractorBookingEditSheet.tsx', fn: 'remove', success: ['bookingDeleted'], after: ['deleteBookingWithTombstone'], refusal: true },
   { file: 'components/warnings/WarningsScreen.tsx', fn: 'handleRemoveEntry', success: ['bookingDeleted'], after: ['onDeleteManagerBooking', 'onDeleteBooking'], refusal: true, rethrow: true },
   { file: 'components/warnings/WarningsScreen.tsx', fn: 'dismiss', success: ['warningResolved'], after: ['notifyCompanyActivity'], refusal: false },
-  { file: 'app/dashboard/warnings/page.tsx', fn: 'handleAcceptClash', success: [], after: ['approveBookingClashPairs', 'approveBookingClash', 'all'], refusal: true, rethrow: true },
+  { file: 'app/dashboard/warnings/page.tsx', fn: 'handleAcceptClash', success: [], after: ['approveBookingClashPairs', 'approveBookingClash'], refusal: true, rethrow: true },
   { file: 'app/dashboard/warnings/page.tsx', fn: 'handleDismissQualification', success: [], after: ['dismissQualificationWarning'], refusal: true, rethrow: true },
   { file: 'components/annual-leave/OperativeAnnualLeaveCalendar.tsx', fn: 'bookLeave', success: ['leaveBooked', 'leaveRequested'], after: ['createRequests'], notices: ['notifyLeaveChangedForPerson'], refusal: true, rethrow: true },
   { file: 'components/annual-leave/OperativeAnnualLeaveCalendar.tsx', fn: 'confirmChange', success: ['leaveEdited'], after: ['saveBooking'], refusal: true, rethrow: true },
@@ -74,6 +74,7 @@ const SITES: Site[] = [
   { file: 'components/overtime/PayeClaimsScreen.tsx', fn: 'approve', success: [], after: ['savePayeClaimReviews'], refusal: true },
   { file: 'components/overtime/PayeClaimsScreen.tsx', fn: 'generate', success: ['timesheetSaved'], after: ['savePayeClaimReport', 'downloadClaimReport'], refusal: true },
   { file: 'components/overtime/PayeClaimsScreen.tsx', fn: 'submit', success: ['timesheetSaved'], after: ['updatePayeClaim', 'addPriceWork', 'addExpense'], refusal: true },
+  { file: 'components/timesheets/TimesheetPeriodPage.tsx', fn: 'saveExtraForm', success: ['timesheetSaved'], after: ['saveLateChange', 'saveEntryChange', 'persist'], refusal: true },
   { file: 'components/users/AddUserScreen.tsx', fn: 'handleSubmit', success: ['userInvited'], after: ['createGhost', 'inviteUser'], refusal: true },
 ]
 
@@ -354,4 +355,30 @@ test('saved data is identical with sounds on and off (feedback returns nothing a
     assert.deepEqual(runs[0], runs[1], event)
     assert.equal(runs[0][1], undefined)
   }
+})
+
+test('16 Nov scan: a clash approval plays the error sound only when the approval write is refused, never for a failed reload', () => {
+  const source = parse('app/dashboard/warnings/page.tsx')
+  const handler = findHandler(source, 'handleAcceptClash')
+  const refusals = feedbackCalls(handler).filter((call) => insideCatch(call, handler))
+  assert.ok(refusals.length > 0)
+  for (const call of refusals) {
+    const guarded = enclosingTry(call, handler)
+    assert.ok(guarded, 'the refusal belongs to a try')
+    const called: string[] = []
+    walk(guarded.tryBlock, (node) => {
+      if (ts.isCallExpression(node)) called.push(calleeName(node))
+    })
+    for (const load of ['loadAcceptedBookingClashes', 'loadResolvedWarningKeys', 'all']) {
+      assert.ok(!called.includes(load), `the reload (${load}) is outside the try whose catch plays actionRefused`)
+    }
+  }
+  // The success sound comes before the reload, so a reload that fails after a saved approval has already played it.
+  const success = feedbackCalls(handler).filter((call) => !insideCatch(call, handler))
+  let reload: ts.Node | null = null
+  walk(handler, (node) => {
+    if (!reload && ts.isCallExpression(node) && calleeName(node) === 'loadAcceptedBookingClashes') reload = node
+  })
+  assert.ok(reload)
+  assert.ok(success.some((call) => call.getEnd() < (reload as ts.Node).getStart()))
 })

@@ -4,6 +4,7 @@
  */
 'use client'
 
+import { feedback } from '@/lib/feedbackSounds/feedback'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Booking, Operative, Project, User } from '@/types'
@@ -782,6 +783,60 @@ export function TimesheetPeriodPage({
     }
     if (!window.confirm(TIMESHEET_ENTRY_DELETE_CONFIRM_MESSAGE)) return
     void saveLateChange(lateExtras.filter((entry) => entry.id !== id))
+  }
+
+  /**
+   * The add / edit form's save (price work or an expense, signed entries or a late extra). Feedback sounds (guide §4
+   * `timesheetSaved`, 16 Nov scan): success after the sheet saved, the refusal when the save failed — late extras get the
+   * same sounds as every other expense or price-work line.
+   */
+  const saveExtraForm = async (entry: {
+    priceWork?: TimesheetDraft['priceWorkEntries'][number]
+    expense?: TimesheetDraft['expenseEntries'][number]
+  }): Promise<boolean> => {
+    // Rulebook 1.45.0 §8: an edit replaces the entry (same id); an add appends it.
+    const replace = <T extends { id: string }>(list: T[], row: T) =>
+      editingEntryId ? list.map((existing) => (existing.id === editingEntryId ? row : existing)) : [...list, row]
+    if (lateEditing) {
+      // Rulebook 1.54.0: a late extra — pending until the line manager decides it (never an inline decision).
+      const row: TimesheetLateExtra =
+        extraMode === 'priceWork'
+          ? { ...entry.priceWork!, kind: 'priceWork', managerDecision: 'pending', managerRevisedAmount: null }
+          : { ...entry.expense!, kind: 'expense', managerDecision: 'pending', managerRevisedAmount: null }
+      const ok = await saveLateChange(replace<TimesheetLateExtra>(lateExtras, row))
+      if (!ok) {
+        feedback('actionRefused')
+        return false
+      }
+      feedback('timesheetSaved')
+      setExtraMode(null)
+      setEditingEntryId(null)
+      setLateEditing(false)
+      return true
+    }
+    const next =
+      extraMode === 'priceWork'
+        ? { ...draft, priceWorkEntries: replace(draft.priceWorkEntries, entry.priceWork!) }
+        : { ...draft, expenseEntries: replace(draft.expenseEntries, entry.expense!) }
+    if (editingEntryId) {
+      const ok = await saveEntryChange(next)
+      if (!ok) {
+        feedback('actionRefused')
+        return false
+      }
+    } else {
+      try {
+        await persist(next)
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Could not save the timesheet')
+        feedback('actionRefused')
+        return false
+      }
+    }
+    feedback('timesheetSaved')
+    setExtraMode(null)
+    setEditingEntryId(null)
+    return true
   }
 
   const acceptPostSignExtra = async () => {
@@ -1710,42 +1765,7 @@ export function TimesheetPeriodPage({
             setEditingEntryId(null)
             setLateEditing(false)
           }}
-          onSave={async (entry) => {
-            // Rulebook 1.45.0 §8: an edit replaces the entry (same id); an add appends it.
-            const replace = <T extends { id: string }>(list: T[], row: T) =>
-              editingEntryId ? list.map((existing) => (existing.id === editingEntryId ? row : existing)) : [...list, row]
-            if (lateEditing) {
-              // Rulebook 1.54.0: a late extra — pending until the line manager decides it (never an inline decision).
-              const row: TimesheetLateExtra =
-                extraMode === 'priceWork'
-                  ? { ...entry.priceWork!, kind: 'priceWork', managerDecision: 'pending', managerRevisedAmount: null }
-                  : { ...entry.expense!, kind: 'expense', managerDecision: 'pending', managerRevisedAmount: null }
-              const ok = await saveLateChange(replace<TimesheetLateExtra>(lateExtras, row))
-              if (!ok) return false
-              setExtraMode(null)
-              setEditingEntryId(null)
-              setLateEditing(false)
-              return true
-            }
-            const next =
-              extraMode === 'priceWork'
-                ? { ...draft, priceWorkEntries: replace(draft.priceWorkEntries, entry.priceWork!) }
-                : { ...draft, expenseEntries: replace(draft.expenseEntries, entry.expense!) }
-            if (editingEntryId) {
-              const ok = await saveEntryChange(next)
-              if (!ok) return false
-            } else {
-              try {
-                await persist(next)
-              } catch (err: unknown) {
-                setError(err instanceof Error ? err.message : 'Could not save the timesheet')
-                return false
-              }
-            }
-            setExtraMode(null)
-            setEditingEntryId(null)
-            return true
-          }}
+          onSave={saveExtraForm}
         />
       ) : null}
 
