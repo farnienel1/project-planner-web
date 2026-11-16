@@ -29,7 +29,6 @@ const STYLE = { text: 0, bold: 1, header: 2, title: 3, money: 4, number: 5, mone
 
 function xml(value: string): string {
   // Characters XML 1.0 cannot hold are dropped.
-  // eslint-disable-next-line no-control-regex
   return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
