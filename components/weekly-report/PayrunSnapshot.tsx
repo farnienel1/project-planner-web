@@ -7,6 +7,7 @@
  * `payrunSnapshotPeriods`; this component only draws them. Read-only, no export.
  */
 import Link from 'next/link'
+import { PAY_PROFILES_FAILED_MESSAGE, retryPayProfiles, usePayProfilesStatus } from '@/lib/pay/usePayProfilesStatus'
 import { useEffect, useMemo, useState } from 'react'
 import {
   PAYRUN_SNAPSHOT_COLUMNS,
@@ -139,9 +140,12 @@ export function PayrunSnapshot({
         timeZone,
       }
     : null
+  // Pay strip: each person's employment type is pay data — wait for the pay laid over the roster (privatePay on).
+  const payStatus = usePayProfilesStatus(organizationId)
+  const payReady = payStatus === 'ready'
   const rows = useMemo(
     () =>
-      loaded && period
+      payReady && loaded && period
         ? payrunSnapshotRowsFor({
             loaded,
             users,
@@ -162,7 +166,7 @@ export function PayrunSnapshot({
               : undefined,
           })
         : [],
-    [loaded, period?.start, period?.end, users, organization, timeZone, overtimeBookings, operativeRows, bookings, managerSiteBookings, changeInputs] // eslint-disable-line react-hooks/exhaustive-deps
+    [payReady, loaded, period?.start, period?.end, users, organization, timeZone, overtimeBookings, operativeRows, bookings, managerSiteBookings, changeInputs] // eslint-disable-line react-hooks/exhaustive-deps
   )
 
   const choice = (value: PayrunSnapshotPeriodKind, disabled: boolean, sub: string | null) => (
@@ -199,9 +203,17 @@ export function PayrunSnapshot({
           {period ? ` · ${PAYRUN_SNAPSHOT_EMPLOYMENT_NOTE}` : ''}
         </p>
         {error ? <p className="banner" data-hue="red">{error}</p> : null}
-        {!loaded && !error ? <p className="muted small">Loading…</p> : null}
-        {loaded && period && rows.length === 0 ? <p className="muted small">{PAYRUN_SNAPSHOT_EMPTY_MESSAGE}</p> : null}
-        {loaded && period && rows.length > 0 ? (
+        {(!loaded || payStatus === 'loading') && !error ? <p className="muted small">Loading…</p> : null}
+        {payStatus === 'failed' && !error ? (
+          <p className="small" style={{ color: 'var(--red)' }}>
+            {PAY_PROFILES_FAILED_MESSAGE}{' '}
+            <button type="button" className="btn" onClick={() => retryPayProfiles(organizationId, 'ready')}>
+              Retry
+            </button>
+          </p>
+        ) : null}
+        {payReady && loaded && period && rows.length === 0 ? <p className="muted small">{PAYRUN_SNAPSHOT_EMPTY_MESSAGE}</p> : null}
+        {payReady && loaded && period && rows.length > 0 ? (
           <div className="tablewrap">
             <table className="t">
               <thead>

@@ -7,6 +7,8 @@
  * Routes (one path, query params): `scope` mine | users; `user` (Users'); `section` overtime | expenses | priceWork;
  * `range` current | past | custom; `start` / `end` day keys.
  */
+import { useOwnPayUser } from '@/lib/pay/useOwnPayUser'
+import { withOwnPay } from '@/lib/pay/ownPayRecord'
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import {
@@ -137,7 +139,12 @@ export function OvertimeScreen() {
   }, [organization?.id, loadUsers, loadOperatives, loadProjects, loadSmallWorks])
 
   const roster = useMemo(() => rulebookRoster(users), [users])
-  const viewer = useMemo(() => (user ? rulebookPerson(users.find((row) => row.id === user.id) || user, users) : null), [user, users])
+  // Pay strip: the viewer's own employment type is pay data — from their own pay profile (`useOwnPayUser`).
+  const ownPay = useOwnPayUser()
+  const viewer = useMemo(
+    () => (user ? rulebookPerson(withOwnPay(users.find((row) => row.id === user.id) || user, ownPay), users) : null),
+    [user, users, ownPay]
+  )
   const access = overtimeHubAccess({ viewer, roster })
   const subjectIds = useMemo(() => (viewer ? overtimeUserSubjects(viewer, roster) : []), [viewer, roster])
   // Rulebook 1.32.0 §4.5: the PAYE payday banner while none is set (admins are told where to set it).
@@ -172,6 +179,9 @@ export function OvertimeScreen() {
   if (!mine && !access.users) {
     return <PageShell><Note tone="info">Users&apos; overtime is for admins and line managers.</Note></PageShell>
   }
+  if (mine && ownPay.status === 'loading') {
+    return <PageShell><Note tone="info">Loading…</Note></PageShell>
+  }
   if (mine && !access.mine) {
     return <PageShell><Note tone="info">My Overtime, Expenses &amp; Price Work is for PAYE staff.</Note></PageShell>
   }
@@ -185,7 +195,7 @@ export function OvertimeScreen() {
     )
   }
 
-  const subject = mine ? users.find((row) => row.id === user.id) || user : users.find((row) => row.id === userParam)
+  const subject = mine ? withOwnPay(users.find((row) => row.id === user.id) || user, ownPay) : users.find((row) => row.id === userParam)
   if (!subject || (!mine && !subjectIds.includes(subject.id))) {
     return <PageShell><Note tone="info">{users.length === 0 ? 'Loading…' : 'This person is not one you can see here.'}</Note></PageShell>
   }

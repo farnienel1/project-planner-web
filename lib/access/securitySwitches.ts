@@ -21,6 +21,8 @@ import {
 let config: Record<string, unknown> | null = null
 let unsubscribe: Unsubscribe | null = null
 let loaded = false
+// Tests only: hold the "not read yet" state (with no Firestore in tests, `start` would mark it read at once).
+let holdUnreadForTests = false
 let readyWaiters: Array<() => void> = []
 const changeListeners = new Set<(name: SecuritySwitch) => void>()
 const configListeners = new Set<() => void>()
@@ -35,6 +37,7 @@ function markLoaded() {
 }
 
 function start(): void {
+  if (holdUnreadForTests) return
   if (unsubscribe || !db) {
     if (!db) markLoaded()
     return
@@ -75,6 +78,12 @@ export function securitySwitchesReady(): Promise<void> {
     readyWaiters.push(resolve)
     setTimeout(resolve, FIRST_READ_WAIT_MS)
   })
+}
+
+/** Whether `platformConfig/app` has been read once (or the read failed). Before that every switch reads off. */
+export function securitySwitchesLoaded(): boolean {
+  start()
+  return loaded
 }
 
 /** `securitySwitchOn(platformConfig/app, organizationId, name)`; the open organisation when none is given. */
@@ -139,9 +148,17 @@ export function onSecuritySwitchChange(listener: (name: SecuritySwitch) => void)
 
 /** Tests only. */
 export function setSecuritySwitchConfigForTests(next: Record<string, unknown> | null): void {
+  holdUnreadForTests = false
   const previous = config
   config = next
   loaded = true
   notifyChanges(previous, next)
   notifyConfigListeners()
+}
+
+/** Tests only: `platformConfig/app` not read yet (every switch unknown). */
+export function setSecuritySwitchesUnreadForTests(): void {
+  holdUnreadForTests = true
+  loaded = false
+  config = null
 }

@@ -47,7 +47,13 @@ import { effectivePermissions } from '@/lib/canonical/permissionLevels'
 import { savePartialDocument } from '@/lib/firebase/partialWrite'
 import { inboxActorUserId } from '@/lib/firebase/notifyInbox'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
-import { overlayRosterPay, refreshPayProfiles } from '@/lib/pay/payProfileOverlay'
+import {
+  notePayRosterOverlaid,
+  onPayProfileCacheChange,
+  overlayRosterPay,
+  payProfileCacheVersion,
+  refreshPayProfiles,
+} from '@/lib/pay/payProfileOverlay'
 
 /** `siteAudits/{id}` through the rulebook reader `parseSiteAuditDocument` (rulebook 1.8.0). */
 function mapSiteAudit(docId: string, data: Record<string, unknown>): SiteAudit | null {
@@ -801,6 +807,27 @@ let listedUserRevision = 0
 let listedRosterOrgId = ''
 let rosterLoadGeneration = 0
 const ORG_USER_LOAD_KEY = 'orgUserStore:users'
+// Pay strip: the pay-profile cache version the listed roster was parsed with, and the version a re-read was last
+// started for (one re-read per cache change).
+let rosterParsedVersion = { organizationId: '', version: -1 }
+let rosterRereadForVersion = -1
+
+/** Reads the roster again so every row is laid over with the pay-profile cache as it is now (once per cache version). */
+function rereadRosterForPay(organizationId: string): Promise<void> | undefined {
+  const version = payProfileCacheVersion()
+  if (rosterRereadForVersion === version) return undefined
+  rosterRereadForVersion = version
+  return useOrgUserStore.getState().loadUsers(organizationId, { force: true }).catch(() => undefined)
+}
+
+// Another store's pay-profile read (the operatives rows, a switch change) changed the cache after the roster was
+// parsed: read the roster again, so its pay is never the stripped users document's.
+onPayProfileCacheChange((organizationId) => {
+  if (listedRosterOrgId !== organizationId) return
+  if (rosterParsedVersion.organizationId !== organizationId) return
+  if (rosterParsedVersion.version === payProfileCacheVersion()) return
+  void rereadRosterForPay(organizationId)
+})
 
 function rosterStorageKey(organizationId: string): string {
   return `pp.roster:${organizationId}`
@@ -909,6 +936,8 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
       organizationId,
       async (attempt) => {
         const generation = ++rosterLoadGeneration
+        // Pay strip: the pay-profile cache version this read is parsed with (`overlayRosterPay`).
+        const versionAtFetch = payProfileCacheVersion()
         const inMemory = listedRosterOrgId === organizationId ? get().users : []
         const previous = inMemory.length > 0 ? inMemory : readStoredRoster(organizationId)
         const applyLoaded = async (loaded: Awaited<ReturnType<typeof fetchOrganisationRoster>>) => {
@@ -952,13 +981,18 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
           startLiveRoster(organizationId, loaded.fallbackIds)
           // Rulebook 1.26.0 §8: read the pay profiles this viewer may read; when they changed, read the roster again
           // so every person's pay is laid over (`payProfileReadPlan`, `overlayPayProfile`).
+          // Pay strip: the roster counts as laid over only when it was parsed with the cache as it is after this read
+          // (another store's read may have changed the cache meanwhile — then it is read again).
+          rosterParsedVersion = { organizationId, version: versionAtFetch }
           void import('@/lib/stores/authStore')
             .then(({ useAuthStore }) => refreshPayProfiles(organizationId, useAuthStore.getState().user as never, users as never))
-            .then((changed) => {
-              if (changed && listedRosterOrgId === organizationId) {
-                return get().loadUsers(organizationId, { force: true })
+            .then(() => {
+              if (listedRosterOrgId !== organizationId || generation !== rosterLoadGeneration) return undefined
+              if (versionAtFetch === payProfileCacheVersion()) {
+                notePayRosterOverlaid(organizationId, versionAtFetch)
+                return undefined
               }
-              return undefined
+              return rereadRosterForPay(organizationId)
             })
             .catch(() => undefined)
         }

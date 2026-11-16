@@ -56,6 +56,9 @@ import {
   awaitingManagerSignOff,
   isTimesheetFullyApproved,
 } from '@/lib/timesheets/timesheetApprovalPolicy'
+import { useOwnPayUser } from '@/lib/pay/useOwnPayUser'
+import { withOwnPay } from '@/lib/pay/ownPayRecord'
+import { retryPayProfiles, usePayProfilesStatus } from '@/lib/pay/usePayProfilesStatus'
 import { canAccessMyTimesheetsWithPolicy, shouldAppearInOperativeTimesheetRoster, timesheetDayKeysForPeriod } from '@/lib/timesheets/timesheetPayrollPolicy'
 import { exportedTimesheetRosterGroups, timesheetRosterGroups } from '@/lib/timesheets/timesheetWeekUtils'
 import {
@@ -72,6 +75,7 @@ import {
   type OperativeDayRateHistoryCollection,
 } from '@/lib/timesheets/dayRateHistoryStorage'
 import {
+  payProfilesInputLoad,
   timesheetInputsStatus,
   withBookingsGate,
   type TimesheetInputLoad,
@@ -158,14 +162,22 @@ export function TimesheetsHub() {
   const [historyLoad, setHistoryLoad] = useState<TimesheetInputLoad>('loading')
   const [inputsAttempt, setInputsAttempt] = useState(0)
 
-  const showMine = user ? canAccessMyTimesheetsWithPolicy(user, invoicing, new Date(), timeZone) : false
+  // Pay strip: the signed-in person's employment type comes from their pay profile while `privatePay` is on
+  // (`useOwnPayUser`); the session user alone reads as self-employed once the strip has run. Off: unchanged.
+  const ownPay = useOwnPayUser()
+  const me = ownPay.status === 'ready' ? ownPay.user : null
+  const payProfilesStatus = usePayProfilesStatus(organization?.id)
+  const showMine = me ? canAccessMyTimesheetsWithPolicy(me, invoicing, new Date(), timeZone) : false
   const showTeam = canAccessOperativeTimesheets(user, usersLoading, users)
-  const showDisabled = shouldShowTimesheetsDisabledMessage(user, showMine)
+  const showDisabled = me ? shouldShowTimesheetsDisabledMessage(me, showMine) : false
   // Rulebook 1.29.0 §25: "Overtime, Expenses & Price Work" — PAYE people (My…), admins and line managers (Users'…).
   const overtimeAccess = user
-    ? overtimeHubAccess({ viewer: rulebookPerson(users.find((row) => row.id === user.id) || user, users), roster: rulebookRoster(users) })
+    ? overtimeHubAccess({
+        viewer: rulebookPerson(withOwnPay(users.find((row) => row.id === user.id) || user, ownPay), users),
+        roster: rulebookRoster(users),
+      })
     : { showButton: false, mine: false, users: false }
-  const canOpen = canAccessTimesheetsSurface(user, usersLoading, users) || overtimeAccess.showButton
+  const canOpen = canAccessTimesheetsSurface(ownPay.user ?? user, usersLoading, users) || overtimeAccess.showButton
 
   useEffect(() => {
     if (pathSurface !== 'hub') return
@@ -323,10 +335,19 @@ export function TimesheetsHub() {
     )
   }
 
-  const inputsStatus = timesheetInputsStatus({ details: detailsLoad, history: historyLoad })
+  // Pay strip: signing, counter-signing, invoices and export also wait for the pay laid over the roster
+  // (`payProfilesStatusFor`) and the signed-in person's own pay (`useOwnPayUser`).
+  const inputsStatus = timesheetInputsStatus({
+    details: detailsLoad,
+    history: historyLoad,
+    payProfiles: payProfilesInputLoad(payProfilesStatus, ownPay.status),
+  })
   const payInputs: TimesheetInputsState = {
     ...inputsStatus,
-    retry: () => setInputsAttempt((value) => value + 1),
+    retry: () => {
+      setInputsAttempt((value) => value + 1)
+      retryPayProfiles(organization?.id, ownPay.status)
+    },
   }
 
   // Rulebook 1.43.0 (`timesheetSnapshotReady`): the whole booking archive this screen asked for has arrived for the
@@ -383,7 +404,7 @@ export function TimesheetsHub() {
   }
 
   if (surface === 'mine') {
-    const subject = users.find((row) => row.id === user.id) || user
+    const subject = withOwnPay(users.find((row) => row.id === user.id) || user, ownPay)
     // Rulebook 1.11.0 `showsMyTimesheets`: no My Timesheets for a PAYE person; only periods with a self-employed day.
     const minePastPeriods = pastPeriods.filter(
       (period) => timesheetDayKeysForPeriod(subject, period.start, period.end, timeZone).length > 0

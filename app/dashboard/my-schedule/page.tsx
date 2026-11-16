@@ -17,6 +17,7 @@ import {
   operativeIdsForEmail,
 } from '@/lib/operatives/operativeRosterUtils'
 import { canSelfBookMySchedule, isOperativeMode } from '@/lib/navigation/menuPermissions'
+import { useOwnPayUser } from '@/lib/pay/useOwnPayUser'
 import { canBookWork, canViewWarnings, hasAdminAccess } from '@/lib/permissions'
 import { useMyScheduleClashMarkers } from '@/lib/schedule/myScheduleClashMarkers'
 import { managerSiteBookingDisplayTitle, managerSiteBookingToScheduleBooking } from '@/lib/scheduling/managerSiteBookingUtils'
@@ -56,7 +57,10 @@ function MySchedulePageContent() {
     invoicing: OrgInvoicingSettings
   } | null>(null)
 
-  const selfBooking = canSelfBookMySchedule(user)
+  // Pay strip: a `timesheetsEnabled` the users document does not store follows the employment type, which is read from
+  // the person's own pay profile while `privatePay` is on (`useOwnPayUser`). Off: the session user, as before.
+  const ownPay = useOwnPayUser()
+  const selfBooking = canSelfBookMySchedule(ownPay.status === 'ready' ? ownPay.user : user)
 
   useEffect(() => {
     if (!organization?.id) return

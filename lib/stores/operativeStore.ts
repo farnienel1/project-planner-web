@@ -29,7 +29,14 @@ import { readStoredRates } from '@/lib/timesheets/payBasis'
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 import { removeFutureBookingsForPerson } from '@/lib/bookings/removeBookingsOnDelete'
 import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
-import { noteOperativeRows, overlayRosterPay, payEditorRecord } from '@/lib/pay/payProfileOverlay'
+import {
+  noteOperativeRows,
+  notePayOperativesOverlaid,
+  onPayProfileCacheChange,
+  overlayRosterPay,
+  payEditorRecord,
+  payProfileCacheVersion,
+} from '@/lib/pay/payProfileOverlay'
 
 const OPERATIVES_KEY = 'operativeStore:operatives'
 const MANAGERS_KEY = 'operativeStore:managers'
@@ -65,23 +72,37 @@ interface OperativeState {
   cleanupLegacyPlaceholderManagers: (organizationId: string) => Promise<number>
 }
 
-/** Re-reads the pay profiles (1.27.0 catalogue operatives) and, when they changed, the operatives rows through them. */
+/** Re-reads the pay profiles (1.27.0 catalogue operatives); a change re-reads the operatives rows (listener below). */
 async function refreshCatalogueOperativePay(organizationId: string): Promise<void> {
   try {
-    const [{ refreshPayProfiles }, { useAuthStore }, { useOrgUserStore }, { unsubscribeOrgCollection }] = await Promise.all([
+    const [{ refreshPayProfiles }, { useAuthStore }, { useOrgUserStore }] = await Promise.all([
       import('@/lib/pay/payProfileOverlay'),
       import('@/lib/stores/authStore'),
       import('@/lib/stores/siteAuditStore'),
-      import('@/lib/firebase/subscribeOrgCollection'),
     ])
-    const changed = await refreshPayProfiles(organizationId, useAuthStore.getState().user as never, useOrgUserStore.getState().users as never)
-    if (!changed || !liveResultStillCurrent(organizationId)) return
-    unsubscribeOrgCollection(OPERATIVES_KEY)
-    await useOperativeStore.getState().loadOperatives(organizationId, { force: true })
+    // A change re-reads the rows through the cache-change listener below.
+    await refreshPayProfiles(organizationId, useAuthStore.getState().user as never, useOrgUserStore.getState().users as never)
   } catch {
     // A refused or failed read keeps the rows as read (rulebook 1.26.0).
   }
 }
+
+// Pay strip: the pay-profile cache changed after the operatives rows were parsed — read them again through it (once
+// per cache version), so a catalogue operative's rate is never the stripped row's.
+let operativesRereadForVersion = -1
+onPayProfileCacheChange((organizationId) => {
+  if (operativesOrgId !== organizationId) return
+  const version = payProfileCacheVersion()
+  if (operativesRereadForVersion === version) return
+  operativesRereadForVersion = version
+  void import('@/lib/firebase/subscribeOrgCollection')
+    .then(({ unsubscribeOrgCollection }) => {
+      if (!liveResultStillCurrent(organizationId)) return undefined
+      unsubscribeOrgCollection(OPERATIVES_KEY)
+      return useOperativeStore.getState().loadOperatives(organizationId, { force: true })
+    })
+    .catch(() => undefined)
+})
 
 export const useOperativeStore = create<OperativeState>((set, get) => ({
   operatives: [],
@@ -110,6 +131,8 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
         if (noteOperativeRows(organizationId, docs.map((entry) => ({ ...entry.data, id: entry.id }))) && privatePayFor(organizationId)) {
           void refreshCatalogueOperativePay(organizationId)
         }
+        // Pay strip: the pay-profile cache version these rows are parsed with.
+        const payVersion = payProfileCacheVersion()
         const mapped = docs.flatMap((entry) => {
           // Rulebook 1.26.0 §8: a catalogue operative's pay is read from its pay profile first (`overlayPayProfile`).
           const parsed = parseOperative(entry.id, overlayRosterPay(organizationId, entry.id, entry.data), organizationId)
@@ -119,6 +142,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
         const operatives = retainScopedRows(`operatives:${organizationId}`, previous, mapped, meta)
         operativesOrgId = organizationId
         set({ operatives, loading: false, operativesLoadedOrgId: organizationId })
+        notePayOperativesOverlaid(organizationId, payVersion)
       })
       set({ loading: false })
     } catch (error: unknown) {

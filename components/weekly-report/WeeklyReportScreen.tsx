@@ -22,6 +22,7 @@ import {
 } from '@/lib/weekly-report/invoicingPeriodUtils'
 import { invoicingQuickSelectLabel } from '@/lib/weekly-report/invoicingRead'
 import { buildWeeklyReportData } from '@/lib/weekly-report/weeklyReportData'
+import { PAY_PROFILES_FAILED_MESSAGE, retryPayProfiles, usePayProfilesStatus } from '@/lib/pay/usePayProfilesStatus'
 import { useOrgBankHolidays } from '@/components/annual-leave/useOrgBankHolidays'
 import type {
   SubcontractorBookingRow,
@@ -238,8 +239,12 @@ export function WeeklyReportScreen({
   const bankRangeEnd = period?.end ?? bankRangeStart
   const bank = useOrgBankHolidays(bankRangeStart, bankRangeEnd)
   const bankHolidayDayKeys = useMemo(() => bank.holidays.map((holiday) => holiday.date), [bank.holidays])
+  // Pay strip: pay and employment types are read from the pay profiles while `privatePay` is on; the report waits for
+  // the pay laid over the roster (`payProfilesStatusFor`), never pricing a stripped users document.
+  const payStatus = usePayProfilesStatus(organizationId)
+  const payReady = payStatus === 'ready'
   const builtReport = useMemo(() => {
-    if (!period || !bank.loaded) return null
+    if (!period || !bank.loaded || !payReady) return null
     return buildWeeklyReportData({
       bankHolidayDayKeys,
       organizationName,
@@ -265,6 +270,7 @@ export function WeeklyReportScreen({
       viewer: viewer ? ({ ...viewer, isPlatformOwner: isPlatformOwnerEmail(viewer.email) } as never) : null,
     })
   }, [
+    payReady,
     bank.loaded,
     bankHolidayDayKeys,
     timesheetSheets,
@@ -642,6 +648,19 @@ export function WeeklyReportScreen({
             >
               {generating ? 'Generating report…' : 'Generate Report'}
             </button>
+            {period && payStatus === 'loading' ? (
+              <p className="muted small" style={{ marginTop: 8 }}>
+                Loading…
+              </p>
+            ) : null}
+            {period && payStatus === 'failed' ? (
+              <p className="small" style={{ marginTop: 8, color: 'var(--red)' }}>
+                {PAY_PROFILES_FAILED_MESSAGE}{' '}
+                <button type="button" className="btn" onClick={() => retryPayProfiles(organizationId, 'ready')}>
+                  Retry
+                </button>
+              </p>
+            ) : null}
           </section>
 
       {downloadOpen && report && period ? (
