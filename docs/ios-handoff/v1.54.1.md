@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.54.0 → 1.54.1
-Packed hash: 703006af23a23a1fd2979e2a4d6f05f8e559221f5ff6ee31c32823f1c62c960e
-Rulebook sha256: 86dad01202545886ea2ac826f8c413eabcfa377c887d5a16eb7a0e2495d56a0a
+Packed hash: d4d2e9205092be779dbe25d3a37e5d3f6091a04ecfec9eb2308d5a6379e5a3f0
+Rulebook sha256: 3069636d7acb9d0cae97c530a7c63781a7c4b41657d87e4e7bce178b9b0dc02c
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -26,8 +26,8 @@ Exports added: none
 Exports removed: none
 Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/canonical.test.ts, lib/canonical/timesheetPeriod.ts, storage.rules
 Done when:
-- [ ] Packed hash in iOS equals 703006af23a23a1fd2979e2a4d6f05f8e559221f5ff6ee31c32823f1c62c960e
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 86dad01202545886ea2ac826f8c413eabcfa377c887d5a16eb7a0e2495d56a0a)
+- [ ] Packed hash in iOS equals d4d2e9205092be779dbe25d3a37e5d3f6091a04ecfec9eb2308d5a6379e5a3f0
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 3069636d7acb9d0cae97c530a7c63781a7c4b41657d87e4e7bce178b9b0dc02c)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.54.1)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -37,7 +37,7 @@ Done when:
 ## What changed in 1.54.1
 
 - **Measurements:** static compile cost 230,289 (main, 1.54.0) → **231,835** (CI budget 245,000); `firestore.rules` 147,533 bytes, `firestoreRulesMaxBytes` raised 147,456 → 148,480 (no comment left to move; reason in `scripts/rules-budget.json`); emulator type check 0 issues; `RULES_STRICT_BUDGET=1` the same 6 limit refusals as main.
-- **Review of #334** (before merge): ids compared part by part (`timesheetIdNames`, never a regex built from `userId`); a timesheet export's name must start with the uploader's own uid unless an admin uploads it; Storage never locks the platform owner out of a lapsed or scheduled-for-deletion organisation (§19); the export email goes to the token's email (the screen sends `auth.currentUser.email`). Follow-up, not changed: the email function's `timesheet_export` template still allows up to 5 member recipients (iOS uses it).
+- **Review of #334** (before merge): ids compared part by part (`timesheetIdNames`, never a regex built from `userId`); a timesheet export's name must start with the uploader's own uid unless an admin uploads it; Storage never locks the platform owner out of a lapsed or scheduled-for-deletion organisation (§19); the export email goes to the token's email (the screen sends `auth.currentUser.email`). The email function's `timesheet_export` template sends only to the caller's own sign-in email (recipient rule `self`; it allowed up to 5 active members; iOS sends only to the exporter, `InvoicingView` `to: [exporter email]`).
 - **Timesheets filed under the person they name** (§16, platform scan 16 Nov, HIGH): `timesheetSubjectFiled` — a create's id must start `timesheet_{userId}_` for the `userId` written (else the caller's id), owners and reviewers alike; an update never changes `userId` except adding a missing one the id names. Before, any member could create `timesheet_{colleague}_{period}` under their own `userId`, blocking the colleague's sheet and showing injected entries as theirs; a reviewer could refile a sheet under someone else (LOW). Emulator tests in `tests/timesheetSettings.rules.test.ts`.
 - **Storage roles per organisation, deactivation, billing and deletion** (§16, §24, HIGH / MEDIUM): `storage.rules` `orgMember`, `adminLike`, `isOperativeHere`, `staffLike`, `orgFileAdmin`, `claimAdmin` read the users-document flags only on the users document of this organisation, else the `members` entry; `orgOpen` and `membershipActive` refuse a deactivated person and a lapsed or scheduled-for-deletion organisation.
 - **Timesheet export PDFs** (§8, §16, §24, HIGH): read by admins and the exporter only; `timesheetExportStoragePath` takes the exporter's uid (`{uid}_{seconds}_{file}`; web `timesheetExportPath` now calls it).
