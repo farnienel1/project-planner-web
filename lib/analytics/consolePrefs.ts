@@ -20,8 +20,3 @@ export const useConsolePrefs = create<ConsolePrefs>((set) => ({
   setJumpQuery: (jumpQuery) => set({ jumpQuery }),
 }))
 
-export function isTestRecord(row: { isInternal?: boolean; email?: string; name?: string }): boolean {
-  if (row.isInternal) return true
-  const blob = `${row.email || ''} ${row.name || ''}`.toLowerCase()
-  return /\btest\b|\bstaging\b|@example\.|@test\./.test(blob)
-}

@@ -19,7 +19,8 @@ import { METRIC_DEFINITIONS, type DateRangePreset } from '@/lib/analytics/events
 import { DeveloperShell, DeveloperStatus, MetricCard, MiniBars } from '@/components/developer/DeveloperShell'
 import { EmptyState, LoadingSpinner } from '@/components/dashboard/PageShell'
 import { CONSOLE_PERIODS, type ConsolePeriodId, deltaCopy, formatCount, formatGbpFromPence, resolveConsolePeriod } from '@/lib/analytics/consolePeriod'
-import { isTestRecord, useConsolePrefs } from '@/lib/analytics/consolePrefs'
+import { useConsolePrefs } from '@/lib/analytics/consolePrefs'
+import { isTestOrganisation, isTestPerson, testOrganisationIds } from '@/lib/owner/testData'
 import { loadSignedTimesheetValueTotals, otherCurrenciesNote, type SignedTimesheetValueTotals } from '@/lib/owner/signedTimesheetValue'
 import { billingLabel, billingStatusLabel } from '@/lib/stripe/billing'
 import { ANNUAL_PENCE, MONTHLY_PENCE } from '@/lib/stripe/plans'
@@ -85,8 +86,9 @@ export function DeveloperOverviewScreen() {
   const { events, sessions, users, organisations, loading, error, loadedAt, load, refresh } = useAnalyticsStore()
   const { suggestions, votes, loadBoard } = useFeedbackStore()
   const includeTestData = useConsolePrefs((state) => state.includeTestData)
-  const visibleUsers = includeTestData ? users : users.filter((user) => !isTestRecord(user))
-  const visibleOrgs = includeTestData ? organisations : organisations.filter((org) => !isTestRecord(org))
+  const testOrgIds = useMemo(() => testOrganisationIds(organisations), [organisations])
+  const visibleUsers = includeTestData ? users : users.filter((user) => !isTestPerson(user, testOrgIds))
+  const visibleOrgs = includeTestData ? organisations : organisations.filter((org) => !isTestOrganisation(org))
   const [timesheetValue, setTimesheetValue] = useState<SignedTimesheetValueTotals>({
     ...emptyTimesheets,
     loaded: false,
@@ -106,7 +108,7 @@ export function DeveloperOverviewScreen() {
       setTimesheetValue(emptyTimesheets)
       return
     }
-    const orgUsers = includeTestData ? users : users.filter((user) => !isTestRecord(user))
+    const orgUsers = includeTestData ? users : users.filter((user) => !isTestPerson(user, testOrgIds))
     void loadSignedTimesheetValueTotals({
       organizationIds: orgIdsKey.split(',').filter(Boolean),
       users: orgUsers,

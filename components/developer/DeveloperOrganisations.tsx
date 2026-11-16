@@ -11,7 +11,8 @@ import type { DateRangePreset } from '@/lib/analytics/events'
 import { DateRangePicker } from '@/components/developer/DeveloperOverview'
 import { DeveloperShell, DeveloperStatus, MetricCard } from '@/components/developer/DeveloperShell'
 import { EmptyState, LoadingSpinner, SearchField } from '@/components/dashboard/PageShell'
-import { isTestRecord, useConsolePrefs } from '@/lib/analytics/consolePrefs'
+import { useConsolePrefs } from '@/lib/analytics/consolePrefs'
+import { isTestOrganisation } from '@/lib/owner/testData'
 import { billingLabel, billingStatusLabel } from '@/lib/stripe/billing'
 
 export function DeveloperOrganisationsScreen() {
@@ -44,10 +45,10 @@ export function DeveloperOrganisationsScreen() {
   const visible = useMemo(
     () =>
       rows.filter((row) => {
-        if (!includeTestData && isTestRecord(row)) return false
+        if (!includeTestData && isTestOrganisation(orgById.get(row.id))) return false
         return matchesOwnerSearch([row.name, row.id], query || jumpQuery)
       }),
-    [rows, query, jumpQuery, includeTestData]
+    [rows, query, jumpQuery, includeTestData, orgById]
   )
 
   if (loading && organisations.length === 0 && users.length === 0 && !error) {
