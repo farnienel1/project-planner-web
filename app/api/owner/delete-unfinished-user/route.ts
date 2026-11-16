@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { clientIp, enforceRateLimit, isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
-import { requireOwner, writeAuditLog, writeAuditLogOrThrow } from '@/lib/owner/requireOwner'
+import { enforceRateLimit, isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
+import { requireOwner } from '@/lib/owner/requireOwner'
+import { OWNER_AUDIT_UNAVAILABLE_MESSAGE, beginOwnerAudit, type OwnerAuditRun } from '@/lib/owner/ownerAudit'
 import { bearerToken, firestoreDelete, firestoreGet, restFieldsToPlain } from '@/lib/owner/firestoreRest'
 import {
   adminCountCollection,
@@ -86,33 +87,33 @@ export async function POST(request: NextRequest) {
   if (!decision.allowed) return jsonError(decision.reason, decision.status)
 
   const email = typeof user.email === 'string' ? user.email : ''
-  const auditBase = {
-    actorUid: owner.uid,
-    targetUserId: uid,
-    targetOrgId: organizationId || undefined,
-    before: {
-      email,
-      organizationId,
-      passwordSet: user.passwordSet === true,
-      authCreatedAt: authAccount.state === 'read' && authAccount.createdAtMs ? new Date(authAccount.createdAtMs).toISOString() : null,
-    },
-    reason: `abandoned-or-orphan cleanup after ${abandonedSignupCutoff().toISOString()}`,
-    ip: clientIp(request),
-  }
-  // The audit entry is written first; if it cannot be stored, nothing is deleted.
+  // Owner console PLAN A4: `requested` is written first; if it cannot be stored, nothing is deleted.
+  let audit: OwnerAuditRun
   try {
-    await writeAuditLogOrThrow(request, { ...auditBase, action: 'ownerDeleteUnfinishedUser' })
-  } catch (error) {
-    console.error('[owner/delete-unfinished-user] audit', error)
-    return jsonError('Could not write the audit log entry, so nothing was deleted. Try again.', 502)
+    audit = await beginOwnerAudit(request, owner.uid, {
+      action: 'ownerDeleteUnfinishedUser',
+      targetUserId: uid,
+      targetOrgId: organizationId || undefined,
+      before: {
+        email,
+        organizationId,
+        passwordSet: user.passwordSet === true,
+        authCreatedAt:
+          authAccount.state === 'read' && authAccount.createdAtMs ? new Date(authAccount.createdAtMs).toISOString() : null,
+      },
+      reason: `abandoned-or-orphan cleanup after ${abandonedSignupCutoff().toISOString()}`,
+    })
+  } catch {
+    return jsonError(OWNER_AUDIT_UNAVAILABLE_MESSAGE, 502)
   }
 
   try {
     await firestoreDelete(token, `users/${uid}`)
-    return NextResponse.json({ ok: true })
+    await audit.complete({ deleted: `users/${uid}` })
+    return NextResponse.json({ ok: true, requestId: audit.requestId })
   } catch (error) {
     console.error('[owner/delete-unfinished-user]', error)
-    await writeAuditLog(request, { ...auditBase, action: 'ownerDeleteUnfinishedUserFailed' })
+    await audit.fail(error)
     return jsonError('Could not delete that user. Publish the updated Firestore rules first.', 502)
   }
 }

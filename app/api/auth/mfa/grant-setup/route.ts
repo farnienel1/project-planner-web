@@ -103,6 +103,6 @@ export async function POST(request: NextRequest) {
 
   const response = NextResponse.json({ ok: true, skipped: true })
   writeMfaCookie(response.cookies, request, 'challenge', '', 0)
-  writeMfaCookie(response.cookies, request, 'ok', encodeMfaOk(user.uid, Date.now() + MFA_OK_TTL_MS), MFA_OK_TTL_MS)
+  writeMfaCookie(response.cookies, request, 'ok', encodeMfaOk(user.uid, Date.now() + MFA_OK_TTL_MS, Date.now()), MFA_OK_TTL_MS)
   return response
 }

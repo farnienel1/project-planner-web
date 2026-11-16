@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { rateLimit } from '@/lib/security/rateLimit'
+import { identityToolkitBase } from '@/lib/owner/googleApis'
 
 export { clientSafeMessage } from '@/lib/security/sanitize'
 
@@ -69,7 +70,7 @@ export async function verifyFirebaseIdToken(idToken: string): Promise<FirebaseAu
 
   try {
     const response = await fetch(
-      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(apiKey)}`,
+      `${identityToolkitBase()}/accounts:lookup?key=${encodeURIComponent(apiKey)}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

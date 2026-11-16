@@ -1,7 +1,7 @@
-const projectId = () => process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || ''
+import { firestoreDocumentsBase } from '@/lib/owner/googleApis'
 
 function docUrl(path: string) {
-  return `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId())}/databases/(default)/documents/${path}`
+  return `${firestoreDocumentsBase()}/${path}`
 }
 
 export async function firestoreGet(idToken: string, path: string) {
@@ -37,7 +37,7 @@ export async function firestoreQueryEqual(
   field: string,
   value: string
 ): Promise<string[]> {
-  const url = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId())}/databases/(default)/documents/${parentPath}:runQuery`
+  const url = `${firestoreDocumentsBase()}/${parentPath}:runQuery`
   const response = await fetch(url, {
     method: 'POST',
     headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
