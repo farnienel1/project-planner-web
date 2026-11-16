@@ -143,7 +143,7 @@ export function DeveloperOverviewScreen() {
       cancelled = true
       window.clearTimeout(watchdog)
     }
-  }, [orgIdsKey, includeTestData, users, loading, periodRange.start, periodRange.end, periodRange.previousStart, periodRange.previousEnd])
+  }, [orgIdsKey, includeTestData, users, testOrgIds, loading, periodRange.start, periodRange.end, periodRange.previousStart, periodRange.previousEnd])
 
   const periodMetrics = useMemo(() => {
     const start = periodRange.start
