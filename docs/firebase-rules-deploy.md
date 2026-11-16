@@ -6,7 +6,7 @@ Workflow: `.github/workflows/firebase-rules-deploy.yml` ("Firebase rules deploy"
 
 ## What it does
 
-1. Refuses to run unless it was started on `main` and the confirm box says `publish`.
+1. Refuses to run unless it was started on `main` and the confirm box says `publish` — the first step, before anything touches the key.
 2. Maps the chosen target to `firebase deploy --only …` — the only targets it knows:
 
    | Target | `--only` |
@@ -17,9 +17,10 @@ Workflow: `.github/workflows/firebase-rules-deploy.yml` ("Firebase rules deploy"
    | `firestore-rules+storage-rules` | `firestore:rules,storage` |
    | `all-rules` | `firestore:rules,firestore:indexes,storage` |
 
-3. Runs the same rules guards CI runs: the size and compile-cost budget (`npm run check:rules-budget`) and the emulator type check (`scripts/check-rules-typecheck.mjs`).
-4. Writes the `FIREBASE_DEPLOY_SA_KEY` secret to a private temporary file, deploys with `firebase-tools@15.34.2 --non-interactive` to `project-planner-f986c`, and deletes the key file at the end whatever happened.
-5. **Checks what is really live** (the method in `docs/firestore-rules-notes.md` "After publishing"): reads `releases/cloud.firestore` (and `releases/firebase.storage/<bucket>` when Storage rules were deployed), then the ruleset each points at, and compares its source with the file on `main` by sha256. The job fails if they differ. The release name, live ruleset id, its `updateTime` and the hash go in the run's summary.
+3. Refuses to run unless CI passed on that exact commit: the latest `build-and-test`, `rules-typecheck` and `rulebook-check` check runs of `GITHUB_SHA` must have succeeded (`scripts/firebase-rules-deploy.mjs ci-check`, read with the job's own token). So a failing test or rules check on `main` blocks a publish.
+4. Installs with `npm ci --ignore-scripts` (no package install scripts run in the job that later holds the key) and runs the same rules guards CI runs: the size and compile-cost budget (`npm run check:rules-budget`) and the emulator type check (`scripts/check-rules-typecheck.mjs`).
+5. Writes the `FIREBASE_DEPLOY_SA_KEY` secret to a private temporary file and checks it is a service-account key of `project-planner-f986c` — any problem prints one fixed message, never the file or a parse error (which could quote the private key). Then deploys with `firebase-tools@15.34.2 --non-interactive` to `project-planner-f986c`, and deletes the key file at the end whatever happened.
+6. **Checks what is really live** (also after a half-failed combined deploy, so the summary says what is live) (the method in `docs/firestore-rules-notes.md` "After publishing"): reads `releases/cloud.firestore` (and `releases/firebase.storage/<bucket>` when Storage rules were deployed), then the ruleset each points at, and compares its source with the file on `main` by sha256. The job fails if they differ. The release name, live ruleset id, its `updateTime` and the hash go in the run's summary.
 
 Indexes: `--non-interactive` without `--force` never deletes an index that is live but missing from `firestore.indexes.json` (firebase-tools only warns). Indexes are not compared after the deploy; the deploy log says what was created.
 
@@ -44,7 +45,32 @@ Cloud Functions, hosting, Realtime Database, data, users, billing, `platformConf
 
 ## The secret and the service account
 
-- Secret: `FIREBASE_DEPLOY_SA_KEY` (the service account's JSON key). The job runs in the GitHub environment **`firebase-rules`**.
-- **Lock it to main (owner step, recommended).** A repository secret can be read by any workflow file on any branch that someone with write access pushes, so the main-only check in the workflow is not enough on its own. In GitHub → Settings → Environments → `firebase-rules` (created by the first run, or press New environment): Deployment branches and tags → **Selected branches and tags** → add `main`; then **Add environment secret** `FIREBASE_DEPLOY_SA_KEY` with the same key, and delete the repository secret of that name (Settings → Secrets and variables → Actions). Optionally add yourself as a Required reviewer to approve every run. Service account: `github-rules-deployer@project-planner-f986c.iam.gserviceaccount.com`.
+- Secret: `FIREBASE_DEPLOY_SA_KEY` (the service account's JSON key). Service account: `github-rules-deployer@project-planner-f986c.iam.gserviceaccount.com`. The job runs in the GitHub environment **`firebase-rules`**.
 - Roles: `roles/firebaserules.admin` (create, test and release rulesets; read releases and rulesets for the check), `roles/datastore.indexAdmin` (indexes and the Firestore database lookup), `roles/serviceusage.serviceUsageConsumer` (firebase-tools checks the APIs are enabled), `roles/firebase.viewer` (the project and the default Storage bucket lookup).
-- To revoke: delete the key in Google Cloud → IAM → Service accounts → the account → Keys, and delete the GitHub secret.
+- Third-party actions are pinned to full commit SHAs (the tag is in a comment beside each).
+
+### Owner steps, in this order (do these before the first run)
+
+A repository secret can be read by a workflow file on **any** branch that someone with write access pushes, so the workflow's own "main only" check is not enough on its own. These steps lock the key to `main`:
+
+1. **Create the environment.** GitHub → the `project-planner-web` repo → Settings → Environments → **New environment** → name it exactly `firebase-rules` → Configure environment.
+2. **Main only.** In that environment: Deployment branches and tags → **Selected branches and tags** → Add deployment branch or tag rule → type `main` → Add rule.
+3. **Add the environment secret.** Same page → Environment secrets → **Add environment secret** → name `FIREBASE_DEPLOY_SA_KEY` → paste the key JSON (step 5 gives a fresh one; do step 5 first if you want to paste the new key straight away) → Add secret.
+4. **Delete the repository secret.** Settings → Secrets and variables → Actions → Repository secrets → `FIREBASE_DEPLOY_SA_KEY` → delete. From now on only a job in the `firebase-rules` environment on `main` can read the key.
+5. **Rotate the key** (the old one sat in a repository secret any branch could read). Google Cloud console → IAM & Admin → Service accounts → `github-rules-deployer@…` → Keys → **Add key → Create new key → JSON** (downloads the new file; put it in the environment secret, step 3) → then delete the old key in the same list (check its key ID and creation date). Delete the downloaded file from your computer once it is saved in GitHub.
+6. **Protect main.** Settings → Branches (or Rules → Rulesets) → add a rule for `main`: **Require a pull request before merging**, **Require status checks to pass** with `build-and-test`, `rules-typecheck` and `rulebook-check` selected, and block force pushes. This stops anyone pushing straight to `main` to get round the environment rule.
+7. *Optional:* Required reviewers on the environment would make every run wait for an approval. You chose not to, so runs start straight away; you can add it later in the same Environments page.
+
+### First storage-rules run: check the log
+
+When Storage rules are deployed, firebase-tools may try to read the project's IAM policy to check the Storage service account can use cross-service rules. In non-interactive mode it normally skips this, but if the log of the first `storage-rules` (or `firestore-rules+storage-rules` / `all-rules`) run shows a warning naming `resourcemanager.projects.getIamPolicy`, add a read-only role to the deploy account:
+
+```
+gcloud projects add-iam-policy-binding project-planner-f986c --member=serviceAccount:github-rules-deployer@project-planner-f986c.iam.gserviceaccount.com --role=roles/iam.securityReviewer
+```
+
+It is a warning, not a failure: the rules are still published, and the run's "Check what is really live" step says whether they match.
+
+### Revoking
+
+Delete the key in Google Cloud → IAM & Admin → Service accounts → the account → Keys, and delete the GitHub environment secret.

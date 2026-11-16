@@ -29,6 +29,7 @@ on:
 
 permissions:
   contents: read
+  checks: read
 
 concurrency:
   group: firebase-rules-deploy
@@ -62,11 +63,11 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
@@ -77,7 +78,15 @@ jobs:
           TARGETS: ${{ inputs.targets }}
         run: node scripts/firebase-rules-deploy.mjs plan
 
-      - run: npm ci
+      - name: CI passed on this commit
+        # build-and-test, rules-typecheck and rulebook-check must have succeeded on GITHUB_SHA, so failing rules tests
+        # on main block a publish.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/firebase-rules-deploy.mjs ci-check
+
+      # No install scripts run in a job that later holds the deploy key.
+      - run: npm ci --ignore-scripts
 
       - name: Rules guard tests
         run: node --test scripts/firebase-rules-deploy.test.mjs scripts/check-rules-budget.test.mjs
@@ -85,7 +94,7 @@ jobs:
       - name: Security rules size and compile-cost budget
         run: npm run check:rules-budget
 
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6
         with:
           distribution: temurin
           java-version: 21
@@ -94,6 +103,7 @@ jobs:
         run: npx -y "firebase-tools@${FIREBASE_TOOLS_VERSION}" emulators:exec --only firestore --project demo-rules-typecheck "node scripts/check-rules-typecheck.mjs"
 
       - name: Write the service-account key
+        id: key
         env:
           SA_KEY: ${{ secrets.FIREBASE_DEPLOY_SA_KEY }}
         run: |
@@ -104,8 +114,9 @@ jobs:
           umask 077
           key="$RUNNER_TEMP/sa.json"
           printf '%s' "$SA_KEY" > "$key"
-          node -e 'const k=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(k.type!=="service_account"||!k.client_email||!k.private_key||k.project_id!==process.env.PROJECT_ID){console.error("::error::FIREBASE_DEPLOY_SA_KEY is not a service-account key of "+process.env.PROJECT_ID); process.exit(1)}' "$key"
           echo "GOOGLE_APPLICATION_CREDENTIALS=$key" >> "$GITHUB_ENV"
+          # Prints only a fixed message on failure, never the parse error (it can quote the private key).
+          GOOGLE_APPLICATION_CREDENTIALS="$key" node scripts/firebase-rules-deploy.mjs check-key
 
       - name: Deploy
         env:
@@ -115,6 +126,8 @@ jobs:
           npx -y "firebase-tools@${FIREBASE_TOOLS_VERSION}" deploy --only "$ONLY" --project "$PROJECT_ID" --non-interactive
 
       - name: Check what is really live
+        # Also after a half-failed combined deploy, so the summary says what is live.
+        if: always() && steps.plan.outcome == 'success' && steps.key.outcome == 'success'
         env:
           VERIFY_FIRESTORE: ${{ steps.plan.outputs.firestore }}
           VERIFY_STORAGE: ${{ steps.plan.outputs.storage }}

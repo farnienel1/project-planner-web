@@ -2,8 +2,10 @@
 /**
  * Helper for .github/workflows/firebase-rules-deploy.yml (docs/firebase-rules-deploy.md).
  *
- *   node scripts/firebase-rules-deploy.mjs plan     reads TARGETS, writes only / firestore / storage / indexes to $GITHUB_OUTPUT
- *   node scripts/firebase-rules-deploy.mjs verify   reads the live releases and compares them with the files in the checkout
+ *   node scripts/firebase-rules-deploy.mjs plan       reads TARGETS, writes only / firestore / storage / indexes to $GITHUB_OUTPUT
+ *   node scripts/firebase-rules-deploy.mjs ci-check   fails unless CI (REQUIRED_CI_CHECKS) passed on GITHUB_SHA
+ *   node scripts/firebase-rules-deploy.mjs check-key  checks the key file without ever printing its contents
+ *   node scripts/firebase-rules-deploy.mjs verify     reads the live releases and compares them with the files in the checkout
  *
  * Every input comes from the environment, never from the command line, so a workflow input is never interpolated into
  * a shell line. `verify` needs no dependency: it signs a service-account JWT with node:crypto and exchanges it at
@@ -67,11 +69,63 @@ function summary(line) {
 
 const base64url = (input) => Buffer.from(input).toString('base64url')
 
-async function accessToken(keyPath) {
-  const key = JSON.parse(readFileSync(keyPath, 'utf8'))
-  if (key.type !== 'service_account' || !key.client_email || !key.private_key) {
-    throw new Error('The key file is not a service-account key')
+/**
+ * Reads the service-account key file. Any failure gives one fixed message: a JSON parse error's text can quote the
+ * file around the error (the private key), so it never reaches the log.
+ */
+export function readServiceAccountKey(keyPath, projectId) {
+  let key
+  try {
+    key = JSON.parse(readFileSync(keyPath, 'utf8'))
+  } catch {
+    throw new Error('The service-account key is not valid JSON (contents not shown).')
   }
+  if (!key || key.type !== 'service_account' || typeof key.client_email !== 'string' || typeof key.private_key !== 'string'
+    || (projectId && key.project_id !== projectId)) {
+    throw new Error(`The service-account key is not a service-account key of ${projectId || 'this project'} (contents not shown).`)
+  }
+  return key
+}
+
+/** Every check run named in `required` has its latest run completed with success; returns the names that are not. */
+export function missingCiChecks(checkRuns, required) {
+  const latest = new Map()
+  for (const run of checkRuns ?? []) {
+    if (!required.includes(run?.name)) continue
+    const at = Date.parse(run.started_at ?? '') || 0
+    const seen = latest.get(run.name)
+    if (!seen || at >= seen.at) latest.set(run.name, { at, run })
+  }
+  return required.filter((name) => {
+    const run = latest.get(name)?.run
+    return !run || run.status !== 'completed' || run.conclusion !== 'success'
+  })
+}
+
+export const REQUIRED_CI_CHECKS = Object.freeze(['build-and-test', 'rules-typecheck', 'rulebook-check'])
+
+async function ciCheck() {
+  const { GITHUB_TOKEN: token, GITHUB_REPOSITORY: repo, GITHUB_SHA: sha } = process.env
+  if (!token || !repo || !sha) throw new Error('GITHUB_TOKEN, GITHUB_REPOSITORY and GITHUB_SHA are required')
+  const runs = []
+  for (let page = 1; page <= 10; page += 1) {
+    const response = await fetch(`https://api.github.com/repos/${repo}/commits/${sha}/check-runs?per_page=100&page=${page}`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
+    })
+    if (!response.ok) throw new Error(`Could not read the CI checks of ${sha} (HTTP ${response.status})`)
+    const body = await response.json()
+    runs.push(...(body.check_runs ?? []))
+    if ((body.check_runs ?? []).length < 100) break
+  }
+  const missing = missingCiChecks(runs, REQUIRED_CI_CHECKS)
+  if (missing.length) {
+    throw new Error(`CI has not passed on ${sha}: ${missing.join(', ')} not successful. Wait for CI on main, or fix it first.`)
+  }
+  console.log(`CI passed on ${sha}: ${REQUIRED_CI_CHECKS.join(', ')}`)
+}
+
+async function accessToken(keyPath, projectId) {
+  const key = readServiceAccountKey(keyPath, projectId)
   const now = Math.floor(Date.now() / 1000)
   const header = base64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))
   const claims = base64url(JSON.stringify({
@@ -128,7 +182,7 @@ async function verify() {
     summary('No rules file was deployed (indexes only): nothing to compare. firebase-tools reported the index deploy above.')
     return
   }
-  const token = await accessToken(keyPath)
+  const token = await accessToken(keyPath, projectId)
   summary('### Live rules after the deploy\n')
   summary('| Rules | Release | Live ruleset | Release updateTime | Compared with the checkout (sha256) |')
   summary('|---|---|---|---|---|')
@@ -146,7 +200,13 @@ async function main(command) {
     return
   }
   if (command === 'verify') return verify()
-  throw new Error('Usage: firebase-rules-deploy.mjs plan|verify')
+  if (command === 'ci-check') return ciCheck()
+  if (command === 'check-key') {
+    readServiceAccountKey(process.env.GOOGLE_APPLICATION_CREDENTIALS, process.env.PROJECT_ID)
+    console.log('Service-account key file is valid.')
+    return
+  }
+  throw new Error('Usage: firebase-rules-deploy.mjs plan|ci-check|check-key|verify')
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
