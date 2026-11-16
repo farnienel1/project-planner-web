@@ -15,7 +15,8 @@ type LogoCropModalProps = {
 }
 
 async function loadPdfJs() {
-  // Use the package main build path (works across pdfjs-dist 4.x installs).
+  // The package main build (pdfjs-dist 6). The worker is copied from the same install by next.config.js,
+  // so API and worker versions always match.
   const pdfjs = await import('pdfjs-dist/build/pdf.mjs' as 'pdfjs-dist')
   pdfjs.GlobalWorkerOptions.workerSrc = '/pdfjs/pdf.worker.min.mjs'
   return pdfjs
@@ -39,9 +40,9 @@ async function fileToImageSource(file: File): Promise<{ src: string; revoke?: ()
   const canvas = document.createElement('canvas')
   canvas.width = viewport.width
   canvas.height = viewport.height
-  const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('Could not prepare PDF preview.')
-  await page.render({ canvasContext: ctx, viewport }).promise
+  if (!canvas.getContext('2d')) throw new Error('Could not prepare PDF preview.')
+  // pdfjs-dist 5+: pass the canvas itself (canvasContext is only kept for backwards compatibility).
+  await page.render({ canvas, viewport }).promise
   return { src: canvas.toDataURL('image/png') }
 }
 
