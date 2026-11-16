@@ -136,6 +136,11 @@ export function restFieldsToPlain(fields?: Record<string, unknown>): Record<stri
     else if ('doubleValue' in entry) out[key] = Number(entry.doubleValue)
     else if ('timestampValue' in entry) out[key] = new Date(String(entry.timestampValue))
     else if ('nullValue' in entry) out[key] = null
+    // A DocumentReference reads as the referenced document's id, never as a missing field (review of #340).
+    else if ('referenceValue' in entry) {
+      const ref = String(entry.referenceValue || '')
+      out[key] = ref.slice(ref.lastIndexOf('/') + 1)
+    }
     else if ('mapValue' in entry) {
       const nested = (entry.mapValue as { fields?: Record<string, unknown> })?.fields
       out[key] = restFieldsToPlain(nested)

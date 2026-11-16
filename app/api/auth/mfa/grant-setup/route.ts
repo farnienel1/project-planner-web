@@ -6,7 +6,7 @@ import {
   readJsonBody,
   requireFirebaseUser,
 } from '@/lib/security/apiGuard'
-import { encodeSigned, MFA_OK_TTL_MS, writeMfaCookie, type MfaOk } from '@/lib/auth/mfa/mfaCookies'
+import { encodeMfaOk, MFA_OK_TTL_MS, writeMfaCookie } from '@/lib/auth/mfa/mfaCookies'
 import { bearerToken, firestoreGet, readBool, restFieldsToPlain } from '@/lib/owner/firestoreRest'
 import { isPlatformOwnerEmail } from '@/lib/platform/owner'
 import { clampString, isValidUuid } from '@/lib/security/validation'
@@ -93,15 +93,16 @@ export async function POST(request: NextRequest) {
       invitationUsedAtMs,
       isOrgAdmin,
       orgCreatedAtMs,
+      // C1–C3: from Firebase Auth (accounts:lookup with the caller's own token), never a client-written document.
+      authAccountCreatedAtMs: user.createdAtMs ?? null,
       nowMs: Date.now(),
     })
   ) {
     return jsonError('Two-factor verification is required for this account', 403)
   }
 
-  const ok: MfaOk = { uid: user.uid, exp: Date.now() + MFA_OK_TTL_MS }
   const response = NextResponse.json({ ok: true, skipped: true })
   writeMfaCookie(response.cookies, request, 'challenge', '', 0)
-  writeMfaCookie(response.cookies, request, 'ok', encodeSigned(ok), MFA_OK_TTL_MS)
+  writeMfaCookie(response.cookies, request, 'ok', encodeMfaOk(user.uid, Date.now() + MFA_OK_TTL_MS), MFA_OK_TTL_MS)
   return response
 }

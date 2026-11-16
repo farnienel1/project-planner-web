@@ -7,6 +7,14 @@ export type FirebaseAuthUser = {
   uid: string
   email: string | null
   emailVerified: boolean
+  /** Firebase Auth account creation time (ms) from `accounts:lookup`; null when missing or unreadable. */
+  createdAtMs?: number | null
+}
+
+/** `accounts:lookup` returns `createdAt` as a string of epoch milliseconds. */
+export function parseAuthCreatedAtMs(value: unknown): number | null {
+  const raw = typeof value === 'number' ? value : typeof value === 'string' && /^\d+$/.test(value.trim()) ? Number(value.trim()) : NaN
+  return Number.isFinite(raw) && raw > 0 ? raw : null
 }
 
 export function clientIp(request: NextRequest): string {
@@ -71,7 +79,7 @@ export async function verifyFirebaseIdToken(idToken: string): Promise<FirebaseAu
     if (!response.ok) return null
 
     const data = (await response.json()) as {
-      users?: Array<{ localId?: string; email?: string; emailVerified?: boolean }>
+      users?: Array<{ localId?: string; email?: string; emailVerified?: boolean; createdAt?: string }>
     }
     const user = data.users?.[0]
     if (!user?.localId) return null
@@ -80,6 +88,7 @@ export async function verifyFirebaseIdToken(idToken: string): Promise<FirebaseAu
       uid: user.localId,
       email: user.email ? user.email.toLowerCase() : null,
       emailVerified: Boolean(user.emailVerified),
+      createdAtMs: parseAuthCreatedAtMs(user.createdAt),
     }
   } catch {
     return null
