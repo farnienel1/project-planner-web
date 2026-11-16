@@ -5,7 +5,9 @@
  * Each wired handler must:
  *  - play its success event once, after the last write it awaits, outside any catch;
  *  - play `actionRefused` inside its catch (the error then goes where it went before);
- *  - call `feedback` only as a statement of its own (it returns nothing and cannot change a payload).
+ *  - call `feedback` only as a statement of its own (it returns nothing and cannot change a payload);
+ *  - where its catch was added for the sound, play the refusal and rethrow the same error, nothing else;
+ *  - play success before any notice sent after the save, so a failed notice never adds the error sound.
  * No other function in `app/` or `components/` may call `feedback` — in particular no effect, listener or snapshot
  * callback, so another person's change, a page load or an autosave never plays a sound.
  */
@@ -29,6 +31,13 @@ type Site = {
   after: string[]
   /** Whether a catch in it plays `actionRefused`. */
   refusal: boolean
+  /**
+   * The catch was added for the sound (the handler had no catch before, owner decision 8): it must play the refusal and
+   * then rethrow its own error, so the error reaches exactly where it went before.
+   */
+  rethrow?: true
+  /** Notices sent after the save. The success sound comes before them, so a failed notice never plays the error. */
+  notices?: string[]
 }
 
 const SITES: Site[] = [
@@ -45,18 +54,18 @@ const SITES: Site[] = [
   { file: 'components/daily-overview/DailyOverviewBookingSheet.tsx', fn: 'saveHoursOnly', success: ['bookingEdited'], after: ['updateBooking', 'updateManagerSiteBooking'], refusal: true },
   { file: 'components/projects/scheduling/SubcontractorBookingEditSheet.tsx', fn: 'save', success: ['bookingEdited'], after: ['updateSubcontractorBooking'], refusal: true },
   { file: 'components/projects/scheduling/SubcontractorBookingEditSheet.tsx', fn: 'remove', success: ['bookingDeleted'], after: ['deleteBookingWithTombstone'], refusal: true },
-  { file: 'components/warnings/WarningsScreen.tsx', fn: 'handleRemoveEntry', success: ['bookingDeleted'], after: ['onDeleteManagerBooking', 'onDeleteBooking'], refusal: true },
+  { file: 'components/warnings/WarningsScreen.tsx', fn: 'handleRemoveEntry', success: ['bookingDeleted'], after: ['onDeleteManagerBooking', 'onDeleteBooking'], refusal: true, rethrow: true },
   { file: 'components/warnings/WarningsScreen.tsx', fn: 'dismiss', success: ['warningResolved'], after: ['notifyCompanyActivity'], refusal: false },
-  { file: 'app/dashboard/warnings/page.tsx', fn: 'handleAcceptClash', success: [], after: ['approveBookingClashPairs', 'approveBookingClash', 'all'], refusal: true },
-  { file: 'app/dashboard/warnings/page.tsx', fn: 'handleDismissQualification', success: [], after: ['dismissQualificationWarning'], refusal: true },
-  { file: 'components/annual-leave/OperativeAnnualLeaveCalendar.tsx', fn: 'bookLeave', success: ['leaveBooked', 'leaveRequested'], after: ['createRequests', 'notifyLeaveChangedForPerson'], refusal: true },
-  { file: 'components/annual-leave/OperativeAnnualLeaveCalendar.tsx', fn: 'confirmChange', success: ['leaveEdited'], after: ['saveBooking'], refusal: true },
-  { file: 'components/annual-leave/OperativeAnnualLeaveCalendar.tsx', fn: 'approveRequest', success: ['leaveApproved'], after: ['decideBooking', 'notifyHolidayRequestDecisionToUser'], refusal: true },
-  { file: 'components/annual-leave/OperativeAnnualLeaveCalendar.tsx', fn: 'deleteAnnualLeave', success: ['leaveRemoved'], after: ['deleteBooking', 'notifyLeaveChangedForPerson'], refusal: true },
-  { file: 'components/annual-leave/OperativeAnnualLeaveCalendar.tsx', fn: 'declineRequest', success: ['leaveDeclined'], after: ['decideBooking', 'notifyHolidayRequestDecisionToUser'], refusal: true },
-  { file: 'components/tasks/TasksScreen.tsx', fn: 'approveHoliday', success: ['leaveApproved'], after: ['deleteBooking', 'decideBooking', 'notifyHolidayRequestDecisionToUser'], refusal: true },
-  { file: 'components/tasks/TasksScreen.tsx', fn: 'declineHoliday', success: ['leaveDeclined'], after: ['saveBooking', 'decideBooking', 'notifyHolidayRequestDecisionToUser'], refusal: true },
-  { file: 'components/annual-leave/OperativeAnnualLeaveManagement.tsx', fn: 'updateStatus', success: ['leaveApproved', 'leaveDeclined'], after: ['deleteBooking', 'saveBooking', 'decideBooking', 'notifyHolidayRequestDecisionToUser'], refusal: true },
+  { file: 'app/dashboard/warnings/page.tsx', fn: 'handleAcceptClash', success: [], after: ['approveBookingClashPairs', 'approveBookingClash', 'all'], refusal: true, rethrow: true },
+  { file: 'app/dashboard/warnings/page.tsx', fn: 'handleDismissQualification', success: [], after: ['dismissQualificationWarning'], refusal: true, rethrow: true },
+  { file: 'components/annual-leave/OperativeAnnualLeaveCalendar.tsx', fn: 'bookLeave', success: ['leaveBooked', 'leaveRequested'], after: ['createRequests'], notices: ['notifyLeaveChangedForPerson'], refusal: true, rethrow: true },
+  { file: 'components/annual-leave/OperativeAnnualLeaveCalendar.tsx', fn: 'confirmChange', success: ['leaveEdited'], after: ['saveBooking'], refusal: true, rethrow: true },
+  { file: 'components/annual-leave/OperativeAnnualLeaveCalendar.tsx', fn: 'approveRequest', success: ['leaveApproved'], after: ['decideBooking'], notices: ['notifyHolidayRequestDecisionToUser'], refusal: true, rethrow: true },
+  { file: 'components/annual-leave/OperativeAnnualLeaveCalendar.tsx', fn: 'deleteAnnualLeave', success: ['leaveRemoved'], after: ['deleteBooking'], notices: ['notifyLeaveChangedForPerson'], refusal: true, rethrow: true },
+  { file: 'components/annual-leave/OperativeAnnualLeaveCalendar.tsx', fn: 'declineRequest', success: ['leaveDeclined'], after: ['decideBooking'], notices: ['notifyHolidayRequestDecisionToUser'], refusal: true, rethrow: true },
+  { file: 'components/tasks/TasksScreen.tsx', fn: 'approveHoliday', success: ['leaveApproved'], after: ['deleteBooking', 'decideBooking'], notices: ['notifyHolidayRequestDecisionToUser'], refusal: true, rethrow: true },
+  { file: 'components/tasks/TasksScreen.tsx', fn: 'declineHoliday', success: ['leaveDeclined'], after: ['saveBooking', 'decideBooking'], notices: ['notifyHolidayRequestDecisionToUser'], refusal: true, rethrow: true },
+  { file: 'components/annual-leave/OperativeAnnualLeaveManagement.tsx', fn: 'updateStatus', success: ['leaveApproved', 'leaveDeclined'], after: ['deleteBooking', 'saveBooking', 'decideBooking'], notices: ['notifyHolidayRequestDecisionToUser'], refusal: true, rethrow: true },
   { file: 'components/overtime/OvertimeScreen.tsx', fn: 'run', success: [], after: ['work'], refusal: true },
   { file: 'components/overtime/OvertimeScreen.tsx', fn: 'direct', success: ['timesheetSaved'], after: ['applyDirectOvertime'], refusal: false },
   { file: 'components/overtime/OvertimeScreen.tsx', fn: 'sendForApproval', success: ['overtimeSent'], after: ['sendOvertimeRequest'], refusal: false },
@@ -205,6 +214,63 @@ for (const site of SITES) {
       assert.ok(refusals.length > 0, `${site.fn}: the catch plays actionRefused`)
       for (const call of refusals) assert.deepEqual(literals(call.arguments[0]), ['actionRefused'])
     }
+
+    // A catch added only for the sound plays it and rethrows its own error, nothing else, so the error goes where it
+    // went before (owner decision 8). Removing the `throw` would swallow the error and fails here.
+    if (site.rethrow) {
+      for (const call of refusals) {
+        let clause: ts.CatchClause | null = null
+        for (let node: ts.Node | undefined = call.parent; node && node !== handler; node = node.parent) {
+          if (ts.isCatchClause(node)) {
+            clause = node
+            break
+          }
+        }
+        assert.ok(clause, `${site.fn}: refusal inside a catch`)
+        const variable = clause.variableDeclaration?.name
+        assert.ok(variable && ts.isIdentifier(variable), `${site.fn}: the catch names its error`)
+        const statements = clause.block.statements
+        const last = statements[statements.length - 1]
+        assert.ok(
+          last && ts.isThrowStatement(last) && last.expression && ts.isIdentifier(last.expression) && last.expression.text === variable.text,
+          `${site.fn}: the catch ends with throw ${variable.text}`
+        )
+        // Before the throw: only the refusal sound (on its own, or guarded by "nothing saved yet").
+        for (const statement of statements.slice(0, -1)) {
+          const sound = ts.isIfStatement(statement) && !statement.elseStatement ? statement.thenStatement : statement
+          assert.ok(
+            ts.isExpressionStatement(sound) && ts.isCallExpression(sound.expression) && calleeName(sound.expression) === 'feedback',
+            `${site.fn}: the added catch only plays the sound before rethrowing (${statement.getText(source).slice(0, 40)})`
+          )
+        }
+      }
+    }
+
+    // Notices sent after the save come after the success sound: a failed notice after a successful save must not be
+    // the only sound (or turn it into the error).
+    for (const notice of site.notices ?? []) {
+      const sends: ts.Node[] = []
+      walk(handler, (node) => {
+        if (ts.isCallExpression(node) && calleeName(node) === notice && !insideCatch(node, handler)) sends.push(node)
+      })
+      assert.ok(sends.length > 0, `${site.fn}: ${notice} found`)
+      for (const send of sends) {
+        // Between the save just before this notice and the notice itself (so the sound of another branch never counts).
+        const save = writes
+          .filter((write) => write.getEnd() < send.getStart())
+          .reduce<ts.Node | null>((a, b) => (!a || b.getStart() > a.getStart() ? b : a), null)
+        assert.ok(save, `${site.fn}: a save precedes ${notice}`)
+        const between = success.filter((call) => call.getStart() > save.getEnd() && call.getEnd() < send.getStart())
+        assert.ok(between.length > 0, `${site.fn}: the success sound plays after the save and before ${notice}`)
+      }
+      // In the catch the refusal is guarded so a save that already played success plays nothing more.
+      for (const call of refusals) {
+        assert.ok(
+          ts.isExpressionStatement(call.parent) && ts.isIfStatement(call.parent.parent),
+          `${site.fn}: the refusal is skipped once the save succeeded`
+        )
+      }
+    }
   })
 }
 
@@ -240,6 +306,18 @@ test('no other place calls feedback — never an effect, a listener, a snapshot 
       // `run(async () => …)` handlers are named by the const that holds them.
       assert.ok(allowed.has(`${file}#${owner}`), `${file}: feedback in ${owner || 'an unnamed function'} is not a wired handler`)
     }
+  }
+})
+
+test('no wired handler loads a new page (the one way an earlier onClose / navigation could cut a sound)', () => {
+  // The player is one per page (module level), not per component: closing a sheet (`onClose()`) or a client-side
+  // `router.push` / `replace` unmounts the component but keeps the page and its AudioContext, so a sound played just
+  // before or after them is heard either way. Only a full page load would stop it, so none is allowed in a handler.
+  const FULL_LOAD = /\b(window\.)?location\.(assign|replace|reload)\(|\b(window\.)?location(\.href)?\s*=[^=]/
+  for (const site of SITES) {
+    const source = parse(site.file)
+    const text = findHandler(source, site.fn).getText(source)
+    assert.doesNotMatch(text, FULL_LOAD, `${site.file} ${site.fn}`)
   }
 })
 

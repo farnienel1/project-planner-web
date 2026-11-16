@@ -190,6 +190,7 @@ export function OperativeAnnualLeaveManagement({
 
   const updateStatus = async (booking: HolidayBooking, status: 'approved' | 'rejected', decisionNote?: string) => {
     if (!organization?.id || !user) return
+    let saved = false
     try {
       if (isCancellationRequest(booking)) {
         if (status === 'approved') {
@@ -202,6 +203,9 @@ export function OperativeAnnualLeaveManagement({
             updatedAt: new Date(),
           })
         }
+        saved = true
+        // The approver's decision on a cancellation request, played once it is saved (before the notice).
+        feedback(status === 'approved' ? 'leaveApproved' : 'leaveDeclined')
         // Rulebook §9 / 1.9.0: the requester hears the cancellation decision (`holidayDecisionRecipients`).
         await notifyHolidayRequestDecisionToUser({
           organizationId: organization.id,
@@ -213,11 +217,13 @@ export function OperativeAnnualLeaveManagement({
           users,
           operatives,
         })
-        feedback(status === 'approved' ? 'leaveApproved' : 'leaveDeclined')
         return
       }
       // `holidayDecisionWriteFields`: status, approver and the optional note in one partial update.
       await decideBooking(organization.id, booking, { status, approverUid: user.id, decisionNote })
+      saved = true
+      // The approver's decision on a request, played once it is saved (before the notice).
+      feedback(status === 'approved' ? 'leaveApproved' : 'leaveDeclined')
       await notifyHolidayRequestDecisionToUser({
         organizationId: organization.id,
         booking,
@@ -228,11 +234,10 @@ export function OperativeAnnualLeaveManagement({
         users,
         operatives,
       })
-      // The approver's decision on a request or a cancellation request.
-      feedback(status === 'approved' ? 'leaveApproved' : 'leaveDeclined')
     } catch (error) {
-      // Owner decision 8: the refusal sound, then the error goes where it went before.
-      feedback('actionRefused')
+      // Owner decision 8: the refusal sound, then the error goes where it went before. Once the decision is saved a
+      // failed notice plays nothing more (one sound per action).
+      if (!saved) feedback('actionRefused')
       throw error
     }
   }

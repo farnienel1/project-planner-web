@@ -15,6 +15,8 @@ import {
   FEEDBACK_SOUNDS_DEFAULT,
   FEEDBACK_SOUNDS_STORAGE_KEY,
   FEEDBACK_THROTTLE_MS,
+  FEEDBACK_UNLOCK_EVENTS,
+  attachFeedbackUnlock,
   claimsReviewEvent,
   createFeedbackPlayer,
   feedback,
@@ -334,4 +336,90 @@ test('server rendering: no window, no AudioContext is created and nothing throws
 test('the module imports nothing that reads or writes data (it cannot change a save)', () => {
   const source = readFileSync(path.join(ROOT, 'lib', 'feedbackSounds', 'feedback.ts'), 'utf8')
   assert.doesNotMatch(source, /^import /m)
+})
+
+/** A stand-in for `window` / `document` that records listeners and can fire them. */
+function fakeTarget() {
+  const listeners = new Map<string, Set<() => void>>()
+  const options: Array<{ type: string; capture: boolean; passive: boolean }> = []
+  return {
+    listeners,
+    options,
+    addEventListener(type: string, listener: () => void, opts: { capture: true; passive: true }) {
+      options.push({ type, capture: opts.capture, passive: opts.passive })
+      if (!listeners.has(type)) listeners.set(type, new Set())
+      listeners.get(type)!.add(listener)
+    },
+    removeEventListener(type: string, listener: () => void) {
+      listeners.get(type)?.delete(listener)
+    },
+    fire(type: string) {
+      for (const l of [...(listeners.get(type) ?? [])]) l()
+    },
+    count() {
+      return [...listeners.values()].reduce((n, set) => n + set.size, 0)
+    },
+  }
+}
+
+test('unlock: listens for pointerdown, pointerup, touchend, click and keydown (iOS Safari counts no touch pointerdown)', () => {
+  assert.deepEqual([...FEEDBACK_UNLOCK_EVENTS], ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'])
+  const target = fakeTarget()
+  let calls = 0
+  const off = attachFeedbackUnlock(target, () => calls++, () => false)
+  for (const type of FEEDBACK_UNLOCK_EVENTS) assert.equal(target.listeners.get(type)?.size, 1, type)
+  assert.ok(target.options.every((o) => o.capture && o.passive), 'capture mode, passive')
+  // iOS Safari: the touch pointerdown does not resume the context; the touchend / click that follows must.
+  target.fire('touchend')
+  target.fire('click')
+  assert.equal(calls, 2)
+  off()
+  assert.equal(target.count(), 0)
+})
+
+test('unlock: listeners come off once the context is running, and stay while it is still suspended', async () => {
+  const target = fakeTarget()
+  let running = false
+  attachFeedbackUnlock(target, () => undefined, () => running)
+  target.fire('pointerdown')
+  assert.equal(target.count(), FEEDBACK_UNLOCK_EVENTS.length, 'still suspended: keep listening')
+  // The resume() promise settles a moment after the gesture.
+  target.fire('click')
+  running = true
+  await new Promise((done) => setTimeout(done, 80))
+  assert.equal(target.count(), 0, 'running: every gesture listener removed')
+})
+
+test('unlock: back on when the page is visible again and iOS suspended audio in the background', () => {
+  const target = fakeTarget()
+  const doc = fakeTarget()
+  let running = true
+  attachFeedbackUnlock(target, () => undefined, () => running, doc)
+  target.fire('click')
+  assert.equal(target.count(), 0)
+  doc.fire('visibilitychange')
+  assert.equal(target.count(), 0, 'still running: nothing added')
+  running = false
+  doc.fire('visibilitychange')
+  assert.equal(target.count(), FEEDBACK_UNLOCK_EVENTS.length)
+  doc.fire('visibilitychange')
+  assert.equal(target.count(), FEEDBACK_UNLOCK_EVENTS.length, 'never added twice')
+})
+
+test('unlock: a throwing unlock never escapes the page listener', () => {
+  const target = fakeTarget()
+  attachFeedbackUnlock(target, () => {
+    throw new Error('no audio')
+  }, () => {
+    throw new Error('no audio')
+  })
+  assert.doesNotThrow(() => target.fire('touchend'))
+})
+
+test('player: unlocked() is false before any context and true once it runs', () => {
+  const h = harness()
+  const player = createFeedbackPlayer(h.deps)
+  assert.equal(player.unlocked(), false)
+  player.unlock()
+  assert.equal(player.unlocked(), true)
 })

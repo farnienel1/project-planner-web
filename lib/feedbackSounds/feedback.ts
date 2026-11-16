@@ -149,6 +149,8 @@ export type FeedbackPlayer = {
   sample: (sound?: FeedbackSound) => void
   /** Creates / resumes the context inside a user gesture (browser autoplay rules) and schedules loading. */
   unlock: () => void
+  /** True once the context is running (the gesture listeners can then come off). */
+  unlocked: () => boolean
   /** Starts fetching and decoding the files (idempotent). */
   preload: () => void
 }
@@ -293,6 +295,13 @@ export function createFeedbackPlayer(deps: FeedbackPlayerDeps): FeedbackPlayer {
         debug('feedback: unlock failed', error)
       }
     },
+    unlocked() {
+      try {
+        return context?.state === 'running'
+      } catch {
+        return false
+      }
+    },
     preload,
   }
 }
@@ -367,27 +376,112 @@ export function playFeedbackSample(): void {
 }
 
 /**
- * Unlocks audio inside the person's `pointerdown` / `keydown` (browser autoplay rules: the context is created, or
- * resumed after the browser suspended it, during a gesture) and loads the files once while the browser is idle.
- * Mounted once by the app shell; returns the clean-up. Each call after the first is a cheap no-op unless the context
- * was suspended. Someone with sounds off never gets an `AudioContext`.
+ * The gestures that unlock audio. iOS Safari does not count a touch `pointerdown` as a user gesture, so the context is
+ * also resumed on `pointerup`, `touchend` and `click` (and `keydown` for keyboards).
+ */
+export const FEEDBACK_UNLOCK_EVENTS = ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'] as const
+
+/** The parts of `window` / `document` the unlock listeners use (so tests can stand in for them). */
+export type FeedbackUnlockTarget = {
+  addEventListener: (type: string, listener: () => void, options: { capture: true; passive: true }) => void
+  removeEventListener: (type: string, listener: () => void, capture: true) => void
+}
+
+/**
+ * Listens for the gestures in `FEEDBACK_UNLOCK_EVENTS` (capture, passive) and calls `unlock` inside each one. Once
+ * `unlocked()` is true the listeners come off. When the page becomes visible again (`visibility`, e.g. `document`'s
+ * `visibilitychange`) and audio is no longer running — iOS suspends it in the background — they go back on. Returns
+ * the clean-up. Never throws.
+ */
+export function attachFeedbackUnlock(
+  target: FeedbackUnlockTarget,
+  unlock: () => void,
+  unlocked: () => boolean,
+  visibility?: FeedbackUnlockTarget
+): () => void {
+  let attached = false
+  const detach = () => {
+    if (!attached) return
+    attached = false
+    for (const type of FEEDBACK_UNLOCK_EVENTS) {
+      try {
+        target.removeEventListener(type, onGesture, true)
+      } catch {
+        // never throw
+      }
+    }
+  }
+  const settle = () => {
+    try {
+      if (unlocked()) detach()
+    } catch {
+      // never throw
+    }
+  }
+  function onGesture() {
+    try {
+      unlock()
+    } catch {
+      // never throw from a page listener
+    }
+    settle()
+    // `resume()` settles a moment later: check again so the listeners come off after the first gesture that worked.
+    try {
+      setTimeout(settle, 50)
+    } catch {
+      // never throw
+    }
+  }
+  const attach = () => {
+    if (attached) return
+    attached = true
+    for (const type of FEEDBACK_UNLOCK_EVENTS) {
+      try {
+        target.addEventListener(type, onGesture, { capture: true, passive: true })
+      } catch {
+        // never throw
+      }
+    }
+  }
+  const onVisible = () => {
+    try {
+      if (!unlocked()) attach()
+    } catch {
+      // never throw
+    }
+  }
+  attach()
+  try {
+    visibility?.addEventListener('visibilitychange', onVisible, { capture: true, passive: true })
+  } catch {
+    // never throw
+  }
+  return () => {
+    detach()
+    try {
+      visibility?.removeEventListener('visibilitychange', onVisible, true)
+    } catch {
+      // never throw
+    }
+  }
+}
+
+/**
+ * Unlocks audio inside the person's gesture (browser autoplay rules: the context is created, or resumed after the
+ * browser suspended it, during a gesture) and loads the files once while the browser is idle. Mounted once by the app
+ * shell; returns the clean-up. Someone with sounds off never gets an `AudioContext`.
  */
 export function installFeedbackUnlock(): () => void {
   try {
     if (typeof window === 'undefined') return () => undefined
-    const onGesture = () => {
-      try {
+    return attachFeedbackUnlock(
+      window,
+      () => {
         if (feedbackSoundsEnabled()) player()?.unlock()
-      } catch {
-        // never throw from a page listener
-      }
-    }
-    window.addEventListener('pointerdown', onGesture, { capture: true, passive: true })
-    window.addEventListener('keydown', onGesture, { capture: true, passive: true })
-    return () => {
-      window.removeEventListener('pointerdown', onGesture, true)
-      window.removeEventListener('keydown', onGesture, true)
-    }
+      },
+      () => player()?.unlocked() ?? false,
+      typeof document === 'undefined' ? undefined : document
+    )
   } catch {
     return () => undefined
   }
