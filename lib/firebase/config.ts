@@ -5,6 +5,7 @@ import { firestoreFor } from './firestoreInstance';
 import { getStorage, FirebaseStorage } from 'firebase/storage';
 import { isFirebaseConfigured } from './env';
 import { ensureAppCheck } from './appCheck';
+import { withAuthEmulator } from './emulators';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -25,7 +26,7 @@ function initFirebaseApp(): FirebaseApp | null {
 const app = initFirebaseApp();
 
 // Initialize services only when Firebase env vars are present (avoids SSR crashes).
-export const auth: Auth = app ? getAuth(app) : (null as unknown as Auth);
+export const auth: Auth = app ? withAuthEmulator(getAuth(app)) : (null as unknown as Auth);
 export const db: Firestore = app ? firestoreFor(app) : (null as unknown as Firestore);
 export const storage: FirebaseStorage = app ? getStorage(app) : (null as unknown as FirebaseStorage);
 
