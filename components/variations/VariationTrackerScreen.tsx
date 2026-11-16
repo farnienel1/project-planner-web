@@ -444,8 +444,11 @@ export function VariationTrackerScreen({
                       <span style={{ display: 'block' }}>{variationDateText(row.createdAt.getTime(), timeZone)}</span>
                     </td>
                     <td className="xs tabular-nums" style={{ padding: '10px 8px', verticalAlign: 'top' }}>
-                      {/* Owner 16 Nov: the date the variation went to the client, in the organisation zone; "—" when not submitted. */}
-                      {(row.submittedAt ? variationDateText(row.submittedAt.getTime(), timeZone) : '') || '—'}
+                      {/* Owner 16 Nov: the date the variation went to the client, in the organisation zone. Shown only while it is
+                          Submitted or Closed — a variation reopened to Open keeps its old `submittedAt`, which is not shown. */}
+                      {((row.status === 'submitted' || row.status === 'closed') && row.submittedAt
+                        ? variationDateText(row.submittedAt.getTime(), timeZone)
+                        : '') || '—'}
                     </td>
                     <td style={{ padding: '10px 8px', verticalAlign: 'top' }}>
                       <span className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
