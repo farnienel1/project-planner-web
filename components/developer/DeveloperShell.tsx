@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState, type ReactNode } from 'react'
-import { ArrowRightOnRectangleIcon, Bars3Icon } from '@heroicons/react/24/outline'
+import { ArrowRightOnRectangleIcon, Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { AppLogoMark } from '@/components/ui/AppLogoMark'
 import { useFeedbackStore } from '@/lib/feedback/feedbackStore'
@@ -49,10 +49,13 @@ export function DeveloperAppShell({ children }: { children: ReactNode }) {
         <span className="sb-logo">
           <AppLogoMark size={30} radius={8} />
         </span>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="sb-title truncate">Owner console</p>
           <p className="sb-org truncate">{user?.email || 'info@projectplanner.us'}</p>
         </div>
+        <button type="button" className="sb-signout lg:hidden" aria-label="Close menu" onClick={() => setMenuOpen(false)}>
+          <XMarkIcon className="h-5 w-5" />
+        </button>
       </div>
       <nav className="sb-nav flex-1 overflow-y-auto" aria-label="Owner console" onClick={() => setMenuOpen(false)}>
         {groups
@@ -122,14 +125,16 @@ export function DeveloperAppShell({ children }: { children: ReactNode }) {
   )
 
   return (
-    <div className="app-frame min-h-screen text-[var(--ink)]" data-testid="owner-console">
+    <div
+      className="app-frame min-h-screen text-[var(--ink)]"
+      data-testid="owner-console"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && menuOpen) setMenuOpen(false)
+      }}
+    >
       {menuOpen ? (
-        <button
-          type="button"
-          className="fixed inset-0 z-[60] bg-[rgba(10,20,40,.4)] lg:hidden"
-          aria-label="Close menu"
-          onClick={() => setMenuOpen(false)}
-        />
+        // The dimmed backdrop closes the menu on a tap; keyboard users use the Close button or Escape.
+        <div className="fixed inset-0 z-[60] bg-[rgba(10,20,40,.4)] lg:hidden" aria-hidden onClick={() => setMenuOpen(false)} />
       ) : null}
       <div className="flex min-h-screen">
         <aside

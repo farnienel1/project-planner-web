@@ -88,7 +88,6 @@ test('seed: headline counts (users documents, not folded people)', () => {
     internalAccounts: users.filter((u) => u.data.isInternal === true).length,
     accountsInTestOrgs: users.filter(inTestOrg).length,
     internalAccountsInTestOrgs: users.filter((u) => u.data.isInternal === true && inTestOrg(u)).length,
-    pendingInvitations: seed.invitations.filter((i) => i.data.isUsed === false).length,
   }
   const withTest = ownerCountsFromParts(parts, true)
   const without = ownerCountsFromParts(parts, false)
@@ -100,5 +99,4 @@ test('seed: headline counts (users documents, not folded people)', () => {
   assert.equal(without.accounts, e.accountsWithoutTest)
   assert.equal(withTest.testAccounts, e.testAccounts)
   assert.equal(withTest.inactiveAccounts, e.inactiveAccounts)
-  assert.equal(withTest.pendingInvitations, e.pendingInvitations)
 })

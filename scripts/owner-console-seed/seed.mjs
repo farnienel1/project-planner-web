@@ -1,11 +1,15 @@
 #!/usr/bin/env node
 // Writes the owner-console seed to the Firebase EMULATORS. Refuses to run against anything else.
 //
-//   firebase emulators:exec --only firestore,auth --project demo-owner-console "node scripts/owner-console-seed/seed.mjs"
+//   firebase emulators:exec --only firestore,auth --project demo-owner-console "npx tsx scripts/owner-console-seed/seed.mjs"
+//
+// Run with tsx: it sets each seeded sign-in's Auth custom claims with the rulebook's authClaimsForPerson, as the
+// authClaims Cloud Function would (rulebook §16), so organisation people can use the app against these rules.
 //
 // It clears the emulator's Firestore and Auth data first (emulator only), then writes seedData.mjs.
 import { buildOwnerConsoleSeed, SEED_AUTH_USERS, SEED_PASSWORD, SEED_PROJECT_ID } from './seedData.mjs'
 import { toRestFields } from './restValues.mjs'
+import { authClaimsForPerson } from '../../lib/canonical/authClaims.ts'
 
 const firestoreHost = process.env.FIRESTORE_EMULATOR_HOST || ''
 const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST || ''
@@ -34,14 +38,24 @@ async function clear() {
   await call(`http://${authHost}/emulator/v1/projects/${project}/accounts`, { method: 'DELETE' })
 }
 
-async function createAuthUsers() {
+async function createAuthUsers(seed) {
+  const organizations = Object.fromEntries(seed.orgs.map((org) => [org.id, org.data]))
   for (const user of SEED_AUTH_USERS) {
     await call(`http://${authHost}/identitytoolkit.googleapis.com/v1/projects/${project}/accounts`, {
       method: 'POST',
       body: JSON.stringify({ localId: user.uid, email: user.email, password: SEED_PASSWORD, emailVerified: true, displayName: user.displayName }),
     })
+    if (user.role === 'owner') continue
+    const profile = seed.users.find((doc) => doc.id === user.uid)?.data || null
+    const { claims } = authClaimsForPerson({ uid: user.uid, user: profile, organizations, memberships: {}, stamp: SEED_CLAIMS_STAMP })
+    await call(`http://${authHost}/identitytoolkit.googleapis.com/v1/projects/${project}/accounts:update`, {
+      method: 'POST',
+      body: JSON.stringify({ localId: user.uid, customAttributes: JSON.stringify(claims) }),
+    })
   }
 }
+
+const SEED_CLAIMS_STAMP = 1
 
 function docName(path) {
   return `projects/${project}/databases/(default)/documents/${path}`
@@ -70,11 +84,16 @@ put('productFeedback', seed.productFeedback)
 put('interestRegistrations', seed.interestRegistrations)
 put('adminAuditLog', seed.adminAuditLog)
 put('erasedOrganizations', seed.erasedOrganizations)
+// The claims marker each sign-in's app listens to (rulebook §16): the same stamp as its claims, so nothing waits.
+for (const user of SEED_AUTH_USERS) {
+  if (user.role === 'owner') continue
+  writes.push({ update: { name: docName(`users/${user.uid}/private/authClaims`), fields: toRestFields({ v: SEED_CLAIMS_STAMP }) } })
+}
 for (const sheet of seed.timesheets) {
   writes.push({ update: { name: docName(`organizations/${sheet.orgId}/settings/${sheet.id}`), fields: toRestFields(sheet.data) } })
 }
 
 await clear()
-await createAuthUsers()
+await createAuthUsers(seed)
 await commit(writes)
 console.log(`owner-console seed: ${SEED_AUTH_USERS.length} sign-ins and ${writes.length} documents written to ${project} (emulator).`)

@@ -146,7 +146,6 @@ test('counts: aggregation results equal the fixtures, with and without test data
   assert.equal(without.accounts, e.accountsWithoutTest)
   assert.equal(withTest.scheduledForDeletion, e.scheduledForDeletion)
   assert.equal(withTest.inactiveAccounts, e.inactiveAccounts)
-  assert.equal(withTest.pendingInvitations, e.pendingInvitations)
   // Counts never list a collection: every Firestore call is an aggregation, a flag query or one document read.
   const listed = backend.calls.filter((call) => call.method === 'GET' && /\/documents\/(users|organizations)(\?|$)/.test(call.url))
   assert.equal(listed.length, 0)

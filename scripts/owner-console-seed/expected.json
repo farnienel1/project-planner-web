@@ -17,7 +17,10 @@
     "inactive": 6,
     "pending": 6,
     "activeWithoutTest": 110,
-    "dualPersonOrganisations": ["org-eur", "org-small"]
+    "dualPersonOrganisations": [
+      "org-eur",
+      "org-small"
+    ]
   },
   "counts": {
     "organisations": 7,
@@ -27,12 +30,24 @@
     "accounts": 126,
     "accountsWithoutTest": 123,
     "testAccounts": 3,
-    "inactiveAccounts": 5,
-    "pendingInvitations": 3
+    "inactiveAccounts": 5
   },
   "search": {
-    "large": { "organisations": ["org-large"] },
-    "dee@dual": { "people": ["dual-1"] },
-    "test valley": { "people": ["op-small-1"], "organisations": [] }
+    "large": {
+      "organisations": [
+        "org-large"
+      ]
+    },
+    "dee@dual": {
+      "people": [
+        "dual-1"
+      ]
+    },
+    "test valley": {
+      "people": [
+        "op-small-1"
+      ],
+      "organisations": []
+    }
   }
 }

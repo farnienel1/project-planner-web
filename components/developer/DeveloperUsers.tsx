@@ -119,7 +119,8 @@ export function DeveloperUsersScreen() {
       ) : visible.length === 0 ? (
         <EmptyState title="No matching users" description="Try a different name, email or organisation." />
       ) : (
-        <div className="card overflow-visible">
+        // The row menu is a portal (fixed), so the table can scroll sideways on a phone instead of the whole page.
+        <div className="card overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="bg-[var(--soft)] text-xs uppercase text-[var(--ink3)]">
               <tr>

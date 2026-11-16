@@ -2,6 +2,8 @@
  * Owner console headline counts (PLAN §3.2, metric contracts in metricContracts.ts): Firestore `count()` aggregations
  * run with the owner's token on the server, never a download of the collections. Test data (D12: the `isInternal` /
  * `isTest` flags) is counted separately and taken off when "Include test data" is off.
+ * Pending invitations are not counted here: the rules let the owner list invitations one organisation at a time
+ * only, so that count comes with the Needs you queue (PR 3).
  */
 import { PLATFORM_OWNER_SENTINEL_ORG } from '@/lib/platform/owner'
 import {
@@ -31,7 +33,6 @@ export type OwnerCountParts = {
   internalAccounts: number
   accountsInTestOrgs: number
   internalAccountsInTestOrgs: number
-  pendingInvitations: number
 }
 
 export type OwnerCounts = {
@@ -44,7 +45,6 @@ export type OwnerCounts = {
   testAccounts: number
   /** `isActive == false` accounts, test data included. */
   inactiveAccounts: number
-  pendingInvitations: number
 }
 
 export function ownerCountsFromParts(parts: OwnerCountParts, includeTestData: boolean): OwnerCounts {
@@ -60,7 +60,6 @@ export function ownerCountsFromParts(parts: OwnerCountParts, includeTestData: bo
     accounts: includeTestData ? accountsAll : Math.max(0, accountsAll - testAccounts),
     testAccounts,
     inactiveAccounts: parts.inactiveAccounts,
-    pendingInvitations: parts.pendingInvitations,
   }
 }
 
@@ -89,7 +88,7 @@ export async function readOwnerCountParts(token: string): Promise<OwnerCountPart
     for (const values of chunks(testForms, 30)) total += await count('users', build(values))
     return total
   }
-  const [organisations, sentinel, testBoth, scheduled, accounts, ownerAccounts, inactiveAccounts, internalAccounts, pendingInvitations] =
+  const [organisations, sentinel, testBoth, scheduled, accounts, ownerAccounts, inactiveAccounts, internalAccounts] =
     await Promise.all([
       count('organizations'),
       firestoreGet(token, `organizations/${PLATFORM_OWNER_SENTINEL_ORG}`).then((doc) => (doc ? 1 : 0)),
@@ -99,7 +98,6 @@ export async function readOwnerCountParts(token: string): Promise<OwnerCountPart
       count('users', restEqual('organizationId', PLATFORM_OWNER_SENTINEL_ORG)),
       count('users', restEqual('isActive', false)),
       count('users', restEqual('isInternal', true)),
-      count('invitations', restEqual('isUsed', false)),
     ])
   const accountsInTestOrgs = testForms.length ? await sumOverChunks((values) => restIn('organizationId', values)) : 0
   const internalAccountsInTestOrgs = testForms.length
@@ -118,6 +116,5 @@ export async function readOwnerCountParts(token: string): Promise<OwnerCountPart
     internalAccounts,
     accountsInTestOrgs,
     internalAccountsInTestOrgs,
-    pendingInvitations,
   }
 }

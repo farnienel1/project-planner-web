@@ -23,19 +23,17 @@ export async function ownerGet<T>(path: string, params: Record<string, string | 
   return data
 }
 
-export type OwnerCountsState = { counts: OwnerCounts | null; error: string | null; loading: boolean; refresh: () => void }
+export type OwnerCountsState = { counts: OwnerCounts | null; error: string | null; refresh: () => void }
 
 /** Headline counts (spec §2: when the page opens, then every 60 s, plus refresh). */
 export function useOwnerCounts(includeTestData: boolean, enabled = true): OwnerCountsState {
   const [counts, setCounts] = useState<OwnerCounts | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
   const [tick, setTick] = useState(0)
   const refresh = useCallback(() => setTick((value) => value + 1), [])
   useEffect(() => {
     if (!enabled) return
     const controller = new AbortController()
-    setLoading(true)
     ownerGet<OwnerCounts>('/api/owner/counts', { includeTestData }, controller.signal)
       .then((value) => {
         setCounts(value)
@@ -45,16 +43,13 @@ export function useOwnerCounts(includeTestData: boolean, enabled = true): OwnerC
         if (controller.signal.aborted) return
         setError(err instanceof Error ? err.message : 'Could not load the counts.')
       })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false)
-      })
     const timer = window.setInterval(() => setTick((value) => value + 1), 60_000)
     return () => {
       controller.abort()
       window.clearInterval(timer)
     }
   }, [includeTestData, enabled, tick])
-  return { counts, error, loading, refresh }
+  return { counts, error, refresh }
 }
 
 export async function ownerSearchRequest(q: string, includeTestData: boolean, signal?: AbortSignal): Promise<OwnerSearchResult> {
