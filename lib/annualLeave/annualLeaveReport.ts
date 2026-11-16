@@ -3,8 +3,9 @@
  *
  * One person's leave in one leave year is the rulebook's `leaveReportRows`; the years offered are
  * `leaveReportYears`. This file only turns loaded `HolidayBooking` rows (already read through
- * `parseHolidayDocument` by the holiday store) into the rulebook's record shape and passes the organisation's leave
- * year (`annualLeaveDefaults.startMonth`), the person's ids and the region's bank holidays. No figure is worked out here.
+ * `parseHolidayDocument` by the holiday store) into the rulebook's record shape and passes the leave year the balance
+ * on the same page counts (rulebook 1.54.0 `annualLeaveReportYearMonths`, via `userLeaveReportYearMonths`), the
+ * person's ids and the region's bank holidays. No figure is worked out here.
  */
 import { leaveReportRows, leaveReportYears, type LeaveReport, type LeaveReportRecord } from '@/lib/canonical'
 import { holidayBookingDayKeys } from '@/lib/annualLeave/holidayDayKeys'

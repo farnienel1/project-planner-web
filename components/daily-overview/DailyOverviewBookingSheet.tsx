@@ -28,6 +28,7 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { bookableWorks } from '@/lib/access/workAccess'
 import { useDeadlineAssignedProjectIds } from '@/lib/deadlines/useDeadlineAssignedProjectIds'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
+import { bookingRowUserId } from '@/lib/daily-overview/bookingRowUser'
 import { splitBookingMoveCatalogues } from '@/lib/projects/bookingMoveCatalogues'
 import { worksInTab, worksTabCounts } from '@/lib/canonical'
 import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
@@ -51,6 +52,7 @@ import { canBookOtherLocationsFor, normalizeDocumentId, organizationOvertimeMult
 import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
 import { webJobAccessViewer } from '@/lib/access/readPlan'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
+import { feedback } from '@/lib/feedbackSounds/feedback'
 
 type DestTab = 'other' | 'projects' | 'smallWorks'
 type StatusFilter = 'active' | 'upcoming' | 'completed'
@@ -88,6 +90,9 @@ function managerSlotFromRaw(raw?: string): string {
   return kind === 'FULL' ? 'FULL_DAY' : kind
 }
 
+/** Other books the person on the manager schedule, which needs their users account (never a guessed one). */
+const OTHER_NEEDS_ACCOUNT_MESSAGE = 'This person needs a user account to be booked to Other.'
+
 /**
  * Rulebook 1.41.0 §5 with the 1.39 moves: moving a booking to the other kind is one batch (create + the source's delete
  * and tombstone), and a Replace needs its own checked transaction, so the two are not combined. A move that would also
@@ -115,7 +120,7 @@ export function DailyOverviewBookingSheet({
   } = useManagerScheduleStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const { operatives, managers } = useOperativeStore()
-  const { users } = useOrgUserStore()
+  const { users, userIdAliases } = useOrgUserStore()
   const [tab, setTab] = useState<DestTab | undefined>(undefined)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('active')
   const [search, setSearch] = useState('')
@@ -215,15 +220,14 @@ export function DailyOverviewBookingSheet({
     return project.siteName.toLowerCase().includes(q) || project.jobNumber.toLowerCase().includes(q)
   })
 
+  // Guardrail 1: the booking's account comes from the rulebook (`resolveBookingPerson` via `bookingRowUserId`): the
+  // operatives row's `linkedUserId`, then a users document under the stored id, then a non-blank email. A row with a
+  // blank email and no link has no account here, so "Other" refuses instead of booking someone else.
   const resolvedUserId = useMemo(() => {
     if (row.userId) return row.userId
     if (!row.operativeId) return undefined
-    const op = operatives.find((entry) => normalizeDocumentId(entry.id) === normalizeDocumentId(row.operativeId))
-    if (!op) return undefined
-    const byEmail = users.find((entry) => entry.email.trim().toLowerCase() === op.email.trim().toLowerCase())
-    if (byEmail) return byEmail.id
-    return users.find((entry) => normalizeDocumentId(findOperativeForUser(entry, operatives)?.id) === normalizeDocumentId(row.operativeId))?.id
-  }, [row.userId, row.operativeId, operatives, users])
+    return bookingRowUserId(row.operativeId, { operatives, users, userIdAliases })
+  }, [row.userId, row.operativeId, operatives, users, userIdAliases])
 
   // Rulebook §2 (1.33.0): moving a labour booking to Other deletes it (there is no cancel), so it is offered only when
   // the viewer may also delete that booking (`bookingRemoveAction`), never refused half-way.
@@ -359,8 +363,10 @@ export function DailyOverviewBookingSheet({
         }, replace)
       }
       onClose()
+      feedback('bookingEdited')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not update booking')
+      feedback('actionRefused')
     } finally {
       setSaving(false)
     }
@@ -368,13 +374,15 @@ export function DailyOverviewBookingSheet({
 
   const saveToOther = async (pick: ScheduleLocationPick) => {
     if (!organization?.id || !hoursValid) return
+    // Refused before any check or write: a booking whose person has no resolved account is never moved to Other
+    // under someone else (guardrail 1).
+    if (!resolvedUserId) {
+      setError(OTHER_NEEDS_ACCOUNT_MESSAGE)
+      return
+    }
     if (!breakConfirmed()) return
     const replace = await leaveConfirmed()
     if (!replace) return
-    if (!resolvedUserId) {
-      setError('This person needs a user account to be booked to Other.')
-      return
-    }
     setSaving(true)
     setError(null)
     try {
@@ -405,8 +413,10 @@ export function DailyOverviewBookingSheet({
         }, replace)
       }
       onClose()
+      if (row.bookingId) feedback('bookingEdited')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not update booking')
+      feedback('actionRefused')
     } finally {
       setSaving(false)
     }
@@ -429,8 +439,10 @@ export function DailyOverviewBookingSheet({
         }, replace)
       }
       onClose()
+      feedback('bookingEdited')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not update booking')
+      feedback('actionRefused')
     } finally {
       setSaving(false)
     }

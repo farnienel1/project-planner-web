@@ -367,16 +367,26 @@ export function timesheetPeriodWriteFields(input: {
   }
 }
 
-/** Storage object iOS already writes: `organizations/{orgId}/timesheetExports/{stamp}_{file}`. */
+/**
+ * The Storage object of one exported timesheet PDF: `organizations/{orgId}/timesheetExports/{uid}_{stamp}_{file}`.
+ *
+ * Rulebook 1.54.1 (§8, §24): the export is an invoice (rates and pay), so the Storage rules let only admins of the
+ * organisation and the staff member who exported it read it; the exporter is named by their Auth uid at the front of
+ * the object name (`uploaderUid`). Without a usable uid (blank, or one with `/` or `_`) the name is the pre-1.54.1
+ * `{stamp}_{file}`, which only admins read.
+ */
 export function timesheetExportStoragePath(
   organizationId: string,
   fileName: string,
-  stampSeconds: number
+  stampSeconds: number,
+  uploaderUid?: string | null
 ): string {
   const org = trimmed(organizationId)
   const safe = trimmed(fileName).replace(/\s+/g, '_')
   const stamp = Math.max(0, Math.floor(Number(stampSeconds) || 0))
-  return `organizations/${org}/${TIMESHEET_EXPORT_STORAGE_FOLDER}/${stamp}_${safe}`
+  const uid = trimmed(uploaderUid ?? '')
+  const prefix = uid && !/[/_\s]/.test(uid) ? `${uid}_` : ''
+  return `organizations/${org}/${TIMESHEET_EXPORT_STORAGE_FOLDER}/${prefix}${stamp}_${safe}`
 }
 
 export function timesheetStatusWriteFields(fields: TimesheetStatusFields): Record<string, unknown> {

@@ -487,20 +487,6 @@ export function canEditTargetUserPermissions(
   return false
 }
 
-export function canDeleteUser(
-  actor: PermissionUser,
-  target: PermissionUser,
-  orgCreatorUserId?: string
-): boolean {
-  if (!actor || !target) return false
-  if (target.isSuperAdmin) return false
-  if (orgCreatorUserId && target.id === orgCreatorUserId) return false
-  if (actor.id === target.id && actor.isSuperAdmin) return false
-  if (actor.isSuperAdmin) return true
-  if (flag(actor, 'adminAccess') && !hasAdminAccess(target) && !target.isSuperAdmin) return true
-  return false
-}
-
 export function getManageUsersLabel(user: PermissionUser, _organization?: unknown): string {
   if (canManageUsers(user)) return 'Manage users'
   return 'Manage operatives'

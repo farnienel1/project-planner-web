@@ -7,9 +7,9 @@ import { usePendingNavigation } from '@/lib/navigation/usePendingNavigation'
 import { PendingSpinner } from '@/components/shell/PendingSpinner'
 import Link from 'next/link'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { resendInvitationEmail } from '@/lib/orgSetup/resendInvitation'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useUserStore } from '@/lib/stores/userStore'
-import { useInviteStore } from '@/lib/stores/inviteStore'
 import { canManageUsers, getManageUsersLabel } from '@/lib/navigation/menuPermissions'
 import {
   filterUsersForManageTab,
@@ -151,7 +151,6 @@ export function ManageUsersScreen() {
   const { user: currentUser, organization } = useAuthStore()
   const { users, error: rosterError, rosterLoadedOrgId, claimedEmails, loadUsers } = useOrgUserStore()
   const { sendPasswordReset } = useUserStore()
-  const { inviteUser } = useInviteStore()
 
   const [tab, setTab] = useState<ManageUsersTab>('admins')
   const [segment, setSegment] = useState<RosterSegment>('active')
@@ -281,23 +280,14 @@ export function ManageUsersScreen() {
     if (!organization?.id) return
     setBusyRow(user.id)
     try {
-      await inviteUser({
-        email: user.email,
+      // Sends the existing invitation again (as iOS); never re-runs Add User or rewrites the placeholder.
+      await resendInvitationEmail({
         organizationId: organization.id,
-        organizationName: organization.name,
-        firstName: user.firstName,
-        surname: user.surname,
-        mobileNumber: user.mobileNumber,
-        permissions: user.permissions,
-        assignedManagerUserId: user.assignedManagerUserId,
-        dayRate: user.dayRate,
-        hourlyRate: user.hourlyRate,
-        payBasis: user.payBasis,
-        tradeTypePreset: user.tradeTypePreset,
-        tradeTypeCustom: user.tradeTypeCustom,
+        organizationName: organization.name || '',
+        person: user,
+        actor: currentUser,
       })
       flash('success', `Sign-up email sent to ${user.email}.`)
-      loadUsers(organization.id)
     } catch (error) {
       flash('error', error instanceof Error ? error.message : 'Failed to send sign-up email.')
     } finally {

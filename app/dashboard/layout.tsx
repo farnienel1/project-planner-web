@@ -20,6 +20,7 @@ import { OrganizationDeletedScreen } from '@/components/billing/OrganizationDele
 import { hasAdminAccess } from '@/lib/navigation/menuPermissions'
 import { LAPSED_BILLING_PATH, LapsedBillingOnly, SubscriptionLapsedScreen } from '@/components/billing/SubscriptionLapsedScreen'
 import { LEGAL_ENTITY } from '@/lib/legal/customerLegalPack'
+import { WebUpdateGate } from '@/components/client/WebUpdateGate'
 
 export default function DashboardLayout({
   children,
@@ -123,6 +124,7 @@ export default function DashboardLayout({
 
   return (
     <AppShell>
+      <WebUpdateGate />
       <BillingReadOnlyBanner />
       <AnalyticsConsentHost autoPrompt />
       <ProductAnalyticsProvider>{children}</ProductAnalyticsProvider>

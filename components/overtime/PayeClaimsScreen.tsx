@@ -9,6 +9,8 @@
  * (the person only). Users' view (line managers, admins) is read-only. A self-employed person's items are their
  * timesheet entries, read-only (`timesheetClaimRows`).
  */
+import { useOwnPayUser } from '@/lib/pay/useOwnPayUser'
+import { withOwnPay } from '@/lib/pay/ownPayRecord'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
@@ -86,6 +88,7 @@ import type { User } from '@/types'
 
 import { downloadPdf } from '@/lib/pdf/downloadPdf'
 import { loadExportModule } from '@/lib/pdf/loadExportModule'
+import { claimsReviewEvent, feedback } from '@/lib/feedbackSounds/feedback'
 
 // The PDF builders (pdf-lib) load only when a PDF is made.
 const buildPayeClaimReportPdf: typeof import('@/lib/payeClaims/payeClaimReportPdf').buildPayeClaimReportPdf = (...args) =>
@@ -119,7 +122,12 @@ export function PayeClaimsSection(props: Props) {
   const { kind, mine, subject, here, range, start, end, orgDoc, todayKey } = props
   const title = sectionTitle(kind)
   const roster = useMemo(() => rulebookRoster(props.users), [props.users])
-  const viewer = useMemo(() => rulebookPerson(props.users.find((row) => row.id === props.viewerUser.id) || props.viewerUser, props.users), [props.users, props.viewerUser])
+  // Pay strip: the viewer's own employment type from their own pay profile (`useOwnPayUser`).
+  const ownPay = useOwnPayUser()
+  const viewer = useMemo(
+    () => rulebookPerson(withOwnPay(props.users.find((row) => row.id === props.viewerUser.id) || props.viewerUser, ownPay), props.users),
+    [props.users, props.viewerUser, ownPay]
+  )
   const subjectPerson = useMemo(() => rulebookPerson(subject, props.users), [subject, props.users])
   const allowed = canViewPayeClaims(viewer, subjectPerson, roster)
   const current = payePayrunPeriod(orgDoc, todayKey)
@@ -328,8 +336,12 @@ function ClaimList(props: Omit<Props, 'range'> & { range: { start: string; end: 
       await savePayeClaimReviews(organizationId, preview.writes)
       setDecisions({})
       setNotice(preview.message)
+      // Owner decision 2: approved / declined as decided; nothing saved plays nothing (decision 4).
+      const reviewed = claimsReviewEvent(preview.writes)
+      if (reviewed) feedback(reviewed)
     } catch (e: unknown) {
       setNotice(e instanceof Error ? e.message : 'The review could not be saved.')
+      feedback('actionRefused')
     } finally {
       setBusy(false)
     }
@@ -353,8 +365,10 @@ function ClaimList(props: Omit<Props, 'range'> & { range: { start: string; end: 
         items: inRange,
       })
       await downloadClaimReport(snapshot, orgLogo(props.orgDoc), setNotice)
+      feedback('timesheetSaved')
     } catch (e: unknown) {
       setNotice(e instanceof Error ? e.message : 'The report could not be made.')
+      feedback('actionRefused')
     } finally {
       setBusy(false)
     }
@@ -640,10 +654,12 @@ function ClaimSheet(props: {
         await addExpense({ organizationId, currency, draft: { title, details, jobNumber, date: from, amount, evidence: list } })
       }
       props.onClose()
+      feedback('timesheetSaved')
     } catch (e: unknown) {
       // 1.30.0 review: a refused or failed save leaves no new copy behind where line managers and admins could read it.
       await discardClaimEvidence(organizationId, uploaded)
       setError(e instanceof Error ? e.message : 'It could not be saved.')
+      feedback('actionRefused')
     } finally {
       setSaving(false)
     }

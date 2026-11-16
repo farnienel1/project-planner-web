@@ -27,13 +27,13 @@ import {
   applyJobTaskFilter,
   emptyCopyForScope,
   filterTasksForScope,
-  isAssignedToUser,
   jobTaskFilterDescription,
   taskScopeCounts,
   taskStatCounts,
   type JobTaskFilter,
   type ProjectTaskListScope,
 } from '@/lib/tasks/projectTaskFilters'
+import { tasksAssignedToUser } from '@/lib/tasks/taskUtils'
 import type { Project, ProjectTask, ProjectTaskStatus } from '@/types'
 
 export function ProjectTasksSection({ project }: { project: Project }) {
@@ -52,7 +52,7 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
   const { organization, user } = useAuthStore()
   const { tasks, loading, error, loadTasks, saveTask, deleteTask } = useTaskStore()
   const { operatives, managers, loadOperatives, loadManagers } = useOperativeStore()
-  const { loadUsers } = useOrgUserStore()
+  const { users, loadUsers } = useOrgUserStore()
   const managerRoster = useRosterDocuments(organization?.id)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<ProjectTask | null>(null)
@@ -96,21 +96,19 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
     router.replace(pathname, { scroll: false })
   }
 
-  const filterOpts = {
-    userEmail: user?.email,
-    user: user ? { email: user.email, firstName: user.firstName, surname: user.surname } : null,
-    operatives,
-    managers,
-    operativeMode: isOperative,
-  }
+  // Guardrail 1 / rulebook §23 (`tasksAssignedToViewer`): "Assigned to me" and an operative's job task list match the
+  // viewer under every id they go by — the same rule as My tasks and the Home counts.
+  const assignedTaskIds = useMemo(
+    () => new Set(tasksAssignedToUser(projectTasks, user, operatives, managers, users).map((task) => task.id)),
+    [projectTasks, user, operatives, managers, users]
+  )
+  const filterOpts = useMemo(() => ({ assignedTaskIds }), [assignedTaskIds])
 
   const visibleBase = useMemo(() => {
     const filtered = applyJobTaskFilter(projectTasks, taskFilter)
     if (canViewAll) return filtered
-    return filtered.filter((task) =>
-      isAssignedToUser(task, filterOpts.userEmail, operatives, managers, isOperative)
-    )
-  }, [canViewAll, projectTasks, taskFilter, filterOpts.userEmail, filterOpts.operativeMode, operatives, managers, user, isOperative])
+    return filtered.filter((task) => assignedTaskIds.has(task.id))
+  }, [canViewAll, projectTasks, taskFilter, assignedTaskIds])
 
   const scoped = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -120,7 +118,7 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
         return task.title.toLowerCase().includes(q) || (task.details || '').toLowerCase().includes(q)
       })
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-  }, [visibleBase, scope, search, filterOpts.userEmail, filterOpts.operativeMode, operatives, managers, isOperative])
+  }, [visibleBase, scope, search, filterOpts])
 
   const counts = taskScopeCounts(visibleBase, filterOpts)
   const stats = taskStatCounts(visibleBase)

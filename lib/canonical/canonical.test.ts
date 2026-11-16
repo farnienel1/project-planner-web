@@ -2614,6 +2614,17 @@ test('timesheet period identity stays on the stored window after a pay-run mode 
     timesheetExportStoragePath('org-1', 'Ada Booked timesheet.pdf', 1_775_000_000),
     'organizations/org-1/timesheetExports/1775000000_Ada_Booked_timesheet.pdf'
   )
+  // 1.54.1: the exporter's uid leads the name, so the Storage rules let them (and admins) read it back.
+  assert.equal(
+    timesheetExportStoragePath('org-1', 'Ada Booked timesheet.pdf', 1_775_000_000, 'UidAbc123'),
+    'organizations/org-1/timesheetExports/UidAbc123_1775000000_Ada_Booked_timesheet.pdf'
+  )
+  for (const bad of ['', '  ', 'a/b', 'a_b', null, undefined]) {
+    assert.equal(
+      timesheetExportStoragePath('org-1', 'x.pdf', 1, bad),
+      'organizations/org-1/timesheetExports/1_x.pdf'
+    )
+  }
 })
 
 test('selectable payment runs keep the old window after a mode or range change', () => {

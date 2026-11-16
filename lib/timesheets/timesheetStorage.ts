@@ -5,7 +5,7 @@
  * Doc id: timesheet_{userId}_{unixStartOfDay} using the organisation origin-country zone.
  * Legacy yyyy-MM-dd / ISO-week keys are still read so older web drafts are not lost.
  */
-import { collection, doc, getDoc, getDocs, query, serverTimestamp, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, query, runTransaction, serverTimestamp, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase/config'
 import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
 import { parseFirestoreDate as parseSharedFirestoreDate, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
@@ -32,12 +32,19 @@ import {
   timesheetStoredStartDayKey,
   type TimesheetEntryDecision,
   type TimesheetEntryReview,
+  timesheetExportedFieldSet,
+  timesheetLateExtrasSummary,
+  parseTimesheetLateExtras,
+  TIMESHEET_LATE_EXTRAS_FIELD,
+  TIMESHEET_ENTRY_REVIEWS_FIELD,
 } from '@/lib/canonical'
+import { draftEntryFingerprints, draftReviewEntries, draftStoredExported } from '@/lib/timesheets/timesheetAdjustments'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import {
   emptyTimesheetDraft,
   type TimesheetDraft,
   type TimesheetExpenseEntry,
+  type TimesheetLateExtra,
   type TimesheetManagerDecision,
   type TimesheetPayrollLineReview,
   type TimesheetPriceWorkEntry,
@@ -155,6 +162,76 @@ function mapEntries(
   }
 }
 
+/** Rulebook 1.54.0 §8: `lateExtras` through `parseTimesheetLateExtras` (the late decision, never an inline one). */
+function mapLateExtras(
+  data: Record<string, unknown>,
+  sheetDocId: string,
+  timeZone: string,
+  ownerUserIds: ReadonlyArray<string> = []
+): TimesheetLateExtra[] | undefined {
+  if (!Array.isArray(data[TIMESHEET_LATE_EXTRAS_FIELD])) return undefined
+  return parseTimesheetLateExtras(sheetDocId, data, { timeZone, ownerUserIds }).map((entry): TimesheetLateExtra => {
+    const common = {
+      id: entry.id,
+      title: entry.title,
+      details: entry.details,
+      jobNumber: entry.jobNumber,
+      amount: entry.amount,
+      evidence: entry.evidence,
+      reviewFingerprint: entry.reviewFingerprint,
+      managerDecision: decisionOf(entry.managerDecision),
+      managerRevisedAmount: entry.managerRevisedAmount,
+      // Third review of #337: an ignored late extra (id taken) is shown, never offered for review or paid.
+      lateState: entry.lateDecision.state,
+      lateReason: entry.lateDecision.reason,
+    }
+    if (entry.kind === 'priceWork') {
+      return {
+        ...common,
+        kind: 'priceWork',
+        agreedManagerName: entry.agreedManagerName,
+        startDate: entry.startMs != null ? new Date(entry.startMs) : new Date(),
+        endDate: entry.endMs != null ? new Date(entry.endMs) : null,
+      }
+    }
+    return {
+      ...common,
+      kind: 'expense',
+      date: entry.dateMs != null ? new Date(entry.dateMs) : new Date(),
+      receiptName: entry.receiptName,
+    }
+  })
+}
+
+/** Rulebook 1.54.0: a late extra as stored — the entry's own fields and kind, never a decision. */
+export function lateExtraToFirestore(entry: TimesheetLateExtra): Record<string, unknown> {
+  const evidence = entry.evidence && entry.evidence.length > 0 ? { evidence: timesheetEntryEvidenceWriteFields(entry.evidence) } : {}
+  if (entry.kind === 'priceWork') {
+    return {
+      kind: 'priceWork',
+      id: entry.id,
+      title: entry.title,
+      details: entry.details,
+      jobNumber: entry.jobNumber,
+      agreedManagerName: entry.agreedManagerName,
+      startDate: Timestamp.fromDate(entry.startDate),
+      endDate: entry.endDate ? Timestamp.fromDate(entry.endDate) : null,
+      amount: entry.amount,
+      ...evidence,
+    }
+  }
+  return {
+    kind: 'expense',
+    id: entry.id,
+    title: entry.title,
+    details: entry.details,
+    jobNumber: entry.jobNumber,
+    date: Timestamp.fromDate(entry.date),
+    amount: entry.amount,
+    ...evidence,
+  }
+}
+
 function finiteNumber(value: unknown): number {
   const number = typeof value === 'number' ? value : Number(value)
   return Number.isFinite(number) ? number : 0
@@ -171,6 +248,9 @@ function mapMoneyLine(row: Record<string, unknown>): WeeklyReportMoneyLine | nul
     date: parseFirestoreDate(row.date) || new Date(),
     amount: finiteNumber(row.amount),
     decision: asDecision(row.decision),
+    // Rulebook 1.54.0: an approved late extra's row (and its fingerprint when approved).
+    ...(row.lateExtra === true ? { lateExtra: true } : {}),
+    ...(typeof row.entryFingerprint === 'string' && row.entryFingerprint ? { entryFingerprint: row.entryFingerprint } : {}),
   }
 }
 
@@ -237,6 +317,8 @@ export function weeklyReportOverrideToFirestore(override: WeeklyReportOverride):
     date: Timestamp.fromDate(line.date),
     amount: line.amount,
     decision: line.decision,
+    ...(line.lateExtra === true ? { lateExtra: true } : {}),
+    ...(line.entryFingerprint ? { entryFingerprint: line.entryFingerprint } : {}),
   })
   return {
     approvedAt: Timestamp.fromDate(override.approvedAt),
@@ -346,8 +428,13 @@ export function draftFromFirestoreMap(
     managerSignedByUserId: status.managerSignedByUserId || null,
     managerSignatureImageBase64: includeSignatures ? status.managerSignatureImageBase64 || null : null,
     exportedAt: status.exportedAtMs ? new Date(status.exportedAtMs) : null,
+    exportedAtStored: timesheetExportedFieldSet(data.exportedAt),
     expenseEntries: entries.expenseEntries,
     priceWorkEntries: entries.priceWorkEntries,
+    ...(() => {
+      const lateExtras = mapLateExtras(data, options?.sheetDocId?.trim() || '', organizationZoneOr(options?.timeZone), options?.ownerUserIds ?? [])
+      return lateExtras ? { lateExtras } : {}
+    })(),
     payrollLineReviews: mapReviews(data.payrollLineReviews),
     weeklyReportOverride: weeklyReportOverrideFromFirestore(data.weeklyReportOverride),
     extraEntryReviews: parseTimesheetEntryReviews(data),
@@ -413,6 +500,8 @@ export function draftToFirestoreMap(draft: TimesheetDraft): Record<string, unkno
       managerDecision: entry.managerDecision,
       managerRevisedAmount: entry.managerRevisedAmount ?? null,
     })),
+    // Rulebook 1.54.0: written only when the draft has the list, so a sheet without late extras keeps its stored shape.
+    ...(Array.isArray(draft.lateExtras) ? { [TIMESHEET_LATE_EXTRAS_FIELD]: draft.lateExtras.map(lateExtraToFirestore) } : {}),
     payrollLineReviews: Object.fromEntries(
       Object.entries(draft.payrollLineReviews).map(([key, review]) => [
         key,
@@ -460,6 +549,7 @@ export function timesheetDraftHasActivity(draft: TimesheetDraft): boolean {
       draft.exportedAt ||
       draft.expenseEntries.length ||
       draft.priceWorkEntries.length ||
+      (draft.lateExtras?.length ?? 0) ||
       draft.managerNote.trim() ||
       draft.weeklyReportOverride
   )
@@ -872,14 +962,26 @@ export async function saveTimesheetDraft({
       }
     }
     const next = draftToFirestoreMap(draft)
+    const ownerUserIds = timesheetEvidenceOwnerIds(canonicalId, { userId }, [writerId])
     const entriesError = timesheetOwnerEntriesError({
       previous,
       next: { priceWorkEntries: next.priceWorkEntries as unknown[], expenseEntries: next.expenseEntries as unknown[] },
       organizationId,
       // The uploader is the signed-in owner; the sheet's own ids count as theirs too.
-      ownerUserIds: timesheetEvidenceOwnerIds(canonicalId, { userId }, [writerId]),
+      ownerUserIds,
     })
     if (entriesError) throw new Error(entriesError)
+    // Rulebook 1.54.0: late extras follow the same entry rules (job number, evidence), checked by kind.
+    const lateOf = (source: unknown, kind: string) =>
+      (Array.isArray(source) ? source : []).filter((row) => row && typeof row === 'object' && (row as Record<string, unknown>).kind === kind)
+    const previousLate = base ? draftToFirestoreMap(base)[TIMESHEET_LATE_EXTRAS_FIELD] : undefined
+    const lateError = timesheetOwnerEntriesError({
+      previous: { priceWorkEntries: lateOf(previousLate, 'priceWork'), expenseEntries: lateOf(previousLate, 'expense') },
+      next: { priceWorkEntries: lateOf(next[TIMESHEET_LATE_EXTRAS_FIELD], 'priceWork'), expenseEntries: lateOf(next[TIMESHEET_LATE_EXTRAS_FIELD], 'expense') },
+      organizationId,
+      ownerUserIds,
+    })
+    if (lateError) throw new Error(lateError)
   }
   // Who and where (`writeMetadataFields`) plus the server time, on every timesheet save.
   const metadata = {
@@ -887,6 +989,29 @@ export async function saveTimesheetDraft({
     updatedAt: serverTimestamp(),
     // Rulebook 1.47.0 (second review #325 item 3): the record of what was signed carries the server time.
     ...(draft.operativeSignedBookingsAtPending ? { operativeSignedBookingsAt: serverTimestamp() } : {}),
+  }
+  // Rulebook 1.54.0 (third review of #337): a reviewer's entry decisions (`extraEntryReviews`, a late extra's with
+  // `lateExtra: true`) go in the SAME write as the sheet — the snapshot that adds an approved late extra and the review
+  // that approves it are never written apart. An ignored late extra (id taken) is never decided
+  // (`draftReviewEntries`), and an exported sheet's late extras are frozen (`exported`).
+  const reviewFields = reviewer
+    ? timesheetEntryReviewWriteFields({
+        stored: draft.extraEntryReviews ?? null,
+        entries: draftReviewEntries(draft),
+        reviewedByUserId: writerId,
+        reviewedAtMs: Date.now(),
+        exported: draftStoredExported(draft),
+        // Fourth review of #337: the writer derives the signed ids itself (the loaded entries carry their derived ids).
+        sheet: { priceWorkEntries: draft.priceWorkEntries, expenseEntries: draft.expenseEntries, lateExtras: draft.lateExtras ?? [] },
+      })
+    : {}
+  const hasReviewFields = Object.keys(reviewFields).length > 0
+  // The same reviews as one nested map, for a sheet created by this save (a merge never reads a dotted key as a path).
+  const nestedReviewFields = () => {
+    const prefix = `${TIMESHEET_ENTRY_REVIEWS_FIELD}.`
+    const map: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(reviewFields)) if (key.startsWith(prefix)) map[key.slice(prefix.length)] = value
+    return Object.keys(map).length > 0 ? { [TIMESHEET_ENTRY_REVIEWS_FIELD]: map } : {}
   }
   // Partial writes (rulebook §1): an existing sheet gets only the fields that changed (`updateDoc`), so stored
   // manager values the owner may not send (`timesheetOwnerWriteFields`) are never resent. A new sheet is created.
@@ -901,7 +1026,7 @@ export async function saveTimesheetDraft({
       }
       if (stored === null || stored === undefined) {
         // No stored sheet (or it could not be read): create / merge, which never deletes a stored field.
-        await setDoc(ref, { ...sheetPayload(Boolean(draft.managerSignedAt), draft), ...metadata }, { merge: true })
+        await setDoc(ref, { ...sheetPayload(Boolean(draft.managerSignedAt), draft), ...nestedReviewFields(), ...metadata }, { merge: true })
         return
       }
       // 1.9.0: whether the line manager has signed comes from the stored copy, never from a stale local draft.
@@ -913,27 +1038,77 @@ export async function saveTimesheetDraft({
         for (const key of Object.keys(periodFields)) {
           if (payload[key] !== undefined && stored[key] === undefined) write.set[key] = payload[key]
         }
-        if (Object.keys(write.set).length === 0 && write.remove.length === 0) return
-        await updateDoc(ref, { ...firestoreUpdateFields(write), ...metadata })
+        if (Object.keys(write.set).length === 0 && write.remove.length === 0 && !hasReviewFields) return
+        await updateDoc(ref, { ...firestoreUpdateFields(write), ...reviewFields, ...metadata })
         return
       }
       const changed = changedFirestoreFields(payload, stored)
-      if (Object.keys(changed).length === 0) return
-      await updateDoc(ref, { ...changed, ...metadata })
+      if (Object.keys(changed).length === 0 && !hasReviewFields) return
+      await updateDoc(ref, { ...changed, ...reviewFields, ...metadata })
     })
   )
   if (!reviewer) return draft.extraEntryReviews ?? null
-  const reviewFields = timesheetEntryReviewWriteFields({
-    stored: draft.extraEntryReviews ?? null,
-    entries: [...draft.expenseEntries, ...draft.priceWorkEntries],
-    reviewedByUserId: writerId,
-    reviewedAtMs: Date.now(),
-  })
-  if (Object.keys(reviewFields).length === 0) return draft.extraEntryReviews ?? null
-  await Promise.all(
-    ids.map((id) => updateDoc(doc(db, 'organizations', organizationId, 'settings', id), reviewFields))
-  )
+  if (!hasReviewFields) return draft.extraEntryReviews ?? null
   return timesheetEntryReviewsAfterWrite(draft.extraEntryReviews ?? null, reviewFields)
+}
+
+/** Why `stampTimesheetExport` did not stamp a sheet. */
+export type TimesheetExportStampResult = 'stamped' | 'already-exported' | 'late-extras-waiting' | 'missing'
+
+/**
+ * Rulebook 1.54.0 (third review of #337): Export's stamp. In one transaction it re-reads the stored sheet (every copy
+ * `saveTimesheetDraft` would write) and writes ONLY the export fields — the signed snapshot and `exportedAt` — never a
+ * whole sheet from the copy Export loaded, so a late extra the person added, edited or deleted meanwhile is never written
+ * back over. It refuses (writes nothing) when the stored sheet is already exported, or when its late extras now wait for
+ * the line manager with the snapshot about to be written (`timesheetLateExtrasSummary`).
+ */
+export async function stampTimesheetExport({
+  organizationId,
+  userId,
+  weekStart,
+  draft,
+  timeZone,
+  documentId = null,
+}: {
+  organizationId: string
+  userId: string
+  weekStart: Date
+  /** The prepared sheet: its `weeklyReportOverride` and `exportedAt` are written. */
+  draft: TimesheetDraft
+  /** The organisation's business time zone (required: never a London default). */
+  timeZone: string
+  documentId?: string | null
+}): Promise<TimesheetExportStampResult> {
+  const writerId = auth?.currentUser?.uid || ''
+  if (!draft.exportedAt || !draft.weeklyReportOverride) return 'missing'
+  const ids = Array.from(
+    new Set(
+      [timesheetDocId(userId, weekStart, timeZone), documentId || timesheetSourceDocumentId(draft)].filter((id): id is string => Boolean(id))
+    )
+  )
+  const fields = sanitizeForFirestore({
+    weeklyReportOverride: weeklyReportOverrideToFirestore(draft.weeklyReportOverride),
+    exportedAt: Timestamp.fromDate(draft.exportedAt),
+  }) as Record<string, unknown>
+  return runTransaction(db, async (transaction) => {
+    const refs = ids.map((id) => doc(db, 'organizations', organizationId, 'settings', id))
+    const snaps = await Promise.all(refs.map((ref) => transaction.get(ref)))
+    const present = snaps.map((snap, index) => ({ snap, ref: refs[index] })).filter((row) => row.snap.exists())
+    if (present.length === 0) return 'missing'
+    for (const { snap } of present) {
+      const stored = snap.data() as Record<string, unknown>
+      if (timesheetExportedFieldSet(stored.exportedAt)) return 'already-exported'
+      const loaded = draftFromFirestoreMap(stored, { includeSignatures: false, sheetDocId: snap.id, timeZone })
+      const late = timesheetLateExtrasSummary(
+        { ...stored, weeklyReportOverride: fields.weeklyReportOverride },
+        { entryFingerprints: draftEntryFingerprints(loaded), exportedAtStored: false, sheetDocId: snap.id }
+      )
+      if (late.waitingForLineManager) return 'late-extras-waiting'
+    }
+    const metadata = { ...(writeMetadataFields(writerId, 'web') ?? {}), updatedAt: serverTimestamp() }
+    for (const { ref } of present) transaction.update(ref, { ...fields, ...metadata })
+    return 'stamped'
+  })
 }
 
 export type TimesheetStateRow = {

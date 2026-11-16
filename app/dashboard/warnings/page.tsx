@@ -46,7 +46,7 @@ import {
   warningDecisionsFailed,
   type WarningDecisionFailures,
 } from '@/lib/warnings/warningDecisionsLoad'
-import { activeOrgWarnings, generateOrgWarnings } from '@/lib/warnings/generateOrgWarnings'
+import { activeOrgWarnings, generateOrgWarnings, type WarningDecisionInputs } from '@/lib/warnings/generateOrgWarnings'
 import { loadResolvedWarningKeys, watchResolvedWarningKeys } from '@/lib/warnings/warningResolutionStorage'
 import {
   partitionRowsByOrganization,
@@ -60,6 +60,19 @@ import type { OrgWarningsResult } from '@/lib/warnings/generateOrgWarnings'
 import { WarningsScreen } from '@/components/warnings/WarningsScreen'
 import { useWarningsSortDirection } from '@/lib/warnings/useWarningsSortDirection'
 import { ORG_DATA_REFRESHED_EVENT } from '@/lib/stores/refreshOrgData'
+import { feedback, warningResolvedEvent, type FeedbackEvent } from '@/lib/feedbackSounds/feedback'
+
+/**
+ * Feedback sounds (owner decision 11, 16 Nov): after the person's own approve / dismiss, `allWarningsClear` when their
+ * own scoped list (`activeOrgWarnings`, the count this page shows) reached zero, else `warningResolved`. Never throws.
+ */
+function resolvedFeedbackEvent(listed: OrgWarningsResult | null, decisions: WarningDecisionInputs): FeedbackEvent {
+  try {
+    return listed ? warningResolvedEvent(activeOrgWarnings(listed, decisions).coreCount) : 'warningResolved'
+  } catch {
+    return 'warningResolved'
+  }
+}
 
 export default function WarningsPage() {
   const router = useRouter()
@@ -88,6 +101,22 @@ export default function WarningsPage() {
   const [decisionsAttempt, setDecisionsAttempt] = useState(0)
   const markDecision = useCallback((source: keyof WarningDecisionFailures, failed: boolean) => {
     setDecisionFailures((current) => (current[source] === failed ? current : { ...current, [source]: failed }))
+  }, [])
+  // Which decision lists have had a live snapshot for which organisation (scan 16 Nov): a one-shot read that resolves
+  // after a live snapshot never overwrites it, and a read for the previous organisation is dropped after a switch.
+  const liveDecisions = useRef<{ orgId: string | null; kinds: Set<keyof WarningDecisionFailures> }>({ orgId: null, kinds: new Set() })
+  const currentOrgId = useRef<string | null>(organization?.id ?? null)
+  useEffect(() => {
+    currentOrgId.current = organization?.id ?? null
+  }, [organization?.id])
+  const noteLiveDecision = useCallback((orgId: string, kind: keyof WarningDecisionFailures) => {
+    if (liveDecisions.current.orgId !== orgId) liveDecisions.current = { orgId, kinds: new Set() }
+    liveDecisions.current.kinds.add(kind)
+  }, [])
+  /** True when a one-shot result for `orgId` may still be applied: the organisation is open and no live snapshot came. */
+  const oneShotApplies = useCallback((orgId: string, kind: keyof WarningDecisionFailures) => {
+    if (currentOrgId.current !== orgId) return false
+    return !(liveDecisions.current.orgId === orgId && liveDecisions.current.kinds.has(kind))
   }, [])
   const [orgDetails, setOrgDetails] = useState<OrganizationDetails | null>(null)
   const [detectionSettled, setDetectionSettled] = useState(false)
@@ -208,34 +237,46 @@ export default function WarningsPage() {
     const orgId = organization?.id
     if (!orgId) return
     let cancelled = false
+    // Review L5: a retry (or a new organisation) starts again with no live snapshot recorded; the listeners below
+    // re-subscribe in the same commit and record theirs as they arrive.
+    liveDecisions.current = { orgId, kinds: new Set() }
     setDecisionsOrgId(null)
     setDecisionFailures(NO_WARNING_DECISION_FAILURES)
     void Promise.all([
       loadAcceptedBookingClashes(orgId)
         .then((rows) => {
-          setAcceptedClashes(rows)
+          if (cancelled) return
+          if (oneShotApplies(orgId, 'accepted')) setAcceptedClashes(rows)
           markDecision('accepted', false)
         })
-        .catch(() => markDecision('accepted', true)),
+        .catch(() => {
+          if (!cancelled && oneShotApplies(orgId, 'accepted')) markDecision('accepted', true)
+        }),
       loadDismissedWarnings(orgId)
         .then((rows) => {
-          setDismissedWarnings(rows)
+          if (cancelled) return
+          if (oneShotApplies(orgId, 'dismissed')) setDismissedWarnings(rows)
           markDecision('dismissed', false)
         })
-        .catch(() => markDecision('dismissed', true)),
+        .catch(() => {
+          if (!cancelled && oneShotApplies(orgId, 'dismissed')) markDecision('dismissed', true)
+        }),
       loadResolvedWarningKeys(orgId)
         .then((keys) => {
-          setResolvedKeys(keys)
+          if (cancelled) return
+          if (oneShotApplies(orgId, 'resolved')) setResolvedKeys(keys)
           markDecision('resolved', false)
         })
-        .catch(() => markDecision('resolved', true)),
+        .catch(() => {
+          if (!cancelled && oneShotApplies(orgId, 'resolved')) markDecision('resolved', true)
+        }),
     ]).finally(() => {
       if (!cancelled) setDecisionsOrgId(orgId)
     })
     return () => {
       cancelled = true
     }
-  }, [organization?.id, decisionsAttempt, markDecision])
+  }, [organization?.id, decisionsAttempt, markDecision, oneShotApplies])
 
   // Rulebook 1.8.0 §5: an approval or removal on any device updates this page live.
   useEffect(() => {
@@ -244,12 +285,13 @@ export default function WarningsPage() {
     return watchResolvedWarningKeys(
       orgId,
       (keys) => {
+        noteLiveDecision(orgId, 'resolved')
         setResolvedKeys(keys)
         markDecision('resolved', false)
       },
       () => markDecision('resolved', true)
     )
-  }, [organization?.id, decisionsAttempt, markDecision])
+  }, [organization?.id, decisionsAttempt, markDecision, noteLiveDecision])
 
   // Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): accepted clashes and dismissed warnings are live too, so an approval or a
   // dismissal on iOS clears the row here without reopening the page.
@@ -259,6 +301,7 @@ export default function WarningsPage() {
     const stopAccepted = watchAcceptedBookingClashes(
       orgId,
       (rows) => {
+        noteLiveDecision(orgId, 'accepted')
         setAcceptedClashes(rows)
         markDecision('accepted', false)
       },
@@ -267,6 +310,7 @@ export default function WarningsPage() {
     const stopDismissed = watchDismissedWarnings(
       orgId,
       (rows) => {
+        noteLiveDecision(orgId, 'dismissed')
         setDismissedWarnings(rows)
         markDecision('dismissed', false)
       },
@@ -276,16 +320,30 @@ export default function WarningsPage() {
       stopAccepted()
       stopDismissed()
     }
-  }, [organization?.id, decisionsAttempt, markDecision])
+  }, [organization?.id, decisionsAttempt, markDecision, noteLiveDecision])
 
   // Global Refresh: stores reload themselves; this page also re-reads what it keeps locally.
   useEffect(() => {
     const orgId = organization?.id
     if (!orgId) return
     const onRefreshed = () => {
-      loadAcceptedBookingClashes(orgId).then(setAcceptedClashes).catch(() => {})
-      loadDismissedWarnings(orgId).then(setDismissedWarnings).catch(() => {})
-      loadResolvedWarningKeys(orgId).then(setResolvedKeys).catch(() => {})
+      // The live listeners keep these current; a refresh read only fills a list no snapshot has reached yet, and is
+      // dropped when the organisation has changed meanwhile.
+      loadAcceptedBookingClashes(orgId)
+        .then((rows) => {
+          if (oneShotApplies(orgId, 'accepted')) setAcceptedClashes(rows)
+        })
+        .catch(() => {})
+      loadDismissedWarnings(orgId)
+        .then((rows) => {
+          if (oneShotApplies(orgId, 'dismissed')) setDismissedWarnings(rows)
+        })
+        .catch(() => {})
+      loadResolvedWarningKeys(orgId)
+        .then((keys) => {
+          if (oneShotApplies(orgId, 'resolved')) setResolvedKeys(keys)
+        })
+        .catch(() => {})
       void loadOrganizationDetails(orgId, { fromServer: true, allowCacheFallback: true })
         .then((details) => {
           if (!details || details.id !== orgId) return
@@ -295,7 +353,7 @@ export default function WarningsPage() {
     }
     window.addEventListener(ORG_DATA_REFRESHED_EVENT, onRefreshed)
     return () => window.removeEventListener(ORG_DATA_REFRESHED_EVENT, onRefreshed)
-  }, [organization?.id])
+  }, [organization?.id, oneShotApplies])
 
   // Each snapshot of the organisation document (any device) re-reads the parsed details from it.
   useEffect(() => {
@@ -481,20 +539,33 @@ export default function WarningsPage() {
   const handleDismissQualification = useCallback(
     async (warning: { dismissKey: string; operativeId: string; qualificationId: string; dayKey: string }) => {
       if (!organization?.id || !user?.id) return
-      await dismissQualificationWarning({
-        organizationId: organization.id,
-        dismissKey: warning.dismissKey,
-        operativeId: warning.operativeId,
-        qualificationId: warning.qualificationId,
-        expiryDayKey: warning.dayKey,
-        dismissedByUserId: user.id,
-      })
+      try {
+        await dismissQualificationWarning({
+          organizationId: organization.id,
+          dismissKey: warning.dismissKey,
+          operativeId: warning.operativeId,
+          qualificationId: warning.qualificationId,
+          expiryDayKey: warning.dayKey,
+          dismissedByUserId: user.id,
+        })
+      } catch (error) {
+        // Owner decision 8: the refusal sound, then the error goes where it went before.
+        feedback('actionRefused')
+        throw error
+      }
       setDismissedWarnings((current) => [
         ...current.filter((entry) => entry.dismissKey !== warning.dismissKey),
         { dismissKey: warning.dismissKey, kind: 'qualification_expired', dismissedAt: new Date(), dismissedByUserId: user.id },
       ])
+      feedback(
+        resolvedFeedbackEvent(visible, {
+          resolvedKeys,
+          acceptedClashes,
+          dismissedQualificationKeys: new Set([...dismissedKeys, warning.dismissKey]),
+        })
+      )
     },
-    [organization?.id, user?.id]
+    [organization?.id, user?.id, visible, resolvedKeys, acceptedClashes, dismissedKeys]
   )
 
   const handleAcceptClash = useCallback(
@@ -505,25 +576,38 @@ export default function WarningsPage() {
       pairs?: Array<{ bookingAId: string; bookingBId: string }>
     }) => {
       if (!organization?.id || !user?.id) return
-      // Both `acceptedBookingClashes` and `warningResolutions` (`clashApprovalWrites`), so iOS sees it too.
-      if (clash.pairs && clash.pairs.length > 0) {
-        // Operative cluster (`operativeClashGroups`): approve every overlapping pair.
-        await approveBookingClashPairs(organization.id, clash.pairs, user.id)
-      } else {
-        await approveBookingClash(
-          organization.id,
-          { bookingAId: clash.bookingAId, bookingBId: clash.bookingBId, resolutionKey: clash.resolutionKey },
-          user.id
+      try {
+        // Both `acceptedBookingClashes` and `warningResolutions` (`clashApprovalWrites`), so iOS sees it too.
+        if (clash.pairs && clash.pairs.length > 0) {
+          // Operative cluster (`operativeClashGroups`): approve every overlapping pair.
+          await approveBookingClashPairs(organization.id, clash.pairs, user.id)
+        } else {
+          await approveBookingClash(
+            organization.id,
+            { bookingAId: clash.bookingAId, bookingBId: clash.bookingBId, resolutionKey: clash.resolutionKey },
+            user.id
+          )
+        }
+        const [accepted, resolved] = await Promise.all([
+          loadAcceptedBookingClashes(organization.id),
+          loadResolvedWarningKeys(organization.id),
+        ])
+        setAcceptedClashes(accepted)
+        setResolvedKeys(resolved)
+        feedback(
+          resolvedFeedbackEvent(visible, {
+            resolvedKeys: resolved,
+            acceptedClashes: accepted,
+            dismissedQualificationKeys: dismissedKeys,
+          })
         )
+      } catch (error) {
+        // Owner decision 8: the refusal sound, then the error goes where it went before.
+        feedback('actionRefused')
+        throw error
       }
-      const [accepted, resolved] = await Promise.all([
-        loadAcceptedBookingClashes(organization.id),
-        loadResolvedWarningKeys(organization.id),
-      ])
-      setAcceptedClashes(accepted)
-      setResolvedKeys(resolved)
     },
-    [organization?.id, user?.id]
+    [organization?.id, user?.id, visible, dismissedKeys]
   )
 
   const handleDeleteBooking = useCallback(

@@ -19,7 +19,7 @@ import {
   notifyHolidayRequestDecisionToUser,
   notifyLeaveChangedForPerson,
 } from '@/lib/annualLeave/notifyHolidayRequestDecision'
-import { leaveBalanceShowsEmploymentType, userLeaveBalance, userLeaveBankHolidayRange } from '@/lib/annualLeave/leaveBalance'
+import { leaveBalanceShowsEmploymentType, userLeaveBalance, userLeaveBankHolidayRange, userLeaveReportYearMonths } from '@/lib/annualLeave/leaveBalance'
 import { useLeaveEmployment } from '@/lib/annualLeave/useLeaveEmployment'
 import { addAnnualLeaveAdjustment, useAnnualLeaveAdjustments } from '@/lib/annualLeave/leaveAdjustments'
 import { annualLeaveBalanceNotes, canAdjustAnnualLeave, canViewAnnualLeaveAdjustments, normalizeDocumentId } from '@/lib/canonical'
@@ -34,6 +34,7 @@ import type { HolidayBooking, HolidayTimeSlot } from '@/types'
 import { AnnualLeaveLegend, LeaveDayCalendar } from './LeaveDayCalendar'
 import { useOrgBankHolidays } from './useOrgBankHolidays'
 import { AnnualLeaveReportButton } from './AnnualLeaveReport'
+import { feedback } from '@/lib/feedbackSounds/feedback'
 
 function dayFromKey(key: string): Date {
   const [year, month, day] = key.split('-').map(Number)
@@ -176,6 +177,8 @@ export function OperativeAnnualLeaveCalendar({
   const balanceBank = useOrgBankHolidays(dayFromKey(balanceRange.startDayKey), dayFromKey(balanceRange.endDayKey), {
     years: balanceRange.years,
   })
+  // Rulebook 1.54.0 §9: the report counts the leave year this balance counts (`annualLeaveReportYearMonths`).
+  const reportYearMonths = userLeaveReportYearMonths({ user: subject, employment: leaveEmployment.employment, orgDefaults: orgLeaveDefaults, timeZone })
   const balance = subject
     ? userLeaveBalance({
         user: subject,
@@ -252,6 +255,7 @@ export function OperativeAnnualLeaveCalendar({
     // Approved only when the viewer may decide this person's leave, or self-books their own (`leaveSaveStatus`).
     const status = leaveSaveStatus(user, { userId: person.userId, operativeId: person.operativeId }, users, operatives)
     setSaving(true)
+    let stored = false
     try {
       const day = format(selectedDay, 'yyyy-MM-dd')
       const saved = await createRequests(organization.id, [
@@ -265,6 +269,10 @@ export function OperativeAnnualLeaveCalendar({
           approvedByUserId: status === 'approved' ? user.id : null,
         },
       ])
+      stored = true
+      // Owner decision 5: approved leave booked here is leaveBooked; a pending request is leaveRequested. Played once
+      // the leave is saved, before the notice, so a failed notice never turns it into the error sound.
+      feedback(status === 'approved' ? 'leaveBooked' : 'leaveRequested')
       // Rulebook §13 (web from 1.40.0): the person hears that leave was booked for them (`holidayDecisionRecipients`).
       if (status === 'approved') {
         for (const booking of saved ?? []) {
@@ -282,6 +290,11 @@ export function OperativeAnnualLeaveCalendar({
       setMessage(`Annual leave booked for ${person.displayName}.`)
       setSelectedDay(null)
       setTimeout(() => setMessage(null), 3000)
+    } catch (error) {
+      // Owner decision 8: the refusal sound, then the error goes where it went before. Once the leave is saved a
+      // failed notice plays nothing more (one sound per action).
+      if (!stored) feedback('actionRefused')
+      throw error
     } finally {
       setSaving(false)
     }
@@ -306,6 +319,11 @@ export function OperativeAnnualLeaveCalendar({
       setMessage('Annual leave booking updated.')
       setSelectedDay(null)
       setTimeout(() => setMessage(null), 3000)
+      feedback('leaveEdited')
+    } catch (error) {
+      // Owner decision 8: the refusal sound, then the error goes where it went before.
+      feedback('actionRefused')
+      throw error
     } finally {
       setSaving(false)
     }
@@ -314,8 +332,11 @@ export function OperativeAnnualLeaveCalendar({
   const approveRequest = async () => {
     if (!organization?.id || !user || !pendingBooking) return
     setSaving(true)
+    let saved = false
     try {
       await decideBooking(organization.id, pendingBooking, { status: 'approved', approverUid: user.id })
+      saved = true
+      feedback('leaveApproved')
       await notifyHolidayRequestDecisionToUser({
         organizationId: organization.id,
         booking: pendingBooking,
@@ -328,6 +349,11 @@ export function OperativeAnnualLeaveCalendar({
       setMessage('Request approved.')
       setSelectedDay(null)
       setTimeout(() => setMessage(null), 3000)
+    } catch (error) {
+      // Owner decision 8: the refusal sound, then the error goes where it went before. Once the leave is saved a
+      // failed notice plays nothing more (one sound per action).
+      if (!saved) feedback('actionRefused')
+      throw error
     } finally {
       setSaving(false)
     }
@@ -336,8 +362,11 @@ export function OperativeAnnualLeaveCalendar({
   const deleteAnnualLeave = async (booking: HolidayBooking) => {
     if (!organization?.id) return
     setSaving(true)
+    let saved = false
     try {
       await deleteBooking(organization.id, booking.id)
+      saved = true
+      feedback('leaveRemoved')
       // Rulebook §13 (web from 1.40.0): the person hears that their leave was removed (`holiday_cancelled_by_manager`).
       if (user) {
         await notifyLeaveChangedForPerson({
@@ -353,6 +382,11 @@ export function OperativeAnnualLeaveCalendar({
       setMessage('Annual leave removed.')
       if (approvedBooking?.id === booking.id) setSelectedDay(null)
       setTimeout(() => setMessage(null), 3000)
+    } catch (error) {
+      // Owner decision 8: the refusal sound, then the error goes where it went before. Once the leave is saved a
+      // failed notice plays nothing more (one sound per action).
+      if (!saved) feedback('actionRefused')
+      throw error
     } finally {
       setSaving(false)
       setPendingDelete(null)
@@ -367,8 +401,11 @@ export function OperativeAnnualLeaveCalendar({
     )
     if (note === null) return
     setSaving(true)
+    let saved = false
     try {
       await decideBooking(organization.id, pendingBooking, { status: 'rejected', approverUid: user.id, decisionNote: note })
+      saved = true
+      feedback('leaveDeclined')
       await notifyHolidayRequestDecisionToUser({
         organizationId: organization.id,
         booking: pendingBooking,
@@ -382,6 +419,11 @@ export function OperativeAnnualLeaveCalendar({
       setMessage('Request declined.')
       setSelectedDay(null)
       setTimeout(() => setMessage(null), 3000)
+    } catch (error) {
+      // Owner decision 8: the refusal sound, then the error goes where it went before. Once the leave is saved a
+      // failed notice plays nothing more (one sound per action).
+      if (!saved) feedback('actionRefused')
+      throw error
     } finally {
       setSaving(false)
     }
@@ -419,9 +461,9 @@ export function OperativeAnnualLeaveCalendar({
           personSubtitle={person.subtitle}
           bookings={personBookings}
           personIds={reportPersonIds}
-          startMonth={orgLeaveDefaults.startMonth}
+          startMonth={reportYearMonths.startMonth}
           employmentStartDayKey={subject?.employmentStartDate ?? null}
-          ready={leaveDefaultsLoaded}
+          ready={leaveDefaultsLoaded && (!subject || leaveEmployment.ready)}
         />
       ) : null}
 

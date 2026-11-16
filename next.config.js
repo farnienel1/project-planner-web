@@ -1,7 +1,7 @@
 const fs = require('fs')
 const path = require('path')
 
-const pdfWorkerSrc = path.join(__dirname, 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs')
+const pdfWorkerSrc = path.join(__dirname, 'node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs')
 const pdfWorkerDest = path.join(__dirname, 'public/pdfjs/pdf.worker.min.mjs')
 if (fs.existsSync(pdfWorkerSrc)) {
   fs.mkdirSync(path.dirname(pdfWorkerDest), { recursive: true })

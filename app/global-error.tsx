@@ -45,6 +45,8 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
             >
               Retry
             </button>
+            {/* A full page load on purpose: the root layout has crashed, so client-side <Link> navigation is not safe. */}
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
             <a
               href="/"
               style={{

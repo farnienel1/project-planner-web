@@ -64,7 +64,7 @@ import {
 } from '@/lib/timesheets/timesheetRoutes'
 import type { PaletteItem } from '@/lib/ui/commandPalette'
 import { useProjectStore } from '@/lib/stores/projectStore'
-import { deliverDueTimesheetSubmissionReminders } from '@/lib/timesheets/deliverTimesheetSubmissionReminders'
+import { deliverTimesheetRemindersForViewer } from '@/lib/timesheets/deliverTimesheetSubmissionReminders'
 import { refreshAllOrgData } from '@/lib/stores/refreshOrgData'
 import { db } from '@/lib/firebase/config'
 import { runWhenIdle } from '@/lib/analytics/runWhenIdle'
@@ -76,6 +76,7 @@ import { createMenuItems } from '@/lib/navigation/createMenu'
 import { cn } from '@/lib/ui/cn'
 import { UserAvatar } from '@/components/users/UserAvatar'
 import { inboxOwnerIds } from '@/lib/staff/rulebookPeople'
+import { FeedbackSoundsUnlock } from '@/components/client/FeedbackSoundsUnlock'
 
 function NavGlyph({ path, className }: { path: string; className?: string }) {
   return (
@@ -274,7 +275,8 @@ function AppShellInner({ children }: { children: ReactNode }) {
     const timer = window.setTimeout(() => {
       if (remindersRunForOrg.current === orgId) return
       remindersRunForOrg.current = orgId
-      void deliverDueTimesheetSubmissionReminders(orgId, users).catch(() => {})
+      // Pay strip: only people whose employment type this viewer can read (`timesheetReminderAudience`).
+      void deliverTimesheetRemindersForViewer(orgId, users).catch(() => {})
     }, 1500)
     return () => window.clearTimeout(timer)
   }, [organization?.id, users])
@@ -711,6 +713,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <ToastProvider>
       <AppShellInner>{children}</AppShellInner>
       <BookingDeleteNotice />
+      <FeedbackSoundsUnlock />
     </ToastProvider>
   )
 }

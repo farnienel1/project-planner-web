@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import {
-  decodeSigned,
+  decodeMfaChallenge,
   encodeSigned,
   hashMfaCode,
   codesMatch,
@@ -9,7 +9,7 @@ import {
   readMfaCookie,
   writeMfaCookie,
   type MfaChallenge,
-  type MfaOk,
+  encodeMfaOk,
 } from '@/lib/auth/mfa/mfaCookies'
 import { enforceRateLimit, jsonError, readJsonBody } from '@/lib/security/apiGuard'
 import { extractMfaCode } from '@/lib/auth/mfa/mfaCode'
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
   if (!/^\d{6}$/.test(code)) return jsonError('Enter the 6-digit code from your email.', 400)
 
   const raw = readMfaCookie(request, 'challenge')
-  const challenge = decodeSigned<MfaChallenge>(raw)
+  const challenge = decodeMfaChallenge(raw)
   if (!challenge || challenge.exp < Date.now()) {
     const response = jsonError('That code has expired. Sign in again to receive a new one.', 401)
     writeMfaCookie(response.cookies, request, 'challenge', '', 0)
@@ -54,10 +54,9 @@ export async function POST(request: NextRequest) {
     return response
   }
 
-  const ok: MfaOk = { uid: challenge.uid, exp: Date.now() + MFA_OK_TTL_MS }
   const next = challenge.next || ''
   const response = NextResponse.json({ ok: true, next })
   writeMfaCookie(response.cookies, request, 'challenge', '', 0)
-  writeMfaCookie(response.cookies, request, 'ok', encodeSigned(ok), MFA_OK_TTL_MS)
+  writeMfaCookie(response.cookies, request, 'ok', encodeMfaOk(challenge.uid, Date.now() + MFA_OK_TTL_MS), MFA_OK_TTL_MS)
   return response
 }

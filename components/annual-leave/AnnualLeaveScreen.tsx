@@ -16,6 +16,9 @@ import { samePersonIds } from '@/lib/staff/userRosterUtils'
 import { teamLeaveTab } from '@/lib/annualLeave/teamLeaveQueue'
 import { leaveIdKeys } from '@/lib/annualLeave/annualLeavePerson'
 import { AnnualLeaveReportButton } from './AnnualLeaveReport'
+import { useLeaveEmployment } from '@/lib/annualLeave/useLeaveEmployment'
+import { userLeaveReportYearMonths } from '@/lib/annualLeave/leaveBalance'
+import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 
 export function AnnualLeaveScreen() {
   const { organization, user } = useAuthStore()
@@ -94,6 +97,12 @@ export function AnnualLeaveScreen() {
     [user, users, userIdAliases, operatives]
   )
 
+  // Rulebook 1.54.0 §9: the report counts the leave year the balance on My leave counts (`annualLeaveReportYearMonths`):
+  // the person's own leave year while they have an allowance, else the organisation's.
+  const timeZone = useOrganizationTimeZone()
+  const leaveEmployment = useLeaveEmployment(organization?.id, user)
+  const reportYearMonths = userLeaveReportYearMonths({ user, employment: leaveEmployment.employment, orgDefaults: orgLeaveDefaults, timeZone })
+
   return (
     <div className="mx-auto max-w-xl space-y-4 pb-10">
       <h1>Annual leave</h1>
@@ -133,9 +142,9 @@ export function AnnualLeaveScreen() {
           personSubtitle={user.email}
           bookings={myBookings}
           personIds={myLeaveIds}
-          startMonth={orgLeaveDefaults.startMonth}
+          startMonth={reportYearMonths.startMonth}
           employmentStartDayKey={user.employmentStartDate ?? null}
-          ready={leaveDefaultsLoaded}
+          ready={leaveDefaultsLoaded && leaveEmployment.ready}
         />
       ) : null}
 

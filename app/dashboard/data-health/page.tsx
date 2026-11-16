@@ -21,6 +21,7 @@ import { BookingsNotLinkedToPerson } from '@/components/dataHealth/BookingsNotLi
 import { UsersMissingLevel } from '@/components/dataHealth/UsersMissingLevel'
 import { UsersMissingEmploymentType } from '@/components/dataHealth/UsersMissingEmploymentType'
 import { UsersMissingLineManager } from '@/components/dataHealth/UsersMissingLineManager'
+import { TimesheetsHalfSigned } from '@/components/dataHealth/TimesheetsHalfSigned'
 import {
   parseAppUserDocument,
   parseBooking,
@@ -141,6 +142,8 @@ export default function DataHealthPage() {
         <GhostsToCheck organizationId={organization.id} />
         {/* Rulebook 1.51.0 §7 (Q4b): annual leave whose person matches nobody (`leaveRecordsWithoutPerson`). */}
         <LeaveNotLinkedToPerson organizationId={organization.id} />
+        {/* Rulebook 1.54.0 §8: sheets the line manager signed whose person signature is missing (`timesheetsHalfSigned`). */}
+        <TimesheetsHalfSigned organizationId={organization.id} />
         <BookingHealthScan organizationId={organization.id} />
       </div>
     ) : null

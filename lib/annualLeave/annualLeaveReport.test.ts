@@ -7,7 +7,7 @@ import {
   annualLeaveReportYears,
   annualLeaveReportYearTitle,
 } from './annualLeaveReport.ts'
-import { userLeaveBalance } from './leaveBalance.ts'
+import { userLeaveBalance, userLeaveReportYearMonths } from './leaveBalance.ts'
 
 const ZONE = 'Europe/London'
 
@@ -109,4 +109,36 @@ test('annual leave report wording matches iOS', () => {
   assert.equal(annualLeaveReportDaysText(1), '1 day')
   assert.equal(annualLeaveReportDaysText(0), '0 days')
   assert.equal(annualLeaveReportDaysText(7.5), '7.5 days')
+})
+
+test('1.54.0: the report counts the same leave year as the balance on the page (userLeaveReportYearMonths)', () => {
+  // Review of #335: an April–March person in a January–December company, leave on 2 Feb, 4 May and 2 Nov 2026.
+  const now = new Date('2026-11-16T12:00:00Z')
+  const own = [
+    leave({ id: 'x1', startDayKey: '2026-02-02', endDayKey: '2026-02-02' }),
+    leave({ id: 'x2', startDayKey: '2026-05-04', endDayKey: '2026-05-04' }),
+    leave({ id: 'x3', startDayKey: '2026-11-02', endDayKey: '2026-11-02' }),
+  ]
+  const user = { annualLeaveEnabled: true, annualLeaveYearStartMonth: 4, annualLeaveYearEndMonth: 3 } as never
+  const orgDefaults = { daysPerYear: 25, startMonth: 1, endMonth: 12, carriesOver: false }
+  const months = userLeaveReportYearMonths({ user, employment: null, orgDefaults, now, timeZone: ZONE })
+  assert.deepEqual(months, { startMonth: 4, endMonth: 3 })
+  const balance = userLeaveBalance({ user, bookings: own, employment: null, orgDefaults, now, timeZone: ZONE })
+  const report = annualLeaveReport({
+    bookings: own,
+    personIds: ['u1'],
+    onDayKey: balance.startDayKey,
+    startMonth: months.startMonth,
+    timeZone: ZONE,
+  })
+  assert.equal(report.startDayKey, balance.startDayKey)
+  assert.equal(report.totalDays, 2)
+  assert.equal(report.totalDays, balance.taken)
+
+  // No allowance: the organisation's leave year.
+  const noAllowance = { annualLeaveEnabled: false, annualLeaveYearStartMonth: 4, annualLeaveYearEndMonth: 3 } as never
+  assert.deepEqual(
+    userLeaveReportYearMonths({ user: noAllowance, employment: null, orgDefaults, now, timeZone: ZONE }),
+    { startMonth: 1, endMonth: 12 }
+  )
 })

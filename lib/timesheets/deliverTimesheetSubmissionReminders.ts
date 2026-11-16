@@ -6,15 +6,56 @@ import {
   captureOrganizationContext,
   dueTimesheetSubmissionNotices,
   organizationContextStillCurrent,
+  payProfileReadPlan,
   TIMESHEET_SUBMISSION_NOTICE_TYPE,
   timesheetParticipant,
   timesheetSubmissionNoticeDedupKey,
 } from '@/lib/canonical'
 import { loadOrganizationDetails } from '@/lib/settings/organizationSettings'
 import { organizationTimeZone } from '@/lib/canonical'
+import { timesheetReminderAudience } from '@/lib/timesheets/timesheetReminderAudience'
 import type { User } from '@/types'
 
 const deliveredThisSession = new Set<string>()
+
+/**
+ * Pay strip: sends the due reminders for the people this viewer may judge (`timesheetReminderAudience`). `roster` is
+ * the listed roster; while `privatePay` is off it is used as given (as before). While it is on, an admin waits for the
+ * pay laid over the roster and uses the store's roster then; anyone else sends only their own, from their own pay.
+ */
+export async function deliverTimesheetRemindersForViewer(organizationId: string, roster: User[]): Promise<number> {
+  const orgId = String(organizationId || '').trim()
+  if (!orgId) return 0
+  const [{ privatePayFor, whenSecuritySwitchesLoaded }, overlay, { resolveOwnPayUser }, { useAuthStore }, { useOrgUserStore }] =
+    await Promise.all([
+      import('@/lib/access/securitySwitches'),
+      import('@/lib/pay/payProfileOverlay'),
+      import('@/lib/pay/useOwnPayUser'),
+      import('@/lib/stores/authStore'),
+      import('@/lib/stores/siteAuditStore'),
+    ])
+  // Pay strip: until `platformConfig/app` has been read, `privatePay` is unknown — not off — so nothing is sent before
+  // then (the stripped roster would read everyone as self-employed). Review #342 item 6: wait for the read rather than
+  // giving up for the session, so a slow config read still sends what is due once it arrives (also with privatePay off).
+  await whenSecuritySwitchesLoaded()
+  // The company may have been switched while waiting: its own session run sends its reminders.
+  const openOrganizationId = useAuthStore.getState().organization?.id
+  if (openOrganizationId && openOrganizationId !== orgId) return 0
+  const privatePay = privatePayFor(orgId)
+  if (!privatePay) return deliverDueTimesheetSubmissionReminders(orgId, roster)
+  const viewer = useAuthStore.getState().user
+  const viewerReadsEveryPay = payProfileReadPlan(viewer as never, []).kind === 'all'
+  const payProfiles = viewerReadsEveryPay ? await overlay.whenPayProfilesSettled(orgId) : 'loading'
+  const own = await resolveOwnPayUser()
+  const audience = timesheetReminderAudience({
+    privatePay,
+    viewerReadsEveryPay,
+    payProfiles,
+    roster: viewerReadsEveryPay ? useOrgUserStore.getState().users : roster,
+    own,
+  })
+  return deliverDueTimesheetSubmissionReminders(orgId, audience)
+}
 
 /** Rulebook 1.10.0 (M12): `timesheetParticipant` — the same people as the Weekly Report feed. */
 export function receivesTimesheetSubmissionReminder(user: User, now: Date, timeZone: string): boolean {

@@ -10,13 +10,15 @@ import { userBookingRemoveAction, userCanWriteBooking } from '@/lib/access/booki
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { rosterDisplayName, samePersonIds } from '@/lib/staff/userRosterUtils'
 import { useProjectStore } from '@/lib/stores/projectStore'
-import { bookingIdsForAccount } from '@/lib/canonical'
+import { bookingIdsForAccount, bookingOccupiesDay } from '@/lib/canonical'
 import {
   findOperativeForUser,
   getActiveOperativesForScheduling,
   operativeIdsForEmail,
 } from '@/lib/operatives/operativeRosterUtils'
 import { canSelfBookMySchedule, isOperativeMode } from '@/lib/navigation/menuPermissions'
+import { retryOwnPayRead, useOwnPayUser } from '@/lib/pay/useOwnPayUser'
+import { OWN_PAY_FAILED_MESSAGE, OWN_PAY_LOADING_MESSAGE, PayStatusNotice } from '@/components/pay/PayStatusNotice'
 import { canBookWork, canViewWarnings, hasAdminAccess } from '@/lib/permissions'
 import { useMyScheduleClashMarkers } from '@/lib/schedule/myScheduleClashMarkers'
 import { managerSiteBookingDisplayTitle, managerSiteBookingToScheduleBooking } from '@/lib/scheduling/managerSiteBookingUtils'
@@ -56,7 +58,10 @@ function MySchedulePageContent() {
     invoicing: OrgInvoicingSettings
   } | null>(null)
 
-  const selfBooking = canSelfBookMySchedule(user)
+  // Pay strip: a `timesheetsEnabled` the users document does not store follows the employment type, which is read from
+  // the person's own pay profile while `privatePay` is on (`useOwnPayUser`). Off: the session user, as before.
+  const ownPay = useOwnPayUser()
+  const selfBooking = canSelfBookMySchedule(ownPay.status === 'ready' ? ownPay.user : user)
 
   useEffect(() => {
     if (!organization?.id) return
@@ -259,23 +264,52 @@ function MySchedulePageContent() {
     )
   }
 
-  const assignedBookings: AssignedScheduleBooking[] = linkedOperativeIds.flatMap((operativeId) =>
-    bookings
-      .filter((booking) => {
-        if (String(booking.operativeId || '').toLowerCase() !== operativeId.toLowerCase()) return false
-        const status = normalizeBookingStatus(booking.status)
-        return status !== 'Cancelled' && status !== 'Completed'
-      })
-      .map((booking) => {
-        const project = [...projects, ...smallWorks].find((row) => row.id === booking.projectId)
-        const title = project
-          ? `${project.jobNumber ?? ''} ${project.siteName ?? ''}`.trim() || project.siteName || 'Scheduled work'
-          : 'Scheduled work'
-        // Rulebook 1.20.2: the times and the pay rule's hours for that day ("Custom 07:30–14:00 · 8h").
-        const detail = bookingRowText(booking, booking.date, payrollPolicy)
-        return { id: booking.id, date: booking.date, title, detail }
-      })
-  )
+  const assignedRow = (booking: (typeof bookings)[number]): AssignedScheduleBooking => {
+    const project = [...projects, ...smallWorks].find((row) => row.id === booking.projectId)
+    const title = project
+      ? `${project.jobNumber ?? ''} ${project.siteName ?? ''}`.trim() || project.siteName || 'Scheduled work'
+      : 'Scheduled work'
+    // Rulebook 1.20.2: the times and the pay rule's hours for that day ("Custom 07:30–14:00 · 8h").
+    const detail = bookingRowText(booking, booking.date, payrollPolicy)
+    return {
+      id: booking.id,
+      date: booking.date,
+      title,
+      detail,
+      timeSlot: String(booking.timeSlot ?? ''),
+      workStartTime: booking.workStartTime ?? null,
+      workEndTime: booking.workEndTime ?? null,
+      status: booking.status == null ? null : String(booking.status),
+    }
+  }
+  const linkedIdKeys = new Set(linkedOperativeIds.map((id) => id.toLowerCase()))
+  const myLabourBookings = bookings.filter((booking) => linkedIdKeys.has(String(booking.operativeId || '').toLowerCase()))
+  const assignedBookings: AssignedScheduleBooking[] = myLabourBookings
+    .filter((booking) => {
+      const status = normalizeBookingStatus(booking.status)
+      return status !== 'Cancelled' && status !== 'Completed'
+    })
+    .map(assignedRow)
+  // Review L4: the self-booking clash check counts every labour booking that occupies its day (`bookingOccupiesDay`,
+  // Completed included), not only the ones listed above.
+  const labourClashBookings: AssignedScheduleBooking[] = myLabourBookings
+    .filter((booking) => bookingOccupiesDay(booking.status))
+    .map(assignedRow)
+
+  // Review #342 item 3: only a manager's self-booking depends on their pay (a missing `timesheetsEnabled` follows the
+  // employment type). While their own pay is loading or failed, show that — never decide from the stripped record.
+  if (!isOperativeMode(user) && !hasAdminAccess(user) && ownPay.status !== 'ready') {
+    return (
+      <div className="card pad px-6 py-8">
+        <PayStatusNotice
+          status={ownPay.status}
+          loadingMessage={OWN_PAY_LOADING_MESSAGE}
+          failedMessage={OWN_PAY_FAILED_MESSAGE}
+          onRetry={retryOwnPayRead}
+        />
+      </div>
+    )
+  }
 
   if (selfBooking) {
     return (
@@ -285,6 +319,7 @@ function MySchedulePageContent() {
         organizationName={organization.name || 'your organisation'}
         payrollPolicy={payrollPolicy}
         assignedBookings={assignedBookings}
+        labourClashBookings={labourClashBookings}
         canEditBookings={canBookWork(user)}
         clashMarkers={clashMarkers}
       />
