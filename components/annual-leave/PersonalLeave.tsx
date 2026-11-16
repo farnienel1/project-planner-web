@@ -344,7 +344,7 @@ export function PersonalLeave({
       flash(
         status === 'approved'
           ? `${daysLabel(selectedUnits)} booked.`
-          : `Holiday request submitted for ${daysLabel(selectedUnits)}.`
+          : `Annual leave request submitted for ${daysLabel(selectedUnits)}.`
       )
       setPicks([])
     } catch (err: unknown) {

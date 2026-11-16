@@ -14,6 +14,12 @@ import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { leaveRecordsForAccount } from '@/lib/canonical/bookingPerson'
 import { samePersonIds } from '@/lib/staff/userRosterUtils'
 import { teamLeaveTab } from '@/lib/annualLeave/teamLeaveQueue'
+import { leaveIdKeys } from '@/lib/annualLeave/annualLeavePerson'
+import { AnnualLeaveReportButton } from './AnnualLeaveReport'
+import { annualLeaveReportLeaveState } from '@/lib/annualLeave/annualLeaveReport'
+import { useLeaveEmployment } from '@/lib/annualLeave/useLeaveEmployment'
+import { userLeaveReportYearMonths } from '@/lib/annualLeave/leaveBalance'
+import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 
 export function AnnualLeaveScreen() {
   const { organization, user } = useAuthStore()
@@ -37,6 +43,7 @@ export function AnnualLeaveScreen() {
   const [tab, setTab] = useState<'mine' | 'team'>(requestedTab)
   const [queueCount, setQueueCount] = useState(0)
   const [orgLeaveDefaults, setOrgLeaveDefaults] = useState<OrgAnnualLeaveDefaults>(DEFAULT_ANNUAL_LEAVE)
+  const [leaveDefaultsOrgId, setLeaveDefaultsOrgId] = useState<string | null>(null)
 
   useEffect(() => {
     setTab(requestedTab)
@@ -44,12 +51,15 @@ export function AnnualLeaveScreen() {
 
   useEffect(() => {
     if (!organization?.id) return
-    loadOrganizationDetails(organization.id)
+    const orgId = organization.id
+    loadOrganizationDetails(orgId)
       .then((details) => {
         if (details?.annualLeaveDefaults) setOrgLeaveDefaults(details.annualLeaveDefaults)
       })
       .catch(() => undefined)
+      .finally(() => setLeaveDefaultsOrgId(orgId))
   }, [organization?.id])
+  const leaveDefaultsLoaded = Boolean(organization?.id) && leaveDefaultsOrgId === organization?.id
 
   const myBookings = useMemo(
     () =>
@@ -69,6 +79,40 @@ export function AnnualLeaveScreen() {
       ).sort((a, b) => b.startDate.getTime() - a.startDate.getTime()),
     [bookings, user, users, userIdAliases, operatives]
   )
+
+  // Annual leave report (rulebook §9 `leaveReportRows`): every id this person's leave may be filed under
+  // (`leaveRecordsForAccount`'s ids, the email included), the same set `myBookings` was matched on.
+  const myLeaveIds = useMemo(
+    () =>
+      user
+        ? leaveIdKeys(
+            {
+              id: user.id,
+              email: user.email,
+              formerIds: user.formerUserIds ?? [],
+              aliasIds: Array.from(samePersonIds(user.id, users, userIdAliases)),
+            },
+            operatives
+          )
+        : [],
+    [user, users, userIdAliases, operatives]
+  )
+
+  // Rulebook 1.54.0 §9: the report counts the leave year the balance on My leave counts (`annualLeaveReportYearMonths`):
+  // the person's own leave year while they have an allowance, else the organisation's.
+  const timeZone = useOrganizationTimeZone()
+  // The report waits for the person's leave records (never "0 days" while loading or after a failed load).
+  const holidayLoading = useHolidayStore((state) => state.loading)
+  const holidayError = useHolidayStore((state) => state.error)
+  const holidayLoadedOrgId = useHolidayStore((state) => state.loadedOrgId)
+  const reportLeaveState = annualLeaveReportLeaveState({
+    organizationId: organization?.id,
+    loading: holidayLoading,
+    error: holidayError,
+    loadedOrgId: holidayLoadedOrgId,
+  })
+  const leaveEmployment = useLeaveEmployment(organization?.id, user)
+  const reportYearMonths = userLeaveReportYearMonths({ user, employment: leaveEmployment.employment, orgDefaults: orgLeaveDefaults, timeZone })
 
   return (
     <div className="mx-auto max-w-xl space-y-4 pb-10">
@@ -101,6 +145,19 @@ export function AnnualLeaveScreen() {
         <div className={tab === 'team' ? undefined : 'hidden'}>
           <OperativeAnnualLeaveManagement embedded onQueueCount={setQueueCount} />
         </div>
+      ) : null}
+
+      {(tab === 'mine' || !canTeam) && user ? (
+        <AnnualLeaveReportButton
+          personName={`${user.firstName ?? ''} ${user.surname ?? ''}`.trim() || user.email}
+          personSubtitle={user.email}
+          bookings={myBookings}
+          personIds={myLeaveIds}
+          startMonth={reportYearMonths.startMonth}
+          leaveState={reportLeaveState}
+          employmentStartDayKey={user.employmentStartDate ?? null}
+          ready={leaveDefaultsLoaded && leaveEmployment.ready}
+        />
       ) : null}
 
       {tab === 'mine' || !canTeam ? (
