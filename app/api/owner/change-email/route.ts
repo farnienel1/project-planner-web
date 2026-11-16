@@ -86,7 +86,13 @@ export async function POST(request: NextRequest) {
   }
 
   const token = bearerToken(request)
-  const userDoc = await firestoreGet(token, `users/${uid}`)
+  let userDoc: Awaited<ReturnType<typeof firestoreGet>>
+  try {
+    userDoc = await firestoreGet(token, `users/${uid}`)
+  } catch (error) {
+    console.error('[owner/change-email] read user', error)
+    return jsonError('Could not read that user record, so nothing was changed. Try again.', 503)
+  }
   if (!userDoc) return jsonError('That user record was not found.', 404)
   const oldEmail = readString(userDoc.fields, 'email').toLowerCase()
   if (isPlatformOwnerEmail(oldEmail)) {

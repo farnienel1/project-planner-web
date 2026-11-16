@@ -18,8 +18,13 @@ export function parseAuthCreatedAtMs(value: unknown): number | null {
   return Number.isFinite(raw) && raw > 0 ? raw : null
 }
 
+/**
+ * The caller's address for rate limits and audit rows. On Netlify `x-nf-client-connection-ip` is set by the edge from
+ * the connection itself, so a client cannot choose it (re-review of #348); `x-forwarded-for` is the fallback elsewhere.
+ */
 export function clientIp(request: NextRequest): string {
   return (
+    request.headers.get('x-nf-client-connection-ip')?.trim() ||
     request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
     request.headers.get('x-real-ip')?.trim() ||
     'unknown'
@@ -42,6 +47,13 @@ export function enforceRateLimit(
   windowMs: number
 ): NextResponse | null {
   const result = rateLimit(`${scope}:${clientIp(request)}`, limit, windowMs)
+  if (result.ok) return null
+  return jsonError('Too many requests. Please try again shortly.', 429, result.retryAfterSec)
+}
+
+/** A rate limit on any key (for example a verified user id), not only the caller's address. */
+export function enforceRateLimitKey(scope: string, key: string, limit: number, windowMs: number): NextResponse | null {
+  const result = rateLimit(`${scope}:${key}`, limit, windowMs)
   if (result.ok) return null
   return jsonError('Too many requests. Please try again shortly.', 429, result.retryAfterSec)
 }

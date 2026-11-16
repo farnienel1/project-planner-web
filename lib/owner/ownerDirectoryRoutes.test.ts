@@ -12,6 +12,7 @@ import { mfaCookieName, shouldSecureMfaCookies } from '../auth/mfa/mfaCookiePoli
 import { buildOwnerConsoleSeed } from '../../scripts/owner-console-seed/seedData.mjs'
 import { installFakeFirestore } from './fakeFirestoreRest.ts'
 import { clearOwnerDirectoryCache } from './directoryServer.ts'
+import { resetRateLimitForTests } from '../security/rateLimit.ts'
 import { GET as orgsGET } from '../../app/api/owner/directory/orgs/route.ts'
 import { GET as peopleGET } from '../../app/api/owner/directory/people/route.ts'
 import { GET as searchGET } from '../../app/api/owner/search/route.ts'
@@ -26,6 +27,7 @@ const realEnv = Object.fromEntries(ENV.map((name) => [name, process.env[name]]))
 const realFetch = globalThis.fetch
 afterEach(() => {
   clearOwnerDirectoryCache()
+  resetRateLimitForTests()
   globalThis.fetch = realFetch
   for (const name of ENV) {
     if (realEnv[name] === undefined) delete process.env[name]
@@ -177,5 +179,25 @@ test('review #348 M1: search allows 60 requests a minute from one address, then 
   installFakeFirestore(collections, owner)
   let last = 0
   for (let i = 0; i < 61; i += 1) last = (await searchGET(get('/api/owner/search?q=la', { ip: '203.0.113.201' }))).status
+  assert.equal(last, 429)
+})
+
+test('re-review of #348: the limit follows the verified owner, not a header the client chooses', async () => {
+  installFakeFirestore(collections, owner)
+  let last = 0
+  // A different x-forwarded-for on every request: still 429 at the 61st search by the same owner.
+  for (let i = 0; i < 61; i += 1) last = (await searchGET(get('/api/owner/search?q=la'))).status
+  assert.equal(last, 429)
+})
+
+test('re-review of #348: on Netlify the edge address (x-nf-client-connection-ip) is the one counted', async () => {
+  installFakeFirestore(collections, superAdmin)
+  let last = 0
+  for (let i = 0; i < 121; i += 1) {
+    const request = get('/api/owner/counts', { mfaUid: 'su-large' })
+    request.headers.set('x-nf-client-connection-ip', '198.18.0.7')
+    last = (await countsGET(request)).status
+  }
+  // Refused by the guard (403) until the per-address limit is reached, whatever x-forwarded-for said.
   assert.equal(last, 429)
 })

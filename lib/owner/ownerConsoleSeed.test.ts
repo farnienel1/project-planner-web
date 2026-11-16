@@ -51,6 +51,11 @@ test('seed, review of #348 L6: who test data hides by default', () => {
   // Home is the test company but also a member of a real one: visible.
   assert.equal(peopleRows.find((row) => row.id === 'demo-3')?.isTest, false)
   assert.deepEqual(peopleRows.find((row) => row.id === 'demo-3')?.organizationIds, ['org-small', 'org-test'])
+  // A member of a real company only under a former invite id, and the creator of a real company: visible.
+  assert.deepEqual(peopleRows.find((row) => row.id === 'demo-4')?.organizationIds, ['org-small', 'org-test'])
+  assert.equal(peopleRows.find((row) => row.id === 'demo-4')?.isTest, false)
+  assert.deepEqual(peopleRows.find((row) => row.id === 'demo-5')?.organizationIds, ['org-lapsed', 'org-test'])
+  assert.equal(peopleRows.find((row) => row.id === 'demo-5')?.isTest, false)
   // One of two documents flagged internal: visible.
   assert.equal(peopleRows.find((row) => row.id === 'dual-1')?.isTest, false)
 })

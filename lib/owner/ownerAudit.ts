@@ -63,13 +63,19 @@ export type OwnerAuditEntry = OwnerAuditInput & {
   atIso: string
 }
 
-/** Any email address inside a text (review of #348, L7: masked wherever it appears, not only as the whole value). */
-const EMAIL_ANYWHERE_RE = /[^\s@<>"'(),;:[\]]+@[^\s@<>"'(),;:[\]]+\.[A-Za-z]{2,}/g
+/**
+ * Any email address inside a text (review of #348, L7: masked wherever it appears, not only as the whole value).
+ * The parts are bounded (local part 1–64, domain 1–253, top level 2–24 letters) so a long text cannot make the match
+ * slow, and every text is clipped to MASK_INPUT_MAX before it is searched (re-review of #348).
+ */
+const EMAIL_ANYWHERE_RE = /[^\s@<>"'(),;:[\]]{1,64}@[^\s@<>"'(),;:[\].]{1,63}(?:\.[^\s@<>"'(),;:[\].]{1,63}){0,8}\.[A-Za-z]{2,24}/g
+const MASK_INPUT_MAX = 4000
 
-/** Masks every email address inside a text. */
+/** Masks every email address inside a text (clipped to MASK_INPUT_MAX first). */
 export function maskEmailsInText(text: string): string {
-  return text.replace(EMAIL_ANYWHERE_RE, (match) => maskEmail(match))
+  return text.slice(0, MASK_INPUT_MAX).replace(EMAIL_ANYWHERE_RE, (match) => maskEmail(match))
 }
+
 /** Keys never written into an audit entry, at any depth (compared without case). */
 const HIDDEN_KEYS = new Set([
   'rate',

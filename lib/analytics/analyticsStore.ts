@@ -27,7 +27,14 @@ import {
   parseOwnerConsoleUser,
 } from '@/lib/analytics/ownerDirectory'
 import type { User } from '@/types'
-import { CONSOLE_EVENTS_CAP, consoleEventsLoadCovers, consoleEventsSince, widerEventsSince } from '@/lib/analytics/consolePeriod'
+import {
+  CONSOLE_EVENTS_CAP,
+  consoleEventsLoadCovers,
+  consoleEventsSince,
+  eventsLoadWindow,
+  queuedEventsReload,
+  widerEventsSince,
+} from '@/lib/analytics/consolePeriod'
 import { useConsolePrefs } from '@/lib/analytics/consolePrefs'
 
 export type { PlatformOrganisation } from '@/lib/analytics/analyticsTypes'
@@ -48,9 +55,10 @@ type AnalyticsState = {
   eventsError: string | null
   /**
    * Loads the directory and the events and sessions of the page's period (owner console PR 1: never every event ever).
-   * `since` defaults to the shared period's comparison start (`consoleEventsSince`).
+   * With no `since`, the wider of the window already loaded and the shared period's start (never narrower).
+   * `force` reloads even when the window is covered (Refresh).
    */
-  load: (since?: Date | null) => Promise<void>
+  load: (since?: Date | null, options?: { force?: boolean }) => Promise<void>
   refresh: () => Promise<void>
 }
 
@@ -190,6 +198,8 @@ function eventsLoadMessage(error: unknown, what: 'events' | 'sessions'): string 
 
 /** A wider window asked for while a load is running; loaded straight after it (review of #348, M2). */
 let queuedSince: Date | null | undefined
+/** A Refresh asked for while a load runs: reload once it ends, even when its window is covered. */
+let queuedForce = false
 
 function permissionMessage(error: unknown): string {
   if (isPermissionDenied(error)) {
@@ -208,16 +218,18 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
   eventsTruncated: false,
   eventsError: null,
 
-  load: async (sinceArg) => {
+  load: async (sinceArg, options = {}) => {
     if (!db) return
     const current = get()
-    const since = sinceArg === undefined ? consoleEventsSince(useConsolePrefs.getState().period) : sinceArg
+    const since = eventsLoadWindow(sinceArg, current.eventsSince, consoleEventsSince(useConsolePrefs.getState().period))
     if (current.loading) {
-      // Never drop a wider window: remember it and load it when this load finishes.
+      // Never drop a wider window or a Refresh: remember it and load it when this load finishes.
       queuedSince = widerEventsSince(queuedSince, since)
+      if (options.force) queuedForce = true
       return
     }
     const directoryFresh =
+      !options.force &&
       Boolean(current.loadedAt) &&
       Date.now() - (current.loadedAt as Date).getTime() < 15_000 &&
       current.users.length + current.organisations.length > 0
@@ -247,6 +259,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
 
     if (fatal && users.length === 0 && organisations.length === 0) {
       queuedSince = undefined
+      queuedForce = false
       set({ error: permissionMessage(fatal), loading: false })
       return
     }
@@ -264,12 +277,14 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
       error: null,
     })
     const queued = queuedSince
+    const force = queuedForce
     queuedSince = undefined
-    if (queued !== undefined && !consoleEventsLoadCovers(since, queued)) await get().load(queued)
+    queuedForce = false
+    if (queuedEventsReload(queued, force, since)) await get().load(queued as Date | null, { force })
   },
 
+  // Reloads everything for the window already loaded (never narrower), also when a load is running.
   refresh: async () => {
-    set({ loadedAt: undefined, eventsSince: undefined })
-    await get().load()
+    await get().load(undefined, { force: true })
   },
 }))

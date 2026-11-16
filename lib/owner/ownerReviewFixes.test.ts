@@ -8,8 +8,10 @@ import { mfaCookieName, shouldSecureMfaCookies } from '../auth/mfa/mfaCookiePoli
 import { installFakeFirestore } from './fakeFirestoreRest.ts'
 import { POST as grantSetup } from '../../app/api/auth/mfa/grant-setup/route.ts'
 import { POST as markInternal } from '../../app/api/owner/mark-internal/route.ts'
+import { POST as changeEmail } from '../../app/api/owner/change-email/route.ts'
+import { generateKeyPairSync } from 'node:crypto'
 
-const ENV = ['NEXT_PUBLIC_FIREBASE_API_KEY', 'NEXT_PUBLIC_FIREBASE_PROJECT_ID'] as const
+const ENV = ['NEXT_PUBLIC_FIREBASE_API_KEY', 'NEXT_PUBLIC_FIREBASE_PROJECT_ID', 'FIREBASE_SERVICE_ACCOUNT_JSON'] as const
 const realEnv = Object.fromEntries(ENV.map((name) => [name, process.env[name]]))
 const realFetch = globalThis.fetch
 afterEach(() => {
@@ -56,4 +58,26 @@ test('mark-internal refuses the platform-owner sentinel organisation and writes 
   assert.equal(response.status, 400)
   assert.equal(backend.auditWrites.length, 0)
   assert.equal(backend.calls.filter((call) => call.method === 'PATCH').length, 0)
+})
+
+test('re-review of #348: change-email answers a clear 503 when the user record cannot be read, and writes nothing', async () => {
+  const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
+  process.env.FIREBASE_SERVICE_ACCOUNT_JSON = JSON.stringify({
+    client_email: 'console-test@demo.iam.gserviceaccount.com',
+    private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+    project_id: 'demo',
+  })
+  const calls: { method: string; url: string }[] = []
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    calls.push({ method: (init?.method || 'GET').toUpperCase(), url })
+    if (url.includes('accounts:lookup')) {
+      return new Response(JSON.stringify({ users: [{ localId: 'owner-uid', email: PLATFORM_OWNER_EMAIL, emailVerified: true, createdAt: '1000' }] }))
+    }
+    return new Response('{"error":{"status":"UNAVAILABLE"}}', { status: 500 })
+  }) as typeof fetch
+  const response = await changeEmail(post('/api/owner/change-email', { uid: 'u1', newEmail: 'new@example.com', reason: 'typo' }, true))
+  assert.equal(response.status, 503)
+  assert.match(((await response.json()) as { error: string }).error, /nothing was changed/)
+  assert.equal(calls.some((call) => call.url.includes('/adminAuditLog') || call.method === 'PATCH'), false)
 })

@@ -6,6 +6,7 @@ import {
   OWNER_AUDIT_PHASES,
   OwnerAuditUnavailableError,
   beginOwnerAudit,
+  maskEmailsInText,
   ownerAuditDocumentFields,
   recordOwnerEvent,
   sanitizeAuditDetail,
@@ -166,4 +167,14 @@ test('review #348: a refused action can be recorded as failed', async () => {
   const writes = captureWrites()
   await recordOwnerEvent(request(), 'owner-uid', { action: 'ownerDeleteOrganisation.blocked' }, { phase: 'failed' })
   assert.equal(writes[0].fields.phase.stringValue, 'failed')
+})
+
+test('re-review of #348: masking a 32 KB text is fast and still masks, and long texts are clipped first', () => {
+  const nasty = `${'a'.repeat(16_000)}@${'b.'.repeat(8_000)}`
+  const started = performance.now()
+  maskEmailsInText(nasty)
+  maskEmailsInText('x@'.repeat(16_000))
+  assert.ok(performance.now() - started < 250, `took ${performance.now() - started} ms`)
+  assert.equal(maskEmailsInText('to jane.smith@mail.example.co.uk ok'), 'to j•••@mail.example.co.uk ok')
+  assert.equal(maskEmailsInText('z'.repeat(10_000)).length, 4000)
 })

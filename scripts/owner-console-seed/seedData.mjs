@@ -112,24 +112,28 @@ export function buildOwnerConsoleSeed() {
     id: 'org-small',
     data: {
       name: 'Small Sparks', countryCode: 'GB', createdAt: at(60), creatorUserId: 'adm-small',
-      members: { 'adm-small': 'admin', 'op-small-1': 'operative', 'dual-1': 'manager', 'ghost-small': 'operative', 'intern-1': 'operative', 'demo-3': 'operative' },
+      members: { 'adm-small': 'admin', 'op-small-1': 'operative', 'dual-1': 'manager', 'ghost-small': 'operative', 'intern-1': 'operative', 'demo-3': 'operative', 'inv-old-4': 'operative' },
       billing: { status: 'trialing', trialEnd: at(-5) },
     },
   })
 
   // 3. Test / internal company.
-  orgs.push({ id: 'org-test', data: { name: 'Demo Co (internal)', isInternal: true, isTest: true, createdAt: at(90), members: { 'demo-1': 'admin', 'demo-2': 'operative', 'demo-3': 'operative' } } })
+  orgs.push({ id: 'org-test', data: { name: 'Demo Co (internal)', isInternal: true, isTest: true, createdAt: at(90), members: { 'demo-1': 'admin', 'demo-2': 'operative', 'demo-3': 'operative', 'demo-4': 'operative', 'demo-5': 'operative' } } })
   users.push(person('demo-1', 'org-test', { email: 'demo1@demo.example', firstName: 'Dana', surname: 'Demo', role: 'admin', adminAccess: true, lastSeenAt: at(1) }))
   users.push(person('demo-2', 'org-test', { email: 'demo2@demo.example', firstName: 'Dan', surname: 'Demo', role: 'operative', lastSeenAt: at(1) }))
   // Home is the test company, but also a member of a real one (Small Sparks): stays visible (review of #348 L6).
   users.push(person('demo-3', 'org-test', { email: 'demo3@demo.example', firstName: 'Del', surname: 'Demo', role: 'operative', lastSeenAt: at(1) }))
+  // Member of a real company only under a former invite id (listed in Small Sparks' members as inv-old-4): visible.
+  users.push(person('demo-4', 'org-test', { email: 'demo4@demo.example', firstName: 'Dot', surname: 'Demo', role: 'operative', formerUserIds: ['inv-old-4'], lastSeenAt: at(1) }))
+  // Creator of a real company (Lapsed Ltd) though not in its members map: visible.
+  users.push(person('demo-5', 'org-test', { email: 'demo5@demo.example', firstName: 'Don', surname: 'Demo', role: 'admin', lastSeenAt: at(1) }))
 
   // 4. Setup unfinished (no name stored).
   orgs.push({ id: 'org-unfinished', data: { createdAt: at(30), members: { 'unf-1': 'admin' } } })
   users.push(person('unf-1', 'org-unfinished', { email: 'unf@nowhere.example', firstName: 'Una', surname: 'Finished', role: 'admin', passwordSet: false }))
 
   // 5. Lapsed (unpaid). lap-2 is an old shape: the organisation stored as a path, lastName, createdAt as text.
-  orgs.push({ id: 'org-lapsed', data: { name: 'Lapsed Ltd', createdAt: at(300), members: { 'lap-1': 'admin', 'lap-2': 'operative' }, billing: { status: 'unpaid', lastPaymentFailedAt: at(40) } } })
+  orgs.push({ id: 'org-lapsed', data: { name: 'Lapsed Ltd', creatorUserId: 'demo-5', createdAt: at(300), members: { 'lap-1': 'admin', 'lap-2': 'operative' }, billing: { status: 'unpaid', lastPaymentFailedAt: at(40) } } })
   users.push(person('lap-1', 'org-lapsed', { email: 'lap1@lapsed.example', firstName: 'Lee', surname: 'Lapsed', role: 'admin', lastSeenAt: at(45) }))
   users.push({
     id: 'lap-2',

@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { enforceRateLimit, jsonError } from '@/lib/security/apiGuard'
+import { enforceRateLimit, enforceRateLimitKey, jsonError } from '@/lib/security/apiGuard'
 import { requireOwnerSession, type OwnerSession } from '@/lib/owner/requireOwner'
 
-/** Shared start of every owner read route: rate limit (per IP), then the owner guard (PLAN A3). */
+/**
+ * Shared start of every owner read route: a per-address limit before the guard (so a stranger cannot make the server
+ * verify tokens without end), the owner guard (PLAN A3), then the same limit per verified owner uid, which no request
+ * header can change (re-review of #348).
+ */
 export async function ownerReadGuard(request: NextRequest, scope: string, limit = 120): Promise<OwnerSession | NextResponse> {
   const limited = enforceRateLimit(request, scope, limit, 60 * 1000)
   if (limited) return limited
-  return requireOwnerSession(request)
+  const owner = await requireOwnerSession(request)
+  if (owner instanceof NextResponse) return owner
+  const perOwner = enforceRateLimitKey(`${scope}:uid`, owner.uid, limit, 60 * 1000)
+  return perOwner || owner
 }
 
 export function ownerJson(body: unknown): NextResponse {

@@ -5,8 +5,35 @@ import { getClientAuthHeaders } from '@/lib/security/clientAuthHeaders'
 import type { OwnerCounts } from '@/lib/owner/ownerCounts'
 import type { OwnerSearchResult } from '@/lib/owner/directory'
 
+/**
+ * The server keeps directory rows for 60 s per instance and clears them on owner changes, but another instance may
+ * still hold old rows. After an owner change the next directory or search request asks for fresh rows (`refresh=1`)
+ * (re-review of #348).
+ */
+let directoryStale = false
+
+export function markOwnerDirectoryStale(): void {
+  directoryStale = true
+}
+
+/** True for the routes that read the cached directory. */
+export function readsOwnerDirectory(path: string): boolean {
+  return path.startsWith('/api/owner/directory/') || path === '/api/owner/search'
+}
+
+/** The query for a request: `refresh` is added once after an owner change, for the directory routes only. */
+export function ownerQueryParams(
+  path: string,
+  params: Record<string, string | number | boolean | undefined>,
+  stale: boolean
+): Record<string, string | number | boolean | undefined> {
+  return stale && readsOwnerDirectory(path) ? { ...params, refresh: true } : params
+}
+
 /** GET an owner route with the signed-in owner's token and the MFA cookie. Throws the route's own message. */
-export async function ownerGet<T>(path: string, params: Record<string, string | number | boolean | undefined> = {}, signal?: AbortSignal): Promise<T> {
+export async function ownerGet<T>(path: string, rawParams: Record<string, string | number | boolean | undefined> = {}, signal?: AbortSignal): Promise<T> {
+  const usedStale = directoryStale && readsOwnerDirectory(path)
+  const params = ownerQueryParams(path, rawParams, directoryStale)
   const query = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
     if (value === undefined || value === '' || value === false) continue
@@ -20,6 +47,7 @@ export async function ownerGet<T>(path: string, params: Record<string, string | 
   })
   const data = (await response.json().catch(() => ({}))) as T & { error?: string }
   if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`)
+  if (usedStale) directoryStale = false
   return data
 }
 

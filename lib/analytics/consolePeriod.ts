@@ -194,3 +194,22 @@ export function consoleEventsState(
   if (loaded.truncated) return 'cut_short'
   return 'complete'
 }
+
+/**
+ * The window a store load uses (re-review of #348): an explicit request as given; with none (a Refresh, a reload after
+ * an action), the wider of the window already loaded and the shared period's default, so a page never narrows.
+ */
+export function eventsLoadWindow(
+  requested: Date | null | undefined,
+  current: Date | null | undefined,
+  fallback: Date | null
+): Date | null {
+  if (requested !== undefined) return requested
+  return widerEventsSince(current, fallback)
+}
+
+/** After a load ends: run the queued one when it was a Refresh (`force`) or needs a wider window than was loaded. */
+export function queuedEventsReload(queued: Date | null | undefined, force: boolean, loadedSince: Date | null): boolean {
+  if (queued === undefined) return false
+  return force || !consoleEventsLoadCovers(loadedSince, queued)
+}

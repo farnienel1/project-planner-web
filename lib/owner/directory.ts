@@ -11,6 +11,8 @@ import { hasAccess, type OrgBillingAccessInput } from '@/lib/canonical/billingAc
 import { organizationDeletionState } from '@/lib/canonical/organizationDeletion'
 import { documentOrganizationId } from '@/lib/canonical/peopleDocuments'
 import { rosterPeople } from '@/lib/canonical/scheduleSources'
+import { rosterMembersForOrganization } from '@/lib/canonical/orgRoster'
+import { personIdSet } from '@/lib/canonical/personIds'
 import { rosterPersonName, rosterSegment, type RosterSegment } from '@/lib/canonical/userRosterSegment'
 import { maskEmail } from '@/lib/auth/maskEmail'
 import { isPlatformOwnerSentinelOrg } from '@/lib/platform/owner'
@@ -219,19 +221,29 @@ function personDoc(doc: PlainDoc): PersonDoc | null {
 }
 
 /**
- * The organisations each users document id is listed in through `organizations/{id}.members` (the members map every
- * organisation document keeps; the owner can read it, unlike a person's membership subcollection).
+ * The organisations each id is anchored in: every `members` key and the creator (rulebook §1 anchored people,
+ * `rosterMembersForOrganization(...).anchoredIds`). Keys are lower case (ids compare without case). The owner can read
+ * these maps, unlike a person's membership subcollection. A person is matched under every id they go by
+ * (`personIdSet`: own, former and same-email ids), so a member listed under a former invite id still counts
+ * (review of #348).
  */
 export function organisationMembership(orgDocs: readonly PlainDoc[]): Map<string, string[]> {
   const out = new Map<string, string[]>()
   for (const org of orgDocs) {
     if (!org.id || isPlatformOwnerSentinelOrg(org.id)) continue
-    const members = org.data?.members
-    if (!members || typeof members !== 'object') continue
-    for (const uid of Object.keys(members as object)) {
-      const list = out.get(uid) || []
-      list.push(org.id)
-      out.set(uid, list)
+    const members = org.data?.members && typeof org.data.members === 'object' ? (org.data.members as Record<string, unknown>) : null
+    const { anchoredIds } = rosterMembersForOrganization({
+      organizationId: org.id,
+      users: [],
+      members,
+      creatorUserId: typeof org.data?.creatorUserId === 'string' ? org.data.creatorUserId : null,
+    })
+    for (const id of anchoredIds) {
+      const key = id.trim().toLowerCase()
+      if (!key) continue
+      const list = out.get(key) || []
+      if (!list.includes(org.id)) list.push(org.id)
+      out.set(key, list)
     }
   }
   return out
@@ -265,8 +277,14 @@ export function ownerPeopleRows(
   }
   return people.map((person) => {
     const group = byKept.get(person.id) || [person]
+    const ids = personIdSet({
+      id: person.id,
+      email: person.email,
+      formerUserIds: [...person.formerUserIds, ...group.flatMap((doc) => doc.formerUserIds)],
+      sameEmailUserIds: [...person.sameEmailUserIds, ...group.map((doc) => doc.id)],
+    })
     const organizationIds = [
-      ...new Set(group.flatMap((doc) => [doc.organizationId, ...(memberOf.get(doc.id) || [])]).filter(Boolean)),
+      ...new Set([...group.map((doc) => doc.organizationId), ...ids.flatMap((id) => memberOf.get(id.toLowerCase()) || [])].filter(Boolean)),
     ].sort()
     const lastSeen = group.map((doc) => timeMs(doc.data.lastSeenAt)).filter((ms): ms is number => ms != null)
     const created = group.map((doc) => timeMs(doc.data.createdAt)).filter((ms): ms is number => ms != null)

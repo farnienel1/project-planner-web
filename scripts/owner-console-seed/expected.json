@@ -10,13 +10,13 @@
     "largeMembers": 110
   },
   "people": {
-    "rows": 126,
-    "rowsWithoutTest": 123,
+    "rows": 128,
+    "rowsWithoutTest": 125,
     "test": 3,
-    "active": 114,
+    "active": 116,
     "inactive": 6,
     "pending": 6,
-    "activeWithoutTest": 111,
+    "activeWithoutTest": 113,
     "dualPersonOrganisations": [
       "org-eur",
       "org-small"
@@ -27,9 +27,9 @@
     "organisationsWithoutTest": 6,
     "testOrganisations": 1,
     "scheduledForDeletion": 1,
-    "accounts": 127,
+    "accounts": 129,
     "accountsWithoutTest": 122,
-    "testAccounts": 5,
+    "testAccounts": 7,
     "inactiveAccounts": 5
   },
   "search": {

@@ -6,6 +6,8 @@ import {
   consoleEventsLoadCovers,
   consoleEventsSince,
   consoleEventsState,
+  eventsLoadWindow,
+  queuedEventsReload,
   rangeEventsSince,
   resolveConsolePeriod,
   widerEventsSince,
@@ -79,4 +81,20 @@ test('review #348 M2: the events state a page shows', () => {
   assert.equal(consoleEventsState({ ...base, since: oct }, null), 'partial')
   assert.equal(rangeEventsSince({ preset: 'all_time', start: oct, previousStart: oct }), null)
   assert.equal(rangeEventsSince({ preset: 'last_7', start: nov, previousStart: oct }), oct)
+})
+
+test('re-review of #348: Refresh and reloads keep the loaded window; a Refresh during a load reloads after it', () => {
+  const oct = new Date('2026-10-01T00:00:00Z')
+  const nov = new Date('2026-11-01T00:00:00Z')
+  // No window asked for: keep the wider of what is loaded and the default.
+  assert.equal(eventsLoadWindow(undefined, oct, nov), oct)
+  assert.equal(eventsLoadWindow(undefined, null, nov), null)
+  assert.equal(eventsLoadWindow(undefined, undefined, nov), nov)
+  // An explicit window is used as given.
+  assert.equal(eventsLoadWindow(nov, oct, nov), nov)
+  // Queued: a Refresh always reloads; a narrower plain request does not; a wider one does.
+  assert.equal(queuedEventsReload(undefined, false, oct), false)
+  assert.equal(queuedEventsReload(oct, true, oct), true)
+  assert.equal(queuedEventsReload(nov, false, oct), false)
+  assert.equal(queuedEventsReload(oct, false, nov), true)
 })
