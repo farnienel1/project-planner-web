@@ -42,6 +42,10 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # The secret should live in this environment, with its deployment branches limited to main, and not as a
+    # repository secret: a repository secret is readable by any workflow on any branch a writer pushes
+    # (docs/firebase-rules-deploy.md "The secret"). The main-only check below is a second guard, not the first.
+    environment: firebase-rules
     timeout-minutes: 20
     steps:
       - name: Check the request (main only, confirmed)

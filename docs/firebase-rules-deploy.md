@@ -44,6 +44,7 @@ Cloud Functions, hosting, Realtime Database, data, users, billing, `platformConf
 
 ## The secret and the service account
 
-- Secret: `FIREBASE_DEPLOY_SA_KEY` (repository secret, the service account's JSON key). Service account: `github-rules-deployer@project-planner-f986c.iam.gserviceaccount.com`.
+- Secret: `FIREBASE_DEPLOY_SA_KEY` (the service account's JSON key). The job runs in the GitHub environment **`firebase-rules`**.
+- **Lock it to main (owner step, recommended).** A repository secret can be read by any workflow file on any branch that someone with write access pushes, so the main-only check in the workflow is not enough on its own. In GitHub → Settings → Environments → `firebase-rules` (created by the first run, or press New environment): Deployment branches and tags → **Selected branches and tags** → add `main`; then **Add environment secret** `FIREBASE_DEPLOY_SA_KEY` with the same key, and delete the repository secret of that name (Settings → Secrets and variables → Actions). Optionally add yourself as a Required reviewer to approve every run. Service account: `github-rules-deployer@project-planner-f986c.iam.gserviceaccount.com`.
 - Roles: `roles/firebaserules.admin` (create, test and release rulesets; read releases and rulesets for the check), `roles/datastore.indexAdmin` (indexes and the Firestore database lookup), `roles/serviceusage.serviceUsageConsumer` (firebase-tools checks the APIs are enabled), `roles/firebase.viewer` (the project and the default Storage bucket lookup).
 - To revoke: delete the key in Google Cloud → IAM → Service accounts → the account → Keys, and delete the GitHub secret.
