@@ -93,6 +93,8 @@ export async function POST(request: NextRequest) {
       invitationUsedAtMs,
       isOrgAdmin,
       orgCreatedAtMs,
+      // C1–C3: from Firebase Auth (accounts:lookup with the caller's own token), never a client-written document.
+      authAccountCreatedAtMs: user.createdAtMs ?? null,
       nowMs: Date.now(),
     })
   ) {
