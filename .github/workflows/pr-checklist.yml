@@ -21,7 +21,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: Checker tests
         run: node --test scripts/check-pr-body.test.mjs
       - name: PR body has the required sections
