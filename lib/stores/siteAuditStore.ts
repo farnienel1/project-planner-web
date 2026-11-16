@@ -47,7 +47,9 @@ import { effectivePermissions } from '@/lib/canonical/permissionLevels'
 import { savePartialDocument } from '@/lib/firebase/partialWrite'
 import { inboxActorUserId } from '@/lib/firebase/notifyInbox'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
+import { rerunWhenViewerArrives } from '@/lib/pay/rosterViewerWait'
 import {
+  notePayRosterLoadFailed,
   notePayRosterOverlaid,
   onPayProfileCacheChange,
   overlayRosterPay,
@@ -985,7 +987,17 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
           // (another store's read may have changed the cache meanwhile — then it is read again).
           rosterParsedVersion = { organizationId, version: versionAtFetch }
           void import('@/lib/stores/authStore')
-            .then(({ useAuthStore }) => refreshPayProfiles(organizationId, useAuthStore.getState().user as never, users as never))
+            .then(({ useAuthStore }) => {
+              // Review #342 item 4: no signed-in person yet — nothing can be read for them. Read the roster again as
+              // soon as they are known, so the overlay runs (the gate stays `loading` until then, never `ready`).
+              rerunWhenViewerArrives({
+                organizationId,
+                authStore: useAuthStore as never,
+                stillListed: () => listedRosterOrgId === organizationId,
+                reload: () => void useOrgUserStore.getState().loadUsers(organizationId, { force: true }).catch(() => undefined),
+              })
+              return refreshPayProfiles(organizationId, useAuthStore.getState().user as never, users as never)
+            })
             .then(() => {
               if (listedRosterOrgId !== organizationId || generation !== rosterLoadGeneration) return undefined
               if (versionAtFetch === payProfileCacheVersion()) {
@@ -1004,6 +1016,9 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
           } catch (error: unknown) {
             if (!isTimeoutError(error) || generation !== rosterLoadGeneration) throw error
             // Leave the error on screen instead of spinning, then take the list if the read finishes.
+            // Review #342 item 4: a timed-out roster is not laid over — the pay gate reads `failed` (with Retry) until
+            // the late read lands.
+            notePayRosterLoadFailed(organizationId)
             set({
               error: error instanceof Error ? error.message : 'The user list did not finish loading.',
               loading: false,
@@ -1031,6 +1046,7 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
           if (generation !== rosterLoadGeneration) throw new OrgLoadNotCached()
           // runOrgLoad retries auth-token races; keep "Loading users..." up until the last attempt fails.
           if (!attempt.final && isRetryableAuthLoadError(error)) throw error
+          notePayRosterLoadFailed(organizationId)
           set({
             error: error instanceof Error ? error.message : 'Failed to load users',
             loading: false,

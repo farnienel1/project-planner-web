@@ -73,10 +73,17 @@ let inFlight: Promise<boolean> | null = null
 // Pay strip readiness. `cacheVersion` goes up whenever what is cached changes. A list laid over with the cache (the
 // roster, the operatives rows) notes the version it was parsed with; it is "settled" only when that is the current
 // version. `loadedOrganizationId` is the organisation whose last read (while `privatePay` was on) answered;
-// `failedOrganizationId` the one whose whole-collection read failed.
+// `failedOrganizationId` the one whose whole-collection read (admins) failed — then nobody's pay is known.
+// `failedSubjects` holds, per person, the people whose own pay-profile read was refused or not reached (review #342
+// item 1): only their sheets, rows and actions fail, never the whole organisation. `answeredIds` are the ids whose
+// last read answered (an offline re-read keeps that answer). `rosterFailedOrganizationId`: the roster itself could not
+// be read (error or time-out), so nothing was laid over — `failed`, with Retry (review #342 item 4).
 let cacheVersion = 0
 let loadedOrganizationId = ''
 let failedOrganizationId = ''
+let failedSubjects: { organizationId: string; ids: Set<string> } = { organizationId: '', ids: new Set() }
+let answeredIds: { organizationId: string; ids: Set<string> } = { organizationId: '', ids: new Set() }
+let rosterFailedOrganizationId = ''
 let rosterOverlaid = { organizationId: '', version: -1 }
 let operativesOverlaid = { organizationId: '', version: -1 }
 const versionListeners = new Set<(organizationId: string) => void>()
@@ -118,6 +125,14 @@ export function onPayProfileCacheChange(listener: (organizationId: string) => vo
 /** The roster of `organizationId` was parsed through `overlayRosterPay` with cache `version`. */
 export function notePayRosterOverlaid(organizationId: string, version: number): void {
   rosterOverlaid = { organizationId, version }
+  if (rosterFailedOrganizationId === organizationId) rosterFailedOrganizationId = ''
+  notifyStatus()
+}
+
+/** The roster of `organizationId` could not be read (an error or a time-out): the pay gate reads `failed` until it is. */
+export function notePayRosterLoadFailed(organizationId: string): void {
+  if (!organizationId || rosterFailedOrganizationId === organizationId) return
+  rosterFailedOrganizationId = organizationId
   notifyStatus()
 }
 
@@ -130,8 +145,17 @@ export function notePayOperativesOverlaid(organizationId: string, version: numbe
 
 export type PayProfilesStatus = 'loading' | 'ready' | 'failed'
 
-/** How one pay-profile read ended: answered, refused by the rules, or not reached (offline / timed out). */
-export type PayProfileReadOutcome = { kind: 'read' | 'refused' | 'offline'; planned: boolean }
+/**
+ * How one pay-profile read ended: answered, refused by the rules, or not reached (offline / timed out). `id` is the
+ * document read (`*` for the whole collection); `subjectId` the person it was read for (the planned id; for a former
+ * invite id, the person whose former id it is); `planned` whether the read plan asked for that id itself.
+ */
+export type PayProfileReadOutcome = {
+  kind: 'read' | 'refused' | 'offline'
+  planned: boolean
+  id?: string
+  subjectId?: string
+}
 
 /** `permission-denied` is a refusal; every other error is the network (offline, unavailable, timed out). */
 export function payProfileReadErrorKind(error: unknown): 'refused' | 'offline' {
@@ -139,21 +163,39 @@ export function payProfileReadErrorKind(error: unknown): 'refused' | 'offline' {
   return code === 'permission-denied' || code === 'firestore/permission-denied' ? 'refused' : 'offline'
 }
 
+function personKey(id: string | null | undefined): string {
+  return String(id ?? '').trim().toLowerCase()
+}
+
 /**
- * Pay strip: whether a refresh counts. `failed` when a read the plan asks for (a person whose pay the viewer may see,
- * `payProfileReadPlan`) was refused, or was not reached with no earlier answer to fall back on. A refusal of a former
- * invite id (read only in case it holds the invited pay; the rules may refuse an id with no users document) does not
- * count. An offline read with an earlier answer keeps that answer (`ok`).
+ * Pay strip (review #342 item 1): what a refresh could not read, per person. `wholeOrganization` only when the
+ * whole-collection read (admins) was refused, or not reached with no earlier answer — then nobody's pay is known.
+ * Otherwise `failedSubjectIds` are the people whose own planned read was refused, or not reached with no earlier answer
+ * for that id; a person whose former invite id was not reached (with no earlier answer) too, since it may hold their
+ * pay. A refused former invite id does not count (the rules may refuse an id with no users document). Never fails the
+ * rest of the organisation because of one person.
  */
-export function payProfileReadVerdict(
+export function payProfileReadFailures(
   outcomes: ReadonlyArray<PayProfileReadOutcome>,
-  options: { hadEarlierRead: boolean }
-): 'ok' | 'failed' {
+  options: { answeredBefore: ReadonlySet<string> }
+): { wholeOrganization: boolean; failedSubjectIds: string[] } {
+  const failed = new Set<string>()
+  let wholeOrganization = false
   for (const row of outcomes) {
-    if (row.kind === 'refused' && row.planned) return 'failed'
-    if (row.kind === 'offline' && !options.hadEarlierRead) return 'failed'
+    if (row.kind === 'read') continue
+    const id = personKey(row.id ?? '*')
+    if (id === '*') {
+      if (row.kind === 'refused' || !options.answeredBefore.has('*')) wholeOrganization = true
+      continue
+    }
+    const subject = personKey(row.subjectId ?? row.id)
+    if (row.kind === 'refused') {
+      if (row.planned) failed.add(subject)
+      continue
+    }
+    if (!options.answeredBefore.has(id)) failed.add(subject)
   }
-  return 'ok'
+  return { wholeOrganization, failedSubjectIds: [...failed].filter(Boolean).sort() }
 }
 
 /**
@@ -168,12 +210,43 @@ export function payProfilesStatusFor(organizationId: string | null | undefined):
   if (!securitySwitchesLoaded()) return 'loading'
   if (!privatePayFor(organizationId)) return 'ready'
   if (failedOrganizationId === organizationId) return 'failed'
+  if (rosterFailedOrganizationId === organizationId) return 'failed'
   // A refresh in flight does not re-open the wait once a read has answered (no flicker): the cache keeps the last
   // answer until the new one lands, and only a change (a new cache version) re-opens it.
   if (loadedOrganizationId !== organizationId || cacheOrganizationId !== organizationId) return 'loading'
   if (rosterOverlaid.organizationId !== organizationId || rosterOverlaid.version !== cacheVersion) return 'loading'
   if (operativesOverlaid.organizationId === organizationId && operativesOverlaid.version !== cacheVersion) return 'loading'
   return 'ready'
+}
+
+/** The people of `organizationId` whose pay could not be read (lower-case ids; see `payProfileReadFailures`). */
+export function payProfileFailedSubjectIds(organizationId: string | null | undefined): string[] {
+  if (!organizationId || failedSubjects.organizationId !== organizationId) return []
+  return [...failedSubjects.ids].sort()
+}
+
+/**
+ * Pay strip (review #342 items 1 and 7): whether one person's pay is known — the organisation's status first
+ * (`payProfilesStatusFor`), then `failed` when the read of any id the person goes by (`id`, `formerUserIds`) failed.
+ */
+export function personPayStatus(
+  organizationStatus: PayProfilesStatus,
+  failedIds: ReadonlyArray<string> | ReadonlySet<string>,
+  person: { id: string; formerUserIds?: ReadonlyArray<string> | null } | null | undefined
+): PayProfilesStatus {
+  if (organizationStatus !== 'ready') return organizationStatus
+  if (!person) return 'ready'
+  const failed = failedIds instanceof Set ? (failedIds as ReadonlySet<string>) : new Set(failedIds as ReadonlyArray<string>)
+  if (failed.size === 0) return 'ready'
+  return [person.id, ...(person.formerUserIds ?? [])].some((id) => failed.has(personKey(id))) ? 'failed' : 'ready'
+}
+
+/** `personPayStatus` for `organizationId` as it is now. */
+export function payProfilesStatusForPerson(
+  organizationId: string | null | undefined,
+  person: { id: string; formerUserIds?: ReadonlyArray<string> | null } | null | undefined
+): PayProfilesStatus {
+  return personPayStatus(payProfilesStatusFor(organizationId), payProfileFailedSubjectIds(organizationId), person)
 }
 
 /** Called when `payProfilesStatusFor` may have changed. Returns the unsubscribe. */
@@ -333,12 +406,39 @@ function sameProfiles(a: Map<string, PayProfileDocument>, b: Map<string, PayProf
  * when what is cached changed (the roster should be re-read through `overlayRosterPay`). A refused or failed read
  * leaves that person on their users document, as before 1.26.0.
  */
+/** Where `refreshPayProfiles` reads from: Firestore by default; tests pass their own. Each read throws as Firestore does. */
+export type PayProfileReader = {
+  readCollection: (organizationId: string) => Promise<Array<{ id: string; data: Record<string, unknown> }>>
+  readDocument: (organizationId: string, id: string) => Promise<{ id: string; data: Record<string, unknown> } | null>
+}
+
+function firestorePayProfileReader(): PayProfileReader | null {
+  if (!db) return null
+  const firestore = db
+  return {
+    readCollection: async (organizationId) => {
+      const snap = await getDocs(collection(firestore, 'organizations', organizationId, PAY_PROFILES_COLLECTION))
+      return snap.docs.map((entry) => ({ id: entry.id, data: entry.data() as Record<string, unknown> }))
+    },
+    readDocument: async (organizationId, id) => {
+      const snap = await getDoc(doc(firestore, 'organizations', organizationId, PAY_PROFILES_COLLECTION, id))
+      return snap.exists() ? { id: snap.id, data: snap.data() as Record<string, unknown> } : null
+    },
+  }
+}
+
 export async function refreshPayProfiles(
   organizationId: string,
   viewer: PayViewer | null | undefined,
-  roster: ReadonlyArray<PaySubject & { formerUserIds?: ReadonlyArray<string> | null }>
+  roster: ReadonlyArray<PaySubject & { formerUserIds?: ReadonlyArray<string> | null }>,
+  reader: PayProfileReader | null = firestorePayProfileReader()
 ): Promise<boolean> {
-  if (!organizationId || !viewer) return false
+  if (!organizationId) return false
+  if (!viewer) {
+    // Review #342 item 4: the signed-in person is not known yet. The roster store re-runs the overlay once they are
+    // (`siteAuditStore`); until then the gate stays `loading`, never `ready` on a stripped roster.
+    return false
+  }
   if (inFlight) await inFlight.catch(() => false)
   // Off: no pay-profile read and nothing laid over (a stale profile never replaces the users document's pay).
   if (!privatePayFor(organizationId)) {
@@ -349,41 +449,45 @@ export async function refreshPayProfiles(
     notifyStatus()
     return had
   }
-  if (!db) return false
-  const firestore = db
+  if (!reader) return false
   const run = (async () => {
     // 1.27.0: the catalogue operatives too, so a manager with the Operatives toggle reads `payProfiles/{rowId}`.
     const plan = payProfileReadPlan(viewer, payPlanSubjects(organizationId, roster), roster as never)
     // Pay strip: what is cached for this organisation from an earlier read that answered (the offline fallback).
     const previous = loadedOrganizationId === organizationId && cacheOrganizationId === organizationId ? profiles : null
+    const answeredBefore = answeredIds.organizationId === organizationId ? answeredIds.ids : new Set<string>()
     const outcomes: PayProfileReadOutcome[] = []
     const next = new Map<string, PayProfileDocument>()
     if (plan.kind === 'all') {
       try {
-        const snap = await getDocs(collection(firestore, 'organizations', organizationId, PAY_PROFILES_COLLECTION))
-        for (const entry of snap.docs) next.set(entry.id, parsePayProfileDocument(entry.id, entry.data() as Record<string, unknown>))
-        outcomes.push({ kind: 'read', planned: true })
+        const rows = await reader.readCollection(organizationId)
+        for (const entry of rows) next.set(entry.id, parsePayProfileDocument(entry.id, entry.data))
+        outcomes.push({ kind: 'read', planned: true, id: '*' })
       } catch (error) {
-        outcomes.push({ kind: payProfileReadErrorKind(error), planned: true })
-        if (previous) for (const [id, profile] of previous) next.set(id, profile)
+        const kind = payProfileReadErrorKind(error)
+        outcomes.push({ kind, planned: true, id: '*' })
+        // Offline only: keep the earlier answer. Never after a refusal.
+        if (kind === 'offline' && previous) for (const [id, profile] of previous) next.set(id, profile)
       }
     } else {
       const byId = new Map(roster.map((person) => [String(person.id ?? ''), person]))
-      const planned = new Set(plan.ids)
-      const ids = new Set<string>()
+      // id read → the planned person it is read for (their own id, or theirs as a former invite id).
+      const reads = new Map<string, { subjectId: string; planned: boolean }>()
+      for (const id of plan.ids) reads.set(id, { subjectId: id, planned: true })
       for (const id of plan.ids) {
-        ids.add(id)
-        for (const former of byId.get(id)?.formerUserIds ?? []) if (former) ids.add(former)
+        for (const former of byId.get(id)?.formerUserIds ?? []) {
+          if (former && !reads.has(former)) reads.set(former, { subjectId: id, planned: false })
+        }
       }
       await Promise.all(
-        [...ids].map(async (id) => {
+        [...reads].map(async ([id, read]) => {
           try {
-            const snap = await getDoc(doc(firestore, 'organizations', organizationId, PAY_PROFILES_COLLECTION, id))
-            if (snap.exists()) next.set(snap.id, parsePayProfileDocument(snap.id, snap.data() as Record<string, unknown>))
-            outcomes.push({ kind: 'read', planned: planned.has(id) })
+            const found = await reader.readDocument(organizationId, id)
+            if (found) next.set(found.id, parsePayProfileDocument(found.id, found.data))
+            outcomes.push({ kind: 'read', planned: read.planned, id, subjectId: read.subjectId })
           } catch (error) {
             const kind = payProfileReadErrorKind(error)
-            outcomes.push({ kind, planned: planned.has(id) })
+            outcomes.push({ kind, planned: read.planned, id, subjectId: read.subjectId })
             // Offline only: keep what an earlier read gave for this id. Never after a refusal.
             const kept = kind === 'offline' ? previous?.get(id) : undefined
             if (kept) next.set(id, kept)
@@ -391,11 +495,20 @@ export async function refreshPayProfiles(
         })
       )
     }
-    const verdict = payProfileReadVerdict(outcomes, { hadEarlierRead: previous != null })
-    if (verdict === 'failed') {
+    const failures = payProfileReadFailures(outcomes, { answeredBefore })
+    const answered = new Set<string>(answeredBefore)
+    for (const row of outcomes) {
+      const key = personKey(row.id)
+      if (row.kind === 'read') answered.add(key)
+      else if (row.kind === 'refused') answered.delete(key)
+    }
+    answeredIds = { organizationId, ids: answered }
+    const previousFailed = failedSubjects.organizationId === organizationId ? [...failedSubjects.ids].sort().join('|') : ''
+    failedSubjects = { organizationId, ids: new Set(failures.failedSubjectIds) }
+    if (failures.wholeOrganization) {
       failedOrganizationId = organizationId
       // A refused read never keeps an earlier copy (the viewer may have lost the right to see it).
-      if (outcomes.some((row) => row.kind === 'refused' && row.planned) && cacheOrganizationId === organizationId && profiles.size > 0) {
+      if (outcomes.some((row) => row.kind === 'refused') && cacheOrganizationId === organizationId && profiles.size > 0) {
         profiles = new Map()
         bumpVersion(organizationId)
       }
@@ -407,6 +520,7 @@ export async function refreshPayProfiles(
     loadedOrganizationId = organizationId
     if (failedOrganizationId === organizationId) failedOrganizationId = ''
     if (changed) bumpVersion(organizationId)
+    else if (previousFailed !== failures.failedSubjectIds.join('|')) notifyStatus()
     return changed
   })()
   inFlight = run
@@ -429,10 +543,15 @@ export async function payProfilesSettled(): Promise<void> {
 }
 
 /** Tests only. */
-export function setPayProfilesForTests(organizationId: string, rows: PayProfileDocument[]): void {
+export function setPayProfilesForTests(
+  organizationId: string,
+  rows: PayProfileDocument[],
+  options?: { failedSubjectIds?: ReadonlyArray<string> }
+): void {
   cacheOrganizationId = organizationId
   loadedOrganizationId = organizationId
   failedOrganizationId = ''
+  failedSubjects = { organizationId, ids: new Set((options?.failedSubjectIds ?? []).map(personKey)) }
   profiles = new Map(rows.map((row) => [row.subjectId, row]))
   bumpVersion(organizationId)
   notifyStatus()
@@ -449,6 +568,9 @@ export function resetPayProfilesForTests(): void {
   cacheOrganizationId = ''
   loadedOrganizationId = ''
   failedOrganizationId = ''
+  failedSubjects = { organizationId: '', ids: new Set() }
+  answeredIds = { organizationId: '', ids: new Set() }
+  rosterFailedOrganizationId = ''
   profiles = new Map()
   rosterOverlaid = { organizationId: '', version: -1 }
   operativesOverlaid = { organizationId: '', version: -1 }

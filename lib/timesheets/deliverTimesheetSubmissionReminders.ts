@@ -26,7 +26,7 @@ const deliveredThisSession = new Set<string>()
 export async function deliverTimesheetRemindersForViewer(organizationId: string, roster: User[]): Promise<number> {
   const orgId = String(organizationId || '').trim()
   if (!orgId) return 0
-  const [{ privatePayFor, securitySwitchesLoaded, securitySwitchesReady }, overlay, { resolveOwnPayUser }, { useAuthStore }, { useOrgUserStore }] =
+  const [{ privatePayFor, whenSecuritySwitchesLoaded }, overlay, { resolveOwnPayUser }, { useAuthStore }, { useOrgUserStore }] =
     await Promise.all([
       import('@/lib/access/securitySwitches'),
       import('@/lib/pay/payProfileOverlay'),
@@ -34,10 +34,13 @@ export async function deliverTimesheetRemindersForViewer(organizationId: string,
       import('@/lib/stores/authStore'),
       import('@/lib/stores/siteAuditStore'),
     ])
-  await securitySwitchesReady()
-  // Pay strip: until `platformConfig/app` has been read, `privatePay` is unknown — not off. Send nothing (a later
-  // session sends what is due): the stripped roster would read everyone as self-employed.
-  if (!securitySwitchesLoaded()) return 0
+  // Pay strip: until `platformConfig/app` has been read, `privatePay` is unknown — not off — so nothing is sent before
+  // then (the stripped roster would read everyone as self-employed). Review #342 item 6: wait for the read rather than
+  // giving up for the session, so a slow config read still sends what is due once it arrives (also with privatePay off).
+  await whenSecuritySwitchesLoaded()
+  // The company may have been switched while waiting: its own session run sends its reminders.
+  const openOrganizationId = useAuthStore.getState().organization?.id
+  if (openOrganizationId && openOrganizationId !== orgId) return 0
   const privatePay = privatePayFor(orgId)
   if (!privatePay) return deliverDueTimesheetSubmissionReminders(orgId, roster)
   const viewer = useAuthStore.getState().user

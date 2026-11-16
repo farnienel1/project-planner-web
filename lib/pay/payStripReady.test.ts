@@ -234,25 +234,53 @@ test('(a) before platformConfig/app is read, privatePay is unknown, not off: not
   const own = ownPayState({ user: stripped, rawDocument: strippedDoc, switchesLoaded: false, privatePay: false, read: null })
   assert.equal(own.status, 'loading')
   assert.deepEqual(timesheetReminderAudience({ privatePay: true, viewerReadsEveryPay: false, payProfiles: 'loading', roster: [stripped], own }), [])
-  // The reminder sender returns before reading anyone (no Firestore in tests: it would otherwise reach the store).
+  // The reminder sender reads nobody while the switches are unknown — it waits (review #342 item 6: it no longer gives
+  // up for the session), then runs once they are read.
   const { deliverTimesheetRemindersForViewer } = await import('../timesheets/deliverTimesheetSubmissionReminders.ts')
-  assert.equal(await deliverTimesheetRemindersForViewer(ORG, [stripped]), 0)
+  let settled = false
+  const sending = deliverTimesheetRemindersForViewer(ORG, [stripped]).then((count) => {
+    settled = true
+    return count
+  })
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  assert.equal(settled, false)
   // The overtime reopen pre-check treats unknown as on (never trusts a stripped row).
   assert.equal(reopenPayePreCheck({ privatePay: true, person: stripped, profile: null }), 'unknown')
   setSecuritySwitchConfigForTests(null)
+  // No Firestore in tests: the off path reaches the sender, which writes nothing.
+  assert.equal(await sending, 0)
 })
 
-test('(b) a refused or failed roster pay read is not settled: reports and signing are blocked, with retry', async () => {
-  const { payProfileReadVerdict, payProfileReadErrorKind } = await import('./payProfileOverlay.ts')
+test('(b) a refused or failed pay read is not settled — per person, never the whole organisation for one person', async () => {
+  const { payProfileReadFailures, payProfileReadErrorKind } = await import('./payProfileOverlay.ts')
   assert.equal(payProfileReadErrorKind({ code: 'permission-denied' }), 'refused')
   assert.equal(payProfileReadErrorKind({ code: 'unavailable' }), 'offline')
   assert.equal(payProfileReadErrorKind(new Error('timeout')), 'offline')
-  // A refused read of a person the plan asks for fails the refresh, earlier answer or not.
-  assert.equal(payProfileReadVerdict([{ kind: 'refused', planned: true }], { hadEarlierRead: true }), 'failed')
-  // A refused former invite id does not (the rules may refuse an id with no users document).
-  assert.equal(payProfileReadVerdict([{ kind: 'read', planned: true }, { kind: 'refused', planned: false }], { hadEarlierRead: false }), 'ok')
-  // Offline with nothing read before: failed.
-  assert.equal(payProfileReadVerdict([{ kind: 'offline', planned: true }], { hadEarlierRead: false }), 'failed')
+  const none = new Set<string>()
+  // A refused planned read fails that person only, earlier answer or not.
+  assert.deepEqual(
+    payProfileReadFailures(
+      [
+        { kind: 'read', planned: true, id: 'lm', subjectId: 'lm' },
+        { kind: 'refused', planned: true, id: 'B', subjectId: 'B' },
+      ],
+      { answeredBefore: new Set(['b']) }
+    ),
+    { wholeOrganization: false, failedSubjectIds: ['b'] }
+  )
+  // A refused former invite id does not count (the rules may refuse an id with no users document).
+  assert.deepEqual(
+    payProfileReadFailures([{ kind: 'refused', planned: false, id: 'OLD', subjectId: 'a' }], { answeredBefore: none }),
+    { wholeOrganization: false, failedSubjectIds: [] }
+  )
+  // A former id not reached with nothing read before fails its person (it may hold their pay).
+  assert.deepEqual(
+    payProfileReadFailures([{ kind: 'offline', planned: false, id: 'OLD', subjectId: 'a' }], { answeredBefore: none }).failedSubjectIds,
+    ['a']
+  )
+  // The whole-collection read (admins): a refusal, or offline with nothing read before, fails the organisation.
+  assert.equal(payProfileReadFailures([{ kind: 'refused', planned: true, id: '*' }], { answeredBefore: new Set(['*']) }).wholeOrganization, true)
+  assert.equal(payProfileReadFailures([{ kind: 'offline', planned: true, id: '*' }], { answeredBefore: none }).wholeOrganization, true)
   // Failed blocks sign / counter-sign / invoice / export with the failed message (the banner offers Retry).
   const blocked = timesheetInputsStatus({ details: 'loaded', history: 'loaded', payProfiles: payProfilesInputLoad('failed', 'ready') })
   assert.equal(blocked.ready, false)
@@ -310,10 +338,12 @@ test('(d) a roster refresh does not flip readiness back to loading; only a chang
 })
 
 test('(e) the cached answer is used offline only, never after a refusal', async () => {
-  const { payProfileReadVerdict } = await import('./payProfileOverlay.ts')
+  const { payProfileReadFailures } = await import('./payProfileOverlay.ts')
   const { ownPayReadAfter } = await import('./ownPayRecord.ts')
-  assert.equal(payProfileReadVerdict([{ kind: 'offline', planned: true }], { hadEarlierRead: true }), 'ok')
-  assert.equal(payProfileReadVerdict([{ kind: 'refused', planned: true }], { hadEarlierRead: true }), 'failed')
+  const before = new Set(['*', 'a'])
+  assert.equal(payProfileReadFailures([{ kind: 'offline', planned: true, id: '*' }], { answeredBefore: before }).wholeOrganization, false)
+  assert.deepEqual(payProfileReadFailures([{ kind: 'offline', planned: true, id: 'a', subjectId: 'a' }], { answeredBefore: before }).failedSubjectIds, [])
+  assert.deepEqual(payProfileReadFailures([{ kind: 'refused', planned: true, id: 'a', subjectId: 'a' }], { answeredBefore: before }).failedSubjectIds, ['a'])
   assert.equal(ownPayReadAfter(found(payeProfile), { status: 'failed', profile: null }).status, 'found')
   assert.equal(ownPayReadAfter(found(payeProfile), { status: 'refused', profile: null }).status, 'refused')
 })

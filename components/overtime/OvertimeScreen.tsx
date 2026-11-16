@@ -7,7 +7,17 @@
  * Routes (one path, query params): `scope` mine | users; `user` (Users'); `section` overtime | expenses | priceWork;
  * `range` current | past | custom; `start` / `end` day keys.
  */
-import { useOwnPayUser } from '@/lib/pay/useOwnPayUser'
+import { retryOwnPayRead, useOwnPayUser } from '@/lib/pay/useOwnPayUser'
+import { personPayStatus, type PayProfilesStatus } from '@/lib/pay/payProfileOverlay'
+import { retryPayProfiles, usePayProfileFailedIds, usePayProfilesStatus } from '@/lib/pay/usePayProfilesStatus'
+import {
+  OWN_PAY_FAILED_MESSAGE,
+  OWN_PAY_LOADING_MESSAGE,
+  PAY_DETAILS_NOT_LOADED_LABEL,
+  PERSON_PAY_LOADING_MESSAGE,
+  PayStatusNotice,
+  personPayFailedMessage,
+} from '@/components/pay/PayStatusNotice'
 import { withOwnPay } from '@/lib/pay/ownPayRecord'
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
@@ -141,6 +151,9 @@ export function OvertimeScreen() {
   const roster = useMemo(() => rulebookRoster(users), [users])
   // Pay strip: the viewer's own employment type is pay data — from their own pay profile (`useOwnPayUser`).
   const ownPay = useOwnPayUser()
+  // Review #342 item 7: each person's employment type is pay data — known only once their pay was read.
+  const rosterPayStatus = usePayProfilesStatus(organization?.id)
+  const rosterPayFailedIds = usePayProfileFailedIds(organization?.id)
   const viewer = useMemo(
     () => (user ? rulebookPerson(withOwnPay(users.find((row) => row.id === user.id) || user, ownPay), users) : null),
     [user, users, ownPay]
@@ -179,8 +192,13 @@ export function OvertimeScreen() {
   if (!mine && !access.users) {
     return <PageShell><Note tone="info">Users&apos; overtime is for admins and line managers.</Note></PageShell>
   }
-  if (mine && ownPay.status === 'loading') {
-    return <PageShell><Note tone="info">Loading…</Note></PageShell>
+  // Review #342 item 3: never decide "is for PAYE staff" from the stripped record while own pay is loading or failed.
+  if (mine && ownPay.status !== 'ready') {
+    return (
+      <PageShell>
+        <PayStatusNotice status={ownPay.status} loadingMessage={OWN_PAY_LOADING_MESSAGE} failedMessage={OWN_PAY_FAILED_MESSAGE} onRetry={retryOwnPayRead} />
+      </PageShell>
+    )
   }
   if (mine && !access.mine) {
     return <PageShell><Note tone="info">My Overtime, Expenses &amp; Price Work is for PAYE staff.</Note></PageShell>
@@ -190,7 +208,10 @@ export function OvertimeScreen() {
     return (
       <PageShell>
         <NavBar title={OVERTIME_USERS_LABEL} back={{ label: OVERTIME_HUB_LABEL, href: overtimeHref({}) }} />
-        <UsersList users={users.filter((row) => subjectIds.includes(row.id))} onOpen={(id) => router.push(overtimeHref({ scope: 'users', user: id }))} />
+        <UsersList
+          users={users.filter((row) => subjectIds.includes(row.id))}
+          payStatusOf={(row) => personPayStatus(rosterPayStatus, rosterPayFailedIds, row)}
+          onOpen={(id) => router.push(overtimeHref({ scope: 'users', user: id }))} />
       </PageShell>
     )
   }
@@ -198,6 +219,21 @@ export function OvertimeScreen() {
   const subject = mine ? withOwnPay(users.find((row) => row.id === user.id) || user, ownPay) : users.find((row) => row.id === userParam)
   if (!subject || (!mine && !subjectIds.includes(subject.id))) {
     return <PageShell><Note tone="info">{users.length === 0 ? 'Loading…' : 'This person is not one you can see here.'}</Note></PageShell>
+  }
+  // Review #342 item 7: someone else's overtime, price work and expenses depend on their employment type — while
+  // their pay is loading or could not be read, say so (with Retry) instead of the stripped record's answer.
+  const subjectPayStatus = mine ? 'ready' : personPayStatus(rosterPayStatus, rosterPayFailedIds, subject)
+  if (subjectPayStatus !== 'ready') {
+    return (
+      <PageShell>
+        <PayStatusNotice
+          status={subjectPayStatus}
+          loadingMessage={PERSON_PAY_LOADING_MESSAGE}
+          failedMessage={personPayFailedMessage(personName(subject))}
+          onRetry={() => retryPayProfiles(organization.id, 'ready')}
+        />
+      </PageShell>
+    )
   }
   const baseTitle = mine ? OVERTIME_MINE_LABEL : personName(subject)
   const upHref = mine ? overtimeHref({}) : overtimeHref({ scope: 'users' })
@@ -428,11 +464,20 @@ function PendingRequests({ organizationId, subjectId, onOpen }: { organizationId
   )
 }
 
-function UsersList({ users, onOpen }: { users: User[]; onOpen: (id: string) => void }) {
+function UsersList({
+  users,
+  onOpen,
+  payStatusOf,
+}: {
+  users: User[]
+  onOpen: (id: string) => void
+  payStatusOf: (row: User) => PayProfilesStatus
+}) {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'all' | 'paye' | 'self'>('all')
+  // Review #342 item 7: a person whose pay is not known is in neither the PAYE nor the self-employed filter.
   const rows = users
-    .filter((row) => (filter === 'all' ? true : filter === 'paye' ? isPaye(row) : !isPaye(row)))
+    .filter((row) => (filter === 'all' ? true : payStatusOf(row) !== 'ready' ? false : filter === 'paye' ? isPaye(row) : !isPaye(row)))
     .filter((row) => personName(row).toLowerCase().includes(search.trim().toLowerCase()))
     .sort((a, b) => personName(a).localeCompare(personName(b)))
   return (
@@ -466,7 +511,7 @@ function UsersList({ users, onOpen }: { users: User[]; onOpen: (id: string) => v
             <tr key={row.id} className="click" onClick={() => onOpen(row.id)}>
               <td>
                 <span className="pu-who">
-                  <IconTile tone={isPaye(row) ? 'slate' : 'amber'} size="sm" round>
+                  <IconTile tone={payStatusOf(row) !== 'ready' ? 'slate' : isPaye(row) ? 'slate' : 'amber'} size="sm" round>
                     {initialsOf(personName(row))}
                   </IconTile>
                   <span>
@@ -484,7 +529,13 @@ function UsersList({ users, onOpen }: { users: User[]; onOpen: (id: string) => v
                 </span>
               </td>
               <td>
-                <Chip tone={isPaye(row) ? 'slate' : 'amber'}>{isPaye(row) ? 'PAYE' : 'Self-employed'}</Chip>
+                {payStatusOf(row) === 'ready' ? (
+                  <Chip tone={isPaye(row) ? 'slate' : 'amber'}>{isPaye(row) ? 'PAYE' : 'Self-employed'}</Chip>
+                ) : payStatusOf(row) === 'loading' ? (
+                  <Chip tone="slate">Loading…</Chip>
+                ) : (
+                  <Chip tone="red">{PAY_DETAILS_NOT_LOADED_LABEL}</Chip>
+                )}
               </td>
               <td className="actions">
                 <ChevronRightIcon width={16} height={16} aria-hidden="true" style={{ color: 'var(--pu-muted)' }} />

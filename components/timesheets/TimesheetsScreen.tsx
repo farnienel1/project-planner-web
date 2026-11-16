@@ -78,6 +78,8 @@ import {
   type DataColumn,
 } from '@/components/ui/page'
 import { EXPORT_STOPPED_MESSAGE, type TimesheetInputsState } from '@/lib/timesheets/timesheetInputs'
+import { personPayStatus } from '@/lib/pay/payProfileOverlay'
+import { PAY_DETAILS_NOT_LOADED_LABEL } from '@/components/pay/PayStatusNotice'
 import {
   EXPORT_REBUILT_CONFIRM,
   EXPORT_RECOVER_HINT,
@@ -90,6 +92,7 @@ import type { PayrollTimePolicyState } from '@/lib/canonical'
 import { SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE, signedTimesheetActions } from '@/lib/canonical'
 
 /** Third review #325: Export left a sheet out because the bookings or pay inputs were still loading. */
+const EXPORT_PAY_UNKNOWN_SKIPPED_MESSAGE = "Not exported — their pay details couldn't be loaded; press Retry, then export again."
 const EXPORT_INPUTS_LOADING_SKIPPED_MESSAGE = 'Not exported — the bookings or pay settings were still loading; export again.'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
@@ -126,8 +129,11 @@ export function TimesheetsScreen({
   history = emptyDayRateHistory(),
   scheduleOptions = DEFAULT_MY_SCHEDULE,
   payInputs,
+  payUnknownIds,
 }: {
   payInputs: TimesheetInputsState
+  /** Review #342 item 1: people whose pay could not be read (lower-case ids) — marked on the list, skipped by Export. */
+  payUnknownIds?: ReadonlySet<string>
   bookings: Booking[]
   managerSiteBookings: ManagerSiteBooking[]
   operatives: Operative[]
@@ -344,6 +350,8 @@ export function TimesheetsScreen({
   // before each person — `coverage` can drop mid-export (a re-plan, a network blip).
   const payInputsRef = useRef(payInputs)
   payInputsRef.current = payInputs
+  const payUnknownFor = (member: User): boolean =>
+    personPayStatus('ready', payUnknownIds ?? new Set<string>(), member) === 'failed'
 
   /**
    * Rulebook 1.43.0 (review r318): one sheet of an export, prepared without writing anything — re-read fresh (the
@@ -523,10 +531,12 @@ export function TimesheetsScreen({
     const exportedAt = new Date()
     changedSkippedRef.current = []
     inputsSkippedRef.current = []
+    // Review #342 item 1: a person whose pay could not be read is never exported on a stripped record; named below.
+    const payUnknownSkipped = visible.filter((member) => drafts.has(member.id) && payUnknownFor(member)).map((member) => displayName(member))
     const reasonOf = (error: unknown) => (error instanceof Error && error.message ? error.message : 'unknown error')
     try {
       const run = await runTimesheetExport({
-        members: visible.filter((member) => drafts.has(member.id)),
+        members: visible.filter((member) => drafts.has(member.id) && !payUnknownFor(member)),
         memberId: (member) => member.id,
         memberName: (member) => displayName(member),
         // Rulebook 1.43.0 (review r318): every person is prepared (and the gate checked) before anyone is stamped.
@@ -603,6 +613,7 @@ export function TimesheetsScreen({
           }),
           changedSkipped.length > 0 ? `${SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE} (${changedSkipped.join(', ')})` : '',
           inputsSkipped.length > 0 ? `${EXPORT_INPUTS_LOADING_SKIPPED_MESSAGE} (${inputsSkipped.join(', ')})` : '',
+          payUnknownSkipped.length > 0 ? `${EXPORT_PAY_UNKNOWN_SKIPPED_MESSAGE} (${payUnknownSkipped.join(', ')})` : '',
         ]
           .filter(Boolean)
           .join(' ')
@@ -715,6 +726,7 @@ export function TimesheetsScreen({
               pill={teamTab === 'signed' ? 'Signed off' : 'Pending'}
               pillHue={teamTab === 'signed' ? 'green' : 'warn'}
               summary={summary}
+              payUnknown={payUnknownFor(member)}
               onClick={() =>
                 router.push(
                   timesheetsTeamHref({
@@ -791,6 +803,7 @@ function MemberRow({
   timeZone,
   onClick,
   onDownload,
+  payUnknown = false,
 }: {
   member: User
   users: User[]
@@ -803,6 +816,8 @@ function MemberRow({
   timeZone?: string
   onClick: () => void
   onDownload?: () => void
+  /** Review #342 items 1 and 7: this person's pay could not be read — no figures, a red chip instead. */
+  payUnknown?: boolean
 }) {
   const currency = useOrganizationCurrency()
   const role = member.permissions.operativeMode ? 'Operative' : hasAdminAccess(member) ? 'Admin' : 'Manager'
@@ -842,14 +857,19 @@ function MemberRow({
           <td style={{ whiteSpace: 'nowrap' }}>{exportedAt && timeZone ? formatStampInZone(exportedAt, timeZone) : ''}</td>
         </>
       ) : null}
-      <td className="num">{formatQueueHours(summary.hours)}</td>
-      <td className="num">{formatQueueHours(summary.overtimeHours)}</td>
-      <td className="num">{formatMoney(summary.priceWork, currency)}</td>
-      <td className="num">{formatMoney(summary.expenses, currency)}</td>
+      <td className="num">{payUnknown ? '—' : formatQueueHours(summary.hours)}</td>
+      <td className="num">{payUnknown ? '—' : formatQueueHours(summary.overtimeHours)}</td>
+      <td className="num">{payUnknown ? '—' : formatMoney(summary.priceWork, currency)}</td>
+      <td className="num">{payUnknown ? '—' : formatMoney(summary.expenses, currency)}</td>
       <td>{role}</td>
       {lineManager != null ? <td>{lineManager}</td> : null}
       <td>
         <Chip tone={pillHue === 'warn' ? 'amber' : pillHue === 'green' ? 'green' : 'slate'}>{pill}</Chip>
+        {payUnknown ? (
+          <span style={{ marginLeft: 8 }}>
+            <Chip tone="red">{PAY_DETAILS_NOT_LOADED_LABEL}</Chip>
+          </span>
+        ) : null}
         {onDownload ? (
           <button
             type="button"

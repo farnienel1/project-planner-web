@@ -17,7 +17,8 @@ import {
   operativeIdsForEmail,
 } from '@/lib/operatives/operativeRosterUtils'
 import { canSelfBookMySchedule, isOperativeMode } from '@/lib/navigation/menuPermissions'
-import { useOwnPayUser } from '@/lib/pay/useOwnPayUser'
+import { retryOwnPayRead, useOwnPayUser } from '@/lib/pay/useOwnPayUser'
+import { OWN_PAY_FAILED_MESSAGE, OWN_PAY_LOADING_MESSAGE, PayStatusNotice } from '@/components/pay/PayStatusNotice'
 import { canBookWork, canViewWarnings, hasAdminAccess } from '@/lib/permissions'
 import { useMyScheduleClashMarkers } from '@/lib/schedule/myScheduleClashMarkers'
 import { managerSiteBookingDisplayTitle, managerSiteBookingToScheduleBooking } from '@/lib/scheduling/managerSiteBookingUtils'
@@ -280,6 +281,21 @@ function MySchedulePageContent() {
         return { id: booking.id, date: booking.date, title, detail }
       })
   )
+
+  // Review #342 item 3: only a manager's self-booking depends on their pay (a missing `timesheetsEnabled` follows the
+  // employment type). While their own pay is loading or failed, show that — never decide from the stripped record.
+  if (!isOperativeMode(user) && !hasAdminAccess(user) && ownPay.status !== 'ready') {
+    return (
+      <div className="card pad px-6 py-8">
+        <PayStatusNotice
+          status={ownPay.status}
+          loadingMessage={OWN_PAY_LOADING_MESSAGE}
+          failedMessage={OWN_PAY_FAILED_MESSAGE}
+          onRetry={retryOwnPayRead}
+        />
+      </div>
+    )
+  }
 
   if (selfBooking) {
     return (
