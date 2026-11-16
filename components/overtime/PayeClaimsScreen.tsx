@@ -86,6 +86,7 @@ import type { User } from '@/types'
 
 import { downloadPdf } from '@/lib/pdf/downloadPdf'
 import { loadExportModule } from '@/lib/pdf/loadExportModule'
+import { claimsReviewEvent, feedback } from '@/lib/feedbackSounds/feedback'
 
 // The PDF builders (pdf-lib) load only when a PDF is made.
 const buildPayeClaimReportPdf: typeof import('@/lib/payeClaims/payeClaimReportPdf').buildPayeClaimReportPdf = (...args) =>
@@ -328,8 +329,12 @@ function ClaimList(props: Omit<Props, 'range'> & { range: { start: string; end: 
       await savePayeClaimReviews(organizationId, preview.writes)
       setDecisions({})
       setNotice(preview.message)
+      // Owner decision 2: approved / declined as decided; nothing saved plays nothing (decision 4).
+      const reviewed = claimsReviewEvent(preview.writes)
+      if (reviewed) feedback(reviewed)
     } catch (e: unknown) {
       setNotice(e instanceof Error ? e.message : 'The review could not be saved.')
+      feedback('actionRefused')
     } finally {
       setBusy(false)
     }
@@ -353,8 +358,10 @@ function ClaimList(props: Omit<Props, 'range'> & { range: { start: string; end: 
         items: inRange,
       })
       await downloadClaimReport(snapshot, orgLogo(props.orgDoc), setNotice)
+      feedback('timesheetSaved')
     } catch (e: unknown) {
       setNotice(e instanceof Error ? e.message : 'The report could not be made.')
+      feedback('actionRefused')
     } finally {
       setBusy(false)
     }
@@ -640,10 +647,12 @@ function ClaimSheet(props: {
         await addExpense({ organizationId, currency, draft: { title, details, jobNumber, date: from, amount, evidence: list } })
       }
       props.onClose()
+      feedback('timesheetSaved')
     } catch (e: unknown) {
       // 1.30.0 review: a refused or failed save leaves no new copy behind where line managers and admins could read it.
       await discardClaimEvidence(organizationId, uploaded)
       setError(e instanceof Error ? e.message : 'It could not be saved.')
+      feedback('actionRefused')
     } finally {
       setSaving(false)
     }

@@ -106,6 +106,7 @@ const buildOvertimeReportPdf: typeof import('@/lib/overtime/overtimeReportPdf').
 
 export { OVERTIME_PATH, overtimeHref }
 import type { Project, User } from '@/types'
+import { feedback } from '@/lib/feedbackSounds/feedback'
 
 export function OvertimeScreen() {
   const router = useRouter()
@@ -698,6 +699,7 @@ function OvertimeLines(props: {
       await work()
     } catch (e) {
       setMessage(e instanceof OvertimeApprovalRefused || e instanceof Error ? e.message : 'Something went wrong.')
+      feedback('actionRefused')
     } finally {
       setBusy(false)
     }
@@ -707,6 +709,7 @@ function OvertimeLines(props: {
     run(async () => {
       const ok = await applyDirectOvertime({ organizationId, booking, action, organization, timeZone, person: subject, users, job: jobFor(booking.jobId ?? null) })
       if (!ok) setMessage('That change is not allowed on this booking.')
+      feedback(ok ? 'timesheetSaved' : 'actionRefused')
     })
 
   /** The person's red X: warn before an all-overtime booking is removed (`OVERTIME_DELETE_WARNING`). */
@@ -747,6 +750,8 @@ function OvertimeLines(props: {
       await sendOvertimeRequest({ organizationId, requester: subject, users, rangeStart: range.start, rangeEnd: range.end, lines: built.lines, existing: requests, personIds: operativeIds, bookings })
       setChoices({})
       setMessage('Sent for approval.')
+      // Owner decision 2: "Send for approval" plays the sent sound.
+      feedback('overtimeSent')
     })
 
   const generateReport = () =>
@@ -755,6 +760,7 @@ function OvertimeLines(props: {
       const bytes = await buildOvertimeReportPdf(saved, { logoUrl: props.logoUrl })
       downloadPdf(bytes, `overtime-${range.start}-${range.end}.pdf`)
       setMessage('Report saved and downloaded. Send it to payroll yourself.')
+      feedback('timesheetSaved')
     })
 
   const canDecide = props.mode === 'review' && canDecideOvertimeRequest(rulebookPerson(props.viewerUser, users), subjectPerson, roster)
@@ -857,6 +863,8 @@ function OvertimeLines(props: {
                   setDeciderChoices({})
                   // Rulebook 1.33.0 `overtimeReturnMessage`: "Returned 5 lines. …".
                   setMessage(result.message)
+                  // Owner decision 2: "Return overtime" plays the approved sound.
+                  feedback('overtimeReturned')
                 })
               }
             />

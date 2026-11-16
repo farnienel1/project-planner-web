@@ -716,6 +716,37 @@ UI only, web only (`docs/design/user-profile-ui/user-profile-ui-spec.md`; branch
 | 15 Nov | B7: the weekly report waits for the region's bank holidays before it can be generated (as My Profile); Daily Overview and Home use them as soon as they load (before that, the old count for at most a moment). | done, owner to confirm |
 | 15 Nov | Not changed: the timesheet collector and the weekly report still leave out switched-off schedule locations (`includesManagerScheduleLocation`), unlike Daily Overview after A10. Follow-up question: should timesheets and the weekly report follow A10 too (a pay change)? | question |
 
+## 16 Nov decisions (feedback sounds, web)
+
+Not a rulebook change (rulebook §15, platform-specific): sounds change no data, payload, calculation, permission or flow. Spec `docs/design/feedback/feedback-sounds-haptics-guide.md` (v1.1); module `lib/feedbackSounds/feedback.ts`.
+
+| Date | Decision | Status |
+|---|---|---|
+| 16 Nov | **1** Sounds are **on** by default. Web toggle in Settings → Personal card: "Sounds", "Applies to this browser only.", and a "Play a sample" button (`localStorage` `pp.feedback.sounds`, this browser only). | done web (w-feedback-sounds) |
+| 16 Nov | **2** The guide's booking-request events have no feature; reuse their sounds for overtime "Send for approval" (sent), "Return overtime" (approved) and the price work / expense review Approve (approved / declined as decided). Owner: "a nice to have … should ping when a button is pressed or action has been done. I don't want sounds going off randomly" — a sound only after the person's own action, never from listeners, other people's changes, page load or autosave. Events `overtimeSent`, `overtimeReturned`, `claimsApproved`, `claimsDeclined` (guide v1.1 §4). | done web |
+| 16 Nov | **3** A partly saved bulk action plays the error sound. | done web |
+| 16 Nov | **4** "Nothing new to save" plays no sound. | done web |
+| 16 Nov | **5** Self-booked or manager-booked approved leave plays leaveBooked. A cancellation request, a leave removal or a leave edit plays the saved / removed sounds (`leaveEdited` success, `leaveRemoved` removed; guide v1.1). | done web for the manager calendar; the person's own leave screen (cancellation request, self-booked leave) waits for #335 — see follow-ups |
+| 16 Nov | **6** (iOS only.) | n/a web |
+| 16 Nov | **7** (iOS only.) | n/a web |
+| 16 Nov | **8** Web handlers with no catch may get a catch-and-rethrow so `actionRefused` plays; behaviour otherwise identical and the error reaches the same place. | done web (warnings page, Warnings clash delete, leave calendar, Tasks leave approvals, team leave decisions) |
+| 16 Nov | **9** Module path `lib/feedbackSounds/feedback.ts` (`lib/feedback/` is the ideas board). | done web |
+| 16 Nov | **10** An invite saved whose email failed still plays userInvited. A ghost create plays userInvited. | done web |
+| 16 Nov | **11** `allWarningsClear` means the viewer's own scoped Warnings list reached zero, after their own action. | done web (`activeOrgWarnings(...).coreCount` after the approve / dismiss) |
+| 16 Nov | **12** Web gain 0.35. | done web |
+| 16 Nov | **13** Everything is actioned, except `components/timesheets/TimesheetPeriodPage.tsx` (open #337) and `components/annual-leave/PersonalLeave.tsx` (open #335), wired after those merge. | done web except the two files (PR follow-ups list) |
+
+## Feedback sounds judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 16 Nov | Six new event names in the guide (v1.1) rather than reusing the booking-request names in code: `leaveEdited`, `leaveRemoved`, `overtimeSent`, `overtimeReturned`, `claimsApproved`, `claimsDeclined`. Same sounds as decided; iOS copies the guide again. | done, owner to confirm |
+| 16 Nov | An approver accepting a leave **cancellation request** plays leaveApproved; refusing it plays leaveDeclined (the approver's decision, as for a leave request). | done, owner to confirm |
+| 16 Nov | Overtime ✓ / ✕ / ⚙ saved directly (no line manager) plays timesheetSaved; "That change is not allowed on this booking" plays the error sound. | done, owner to confirm |
+| 16 Nov | Silent on success (no event in the guide): overtime "Withdraw request" and deleting a price work / expense item. Dismissing a materials cut-off warning plays `warningResolved` (it only hides the card on this device, so it never plays `allWarningsClear`). A failed withdraw plays the error sound (the shared overtime error path). | done, owner to confirm |
+| 16 Nov | Price work / expense Approve with a mix of ✓ and ✕ plays approved; only ✕ plays declined. | done, owner to confirm |
+| 16 Nov | A sound whose file has not loaded within 1 s of the action is skipped (never played late). | done, owner to confirm |
+
 ## Open questions for the owner
 
 | Date | Question |

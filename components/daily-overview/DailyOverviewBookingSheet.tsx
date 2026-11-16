@@ -51,6 +51,7 @@ import { canBookOtherLocationsFor, normalizeDocumentId, organizationOvertimeMult
 import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
 import { webJobAccessViewer } from '@/lib/access/readPlan'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
+import { feedback } from '@/lib/feedbackSounds/feedback'
 
 type DestTab = 'other' | 'projects' | 'smallWorks'
 type StatusFilter = 'active' | 'upcoming' | 'completed'
@@ -359,8 +360,10 @@ export function DailyOverviewBookingSheet({
         }, replace)
       }
       onClose()
+      feedback('bookingEdited')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not update booking')
+      feedback('actionRefused')
     } finally {
       setSaving(false)
     }
@@ -405,8 +408,10 @@ export function DailyOverviewBookingSheet({
         }, replace)
       }
       onClose()
+      if (row.bookingId) feedback('bookingEdited')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not update booking')
+      feedback('actionRefused')
     } finally {
       setSaving(false)
     }
@@ -429,8 +434,10 @@ export function DailyOverviewBookingSheet({
         }, replace)
       }
       onClose()
+      feedback('bookingEdited')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not update booking')
+      feedback('actionRefused')
     } finally {
       setSaving(false)
     }

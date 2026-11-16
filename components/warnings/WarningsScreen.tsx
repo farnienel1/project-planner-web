@@ -23,6 +23,7 @@ import { dayKey, formatLongDay } from '@/lib/ios-parity/londonTime'
 import { notifyCompanyActivity } from '@/lib/notifications/companyActivity'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { normalizeDocumentId } from '@/lib/canonical'
+import { feedback } from '@/lib/feedbackSounds/feedback'
 
 type FilterChip = 'all' | 'clashes' | 'unbooked' | 'leave' | 'materials' | 'qualifications'
 
@@ -152,6 +153,7 @@ function MaterialsCard({
       }
     }
     setHidden(true)
+    feedback('warningResolved')
   }
 
   return (
@@ -471,6 +473,11 @@ export function WarningsScreen({
     try {
       if (entry.managerBookingId) await onDeleteManagerBooking(entry.managerBookingId)
       else await onDeleteBooking(entry.bookingId)
+      feedback('bookingDeleted')
+    } catch (error) {
+      // Owner decision 8: the refusal sound, then the error goes where it went before.
+      feedback('actionRefused')
+      throw error
     } finally {
       setBusyId(null)
     }

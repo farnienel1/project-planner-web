@@ -46,7 +46,7 @@ import {
   warningDecisionsFailed,
   type WarningDecisionFailures,
 } from '@/lib/warnings/warningDecisionsLoad'
-import { activeOrgWarnings, generateOrgWarnings } from '@/lib/warnings/generateOrgWarnings'
+import { activeOrgWarnings, generateOrgWarnings, type WarningDecisionInputs } from '@/lib/warnings/generateOrgWarnings'
 import { loadResolvedWarningKeys, watchResolvedWarningKeys } from '@/lib/warnings/warningResolutionStorage'
 import {
   partitionRowsByOrganization,
@@ -60,6 +60,19 @@ import type { OrgWarningsResult } from '@/lib/warnings/generateOrgWarnings'
 import { WarningsScreen } from '@/components/warnings/WarningsScreen'
 import { useWarningsSortDirection } from '@/lib/warnings/useWarningsSortDirection'
 import { ORG_DATA_REFRESHED_EVENT } from '@/lib/stores/refreshOrgData'
+import { feedback, warningResolvedEvent, type FeedbackEvent } from '@/lib/feedbackSounds/feedback'
+
+/**
+ * Feedback sounds (owner decision 11, 16 Nov): after the person's own approve / dismiss, `allWarningsClear` when their
+ * own scoped list (`activeOrgWarnings`, the count this page shows) reached zero, else `warningResolved`. Never throws.
+ */
+function resolvedFeedbackEvent(listed: OrgWarningsResult | null, decisions: WarningDecisionInputs): FeedbackEvent {
+  try {
+    return listed ? warningResolvedEvent(activeOrgWarnings(listed, decisions).coreCount) : 'warningResolved'
+  } catch {
+    return 'warningResolved'
+  }
+}
 
 export default function WarningsPage() {
   const router = useRouter()
@@ -481,20 +494,33 @@ export default function WarningsPage() {
   const handleDismissQualification = useCallback(
     async (warning: { dismissKey: string; operativeId: string; qualificationId: string; dayKey: string }) => {
       if (!organization?.id || !user?.id) return
-      await dismissQualificationWarning({
-        organizationId: organization.id,
-        dismissKey: warning.dismissKey,
-        operativeId: warning.operativeId,
-        qualificationId: warning.qualificationId,
-        expiryDayKey: warning.dayKey,
-        dismissedByUserId: user.id,
-      })
+      try {
+        await dismissQualificationWarning({
+          organizationId: organization.id,
+          dismissKey: warning.dismissKey,
+          operativeId: warning.operativeId,
+          qualificationId: warning.qualificationId,
+          expiryDayKey: warning.dayKey,
+          dismissedByUserId: user.id,
+        })
+      } catch (error) {
+        // Owner decision 8: the refusal sound, then the error goes where it went before.
+        feedback('actionRefused')
+        throw error
+      }
       setDismissedWarnings((current) => [
         ...current.filter((entry) => entry.dismissKey !== warning.dismissKey),
         { dismissKey: warning.dismissKey, kind: 'qualification_expired', dismissedAt: new Date(), dismissedByUserId: user.id },
       ])
+      feedback(
+        resolvedFeedbackEvent(visible, {
+          resolvedKeys,
+          acceptedClashes,
+          dismissedQualificationKeys: new Set([...dismissedKeys, warning.dismissKey]),
+        })
+      )
     },
-    [organization?.id, user?.id]
+    [organization?.id, user?.id, visible, resolvedKeys, acceptedClashes, dismissedKeys]
   )
 
   const handleAcceptClash = useCallback(
@@ -505,25 +531,38 @@ export default function WarningsPage() {
       pairs?: Array<{ bookingAId: string; bookingBId: string }>
     }) => {
       if (!organization?.id || !user?.id) return
-      // Both `acceptedBookingClashes` and `warningResolutions` (`clashApprovalWrites`), so iOS sees it too.
-      if (clash.pairs && clash.pairs.length > 0) {
-        // Operative cluster (`operativeClashGroups`): approve every overlapping pair.
-        await approveBookingClashPairs(organization.id, clash.pairs, user.id)
-      } else {
-        await approveBookingClash(
-          organization.id,
-          { bookingAId: clash.bookingAId, bookingBId: clash.bookingBId, resolutionKey: clash.resolutionKey },
-          user.id
+      try {
+        // Both `acceptedBookingClashes` and `warningResolutions` (`clashApprovalWrites`), so iOS sees it too.
+        if (clash.pairs && clash.pairs.length > 0) {
+          // Operative cluster (`operativeClashGroups`): approve every overlapping pair.
+          await approveBookingClashPairs(organization.id, clash.pairs, user.id)
+        } else {
+          await approveBookingClash(
+            organization.id,
+            { bookingAId: clash.bookingAId, bookingBId: clash.bookingBId, resolutionKey: clash.resolutionKey },
+            user.id
+          )
+        }
+        const [accepted, resolved] = await Promise.all([
+          loadAcceptedBookingClashes(organization.id),
+          loadResolvedWarningKeys(organization.id),
+        ])
+        setAcceptedClashes(accepted)
+        setResolvedKeys(resolved)
+        feedback(
+          resolvedFeedbackEvent(visible, {
+            resolvedKeys: resolved,
+            acceptedClashes: accepted,
+            dismissedQualificationKeys: dismissedKeys,
+          })
         )
+      } catch (error) {
+        // Owner decision 8: the refusal sound, then the error goes where it went before.
+        feedback('actionRefused')
+        throw error
       }
-      const [accepted, resolved] = await Promise.all([
-        loadAcceptedBookingClashes(organization.id),
-        loadResolvedWarningKeys(organization.id),
-      ])
-      setAcceptedClashes(accepted)
-      setResolvedKeys(resolved)
     },
-    [organization?.id, user?.id]
+    [organization?.id, user?.id, visible, dismissedKeys]
   )
 
   const handleDeleteBooking = useCallback(

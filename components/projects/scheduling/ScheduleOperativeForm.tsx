@@ -49,6 +49,7 @@ import { ScheduleBookingReviewStep } from '@/components/projects/scheduling/Sche
 import { ScheduleDatesStep } from '@/components/projects/scheduling/ScheduleDatesStep'
 import { SchedulePersonPickerStep } from '@/components/projects/scheduling/SchedulePersonPickerStep'
 import type { Project } from '@/types'
+import { feedback } from '@/lib/feedbackSounds/feedback'
 
 const STEP_LABELS: Record<WizardStep, string> = {
   dates: 'Dates',
@@ -343,8 +344,12 @@ export function ScheduleOperativeForm({
         }
       }
       router.push(scheduleBasePath)
+      // Feedback sounds: one sound for the whole request; every day already booked plays nothing (owner decision 4).
+      if (savedDays.length > 0) feedback('bookingSaved')
     } catch (e: unknown) {
       setError(partialSaveMessage(e instanceof Error ? e.message : 'Failed to create bookings', savedDays))
+      // Owner decision 3: partly saved plays the error sound.
+      feedback('actionRefused')
     } finally {
       setSaving(false)
     }

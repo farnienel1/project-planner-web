@@ -30,6 +30,7 @@ import {
 import { hasAdminAccess, isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
 import type { HolidayBooking, ProjectTask, ProjectTaskStatus } from '@/types'
+import { feedback } from '@/lib/feedbackSounds/feedback'
 
 const STATUS_STYLES: Record<ProjectTaskStatus, { badge: string; label: string }> = {
   'To Do': { badge: 'bg-slate-100 text-slate-700', label: 'To Do' },
@@ -269,6 +270,12 @@ export function TasksScreen() {
           operatives,
         })
       }
+      // The approver's decision: accepting a request or a cancellation request is leaveApproved.
+      feedback('leaveApproved')
+    } catch (error) {
+      // Owner decision 8: the refusal sound, then the error goes where it went before.
+      feedback('actionRefused')
+      throw error
     } finally {
       setActionId(null)
     }
@@ -307,6 +314,12 @@ export function TasksScreen() {
           operatives,
         })
       }
+      // The approver's decision: declining a request or a cancellation request is leaveDeclined.
+      feedback('leaveDeclined')
+    } catch (error) {
+      // Owner decision 8: the refusal sound, then the error goes where it went before.
+      feedback('actionRefused')
+      throw error
     } finally {
       setActionId(null)
     }

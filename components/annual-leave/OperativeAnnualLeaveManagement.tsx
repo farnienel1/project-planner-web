@@ -28,6 +28,7 @@ import type { HolidayBooking } from '@/types'
 import { OperativeAnnualLeaveCalendar } from './OperativeAnnualLeaveCalendar'
 import { AnnualLeaveLegend, LeaveDayCalendar } from './LeaveDayCalendar'
 import { useOrgBankHolidays } from './useOrgBankHolidays'
+import { feedback } from '@/lib/feedbackSounds/feedback'
 
 type HubTab = 'manage' | 'approved' | 'requests'
 
@@ -189,42 +190,51 @@ export function OperativeAnnualLeaveManagement({
 
   const updateStatus = async (booking: HolidayBooking, status: 'approved' | 'rejected', decisionNote?: string) => {
     if (!organization?.id || !user) return
-    if (isCancellationRequest(booking)) {
-      if (status === 'approved') {
-        await deleteBooking(organization.id, booking.id)
-      } else {
-        await saveBooking(organization.id, {
-          ...booking,
-          cancellationRequestedAt: undefined,
-          cancellationRequestedByUserId: undefined,
-          updatedAt: new Date(),
+    try {
+      if (isCancellationRequest(booking)) {
+        if (status === 'approved') {
+          await deleteBooking(organization.id, booking.id)
+        } else {
+          await saveBooking(organization.id, {
+            ...booking,
+            cancellationRequestedAt: undefined,
+            cancellationRequestedByUserId: undefined,
+            updatedAt: new Date(),
+          })
+        }
+        // Rulebook §9 / 1.9.0: the requester hears the cancellation decision (`holidayDecisionRecipients`).
+        await notifyHolidayRequestDecisionToUser({
+          organizationId: organization.id,
+          booking,
+          approved: status === 'approved',
+          cancellation: true,
+          decidedByName: holidayDecisionActorName(user),
+          decidedByUserId: user?.id ?? null,
+          users,
+          operatives,
         })
+        feedback(status === 'approved' ? 'leaveApproved' : 'leaveDeclined')
+        return
       }
-      // Rulebook §9 / 1.9.0: the requester hears the cancellation decision (`holidayDecisionRecipients`).
+      // `holidayDecisionWriteFields`: status, approver and the optional note in one partial update.
+      await decideBooking(organization.id, booking, { status, approverUid: user.id, decisionNote })
       await notifyHolidayRequestDecisionToUser({
         organizationId: organization.id,
         booking,
         approved: status === 'approved',
-        cancellation: true,
         decidedByName: holidayDecisionActorName(user),
         decidedByUserId: user?.id ?? null,
+        reason: decisionNote,
         users,
         operatives,
       })
-      return
+      // The approver's decision on a request or a cancellation request.
+      feedback(status === 'approved' ? 'leaveApproved' : 'leaveDeclined')
+    } catch (error) {
+      // Owner decision 8: the refusal sound, then the error goes where it went before.
+      feedback('actionRefused')
+      throw error
     }
-    // `holidayDecisionWriteFields`: status, approver and the optional note in one partial update.
-    await decideBooking(organization.id, booking, { status, approverUid: user.id, decisionNote })
-    await notifyHolidayRequestDecisionToUser({
-      organizationId: organization.id,
-      booking,
-      approved: status === 'approved',
-      decidedByName: holidayDecisionActorName(user),
-      decidedByUserId: user?.id ?? null,
-      reason: decisionNote,
-      users,
-      operatives,
-    })
   }
 
   if (!teamLeaveTab(user, users, operatives)) {

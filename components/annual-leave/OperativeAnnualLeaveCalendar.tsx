@@ -33,6 +33,7 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import type { HolidayBooking, HolidayTimeSlot } from '@/types'
 import { AnnualLeaveLegend, LeaveDayCalendar } from './LeaveDayCalendar'
 import { useOrgBankHolidays } from './useOrgBankHolidays'
+import { feedback } from '@/lib/feedbackSounds/feedback'
 
 function dayFromKey(key: string): Date {
   const [year, month, day] = key.split('-').map(Number)
@@ -276,6 +277,12 @@ export function OperativeAnnualLeaveCalendar({
       setMessage(`Annual leave booked for ${person.displayName}.`)
       setSelectedDay(null)
       setTimeout(() => setMessage(null), 3000)
+      // Owner decision 5: approved leave booked here is leaveBooked; a pending request is leaveRequested.
+      feedback(status === 'approved' ? 'leaveBooked' : 'leaveRequested')
+    } catch (error) {
+      // Owner decision 8: the refusal sound, then the error goes where it went before.
+      feedback('actionRefused')
+      throw error
     } finally {
       setSaving(false)
     }
@@ -300,6 +307,11 @@ export function OperativeAnnualLeaveCalendar({
       setMessage('Annual leave booking updated.')
       setSelectedDay(null)
       setTimeout(() => setMessage(null), 3000)
+      feedback('leaveEdited')
+    } catch (error) {
+      // Owner decision 8: the refusal sound, then the error goes where it went before.
+      feedback('actionRefused')
+      throw error
     } finally {
       setSaving(false)
     }
@@ -322,6 +334,11 @@ export function OperativeAnnualLeaveCalendar({
       setMessage('Request approved.')
       setSelectedDay(null)
       setTimeout(() => setMessage(null), 3000)
+      feedback('leaveApproved')
+    } catch (error) {
+      // Owner decision 8: the refusal sound, then the error goes where it went before.
+      feedback('actionRefused')
+      throw error
     } finally {
       setSaving(false)
     }
@@ -347,6 +364,11 @@ export function OperativeAnnualLeaveCalendar({
       setMessage('Annual leave removed.')
       if (approvedBooking?.id === booking.id) setSelectedDay(null)
       setTimeout(() => setMessage(null), 3000)
+      feedback('leaveRemoved')
+    } catch (error) {
+      // Owner decision 8: the refusal sound, then the error goes where it went before.
+      feedback('actionRefused')
+      throw error
     } finally {
       setSaving(false)
       setPendingDelete(null)
@@ -376,6 +398,11 @@ export function OperativeAnnualLeaveCalendar({
       setMessage('Request declined.')
       setSelectedDay(null)
       setTimeout(() => setMessage(null), 3000)
+      feedback('leaveDeclined')
+    } catch (error) {
+      // Owner decision 8: the refusal sound, then the error goes where it went before.
+      feedback('actionRefused')
+      throw error
     } finally {
       setSaving(false)
     }
