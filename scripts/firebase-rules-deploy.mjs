@@ -3,7 +3,7 @@
  * Helper for .github/workflows/firebase-rules-deploy.yml (docs/firebase-rules-deploy.md).
  *
  *   node scripts/firebase-rules-deploy.mjs plan       reads TARGETS, writes only / firestore / storage / indexes to $GITHUB_OUTPUT
- *   node scripts/firebase-rules-deploy.mjs ci-check   fails unless CI (REQUIRED_CI_CHECKS) passed on GITHUB_SHA
+ *   node scripts/firebase-rules-deploy.mjs ci-check   fails unless CI (REQUIRED_CI_JOBS, push-to-main runs) passed on GITHUB_SHA
  *   node scripts/firebase-rules-deploy.mjs check-key  checks the key file without ever printing its contents
  *   node scripts/firebase-rules-deploy.mjs verify     reads the live releases and compares them with the files in the checkout
  *
@@ -87,41 +87,84 @@ export function readServiceAccountKey(keyPath, projectId) {
   return key
 }
 
-/** Every check run named in `required` has its latest run completed with success; returns the names that are not. */
-export function missingCiChecks(checkRuns, required) {
+/**
+ * The CI jobs a publish needs, each tied to the workflow FILE that runs it on a push to main. Matching by file (not by a
+ * check-run name) means a job of the same name in another workflow, or a run from another event (the daily scheduled
+ * rulebook run, where rulebook-check is skipped; a manual dispatch), never counts.
+ */
+export const REQUIRED_CI_JOBS = Object.freeze([
+  Object.freeze({ workflowPath: '.github/workflows/web-ci.yml', job: 'build-and-test' }),
+  Object.freeze({ workflowPath: '.github/workflows/web-ci.yml', job: 'rules-typecheck' }),
+  Object.freeze({ workflowPath: '.github/workflows/rulebook.yml', job: 'rulebook-check' }),
+])
+
+const workflowFile = (path) => String(path ?? '').split('@')[0]
+
+/**
+ * The latest push-to-main workflow run of each required workflow file for `sha` (GET /actions/runs), from `runs`.
+ * Runs from any other event, branch or commit are ignored.
+ */
+export function latestPushRuns(runs, { sha, required = REQUIRED_CI_JOBS } = {}) {
+  const paths = new Set(required.map((r) => r.workflowPath))
   const latest = new Map()
-  for (const run of checkRuns ?? []) {
-    if (!required.includes(run?.name)) continue
-    const at = Date.parse(run.started_at ?? '') || 0
-    const seen = latest.get(run.name)
-    if (!seen || at >= seen.at) latest.set(run.name, { at, run })
+  for (const run of runs ?? []) {
+    if (run?.event !== 'push' || run?.head_branch !== 'main' || (sha && run?.head_sha !== sha)) continue
+    const path = workflowFile(run.path)
+    if (!paths.has(path)) continue
+    const at = Date.parse(run.created_at ?? '') || 0
+    const seen = latest.get(path)
+    if (!seen || at > seen.at || (at === seen.at && Number(run.id) > Number(seen.run.id))) latest.set(path, { at, run })
   }
-  return required.filter((name) => {
-    const run = latest.get(name)?.run
-    return !run || run.status !== 'completed' || run.conclusion !== 'success'
-  })
+  return new Map([...latest].map(([path, { run }]) => [path, run]))
 }
 
-export const REQUIRED_CI_CHECKS = Object.freeze(['build-and-test', 'rules-typecheck', 'rulebook-check'])
+/**
+ * The required jobs that have not succeeded, as "workflow-file: job". `runsByPath` is latestPushRuns; `jobsByRunId`
+ * maps a run id to its jobs (GET /actions/runs/{id}/jobs, latest attempt). A missing run, a run not completed, a missing
+ * job, or any conclusion other than success blocks.
+ */
+export function missingCiJobs(runsByPath, jobsByRunId, required = REQUIRED_CI_JOBS) {
+  return required
+    .filter(({ workflowPath, job }) => {
+      const run = runsByPath.get(workflowPath)
+      if (!run || run.status !== 'completed') return true
+      const jobs = jobsByRunId.get(run.id) ?? []
+      const found = jobs.find((j) => j?.name === job)
+      return !found || found.status !== 'completed' || found.conclusion !== 'success'
+    })
+    .map(({ workflowPath, job }) => `${workflowPath.replace('.github/workflows/', '')}: ${job}`)
+}
+
+async function githubJson(url, token) {
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
+  })
+  if (!response.ok) throw new Error(`Could not read ${url.replace(/\?.*$/, '')} (HTTP ${response.status})`)
+  return response.json()
+}
 
 async function ciCheck() {
   const { GITHUB_TOKEN: token, GITHUB_REPOSITORY: repo, GITHUB_SHA: sha } = process.env
   if (!token || !repo || !sha) throw new Error('GITHUB_TOKEN, GITHUB_REPOSITORY and GITHUB_SHA are required')
+  const api = `https://api.github.com/repos/${repo}/actions`
   const runs = []
   for (let page = 1; page <= 10; page += 1) {
-    const response = await fetch(`https://api.github.com/repos/${repo}/commits/${sha}/check-runs?per_page=100&page=${page}`, {
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
-    })
-    if (!response.ok) throw new Error(`Could not read the CI checks of ${sha} (HTTP ${response.status})`)
-    const body = await response.json()
-    runs.push(...(body.check_runs ?? []))
-    if ((body.check_runs ?? []).length < 100) break
+    const body = await githubJson(`${api}/runs?head_sha=${sha}&event=push&branch=main&per_page=100&page=${page}`, token)
+    const batch = body.workflow_runs ?? []
+    runs.push(...batch)
+    if (batch.length < 100) break
   }
-  const missing = missingCiChecks(runs, REQUIRED_CI_CHECKS)
+  const runsByPath = latestPushRuns(runs, { sha })
+  const jobsByRunId = new Map()
+  for (const run of runsByPath.values()) {
+    const body = await githubJson(`${api}/runs/${run.id}/jobs?filter=latest&per_page=100`, token)
+    jobsByRunId.set(run.id, body.jobs ?? [])
+  }
+  const missing = missingCiJobs(runsByPath, jobsByRunId)
   if (missing.length) {
-    throw new Error(`CI has not passed on ${sha}: ${missing.join(', ')} not successful. Wait for CI on main, or fix it first.`)
+    throw new Error(`CI has not passed on ${sha} (push to main): ${missing.join(', ')}. Wait for CI on main, or fix it first.`)
   }
-  console.log(`CI passed on ${sha}: ${REQUIRED_CI_CHECKS.join(', ')}`)
+  console.log(`CI passed on ${sha} (push to main): ${REQUIRED_CI_JOBS.map((r) => r.job).join(', ')}`)
 }
 
 async function accessToken(keyPath, projectId) {

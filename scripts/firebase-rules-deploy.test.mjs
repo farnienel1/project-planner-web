@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { compareRuleset, missingCiChecks, planTargets, readServiceAccountKey, REQUIRED_CI_CHECKS, TARGET_PLANS } from './firebase-rules-deploy.mjs'
+import { compareRuleset, latestPushRuns, missingCiJobs, planTargets, readServiceAccountKey, TARGET_PLANS } from './firebase-rules-deploy.mjs'
 
 test('every target maps to rules, storage rules or indexes only — never functions or hosting', () => {
   for (const plan of Object.values(TARGET_PLANS)) {
@@ -54,13 +54,47 @@ test('a bad key file never puts its contents in the error', () => {
   }
 })
 
-test('CI gate: every required check must have its latest run successful', () => {
-  const ok = (name, at = '2026-11-16T10:00:00Z') => ({ name, status: 'completed', conclusion: 'success', started_at: at })
-  assert.deepEqual(missingCiChecks(REQUIRED_CI_CHECKS.map((n) => ok(n)), REQUIRED_CI_CHECKS), [])
-  assert.deepEqual(missingCiChecks([ok('build-and-test'), ok('rules-typecheck')], REQUIRED_CI_CHECKS), ['rulebook-check'])
-  const failedLater = [...REQUIRED_CI_CHECKS.map((n) => ok(n)), { name: 'rules-typecheck', status: 'completed', conclusion: 'failure', started_at: '2026-11-16T11:00:00Z' }]
-  assert.deepEqual(missingCiChecks(failedLater, REQUIRED_CI_CHECKS), ['rules-typecheck'])
-  const pending = [ok('build-and-test'), ok('rulebook-check'), { name: 'rules-typecheck', status: 'in_progress', conclusion: null, started_at: '2026-11-16T10:00:00Z' }]
-  assert.deepEqual(missingCiChecks(pending, REQUIRED_CI_CHECKS), ['rules-typecheck'])
-  assert.deepEqual(missingCiChecks([], REQUIRED_CI_CHECKS), [...REQUIRED_CI_CHECKS])
+const SHA = 'abc123'
+const wfRun = (id, file, { event = 'push', branch = 'main', at = '2026-11-16T10:00:00Z', status = 'completed', sha = SHA } = {}) =>
+  ({ id, path: `.github/workflows/${file}`, event, head_branch: branch, head_sha: sha, created_at: at, status })
+const job = (name, conclusion = 'success') => ({ name, status: 'completed', conclusion })
+const goodJobs = () => new Map([[1, [job('build-and-test'), job('rules-typecheck')]], [2, [job('rulebook-check')]]])
+const gate = (runs, jobs) => missingCiJobs(latestPushRuns(runs, { sha: SHA }), jobs)
+
+test('CI gate: push-to-main runs of web-ci.yml and rulebook.yml with every job successful pass', () => {
+  assert.deepEqual(gate([wfRun(1, 'web-ci.yml'), wfRun(2, 'rulebook.yml')], goodJobs()), [])
+})
+
+test('CI gate: a later scheduled rulebook run with rulebook-check skipped does not block', () => {
+  const runs = [wfRun(1, 'web-ci.yml'), wfRun(2, 'rulebook.yml'), wfRun(3, 'rulebook.yml', { event: 'schedule', at: '2026-11-17T06:17:00Z' })]
+  const jobs = goodJobs()
+  jobs.set(3, [{ name: 'rulebook-check', status: 'completed', conclusion: 'skipped' }])
+  assert.deepEqual(gate(runs, jobs), [])
+  // A later manual dispatch of web-ci does not count either.
+  const dispatched = [...runs, wfRun(4, 'web-ci.yml', { event: 'workflow_dispatch', at: '2026-11-17T07:00:00Z' })]
+  jobs.set(4, [job('build-and-test', 'failure')])
+  assert.deepEqual(gate(dispatched, jobs), [])
+})
+
+test('CI gate: a later failed push run of the same workflow blocks', () => {
+  const runs = [wfRun(1, 'web-ci.yml'), wfRun(2, 'rulebook.yml'), wfRun(5, 'web-ci.yml', { at: '2026-11-16T12:00:00Z' })]
+  const jobs = goodJobs()
+  jobs.set(5, [job('build-and-test'), job('rules-typecheck', 'failure')])
+  assert.deepEqual(gate(runs, jobs), ['web-ci.yml: rules-typecheck'])
+})
+
+test('CI gate: missing runs, missing jobs, unfinished runs and skipped jobs block', () => {
+  assert.deepEqual(gate([], new Map()), ['web-ci.yml: build-and-test', 'web-ci.yml: rules-typecheck', 'rulebook.yml: rulebook-check'])
+  assert.deepEqual(gate([wfRun(1, 'web-ci.yml'), wfRun(2, 'rulebook.yml')], new Map([[1, [job('build-and-test')]], [2, [job('rulebook-check')]]])), ['web-ci.yml: rules-typecheck'])
+  assert.deepEqual(gate([wfRun(1, 'web-ci.yml', { status: 'in_progress' }), wfRun(2, 'rulebook.yml')], goodJobs()), ['web-ci.yml: build-and-test', 'web-ci.yml: rules-typecheck'])
+  const skipped = goodJobs()
+  skipped.set(2, [{ name: 'rulebook-check', status: 'completed', conclusion: 'skipped' }])
+  assert.deepEqual(gate([wfRun(1, 'web-ci.yml'), wfRun(2, 'rulebook.yml')], skipped), ['rulebook.yml: rulebook-check'])
+})
+
+test('CI gate: a job of the same name in another workflow, another branch or another commit never counts', () => {
+  const runs = [wfRun(1, 'web-ci.yml'), wfRun(6, 'other.yml'), wfRun(7, 'rulebook.yml', { branch: 'feature' }), wfRun(8, 'rulebook.yml', { sha: 'zzz' })]
+  const jobs = goodJobs()
+  jobs.set(6, [job('rulebook-check')]); jobs.set(7, [job('rulebook-check')]); jobs.set(8, [job('rulebook-check')])
+  assert.deepEqual(gate(runs, jobs), ['rulebook.yml: rulebook-check'])
 })

@@ -29,7 +29,7 @@ on:
 
 permissions:
   contents: read
-  checks: read
+  actions: read
 
 concurrency:
   group: firebase-rules-deploy
@@ -79,8 +79,8 @@ jobs:
         run: node scripts/firebase-rules-deploy.mjs plan
 
       - name: CI passed on this commit
-        # build-and-test, rules-typecheck and rulebook-check must have succeeded on GITHUB_SHA, so failing rules tests
-        # on main block a publish.
+        # The latest push-to-main runs of web-ci.yml (build-and-test, rules-typecheck) and rulebook.yml (rulebook-check)
+        # for GITHUB_SHA must have succeeded; scheduled or dispatched runs never count.
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/firebase-rules-deploy.mjs ci-check
