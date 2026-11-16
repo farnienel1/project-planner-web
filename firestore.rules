@@ -1813,16 +1813,17 @@ service cloud.firestore {
             (request.resource.data.get('priceWorkEntries', null) == null || request.resource.data.get('priceWorkEntries', null) == []) &&
             (resource.data.get('priceWorkEntries', null) == null || resource.data.get('priceWorkEntries', null) == [])
           )) &&
-              (!('lateExtras' in written) || !timesheetStoredExported())
+              (!('lateExtras' in written) || (!timesheetStoredExported() &&
+                (request.resource.data.get('lateExtras', null) == null || request.resource.data.lateExtras is list)))
             ) : !('lateExtras' in written));
         }
         function timesheetStoredExported() {
           return resource.data.get('exportedAt', null) is timestamp || resource.data.get('exportedAt', null) is number;
         }
-        // 1.54.0: once exported, no reviewer writes `lateExtras`; with late extras stored, nor its reviews or snapshot.
+        // 1.54.0: once exported, no reviewer writes `lateExtras` or `exportedAt`; with late extras, nor reviews or snapshot.
         function timesheetReviewerKeepsExportedLate() {
           let w = writtenKeys();
-          return resource == null || !timesheetStoredExported() || (!('lateExtras' in w) &&
+          return resource == null || !timesheetStoredExported() || (!w.hasAny(['lateExtras', 'exportedAt']) &&
             (resource.data.get('lateExtras', null) in [null, []] || !w.hasAny(['extraEntryReviews', 'weeklyReportOverride'])));
         }
 

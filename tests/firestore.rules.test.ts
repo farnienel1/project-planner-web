@@ -1853,6 +1853,11 @@ test('timesheets: the owner cannot change line reviews, entry decisions or the a
   const late = (amount: number) => ({ kind: 'expense', id: 'L1', title: 'Taxi', details: '', jobNumber: 'J1', date: Timestamp.now(), amount })
   await assertSucceeds(setDoc(ref(rep), { ...signedResend, lateExtras: [late(25)] }, { merge: true }))
   await assertSucceeds(updateDoc(ref(rep), { lateExtras: [late(30)] }))
+  // Final check of #337: `lateExtras` is a list (or null), never a map or other junk.
+  await assertFails(updateDoc(ref(rep), { lateExtras: { L1: late(30) } }))
+  await assertFails(updateDoc(ref(rep), { lateExtras: 'x' }))
+  await assertSucceeds(updateDoc(ref(rep), { lateExtras: null }))
+  await assertSucceeds(updateDoc(ref(rep), { lateExtras: [late(30)] }))
   await assertFails(updateDoc(ref(rep), { 'extraEntryReviews.L1': { decision: 'approved', reviewedAmount: 30, lateExtra: true, reviewedFingerprint: 'x' } }))
   await assertSucceeds(updateDoc(ref(rep), { lateExtras: [] }))
   // The person clearing their own signature never clears the line manager's or the snapshot.
@@ -1879,6 +1884,12 @@ test('timesheets: the owner cannot change line reviews, entry decisions or the a
   await assertFails(updateDoc(ref(lm), { lateExtras: deleteField() }))
   await assertFails(updateDoc(ref(lm), { lateExtras: [] }))
   await assertFails(updateDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com')), { lateExtras: null }))
+  // Final check of #337: no reviewer removes or changes a stored exportedAt (delete / re-price / restore); the same value passes.
+  await assertFails(updateDoc(ref(lm), { exportedAt: deleteField() }))
+  await assertFails(updateDoc(ref(lm), { exportedAt: 'x' }))
+  await assertFails(updateDoc(ref(lm), { exportedAt: null }))
+  await assertFails(updateDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com')), { exportedAt: Timestamp.fromMillis(exported.toMillis() + 1000) }))
+  await assertSucceeds(setDoc(ref(lm), { exportedAt: exported, managerNote: 'Filed again' }, { merge: true }))
   // An exported sheet whose `lateExtras` is stored as null (or empty) has no late extras: reviews behave as before 1.54.0.
   const idNull = `timesheet_${REPORT_A}_1770100000`
   await env.withSecurityRulesDisabled(async (ctx) => {

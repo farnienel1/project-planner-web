@@ -531,6 +531,7 @@ var ProjectPlannerCanonical = (() => {
     TIMESHEET_ENTRY_EDIT_EXPENSE_TITLE: () => TIMESHEET_ENTRY_EDIT_EXPENSE_TITLE,
     TIMESHEET_ENTRY_EDIT_LABEL: () => TIMESHEET_ENTRY_EDIT_LABEL,
     TIMESHEET_ENTRY_EDIT_PRICE_WORK_TITLE: () => TIMESHEET_ENTRY_EDIT_PRICE_WORK_TITLE,
+    TIMESHEET_ENTRY_ID_MAX_LENGTH: () => TIMESHEET_ENTRY_ID_MAX_LENGTH,
     TIMESHEET_ENTRY_REVIEWS_FIELD: () => TIMESHEET_ENTRY_REVIEWS_FIELD,
     TIMESHEET_ENTRY_SAVE_CHANGES_LABEL: () => TIMESHEET_ENTRY_SAVE_CHANGES_LABEL,
     TIMESHEET_EXPORTED_EXTRAS_MESSAGE: () => TIMESHEET_EXPORTED_EXTRAS_MESSAGE,
@@ -1660,6 +1661,7 @@ var ProjectPlannerCanonical = (() => {
     timesheetLateExtraKind: () => timesheetLateExtraKind,
     timesheetLateExtraLabel: () => timesheetLateExtraLabel,
     timesheetLateExtraReviewable: () => timesheetLateExtraReviewable,
+    timesheetLateExtraRowProblem: () => timesheetLateExtraRowProblem,
     timesheetLateExtraRows: () => timesheetLateExtraRows,
     timesheetLateExtrasSnapshotRows: () => timesheetLateExtrasSnapshotRows,
     timesheetLateExtrasSummary: () => timesheetLateExtrasSummary,
@@ -12374,7 +12376,13 @@ var ProjectPlannerCanonical = (() => {
   }
   function timesheetEntryReviewKeyUsable(id2) {
     const value = text12(id2);
-    return value !== "" && !/[.`~*/[\]]/.test(value);
+    return value !== "" && value.length <= TIMESHEET_ENTRY_ID_MAX_LENGTH && !/^__.*__$/.test(value) && !/[.`~*/[\]]/.test(value);
+  }
+  var TIMESHEET_ENTRY_ID_MAX_LENGTH = 200;
+  function timesheetLateExtraRowProblem(row2) {
+    if (!timesheetEntryReviewKeyUsable(row2?.id)) return "id-unusable";
+    if (!text12(row2?.title)) return "no-title";
+    return null;
   }
   function timesheetSignedEntryKeys(sheet, sheetDocId) {
     const keys = /* @__PURE__ */ new Set();
@@ -12465,6 +12473,7 @@ var ProjectPlannerCanonical = (() => {
       const id2 = text12(entry.id);
       if (!id2 || !timesheetEntryReviewKeyUsable(id2)) continue;
       if (entry.lateExtra === true) {
+        if (timesheetLateExtraRowProblem(entry)) continue;
         const key5 = normalizeDocumentId(id2);
         if (input.exported === true || signedIds.has(key5) || lateSeen.has(key5)) continue;
         lateSeen.add(key5);
@@ -12477,7 +12486,7 @@ var ProjectPlannerCanonical = (() => {
       if (late && fingerprint == null) continue;
       let storedKey = input.stored ? reviewKeyFor(stored, id2) : void 0;
       let prior = storedKey != null ? stored[storedKey] : void 0;
-      if (prior && prior.lateExtra !== late) {
+      if (prior && prior.lateExtra === true !== late) {
         if (late) continue;
         if (storedKey !== id2) storedKey = void 0;
         prior = void 0;
@@ -12739,7 +12748,8 @@ var ProjectPlannerCanonical = (() => {
     const id2 = text13(row2.id);
     if (!id2) return ignored("no-id");
     const data = sheet && typeof sheet === "object" ? sheet : {};
-    if (!timesheetEntryReviewKeyUsable(id2)) return ignored("id-unusable");
+    const problem = timesheetLateExtraRowProblem(row2);
+    if (problem) return ignored(problem);
     if (timesheetSignedEntryKeys(data, options.sheetDocId).has(normalizeDocumentId(id2))) return ignored("id-taken");
     const review = timesheetEntryReviewFor(parseTimesheetEntryReviews(data), id2);
     if (!review) return pending("no-review");
@@ -12772,7 +12782,11 @@ var ProjectPlannerCanonical = (() => {
   function parseTimesheetLateExtras(sheetDocId, sheet, options) {
     const data = sheet && typeof sheet === "object" ? sheet : {};
     const rows3 = timesheetLateExtraRows(data, { sheetDocId });
-    const byId = new Map(rows3.map((row2) => [normalizeDocumentId(row2.id), row2]));
+    const byId = /* @__PURE__ */ new Map();
+    for (const row2 of rows3) {
+      const key5 = normalizeDocumentId(row2.id);
+      if (!byId.has(key5)) byId.set(key5, row2);
+    }
     const raw = rowsOf(data[TIMESHEET_LATE_EXTRAS_FIELD]).filter((row2) => timesheetLateExtraKind(row2) && text13(row2.id));
     const parsed = parseTimesheetEntries(
       sheetDocId,
@@ -12904,7 +12918,7 @@ var ProjectPlannerCanonical = (() => {
     if (decision.state === "approved") return TIMESHEET_LATE_EXTRA_APPROVED_LABEL;
     if (decision.state === "declined") return TIMESHEET_LATE_EXTRA_DECLINED_LABEL;
     if (decision.state === "pending") return TIMESHEET_LATE_EXTRA_WAITING_LABEL;
-    if (decision.state === "ignored" && decision.reason === "id-unusable") return TIMESHEET_LATE_EXTRA_ID_UNUSABLE_LABEL;
+    if (decision.state === "ignored" && (decision.reason === "id-unusable" || decision.reason === "no-title")) return TIMESHEET_LATE_EXTRA_ID_UNUSABLE_LABEL;
     if (decision.state === "ignored" && (decision.reason == null || decision.reason === "id-taken")) return TIMESHEET_LATE_EXTRA_ID_TAKEN_LABEL;
     return null;
   }
@@ -13510,7 +13524,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.54.0" : "",
-      sha256: true ? "37516de31916c661c14706b741f0c10e57e58dca72ac2428f91378be13792eca" : ""
+      sha256: true ? "2e56d29d39c111e7e05ad727b7969946518bb37c4a4f1c717f924e6f99042ff6" : ""
     };
   }
   function rulebookVersionLabel(version) {

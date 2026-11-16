@@ -267,7 +267,29 @@ export function timesheetEntryReviewFor(
  */
 export function timesheetEntryReviewKeyUsable(id: unknown): boolean {
   const value = text(id)
-  return value !== '' && !/[.`~*/[\]]/.test(value)
+  // Final check of #337: also never a reserved `__…__` name, and never longer than `TIMESHEET_ENTRY_ID_MAX_LENGTH`
+  // (Firestore refuses field paths near 1,500 bytes; a reviewer's save must never throw on one bad row).
+  return (
+    value !== '' &&
+    value.length <= TIMESHEET_ENTRY_ID_MAX_LENGTH &&
+    !/^__.*__$/.test(value) &&
+    !/[.`~*/[\]]/.test(value)
+  )
+}
+
+/** Final check of #337: the longest entry id that can be a review key (characters; well under Firestore's byte limit). */
+export const TIMESHEET_ENTRY_ID_MAX_LENGTH = 200
+
+/**
+ * Final check of #337: the one test of a late extra's own row shared by the reader (`timesheetLateExtraDecision`, so
+ * its rows, summary and snapshot) and the writer (`timesheetEntryReviewWriteFields`): a row that can be reviewed has a
+ * usable id (`timesheetEntryReviewKeyUsable`) and a title (the entry reader drops an untitled row, so nobody could see
+ * it to decide it). Null when it can; else why not.
+ */
+export function timesheetLateExtraRowProblem(row: Record<string, unknown> | null | undefined): 'id-unusable' | 'no-title' | null {
+  if (!timesheetEntryReviewKeyUsable(row?.id)) return 'id-unusable'
+  if (!text(row?.title)) return 'no-title'
+  return null
 }
 
 /**
@@ -452,6 +474,7 @@ export function timesheetEntryReviewWriteFields(input: {
     const id = text(entry.id)
     if (!id || !timesheetEntryReviewKeyUsable(id)) continue
     if (entry.lateExtra === true) {
+      if (timesheetLateExtraRowProblem(entry)) continue
       const key = normalizeDocumentId(id)
       if (input.exported === true || signedIds.has(key) || lateSeen.has(key)) continue
       lateSeen.add(key)
@@ -465,7 +488,7 @@ export function timesheetEntryReviewWriteFields(input: {
     if (late && fingerprint == null) continue
     let storedKey = input.stored ? reviewKeyFor(stored, id) : undefined
     let prior = storedKey != null ? stored[storedKey] : undefined
-    if (prior && prior.lateExtra !== late) {
+    if (prior && (prior.lateExtra === true) !== late) {
       // A late review never replaces a signed entry's. A signed entry whose id matches a stored late review only
       // without case writes its own review under its exact id (fourth review of #337: a later decision of the signed
       // entry still applies); one stored under its exact id was never a valid late review (that late extra is ignored)

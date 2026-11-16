@@ -66,7 +66,7 @@ export type TimesheetLateExtra =
  * (its id is a signed entry's or an earlier late extra's) is never paid and never offered for review. Read only.
  */
 export type TimesheetLateExtraState = 'approved' | 'declined' | 'pending' | 'ignored'
-export type TimesheetLateExtraReason = 'review' | 'no-review' | 'stale-review' | 'not-late-review' | 'id-taken' | 'id-unusable' | 'no-kind' | 'no-id'
+export type TimesheetLateExtraReason = 'review' | 'no-review' | 'stale-review' | 'not-late-review' | 'id-taken' | 'id-unusable' | 'no-title' | 'no-kind' | 'no-id'
 
 /** Shared with iOS `TimesheetWeeklyReportLabourLine`. `bookingId` is "" when unknown. */
 export type WeeklyReportLabourLine = {

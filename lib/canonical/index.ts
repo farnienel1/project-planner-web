@@ -2180,7 +2180,13 @@ export {
   timesheetExportedFieldSet,
   timesheetOwnerCanAddLateExtras,
 } from './timesheetSnapshot'
-export { timesheetEntryReviewFor, timesheetEntryReviewKeyUsable, timesheetSignedEntryKeys } from './timesheetEntryReviews'
+export {
+  TIMESHEET_ENTRY_ID_MAX_LENGTH,
+  timesheetEntryReviewFor,
+  timesheetEntryReviewKeyUsable,
+  timesheetLateExtraRowProblem,
+  timesheetSignedEntryKeys,
+} from './timesheetEntryReviews'
 // Rulebook 1.54.0 §8 / §13: "Your signed timesheet has changed" (written by the server).
 export {
   TIMESHEET_BOOKINGS_CHANGED_NOTICE_MESSAGE,

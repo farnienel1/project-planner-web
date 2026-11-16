@@ -25,7 +25,7 @@ import type { SignedTimesheetBookingChanges } from './timesheetBookingChanges'
 import {
   parseTimesheetEntryReviews,
   timesheetEntryEffectiveAmount,
-  timesheetEntryReviewKeyUsable,
+  timesheetLateExtraRowProblem,
   timesheetSignedEntryKeys,
   timesheetEntryFingerprint,
   timesheetEntryReviewFor,
@@ -94,7 +94,7 @@ export type TimesheetLateExtraDecisionResult = {
   revisedAmount: number | null
   /** What it pays now (0 unless approved). */
   paid: number
-  reason: 'review' | 'no-review' | 'stale-review' | 'not-late-review' | 'id-taken' | 'id-unusable' | 'no-kind' | 'no-id'
+  reason: 'review' | 'no-review' | 'stale-review' | 'not-late-review' | 'id-taken' | 'id-unusable' | 'no-title' | 'no-kind' | 'no-id'
 }
 
 /**
@@ -158,7 +158,8 @@ export function timesheetLateExtraDecision(
   const data = sheet && typeof sheet === 'object' ? sheet : {}
   // Fourth review of #337: a late extra nobody can decide is ignored, never left waiting — an id that cannot be a review
   // key, or one that matches a signed entry's stored or derived id (without case). The writer refuses both too.
-  if (!timesheetEntryReviewKeyUsable(id)) return ignored('id-unusable')
+  const problem = timesheetLateExtraRowProblem(row)
+  if (problem) return ignored(problem)
   if (timesheetSignedEntryKeys(data, options.sheetDocId).has(normalizeDocumentId(id))) return ignored('id-taken')
   const review = timesheetEntryReviewFor(parseTimesheetEntryReviews(data), id)
   if (!review) return pending('no-review')
@@ -223,7 +224,13 @@ export function parseTimesheetLateExtras(
 ): TimesheetLateExtraEntryDocument[] {
   const data = sheet && typeof sheet === 'object' ? sheet : {}
   const rows = timesheetLateExtraRows(data, { sheetDocId })
-  const byId = new Map(rows.map((row) => [normalizeDocumentId(row.id), row]))
+  // Final check of #337: the FIRST row of an id wins (as in `timesheetLateExtraRows`); a later duplicate never lends the
+  // first its "ignored" decision.
+  const byId = new Map<string, TimesheetLateExtraRow>()
+  for (const row of rows) {
+    const key = normalizeDocumentId(row.id)
+    if (!byId.has(key)) byId.set(key, row)
+  }
   const raw = rowsOf(data[TIMESHEET_LATE_EXTRAS_FIELD]).filter((row) => timesheetLateExtraKind(row) && text(row.id))
   const parsed = parseTimesheetEntries(
     sheetDocId,
@@ -432,7 +439,7 @@ export function timesheetLateExtraLabel(
   if (decision.state === 'approved') return TIMESHEET_LATE_EXTRA_APPROVED_LABEL
   if (decision.state === 'declined') return TIMESHEET_LATE_EXTRA_DECLINED_LABEL
   if (decision.state === 'pending') return TIMESHEET_LATE_EXTRA_WAITING_LABEL
-  if (decision.state === 'ignored' && decision.reason === 'id-unusable') return TIMESHEET_LATE_EXTRA_ID_UNUSABLE_LABEL
+  if (decision.state === 'ignored' && (decision.reason === 'id-unusable' || decision.reason === 'no-title')) return TIMESHEET_LATE_EXTRA_ID_UNUSABLE_LABEL
   if (decision.state === 'ignored' && (decision.reason == null || decision.reason === 'id-taken')) return TIMESHEET_LATE_EXTRA_ID_TAKEN_LABEL
   return null
 }

@@ -589,3 +589,59 @@ test('1.54.0 fourth review of #337 (3): unreviewed signed E1, only late e1 passe
   assert.equal(R.timesheetEntryDecision(after, signed1, 'expense').decision, 'declined')
   assert.equal(invoiceTotal(after), 0)
 })
+
+// Final check of #337, finding 1: late extras nobody can decide are ignored in one place (reader, rows, summary, writer).
+test('1.54.0 final check of #337 (1): duplicates (first wins), untitled rows, __…__ ids and over-long ids never wait', () => {
+  const write = (entries: Record<string, unknown>[]) =>
+    R.timesheetEntryReviewWriteFields({
+      stored: {},
+      entries: entries.map((row) => ({ ...row, managerDecision: 'approved', reviewFingerprint: fpOf(row), lateExtra: true })) as never,
+      reviewedByUserId: LM,
+      reviewedAtMs: 1,
+    })
+  // Duplicates: the first row of an id is reviewable and shows as waiting; the second is ignored — on the reader too.
+  const first = lateExpense('L1', 10)
+  const second = { ...lateExpense('l1', 900), title: 'Second' }
+  const dup = counterSignedSheet({ lateExtras: [first, second] })
+  const parsed = R.parseTimesheetLateExtras('timesheet_u_1', { userId: 'u', ...dup })
+  assert.deepEqual(parsed.map((row) => [row.id, row.lateDecision.state]), [['L1', 'pending']])
+  assert.deepEqual(R.timesheetLateExtraRows(dup).map((row) => row.decision.state), ['pending', 'ignored'])
+  assert.deepEqual(Object.keys(write([first, second])), ['extraEntryReviews.L1'])
+  // Approving the first ends the wait (the duplicate never holds it up).
+  const approved = { ...dup, weeklyReportOverride: null, extraEntryReviews: { ...(dup.extraEntryReviews as object), L1: lateReview(first) } }
+  assert.equal(R.timesheetLateExtrasSummary(approved).pending, 0)
+  // Untitled (blank or spaces), `__…__` and over-long ids: ignored ("can't be reviewed"), never written, never waiting.
+  for (const row of [
+    { ...lateExpense('U1', 5), title: '' },
+    { ...lateExpense('U2', 5), title: '   ' },
+    lateExpense('__name__', 5),
+    lateExpense('x'.repeat(R.TIMESHEET_ENTRY_ID_MAX_LENGTH + 1), 5),
+  ]) {
+    const sheet = counterSignedSheet({ lateExtras: [row] })
+    const decision = R.timesheetLateExtraDecision(sheet, row)
+    assert.equal(decision.state, 'ignored', String(row.id).slice(0, 20))
+    assert.equal(R.timesheetLateExtraLabel(decision), R.TIMESHEET_LATE_EXTRA_ID_UNUSABLE_LABEL)
+    assert.equal(R.timesheetLateExtrasSummary(sheet).waitingForLineManager, false)
+    assert.deepEqual(write([row]), {})
+  }
+  assert.equal(R.timesheetEntryReviewKeyUsable('x'.repeat(R.TIMESHEET_ENTRY_ID_MAX_LENGTH)), true)
+  assert.equal(R.timesheetEntryReviewKeyUsable('__a__'), false)
+  assert.equal(R.timesheetEntryReviewKeyUsable('__a'), true)
+  // A signed entry with an unusable id is skipped by the writer, never a throwing field path.
+  assert.deepEqual(
+    R.timesheetEntryReviewWriteFields({ stored: {}, entries: [{ id: '__x__', title: 'T', amount: 1, managerDecision: 'declined' }] as never, reviewedByUserId: LM, reviewedAtMs: 1 }),
+    {}
+  )
+})
+
+test('1.54.0 final check of #337 (4): a raw stored review map behaves as the parsed one (lateExtra missing = signed)', () => {
+  const signed1 = { id: 'E1', title: 'Hotel', details: '', jobNumber: 'J-1', date: SIGNED, amount: 10 }
+  const raw = { E1: { decision: 'approved', revisedAmount: null, reviewedAmount: 10, reviewedByUserId: LM, reviewedAtMs: 1 } } as never
+  const fields = R.timesheetEntryReviewWriteFields({
+    stored: raw,
+    entries: [{ ...signed1, managerDecision: 'declined' }] as never,
+    reviewedByUserId: LM,
+    reviewedAtMs: 2,
+  })
+  assert.deepEqual(Object.keys(fields), ['extraEntryReviews.E1'])
+})
