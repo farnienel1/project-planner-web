@@ -73,6 +73,7 @@ import { openAnalyticsConsentSettings } from '@/lib/analytics/analyticsConsent'
 import { DeleteAccountRow } from '@/components/settings/DeleteAccountDialog'
 import { MyProfileFigures } from '@/components/settings/MyProfileFigures'
 import { appVersionLabel } from '@/lib/app/appVersion'
+import { SoundsSettingRow } from '@/components/settings/SoundsSettingRow'
 
 // ─── Subpanels ────────────────────────────────────────────────────────────────
 type Panel = SettingsPanel
@@ -641,6 +642,7 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
                 />
               </Link>
             ))}
+            <SoundsSettingRow />
             <DeleteAccountRow />
           </SettingsCard>
         </section>

@@ -70,6 +70,7 @@ import {
   SuccessBanner,
   ErrorBanner,
 } from '@/components/settings/primitives'
+import { feedback } from '@/lib/feedbackSounds/feedback'
 
 function FormSection({ label, children }: { label?: string; children: ReactNode }) {
   return (
@@ -416,8 +417,11 @@ export function AddUserScreen() {
         setSuccess(`${firstName} ${surname} was added. They have no app login and can be booked straight away.`)
         setSaved(true)
         window.setTimeout(() => router.push(backHref), 1800)
+        // Owner decision 10: a ghost create plays userInvited.
+        feedback('userInvited')
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : 'Failed to add this person')
+        feedback('actionRefused')
       } finally {
         setSaving(false)
       }
@@ -557,8 +561,11 @@ export function AddUserScreen() {
 
       setSaved(true)
       window.setTimeout(() => router.push(backHref), 2200)
+      // Owner decision 10: saved with the email failed still plays userInvited (the message says so).
+      feedback('userInvited')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to invite user')
+      feedback('actionRefused')
     } finally {
       setSaving(false)
     }

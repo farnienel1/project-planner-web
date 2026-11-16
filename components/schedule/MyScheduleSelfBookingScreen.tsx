@@ -73,6 +73,7 @@ import { useOrganizationDocument, useOrganizationTimeZone } from '@/lib/stores/o
 import { bookingRequestIdentity } from '@/lib/canonical/bookingSlots'
 import { managerBookingIdentity, uniqueBookingsById } from '@/lib/scheduling/bookingRequestIdentity'
 import { bookingRowText } from '@/lib/scheduling/bookingRowHours'
+import { feedback } from '@/lib/feedbackSounds/feedback'
 
 /** Labour booked onto this person from Book labour. Shown on the week, not removed from here. */
 export type AssignedScheduleBooking = {
@@ -416,8 +417,11 @@ export function MyScheduleSelfBookingScreen({
       }
       setExpandedLoc(null)
       setBookSheetDay(null)
+      // Feedback sounds: one sound for every day written; "already booked" wrote nothing and plays nothing.
+      if (wrote > 0) feedback('bookingSaved')
     } catch (error) {
       flash('error', error instanceof Error ? error.message : 'Could not save booking.')
+      feedback('actionRefused')
     } finally {
       keys.forEach((key) => selfBookInflight.delete(key))
       setBusy(false)
@@ -558,8 +562,10 @@ export function MyScheduleSelfBookingScreen({
     try {
       await deleteManagerSiteBooking(organizationId, booking.id)
       flash('success', 'Booking removed.')
+      feedback('bookingDeleted')
     } catch (error) {
       flash('error', error instanceof Error ? error.message : 'Could not remove booking.')
+      feedback('actionRefused')
     } finally {
       setBusy(false)
     }

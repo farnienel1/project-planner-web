@@ -22,6 +22,7 @@ import { ScheduleQuickSelect } from '@/components/projects/scheduling/ScheduleQu
 import { ScheduleSelectedDates } from '@/components/projects/scheduling/ScheduleSelectedDates'
 import { useScheduleDateRules } from '@/lib/scheduling/useOrganizationPayrollPolicy'
 import type { Project } from '@/types'
+import { feedback } from '@/lib/feedbackSounds/feedback'
 
 export function ScheduleSubcontractorForm({
   project,
@@ -195,8 +196,10 @@ export function ScheduleSubcontractorForm({
         })
       )
       router.push(scheduleBasePath)
+      feedback('bookingSaved')
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to create bookings')
+      feedback('actionRefused')
     } finally {
       setSaving(false)
     }

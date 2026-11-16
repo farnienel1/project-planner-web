@@ -21,6 +21,7 @@ import {
 } from '@/lib/scheduling/bookingSlotRules'
 import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
 import { OvertimeRateField } from '@/components/overtime/OvertimeRateField'
+import { feedback } from '@/lib/feedbackSounds/feedback'
 
 const SLOT_OPTIONS: { value: ScheduleSlotChoice; label: string }[] = [
   { value: 'AM', label: 'Morning (AM)' },
@@ -144,8 +145,11 @@ export function BookingEditSheet({
         ...(overtimeRate !== storedRate ? { otMultiplierOverride: overtimeRate } : {}),
       }, { replaces: allReplacedBookings(choices) })
       onClose()
+      // Feedback sounds: the sheet plays for every parent (they never play themselves).
+      feedback(isNew ? 'bookingSaved' : 'bookingEdited')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save booking')
+      feedback('actionRefused')
     }
   }
 
@@ -158,8 +162,10 @@ export function BookingEditSheet({
     try {
       if (onDelete) await onDelete()
       onClose()
+      if (onDelete) feedback('bookingDeleted')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to delete booking')
+      feedback('actionRefused')
     }
   }
   const showRemove = Boolean(onDelete)

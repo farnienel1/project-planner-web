@@ -64,6 +64,7 @@ import { CreateOvertimeRateField, useCreateOvertimeRateFields } from '@/componen
 import { useOrganizationDocument, useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { webJobAccessViewer } from '@/lib/access/readPlan'
 import { enforcedReadsFor } from '@/lib/access/securitySwitches'
+import { feedback } from '@/lib/feedbackSounds/feedback'
 
 type BookToTab = 'other' | 'projects' | 'smallWorks'
 type ManagerSlot = 'FULL_DAY' | 'AM' | 'PM' | 'CUSTOM_HOURS'
@@ -587,6 +588,8 @@ export function BookLabourFlowScreen({
 
     setSaving(true)
     setErrorBanner(null)
+    // Feedback sounds (guide §4): one sound for the whole party; nothing new written plays nothing (owner decision 4).
+    let wrote = 0
     try {
       for (const person of people) {
         if (usesOperativePath(person, args.locationType, resolvedProject) && resolvedProject) {
@@ -617,6 +620,7 @@ export function BookLabourFlowScreen({
             ...(args.rateFields ?? {}),
             organizationId: organization.id,
           }, { replaces: args.replacedByUserId?.get(person.user.id) })
+          wrote += 1
         } else {
           if (duplicateManager(
             person.user.id,
@@ -642,13 +646,17 @@ export function BookLabourFlowScreen({
             isBreakRemoved: args.breakRemoved === true,
             ...(args.rateFields ?? {}),
           }, { replaces: args.replacedByUserId?.get(person.user.id) })
+          wrote += 1
         }
       }
       closeFlow()
+      if (wrote > 0) feedback('bookingSaved')
     } catch (error) {
       const extra =
         error instanceof IosWriteValidationError && error.issues.length > 0 ? ` ${error.issues.join('; ')}` : ''
       setErrorBanner(`${error instanceof Error ? error.message : 'Could not book'}${extra}`)
+      // Owner decision 3: a party only partly saved plays the error sound.
+      feedback('actionRefused')
     } finally {
       setSaving(false)
     }

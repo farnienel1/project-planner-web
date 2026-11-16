@@ -2,16 +2,20 @@ export function Toggle({
   checked,
   onChange,
   disabled,
+  ariaLabel,
 }: {
   checked: boolean
   onChange: (v: boolean) => void
   disabled?: boolean
+  /** The switch's name for screen readers, when no visible label is tied to it. */
+  ariaLabel?: string
 }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
+      aria-label={ariaLabel}
       disabled={disabled}
       onClick={() => !disabled && onChange(!checked)}
       data-hue="blue"
