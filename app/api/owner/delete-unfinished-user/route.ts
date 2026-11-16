@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { clientIp, enforceRateLimit, isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
 import { requireOwner, writeAuditLog, writeAuditLogOrThrow } from '@/lib/owner/requireOwner'
+import { bearerToken, firestoreDelete, firestoreGet, restFieldsToPlain } from '@/lib/owner/firestoreRest'
 import {
-  bearerToken,
-  firestoreDelete,
-  firestoreGet,
-  firestoreListCollection,
-  restFieldsToPlain,
-} from '@/lib/owner/firestoreRest'
+  adminCountCollection,
+  adminLookupAuthCreatedAtMs,
+  firebaseAdminConfigured,
+} from '@/lib/owner/identityToolkitAdmin'
+import { documentOrganizationId } from '@/lib/canonical/peopleDocuments'
 import { abandonedSignupCutoff } from '@/lib/owner/unfinishedSetup'
 import {
   unfinishedUserDeleteDecision,
@@ -28,6 +28,14 @@ export async function POST(request: NextRequest) {
   const uid = (body.value.uid || '').trim()
   if (!uid) return jsonError('uid is required', 400)
   if (!DOC_ID.test(uid)) return jsonError('uid is not valid', 400)
+  // The security rules let only the person list their own `orgMemberships`, so the owner's token can never
+  // prove "not a member anywhere" (review of #340). That, and the Auth creation time, need the server key.
+  if (!firebaseAdminConfigured()) {
+    return jsonError(
+      'Deleting unfinished sign-ups is not available until the server key (FIREBASE_SERVICE_ACCOUNT_JSON) is set up. Nothing was deleted.',
+      501
+    )
+  }
   const token = bearerToken(request)
 
   // Owner console audit H2: re-check on the server that this really is an unfinished sign-up.
@@ -41,10 +49,14 @@ export async function POST(request: NextRequest) {
   }
   const user = restFieldsToPlain(userFields)
 
-  const organizationId = typeof user.organizationId === 'string' ? user.organizationId.trim() : ''
+  // The rulebook reader: an id, a path or a reference. A stored value it can't read is unreadable, never "none".
+  const rawOrganizationId = user.organizationId
+  const hasStoredOrganization =
+    rawOrganizationId != null && !(typeof rawOrganizationId === 'string' && rawOrganizationId.trim() === '')
+  const organizationId = hasStoredOrganization ? documentOrganizationId(rawOrganizationId) || '' : ''
   let homeOrg: UnfinishedUserDeleteInput['homeOrg'] = { state: 'none' }
-  if (organizationId) {
-    if (!DOC_ID.test(organizationId)) {
+  if (hasStoredOrganization) {
+    if (!organizationId || !DOC_ID.test(organizationId)) {
       homeOrg = { state: 'unreadable' }
     } else {
       try {
@@ -58,13 +70,19 @@ export async function POST(request: NextRequest) {
 
   let memberships: UnfinishedUserDeleteInput['memberships']
   try {
-    const rows = await firestoreListCollection(token, `users/${uid}/orgMemberships`, 1)
-    memberships = { state: 'read', count: rows.length }
+    memberships = { state: 'read', count: await adminCountCollection(`users/${uid}/orgMemberships`, 1) }
   } catch {
     memberships = { state: 'unreadable' }
   }
 
-  const decision = unfinishedUserDeleteDecision({ uid, user, homeOrg, memberships, nowMs: Date.now() })
+  let authAccount: UnfinishedUserDeleteInput['authAccount']
+  try {
+    authAccount = { state: 'read', createdAtMs: await adminLookupAuthCreatedAtMs(uid) }
+  } catch {
+    authAccount = { state: 'unreadable' }
+  }
+
+  const decision = unfinishedUserDeleteDecision({ uid, user, homeOrg, memberships, authAccount, nowMs: Date.now() })
   if (!decision.allowed) return jsonError(decision.reason, decision.status)
 
   const email = typeof user.email === 'string' ? user.email : ''
@@ -72,7 +90,12 @@ export async function POST(request: NextRequest) {
     actorUid: owner.uid,
     targetUserId: uid,
     targetOrgId: organizationId || undefined,
-    before: { email, organizationId, passwordSet: user.passwordSet === true },
+    before: {
+      email,
+      organizationId,
+      passwordSet: user.passwordSet === true,
+      authCreatedAt: authAccount.state === 'read' && authAccount.createdAtMs ? new Date(authAccount.createdAtMs).toISOString() : null,
+    },
     reason: `abandoned-or-orphan cleanup after ${abandonedSignupCutoff().toISOString()}`,
     ip: clientIp(request),
   }

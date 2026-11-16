@@ -4,15 +4,19 @@ import { PLATFORM_OWNER_EMAIL } from '../canonical/passwordPolicy.ts'
 import { unfinishedUserDeleteDecision, type UnfinishedUserDeleteInput } from './unfinishedUserDelete.ts'
 
 const now = Date.parse('2026-11-16T09:00:00.000Z')
-const fourteenMonthsAgo = new Date(Date.parse('2025-09-16T09:00:00.000Z'))
-const lastWeek = new Date(now - 7 * 24 * 60 * 60 * 1000)
+const fourteenMonthsAgoMs = Date.parse('2025-09-16T09:00:00.000Z')
+const lastWeekMs = now - 7 * 24 * 60 * 60 * 1000
 
-/** An abandoned founder: password set 14 months ago, an unnamed organisation of their own, no memberships. */
+/**
+ * An abandoned founder: password set, Firebase Auth account created 14 months ago (read on the server),
+ * an unnamed organisation of their own, no memberships.
+ */
 const abandoned: UnfinishedUserDeleteInput = {
   uid: 'u1',
-  user: { email: 'gone@example.com', passwordSet: true, organizationId: 'org-1', createdAt: fourteenMonthsAgo },
+  user: { email: 'gone@example.com', passwordSet: true, organizationId: 'org-1' },
   homeOrg: { state: 'found', fields: { name: '', creatorUserId: 'u1', members: { u1: 'admin' } } },
   memberships: { state: 'read', count: 0 },
+  authAccount: { state: 'read', createdAtMs: fourteenMonthsAgoMs },
   nowMs: now,
 }
 
@@ -27,7 +31,7 @@ test('H2: an abandoned unfinished sign-up may be deleted', () => {
   assert.equal(refused({ ...abandoned, homeOrg: { state: 'missing' } }), null)
   // never set a password: recent is fine
   assert.equal(
-    refused({ ...abandoned, user: { ...abandoned.user!, passwordSet: false, createdAt: lastWeek } }),
+    refused({ ...abandoned, user: { ...abandoned.user!, passwordSet: false }, authAccount: { state: 'read', createdAtMs: lastWeekMs } }),
     null
   )
 })
@@ -50,8 +54,28 @@ test('H2: an unfinished organisation that has other members is refused', () => {
 })
 
 test('H2: a recent sign-up who set a password is refused (not abandoned yet)', () => {
-  assert.equal(refused({ ...abandoned, user: { ...abandoned.user!, createdAt: lastWeek } }), 409)
-  assert.equal(refused({ ...abandoned, user: { ...abandoned.user!, createdAt: undefined } }), 409)
+  assert.equal(refused({ ...abandoned, authAccount: { state: 'read', createdAtMs: lastWeekMs } }), 409)
+})
+
+test('review #340: the 12-month age is the Firebase Auth creation time, never the client-written createdAt', () => {
+  // A client-written users.createdAt from long ago does not make a new account deletable.
+  const forged = {
+    ...abandoned,
+    user: { ...abandoned.user!, createdAt: new Date(fourteenMonthsAgoMs) },
+    authAccount: { state: 'read' as const, createdAtMs: lastWeekMs },
+  }
+  assert.equal(refused(forged), 409)
+  // Password set but no Auth account (age unknown): refused.
+  assert.equal(refused({ ...abandoned, authAccount: { state: 'read', createdAtMs: null } }), 409)
+  assert.equal(refused({ ...abandoned, authAccount: { state: 'unreadable' } }), 503)
+})
+
+test('review #340: a missing or non-boolean passwordSet is not deletable', () => {
+  const { passwordSet: _drop, ...noFlag } = abandoned.user!
+  void _drop
+  assert.equal(refused({ ...abandoned, user: noFlag }), 409)
+  assert.equal(refused({ ...abandoned, user: { ...abandoned.user!, passwordSet: 'false' } }), 409)
+  assert.equal(refused({ ...abandoned, user: { ...abandoned.user!, passwordSet: null } }), 409)
 })
 
 test('H2: a ghost operative is a live person and is refused', () => {

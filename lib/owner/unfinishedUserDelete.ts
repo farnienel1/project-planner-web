@@ -1,6 +1,5 @@
 import { isPlatformOwnerEmail } from '@/lib/canonical/passwordPolicy'
 import { abandonedSignupCutoff, isUnfinishedSetupName } from '@/lib/owner/unfinishedSetup'
-import { timestampMs } from '@/lib/security/requireOrgAccess'
 
 /** What the server read for one "delete unfinished sign-up" request (owner console audit H2). */
 export type UnfinishedUserDeleteInput = {
@@ -13,8 +12,13 @@ export type UnfinishedUserDeleteInput = {
     | { state: 'missing' }
     | { state: 'unreadable' }
     | { state: 'found'; fields: Record<string, unknown> }
-  /** `users/{uid}/orgMemberships`. */
+  /** `users/{uid}/orgMemberships`, read with the server key (the rules refuse the owner's token this list). */
   memberships: { state: 'read'; count: number } | { state: 'unreadable' }
+  /**
+   * The Firebase Auth account, read on the server with the server key. `createdAtMs: null` = no Auth account.
+   * The 12-month age uses this, never the client-written `users.createdAt` (review of #340).
+   */
+  authAccount: { state: 'read'; createdAtMs: number | null } | { state: 'unreadable' }
   nowMs: number
 }
 
@@ -29,8 +33,9 @@ function refuse(status: 400 | 404 | 409 | 503, reason: string): UnfinishedUserDe
 /**
  * Server re-check before the owner deletes an "unfinished sign-up" (owner console PLAN §5, PR 0):
  * no organisation, or only an unfinished one of their own; not a member anywhere; and either the password
- * was never set, or the sign-up is more than 12 months old (`abandonedSignupCutoff`). Anything that could
- * not be read refuses — a failed read never makes a live person look unfinished.
+ * was never set (`passwordSet` stored exactly `false`), or the Firebase Auth account is more than 12 months
+ * old (`abandonedSignupCutoff`). Anything that could not be read, and a missing `passwordSet`, refuses — a
+ * failed read never makes a live person look unfinished.
  */
 export function unfinishedUserDeleteDecision(input: UnfinishedUserDeleteInput): UnfinishedUserDeleteDecision {
   const user = input.user
@@ -63,12 +68,17 @@ export function unfinishedUserDeleteDecision(input: UnfinishedUserDeleteInput): 
     }
   }
 
-  if (user.passwordSet === true) {
-    const createdAtMs = timestampMs(user.createdAt)
-    const cutoffMs = abandonedSignupCutoff(new Date(input.nowMs)).getTime()
-    if (createdAtMs == null || createdAtMs <= 0 || createdAtMs > cutoffMs) {
-      return refuse(409, 'This sign-up is less than 12 months old. Nothing was deleted.')
-    }
+  if (user.passwordSet === false) return { allowed: true }
+  if (user.passwordSet !== true) {
+    return refuse(409, 'Could not tell whether this sign-up was finished (no password flag). Nothing was deleted.')
+  }
+  if (input.authAccount.state === 'unreadable') {
+    return refuse(503, 'Could not read this person’s login. Nothing was deleted.')
+  }
+  const createdAtMs = input.authAccount.createdAtMs
+  const cutoffMs = abandonedSignupCutoff(new Date(input.nowMs)).getTime()
+  if (createdAtMs == null || createdAtMs > cutoffMs) {
+    return refuse(409, 'This login is less than 12 months old, or its age is unknown. Nothing was deleted.')
   }
   return { allowed: true }
 }

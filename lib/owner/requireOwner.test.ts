@@ -2,7 +2,7 @@ import { afterEach, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { NextRequest, NextResponse } from 'next/server'
 import { PLATFORM_OWNER_EMAIL } from '../canonical/passwordPolicy.ts'
-import { encodeSigned } from '../auth/mfa/mfaCookies.ts'
+import { encodeMfaOk, encodeSigned } from '../auth/mfa/mfaCookies.ts'
 import { mfaCookieName, shouldSecureMfaCookies } from '../auth/mfa/mfaCookiePolicy.ts'
 import { requireOwner } from './requireOwner.ts'
 
@@ -50,22 +50,22 @@ test('H1: the verified owner without an MFA cookie is refused by owner routes', 
 
 test('H1: an MFA cookie for another uid is refused', async () => {
   signIn(owner)
-  const cookie = encodeSigned({ uid: 'someone-else', exp: fresh() })
+  const cookie = encodeMfaOk('someone-else', fresh())
   assert.equal(await status(await requireOwner(ownerRequest(cookie))), 403)
 })
 
 test('H1: an expired or tampered MFA cookie is refused', async () => {
   signIn(owner)
-  const expired = encodeSigned({ uid: 'owner-uid', exp: Date.now() - 1 })
+  const expired = encodeMfaOk('owner-uid', Date.now() - 1)
   assert.equal(await status(await requireOwner(ownerRequest(expired))), 403)
-  const valid = encodeSigned({ uid: 'owner-uid', exp: fresh() })
+  const valid = encodeMfaOk('owner-uid', fresh())
   const [payload] = valid.split('.')
   assert.equal(await status(await requireOwner(ownerRequest(`${payload}.forged`))), 403)
 })
 
 test('H1: the verified owner with their own valid MFA cookie is allowed', async () => {
   signIn(owner)
-  const cookie = encodeSigned({ uid: 'owner-uid', exp: fresh() })
+  const cookie = encodeMfaOk('owner-uid', fresh())
   const result = await requireOwner(ownerRequest(cookie))
   assert.equal(await status(result), 'ok')
   assert.equal((result as { uid: string }).uid, 'owner-uid')
@@ -73,12 +73,31 @@ test('H1: the verified owner with their own valid MFA cookie is allowed', async 
 
 test('a non-owner with a valid MFA cookie is still refused', async () => {
   signIn({ localId: 'u2', email: 'someone@example.com', emailVerified: true })
-  const cookie = encodeSigned({ uid: 'u2', exp: fresh() })
+  const cookie = encodeMfaOk('u2', fresh())
   assert.equal(await status(await requireOwner(ownerRequest(cookie))), 403)
 })
 
 test('the owner email unverified is still refused', async () => {
   signIn({ ...owner, emailVerified: false })
-  const cookie = encodeSigned({ uid: 'owner-uid', exp: fresh() })
+  const cookie = encodeMfaOk('owner-uid', fresh())
   assert.equal(await status(await requireOwner(ownerRequest(cookie))), 403)
+})
+
+test('review #340: a challenge cookie copied into the ok cookie is refused', async () => {
+  signIn(owner)
+  const challenge = encodeSigned({
+    kind: 'challenge',
+    uid: 'owner-uid',
+    email: 'x@example.com',
+    codeHash: 'h',
+    exp: fresh(),
+    attempts: 0,
+    lastSentAt: Date.now(),
+  })
+  assert.equal(await status(await requireOwner(ownerRequest(challenge))), 403)
+})
+
+test('review #340: an ok cookie signed before the purpose field (no kind) is refused', async () => {
+  signIn(owner)
+  assert.equal(await status(await requireOwner(ownerRequest(encodeSigned({ uid: 'owner-uid', exp: fresh() })))), 403)
 })

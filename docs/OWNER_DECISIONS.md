@@ -720,7 +720,7 @@ UI only, web only (`docs/design/user-profile-ui/user-profile-ui-spec.md`; branch
 
 | Date | Decision | Status |
 |---|---|---|
-| 16 Nov | **Go PR 0 (security hotfix), C3 included.** Every 2FA skip on `grant-setup` (owner, `accountConfirmed: false`, a just-used invitation, a just-created organisation) applies only while the caller's own Firebase Auth account is under 24 hours old, read on the server from Firebase Auth (C1, C2, C3); every owner API route checks the signed 2FA cookie for the same account (H1); "Delete unfinished sign-up" re-checks on the server, refuses live people, and writes its audit entry before deleting (H2). Rules hardening for C2 / C3 (refuse self-writes of `accountConfirmed`, check an organisation's `createdAt`) is a follow-up after #334. Nothing else from the console plan is approved yet. | done web (branch w-console-pr0-mfa); iOS n/a (uses none of these routes) |
+| 16 Nov | **16 Nov: go PR 0 incl. C3.** Every 2FA skip on `grant-setup` (owner, `accountConfirmed: false`, a just-used invitation, a just-created organisation) applies only while the caller's own Firebase Auth account is under 24 hours old, read on the server from Firebase Auth (C1, C2, C3); every owner API route checks the signed 2FA cookie for the same account (H1), and a signed cookie now carries its purpose, so a code-request (challenge) cookie can never pass as a passed 2FA check (review of #340; everyone enters the code once after the deploy); "Delete unfinished sign-up" re-checks on the server (memberships and the login's age read with the server key; refused with a clear message until it is set up), refuses live people, and writes its audit entry before deleting (H2). Rules hardening for C2 / C3 is a follow-up after #334. Nothing else from the console plan is approved yet. | done web (PR #340); iOS n/a (uses none of these routes) |
 
 ## Owner console decisions (16 Nov)
 
@@ -746,15 +746,14 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 | 16 Nov | **D16 — feedback copies in customers' users docs (`ppIdea*`):** Stop writing them, keep reading for one release, then a clean-up script; a separate PR after the console. | decided |
 | 16 Nov | **D17 — releases & switches editing:** Read-only now; editing later with confirm + audit, one switch at a time. | decided |
 | 16 Nov | **Rules space:** **Reclaim**: make room in `firestore.rules` by deleting dead rules and moving long comments to `docs/`. The byte limit is **not** raised. | decided |
-| 16 Nov | **Go PR 0:** 16 Nov: go PR 0 incl. C3. | decided |
 
-## PR 0 judgement calls (owner to confirm)
+## PR 0 judgement calls
 
 | Date | Choice | Status |
 |---|---|---|
-| 16 Nov | An existing account (over 24 hours old) that accepts an invitation to another company or founds a second company now enters the emailed code once, like any other sign-in. | done, owner to confirm |
-| 16 Nov | The 2FA cookie check also covers the register-interest owner routes (`/api/interest/registrations`), which use the same owner check. | done, owner to confirm |
-| 16 Nov | "Delete unfinished sign-up" also refuses a ghost operative, and anyone whose unfinished organisation has other members. | done, owner to confirm |
+| 16 Nov | An existing account (over 24 hours old) that accepts an invitation to another company or founds a second company now enters the emailed code once, like any other sign-in. | done, owner OK 16 Nov |
+| 16 Nov | The 2FA cookie check also covers the register-interest owner routes (`/api/interest/registrations`), which use the same owner check. | done, owner OK 16 Nov |
+| 16 Nov | "Delete unfinished sign-up" also refuses a ghost operative, and anyone whose unfinished organisation has other members (half-set-up organisations with other people in them). | done, owner OK 16 Nov |
 
 ## Open questions for the owner
 

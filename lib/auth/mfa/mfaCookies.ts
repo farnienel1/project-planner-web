@@ -31,7 +31,13 @@ export const MFA_RESEND_MS = 8 * 1000
 export const MFA_MAX_ATTEMPTS = 5
 export const MFA_OK_TTL_MS = 12 * 60 * 60 * 1000
 
+/**
+ * Every signed MFA cookie carries its purpose (review of #340): the challenge and the ok cookie are signed with
+ * the same key, so without `kind` a challenge (issued before any code is entered) could be copied into the ok
+ * cookie. Readers require the kind they expect; a cookie without one (signed before this field) is refused.
+ */
 export type MfaChallenge = {
+  kind: 'challenge'
   uid: string
   email: string
   codeHash: string
@@ -42,6 +48,7 @@ export type MfaChallenge = {
 }
 
 export type MfaOk = {
+  kind: 'ok'
   uid: string
   exp: number
 }
@@ -68,6 +75,30 @@ export function decodeSigned<T>(raw?: string | null): T | null {
   } catch {
     return null
   }
+}
+
+export function encodeMfaOk(uid: string, exp: number): string {
+  const ok: MfaOk = { kind: 'ok', uid, exp }
+  return encodeSigned(ok)
+}
+
+/** A valid, unexpired ok cookie — never a challenge, never a cookie signed before the purpose field. */
+export function decodeMfaOk(raw: string | null | undefined, nowMs = Date.now()): MfaOk | null {
+  const value = decodeSigned<Partial<MfaOk> & { kind?: unknown }>(raw)
+  if (!value || value.kind !== 'ok') return null
+  if (typeof value.uid !== 'string' || !value.uid) return null
+  if (typeof value.exp !== 'number' || !(value.exp > nowMs)) return null
+  return { kind: 'ok', uid: value.uid, exp: value.exp }
+}
+
+/** A challenge cookie — never an ok cookie. Expiry is left to the caller (it answers "expired" itself). */
+export function decodeMfaChallenge(raw: string | null | undefined): MfaChallenge | null {
+  const value = decodeSigned<Partial<MfaChallenge> & { kind?: unknown }>(raw)
+  if (!value || value.kind !== 'challenge') return null
+  if (typeof value.uid !== 'string' || !value.uid) return null
+  if (typeof value.codeHash !== 'string' || typeof value.email !== 'string') return null
+  if (typeof value.exp !== 'number') return null
+  return value as MfaChallenge
 }
 
 export function hashMfaCode(code: string, uid: string): string {
