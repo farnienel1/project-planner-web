@@ -69,6 +69,7 @@ import {
   managerAdjustmentRows,
   showsTimesheetAdjustment,
   draftPayrollLineReview,
+  draftStoredExported,
 } from '@/lib/timesheets/timesheetAdjustments'
 import { timesheetDayKeysForPeriod } from '@/lib/timesheets/timesheetPayrollPolicy'
 import {
@@ -151,6 +152,7 @@ import {
   timesheetOwnerCanAddLateExtras,
   timesheetEntryEffectiveAmount,
   timesheetLateExtraLabel,
+  timesheetLateExtraReviewable,
   TIMESHEET_LATE_EXTRA_ADD_CONFIRM_MESSAGE,
   TIMESHEET_LATE_EXTRA_WAITING_LABEL,
   TIMESHEET_LATE_EXTRAS_REVIEWER_MESSAGE,
@@ -1455,7 +1457,10 @@ export function TimesheetPeriodPage({
                 evidence: item.evidence ?? [],
                 legacyReceipt: null,
                 statusLabel: timesheetLateExtraLabel({
-                  state: item.managerDecision === 'pending' ? 'pending' : item.managerDecision === 'declined' ? 'declined' : 'approved',
+                  state:
+                    item.lateState ??
+                    (item.managerDecision === 'pending' ? 'pending' : item.managerDecision === 'declined' ? 'declined' : 'approved'),
+                  reason: item.lateReason,
                 }),
               }))}
               managerHasSigned
@@ -2252,16 +2257,24 @@ function ReviewExtras({
   ) => void
 }) {
   const lateExtras = draft.lateExtras ?? []
+  // Rulebook 1.54.0 (third review of #337): an exported sheet's late extras are frozen, and an ignored one (its id is a
+  // signed entry's) is never decided (`timesheetLateExtraReviewable`).
+  const lateExported = draftStoredExported(draft)
   if (draft.expenseEntries.length === 0 && draft.priceWorkEntries.length === 0 && lateExtras.length === 0) return null
   return (
     <>
       {lateExtras.length > 0 ? (
-        <Card title={canReview ? 'Added after sign-off — your decision' : 'Added after sign-off'}>
-          <div className="pu-card-b" style={{ paddingBottom: 0 }}>
-            <Note tone="amber">{TIMESHEET_LATE_EXTRAS_REVIEWER_MESSAGE}</Note>
-          </div>
+        <Card title={canReview && !lateExported ? 'Added after sign-off — your decision' : 'Added after sign-off'}>
+          {!lateExported ? (
+            <div className="pu-card-b" style={{ paddingBottom: 0 }}>
+              <Note tone="amber">{TIMESHEET_LATE_EXTRAS_REVIEWER_MESSAGE}</Note>
+            </div>
+          ) : null}
           <div className="pu-list">
             {lateExtras.map((entry, index) => {
+              const reviewable = timesheetLateExtraReviewable({ state: entry.lateState ?? 'pending' }, { exported: lateExported })
+              const ignoredLabel =
+                entry.lateState === 'ignored' ? timesheetLateExtraLabel({ state: 'ignored', reason: entry.lateReason }) : null
               const removed = entry.managerDecision === 'declined'
               const when = entry.kind === 'priceWork' ? entry.startDate : entry.date
               return (
@@ -2275,14 +2288,20 @@ function ReviewExtras({
                       {entry.evidence?.length ? ` · ${claimEvidenceCountText(entry.evidence.length)}` : ''}
                     </span>
                     <EvidenceLinks evidence={entry.evidence} />
-                    {entry.managerDecision === 'pending' ? (
+                    {ignoredLabel ? (
+                      <span style={{ display: 'inline-block', marginTop: 4 }}>
+                        <Chip tone="amber">{ignoredLabel}</Chip>
+                      </span>
+                    ) : entry.managerDecision === 'pending' && reviewable ? (
                       <span style={{ display: 'inline-block', marginTop: 4 }}>
                         <Chip tone="amber">Waiting for your decision</Chip>
                       </span>
                     ) : null}
-                    <LiveReviewExtraAmount amount={entry.amount} decision={entry.managerDecision} revisedAmount={entry.managerRevisedAmount} />
+                    {ignoredLabel ? null : (
+                      <LiveReviewExtraAmount amount={entry.amount} decision={entry.managerDecision} revisedAmount={entry.managerRevisedAmount} />
+                    )}
                   </span>
-                  {canReview ? (
+                  {canReview && reviewable ? (
                     <TickCross
                       decision={entry.managerDecision}
                       undecided={entry.managerDecision === 'pending'}

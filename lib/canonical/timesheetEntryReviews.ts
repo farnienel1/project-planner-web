@@ -319,6 +319,10 @@ export function timesheetEntryDecision(
     const review = id ? reviewFor(reviews, id) : undefined
     if (!review) {
       base = { decision: 'approved', revisedAmount: null, source: 'unreviewed' }
+    } else if (review.lateExtra) {
+      // 1.54.0 (third review of #337): a review written for a late extra is never a signed entry's review, even under
+      // the same id in another letter case (`timesheetEntryReviewWriteFields` refuses to write one there).
+      base = { decision: 'pending', revisedAmount: null, source: 'stale-review' }
     } else if (
       review.reviewedFingerprint != null &&
       review.reviewedFingerprint !== rowFingerprint(row, kind ?? entryKindInSheet(sheet, id, row.startDate != null ? 'priceWork' : 'expense'), trustedFingerprint)
@@ -374,13 +378,43 @@ export function timesheetEntryReviewWriteFields(input: {
   entries: readonly TimesheetEntryReviewInput[]
   reviewedByUserId: string
   reviewedAtMs: number
+  /**
+   * 1.54.0 (third review of #337): the stored document's `exportedAt` is set (`timesheetExportedFieldSet`). An exported
+   * sheet's late extras are frozen: no late extra's decision is written.
+   */
+  exported?: boolean | null
+  /**
+   * 1.54.0 (third review of #337): the ids of the signed entries (`priceWorkEntries` / `expenseEntries`) when `entries`
+   * does not list them all. The signed entries in `entries` always count.
+   */
+  signedEntryIds?: ReadonlyArray<unknown> | null
 }): Record<string, Record<string, unknown>> {
   const stored = input.stored || {}
   const reviewer = text(input.reviewedByUserId)
   const output: Record<string, Record<string, unknown>> = {}
+  // 1.54.0 (third review of #337): a late extra and a signed entry never share a review. A late extra whose id is a
+  // signed entry's (ids without case), or an earlier late extra's, is never written (it is ignored for pay,
+  // `timesheetLateExtraDecision`); and a stored review is never overwritten by the other kind (a late extra's review
+  // never replaces a signed entry's, and the reverse).
+  const signedIds = new Set<string>()
+  for (const raw of input.signedEntryIds ?? []) {
+    const key = normalizeDocumentId(raw)
+    if (key) signedIds.add(key)
+  }
+  for (const entry of input.entries) {
+    if (entry.lateExtra === true) continue
+    const key = normalizeDocumentId(entry.id)
+    if (key) signedIds.add(key)
+  }
+  const lateSeen = new Set<string>()
   for (const entry of input.entries) {
     const id = text(entry.id)
     if (!id || /[.`~*/[\]]/.test(id)) continue
+    if (entry.lateExtra === true) {
+      const key = normalizeDocumentId(id)
+      if (input.exported === true || signedIds.has(key) || lateSeen.has(key)) continue
+      lateSeen.add(key)
+    }
     const decision = parseTimesheetEntryDecision(entry.managerDecision)
     const revisedAmount = decision === 'edited' ? finite(entry.managerRevisedAmount) : null
     const amount = finite(entry.amount) ?? 0
@@ -390,6 +424,7 @@ export function timesheetEntryReviewWriteFields(input: {
     if (late && fingerprint == null) continue
     const storedKey = input.stored ? reviewKeyFor(stored, id) : undefined
     const prior = storedKey != null ? stored[storedKey] : undefined
+    if (prior && prior.lateExtra !== late) continue
     // Whether the stored review still applies to the entry as stored (the reader's rule, `timesheetEntryDecision`).
     const priorCurrent =
       prior != null &&

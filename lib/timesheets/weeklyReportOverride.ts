@@ -17,6 +17,7 @@ import {
   isPayrollLineRemoved,
   draftPayrollLineReview,
   draftEntryFingerprints,
+  draftStoredExported,
   timesheetSheetFields,
 } from '@/lib/timesheets/timesheetAdjustments'
 import { bookingIdFromLineId } from '@/lib/timesheets/payrollLineBookingLookup'
@@ -422,6 +423,9 @@ export function applyWeeklyReportOverride(input: WeeklyReportOverrideInput): Tim
     return { ...input.draft, weeklyReportOverride: null }
   }
   const existing = input.draft.weeklyReportOverride
+  // Rulebook 1.54.0 (third review of #337): an exported sheet with late extras is frozen — no review re-prices its
+  // snapshot and no late extra joins or leaves it (the security rules refuse those writes once `exportedAt` is stored).
+  if (existing && draftStoredExported(input.draft) && (input.draft.lateExtras?.length ?? 0) > 0) return input.draft
   if (existing && input.rebuildSnapshot === true && !input.draft.exportedAt) {
     return { ...input.draft, weeklyReportOverride: makeOverride(input) }
   }

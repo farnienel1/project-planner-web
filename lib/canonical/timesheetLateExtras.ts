@@ -45,6 +45,11 @@ export type TimesheetLateExtraKind = 'priceWork' | 'expense'
 export const TIMESHEET_LATE_EXTRA_WAITING_LABEL = 'Added after sign-off — waiting for your line manager'
 export const TIMESHEET_LATE_EXTRA_APPROVED_LABEL = 'Added after sign-off — approved'
 export const TIMESHEET_LATE_EXTRA_DECLINED_LABEL = 'Added after sign-off — declined'
+/**
+ * Third review of #337: a late extra whose id is a signed entry's id (ids without case) or another late extra's is never
+ * paid and never reviewed; both sides see this instead of a decision.
+ */
+export const TIMESHEET_LATE_EXTRA_ID_TAKEN_LABEL = "Can't be reviewed — same reference as a signed item"
 /** The reviewer's prompt while late extras wait for them. */
 export const TIMESHEET_LATE_EXTRAS_REVIEWER_MESSAGE =
   'Price work or expenses were added after this timesheet was signed. Approve or decline each one — only what you approve is paid.'
@@ -86,6 +91,28 @@ export type TimesheetLateExtraDecisionResult = {
   /** What it pays now (0 unless approved). */
   paid: number
   reason: 'review' | 'no-review' | 'stale-review' | 'not-late-review' | 'id-taken' | 'no-kind' | 'no-id'
+}
+
+/**
+ * Third review of #337: the key a late extra's trusted fingerprint is kept under in an app's fingerprint map (`late:` +
+ * the id without case), so a late extra and a signed entry whose ids differ only by letter case never share (or replace)
+ * each other's fingerprint. Signed entries keep the plain key (`timesheetEntryFingerprintMap`).
+ */
+export function timesheetLateExtraFingerprintKey(id: unknown): string {
+  return `late:${normalizeDocumentId(id)}`
+}
+
+/** The reader's fingerprints for an app's loaded late extras, under `timesheetLateExtraFingerprintKey`. */
+export function timesheetLateExtraFingerprintMap(
+  entries: ReadonlyArray<{ id?: unknown; reviewFingerprint?: unknown } | null | undefined> | null | undefined
+): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const entry of entries || []) {
+    const id = text(entry?.id)
+    const fingerprint = text(entry?.reviewFingerprint)
+    if (id && fingerprint) out[timesheetLateExtraFingerprintKey(id)] = fingerprint
+  }
+  return out
 }
 
 function signedEntryIds(sheet: Record<string, unknown>): Set<string> {
@@ -169,7 +196,7 @@ export function timesheetLateExtraRows(
     const id = text(row.id)
     if (!kind || !id) continue
     const key = normalizeDocumentId(id)
-    const trusted = options.entryFingerprints ? options.entryFingerprints[key] ?? null : null
+    const trusted = options.entryFingerprints ? options.entryFingerprints[timesheetLateExtraFingerprintKey(id)] ?? null : null
     const decision = seen.has(key)
       ? ({ state: 'ignored', decision: 'pending', revisedAmount: null, paid: 0, reason: 'id-taken' } as const)
       : timesheetLateExtraDecision(data, row, trusted)
@@ -258,13 +285,39 @@ export function timesheetLateExtrasSnapshotRows(
       date: late.kind === 'priceWork' ? late.row.startDate ?? late.row.date : late.row.date,
       amount: late.decision.paid,
       decision: late.decision.decision === 'edited' ? ('edited' as const) : ('approved' as const),
-      entryFingerprint: options.entryFingerprints?.[normalizeDocumentId(late.id)] || timesheetEntryFingerprint(late.row, late.kind),
+      entryFingerprint: options.entryFingerprints?.[timesheetLateExtraFingerprintKey(late.id)] || timesheetEntryFingerprint(late.row, late.kind),
       lateExtra: true as const,
     }
     if (late.kind === 'priceWork') priceWork.push(row)
     else expenses.push(row)
   }
   return { priceWork, expenses }
+}
+
+/**
+ * Third review of #337: a signed snapshot's money rows as a report may count them while late extras wait for the line
+ * manager. A row marked `lateExtra` counts only while that late extra is still approved at the same pennies (an edited,
+ * deleted or declined late extra leaves the snapshot only at the reviewer's next save); every other row is kept. An
+ * exported sheet (`exportedAtStored`, else `timesheetExportedFieldSet` of the stored `exportedAt`) is frozen: its rows are
+ * kept as signed.
+ */
+export function timesheetSnapshotMoneyRowsCurrent<R extends { id?: unknown; amount?: unknown; lateExtra?: unknown }>(
+  sheet: Record<string, unknown> | null | undefined,
+  rows: ReadonlyArray<R>,
+  options: { entryFingerprints?: Record<string, string> | null; exportedAtStored?: boolean | null } = {}
+): R[] {
+  const data = sheet && typeof sheet === 'object' ? sheet : {}
+  const exported = typeof options.exportedAtStored === 'boolean' ? options.exportedAtStored : timesheetExportedFieldSet(data.exportedAt)
+  if (exported || !rows.some((row) => row?.lateExtra === true)) return [...rows]
+  const approved = new Map<string, number>()
+  for (const late of timesheetLateExtraRows(data, options)) {
+    if (late.decision.state === 'approved' && late.decision.paid > 0) approved.set(normalizeDocumentId(late.id), late.decision.paid)
+  }
+  return rows.filter((row) => {
+    if (row?.lateExtra !== true) return true
+    const paid = approved.get(normalizeDocumentId(row.id))
+    return paid != null && Math.abs(roundPennies(finite(row.amount) ?? 0) - paid) < AMOUNT_EPSILON
+  })
 }
 
 export type TimesheetLateExtrasSummary = {
@@ -368,10 +421,30 @@ export function timesheetChangesWithLateExtras(
   return { ...bookingChange, lateExtrasWaiting: false, bookingsChanged: bookingChange.changed }
 }
 
-/** The person's label for one late extra. */
-export function timesheetLateExtraLabel(decision: Pick<TimesheetLateExtraDecisionResult, 'state'>): string | null {
+/**
+ * The label for one late extra (the person's list and the reviewer's). Third review of #337: an ignored one whose id is
+ * taken (a signed entry's, or an earlier late extra's) reads `TIMESHEET_LATE_EXTRA_ID_TAKEN_LABEL`.
+ */
+export function timesheetLateExtraLabel(
+  decision: Pick<TimesheetLateExtraDecisionResult, 'state'> & { reason?: TimesheetLateExtraDecisionResult['reason'] }
+): string | null {
   if (decision.state === 'approved') return TIMESHEET_LATE_EXTRA_APPROVED_LABEL
   if (decision.state === 'declined') return TIMESHEET_LATE_EXTRA_DECLINED_LABEL
   if (decision.state === 'pending') return TIMESHEET_LATE_EXTRA_WAITING_LABEL
+  if (decision.state === 'ignored' && (decision.reason == null || decision.reason === 'id-taken')) return TIMESHEET_LATE_EXTRA_ID_TAKEN_LABEL
   return null
+}
+
+/**
+ * Third review of #337: whether a reviewer may decide this late extra now — never one that is ignored (its id is a
+ * signed entry's or an earlier late extra's: its decision would be written under, and replace, that entry's review),
+ * and never once the sheet is exported (`exported`: the stored `exportedAt`, `timesheetExportedFieldSet`; an exported
+ * sheet's late extras are frozen, as the security rules hold).
+ */
+export function timesheetLateExtraReviewable(
+  decision: Pick<TimesheetLateExtraDecisionResult, 'state'> | null | undefined,
+  options: { exported?: boolean | null } = {}
+): boolean {
+  if (options.exported === true) return false
+  return decision != null && decision.state !== 'ignored'
 }

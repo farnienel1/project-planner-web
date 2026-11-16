@@ -9,7 +9,7 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.54.0 → 1.54.0
-Packed hash: 87f6158125bdb36140cf3bed9242f4c0004fc26080c7d1a7099076320747d363
+Packed hash: aa7ce65462370d3f1f5d03955f35a85cbb5108b9c47a085cf2397424e03bc0ff
 Rulebook sha256: c749568f63aebd2fb801f49fd365304dac366d321dcbf80f92cf01564ab80dd8
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
@@ -22,11 +22,11 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 5a8a7e4e6f56b91cb18f71e79207782b8840fccf0b63b695826c47e18e59a32e
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: TIMESHEET_LATE_EXTRAS_EXPORT_SKIPPED_MESSAGE, TIMESHEET_LATE_EXTRAS_FIELD, TIMESHEET_LATE_EXTRAS_REVIEWER_MESSAGE, TIMESHEET_LATE_EXTRA_ADD_CONFIRM_MESSAGE, TIMESHEET_LATE_EXTRA_APPROVED_LABEL, TIMESHEET_LATE_EXTRA_DECLINED_LABEL, TIMESHEET_LATE_EXTRA_WAITING_LABEL, parseTimesheetLateExtras, timesheetChangesWithLateExtras, timesheetEntryReviewFor, timesheetLateExtraDecision, timesheetLateExtraKind, timesheetLateExtraLabel, timesheetLateExtraRows, timesheetLateExtrasSnapshotRows, timesheetLateExtrasSummary, timesheetOwnerCanAddLateExtras
-Exports removed: SIGNED_TIMESHEET_EXTRAS_CHANGED_COUNTERSIGN_MESSAGE, SIGNED_TIMESHEET_EXTRAS_CHANGED_MESSAGE, SIGNED_TIMESHEET_EXTRAS_CHANGED_REVIEWER_MESSAGE, SIGNED_TIMESHEET_EXTRAS_REOPEN_CONFIRM_MESSAGE, signedTimesheetChanges, signedTimesheetExtrasBaselineFields, signedTimesheetExtrasChanges, signedTimesheetExtrasRecord
-Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/reportPay.ts, lib/canonical/timesheet154.test.ts, lib/canonical/timesheetEntryEvidence.ts, lib/canonical/timesheetEntryReviews.ts, lib/canonical/timesheetExtrasChanges.ts, lib/canonical/timesheetSnapshot.ts, lib/canonical/timesheetLateExtras.ts
+Exports added: TIMESHEET_LATE_EXTRA_ID_TAKEN_LABEL, timesheetLateExtraFingerprintKey, timesheetLateExtraFingerprintMap, timesheetLateExtraReviewable, timesheetSnapshotMoneyRowsCurrent
+Exports removed: none
+Web files that changed the rules: lib/canonical/bundleEntry.ts, lib/canonical/index.ts, lib/canonical/timesheetEntryReviews.ts, lib/canonical/timesheetLateExtras.ts
 Done when:
-- [ ] Packed hash in iOS equals 87f6158125bdb36140cf3bed9242f4c0004fc26080c7d1a7099076320747d363
+- [ ] Packed hash in iOS equals aa7ce65462370d3f1f5d03955f35a85cbb5108b9c47a085cf2397424e03bc0ff
 - [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 c749568f63aebd2fb801f49fd365304dac366d321dcbf80f92cf01564ab80dd8)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.54.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine

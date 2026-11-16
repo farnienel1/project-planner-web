@@ -13,7 +13,7 @@ import {
   loadTimesheetDraft,
   loadTimesheetDraftsByUserHistory,
   mergeListedTimesheetDrafts,
-  saveTimesheetDraft,
+  stampTimesheetExport,
   timesheetSourceDocumentId,
   type ExportedTimesheetHistoryRow,
 } from '@/lib/timesheets/timesheetStorage'
@@ -398,18 +398,21 @@ export function TimesheetsScreen({
     return { draft: { ...built, exportedAt }, documentId: timesheetSourceDocumentId(full), member }
   }
 
-  const stampExport = async (sheet: { draft: TimesheetDraft; documentId: string | null; member: User }) => {
-    if (!organization?.id) return
-    await saveTimesheetDraft({
+  const stampExport = async (sheet: { draft: TimesheetDraft; documentId: string | null; member: User }): Promise<boolean> => {
+    if (!organization?.id) return false
+    // Rulebook 1.54.0 (third review of #337): only the export fields, in a transaction that re-reads the sheet — a late
+    // extra added, edited or deleted since it was prepared is never written back over, and such a sheet is not stamped.
+    const result = await stampTimesheetExport({
       organizationId: organization.id,
       userId: sheet.member.id,
       weekStart: periodStart,
-      weekEnd: periodEnd,
       draft: sheet.draft,
       timeZone,
       documentId: sheet.documentId,
-      access: { subjectHasLineManager: !userTimesheetSelfSigned(sheet.member, users) },
     })
+    if (result === 'stamped') return true
+    if (result === 'late-extras-waiting') lateSkippedRef.current.push(displayName(sheet.member))
+    return false
   }
 
   /**

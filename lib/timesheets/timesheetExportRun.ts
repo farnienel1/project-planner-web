@@ -18,7 +18,11 @@ export type TimesheetExportRunInput<M, T> = {
   gateReady: () => boolean
   /** Fresh read + built snapshot with `exportedAt`; `{ skip: 'exported' }` for a sheet already exported, `null` to leave out. */
   prepare: (member: M) => Promise<T | { skip: 'exported' } | null>
-  stamp: (prepared: TimesheetExportPrepared<T>) => Promise<void>
+  /**
+   * Stamps one sheet exported. 1.54.0 (third review of #337): `false` = not stamped and not an error (the sheet changed
+   * since it was prepared — the caller names it); the export goes on with the next person.
+   */
+  stamp: (prepared: TimesheetExportPrepared<T>) => Promise<void | boolean>
   deliver: (stamped: ReadonlyArray<TimesheetExportPrepared<T>>) => Promise<void>
   forgetHistory: () => void
 }
@@ -54,7 +58,8 @@ export async function runTimesheetExport<M, T>(input: TimesheetExportRunInput<M,
   let stopped: TimesheetExportRunResult<T>['stopped'] = null
   for (const row of prepared) {
     try {
-      await input.stamp(row)
+      const result = await input.stamp(row)
+      if (result === false) continue
       stamped.push(row)
     } catch (error) {
       stopped = { reason: 'stamp', error }

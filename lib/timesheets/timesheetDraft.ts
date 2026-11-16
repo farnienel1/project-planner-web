@@ -58,8 +58,15 @@ export type TimesheetPriceWorkEntry = {
  * written to the entry. It pays only once approved.
  */
 export type TimesheetLateExtra =
-  | (TimesheetPriceWorkEntry & { kind: 'priceWork' })
-  | (TimesheetExpenseEntry & { kind: 'expense' })
+  | (TimesheetPriceWorkEntry & { kind: 'priceWork'; lateState?: TimesheetLateExtraState; lateReason?: TimesheetLateExtraReason })
+  | (TimesheetExpenseEntry & { kind: 'expense'; lateState?: TimesheetLateExtraState; lateReason?: TimesheetLateExtraReason })
+
+/**
+ * Rulebook 1.54.0 (third review of #337): where a loaded late extra stands (`timesheetLateExtraDecision`) — `ignored`
+ * (its id is a signed entry's or an earlier late extra's) is never paid and never offered for review. Read only.
+ */
+export type TimesheetLateExtraState = 'approved' | 'declined' | 'pending' | 'ignored'
+export type TimesheetLateExtraReason = 'review' | 'no-review' | 'stale-review' | 'not-late-review' | 'id-taken' | 'no-kind' | 'no-id'
 
 /** Shared with iOS `TimesheetWeeklyReportLabourLine`. `bookingId` is "" when unknown. */
 export type WeeklyReportLabourLine = {
