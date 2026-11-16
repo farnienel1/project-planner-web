@@ -9,6 +9,8 @@
  * (the person only). Users' view (line managers, admins) is read-only. A self-employed person's items are their
  * timesheet entries, read-only (`timesheetClaimRows`).
  */
+import { useOwnPayUser } from '@/lib/pay/useOwnPayUser'
+import { withOwnPay } from '@/lib/pay/ownPayRecord'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
@@ -120,7 +122,12 @@ export function PayeClaimsSection(props: Props) {
   const { kind, mine, subject, here, range, start, end, orgDoc, todayKey } = props
   const title = sectionTitle(kind)
   const roster = useMemo(() => rulebookRoster(props.users), [props.users])
-  const viewer = useMemo(() => rulebookPerson(props.users.find((row) => row.id === props.viewerUser.id) || props.viewerUser, props.users), [props.users, props.viewerUser])
+  // Pay strip: the viewer's own employment type from their own pay profile (`useOwnPayUser`).
+  const ownPay = useOwnPayUser()
+  const viewer = useMemo(
+    () => rulebookPerson(withOwnPay(props.users.find((row) => row.id === props.viewerUser.id) || props.viewerUser, ownPay), props.users),
+    [props.users, props.viewerUser, ownPay]
+  )
   const subjectPerson = useMemo(() => rulebookPerson(subject, props.users), [subject, props.users])
   const allowed = canViewPayeClaims(viewer, subjectPerson, roster)
   const current = payePayrunPeriod(orgDoc, todayKey)

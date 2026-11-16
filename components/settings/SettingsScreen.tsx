@@ -27,6 +27,7 @@ import {
   writeMetadataFields,
 } from '@/lib/canonical'
 import { readStoredRates } from '@/lib/canonical/payRate'
+import { useOwnPayUser } from '@/lib/pay/useOwnPayUser'
 import { loadTaxIds, saveTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
 import { useOrganizationCurrency, useOrganizationDocument, useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { loginPathForResetEmail } from '@/lib/auth/emailAction'
@@ -151,8 +152,12 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
     }
   }, [userId])
 
-  // Read-only pay and employment, from the rulebook: one basis only, and the employment type today.
-  const rates = readStoredRates(user ?? {})
+  // Read-only pay and employment, from the rulebook: one basis only, and the employment type today. Pay strip: from
+  // the person's own pay profile while `privatePay` is on (`useOwnPayUser`; own id, else a former id), never the
+  // stripped users document; shown once that read has answered. Off: the session user, as before.
+  const ownPay = useOwnPayUser()
+  const payUser = ownPay.status === 'ready' ? ownPay.user : null
+  const rates = readStoredRates(payUser ?? {})
   const rateRow =
     rates.payBasis === 'hourly' && rates.hourlyRate != null
       ? { label: 'Hourly rate', value: formatMoney(rates.hourlyRate, currencyCode) }
@@ -161,7 +166,7 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
         : rates.hourlyRate != null
           ? { label: 'Hourly rate', value: formatMoney(rates.hourlyRate, currencyCode) }
           : null
-  const employmentToday = user ? employmentTypeLabel(employmentTypeOnDay(user, new Date(), timeZone)) : ''
+  const employmentToday = payUser ? employmentTypeLabel(employmentTypeOnDay(payUser, new Date(), timeZone)) : ''
   useSettingsDirty(dirty)
   const orgName = displayOrganizationName(organization?.name)
 

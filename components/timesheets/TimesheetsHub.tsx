@@ -56,6 +56,10 @@ import {
   awaitingManagerSignOff,
   isTimesheetFullyApproved,
 } from '@/lib/timesheets/timesheetApprovalPolicy'
+import { retryOwnPayRead, useOwnPayUser } from '@/lib/pay/useOwnPayUser'
+import { withOwnPay } from '@/lib/pay/ownPayRecord'
+import { retryPayProfiles, usePayProfilesStatus, usePayStatusOf } from '@/lib/pay/usePayProfilesStatus'
+import { OWN_PAY_FAILED_MESSAGE, OWN_PAY_LOADING_MESSAGE, PayStatusNotice } from '@/components/pay/PayStatusNotice'
 import { canAccessMyTimesheetsWithPolicy, shouldAppearInOperativeTimesheetRoster, timesheetDayKeysForPeriod } from '@/lib/timesheets/timesheetPayrollPolicy'
 import { exportedTimesheetRosterGroups, timesheetRosterGroups } from '@/lib/timesheets/timesheetWeekUtils'
 import {
@@ -72,6 +76,7 @@ import {
   type OperativeDayRateHistoryCollection,
 } from '@/lib/timesheets/dayRateHistoryStorage'
 import {
+  payProfilesInputLoad,
   timesheetInputsStatus,
   withBookingsGate,
   type TimesheetInputLoad,
@@ -158,14 +163,23 @@ export function TimesheetsHub() {
   const [historyLoad, setHistoryLoad] = useState<TimesheetInputLoad>('loading')
   const [inputsAttempt, setInputsAttempt] = useState(0)
 
-  const showMine = user ? canAccessMyTimesheetsWithPolicy(user, invoicing, new Date(), timeZone) : false
+  // Pay strip: the signed-in person's employment type comes from their pay profile while `privatePay` is on
+  // (`useOwnPayUser`); the session user alone reads as self-employed once the strip has run. Off: unchanged.
+  const ownPay = useOwnPayUser()
+  const me = ownPay.status === 'ready' ? ownPay.user : null
+  const payProfilesStatus = usePayProfilesStatus(organization?.id)
+  const payStatusOf = usePayStatusOf(organization?.id)
+  const showMine = me ? canAccessMyTimesheetsWithPolicy(me, invoicing, new Date(), timeZone) : false
   const showTeam = canAccessOperativeTimesheets(user, usersLoading, users)
-  const showDisabled = shouldShowTimesheetsDisabledMessage(user, showMine)
+  const showDisabled = me ? shouldShowTimesheetsDisabledMessage(me, showMine) : false
   // Rulebook 1.29.0 §25: "Overtime, Expenses & Price Work" — PAYE people (My…), admins and line managers (Users'…).
   const overtimeAccess = user
-    ? overtimeHubAccess({ viewer: rulebookPerson(users.find((row) => row.id === user.id) || user, users), roster: rulebookRoster(users) })
+    ? overtimeHubAccess({
+        viewer: rulebookPerson(withOwnPay(users.find((row) => row.id === user.id) || user, ownPay), users),
+        roster: rulebookRoster(users),
+      })
     : { showButton: false, mine: false, users: false }
-  const canOpen = canAccessTimesheetsSurface(user, usersLoading, users) || overtimeAccess.showButton
+  const canOpen = canAccessTimesheetsSurface(ownPay.user ?? user, usersLoading, users) || overtimeAccess.showButton
 
   useEffect(() => {
     if (pathSurface !== 'hub') return
@@ -323,11 +337,23 @@ export function TimesheetsHub() {
     )
   }
 
-  const inputsStatus = timesheetInputsStatus({ details: detailsLoad, history: historyLoad })
-  const payInputs: TimesheetInputsState = {
-    ...inputsStatus,
-    retry: () => setInputsAttempt((value) => value + 1),
-  }
+  // Pay strip: signing, counter-signing, invoices and export also wait for the pay they are priced from (review #342
+  // item 1: per person — one person's refused read never blocks anyone else's sheet):
+  //   - My Timesheets: the signed-in person's own pay (`useOwnPayUser`); the roster only while it is still loading;
+  //   - reviewing one person: that person's pay (`personPayStatus`);
+  //   - the User Timesheets list and Export: the roster as a whole; a person whose read failed is marked and skipped.
+  const payInputsFor = (payProfiles: TimesheetInputLoad): TimesheetInputsState => ({
+    ...timesheetInputsStatus({ details: detailsLoad, history: historyLoad, payProfiles }),
+    retry: () => {
+      setInputsAttempt((value) => value + 1)
+      retryPayProfiles(organization?.id, ownPay.status)
+    },
+  })
+  const minePayInputs = payInputsFor(
+    payProfilesInputLoad(payProfilesStatus === 'loading' ? 'loading' : 'ready', ownPay.status)
+  )
+  const teamPayInputs = payInputsFor(payProfilesInputLoad(payProfilesStatus, 'ready'))
+  const payInputs = surface === 'mine' ? minePayInputs : teamPayInputs
 
   // Rulebook 1.43.0 (`timesheetSnapshotReady`): the whole booking archive this screen asked for has arrived for the
   // open organisation (labour and manager site bookings) — never just the rows an earlier, narrower listener held.
@@ -383,7 +409,22 @@ export function TimesheetsHub() {
   }
 
   if (surface === 'mine') {
-    const subject = users.find((row) => row.id === user.id) || user
+    // Review #342 item 3: My Timesheets (which periods, which days) is decided from the person's own pay — never from
+    // the stripped users document while that is loading or could not be read.
+    if (ownPay.status !== 'ready') {
+      return (
+        <PageShell className="pb-10">
+          <PageBand eyebrow="Timesheets" title="My Timesheets" />
+          <PayStatusNotice
+            status={ownPay.status}
+            loadingMessage={OWN_PAY_LOADING_MESSAGE}
+            failedMessage={OWN_PAY_FAILED_MESSAGE}
+            onRetry={retryOwnPayRead}
+          />
+        </PageShell>
+      )
+    }
+    const subject = withOwnPay(users.find((row) => row.id === user.id) || user, ownPay)
     // Rulebook 1.11.0 `showsMyTimesheets`: no My Timesheets for a PAYE person; only periods with a self-employed day.
     const minePastPeriods = pastPeriods.filter(
       (period) => timesheetDayKeysForPeriod(subject, period.start, period.end, timeZone).length > 0
@@ -436,6 +477,10 @@ export function TimesheetsHub() {
         {selectedUser ? (
           <TimesheetPeriodPage
             {...periodPageProps}
+            // Review #342 item 1: the reviewed person's own pay decides; another person's refused read never does.
+            payInputs={payInputsFor(
+              payProfilesInputLoad(payStatusOf(selectedUser), 'ready')
+            )}
             subjectUser={selectedUser}
             mode="review"
             heading="Review Timesheet"
@@ -484,6 +529,9 @@ export function TimesheetsHub() {
               // Rulebook 1.43.0 (review r318): export stamps and freezes the signed snapshot, so it waits for the
               // server-confirmed bookings as signing does (`withBookingsGate` → `timesheetSnapshotReady`).
               payInputs={withBookingsGate(payInputs, { bookingsLoaded, bookingsFailed })}
+              // Review #342 item 1: people whose pay is not known (loading or failed) show no figures and are skipped by
+              // Export and Download PDF.
+              payStatusOf={payStatusOf}
             />
           </>
         )}

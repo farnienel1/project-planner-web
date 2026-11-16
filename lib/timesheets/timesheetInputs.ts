@@ -9,6 +9,19 @@ import { timesheetSnapshotReady } from '@/lib/canonical'
 
 export type TimesheetInputLoad = 'loading' | 'loaded' | 'failed'
 
+/**
+ * Pay strip: the pay laid over the roster (`payProfilesStatusFor`) and the signed-in person's own pay
+ * (`useOwnPayUser`) as one input of `timesheetInputsStatus`. Both are `ready` straight away while `privatePay` is off.
+ */
+export function payProfilesInputLoad(
+  roster: 'loading' | 'ready' | 'failed',
+  own: 'loading' | 'ready' | 'failed'
+): TimesheetInputLoad {
+  if (roster === 'failed' || own === 'failed') return 'failed'
+  if (roster === 'ready' && own === 'ready') return 'loaded'
+  return 'loading'
+}
+
 /** 1.43.0: the period page could not check the person's earlier timesheets; nothing is saved until a Retry loads it. */
 export const TIMESHEET_HISTORY_LOAD_FAILED_MESSAGE = "Couldn't check older timesheets — try again."
 
@@ -26,11 +39,19 @@ export const TIMESHEET_INPUTS_FAILED_MESSAGE =
 export function timesheetInputsStatus(input: {
   details: TimesheetInputLoad
   history: TimesheetInputLoad
+  /**
+   * Pay strip: the pay laid over the roster and the signed-in person's own pay (`payProfilesInputLoad`). Missing is
+   * loaded (callers that hold no roster).
+   */
+  payProfiles?: TimesheetInputLoad
 }): { ready: boolean; failed: boolean; message: string | null } {
-  if (input.details === 'failed' || input.history === 'failed') {
+  const payProfiles = input.payProfiles ?? 'loaded'
+  if (input.details === 'failed' || input.history === 'failed' || payProfiles === 'failed') {
     return { ready: false, failed: true, message: TIMESHEET_INPUTS_FAILED_MESSAGE }
   }
-  if (input.details === 'loaded' && input.history === 'loaded') return { ready: true, failed: false, message: null }
+  if (input.details === 'loaded' && input.history === 'loaded' && payProfiles === 'loaded') {
+    return { ready: true, failed: false, message: null }
+  }
   return { ready: false, failed: false, message: TIMESHEET_INPUTS_LOADING_MESSAGE }
 }
 

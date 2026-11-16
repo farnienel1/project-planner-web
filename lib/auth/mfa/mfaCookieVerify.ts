@@ -38,8 +38,12 @@ async function hmacSha256Base64Url(secret: string, payload: string): Promise<str
   return bytesToBase64Url(new Uint8Array(signature))
 }
 
-export function mfaOkAllowsDashboard(value: { uid?: string; exp?: number } | null, nowMs = Date.now()): boolean {
-  return Boolean(value?.uid && typeof value.exp === 'number' && value.exp > nowMs)
+/** Only an ok cookie (`kind: 'ok'`) counts — a signed challenge has a uid and an exp too (review of #340). */
+export function mfaOkAllowsDashboard(
+  value: { kind?: unknown; uid?: string; exp?: number } | null,
+  nowMs = Date.now()
+): boolean {
+  return Boolean(value?.kind === 'ok' && value.uid && typeof value.exp === 'number' && value.exp > nowMs)
 }
 
 /** Edge-safe check: HMAC matches and exp is in the future. A non-empty cookie is not enough. */
@@ -50,7 +54,7 @@ export async function verifySignedMfaOk(raw: string | undefined | null, nowMs = 
   try {
     const expected = await hmacSha256Base64Url(mfaSigningSecret(), payload)
     if (!signaturesMatch(sig, expected)) return null
-    const parsed = JSON.parse(base64UrlToUtf8(payload) || '') as { uid?: string; exp?: number }
+    const parsed = JSON.parse(base64UrlToUtf8(payload) || '') as { kind?: unknown; uid?: string; exp?: number }
     if (!mfaOkAllowsDashboard(parsed, nowMs)) return null
     return { uid: parsed.uid as string, exp: parsed.exp as number }
   } catch {
