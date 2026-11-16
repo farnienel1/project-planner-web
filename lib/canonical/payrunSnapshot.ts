@@ -54,9 +54,11 @@ import {
   timesheetListBucket,
   timesheetPaymentRunPeriodsFromWindow,
   timesheetStoredStartDayKey,
+  parseTimesheetRevisionDocId,
   timesheetVersionSignedOff,
   type TimesheetStatusFields,
 } from './timesheetPeriod'
+import { timesheetRevisionReportState } from './timesheetRevisions'
 import { isAnonymisedDeletedProfile, isGhostUser, rosterPersonName, rosterSegment } from './userRosterSegment'
 
 // MARK: - Copy
@@ -160,7 +162,13 @@ export type PayrunSnapshotSheet = {
    * reopened sheet reads Not started (back with the person) or Submitted (waiting for the line manager again). Missing =
    * as before 1.47.0.
    */
-  bookingsChange?: { reopened?: boolean | null; waitingFor?: 'person' | 'lineManager' | null } | null
+  bookingsChange?: {
+    reopened?: boolean | null
+    waitingFor?: 'person' | 'lineManager' | null
+    /** 1.55.0 (J4): `changed` and `exported` — an exported sheet whose bookings changed makes a revision due. */
+    changed?: boolean | null
+    exported?: boolean | null
+  } | null
   /** 1.55.0 §8: the stored document id, so an original and its revisions (`…_rev{N}`) count as one sheet. */
   documentId?: string | null
   /** 1.55.0 (review of #344): `timesheetVersionSignedOff` of the stored sheet (a self-signed sheet with its snapshot too). */
@@ -362,20 +370,24 @@ function timesheetCell(
   const lineManager = hasActiveLineManager(person, roster as never)
   const states = runs.map((run) => {
     const index = pickTimesheetRowForPeriod(
-      // 1.55.0: of an original and its revisions, the latest exported or signed-off version (`timesheetReportVersion`).
-      theirs.map((sheet) => ({
-        startDayKey: sheet.startDayKey,
-        endDayKey: sheet.endDayKey || null,
-        documentId: sheet.documentId ?? null,
-        exported: sheet.status.exportedAtMs != null,
-        signedOff: sheet.signedOff ?? sheet.status.managerSignedAtMs != null,
-      })),
-      run,
-      { versions: 'reports' }
+      // 1.55.0: of an original and its revisions, the latest version.
+      theirs.map((sheet) => ({ startDayKey: sheet.startDayKey, endDayKey: sheet.endDayKey || null, documentId: sheet.documentId ?? null })),
+      run
     )
     const bucket = index < 0 ? 'unsigned' : timesheetListBucket(theirs[index].status, lineManager, theirs[index].bookingsChange)
-    const state: TimesheetState = bucket === 'signed' || bucket === 'exported' ? 'signed' : bucket === 'awaiting' ? 'submitted' : 'notStarted'
-    return { run, state }
+    let state: TimesheetState = bucket === 'signed' || bucket === 'exported' ? 'signed' : bucket === 'awaiting' ? 'submitted' : 'notStarted'
+    // Owner decision 16 Nov (J4): a revision due or open is not signed — "Revision due" / "REV 1 waiting for signature".
+    const sheet = index < 0 ? null : theirs[index]
+    const revision = sheet
+      ? timesheetRevisionReportState({
+          revision: parseTimesheetRevisionDocId(sheet.documentId)?.revision ?? 0,
+          exported: sheet.status.exportedAtMs != null,
+          signedOff: sheet.signedOff ?? sheet.status.managerSignedAtMs != null,
+          change: sheet.bookingsChange,
+        })
+      : null
+    if (revision && revision.state !== 'none') state = revision.state === 'due' ? 'notStarted' : bucket === 'awaiting' ? 'submitted' : 'notStarted'
+    return { run, state, revisionLabel: revision?.label ?? '' }
   })
   const link = (run?: { startDayKey: string; endDayKey: string }): PayrunSnapshotLink => ({
     kind: 'timesheet',
@@ -386,7 +398,7 @@ function timesheetCell(
   if (states.length === 0) return cell('notStarted', PAYRUN_SNAPSHOT_STATE_LABELS.notStarted, 'neutral', link())
   const least = states.reduce((a, b) => (TIMESHEET_ORDER[b.state] < TIMESHEET_ORDER[a.state] ? b : a))
   const tone: PayrunSnapshotTone = least.state === 'signed' ? 'good' : least.state === 'submitted' ? 'warn' : 'neutral'
-  const base = PAYRUN_SNAPSHOT_STATE_LABELS[least.state]
+  const base = least.revisionLabel || PAYRUN_SNAPSHOT_STATE_LABELS[least.state]
   const signed = states.filter((entry) => entry.state === 'signed').length
   const label = states.length > 1 ? `${base} · ${signed} of ${states.length} signed` : base
   return cell(least.state, label, tone, link(least.run))

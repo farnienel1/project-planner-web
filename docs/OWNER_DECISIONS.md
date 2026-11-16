@@ -843,16 +843,20 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 
 | Date | Choice | Status |
 |---|---|---|
-| 16 Nov | J1 A revision copies the late extras exactly as stored (the rules check the copy is exact, so the person cannot add approvals); a late extra still pending stays pending and can now be decided on the revision. | done, owner to confirm |
-| 16 Nov | J2 The rules cannot see whether a booking really changed: the person could create a revision with nothing changed — it shows "+£0.00" and still needs the line manager's counter-signature. | done, owner to confirm |
-| 16 Nov | J3 Invoices had no number before 1.55.0; every invoice (old sheets included) now shows a derived number `TS-{pay run first day}-{first 6 letters/digits of the person's id}`, revisions "-REV1". | done, owner to confirm |
-| 16 Nov | J4 While a revision is open (not yet signed off), the weekly report and Payrun Snapshot keep using the previous exported version. | done, owner to confirm |
-| 16 Nov | J5 The difference is not stored (the brief suggested a stored `previousExportedTotal`): it is worked out from the previous (frozen) version when shown, so it cannot be forged. | done, owner to confirm |
-| 16 Nov | J6 An open revision can be deleted by a reviewer (admin or line manager), never by the person. No screen offers it yet. | done (rules), owner to confirm |
+| 16 Nov | J1 A revision copies the late extras exactly as stored (the rules check the copy is exact, so the person cannot add approvals); a late extra still pending stays pending and can now be decided on the revision. | done, owner confirmed 16 Nov ("all fine") |
+| 16 Nov | J2 The rules cannot see whether a booking really changed: the person could create a revision with nothing changed — it shows "+£0.00" and still needs the line manager's counter-signature. | done, owner confirmed 16 Nov ("all fine") |
+| 16 Nov | J3 Invoices had no number before 1.55.0; every invoice (old sheets included) now shows a derived number `TS-{pay run first day}-{first 6 letters/digits of the person's id}`, revisions "-REV1". | done, owner confirmed 16 Nov ("all fine") |
+| 16 Nov | J4 While a revision is open (not yet signed off), the weekly report and Payrun Snapshot keep using the previous exported version. | **changed by the owner 16 Nov** (see below) |
+| 16 Nov | J5 The difference is not stored (the brief suggested a stored `previousExportedTotal`): it is worked out from the previous (frozen) version when shown, so it cannot be forged. | done, owner confirmed 16 Nov ("all fine") |
+| 16 Nov | J6 An open revision can be deleted by a reviewer (admin or line manager), never by the person. No screen offers it yet. | done, owner confirmed 16 Nov ("all fine") |
+| 16 Nov | **J4 changed (owner):** the weekly report and Payrun Snapshot use the latest bookings. While a revision is due or open (not signed off) the pay run is treated as 1.47 treats a reopened sheet: the exported version stops counting as approved, the live bookings are reported, and the check line / cell shows the state — "Revision due" or "REV 1 waiting for signature". Once the revision is signed off it is used. | done (1.55.0, `timesheetRevisionReportState`) |
+| 16 Nov | **Finding 6 = (a) (owner):** on a revision, copied labour approve / decline decisions are kept only for bookings unchanged since the previous version (its snapshot line's `bookingFingerprint` vs the live line, `overtimeFingerprintsMatch`); changed bookings go back to pending for the line manager. A line signed before 1.46 (no fingerprint) keeps its decision only when its hours and amount match. The rules let a revision drop copied labour decisions, never add or alter one. | done (1.55.0, `timesheetRevisionLabourReviews`) |
+| 16 Nov | Revisions apply only after export (before export, 1.47 reopens the sheet): confirmed by the owner. | confirmed |
+| 16 Nov | Judgement call (finding 6): a line signed before 1.46 that was declined or edited keeps its decision when its hours match (its signed amount is 0 or the revised amount, not the booking's, so the amount is not compared). | done, owner to confirm |
 | 16 Nov | Review of #344: the person never adds, edits or deletes price work, expenses or late extras on a revision (after export they go on the next timesheet); the line manager still decides the copied ones. | done (1.55.0) |
 | 16 Nov | Review of #344: when the previous version has no signed snapshot (exported before snapshots were kept) the difference reads "Difference not available (older export)", on screen and on the invoice. | done (1.55.0), owner to confirm |
 | 16 Nov | Review of #344: the invoice number is built from the stored original sheet (its id and stored `userId`): `TS-{the id's stamp}-{6 of the person's id}`, e.g. TS-1761955200-6A9632-REV1 (replaces the J3 form `TS-{YYYYMMDD}-…`). | done (1.55.0), owner to confirm |
-| 16 Nov | Review of #344 finding 6 (copied labour decisions on a revision never going stale) is an owner question, left as is. Finding 5 (privatePay read of a missing settings doc) is fixed separately (`w-hotfix-settings-read`). | open (owner question / separate branch) |
+| 16 Nov | Review of #344 finding 5 (privatePay read of a missing settings doc) is fixed separately (`w-hotfix-settings-read`). | open (separate branch) |
 
 ## Open questions for the owner
 

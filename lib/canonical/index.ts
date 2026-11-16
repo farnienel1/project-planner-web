@@ -2242,6 +2242,7 @@ export {
   TIMESHEET_REVISION_DUE_NOTICE_TITLE,
   TIMESHEET_REVISION_DUE_REVIEWER_MESSAGE,
   TIMESHEET_REVISION_DIFFERENCE_UNKNOWN,
+  TIMESHEET_REVISION_DUE_REPORT_LABEL,
   TIMESHEET_REVISION_DUE_STATUS,
   canCreateTimesheetRevision,
   isTimesheetRevisionDocId,
@@ -2251,7 +2252,9 @@ export {
   timesheetInvoiceNumber,
   timesheetInvoiceNumberForRevision,
   timesheetLatestVersion,
-  timesheetReportVersion,
+  timesheetRevisionLabourReviews,
+  timesheetRevisionReportState,
+  timesheetRevisionWaitingLabel,
   timesheetRevisionCreateFields,
   timesheetRevisionDifference,
   timesheetRevisionDocId,
@@ -2262,4 +2265,5 @@ export {
   timesheetVersionsForPeriod,
   timesheetVersionSignedOff,
 } from './timesheetRevisions'
+export type { TimesheetRevisionLiveLine } from './timesheetRevisions'
 export type { TimesheetRevisionCheck, TimesheetRevisionDifference, TimesheetVersion, TimesheetVersionRef } from './timesheetRevisions'

@@ -40,7 +40,6 @@ import {
   isTimesheetRevisionDocId,
   parseTimesheetRevisionDocId,
   timesheetLatestVersion,
-  timesheetReportVersion,
   timesheetRevisionCreateFields,
   timesheetRevisionDocId,
   timesheetVersionsForPeriod,
@@ -1215,16 +1214,26 @@ export type TimesheetRevisionCreateResult =
 export async function createTimesheetRevision({
   organizationId,
   previousDocumentId,
+  liveLines,
 }: {
   organizationId: string
   previousDocumentId: string
+  /**
+   * Owner decision 16 Nov (finding 6 = a): the period's live payroll lines — labour decisions are kept only for bookings
+   * unchanged since the previous version (`timesheetRevisionLabourReviews`).
+   */
+  liveLines: ReadonlyArray<{ id: string; bookingFingerprint?: string | null; amount?: number | null; paidHours?: number | null }>
 }): Promise<TimesheetRevisionCreateResult> {
   const writerId = auth?.currentUser?.uid || ''
   return runTransaction(db, async (transaction) => {
     const previousRef = doc(db, 'organizations', organizationId, 'settings', previousDocumentId)
     const previous = await transaction.get(previousRef)
     if (!previous.exists()) return { status: 'missing', documentId: null, revision: null }
-    const made = timesheetRevisionCreateFields({ previous: { documentId: previous.id, data: previous.data() as Record<string, unknown> }, writerUserId: writerId })
+    const made = timesheetRevisionCreateFields({
+      previous: { documentId: previous.id, data: previous.data() as Record<string, unknown> },
+      writerUserId: writerId,
+      liveLines,
+    })
     if (!made) return { status: 'not-exported', documentId: null, revision: null }
     const targetRef = doc(db, 'organizations', organizationId, 'settings', made.documentId)
     const target = await transaction.get(targetRef)
@@ -1240,18 +1249,14 @@ export async function createTimesheetRevision({
 }
 
 /**
- * Rulebook 1.55.0: one row per pay run of each original — `latest` (lists) keeps the latest version, `reports` the
- * latest exported or signed-off one (`timesheetReportVersion`, the weekly report).
+ * Rulebook 1.55.0: one row per pay run of each original — its latest version (lists, the weekly report and the Payrun
+ * Snapshot; owner decision 16 Nov J4: whether it counts as approved is `timesheetRevisionReportState`).
  */
-function collapseVersionRows<T extends { documentId: string }>(
-  rows: T[],
-  dataOf: (row: T) => Record<string, unknown>,
-  versions: 'latest' | 'reports'
-): T[] {
+function collapseVersionRows<T extends { documentId: string }>(rows: T[], dataOf: (row: T) => Record<string, unknown>): T[] {
   const chains = timesheetVersionsForPeriod(rows.map((row) => ({ documentId: row.documentId, data: dataOf(row) })))
   const keep = new Set<string>()
   for (const chain of chains) {
-    const picked = versions === 'reports' ? timesheetReportVersion(chain) : timesheetLatestVersion(chain)
+    const picked = timesheetLatestVersion(chain)
     if (picked) keep.add(picked.documentId)
   }
   return rows.filter((row) => keep.has(row.documentId) || !parseTimesheetRevisionDocId(row.documentId))
@@ -1332,11 +1337,8 @@ export async function listTimesheetStates(
   organizationId: string,
   userId: string,
   limit = 400,
-  /**
-   * Rulebook 1.55.0: `latest` (lists, default), `reports` (the weekly report: latest exported or signed off) or `all`
-   * (every stored version, e.g. exported history).
-   */
-  versions: 'latest' | 'reports' | 'all' = 'latest'
+  /** Rulebook 1.55.0: `latest` (one row per pay run, default) or `all` (every stored version, e.g. exported history). */
+  versions: 'latest' | 'all' = 'latest'
 ): Promise<TimesheetStateRow[]> {
   try {
     const snap = await getDocs(
@@ -1359,7 +1361,7 @@ export async function listTimesheetStates(
         draft: rememberSource(draftFromFirestoreMap(data, { ...LIST_DRAFT_OPTIONS, sheetDocId: entry.id }), entry.id),
       })
     }
-    const collapsed = versions === 'all' ? rows : collapseVersionRows(rows, (row) => stored.get(row.documentId) || {}, versions)
+    const collapsed = versions === 'all' ? rows : collapseVersionRows(rows, (row) => stored.get(row.documentId) || {})
     collapsed.sort((a, b) => b.weekStart.getTime() - a.weekStart.getTime())
     return collapsed.slice(0, Math.max(1, limit))
   } catch (error) {

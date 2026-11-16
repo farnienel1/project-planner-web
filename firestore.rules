@@ -1840,12 +1840,15 @@ service cloud.firestore {
           let base = d.get('revisionOf', '');
           let prevId = n == 1 ? base : base + '_rev' + string(n - 1);
           let prev = get(/databases/(default)/documents/organizations/$(organizationId)/settings/$(prevId)).data;
-          let copied = ['userId', 'weekStart', 'weekEnd', 'weekStartKey', 'weekEndKey', 'priceWorkEntries', 'expenseEntries', 'lateExtras', 'extraEntryReviews', 'payrollLineReviews'];
-          return d.keys().hasOnly(copied.concat(tsRevKeys()).concat(['updatedAt', 'updatedBy', 'updatedFrom'])) && n is int && n > 0 && n < 100 &&
+          let copied = ['userId','weekStart','weekEnd','weekStartKey','weekEndKey','priceWorkEntries','expenseEntries','lateExtras','extraEntryReviews'];
+          let nr = d.get('payrollLineReviews', null);
+          let pr = prev.get('payrollLineReviews', null);
+          return (d.keys().hasOnly(copied.concat(tsRevKeys()).concat(['payrollLineReviews','updatedAt','updatedBy','updatedFrom'])) && n is int && n > 0 && n < 100 &&
             base.matches('^timesheet_.+') && !base.matches('.*_rev[0-9]+$') && settingId == base + '_rev' + string(n) && d.get('previousVersionId', '') == prevId &&
-            d.get('revisionCreatedBy', '') == request.auth.uid && d.get('revisionCreatedAt', null) == request.time && writeMetadataKeysValid(d.keys().toSet()) &&
-            d.get('userId', null) is string && timesheetIdNames(d.userId) && tsExportedIn(prev) && !d.diff(prev).affectedKeys().hasAny(copied) &&
-            (tsIdIsCallers(d.userId) || tsReviewer());
+            d.get('revisionCreatedBy', '') == request.auth.uid && d.get('revisionCreatedAt', null) == request.time && d.get('userId', null) is string)
+            ? (writeMetadataKeysValid(d.keys().toSet()) && timesheetIdNames(d.userId) && tsExportedIn(prev) && !d.diff(prev).affectedKeys().hasAny(copied) &&
+              (nr == pr || (nr is map && pr is map && nr.diff(pr).addedKeys().union(nr.diff(pr).changedKeys()).size() == 0))
+              ? tsIdIsCallers(d.userId) || tsReviewer() : false) : false;
         }
         function tsRevKeys() {
           return ['revisionOf', 'revision', 'previousVersionId', 'revisionCreatedBy', 'revisionCreatedAt'];
@@ -1868,7 +1871,7 @@ service cloud.firestore {
             (tsUid() is string && canViewPayOfAsMember(tsUid())) ||
             (!tsIsSubject() && tsReviewer()))));
         allow create, update, delete: if canAccessOrganization(organizationId) && ((request.method == 'create' && settingId.matches('^timesheet_.+_rev[1-9][0-9]?$')) ? tsRevCreate() : (
-          (request.method == 'create' || tsRevKept()) && (
+          (request.method == 'create' || tsRevKept()) ? (
           (request.method != 'delete') ? ((
           (settingId.matches('^timesheet_.*'))
             ? (isPlatformOwner() || (timesheetSubjectFiled() && timesheetExportedFrozen() && (tsIsSubject() ? (
@@ -1895,7 +1898,7 @@ service cloud.firestore {
             tsEmptyish(resource.data.get('extraEntryReviews', null))
           ) : (tsReviewer() && !timesheetStoredExported())))
             : (settingId.matches('(deadlines_|healthSafety_).*|deadlineAssignments') || (!settingId.matches('^variation(s|Item)_.*') && canAccessVariationsStaff(organizationId)))
-        )))));
+        ))) : false));
       }
 
       match /tasks/{taskId} {

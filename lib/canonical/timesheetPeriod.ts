@@ -409,7 +409,7 @@ export function timesheetStatusWriteFields(fields: TimesheetStatusFields): Recor
 /**
  * Rulebook 1.55.0 §8: a stored version is signed off — the line manager counter-signed (`managerSignedAt` /
  * `approvedAt`), or a self-signed person signed with the signed snapshot written. The weekly report and Payrun Snapshot
- * use the latest version that is exported or signed off (`timesheetReportVersion`).
+ * read it through `timesheetRevisionReportState`.
  */
 export function timesheetVersionSignedOff(data: Record<string, unknown> | null | undefined): boolean {
   const row = data && typeof data === 'object' ? data : {}
@@ -440,19 +440,15 @@ export type TimesheetPeriodCandidateRow = {
   hasActivity?: boolean
   /** 1.55.0: the stored document id, so revisions (`…_rev{N}`, §8) of one sheet are read as one row. */
   documentId?: string | null
-  /** 1.55.0: `exportedAt` stored (only read with `versions: 'reports'`). */
-  exported?: boolean | null
-  /** 1.55.0: signed off (only read with `versions: 'reports'`). */
-  signedOff?: boolean | null
 }
 
 /**
- * 1.55.0 §8: of the rows that are versions of one sheet (an original and its `…_rev{N}` revisions), only one stays a
- * candidate — the latest version (`latest`, lists and the period page), or the latest exported or signed-off version
- * (`reports`, the weekly report and Payrun Snapshot; `timesheetReportVersion`). Rows without a document id, and sheets
- * without revisions, are untouched.
+ * 1.55.0 §8: of the rows that are versions of one sheet (an original and its `…_rev{N}` revisions), only the latest
+ * version stays a candidate — lists, the period page, the weekly report and the Payrun Snapshot all read it (owner
+ * decision 16 Nov, J4: whether it counts as approved is `timesheetRevisionReportState`). Rows without a document id, and
+ * sheets without revisions, are untouched.
  */
-function versionCandidateIndexes(rows: readonly TimesheetPeriodCandidateRow[], versions: 'latest' | 'reports'): Set<number> {
+function versionCandidateIndexes(rows: readonly TimesheetPeriodCandidateRow[]): Set<number> {
   const keep = new Set<number>()
   const chains = new Map<string, Array<{ index: number; revision: number }>>()
   rows.forEach((row, index) => {
@@ -467,17 +463,7 @@ function versionCandidateIndexes(rows: readonly TimesheetPeriodCandidateRow[], v
   })
   for (const chain of chains.values()) {
     chain.sort((a, b) => a.revision - b.revision)
-    let picked = chain[chain.length - 1]
-    if (versions === 'reports') {
-      for (let at = chain.length - 1; at >= 0; at -= 1) {
-        const row = rows[chain[at].index]
-        if (chain[at].revision === 0 || row.exported === true || row.signedOff === true) {
-          picked = chain[at]
-          break
-        }
-      }
-    }
-    keep.add(picked.index)
+    keep.add(chain[chain.length - 1].index)
   }
   return keep
 }
@@ -486,15 +472,14 @@ function versionCandidateIndexes(rows: readonly TimesheetPeriodCandidateRow[], v
  * Which stored row is this pay-run period. Exact start+end wins. A start-only
  * leftover matches only the period that still starts on that day. A sheet whose
  * stored end disagrees (historical 1–7 vs live 1–15) is never promoted.
- * 1.55.0: rows that are versions of one sheet count as one row (`versions`, default the latest).
+ * 1.55.0: rows that are versions of one sheet count as one row — the latest version.
  */
 export function pickTimesheetRowForPeriod(
   rows: readonly TimesheetPeriodCandidateRow[],
-  period: { startDayKey: string; endDayKey: string },
-  options?: { versions?: 'latest' | 'reports' } | null
+  period: { startDayKey: string; endDayKey: string }
 ): number {
   if (rows.length === 0) return -1
-  const candidates = versionCandidateIndexes(rows, options?.versions === 'reports' ? 'reports' : 'latest')
+  const candidates = versionCandidateIndexes(rows)
   const exact: number[] = []
   const startOnly: number[] = []
   for (let index = 0; index < rows.length; index += 1) {

@@ -42,9 +42,9 @@ revision is caused by a booking change, never by someone editing a timesheet. Ru
    reviews or raised entries. Labour is never copied: it is priced from the live bookings. Entries stored without an id
    keep their id because `timesheetEntryId` derives a revision's ids from its original's id.
 6. **Lists, reports.** Lists and the period page: the latest version, earlier versions read-only under it. Weekly report
-   and Payrun Snapshot: the latest version that is exported or signed off (`timesheetReportVersion`), so an open
-   revision leaves the previous exported version in force. Implemented once in `pickTimesheetRowForPeriod` (rows with
-   `documentId`) and `timesheetVersionsForPeriod`.
+   and Payrun Snapshot: also the latest version and the latest bookings (owner, J4 changed): a revision due or open is
+   not approved (`timesheetRevisionReportState`: "Revision due" / "REV 1 waiting for signature"); signed off, it counts.
+   Implemented once in `pickTimesheetRowForPeriod` (rows with `documentId`) and `timesheetVersionsForPeriod`.
 7. **Late extras, PAYE days, pay privacy.** After export, price work and expenses still go on the next timesheet. A
    revision carries the late extras as stored (approved ones keep paying). PAYE days are left out exactly as on any
    sheet (`timesheetDaysForPerson`). The revision is a `timesheet_` document, so the `privatePay` read rules apply.
@@ -70,7 +70,7 @@ revision is caused by a booking change, never by someone editing a timesheet. Ru
   (it shows "+£0.00" and goes through normal signing).
 - J3 Invoice numbers are derived (`TS-20261101-6A9632`), shown on every invoice from 1.55.0, old sheets included.
 - J4 Manual "Create revision" kept for admins and line managers (cheap).
-- J5 While a revision is open the weekly report and Payrun Snapshot keep using the previous exported version.
+- J5 (changed by the owner, J4 in the register): the weekly report and Payrun Snapshot use the latest bookings while a revision is due or open.
 
 ## Review of #344 (16 Nov)
 
@@ -84,3 +84,11 @@ revision is caused by a booking change, never by someone editing a timesheet. Ru
   12: `parseTimesheetRevisionDocId` (one parser, in `timesheetPeriod.ts`) refuses `_rev0` / `_rev01`; the hub calls
   `timesheetRevisionDue`.
 - Not here: finding 5 (hotfix branch `w-hotfix-settings-read`), finding 6 (owner question).
+
+## Owner answers (16 Nov)
+
+- J4 changed: weekly report and Payrun Snapshot use the latest version and bookings; a revision due or open is not
+  approved (`timesheetRevisionReportState`). J1, J2, J3, J5, J6 confirmed.
+- Finding 6 = (a): `timesheetRevisionLabourReviews` keeps labour decisions only for unchanged bookings (fingerprints;
+  hours and amount for lines signed before 1.46). Rules: `payrollLineReviews` on a revision create may only be a part
+  of the previous version's map (`nr.diff(pr)` has no added or changed keys).

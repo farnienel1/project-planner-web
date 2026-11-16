@@ -1373,7 +1373,9 @@ Rulebook 1.55.0 §8 / §16: timesheet revisions, on top of 1.54.1 (`timesheetIdN
   comparison accepts it). The previous version must be exported by the same leftover rule as `timesheetStoredExported`
   (`tsExportedIn(prev)`) — so a second open revision is impossible — and every copied field must equal it
   (`!d.diff(prev).affectedKeys().hasAny(copied)`), so the person can never create a revision with self-approved reviews
-  or changed entries. The caller is the subject (`tsIdIsCallers`) or a reviewer of the subject (`tsReviewer`). One
+  or changed entries. `payrollLineReviews` is the exception (owner decision 16 Nov, finding 6 = a): the create's map must
+  be the previous version's, or a part of it (`nr.diff(pr)` has no added or changed keys) — labour decisions on changed
+  bookings are dropped, never added or altered. The caller is the subject (`tsIdIsCallers`) or a reviewer of the subject (`tsReviewer`). One
   `get` (the previous version).
 - `tsRevKept()` — on every update and delete of a revision: its revision fields never change; the subject never changes
   its `priceWorkEntries`, `expenseEntries` or `lateExtras` (review of #344: a probe raised a copied expense from £20 to

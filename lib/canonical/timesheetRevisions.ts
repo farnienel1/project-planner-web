@@ -28,6 +28,7 @@ import {
   type TimesheetVersionRef,
 } from './timesheetPeriod'
 import { excludeActor, type NotificationPerson } from './notificationRecipients'
+import { overtimeFingerprintsMatch } from './bookingFingerprint'
 import { timesheetWriterIsReviewer } from './timesheetEntryReviews'
 
 /** `settings/{original id}{TIMESHEET_REVISION_SUFFIX}{N}`, N = 1, 2, …. */
@@ -203,17 +204,40 @@ export function timesheetLatestVersion(chain: ReadonlyArray<TimesheetVersion> | 
   return list.length > 0 ? list[list.length - 1] : null
 }
 
+export const TIMESHEET_REVISION_DUE_REPORT_LABEL = 'Revision due'
+
+/** "REV 1 waiting for signature". */
+export function timesheetRevisionWaitingLabel(revision: unknown): string {
+  const label = timesheetRevisionLabel(revision)
+  return label ? `${label} waiting for signature` : ''
+}
+
 /**
- * The version the weekly report and Payrun Snapshot use: the latest version that is exported or signed off. An open
- * revision (not yet signed off) leaves the previous exported version in force. A chain with nothing signed (an open
- * original) gives its latest version, as before 1.55.0.
+ * Owner decision 16 Nov (J4, changed): the weekly report and Payrun Snapshot read the pay run's LATEST version and the
+ * latest bookings. While a revision is due (the latest version is exported and its bookings changed since,
+ * `signedTimesheetBookingChanges` → `exported` and `changed`) or open (a revision not yet signed off), the pay run is
+ * treated as 1.47.0 treats a reopened sheet: it does not count as approved, so the live bookings are reported, and the
+ * check line / cell shows `label` — "Revision due" or "REV 1 waiting for signature". Once the revision is signed off it
+ * counts as any signed sheet. `state` `none` leaves the ordinary rules in force.
  */
-export function timesheetReportVersion(chain: ReadonlyArray<TimesheetVersion> | null | undefined): TimesheetVersion | null {
-  const list = chain ?? []
-  for (let index = list.length - 1; index >= 0; index -= 1) {
-    if (list[index].revision === 0 || list[index].exported || list[index].signedOff) return list[index]
+export function timesheetRevisionReportState(input: {
+  /** The version's REV N (0 for the original). */
+  revision: number | null | undefined
+  /** Exported as the rules read it (`resolveTimesheetExportedAtMs`). */
+  exported: boolean | null | undefined
+  /** `timesheetVersionSignedOff`. */
+  signedOff: boolean | null | undefined
+  /** `signedTimesheetBookingChanges` of the version. */
+  change?: { changed?: boolean | null; exported?: boolean | null } | null
+}): { state: 'none' | 'due' | 'open'; approved: boolean | null; label: string } {
+  const revision = typeof input.revision === 'number' && input.revision > 0 ? input.revision : 0
+  if (input.exported === true && input.change?.exported === true && input.change?.changed === true) {
+    return { state: 'due', approved: false, label: TIMESHEET_REVISION_DUE_REPORT_LABEL }
   }
-  return timesheetLatestVersion(list)
+  if (revision > 0 && input.exported !== true && input.signedOff !== true) {
+    return { state: 'open', approved: false, label: timesheetRevisionWaitingLabel(revision) }
+  }
+  return { state: 'none', approved: null, label: '' }
 }
 
 /** The versions before the latest, newest first (shown read-only under the latest). */
@@ -324,18 +348,83 @@ export const TIMESHEET_REVISION_COPIED_FIELDS = [
   'payrollLineReviews',
 ] as const
 
+/** A live payroll line as the revision's labour-review check reads it (the timesheet collector's line). */
+export type TimesheetRevisionLiveLine = {
+  id: string
+  bookingFingerprint?: string | null
+  amount?: number | null
+  paidHours?: number | null
+}
+
+function close(a: unknown, b: unknown): boolean {
+  const x = typeof a === 'number' ? a : Number(a)
+  const y = typeof b === 'number' ? b : Number(b)
+  return Number.isFinite(x) && Number.isFinite(y) && Math.abs(x - y) < 0.005
+}
+
+/**
+ * Owner decision 16 Nov (finding 6 = a): the line manager's labour decisions (`payrollLineReviews`) a revision keeps —
+ * only those on a booking that has not changed since the version it corrects. Each review key must name a line of that
+ * version's signed snapshot and a live line (ids without case); the booking is unchanged when the snapshot line's
+ * `bookingFingerprint` matches the live line's (`overtimeFingerprintsMatch`), or — a line signed before 1.46.0 with no
+ * fingerprint — when its hours match and, unless it was declined or edited (its signed amount is then not the
+ * booking's), its amount too. Every other review is dropped, so that line is pending again and the line manager
+ * reviews it. Nothing is ever added or altered (the rules check the kept map is a part of the stored one). Without live
+ * lines every review is dropped; a stored `null` or missing map is returned as stored.
+ */
+export function timesheetRevisionLabourReviews(input: {
+  previous: Record<string, unknown> | null | undefined
+  liveLines: ReadonlyArray<TimesheetRevisionLiveLine | null | undefined> | null | undefined
+}): unknown {
+  const data = record(input?.previous)
+  const stored = data.payrollLineReviews
+  if (stored == null || typeof stored !== 'object' || Array.isArray(stored)) return stored
+  const snapshot = new Map<string, Record<string, unknown>>()
+  const override = record(data.weeklyReportOverride)
+  for (const line of Array.isArray(override.lines) ? override.lines : []) {
+    const row = record(line)
+    const id = text(row.id).toLowerCase()
+    if (id && !snapshot.has(id)) snapshot.set(id, row)
+  }
+  const live = new Map<string, TimesheetRevisionLiveLine>()
+  for (const line of input?.liveLines ?? []) {
+    const id = text(line?.id).toLowerCase()
+    if (line && id && !live.has(id)) live.set(id, line)
+  }
+  const kept: Record<string, unknown> = {}
+  for (const [key, review] of Object.entries(stored as Record<string, unknown>)) {
+    const signed = snapshot.get(key.trim().toLowerCase())
+    const now = live.get(key.trim().toLowerCase())
+    if (!signed || !now) continue
+    const fingerprint = text(signed.bookingFingerprint)
+    const decision = text(signed.decision)
+    const unchanged = fingerprint
+      ? overtimeFingerprintsMatch(fingerprint, now.bookingFingerprint)
+      : close(signed.paidHours, now.paidHours) && (decision === 'declined' || decision === 'edited' || close(signed.amount, now.amount))
+    if (unchanged) kept[key] = review
+  }
+  return kept
+}
+
 /**
  * The create shape of revision `previous.revision + 1` (the security rules accept exactly these keys plus
  * `revisionCreatedAt` — the server time — and write metadata, which the app adds). It copies
  * `TIMESHEET_REVISION_COPIED_FIELDS` exactly as stored on the version it corrects: the period identity, the price work
  * and expense entries, the late extras (approved ones keep paying; one still pending can now be decided on the
  * revision) and the line manager's decisions (`extraEntryReviews`; Edit hours `payrollLineReviews`, which read as stale
- * once their booking changed, 1.46.0). It never copies signatures, the signed snapshot, notes, `exportedAt` or any
+ * once their booking changed, 1.46.0; owner decision 16 Nov: only those on a booking unchanged since this version,
+ * `timesheetRevisionLabourReviews`). It never copies signatures, the signed snapshot, notes, `exportedAt` or any
  * figure: labour is priced from the live bookings. Null when `previous` is not an exported version of a timesheet.
  */
 export function timesheetRevisionCreateFields(input: {
   previous: { documentId: string; data: Record<string, unknown> | null | undefined }
   writerUserId: string
+  /**
+   * Owner decision 16 Nov (finding 6 = a): the period's live payroll lines (id, `bookingFingerprint`, amount, paid
+   * hours) — the labour decisions are kept only for unchanged bookings (`timesheetRevisionLabourReviews`). Missing:
+   * every labour decision is dropped (pending again).
+   */
+  liveLines?: ReadonlyArray<TimesheetRevisionLiveLine | null | undefined> | null
 }): { documentId: string; revision: number; fields: Record<string, unknown> } | null {
   const ref = parseTimesheetRevisionDocId(input?.previous?.documentId)
   const data = record(input?.previous?.data)
@@ -347,6 +436,8 @@ export function timesheetRevisionCreateFields(input: {
   const fields: Record<string, unknown> = {}
   // Review of #344: a stored null is copied as null (the rules compare each copied field with the version it corrects).
   for (const key of TIMESHEET_REVISION_COPIED_FIELDS) if (data[key] !== undefined) fields[key] = data[key]
+  // Finding 6 (a): labour decisions only for bookings unchanged since this version (a part of the stored map).
+  if (data.payrollLineReviews !== undefined) fields.payrollLineReviews = timesheetRevisionLabourReviews({ previous: data, liveLines: input.liveLines })
   fields.revisionOf = ref.baseDocumentId
   fields.revision = revision
   fields.previousVersionId = ref.documentId

@@ -1075,11 +1075,17 @@ export function TimesheetPeriodPage({
   // change made it due) or a reviewer's ("Create revision"). One transaction creates only the new document; the page then
   // opens it like any open sheet. A reviewer's revision tells the person (`timesheet_revision_to_sign`).
   const handleCreateRevision = async () => {
-    if (!organization?.id || !latestVersion || !revisionCheck.allowed || busy) return
+    // The live lines must be complete (bookings and pay inputs loaded) before decisions are compared with them.
+    if (!organization?.id || !latestVersion || !revisionCheck.allowed || busy || !payInputs.ready || !snapshotState.ready) return
     setBusy(true)
     setError(null)
     try {
-      const result = await createTimesheetRevision({ organizationId: organization.id, previousDocumentId: latestVersion.documentId })
+      // Finding 6 (a): the live lines decide which labour decisions the revision keeps (unchanged bookings only).
+      const result = await createTimesheetRevision({
+        organizationId: organization.id,
+        previousDocumentId: latestVersion.documentId,
+        liveLines: payroll.lineItems.map((line) => ({ id: line.id, bookingFingerprint: line.bookingFingerprint ?? null, amount: line.amount, paidHours: line.paidHours })),
+      })
       if (result.status === 'created' && viewer && viewer.id !== subjectUser.id) {
         await notifyTimesheetRevisionToSign({
           organizationId: organization.id,
@@ -1393,7 +1399,7 @@ export function TimesheetPeriodPage({
         differenceText={revisionCopy.differenceText}
         due={revisionDue}
         canCreate={revisionCheck.allowed && (mode === 'mine' ? revisionDue.due : true)}
-        busy={busy || !signInputsLoaded}
+        busy={busy || !signInputsLoaded || !payInputs.ready || !snapshotState.ready}
         earlier={timesheetEarlierVersions(versionChain)}
         timeZone={timeZone}
         currency={currency}

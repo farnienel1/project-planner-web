@@ -16917,7 +16917,7 @@ test('1.53.0 review: a new night shift clashes with the next morning\'s early bo
     assert.equal(next.documentId, `${ORIGINAL}_rev2`)
   })
 
-  test('1.55.0 versions: latest for lists, latest exported or signed off for reports', () => {
+  test('1.55.0 versions: the latest version for lists and reports', () => {
     const chain = R.timesheetVersionsForPeriod([
       { documentId: `${ORIGINAL}_rev1`, data: { userId: SUBJECT, exportedAt } },
       { documentId: ORIGINAL, data: original },
@@ -16927,13 +16927,12 @@ test('1.53.0 review: a new night shift clashes with the next morning\'s early bo
     assert.equal(chain.length, 1)
     assert.deepEqual(chain[0].map((v) => v.revision), [0, 1, 2])
     assert.equal(R.timesheetLatestVersion(chain[0])?.revision, 2)
-    assert.equal(R.timesheetReportVersion(chain[0])?.revision, 1, 'the open REV 2 leaves REV 1 in force')
     assert.deepEqual(R.timesheetEarlierVersions(chain[0]).map((v) => v.revision), [1, 0])
     const signed = R.timesheetVersionsForPeriod([
       { documentId: ORIGINAL, data: original },
       { documentId: `${ORIGINAL}_rev1`, data: { userId: SUBJECT, operativeSignedAt: signedAt, managerSignedAt: signedAt } },
     ])[0]
-    assert.equal(R.timesheetReportVersion(signed)?.revision, 1, 'a counter-signed revision is used before export')
+    assert.equal(signed[1].signedOff, true, 'a counter-signed revision is signed off before export')
   })
 
   test('1.55.0 pickTimesheetRowForPeriod reads an original and its revisions as one row', () => {
@@ -16943,7 +16942,6 @@ test('1.53.0 review: a new night shift clashes with the next morning\'s early bo
     ]
     const period = { startDayKey: '2026-11-01', endDayKey: '2026-11-15' }
     assert.equal(R.pickTimesheetRowForPeriod(rows, period), 1, 'the latest version, even with no activity yet')
-    assert.equal(R.pickTimesheetRowForPeriod(rows, period, { versions: 'reports' }), 0)
     assert.equal(R.pickTimesheetRowForPeriod(rows.map(({ documentId: _d, ...row }) => row), period), 0, 'without ids: as before')
   })
 
@@ -16961,8 +16959,10 @@ test('1.53.0 review: a new night shift clashes with the next morning\'s early bo
     assert.equal(f.revision, 1)
     assert.equal(f.revisionCreatedBy, LM)
     for (const key of R.TIMESHEET_REVISION_COPIED_FIELDS) {
-      if (key in original) assert.deepEqual(f[key], (original as Record<string, unknown>)[key], key)
+      if (key in original && key !== 'payrollLineReviews') assert.deepEqual(f[key], (original as Record<string, unknown>)[key], key)
     }
+    // Finding 6 (a): no live lines given → every labour decision is pending again (an empty map, a part of the stored one).
+    assert.deepEqual(f.payrollLineReviews, {})
     for (const key of ['operativeSignedAt', 'managerSignedAt', 'exportedAt', 'weeklyReportOverride', 'managerNote', 'previousExportedTotal']) assert.equal(key in f, false)
     // An entry stored without an id keeps its derived id on the revision, so its review still matches.
     assert.equal(
@@ -17075,6 +17075,53 @@ test('1.53.0 review: a new night shift clashes with the next morning\'s early bo
     assert.equal(sheet?.signedOff, true)
     assert.equal(sheet?.documentId, `${ORIGINAL}_rev1`)
   })
+  test('1.55.0 finding 6 (a): labour decisions are kept only for bookings unchanged since the previous version', () => {
+    const fp = (start: string) => R.overtimeBookingFingerprint({ id: 'b1', personId: '', dayKey: '2026-11-03', timeSlot: 'CUSTOM_HOURS', workStartTime: start, workEndTime: '16:00', isBreakRemoved: false, otMultiplierOverride: null, status: 'Confirmed' } as never)
+    const previous = {
+      ...original,
+      payrollLineReviews: { 'op-b1': { decision: 'declined' }, 'op-b2': { decision: 'approved' }, 'op-b3': { decision: 'approved' }, 'op-gone': { decision: 'declined' } },
+      weeklyReportOverride: {
+        lines: [
+          { id: 'op-b1', bookingFingerprint: fp('07:00'), amount: 0, paidHours: 8.5, decision: 'declined' },
+          { id: 'op-b2', bookingFingerprint: fp('07:00'), amount: 250, paidHours: 8.5, decision: 'approved' },
+          // Signed before 1.46.0: no fingerprint — kept only when the hours and amount match.
+          { id: 'op-b3', amount: 250, paidHours: 8.5, decision: 'approved' },
+        ],
+      },
+    }
+    const kept = R.timesheetRevisionLabourReviews({
+      previous,
+      liveLines: [
+        { id: 'OP-B1', bookingFingerprint: fp('07:00'), amount: 250, paidHours: 8.5 },
+        { id: 'op-b2', bookingFingerprint: fp('06:00'), amount: 300, paidHours: 9.5 },
+        { id: 'op-b3', amount: 250, paidHours: 8.5 },
+      ],
+    })
+    assert.deepEqual(kept, { 'op-b1': { decision: 'declined' }, 'op-b3': { decision: 'approved' } })
+    const changedOld = R.timesheetRevisionLabourReviews({ previous, liveLines: [{ id: 'op-b3', amount: 260, paidHours: 8.5 }] })
+    assert.deepEqual(changedOld, {}, 'an old line whose amount changed goes back to pending')
+    const made = R.timesheetRevisionCreateFields({ previous: { documentId: ORIGINAL, data: previous }, writerUserId: LM, liveLines: [{ id: 'op-b1', bookingFingerprint: fp('07:00') }] })
+    assert.deepEqual(made!.fields.payrollLineReviews, { 'op-b1': { decision: 'declined' } })
+    assert.equal(R.timesheetRevisionLabourReviews({ previous: { lateExtras: [] }, liveLines: [] }), undefined)
+  })
+
+  test('1.55.0 J4: a revision due or open is not approved; signed off it counts', () => {
+    assert.deepEqual(R.timesheetRevisionReportState({ revision: 0, exported: true, signedOff: true, change: { exported: true, changed: true } }), { state: 'due', approved: false, label: 'Revision due' })
+    assert.deepEqual(R.timesheetRevisionReportState({ revision: 1, exported: false, signedOff: false, change: null }), { state: 'open', approved: false, label: 'REV 1 waiting for signature' })
+    assert.equal(R.timesheetRevisionReportState({ revision: 1, exported: false, signedOff: true, change: null }).state, 'none')
+    assert.equal(R.timesheetRevisionReportState({ revision: 1, exported: true, signedOff: true, change: { exported: true, changed: false } }).state, 'none')
+    // Payrun Snapshot cells: due, open, signed off.
+    const roster = [{ id: SUBJECT, firstName: 'S', surname: 'P', email: 's@x.com', isActive: true, passwordSet: true, employmentType: 'self_employed', assignedManagerUserIds: [LM] }, { id: LM, firstName: 'L', surname: 'M', email: 'l@x.com', isActive: true, passwordSet: true, manager: true, role: 'manager' }]
+    const run = (sheets: unknown[]) =>
+      (R.payrunSnapshotRows({ roster, organization: {}, period: { start: '2026-11-01', end: '2026-11-15' }, sheets, overtimeRequests: [], overtimeReports: [], payeClaimReports: [], priceWork: [], expenses: [], timeZone: 'Europe/London' } as never) as Array<{ personId: string; cells: { timesheet: { label: string } } }>)
+        .find((row) => row.personId === SUBJECT)?.cells.timesheet.label
+    const exportedSheet = R.parsePayrunSnapshotSheet(ORIGINAL, original)!
+    assert.equal(run([{ ...exportedSheet, bookingsChange: { reopened: false, waitingFor: null, changed: true, exported: true } }]), 'Revision due')
+    const openRev = R.parsePayrunSnapshotSheet(`${ORIGINAL}_rev1`, { userId: SUBJECT, weekStartKey: '2026-11-01', weekEndKey: '2026-11-15' })!
+    assert.equal(run([exportedSheet, openRev]), 'REV 1 waiting for signature')
+    const signedRev = R.parsePayrunSnapshotSheet(`${ORIGINAL}_rev1`, { userId: SUBJECT, weekStartKey: '2026-11-01', weekEndKey: '2026-11-15', operativeSignedAt: signedAt, operativeSignedByName: 'S P', operativeSignatureImageBase64: 'x', managerSignedAt: signedAt, managerSignedByName: 'L M', managerSignatureImageBase64: 'y', weeklyReportOverride: { lines: [] } })!
+    assert.equal(run([exportedSheet, signedRev]), R.PAYRUN_SNAPSHOT_STATE_LABELS.signed)
+  })
 }
 
 test('1.55.0 weekly report check line names the revision used ("· REV 1")', () => {
@@ -17087,4 +17134,11 @@ test('1.55.0 weekly report check line names the revision used ("· REV 1")', () 
   const base = { personId: 'u-admin', startDayKey: '2026-11-01', endDayKey: '2026-11-15', sheet, payrollLines: [] }
   assert.equal(wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...base, revision: 1 }] }).people[0].check?.label, 'Timesheet: Signed · REV 1 · Invoice £250.00 ✓')
   assert.equal(wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [base] }).people[0].check?.label, 'Timesheet: Signed · Invoice £250.00 ✓')
+  // Owner decision 16 Nov (J4): revision due, open, signed off.
+  const exportedSheet = { ...sheet, managerSignedAt: new Date('2026-11-16T11:00:00Z'), exportedAt: new Date('2026-11-17T10:00:00Z') }
+  const due = wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...base, sheet: exportedSheet, change: { exported: true, changed: true } }] }).people[0].check?.label
+  assert.match(String(due), /^Timesheet: Revision due/)
+  assert.match(String(wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...base, sheet: { operativeSignedAt: null }, revision: 1 }] }).people[0].check?.label), /^Timesheet: REV 1 waiting for signature/)
+  const signedOff = { ...sheet, managerSignedAt: new Date('2026-11-16T11:00:00Z') }
+  assert.match(String(wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...base, sheet: signedOff, revision: 1 }] }).people[0].check?.label), /^Timesheet: Signed · REV 1/)
 })

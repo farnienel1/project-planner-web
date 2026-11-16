@@ -221,3 +221,19 @@ test('review of #344: a stored null in a copied field is copied as null and the 
   const rev = revisionPayload(ORIGINAL, withNull, OP)
   await assertSucceeds(setDoc(doc(await db(OP), 'organizations', ORG, 'settings', rev.id), rev.data))
 })
+
+test('owner decision 16 Nov (finding 6 = a): a revision may drop copied labour decisions, never add or alter one', async () => {
+  await reset()
+  const withReviews = { ...originalData, payrollLineReviews: { 'op-b1': { decision: 'declined' }, 'op-b2': { decision: 'approved' } } }
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG, 'settings', ORIGINAL), withReviews)
+  })
+  const fs = await db(OP)
+  const id = `${ORIGINAL}_rev1`
+  // Adding a decision: refused.
+  await assertFails(setDoc(doc(fs, 'organizations', ORG, 'settings', id), revisionPayload(ORIGINAL, withReviews, OP, { payrollLineReviews: { ...withReviews.payrollLineReviews, 'op-b3': { decision: 'approved' } } }).data))
+  // Altering one (a declined line approved): refused.
+  await assertFails(setDoc(doc(fs, 'organizations', ORG, 'settings', id), revisionPayload(ORIGINAL, withReviews, OP, { payrollLineReviews: { 'op-b1': { decision: 'approved' } } }).data))
+  // Dropping the changed booking's decision (pending again): allowed.
+  await assertSucceeds(setDoc(doc(fs, 'organizations', ORG, 'settings', id), revisionPayload(ORIGINAL, withReviews, OP, { payrollLineReviews: { 'op-b1': { decision: 'declined' } } }).data))
+})
