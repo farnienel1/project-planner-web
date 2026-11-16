@@ -44,6 +44,7 @@ import {
   timesheetRevisionDocId,
   timesheetVersionsForPeriod,
   type TimesheetVersion,
+  normalizeDocumentId,
 } from '@/lib/canonical'
 import { draftEntryFingerprints, draftReviewEntries, draftStoredExported } from '@/lib/timesheets/timesheetAdjustments'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
@@ -207,6 +208,139 @@ function mapLateExtras(
       date: entry.dateMs != null ? new Date(entry.dateMs) : new Date(),
       receiptName: entry.receiptName,
     }
+  })
+}
+
+/**
+ * The stored `lateExtras` rows the reader did not return (16 Nov scan), kept exactly as stored so the next save writes
+ * them back. A row counts as read only when it passes the reader's own tests (`parseTimesheetLateExtras`): a kind and
+ * an id, and — per id, without case, in stored order — the first row whose kind's entries hold a row of that id with a
+ * title (`parseTimesheetEntries` keeps titled rows only), which is the row returned. Every other row (a blank title,
+ * no id, no kind, a later copy of an id) is kept. `read` (the entries the reader returned) is a safety net: a row whose
+ * id was not returned is never counted as read.
+ */
+export function unreadLateExtraRows(data: Record<string, unknown>, read: ReadonlyArray<{ id: string }>): Record<string, unknown>[] {
+  const { rows, readIndexes } = lateExtraReadIndexes(data, read)
+  return rows.flatMap((row, index) => (row && !readIndexes.has(index) ? [row] : []))
+}
+
+/** A kept late-extra row's identity for `lateExtrasLayout` (its stored content; identical rows are interchangeable). */
+export function lateExtraRowKey(row: Record<string, unknown>): string {
+  return JSON.stringify(row)
+}
+
+/**
+ * Review of #347: the stored order of `lateExtras` — each stored row in place, as a read row (its id without case) or a
+ * kept row (`lateExtraRowKey`). Not-a-record entries are left out (they were never kept).
+ */
+export function lateExtrasStoredLayout(
+  data: Record<string, unknown>,
+  read: ReadonlyArray<{ id: string }>
+): Array<{ read: string } | { unread: string }> {
+  const { rows, readIndexes } = lateExtraReadIndexes(data, read)
+  return rows.flatMap((row, index) => {
+    if (!row) return []
+    return [readIndexes.has(index) ? { read: normalizeDocumentId(row.id) } : { unread: lateExtraRowKey(row) }]
+  })
+}
+
+/**
+ * Review of #347: the `lateExtras` list a save writes — read rows and kept rows each in their own stored slot
+ * (`layout`), a row the person deleted left out, and new rows appended after. Without a layout: shown rows, then kept.
+ */
+export function lateExtrasForWrite(
+  shown: ReadonlyArray<Record<string, unknown>>,
+  unread: ReadonlyArray<Record<string, unknown>>,
+  layout: ReadonlyArray<{ read: string } | { unread: string }> | null | undefined
+): Record<string, unknown>[] {
+  if (!layout || layout.length === 0) return [...shown, ...unread]
+  const shownLeft = [...shown]
+  const unreadLeft = [...unread]
+  const out: Record<string, unknown>[] = []
+  for (const slot of layout) {
+    if ('read' in slot) {
+      const at = shownLeft.findIndex((row) => normalizeDocumentId(row.id) === slot.read)
+      if (at >= 0) out.push(...shownLeft.splice(at, 1))
+    } else {
+      const at = unreadLeft.findIndex((row) => lateExtraRowKey(row) === slot.unread)
+      if (at >= 0) out.push(...unreadLeft.splice(at, 1))
+    }
+  }
+  return [...out, ...shownLeft, ...unreadLeft]
+}
+
+function lateExtraReadIndexes(
+  data: Record<string, unknown>,
+  read: ReadonlyArray<{ id: string }>
+): { rows: Array<Record<string, unknown> | null>; readIndexes: Set<number> } {
+  const stored = data[TIMESHEET_LATE_EXTRAS_FIELD]
+  if (!Array.isArray(stored)) return { rows: [], readIndexes: new Set() }
+  const returned = new Set(read.map((entry) => normalizeDocumentId(entry.id)))
+  const str = (value: unknown) => (typeof value === 'string' ? value.trim() : '')
+  const kindOf = (row: Record<string, unknown>) => (row.kind === 'priceWork' || row.kind === 'expense' ? row.kind : null)
+  const rows = stored.map((raw) => (raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : null))
+  const readIndexes = new Set<number>()
+  const seen = new Set<string>()
+  rows.forEach((row) => {
+    if (!row) return
+    const kind = kindOf(row)
+    const id = str(row.id)
+    if (!kind || !id) return
+    const key = normalizeDocumentId(id)
+    if (seen.has(key) || !returned.has(key)) return
+    const index = rows.findIndex(
+      (other) => other != null && kindOf(other) === kind && str(other.id) !== '' && normalizeDocumentId(other.id) === key && str(other.title) !== ''
+    )
+    if (index < 0) return
+    readIndexes.add(index)
+    seen.add(key)
+  })
+  return { rows, readIndexes }
+}
+
+/**
+ * 16 Nov scan (review of #347): the kept rows after the person's late-extras change from `before` to `next` — a kept row
+ * that shares an id (without case) with a late extra the person deleted in that change goes with it, so a hidden copy
+ * never comes back as a visible late extra.
+ */
+export function lateExtrasUnreadAfter(
+  unread: ReadonlyArray<Record<string, unknown>> | null | undefined,
+  before: ReadonlyArray<{ id: string }> | null | undefined,
+  next: ReadonlyArray<{ id: string }>
+): Record<string, unknown>[] {
+  const kept = new Set(next.map((entry) => normalizeDocumentId(entry.id)))
+  const deleted = new Set((before ?? []).map((entry) => normalizeDocumentId(entry.id)).filter((key) => key && !kept.has(key)))
+  // Second review of #347: only a kept row the reader could later show goes (kind exactly priceWork / expense, a string
+  // id, a non-blank title); a row it can never show (blank title, no or padded kind, no string id) is kept as stored.
+  const couldShow = (row: Record<string, unknown>) =>
+    (row.kind === 'priceWork' || row.kind === 'expense') &&
+    typeof row.id === 'string' &&
+    row.id.trim() !== '' &&
+    typeof row.title === 'string' &&
+    row.title.trim() !== ''
+  return (unread ?? []).filter((row) => !(couldShow(row) && deleted.has(normalizeDocumentId(row.id))))
+}
+
+/**
+ * Rulebook 1.54.0: the owner's late extras follow the entry rules (job number, evidence), checked by kind against the
+ * sheet as this editor loaded it (`base`; none: every late extra counts as new). Review of #347: only the person's own
+ * late extras (the draft's), never the rows kept as stored (`lateExtrasUnread`) — they are written back untouched and
+ * are not the person's edit (a second stored copy of an id would otherwise always read as an edit and refuse the save).
+ */
+export function ownerLateExtrasError(input: {
+  base: TimesheetDraft | null
+  draft: TimesheetDraft
+  organizationId: string
+  ownerUserIds: ReadonlyArray<string>
+}): string | null {
+  const lateOf = (rows: Record<string, unknown>[] | undefined, kind: string) => (rows ?? []).filter((row) => row.kind === kind)
+  const previousLate = input.base ? (input.base.lateExtras ?? []).map(lateExtraToFirestore) : undefined
+  const nextLate = (input.draft.lateExtras ?? []).map(lateExtraToFirestore)
+  return timesheetOwnerEntriesError({
+    previous: { priceWorkEntries: lateOf(previousLate, 'priceWork'), expenseEntries: lateOf(previousLate, 'expense') },
+    next: { priceWorkEntries: lateOf(nextLate, 'priceWork'), expenseEntries: lateOf(nextLate, 'expense') },
+    organizationId: input.organizationId,
+    ownerUserIds: [...input.ownerUserIds],
   })
 }
 
@@ -440,7 +574,11 @@ export function draftFromFirestoreMap(
     priceWorkEntries: entries.priceWorkEntries,
     ...(() => {
       const lateExtras = mapLateExtras(data, options?.sheetDocId?.trim() || '', organizationZoneOr(options?.timeZone), options?.ownerUserIds ?? [])
-      return lateExtras ? { lateExtras } : {}
+      if (!lateExtras) return {}
+      const lateExtrasUnread = unreadLateExtraRows(data, lateExtras)
+      return lateExtrasUnread.length > 0
+        ? { lateExtras, lateExtrasUnread, lateExtrasLayout: lateExtrasStoredLayout(data, lateExtras) }
+        : { lateExtras }
     })(),
     payrollLineReviews: mapReviews(data.payrollLineReviews),
     weeklyReportOverride: weeklyReportOverrideFromFirestore(data.weeklyReportOverride),
@@ -510,7 +648,18 @@ export function draftToFirestoreMap(draft: TimesheetDraft): Record<string, unkno
       managerRevisedAmount: entry.managerRevisedAmount ?? null,
     })),
     // Rulebook 1.54.0: written only when the draft has the list, so a sheet without late extras keeps its stored shape.
-    ...(Array.isArray(draft.lateExtras) ? { [TIMESHEET_LATE_EXTRAS_FIELD]: draft.lateExtras.map(lateExtraToFirestore) } : {}),
+    // 16 Nov scan: rows the reader skipped (`lateExtrasUnread`) are written back exactly as stored, never dropped.
+    ...(Array.isArray(draft.lateExtras) || (draft.lateExtrasUnread?.length ?? 0) > 0
+      ? {
+          // Review of #347: every row back in its own stored slot (new rows appended), so an unrelated save never
+          // reorders the list (the reader takes a late extra's decision from the first stored row of an id).
+          [TIMESHEET_LATE_EXTRAS_FIELD]: lateExtrasForWrite(
+            (draft.lateExtras ?? []).map(lateExtraToFirestore),
+            draft.lateExtrasUnread ?? [],
+            draft.lateExtrasLayout
+          ),
+        }
+      : {}),
     payrollLineReviews: Object.fromEntries(
       Object.entries(draft.payrollLineReviews).map(([key, review]) => [
         key,
@@ -1061,15 +1210,7 @@ export async function saveTimesheetDraft({
     })
     if (entriesError) throw new Error(entriesError)
     // Rulebook 1.54.0: late extras follow the same entry rules (job number, evidence), checked by kind.
-    const lateOf = (source: unknown, kind: string) =>
-      (Array.isArray(source) ? source : []).filter((row) => row && typeof row === 'object' && (row as Record<string, unknown>).kind === kind)
-    const previousLate = base ? draftToFirestoreMap(base)[TIMESHEET_LATE_EXTRAS_FIELD] : undefined
-    const lateError = timesheetOwnerEntriesError({
-      previous: { priceWorkEntries: lateOf(previousLate, 'priceWork'), expenseEntries: lateOf(previousLate, 'expense') },
-      next: { priceWorkEntries: lateOf(next[TIMESHEET_LATE_EXTRAS_FIELD], 'priceWork'), expenseEntries: lateOf(next[TIMESHEET_LATE_EXTRAS_FIELD], 'expense') },
-      organizationId,
-      ownerUserIds,
-    })
+    const lateError = ownerLateExtrasError({ base: base ?? null, draft, organizationId, ownerUserIds })
     if (lateError) throw new Error(lateError)
   }
   // Who and where (`writeMetadataFields`) plus the server time, on every timesheet save.

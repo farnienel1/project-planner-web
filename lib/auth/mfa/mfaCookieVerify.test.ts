@@ -44,3 +44,11 @@ test('review #340: a challenge from before the purpose field (no kind) is refuse
   assert.equal(await verifySignedMfaOk(legacyOk, now), null)
   assert.equal(mfaOkAllowsDashboard({ uid: 'u1', exp: now + 1 }, now), false)
 })
+
+test('owner console PR 1: the edge verifier returns iat when the cookie has one', async () => {
+  const now = Date.now()
+  const withIat = encodeSigned({ kind: 'ok', uid: 'u1', exp: now + 60_000, iat: now - 1000 })
+  assert.deepEqual(await verifySignedMfaOk(withIat, now), { uid: 'u1', exp: now + 60_000, iat: now - 1000 })
+  const without = encodeSigned({ kind: 'ok', uid: 'u1', exp: now + 60_000 })
+  assert.deepEqual(await verifySignedMfaOk(without, now), { uid: 'u1', exp: now + 60_000 })
+})

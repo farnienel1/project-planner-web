@@ -7,7 +7,8 @@ import { billingLabel } from '@/lib/stripe/billing'
 import { formatGbpFromPence } from '@/lib/analytics/consolePeriod'
 import { ANNUAL_PENCE, MONTHLY_PENCE } from '@/lib/stripe/plans'
 import { inRange } from '@/lib/analytics/aggregations'
-import { resolveConsolePeriod } from '@/lib/analytics/consolePeriod'
+import { consoleEventsSince, resolveConsolePeriod } from '@/lib/analytics/consolePeriod'
+import { useConsolePrefs } from '@/lib/analytics/consolePrefs'
 import { MetricCard } from '@/components/developer/DeveloperShell'
 
 export function DeveloperPlaceholderScreen({
@@ -30,8 +31,9 @@ export function DeveloperPlaceholderScreen({
 
 export function DeveloperGrowthScreen() {
   const { events, users, organisations, load } = useAnalyticsStore()
+  // This page always shows this year: it loads this year's events (owner console PR 1, bounded to the page's period).
   useEffect(() => {
-    void load()
+    void load(consoleEventsSince('year'))
   }, [load])
   const year = resolveConsolePeriod('year')
   const counts = useMemo(() => {
@@ -42,7 +44,7 @@ export function DeveloperGrowthScreen() {
     return { signedUp, orgSetup, firstProject, firstTimesheet }
   }, [events, year.start, year.end])
   return (
-    <DeveloperShell title="Growth">
+    <DeveloperShell title="Growth" eventsFrom={consoleEventsSince('year')}>
       <p className="text-sm text-[var(--ink2)]">
         Activation steps from product events this year. Historic funnels are not invented — they fill in as those events fire.
       </p>
@@ -114,13 +116,14 @@ export function DeveloperRevenueScreen() {
 
 export function DeveloperPagesErrorsScreen() {
   const { events, load } = useAnalyticsStore()
+  const period = useConsolePrefs((state) => state.period)
   useEffect(() => {
     void load()
   }, [load])
   const pages = events.filter((event) => event.eventName === 'page_viewed').length
   const errors = events.filter((event) => event.eventName === 'client_error').length
   return (
-    <DeveloperShell title="Pages & errors">
+    <DeveloperShell title="Pages & errors" eventsFrom={consoleEventsSince(period)}>
       <p className="text-sm text-[var(--ink2)]">
         page_viewed and client_error events. Names, emails and free text are stripped from event metadata before they are stored.
       </p>

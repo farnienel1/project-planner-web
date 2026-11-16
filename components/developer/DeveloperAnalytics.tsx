@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useAnalyticsStore } from '@/lib/analytics/analyticsStore'
+import { rangeEventsSince } from '@/lib/analytics/consolePeriod'
 import { resolveDateRange, formatDuration, percentChange } from '@/lib/analytics/dateRange'
 import {
   activityLanes,
@@ -26,16 +27,21 @@ import { EmptyState, LoadingSpinner } from '@/components/dashboard/PageShell'
 import { useFeedbackStore } from '@/lib/feedback/feedbackStore'
 import { formatOwnerWhen } from '@/lib/analytics/ownerDirectory'
 
+const pageEventsSince = rangeEventsSince
+
 export function DeveloperAnalyticsScreen() {
   const [preset, setPreset] = useState<DateRangePreset>('all_time')
   const range = useMemo(() => resolveDateRange(preset), [preset])
   const { events, sessions, users, organisations, loading, error, load, refresh } = useAnalyticsStore()
   const { suggestions, loadBoard } = useFeedbackStore()
 
+  // Owner console PR 1: this page's own range bounds the events it loads ("All time" is the newest capped set).
   useEffect(() => {
-    void load()
+    void load(pageEventsSince(range))
+  }, [load, range])
+  useEffect(() => {
     void loadBoard(true)
-  }, [load, loadBoard])
+  }, [loadBoard])
 
   const hasEvents = events.length > 0
   const eventActive = dailyActiveUsers(events, range)
@@ -68,6 +74,7 @@ export function DeveloperAnalyticsScreen() {
   return (
     <DeveloperShell
       title="Analytics"
+      eventsFrom={pageEventsSince(range)}
       actions={
         <button type="button" className="btn sm ghost" onClick={() => void refresh()} disabled={loading}>
           {loading ? 'Refreshing…' : 'Refresh'}
@@ -219,8 +226,8 @@ export function DeveloperUsageScreen() {
   const { events, users, organisations, loading, error, load, refresh } = useAnalyticsStore()
 
   useEffect(() => {
-    void load()
-  }, [load])
+    void load(pageEventsSince(range))
+  }, [load, range])
 
   const rows = featureUsageRows(events, range, { start: range.previousStart, end: range.previousEnd })
 
@@ -231,6 +238,7 @@ export function DeveloperUsageScreen() {
   return (
     <DeveloperShell
       title="Feature usage"
+      eventsFrom={pageEventsSince(range)}
       actions={
         <button type="button" className="btn sm ghost" onClick={() => void refresh()} disabled={loading}>
           {loading ? 'Refreshing…' : 'Refresh'}

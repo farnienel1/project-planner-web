@@ -19,10 +19,10 @@ import {
   notifyHolidayRequestDecisionToUser,
   notifyLeaveChangedForPerson,
 } from '@/lib/annualLeave/notifyHolidayRequestDecision'
-import { leaveBalanceShowsEmploymentType, userLeaveBalance, userLeaveBankHolidayRange } from '@/lib/annualLeave/leaveBalance'
+import { leaveBalanceShowsEmploymentType, userLeaveBalance, userLeaveBankHolidayRange, userLeaveReportYearMonths } from '@/lib/annualLeave/leaveBalance'
 import { useLeaveEmployment } from '@/lib/annualLeave/useLeaveEmployment'
 import { addAnnualLeaveAdjustment, useAnnualLeaveAdjustments } from '@/lib/annualLeave/leaveAdjustments'
-import { annualLeaveBalanceNotes, canAdjustAnnualLeave, canViewAnnualLeaveAdjustments } from '@/lib/canonical'
+import { annualLeaveBalanceNotes, canAdjustAnnualLeave, canViewAnnualLeaveAdjustments, normalizeDocumentId } from '@/lib/canonical'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { DEFAULT_ANNUAL_LEAVE, loadOrganizationDetails, type OrgAnnualLeaveDefaults } from '@/lib/settings/organizationSettings'
@@ -33,6 +33,8 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import type { HolidayBooking, HolidayTimeSlot } from '@/types'
 import { AnnualLeaveLegend, LeaveDayCalendar } from './LeaveDayCalendar'
 import { useOrgBankHolidays } from './useOrgBankHolidays'
+import { AnnualLeaveReportButton } from './AnnualLeaveReport'
+import { annualLeaveReportLeaveState } from '@/lib/annualLeave/annualLeaveReport'
 import { feedback } from '@/lib/feedbackSounds/feedback'
 
 function dayFromKey(key: string): Date {
@@ -143,6 +145,16 @@ export function OperativeAnnualLeaveCalendar({
 
   // Rulebook 1.40.0: this person's balance (PAYE days only), their adjustments, and who may adjust them.
   const timeZone = useOrganizationTimeZone()
+  // The report waits for the person's leave records (never "0 days" while loading or after a failed load).
+  const holidayLoading = useHolidayStore((state) => state.loading)
+  const holidayError = useHolidayStore((state) => state.error)
+  const holidayLoadedOrgId = useHolidayStore((state) => state.loadedOrgId)
+  const reportLeaveState = annualLeaveReportLeaveState({
+    organizationId: organization?.id,
+    loading: holidayLoading,
+    error: holidayError,
+    loadedOrgId: holidayLoadedOrgId,
+  })
   const subject = useMemo(() => (person.userId ? users.find((row) => row.id === person.userId) ?? null : null), [person.userId, users])
   const [orgLeaveDefaults, setOrgLeaveDefaults] = useState<OrgAnnualLeaveDefaults>(DEFAULT_ANNUAL_LEAVE)
   // Rulebook 1.53.0 (B13): no balance until this organisation's leave-year settings are read (or the read failed) —
@@ -159,6 +171,11 @@ export function OperativeAnnualLeaveCalendar({
       .finally(() => setLeaveDefaultsOrgId(orgId))
   }, [organization?.id])
   const leaveDefaultsLoaded = Boolean(organization?.id) && leaveDefaultsOrgId === organization?.id
+  // Every id this person's leave may be filed under — the same set `bookingMatchesPerson` matched `personBookings` on.
+  const reportPersonIds = useMemo(
+    () => Array.from(new Set([...(person.leaveIds ?? []), normalizeDocumentId(person.userId), normalizeDocumentId(person.operativeId)].filter(Boolean))),
+    [person.leaveIds, person.userId, person.operativeId]
+  )
   const viewerMayAdjust = Boolean(user && subject && canAdjustAnnualLeave(rulebookPerson(user, users), rulebookPerson(subject, users), rulebookRoster(users)))
   const viewerMaySeeAdjustments = Boolean(
     user && subject && canViewAnnualLeaveAdjustments(rulebookPerson(user, users), rulebookPerson(subject, users), rulebookRoster(users))
@@ -171,6 +188,8 @@ export function OperativeAnnualLeaveCalendar({
   const balanceBank = useOrgBankHolidays(dayFromKey(balanceRange.startDayKey), dayFromKey(balanceRange.endDayKey), {
     years: balanceRange.years,
   })
+  // Rulebook 1.54.0 §9: the report counts the leave year this balance counts (`annualLeaveReportYearMonths`).
+  const reportYearMonths = userLeaveReportYearMonths({ user: subject, employment: leaveEmployment.employment, orgDefaults: orgLeaveDefaults, timeZone })
   const balance = subject
     ? userLeaveBalance({
         user: subject,
@@ -443,6 +462,22 @@ export function OperativeAnnualLeaveCalendar({
           </span>
         )}
       </div>
+
+      {/* Annual leave report (rulebook §9 `leaveReportRows`): for a person with an account, whoever may see their leave
+          history (`canViewAnnualLeaveAdjustments`: admins and their line managers); a catalogue row with no account is
+          only on an admin's Team list (`annualLeaveTeamPeople`). */}
+      {(subject ? viewerMaySeeAdjustments : !person.userId) ? (
+        <AnnualLeaveReportButton
+          personName={person.displayName}
+          personSubtitle={person.subtitle}
+          bookings={personBookings}
+          personIds={reportPersonIds}
+          startMonth={reportYearMonths.startMonth}
+          leaveState={reportLeaveState}
+          employmentStartDayKey={subject?.employmentStartDate ?? null}
+          ready={leaveDefaultsLoaded && (!subject || leaveEmployment.ready)}
+        />
+      ) : null}
 
       {balance ? (
         <>

@@ -1,6 +1,7 @@
 import {
   annualLeaveBalance,
   annualLeaveBankHolidayRange,
+  annualLeaveReportYearMonths,
   applyRemainingOverride,
   canViewPersonPay,
   isPlatformOwnerEmail,
@@ -48,6 +49,32 @@ export function userLeaveBankHolidayRange(input: {
   const defaults = input.orgDefaults ?? DEFAULT_ANNUAL_LEAVE
   const timeZone = organizationZoneOr(input.timeZone)
   return annualLeaveBankHolidayRange({
+    annualLeaveEnabled: input.user?.annualLeaveEnabled,
+    startMonth: input.user?.annualLeaveYearStartMonth,
+    endMonth: input.user?.annualLeaveYearEndMonth,
+    orgStartMonth: defaults.startMonth,
+    orgEndMonth: defaults.endMonth,
+    onDayKey: dayKeyInZone(input.now ?? new Date(), timeZone),
+    timeZone,
+    employment: input.employment,
+  })
+}
+
+/**
+ * Rulebook 1.54.0 §9: the leave-year months the Annual leave report uses for this person — exactly the year
+ * `userLeaveBalance` counts on the same page (`annualLeaveReportYearMonths`): their own leave year while they have an
+ * allowance today, else the organisation's.
+ */
+export function userLeaveReportYearMonths(input: {
+  user: Pick<User, 'annualLeaveEnabled' | 'annualLeaveYearStartMonth' | 'annualLeaveYearEndMonth'> | null
+  employment: EmploymentTypeUser | null
+  orgDefaults?: OrgAnnualLeaveDefaults | null
+  now?: Date
+  timeZone?: string | null
+}): { startMonth: number; endMonth: number } {
+  const defaults = input.orgDefaults ?? DEFAULT_ANNUAL_LEAVE
+  const timeZone = organizationZoneOr(input.timeZone)
+  return annualLeaveReportYearMonths({
     annualLeaveEnabled: input.user?.annualLeaveEnabled,
     startMonth: input.user?.annualLeaveYearStartMonth,
     endMonth: input.user?.annualLeaveYearEndMonth,

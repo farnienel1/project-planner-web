@@ -190,3 +190,23 @@ test('review #340: a password-set account younger than 12 months by Firebase Aut
   assert.equal(response.status, 409)
   assert.equal(deleted(calls), false)
 })
+
+test('PLAN A4: the delete is recorded as requested, then completed, with one requestId', async () => {
+  const calls = stubBackend({ serverKey: true, userFields: abandonedUser })
+  const bodies: string[] = []
+  const inner = globalThis.fetch
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes('/adminAuditLog')) bodies.push(String(init?.body || ''))
+    return inner(input, init)
+  }) as typeof fetch
+  const response = await POST(request())
+  assert.equal(response.status, 200)
+  assert.equal(bodies.length, 2)
+  const [requested, completed] = bodies.map((body) => JSON.parse(body).fields)
+  assert.equal(requested.phase.stringValue, 'requested')
+  assert.equal(completed.phase.stringValue, 'completed')
+  assert.equal(requested.requestId.stringValue, completed.requestId.stringValue)
+  // The email is masked in the stored entry.
+  assert.match(requested.before.stringValue, /g•••@example\.com/)
+  assert.ok(calls.some((call) => call.method === 'DELETE'))
+})

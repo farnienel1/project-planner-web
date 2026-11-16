@@ -8,6 +8,11 @@ if (fs.existsSync(pdfWorkerSrc)) {
   fs.copyFileSync(pdfWorkerSrc, pdfWorkerDest)
 }
 
+// Owner console e2e harness only (scripts/owner-e2e): a build made with NEXT_PUBLIC_USE_EMULATORS=1 may also reach the
+// local Auth and Firestore emulators. Production builds never set it, so their policy is unchanged.
+const emulatorConnectSrc =
+  process.env.NEXT_PUBLIC_USE_EMULATORS === '1' ? ' http://127.0.0.1:9099 http://127.0.0.1:8080 http://localhost:9099 http://localhost:8080' : ''
+
 const ContentSecurityPolicy = [
   "default-src 'self'",
   "base-uri 'self'",
@@ -18,7 +23,7 @@ const ContentSecurityPolicy = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  "connect-src 'self' https://*.googleapis.com https://*.gstatic.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasestorage.app https://*.firebaseapp.com https://*.cloudfunctions.net https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://firebasestorage.googleapis.com https://content-firebaseappcheck.googleapis.com https://firebaseappcheck.googleapis.com https://www.google.com https://www.gstatic.com https://api.stripe.com https://*.stripe.com https://*.stripe.network https://maps.googleapis.com https://photon.komoot.io https://nominatim.openstreetmap.org https://*.tile.openstreetmap.org",
+  "connect-src 'self' https://*.googleapis.com https://*.gstatic.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasestorage.app https://*.firebaseapp.com https://*.cloudfunctions.net https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://firebasestorage.googleapis.com https://content-firebaseappcheck.googleapis.com https://firebaseappcheck.googleapis.com https://www.google.com https://www.gstatic.com https://api.stripe.com https://*.stripe.com https://*.stripe.network https://maps.googleapis.com https://photon.komoot.io https://nominatim.openstreetmap.org https://*.tile.openstreetmap.org" + emulatorConnectSrc,
   "frame-src 'self' blob: https://js.stripe.com https://checkout.stripe.com https://hooks.stripe.com https://*.firebaseapp.com https://www.google.com https://www.gstatic.com https://recaptcha.google.com",
   "worker-src 'self' blob:",
   "media-src 'self' blob:",

@@ -47,16 +47,20 @@ export function mfaOkAllowsDashboard(
 }
 
 /** Edge-safe check: HMAC matches and exp is in the future. A non-empty cookie is not enough. */
-export async function verifySignedMfaOk(raw: string | undefined | null, nowMs = Date.now()): Promise<{ uid: string; exp: number } | null> {
+export async function verifySignedMfaOk(
+  raw: string | undefined | null,
+  nowMs = Date.now()
+): Promise<{ uid: string; exp: number; iat?: number } | null> {
   if (!raw || !raw.includes('.')) return null
   const [payload, sig] = raw.split('.')
   if (!payload || !sig) return null
   try {
     const expected = await hmacSha256Base64Url(mfaSigningSecret(), payload)
     if (!signaturesMatch(sig, expected)) return null
-    const parsed = JSON.parse(base64UrlToUtf8(payload) || '') as { kind?: unknown; uid?: string; exp?: number }
+    const parsed = JSON.parse(base64UrlToUtf8(payload) || '') as { kind?: unknown; uid?: string; exp?: number; iat?: unknown }
     if (!mfaOkAllowsDashboard(parsed, nowMs)) return null
-    return { uid: parsed.uid as string, exp: parsed.exp as number }
+    const base = { uid: parsed.uid as string, exp: parsed.exp as number }
+    return typeof parsed.iat === 'number' && Number.isFinite(parsed.iat) ? { ...base, iat: parsed.iat } : base
   } catch {
     return null
   }

@@ -181,6 +181,7 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
     loadBookings,
     loadManagerSiteBookings,
     loadOperatives,
+    loadManagers,
     loadTasks,
   ])
 
@@ -223,7 +224,6 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
 
   useEffect(() => {
     if (consumeCreateQuery()) openCreate()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const openEdit = (client: Client) => {

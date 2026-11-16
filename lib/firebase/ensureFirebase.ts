@@ -5,6 +5,7 @@ import { firestoreFor } from '@/lib/firebase/firestoreInstance'
 import { FirebaseStorage, getStorage } from 'firebase/storage'
 import { getFirebaseConfigError, isFirebaseConfigured } from '@/lib/firebase/env'
 import { ensureAppCheck } from '@/lib/firebase/appCheck'
+import { withAuthEmulator } from '@/lib/firebase/emulators'
 
 let app: FirebaseApp | null = null
 
@@ -36,7 +37,7 @@ export function ensureFirebaseApp(): FirebaseApp {
 }
 
 export function getFirebaseAuth(): Auth {
-  return getAuth(ensureFirebaseApp())
+  return withAuthEmulator(getAuth(ensureFirebaseApp()))
 }
 
 export function getFirebaseDb(): Firestore {

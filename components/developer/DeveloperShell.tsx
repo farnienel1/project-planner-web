@@ -2,9 +2,9 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
+import { ArrowRightOnRectangleIcon, Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { useAnalyticsStore } from '@/lib/analytics/analyticsStore'
 import { AppLogoMark } from '@/components/ui/AppLogoMark'
 import { useFeedbackStore } from '@/lib/feedback/feedbackStore'
 import { useNewInterestCount } from '@/lib/interest/interestStore'
@@ -12,132 +12,242 @@ import { cn } from '@/lib/ui/cn'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
 import { hasCustomerOrganisation } from '@/lib/platform/owner'
 import { useConsolePrefs } from '@/lib/analytics/consolePrefs'
+import { CONSOLE_PERIODS } from '@/lib/analytics/consolePeriod'
+import { activeConsoleHref, consolePageUsesPeriod, visibleConsoleNav } from '@/lib/owner/consoleNav'
+import { useOwnerCounts } from '@/lib/owner/client/ownerApi'
+import { ConsoleSearch } from '@/components/developer/ConsoleSearch'
+import { ConsoleEventsNotice } from '@/components/developer/ConsoleEventsNotice'
 
-const LINKS = [
-  { href: '/developer', label: 'Overview' },
-  { href: '/developer/organisations', label: 'Organisations' },
-  { href: '/developer/users', label: 'Users' },
-  { href: '/developer/growth', label: 'Growth' },
-  { href: '/developer/revenue', label: 'Revenue' },
-  { href: '/developer/usage', label: 'Feature usage' },
-  { href: '/developer/pages', label: 'Pages & errors' },
-  { href: '/developer/website-stats', label: 'Website stats' },
-  { href: '/developer/analytics', label: 'Analytics' },
-  { href: '/developer/feedback', label: 'Feedback' },
-  { href: '/developer/register-interest', label: 'Register interest' },
-  { href: '/developer/roadmap', label: 'Roadmap' },
-  { href: '/developer/data-quality', label: 'Data quality' },
-  { href: '/developer/account', label: 'Account' },
-]
-
+/**
+ * The console frame: the app's own sidebar and top bar (`app-frame`, `sb`, `tb` in app/brand-shell.css, owner answer
+ * 16 Nov: no separate design file). The menu is CONSOLE_NAV (spec §4 groups, useful-only rule); the visual layer is
+ * only class names, so it restyles in one place.
+ */
 export function DeveloperAppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname() || ''
   const { user, organization, signOut } = useAuthStore()
-  const orgCount = useAnalyticsStore((state) => state.organisations.length)
-  const userCount = useAnalyticsStore((state) => state.users.length)
-  const ideaCount = useFeedbackStore((state) => state.suggestions.filter((row) => !row.hidden && !row.mergedIntoId).length)
   const orgApp = hasCustomerOrganisation(user?.organizationId)
-  const { includeTestData, setIncludeTestData, jumpQuery, setJumpQuery } = useConsolePrefs()
+  const { includeTestData, setIncludeTestData, period, setPeriod } = useConsolePrefs()
   const newInterestCount = useNewInterestCount()
   const triageCount = useFeedbackStore(
     (state) => state.suggestions.filter((row) => !row.hidden && !row.mergedIntoId && row.productDecision === 'none').length
   )
+  const { counts, error: countsError } = useOwnerCounts(includeTestData)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const activeHref = activeConsoleHref(pathname)
+  const showPeriod = consolePageUsesPeriod(pathname)
+  const groups = visibleConsoleNav()
 
-  return (
-    <div className="min-h-screen bg-[var(--bg)]">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--navy)] bg-[var(--navy)] px-4 py-3 text-white">
-        <div className="flex items-center gap-3">
-          <AppLogoMark size={36} radius={10} />
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/70">Owner console</p>
-            <p className="text-sm font-bold">{user?.email || 'info@projectplanner.us'}</p>
-          </div>
+  const badgeFor = (badge?: string) => {
+    if (badge === 'feedbackTriage' && triageCount > 0) return { count: triageCount, label: `${triageCount} feedback to triage` }
+    if (badge === 'interestNew' && newInterestCount > 0) return { count: newInterestCount, label: `${newInterestCount} new` }
+    return null
+  }
+
+  const sidebar = (
+    <>
+      <div className="sb-brand">
+        <span className="sb-logo">
+          <AppLogoMark size={30} radius={8} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="sb-title truncate">Owner console</p>
+          <p className="sb-org truncate">{user?.email || 'info@projectplanner.us'}</p>
         </div>
-        <label className="hidden min-w-[240px] flex-1 items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-sm text-white/80 lg:flex">
-          <span className="text-white/60">Jump</span>
-          <input
-            value={jumpQuery}
-            onChange={(event) => setJumpQuery(event.target.value)}
-            placeholder="Organisation or user"
-            className="w-full bg-transparent text-white outline-none placeholder:text-white/50"
-          />
-          <kbd className="rounded border border-white/30 px-1 text-[10px]">⌘K</kbd>
-        </label>
-        <div className="flex flex-wrap items-center gap-3 text-sm">
-          <button
-            type="button"
-            role="switch"
-            aria-checked={includeTestData}
-            onClick={() => setIncludeTestData(!includeTestData)}
-            className="flex items-center gap-2 text-white/80"
-          >
-            Include test data
-            <span className={`relative h-5 w-9 rounded-full ${includeTestData ? 'bg-[var(--blue)]' : 'bg-white/25'}`}>
-              <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition ${includeTestData ? 'left-4' : 'left-0.5'}`} />
-            </span>
-          </button>
-          <span className="hidden sm:inline text-white/80">
-            {orgCount} organisations · {userCount} users · {ideaCount} feedback
-          </span>
+        <button type="button" className="sb-signout lg:hidden" aria-label="Close menu" onClick={() => setMenuOpen(false)}>
+          <XMarkIcon className="h-5 w-5" />
+        </button>
+      </div>
+      <nav className="sb-nav flex-1 overflow-y-auto" aria-label="Owner console" onClick={() => setMenuOpen(false)}>
+        {groups
+          .filter((group) => group.id !== 'bottom')
+          .map((group) => (
+            <div key={group.id} className="sb-group" data-testid={`console-group-${group.id}`}>
+              <div className="sb-label-row">
+                <p className="sb-label">{group.label}</p>
+              </div>
+              <div className="sb-items">
+                {group.items.map((item) => {
+                  const badge = badgeFor(item.badge)
+                  const on = activeHref === item.href
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href as string}
+                      className={cn('sb-item', on && 'on')}
+                      aria-current={on ? 'page' : undefined}
+                      title={item.note}
+                    >
+                      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                      {badge ? (
+                        <span className="tb-badge rounded-full px-1.5 text-[10.5px] font-semibold text-white" aria-label={badge.label}>
+                          {badge.count}
+                        </span>
+                      ) : null}
+                    </Link>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+      </nav>
+      <div className="sb-foot">
+        <div className="sb-items sb-foot-links">
+          {groups
+            .filter((group) => group.id === 'bottom')
+            .flatMap((group) => group.items)
+            .map((item) => (
+              <Link
+                key={item.href}
+                href={item.href as string}
+                className={cn('sb-item', activeHref === item.href && 'on')}
+                aria-current={activeHref === item.href ? 'page' : undefined}
+              >
+                {item.label}
+              </Link>
+            ))}
           {orgApp ? (
-            <Link href="/dashboard" className="btn sm ghost" style={{ color: 'white', borderColor: 'rgba(255,255,255,.25)' }}>
+            <Link href="/dashboard" className="sb-item">
               Organisation app
             </Link>
           ) : null}
-          <Link href="/developer/account" className="btn sm ghost" style={{ color: 'white', borderColor: 'rgba(255,255,255,.25)' }}>
-            Account
-          </Link>
-          <button type="button" className="btn sm ghost" style={{ color: 'white', borderColor: 'rgba(255,255,255,.25)' }} onClick={() => void signOut()}>
-            Sign out
+        </div>
+        <div className="sb-user">
+          <div className="min-w-0">
+            <p className="sb-user-name truncate">{user?.email || 'info@projectplanner.us'}</p>
+            <p className="sb-org truncate">Platform owner</p>
+          </div>
+          <button type="button" onClick={() => void signOut()} className="sb-signout" aria-label="Sign out" title="Sign out">
+            <ArrowRightOnRectangleIcon className="h-4 w-4" />
           </button>
         </div>
-      </header>
-      <nav className="overflow-x-auto border-b border-[var(--line)] bg-[#e7ebf1] px-3 py-2">
-        <div className="flex gap-1">
-          {LINKS.map((link) => {
-            const on =
-              pathname === link.href || (link.href !== '/developer' && pathname.startsWith(link.href))
-            return (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={cn(
-                  'whitespace-nowrap rounded-[10px] px-3 py-2 text-center text-xs font-bold',
-                  on ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'
-                )}
-              >
-                {link.label}
-                {link.href === '/developer/feedback' && triageCount > 0 ? (
-                  <span className="ml-1 rounded-full bg-[var(--red)] px-1.5 text-[10px] text-white">{triageCount}</span>
-                ) : null}
-                {link.href === '/developer/register-interest' && newInterestCount > 0 ? (
-                  <span className="ml-1 rounded-full bg-[var(--red)] px-1.5 text-[10px] text-white">{newInterestCount}</span>
-                ) : null}
-              </Link>
-            )
-          })}
-        </div>
-      </nav>
-      <main className="mx-auto w-full max-w-[1400px] px-4 py-5">{children}</main>
-      {organization && orgApp ? (
-        <p className="px-4 pb-4 text-center text-xs text-[var(--ink3)]">
-          Signed in with a profile that also belongs to {organization.name}. The pages above still show every organisation.
-        </p>
+      </div>
+    </>
+  )
+
+  return (
+    <div
+      className="app-frame min-h-screen text-[var(--ink)]"
+      data-testid="owner-console"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && menuOpen) setMenuOpen(false)
+      }}
+    >
+      {menuOpen ? (
+        // The dimmed backdrop closes the menu on a tap; keyboard users use the Close button or Escape.
+        <div className="fixed inset-0 z-[60] bg-[rgba(10,20,40,.4)] lg:hidden" aria-hidden onClick={() => setMenuOpen(false)} />
       ) : null}
+      <div className="flex min-h-screen">
+        <aside
+          className={cn(
+            'sb flex min-h-0 flex-col',
+            'max-[1023px]:fixed max-[1023px]:inset-y-0 max-[1023px]:left-0 max-[1023px]:z-[70] max-[1023px]:w-[290px] max-[1023px]:transition-transform',
+            menuOpen ? 'max-[1023px]:translate-x-0' : 'max-[1023px]:-translate-x-full max-[1023px]:invisible',
+            'lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-[244px] lg:shrink-0'
+          )}
+          aria-label="Owner console menu"
+        >
+          <div className="flex h-full flex-col">{sidebar}</div>
+        </aside>
+        <div className="app-panel flex min-w-0 flex-1 flex-col">
+          <header className="tb sticky top-0 z-20 flex min-h-[54px] min-w-0 flex-wrap items-center gap-2 px-5 py-2 max-[760px]:px-3.5">
+            <button
+              type="button"
+              className="tb-control grid h-9 w-9 shrink-0 place-items-center lg:hidden"
+              aria-label="Open menu"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen(true)}
+            >
+              <Bars3Icon className="h-5 w-5" />
+            </button>
+            <ConsoleSearch />
+            <div className="ml-auto flex flex-wrap items-center gap-3 text-[12.5px] text-[var(--dash-ink-2)]">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={includeTestData}
+                onClick={() => setIncludeTestData(!includeTestData)}
+                className="flex items-center gap-2"
+                data-testid="include-test-data"
+              >
+                Include test data
+                <span className={`relative h-5 w-9 rounded-full ${includeTestData ? 'bg-[var(--dash-blue-solid)]' : 'bg-[var(--dash-track)]'}`}>
+                  <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition ${includeTestData ? 'left-4' : 'left-0.5'}`} />
+                </span>
+              </button>
+              {/*
+                Useful-only rule: each count opens the list it counts and equals its headline there. A people count
+                returns with PR 5, when the People page reads the same directory (review of #348: the accounts count
+                did not match the People page's fold).
+              */}
+              {counts ? (
+                <span className="flex flex-wrap items-center gap-2" data-testid="console-counts">
+                  <Link href="/developer/organisations" className="underline-offset-2 hover:underline" title={OWNER_COUNT_HINTS.organisations}>
+                    <b className="font-semibold text-[var(--dash-ink)]">{counts.organisations}</b> organisations
+                  </Link>
+
+                </span>
+              ) : countsError ? (
+                <span className="text-[var(--dash-warn-ink)]" title={countsError}>
+                  Counts unavailable
+                </span>
+              ) : null}
+            </div>
+          </header>
+          {showPeriod ? (
+            <div className="flex flex-wrap items-center gap-2 border-b border-[var(--dash-line)] bg-[var(--dash-panel)] px-5 py-2 max-[760px]:px-3.5">
+              <span className="text-[12px] text-[var(--dash-muted)]" id="console-period-label">
+                Period
+              </span>
+              <div className="flex flex-wrap gap-1" role="group" aria-labelledby="console-period-label">
+                {CONSOLE_PERIODS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    aria-pressed={period === item.id}
+                    onClick={() => setPeriod(item.id)}
+                    className={cn(
+                      'rounded-[8px] px-3 py-1.5 text-[12.5px] font-medium',
+                      period === item.id ? 'bg-[var(--dash-primary-bg)] text-[var(--dash-primary-ink)]' : 'tb-control'
+                    )}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          <main className="mx-auto w-full max-w-[1400px] min-w-0 px-4 py-5">{children}</main>
+          {organization && orgApp ? (
+            <p className="px-4 pb-4 text-center text-xs text-[var(--dash-muted)]">
+              Signed in with a profile that also belongs to {organization.name}. The pages above still show every organisation.
+            </p>
+          ) : null}
+        </div>
+      </div>
     </div>
   )
 }
+
+/** The hover text of the header counts (their metric contracts). */
+export const OWNER_COUNT_HINTS = {
+  organisations:
+    'Organisation documents (count() on the server), without the platform-owner profile. Test companies (isInternal / isTest) are left out unless Include test data is on. Refreshed every 60 seconds.',
+} as const
 
 export function DeveloperShell({
   title,
   children,
   actions,
   back,
+  eventsFrom,
 }: {
   title: string
   children: ReactNode
   actions?: ReactNode
   back?: { href: string; label: string }
+  /** Pages that count product events pass the first instant they count (null = all time): see ConsoleEventsNotice. */
+  eventsFrom?: Date | null
 }) {
   return (
     <div className="space-y-4">
@@ -150,6 +260,7 @@ export function DeveloperShell({
         <h1 className="text-xl font-extrabold text-[var(--ink)]">{title}</h1>
         {actions}
       </div>
+      {eventsFrom !== undefined ? <ConsoleEventsNotice from={eventsFrom} /> : null}
       {children}
     </div>
   )

@@ -65,3 +65,57 @@ jobs:
           java-version: 21
       - name: Firestore rules type check (emulator)
         run: npx -y firebase-tools@15.34.2 emulators:exec --only firestore --project demo-rules-typecheck "node scripts/check-rules-typecheck.mjs"
+
+  rules-tests:
+    # Owner console PR 1 (audit §1): the Firestore rules suites run on every pull request (they were never in CI).
+    # The Storage rules suite is not added yet: it fails 20 of 28 on the emulator today (audit §1, pre-existing).
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      TZ: UTC
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npm install -g firebase-tools@15.34.2
+      - name: Firestore rules suites (emulator)
+        run: npm run test:rules
+
+  owner-e2e:
+    # Owner console end-to-end suite (spec §6.3.5): emulators + seed + the built app + Playwright (Chromium).
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TZ: UTC
+      CI: 'true'
+      FIREBASE_BIN: firebase
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npm install -g firebase-tools@15.34.2
+      - run: npx playwright install --with-deps chromium
+      - name: Owner console e2e (emulators, seed, app, Playwright)
+        run: npm run test:owner-e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-e2e-report
+          path: |
+            playwright-report/owner-e2e
+            test-results/owner-e2e
+          retention-days: 14

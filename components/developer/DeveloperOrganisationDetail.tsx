@@ -6,6 +6,7 @@ import { useAnalyticsStore } from '@/lib/analytics/analyticsStore'
 import { useFeedbackStore } from '@/lib/feedback/feedbackStore'
 import { directoryActiveUsers, organisationActivityRows } from '@/lib/analytics/aggregations'
 import { resolveDateRange } from '@/lib/analytics/dateRange'
+import { rangeEventsSince } from '@/lib/analytics/consolePeriod'
 import { formatOwnerWhen, matchesOwnerSearch, ownerPersonName, ownerRoleLabel } from '@/lib/analytics/ownerDirectory'
 import { rosterStatusLabel } from '@/lib/staff/userRosterUtils'
 import { DateRangePicker } from '@/components/developer/DeveloperOverview'
@@ -31,10 +32,13 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
   const { suggestions, loadBoard } = useFeedbackStore()
   const { showFullEmails } = useConsolePrefs()
 
+  // This page's own range bounds the events it loads (review of #348, M2).
   useEffect(() => {
-    void load()
+    void load(rangeEventsSince(range))
+  }, [load, range])
+  useEffect(() => {
     void loadBoard(true)
-  }, [load, loadBoard])
+  }, [loadBoard])
 
   const orgUsers = useMemo(
     () => collapseDirectoryUsers(users.filter((user) => user.organizationId === organisationId)).users,
@@ -77,7 +81,7 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
   }
 
   return (
-    <DeveloperShell title={name} back={{ href: '/developer/organisations', label: 'Organisations' }}>
+    <DeveloperShell title={name} back={{ href: '/developer/organisations', label: 'Organisations' }} eventsFrom={rangeEventsSince(range)}>
       <p className="text-xs text-[var(--ink3)]">{organisationId}</p>
       <DateRangePicker preset={preset} onChange={setPreset} />
       <DeveloperStatus error={error} loading={loading} />

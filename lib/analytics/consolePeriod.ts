@@ -132,3 +132,84 @@ export function deltaCopy(current: number, previous: number): { text: string; di
   const direction = pct > 0 ? 'up' : 'down'
   return { text: `${pct > 0 ? '▲' : '▼'} ${Math.abs(pct)}% vs comparison`, direction }
 }
+
+/**
+ * Owner console PR 1 (spec §2, audit §3): the console store downloads product events and sessions only for the page's
+ * period — from the start of its comparison period — and never more than CONSOLE_EVENTS_CAP of each (newest first).
+ * The console is platform-wide, so its periods are in Europe/London (resolveConsolePeriod's default, PLAN §2).
+ * "To date" has no start, so it is the newest CONSOLE_EVENTS_CAP; a capped load is shown as such, never as complete.
+ */
+export const CONSOLE_EVENTS_CAP = 5000
+
+/** The first instant the store must load events from for this period; null means "no lower bound" (To date). */
+export function consoleEventsSince(period: ConsolePeriodId, now = new Date(), timeZone?: string): Date | null {
+  if (period === 'to_date') return null
+  const range = resolveConsolePeriod(period, now, timeZone)
+  return range.previousStart.getTime() < range.start.getTime() ? range.previousStart : range.start
+}
+
+/** True when the loaded events cover every instant from `from` onwards (so a count over it is complete). */
+export function consoleEventsCover(
+  loaded: { since: Date | null; truncated: boolean } | null,
+  from: Date
+): boolean {
+  if (!loaded || loaded.truncated) return false
+  return loaded.since === null || loaded.since.getTime() <= from.getTime()
+}
+
+/** True when a load from `loadedSince` already covers what `wanted` needs (no download needed). */
+export function consoleEventsLoadCovers(loadedSince: Date | null | undefined, wanted: Date | null): boolean {
+  if (loadedSince === undefined) return false
+  if (loadedSince === null) return true
+  return wanted !== null && loadedSince.getTime() <= wanted.getTime()
+}
+
+/** The widest of two "load from" choices: null (no lower bound) beats any date; else the earlier date. */
+export function widerEventsSince(a: Date | null | undefined, b: Date | null): Date | null {
+  if (a === undefined) return b
+  if (a === null || b === null) return null
+  return a.getTime() <= b.getTime() ? a : b
+}
+
+/** The "load from" instant for a page's own date range (AnalyticsDateRange): All time has no lower bound. */
+export function rangeEventsSince(range: { preset: string; start: Date; previousStart: Date }): Date | null {
+  if (range.preset === 'all_time') return null
+  return range.previousStart.getTime() < range.start.getTime() ? range.previousStart : range.start
+}
+
+export type ConsoleEventsState = 'loading' | 'error' | 'partial' | 'cut_short' | 'complete'
+
+/**
+ * What a page that counts product events must say about them (review of #348, M2): still loading, could not be read,
+ * loaded only from a later day than the page needs (partial), cut short at CONSOLE_EVENTS_CAP, or complete.
+ */
+export function consoleEventsState(
+  loaded: { since: Date | null | undefined; truncated: boolean; error: string | null; loading: boolean },
+  from: Date | null
+): ConsoleEventsState {
+  if (loaded.error) return 'error'
+  if (loaded.since === undefined) return 'loading'
+  const covers = loaded.since === null || (from !== null && loaded.since.getTime() <= from.getTime())
+  if (!covers) return loaded.loading ? 'loading' : 'partial'
+  if (loaded.truncated) return 'cut_short'
+  return 'complete'
+}
+
+/**
+ * The window a store load uses (re-review of #348): an explicit request as given; with none (a Refresh, a reload after
+ * an action), the wider of the window already loaded and the shared period's default, so a page never narrows.
+ */
+export function eventsLoadWindow(
+  requested: Date | null | undefined,
+  current: Date | null | undefined,
+  fallback: Date | null
+): Date | null {
+  if (requested !== undefined) return requested
+  return widerEventsSince(current, fallback)
+}
+
+/** After a load ends: run the queued one when it was a Refresh (`force`) or needs a wider window than was loaded. */
+export function queuedEventsReload(queued: Date | null | undefined, force: boolean, loadedSince: Date | null): boolean {
+  if (queued === undefined) return false
+  return force || !consoleEventsLoadCovers(loadedSince, queued)
+}

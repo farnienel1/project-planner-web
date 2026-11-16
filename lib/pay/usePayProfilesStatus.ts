@@ -12,6 +12,7 @@ import {
   payProfilesRetryNeeded,
   payProfileStateVersion,
   payProfilesStatusFor,
+  payProfilesStatusForCatalogueOperative,
   payProfilesStatusForPerson,
   personPayStatus,
   type PayProfilesStatus,
@@ -58,10 +59,21 @@ export function usePersonPayStatus(
  */
 export function usePayStatusOf(
   organizationId: string | null | undefined
-): (person: { id: string; formerUserIds?: ReadonlyArray<string> | null } | null | undefined) => PayProfilesStatus {
+): (
+  person: { id: string; formerUserIds?: ReadonlyArray<string> | null; catalogueOperative?: boolean } | null | undefined
+) => PayProfilesStatus {
   const version = useSyncExternalStore(onPayProfilesStatusChange, payProfileStateVersion, () => 0)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  return useMemo(() => (person) => payProfilesStatusForPerson(organizationId, person), [organizationId, version])
+  // 16 Nov scan: a catalogue operative (an `operatives` row with no account) waits for its row to be re-read with the
+  // pay profiles (`payProfilesStatusForCatalogueOperative`).
+  return useMemo(
+    () => (person) =>
+      person?.catalogueOperative
+        ? payProfilesStatusForCatalogueOperative(organizationId, person.id)
+        : payProfilesStatusForPerson(organizationId, person),
+    // `version` re-creates the function whenever any pay status may have changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [organizationId, version]
+  )
 }
 
 /** Retry after a failed pay-profile read: the own read, and the roster (which reads the pay profiles again). */

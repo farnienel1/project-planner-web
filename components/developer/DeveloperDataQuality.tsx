@@ -3,17 +3,20 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useAnalyticsStore } from '@/lib/analytics/analyticsStore'
+import { consoleEventsSince } from '@/lib/analytics/consolePeriod'
 import { DeveloperShell, DeveloperStatus } from '@/components/developer/DeveloperShell'
 import { EmptyState, LoadingSpinner } from '@/components/dashboard/PageShell'
 import { MaskedEmail } from '@/components/developer/MaskedEmail'
 import { ownerPersonName } from '@/lib/analytics/ownerDirectory'
 import { isUnfinishedSetupName, isAbandonedUnfinishedSignup, unfinishedSetupLabel } from '@/lib/owner/unfinishedSetup'
-import { isTestRecord, useConsolePrefs } from '@/lib/analytics/consolePrefs'
+import { useConsolePrefs } from '@/lib/analytics/consolePrefs'
+import { isTestOrganisation } from '@/lib/owner/testData'
 import { auditOwnerAction, ownerDeleteUnfinishedUser, ownerMarkInternal } from '@/lib/owner/ownerActions'
 import { formatOwnerWhen } from '@/lib/analytics/ownerDirectory'
 
 export function DeveloperDataQualityScreen() {
   const { organisations, users, events, loading, error, load, refresh } = useAnalyticsStore()
+  const period = useConsolePrefs((state) => state.period)
   const { showFullEmails } = useConsolePrefs()
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState('')
@@ -29,7 +32,7 @@ export function DeveloperDataQualityScreen() {
       return !org || org.unfinishedSetup || isUnfinishedSetupName(org.name)
     })
     const abandoned = unfinishedUsers.filter((user) => isAbandonedUnfinishedSignup(user.createdAt))
-    const testOrgs = organisations.filter((org) => isTestRecord(org))
+    const testOrgs = organisations.filter((org) => isTestOrganisation(org))
     const missingSource = events.filter((event) => !event.source && !event.path)
     return { unfinishedUsers, abandoned, testOrgs, missingSource }
   }, [organisations, users, events])
@@ -39,6 +42,7 @@ export function DeveloperDataQualityScreen() {
   return (
     <DeveloperShell
       title="Data quality"
+      eventsFrom={consoleEventsSince(period)}
       actions={
         <button type="button" className="btn sm ghost" onClick={() => void refresh()} disabled={loading}>
           {loading ? 'Refreshing…' : 'Refresh'}

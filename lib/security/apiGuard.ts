@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { rateLimit } from '@/lib/security/rateLimit'
+import { identityToolkitBase } from '@/lib/owner/googleApis'
 
 export { clientSafeMessage } from '@/lib/security/sanitize'
 
@@ -17,8 +18,31 @@ export function parseAuthCreatedAtMs(value: unknown): number | null {
   return Number.isFinite(raw) && raw > 0 ? raw : null
 }
 
+/** True for a plain IPv4 or IPv6 address (no port, no brackets, no other text). */
+export function looksLikeIpAddress(value: string): boolean {
+  if (/^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/.test(value)) return true
+  if (value.length > 45 || !value.includes(':') || !/^[0-9a-fA-F:.]+$/.test(value)) return false
+  const doubleColons = value.split('::').length - 1
+  if (doubleColons > 1) return false
+  const groups = value.split(':')
+  const last = groups[groups.length - 1]
+  const tailIsV4 = last.includes('.')
+  if (tailIsV4 && !looksLikeIpAddress(last)) return false
+  const hexGroups = (tailIsV4 ? groups.slice(0, -1) : groups).filter((group) => group !== '')
+  if (!hexGroups.every((group) => /^[0-9a-fA-F]{1,4}$/.test(group))) return false
+  const width = hexGroups.length + (tailIsV4 ? 2 : 0)
+  return doubleColons === 1 ? width < 8 : width === 8
+}
+
+/**
+ * The caller's address for rate limits and audit rows. On Netlify `x-nf-client-connection-ip` is set by the edge from
+ * the connection itself; its last comma-separated part is used, and only when it is an IPv4 or IPv6 address
+ * (final check of #348). Otherwise `x-forwarded-for` and `x-real-ip` as before.
+ */
 export function clientIp(request: NextRequest): string {
+  const edge = request.headers.get('x-nf-client-connection-ip')?.split(',').pop()?.trim() ?? ''
   return (
+    (looksLikeIpAddress(edge) ? edge : '') ||
     request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
     request.headers.get('x-real-ip')?.trim() ||
     'unknown'
@@ -41,6 +65,13 @@ export function enforceRateLimit(
   windowMs: number
 ): NextResponse | null {
   const result = rateLimit(`${scope}:${clientIp(request)}`, limit, windowMs)
+  if (result.ok) return null
+  return jsonError('Too many requests. Please try again shortly.', 429, result.retryAfterSec)
+}
+
+/** A rate limit on any key (for example a verified user id), not only the caller's address. */
+export function enforceRateLimitKey(scope: string, key: string, limit: number, windowMs: number): NextResponse | null {
+  const result = rateLimit(`${scope}:${key}`, limit, windowMs)
   if (result.ok) return null
   return jsonError('Too many requests. Please try again shortly.', 429, result.retryAfterSec)
 }
@@ -69,7 +100,7 @@ export async function verifyFirebaseIdToken(idToken: string): Promise<FirebaseAu
 
   try {
     const response = await fetch(
-      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(apiKey)}`,
+      `${identityToolkitBase()}/accounts:lookup?key=${encodeURIComponent(apiKey)}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

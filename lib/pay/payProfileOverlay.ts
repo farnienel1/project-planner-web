@@ -264,6 +264,23 @@ export function payProfilesStatusForPerson(
   return [person.id, ...(person.formerUserIds ?? [])].some((id) => coveredSubjects.ids.has(personKey(id))) ? status : 'loading'
 }
 
+/**
+ * 16 Nov scan (rulebook §8, `catalogueOperativePaySubjects`): a catalogue operative (an `operatives` row with no app
+ * account, id `operativeId`) is priced from `payProfiles/{rowId}` laid over its row. Its pay is known only once the
+ * person's status is ready (`payProfilesStatusForPerson`: the row was in the last read plan, its read did not fail) AND
+ * the `operatives` rows were parsed with the current pay-profile cache — before that the row still holds its stripped
+ * or stale pay. While `privatePay` is off the row holds the pay, so it is ready with the organisation.
+ */
+export function payProfilesStatusForCatalogueOperative(
+  organizationId: string | null | undefined,
+  operativeId: string
+): PayProfilesStatus {
+  const status = payProfilesStatusForPerson(organizationId, { id: operativeId })
+  if (status !== 'ready' || !organizationId || !privatePayFor(organizationId)) return status
+  if (operativesOverlaid.organizationId !== organizationId || operativesOverlaid.version !== cacheVersion) return 'loading'
+  return status
+}
+
 /** Changes whenever any pay status may have changed (for hooks that ask about many people). */
 export function payProfileStateVersion(): number {
   return stateVersion
@@ -644,6 +661,8 @@ export function resetPayProfilesForTests(): void {
   profiles = new Map()
   rosterOverlaid = { organizationId: '', version: -1 }
   operativesOverlaid = { organizationId: '', version: -1 }
+  operativeRowsOrganizationId = ''
+  operativeRows = []
   inFlight = null
   cacheVersion += 1
 }

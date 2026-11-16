@@ -27,6 +27,15 @@ import {
   parseOwnerConsoleUser,
 } from '@/lib/analytics/ownerDirectory'
 import type { User } from '@/types'
+import {
+  CONSOLE_EVENTS_CAP,
+  consoleEventsLoadCovers,
+  consoleEventsSince,
+  eventsLoadWindow,
+  queuedEventsReload,
+  widerEventsSince,
+} from '@/lib/analytics/consolePeriod'
+import { useConsolePrefs } from '@/lib/analytics/consolePrefs'
 
 export type { PlatformOrganisation } from '@/lib/analytics/analyticsTypes'
 
@@ -38,7 +47,18 @@ type AnalyticsState = {
   loading: boolean
   error: string | null
   loadedAt?: Date
-  load: (since?: Date) => Promise<void>
+  /** First instant the loaded events and sessions cover; null = no lower bound (To date); undefined = not loaded. */
+  eventsSince?: Date | null
+  /** True when the events or sessions hit CONSOLE_EVENTS_CAP, so the oldest in the window are missing. */
+  eventsTruncated: boolean
+  /** Set when events or sessions could not be read: the pages say so instead of showing empty counts as real. */
+  eventsError: string | null
+  /**
+   * Loads the directory and the events and sessions of the page's period (owner console PR 1: never every event ever).
+   * With no `since`, the wider of the window already loaded and the shared period's start (never narrower).
+   * `force` reloads even when the window is covered (Refresh).
+   */
+  load: (since?: Date | null, options?: { force?: boolean }) => Promise<void>
   refresh: () => Promise<void>
 }
 
@@ -133,49 +153,53 @@ async function loadOrganisations(userOrgIds: string[]): Promise<PlatformOrganisa
   }
 }
 
-async function loadEvents(since: Date): Promise<ProductEvent[]> {
-  if (!db) return []
-  const stamp = Timestamp.fromDate(since)
+/** Events from `since` (newest first), at most CONSOLE_EVENTS_CAP. A refused read is empty, never a full download. */
+async function loadEvents(since: Date | null): Promise<{ rows: ProductEvent[]; truncated: boolean; error: string | null }> {
+  if (!db) return { rows: [], truncated: false, error: null }
+  const constraints = since
+    ? [where('createdAt', '>=', Timestamp.fromDate(since)), orderBy('createdAt', 'desc'), limit(CONSOLE_EVENTS_CAP)]
+    : [orderBy('createdAt', 'desc'), limit(CONSOLE_EVENTS_CAP)]
   try {
-    const snap = await getDocs(query(collection(db, 'productEvents'), where('createdAt', '>=', stamp)))
-    return snap.docs
+    const snap = await getDocs(query(collection(db, 'productEvents'), ...constraints))
+    const rows = snap.docs
       .map((entry) => parseEvent(entry.id, entry.data() as Record<string, unknown>))
       .filter((row): row is ProductEvent => Boolean(row))
+    return { rows, truncated: snap.size >= CONSOLE_EVENTS_CAP, error: null }
   } catch (error) {
-    if (isPermissionDenied(error)) return []
-    try {
-      const docs = await fetchAllDocs('productEvents')
-      return docs
-        .map((entry) => parseEvent(entry.id, entry.data() as Record<string, unknown>))
-        .filter((row): row is ProductEvent => Boolean(row))
-        .filter((row) => row.createdAt.getTime() >= since.getTime())
-    } catch {
-      return []
-    }
+    // Never a silent empty list: the pages show that the events could not be read (review of #348, M2).
+    console.warn('[owner console] events', error)
+    return { rows: [], truncated: false, error: eventsLoadMessage(error, 'events') }
   }
 }
 
-async function loadSessions(since: Date): Promise<ProductSession[]> {
-  if (!db) return []
-  const stamp = Timestamp.fromDate(since)
+/** Sessions started from `since` (newest first), at most CONSOLE_EVENTS_CAP. */
+async function loadSessions(since: Date | null): Promise<{ rows: ProductSession[]; truncated: boolean; error: string | null }> {
+  if (!db) return { rows: [], truncated: false, error: null }
+  const constraints = since
+    ? [where('startedAt', '>=', Timestamp.fromDate(since)), orderBy('startedAt', 'desc'), limit(CONSOLE_EVENTS_CAP)]
+    : [orderBy('startedAt', 'desc'), limit(CONSOLE_EVENTS_CAP)]
   try {
-    const snap = await getDocs(query(collection(db, 'productSessions'), where('startedAt', '>=', stamp)))
-    return snap.docs
+    const snap = await getDocs(query(collection(db, 'productSessions'), ...constraints))
+    const rows = snap.docs
       .map((entry) => parseSession(entry.id, entry.data() as Record<string, unknown>))
       .filter((row): row is ProductSession => Boolean(row))
+    return { rows, truncated: snap.size >= CONSOLE_EVENTS_CAP, error: null }
   } catch (error) {
-    if (isPermissionDenied(error)) return []
-    try {
-      const docs = await fetchAllDocs('productSessions')
-      return docs
-        .map((entry) => parseSession(entry.id, entry.data() as Record<string, unknown>))
-        .filter((row): row is ProductSession => Boolean(row))
-        .filter((row) => row.startedAt.getTime() >= since.getTime())
-    } catch {
-      return []
-    }
+    // Never a silent empty list: the pages show that the sessions could not be read (review of #348, M2).
+    console.warn('[owner console] sessions', error)
+    return { rows: [], truncated: false, error: eventsLoadMessage(error, 'sessions') }
   }
 }
+
+function eventsLoadMessage(error: unknown, what: 'events' | 'sessions'): string {
+  if (isPermissionDenied(error)) return `Product ${what} could not be read (permission refused). Sign in again as the owner.`
+  return `Product ${what} could not be read${error instanceof Error && error.message ? `: ${error.message}` : ''}. Refresh to try again.`
+}
+
+/** A wider window asked for while a load is running; loaded straight after it (review of #348, M2). */
+let queuedSince: Date | null | undefined
+/** A Refresh asked for while a load runs: reload once it ends, even when its window is covered. */
+let queuedForce = false
 
 function permissionMessage(error: unknown): string {
   if (isPermissionDenied(error)) {
@@ -191,50 +215,51 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
   organisations: [],
   loading: false,
   error: null,
+  eventsTruncated: false,
+  eventsError: null,
 
-  load: async (_since) => {
+  load: async (sinceArg, options = {}) => {
     if (!db) return
     const current = get()
-    if (current.loading) return
-    if (current.loadedAt && Date.now() - current.loadedAt.getTime() < 15_000 && current.users.length + current.organisations.length > 0) {
+    const since = eventsLoadWindow(sinceArg, current.eventsSince, consoleEventsSince(useConsolePrefs.getState().period))
+    if (current.loading) {
+      // Never drop a wider window or a Refresh: remember it and load it when this load finishes.
+      queuedSince = widerEventsSince(queuedSince, since)
+      if (options.force) queuedForce = true
       return
     }
-    // Always load the live directory from the beginning of recorded time so
-    // switching date presets cannot hide organisations or users.
-    const from = new Date('2018-01-01T00:00:00.000Z')
+    const directoryFresh =
+      !options.force &&
+      Boolean(current.loadedAt) &&
+      Date.now() - (current.loadedAt as Date).getTime() < 15_000 &&
+      current.users.length + current.organisations.length > 0
+    if (directoryFresh && consoleEventsLoadCovers(current.eventsSince, since)) return
     set({ loading: true, error: null })
-    let users: User[] = []
-    let organisations: PlatformOrganisation[] = []
-    let events: ProductEvent[] = []
-    let sessions: ProductSession[] = []
+    let users: User[] = current.users
+    let organisations: PlatformOrganisation[] = current.organisations
     let fatal: unknown
 
-    try {
-      users = await loadUsers()
-    } catch (error) {
-      fatal = error
+    if (!directoryFresh) {
+      // The directory (users, organisations) is still read whole here for the old pages; the new pages read the
+      // paged /api/owner/directory routes instead. Removed with useAnalyticsStore (PLAN §8, PR 11).
+      try {
+        users = await loadUsers()
+      } catch (error) {
+        fatal = error
+      }
+      try {
+        organisations = mergeOrganisationsFromUsers(await loadOrganisations(users.map((user) => user.organizationId)), users)
+      } catch (error) {
+        organisations = mergeOrganisationsFromUsers([], users)
+        if (!organisations.length && !users.length) fatal = fatal || error
+      }
     }
 
-    try {
-      organisations = mergeOrganisationsFromUsers(await loadOrganisations(users.map((user) => user.organizationId)), users)
-    } catch (error) {
-      organisations = mergeOrganisationsFromUsers([], users)
-      if (!organisations.length && !users.length) fatal = fatal || error
-    }
-
-    try {
-      events = await loadEvents(from)
-    } catch {
-      events = []
-    }
-
-    try {
-      sessions = await loadSessions(from)
-    } catch {
-      sessions = []
-    }
+    const [events, sessions] = await Promise.all([loadEvents(since), loadSessions(since)])
 
     if (fatal && users.length === 0 && organisations.length === 0) {
+      queuedSince = undefined
+      queuedForce = false
       set({ error: permissionMessage(fatal), loading: false })
       return
     }
@@ -242,16 +267,24 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
     set({
       users,
       organisations,
-      events,
-      sessions,
+      events: events.rows,
+      sessions: sessions.rows,
+      eventsSince: since,
+      eventsTruncated: events.truncated || sessions.truncated,
+      eventsError: events.error || sessions.error,
       loading: false,
-      loadedAt: new Date(),
+      loadedAt: directoryFresh ? current.loadedAt : new Date(),
       error: null,
     })
+    const queued = queuedSince
+    const force = queuedForce
+    queuedSince = undefined
+    queuedForce = false
+    if (queuedEventsReload(queued, force, since)) await get().load(queued as Date | null, { force })
   },
 
+  // Reloads everything for the window already loaded (never narrower), also when a load is running.
   refresh: async () => {
-    set({ loadedAt: undefined })
-    await get().load()
+    await get().load(undefined, { force: true })
   },
 }))
