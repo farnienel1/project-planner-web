@@ -576,11 +576,12 @@ export default function WarningsPage() {
       pairs?: Array<{ bookingAId: string; bookingBId: string }>
     }) => {
       if (!organization?.id || !user?.id) return
+      const pairs = clash.pairs && clash.pairs.length > 0 ? clash.pairs : null
       try {
         // Both `acceptedBookingClashes` and `warningResolutions` (`clashApprovalWrites`), so iOS sees it too.
-        if (clash.pairs && clash.pairs.length > 0) {
+        if (pairs) {
           // Operative cluster (`operativeClashGroups`): approve every overlapping pair.
-          await approveBookingClashPairs(organization.id, clash.pairs, user.id)
+          await approveBookingClashPairs(organization.id, pairs, user.id)
         } else {
           await approveBookingClash(
             organization.id,
@@ -588,26 +589,35 @@ export default function WarningsPage() {
             user.id
           )
         }
-        const [accepted, resolved] = await Promise.all([
-          loadAcceptedBookingClashes(organization.id),
-          loadResolvedWarningKeys(organization.id),
-        ])
-        setAcceptedClashes(accepted)
-        setResolvedKeys(resolved)
-        feedback(
-          resolvedFeedbackEvent(visible, {
-            resolvedKeys: resolved,
-            acceptedClashes: accepted,
-            dismissedQualificationKeys: dismissedKeys,
-          })
-        )
       } catch (error) {
         // Owner decision 8: the refusal sound, then the error goes where it went before.
         feedback('actionRefused')
         throw error
       }
+      // 16 Nov scan: the approval is written, so the success sound plays now — a failed reload below never turns it
+      // into the error sound. The list it judges "all clear" by is the current one with this approval added.
+      const approvedNow = (pairs ?? [{ bookingAId: clash.bookingAId, bookingBId: clash.bookingBId }]).map((pair) => ({
+        id: '',
+        bookingAId: pair.bookingAId,
+        bookingBId: pair.bookingBId,
+        acceptedAt: new Date(),
+        acceptedByUserId: user.id,
+      }))
+      feedback(
+        resolvedFeedbackEvent(visible, {
+          resolvedKeys: clash.resolutionKey ? [...resolvedKeys, clash.resolutionKey] : resolvedKeys,
+          acceptedClashes: [...acceptedClashes, ...approvedNow],
+          dismissedQualificationKeys: dismissedKeys,
+        })
+      )
+      const [accepted, resolved] = await Promise.all([
+        loadAcceptedBookingClashes(organization.id),
+        loadResolvedWarningKeys(organization.id),
+      ])
+      setAcceptedClashes(accepted)
+      setResolvedKeys(resolved)
     },
-    [organization?.id, user?.id, visible, dismissedKeys]
+    [organization?.id, user?.id, visible, dismissedKeys, resolvedKeys, acceptedClashes]
   )
 
   const handleDeleteBooking = useCallback(

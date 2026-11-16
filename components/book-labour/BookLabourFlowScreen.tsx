@@ -257,6 +257,7 @@ export function BookLabourFlowScreen({
     loadBookings,
     loadManagerSiteBookings,
     loadOperatives,
+    loadManagers,
     loadUsers,
     loadProjects,
     loadSmallWorks,
