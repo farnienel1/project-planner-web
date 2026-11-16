@@ -6,6 +6,7 @@ import { useAnalyticsStore } from '@/lib/analytics/analyticsStore'
 import { useFeedbackStore } from '@/lib/feedback/feedbackStore'
 import { directoryActiveUsers, organisationActivityRows } from '@/lib/analytics/aggregations'
 import { resolveDateRange } from '@/lib/analytics/dateRange'
+import { rangeEventsSince } from '@/lib/analytics/consolePeriod'
 import { formatOwnerWhen, matchesOwnerSearch } from '@/lib/analytics/ownerDirectory'
 import type { DateRangePreset } from '@/lib/analytics/events'
 import { DateRangePicker } from '@/components/developer/DeveloperOverview'
@@ -23,10 +24,13 @@ export function DeveloperOrganisationsScreen() {
   const { suggestions, loadBoard } = useFeedbackStore()
   const { includeTestData, jumpQuery } = useConsolePrefs()
 
+  // This page's own range bounds the events it loads (review of #348, M2).
   useEffect(() => {
-    void load()
+    void load(rangeEventsSince(range))
+  }, [load, range])
+  useEffect(() => {
     void loadBoard(true)
-  }, [load, loadBoard])
+  }, [loadBoard])
 
   const rows = useMemo(
     () =>
@@ -58,6 +62,7 @@ export function DeveloperOrganisationsScreen() {
   return (
     <DeveloperShell
       title="Organisations"
+      eventsFrom={rangeEventsSince(range)}
       actions={
         <button type="button" className="btn sm ghost" onClick={() => void refresh()} disabled={loading}>
           {loading ? 'Refreshing…' : 'Refresh'}

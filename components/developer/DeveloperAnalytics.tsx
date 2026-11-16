@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useAnalyticsStore } from '@/lib/analytics/analyticsStore'
+import { rangeEventsSince } from '@/lib/analytics/consolePeriod'
 import { resolveDateRange, formatDuration, percentChange } from '@/lib/analytics/dateRange'
 import {
   activityLanes,
@@ -26,10 +27,7 @@ import { EmptyState, LoadingSpinner } from '@/components/dashboard/PageShell'
 import { useFeedbackStore } from '@/lib/feedback/feedbackStore'
 import { formatOwnerWhen } from '@/lib/analytics/ownerDirectory'
 
-function pageEventsSince(range: { preset: string; previousStart: Date; start: Date }): Date | null {
-  if (range.preset === 'all_time') return null
-  return range.previousStart.getTime() < range.start.getTime() ? range.previousStart : range.start
-}
+const pageEventsSince = rangeEventsSince
 
 export function DeveloperAnalyticsScreen() {
   const [preset, setPreset] = useState<DateRangePreset>('all_time')
@@ -76,6 +74,7 @@ export function DeveloperAnalyticsScreen() {
   return (
     <DeveloperShell
       title="Analytics"
+      eventsFrom={pageEventsSince(range)}
       actions={
         <button type="button" className="btn sm ghost" onClick={() => void refresh()} disabled={loading}>
           {loading ? 'Refreshing…' : 'Refresh'}
@@ -239,6 +238,7 @@ export function DeveloperUsageScreen() {
   return (
     <DeveloperShell
       title="Feature usage"
+      eventsFrom={pageEventsSince(range)}
       actions={
         <button type="button" className="btn sm ghost" onClick={() => void refresh()} disabled={loading}>
           {loading ? 'Refreshing…' : 'Refresh'}

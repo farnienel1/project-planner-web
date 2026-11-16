@@ -163,3 +163,34 @@ export function consoleEventsLoadCovers(loadedSince: Date | null | undefined, wa
   if (loadedSince === null) return true
   return wanted !== null && loadedSince.getTime() <= wanted.getTime()
 }
+
+/** The widest of two "load from" choices: null (no lower bound) beats any date; else the earlier date. */
+export function widerEventsSince(a: Date | null | undefined, b: Date | null): Date | null {
+  if (a === undefined) return b
+  if (a === null || b === null) return null
+  return a.getTime() <= b.getTime() ? a : b
+}
+
+/** The "load from" instant for a page's own date range (AnalyticsDateRange): All time has no lower bound. */
+export function rangeEventsSince(range: { preset: string; start: Date; previousStart: Date }): Date | null {
+  if (range.preset === 'all_time') return null
+  return range.previousStart.getTime() < range.start.getTime() ? range.previousStart : range.start
+}
+
+export type ConsoleEventsState = 'loading' | 'error' | 'partial' | 'cut_short' | 'complete'
+
+/**
+ * What a page that counts product events must say about them (review of #348, M2): still loading, could not be read,
+ * loaded only from a later day than the page needs (partial), cut short at CONSOLE_EVENTS_CAP, or complete.
+ */
+export function consoleEventsState(
+  loaded: { since: Date | null | undefined; truncated: boolean; error: string | null; loading: boolean },
+  from: Date | null
+): ConsoleEventsState {
+  if (loaded.error) return 'error'
+  if (loaded.since === undefined) return 'loading'
+  const covers = loaded.since === null || (from !== null && loaded.since.getTime() <= from.getTime())
+  if (!covers) return loaded.loading ? 'loading' : 'partial'
+  if (loaded.truncated) return 'cut_short'
+  return 'complete'
+}

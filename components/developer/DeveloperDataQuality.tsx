@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useAnalyticsStore } from '@/lib/analytics/analyticsStore'
+import { consoleEventsSince } from '@/lib/analytics/consolePeriod'
 import { DeveloperShell, DeveloperStatus } from '@/components/developer/DeveloperShell'
 import { EmptyState, LoadingSpinner } from '@/components/dashboard/PageShell'
 import { MaskedEmail } from '@/components/developer/MaskedEmail'
@@ -15,6 +16,7 @@ import { formatOwnerWhen } from '@/lib/analytics/ownerDirectory'
 
 export function DeveloperDataQualityScreen() {
   const { organisations, users, events, loading, error, load, refresh } = useAnalyticsStore()
+  const period = useConsolePrefs((state) => state.period)
   const { showFullEmails } = useConsolePrefs()
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState('')
@@ -40,6 +42,7 @@ export function DeveloperDataQualityScreen() {
   return (
     <DeveloperShell
       title="Data quality"
+      eventsFrom={consoleEventsSince(period)}
       actions={
         <button type="button" className="btn sm ghost" onClick={() => void refresh()} disabled={loading}>
           {loading ? 'Refreshing…' : 'Refresh'}

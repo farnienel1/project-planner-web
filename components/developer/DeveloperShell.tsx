@@ -16,6 +16,7 @@ import { CONSOLE_PERIODS } from '@/lib/analytics/consolePeriod'
 import { activeConsoleHref, consolePageUsesPeriod, visibleConsoleNav } from '@/lib/owner/consoleNav'
 import { useOwnerCounts } from '@/lib/owner/client/ownerApi'
 import { ConsoleSearch } from '@/components/developer/ConsoleSearch'
+import { ConsoleEventsNotice } from '@/components/developer/ConsoleEventsNotice'
 
 /**
  * The console frame: the app's own sidebar and top bar (`app-frame`, `sb`, `tb` in app/brand-shell.css, owner answer
@@ -240,11 +241,14 @@ export function DeveloperShell({
   children,
   actions,
   back,
+  eventsFrom,
 }: {
   title: string
   children: ReactNode
   actions?: ReactNode
   back?: { href: string; label: string }
+  /** Pages that count product events pass the first instant they count (null = all time): see ConsoleEventsNotice. */
+  eventsFrom?: Date | null
 }) {
   return (
     <div className="space-y-4">
@@ -257,6 +261,7 @@ export function DeveloperShell({
         <h1 className="text-xl font-extrabold text-[var(--ink)]">{title}</h1>
         {actions}
       </div>
+      {eventsFrom !== undefined ? <ConsoleEventsNotice from={eventsFrom} /> : null}
       {children}
     </div>
   )

@@ -18,7 +18,7 @@ import {
 import { METRIC_DEFINITIONS, type DateRangePreset } from '@/lib/analytics/events'
 import { DeveloperShell, DeveloperStatus, MetricCard, MiniBars } from '@/components/developer/DeveloperShell'
 import { EmptyState, LoadingSpinner } from '@/components/dashboard/PageShell'
-import { CONSOLE_EVENTS_CAP, CONSOLE_PERIODS, consoleEventsCover, deltaCopy, formatCount, formatGbpFromPence, resolveConsolePeriod } from '@/lib/analytics/consolePeriod'
+import { CONSOLE_PERIODS, consoleEventsCover, consoleEventsSince, deltaCopy, formatCount, formatGbpFromPence, resolveConsolePeriod } from '@/lib/analytics/consolePeriod'
 import { useConsolePrefs } from '@/lib/analytics/consolePrefs'
 import { isTestOrganisation, isTestPerson, testOrganisationIds } from '@/lib/owner/testData'
 import { loadSignedTimesheetValueTotals, otherCurrenciesNote, type SignedTimesheetValueTotals } from '@/lib/owner/signedTimesheetValue'
@@ -294,6 +294,7 @@ export function DeveloperOverviewScreen() {
   return (
     <DeveloperShell
       title="Overview"
+      eventsFrom={consoleEventsSince(period)}
       actions={
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-xs text-[var(--ink3)]">
@@ -305,11 +306,6 @@ export function DeveloperOverviewScreen() {
         </div>
       }
     >
-      {eventsTruncated ? (
-        <p className="text-xs text-[var(--ink3)]">
-          Showing the newest {CONSOLE_EVENTS_CAP.toLocaleString('en-GB')} product events only. Pick a shorter period for complete event counts.
-        </p>
-      ) : null}
       <div className="grid gap-3 lg:grid-cols-[1.2fr_2fr]">
         <div className="card pad text-white" style={{ background: 'linear-gradient(160deg,#1D4ED8,#0F2447)' }}>
           <p className="text-sm font-bold text-white/80">Timesheet value signed · {periodRange.label}</p>

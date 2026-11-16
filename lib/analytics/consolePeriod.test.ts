@@ -1,7 +1,15 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { dayKeyInZone, isoWeekdayInZone, LONDON_TIME_ZONE } from '../orgTime/zoneTime.ts'
-import { consoleEventsCover, consoleEventsLoadCovers, consoleEventsSince, resolveConsolePeriod } from './consolePeriod.ts'
+import {
+  consoleEventsCover,
+  consoleEventsLoadCovers,
+  consoleEventsSince,
+  consoleEventsState,
+  rangeEventsSince,
+  resolveConsolePeriod,
+  widerEventsSince,
+} from './consolePeriod.ts'
 
 test('this week starts Monday in Europe/London', () => {
   const now = new Date('2026-09-22T15:00:00Z')
@@ -45,4 +53,30 @@ test('PR 1: a capped or later load never claims to cover an earlier day', () => 
   assert.equal(consoleEventsLoadCovers(null, since), true)
   assert.equal(consoleEventsLoadCovers(since, null), false)
   assert.equal(consoleEventsLoadCovers(since, new Date('2026-10-02T00:00:00Z')), true)
+})
+
+test('review #348 M2: a queued load keeps the widest window asked for', () => {
+  const oct = new Date('2026-10-01T00:00:00Z')
+  const nov = new Date('2026-11-01T00:00:00Z')
+  assert.equal(widerEventsSince(undefined, nov), nov)
+  assert.equal(widerEventsSince(nov, oct), oct)
+  assert.equal(widerEventsSince(oct, nov), oct)
+  assert.equal(widerEventsSince(oct, null), null)
+  assert.equal(widerEventsSince(null, oct), null)
+})
+
+test('review #348 M2: the events state a page shows', () => {
+  const oct = new Date('2026-10-01T00:00:00Z')
+  const nov = new Date('2026-11-01T00:00:00Z')
+  const base = { truncated: false, error: null, loading: false }
+  assert.equal(consoleEventsState({ ...base, since: undefined }, oct), 'loading')
+  assert.equal(consoleEventsState({ ...base, since: oct, error: 'x' }, oct), 'error')
+  assert.equal(consoleEventsState({ ...base, since: nov }, oct), 'partial')
+  assert.equal(consoleEventsState({ ...base, since: nov, loading: true }, oct), 'loading')
+  assert.equal(consoleEventsState({ ...base, since: oct, truncated: true }, nov), 'cut_short')
+  assert.equal(consoleEventsState({ ...base, since: oct }, nov), 'complete')
+  assert.equal(consoleEventsState({ ...base, since: null }, null), 'complete')
+  assert.equal(consoleEventsState({ ...base, since: oct }, null), 'partial')
+  assert.equal(rangeEventsSince({ preset: 'all_time', start: oct, previousStart: oct }), null)
+  assert.equal(rangeEventsSince({ preset: 'last_7', start: nov, previousStart: oct }), oct)
 })
