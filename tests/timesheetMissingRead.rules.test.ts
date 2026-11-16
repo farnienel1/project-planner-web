@@ -124,3 +124,17 @@ test('a missing non-timesheet settings document stays as before', async () => {
   await assertSucceeds(getDoc(await sheetRef(LM, 'deadlines_J404')))
   await assertFails(getDoc(await sheetRef(OP, 'variations_J404')))
 })
+
+test('1.55.0 privatePay on: a missing revision id is read by the same people as its original', async () => {
+  await setPrivatePay(true)
+  // A revision id `timesheet_{uid}_{stamp}_rev{N}` names the same person as its original (tsUid drops `_rev{N}`).
+  for (const id of [`${MISSING}_rev1`, `${EXISTING}_rev1`, `${EXISTING}_rev12`]) {
+    await assertSucceeds(getDoc(await sheetRef(LM, id)))
+    await assertSucceeds(getDoc(await sheetRef(ADMIN, id)))
+    await assertSucceeds(getDoc(await sheetRef(OP, id)))
+    await assertFails(getDoc(await sheetRef(OTHER_MGR, id)))
+    await assertFails(getDoc(await sheetRef(OTHER, id)))
+  }
+  await assertFails(getDoc(await sheetRef(LM, `${OTHER_MISSING}_rev1`)))
+  await assertSucceeds(getDoc(await sheetRef(OTHER_MGR, `${OTHER_MISSING}_rev1`)))
+})

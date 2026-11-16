@@ -2,7 +2,7 @@
 
 import { formatMoney } from '@/lib/canonical/money'
 import { useOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { auth } from '@/lib/firebase/config'
@@ -15,9 +15,14 @@ import {
   loadTimesheetDraftsByUserHistory,
   mergeListedTimesheetDrafts,
   stampTimesheetExport,
+  timesheetDocId,
   timesheetSourceDocumentId,
   type ExportedTimesheetHistoryRow,
+  timesheetVersionChain,
+  timesheetVersionChainFor,
 } from '@/lib/timesheets/timesheetStorage'
+import { timesheetRevisionCopy } from '@/lib/timesheets/timesheetRevisionCopy'
+import { TIMESHEET_EARLIER_VERSIONS_LABEL, TIMESHEET_ORIGINAL_VERSION_LABEL, timesheetRevisionLabel } from '@/lib/canonical'
 import { emptyTimesheetDraft, type TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import { draftTimesheetTotals } from '@/lib/timesheets/timesheetAdjustments'
 import { SIGNED_OFF_EDIT_NOTE, userTimesheetSelfSigned } from '@/lib/timesheets/timesheetApprovalPolicy'
@@ -432,7 +437,15 @@ export function TimesheetsScreen({
    * the Exported tab's Download (rulebook 1.43.0, review r318: an undelivered sheet is always recoverable; nothing is
    * re-stamped or re-priced).
    */
-  const buildExportPdf = async (member: User, agreed: TimesheetDraft, start: Date, end: Date, extraNotes: string[] = []) => {
+  const buildExportPdf = async (
+    member: User,
+    agreed: TimesheetDraft,
+    start: Date,
+    end: Date,
+    extraNotes: string[] = [],
+    /** Rulebook 1.55.0: the version's stored document id (its REV number, invoice number and difference). */
+    documentId?: string | null
+  ) => {
     const payroll = collectTimesheetPayroll({
       user: member,
       bookings,
@@ -494,6 +507,22 @@ export function TimesheetsScreen({
       totalLabel: 'Total timesheet amount',
       emptyStateMessage: 'No work entries were found for this timesheet period.',
       currencyCode: currency,
+      // Rulebook 1.55.0: "TS-…-REV1" and "REV 1 · +£44.12 from the previous version".
+      ...(() => {
+        const chain = timesheetVersionChain(agreed).length > 0 ? timesheetVersionChain(agreed) : timesheetVersionChainFor(documentId)
+        // Review of #344: the invoice number comes from the stored sheet of this version, never the current users id.
+        const copy = timesheetRevisionCopy({
+          documentId:
+            documentId ||
+            timesheetSourceDocumentId(agreed) ||
+            chain.find((version) => version.revision === (agreed.revision ?? 0))?.documentId ||
+            timesheetDocId(member.id, start, timeZone),
+          chain,
+          total: invoiceLinesTotal(lines),
+          currency,
+        })
+        return { invoiceNumber: copy.invoiceNumber, revisionNote: copy.note }
+      })(),
     })
     return { pdf, fileName: timesheetExportFileName(displayName(member), paymentRunDateStamp(start, end, timeZone)) }
   }
@@ -513,13 +542,14 @@ export function TimesheetsScreen({
     }
     try {
       const full = await loadTimesheetDraft(organization.id, row.user.id, period.start, timeZone, period.end)
-      const sheet = full.exportedAt ? full : row.draft
+      // Rulebook 1.55.0: an earlier version (or a later open revision) is built from the listed copy of this version.
+      const sheet = full.exportedAt && (full.revision ?? 0) === (row.draft.revision ?? 0) ? full : row.draft
       // Review r318: a sheet exported before signed copies were kept has no snapshot — its PDF is rebuilt from today's
       // bookings, rates and working hours, so say so before downloading and on the PDF.
       const rebuilt = exportedPdfIsRebuilt(sheet)
       if (rebuilt && typeof window !== 'undefined' && !window.confirm(EXPORT_REBUILT_CONFIRM)) return
       const extraNotes = rebuilt ? [exportRebuiltPdfNote(formatStampInZone(new Date(), timeZone))] : []
-      const { pdf, fileName } = await buildExportPdf(row.user, sheet, period.start, period.end, extraNotes)
+      const { pdf, fileName } = await buildExportPdf(row.user, sheet, period.start, period.end, extraNotes, sheet === full ? null : row.documentId)
       await shareTimesheetPdf(pdf, fileName)
     } catch (error) {
       setExportMessage(`Couldn't build the PDF for ${displayName(row.user)}${error instanceof Error ? ` (${error.message})` : ''}.`)
@@ -575,7 +605,7 @@ export function TimesheetsScreen({
           stampedCount = rows.length
           for (const row of rows) {
             try {
-              const { pdf, fileName } = await buildExportPdf(row.sheet.member, row.sheet.draft, periodStart, periodEnd)
+              const { pdf, fileName } = await buildExportPdf(row.sheet.member, row.sheet.draft, periodStart, periodEnd, [], row.sheet.documentId)
               pdfAttachments.push({ fileName, content: pdfBytesToBase64(pdf) })
               try {
                 const url = await uploadFile(timesheetExportPath(organization.id, fileName), timesheetPdfBlob(pdf), 'application/pdf')
@@ -753,6 +783,7 @@ export function TimesheetsScreen({
               viewer={user}
               pill={teamTab === 'signed' ? 'Signed off' : 'Pending'}
               pillHue={teamTab === 'signed' ? 'green' : 'warn'}
+              revisionLabel={timesheetRevisionLabel(draft?.revision ?? 0)}
               summary={summary}
               payStatus={payStatusFor(member)}
               onClick={() =>
@@ -831,6 +862,7 @@ function MemberRow({
   timeZone,
   onClick,
   onDownload,
+  revisionLabel = '',
   payStatus = 'ready',
 }: {
   member: User
@@ -844,6 +876,8 @@ function MemberRow({
   timeZone?: string
   onClick: () => void
   onDownload?: () => void
+  /** Rulebook 1.55.0: "REV N" beside the status of a revision. */
+  revisionLabel?: string
   /** Review #342 items 1, 5 and 7: this person's pay — not `ready`: no figures; `failed`: a red chip too. */
   payStatus?: PayProfilesStatus
 }) {
@@ -894,6 +928,11 @@ function MemberRow({
       {lineManager != null ? <td>{lineManager}</td> : null}
       <td>
         <Chip tone={pillHue === 'warn' ? 'amber' : pillHue === 'green' ? 'green' : 'slate'}>{pill}</Chip>
+        {revisionLabel ? (
+          <span style={{ marginLeft: 8 }}>
+            <Chip tone="slate">{revisionLabel}</Chip>
+          </span>
+        ) : null}
         {payStatus === 'failed' ? (
           <span style={{ marginLeft: 8 }}>
             <Chip tone="red">{PAY_DETAILS_NOT_LOADED_LABEL}</Chip>
@@ -1060,7 +1099,7 @@ function ExportedTimesheetsList({
         <MemberTable viewer={viewer} exported>
           {filtered.map(({ row, period }) => {
             const summary = summaryFor(row.user, row.draft, period.start, period.end)
-            return (
+            const main = (
               <MemberRow
                 key={row.id}
                 member={row.user}
@@ -1074,8 +1113,38 @@ function ExportedTimesheetsList({
                 timeZone={timeZone}
                 onClick={() => onOpen(row, period)}
                 onDownload={onDownload ? () => onDownload(row, period) : undefined}
+                revisionLabel={timesheetRevisionLabel(row.draft.revision ?? 0)}
                 payStatus={payStatusOf ? payStatusOf(row.user) : 'ready'}
               />
+            )
+            const earlier = row.earlierVersions ?? []
+            if (earlier.length === 0) return main
+            // Rulebook 1.55.0 §8: the earlier exported versions of this pay run, read only, under the latest.
+            return (
+              <Fragment key={row.id}>
+                {main}
+                <tr>
+                  <td colSpan={12} className="pu-sub">
+                    {TIMESHEET_EARLIER_VERSIONS_LABEL}:{' '}
+                    {earlier.map((version, index) => (
+                      <span key={version.documentId}>
+                        {index > 0 ? ' · ' : ''}
+                        {timesheetRevisionLabel(version.revision) || TIMESHEET_ORIGINAL_VERSION_LABEL}
+                        {onDownload ? (
+                          <button
+                            type="button"
+                            className="pu-rowbtn"
+                            style={{ marginLeft: 6, textDecoration: 'underline' }}
+                            onClick={() => onDownload({ ...row, draft: version.draft, documentId: version.documentId, earlierVersions: [] }, period)}
+                          >
+                            Download PDF
+                          </button>
+                        ) : null}
+                      </span>
+                    ))}
+                  </td>
+                </tr>
+              </Fragment>
             )
           })}
         </MemberTable>

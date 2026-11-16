@@ -126,13 +126,25 @@ export function payrunSnapshotRowsFor(input: {
    * Rulebook 1.47.0 (review #325 item 3): a sheet's `signedTimesheetBookingChanges` (null when it cannot be read —
    * bookings not loaded for its pay run). Missing = as before 1.47.0.
    */
-  bookingsChange?: (sheet: PayrunSnapshotSheet & { draft?: TimesheetDraft }) => { reopened: boolean; waitingFor: 'person' | 'lineManager' | null } | null
+  bookingsChange?: (
+    sheet: PayrunSnapshotSheet & { draft?: TimesheetDraft }
+  ) => { reopened: boolean; waitingFor: 'person' | 'lineManager' | null; changed?: boolean; exported?: boolean } | null
 }): PayrunSnapshotRow[] {
   const list = input.users.filter((user) => user && user.id)
   const sheets = input.loaded.sheets.map((row): PayrunSnapshotSheet => {
-    const sheet: PayrunSnapshotSheet = { userId: row.userId, startDayKey: row.startDayKey, endDayKey: row.endDayKey, status: row.status }
+    // 1.55.0: the stored id and signed-off state travel with the sheet (versions; J4 revision state).
+    const sheet: PayrunSnapshotSheet = {
+      userId: row.userId,
+      startDayKey: row.startDayKey,
+      endDayKey: row.endDayKey,
+      status: row.status,
+      documentId: row.documentId ?? null,
+      signedOff: row.signedOff ?? null,
+    }
     const change = input.bookingsChange?.(row) ?? null
-    return change ? { ...sheet, bookingsChange: { reopened: change.reopened, waitingFor: change.waitingFor } } : sheet
+    return change
+      ? { ...sheet, bookingsChange: { reopened: change.reopened, waitingFor: change.waitingFor, changed: change.changed ?? null, exported: change.exported ?? null } }
+      : sheet
   })
   return payrunSnapshotRows({
     ...input.loaded,

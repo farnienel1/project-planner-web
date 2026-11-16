@@ -18,6 +18,7 @@
  * hourly rate, never multiplied), Pay is the sum of each booking's rounded pay.
  */
 
+import { timesheetRevisionReportState } from './timesheetRevisions'
 import { dayKeyInZone } from '../orgTime/zoneTime'
 import { eachDayKey, isoWeekdayOfDayKey, zoneOrLondon } from './dayKeys'
 import { documentInstantMs } from './peopleDocuments'
@@ -114,11 +115,13 @@ export type WeeklyReportPaySheet = {
   endDayKey: string
   sheet?: Record<string, unknown> | null
   payrollLines?: ReadonlyArray<InvoiceLineInput & { id: string; amount: number }> | null
-  change?: { reopened?: boolean | null; changed?: boolean | null; waitingFor?: 'person' | 'lineManager' | null } | null
+  change?: { reopened?: boolean | null; changed?: boolean | null; exported?: boolean | null; waitingFor?: 'person' | 'lineManager' | null } | null
   /** The sheet's sign-off fields when the app holds a loaded copy (`parseTimesheetStatusFields` of the stored sheet). */
   status?: TimesheetStatusFields | null
   /** 1.45.0: the reader's entry fingerprints for a loaded copy (`timesheetInvoiceRows` `entryFingerprints`). */
   entryFingerprints?: Record<string, string> | null
+  /** 1.55.0 §8: the version used — 0 for the original, N for REV N (the check line reads "· REV N"). */
+  revision?: number | null
 }
 
 export type WeeklyReportPayInput = {
@@ -825,15 +828,29 @@ function checkLine(
   let changedSinceSigned = false
   let compared = false
   const states: WeeklyReportTimesheetState[] = []
+  let revision = 0
+  // Owner decision 16 Nov (J4): a run whose revision is due or open reads "Revision due" / "REV 1 waiting for signature".
+  let revisionStateLabel = ''
   for (const row of [...runs.values()].sort((a, b) => a.startDayKey.localeCompare(b.startDayKey))) {
     if (!stored(row)) {
       states.push('notStarted')
       continue
     }
     if (row.startDayKey < start || row.endDayKey > end) partialRun = true
+    if (typeof row.revision === 'number' && Number.isInteger(row.revision) && row.revision > revision) revision = row.revision
     const fields = row.status ?? parseTimesheetStatusFields(row.sheet ?? null)
     const bucket = timesheetListBucket(fields, person.hasLineManager === true, row.change ?? null)
-    states.push(bucket === 'exported' ? 'exported' : bucket === 'signed' ? 'signed' : bucket === 'awaiting' ? 'submitted' : 'notStarted')
+    const revisionState = timesheetRevisionReportState({
+      revision: row.revision,
+      exported: fields.exportedAtMs != null,
+      signedOff: fields.managerSignedAtMs != null || (fields.operativeSignedAtMs != null && Boolean((row.sheet as Record<string, unknown> | null)?.weeklyReportOverride)),
+      change: row.change,
+    })
+    if (revisionState.state !== 'none') {
+      if (!revisionStateLabel) revisionStateLabel = revisionState.label
+      states.push(bucket === 'awaiting' && revisionState.state === 'open' ? 'submitted' : 'notStarted')
+      changedSinceSigned = changedSinceSigned || revisionState.state === 'due'
+    } else states.push(bucket === 'exported' ? 'exported' : bucket === 'signed' ? 'signed' : bucket === 'awaiting' ? 'submitted' : 'notStarted')
     if (row.change?.reopened === true || (row.change?.changed === true && fields.operativeSignedAtMs != null && bucket !== 'exported')) changedSinceSigned = true
     const days = eachDayKey(row.startDayKey, row.endDayKey, zone).filter((day) => counted.has(day))
     const approved = ctx.approvedRun(row)
@@ -854,7 +871,9 @@ function checkLine(
   if (states.length === 0) states.push('notStarted')
   const least = states.reduce((a, b) => (STATE_ORDER[b] < STATE_ORDER[a] ? b : a))
   const signedCount = states.filter((state) => state === 'signed' || state === 'exported').length
-  const stateLabel = `Timesheet: ${WEEKLY_REPORT_TIMESHEET_STATE_LABELS[least]}${states.length > 1 ? ` · ${signedCount} of ${states.length} signed` : ''}`
+  const stateLabel = revisionStateLabel
+    ? `Timesheet: ${revisionStateLabel}${states.length > 1 ? ` · ${signedCount} of ${states.length} signed` : ''}`
+    : `Timesheet: ${WEEKLY_REPORT_TIMESHEET_STATE_LABELS[least]}${states.length > 1 ? ` · ${signedCount} of ${states.length} signed` : ''}${revision > 0 ? ` · REV ${revision}` : ''}`
   const awaiting = [
     awaitingPriceWork > 0.0001 ? `+ ${money(roundPennies(awaitingPriceWork))} price work awaiting sign-off` : '',
     awaitingExpenses > 0.0001 ? `+ ${money(roundPennies(awaitingExpenses))} expenses awaiting sign-off` : '',

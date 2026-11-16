@@ -860,6 +860,38 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 | 16 Nov | Storage, outside a person's home company, follows the organisation's `members` map: listed `admin` / `manager` is staff there, `operative` / `member` is not. Guardrail 3: someone listed `manager` in another company whose own users document says operative now gets staff Storage access there (variation evidence, exports they made) — the same role the Firestore rules give them through the auth claims. | done (1.54.1), owner to confirm |
 | 16 Nov | **Notifications create not tightened** (scan LOW): requiring `actorUserId` would refuse iPhone notices today (`saveNotification` leaves it out by default). iOS 1.54.1 hand-off asks iOS to always pass it; then a later rules release can require it (except the three scheduled types). | question (owner: tighten after iOS?) |
 
+## 16 Nov decisions (for 1.55, timesheet revisions)
+
+| Date | Decision | Status |
+|---|---|---|
+| 16 Nov | **Lock all.** Once a timesheet is exported nobody changes it, admins included. | done (rules 1.54.1, PR #334, `timesheetExportedFrozen`); 1.55.0 keeps it — an exported original and an exported revision stay frozen |
+| 16 Nov | **Corrections go through revisions** (REV 1, REV 2, …): the original and each exported revision never change; a revision goes through normal signing (person, then line manager; a self-signed person alone); on export it shows "REV N" and the difference from the previous version (e.g. "+£44.12"); the next correction is REV N + 1. | done web + rulebook + rules (1.55.0, w155-timesheet-revisions); iOS open (hand-off v1.55.0) |
+| 16 Nov | **Refined: a revision is caused by a booking change**, never by editing a timesheet. Before export nothing changes from 1.47 (the sheet reopens, no REV). After export a booking change (the 1.47 rule) leaves the sheet frozen and makes a revision due, derived from the latest exported version and the live bookings (`timesheetRevisionDue`), never written by whoever edits the booking. The person gets "update to your already exported timesheet" and the yellow triangle, presses "Review and sign again" (their own write creates the revision), signs the live figures; the line manager counter-signs. | done web + rulebook + rules + functions (1.55.0); iOS open |
+| 16 Nov | **Notice**: the 1.54 booking-notice functions also fire for exported sheets, once per exported version, never the actor — one type `timesheet_revision_to_sign` ("Update to your exported timesheet"; "Your timesheet has a revision to sign" when a reviewer creates one). | done (1.55.0); functions deploy pending |
+| 16 Nov | **Manual "Create revision"** for admins and line managers kept (cheap) — for corrections a booking did not cause. | done web (1.55.0); iOS open |
+| 16 Nov | **Price work and expenses after export**: "add it to your next timesheet" still; a revision carries the period's entries and late extras. | done (1.55.0) |
+| 16 Nov | **Invoice number**: the original's number plus "-REV1", "-REV2". | done (1.55.0: invoices had no number — a derived `TS-{YYYYMMDD}-{person}` is introduced, judgement call J3) |
+| 16 Nov | Build now, before the 25 Nov launch; full test 20 Nov. | in progress |
+
+## 1.55.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 16 Nov | J1 A revision copies the late extras exactly as stored (the rules check the copy is exact, so the person cannot add approvals); a late extra still pending stays pending and can now be decided on the revision. | done, owner confirmed 16 Nov ("all fine") |
+| 16 Nov | J2 The rules cannot see whether a booking really changed: the person could create a revision with nothing changed — it shows "+£0.00" and still needs the line manager's counter-signature. | done, owner confirmed 16 Nov ("all fine") |
+| 16 Nov | J3 Invoices had no number before 1.55.0; every invoice (old sheets included) now shows a derived number `TS-{pay run first day}-{first 6 letters/digits of the person's id}`, revisions "-REV1". | done, owner confirmed 16 Nov ("all fine") |
+| 16 Nov | J4 While a revision is open (not yet signed off), the weekly report and Payrun Snapshot keep using the previous exported version. | **changed by the owner 16 Nov** (see below) |
+| 16 Nov | J5 The difference is not stored (the brief suggested a stored `previousExportedTotal`): it is worked out from the previous (frozen) version when shown, so it cannot be forged. | done, owner confirmed 16 Nov ("all fine") |
+| 16 Nov | J6 An open revision can be deleted by a reviewer (admin or line manager), never by the person. No screen offers it yet. | done, owner confirmed 16 Nov ("all fine") |
+| 16 Nov | **J4 changed (owner):** the weekly report and Payrun Snapshot use the latest bookings. While a revision is due or open (not signed off) the pay run is treated as 1.47 treats a reopened sheet: the exported version stops counting as approved, the live bookings are reported, and the check line / cell shows the state — "Revision due" or "REV 1 waiting for signature". Once the revision is signed off it is used. | done (1.55.0, `timesheetRevisionReportState`) |
+| 16 Nov | **Finding 6 = (a) (owner):** on a revision, copied labour approve / decline decisions are kept only for bookings unchanged since the previous version (its snapshot line's `bookingFingerprint` vs the live line, `overtimeFingerprintsMatch`); changed bookings go back to pending for the line manager. A line signed before 1.46 (no fingerprint) keeps its decision only when its hours and amount match. The rules let a revision drop copied labour decisions, never add or alter one. | done (1.55.0, `timesheetRevisionLabourReviews`) |
+| 16 Nov | Revisions apply only after export (before export, 1.47 reopens the sheet): confirmed by the owner. | confirmed |
+| 16 Nov | Judgement call (finding 6): a line signed before 1.46 that was declined or edited keeps its decision when its hours match (its signed amount is 0 or the revised amount, not the booking's, so the amount is not compared). | done, owner to confirm |
+| 16 Nov | Review of #344: the person never adds, edits or deletes price work, expenses or late extras on a revision (after export they go on the next timesheet); the line manager still decides the copied ones. | done (1.55.0) |
+| 16 Nov | Review of #344: when the previous version has no signed snapshot (exported before snapshots were kept) the difference reads "Difference not available (older export)", on screen and on the invoice. | done (1.55.0), owner to confirm |
+| 16 Nov | Review of #344: the invoice number is built from the stored original sheet (its id and stored `userId`): `TS-{the id's stamp}-{6 of the person's id}`, e.g. TS-1761955200-6A9632-REV1 (replaces the J3 form `TS-{YYYYMMDD}-…`). | done (1.55.0), owner to confirm |
+| 16 Nov | Review of #344 finding 5 (privatePay read of a missing settings doc) is fixed separately (`w-hotfix-settings-read`). | open (separate branch) |
+
 ## Open questions for the owner
 
 | Date | Question |

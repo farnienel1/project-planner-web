@@ -560,11 +560,17 @@ export function signedTimesheetBookingWriteReopens(input: {
   afterOnSheet: boolean
   personIds?: ReadonlyArray<string | null | undefined> | null
   nowMs: number
+  /**
+   * 1.55.0 §8: also judge an exported sheet (a change there makes a revision due; the sheet itself stays frozen).
+   * Missing = exported sheets never reopen, as before 1.55.0.
+   */
+  includeExported?: boolean | null
 }): { reopens: boolean; kind: 'changed' | 'removed' | 'added' | null; reference: 'record' | 'snapshot' | 'none' } {
   const none = { reopens: false, kind: null, reference: 'none' as const }
   const sheet = input.sheet
   if (!sheet) return none
-  if (resolveTimesheetExportedAtMs(sheet as Record<string, unknown>) != null || realMs(sheet.exportedAtMs) != null) return none
+  const exported = resolveTimesheetExportedAtMs(sheet as Record<string, unknown>) != null || realMs(sheet.exportedAtMs) != null
+  if (exported && input.includeExported !== true) return none
   const operativeSignedMs = realMs(sheet.operativeSignedAt) ?? realMs(sheet.operativeSignedAtMs)
   const override = sheet.weeklyReportOverride && typeof sheet.weeklyReportOverride === 'object' ? sheet.weeklyReportOverride : null
   if (operativeSignedMs == null && !override) return none

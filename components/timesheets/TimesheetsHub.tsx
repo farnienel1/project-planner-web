@@ -49,6 +49,7 @@ import {
   loadTimesheetDrafts,
   loadTimesheetDraftsForStarts,
   listTimesheetStates,
+  timesheetSourceDocumentId,
 } from '@/lib/timesheets/timesheetStorage'
 import { timesheetReviewerHubStats } from '@/lib/timesheets/timesheetHubStats'
 import { emptyTimesheetDraft, type TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
@@ -88,7 +89,14 @@ import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import { OVERTIME_PATH } from '@/components/overtime/OvertimeScreen'
 import { BookingsChangedWarning } from '@/components/timesheets/BookingsChangedWarning'
 import { bookingCoverageCoversDay, periodBookingChanges, type BookingChangeCatalogue } from '@/lib/timesheets/timesheetBookingChanges'
-import { SIGNED_TIMESHEET_CHANGED_STATUS } from '@/lib/canonical'
+import {
+  SIGNED_TIMESHEET_CHANGED_STATUS,
+  TIMESHEET_REVISION_DUE_MESSAGE,
+  TIMESHEET_REVISION_DUE_STATUS,
+  timesheetRevisionDue,
+  timesheetRevisionLabel,
+  timesheetVersionsForPeriod,
+} from '@/lib/canonical'
 import {
   ActionCard,
   Card,
@@ -736,11 +744,13 @@ function MineTimesheetsList({
   const changeOf = (period: { start: Date; end: Date }) =>
     periodBookingChanges(changeCatalogue, subject, drafts.get(periodKey(period)), period)
   const needsSigningAgain = (period: { start: Date; end: Date }) => changeOf(period)?.waitingFor === 'person'
-  const currentChanged = needsSigningAgain(currentPeriod)
+  // Rulebook 1.55.0 §8: the listed (latest) version is exported and a booking changed — an update (revision) to sign.
+  const revisionDue = (period: { start: Date; end: Date }) => revisionDueOf(drafts.get(periodKey(period)), changeOf(period))
+  const currentChanged = needsSigningAgain(currentPeriod) || revisionDue(currentPeriod)
   const pending = [currentPeriod, ...discoveredPast].filter((period) => {
     const draft = drafts.get(periodKey(period))
     if (!draft) return false
-    if (needsSigningAgain(period)) return true
+    if (needsSigningAgain(period) || revisionDue(period)) return true
     const change = changeOf(period)
     return awaitingManagerSignOff(draft, subject, users) || change?.waitingFor === 'lineManager'
   })
@@ -783,10 +793,16 @@ function MineTimesheetsList({
                   <PeriodButton label={formatPaymentPeriodLine(period.start, period.end, timeZone)} onClick={() => openPeriod(period)} />
                 </td>
                 <td>
-                  {needsSigningAgain(period) ? (
+                  {revisionDue(period) ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <BookingsChangedWarning message={TIMESHEET_REVISION_DUE_MESSAGE} />
+                      <Chip tone="amber">{TIMESHEET_REVISION_DUE_STATUS}</Chip>
+                    </span>
+                  ) : needsSigningAgain(period) ? (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                       <BookingsChangedWarning />
                       <Chip tone="amber">{SIGNED_TIMESHEET_CHANGED_STATUS}</Chip>
+                      {revisionBadge(drafts.get(periodKey(period)))}
                     </span>
                   ) : (
                     <Chip tone="amber">Timesheet pending manager signature</Chip>
@@ -813,7 +829,7 @@ function MineTimesheetsList({
                     <PeriodButton label={formatPaymentPeriodLine(period.start, period.end, timeZone)} onClick={() => openPeriod(period)} />
                   </td>
                   <td>
-                    <Chip tone={pastStatusTone(status)}>{status}</Chip>
+                    <Chip tone={pastStatusTone(status)}>{status}</Chip> {revisionBadge(drafts.get(periodKey(period)))}
                   </td>
                 </tr>
               )
@@ -823,6 +839,28 @@ function MineTimesheetsList({
       ) : null}
     </>
   )
+}
+
+/**
+ * Rulebook 1.55.0 §8 (`timesheetRevisionDue`): the listed draft is the period's latest version; it is passed as a
+ * one-version chain (its stored id and its resolved `exportedAt`, the leftover rule already applied), with its
+ * `signedTimesheetBookingChanges`.
+ */
+function revisionDueOf(
+  draft: TimesheetDraft | undefined,
+  change: { exported?: boolean | null; changed?: boolean | null } | null | undefined
+): boolean {
+  if (!draft) return false
+  const documentId = timesheetSourceDocumentId(draft)
+  if (!documentId) return false
+  const chain = timesheetVersionsForPeriod([{ documentId, data: { exportedAt: draft.exportedAt ?? null } }])[0] ?? []
+  return timesheetRevisionDue({ chain, change }).due
+}
+
+/** Rulebook 1.55.0: the "REV N" badge of a listed version (nothing for an original). */
+function revisionBadge(draft: TimesheetDraft | undefined): ReactNode {
+  const label = timesheetRevisionLabel(draft?.revision ?? 0)
+  return label ? <Chip tone="slate">{label}</Chip> : null
 }
 
 /** The period line as the row's keyboard control (the whole row opens it too, as the card did before). */
@@ -900,8 +938,8 @@ function MineChangedIndicator({
         })
         setRows(
           stored
-            // Only signed sheets nobody has exported can reopen (an exported sheet stays frozen).
-            .filter((row) => Boolean(row.draft.operativeSignedAt) && !row.draft.exportedAt)
+            // Signed sheets: an unexported one reopens; 1.55.0: the latest version exported makes a revision due.
+            .filter((row) => Boolean(row.draft.operativeSignedAt) || Boolean(row.draft.exportedAt))
             .map((row) => {
               const resolved = resolveTimesheetPeriod({
                 storedStartDayKey: dayKey(row.weekStart, timeZone),
@@ -923,7 +961,10 @@ function MineChangedIndicator({
     }
   }, [organizationId, subject.id, invoicing, timeZone])
   // Only the pay runs the loaded window holds (`coversPeriod`, the last HUB_CHANGE_SCAN_RUNS); memoised per period.
-  const show = rows.some((row) => periodBookingChanges(catalogue, subject, row.draft, row.period)?.waitingFor === 'person')
+  const show = rows.some((row) => {
+    const change = periodBookingChanges(catalogue, subject, row.draft, row.period)
+    return change?.waitingFor === 'person' || revisionDueOf(row.draft, change)
+  })
   return <WithChangedTriangle show={show}>{children}</WithChangedTriangle>
 }
 

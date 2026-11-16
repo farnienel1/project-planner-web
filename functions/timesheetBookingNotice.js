@@ -15,6 +15,12 @@
  * One row per sheet per person signature (`timesheetBookingsChangedNoticeId`, created with `create()`): further changes
  * before the person signs again add nothing; their next signature lets the next change notify again.
  *
+ * Rulebook 1.55.0 §8 (owner refinement 16 Nov): exported sheets too. Of an original and its revisions (`…_rev{N}`) only
+ * the pay run's LATEST version is judged (`timesheetVersionsForPeriod` / `timesheetLatestVersion`); when it is exported
+ * and the write changes a booking it signed, a revision is due and the person gets `timesheet_revision_to_sign` ("an
+ * update to your already exported timesheet"), once per exported version (`timesheetRevisionDueNoticeId`). Nothing
+ * here writes a timesheet document.
+ *
  * Every decision is the packed rulebook's; this file only reads documents and writes the row.
  */
 
@@ -102,9 +108,10 @@ const WEEK_END_SLACK_MS = 2 * 24 * 60 * 60 * 1000
  *   usersListingFormerId(id) → [{ id, data }]             (users where formerUserIds array-contains id, at most 5)
  *   operativesByEmail(orgId, email) → [{ id, data }]
  *   timesheetsCovering(orgId, userIds, fromMs) → [{ id, data }]
- *     (settings where userId in userIds (at most 10) and weekEnd >= fromMs, oldest first, at most 4 — the sheets whose
+ *     (settings where userId in userIds (at most 10) and weekEnd >= fromMs, oldest first, at most 8 — the sheets whose
  *      pay run can hold the booking day; composite index settings userId ASC, weekEnd ASC)
  *   tombstone(orgId, bookingId) → data | null              (deletedBookings/{bookingId})
+ *   sheet(orgId, id) → data | null                         (settings/{id}: 1.55.0, the rest of a version chain)
  *   createNotification(orgId, id, fields) → 'created' | 'exists'
  *
  * Reads per booking write (review of #337, item 4): 0 when the write changes none of the fields the rule reads; else
@@ -184,7 +191,37 @@ function createTimesheetBookingNotice({ store, canonical, logger = console, serv
         const startMs = millis((row.data || {}).weekStart)
         return startMs == null || startMs <= latestMs
       })
+      // 1.55.0 (review of #344): the query's limit can cut a version chain. For each original whose highest version
+      // found is exported, read the following revisions by id until one is missing, so the latest version is judged.
+      const highest = new Map()
+      for (const row of sheets) {
+        const ref = canonical.parseTimesheetRevisionDocId(row.id)
+        if (!ref) continue
+        const held = highest.get(ref.baseDocumentId)
+        if (!held || ref.revision > held.revision) highest.set(ref.baseDocumentId, { revision: ref.revision, row })
+      }
+      for (const [base, held] of highest) {
+        let row = held.row
+        let n = held.revision
+        while (canonical.resolveTimesheetExportedAtMs(plainSheet(row.data || {})) != null) {
+          const id = canonical.timesheetRevisionDocId(base, n + 1)
+          const data = id ? await store.sheet(orgId, id) : null
+          if (!data) break
+          row = { id, data }
+          sheets.push(row)
+          n += 1
+        }
+      }
+      // 1.55.0: one row per pay run — the latest version of each original's chain.
+      const latestIds = new Set(
+        canonical
+          .timesheetVersionsForPeriod(sheets.map((row) => ({ documentId: row.id, data: row.data || {} })))
+          .map((chain) => canonical.timesheetLatestVersion(chain))
+          .filter(Boolean)
+          .map((version) => version.documentId)
+      )
       for (const sheetRow of sheets) {
+        if (!latestIds.has(sheetRow.id)) continue
         const sheet = plainSheet(sheetRow.data || {})
         const startMs = millis((sheetRow.data || {}).weekStart)
         const endMs = millis((sheetRow.data || {}).weekEnd)
@@ -201,17 +238,21 @@ function createTimesheetBookingNotice({ store, canonical, logger = console, serv
           person: { ...user, id: uid },
           timeZone,
           nowMs: now(),
+          includeExported: true,
         })
         if (!decision.notify) continue
         const recipients = canonical.timesheetBookingsChangedRecipients(uid, actor || null, [{ ...user, id: uid }])
         if (recipients.length === 0) continue
-        const noticeId = canonical.timesheetBookingsChangedNoticeId(sheetRow.id, sheet)
+        const revisionDue = decision.exported === true
+        const noticeId = revisionDue
+          ? canonical.timesheetRevisionDueNoticeId(sheetRow.id, sheet)
+          : canonical.timesheetBookingsChangedNoticeId(sheetRow.id, sheet)
         if (!noticeId) continue
         const created = canonical.notificationCreateFields({
           organizationId: orgId,
-          type: canonical.TIMESHEET_BOOKINGS_CHANGED_NOTICE_TYPE,
-          title: canonical.TIMESHEET_BOOKINGS_CHANGED_NOTICE_TITLE,
-          message: canonical.TIMESHEET_BOOKINGS_CHANGED_NOTICE_MESSAGE,
+          type: revisionDue ? canonical.TIMESHEET_REVISION_NOTICE_TYPE : canonical.TIMESHEET_BOOKINGS_CHANGED_NOTICE_TYPE,
+          title: revisionDue ? canonical.TIMESHEET_REVISION_DUE_NOTICE_TITLE : canonical.TIMESHEET_BOOKINGS_CHANGED_NOTICE_TITLE,
+          message: revisionDue ? canonical.TIMESHEET_REVISION_DUE_NOTICE_MESSAGE : canonical.TIMESHEET_BOOKINGS_CHANGED_NOTICE_MESSAGE,
           userId: recipients[0],
           deepLinkUserId: uid,
           dayKey: start,
@@ -223,7 +264,7 @@ function createTimesheetBookingNotice({ store, canonical, logger = console, serv
         if (startMs != null && sheetRow.data && sheetRow.data.weekStart) fields.deepLinkWeekStart = sheetRow.data.weekStart
         const result = await store.createNotification(orgId, noticeId, fields)
         if (result === 'created') written += 1
-        logger.info('timesheet bookings changed notice', { orgId, sheetId: sheetRow.id, bookingId, reason: decision.reason, result })
+        logger.info('timesheet bookings changed notice', { orgId, sheetId: sheetRow.id, bookingId, reason: decision.reason, revisionDue, result })
       }
     }
     return { written }
@@ -255,11 +296,14 @@ function createAdminTimesheetNoticeStore(db, Timestamp) {
         .where('userId', 'in', userIds)
         .where('weekEnd', '>=', Timestamp.fromMillis(fromMs))
         .orderBy('weekEnd', 'asc')
-        .limit(4)
+        // 1.55.0: a pay run may hold an original and its revisions.
+        .limit(8)
         .get()
       return snap.docs.map((doc) => ({ id: doc.id, data: doc.data() }))
     },
     tombstone: async (orgId, bookingId) => data(await db.doc(`organizations/${orgId}/deletedBookings/${bookingId}`).get()),
+    // 1.55.0: one timesheet document by id (the rest of a version chain).
+    sheet: async (orgId, id) => (id && !id.includes('/') ? data(await db.doc(`organizations/${orgId}/settings/${id}`).get()) : null),
     createNotification: async (orgId, id, fields) => {
       try {
         await db.doc(`organizations/${orgId}/notifications/${id}`).create(fields)

@@ -2177,7 +2177,9 @@ export {
 } from './timesheetLateExtras'
 export {
   TIMESHEET_EXPORTED_EXTRAS_MESSAGE,
+  TIMESHEET_REVISION_EXTRAS_MESSAGE,
   timesheetExportedFieldSet,
+  timesheetSheetIsRevision,
   timesheetOwnerCanAddLateExtras,
 } from './timesheetSnapshot'
 export {
@@ -2196,6 +2198,7 @@ export {
   timesheetBookingWriteMatters,
   timesheetBookingsChangedNoticeId,
   timesheetBookingsChangedRecipients,
+  timesheetRevisionDueNoticeId,
 } from './timesheetBookingNotice'
 // Rulebook 1.54.0 §8 / §11: Settings → Data health "Timesheets half signed".
 export {
@@ -2216,3 +2219,51 @@ export type {
 } from './timesheetLateExtras'
 export type { TimesheetBookingNoticeDecision, TimesheetBookingNoticeSheet } from './timesheetBookingNotice'
 export type { TimesheetHalfSignedRow } from './timesheetHalfSigned'
+// Rulebook 1.55.0 §8 / §13: timesheet revisions (REV 1, REV 2, …).
+export {
+  TIMESHEET_CREATE_REVISION_HELP,
+  TIMESHEET_CREATE_REVISION_LABEL,
+  TIMESHEET_EARLIER_VERSIONS_LABEL,
+  TIMESHEET_ORIGINAL_VERSION_LABEL,
+  TIMESHEET_REVISION_COPIED_FIELDS,
+  TIMESHEET_REVISION_FIELDS,
+  TIMESHEET_REVISION_LIMIT_MESSAGE,
+  TIMESHEET_REVISION_MAX,
+  TIMESHEET_REVISION_NOT_EXPORTED_MESSAGE,
+  TIMESHEET_REVISION_NOT_REVIEWER_MESSAGE,
+  TIMESHEET_REVISION_NOTICE_MESSAGE,
+  TIMESHEET_REVISION_NOTICE_TITLE,
+  TIMESHEET_REVISION_NOTICE_TYPE,
+  TIMESHEET_REVISION_OPEN_MESSAGE,
+  TIMESHEET_REVISION_SUFFIX,
+  TIMESHEET_REVIEW_AND_SIGN_REVISION_LABEL,
+  TIMESHEET_REVISION_DUE_MESSAGE,
+  TIMESHEET_REVISION_DUE_NOTICE_MESSAGE,
+  TIMESHEET_REVISION_DUE_NOTICE_TITLE,
+  TIMESHEET_REVISION_DUE_REVIEWER_MESSAGE,
+  TIMESHEET_REVISION_DIFFERENCE_UNKNOWN,
+  TIMESHEET_REVISION_DUE_REPORT_LABEL,
+  TIMESHEET_REVISION_DUE_STATUS,
+  canCreateTimesheetRevision,
+  isTimesheetRevisionDocId,
+  parseTimesheetRevisionDocId,
+  timesheetEarlierVersions,
+  timesheetExportedTotal,
+  timesheetInvoiceNumber,
+  timesheetInvoiceNumberForRevision,
+  timesheetLatestVersion,
+  timesheetRevisionLabourReviews,
+  timesheetRevisionReportState,
+  timesheetRevisionWaitingLabel,
+  timesheetRevisionCreateFields,
+  timesheetRevisionDifference,
+  timesheetRevisionDocId,
+  timesheetRevisionDue,
+  timesheetRevisionLabel,
+  timesheetRevisionNoticeKey,
+  timesheetRevisionToSignRecipients,
+  timesheetVersionsForPeriod,
+  timesheetVersionSignedOff,
+} from './timesheetRevisions'
+export type { TimesheetRevisionLiveLine } from './timesheetRevisions'
+export type { TimesheetRevisionCheck, TimesheetRevisionDifference, TimesheetVersion, TimesheetVersionRef } from './timesheetRevisions'

@@ -37,6 +37,13 @@ import {
   parseTimesheetLateExtras,
   TIMESHEET_LATE_EXTRAS_FIELD,
   TIMESHEET_ENTRY_REVIEWS_FIELD,
+  isTimesheetRevisionDocId,
+  parseTimesheetRevisionDocId,
+  timesheetLatestVersion,
+  timesheetRevisionCreateFields,
+  timesheetRevisionDocId,
+  timesheetVersionsForPeriod,
+  type TimesheetVersion,
   normalizeDocumentId,
 } from '@/lib/canonical'
 import { draftEntryFingerprints, draftReviewEntries, draftStoredExported } from '@/lib/timesheets/timesheetAdjustments'
@@ -576,6 +583,8 @@ export function draftFromFirestoreMap(
     payrollLineReviews: mapReviews(data.payrollLineReviews),
     weeklyReportOverride: weeklyReportOverrideFromFirestore(data.weeklyReportOverride),
     extraEntryReviews: parseTimesheetEntryReviews(data),
+    // Rulebook 1.55.0: REV N read from the document id (0 for the original); never written.
+    ...(options?.sheetDocId ? { revision: parseTimesheetRevisionDocId(options.sheetDocId)?.revision ?? 0 } : {}),
   }
 }
 
@@ -709,6 +718,8 @@ export type TimesheetPeriodCandidate = {
   endDayKey?: string | null
   draft: TimesheetDraft
   documentId?: string
+  /** Rulebook 1.55.0: the stored document (for the version chain); optional. */
+  data?: Record<string, unknown>
 }
 
 /**
@@ -729,6 +740,8 @@ export function pickTimesheetDraftForPeriod(
       startDayKey: timesheetStoredStartDayKey(row.weekStart, timeZone) || dayKey(row.weekStart, timeZone),
       endDayKey: row.endDayKey || null,
       hasActivity: timesheetDraftHasActivity(row.draft),
+      // Rulebook 1.55.0: an original and its revisions count as one row; the latest version wins.
+      documentId: row.documentId ?? null,
     })),
     period
   )
@@ -744,6 +757,69 @@ function weekStartMatches(data: Record<string, unknown>, weekStart: Date, timeZo
 }
 
 const sourceDocumentIds = new WeakMap<TimesheetDraft, string>()
+/** Rulebook 1.55.0 §8: every stored version of the draft's pay run (original, REV 1, …), oldest first. */
+const versionChains = new WeakMap<TimesheetDraft, TimesheetVersion[]>()
+
+/** Rulebook 1.55.0: the same chains by every version's document id (a copied draft loses the WeakMap entry). */
+const versionChainsById = new Map<string, TimesheetVersion[]>()
+
+/** The stored versions of the period the draft was loaded for (oldest first); [] when not loaded. */
+export function timesheetVersionChain(draft: TimesheetDraft): TimesheetVersion[] {
+  return versionChains.get(draft) || []
+}
+
+/** The stored versions of the period one of whose documents is `documentId` (as last loaded); [] when not loaded. */
+export function timesheetVersionChainFor(documentId: string | null | undefined): TimesheetVersion[] {
+  return (documentId && versionChainsById.get(documentId)) || []
+}
+
+/**
+ * Rulebook 1.55.0 §8: the versions of the sheet stored at `documentId` — its original and every revision
+ * (`{original}_rev1`, `_rev2`, … read until one is missing). Reads nothing more for a sheet that was never exported
+ * (only an exported version can have a revision).
+ */
+async function readVersionChain(organizationId: string, documentId: string, data: Record<string, unknown>): Promise<TimesheetVersion[]> {
+  const ref = parseTimesheetRevisionDocId(documentId)
+  if (!ref) return []
+  const docs: Array<{ documentId: string; data: Record<string, unknown> }> = [{ documentId, data }]
+  if (ref.revision === 0 && !timesheetExportedFieldSet(data.exportedAt)) return timesheetVersionsForPeriod(docs)[0] ?? []
+  if (ref.revision > 0) {
+    for (let n = 0; n < ref.revision; n += 1) {
+      const id = timesheetRevisionDocId(ref.baseDocumentId, n)
+      const stored = id ? await readDoc(organizationId, id) : null
+      if (stored) docs.push({ documentId: id, data: stored })
+    }
+  }
+  for (let n = ref.revision + 1; ; n += 1) {
+    const id = timesheetRevisionDocId(ref.baseDocumentId, n)
+    if (!id) break
+    const stored = await readDoc(organizationId, id)
+    if (!stored) break
+    docs.push({ documentId: id, data: stored })
+  }
+  return timesheetVersionsForPeriod(docs)[0] ?? []
+}
+
+/**
+ * The draft of the LATEST version of the sheet stored at `documentId` (the period page and lists show it), with its
+ * version chain remembered (`timesheetVersionChain`).
+ */
+async function latestVersionDraft(
+  organizationId: string,
+  documentId: string,
+  data: Record<string, unknown>,
+  options: { includeSignatures?: boolean; timeZone?: string | null; ownerUserIds?: ReadonlyArray<string> | null }
+): Promise<TimesheetDraft> {
+  const chain = await readVersionChain(organizationId, documentId, data)
+  const latest = timesheetLatestVersion(chain)
+  const id = latest?.documentId || documentId
+  const draft = rememberSource(draftFromFirestoreMap(latest?.data || data, { ...options, sheetDocId: id }), id)
+  if (chain.length > 0) {
+    versionChains.set(draft, chain)
+    for (const version of chain) versionChainsById.set(version.documentId, chain)
+  }
+  return draft
+}
 
 export function timesheetSourceDocumentId(draft: TimesheetDraft): string | null {
   return sourceDocumentIds.get(draft) || null
@@ -782,7 +858,8 @@ async function loadTimesheetDraftByCandidates(
   const hits = await Promise.all(unique.map(async (id) => ({ id, data: await readDoc(organizationId, id) })))
   const hit = hits.find((row) => row.data)
   if (hit?.data) {
-    return { draft: rememberSource(draftFromFirestoreMap(hit.data, { includeSignatures, sheetDocId: hit.id, timeZone, ownerUserIds }), hit.id), allMissing: false }
+    // Rulebook 1.55.0: the latest version (a revision of an exported sheet), with the period's version chain.
+    return { draft: await latestVersionDraft(organizationId, hit.id, hit.data, { includeSignatures, timeZone, ownerUserIds }), allMissing: false }
   }
   return { draft: null, allMissing: unique.length > 0 && hits.every((row) => row.data == null) }
 }
@@ -807,6 +884,7 @@ function timesheetStateFromDoc(
     weekStart,
     endDayKey: storedEndDayKey(data, timeZone),
     draft: rememberSource(draftFromFirestoreMap(data, { includeSignatures, sheetDocId: documentId, timeZone }), documentId),
+    data,
   }
 }
 
@@ -862,9 +940,8 @@ export async function loadTimesheetDraft(
     )
     for (const entry of snap.docs) {
       const data = entry.data() as Record<string, unknown>
-      if (data.userId === userId) return rememberSource(draftFromFirestoreMap(data, { sheetDocId: entry.id, timeZone, ownerUserIds }), entry.id)
-      if (weekStartMatches(data, weekStart, timeZone) && entry.id.includes(userId)) {
-        return rememberSource(draftFromFirestoreMap(data, { sheetDocId: entry.id, timeZone, ownerUserIds }), entry.id)
+      if (data.userId === userId || (weekStartMatches(data, weekStart, timeZone) && entry.id.includes(userId))) {
+        return await latestVersionDraft(organizationId, entry.id, data, { timeZone, ownerUserIds })
       }
     }
   } catch {
@@ -874,6 +951,7 @@ export async function loadTimesheetDraft(
   try {
     const grouped = await loadTimesheetCandidatesByUserIds(organizationId, [userId], true, timeZone)
     const picked = pickTimesheetDraftForPeriod(grouped.get(userId) || [], weekStart, end, timeZone)
+    if (picked?.documentId && picked.data) return await latestVersionDraft(organizationId, picked.documentId, picked.data, { timeZone, ownerUserIds })
     if (picked) return picked.draft
   } catch (error) {
     // 1.43.0 (review r318, 2nd round): a failed history query is shown as an error with Retry
@@ -894,9 +972,20 @@ function applyKeyedTimesheetDocs(
   for (const entry of snap.docs) {
     const data = entry.data() as Record<string, unknown>
     const userId = typeof data.userId === 'string' ? data.userId : ''
-    if (!wanted.has(userId) || results.has(userId)) continue
+    if (!wanted.has(userId) || !laterVersion(results.get(userId), entry.id)) continue
     results.set(userId, rememberSource(draftFromFirestoreMap(data, { ...LIST_DRAFT_OPTIONS, sheetDocId: entry.id }), entry.id))
   }
+}
+
+/**
+ * Rulebook 1.55.0: whether the document at `documentId` should replace the draft already listed for a person — only a
+ * later version of the same sheet (a revision) does; otherwise the first one listed stays, as before.
+ */
+function laterVersion(current: TimesheetDraft | undefined, documentId: string): boolean {
+  if (!current) return true
+  const held = parseTimesheetRevisionDocId(timesheetSourceDocumentId(current))
+  const next = parseTimesheetRevisionDocId(documentId)
+  return Boolean(held && next && held.baseDocumentId === next.baseDocumentId && next.revision > held.revision)
 }
 
 /** Current pay-run sheets from each person's history — one batched userId query, no per-user getDoc waterfall. */
@@ -1058,11 +1147,11 @@ export async function saveTimesheetDraft({
   const writerId = auth?.currentUser?.uid || ''
   const reviewer = access?.reviewer ?? Boolean(writerId && writerId !== userId)
   const canonicalId = timesheetDocId(userId, weekStart, timeZone)
-  const ids = Array.from(
-    new Set(
-      [canonicalId, documentId || timesheetSourceDocumentId(draft)].filter((id): id is string => Boolean(id))
-    )
-  )
+  const sourceId = documentId || timesheetSourceDocumentId(draft)
+  // Rulebook 1.55.0: a revision is saved on its own document only — never also on the (frozen) original's id.
+  const ids = isTimesheetRevisionDocId(sourceId)
+    ? [sourceId as string]
+    : Array.from(new Set([canonicalId, sourceId].filter((id): id is string => Boolean(id))))
   const end = weekEnd || weekStart
   const periodFields = timesheetPeriodWriteFields({
     userId,
@@ -1222,11 +1311,11 @@ export async function stampTimesheetExport({
 }): Promise<TimesheetExportStampResult> {
   const writerId = auth?.currentUser?.uid || ''
   if (!draft.exportedAt || !draft.weeklyReportOverride) return 'missing'
-  const ids = Array.from(
-    new Set(
-      [timesheetDocId(userId, weekStart, timeZone), documentId || timesheetSourceDocumentId(draft)].filter((id): id is string => Boolean(id))
-    )
-  )
+  const sourceId = documentId || timesheetSourceDocumentId(draft)
+  // Rulebook 1.55.0: a revision is stamped on its own document only (its original is already exported).
+  const ids = isTimesheetRevisionDocId(sourceId)
+    ? [sourceId as string]
+    : Array.from(new Set([timesheetDocId(userId, weekStart, timeZone), sourceId].filter((id): id is string => Boolean(id))))
   const fields = sanitizeForFirestore({
     weeklyReportOverride: weeklyReportOverrideToFirestore(draft.weeklyReportOverride),
     exportedAt: Timestamp.fromDate(draft.exportedAt),
@@ -1250,6 +1339,72 @@ export async function stampTimesheetExport({
     for (const { ref } of present) transaction.update(ref, { ...fields, ...metadata })
     return 'stamped'
   })
+}
+
+/** Why `createTimesheetRevision` did not create one. */
+export type TimesheetRevisionCreateResult =
+  | { status: 'created'; documentId: string; revision: number }
+  | { status: 'exists' | 'not-exported' | 'missing'; documentId: string | null; revision: number | null }
+
+/**
+ * Rulebook 1.55.0 §8: create the next revision of the sheet whose latest version is `previousDocumentId` — the person's
+ * own write when a booking change made one due ("Review and sign again"), or a reviewer's ("Create revision"). One
+ * transaction re-reads the version it corrects (it must be exported) and the target (it must not exist), and creates
+ * ONLY the new document (`timesheetRevisionCreateFields` + the server time + write metadata). Nothing else is written.
+ */
+export async function createTimesheetRevision({
+  organizationId,
+  previousDocumentId,
+  liveLines,
+  writerIsSubject = false,
+}: {
+  organizationId: string
+  previousDocumentId: string
+  /** Review of #344 (M1): the person's own revision copies `payrollLineReviews` exactly (the rules require it). */
+  writerIsSubject?: boolean
+  /**
+   * Owner decision 16 Nov (finding 6 = a): the period's live payroll lines — labour decisions are kept only for bookings
+   * unchanged since the previous version (`timesheetRevisionLabourReviews`).
+   */
+  liveLines: ReadonlyArray<{ id: string; bookingFingerprint?: string | null; amount?: number | null; paidHours?: number | null }>
+}): Promise<TimesheetRevisionCreateResult> {
+  const writerId = auth?.currentUser?.uid || ''
+  return runTransaction(db, async (transaction) => {
+    const previousRef = doc(db, 'organizations', organizationId, 'settings', previousDocumentId)
+    const previous = await transaction.get(previousRef)
+    if (!previous.exists()) return { status: 'missing', documentId: null, revision: null }
+    const made = timesheetRevisionCreateFields({
+      previous: { documentId: previous.id, data: previous.data() as Record<string, unknown> },
+      writerUserId: writerId,
+      writerIsSubject,
+      liveLines,
+    })
+    if (!made) return { status: 'not-exported', documentId: null, revision: null }
+    const targetRef = doc(db, 'organizations', organizationId, 'settings', made.documentId)
+    const target = await transaction.get(targetRef)
+    if (target.exists()) return { status: 'exists', documentId: made.documentId, revision: made.revision }
+    transaction.set(targetRef, {
+      ...made.fields,
+      revisionCreatedAt: serverTimestamp(),
+      ...(writeMetadataFields(writerId, 'web') ?? {}),
+      updatedAt: serverTimestamp(),
+    })
+    return { status: 'created', documentId: made.documentId, revision: made.revision }
+  })
+}
+
+/**
+ * Rulebook 1.55.0: one row per pay run of each original — its latest version (lists, the weekly report and the Payrun
+ * Snapshot; owner decision 16 Nov J4: whether it counts as approved is `timesheetRevisionReportState`).
+ */
+function collapseVersionRows<T extends { documentId: string }>(rows: T[], dataOf: (row: T) => Record<string, unknown>): T[] {
+  const chains = timesheetVersionsForPeriod(rows.map((row) => ({ documentId: row.documentId, data: dataOf(row) })))
+  const keep = new Set<string>()
+  for (const chain of chains) {
+    const picked = timesheetLatestVersion(chain)
+    if (picked) keep.add(picked.documentId)
+  }
+  return rows.filter((row) => keep.has(row.documentId) || !parseTimesheetRevisionDocId(row.documentId))
 }
 
 export type TimesheetStateRow = {
@@ -1279,7 +1434,7 @@ export async function loadCanonicalTimesheetDrafts(
     for (const id of candidateTimesheetDocIds(userId, weekStart, timeZone)) {
       const data = await readDoc(organizationId, id)
       if (!data) continue
-      return [userId, rememberSource(draftFromFirestoreMap(data, { ...LIST_DRAFT_OPTIONS, sheetDocId: id }), id)] as const
+      return [userId, await latestVersionDraft(organizationId, id, data, LIST_DRAFT_OPTIONS)] as const
     }
     return null
   })
@@ -1303,7 +1458,7 @@ export async function loadPayPeriodTimesheetDrafts(
     if (!entry.id.startsWith('timesheet_')) continue
     const data = entry.data() as Record<string, unknown>
     const userId = typeof data.userId === 'string' ? data.userId : ''
-    if (!userId || results.has(userId)) continue
+    if (!userId || !laterVersion(results.get(userId), entry.id)) continue
     results.set(userId, rememberSource(draftFromFirestoreMap(data, { ...LIST_DRAFT_OPTIONS, sheetDocId: entry.id }), entry.id))
   }
   return results
@@ -1326,28 +1481,34 @@ export function mergeListedTimesheetDrafts(
 export async function listTimesheetStates(
   organizationId: string,
   userId: string,
-  limit = 400
+  limit = 400,
+  /** Rulebook 1.55.0: `latest` (one row per pay run, default) or `all` (every stored version, e.g. exported history). */
+  versions: 'latest' | 'all' = 'latest'
 ): Promise<TimesheetStateRow[]> {
   try {
     const snap = await getDocs(
       query(collection(db, 'organizations', organizationId, 'settings'), where('userId', '==', userId))
     )
+    const stored = new Map<string, Record<string, unknown>>()
     const rows: TimesheetStateRow[] = []
     for (const entry of snap.docs) {
       if (!entry.id.startsWith('timesheet_')) continue
       const data = entry.data() as Record<string, unknown>
       const weekStart = parseFirestoreDate(data.weekStart)
       if (!weekStart) continue
+      stored.set(entry.id, data)
       rows.push({
         documentId: entry.id,
         userId,
         weekStart,
         endDayKey: storedEndDayKey(data, LONDON_TIME_ZONE),
-        draft: draftFromFirestoreMap(data, { ...LIST_DRAFT_OPTIONS, sheetDocId: entry.id }),
+        // 1.55.0 (review of #344): the stored id travels with the draft (`timesheetSourceDocumentId`).
+        draft: rememberSource(draftFromFirestoreMap(data, { ...LIST_DRAFT_OPTIONS, sheetDocId: entry.id }), entry.id),
       })
     }
-    rows.sort((a, b) => b.weekStart.getTime() - a.weekStart.getTime())
-    return rows.slice(0, Math.max(1, limit))
+    const collapsed = versions === 'all' ? rows : collapseVersionRows(rows, (row) => stored.get(row.documentId) || {})
+    collapsed.sort((a, b) => b.weekStart.getTime() - a.weekStart.getTime())
+    return collapsed.slice(0, Math.max(1, limit))
   } catch (error) {
     // 1.43.0: never an error on screen; logged so a refused query (rules) is visible in the console.
     console.warn('[timesheets] listTimesheetStates query failed', error)
@@ -1361,6 +1522,10 @@ export type ExportedTimesheetHistoryRow = {
   weekStart: Date
   endDayKey?: string | null
   draft: TimesheetDraft
+  /** Rulebook 1.55.0: the stored document of this version. */
+  documentId?: string
+  /** Rulebook 1.55.0: the earlier exported versions of the same pay run, newest first (shown read-only under it). */
+  earlierVersions?: Array<{ documentId: string; revision: number; draft: TimesheetDraft }>
 }
 
 const EXPORTED_HISTORY_TTL_MS = 20_000
@@ -1379,11 +1544,23 @@ function ingestExportedRow(
   member: import('@/types').User,
   weekStart: Date,
   draft: TimesheetDraft,
-  endDayKey?: string | null
+  endDayKey?: string | null,
+  documentId?: string | null
 ) {
   if (!draft.exportedAt) return
   const id = `${member.id}|${Math.floor(weekStart.getTime() / 1000)}`
-  byId.set(id, { id, user: member, weekStart, endDayKey, draft })
+  // Rulebook 1.55.0: one row per pay run showing the latest exported version; the earlier ones go under it.
+  const revision = documentId ? parseTimesheetRevisionDocId(documentId)?.revision ?? 0 : 0
+  const held = byId.get(id)
+  const version = { documentId: documentId || '', revision, draft }
+  if (held) {
+    const heldVersion = { documentId: held.documentId || '', revision: held.draft.revision ?? 0, draft: held.draft }
+    const [latest, earlier] = revision > heldVersion.revision ? [version, heldVersion] : [heldVersion, version]
+    const earlierVersions = [...(held.earlierVersions || []), earlier].sort((a, b) => b.revision - a.revision)
+    byId.set(id, { id, user: member, weekStart, endDayKey, draft: latest.draft, documentId: latest.documentId || undefined, earlierVersions })
+    return
+  }
+  byId.set(id, { id, user: member, weekStart, endDayKey, draft, documentId: documentId || undefined })
 }
 
 export async function loadExportedTimesheetHistory({
@@ -1402,13 +1579,14 @@ export async function loadExportedTimesheetHistory({
   const byId = new Map<string, ExportedTimesheetHistoryRow>()
   const byUserId = new Map(users.map((user) => [user.id, user]))
 
-  const ingestData = (member: import('@/types').User, weekStart: Date, data: Record<string, unknown>) => {
+  const ingestData = (member: import('@/types').User, weekStart: Date, data: Record<string, unknown>, documentId: string) => {
     ingestExportedRow(
       byId,
       member,
       weekStart,
-      draftFromFirestoreMap(data, LIST_DRAFT_OPTIONS),
-      storedEndDayKey(data, LONDON_TIME_ZONE)
+      draftFromFirestoreMap(data, { ...LIST_DRAFT_OPTIONS, sheetDocId: documentId }),
+      storedEndDayKey(data, LONDON_TIME_ZONE),
+      documentId
     )
   }
 
@@ -1426,7 +1604,7 @@ export async function loadExportedTimesheetHistory({
       const member = byUserId.get(userId) ?? users.find((row) => row.id.toLowerCase() === userId.toLowerCase())
       const weekStart = parseFirestoreDate(data.weekStart)
       if (!member || !weekStart) continue
-      ingestData(member, weekStart, data)
+      ingestData(member, weekStart, data, entry.id)
     }
     if (byId.size > 0) {
       const rows = Array.from(byId.values()).sort((a, b) => {
@@ -1445,11 +1623,11 @@ export async function loadExportedTimesheetHistory({
   }
 
   const batches = await mapInBatches(users, 8, async (member) => {
-    const rows = await listTimesheetStates(organizationId, member.id, 400)
+    const rows = await listTimesheetStates(organizationId, member.id, 400, 'all')
     return { member, rows }
   })
   for (const { member, rows } of batches) {
-    for (const row of rows) ingestExportedRow(byId, member, row.weekStart, row.draft, row.endDayKey)
+    for (const row of rows) ingestExportedRow(byId, member, row.weekStart, row.draft, row.endDayKey, row.documentId)
   }
 
   const rows = Array.from(byId.values()).sort((a, b) => {

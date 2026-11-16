@@ -35,6 +35,7 @@ function storeWith({ sheets, users = {}, operatives = {}, tombstones = {} }) {
       return read(uids.includes(PERSON) ? sheets.filter((row) => !row.data.weekEnd || row.data.weekEnd.getTime() >= fromMs).slice(0, 4) : [])
     },
     tombstone: async (_org, id) => read(tombstones[id] ?? null),
+    sheet: async (_org, id) => read(sheets.find((row) => row.id === id)?.data ?? null),
     createNotification: async (_org, id, fields) => {
       if (created.has(id)) return 'exists'
       created.set(id, fields)
@@ -102,10 +103,35 @@ test('1.54.0: a signed booking whose times change tells the person once per sign
   assert.equal(again.written, 0)
 })
 
-test('1.54.0: no notice for an exported sheet, a write that changes nothing the rule reads, or the person\'s own change', async () => {
-  const exported = storeWith({ sheets: [signedSheet({ exportedAt: new Date(signedAt + 7200_000) })], users })
+test('1.55.0: an exported sheet whose booking changes makes a revision due — one "update" row per exported version', async () => {
+  const exportedAt = new Date(signedAt + 7200_000)
+  const exported = storeWith({ sheets: [signedSheet({ exportedAt })], users })
   const n1 = createTimesheetBookingNotice({ store: exported, canonical, logger: { info() {}, error() {} } })
-  assert.equal((await n1.handle({ orgId: ORG, collection: 'bookings', bookingId: 'B1', before: booking(), after: booking({ workEndTime: '18:00' }) })).written, 0)
+  assert.equal((await n1.handle({ orgId: ORG, collection: 'bookings', bookingId: 'B1', before: booking(), after: booking({ workEndTime: '18:00' }) })).written, 1)
+  const [row] = [...exported.created.values()]
+  assert.equal(row.type, 'timesheet_revision_to_sign')
+  assert.equal(row.title, canonical.TIMESHEET_REVISION_DUE_NOTICE_TITLE)
+  assert.equal(row.userId, PERSON)
+  assert.equal((await n1.handle({ orgId: ORG, collection: 'bookings', bookingId: 'B1', before: booking({ workEndTime: '18:00' }), after: booking({ workEndTime: '19:00' }) })).written, 0, 'once per exported version')
+  // The person's own change: nothing.
+  const own = storeWith({ sheets: [signedSheet({ exportedAt })], users })
+  const n3 = createTimesheetBookingNotice({ store: own, canonical, logger: { info() {}, error() {} } })
+  assert.equal((await n3.handle({ orgId: ORG, collection: 'bookings', bookingId: 'B1', before: booking(), after: booking({ workEndTime: '18:00', updatedBy: PERSON }) })).written, 0)
+})
+
+test('1.55.0: only the latest version of a pay run is judged — an open revision follows the 1.47.0 rule, the exported original is ignored', async () => {
+  const exportedAt = new Date(signedAt + 7200_000)
+  const original = signedSheet({ exportedAt })
+  // REV 1, signed by the person, not exported.
+  const rev = { id: `${original.id}_rev1`, data: { ...signedSheet().data, managerSignedAt: null, revisionOf: original.id, revision: 1 } }
+  const store = storeWith({ sheets: [original, rev], users })
+  const notice = createTimesheetBookingNotice({ store, canonical, logger: { info() {}, error() {} } })
+  assert.equal((await notice.handle({ orgId: ORG, collection: 'bookings', bookingId: 'B1', before: booking(), after: booking({ workEndTime: '18:00' }) })).written, 1)
+  const [row] = [...store.created.values()]
+  assert.equal(row.type, 'timesheet_bookings_changed', 'the open revision reopens; no "update to an exported sheet"')
+})
+
+test('1.54.0: no notice for a write that changes nothing the rule reads, or the person\'s own change', async () => {
 
   const plain = storeWith({ sheets: [signedSheet()], users })
   const n2 = createTimesheetBookingNotice({ store: plain, canonical, logger: { info() {}, error() {} } })
@@ -139,4 +165,18 @@ test('1.54.0 review of #337 (4): reads per write — none for a write the rule i
   // The query asks only for sheets whose pay run can still hold the booking day.
   assert.ok(store.reads.queries[0].fromMs <= day('2026-11-10').getTime())
   assert.ok(store.reads.queries[0].fromMs >= day('2026-11-07').getTime())
+})
+
+test('1.55.0 (review of #344): a version chain cut by the query limit is completed by id — the open revision is judged', async () => {
+  const exportedAt = new Date(signedAt + 7200_000)
+  const original = signedSheet({ exportedAt })
+  const rev1 = { id: `${original.id}_rev1`, data: { ...signedSheet().data, exportedAt, revisionOf: original.id, revision: 1 } }
+  const rev2 = { id: `${original.id}_rev2`, data: { ...signedSheet().data, managerSignedAt: null, revisionOf: original.id, revision: 2 } }
+  const store = storeWith({ sheets: [original, rev1, rev2], users })
+  // The covering query returns only the original (as if the limit cut the chain).
+  store.timesheetsCovering = async () => [original]
+  const notice = createTimesheetBookingNotice({ store, canonical, logger: { info() {}, error() {} } })
+  assert.equal((await notice.handle({ orgId: ORG, collection: 'bookings', bookingId: 'B1', before: booking(), after: booking({ workEndTime: '18:00' }) })).written, 1)
+  const [row] = [...store.created.values()]
+  assert.equal(row.type, 'timesheet_bookings_changed', 'the open REV 2 is the latest version: it reopens, no "update to an exported sheet"')
 })

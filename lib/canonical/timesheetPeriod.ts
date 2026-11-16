@@ -165,7 +165,8 @@ export function timesheetDocumentId(userId: string, startDayKey: string, timeZon
 export function timesheetDocumentSubjectId(documentId: unknown): string {
   const id = typeof documentId === 'string' ? documentId.trim() : ''
   if (!id.startsWith(TIMESHEET_DOCUMENT_PREFIX)) return ''
-  const match = /^(.+)_(-?\d+)$/.exec(id.slice(TIMESHEET_DOCUMENT_PREFIX.length))
+  // 1.55.0: a revision id (`…_rev{N}`, §8) names the same person as the original it corrects.
+  const match = /^(.+)_(-?\d+)$/.exec(id.slice(TIMESHEET_DOCUMENT_PREFIX.length).replace(/_rev[1-9]\d?$/, ''))
   return match ? match[1] : ''
 }
 
@@ -405,25 +406,84 @@ export function timesheetStatusWriteFields(fields: TimesheetStatusFields): Recor
   }
 }
 
+/**
+ * Rulebook 1.55.0 §8: a stored version is signed off — the line manager counter-signed (`managerSignedAt` /
+ * `approvedAt`), or a self-signed person signed with the signed snapshot written. The weekly report and Payrun Snapshot
+ * read it through `timesheetRevisionReportState`.
+ */
+export function timesheetVersionSignedOff(data: Record<string, unknown> | null | undefined): boolean {
+  const row = data && typeof data === 'object' ? data : {}
+  const snapshot = row.weeklyReportOverride != null && typeof row.weeklyReportOverride === 'object'
+  return realSignatureMs(row.managerSignedAt) != null || realSignatureMs(row.approvedAt) != null || (realSignatureMs(row.operativeSignedAt) != null && snapshot)
+}
+
+/** A version reference read from a document id: the original's id and the revision number (0 = the original). */
+export type TimesheetVersionRef = { documentId: string; baseDocumentId: string; revision: number }
+
+/**
+ * Rulebook 1.55.0 §8: `timesheet_{uid}_{stamp}` → revision 0; `timesheet_{uid}_{stamp}_rev3` → revision 3 of
+ * `timesheet_{uid}_{stamp}`. Null when the id is not a timesheet id, or ends in a revision suffix that is not 1–99
+ * written without a leading zero (`_rev0`, `_rev01`, `_rev100`) — such an id is neither an original nor a revision.
+ */
+export function parseTimesheetRevisionDocId(documentId: unknown): TimesheetVersionRef | null {
+  const id = trimmed(documentId)
+  if (!id.startsWith(TIMESHEET_DOCUMENT_PREFIX)) return null
+  const suffix = /^(.+)_rev(\d+)$/.exec(id)
+  if (!suffix) return { documentId: id, baseDocumentId: id, revision: 0 }
+  if (!/^[1-9]\d?$/.test(suffix[2]) || !suffix[1].startsWith(TIMESHEET_DOCUMENT_PREFIX)) return null
+  return { documentId: id, baseDocumentId: suffix[1], revision: Number(suffix[2]) }
+}
+
 export type TimesheetPeriodCandidateRow = {
   startDayKey: string
   endDayKey?: string | null
   hasActivity?: boolean
+  /** 1.55.0: the stored document id, so revisions (`…_rev{N}`, §8) of one sheet are read as one row. */
+  documentId?: string | null
+}
+
+/**
+ * 1.55.0 §8: of the rows that are versions of one sheet (an original and its `…_rev{N}` revisions), only the latest
+ * version stays a candidate — lists, the period page, the weekly report and the Payrun Snapshot all read it (owner
+ * decision 16 Nov, J4: whether it counts as approved is `timesheetRevisionReportState`). Rows without a document id, and
+ * sheets without revisions, are untouched.
+ */
+function versionCandidateIndexes(rows: readonly TimesheetPeriodCandidateRow[]): Set<number> {
+  const keep = new Set<number>()
+  const chains = new Map<string, Array<{ index: number; revision: number }>>()
+  rows.forEach((row, index) => {
+    const ref = parseTimesheetRevisionDocId(row.documentId)
+    if (!ref) {
+      keep.add(index)
+      return
+    }
+    const chain = chains.get(ref.baseDocumentId) ?? []
+    chain.push({ index, revision: ref.revision })
+    chains.set(ref.baseDocumentId, chain)
+  })
+  for (const chain of chains.values()) {
+    chain.sort((a, b) => a.revision - b.revision)
+    keep.add(chain[chain.length - 1].index)
+  }
+  return keep
 }
 
 /**
  * Which stored row is this pay-run period. Exact start+end wins. A start-only
  * leftover matches only the period that still starts on that day. A sheet whose
  * stored end disagrees (historical 1–7 vs live 1–15) is never promoted.
+ * 1.55.0: rows that are versions of one sheet count as one row — the latest version.
  */
 export function pickTimesheetRowForPeriod(
   rows: readonly TimesheetPeriodCandidateRow[],
   period: { startDayKey: string; endDayKey: string }
 ): number {
   if (rows.length === 0) return -1
+  const candidates = versionCandidateIndexes(rows)
   const exact: number[] = []
   const startOnly: number[] = []
   for (let index = 0; index < rows.length; index += 1) {
+    if (!candidates.has(index)) continue
     const row = rows[index]
     if (trimmed(row.startDayKey) !== period.startDayKey) continue
     const end = trimmed(row.endDayKey)

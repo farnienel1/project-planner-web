@@ -56,6 +56,8 @@ export type TimesheetBookingNoticeSheet = {
 
 export type TimesheetBookingNoticeDecision = {
   notify: boolean
+  /** 1.55.0: the sheet is exported, so the notice is "an update to your already exported timesheet" (a revision due). */
+  exported?: boolean
   /** Why (or why not) — for the function's log line. */
   reason:
     | 'not-signed'
@@ -134,14 +136,19 @@ export function timesheetBookingChangeNotice(input: {
   timeZone?: string | null
   /** The write's server time (additions are judged against the signature less the 1.47.0 window). */
   nowMs?: number | null
+  /**
+   * 1.55.0 §8: also judge an exported sheet — pass the latest version of the pay run only
+   * (`timesheetLatestVersion`). A change there makes a revision due (`exported: true` on the decision). Missing = an
+   * exported sheet never notifies, as before 1.55.0.
+   */
+  includeExported?: boolean | null
 }): TimesheetBookingNoticeDecision {
   const sheet = input.sheet
   if (!sheet) return { notify: false, reason: 'not-signed' }
   const signed = present(sheet.operativeSignedAt) || present(sheet.operativeSignedAtMs) || present(sheet.managerSignedAt) || present(sheet.approvedAt)
   if (!signed) return { notify: false, reason: 'not-signed' }
-  if (resolveTimesheetExportedAtMs(sheet as Record<string, unknown>) != null || realMs(sheet.exportedAtMs) != null) {
-    return { notify: false, reason: 'exported' }
-  }
+  const exported = resolveTimesheetExportedAtMs(sheet as Record<string, unknown>) != null || realMs(sheet.exportedAtMs) != null
+  if (exported && input.includeExported !== true) return { notify: false, reason: 'exported' }
   if (!timesheetBookingWriteMatters(input.before, input.after)) return { notify: false, reason: 'no-change' }
   const ids = new Set(input.personIds.map((id) => normalizeDocumentId(text(id))).filter(Boolean))
   const start = text(input.periodStartDayKey)
@@ -172,11 +179,12 @@ export function timesheetBookingChangeNotice(input: {
     after: input.after ?? null,
     afterOnSheet: now === 'yes',
     personIds: input.personIds,
+    includeExported: exported,
     nowMs: typeof input.nowMs === 'number' && Number.isFinite(input.nowMs) ? input.nowMs : Date.now(),
   })
   if (decision.reference === 'none') return { notify: false, reason: 'nothing-signed-to-compare' }
   if (!decision.reopens) return { notify: false, reason: 'booking-not-signed' }
-  return { notify: true, reason: decision.kind === 'added' ? 'booking-added' : 'signed-booking-changed' }
+  return { notify: true, ...(exported ? { exported: true } : {}), reason: decision.kind === 'added' ? 'booking-added' : 'signed-booking-changed' }
 }
 
 /** `timesheet_bookings_changed`: the sheet's person (an account), never the person who changed the booking. */
@@ -198,4 +206,16 @@ export function timesheetBookingsChangedNoticeId(sheetDocId: string, sheet: Time
   const signedMs = realMs(sheet?.operativeSignedAt) ?? realMs(sheet?.operativeSignedAtMs) ?? realMs(sheet?.managerSignedAt) ?? realMs(sheet?.approvedAt)
   if (!id || signedMs == null) return null
   return derivedDocumentId(`timesheetBookingsChanged|${id}|${signedMs}`)
+}
+
+/**
+ * 1.55.0 §8 / §13: the de-dupe id of "an update to your already exported timesheet" — one row per exported version
+ * (`timesheetRevisionDue|{sheetDocId}|{exportedAt ms}`, `derivedDocumentId`), so the person is told once per version
+ * however many bookings change. Null without an export instant.
+ */
+export function timesheetRevisionDueNoticeId(sheetDocId: string, sheet: TimesheetBookingNoticeSheet | null | undefined): string | null {
+  const id = text(sheetDocId)
+  const exportedMs = realMs(sheet?.exportedAt) ?? realMs(sheet?.exportedAtMs)
+  if (!id || exportedMs == null) return null
+  return derivedDocumentId(`timesheetRevisionDue|${id}|${exportedMs}`)
 }

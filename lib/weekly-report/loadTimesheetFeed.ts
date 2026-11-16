@@ -10,7 +10,7 @@ import type { MyScheduleOptions, OrgInvoicingSettings, OrgPayrollTimePolicy } fr
 import { DEFAULT_MY_SCHEDULE, DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import { dayKey } from '@/lib/ios-parity/londonTime'
 import { isTimesheetFullyApproved } from '@/lib/timesheets/timesheetApprovalPolicy'
-import { normalizeDocumentId, timesheetParticipant } from '@/lib/canonical'
+import { normalizeDocumentId, timesheetParticipant, timesheetRevisionReportState } from '@/lib/canonical'
 import { payPeriodsOverlapping } from '@/lib/timesheets/timesheetPayrollPolicy'
 import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride'
 import { draftWithCurrentLateRows, periodBookingChanges } from '@/lib/timesheets/timesheetBookingChanges'
@@ -145,9 +145,11 @@ export async function loadWeeklyReportTimesheetFeed({
         // Fourth review of #337: the check line reads the snapshot's late rows only while still approved.
         sheet: draft ? timesheetSheetFields(draftWithCurrentLateRows(draft)) : null,
         status: draft ? timesheetStatusFieldsFromDraft(draft) : null,
-        change: checkChange ? { reopened: checkChange.reopened, changed: checkChange.changed, waitingFor: checkChange.waitingFor } : null,
+        change: checkChange ? { reopened: checkChange.reopened, changed: checkChange.changed, exported: checkChange.exported, waitingFor: checkChange.waitingFor } : null,
         payrollLines: payroll.lineItems,
         entryFingerprints: draft ? draftEntryFingerprints(draft) : null,
+        // Rulebook 1.55.0: the latest version — the check line reads "· REV N", "Revision due" or "REV N waiting for signature".
+        revision: draft?.revision ?? 0,
       })
       if (!draft || !isTimesheetFullyApproved(draft, user, users)) continue
       // Rulebook 1.47.0 §8: a signed, unexported sheet whose bookings changed since it was signed is not approved until
@@ -156,6 +158,19 @@ export async function loadWeeklyReportTimesheetFeed({
       // 1.54.0: late extras waiting for the line manager never take a signed sheet out of the feed (its signed money
       // stands; only approved late extras are in its snapshot).
       if (change?.reopened && change.bookingsChanged !== false) continue
+      // Rulebook 1.55.0 (owner decision 16 Nov, J4): a revision due (the exported latest version's bookings changed) is
+      // not approved either — the live bookings are reported until the revision is signed off. An open revision is not
+      // fully approved, so it never reaches here.
+      if (
+        timesheetRevisionReportState({
+          revision: draft.revision ?? 0,
+          exported: Boolean(draft.exportedAt),
+          signedOff: true,
+          change,
+        }).state === 'due'
+      ) {
+        continue
+      }
       let working = draft
       if (!working.weeklyReportOverride) {
         working = applyWeeklyReportOverride({

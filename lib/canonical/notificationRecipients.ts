@@ -343,6 +343,11 @@ export function timesheetNotificationDedupeKey(input: {
   timeZone?: string | null
   /** Required for `timesheet_pending_manager_signoff` (one row per recipient). */
   recipientId?: string | null
+  /**
+   * Rulebook 1.55.0: the version's revision number (REV N, 1–99). A revision shares its period start with the original,
+   * so its notices get their own key (`…|rev{N}`); 0 / missing is the original (the key is unchanged).
+   */
+  revision?: number | null
 }): string | null {
   const type = idText(input?.type)
   const subject = idText(input?.subjectId)
@@ -350,11 +355,13 @@ export function timesheetNotificationDedupeKey(input: {
   if (!subject || !/^\d{4}-\d{2}-\d{2}$/.test(dayKey)) return null
   const seconds = Math.floor(dateFromDayKeyInZone(dayKey, zoneOrLondon(input.timeZone)).getTime() / 1000)
   if (!Number.isFinite(seconds)) return null
+  const rev = input.revision
+  const suffix = typeof rev === 'number' && Number.isInteger(rev) && rev >= 1 && rev <= 99 ? `|rev${rev}` : ''
   if (type === TIMESHEET_PENDING_NOTICE_TYPE) {
     const recipient = idText(input.recipientId)
-    return recipient ? `timesheetPending|${subject}|${recipient}|${seconds}` : null
+    return recipient ? `timesheetPending|${subject}|${recipient}|${seconds}${suffix}` : null
   }
-  if (type === TIMESHEET_SIGNED_NOTICE_TYPE) return `timesheetSigned|${subject}|${seconds}`
+  if (type === TIMESHEET_SIGNED_NOTICE_TYPE) return `timesheetSigned|${subject}|${seconds}${suffix}`
   return null
 }
 
@@ -399,6 +406,8 @@ export const NOTIFICATION_CATALOG: ReadonlyArray<NotificationCatalogRow> = [
   row('timesheet_signed_by_manager', 'Line manager or admin signs a timesheet', 'timesheetSignedRecipients', ['web', 'ios']),
   row('timesheet_bookings_changed', 'A booking on the person\'s signed, not exported timesheet changes so the sheet reopens (1.54.0)', 'timesheetBookingsChangedRecipients', ['function'],
     'written by the timesheetBookingsChangedNotice Cloud Function (timesheetBookingChangeNotice), one row per sheet per signature (timesheetBookingsChangedNoticeId); deepLinkUserId = the person, dayKey = the pay run\'s first day; opens My Timesheets for that period. Toggle: timesheetSignOff. iOS: accept the type and route it to My Timesheets.'),
+  row('timesheet_revision_to_sign', 'An admin or line manager creates a revision of the person\'s exported timesheet (1.55.0)', 'timesheetRevisionToSignRecipients', ['web', 'ios'],
+    'one row per revision (timesheetRevisionNoticeKey); deepLinkUserId = the person, dayKey = the pay run\'s first day; opens My Timesheets for that period, which shows the revision. Toggle: timesheetSignOff.'),
   row('line_manager_peer_update', 'One line manager signs a timesheet or decides leave for a shared report', 'lineManagerPeerRecipients', ['web', 'ios'],
     'web: not written for leave decisions (iOS is).'),
   row('timesheet_submission_reminder', 'Scheduled reminder before the submit deadline', 'dueTimesheetSubmissionNotices (schedule); recipients are each participating user', ['web', 'ios'],

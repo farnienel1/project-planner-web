@@ -549,6 +549,7 @@ const ENTRY_ARRAY_FIELD: Record<TimesheetEntryKind, 'expenseEntries' | 'priceWor
  * The id of an entry stored without one: a UUID-shaped, upper-case id derived from the sheet id, the array, the
  * entry's position and its content — the same on every platform and every read, never random. A stored id always
  * wins (kept in its stored case, UUID or not). Saving the sheet writes the derived id onto the entry.
+ * 1.55.0 §8: a revision (`…_rev{N}`) derives from its original's id, so an entry it copied keeps its id (and review).
  */
 export function timesheetEntryId(
   sheetDocId: string,
@@ -561,7 +562,7 @@ export function timesheetEntryId(
   if (stored) return stored
   const when = documentInstantMs(kind === 'expense' ? row.date : row.startDate)
   const source = [
-    text(sheetDocId),
+    text(sheetDocId).replace(/_rev[1-9]\d?$/, ''),
     ENTRY_ARRAY_FIELD[kind],
     String(Math.max(0, Math.floor(Number(index) || 0))),
     rawText(row.title),
