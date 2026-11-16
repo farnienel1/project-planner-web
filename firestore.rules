@@ -1798,9 +1798,16 @@ service cloud.firestore {
           return timesheetOwnerLeaves('payrollLineReviews', written) &&
             timesheetOwnerLeaves('extraEntryReviews', written) &&
             timesheetOwnerLeaves('weeklyReportOverride', written) &&
-            (!(resource != null && (
+            // 1.54.0: extras added after sign-off (`lateExtras`) until exported; they pay only once reviewed (`extraEntryReviews`).
+            (!('lateExtras' in written) || resource == null || !(
             resource.data.get('exportedAt', null) is timestamp ||
             resource.data.get('exportedAt', null) is number
+          )) &&
+            (!(resource != null && (
+            resource.data.get('managerSignedAt', null) is timestamp ||
+            resource.data.get('managerSignedAt', null) is number ||
+            resource.data.get('approvedAt', null) is timestamp ||
+            resource.data.get('approvedAt', null) is number
           )) || (
               (!('expenseEntries' in written) || (
             (request.resource.data.get('expenseEntries', null) == null || request.resource.data.get('expenseEntries', null) == []) &&

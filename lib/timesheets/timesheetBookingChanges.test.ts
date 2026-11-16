@@ -293,44 +293,62 @@ test('1.47.0 web (third review 1): the pending server-time flag clears on the dr
   assert.equal(clearSignedBookingsPending(edited, null), edited)
 })
 
-test('1.54.0 web: an expense added after the counter-signature reopens the sheet; a reviewer save keeps the signed money rows', () => {
+const lateExpense154 = {
+  kind: 'expense' as const,
+  id: 'L1',
+  title: 'Parking',
+  details: '',
+  jobNumber: 'J-1',
+  date: day,
+  amount: 12,
+  receiptName: null,
+  evidence: [],
+  managerDecision: 'pending' as const,
+  managerRevisedAmount: null,
+}
+
+test('1.54.0 web: a late extra waits for the line manager, pays nothing, and joins the snapshot only once approved', () => {
   const sheet = signedSheet([booking()])
-  assert.equal(changes(sheet, [booking()]).changed, false)
-  const expense = {
-    id: 'E1',
-    title: 'Parking',
-    details: '',
-    jobNumber: 'J-1',
-    date: day,
-    amount: 12,
-    receiptName: null,
-    evidence: [],
-    reviewFingerprint: 'fp-e1',
-    managerDecision: 'approved' as const,
-    managerRevisedAmount: null,
-  }
-  const withExpense: TimesheetDraft = { ...sheet, expenseEntries: [expense] }
-  const reopened = changes(withExpense, [booking()])
-  assert.equal(reopened.reopened, true)
-  assert.equal(reopened.waitingFor, 'person')
-  assert.equal(signedTimesheetActions(reopened).mayExport, false)
+  const signedLines = sheet.weeklyReportOverride!.lines
+  // Stored and read back: the reader gives the late decision (pending) and the stored row's fingerprint.
+  const stored = draftToFirestoreMap({ ...sheet, lateExtras: [{ ...lateExpense154, managerDecision: 'approved' }] }) as Record<string, unknown>
+  const storedLate = (stored.lateExtras as Record<string, unknown>[])[0]
+  assert.equal('managerDecision' in storedLate, false, 'a late extra never stores a decision')
+  assert.equal(storedLate.kind, 'expense')
+  const loaded = draftFromFirestoreMap(stored)
+  const late = loaded.lateExtras![0]
+  assert.equal(late.managerDecision, 'pending')
+  assert.ok(late.reviewFingerprint)
+  const withLate: TimesheetDraft = { ...sheet, lateExtras: [late] }
+  // Lists: with the line manager (no booking changed); nothing for the person to sign; export blocked.
+  const change = changes(withLate, [booking()])
+  assert.deepEqual([change.reopened, change.waitingFor, change.bookingsChanged], [true, 'lineManager', false])
+  assert.equal(signedTimesheetActions(change).mayExport, false)
+  // Figures stay the signed snapshot (late extras alone never discard it).
+  assert.equal(draftForFigures(withLate, change), withLate)
   const base = { ...collectorBase, user: person, users, weekStart: period.start, weekEnd: period.end, bookings: [booking()], managerSiteBookings: [] }
-  // The line manager's routine save never slips the new expense into the signed snapshot.
-  const saved = applyWeeklyReportOverride({ ...base, draft: withExpense })
+  // A routine save before any decision: no late row in the snapshot.
+  const saved = applyWeeklyReportOverride({ ...base, draft: withLate })
   assert.equal(saved.weeklyReportOverride?.expenses.length, 0)
-  // Counter-signed again (rebuildSnapshot): the snapshot takes it, with its fingerprint.
-  const rebuilt = applyWeeklyReportOverride({ ...base, draft: withExpense, rebuildSnapshot: true })
-  assert.equal(rebuilt.weeklyReportOverride?.expenses[0]?.entryFingerprint, 'fp-e1')
-  // The stored shape round-trips the record and the fingerprint.
-  const stored = draftFromFirestoreMap(
-    draftToFirestoreMap({
-      ...rebuilt,
-      operativeSignedExtras: [{ kind: 'expense', entryId: 'E1', fingerprint: 'fp-e1' }],
-      operativeSignedExtrasSignedAt: new Date('2026-09-19T09:00:00Z'),
-    }) as Record<string, unknown>
-  )
-  assert.deepEqual(stored.operativeSignedExtras, [{ kind: 'expense', entryId: 'E1', fingerprint: 'fp-e1' }])
-  assert.equal(stored.weeklyReportOverride?.expenses[0]?.entryFingerprint, 'fp-e1')
+  // The line manager approves it (✓ on screen): the approving save adds it to the money rows, marked `lateExtra`,
+  // and the signed labour rows stay exactly as signed — even with the booking now running later.
+  const approvedOnScreen: TimesheetDraft = { ...withLate, extraEntryReviews: {}, lateExtras: [{ ...late, managerDecision: 'approved' }] }
+  const later = booking({ workEndTime: '19:00' })
+  const approved = applyWeeklyReportOverride({ ...base, bookings: [later], draft: approvedOnScreen })
+  assert.deepEqual(approved.weeklyReportOverride?.expenses.map((row) => [row.id, row.amount, row.lateExtra]), [['L1', 12, true]])
+  assert.deepEqual(approved.weeklyReportOverride?.lines.map((line) => [line.id, line.amount]), signedLines.map((line) => [line.id, line.amount]))
+  // The flag round-trips on the stored snapshot row.
+  const back = draftFromFirestoreMap(draftToFirestoreMap(approved) as Record<string, unknown>)
+  assert.equal(back.weeklyReportOverride?.expenses[0]?.lateExtra, true)
+})
+
+test('1.54.0 web: an inline "approved" on a late extra (the person\'s own copy) never reaches the snapshot without a reviewer', () => {
+  const sheet = signedSheet([booking()])
+  // The person's in-memory copy says approved, but the stored review map has nothing: a non-reviewer's override is
+  // never written (rules), and the rule reads only the map — so the totals and the waiting state ignore it.
+  const forged: TimesheetDraft = { ...sheet, extraEntryReviews: {}, lateExtras: [{ ...lateExpense154, amount: 1000, managerDecision: 'approved', reviewFingerprint: 'x' }] }
+  const change = changes(forged, [booking()])
+  assert.equal(change.waitingFor, 'lineManager')
 })
 
 const office154 = {
@@ -354,39 +372,5 @@ test('1.54.0 review of #337 (2): a sheet signed while Office was off is never "r
   assert.equal(saved.weeklyReportOverride?.lines.length, 0, 'signed is final: no Office lines enter the snapshot')
   // And the change rule does not read it as a frozen-empty repair either: nothing changed.
   assert.equal(changes(frozen, [], [office154]).changed, false)
-})
-
-test('1.54.0 review of #337 (1a): a reviewer save never moves a pre-1.54 declined expense raised by the person into the snapshot', () => {
-  const sheet = signedSheet([booking()])
-  const signedOld: TimesheetDraft = {
-    ...sheet,
-    expenseEntries: [
-      { id: 'E1', title: 'Hotel', details: '', jobNumber: 'J1', date: day, amount: 500, receiptName: null, evidence: [], reviewFingerprint: 'raised', managerDecision: 'approved', managerRevisedAmount: null },
-    ],
-    weeklyReportOverride: {
-      ...sheet.weeklyReportOverride!,
-      expenses: [{ id: 'E1', title: 'Hotel', details: '', jobNumber: 'J1', date: day, amount: 0, decision: 'declined' }],
-    },
-  }
-  assert.equal(changes(signedOld, [booking()]).reopened, true)
-  const base = { ...collectorBase, user: person, users, weekStart: period.start, weekEnd: period.end, bookings: [booking()], managerSiteBookings: [] }
-  const saved = applyWeeklyReportOverride({ ...base, draft: signedOld })
-  assert.equal(saved.weeklyReportOverride?.expenses[0]?.amount, 0)
-  assert.equal(saved.weeklyReportOverride?.expenses[0]?.decision, 'declined')
-})
-
-test('1.54.0 review of #337 (5): an extras-only counter-signature rebuilds money rows and keeps the signed labour rows', () => {
-  const sheet = signedSheet([booking()])
-  const signedLines = sheet.weeklyReportOverride!.lines
-  const withExpense: TimesheetDraft = {
-    ...sheet,
-    expenseEntries: [{ id: 'E2', title: 'Parking', details: '', jobNumber: 'J1', date: day, amount: 12, receiptName: null, evidence: [], reviewFingerprint: 'fp-e2', managerDecision: 'approved', managerRevisedAmount: null }],
-  }
-  // Today's booking now runs later: an extras-only rebuild must not re-price the signed labour.
-  const later = booking({ workEndTime: '19:00' })
-  const base = { ...collectorBase, user: person, users, weekStart: period.start, weekEnd: period.end, bookings: [later], managerSiteBookings: [] }
-  const rebuilt = applyWeeklyReportOverride({ ...base, draft: withExpense, rebuildSnapshot: true, rebuildMoneyOnly: true })
-  assert.deepEqual(rebuilt.weeklyReportOverride?.lines.map((line) => [line.id, line.amount]), signedLines.map((line) => [line.id, line.amount]))
-  assert.equal(rebuilt.weeklyReportOverride?.expenses[0]?.id, 'E2')
 })
 

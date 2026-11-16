@@ -84,7 +84,9 @@ export function effectivePriceWorkAmount(
 export function extrasPendingReview(draft: TimesheetDraft): boolean {
   return (
     draft.expenseEntries.some((entry) => entry.managerDecision === 'pending') ||
-    draft.priceWorkEntries.some((entry) => entry.managerDecision === 'pending')
+    draft.priceWorkEntries.some((entry) => entry.managerDecision === 'pending') ||
+    // Rulebook 1.54.0: a late extra waiting for the line manager's decision.
+    (draft.lateExtras ?? []).some((entry) => entry.managerDecision === 'pending')
   )
 }
 
@@ -98,7 +100,7 @@ export function timesheetSheetFields(draft: TimesheetDraft, options: { reviewerP
   if (options.reviewerPreview) {
     const written = timesheetEntryReviewWriteFields({
       stored: extraEntryReviews,
-      entries: [...draft.priceWorkEntries, ...draft.expenseEntries],
+      entries: [...draft.priceWorkEntries, ...draft.expenseEntries, ...(draft.lateExtras ?? []).map((entry) => ({ ...entry, lateExtra: true }))],
       reviewedByUserId: '',
       reviewedAtMs: 0,
     })
@@ -110,8 +112,18 @@ export function timesheetSheetFields(draft: TimesheetDraft, options: { reviewerP
     extraEntryReviews,
     priceWorkEntries: draft.priceWorkEntries,
     expenseEntries: draft.expenseEntries,
+    // Rulebook 1.54.0: late extras as the rulebook reads them (kind on each row; decisions only from the review map).
+    ...(draft.lateExtras ? { lateExtras: draft.lateExtras } : {}),
     managerSignedAt: draft.managerSignedAt ?? null,
   }
+}
+
+/**
+ * Rulebook 1.45.0 / 1.54.0: the reader's fingerprints for every entry of the loaded draft — the signed entries and the
+ * late extras — so the rulebook never fingerprints a display copy.
+ */
+export function draftEntryFingerprints(draft: TimesheetDraft): Record<string, string> {
+  return timesheetEntryFingerprintMap([...draft.priceWorkEntries, ...draft.expenseEntries, ...(draft.lateExtras ?? [])])
 }
 
 /**
@@ -136,7 +148,7 @@ export function draftTimesheetTotals(input: {
     timesheetDays: input.timesheetDays ?? null,
     timeZone: input.timeZone ?? null,
     // Rulebook 1.45.0: the draft is the loaded copy; its entries carry the reader's fingerprints.
-    entryFingerprints: timesheetEntryFingerprintMap([...input.draft.priceWorkEntries, ...input.draft.expenseEntries]),
+    entryFingerprints: draftEntryFingerprints(input.draft),
   })
 }
 

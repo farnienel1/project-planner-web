@@ -98,8 +98,8 @@ export function timesheetOwnerEntriesError(input: TimesheetOwnerEntriesInput): s
 /**
  * Rulebook 1.45.0 §8: whether the viewer may edit or delete a price work or expense entry on this sheet — only its
  * owner (`viewerIsOwner`: the sheet is theirs under any of their ids), and only while they may add one
- * (`timesheetOwnerCanAddExtras`: 1.54.0, until the sheet is exported; after the line manager has signed the change
- * reopens the sheet, `signedTimesheetExtrasChanges`). A reviewer never edits the entry itself (they decide it: ✓ ✕ ⚙). `message` says why not.
+ * (`timesheetOwnerCanAddExtras`: not once the line manager has signed; a self-signed sheet stays open and asks the
+ * person to sign again). A reviewer never edits the entry itself (they decide it: ✓ ✕ ⚙). `message` says why not.
  */
 export function canEditTimesheetEntry(
   sheet: TimesheetExtrasSheet | null | undefined,

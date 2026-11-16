@@ -1671,19 +1671,31 @@ export type {
 export { payrollPolicyHistoryRows } from './payrollPolicyHistoryRows'
 export type { PayrollPolicyHistoryRow } from './payrollPolicyHistoryRows'
 
-// Rulebook 1.54.0 §8: price work and expenses after the line manager signs reopen the sheet (until exported); one
-// changed-since-signed answer for bookings and extras.
+// Rulebook 1.54.0 §8: late extras — price work and expenses added after the line manager signs (until exported); they
+// pay only once a reviewer approves them in the review map.
 export {
-  SIGNED_TIMESHEET_EXTRAS_CHANGED_COUNTERSIGN_MESSAGE,
-  SIGNED_TIMESHEET_EXTRAS_CHANGED_MESSAGE,
-  SIGNED_TIMESHEET_EXTRAS_CHANGED_REVIEWER_MESSAGE,
-  SIGNED_TIMESHEET_EXTRAS_REOPEN_CONFIRM_MESSAGE,
-  signedTimesheetChanges,
-  signedTimesheetExtrasBaselineFields,
-  signedTimesheetExtrasChanges,
-  signedTimesheetExtrasRecord,
-} from './timesheetExtrasChanges'
-export { TIMESHEET_EXPORTED_EXTRAS_MESSAGE, timesheetExportedFieldSet } from './timesheetSnapshot'
+  TIMESHEET_LATE_EXTRAS_FIELD,
+  TIMESHEET_LATE_EXTRAS_EXPORT_SKIPPED_MESSAGE,
+  TIMESHEET_LATE_EXTRAS_REVIEWER_MESSAGE,
+  TIMESHEET_LATE_EXTRA_ADD_CONFIRM_MESSAGE,
+  TIMESHEET_LATE_EXTRA_APPROVED_LABEL,
+  TIMESHEET_LATE_EXTRA_DECLINED_LABEL,
+  TIMESHEET_LATE_EXTRA_WAITING_LABEL,
+  parseTimesheetLateExtras,
+  timesheetChangesWithLateExtras,
+  timesheetLateExtraDecision,
+  timesheetLateExtraKind,
+  timesheetLateExtraLabel,
+  timesheetLateExtraRows,
+  timesheetLateExtrasSnapshotRows,
+  timesheetLateExtrasSummary,
+} from './timesheetLateExtras'
+export {
+  TIMESHEET_EXPORTED_EXTRAS_MESSAGE,
+  timesheetExportedFieldSet,
+  timesheetOwnerCanAddLateExtras,
+} from './timesheetSnapshot'
+export { timesheetEntryReviewFor } from './timesheetEntryReviews'
 // Rulebook 1.54.0 §8 / §13: "Your signed timesheet has changed" (written by the server).
 export {
   TIMESHEET_BOOKINGS_CHANGED_NOTICE_MESSAGE,

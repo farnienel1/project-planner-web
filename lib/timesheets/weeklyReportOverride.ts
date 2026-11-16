@@ -10,13 +10,14 @@ import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtil
 import type { MyScheduleOptions, OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_MY_SCHEDULE, DEFAULT_PAYROLL_POLICY, orgPayrollPolicyForDay } from '@/lib/settings/organizationSettings'
 import { isTimesheetFullyApproved, userTimesheetSelfSigned } from '@/lib/timesheets/timesheetApprovalPolicy'
-import { draftExtrasChanges } from '@/lib/timesheets/timesheetBookingChanges'
 import {
   effectiveExpenseAmount,
   effectivePayrollAmount,
   effectivePriceWorkAmount,
   isPayrollLineRemoved,
   draftPayrollLineReview,
+  draftEntryFingerprints,
+  timesheetSheetFields,
 } from '@/lib/timesheets/timesheetAdjustments'
 import { bookingIdFromLineId } from '@/lib/timesheets/payrollLineBookingLookup'
 import {
@@ -26,7 +27,14 @@ import {
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import { orgDayHours } from '@/lib/timesheets/payBasis'
 import type { PayrollTimePolicyState } from '@/lib/canonical'
-import { payrollLineReviewKey, payrollLineReviewSnapshotParts, timesheetSnapshotNeedsRebuild, weekdayPaidHours } from '@/lib/canonical'
+import {
+  payrollLineReviewKey,
+  payrollLineReviewSnapshotParts,
+  timesheetLateExtrasSnapshotRows,
+  timesheetSnapshotNeedsRebuild,
+  weekdayPaidHours,
+  type TimesheetLateExtrasSnapshotRow,
+} from '@/lib/canonical'
 import type {
   TimesheetDraft,
   TimesheetManagerDecision,
@@ -63,11 +71,6 @@ export type WeeklyReportOverrideInput = {
    * signatures. Never for an exported sheet (it stays frozen). Any other save keeps the stored lines.
    */
   rebuildSnapshot?: boolean
-  /**
-   * Rulebook 1.54.0 (review of #337): with `rebuildSnapshot`, only price work or expenses changed — the snapshot's
-   * money rows are rebuilt from the live entries and its labour rows stay exactly as signed.
-   */
-  rebuildMoneyOnly?: boolean
 }
 
 function personName(user: User | null | undefined): string {
@@ -149,8 +152,6 @@ function moneyLines(
     date: entry.startDate,
     amount: effectivePriceWorkAmount(entry, managerHasSigned, true),
     decision: agreedDecision(entry.managerDecision),
-    // Rulebook 1.54.0 §8: what was signed, so a later change to the entry reopens the sheet.
-    ...(entry.reviewFingerprint ? { entryFingerprint: entry.reviewFingerprint } : {}),
   }))
   const expenses = draft.expenseEntries.map((entry) => ({
     id: entry.id,
@@ -160,9 +161,27 @@ function moneyLines(
     date: entry.date,
     amount: effectiveExpenseAmount(entry, managerHasSigned, true),
     decision: agreedDecision(entry.managerDecision),
-    ...(entry.reviewFingerprint ? { entryFingerprint: entry.reviewFingerprint } : {}),
   }))
-  return { priceWork, expenses }
+  // Rulebook 1.54.0 §8: the late extras a reviewer approved (`timesheetLateExtrasSnapshotRows`) join the money rows,
+  // marked `lateExtra`; unapproved ones never do. Labour rows are never touched by them.
+  // The reviewer's decisions on screen are laid over the stored reviews exactly as their save writes them (the snapshot
+  // is written in the same save); only a reviewer (or a self-signed owner) ever writes the snapshot (security rules).
+  const late = timesheetLateExtrasSnapshotRows(timesheetSheetFields(draft, { reviewerPreview: true }), { entryFingerprints: draftEntryFingerprints(draft) })
+  const lateRow = (row: TimesheetLateExtrasSnapshotRow): WeeklyReportMoneyLine => {
+    const ms = row.date instanceof Date ? row.date.getTime() : null
+    return {
+      id: row.id,
+      title: row.title,
+      details: row.details,
+      jobNumber: row.jobNumber,
+      date: ms != null && Number.isFinite(ms) ? new Date(ms) : new Date(),
+      amount: row.amount,
+      decision: row.decision,
+      lateExtra: true,
+      entryFingerprint: row.entryFingerprint,
+    }
+  }
+  return { priceWork: [...priceWork, ...late.priceWork.map(lateRow)], expenses: [...expenses, ...late.expenses.map(lateRow)] }
 }
 
 function payrollSummaryFor(input: WeeklyReportOverrideInput) {
@@ -270,15 +289,7 @@ function makeOverride(input: WeeklyReportOverrideInput, prepared?: ReturnType<ty
 
 function reapplyReviews(existing: WeeklyReportOverride, input: WeeklyReportOverrideInput): WeeklyReportOverride {
   const managerHasSigned = Boolean(input.draft.managerSignedAt)
-  // Rulebook 1.54.0 §8: while price work or expenses differ from what was counter-signed, the signed snapshot keeps its
-  // signed money rows — a reviewer's routine save never slips a new or changed entry into it; only the counter-signature
-  // again (`rebuildSnapshot`) takes the live entries.
-  const extras = draftExtrasChanges(input.draft, userTimesheetSelfSigned(input.user, input.users ?? []))
-  // Review of #337 (1a): never while the extras read as changed at all (the person has not signed them, or the line
-  // manager has not counter-signed them) — only the counter-signature again (`rebuildSnapshot`) moves money rows.
-  const money = extras.changed
-    ? { priceWork: existing.priceWork, expenses: existing.expenses }
-    : moneyLines(input.draft, managerHasSigned)
+  const money = moneyLines(input.draft, managerHasSigned)
   const viewerName = personName(input.viewer)
   const existingIds = new Set(existing.lines.map((line) => line.id.toLowerCase()))
   // 1.46.0 (reviews of #324): a signed line is never re-priced by an Edit hours review that is stale against the sheet
@@ -411,11 +422,6 @@ export function applyWeeklyReportOverride(input: WeeklyReportOverrideInput): Tim
     return { ...input.draft, weeklyReportOverride: null }
   }
   const existing = input.draft.weeklyReportOverride
-  if (existing && input.rebuildSnapshot === true && input.rebuildMoneyOnly === true && !input.draft.exportedAt) {
-    const kept = reapplyReviews(existing, input)
-    const money = moneyLines(input.draft, Boolean(input.draft.managerSignedAt))
-    return { ...input.draft, weeklyReportOverride: { ...kept, lines: existing.lines, priceWork: money.priceWork, expenses: money.expenses } }
-  }
   if (existing && input.rebuildSnapshot === true && !input.draft.exportedAt) {
     return { ...input.draft, weeklyReportOverride: makeOverride(input) }
   }

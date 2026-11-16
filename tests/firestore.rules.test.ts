@@ -1832,24 +1832,36 @@ test('timesheets: the owner cannot change line reviews, entry decisions or the a
     managerSignedAt: Timestamp.fromMillis(signed.toMillis()), managerSignedByName: 'Lou', managerSignedByUserId: LM_A,
     approvedAt: Timestamp.fromMillis(signed.toMillis()), approvedByName: 'Lou',
   }
-  // Rulebook 1.54.0 (owner decision 16 Nov): ...the owner MAY change price work and expenses until the sheet is exported
-  // (the sheet reopens for signing, derived by `signedTimesheetExtrasChanges`), keeping every stored signature...
-  await assertSucceeds(setDoc(ref(rep), { ...signedResend, expenseEntries: [expense(500)] }, { merge: true }))
-  await assertSucceeds(setDoc(ref(rep), { ...signedResend, priceWorkEntries: [{ id: 'P1', title: 'Extra', amount: 900, managerDecision: 'approved' }] }, { merge: true }))
-  // ...but never clears the line manager's signature while doing it.
-  await assertFails(setDoc(ref(rep), { managerSignedAt: null, expenseEntries: [expense(400)] }, { merge: true }))
-  // ...but not the approved snapshot, and a save that leaves it out (web timesheetOwnerWriteFields) passes.
+  await assertFails(setDoc(ref(rep), { ...signedResend, expenseEntries: [expense(500)] }, { merge: true }))
+  await assertFails(setDoc(ref(rep), { ...signedResend, priceWorkEntries: [{ id: 'P1', title: 'Extra', amount: 900, managerDecision: 'approved' }] }, { merge: true }))
+  // ...or the approved snapshot, but a save that leaves them out (web timesheetOwnerWriteFields) passes.
   await assertFails(setDoc(ref(rep), { ...signedResend, weeklyReportOverride: null }, { merge: true }))
   await assertSucceeds(setDoc(ref(rep), {
     ...signedResend, userId: REPORT_A, managerNote: 'Thanks', updatedAt: Timestamp.now(), updatedBy: REPORT_A, updatedFrom: 'web',
   }, { merge: true }))
   // The line manager still can.
   await assertSucceeds(setDoc(ref(lm), { expenseEntries: [expense(50, 'edited', 30)] }, { merge: true }))
-  // Once the sheet is exported the owner can change price work or expenses no more (1.54.0).
+
+  // Rulebook 1.54.0 (review of #337, redesign): after the counter-signature the signed entries stay frozen — the £50
+  // expense cannot be raised to £1,000, nor its decision forged — but the person may add, edit and delete late extras
+  // (`lateExtras`) until the sheet is exported. Late extras pay only once a reviewer approves them in the review map,
+  // which the person can never write.
+  await assertFails(setDoc(ref(rep), { ...signedResend, expenseEntries: [expense(1000, 'edited', 1000)] }, { merge: true }))
+  await assertFails(updateDoc(ref(rep), { expenseEntries: [expense(50, 'approved', null)] }))
+  const late = (amount: number) => ({ kind: 'expense', id: 'L1', title: 'Taxi', details: '', jobNumber: 'J1', date: Timestamp.now(), amount })
+  await assertSucceeds(setDoc(ref(rep), { ...signedResend, lateExtras: [late(25)] }, { merge: true }))
+  await assertSucceeds(updateDoc(ref(rep), { lateExtras: [late(30)] }))
+  await assertFails(updateDoc(ref(rep), { 'extraEntryReviews.L1': { decision: 'approved', reviewedAmount: 30, lateExtra: true, reviewedFingerprint: 'x' } }))
+  await assertSucceeds(updateDoc(ref(rep), { lateExtras: [] }))
+  // The person clearing their own signature never clears the line manager's or the snapshot.
+  await assertFails(updateDoc(ref(rep), { operativeSignedAt: null, managerSignedAt: null }))
+  await assertFails(updateDoc(ref(rep), { operativeSignedAt: null, weeklyReportOverride: null }))
+  // The line manager approves a late extra in the review map.
+  await assertSucceeds(updateDoc(ref(lm), { 'extraEntryReviews.L1': { decision: 'approved', reviewedAmount: 30, lateExtra: true, reviewedFingerprint: 'x', reviewedByUserId: LM_A, reviewedAtMs: 2 } }))
+  // Exported: no more late extras.
   const exported = Timestamp.fromMillis(Date.parse('2026-10-20T10:00:00Z'))
   await assertSucceeds(setDoc(ref(lm), { exportedAt: exported }, { merge: true }))
-  await assertFails(setDoc(ref(rep), { ...signedResend, exportedAt: Timestamp.fromMillis(exported.toMillis()), expenseEntries: [expense(600)] }, { merge: true }))
-  await assertFails(setDoc(ref(rep), { ...signedResend, exportedAt: Timestamp.fromMillis(exported.toMillis()), priceWorkEntries: [] }, { merge: true }))
+  await assertFails(updateDoc(ref(rep), { lateExtras: [late(40)] }))
 })
 
 test('timesheets: 1.28.0 a person with no line manager signs but never writes a self-signed snapshot or reviews', async () => {

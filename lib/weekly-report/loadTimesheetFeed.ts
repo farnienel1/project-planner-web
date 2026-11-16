@@ -19,9 +19,8 @@ import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/l
 import { findUserAndOperative, resolveDisplayName, resolvePersonRole, resolvePersonTrade } from '@/lib/weekly-report/weeklyReportPayroll'
 import { mergeDuplicatePersonWeeks, type ApprovedTimesheetWeek } from '@/lib/weekly-report/timesheetFeed'
 import type { PayrollTimePolicyState, WeeklyReportPaySheet } from '@/lib/canonical'
-import { timesheetEntryFingerprintMap } from '@/lib/canonical'
 import { collectTimesheetPayroll } from '@/lib/timesheets/timesheetPayrollCollector'
-import { timesheetSheetFields } from '@/lib/timesheets/timesheetAdjustments'
+import { draftEntryFingerprints, timesheetSheetFields } from '@/lib/timesheets/timesheetAdjustments'
 import { timesheetStatusFieldsFromDraft } from '@/lib/timesheets/timesheetHubStats'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
@@ -147,13 +146,15 @@ export async function loadWeeklyReportTimesheetFeed({
         status: draft ? timesheetStatusFieldsFromDraft(draft) : null,
         change: checkChange ? { reopened: checkChange.reopened, changed: checkChange.changed, waitingFor: checkChange.waitingFor } : null,
         payrollLines: payroll.lineItems,
-        entryFingerprints: draft ? timesheetEntryFingerprintMap([...draft.priceWorkEntries, ...draft.expenseEntries]) : null,
+        entryFingerprints: draft ? draftEntryFingerprints(draft) : null,
       })
       if (!draft || !isTimesheetFullyApproved(draft, user, users)) continue
       // Rulebook 1.47.0 §8: a signed, unexported sheet whose bookings changed since it was signed is not approved until
       // it is signed (and counter-signed) again — the report shows its live bookings, never the stale snapshot.
       const change = checkChange
-      if (change?.reopened) continue
+      // 1.54.0: late extras waiting for the line manager never take a signed sheet out of the feed (its signed money
+      // stands; only approved late extras are in its snapshot).
+      if (change?.reopened && change.bookingsChanged !== false) continue
       let working = draft
       if (!working.weeklyReportOverride) {
         working = applyWeeklyReportOverride({

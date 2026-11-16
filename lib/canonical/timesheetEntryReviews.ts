@@ -83,6 +83,11 @@ export type TimesheetEntryReview = {
   reviewedAtMs: number | null
   /** 1.45.0: `timesheetEntryFingerprint` of the entry the decision was made against; null on older reviews. */
   reviewedFingerprint: string | null
+  /**
+   * 1.54.0: the review is of a late extra (`lateExtras`, added after the line manager signed). Only such a review, with
+   * a fingerprint, ever makes a late extra pay (`timesheetLateExtraDecision`); the person cannot write the map.
+   */
+  lateExtra: boolean
 }
 
 export type TimesheetEntryDecisionSource =
@@ -123,6 +128,7 @@ function parseReview(raw: unknown): TimesheetEntryReview | null {
     reviewedByUserId: text(row.reviewedByUserId),
     reviewedAtMs: finite(row.reviewedAtMs),
     reviewedFingerprint: text(row.reviewedFingerprint) || null,
+    lateExtra: row.lateExtra === true,
   }
 }
 
@@ -242,6 +248,15 @@ function reviewFor(
   return key == null ? undefined : reviews[key]
 }
 
+/** 1.54.0: the review stored for an entry id (exact key, else one differing only by letter case), or undefined. */
+export function timesheetEntryReviewFor(
+  reviews: Record<string, TimesheetEntryReview> | null | undefined,
+  entryId: unknown
+): TimesheetEntryReview | undefined {
+  const id = text(entryId)
+  return reviews && id ? reviewFor(reviews, id) : undefined
+}
+
 /** The stored key of an entry's review: the exact id, else one that differs only by letter case. */
 function reviewKeyFor(reviews: Record<string, TimesheetEntryReview>, entryId: string): string | undefined {
   if (Object.prototype.hasOwnProperty.call(reviews, entryId)) return entryId
@@ -263,61 +278,6 @@ export function timesheetEntryEffectiveAmount(
     return revised == null ? amount : roundPennies(revised)
   }
   return amount
-}
-
-type SignedMoneyRow = { decision: string; amount: number | null }
-
-/**
- * 1.54.0: the signed snapshot's money row for an entry id (ids without case): undefined when the sheet has no signed
- * snapshot with money rows, null when it has one but no row for this id.
- */
-function snapshotMoneyRow(
-  sheet: Record<string, unknown> | null | undefined,
-  id: string,
-  entry: Record<string, unknown>
-): SignedMoneyRow | null | undefined {
-  const override = sheet && typeof sheet === 'object' ? (sheet as Record<string, unknown>).weeklyReportOverride : null
-  if (!override || typeof override !== 'object') return undefined
-  const o = override as Record<string, unknown>
-  if (!Array.isArray(o.priceWork) && !Array.isArray(o.expenses)) return undefined
-  const key = normalizeDocumentId(id)
-  if (!key) return null
-  for (const list of [o.priceWork, o.expenses]) {
-    if (!Array.isArray(list)) continue
-    for (const raw of list) {
-      if (!raw || typeof raw !== 'object') continue
-      const row = raw as Record<string, unknown>
-      if (normalizeDocumentId(row.id) === key) {
-        return { decision: text(row.decision).toLowerCase() || 'approved', amount: finite(row.amount) }
-      }
-    }
-  }
-  // A row signed before entries stored ids (its id was random, the entry's is derived now): the one row with the same
-  // title and job number (two or more such rows: none).
-  const title = text(entry.title).toLowerCase()
-  const job = text(entry.jobNumber).toLowerCase()
-  if (!title) return null
-  const matches: Record<string, unknown>[] = []
-  for (const list of [o.priceWork, o.expenses]) {
-    if (!Array.isArray(list)) continue
-    for (const raw of list) {
-      if (raw && typeof raw === 'object' && text((raw as Record<string, unknown>).title).toLowerCase() === title && text((raw as Record<string, unknown>).jobNumber).toLowerCase() === job) {
-        matches.push(raw as Record<string, unknown>)
-      }
-    }
-  }
-  return matches.length === 1 ? { decision: text(matches[0].decision).toLowerCase() || 'approved', amount: finite(matches[0].amount) } : null
-}
-
-/** 1.54.0: an inline decision is the one the line manager signed (decision, and the money it pays, to the penny). */
-function inlineMatchesSignedRow(inline: TimesheetEntryDecisionResult, amount: number, signed: SignedMoneyRow): boolean {
-  const decision = inline.decision === 'pending' ? 'approved' : inline.decision
-  const signedDecision = signed.decision === 'pending' ? 'approved' : signed.decision
-  if (decision !== signedDecision) return false
-  if (decision === 'declined') return true
-  if (signed.amount == null) return false
-  const paid = timesheetEntryEffectiveAmount(inline.decision, inline.revisedAmount, amount)
-  return Math.abs(roundPennies(paid) - roundPennies(signed.amount)) < AMOUNT_EPSILON
 }
 
 /**
@@ -353,24 +313,8 @@ export function timesheetEntryDecision(
     // Legacy sheet. Inline values are trusted once the line manager has signed: the rules then
     // stop the owner changing the entries, and the manager signed with these decisions on screen.
     const managerSigned = parseTimesheetStatusFields(sheet || {}).managerSignedAtMs != null
-    if (managerSigned) {
-      // 1.54.0 (review of #337, 1b): the person may now change their entries after the line manager signs (until
-      // exported), inline values included, so an inline decision counts only while it is the one the line manager
-      // signed — the signed snapshot's row for this entry (same decision; an edit's revised amount, or an agreed
-      // row's amount, the same to the penny). Anything else is the person's change: pending (paid at its own amount
-      // only once the sheet is signed again), never approved. A sheet signed with no snapshot keeps only an inline
-      // value that lowers what is paid (below).
-      const signedRow = snapshotMoneyRow(sheet, id, row)
-      if (signedRow === undefined) {
-        base = { decision: 'approved', revisedAmount: null, source: 'unreviewed' }
-      } else if (signedRow && inlineMatchesSignedRow(inline, amount, signedRow)) {
-        return inline
-      } else {
-        base = { decision: 'pending', revisedAmount: null, source: 'stale-review' }
-      }
-    } else {
-      base = { decision: 'approved', revisedAmount: null, source: 'unreviewed' }
-    }
+    if (managerSigned) return inline
+    base = { decision: 'approved', revisedAmount: null, source: 'unreviewed' }
   } else {
     const review = id ? reviewFor(reviews, id) : undefined
     if (!review) {
@@ -405,6 +349,8 @@ export type TimesheetEntryReviewInput = {
    * `reviewedFingerprint`; without it (an older caller passing only id and amount) the review is written amount-only.
    */
   reviewFingerprint?: string | null
+  /** 1.54.0: a late extra (`lateExtras`); its review is written with `lateExtra: true` and only with a fingerprint. */
+  lateExtra?: boolean
   title?: unknown
   [field: string]: unknown
 }
@@ -439,6 +385,9 @@ export function timesheetEntryReviewWriteFields(input: {
     const revisedAmount = decision === 'edited' ? finite(entry.managerRevisedAmount) : null
     const amount = finite(entry.amount) ?? 0
     const fingerprint = text(entry.reviewFingerprint) || null
+    const late = entry.lateExtra === true
+    // 1.54.0: a late extra's decision counts only against the fingerprint it was made on.
+    if (late && fingerprint == null) continue
     const storedKey = input.stored ? reviewKeyFor(stored, id) : undefined
     const prior = storedKey != null ? stored[storedKey] : undefined
     // Whether the stored review still applies to the entry as stored (the reader's rule, `timesheetEntryDecision`).
@@ -451,7 +400,7 @@ export function timesheetEntryReviewWriteFields(input: {
     // decision and revised amount are unchanged is never rewritten (its reviewer, time and stored fields stay, an
     // older review is not stamped with a fingerprint); an entry still pending with no current review has nothing to
     // record.
-    if (input.stored && prior && priorCurrent && prior.decision === decision && sameNumber(prior.revisedAmount, revisedAmount)) continue
+    if (input.stored && prior && priorCurrent && prior.lateExtra === late && prior.decision === decision && sameNumber(prior.revisedAmount, revisedAmount)) continue
     if (input.stored && decision === 'pending' && !priorCurrent) continue
     // A review stored under the id in another letter case is updated under that key, never a second one.
     output[`${TIMESHEET_ENTRY_REVIEWS_FIELD}.${storedKey ?? id}`] = {
@@ -459,6 +408,7 @@ export function timesheetEntryReviewWriteFields(input: {
       revisedAmount,
       reviewedAmount: amount,
       ...(fingerprint != null ? { reviewedFingerprint: fingerprint } : {}),
+      ...(late ? { lateExtra: true } : {}),
       reviewedByUserId: reviewer,
       reviewedAtMs: Math.round(Number(input.reviewedAtMs) || 0),
     }

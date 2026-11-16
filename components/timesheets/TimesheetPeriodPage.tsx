@@ -38,16 +38,10 @@ import {
   draftBookingChanges,
   draftForFigures,
   draftSignedBookingRecord,
-  signedTimesheetExtrasSheetFromDraft,
   timesheetPersonIds,
 } from '@/lib/timesheets/timesheetBookingChanges'
 import { BookingsChangedWarning } from '@/components/timesheets/BookingsChangedWarning'
-import {
-  signedTimesheetActions,
-  signedTimesheetExtrasBaselineFields,
-  signedTimesheetExtrasRecord,
-  SIGNED_TIMESHEET_CHANGED_MESSAGE,
-} from '@/lib/canonical'
+import { signedTimesheetActions, SIGNED_TIMESHEET_CHANGED_MESSAGE } from '@/lib/canonical'
 import { staffAccountRole, userTimesheetSubjectIds } from '@/lib/permissions'
 import {
   SENSITIVE_EXPORT_OPTION_LABEL,
@@ -98,6 +92,7 @@ import {
   emptyTimesheetDraft,
   reviewSelection,
   type TimesheetDraft,
+  type TimesheetLateExtra,
   type TimesheetManagerDecision,
 } from '@/lib/timesheets/timesheetDraft'
 import { buildTimesheetInvoiceHtml, printTimesheetInvoice } from '@/lib/timesheets/invoiceGenerator'
@@ -153,6 +148,12 @@ import {
   timesheetLeaveLines,
   timesheetLineClockText,
   timesheetOwnerCanAddExtras,
+  timesheetOwnerCanAddLateExtras,
+  timesheetEntryEffectiveAmount,
+  timesheetLateExtraLabel,
+  TIMESHEET_LATE_EXTRA_ADD_CONFIRM_MESSAGE,
+  TIMESHEET_LATE_EXTRA_WAITING_LABEL,
+  TIMESHEET_LATE_EXTRAS_REVIEWER_MESSAGE,
   timesheetSnapshotNeedsRebuild,
   timesheetSnapshotReady,
   weekdayPaidHours,
@@ -306,6 +307,8 @@ export function TimesheetPeriodPage({
   const [hoursOt, setHoursOt] = useState('')
   const [editingExtra, setEditingExtra] = useState<{
     type: 'expense' | 'priceWork'
+    /** Rulebook 1.54.0: a late extra (decided in the review map with `lateExtra`). */
+    late?: boolean
     id: string
     title: string
     original: number
@@ -314,6 +317,8 @@ export function TimesheetPeriodPage({
   const [pendingExtraMode, setPendingExtraMode] = useState<'priceWork' | 'expense' | null>(null)
   // Rulebook 1.45.0 §8: the entry the owner is editing (the add form opens with it).
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null)
+  // Rulebook 1.54.0 §8: the add / edit form writes a late extra (`lateExtras`) instead of a signed entry.
+  const [lateEditing, setLateEditing] = useState(false)
   const [extrasReviewAlert, setExtrasReviewAlert] = useState(false)
   const [utrWarningOpen, setUtrWarningOpen] = useState(false)
   // Tax ids stay off the invoice unless the person or an admin ticks the box (rulebook).
@@ -431,6 +436,9 @@ export function TimesheetPeriodPage({
   // Review #325 item 8: everything the sheet (and the record of what is signed) is built from has loaded.
   const signInputsLoaded = payInputs.ready && users.length > 0 && operativesLoaded
   const waitingForPerson = bookingChange.waitingFor === 'person'
+  // Rulebook 1.54.0: only late extras wait (no booking changed) — the signatures and the snapshot's labour stand.
+  const lateOnlyWaiting = bookingChange.reopened && bookingChange.bookingsChanged === false
+  const bookingsReopened = bookingChange.reopened && !lateOnlyWaiting
   const canCounterSignAgain = bookingChange.waitingFor === 'lineManager'
   const canManagerReview = (() => {
     if (mode !== 'review' || !viewer || !viewerIsReviewer) return false
@@ -447,26 +455,13 @@ export function TimesheetPeriodPage({
   const fullyApproved = isTimesheetFullyApproved(draft, subjectUser, users) && !bookingChange.reopened
   // 1.47.0: a reopened sheet's figures are the live bookings — its stale signed snapshot is never shown or invoiced.
   const figuresDraft = draftForFigures(draft, bookingChange)
-  // Rulebook 1.54.0 §8 (owner decision 16 Nov): the person adds, edits and deletes price work or expenses until the sheet
-  // is exported. After their line manager has signed, a change reopens the sheet (`signedTimesheetExtrasChanges`): they
-  // sign again, then the line manager counter-signs again. No stored signature is ever cleared for it.
-  const extrasReopen = !sheetSelfSigned && needsCounterSign && Boolean(draft.managerSignedAt) && !draft.exportedAt && draft.exportedAtStored !== true
-  const withExtrasBaseline = (next: TimesheetDraft): TimesheetDraft => {
-    if (!extrasReopen) return next
-    const baseline = signedTimesheetExtrasBaselineFields({
-      sheet: signedTimesheetExtrasSheetFromDraft(draft),
-      storedEntries: { priceWorkEntries: draft.priceWorkEntries, expenseEntries: draft.expenseEntries },
-      selfSigned: sheetSelfSigned,
-    })
-    if (!baseline) return next
-    const signedAt = baseline.operativeSignedExtrasSignedAt
-    return {
-      ...next,
-      operativeSignedExtras: baseline.operativeSignedExtras,
-      operativeSignedExtrasSignedAt: signedAt instanceof Date ? signedAt : draft.operativeSignedAt ?? null,
-    }
-  }
+  // Rulebook 1.43.0 §8: the person adds price work or expenses only until their line manager signs (a self-signed
+  // sheet stays open; adding asks them to sign again).
   const extrasAllowed = timesheetOwnerCanAddExtras(draft, { selfSigned: userTimesheetSelfSigned(subjectUser, users) })
+  // Rulebook 1.54.0 §8: after the line manager signed, until exported, the person adds late extras instead; they pay
+  // only once the line manager approves them. The signed entries never change.
+  const lateAllowed = timesheetOwnerCanAddLateExtras(draft, { selfSigned: userTimesheetSelfSigned(subjectUser, users) })
+  const lateExtras = draft.lateExtras ?? []
   // Rulebook 1.45.0 §8 (`canEditTimesheetEntry`): the owner edits or deletes their own entries until the line manager signs.
   const entryAccess = canEditTimesheetEntry(draft, { viewerIsOwner: mode === 'mine', selfSigned: userTimesheetSelfSigned(subjectUser, users) })
   // Rulebook 1.22.0 (§8): every figure below is `timesheetTotals` — the invoice rows summed — never an app sum.
@@ -486,7 +481,7 @@ export function TimesheetPeriodPage({
   const hoursSubtotal = totals.standardLabour
 
   const persist = useCallback(
-    async (next: TimesheetDraft, options: { rebuildSnapshot?: boolean; rebuildMoneyOnly?: boolean } = {}) => {
+    async (next: TimesheetDraft, options: { rebuildSnapshot?: boolean } = {}) => {
       if (!organization?.id) return
       // 1.43.0: never save over a sheet that could not be loaded (a second copy under another id).
       if (loadFailed) throw new Error(TIMESHEET_HISTORY_LOAD_FAILED_MESSAGE)
@@ -498,7 +493,6 @@ export function TimesheetPeriodPage({
         draft: next,
         // Rulebook 1.47.0: a fresh signature on changed bookings rebuilds the snapshot from the live bookings.
         rebuildSnapshot: options.rebuildSnapshot === true,
-        rebuildMoneyOnly: options.rebuildMoneyOnly === true,
         user: subjectUser,
         users,
         viewer,
@@ -672,10 +666,19 @@ export function TimesheetPeriodPage({
     // Rulebook 1.43.0 (`timesheetOwnerCanAddExtras`): never once the line manager has signed — and never clear only
     // the person's signature (that left the sheet half signed).
     if (!extrasAllowed.allowed) {
-      setError(extrasAllowed.message)
+      // Rulebook 1.54.0: then a late extra, sent to the line manager to approve (until the sheet is exported).
+      if (lateAllowed.allowed) {
+        if (!window.confirm(TIMESHEET_LATE_EXTRA_ADD_CONFIRM_MESSAGE)) return
+        setEditingEntryId(null)
+        setLateEditing(true)
+        setExtraMode(kind)
+        return
+      }
+      setError(lateAllowed.message ?? extrasAllowed.message)
       return
     }
-    if (fullyApproved || extrasReopen) {
+    setLateEditing(false)
+    if (fullyApproved) {
       setPendingExtraMode(kind)
       return
     }
@@ -689,9 +692,7 @@ export function TimesheetPeriodPage({
    */
   const saveEntryChange = async (next: TimesheetDraft): Promise<boolean> => {
     const before = draft
-    // 1.54.0: after the line manager signed, keep every signature and record what was signed (the sheet reopens);
-    // a self-signed sheet keeps its own flow (the person signs it again).
-    const changed = extrasReopen ? withExtrasBaseline(next) : fullyApproved ? clearSignatures(next) : next
+    const changed = fullyApproved ? clearSignatures(next) : next
     try {
       await persist(changed)
     } catch (err: unknown) {
@@ -711,7 +712,8 @@ export function TimesheetPeriodPage({
       setError(entryAccess.message)
       return
     }
-    if ((fullyApproved || extrasReopen) && !window.confirm(postSignExtraWarningCopy(subjectUser, draft, users))) return
+    if (fullyApproved && !window.confirm(postSignExtraWarningCopy(subjectUser, draft, users))) return
+    setLateEditing(false)
     setEditingEntryId(id)
     setExtraMode(kind)
   }
@@ -721,7 +723,7 @@ export function TimesheetPeriodPage({
       setError(entryAccess.message)
       return
     }
-    const prompt = fullyApproved || extrasReopen
+    const prompt = fullyApproved
       ? `${TIMESHEET_ENTRY_DELETE_CONFIRM_MESSAGE}\n\n${postSignExtraWarningCopy(subjectUser, draft, users)}`
       : TIMESHEET_ENTRY_DELETE_CONFIRM_MESSAGE
     if (!window.confirm(prompt)) return
@@ -732,18 +734,60 @@ export function TimesheetPeriodPage({
     void saveEntryChange(next)
   }
 
+  /** Rulebook 1.54.0: save a change to the person's late extras (no signature is cleared; the signed entries stay). */
+  const saveLateChange = async (nextLate: TimesheetLateExtra[]): Promise<boolean> => {
+    const before = draft
+    const next = { ...draft, lateExtras: nextLate }
+    try {
+      await persist(next)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not save the timesheet')
+      return false
+    }
+    if (organization?.id && viewer?.id) {
+      const asEntries = (list: TimesheetLateExtra[]) => ({
+        ...before,
+        priceWorkEntries: list.flatMap((row) => (row.kind === 'priceWork' ? [row] : [])),
+        expenseEntries: list.flatMap((row) => (row.kind === 'expense' ? [row] : [])),
+      })
+      await deleteOwnClaimFiles(
+        timesheetEntryEvidenceToDelete({
+          before: asEntries(before.lateExtras ?? []),
+          after: asEntries(nextLate),
+          organizationId: organization.id,
+          viewerUserId: viewer.id,
+          nowMs: Date.now(),
+        })
+      )
+    }
+    return true
+  }
+
+  const beginEditLate = (kind: 'priceWork' | 'expense', id: string) => {
+    if (!lateAllowed.allowed) {
+      setError(lateAllowed.message)
+      return
+    }
+    setEditingEntryId(id)
+    setLateEditing(true)
+    setExtraMode(kind)
+  }
+
+  const deleteLate = (id: string) => {
+    if (!lateAllowed.allowed) {
+      setError(lateAllowed.message)
+      return
+    }
+    if (!window.confirm(TIMESHEET_ENTRY_DELETE_CONFIRM_MESSAGE)) return
+    void saveLateChange(lateExtras.filter((entry) => entry.id !== id))
+  }
+
   const acceptPostSignExtra = async () => {
     const kind = pendingExtraMode
     if (!kind) return
     if (!extrasAllowed.allowed) {
       setPendingExtraMode(null)
       setError(extrasAllowed.message)
-      return
-    }
-    if (extrasReopen) {
-      // 1.54.0: nothing is saved yet; the entry's own save keeps the signatures and records what was signed.
-      setPendingExtraMode(null)
-      setExtraMode(kind)
       return
     }
     try {
@@ -840,7 +884,13 @@ export function TimesheetPeriodPage({
     if (!editingExtra) return
     const amount = parseTimesheetManagerAmount(editAmount)
     if (amount == null) return
-    if (editingExtra.type === 'expense') {
+    if (editingExtra.late) {
+      // Rulebook 1.54.0: the reviewer's revised amount for a late extra (written to the review map with `lateExtra`).
+      const next = lateExtras.map((entry) =>
+        entry.id !== editingExtra.id ? entry : { ...entry, ...extraReviewAfterSave(entry.managerDecision, entry.amount, amount) }
+      )
+      void persistOrReport({ ...draft, lateExtras: next })
+    } else if (editingExtra.type === 'expense') {
       const next = draft.expenseEntries.map((entry) => {
         if (entry.id !== editingExtra.id) return entry
         return { ...entry, ...extraReviewAfterSave(entry.managerDecision, entry.amount, amount) }
@@ -886,15 +936,12 @@ export function TimesheetPeriodPage({
           operativeSignedBookingsAt: null,
           operativeSignedBookingsAtPending: true,
           operativeSignedBookingsSignedAt: signedAt,
-          // Rulebook 1.54.0 §8: the price work and expenses signed, so a later change reopens the sheet.
-          operativeSignedExtras: signedTimesheetExtrasRecord({ priceWorkEntries: draft.priceWorkEntries, expenseEntries: draft.expenseEntries }),
-          operativeSignedExtrasSignedAt: signedAt,
         },
         subjectUser,
         users
       )
       // A self-signed person's signature on changed bookings rebuilds their snapshot (1.47.0).
-      await persist(next, { rebuildSnapshot: bookingChange.reopened && sheetSelfSigned })
+      await persist(next, { rebuildSnapshot: bookingsReopened && sheetSelfSigned })
       if (organization?.id && requiresLineManagerCounterSign(subjectUser, users)) {
         try {
           await notifyTimesheetPendingManagerSignoff({
@@ -942,9 +989,8 @@ export function TimesheetPeriodPage({
         managerSignatureImageBase64: signature,
         },
         // Rulebook 1.47.0: counter-signing a reopened sheet rebuilds the snapshot from the live bookings.
-        // 1.54.0 (review of #337): when only price work or expenses changed, the counter-signature rebuilds the money
-        // rows and keeps the signed labour rows exactly as signed (never re-priced at today's rates or hours).
-        { rebuildSnapshot: bookingChange.reopened, rebuildMoneyOnly: bookingChange.reopened && !bookingChange.bookingsChanged }
+        // 1.54.0: late extras alone never rebuild the snapshot's labour (the approving save already added them).
+        { rebuildSnapshot: bookingsReopened }
       )
       if (organization?.id) {
         try {
@@ -1391,14 +1437,44 @@ export function TimesheetPeriodPage({
               onDelete={(id) => deleteEntry('expense', id)}
             />
           ) : null}
+          {mode === 'mine' && lateExtras.length > 0 ? (
+            <ExtraList
+              title="Added after sign-off"
+              items={lateExtras.map((item) => ({
+                id: item.id,
+                title: item.kind === 'priceWork' ? `Price work · ${item.title}` : `Expense · ${item.title}`,
+                jobNumber: item.kind === 'priceWork' ? priceWorkJobNumberText(item.jobNumber) : item.jobNumber.trim(),
+                details: item.details,
+                amount:
+                  item.managerDecision === 'approved' || item.managerDecision === 'edited'
+                    ? timesheetEntryEffectiveAmount(item.managerDecision, item.managerRevisedAmount, item.amount)
+                    : 0,
+                original: item.amount,
+                decision: item.managerDecision,
+                removed: item.managerDecision === 'declined',
+                evidence: item.evidence ?? [],
+                legacyReceipt: null,
+                statusLabel: timesheetLateExtraLabel({
+                  state: item.managerDecision === 'pending' ? 'pending' : item.managerDecision === 'declined' ? 'declined' : 'approved',
+                }),
+              }))}
+              managerHasSigned
+              canEdit={lateAllowed.allowed}
+              onEdit={(id) => {
+                const found = lateExtras.find((entry) => entry.id === id)
+                if (found) beginEditLate(found.kind, id)
+              }}
+              onDelete={(id) => deleteLate(id)}
+            />
+          ) : null}
           {mode === 'review' ? (
             <ReviewExtras
               draft={draft}
               canReview={canManagerReview}
               timeZone={timeZone}
               onSave={(next) => void persistOrReport(next)}
-              onEditExtra={(type, id, title, _original, current) => {
-                setEditingExtra({ type, id, title, original: current })
+              onEditExtra={(type, id, title, _original, current, late) => {
+                setEditingExtra({ type, id, title, original: current, late: late === true })
                 setEditAmount(current.toFixed(2))
               }}
             />
@@ -1413,7 +1489,7 @@ export function TimesheetPeriodPage({
               <Card title="Add to this timesheet">
                 {!extrasAllowed.allowed ? (
                   <div className="pu-card-b" style={{ paddingBottom: 0 }}>
-                    <Note tone="amber">{extrasAllowed.message}</Note>
+                    <Note tone="amber">{lateAllowed.allowed ? TIMESHEET_LATE_EXTRA_ADD_CONFIRM_MESSAGE : lateAllowed.message ?? extrasAllowed.message}</Note>
                   </div>
                 ) : null}
                 <div className="pu-card-b pu-tiles">
@@ -1421,9 +1497,9 @@ export function TimesheetPeriodPage({
                     type="button"
                     onClick={() => beginExtra('priceWork')}
                     className="pu-tilebtn"
-                    disabled={!extrasAllowed.allowed}
-                    aria-disabled={!extrasAllowed.allowed}
-                    style={extrasAllowed.allowed ? undefined : { opacity: 0.5, cursor: 'not-allowed' }}
+                    disabled={!extrasAllowed.allowed && !lateAllowed.allowed}
+                    aria-disabled={!extrasAllowed.allowed && !lateAllowed.allowed}
+                    style={extrasAllowed.allowed || lateAllowed.allowed ? undefined : { opacity: 0.5, cursor: 'not-allowed' }}
                   >
                     <IconTile tone="purple" size="sm"><BriefcaseIcon /></IconTile>
                     <span className="pu-tilebtn-t">
@@ -1435,9 +1511,9 @@ export function TimesheetPeriodPage({
                     type="button"
                     onClick={() => beginExtra('expense')}
                     className="pu-tilebtn"
-                    disabled={!extrasAllowed.allowed}
-                    aria-disabled={!extrasAllowed.allowed}
-                    style={extrasAllowed.allowed ? undefined : { opacity: 0.5, cursor: 'not-allowed' }}
+                    disabled={!extrasAllowed.allowed && !lateAllowed.allowed}
+                    aria-disabled={!extrasAllowed.allowed && !lateAllowed.allowed}
+                    style={extrasAllowed.allowed || lateAllowed.allowed ? undefined : { opacity: 0.5, cursor: 'not-allowed' }}
                   >
                     <IconTile tone="green" size="sm"><ReceiptPercentIcon /></IconTile>
                     <span className="pu-tilebtn-t">
@@ -1469,7 +1545,7 @@ export function TimesheetPeriodPage({
 
               {waitingForPerson ? (
                 <Note tone="amber" icon={<BookingsChangedWarning />}>
-                  {bookingChange.message ?? SIGNED_TIMESHEET_CHANGED_MESSAGE}
+                  {SIGNED_TIMESHEET_CHANGED_MESSAGE}
                 </Note>
               ) : canCounterSignAgain ? (
                 <Note tone="amber">Signed again — waiting for your line manager to counter-sign the new figures.</Note>
@@ -1492,7 +1568,7 @@ export function TimesheetPeriodPage({
                 />
               )}
 
-              {needsCounterSign && draft.managerSignedAt && !bookingChange.reopened ? (
+              {needsCounterSign && draft.managerSignedAt && !bookingsReopened ? (
                 <SignedBlock
                   base64={draft.managerSignatureImageBase64}
                   caption={`Manager: ${draft.managerSignedByName || 'Line manager'} · ${signedStamp(draft.managerSignedAt, timeZone)}`}
@@ -1518,7 +1594,9 @@ export function TimesheetPeriodPage({
                     Generate Invoice
                   </PuButton>
                   <p className="pu-sub" style={{ textAlign: 'center' }}>
-                    {bookingChange.reopened
+                    {lateOnlyWaiting
+                      ? TIMESHEET_LATE_EXTRA_WAITING_LABEL
+                      : bookingChange.reopened
                       ? waitingForPerson
                         ? 'Bookings changed since you signed — review and sign again to unlock Generate Invoice.'
                         : 'Timesheet pending manager signature — Generate Invoice unlocks after your line manager counter-signs again.'
@@ -1549,7 +1627,7 @@ export function TimesheetPeriodPage({
                     <Note tone={bookingChange.exported ? 'info' : 'amber'}>{bookingChange.reviewerMessage}</Note>
                   ) : null}
                   {needsCounterSign ? (
-                    draft.managerSignedAt && !bookingChange.reopened ? (
+                    draft.managerSignedAt && !bookingsReopened ? (
                       <SignedBlock
                         base64={draft.managerSignatureImageBase64}
                         caption={`Manager approved: ${draft.managerSignedByName || 'Manager'} · ${signedStamp(draft.managerSignedAt, timeZone)}`}
@@ -1600,7 +1678,9 @@ export function TimesheetPeriodPage({
           key={`${extraMode}-${editingEntryId ?? 'new'}`}
           mode={extraMode}
           initial={
-            editingEntryId
+            editingEntryId && lateEditing
+              ? lateExtras.find((entry) => entry.id === editingEntryId && entry.kind === extraMode) ?? null
+              : editingEntryId
               ? extraMode === 'priceWork'
                 ? draft.priceWorkEntries.find((entry) => entry.id === editingEntryId) ?? null
                 : draft.expenseEntries.find((entry) => entry.id === editingEntryId) ?? null
@@ -1623,11 +1703,25 @@ export function TimesheetPeriodPage({
           onCancel={() => {
             setExtraMode(null)
             setEditingEntryId(null)
+            setLateEditing(false)
           }}
           onSave={async (entry) => {
             // Rulebook 1.45.0 §8: an edit replaces the entry (same id); an add appends it.
             const replace = <T extends { id: string }>(list: T[], row: T) =>
               editingEntryId ? list.map((existing) => (existing.id === editingEntryId ? row : existing)) : [...list, row]
+            if (lateEditing) {
+              // Rulebook 1.54.0: a late extra — pending until the line manager decides it (never an inline decision).
+              const row: TimesheetLateExtra =
+                extraMode === 'priceWork'
+                  ? { ...entry.priceWork!, kind: 'priceWork', managerDecision: 'pending', managerRevisedAmount: null }
+                  : { ...entry.expense!, kind: 'expense', managerDecision: 'pending', managerRevisedAmount: null }
+              const ok = await saveLateChange(replace<TimesheetLateExtra>(lateExtras, row))
+              if (!ok) return false
+              setExtraMode(null)
+              setEditingEntryId(null)
+              setLateEditing(false)
+              return true
+            }
             const next =
               extraMode === 'priceWork'
                 ? { ...draft, priceWorkEntries: replace(draft.priceWorkEntries, entry.priceWork!) }
@@ -1637,7 +1731,7 @@ export function TimesheetPeriodPage({
               if (!ok) return false
             } else {
               try {
-                await persist(withExtrasBaseline(next))
+                await persist(next)
               } catch (err: unknown) {
                 setError(err instanceof Error ? err.message : 'Could not save the timesheet')
                 return false
@@ -2002,16 +2096,19 @@ function LeaveInfoLine({ leave, timeZone }: { leave: TimesheetLeaveLine; timeZon
 
 function TickCross({
   decision,
+  undecided = false,
   onApprove,
   onDecline,
   onEdit,
 }: {
   decision: TimesheetManagerDecision
+  /** Rulebook 1.54.0: a late extra not decided yet shows neither ✓ nor ✕ selected (it is not approved by default). */
+  undecided?: boolean
   onApprove: () => void
   onDecline: () => void
   onEdit: () => void
 }) {
-  const selected = reviewSelection(decision)
+  const selected = undecided ? 'pending' : reviewSelection(decision)
   const approved = selected === 'approved' || selected === 'edited'
   const declined = selected === 'declined'
   const base = { width: 34, height: 34, borderRadius: 9, border: 0, fontWeight: 700, fontSize: 13, cursor: 'pointer' }
@@ -2077,6 +2174,8 @@ function ExtraList({
     /** Rulebook 1.45.0: the entry's evidence, and an older entry's receipt name (no file was stored). */
     evidence: PayeClaimEvidence[]
     legacyReceipt: string | null
+    /** Rulebook 1.54.0: a late extra's own status (`timesheetLateExtraLabel`), shown instead of the decision chip. */
+    statusLabel?: string | null
   }>
   managerHasSigned: boolean
   /** Rulebook 1.45.0 (`canEditTimesheetEntry`): the owner may edit or delete until the line manager signs. */
@@ -2109,7 +2208,11 @@ function ExtraList({
                   </PuButton>
                 </span>
               ) : null}
-              {managerHasSigned && item.decision !== 'pending' ? (
+              {item.statusLabel ? (
+                <span style={{ display: 'inline-block', marginTop: 4 }}>
+                  <Chip tone={item.decision === 'pending' ? 'amber' : decisionTone(item.decision)}>{item.statusLabel}</Chip>
+                </span>
+              ) : managerHasSigned && item.decision !== 'pending' ? (
                 <span style={{ display: 'inline-block', marginTop: 4 }}>
                   <Chip tone={decisionTone(item.decision)}>{decisionLabel(item.decision)}</Chip>
                 </span>
@@ -2144,12 +2247,66 @@ function ReviewExtras({
     id: string,
     title: string,
     original: number,
-    current: number
+    current: number,
+    late?: boolean
   ) => void
 }) {
-  if (draft.expenseEntries.length === 0 && draft.priceWorkEntries.length === 0) return null
+  const lateExtras = draft.lateExtras ?? []
+  if (draft.expenseEntries.length === 0 && draft.priceWorkEntries.length === 0 && lateExtras.length === 0) return null
   return (
     <>
+      {lateExtras.length > 0 ? (
+        <Card title={canReview ? 'Added after sign-off — your decision' : 'Added after sign-off'}>
+          <div className="pu-card-b" style={{ paddingBottom: 0 }}>
+            <Note tone="amber">{TIMESHEET_LATE_EXTRAS_REVIEWER_MESSAGE}</Note>
+          </div>
+          <div className="pu-list">
+            {lateExtras.map((entry, index) => {
+              const removed = entry.managerDecision === 'declined'
+              const when = entry.kind === 'priceWork' ? entry.startDate : entry.date
+              return (
+                <div key={entry.id} className="pu-item" style={{ alignItems: 'flex-start', opacity: removed ? 0.55 : undefined }}>
+                  <span className="grow">
+                    <b style={removed ? { textDecoration: 'line-through' } : undefined}>
+                      {entry.kind === 'priceWork' ? 'Price work' : 'Expense'} · {entry.title}
+                    </b>
+                    <span className="pu-sub">
+                      {abbreviatedDate(when, timeZone)} · {entry.kind === 'priceWork' ? priceWorkJobNumberText(entry.jobNumber) : entry.jobNumber}
+                      {entry.evidence?.length ? ` · ${claimEvidenceCountText(entry.evidence.length)}` : ''}
+                    </span>
+                    <EvidenceLinks evidence={entry.evidence} />
+                    {entry.managerDecision === 'pending' ? (
+                      <span style={{ display: 'inline-block', marginTop: 4 }}>
+                        <Chip tone="amber">Waiting for your decision</Chip>
+                      </span>
+                    ) : null}
+                    <LiveReviewExtraAmount amount={entry.amount} decision={entry.managerDecision} revisedAmount={entry.managerRevisedAmount} />
+                  </span>
+                  {canReview ? (
+                    <TickCross
+                      decision={entry.managerDecision}
+                      undecided={entry.managerDecision === 'pending'}
+                      onApprove={() => {
+                        const next = [...lateExtras]
+                        next[index] = { ...entry, managerDecision: 'approved', managerRevisedAmount: null }
+                        onSave({ ...draft, lateExtras: next })
+                      }}
+                      onDecline={() => {
+                        const next = [...lateExtras]
+                        next[index] = { ...entry, managerDecision: 'declined', managerRevisedAmount: null }
+                        onSave({ ...draft, lateExtras: next })
+                      }}
+                      onEdit={() =>
+                        onEditExtra(entry.kind, entry.id, entry.title, entry.amount, entry.managerRevisedAmount ?? entry.amount, true)
+                      }
+                    />
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
+        </Card>
+      ) : null}
       {draft.expenseEntries.length > 0 ? (
         <Card title={canReview ? 'Expenses — review required' : 'Expenses'}>
           <div className="pu-list">

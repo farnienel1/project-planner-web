@@ -33,12 +33,15 @@ import {
   type TimesheetEntryDecision,
   type TimesheetEntryReview,
   timesheetExportedFieldSet,
+  parseTimesheetLateExtras,
+  TIMESHEET_LATE_EXTRAS_FIELD,
 } from '@/lib/canonical'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import {
   emptyTimesheetDraft,
   type TimesheetDraft,
   type TimesheetExpenseEntry,
+  type TimesheetLateExtra,
   type TimesheetManagerDecision,
   type TimesheetPayrollLineReview,
   type TimesheetPriceWorkEntry,
@@ -156,6 +159,73 @@ function mapEntries(
   }
 }
 
+/** Rulebook 1.54.0 §8: `lateExtras` through `parseTimesheetLateExtras` (the late decision, never an inline one). */
+function mapLateExtras(
+  data: Record<string, unknown>,
+  sheetDocId: string,
+  timeZone: string,
+  ownerUserIds: ReadonlyArray<string> = []
+): TimesheetLateExtra[] | undefined {
+  if (!Array.isArray(data[TIMESHEET_LATE_EXTRAS_FIELD])) return undefined
+  return parseTimesheetLateExtras(sheetDocId, data, { timeZone, ownerUserIds }).map((entry): TimesheetLateExtra => {
+    const common = {
+      id: entry.id,
+      title: entry.title,
+      details: entry.details,
+      jobNumber: entry.jobNumber,
+      amount: entry.amount,
+      evidence: entry.evidence,
+      reviewFingerprint: entry.reviewFingerprint,
+      managerDecision: decisionOf(entry.managerDecision),
+      managerRevisedAmount: entry.managerRevisedAmount,
+    }
+    if (entry.kind === 'priceWork') {
+      return {
+        ...common,
+        kind: 'priceWork',
+        agreedManagerName: entry.agreedManagerName,
+        startDate: entry.startMs != null ? new Date(entry.startMs) : new Date(),
+        endDate: entry.endMs != null ? new Date(entry.endMs) : null,
+      }
+    }
+    return {
+      ...common,
+      kind: 'expense',
+      date: entry.dateMs != null ? new Date(entry.dateMs) : new Date(),
+      receiptName: entry.receiptName,
+    }
+  })
+}
+
+/** Rulebook 1.54.0: a late extra as stored — the entry's own fields and kind, never a decision. */
+export function lateExtraToFirestore(entry: TimesheetLateExtra): Record<string, unknown> {
+  const evidence = entry.evidence && entry.evidence.length > 0 ? { evidence: timesheetEntryEvidenceWriteFields(entry.evidence) } : {}
+  if (entry.kind === 'priceWork') {
+    return {
+      kind: 'priceWork',
+      id: entry.id,
+      title: entry.title,
+      details: entry.details,
+      jobNumber: entry.jobNumber,
+      agreedManagerName: entry.agreedManagerName,
+      startDate: Timestamp.fromDate(entry.startDate),
+      endDate: entry.endDate ? Timestamp.fromDate(entry.endDate) : null,
+      amount: entry.amount,
+      ...evidence,
+    }
+  }
+  return {
+    kind: 'expense',
+    id: entry.id,
+    title: entry.title,
+    details: entry.details,
+    jobNumber: entry.jobNumber,
+    date: Timestamp.fromDate(entry.date),
+    amount: entry.amount,
+    ...evidence,
+  }
+}
+
 function finiteNumber(value: unknown): number {
   const number = typeof value === 'number' ? value : Number(value)
   return Number.isFinite(number) ? number : 0
@@ -172,7 +242,8 @@ function mapMoneyLine(row: Record<string, unknown>): WeeklyReportMoneyLine | nul
     date: parseFirestoreDate(row.date) || new Date(),
     amount: finiteNumber(row.amount),
     decision: asDecision(row.decision),
-    // Rulebook 1.54.0: the entry's fingerprint at signing (missing on rows written before 1.54.0).
+    // Rulebook 1.54.0: an approved late extra's row (and its fingerprint when approved).
+    ...(row.lateExtra === true ? { lateExtra: true } : {}),
     ...(typeof row.entryFingerprint === 'string' && row.entryFingerprint ? { entryFingerprint: row.entryFingerprint } : {}),
   }
 }
@@ -240,6 +311,7 @@ export function weeklyReportOverrideToFirestore(override: WeeklyReportOverride):
     date: Timestamp.fromDate(line.date),
     amount: line.amount,
     decision: line.decision,
+    ...(line.lateExtra === true ? { lateExtra: true } : {}),
     ...(line.entryFingerprint ? { entryFingerprint: line.entryFingerprint } : {}),
   })
   return {
@@ -312,21 +384,6 @@ function mapReviews(raw: unknown): Record<string, TimesheetPayrollLineReview> {
   return output
 }
 
-/** Rulebook 1.54.0 §8: `operativeSignedExtras` as stored (null when missing or not a list; bad rows dropped). */
-function parseOperativeSignedExtras(raw: unknown): TimesheetDraft['operativeSignedExtras'] {
-  if (!Array.isArray(raw)) return null
-  return raw
-    .filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === 'object')
-    .map((row) => ({
-      kind: row.kind === 'priceWork' ? ('priceWork' as const) : ('expense' as const),
-      entryId: typeof row.entryId === 'string' ? row.entryId : '',
-      fingerprint: typeof row.fingerprint === 'string' ? row.fingerprint : '',
-      validKind: row.kind === 'priceWork' || row.kind === 'expense',
-    }))
-    .filter((row) => row.entryId !== '' && row.validKind)
-    .map(({ kind, entryId, fingerprint }) => ({ kind, entryId, fingerprint }))
-}
-
 /** Rulebook 1.47.0 §8: `operativeSignedBookings` as stored (null when missing or not a list; bad rows dropped). */
 function parseOperativeSignedBookings(raw: unknown): TimesheetDraft['operativeSignedBookings'] {
   if (!Array.isArray(raw)) return null
@@ -360,9 +417,6 @@ export function draftFromFirestoreMap(
     operativeSignedBookings: parseOperativeSignedBookings(data.operativeSignedBookings),
     operativeSignedBookingsAt: parseSharedFirestoreDate(data.operativeSignedBookingsAt) ?? null,
     operativeSignedBookingsSignedAt: parseSharedFirestoreDate(data.operativeSignedBookingsSignedAt) ?? null,
-    // Rulebook 1.54.0 §8: the price work and expenses the person signed (missing before 1.54.0).
-    operativeSignedExtras: parseOperativeSignedExtras(data.operativeSignedExtras),
-    operativeSignedExtrasSignedAt: parseSharedFirestoreDate(data.operativeSignedExtrasSignedAt) ?? null,
     managerSignedAt: status.managerSignedAtMs ? new Date(status.managerSignedAtMs) : null,
     managerSignedByName: status.managerSignedByName || null,
     managerSignedByUserId: status.managerSignedByUserId || null,
@@ -371,6 +425,10 @@ export function draftFromFirestoreMap(
     exportedAtStored: timesheetExportedFieldSet(data.exportedAt),
     expenseEntries: entries.expenseEntries,
     priceWorkEntries: entries.priceWorkEntries,
+    ...(() => {
+      const lateExtras = mapLateExtras(data, options?.sheetDocId?.trim() || '', organizationZoneOr(options?.timeZone), options?.ownerUserIds ?? [])
+      return lateExtras ? { lateExtras } : {}
+    })(),
     payrollLineReviews: mapReviews(data.payrollLineReviews),
     weeklyReportOverride: weeklyReportOverrideFromFirestore(data.weeklyReportOverride),
     extraEntryReviews: parseTimesheetEntryReviews(data),
@@ -402,17 +460,6 @@ export function draftToFirestoreMap(draft: TimesheetDraft): Record<string, unkno
       ? { operativeSignedBookingsSignedAt: Timestamp.fromDate(draft.operativeSignedBookingsSignedAt) }
       : draft.operativeSignedBookingsSignedAt === null
         ? { operativeSignedBookingsSignedAt: null }
-        : {}),
-    // Rulebook 1.54.0: written only when the draft has it, so a sheet signed before 1.54.0 keeps its stored shape.
-    ...(Array.isArray(draft.operativeSignedExtras)
-      ? { operativeSignedExtras: draft.operativeSignedExtras.map((row) => ({ ...row })) }
-      : draft.operativeSignedExtras === null
-        ? { operativeSignedExtras: null }
-        : {}),
-    ...(draft.operativeSignedExtrasSignedAt instanceof Date
-      ? { operativeSignedExtrasSignedAt: Timestamp.fromDate(draft.operativeSignedExtrasSignedAt) }
-      : draft.operativeSignedExtrasSignedAt === null
-        ? { operativeSignedExtrasSignedAt: null }
         : {}),
     managerSignedAt: draft.managerSignedAt ? Timestamp.fromDate(draft.managerSignedAt) : null,
     managerSignedByName: draft.managerSignedByName || '',
@@ -447,6 +494,8 @@ export function draftToFirestoreMap(draft: TimesheetDraft): Record<string, unkno
       managerDecision: entry.managerDecision,
       managerRevisedAmount: entry.managerRevisedAmount ?? null,
     })),
+    // Rulebook 1.54.0: written only when the draft has the list, so a sheet without late extras keeps its stored shape.
+    ...(Array.isArray(draft.lateExtras) ? { [TIMESHEET_LATE_EXTRAS_FIELD]: draft.lateExtras.map(lateExtraToFirestore) } : {}),
     payrollLineReviews: Object.fromEntries(
       Object.entries(draft.payrollLineReviews).map(([key, review]) => [
         key,
@@ -494,6 +543,7 @@ export function timesheetDraftHasActivity(draft: TimesheetDraft): boolean {
       draft.exportedAt ||
       draft.expenseEntries.length ||
       draft.priceWorkEntries.length ||
+      (draft.lateExtras?.length ?? 0) ||
       draft.managerNote.trim() ||
       draft.weeklyReportOverride
   )
@@ -906,14 +956,26 @@ export async function saveTimesheetDraft({
       }
     }
     const next = draftToFirestoreMap(draft)
+    const ownerUserIds = timesheetEvidenceOwnerIds(canonicalId, { userId }, [writerId])
     const entriesError = timesheetOwnerEntriesError({
       previous,
       next: { priceWorkEntries: next.priceWorkEntries as unknown[], expenseEntries: next.expenseEntries as unknown[] },
       organizationId,
       // The uploader is the signed-in owner; the sheet's own ids count as theirs too.
-      ownerUserIds: timesheetEvidenceOwnerIds(canonicalId, { userId }, [writerId]),
+      ownerUserIds,
     })
     if (entriesError) throw new Error(entriesError)
+    // Rulebook 1.54.0: late extras follow the same entry rules (job number, evidence), checked by kind.
+    const lateOf = (source: unknown, kind: string) =>
+      (Array.isArray(source) ? source : []).filter((row) => row && typeof row === 'object' && (row as Record<string, unknown>).kind === kind)
+    const previousLate = base ? draftToFirestoreMap(base)[TIMESHEET_LATE_EXTRAS_FIELD] : undefined
+    const lateError = timesheetOwnerEntriesError({
+      previous: { priceWorkEntries: lateOf(previousLate, 'priceWork'), expenseEntries: lateOf(previousLate, 'expense') },
+      next: { priceWorkEntries: lateOf(next[TIMESHEET_LATE_EXTRAS_FIELD], 'priceWork'), expenseEntries: lateOf(next[TIMESHEET_LATE_EXTRAS_FIELD], 'expense') },
+      organizationId,
+      ownerUserIds,
+    })
+    if (lateError) throw new Error(lateError)
   }
   // Who and where (`writeMetadataFields`) plus the server time, on every timesheet save.
   const metadata = {
@@ -959,7 +1021,8 @@ export async function saveTimesheetDraft({
   if (!reviewer) return draft.extraEntryReviews ?? null
   const reviewFields = timesheetEntryReviewWriteFields({
     stored: draft.extraEntryReviews ?? null,
-    entries: [...draft.expenseEntries, ...draft.priceWorkEntries],
+    // Rulebook 1.54.0: a late extra's decision is written with `lateExtra: true` (and only with its fingerprint).
+    entries: [...draft.expenseEntries, ...draft.priceWorkEntries, ...(draft.lateExtras ?? []).map((entry) => ({ ...entry, lateExtra: true }))],
     reviewedByUserId: writerId,
     reviewedAtMs: Date.now(),
   })
