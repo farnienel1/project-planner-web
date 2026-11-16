@@ -14,6 +14,8 @@ import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { leaveRecordsForAccount } from '@/lib/canonical/bookingPerson'
 import { samePersonIds } from '@/lib/staff/userRosterUtils'
 import { teamLeaveTab } from '@/lib/annualLeave/teamLeaveQueue'
+import { leaveIdKeys } from '@/lib/annualLeave/annualLeavePerson'
+import { AnnualLeaveReportButton } from './AnnualLeaveReport'
 
 export function AnnualLeaveScreen() {
   const { organization, user } = useAuthStore()
@@ -37,6 +39,7 @@ export function AnnualLeaveScreen() {
   const [tab, setTab] = useState<'mine' | 'team'>(requestedTab)
   const [queueCount, setQueueCount] = useState(0)
   const [orgLeaveDefaults, setOrgLeaveDefaults] = useState<OrgAnnualLeaveDefaults>(DEFAULT_ANNUAL_LEAVE)
+  const [leaveDefaultsOrgId, setLeaveDefaultsOrgId] = useState<string | null>(null)
 
   useEffect(() => {
     setTab(requestedTab)
@@ -44,12 +47,15 @@ export function AnnualLeaveScreen() {
 
   useEffect(() => {
     if (!organization?.id) return
-    loadOrganizationDetails(organization.id)
+    const orgId = organization.id
+    loadOrganizationDetails(orgId)
       .then((details) => {
         if (details?.annualLeaveDefaults) setOrgLeaveDefaults(details.annualLeaveDefaults)
       })
       .catch(() => undefined)
+      .finally(() => setLeaveDefaultsOrgId(orgId))
   }, [organization?.id])
+  const leaveDefaultsLoaded = Boolean(organization?.id) && leaveDefaultsOrgId === organization?.id
 
   const myBookings = useMemo(
     () =>
@@ -68,6 +74,24 @@ export function AnnualLeaveScreen() {
         : []
       ).sort((a, b) => b.startDate.getTime() - a.startDate.getTime()),
     [bookings, user, users, userIdAliases, operatives]
+  )
+
+  // Annual leave report (rulebook §9 `leaveReportRows`): every id this person's leave may be filed under
+  // (`leaveRecordsForAccount`'s ids, the email included), the same set `myBookings` was matched on.
+  const myLeaveIds = useMemo(
+    () =>
+      user
+        ? leaveIdKeys(
+            {
+              id: user.id,
+              email: user.email,
+              formerIds: user.formerUserIds ?? [],
+              aliasIds: Array.from(samePersonIds(user.id, users, userIdAliases)),
+            },
+            operatives
+          )
+        : [],
+    [user, users, userIdAliases, operatives]
   )
 
   return (
@@ -101,6 +125,18 @@ export function AnnualLeaveScreen() {
         <div className={tab === 'team' ? undefined : 'hidden'}>
           <OperativeAnnualLeaveManagement embedded onQueueCount={setQueueCount} />
         </div>
+      ) : null}
+
+      {(tab === 'mine' || !canTeam) && user ? (
+        <AnnualLeaveReportButton
+          personName={`${user.firstName ?? ''} ${user.surname ?? ''}`.trim() || user.email}
+          personSubtitle={user.email}
+          bookings={myBookings}
+          personIds={myLeaveIds}
+          startMonth={orgLeaveDefaults.startMonth}
+          employmentStartDayKey={user.employmentStartDate ?? null}
+          ready={leaveDefaultsLoaded}
+        />
       ) : null}
 
       {tab === 'mine' || !canTeam ? (

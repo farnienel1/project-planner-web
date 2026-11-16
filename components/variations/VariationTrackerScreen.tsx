@@ -326,7 +326,7 @@ export function VariationTrackerScreen({
         ) : null}
 
         <div className="card" style={{ overflowX: 'auto' }}>
-          <table className="w-full text-sm" style={{ borderCollapse: 'collapse', minWidth: 880 }}>
+          <table className="w-full text-sm" style={{ borderCollapse: 'collapse', minWidth: 990 }}>
             <thead>
               <tr style={{ textAlign: 'left', color: 'var(--ink3)', fontSize: 12 }}>
                 <th style={{ padding: '10px 8px', width: 64 }} aria-label="Move" />
@@ -337,6 +337,7 @@ export function VariationTrackerScreen({
                 <th style={{ padding: '10px 8px', width: 120 }}>Items</th>
                 {showCost ? <th style={{ padding: '10px 8px', width: 110, textAlign: 'right' }}>Cost</th> : null}
                 <th style={{ padding: '10px 8px', width: 150 }}>Raised</th>
+                <th style={{ padding: '10px 8px', width: 110 }}>Submitted</th>
                 <th style={{ padding: '10px 8px', width: 150 }} aria-label="Actions" />
               </tr>
             </thead>
@@ -442,6 +443,10 @@ export function VariationTrackerScreen({
                       {row.createdByName}
                       <span style={{ display: 'block' }}>{variationDateText(row.createdAt.getTime(), timeZone)}</span>
                     </td>
+                    <td className="xs tabular-nums" style={{ padding: '10px 8px', verticalAlign: 'top' }}>
+                      {/* Owner 16 Nov: the date the variation went to the client, in the organisation zone; "—" when not submitted. */}
+                      {(row.submittedAt ? variationDateText(row.submittedAt.getTime(), timeZone) : '') || '—'}
+                    </td>
                     <td style={{ padding: '10px 8px', verticalAlign: 'top' }}>
                       <span className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
                         <Link href={`${base}?edit=${encodeURIComponent(row.id)}`} className="btn sm ghost">Edit items</Link>
@@ -468,7 +473,7 @@ export function VariationTrackerScreen({
               })}
               {visible.length === 0 ? (
                 <tr>
-                  <td colSpan={showCost ? 9 : 8} style={{ padding: 20 }} className="muted">No variations.</td>
+                  <td colSpan={showCost ? 10 : 9} style={{ padding: 20 }} className="muted">No variations.</td>
                 </tr>
               ) : null}
             </tbody>

@@ -152,7 +152,7 @@ function teamRow(candidate: TeamCandidate, users: User[], operatives: Operative[
 }
 
 /** `leaveRecordsForAccount`'s ids for one account, lower case (the email included). */
-function leaveIdKeys(account: { id: string; email?: string | null; formerIds?: readonly string[]; aliasIds?: readonly string[] }, operatives: Operative[]): string[] {
+export function leaveIdKeys(account: { id: string; email?: string | null; formerIds?: readonly string[]; aliasIds?: readonly string[] }, operatives: Operative[]): string[] {
   const ids = bookingIdsForAccount(account, operatives.map((op) => ({ id: op.id, email: op.email })))
   const email = (account.email || '').trim().toLowerCase()
   return Array.from(new Set([...ids.map((id) => id.toLowerCase()), ...(email ? [email] : [])]))

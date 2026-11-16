@@ -22,7 +22,7 @@ import {
 import { leaveBalanceShowsEmploymentType, userLeaveBalance, userLeaveBankHolidayRange } from '@/lib/annualLeave/leaveBalance'
 import { useLeaveEmployment } from '@/lib/annualLeave/useLeaveEmployment'
 import { addAnnualLeaveAdjustment, useAnnualLeaveAdjustments } from '@/lib/annualLeave/leaveAdjustments'
-import { annualLeaveBalanceNotes, canAdjustAnnualLeave, canViewAnnualLeaveAdjustments } from '@/lib/canonical'
+import { annualLeaveBalanceNotes, canAdjustAnnualLeave, canViewAnnualLeaveAdjustments, normalizeDocumentId } from '@/lib/canonical'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { DEFAULT_ANNUAL_LEAVE, loadOrganizationDetails, type OrgAnnualLeaveDefaults } from '@/lib/settings/organizationSettings'
@@ -33,6 +33,7 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import type { HolidayBooking, HolidayTimeSlot } from '@/types'
 import { AnnualLeaveLegend, LeaveDayCalendar } from './LeaveDayCalendar'
 import { useOrgBankHolidays } from './useOrgBankHolidays'
+import { AnnualLeaveReportButton } from './AnnualLeaveReport'
 
 function dayFromKey(key: string): Date {
   const [year, month, day] = key.split('-').map(Number)
@@ -158,6 +159,11 @@ export function OperativeAnnualLeaveCalendar({
       .finally(() => setLeaveDefaultsOrgId(orgId))
   }, [organization?.id])
   const leaveDefaultsLoaded = Boolean(organization?.id) && leaveDefaultsOrgId === organization?.id
+  // Every id this person's leave may be filed under — the same set `bookingMatchesPerson` matched `personBookings` on.
+  const reportPersonIds = useMemo(
+    () => Array.from(new Set([...(person.leaveIds ?? []), normalizeDocumentId(person.userId), normalizeDocumentId(person.operativeId)].filter(Boolean))),
+    [person.leaveIds, person.userId, person.operativeId]
+  )
   const viewerMayAdjust = Boolean(user && subject && canAdjustAnnualLeave(rulebookPerson(user, users), rulebookPerson(subject, users), rulebookRoster(users)))
   const viewerMaySeeAdjustments = Boolean(
     user && subject && canViewAnnualLeaveAdjustments(rulebookPerson(user, users), rulebookPerson(subject, users), rulebookRoster(users))
@@ -403,6 +409,21 @@ export function OperativeAnnualLeaveCalendar({
           </span>
         )}
       </div>
+
+      {/* Annual leave report (rulebook §9 `leaveReportRows`): for a person with an account, whoever may see their leave
+          history (`canViewAnnualLeaveAdjustments`: admins and their line managers); a catalogue row with no account is
+          only on an admin's Team list (`annualLeaveTeamPeople`). */}
+      {(subject ? viewerMaySeeAdjustments : !person.userId) ? (
+        <AnnualLeaveReportButton
+          personName={person.displayName}
+          personSubtitle={person.subtitle}
+          bookings={personBookings}
+          personIds={reportPersonIds}
+          startMonth={orgLeaveDefaults.startMonth}
+          employmentStartDayKey={subject?.employmentStartDate ?? null}
+          ready={leaveDefaultsLoaded}
+        />
+      ) : null}
 
       {balance ? (
         <>

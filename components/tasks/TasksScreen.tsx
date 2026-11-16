@@ -75,7 +75,7 @@ function HolidayApprovalCard({
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-slate-900">
-            {isCancellation ? 'Holiday cancellation request' : 'Annual leave request'}
+            {isCancellation ? 'Annual leave cancellation request' : 'Annual leave request'}
           </p>
           <p className="mt-0.5 text-sm font-medium">{requesterName}</p>
           <p className="mt-0.5 muted small">{formatDateRange(request.startDate, request.endDate, request.timeSlot)}</p>
@@ -382,7 +382,7 @@ export function TasksScreen() {
       {pendingApprovals.length > 0 && (
         <section ref={approvalsRef} className="scroll-mt-6 space-y-3">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="h2">Holiday approvals</h2>
+            <h2 className="h2">Annual leave approvals</h2>
             {(hasAdminAccess(user) || user?.permissions.manager) && (
               <Link href="/dashboard/annual-leave/operatives" className="link">
                 Manage all leave
