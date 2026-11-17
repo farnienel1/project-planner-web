@@ -10,6 +10,7 @@ import {
   timesheetChangesWithLateExtras,
   timesheetLateExtrasSummary,
   timesheetSnapshotMoneyRowsCurrent,
+  timesheetSnapshotNeedsRebuild,
   type SignedTimesheetBooking,
   type TimesheetChanges,
   type TimesheetLateExtrasSummary,
@@ -187,6 +188,28 @@ export function draftForFigures(
   // and (fourth review of #337) only while still approved at that amount (`draftWithCurrentLateRows`).
   if (!change?.reopened || change.bookingsChanged === false || !draft.weeklyReportOverride) return draftWithCurrentLateRows(draft)
   return { ...draft, weeklyReportOverride: null }
+}
+
+/** 17 Nov follow-up: the note under the figures while a snapshot frozen empty waits for its rebuild. */
+export const SNAPSHOT_BEING_REBUILT_NOTE = "Being rebuilt from your bookings — your line manager's next visit saves it."
+/** Review of #368: the same note for a person who signs their own sheet (no line manager visit saves it). */
+export const SNAPSHOT_BEING_REBUILT_SELF_SIGNED_NOTE = "Being rebuilt from your bookings — these figures stand until it's re-signed."
+
+/**
+ * 17 Nov follow-up: the figures of a sheet whose signed snapshot the rulebook already treats as broken
+ * (`timesheetSnapshotNeedsRebuild`: frozen with no labour lines, not exported) are its live bookings, as for a reopened
+ * sheet — never the empty snapshot's total — until a reviewer's visit saves the rebuild. Nothing is written here;
+ * invoicing and export stay blocked by the existing rules until then. Any other sheet: `draftForFigures`.
+ */
+export function draftForFiguresWithRebuild(
+  draft: TimesheetDraft,
+  change: Parameters<typeof draftForFigures>[1],
+  liveLines: ReadonlyArray<TimesheetPayrollLineItem>
+): { draft: TimesheetDraft; beingRebuilt: boolean } {
+  if (draft.weeklyReportOverride && timesheetSnapshotNeedsRebuild(draft, liveLines)) {
+    return { draft: { ...draft, weeklyReportOverride: null }, beingRebuilt: true }
+  }
+  return { draft: draftForFigures(draft, change), beingRebuilt: false }
 }
 
 /**
