@@ -26,6 +26,9 @@ function matches(doc: Doc, filter: Record<string, unknown> | undefined): boolean
   const expected = fromRestValue(field.value)
   if (field.op === 'EQUAL') return actual === expected
   if (field.op === 'IN') return Array.isArray(expected) && expected.includes(actual)
+  // Range filters on timestamps: both sides are ISO text here, which sorts in time order.
+  if (field.op === 'GREATER_THAN_OR_EQUAL') return typeof actual === 'string' && typeof expected === 'string' && actual >= expected
+  if (field.op === 'LESS_THAN_OR_EQUAL') return typeof actual === 'string' && typeof expected === 'string' && actual <= expected
   throw new Error(`fake backend: op ${field.op} not supported`)
 }
 
@@ -58,7 +61,13 @@ export function installFakeFirestore(
     if (url.endsWith(':runQuery') || url.endsWith(':runAggregationQuery')) {
       const body = JSON.parse(String(init?.body))
       const query = body.structuredQuery || body.structuredAggregationQuery.structuredQuery
-      const rows = (collections[query.from[0].collectionId] || []).filter((doc) => matches(doc, query.where))
+      // A query under a parent document (`…/documents/organizations/ORG:runAggregationQuery`) reads
+      // `organizations/ORG/<collectionId>`; a root query reads `<collectionId>`.
+      const docsMarker = '/documents/'
+      const runIndex = url.lastIndexOf(':run')
+      const parent = url.includes(docsMarker) ? decodeURIComponent(url.slice(url.indexOf(docsMarker) + docsMarker.length, runIndex)) : ''
+      const key = parent ? `${parent}/${query.from[0].collectionId}` : query.from[0].collectionId
+      const rows = (collections[key] || []).filter((doc) => matches(doc, query.where))
       if (url.endsWith(':runAggregationQuery')) {
         return new Response(JSON.stringify([{ result: { aggregateFields: { n: { integerValue: String(rows.length) } } } }]))
       }

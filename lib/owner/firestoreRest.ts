@@ -167,6 +167,7 @@ export type RestValue =
   | { booleanValue: boolean }
   | { integerValue: string }
   | { arrayValue: { values: RestValue[] } }
+  | { timestampValue: string }
 
 export type RestFilter = Record<string, unknown>
 
@@ -186,6 +187,14 @@ export function restIn(field: string, values: readonly string[]): RestFilter {
       value: { arrayValue: { values: values.slice(0, 30).map((value) => ({ stringValue: value })) } },
     },
   }
+}
+
+/** `start <= field <= end` on a Timestamp field (a single-field range: no composite index needed). */
+export function restTimeRange(field: string, start: Date, end: Date): RestFilter {
+  const bound = (op: string, at: Date) => ({
+    fieldFilter: { field: { fieldPath: field }, op, value: { timestampValue: at.toISOString() } },
+  })
+  return { compositeFilter: { op: 'AND', filters: [bound('GREATER_THAN_OR_EQUAL', start), bound('LESS_THAN_OR_EQUAL', end)] } }
 }
 
 export function restAnd(filters: RestFilter[]): RestFilter | undefined {

@@ -101,3 +101,50 @@ export function useOwnerCounts(includeTestData: boolean, enabled = true): OwnerC
 export async function ownerSearchRequest(q: string, includeTestData: boolean, signal?: AbortSignal): Promise<OwnerSearchResult> {
   return ownerGet<OwnerSearchResult>('/api/owner/search', { q, includeTestData }, signal)
 }
+
+export type OwnerActivityResponse = {
+  period: string
+  values: Record<'bookings' | 'projects' | 'smallWorks' | 'tasksCompleted', Record<string, number | null>>
+  organisationsCounted: number
+  failedOrganisations: string[]
+  countedAt: string
+}
+
+export type OwnerActivityState = { activity: OwnerActivityResponse | null; error: string | null; loading: boolean; refresh: () => void }
+
+/**
+ * Activity counts read from the records themselves (bookings, projects, small works, completed tasks), per console
+ * period. Read when the page opens, when the period or test-data choice changes, every 5 minutes and on Refresh.
+ * While the first read is running, or after it failed, `activity` is null: the page shows "—", never 0.
+ */
+export function useOwnerActivity(period: string, includeTestData: boolean, enabled = true): OwnerActivityState {
+  const [activity, setActivity] = useState<OwnerActivityResponse | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [tick, setTick] = useState(0)
+  const refresh = useCallback(() => setTick((value) => value + 1), [])
+  useEffect(() => {
+    if (!enabled) return
+    const controller = new AbortController()
+    setLoading(true)
+    ownerGet<OwnerActivityResponse>('/api/owner/activity', { period, includeTestData }, controller.signal)
+      .then((value) => {
+        setActivity(value)
+        setError(null)
+      })
+      .catch((err: unknown) => {
+        if (controller.signal.aborted) return
+        setActivity(null)
+        setError(err instanceof Error ? err.message : 'Could not count the activity.')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false)
+      })
+    const timer = window.setInterval(() => setTick((value) => value + 1), 5 * 60_000)
+    return () => {
+      controller.abort()
+      window.clearInterval(timer)
+    }
+  }, [period, includeTestData, enabled, tick])
+  return { activity, error, loading, refresh }
+}

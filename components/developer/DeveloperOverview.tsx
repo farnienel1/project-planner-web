@@ -25,6 +25,8 @@ import { loadSignedTimesheetValueTotals, otherCurrenciesNote, type SignedTimeshe
 import { billingLabel, billingStatusLabel } from '@/lib/stripe/billing'
 import { ANNUAL_PENCE, MONTHLY_PENCE } from '@/lib/stripe/plans'
 import { csvEscapeCell } from '@/lib/security/spreadsheetCell'
+import { useOwnerActivity } from '@/lib/owner/client/ownerApi'
+import { activityCell, type ActivityMetricKey } from '@/lib/owner/activityDisplay'
 
 const PRESETS: { id: DateRangePreset; label: string }[] = [
   { id: 'all_time', label: 'All time' },
@@ -80,6 +82,43 @@ function countEvents(
   return events.filter((event) => set.has(event.eventName) && inRange(event.createdAt, start, end)).length
 }
 
+const ACTIVITY_ROW_LABELS = new Set(['Bookings made', 'Projects created', 'Small works created', 'Tasks completed'])
+
+function sumCells(a: number | null, b: number | null): number | null {
+  return a === null || b === null ? null : a + b
+}
+
+function activityText(value: number | null, loading: boolean): string {
+  if (value !== null) return formatCount(value)
+  return loading ? '…' : '—'
+}
+
+function activityHint(
+  activity: Parameters<typeof activityCell>[0],
+  metric: ActivityMetricKey | ActivityMetricKey[],
+  period: string,
+  state: { error: string | null; loading: boolean }
+): string {
+  if (state.error) return `Could not count: ${state.error}`
+  if (!activity) return state.loading ? 'Counting…' : '—'
+  const metrics = Array.isArray(metric) ? metric : [metric]
+  const sum = (rangeId: string) =>
+    metrics.reduce<number | null>((total, id) => sumCells(total, activityCell(activity, id, rangeId)), 0)
+  const current = sum(period)
+  const previous = activity.period === period ? sum('previous') : null
+  if (activity.failedOrganisations.length) {
+    return `${activity.failedOrganisations.length} organisation${activity.failedOrganisations.length === 1 ? '' : 's'} could not be counted`
+  }
+  if (current === null || previous === null) return '—'
+  return deltaCopy(current, previous).text
+}
+
+function activityRowTitle(label: string, state: { error: string | null; loading: boolean }): string {
+  if (!ACTIVITY_ROW_LABELS.has(label)) return 'Not loaded for this period. Choose it in the period selector to count it.'
+  if (state.error) return `Could not count: ${state.error}`
+  return state.loading ? 'Counting…' : 'Could not be counted for every organisation.'
+}
+
 export function DeveloperOverviewScreen() {
   const period = useConsolePrefs((state) => state.period)
   const periodRange = useMemo(() => resolveConsolePeriod(period), [period])
@@ -98,6 +137,11 @@ export function DeveloperOverviewScreen() {
     ...emptyTimesheets,
     loaded: false,
   })
+
+  // Bookings, projects, small works and completed tasks are counted from the records themselves (server count()),
+  // never from product events: no app writes `schedule_edited`, and the iPhone writes no product events at all.
+  const ownerActivity = useOwnerActivity(period, includeTestData)
+  const activity = ownerActivity.activity
 
   const orgIdsKey = visibleOrgs.map((org) => org.id).sort().join(',')
 
@@ -152,16 +196,13 @@ export function DeveloperOverviewScreen() {
     const prevEnd = periodRange.previousEnd
     const logins = countEvents(events, ['login', 'user_logged_in'], start, end)
     const prevLogins = countEvents(events, ['login', 'user_logged_in'], prevStart, prevEnd)
-    const projects = countEvents(events, ['project_created', 'small_work_created'], start, end)
-    const prevProjects = countEvents(events, ['project_created', 'small_work_created'], prevStart, prevEnd)
     const signed = countEvents(events, ['timesheet_signed', 'timesheet_approved'], start, end)
-    const bookings = countEvents(events, ['schedule_edited'], start, end)
     const newUsers = visibleUsers.filter((user) => inRange(user.createdAt, start, end)).length
     const prevNewUsers = visibleUsers.filter((user) => inRange(user.createdAt, prevStart, prevEnd)).length
     const newOrgs = visibleOrgs.filter((org) => org.createdAt && inRange(org.createdAt, start, end)).length
     const prevOrgs = visibleOrgs.filter((org) => org.createdAt && inRange(org.createdAt, prevStart, prevEnd)).length
     const active = Math.max(dailyActiveUsers(events, periodRange), directoryActiveUsers(visibleUsers, periodRange))
-    return { logins, prevLogins, projects, prevProjects, signed, bookings, newUsers, prevNewUsers, newOrgs, prevOrgs, active }
+    return { logins, prevLogins, signed, newUsers, prevNewUsers, newOrgs, prevOrgs, active }
   }, [events, visibleUsers, visibleOrgs, periodRange])
 
   const scoreboard = useMemo(() => {
@@ -183,25 +224,17 @@ export function DeveloperOverviewScreen() {
         label: 'New organisations',
         values: columns.map((col) => visibleOrgs.filter((org) => org.createdAt && inRange(org.createdAt, col.range.start, col.range.end)).length),
       },
-      {
-        label: 'Projects created',
-        values: eventValues(['project_created']),
-      },
-      {
-        label: 'Small works created',
-        values: eventValues(['small_work_created']),
-      },
-      {
-        label: 'Tasks completed',
-        values: eventValues(['task_completed']),
-      },
+      ...(['bookings', 'projects', 'smallWorks', 'tasksCompleted'] as ActivityMetricKey[]).map((metric) => ({
+        label: { bookings: 'Bookings made', projects: 'Projects created', smallWorks: 'Small works created', tasksCompleted: 'Tasks completed' }[metric],
+        values: columns.map((col) => activityCell(activity, metric, col.id)),
+      })),
       {
         label: 'Timesheets signed (events)',
         values: eventValues(['timesheet_signed', 'timesheet_approved']),
       },
     ]
     return { columns, rows }
-  }, [events, visibleUsers, visibleOrgs, eventsLoaded])
+  }, [events, visibleUsers, visibleOrgs, eventsLoaded, activity])
 
   const revenue = useMemo(() => {
     let mrr = 0
@@ -281,11 +314,21 @@ export function DeveloperOverviewScreen() {
   }
 
   const kpis = [
-    { label: 'Bookings made', value: formatCount(periodMetrics.bookings), hint: deltaCopy(periodMetrics.bookings, 0).text, definition: 'schedule_edited events in this period. Historic bookings are not invented.' },
+    {
+      label: 'Bookings made',
+      value: activityText(activityCell(activity, 'bookings', period), ownerActivity.loading),
+      hint: activityHint(activity, 'bookings', period, ownerActivity),
+      definition: 'Labour, manager schedule and subcontractor bookings created in this period, counted from the bookings themselves (deleted bookings are not counted).',
+    },
     { label: 'Timesheets signed', value: formatCount(timesheetValue.loaded ? timesheetValue.sheetCount : periodMetrics.signed), hint: timesheetValue.loaded ? `${timesheetValue.sheetCount} fully signed sheets` : 'Reading sheets…', definition: METRIC_DEFINITIONS['Timesheets signed'] || 'Fully signed timesheets in the selected period.' },
     { label: 'Timesheet value', value: timesheetValue.loaded ? formatGbpFromPence(timesheetValue.valuePence) : '…', hint: deltaCopy(timesheetValue.valuePence, timesheetValue.previousPence).text, definition: 'Invoice total (timesheetTotals) of fully signed timesheets of GBP organisations: the signed snapshot when stored, else price work and expenses only. Other currencies are listed, never added.' },
     { label: 'Hours on timesheets', value: timesheetValue.loaded ? formatCount(hours) : '…', hint: hours ? `${formatGbpFromPence(avgPerHour)} / hour` : 'Hours on signed sheets', definition: 'Paid hours (timesheetTotals) of the signed lines of fully signed timesheets of GBP organisations; sheets without a signed snapshot add none.' },
-    { label: 'Projects created', value: formatCount(periodMetrics.projects), hint: deltaCopy(periodMetrics.projects, periodMetrics.prevProjects).text, definition: METRIC_DEFINITIONS['Projects / tasks created'] },
+    {
+      label: 'Projects created',
+      value: activityText(sumCells(activityCell(activity, 'projects', period), activityCell(activity, 'smallWorks', period)), ownerActivity.loading),
+      hint: activityHint(activity, ['projects', 'smallWorks'], period, ownerActivity),
+      definition: 'Projects and small works created in this period, counted from the jobs themselves (web and iPhone).',
+    },
     { label: 'Logins', value: formatCount(periodMetrics.logins), hint: deltaCopy(periodMetrics.logins, periodMetrics.prevLogins).text, definition: 'login / user_logged_in events' },
     { label: 'New users', value: formatCount(periodMetrics.newUsers), hint: deltaCopy(periodMetrics.newUsers, periodMetrics.prevNewUsers).text, definition: METRIC_DEFINITIONS['New user'] },
     { label: 'New organisations', value: formatCount(periodMetrics.newOrgs), hint: deltaCopy(periodMetrics.newOrgs, periodMetrics.prevOrgs).text, definition: 'Organisation documents created in the period' },
@@ -300,7 +343,15 @@ export function DeveloperOverviewScreen() {
           <p className="text-xs text-[var(--ink3)]">
             {loadedAt ? `Updated ${loadedAt.toLocaleTimeString('en-GB')}` : 'Live directory from organisations and users'}
           </p>
-          <button type="button" className="btn sm ghost" onClick={() => void refresh()} disabled={loading}>
+          <button
+            type="button"
+            className="btn sm ghost"
+            onClick={() => {
+              void refresh()
+              ownerActivity.refresh()
+            }}
+            disabled={loading}
+          >
             {loading ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
@@ -414,7 +465,7 @@ export function DeveloperOverviewScreen() {
                     className={`px-2 py-2 text-right ${scoreboard.columns[index].id === period ? 'bg-[var(--soft)] font-bold' : ''}`}
                   >
                     {value === null ? (
-                      <span title="Not loaded for this period. Choose it in the period selector to count it.">—</span>
+                      <span title={activityRowTitle(row.label, ownerActivity)}>—</span>
                     ) : (
                       formatCount(value)
                     )}
