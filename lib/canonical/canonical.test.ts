@@ -11946,6 +11946,21 @@ test('1.28.0 the organisation creator is its Super Admin even without the flag; 
   assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'S', isSuperAdmin: true, organizationId: 'organizations/org' }, { id: 'ORG' }), true)
   assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'S', isSuperAdmin: true, organizationId: 'ORG' }, { id: 'ORG-B' }), false)
   assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'A', isSuperAdmin: false }, { id: 'ORG', creatorUserId: 'C' }), false)
+  // 1.65.0: no fallback when the viewer's home organisation or the organisation id is blank — only an exact match
+  // (or the creator) counts. Before, a stray `isSuperAdmin` on a users document with no organisationId passed anywhere.
+  assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'S', isSuperAdmin: true }, { id: 'ORG' }), false)
+  assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'S', isSuperAdmin: true, organizationId: '' }, { id: 'ORG' }), false)
+  assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'S', isSuperAdmin: true, organizationId: '  ' }, { id: 'ORG' }), false)
+  assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'S', isSuperAdmin: true, organizationId: 'ORG' }, { id: '' }), false)
+  assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'S', isSuperAdmin: true, organizationId: 'ORG' }, null), false)
+  assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'S', isSuperAdmin: true, organizationId: 'org' }, { id: 'ORG' }), true)
+  // The creator still counts with no home organisation.
+  assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'C', isSuperAdmin: false }, { id: 'ORG', creatorUserId: 'C' }), true)
+  // accountDeletionPath and canRestoreOrganization follow: a flagged viewer with no home organisation just deletes.
+  assert.equal(
+    rulebook.accountDeletionPath({ id: 'S', isSuperAdmin: true }, [{ id: 'S', isActive: true, passwordSet: true }], { id: 'ORG', creatorUserId: 'C' }),
+    'delete'
+  )
 
   // A lone unflagged creator admin with no line manager: satisfied, self-signed, self-booked, saves pass.
   const creator = { id: 'C', email: 'c@x.com', role: 'admin', adminAccess: true, hasNoLineManager: true, organizationSuperAdmin: true }
@@ -17829,4 +17844,84 @@ test('1.59.0 review M2: a booking under a managers row with no account stays in 
   assert.equal(groups[0].label, `Jo Bloggs · ${R112.MANAGER_ROW_NOT_LINKED_LABEL}`)
   // The grid still names it (not "Unknown person").
   assert.equal(R112.scheduleRowPerson('mgr-noacc', { accounts: [], operatives: [], managers: [{ id: 'MGR-NOACC' }] }).unresolved, false)
+})
+
+// Rulebook 1.65.0 (§25, §26; mass-assignment audit 17 Nov, owner decision B): the server-side report check.
+test('1.65.0 overtimeReportIntegrity: a report built from its reviewed bookings passes; edited figures are flagged', () => {
+  const booking = { id: 'B1', collection: 'bookings', personId: 'sam', dayKey: '2026-11-05', timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '18:00', status: 'Confirmed' }
+  const figures = r129.overtimeForBooking({ booking, organization: R129_ORG, timeZone: R129_TZ })!
+  assert.equal(figures.overtimeHours, 3)
+  const fingerprint = r129.overtimeBookingFingerprint(booking)
+  const line = { bookingId: 'B1', dayKey: '2026-11-05', jobNumber: 'J-1', clockHours: figures.clockHours, multiplier: figures.multiplier, breakHours: 0, overtimeHours: 3, fingerprint, state: 'returnedApproved' }
+  const report = { userId: 'sam', kind: 'overtime', lines: [line], totals: { overtimeHours: 3, clockHours: figures.clockHours, lineCount: 1 } }
+  const reviews = [{ id: 'sam_B1', data: { userId: 'sam', bookingId: 'B1', decision: 'approved', fingerprint } }]
+  const ok = r129.overtimeReportIntegrity({ reportId: 'R', report, reviews, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ })
+  assert.equal(ok.ok, true)
+  assert.deepEqual([ok.reportedTotal, ok.recomputedTotal], [3, 3])
+
+  // Hours raised on the line and in the totals: the booking gives 3h, the line can be at most clock × rate.
+  const raised = { ...report, lines: [{ ...line, overtimeHours: 9 }], totals: { ...report.totals, overtimeHours: 9 } }
+  const bad = r129.overtimeReportIntegrity({ reportId: 'R', report: raised, reviews, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ })
+  assert.equal(bad.ok, false)
+  assert.deepEqual(bad.problems.map((p) => p.code).sort(), ['hours_differ', 'hours_exceed_clock'])
+  assert.equal(bad.recomputedTotal, 3)
+
+  // Totals that do not add up, a missing review, and a declined line counted.
+  const totals = r129.overtimeReportIntegrity({ reportId: 'R', report: { ...report, totals: { overtimeHours: 30, lineCount: 2 } }, reviews, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ })
+  assert.deepEqual(totals.problems.map((p) => p.code), ['totals_differ', 'line_count_differs'])
+  const unreviewed = r129.overtimeReportIntegrity({ reportId: 'R', report, reviews: [], bookings: [booking], organization: R129_ORG, timeZone: R129_TZ })
+  assert.deepEqual(unreviewed.problems.map((p) => p.code), ['not_reviewed'])
+  const declined = r129.overtimeReportIntegrity({
+    reportId: 'R', report, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ,
+    reviews: [{ id: 'sam_B1', data: { userId: 'sam', bookingId: 'B1', decision: 'declined', fingerprint } }],
+  })
+  assert.deepEqual(declined.problems.map((p) => p.code), ['declined_line_counted'])
+  assert.equal(declined.recomputedTotal, 0)
+
+  // A booking changed after the report is not a mismatch (the report is older, not wrong).
+  const later = { ...booking, workEndTime: '20:00' }
+  assert.equal(r129.overtimeReportIntegrity({ reportId: 'R', report, reviews, bookings: [later], organization: R129_ORG, timeZone: R129_TZ }).ok, true)
+})
+
+test('1.65.0 payeClaimReportIntegrity: totals and items are checked against the stored items; a rejected item is a note', () => {
+  const items = [
+    { id: 'E1', data: { userId: 'sam', title: 'Fuel', amount: 40, currency: 'GBP', date: '2026-11-05', evidence: [] } },
+    { id: 'E2', data: { userId: 'sam', title: 'Parking', amount: 12.5, currency: 'GBP', date: '2026-11-06', evidence: [] } },
+  ]
+  const report = {
+    userId: 'sam', kind: 'expense', currency: 'GBP',
+    items: [{ id: 'E1', title: 'Fuel', amount: 40, startDate: '2026-11-05' }, { id: 'E2', title: 'Parking', amount: 12.5, startDate: '2026-11-06' }],
+    totals: { amount: 52.5, itemCount: 2 },
+  }
+  const ok = r129.payeClaimReportIntegrity({ reportId: 'P', report, items })
+  assert.equal(ok.ok, true)
+  assert.deepEqual([ok.reportedTotal, ok.recomputedTotal], [52.5, 52.5])
+
+  const inflated = { ...report, items: [{ ...report.items[0], amount: 400 }, report.items[1]], totals: { amount: 999, itemCount: 2 } }
+  const bad = r129.payeClaimReportIntegrity({ reportId: 'P', report: inflated, items })
+  assert.equal(bad.ok, false)
+  assert.deepEqual(bad.problems.map((p) => p.code), ['totals_differ', 'amount_differs'])
+  assert.equal(bad.recomputedTotal, 52.5)
+
+  const other = r129.payeClaimReportIntegrity({ reportId: 'P', report, items: [{ ...items[0], data: { ...items[0].data, userId: 'kim' } }, items[1]] })
+  assert.deepEqual(other.problems.map((p) => p.code), ['not_their_item'])
+  const missing = r129.payeClaimReportIntegrity({ reportId: 'P', report, items: [items[1]] })
+  assert.deepEqual(missing.problems.map((p) => p.code), ['item_missing'])
+
+  // A reviewer's rejection of that same version is a note: the review never gates the report (1.32.0).
+  const parsed = r129.parseExpenseDocument('E1', items[0].data)
+  const fingerprint = r129.payeClaimFingerprint(parsed)
+  const rejected = r129.payeClaimReportIntegrity({
+    reportId: 'P', report, items,
+    reviews: [{ id: 'expense_E1', data: { userId: 'sam', itemId: 'E1', kind: 'expense', decision: 'rejected', fingerprint } }],
+  })
+  assert.equal(rejected.ok, true)
+  assert.deepEqual(rejected.problems.map((p) => [p.code, p.severity]), [['rejected_item', 'note']])
+
+  // What the server stores, read back.
+  const fields = r129.reportCheckWriteFields({ reportId: 'P', collection: 'payeClaimReports', result: bad })
+  const back = r129.parseReportCheckDocument('P', JSON.parse(JSON.stringify(fields)))
+  assert.equal(back.ok, false)
+  assert.equal(back.problems.length, 2)
+  assert.equal(r129.REPORT_CHECKS_COLLECTION, 'reportChecks')
 })
