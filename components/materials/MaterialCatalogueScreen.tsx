@@ -8,7 +8,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { CubeIcon } from '@heroicons/react/24/solid'
 import type { MaterialCatalogItem } from '@/types'
-import { MATERIAL_ORDER_UNIT_DETAILS, materialContentText, materialSizeText } from '@/lib/canonical'
+import { MATERIAL_ORDER_UNIT_DETAILS, materialBrandStored, materialBrandText, materialContentText, materialSizeText } from '@/lib/canonical'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useMaterialCatalogStore } from '@/lib/stores/materialCatalogStore'
 import { OrderUnitFields, orderUnitDraftFrom, orderUnitDraftValues, type OrderUnitDraft } from '@/components/materials/OrderUnitFields'
@@ -90,7 +90,7 @@ export function MaterialCatalogueScreen() {
     setExpanded(grouped.map(([category]) => category))
   }, [grouped])
 
-  const brands = new Set(items.map((item) => item.brand)).size
+  const brands = new Set(items.map((item) => materialBrandStored(item.brand)).filter(Boolean)).size
   const categories = new Set(items.map((item) => item.category || 'Other')).size
   const addedToday = items.filter((item) => {
     const d = item.createdAt
@@ -196,7 +196,7 @@ export function MaterialCatalogueScreen() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-[15px] font-medium">{item.name}</p>
-                    <p className="text-[13px] text-[var(--ink3)]">{item.brand || 'Custom'}</p>
+                    <p className="text-[13px] text-[var(--ink3)]">{materialBrandText(item.brand)}</p>
                     <div className="mt-1 flex flex-wrap gap-1.5">
                       {item.productCode ? (
                         <span className="rounded bg-[var(--blue-t)] px-1.5 py-0.5 font-mono text-[11px] font-medium text-[var(--blue)]">
@@ -262,7 +262,7 @@ export function MaterialCatalogueScreen() {
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-[15px] font-medium">{item.name}</p>
-                          <p className="text-[13px] text-[var(--ink3)]">{item.brand || 'Custom'}</p>
+                          <p className="text-[13px] text-[var(--ink3)]">{materialBrandText(item.brand)}</p>
                           <div className="mt-1 flex flex-wrap gap-1.5">
                             {item.productCode ? (
                               <span className="rounded bg-[var(--blue-t)] px-1.5 py-0.5 font-mono text-[11px] font-medium text-[var(--blue)]">
@@ -313,7 +313,7 @@ export function MaterialCatalogueScreen() {
             try {
               await saveItem(organization.id, {
                 ...next,
-                brand: next.brand.trim() || 'Custom',
+                brand: materialBrandStored(next.brand),
                 category: next.category.trim() || 'Other',
                 createdByUserId: next.createdByUserId || user.id,
                 createdByName: next.createdByName || `${user.firstName} ${user.surname}`.trim() || user.email,

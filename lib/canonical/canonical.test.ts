@@ -6936,14 +6936,16 @@ test('1.8.0 material catalogue: never delete-all and rewrite; an empty or failed
   assert.equal(result.write.length, 1)
   assert.equal(result.write[0].id, 'C3')
   assert.equal(result.write[0].create, true)
-  assert.equal(result.write[0].set.brand, 'Custom')
+  // 1.57.0: a new item with no brand stores '' (was "Custom").
+  assert.equal(result.write[0].set.brand, '')
   // A failed load: nothing removed.
   assert.deepEqual(materialCatalogueWrites({ stored, next, loaded: false }).remove, [])
   // An empty list: nothing removed.
   assert.deepEqual(materialCatalogueWrites({ stored, next: [], loaded: true }), { write: [], remove: [] })
   const item = parseMaterialCatalogueDocument('not-a-uuid', { name: 'Box', sizeOrLength: '5', lengthUnit: 'mm' })!
   assert.equal(item.id, 'not-a-uuid')
-  assert.equal(item.brand, 'Custom')
+  // 1.57.0: a missing brand reads as '' and shows as "N/A" (`materialBrandText`).
+  assert.equal(item.brand, '')
   assert.equal(item.lengthUnit, 'MM')
 })
 
@@ -17362,6 +17364,52 @@ test('1.56.0 leaveLegacyKeyFindings: a member from another company who is an ope
   assert.deepEqual([byId.both.personId, ...byId.both.otherPersonIds].sort(), ['HOME-OP', 'HOME-OP2'])
   assert.equal(findings.filter((f) => f.leaveId === 'both').length, 1)
   assert.equal(byId['both-reachable'], undefined)
+})
+
+test('1.58.0 material brand: a missing or legacy "Custom" brand shows "N/A" and stores blank; nothing stored is rewritten', () => {
+  const { materialBrandStored, materialBrandText, MATERIAL_BRAND_MISSING_TEXT, materialCatalogueItemFields, materialCatalogueItemWriteFields, materialCatalogueWrites, parseMaterialCatalogueDocument, parseMaterialLineDocument, materialLineFields, materialLineWriteFields, parseMaterialCatalogueCsv, materialCatalogueCsvExport } = R112
+  assert.equal(MATERIAL_BRAND_MISSING_TEXT, 'N/A')
+  // Display: blank, missing, the legacy word in any case → "N/A"; a real brand as typed (trimmed).
+  for (const v of [undefined, null, '', '  ', 'Custom', ' custom ', 'CUSTOM', 5]) {
+    assert.equal(materialBrandText(v), 'N/A')
+    assert.equal(materialBrandStored(v), '')
+  }
+  assert.equal(materialBrandText(' Prysmian '), 'Prysmian')
+  assert.equal(materialBrandText('Custom Cables Ltd'), 'Custom Cables Ltd')
+  // Reader: '' for a missing or legacy brand.
+  assert.equal(parseMaterialCatalogueDocument('C1', { name: 'Clips', brand: 'Custom' })!.brand, '')
+  assert.equal(parseMaterialCatalogueDocument('C1', { name: 'Clips' })!.brand, '')
+  assert.equal(parseMaterialCatalogueDocument('C1', { name: 'Clips', brand: 'Wago' })!.brand, 'Wago')
+  // Writer: a new item with no brand (or typed "Custom") stores ''.
+  assert.equal(materialCatalogueItemFields({ id: 'C9', name: 'Tape' }).brand, '')
+  assert.equal(materialCatalogueItemFields({ id: 'C9', name: 'Tape', brand: 'Custom' }).brand, '')
+  assert.equal(materialCatalogueItemFields({ id: 'C9', name: 'Tape', brand: ' 3M ' }).brand, '3M')
+  // Guardrail 3: saving an item whose stored brand is "Custom" (or missing) with no brand never rewrites the brand.
+  const stored = { id: 'C2', name: 'Clips', brand: 'Custom', defaultUnit: 'Box', category: 'Other' }
+  const edit = materialCatalogueItemWriteFields(stored, materialCatalogueItemFields({ ...parseMaterialCatalogueDocument('C2', stored)!, name: 'Cable clips' }))
+  assert.deepEqual(edit.set, { name: 'Cable clips' })
+  assert.deepEqual(edit.remove, [])
+  const noBrandField = { id: 'C3', name: 'Tape', defaultUnit: 'Number', category: 'Other' }
+  const edit3 = materialCatalogueItemWriteFields(noBrandField, materialCatalogueItemFields({ id: 'C3', name: 'Tape', defaultUnit: 'Number', category: 'Other' }))
+  assert.equal('brand' in edit3.set, false)
+  // A real brand typed over the legacy word is written.
+  assert.equal(materialCatalogueItemWriteFields(stored, materialCatalogueItemFields({ ...stored, brand: 'Wago' })).set.brand, 'Wago')
+  // An export → import round trip of a "Custom" item writes nothing.
+  const csv = materialCatalogueCsvExport([parseMaterialCatalogueDocument('C2', stored)!])
+  const rows = parseMaterialCatalogueCsv(csv).rows
+  assert.equal(rows[0].brand, '')
+  assert.deepEqual(materialCatalogueWrites({ stored: [{ id: 'C2', data: stored }], next: rows, loaded: true }).write, [])
+  // Job lines: a legacy "Custom" copied from the catalogue reads and stores as no brand; an edit keeps the stored word.
+  const line = parseMaterialLineDocument('L1', { projectId: 'P1', material: 'Clips', brand: 'Custom', quantity: 2, dayKey: '2026-11-17' }, 'Europe/London')!
+  assert.equal(line.brand, null)
+  assert.equal(materialLineFields({ id: 'L2', projectId: 'P1', material: 'Clips', brand: 'Custom', quantity: 1, dayKey: '2026-11-17' }, 'Europe/London').brand, null)
+  const storedLine = { ...materialLineFields({ id: 'L1', projectId: 'P1', material: 'Clips', quantity: 2, dayKey: '2026-11-17' }, 'Europe/London'), brand: 'Custom' }
+  const lineEdit = materialLineWriteFields(storedLine, { ...storedLine, brand: null, quantity: 3 })
+  assert.deepEqual(lineEdit.set, { quantity: 3 })
+  assert.deepEqual(lineEdit.remove, [])
+  // WhatsApp never prints the legacy word.
+  const [wa] = R112.materialWhatsAppRows({ ...WA_BASE, materials: [{ ...WA_BASE.materials[0], brand: 'Custom' }] })
+  assert.equal(wa.message.includes('Custom'), false)
 })
 
 // MARK: - 1.57.0 (17 Nov owner test): stale snapshot that lacks a signed booking; claim rows from the latest revision

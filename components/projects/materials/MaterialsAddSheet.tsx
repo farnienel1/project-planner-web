@@ -9,7 +9,7 @@ import { searchMaterialCatalogue, type MaterialSuggestion } from '@/lib/material
 import { FormInput, FormLabel, FormTextarea } from '@/components/forms/FormShell'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
 import type { MaterialContentMeasure, Project, ProjectMaterialLine } from '@/types'
-import { materialLineText, materialQuantityError, materialSizeText } from '@/lib/canonical'
+import { materialBrandText, materialLineText, materialQuantityError, materialSizeText } from '@/lib/canonical'
 import {
   OrderUnitFields,
   orderUnitDraftFrom,
@@ -212,7 +212,7 @@ export function MaterialsAddSheet({ project, selectedDate, existing, onClose, on
                     >
                       <span className="font-medium text-slate-900">{s.name}</span>
                       <span className="ml-2 text-xs text-slate-500">
-                        {s.brand}
+                        {materialBrandText(s.brand)}
                         {s.productCode ? ` · ${s.productCode}` : ''}
                         {s.category ? ` · ${s.category}` : ''}
                         {s.source === 'catalogue' ? ' · Catalogue' : ' · Recent'}

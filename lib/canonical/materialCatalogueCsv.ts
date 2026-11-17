@@ -205,7 +205,7 @@ export type MaterialCatalogueCsvRow = {
   name: string
   /** Blank → "Other". */
   category: string
-  /** As typed ('' when blank; the catalogue writer stores a blank brand as before). */
+  /** As typed ('' when blank). The catalogue writer stores a blank or legacy "Custom" brand as '' (1.58.0, `materialBrandStored`). */
   brand: string
   productCode: string
   orderUnit: MaterialOrderUnit

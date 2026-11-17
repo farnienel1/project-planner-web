@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.57.0
+# iOS follow-on — rulebook 1.58.0
 
 Generated 2026-11-17 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.57.0 → 1.57.0
-Packed hash: 315eae07c7f2d1a1da6f5963080f16db6c4a02c454ace39a18a5f546d19efc91
-Rulebook sha256: 204486076fe8df3676bbb8bcd70e46907f725ccb8d15e4ac9a7e7cc14a9a4474
+Rulebook version: 1.57.0 → 1.58.0
+Packed hash: ed36051c3eda321e195501d2ce00f3a1b54b4e6c1e993aaf20aed2277abdefa9
+Rulebook sha256: 021d024080428fee353e0a264d42ff8a1e0a6bf0a19638d1ebfa11f9e6e414c8
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -19,37 +19,41 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web lib/canonical/parity-fixture.json             → iOS ProjectPlannerTests/CanonicalParityFixture.json
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
   web lib/canonical/data-parity-fixture.json        → iOS ProjectPlannerTests/DataParityFixture.json
-Contract sha256: 5a8a7e4e6f56b91cb18f71e79207782b8840fccf0b63b695826c47e18e59a32e
+Contract sha256: 5b2615b5540b55f716d40617dd791dbcda6290348ef18951186f47e2e5b7cd20
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: none
+Exports added: SNAPSHOT_GAP_FROM_MS, SNAPSHOT_GAP_REPORTS, signedTimesheetChangeForReports, timesheetClaimLatestSheets
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/canonical.test.ts, lib/canonical/payrunSnapshot.ts, lib/canonical/timesheetBookingChanges.ts, lib/canonical/weeklyReportPay.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/materialCatalogueCsv.ts, lib/canonical/materialQuantity.ts, lib/canonical/operationsDocuments.ts, lib/canonical/payeClaims.ts, lib/canonical/payrunSnapshot.ts, lib/canonical/timesheetBookingChanges.ts, lib/canonical/timesheetLateExtras.ts, lib/canonical/weeklyReportPay.ts
 Done when:
-- [ ] Packed hash in iOS equals 315eae07c7f2d1a1da6f5963080f16db6c4a02c454ace39a18a5f546d19efc91
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 204486076fe8df3676bbb8bcd70e46907f725ccb8d15e4ac9a7e7cc14a9a4474)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.57.0)
+- [ ] Packed hash in iOS equals ed36051c3eda321e195501d2ce00f3a1b54b4e6c1e993aaf20aed2277abdefa9
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 021d024080428fee353e0a264d42ff8a1e0a6bf0a19638d1ebfa11f9e6e414c8)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.58.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.57.0
+## What changed in 1.58.0
 
-- **Owner test 17 Nov (timesheets on web)**: a signed snapshot (`weeklyReportOverride`) missing a booking the person signed and that is still on the sheet is stale (`signedTimesheetBookingChanges` → `snapshotGapBookingIds`, `snapshotGapOnly`; unexported: the line manager counter-signs again, the snapshot rebuilt; exported: a revision is due). Root cause on web: the period page's counter-sign and Export built the snapshot without the person's same-email users ids (`userIdsSharingEmail`) while the screen used them, so the invoice and the timesheet PDF lost bookings filed under a same-email document — all of them on the owner's 1–15 Nov sheet (invoice £195, price work only), Mon 16 Nov on the exported 16–30 Nov sheet. Web `applyWeeklyReportOverride` now works the ids out from the roster when not given.
-- Review of #363: the gap is reported apart (`snapshotGapBookingIds`, `snapshotGapOnly`), never inside `addedBookingIds`. **J1 built (owner to confirm):** a gap-only change flags the sheet but reports keep the signed figures (`signedTimesheetChangeForReports`, used by `weeklyReportPayRows`, `payrunSnapshotRows`, `timesheetRevisionReportState` callers and the web feed); switches `SNAPSHOT_GAP_REPORTS` (J2) and `SNAPSHOT_GAP_FROM_MS` (J3). A gap-only change with late extras waiting is kept as a late-extras change (still waiting for the line manager; signed figures stand).
-- New `timesheetClaimLatestSheets`; `timesheetClaimRows` reads each pay run's latest version only (a revision listed every entry a second time in Users → a person → Price work / Expenses).
-- Web only (no rule change): invoice and timesheet PDF details wrap instead of "…"; price work / expense rows read their title (and description), not "0h · rate not set"; Generate invoice prints the figures the screen shows (`draftForFigures`); Export finishes once the sheets are stamped (PDFs, backups and the email go on in the background, a few sheets prepared at once); the Daily Overview move between labour and manager schedule shows the signed-timesheet delete notice (§2) like Delete and Replace.
+- **A missing material brand reads "N/A", not "Custom"** (§28, owner decision 17 Nov; supersedes the 15 Nov "keep 'Custom' for now, tidy later"). New `materialBrandStored`, `materialBrandText`, `MATERIAL_BRAND_MISSING_TEXT` ("N/A"), `MATERIAL_BRAND_LEGACY_BLANK` ("Custom"). Display only on read: a stored blank or "Custom" brand (trimmed, any case) shows "N/A"; new saves with no brand store `''`; a save that leaves the brand blank never rewrites a stored "Custom" or adds a brand field (`materialCatalogueItemWriteFields`, `materialLineWriteFields`). Changed: `parseMaterialCatalogueDocument` brand `''` (was "Custom"), `materialCatalogueItemFields` brand `''` (was "Custom"), `parseMaterialLineDocument` / `materialLineFields` treat "Custom" as none, `materialSendRecordCreateFields` never writes "Custom", `materialWhatsAppRows` never prints it. Web: catalogue list, pickers, send history, wholesalers, the quote / order email (web route and the email function). No migration, no rules change.
 
-## iOS work for 1.57.0
+## iOS work for 1.58.0
 
-1. **Sync only for the two rule changes.** `signedTimesheetBookingChanges` (a signed snapshot that lacks a booking the person signed and that is still on the sheet is stale) and `timesheetClaimRows` (latest version of each pay run only) are pure rulebook functions; iOS picks them up through `CanonicalBusinessEngine` once synced. Check that every iOS caller already passes the live lines with `scheduleOptionPlace` (Office / WFH / Site survey / custom places), as web does, so such a booking never reads as missing from a repaired snapshot.
-2. **Snapshot builder inputs — checked, no change needed.** Web's bug was building `weeklyReportOverride` without the person's same-email users ids. iOS `TimesheetWeeklyReportOverrideBuilder.applyIfFullyApproved` is called with `relatedUsers: userStore.organizationUsers` in `InvoicingView.swift` (around lines 4183, 5242 and 6765) and in `WeeklyReportTimesheetFeed.swift`. Confirm that any new caller passes it too: the default `relatedUsers: []` reproduces the web bug.
-3. **Invoice / timesheet PDF wording (owner, 17 Nov).** Web no longer prints "· 0h · rate not set" on a price work or expense row. Those rows now read the title, plus the description when there is one. If iOS `InvoicePDFGenerationSupport` prints the same suffix for extras, change it to match.
-4. **PDF line details (owner, 17 Nov).** Web wraps a line's details onto as many lines as needed instead of cutting them with "…". Example: "0.29 days × £225.00/day = £66.18". Check the iOS invoice and timesheet PDFs for the same truncation.
-5. **Export speed.** Web now finishes Export once the sheets are stamped and sends the PDFs and the email in the background. iOS Export is its own code; compare if it also waits on the email.
-6. **Snapshot gap reported apart (J1, owner to confirm).** `signedTimesheetBookingChanges` now returns `snapshotGapBookingIds` and `snapshotGapOnly`. The gap is no longer inside `addedBookingIds`. When iOS passes a sheet's change to `weeklyReportPayRows` (`change`), `payrunSnapshotRows` (`bookingsChange`) or `timesheetRevisionReportState`, include `snapshotGapOnly` and `lateExtrasWaiting`; the rulebook then keeps the signed figures for a gap-only change. For iOS's own weekly-report feed check ("is this signed sheet still approved?"), call `signedTimesheetChangeForReports(change)` first, as web `loadTimesheetFeed.ts` does.
+A missing material brand reads **"N/A"**, not "Custom" (rulebook §28 1.58.0, owner decision 17 Nov, before launch). Display only on read; nothing stored is rewritten (guardrail 3). Every rule below is a packed function — call it through `CanonicalBusinessEngine`; keep no Swift copy of the "Custom" / "N/A" rule.
 
+1. **Find every Swift place that defaults a brand**: search the iOS repo for `"Custom"` next to `brand` / `manufacturer` (catalogue model decode, `FirebaseBackend.materialCatalogueItemPayload`, the catalogue editor save, material pickers / Add material suggestions, send sheet, send history, `MaterialRequestEmailClient` payload, WhatsApp text, CSV import / export). Replace the default with the rulebook: saved value `materialBrandStored(brand)` (`''` for blank or the legacy word "Custom", trimmed, any case); shown value `materialBrandText(brand)` ("N/A" when none).
+2. **Brand slots show `materialBrandText`**: the catalogue list rows, material pickers / suggestions and any detail row labelled Brand / Manufacturer.
+3. **Appended text shows nothing when there is no brand** (`materialBrandStored`, never "Custom"): send history lines, any "· brand" suffix, the WhatsApp text (already `materialWhatsAppRows`).
+4. **Saves**: a catalogue item or job material line with no brand stores `''` / no brand (never "Custom"). Use the rulebook writers where iOS already does (`materialCatalogueItemFields`, `materialCatalogueItemWriteFields`, `materialLineFields`, `materialLineWriteFields`): a save that leaves the brand blank keeps a stored "Custom" exactly as stored and adds no brand field — so an edit of another field never rewrites it. If an iOS save builds its own payload, it must not send `brand` when the user left it blank and the stored value is blank or "Custom".
+5. **Reader change**: `parseMaterialCatalogueDocument(...).brand` is now `''` for a missing or "Custom" brand (was "Custom"); `parseMaterialLineDocument(...).brand` is `null` for "Custom". Any Swift code that compared with "Custom" must use `materialBrandStored(...) == ""` instead. Cross-platform contract: the iOS catalogue sample now expects `brand: ""`.
+6. **Brands count** (if iOS shows one): count distinct non-empty `materialBrandStored` values — "no brand" is not a brand.
+7. **Tests**: a stored "Custom" and a missing brand both show "N/A"; "Custom Cables Ltd" shows as typed; a new item with no brand saves `""`; editing the name of an item stored with "Custom" sends no `brand` field.
+8. `minimumIosBuild`: not needed (display only; an older build's "Custom" reads as "N/A" everywhere).
+
+## New rulebook sections
+
+- 1.58.0 — 2026-11-17
 
 ## Workflow for the iOS agent
 
