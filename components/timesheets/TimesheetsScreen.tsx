@@ -59,7 +59,8 @@ import {
   signatureNotes,
   timesheetExportFileName,
 } from '@/lib/timesheets/timesheetExport'
-import { buildTimesheetInvoicePdf, shareTimesheetPdf, timesheetPdfBlob } from '@/lib/timesheets/invoicePdf'
+import { buildTimesheetInvoicePdf, timesheetPdfBlob } from '@/lib/timesheets/invoicePdf'
+import { downloadPdf } from '@/lib/pdf/downloadPdf'
 import { shouldAppearInOperativeTimesheetRoster, timesheetDayKeysForPeriod } from '@/lib/timesheets/timesheetPayrollPolicy'
 import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
 import { timesheetExportPath, uploadFile } from '@/lib/firebase/storageUtils'
@@ -375,6 +376,11 @@ export function TimesheetsScreen({
     [groupsFor, queueDrafts, teamTab, users, runs, timeZone, bookings, managerSiteBookings, bookingsReady]
   )
 
+  // Each listed person's own pay status (review #342 item 1). Declared before `useSnapshotAutoRepair`, which calls it
+  // while rendering (its `payKey`): declared after it, the first render with a loaded sheet threw "Cannot access
+  // 'payStatusFor' before initialization" and took the whole User Timesheets screen into the error boundary (17 Nov).
+  const payStatusFor = (member: User): PayProfilesStatus => (payStatusOf ? payStatusOf(member) : 'ready')
+
   // Owner item 5 (17 Nov follow-up): every sheet of the loaded pay runs whose snapshot was frozen with no labour lines is
   // rebuilt in the background (`useSnapshotAutoRepair`; signatures kept, never an exported sheet), once the bookings and
   // pay inputs have loaded — never waiting for someone to open that one sheet.
@@ -400,7 +406,7 @@ export function TimesheetsScreen({
     catalogue: changeCatalogue,
     sheets: repairSheets,
     ready: payInputs.ready,
-    payStatusOf: (member) => payStatusFor(member),
+    payStatusOf: payStatusFor,
     onRepaired: () => void reload(),
   })
 
@@ -445,7 +451,6 @@ export function TimesheetsScreen({
   // before each person — `coverage` can drop mid-export (a re-plan, a network blip).
   const payInputsRef = useRef(payInputs)
   payInputsRef.current = payInputs
-  const payStatusFor = (member: User): PayProfilesStatus => (payStatusOf ? payStatusOf(member) : 'ready')
   const payUnknownFor = (member: User): boolean => payStatusFor(member) !== 'ready'
 
   /**
@@ -653,7 +658,8 @@ export function TimesheetsScreen({
       if (rebuilt && typeof window !== 'undefined' && !window.confirm(EXPORT_REBUILT_CONFIRM)) return
       const extraNotes = rebuilt ? [exportRebuiltPdfNote(formatStampInZone(new Date(), timeZone))] : []
       const { pdf, fileName } = await buildExportPdf(row.user, sheet, period.start, period.end, extraNotes, sheet === full ? null : row.documentId)
-      await shareTimesheetPdf(pdf, fileName)
+      // Download PDF saves the file (no share sheet): the PDF is built after an await, so a share sheet could not open.
+      downloadPdf(pdf, fileName)
     } catch (error) {
       setExportMessage(`Couldn't build the PDF for ${displayName(row.user)}${error instanceof Error ? ` (${error.message})` : ''}.`)
     }
