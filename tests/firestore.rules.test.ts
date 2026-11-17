@@ -37,6 +37,7 @@ import { orgMembershipWriteFields } from '../lib/canonical/orgMembership.ts'
 import { writeMetadataFields } from '../lib/canonical/writeMetadata.ts'
 import { inviteMembershipWrites } from '../lib/canonical/inviteAccept.ts'
 import { ghostCreateWrites } from '../lib/canonical/ghostOperatives.ts'
+import { warningDismissDocument } from '../lib/warnings/warningDismiss.ts'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const rules = readFileSync(path.join(root, 'firestore.rules'), 'utf8')
@@ -1278,6 +1279,35 @@ test('warningResolutions: a manager writes their own approval in their company o
   await assertSucceeds(deleteDoc(mgrRef))
   await assertSucceeds(setDoc(mgrRef, fields))
   await assertSucceeds(deleteDoc(doc(await authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'warningResolutions', key)))
+})
+
+test('warningResolutions: the web Dismiss document (warningDismissDocument, server times): a manager may, an operative may not (#372)', async () => {
+  const MANAGER_DISMISS = 'manager-a-dismiss'
+  const managerEmail = `${MANAGER_DISMISS}@test.com`
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', MANAGER_DISMISS), {
+      email: managerEmail,
+      organizationId: ORG_A,
+      role: 'manager',
+      manager: true,
+      permissions: { manager: true, operativeMode: false },
+    })
+  })
+  const key = ['materials', 'job1', '2026-11-18'].join('-')
+  // Exactly what dismissWarningResolution writes: the rulebook fields plus server-time resolvedAt / updatedAt.
+  const shape = (uid: string) => {
+    const write = warningDismissDocument({ resolutionKey: key, dismissedByUserId: uid })
+    assert.ok(write)
+    assert.equal(write.documentId, key)
+    return { ...write.fields, resolvedAt: serverTimestamp(), updatedAt: serverTimestamp() }
+  }
+  const opRef = doc(await authDb(OP_A, 'op-a@test.com'), 'organizations', ORG_A, 'warningResolutions', key)
+  await assertFails(setDoc(opRef, shape(OP_A)))
+  const mgrRef = doc(await authDb(MANAGER_DISMISS, managerEmail), 'organizations', ORG_A, 'warningResolutions', key)
+  await assertSucceeds(setDoc(mgrRef, shape(MANAGER_DISMISS)))
+  const stored = await getDoc(mgrRef)
+  assert.equal(stored.data()?.status, 'dismissed')
+  assert.equal(stored.data()?.updatedFrom, 'web')
 })
 
 // ---------------------------------------------------------------------------

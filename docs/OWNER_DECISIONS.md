@@ -121,6 +121,7 @@ How to use it:
 | 4 Nov | Nobody reviews their own timesheet. | done (1.30.2) |
 | 4 Nov | Exported history shows the viewer's own exported sheets (read-only) and inactive or deleted people's sheets (admins: all; managers: their reports). | done web (1.31.0); iOS open |
 | 4 Nov | 1.32: a notice when an export skips the exporter's own sheet. | done web + rulebook (1.32.0 / PR #274); iOS open (hand-off) |
+| 17 Nov | **Download invoice beside Share invoice** (owner, web only, UI only): the "Invoice generated successfully" dialog gets **Download invoice**, saving the same PDF (same bytes, same file name) straight to the computer; **Share invoice** opens the system share sheet and is hidden where the browser cannot share a file (`navigator.canShare({ files })`). One shared helper (`lib/pdf/downloadPdf.ts`, `components/pdf/PdfFileButtons.tsx`). Judgement call (owner to confirm): the Exported list's **Download PDF** now always downloads (it opened the share sheet where it could); the PAYE overtime / price work / expenses reports and personal site audits already only download, so they are unchanged. | done web (branch `w-invoice-download`); iOS n/a |
 
 ## PAYE overtime, price work and expenses
 
