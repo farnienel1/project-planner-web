@@ -1,4 +1,14 @@
-import { collection, getDocs, onSnapshot, type QuerySnapshot, type Unsubscribe } from 'firebase/firestore'
+import {
+  collection,
+  doc,
+  getDocs,
+  onSnapshot,
+  serverTimestamp,
+  setDoc,
+  type QuerySnapshot,
+  type Unsubscribe,
+} from 'firebase/firestore'
+import { warningDismissDocument } from '@/lib/warnings/warningDismiss'
 import { db } from '@/lib/firebase/config'
 import {
   approvedWarningKeys,
@@ -19,6 +29,26 @@ function recordsOf(snapshot: QuerySnapshot) {
     snapshot.docs.map((entry) => ({ id: entry.id, data: entry.data() as Record<string, unknown> })),
     organizationZoneOr()
   )
+}
+
+/**
+ * Dismiss a warning permanently on every device: `warningResolutions/{resolutionKey}` with status `dismissed`
+ * (`warningDismissDocument` → `warningResolutionWriteFields`, the write iOS makes). Admins and managers only (rules).
+ * Returns the key written. Throws when the key cannot be written or the write is refused.
+ */
+export async function dismissWarningResolution(
+  organizationId: string,
+  resolutionKey: string,
+  dismissedByUserId: string
+): Promise<string> {
+  const write = warningDismissDocument({ resolutionKey, dismissedByUserId })
+  if (!write) throw new Error('This warning cannot be dismissed.')
+  await setDoc(doc(db, 'organizations', organizationId, 'warningResolutions', write.documentId), {
+    ...write.fields,
+    resolvedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  })
+  return write.documentId
 }
 
 /** Keys of warnings approved or removed on any device (`resolvedWarningKeys`). */

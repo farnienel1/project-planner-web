@@ -35,7 +35,8 @@ import {
 } from '@/lib/subcontractors/bookingPeople'
 import { holidayBookingDayKeys, holidayBookingLabourInput } from '@/lib/annualLeave/holidayDayKeys'
 import type { WeekendCoverage } from '@/lib/canonical'
-import { dailyOverviewLeaveRows, normalizeDocumentId } from '@/lib/canonical'
+import { dailyOverviewLeaveRows, isAnonymisedDeletedProfile, normalizeDocumentId, type PayrollTimePolicyState } from '@/lib/canonical'
+import { leaveCoverageWarningsForDays, type LeaveCoverageWarning } from '@/lib/warnings/leaveCoverageWarnings'
 
 export type OverviewSubcontractorBooking = {
   id: string
@@ -163,6 +164,11 @@ export type DailyOverviewModel = {
   bookedPeopleCount: number
   unbookedCount: number
   unbookedNames: string[]
+  /**
+   * The day's "Half-day leave not covered" rows (`leaveCoverageRows` kind `leave_cover`, rulebook §5 / §9), the same
+   * rows Warnings lists for this day, in the viewer's Daily Overview scope (`dailyOverviewScopeFor`).
+   */
+  leaveCoverRows: LeaveCoverageWarning[]
   officeCount: number
   wfhCount: number
   onSiteCount: number
@@ -255,6 +261,8 @@ export function buildDailyOverview(params: {
   excludedUserIdsFromUnbookedWarnings?: readonly string[] | null
   /** Rulebook 1.19.0 §5: `warningDetection.weekendCoverage` (missing → both days on, default windows). */
   weekendCoverage?: WeekendCoverage | null
+  /** Rulebook 1.23.0: the working-hours state, so leave cover reads the day under the rules in effect on it. */
+  payrollPolicyState?: PayrollTimePolicyState | null
   /** Organisation business zone (`organizationTimeZone`). Default Europe/London. */
   timeZone?: string
   /**
@@ -619,6 +627,30 @@ export function buildDailyOverview(params: {
   const unbookedNames = unbookedRows.map(
     (row) => `${row.operativeName} (missing ${overviewFormatHours(row.missingHours)}h)`
   )
+  // Owner report (17 Nov 2026): Daily Overview also lists the day's "Half-day leave not covered" rows — the Warnings
+  // rule (`leaveCoverageRows`) for this one day, under the working hours in effect on it, in this viewer's scope.
+  const leaveCoverRows = leaveCoverageWarningsForDays({
+    bookings: uniqueById(params.bookings),
+    managerSiteBookings: uniqueById(params.managerBookings),
+    operatives: params.operatives,
+    users: params.users,
+    projects: params.projects,
+    holidays: params.holidays,
+    includeWeekends: Boolean(params.includeWeekendsForUnbookedLabour),
+    excludedUserIds: params.excludedUserIdsFromUnbookedWarnings,
+    payrollPolicy: payroll,
+    payrollPolicyState: params.payrollPolicyState ?? null,
+    startDayKey: overviewDayKey,
+    endDayKey: overviewDayKey,
+    timeZone: zone,
+    userIdAliases: params.userIdAliases ?? null,
+  }).filter(
+    (row) =>
+      row.kind === 'leave_cover' &&
+      // Never a current row for an anonymised deleted profile (`isAnonymisedDeletedProfile`, as Warnings).
+      !isAnonymisedDeletedProfile({ name: row.personName }) &&
+      personInScope(row.userId, row.operativeId, row.personKey)
+  )
 
   const policy = params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY
   const labourResults = [
@@ -677,6 +709,7 @@ export function buildDailyOverview(params: {
     bookedPeopleCount: bookedKeys.size,
     unbookedCount: unbookedNames.length,
     unbookedNames,
+    leaveCoverRows,
     officeCount: new Set(officeBookings.map((b) => managerIdentity(b.userId))).size,
     wfhCount: new Set(wfhBookings.map((b) => managerIdentity(b.userId))).size,
     onSiteCount: onSiteKeys.size,

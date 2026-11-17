@@ -4,6 +4,8 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { reseedUntouchedPayFields, watchPayEditorPrivatePay, withPayFieldsFrom } from '@/lib/pay/payEditorSwitchReload'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { useToast } from '@/components/ui/ToastProvider'
+import { FORMER_PERSON_RECORD_SKIPPED_MESSAGE } from '@/lib/canonical/formerPeople'
 import { usePendingNavigation } from '@/lib/navigation/usePendingNavigation'
 import { EditUserSkeleton } from '@/components/users/profile-ui/skeletons'
 import { format } from 'date-fns'
@@ -291,6 +293,7 @@ export function EditUserProfile({
   hubHref?: string
 }) {
   const router = useRouter()
+  const toast = useToast()
   const { navigate: navigateBack, pending: backPending } = usePendingNavigation()
   const { user: currentUser, organization, reloadSignedInProfile } = useAuthStore()
   const organizationTimeZone = useOrganizationTimeZone()
@@ -996,7 +999,9 @@ export function EditUserProfile({
     if (lineManagerBlocks(target, { kind: 'delete' })) return
     setBusyAction('delete')
     try {
-      await deleteUser(target.id, { organizationId: organization?.id, email: target.email, roster: rosterDocs })
+      const outcome = await deleteUser(target.id, { organizationId: organization?.id, email: target.email, roster: rosterDocs })
+      // Rulebook 1.59.0 (review of #370, L1): say so when the former-person record was refused (the delete went ahead).
+      if (outcome?.formerRecordSkipped) toast(FORMER_PERSON_RECORD_SKIPPED_MESSAGE, 9000)
       await removeFromJobs(target, { kind: 'delete' })
       router.push(hubHref || backHref)
     } catch (err: unknown) {

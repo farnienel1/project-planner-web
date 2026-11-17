@@ -249,6 +249,8 @@ export async function completeInvitationPasswordSetup(params: {
     existingProfile: ownUser,
     placeholder: ownPlaceholder ? claimedUser : null,
     invitation: { ...record, organizationId: record.organizationId },
+    // Rulebook 1.59.0: the placeholder is removed only when the account already lists its id (formerUserIds).
+    placeholderId: ownPlaceholder ? placeholderId : null,
   })
   const migrating = plan.movePlaceholder && ownPlaceholder
 
