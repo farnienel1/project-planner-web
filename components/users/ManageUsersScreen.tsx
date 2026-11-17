@@ -10,18 +10,23 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { resendInvitationEmail } from '@/lib/orgSetup/resendInvitation'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useUserStore } from '@/lib/stores/userStore'
-import { canManageUsers, getManageUsersLabel } from '@/lib/navigation/menuPermissions'
+import { canManageUsers, getAddUserLabel, getManageUsersLabel, manageUsersAddButtonShown } from '@/lib/navigation/menuPermissions'
 import {
   filterUsersForManageTab,
   filterUsersForManageTabAndSegment,
   manageUsersListPhase,
   type ManageUsersTab,
 } from '@/lib/staff/manageUsersUtils'
-import { matchesRosterSegment, type RosterSegment } from '@/lib/staff/userRosterUtils'
+import {
+  filterRosterByNameQuery,
+  getOperativeModeUsers,
+  matchesRosterSegment,
+  type RosterSegment,
+} from '@/lib/staff/userRosterUtils'
 import { displayTradeType } from '@/lib/staff/staffTradeTypes'
 import type { User } from '@/types'
 import { UserAvatar } from '@/components/users/UserAvatar'
-import { ChevronRightIcon, EnvelopeIcon, KeyIcon, MagnifyingGlassIcon, UserGroupIcon } from '@heroicons/react/24/solid'
+import { ChevronRightIcon, EnvelopeIcon, KeyIcon, MagnifyingGlassIcon, PlusIcon, UserGroupIcon } from '@heroicons/react/24/solid'
 import {
   Card,
   Chip,
@@ -39,6 +44,8 @@ import { usersWithoutRequiredLineManager } from '@/lib/annualLeave/holidayApprov
 import { accountTypeSyncState } from '@/lib/canonical/permissionLevels'
 import { accountTypeSubject } from '@/lib/staff/accountTypeChange'
 import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
+import { useOperativeStore } from '@/lib/stores/operativeStore'
+import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 
 const ROLE_TABS: { tab: ManageUsersTab; label: string; section: string }[] = [
   { tab: 'admins', label: 'Admins', section: 'Administrators' },
@@ -52,10 +59,19 @@ const SEGMENTS: { key: RosterSegment; title: string }[] = [
   { key: 'pending', title: 'Pending' },
 ]
 
-/** A person's profile, opened from Manage Users (unchanged URL). */
-function userHref(user: User): string {
-  return `/dashboard/users/${user.id}?from=users`
+/** A person's profile, opened from Manage users or the Operatives page (Back returns to the page it came from). */
+function userHref(user: User, from: 'users' | 'operatives'): string {
+  return `/dashboard/users/${user.id}?from=${from}`
 }
+
+/**
+ * Which list the screen shows:
+ *   - `all`: Manage users at `/dashboard/settings/users` (admins; Admins / Managers / Operatives tabs).
+ *   - `operatives`: the one Operatives page at `/dashboard/operatives` (admins and Operatives managers). Its rows are
+ *     the rulebook's Operatives list (`rosterListFor('operatives')` via `getOperativeModeUsers`), searched by name,
+ *     email or phone, exactly as the old Operatives list was.
+ */
+export type ManageUsersScope = 'all' | 'operatives'
 
 function displayName(user: User): string {
   return `${user.firstName} ${user.surname}`.trim() || user.email
@@ -146,11 +162,14 @@ function PeopleNotice({
   )
 }
 
-export function ManageUsersScreen() {
+export function ManageUsersScreen({ scope = 'all' }: { scope?: ManageUsersScope } = {}) {
   const { navigate: navigateTo, prefetch, pendingHref } = usePendingNavigation()
   const { user: currentUser, organization } = useAuthStore()
   const { users, error: rosterError, rosterLoadedOrgId, claimedEmails, loadUsers } = useOrgUserStore()
   const { sendPasswordReset } = useUserStore()
+  const operativesScope = scope === 'operatives'
+  const { operatives, loadOperatives } = useOperativeStore()
+  const from = operativesScope ? 'operatives' : 'users'
 
   const [tab, setTab] = useState<ManageUsersTab>('admins')
   const [segment, setSegment] = useState<RosterSegment>('active')
@@ -159,13 +178,22 @@ export function ManageUsersScreen() {
   const [toast, setToast] = useState<{ kind: 'success' | 'error'; msg: string } | null>(null)
 
   const canManage = canManageUsers(currentUser)
-  const title = getManageUsersLabel(currentUser, organization)
+  // The role tabs are Manage users (admins) only; the Operatives page is one list.
+  const showRoleTabs = canManage && !operativesScope
+  const title = operativesScope ? 'Manage operatives' : getManageUsersLabel(currentUser, organization)
+  const addLabel = getAddUserLabel(currentUser)
+  const canAdd = manageUsersAddButtonShown(scope, currentUser)
 
   const [rosterAttempt, setRosterAttempt] = useState(0)
 
   useEffect(() => {
     if (organization?.id) loadUsers(organization.id)
   }, [organization?.id, loadUsers])
+
+  // The Operatives page searches phone numbers too (the `operatives` row's phone, else the account's mobile).
+  useEffect(() => {
+    if (operativesScope && organization?.id) loadOperatives(organization.id)
+  }, [operativesScope, organization?.id, loadOperatives])
 
   useEffect(() => {
     if (!organization?.id) return
@@ -185,13 +213,25 @@ export function ManageUsersScreen() {
     setSearch('')
   }, [tab])
 
-  const effectiveTab: ManageUsersTab = canManage ? tab : 'operatives'
+  const effectiveTab: ManageUsersTab = showRoleTabs ? tab : 'operatives'
   const section = ROLE_TABS.find((item) => item.tab === effectiveTab)?.section ?? 'Users'
 
   const tabUsers = useMemo(
-    () => filterUsersForManageTab(users, effectiveTab, claimedEmails),
-    [users, effectiveTab, claimedEmails]
+    () =>
+      operativesScope
+        ? getOperativeModeUsers(users, claimedEmails)
+        : filterUsersForManageTab(users, effectiveTab, claimedEmails),
+    [operativesScope, users, effectiveTab, claimedEmails]
   )
+  const phones = useMemo(() => {
+    const map: Record<string, string> = {}
+    if (!operativesScope) return map
+    for (const row of tabUsers) {
+      const op = findOperativeForUser(row, operatives)
+      map[row.id] = op?.phone || row.mobileNumber || ''
+    }
+    return map
+  }, [operativesScope, tabUsers, operatives])
 
   const counts = useMemo(() => {
     const result: Record<RosterSegment, number> = { active: 0, inactive: 0, pending: 0 }
@@ -202,6 +242,10 @@ export function ManageUsersScreen() {
   }, [tabUsers])
 
   const filtered = useMemo(() => {
+    if (operativesScope) {
+      const bySegment = tabUsers.filter((user) => matchesRosterSegment(user, segment))
+      return filterRosterByNameQuery(bySegment, search, phones).sort((a, b) => displayName(a).localeCompare(displayName(b)))
+    }
     const q = search.trim().toLowerCase()
     let list = filterUsersForManageTabAndSegment(users, effectiveTab, segment, claimedEmails)
     if (q) {
@@ -210,7 +254,7 @@ export function ManageUsersScreen() {
       )
     }
     return list.sort((a, b) => displayName(a).localeCompare(displayName(b)))
-  }, [users, effectiveTab, segment, search, claimedEmails])
+  }, [operativesScope, tabUsers, phones, users, effectiveTab, segment, search, claimedEmails])
 
   // `usersMissingLineManager`: active people saved before the line-manager rule who still need one. Admins only.
   const viewerRole = staffAccountRole(currentUser)
@@ -261,7 +305,7 @@ export function ManageUsersScreen() {
   }
 
   function selectUser(user: User) {
-    navigateTo(userHref(user))
+    navigateTo(userHref(user, from))
   }
 
   async function sendReset(user: User) {
@@ -300,16 +344,21 @@ export function ManageUsersScreen() {
       <PageBand
         eyebrow="Team"
         title={title}
-        subtitle="Roles, access and invitations for your organisation."
+        subtitle={
+          operativesScope
+            ? 'Your field team: details, trades and invitations.'
+            : 'Roles, access and invitations for your organisation.'
+        }
         actions={
-          canManage ? (
+          canAdd ? (
             <Link href="/dashboard/settings/users/new" className="pu-btn white">
-              Add user
+              <PlusIcon width={16} height={16} aria-hidden="true" />
+              {addLabel}
             </Link>
           ) : undefined
         }
       >
-        {canManage ? (
+        {showRoleTabs ? (
           <SegmentedTabs
             dark
             ariaLabel="User level"
@@ -386,16 +435,16 @@ export function ManageUsersScreen() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               aria-label={
-                tab === 'admins'
+                effectiveTab === 'admins'
                   ? 'Search admins by name'
-                  : tab === 'managers'
+                  : effectiveTab === 'managers'
                     ? 'Search managers by name'
                     : 'Search operatives by name'
               }
               placeholder={
-                tab === 'admins'
+                effectiveTab === 'admins'
                   ? 'Search admins by name'
-                  : tab === 'managers'
+                  : effectiveTab === 'managers'
                     ? 'Search managers by name'
                     : 'Search operatives by name'
               }
@@ -411,7 +460,7 @@ export function ManageUsersScreen() {
           <EmptyState
             tile={<IconTile tone="slate" size="lg"><UserGroupIcon /></IconTile>}
             title={`No ${segment} ${section.toLowerCase()}`}
-            description="Try another filter or add someone new from Add user."
+            description={canAdd ? `Try another filter or add someone new from ${addLabel}.` : 'Try another filter.'}
           />
         ) : (
           <DataTable
@@ -442,8 +491,8 @@ export function ManageUsersScreen() {
                   key={user.id}
                   className="click"
                   onClick={() => selectUser(user)}
-                  onPointerEnter={() => prefetch(userHref(user))}
-                  aria-busy={pendingHref === userHref(user) || undefined}
+                  onPointerEnter={() => prefetch(userHref(user, from))}
+                  aria-busy={pendingHref === userHref(user, from) || undefined}
                 >
                   <td>
                     <span className="pu-who">
@@ -452,7 +501,7 @@ export function ManageUsersScreen() {
                         <button
                           type="button"
                           className="pu-rowbtn"
-                          onFocus={() => prefetch(userHref(user))}
+                          onFocus={() => prefetch(userHref(user, from))}
                           onClick={(event) => {
                             event.stopPropagation()
                             selectUser(user)
@@ -502,12 +551,12 @@ export function ManageUsersScreen() {
                       <button
                         type="button"
                         onClick={() => selectUser(user)}
-                        onFocus={() => prefetch(userHref(user))}
+                        onFocus={() => prefetch(userHref(user, from))}
                         aria-label={`Open ${displayName(user)}`}
-                        aria-busy={pendingHref === userHref(user) || undefined}
+                        aria-busy={pendingHref === userHref(user, from) || undefined}
                         className="pu-btn icon sm"
                       >
-                        {pendingHref === userHref(user) ? (
+                        {pendingHref === userHref(user, from) ? (
                           <PendingSpinner />
                         ) : (
                           <ChevronRightIcon width={16} height={16} aria-hidden="true" />

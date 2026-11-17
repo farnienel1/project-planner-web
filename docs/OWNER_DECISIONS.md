@@ -919,6 +919,8 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 | 17 Nov | **13a and 14a: owner console number cards two per row, and tables scroll sideways, on a phone.** | done (#357) |
 | 17 Nov | **17a, 18a, 19a: the sign-in session cookie lasts 12h; the 3s "Checking your sign-in…" retry page; the one-time bounce through `/auth/mfa` at deploy.** | done (#359) |
 | 17 Nov | **Secret scan of all three repos:** besides the M365 mailbox password, the history holds an M365 app password, two Resend keys (`re_E…`, `re_L…`) and a SendGrid key. Revoke all four. | open (owner to revoke) |
+| 17 Nov | **One Operatives page (web).** The sidebar had both "Operatives" (a simple list) and "Manage operatives" (Manage users shown to an Operatives manager). One page now: `/dashboard/operatives` shows the Manage users table, Operatives only, with **+ Add operative** in its band (the app-shell quick add stays). For an Operatives manager, Manage users, its sidebar entry and its Home quick action lead to that page; admins keep Manage users (every level). Rows are the rulebook's Operatives list, as the old Operatives page. | done web (w-operatives-one-page); iOS already one page with + |
+| 17 Nov | **An Operatives manager edits operatives on web as on iOS** (rulebook §11 / §16). The profile page asked an admin-only check and showed "View only"; it now asks the same per-person rule as Edit user (`canEditTargetUser`: admins anyone bar the Super Admin; an Operatives manager operative-level people, never a manager, an admin or themselves). Pay, line manager and delete keep their own rules (`canChangePersonPay`, `canChangeLineManager`, `canDeleteUser`). | done web (w-operatives-one-page) |
 
 ## Open questions for the owner
 

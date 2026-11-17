@@ -41,4 +41,6 @@ export {
   parseUserPermissions,
   getManageUsersLabel,
   getAddUserLabel,
+  peopleManagementHref,
+  manageUsersAddButtonShown,
 } from '@/lib/permissions'

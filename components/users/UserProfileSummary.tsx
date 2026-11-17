@@ -11,7 +11,7 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useUserStore } from '@/lib/stores/userStore'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import { displayTradeType } from '@/lib/staff/staffTradeTypes'
-import { canShowAdminEditProfile, roleLabel } from '@/lib/staff/userEditPermissions'
+import { canEditTargetUser, roleLabel } from '@/lib/staff/userEditPermissions'
 import { rosterStatusLabel } from '@/lib/staff/userRosterUtils'
 import { UserAvatar } from '@/components/users/UserAvatar'
 import { Chip, IconTile } from '@/components/ui/page'
@@ -132,7 +132,8 @@ export function UserProfileSummary({
     )
   }
 
-  const canEdit = canShowAdminEditProfile(currentUser)
+  // Rulebook §11: admins edit anyone (bar the Super Admin); an Operatives manager edits operatives. Same test as Edit user.
+  const canEdit = canEditTargetUser(currentUser, target)
   const editHref = `/dashboard/users/${target.id}/edit?from=${encodeURIComponent(from)}`
   const name = `${target.firstName} ${target.surname}`.trim() || roleLabel(target)
   const status = rosterStatusLabel(target)

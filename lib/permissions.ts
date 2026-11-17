@@ -16,6 +16,7 @@ import {
   canOpenWeeklyReport,
   canManageMaterialCatalogue as canonicalCanManageMaterialCatalogue,
   canScheduleOperatives,
+  canManageOperatives as canonicalCanManageOperatives,
 } from '@/lib/canonical'
 import { parseAppUserDocument } from '@/lib/ios-parity/converters'
 import { effectivePermissions, permissionLevelOf } from '@/lib/canonical/permissionLevels'
@@ -322,9 +323,14 @@ export function canManageSiteAuditOperativeVisibility(user: PermissionUser): boo
   return user.isSuperAdmin || flag(user, 'adminAccess') || flag(user, 'manager')
 }
 
+/**
+ * A manager (not an admin, not an operative) with the Operatives permission: rulebook `canManageOperatives` (§11) on a
+ * manager-level account. It also asks for the manager flag, as the security rules do (`managerMayManageOperative`
+ * reads the stored `manager` and `operatives` flags), so the screens never offer a save the rules refuse.
+ */
 export function isActingManagerOperativeManagementOnly(user: PermissionUser): boolean {
-  if (!user || isOperativeMode(user) || hasAdminAccess(user)) return false
-  return flag(user, 'manager') && flag(user, 'operatives')
+  if (!user || permissionLevelOf(user) !== 'manager') return false
+  return flag(user, 'manager') && canonicalCanManageOperatives(user)
 }
 
 export function canViewReports(user: PermissionUser): boolean {
@@ -513,4 +519,23 @@ export function getManageUsersLabel(user: PermissionUser, _organization?: unknow
 export function getAddUserLabel(user: PermissionUser): string {
   if (canManageUsers(user)) return 'Add user'
   return 'Add operative'
+}
+
+/**
+ * Where a viewer manages people (owner 17 Nov: one Operatives page). Admins: Manage users
+ * (`/dashboard/settings/users`, every level). A manager with the Operatives permission: the Operatives page
+ * (`/dashboard/operatives`) — Manage users redirects them there and the sidebar shows only that entry. Anyone else: none.
+ */
+export function peopleManagementHref(user: PermissionUser): string | null {
+  if (canManageUsers(user)) return '/dashboard/settings/users'
+  if (canManageOperativesOnly(user)) return '/dashboard/operatives'
+  return null
+}
+
+/**
+ * The Add button on a people page: Manage users (`all`, admins) or the Operatives page (`operatives`: anyone who may
+ * invite an operative — admins and Operatives managers, "Add operative" for the latter, `getAddUserLabel`).
+ */
+export function manageUsersAddButtonShown(scope: 'all' | 'operatives', user: PermissionUser): boolean {
+  return scope === 'operatives' ? canInviteOperatives(user) : canManageUsers(user)
 }
