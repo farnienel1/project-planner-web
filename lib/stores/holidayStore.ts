@@ -28,6 +28,8 @@ import { forgetOrgPlanDoc, subscribeOrgPlan, unsubscribeOrgPlan } from '@/lib/fi
 import { leavePlanKey, leavePlanParts, leaveReplanTarget, ownBookingIdsFor, webJobAccessViewer } from '@/lib/access/readPlan'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
+import { onPlatformConfigChange, operativeOwnLeaveFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
+import { currentOrganizationId } from '@/lib/canonical'
 import { liveResultStillCurrent } from '@/lib/firebase/liveResult'
 import type { HolidayBooking, HolidayStatus, HolidayTimeSlot } from '@/types'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
@@ -139,40 +141,55 @@ export function isPendingHolidayRequest(booking: HolidayBooking): boolean {
 
 let holidayOrgId = ''
 const HOLIDAY_LISTENER_KEY = 'holidayStore:holidayBookings'
-/** Rulebook 1.56.0: the organisation `loadBookings` was last asked for, and the leave plan its listener runs. */
+/** Rulebook 1.56.0: the organisation `loadBookings` was last asked for, and the leave plan (and user) its listener runs. */
 let holidayRequestedOrgId: string | null = null
 let holidayPlannedKey: string | null = null
+let holidayPlannedUserId: string | null = null
+let followingPlatformConfig = false
 
 /**
- * The signed-in user's leave plan now (`leaveQueryPlan` through `leavePlanParts`): their own ids are worked out here,
- * at plan time, from the auth user and the operatives rows (`bookingIdsForAccount`), never from inputs that may not
- * have arrived yet.
+ * The signed-in user's leave plan for `organizationId` now (`leaveQueryPlan` through `leavePlanParts`): their own ids
+ * are worked out here, at plan time, from the auth user and the operatives rows (`bookingIdsForAccount`), never from
+ * inputs that may not have arrived yet; the `operativeOwnLeave` switch as `platformConfig/app` says now.
  */
-function currentLeavePlanParts() {
+function currentLeavePlanParts(organizationId: string) {
   const user = useAuthStore.getState().user
   return leavePlanParts(
     webJobAccessViewer(user),
     ownBookingIdsFor(user, useOperativeStore.getState().operatives),
-    user?.email ?? null
+    user?.email ?? null,
+    operativeOwnLeaveFor(organizationId)
   )
 }
 
+/** Drop the leave rows on screen (review of #356): a previous user's, or a whole company's after the plan narrowed. */
+function clearHolidayRows(): void {
+  holidayOrgId = ''
+  useHolidayStore.setState({ bookings: [], loadedOrgId: null })
+}
+
 /**
- * Rulebook 1.56.0: re-plan the leave listener of the organisation last requested when the signed-in user or their
- * operatives rows changed the plan (`leaveReplanTarget`). Signed out: forget the plan, so the next sign-in plans
- * afresh.
+ * Rulebook 1.56.0: re-plan the leave listener of the organisation last requested when the signed-in user, their
+ * operatives rows or the `operativeOwnLeave` switch changed the plan (`leaveReplanTarget`) — only while that
+ * organisation is still the open one. Signed out (or another user): forget the plan and the rows.
  */
 export function replanHolidayBookings(): void {
   const user = useAuthStore.getState().user
   if (!user) {
     holidayRequestedOrgId = null
     holidayPlannedKey = null
+    holidayPlannedUserId = null
+    unsubscribeOrgCollection(HOLIDAY_LISTENER_KEY)
+    unsubscribeOrgPlan(HOLIDAY_LISTENER_KEY)
+    clearHolidayRows()
     return
   }
+  if (!holidayRequestedOrgId) return
   const target = leaveReplanTarget({
     requestedOrgId: holidayRequestedOrgId,
-    plannedKey: holidayPlannedKey,
-    nextKey: leavePlanKey(currentLeavePlanParts()),
+    currentOrgId: currentOrganizationId(),
+    plannedKey: holidayPlannedUserId === user.id ? holidayPlannedKey : null,
+    nextKey: leavePlanKey(currentLeavePlanParts(holidayRequestedOrgId)),
     signedIn: true,
   })
   if (target) void useHolidayStore.getState().loadBookings(target).catch(() => undefined)
@@ -191,9 +208,17 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
     if (!organizationId) return
     if (get().loadedOrgId !== organizationId) set({ loading: true, error: null })
     // Rulebook 1.56.0 §9 / §17: the organisation this listener is for (re-plans target it, never an older one), and
-    // readPlanSync re-plans it when the signed-in user or the operatives rows change.
+    // readPlanSync re-plans it when the signed-in user or the operatives rows change; every read of platformConfig/app
+    // re-plans it when the `operativeOwnLeave` switch changes.
     holidayRequestedOrgId = organizationId
     void import('@/lib/access/readPlanSync').then((sync) => sync.startReadPlanSync()).catch(() => undefined)
+    if (!followingPlatformConfig) {
+      followingPlatformConfig = true
+      onPlatformConfigChange(() => replanHolidayBookings())
+    }
+    await securitySwitchesReady()
+    // A newer request (another company) or a company switch took over while the switches were read.
+    if (holidayRequestedOrgId !== organizationId || !liveResultStillCurrent(organizationId)) return
     const onDocs = (docs: OrgCollectionDoc[], meta?: { authoritative: boolean }) => {
       if (!liveResultStillCurrent(organizationId)) return
       const bookings = docs
@@ -205,11 +230,17 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
       holidayOrgId = organizationId
       set({ bookings: kept, loading: false, error: null, loadedOrgId: organizationId })
     }
+    // Rulebook 1.56.0 (`leaveQueryPlan`): with `operativeOwnLeave` on, an operative listens only to their own leave —
+    // never the whole collection; everyone else (and everyone while the switch is off) keeps the whole collection.
+    const userId = useAuthStore.getState().user?.id ?? null
+    const parts = currentLeavePlanParts(organizationId)
+    const key = leavePlanKey(parts)
+    // Review of #356: never keep another user's rows, or a whole company's rows once the plan narrows.
+    if ((holidayPlannedUserId !== null && holidayPlannedUserId !== userId) || (holidayPlannedKey === 'all' && key !== 'all')) {
+      clearHolidayRows()
+    }
+    holidayPlannedKey = null
     try {
-      // Rulebook 1.56.0 (`leaveQueryPlan`, owner answers 17 Nov Q2): admins and managers keep the whole-collection
-      // listener; an operative (and operative mode) listens only to their own leave — never the whole collection.
-      const parts = currentLeavePlanParts()
-      holidayPlannedKey = leavePlanKey(parts)
       if (parts === null) {
         unsubscribeOrgPlan(HOLIDAY_LISTENER_KEY)
         await subscribeOrgCollectionLoaded(HOLIDAY_LISTENER_KEY, organizationId, 'holidayBookings', onDocs)
@@ -225,8 +256,14 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
           set({ bookings: [], loading: false, error: null, loadedOrgId: organizationId })
         }
       }
-      set({ loading: false })
+      // Review of #356: the plan counts as running only after a successful subscribe, so a refused one is retried.
+      if (holidayRequestedOrgId === organizationId) {
+        holidayPlannedKey = key
+        holidayPlannedUserId = userId
+      }
+      if (liveResultStillCurrent(organizationId)) set({ loading: false })
     } catch (error: unknown) {
+      if (!liveResultStillCurrent(organizationId)) return
       set({
         error: error instanceof Error ? error.message : 'Failed to load annual leave',
         loading: false,

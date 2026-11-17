@@ -11,8 +11,9 @@
  * exactly; `leaveQueryValues` over `bookingIdsForAccount` with the users id and former ids, as both apps plan it).
  * Operatives are the people at the operative level in this organisation (`organizationLevelFor`: their users document
  * of this organisation, else their membership here, else the `members` role), so a member whose users document names
- * another company is included. A record two operatives would both claim is one `conflict` finding (the owner decides
- * whose it is), never two fixes.
+ * another company is included. A record two operatives would both claim, that none of their queries reaches, is one
+ * `conflict` finding (the owner decides whose it is), never two fixes; when one claimant's query already reaches it,
+ * it is not reported.
  */
 
 import { bookingIdsForAccount, leaveRecordsForAccount } from './bookingPerson'
@@ -126,6 +127,9 @@ export function leaveLegacyKeyFindings(input: {
       (storedUserId !== null && plan.userValues.has(storedUserId)) ||
       (storedOperativeId !== null && plan.operativeValues.has(storedOperativeId))
     if (owners.length > 1) {
+      // Review of #356: a record one claimant's own-leave query already reaches is not reported (nothing is lost for
+      // that claimant); only a record no claimant's query reaches is a conflict for the owner to decide.
+      if (owners.some(queriedBy)) continue
       findings.push({
         leaveId: entry.id,
         personId: owners[0].person.id,

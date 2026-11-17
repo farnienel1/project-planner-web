@@ -14,6 +14,7 @@ import {
   appUpdateRequired,
   currentOrganizationId,
   ghostAccountsEnabled,
+  operativeOwnLeaveEnabled,
   dataCheckPanelEnabled,
   PLATFORM_CONFIG_APP_PATH,
   securitySwitchOn,
@@ -242,6 +243,17 @@ function notifyConfigListeners() {
 export function ghostAccountsEnabledFor(organizationId?: string | null): boolean {
   start()
   return ghostAccountsEnabled(config, organizationId ?? currentOrganizationId())
+}
+
+/**
+ * Rulebook 1.56.0 §9 / §18: whether operatives read only their own leave in this organisation —
+ * `operativeOwnLeaveEnabled(platformConfig/app, organizationId)`. Off before the first read and when the document or
+ * field is missing (everyone then reads every leave record, as before 1.56.0). The leave listener re-plans on every
+ * read of `platformConfig/app` (`onPlatformConfigChange`).
+ */
+export function operativeOwnLeaveFor(organizationId?: string | null): boolean {
+  start()
+  return operativeOwnLeaveEnabled(config, organizationId ?? currentOrganizationId())
 }
 
 /**

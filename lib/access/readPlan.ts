@@ -102,7 +102,8 @@ export function bookingPlanInputs(): { visibleJobIds: string[]; ownBookingIds: s
 
 /**
  * Rulebook 1.56.0 §9 / §17 (`leaveQueryPlan`): the annual-leave parts for the viewer, or null when they read every
- * leave record (everyone not at the operative level: the existing whole-collection listener). An operative gets one
+ * leave record (the `operativeOwnLeave` switch off, or anyone not at the operative level: the existing
+ * whole-collection listener). With the switch on an operative gets one
  * `userId in (ids + email) OR operativeId in ids` query per chunk of their own ids — never the whole collection, so
  * the Phase B rules (switch `operativeOwnLeave`) can refuse colleagues' leave without breaking this app. Empty
  * `ownIds` means "not known yet": the plan falls back to the viewer's users id and former ids.
@@ -110,9 +111,10 @@ export function bookingPlanInputs(): { visibleJobIds: string[]; ownBookingIds: s
 export function leavePlanParts(
   viewer: JobAccessViewer | null,
   ownIds: ReadonlyArray<string>,
-  email: string | null | undefined
+  email: string | null | undefined,
+  operativeOwnLeave = false
 ): OrgPlanPart[] | null {
-  const plan = leaveQueryPlan(viewer, { ownIds, email })
+  const plan = leaveQueryPlan(viewer, { ownIds, email, operativeOwnLeave })
   if (plan.readsEveryLeave) return null
   return plan.queries.flatMap((query) => {
     if (query.kind !== 'own') return []
@@ -134,16 +136,20 @@ export function leavePlanKey(parts: ReadonlyArray<OrgPlanPart> | null): string {
 
 /**
  * The organisation whose leave listener must be planned again, or null. Re-plans the organisation last requested
- * (never the one whose first snapshot arrived last, so a company switch never tears down the new company's listener)
- * whenever the plan the current inputs give differs from the plan the listener runs; nothing while signed out or
- * before any organisation was requested.
+ * (never the one whose first snapshot arrived last) only while it is still the open organisation — after a company
+ * switch the old company is never re-opened; the new company's own `loadBookings` plans it — and only when the plan
+ * the current inputs give differs from the plan the listener runs. Nothing while signed out or before any
+ * organisation was requested. `currentOrgId` empty (no organisation adopted yet) does not block.
  */
 export function leaveReplanTarget(input: {
   requestedOrgId: string | null
+  currentOrgId?: string | null
   plannedKey: string | null
   nextKey: string
   signedIn: boolean
 }): string | null {
   if (!input.signedIn || !input.requestedOrgId) return null
+  const current = String(input.currentOrgId ?? '').trim().toLowerCase()
+  if (current && current !== input.requestedOrgId.trim().toLowerCase()) return null
   return input.plannedKey === input.nextKey ? null : input.requestedOrgId
 }

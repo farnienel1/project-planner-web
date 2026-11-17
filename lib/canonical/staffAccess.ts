@@ -788,34 +788,41 @@ export function leaveQueryValues(
 }
 
 /**
- * Whether the viewer reads only their own leave (1.56.0, owner answer 17 Nov Q2: operatives only): the operative
- * level — `role.isOperativeMode`, which apps set from `permissionLevelOf(user) === 'operative'` (an admin's stray
- * operative-mode flag never counts). Every other viewer with a role reads every leave record: admins, super admins,
- * managers and a legacy user with no level flag (manager level, rulebook 1.23.1 / 1.44.0 — they can be a line
- * manager and decide leave).
+ * Whether the viewer reads only their own leave (1.56.0, owner answer 17 Nov Q2: operatives only; review of #356:
+ * only once the switch is on). True only when the `operativeOwnLeave` switch is on for the organisation
+ * (`operativeOwnLeaveEnabled`, passed as `operativeOwnLeave`) AND the viewer is at the operative level —
+ * `role.isOperativeMode`, which apps set from `permissionLevelOf(user) === 'operative'` (an admin's stray
+ * operative-mode flag never counts). With the switch off or unknown everyone reads every leave record, as before
+ * 1.56.0, so no record stored under an older key drops out of view before the owner has fixed the data. Every
+ * viewer not at the operative level always reads every leave record: admins, super admins, managers and a legacy user
+ * with no level flag (manager level, rulebook 1.23.1 / 1.44.0 — they can be a line manager and decide leave).
  */
-export function readsOnlyOwnLeave(viewer: JobAccessViewer | null | undefined): boolean {
-  return Boolean(viewer?.role?.isOperativeMode)
+export function readsOnlyOwnLeave(
+  viewer: JobAccessViewer | null | undefined,
+  options?: { operativeOwnLeave?: boolean | null } | null
+): boolean {
+  return options?.operativeOwnLeave === true && Boolean(viewer?.role?.isOperativeMode)
 }
 
 /**
  * The annual-leave queries an app runs for the viewer (rulebook §9, §17; 1.56.0, owner answers 17 Nov Q2):
- *   - everyone with a role who is not at the operative level (`readsOnlyOwnLeave` false: admins, super admins,
- *     managers, a no-flag user): the whole `holidayBookings` collection, as before 1.56.0;
- *   - the operative level: only their own leave — one `or` query per `OWN_LEAVE_IDS_PER_QUERY` ids of
+ *   - while `operativeOwnLeave` is off (or not known) for the organisation, and for everyone not at the operative
+ *     level (`readsOnlyOwnLeave` false: admins, super admins, managers, a no-flag user): the whole `holidayBookings`
+ *     collection, as before 1.56.0;
+ *   - the operative level with the switch on: only their own leave — one `or` query per `OWN_LEAVE_IDS_PER_QUERY` ids of
  *     `leaveQueryValues(uid, ownIds, email)`, the emails on the first query's `userId` part only;
  *   - no viewer, role or uid: no query at all (never a whole-collection query).
  * `ownIds` empty or missing means "not known yet" and falls back to `viewer.ids` (users id and former ids), never to
- * the uid alone. Planned whatever the `operativeOwnLeave` switch says (Phase A).
+ * the uid alone. `operativeOwnLeave` is `operativeOwnLeaveEnabled(platformConfig/app, organizationId)`; missing → off.
  */
 export function leaveQueryPlan(
   viewer: JobAccessViewer | null | undefined,
-  options?: { ownIds?: ReadonlyArray<string> | null; email?: string | null } | null
+  options?: { ownIds?: ReadonlyArray<string> | null; email?: string | null; operativeOwnLeave?: boolean | null } | null
 ): LeaveQueryPlan {
   if (!viewer || !viewer.role) return { readsEveryLeave: false, queries: [] }
   const uid = viewerUid(viewer)
   if (!uid) return { readsEveryLeave: false, queries: [] }
-  if (!readsOnlyOwnLeave(viewer)) {
+  if (!readsOnlyOwnLeave(viewer, { operativeOwnLeave: options?.operativeOwnLeave })) {
     return { readsEveryLeave: true, queries: [{ collection: 'holidayBookings', kind: 'all' }] }
   }
   const known = options?.ownIds && options.ownIds.length > 0 ? options.ownIds : viewer.ids ?? []
