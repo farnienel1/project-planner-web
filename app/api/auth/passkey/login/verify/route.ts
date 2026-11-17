@@ -4,7 +4,8 @@ import { clearSessionCookie } from '@/lib/auth/mfa/mfaCookiePolicy'
 import { encodeMfaOk, MFA_OK_TTL_MS, writeMfaCookie } from '@/lib/auth/mfa/mfaCookies'
 import { clearPasskeyCookie, decodePasskeyChallenge, readPasskeyCookie } from '@/lib/auth/passkeys/passkeyChallenge'
 import { passkeysOffResponse, passkeyUnavailable } from '@/lib/auth/passkeys/passkeyRoute'
-import { finishPasskeyLogin, PASSKEY_LOGIN_FAILED_MESSAGE } from '@/lib/auth/passkeys/passkeyService'
+import { finishPasskeyLogin, PASSKEY_LOGIN_FAILED_MESSAGE, pruneStalePasskeys } from '@/lib/auth/passkeys/passkeyService'
+import { sendPasskeysRemovedNotice } from '@/lib/auth/passkeys/passkeyNotices'
 import { firebasePasskeyAuthAccounts, firestorePasskeyStore } from '@/lib/auth/passkeys/passkeyStore'
 import { clientIp, enforceRateLimit, jsonError, readJsonBody } from '@/lib/security/apiGuard'
 
@@ -28,12 +29,15 @@ export async function POST(request: NextRequest) {
   const cookie = decodePasskeyChallenge(readPasskeyCookie(request), 'passkey-login')
   if (cookie && request.headers.get('origin') !== cookie.origin) return jsonError(PASSKEY_LOGIN_FAILED_MESSAGE, 403)
   try {
-    const result = await finishPasskeyLogin({
-      cookie,
-      response: body.value.response,
-      store: firestorePasskeyStore(),
-      auth: firebasePasskeyAuthAccounts(),
-    })
+    const store = firestorePasskeyStore()
+    const auth = firebasePasskeyAuthAccounts()
+    const result = await finishPasskeyLogin({ cookie, response: body.value.response, store, auth })
+    if (!result.ok && result.reason === 'stale-after-password-change' && result.uid) {
+      // The password changed and the browser never reported it: remove the rest now and tell the account.
+      const more = await pruneStalePasskeys({ uid: result.uid, store, auth })
+      const account = await auth.lookup(result.uid)
+      await sendPasskeysRemovedNotice({ email: account.email, count: more + 1 })
+    }
     if (!result.ok) {
       console.warn('[auth/passkey/login] refused', { reason: result.reason, ip: clientIp(request) })
       const response = jsonError(result.error, result.status)

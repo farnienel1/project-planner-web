@@ -24,6 +24,8 @@ export type PasskeyChallengeCookie = {
   exp: number
   /** Enrolment only: the account the passkey is being added to. */
   uid?: string
+  /** Enrolment only: the user handle given to the authenticator (stored with the passkey). */
+  userHandle?: string
   /** Sign-in only: the page the person returns to (`safePostMfaPath` again on use). */
   next?: string
   /** Sign-in only: the developer login, which accepts only the platform owner's passkey. */
@@ -54,6 +56,7 @@ export function decodePasskeyChallenge(
     origin: value.origin,
     exp: value.exp,
     ...(typeof value.uid === 'string' && value.uid ? { uid: value.uid } : {}),
+    ...(typeof value.userHandle === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value.userHandle) ? { userHandle: value.userHandle } : {}),
     ...(typeof value.next === 'string' ? { next: value.next } : {}),
     ...(value.ownerOnly === true ? { ownerOnly: true } : {}),
   }

@@ -14,6 +14,8 @@ import {
   passkeyLabelFromUserAgent,
 } from '@/lib/auth/passkeys/passkeyService'
 import { firestorePasskeyStore } from '@/lib/auth/passkeys/passkeyStore'
+import { sendPasskeyAddedNotice } from '@/lib/auth/passkeys/passkeyNotices'
+import { bearerToken } from '@/lib/owner/firestoreRest'
 import { enforceRateLimit, jsonError, readJsonBody } from '@/lib/security/apiGuard'
 
 export const runtime = 'nodejs'
@@ -45,6 +47,10 @@ export async function POST(request: NextRequest) {
       label: passkeyLabelFromUserAgent(request.headers.get('user-agent'), body.value.label),
       store: firestorePasskeyStore(),
     })
+    if (result.ok) {
+      // Security notice to the account (best effort: logged, never blocks the passkey).
+      await sendPasskeyAddedNotice({ email: account.email, label: result.passkey.label, idToken: bearerToken(request) })
+    }
     const response = result.ok
       ? NextResponse.json({ ok: true, passkey: result.passkey }, { headers: { 'Cache-Control': 'no-store' } })
       : jsonError(result.error, result.status)

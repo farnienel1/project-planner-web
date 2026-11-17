@@ -41,6 +41,8 @@ const USER = 'pk-user'
 const DISABLED = 'pk-disabled'
 
 let env: RulesTestEnvironment
+/** Auth `passwordUpdatedAt` the mocked accounts:lookup reports, per uid. */
+const passwordUpdatedAt: Record<string, number> = {}
 const realFetch = globalThis.fetch
 const base = () => `http://127.0.0.1:${PORT}/v1/projects/${PROJECT}/databases/(default)/documents`
 const store = () => firestorePasskeyStore({ bearer: async () => 'owner', base: base() })
@@ -73,11 +75,25 @@ test.before(async () => {
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     if (url.includes('accounts:lookup')) {
-      const body = JSON.parse(String(init?.body || '{}')) as { idToken?: string; localId?: string[] }
-      const uid = body.localId?.[0] || (body.idToken ? JSON.parse(Buffer.from(body.idToken.split('.')[1], 'base64url').toString()).user_id : '')
+      const body = JSON.parse(String(init?.body || '{}')) as { idToken?: string; localId?: string[]; email?: string[] }
+      const uid =
+        body.localId?.[0] ||
+        (body.email?.[0] ? body.email[0].replace(/@example\.com$/, '') : '') ||
+        (body.idToken ? JSON.parse(Buffer.from(body.idToken.split('.')[1], 'base64url').toString()).user_id : '')
       if (uid !== USER && uid !== DISABLED) return new Response(JSON.stringify({ users: [] }))
       return new Response(
-        JSON.stringify({ users: [{ localId: uid, email: `${uid}@example.com`, emailVerified: true, disabled: uid === DISABLED, createdAt: '1000' }] })
+        JSON.stringify({
+          users: [
+            {
+              localId: uid,
+              email: `${uid}@example.com`,
+              emailVerified: true,
+              disabled: uid === DISABLED,
+              createdAt: '1000',
+              ...(passwordUpdatedAt[uid] ? { passwordUpdatedAt: passwordUpdatedAt[uid] } : {}),
+            },
+          ],
+        })
       )
     }
     return realFetch(input, init)
@@ -116,11 +132,11 @@ test('REST store on the emulator: create, get, list, conditional counter, single
   const s = store()
   const id = 'store-test-credential-abcdef'
   assert.equal(
-    await s.create({ id, uid: 'store-user', publicKey: 'pk', counter: 1, transports: ['internal'], label: 'Mac', createdAtMs: Date.now(), backedUp: true, deviceType: 'multiDevice', rpId: 'localhost' }),
+    await s.create({ id, uid: 'store-user', publicKey: 'pk', counter: 1, transports: ['internal'], label: 'Mac', createdAtMs: Date.now(), backedUp: true, deviceType: 'multiDevice', rpId: 'localhost', userHandle: 'h1' }),
     'created'
   )
   assert.equal(
-    await s.create({ id, uid: 'someone-else', publicKey: 'pk2', counter: 0, transports: [], label: '', createdAtMs: Date.now(), backedUp: false, deviceType: 'singleDevice', rpId: 'localhost' }),
+    await s.create({ id, uid: 'someone-else', publicKey: 'pk2', counter: 0, transports: [], label: '', createdAtMs: Date.now(), backedUp: false, deviceType: 'singleDevice', rpId: 'localhost', userHandle: 'h2' }),
     'exists'
   )
   const row = await s.get(id)
@@ -220,4 +236,29 @@ test('routes end to end: enrol, sign in (custom token + MFA ok cookie), replay r
   const disabled = await signIn(DISABLED)
   assert.equal(disabled.first.status, 403)
   assert.equal(cookieValue(disabled.first, okCookieName), '', 'a disabled account never gets the MFA pass')
+
+  // The user handle given at registration is stored with the passkey.
+  const stored = await store().listForUser(USER)
+  assert.equal(stored.length, 1)
+  assert.match(stored[0].userHandle, /^[A-Za-z0-9_-]{20,}$/)
+
+  // A password reset (signed out, the email from the reset link) removes the passkeys made before it.
+  const reset = await import('../app/api/auth/passkey/password-changed/route.ts')
+  const untouched = await reset.POST(routeRequest('/api/auth/passkey/password-changed', { body: { email: `${USER}@example.com` } }))
+  assert.equal(untouched.status, 200)
+  assert.equal((await store().listForUser(USER)).length, 1, 'no password change yet: nothing removed')
+  passwordUpdatedAt[USER] = Date.now() + 1000
+  const unknown = await reset.POST(routeRequest('/api/auth/passkey/password-changed', { body: { email: 'nobody@example.com' } }))
+  assert.deepEqual(await unknown.json(), { ok: true }, 'never says whether the email has an account')
+  const removed = await reset.POST(routeRequest('/api/auth/passkey/password-changed', { body: { email: `${USER}@example.com` } }))
+  assert.deepEqual(await removed.json(), { ok: true })
+  assert.equal((await store().listForUser(USER)).length, 0, 'the passkey made before the reset is gone')
+  const after = await signIn(USER)
+  assert.equal(after.first.status, 401)
+  assert.equal(cookieValue(after.first, okCookieName), '')
+
+  // A password change (signed in) reports how many were removed.
+  passwordUpdatedAt[DISABLED] = Date.now() + 1000
+  const changed = await reset.POST(routeRequest('/api/auth/passkey/password-changed', { uid: DISABLED, body: {} }))
+  assert.deepEqual(await changed.json(), { ok: true, removed: 1 })
 })

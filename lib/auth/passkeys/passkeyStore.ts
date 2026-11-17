@@ -29,6 +29,11 @@ export type StoredPasskey = {
   backedUp: boolean
   deviceType: string
   rpId: string
+  /**
+   * The WebAuthn user handle (base64url) given to the authenticator at registration. Compared at sign-in, so
+   * rotating MFA_SIGNING_SECRET never breaks a saved passkey. '' for passkeys saved before it was stored.
+   */
+  userHandle: string
   /** The document's update time, for a conditional counter update. */
   updateTime?: string
 }
@@ -47,12 +52,21 @@ export interface PasskeyStore {
   deleteAllForUser(uid: string): Promise<number>
 }
 
-export type AuthAccount = { exists: boolean; disabled: boolean; email: string | null; emailVerified: boolean }
+export type AuthAccount = {
+  exists: boolean
+  disabled: boolean
+  email: string | null
+  emailVerified: boolean
+  /** When the account's password was last set or changed (Auth `passwordUpdatedAt`, ms); null when unknown. */
+  passwordUpdatedAtMs?: number | null
+}
 
 export interface PasskeyAuthAccounts {
   /** Throws when Auth cannot be asked; callers refuse rather than guess. */
   lookup(uid: string): Promise<AuthAccount>
   customToken(uid: string): Promise<string>
+  /** The uid for a sign-in email, or null when there is no such account. Throws when Auth cannot be asked. */
+  uidForEmail?(email: string): Promise<string | null>
 }
 
 export function passkeyDocumentId(credentialId: string): string {
@@ -117,6 +131,7 @@ export function passkeyFromDocument(document: { name?: string; fields?: RestFiel
     backedUp: fields?.backedUp?.booleanValue === true,
     deviceType: str(fields, 'deviceType'),
     rpId: str(fields, 'rpId'),
+    userHandle: str(fields, 'userHandle'),
     ...(document.updateTime ? { updateTime: document.updateTime } : {}),
   }
 }
@@ -132,6 +147,7 @@ function passkeyFields(passkey: NewPasskey): RestFields {
     backedUp: { booleanValue: passkey.backedUp },
     deviceType: { stringValue: passkey.deviceType },
     rpId: { stringValue: passkey.rpId },
+    userHandle: { stringValue: passkey.userHandle || '' },
   }
 }
 
@@ -264,19 +280,34 @@ export function firebasePasskeyAuthAccounts(options: { fetchImpl?: typeof fetch;
       })
       if (!response.ok) throw new Error(`Looking up the account failed (${response.status})`)
       const data = (await response.json()) as {
-        users?: { localId?: string; disabled?: boolean; email?: string; emailVerified?: boolean }[]
+        users?: { localId?: string; disabled?: boolean; email?: string; emailVerified?: boolean; passwordUpdatedAt?: number | string }[]
       }
       const user = data.users?.find((row) => row.localId === uid)
-      if (!user) return { exists: false, disabled: false, email: null, emailVerified: false }
+      if (!user) return { exists: false, disabled: false, email: null, emailVerified: false, passwordUpdatedAtMs: null }
+      const passwordUpdatedAtMs = Number(user.passwordUpdatedAt)
       return {
         exists: true,
         disabled: user.disabled === true,
         email: user.email ? user.email.trim().toLowerCase() : null,
         emailVerified: user.emailVerified === true,
+        passwordUpdatedAtMs: Number.isFinite(passwordUpdatedAtMs) && passwordUpdatedAtMs > 0 ? passwordUpdatedAtMs : null,
       }
     },
     async customToken(uid) {
       return adminSignCustomToken(uid, { emulator: sessionCookieAllowsUnsigned() })
+    },
+    async uidForEmail(email) {
+      const projectId = sessionProjectId()
+      const clean = email.trim().toLowerCase()
+      if (!projectId || !clean) return null
+      const response = await doFetch(`${identityToolkitBase()}/projects/${encodeURIComponent(projectId)}/accounts:lookup`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${await bearer()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: [clean] }),
+      })
+      if (!response.ok) throw new Error(`Looking up the account failed (${response.status})`)
+      const data = (await response.json()) as { users?: { localId?: string }[] }
+      return data.users?.[0]?.localId || null
     },
   }
 }

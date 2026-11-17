@@ -17,8 +17,14 @@ import {
   finishPasskeyLogin,
   finishPasskeyRegistration,
   passkeyEnrolAllowed,
+  passkeyExpectedUserHandle,
   passkeyLabelFromUserAgent,
+  passkeyStaleAfterPasswordChange,
+  PASSKEYS_REMOVED_AFTER_PASSWORD_MESSAGE,
+  pruneStalePasskeys,
 } from './passkeyService.ts'
+import { sendPasskeyAddedNotice, sendPasskeysRemovedNotice } from './passkeyNotices.ts'
+import { buildPasskeyAddedEmail, buildPasskeysRemovedEmail, PASSKEY_ADDED_EMAIL_SUBJECT } from '../../email/passkeyNoticeEmail.ts'
 import type { AuthAccount, NewPasskey, PasskeyAuthAccounts, PasskeyStore, StoredPasskey } from './passkeyStore.ts'
 import { newSoftAuthenticator, softAssertion, softRegistration } from './testAuthenticator.ts'
 import { adminSignCustomToken, FIREBASE_CUSTOM_TOKEN_AUDIENCE } from '../../owner/identityToolkitAdmin.ts'
@@ -344,6 +350,7 @@ test('switch off: every passkey route answers 404 and sets no cookie', async () 
       import('../../../app/api/auth/passkey/register/options/route.ts'),
       import('../../../app/api/auth/passkey/register/verify/route.ts'),
       import('../../../app/api/auth/passkey/credentials/route.ts'),
+      import('../../../app/api/auth/passkey/password-changed/route.ts'),
     ])
     const req = () =>
       new NextRequest('https://www.projectplanner.us/api/auth/passkey/x', {
@@ -351,7 +358,7 @@ test('switch off: every passkey route answers 404 and sets no cookie', async () 
         headers: { origin: RP.origin, 'content-type': 'application/json' },
         body: '{}',
       })
-    const handlers = [routes[0].POST, routes[1].POST, routes[2].POST, routes[3].POST, routes[4].GET, routes[4].DELETE]
+    const handlers = [routes[0].POST, routes[1].POST, routes[2].POST, routes[3].POST, routes[4].GET, routes[4].DELETE, routes[5].POST]
     for (const handler of handlers) {
       const response = await handler(req())
       assert.equal(response.status, 404)
@@ -360,4 +367,113 @@ test('switch off: every passkey route answers 404 and sets no cookie', async () 
   } finally {
     if (previous !== undefined) process.env.NEXT_PUBLIC_PASSKEYS_ENABLED = previous
   }
+})
+
+test('user handle: stored at registration and compared at sign-in, so rotating MFA_SIGNING_SECRET keeps passkeys working', async () => {
+  const previous = process.env.MFA_SIGNING_SECRET
+  const store = new MemoryStore()
+  try {
+    process.env.MFA_SIGNING_SECRET = 'secret-before-rotation'
+    const begun = await beginPasskeyRegistration({ uid: UID, email: 'p@example.com', rp: RP, existing: [] })
+    assert.ok(begun.ok)
+    const device = newSoftAuthenticator()
+    const response = softRegistration(device, { challenge: begun.options.challenge, origin: RP.origin, rpID: RP.rpID, userHandle: begun.options.user.id })
+    assert.ok((await finishPasskeyRegistration({ uid: UID, cookie: begun.cookie, response, label: 'Mac', store })).ok)
+    assert.equal([...store.rows.values()][0].userHandle, begun.options.user.id)
+
+    process.env.MFA_SIGNING_SECRET = 'secret-after-rotation'
+    assert.notEqual(passkeyUserHandleBase64Url(UID), begun.options.user.id)
+    const cookie = await loginCookie()
+    const result = await finishPasskeyLogin({ cookie, response: softAssertion(device, { challenge: cookie.challenge, origin: RP.origin, rpID: RP.rpID }), store, auth: auth() })
+    assert.ok(result.ok, result.ok ? '' : result.reason)
+  } finally {
+    if (previous === undefined) delete process.env.MFA_SIGNING_SECRET
+    else process.env.MFA_SIGNING_SECRET = previous
+  }
+})
+
+test('user handle: a passkey stored before the handle was saved falls back to the HMAC of the uid', async () => {
+  const store = new MemoryStore()
+  const device = await enrol(store)
+  const row = [...store.rows.values()][0]
+  store.rows.set(row.id, { ...row, userHandle: '' })
+  assert.equal(passkeyExpectedUserHandle({ uid: UID, userHandle: '' }), passkeyUserHandleBase64Url(UID))
+  const cookie = await loginCookie()
+  assert.ok((await finishPasskeyLogin({ cookie, response: softAssertion(device, { challenge: cookie.challenge, origin: RP.origin, rpID: RP.rpID }), store, auth: auth() })).ok)
+  const other = await loginCookie()
+  const wrong = await finishPasskeyLogin({
+    cookie: other,
+    response: softAssertion(device, { challenge: other.challenge, origin: RP.origin, rpID: RP.rpID, userHandle: passkeyUserHandleBase64Url('someone-else') }),
+    store,
+    auth: auth(),
+  })
+  assert.equal(wrong.ok ? '' : wrong.reason, 'user-handle-mismatch')
+})
+
+test('password reset or change: a passkey made before it is refused at sign-in and removed; one made after works', async () => {
+  const store = new MemoryStore()
+  const device = await enrol(store)
+  const created = [...store.rows.values()][0].createdAtMs as number
+  const before = await loginCookie()
+  const okBefore = await finishPasskeyLogin({
+    cookie: before,
+    response: softAssertion(device, { challenge: before.challenge, origin: RP.origin, rpID: RP.rpID }),
+    store,
+    auth: auth({ [UID]: { passwordUpdatedAtMs: created - 60_000 } }),
+  })
+  assert.ok(okBefore.ok, 'a password set before the passkey changes nothing')
+
+  const after = await loginCookie()
+  const accounts = auth({ [UID]: { passwordUpdatedAtMs: created + 60_000 } })
+  const stale = await finishPasskeyLogin({ cookie: after, response: softAssertion(device, { challenge: after.challenge, origin: RP.origin, rpID: RP.rpID }), store, auth: accounts })
+  assert.equal(stale.ok ? '' : stale.reason, 'stale-after-password-change')
+  assert.equal(stale.ok ? '' : stale.error, PASSKEYS_REMOVED_AFTER_PASSWORD_MESSAGE)
+  assert.deepEqual(accounts.minted, [], 'no token after a password change')
+  assert.equal(store.rows.size, 0, 'the stale passkey is removed')
+
+  assert.equal(passkeyStaleAfterPasswordChange({ createdAtMs: 1000 }, { passwordUpdatedAtMs: null }), false)
+  assert.equal(passkeyStaleAfterPasswordChange({ createdAtMs: null }, { passwordUpdatedAtMs: 5 }), true)
+  assert.equal(passkeyStaleAfterPasswordChange({ createdAtMs: 10 }, { passwordUpdatedAtMs: 5 }), false)
+})
+
+test('pruneStalePasskeys removes only passkeys older than the last password change (all of them for a deleted account)', async () => {
+  const store = new MemoryStore()
+  const base = { uid: UID, publicKey: 'pk', counter: 0, transports: [], label: '', backedUp: false, deviceType: 'singleDevice', rpId: RP.rpID, userHandle: '' }
+  await store.create({ ...base, id: 'old-passkey-aaaaaaaaaaaa', createdAtMs: 1_000 })
+  await store.create({ ...base, id: 'new-passkey-aaaaaaaaaaaa', createdAtMs: 9_000 })
+  await store.create({ ...base, uid: 'other', id: 'other-passkey-aaaaaaaaaa', createdAtMs: 1_000 })
+  assert.equal(await pruneStalePasskeys({ uid: UID, store, auth: auth({ [UID]: { passwordUpdatedAtMs: 5_000 } }) }), 1)
+  assert.deepEqual([...store.rows.keys()].sort(), ['new-passkey-aaaaaaaaaaaa', 'other-passkey-aaaaaaaaaa'])
+  assert.equal(await pruneStalePasskeys({ uid: UID, store, auth: auth({ [UID]: { passwordUpdatedAtMs: null } }) }), 0)
+  assert.equal(await pruneStalePasskeys({ uid: UID, store, auth: auth({}) }), 1, 'a deleted account keeps none')
+  assert.equal(await pruneStalePasskeys({ uid: 'nobody', store, auth: auth({}) }), 0)
+})
+
+test('notice emails: added (who, when, device, what to do) and removed; a failed send never throws', async () => {
+  const added = buildPasskeyAddedEmail({ email: 'pat@example.com', label: 'Work <laptop>', atMs: Date.UTC(2026, 10, 17, 9, 5), appBaseUrl: 'https://www.projectplanner.us/' })
+  assert.equal(added.subject, PASSKEY_ADDED_EMAIL_SUBJECT)
+  assert.match(added.html, /pat@example\.com/)
+  assert.match(added.html, /Work &lt;laptop&gt;/)
+  assert.match(added.text, /17 Nov 2026, 09:05 \(Europe\/London\)/)
+  assert.match(added.text, /If this wasn't you, remove it in Settings → Sign-in & password/)
+  assert.match(added.text, /change your password/)
+  assert.match(added.html, /https:\/\/www\.projectplanner\.us\/dashboard\/settings\/password/)
+
+  const removed = buildPasskeysRemovedEmail({ email: 'pat@example.com', count: 2, atMs: Date.UTC(2026, 10, 17), appBaseUrl: 'https://www.projectplanner.us' })
+  assert.match(removed.text, /2 passkeys were removed/)
+  assert.match(removed.text, /Your passkeys were removed — add them again after signing in/)
+
+  const sent: { to: string; subject: string }[] = []
+  const ok = await sendPasskeyAddedNotice({ email: 'pat@example.com', label: 'Mac' }, (async (params: { to: string; subject: string }) => {
+    sent.push(params)
+    return { id: 'x' }
+  }) as never)
+  assert.equal(ok, true)
+  assert.deepEqual(sent.map((row) => row.subject), [PASSKEY_ADDED_EMAIL_SUBJECT])
+  const failed = await sendPasskeyAddedNotice({ email: 'pat@example.com', label: 'Mac' }, (async () => {
+    throw new Error('EMAIL_SERVER_KEY is not set')
+  }) as never)
+  assert.equal(failed, false)
+  assert.equal(await sendPasskeyAddedNotice({ email: '', label: 'Mac' }, (async () => assert.fail('no email, no send')) as never), false)
+  assert.equal(await sendPasskeysRemovedNotice({ email: 'pat@example.com', count: 0 }, (async () => assert.fail('nothing removed, no send')) as never), false)
 })

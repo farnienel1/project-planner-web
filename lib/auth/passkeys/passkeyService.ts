@@ -26,6 +26,7 @@ import {
 } from '@/lib/auth/passkeys/passkeyChallenge'
 import {
   isPasskeyCredentialId,
+  type AuthAccount,
   type PasskeyAuthAccounts,
   type PasskeyStore,
   type StoredPasskey,
@@ -93,6 +94,43 @@ export function passkeyLabelFromUserAgent(userAgent: string | null | undefined, 
   return 'Passkey'
 }
 
+export const PASSKEYS_REMOVED_AFTER_PASSWORD_MESSAGE =
+  'Your passkeys were removed because your password was changed. Sign in with your email and password, then add them again in Settings → Sign-in & password.'
+
+/**
+ * The user handle a passkey must present: the one stored with it at registration, else (passkeys saved before it
+ * was stored) the HMAC of the uid under the current signing secret.
+ */
+export function passkeyExpectedUserHandle(row: Pick<StoredPasskey, 'uid' | 'userHandle'>): string {
+  return row.userHandle || passkeyUserHandleBase64Url(row.uid)
+}
+
+/**
+ * A passkey added before the account's password was last set (a reset or a change) no longer counts: whoever
+ * changes the password takes away every passkey made before it. The authoritative check runs at every sign-in
+ * from Firebase Auth's own `passwordUpdatedAt`, so it holds even if the browser never reports the change.
+ * A passkey with no stored creation time is stale once any password time is known.
+ */
+export function passkeyStaleAfterPasswordChange(
+  row: Pick<StoredPasskey, 'createdAtMs'>,
+  account: Pick<AuthAccount, 'passwordUpdatedAtMs'>
+): boolean {
+  const changed = account.passwordUpdatedAtMs
+  if (typeof changed !== 'number' || !Number.isFinite(changed) || changed <= 0) return false
+  if (typeof row.createdAtMs !== 'number' || !Number.isFinite(row.createdAtMs)) return true
+  return row.createdAtMs < changed
+}
+
+/** Removes the account's passkeys made before its password was last set; returns how many were removed. */
+export async function pruneStalePasskeys(input: { uid: string; store: PasskeyStore; auth: PasskeyAuthAccounts }): Promise<number> {
+  const rows = await input.store.listForUser(input.uid)
+  if (!rows.length) return 0
+  const account = await input.auth.lookup(input.uid)
+  const stale = account.exists ? rows.filter((row) => passkeyStaleAfterPasswordChange(row, account)) : rows
+  for (const row of stale) await input.store.delete(row.id)
+  return stale.length
+}
+
 export async function beginPasskeyRegistration(input: {
   uid: string
   email: string
@@ -126,6 +164,7 @@ export async function beginPasskeyRegistration(input: {
       rpID: input.rp.rpID,
       origin: input.rp.origin,
       uid: input.uid,
+      userHandle: options.user.id,
       exp: nowMs + PASSKEY_CHALLENGE_TTL_MS,
     },
   }
@@ -179,6 +218,7 @@ export async function finishPasskeyRegistration(input: {
     backedUp: info.credentialBackedUp,
     deviceType: info.credentialDeviceType,
     rpId: cookie.rpID,
+    userHandle: cookie.userHandle || passkeyUserHandleBase64Url(input.uid),
   }
   if (!isPasskeyCredentialId(row.id)) return { ok: false, status: 400, error: 'The passkey could not be read. Try again.' }
   if ((await input.store.create(row)) === 'exists') {
@@ -217,10 +257,10 @@ export async function beginPasskeyLogin(input: {
 
 export type PasskeyLoginResult =
   | { ok: true; uid: string; customToken: string; next: PostAuthPath }
-  | { ok: false; status: number; error: string; reason: string }
+  | { ok: false; status: number; error: string; reason: string; uid?: string }
 
-function refuse(status: number, reason: string, error = PASSKEY_LOGIN_FAILED_MESSAGE): PasskeyLoginResult {
-  return { ok: false, status, error, reason }
+function refuse(status: number, reason: string, error = PASSKEY_LOGIN_FAILED_MESSAGE, uid?: string): PasskeyLoginResult {
+  return uid ? { ok: false, status, error, reason, uid } : { ok: false, status, error, reason }
 }
 
 /**
@@ -251,7 +291,7 @@ export async function finishPasskeyLogin(input: {
   if (!stored) return refuse(401, 'unknown-credential')
   if (stored.rpId && stored.rpId !== cookie.rpID) return refuse(401, 'rp-mismatch')
   const handle = response.response?.userHandle
-  if (handle && handle !== passkeyUserHandleBase64Url(stored.uid)) return refuse(401, 'user-handle-mismatch')
+  if (handle && handle !== passkeyExpectedUserHandle(stored)) return refuse(401, 'user-handle-mismatch')
 
   let verification
   try {
@@ -277,6 +317,11 @@ export async function finishPasskeyLogin(input: {
   const account = await input.auth.lookup(stored.uid)
   if (!account.exists) return refuse(401, 'account-missing')
   if (account.disabled) return refuse(403, 'account-disabled', 'This account has been disabled. Contact your administrator.')
+  if (passkeyStaleAfterPasswordChange(stored, account)) {
+    // The password was reset or changed after this passkey was added: it no longer counts (and is removed now).
+    await input.store.delete(stored.id)
+    return refuse(401, 'stale-after-password-change', PASSKEYS_REMOVED_AFTER_PASSWORD_MESSAGE, stored.uid)
+  }
   if (cookie.ownerOnly && !isVerifiedPlatformOwner({ email: account.email, emailVerified: account.emailVerified })) {
     return refuse(403, 'not-owner', PASSKEY_OWNER_ONLY_MESSAGE)
   }

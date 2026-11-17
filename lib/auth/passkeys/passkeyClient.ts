@@ -135,3 +135,31 @@ export async function removePasskey(id: string): Promise<void> {
   const data = await readJson(response)
   if (!response.ok) fail(data, 'Could not remove the passkey.')
 }
+
+/** Shown after a password change or reset when passkeys are on. */
+export const PASSKEYS_REMOVED_NOTICE = 'Your passkeys were removed — add them again after signing in.'
+export const PASSKEYS_MAYBE_REMOVED_NOTICE = 'If you had passkeys, they were removed — add them again after signing in.'
+
+/**
+ * Tell the server the password just changed, so it removes the account's older passkeys now (they already stopped
+ * working: sign-in checks Firebase Auth's own password time). `signedIn`: a change in Settings (the answer says how
+ * many were removed). Otherwise a reset: the email from the reset link, sent without anyone's ID token. Best effort:
+ * returns null when passkeys are off or the call failed.
+ */
+export async function reportPasswordChanged(input: { signedIn: true } | { email: string }): Promise<number | null> {
+  if (!passkeysEnabled()) return null
+  try {
+    const signedIn = 'signedIn' in input
+    const response = await fetch('/api/auth/passkey/password-changed', {
+      ...FETCH_OPTS,
+      method: 'POST',
+      headers: signedIn ? await jsonAuthHeaders() : { 'Content-Type': 'application/json' },
+      body: JSON.stringify(signedIn ? {} : { email: input.email }),
+    })
+    if (!response.ok) return null
+    const data = await readJson(response)
+    return typeof data.removed === 'number' ? data.removed : null
+  } catch {
+    return null
+  }
+}

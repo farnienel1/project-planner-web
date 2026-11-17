@@ -49,6 +49,7 @@ import { displayOrganizationName } from '@/lib/settings/organizationSettings'
 import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
 import { useSettingsDirty, useSettingsLeave } from '@/components/settings/SettingsDirty'
 import { PasskeysSection } from '@/components/settings/PasskeysSection'
+import { PASSKEYS_REMOVED_NOTICE, reportPasswordChanged } from '@/lib/auth/passkeys/passkeyClient'
 import { OrganisationHubPanel, type OrganisationHubDestination } from '@/components/settings/panels/OrganisationHubPanel'
 import { WarningsPanel } from '@/components/settings/panels/WarningsPanel'
 import { MaterialCutOffPanel } from '@/components/settings/panels/MaterialCutOffPanel'
@@ -388,6 +389,8 @@ function PasswordPanel({ onBack }: { onBack: () => void }) {
   const [error, setError] = useState('')
   const [showCurrent, setShowCurrent] = useState(false)
   const [showNew, setShowNew] = useState(false)
+  const [passkeysRemoved, setPasskeysRemoved] = useState(false)
+  const [passkeyListVersion, setPasskeyListVersion] = useState(0)
   const dirty = Boolean(current || next || confirm)
   useSettingsDirty(dirty)
 
@@ -408,6 +411,10 @@ function PasswordPanel({ onBack }: { onBack: () => void }) {
       const credential = EmailAuthProvider.credential(firebaseUser.email, current)
       await reauthenticateWithCredential(firebaseUser as Parameters<typeof reauthenticateWithCredential>[0], credential)
       await updatePassword(firebaseUser as Parameters<typeof updatePassword>[0], next)
+      // Passkeys made before the change stop working; remove them now and say so (best effort).
+      const removedPasskeys = await reportPasswordChanged({ signedIn: true })
+      setPasskeysRemoved(Boolean(removedPasskeys && removedPasskeys > 0))
+      setPasskeyListVersion((value) => value + 1)
       setSaved(true); setCurrent(''); setNext(''); setConfirm('')
       setTimeout(() => setSaved(false), 4000)
     } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Failed to change password') }
@@ -454,6 +461,7 @@ function PasswordPanel({ onBack }: { onBack: () => void }) {
 
       {error && <ErrorBanner message={error} />}
       {saved && <SuccessBanner message="Password changed successfully." />}
+      {passkeysRemoved && <SuccessBanner message={PASSKEYS_REMOVED_NOTICE} />}
       <SaveBar dirty={dirty} hint={dirty ? 'Change your password, or leave to discard what you typed.' : 'Enter your current password and a new one.'}>
         <SaveButton
           saving={saving}
@@ -463,7 +471,7 @@ function PasswordPanel({ onBack }: { onBack: () => void }) {
           onClick={changePassword}
         />
       </SaveBar>
-      <PasskeysSection />
+      <PasskeysSection key={passkeyListVersion} />
     </div>
   )
 }

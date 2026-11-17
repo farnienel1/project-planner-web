@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { isPasskeyAccount, passkeysOffResponse, passkeyUnavailable, requirePasskeyAccount } from '@/lib/auth/passkeys/passkeyRoute'
-import { passkeySummary } from '@/lib/auth/passkeys/passkeyService'
-import { firestorePasskeyStore, isPasskeyCredentialId } from '@/lib/auth/passkeys/passkeyStore'
+import { passkeySummary, pruneStalePasskeys } from '@/lib/auth/passkeys/passkeyService'
+import { firebasePasskeyAuthAccounts, firestorePasskeyStore, isPasskeyCredentialId } from '@/lib/auth/passkeys/passkeyStore'
 import { enforceRateLimit, jsonError, readJsonBody } from '@/lib/security/apiGuard'
 
 export const runtime = 'nodejs'
@@ -16,7 +16,10 @@ export async function GET(request: NextRequest) {
   const account = await requirePasskeyAccount(request)
   if (!isPasskeyAccount(account)) return account
   try {
-    const rows = await firestorePasskeyStore().listForUser(account.uid)
+    const store = firestorePasskeyStore()
+    // Passkeys made before the last password change no longer work: remove them before listing.
+    await pruneStalePasskeys({ uid: account.uid, store, auth: firebasePasskeyAuthAccounts() })
+    const rows = await store.listForUser(account.uid)
     const passkeys = rows
       .map(passkeySummary)
       .sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0))
