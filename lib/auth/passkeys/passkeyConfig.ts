@@ -23,6 +23,8 @@ export const PASSKEY_CHALLENGE_TTL_MS = 5 * 60 * 1000
 export const PASSKEY_ENROL_FRESH_MS = 30 * 60 * 1000
 /** Most passkeys one account may hold. */
 export const PASSKEY_MAX_PER_USER = 10
+/** Every signed-out (email) password-changed answer takes at least this long, so timing reveals nothing. */
+export const PASSWORD_CHANGED_EMAIL_MIN_MS = 1500
 /** The browser prompt's own timeout. */
 export const PASSKEY_PROMPT_TIMEOUT_MS = 120 * 1000
 

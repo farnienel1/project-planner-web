@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+import { PASSWORD_CHANGED_EMAIL_MIN_MS } from '@/lib/auth/passkeys/passkeyConfig'
 import { sendPasskeysRemovedNotice } from '@/lib/auth/passkeys/passkeyNotices'
 import { padToMinimumDuration, passkeysOffResponse, passkeyUnavailable, runAfterResponse } from '@/lib/auth/passkeys/passkeyRoute'
 import { pruneStalePasskeys } from '@/lib/auth/passkeys/passkeyService'
@@ -8,9 +9,6 @@ import { bearerToken } from '@/lib/owner/firestoreRest'
 import { enforceRateLimit, enforceRateLimitKey, lookupFirebaseIdToken, readJsonBody } from '@/lib/security/apiGuard'
 
 export const runtime = 'nodejs'
-
-/** Every signed-out (email) answer takes at least this long, whatever the email, so timing reveals nothing. */
-export const PASSWORD_CHANGED_EMAIL_MIN_MS = 1500
 
 type Body = { email?: string }
 
