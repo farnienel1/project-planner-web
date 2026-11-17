@@ -117,6 +117,8 @@ import {
 } from '@/lib/staff/userPermissionDescriptions'
 import { SUPER_ADMIN_SUCCESSOR_EMPTY, superAdminSuccessors } from '@/lib/staff/superAdminTransfer'
 import { displayedLineManagerId, userWithLineManagerChoice } from '@/lib/firebase/userPayload'
+import { confirmWriteWithin } from '@/lib/works/watchWrite'
+import { useProfileSaveNotice } from '@/lib/users/profileSaveNotice'
 import { ActionPanel, ActionRow, Field, FieldGrid, FormSection, SectionBlock, Switch, ToggleRow, ProfileBack, ProfileBand, ProfileBanner, SaveState, ProfileIcon, type ProfileIconName } from '@/components/users/profile-ui'
 import {
   Input,
@@ -854,30 +856,51 @@ export function EditUserProfile({
         })
       }
       let profileBaseline = savedUser.current
-      if (draftAccountType && draftTypePermissions && draftAccountType !== currentAccountType(previous)) {
-        // Rulebook 1.11.0 `accountTypeChangeWrites`: the new type on every document that decides it here, in one batch
-        // (1.12.2).
-        const typeNote = await changeAccountType(previous, draftAccountType, organization.id, rosterDocs, draftTypePermissions)
-        if (typeNote) setSuccess(typeNote)
-        // The type is saved: the profile save below sends only the other edits, never the type fields again.
-        if (profileBaseline) {
-          const typed = applyAccountType(cloneUser(profileBaseline), draftAccountType)
-          profileBaseline = { ...typed, permissions: draftTypePermissions }
-        }
-      } else if (accountTypeRepair) {
-        // Rulebook 1.12.2 `accountTypeSyncState`: a user type only partly saved (older iOS build, interrupted save) is
-        // finished on every document from the profile's type.
-        await changeAccountType(previous, accountTypeRepair, organization.id, rosterDocs, previous.permissions)
+      const typeChange = Boolean(
+        draftAccountType && draftTypePermissions && draftAccountType !== currentAccountType(previous)
+      )
+      if (typeChange && draftAccountType && draftTypePermissions && profileBaseline) {
+        // The type is saved by `changeAccountType` first: the profile save below sends only the other edits, never the
+        // type fields again.
+        const typed = applyAccountType(cloneUser(profileBaseline), draftAccountType)
+        profileBaseline = { ...typed, permissions: draftTypePermissions }
       }
-      await saveUser(toSave, organization.id, previous.email, { baseline: profileBaseline, payHistoryRows })
-      savedUser.current = toSave
-      if (canViewTaxIds && taxDirty && currentUser?.id) {
-        const next = {
-          utrNumber: taxDraft.utrNumber ?? taxIds?.utrNumber ?? '',
-          vatNumber: taxDraft.vatNumber ?? taxIds?.vatNumber ?? '',
+      const taxNext =
+        canViewTaxIds && taxDirty && currentUser?.id
+          ? {
+              utrNumber: taxDraft.utrNumber ?? taxIds?.utrNumber ?? '',
+              vatNumber: taxDraft.vatNumber ?? taxIds?.vatNumber ?? '',
+            }
+          : null
+      const writerId = currentUser?.id ?? ''
+      // Every write of this save, in order. Each `commit` resolves only when the server confirms it.
+      const persist = (async () => {
+        if (typeChange && draftAccountType && draftTypePermissions) {
+          // Rulebook 1.11.0 `accountTypeChangeWrites`: the new type on every document that decides it here, in one
+          // batch (1.12.2).
+          await changeAccountType(previous, draftAccountType, organization.id, rosterDocs, draftTypePermissions)
+        } else if (accountTypeRepair) {
+          // Rulebook 1.12.2 `accountTypeSyncState`: a user type only partly saved (older iOS build, interrupted save)
+          // is finished on every document from the profile's type.
+          await changeAccountType(previous, accountTypeRepair, organization.id, rosterDocs, previous.permissions)
         }
-        await saveTaxIds(toSave.id, next, currentUser.id)
-        setTaxIds({ ...next, source: 'private' })
+        await saveUser(toSave, organization.id, previous.email, { baseline: profileBaseline, payHistoryRows })
+        if (taxNext) await saveTaxIds(toSave.id, taxNext, writerId)
+      })()
+      // Owner bug 17 Nov: the save waited for the server's confirmation with no time limit, so when it was slow or
+      // never came the screen stayed on "Saving…" although the change already showed (Firestore applies it locally at
+      // once and sends it when it can). Wait at most `WRITE_CONFIRM_TIMEOUT_MS`: a refusal in that time is shown here
+      // and Save comes back; no answer yet returns to the list as any save does, and the list says it is waiting
+      // (`useProfileSaveNotice`) until the server confirms or refuses it. The same pattern as My Projects (4e55d280).
+      const saveId = Date.now()
+      const savedName = `${toSave.firstName} ${toSave.surname}`.trim() || toSave.email
+      const confirmed = await confirmWriteWithin(persist, (outcome) =>
+        useProfileSaveNotice.getState().settled(saveId, outcome, savedName)
+      )
+      if (confirmed === 'pending') useProfileSaveNotice.getState().pending(saveId, savedName)
+      savedUser.current = toSave
+      if (taxNext) {
+        setTaxIds({ ...taxNext, source: 'private' })
         setTaxDraft({ utrNumber: null, vatNumber: null })
       }
       patchListedUser(toSave)
@@ -894,10 +917,16 @@ export function EditUserProfile({
       if (emailChangeNote) setTarget({ ...toSave })
       void setUserActive(toSave.id, toSave.isActive, organization.id, rosterDocs).catch(() => undefined)
       void syncLinkedOperative(organization.id, toSave, operatives).catch(() => undefined)
-      if (draftAccountType === 'operative' && currentAccountType(previous) !== 'operative') {
-        await removeFromJobs(previous, { kind: 'level', to: 'operative' })
-      } else if (previous.isActive !== false && toSave.isActive === false) {
-        await removeFromJobs(previous, { kind: 'deactivate' })
+      // Off their jobs once the save is through (it runs on if this screen stops waiting — never blocks Save).
+      const jobsChange: PersonAccessChange | null =
+        draftAccountType === 'operative' && currentAccountType(previous) !== 'operative'
+          ? { kind: 'level', to: 'operative' }
+          : previous.isActive !== false && toSave.isActive === false
+            ? { kind: 'deactivate' }
+            : null
+      if (jobsChange) {
+        const jobs = persist.then(() => removeFromJobs(previous, jobsChange))
+        await confirmWriteWithin(jobs, () => undefined).catch(() => undefined)
       }
     } catch (err: unknown) {
       setTarget(previous)
@@ -997,7 +1026,8 @@ export function EditUserProfile({
     setBusyAction('delete')
     try {
       await deleteUser(target.id, { organizationId: organization?.id, email: target.email, roster: rosterDocs })
-      await removeFromJobs(target, { kind: 'delete' })
+      // Off their jobs (secondary): waits a bounded time, then returns to the list while it finishes (owner bug 17 Nov).
+      await confirmWriteWithin(removeFromJobs(target, { kind: 'delete' }), () => undefined).catch(() => undefined)
       router.push(hubHref || backHref)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to delete user')

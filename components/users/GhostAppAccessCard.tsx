@@ -5,6 +5,8 @@ import type { User } from '@/types'
 import { giveGhostAppAccess } from '@/lib/staff/ghostWrites'
 import { IconTile } from '@/components/ui/page'
 import { ProfileIcon } from '@/components/users/profile-ui'
+import { withTimeout } from '@/lib/client/withTimeout'
+import { INVITE_EMAIL_TIMEOUT_MESSAGE, INVITE_EMAIL_TIMEOUT_MS } from '@/lib/invites/inviteEmailTimeout'
 
 /**
  * Rulebook 1.34.0 §11 "Give app access" (admins only, `canUpgradeGhost`): the ghost becomes an invite placeholder
@@ -43,14 +45,18 @@ export function GhostAppAccessCard({
       const invitationId = await giveGhostAppAccess({ organizationId, viewer, ghostId: ghost.id, ghost: raw, email })
       try {
         const { requestInviteSetupEmail } = await import('@/lib/invites/requestSetupEmail')
-        await requestInviteSetupEmail({
-          organizationId,
-          invitationId,
-          organizationName,
-          firstName: ghost.firstName,
-          role: 'operative',
-          to: email.trim().toLowerCase(),
-        })
+        await withTimeout(
+          requestInviteSetupEmail({
+            organizationId,
+            invitationId,
+            organizationName,
+            firstName: ghost.firstName,
+            role: 'operative',
+            to: email.trim().toLowerCase(),
+          }),
+          INVITE_EMAIL_TIMEOUT_MS,
+          INVITE_EMAIL_TIMEOUT_MESSAGE
+        )
         setMessage({ tone: 'ok', text: `Invitation sent to ${email.trim()}. They stay bookable until they accept.` })
       } catch (error) {
         setMessage({

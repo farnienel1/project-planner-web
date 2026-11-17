@@ -24,6 +24,7 @@ import type { HolidayBooking, HolidayTimeSlot, User } from '@/types'
 import { AnnualLeaveLegend, LeaveDayCalendar } from './LeaveDayCalendar'
 import { LeaveAdjustmentsList } from './LeaveAdjustments'
 import { useAnnualLeaveAdjustments } from '@/lib/annualLeave/leaveAdjustments'
+import { afterPrimaryWrite } from '@/lib/client/afterPrimaryWrite'
 
 type DayPick = { day: Date; slot: HolidayTimeSlot }
 
@@ -331,14 +332,14 @@ export function PersonalLeave({
       if (status === 'pending' && saved.length > 0) {
         const requesterName = `${user.firstName ?? ''} ${user.surname ?? ''}`.trim() || user.email
         for (const booking of saved) {
-          await notifyHolidayRequestSubmitted({
+          afterPrimaryWrite('notifyHolidayRequestSubmitted', notifyHolidayRequestSubmitted({
             organizationId: organization.id,
             booking,
             requester: user,
             requesterName,
             users,
             timeZone,
-          })
+          }))
         }
       }
       flash(
@@ -531,7 +532,7 @@ export function PersonalLeave({
                               // `holiday_request_submitted` (cancellation) to `holidayRequestRecipients`.
                               const store = useOrgUserStore.getState()
                               if (store.users.length === 0) await store.loadUsers(organization.id).catch(() => undefined)
-                              await notifyHolidayRequestSubmitted({
+                              afterPrimaryWrite('notifyHolidayRequestSubmitted', notifyHolidayRequestSubmitted({
                                 organizationId: organization.id,
                                 booking,
                                 requester: user,
@@ -539,7 +540,7 @@ export function PersonalLeave({
                                 users: useOrgUserStore.getState().users,
                                 timeZone,
                                 kind: 'cancellation',
-                              })
+                              }))
                               flash('Cancellation request sent to your manager.')
                             },
                           })

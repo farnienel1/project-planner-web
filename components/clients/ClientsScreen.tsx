@@ -31,6 +31,7 @@ import { useDeadlineAssignedProjectIds } from '@/lib/deadlines/useDeadlineAssign
 import { notifyClientCreated } from '@/lib/firebase/notifyInbox'
 import { EmptyState, IosFormModal, PageHeader } from '@/components/ios/primitives'
 import { WorkCard } from '@/components/projects/WorkCard'
+import { afterPrimaryWrite } from '@/lib/client/afterPrimaryWrite'
 
 function creatorName(): string {
   const { user } = useAuthStore.getState()
@@ -252,14 +253,14 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
         address: address.trim() || undefined,
         organizationId: organization.id,
       })
-      await notifyClientCreated({
+      afterPrimaryWrite('notifyClientCreated', notifyClientCreated({
         organizationId: organization.id,
         clientId: created.id,
         clientName: created.name,
         createdBy: creatorName(),
         actor: user,
         users: useOrgUserStore.getState().users,
-      })
+      }))
       setCreateOpen(false)
       setCreatedAlert(`Client '${created.name}' has been created successfully!`)
       router.push(`/dashboard/clients/${created.id}`)

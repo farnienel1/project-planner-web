@@ -221,6 +221,7 @@ import {
   type TimesheetInputsState,
 } from '@/lib/timesheets/timesheetInputs'
 import type { PayrollTimePolicyState } from '@/lib/canonical'
+import { afterPrimaryWrite } from '@/lib/client/afterPrimaryWrite'
 
 function money(value: number, currency: string): string {
   return formatMoney(value, currency)
@@ -1071,14 +1072,14 @@ export function TimesheetPeriodPage({
       useMineChangedStore.getState().resolvePeriod(mineChangedKey(organization?.id, subjectUser.id), periodStartKey(periodStart, timeZone))
       if (organization?.id && requiresLineManagerCounterSign(subjectUser, users)) {
         try {
-          await notifyTimesheetPendingManagerSignoff({
+          afterPrimaryWrite('notifyTimesheetPendingManagerSignoff', notifyTimesheetPendingManagerSignoff({
             organizationId: organization.id,
             signedByUser: subjectUser,
             users,
             weekStart: periodStart,
             timeZone,
             revision: draft.revision ?? null,
-          })
+          }))
         } catch {
           // Signature is already saved; inbox delivery is best-effort like iOS Task {}.
         }
@@ -1122,7 +1123,7 @@ export function TimesheetPeriodPage({
       )
       if (organization?.id) {
         try {
-          await notifyTimesheetSignedByManager({
+          afterPrimaryWrite('notifyTimesheetSignedByManager', notifyTimesheetSignedByManager({
             organizationId: organization.id,
             subjectUser,
             signedByName: name,
@@ -1132,7 +1133,7 @@ export function TimesheetPeriodPage({
             weekEnd: periodEnd,
             timeZone,
             revision: draft.revision ?? null,
-          })
+          }))
         } catch {
           // Counter-sign is already saved; inbox delivery is best-effort.
         }
@@ -1164,7 +1165,7 @@ export function TimesheetPeriodPage({
         liveLines: payroll.lineItems.map((line) => ({ id: line.id, bookingFingerprint: line.bookingFingerprint ?? null, amount: line.amount, paidHours: line.paidHours })),
       })
       if (result.status === 'created' && viewer && viewer.id !== subjectUser.id) {
-        await notifyTimesheetRevisionToSign({
+        afterPrimaryWrite('notifyTimesheetRevisionToSign', notifyTimesheetRevisionToSign({
           organizationId: organization.id,
           subjectUser,
           actorUserId: viewer.id,
@@ -1172,7 +1173,7 @@ export function TimesheetPeriodPage({
           revisionDocumentId: result.documentId,
           weekStart: periodStart,
           timeZone,
-        }).catch(() => undefined)
+        }))
       }
       if (result.status === 'not-exported' || result.status === 'missing') setError(revisionCheck.message || 'This timesheet could not be revised.')
       setLoadAttempt((attempt) => attempt + 1)

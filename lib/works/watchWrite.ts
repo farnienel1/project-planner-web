@@ -44,3 +44,32 @@ export async function watchWrite(
   onChange(final)
   return final
 }
+
+/**
+ * Waits for `write` for up to `timeoutMs` (owner bug 17 Nov: Edit user stuck on "Saving…" although the change showed).
+ * Confirmed in time → `'saved'`. Refused in time → throws the refusal, so the screen shows the error and re-enables
+ * Save. Not answered in time → `'pending'`: the write stays queued in Firestore (the local copy already shows it) and
+ * `onLater` is called once with the final outcome (`saved` or `refused`). Never waits longer than `timeoutMs`.
+ */
+export async function confirmWriteWithin(
+  write: Promise<unknown>,
+  onLater: (status: Exclude<WriteStatus, { status: 'pending' }>) => void,
+  timeoutMs: number = WRITE_CONFIRM_TIMEOUT_MS
+): Promise<'saved' | 'pending'> {
+  return new Promise<'saved' | 'pending'>((resolve, reject) => {
+    let answered = false
+    void watchWrite(
+      write,
+      (status) => {
+        if (!answered) {
+          answered = true
+          if (status.status === 'refused') reject(new Error(status.message))
+          else resolve(status.status)
+          return
+        }
+        if (status.status !== 'pending') onLater(status)
+      },
+      timeoutMs
+    )
+  })
+}
