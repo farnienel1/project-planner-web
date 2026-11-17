@@ -115,7 +115,7 @@ export function DeveloperFeedbackScreen() {
           </button>
         ))}
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard label="Open feedback" value={open.filter((row) => !row.hidden).length} />
         <MetricCard label="Needs review" value={pipeline.find((row) => row.id === 'none')?.count || 0} href="/developer/feedback?filter=review" />
         <MetricCard label="On the roadmap" value={(pipeline.find((row) => row.id === 'build')?.count || 0) + (pipeline.find((row) => row.id === 'in_progress')?.count || 0)} href="/developer/roadmap" />
@@ -259,7 +259,7 @@ function InsightsPanel({
   const shipped = suggestions.filter((row) => unifiedStatus(row) === 'shipped').length
   return (
     <div className="space-y-3">
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <MetricCard label="Ideas submitted" value={suggestions.length} />
         <MetricCard label="Votes" value={votes.length} />
         <MetricCard
@@ -407,7 +407,7 @@ export function DeveloperRoadmapScreen() {
                         {row.voteCount} votes · {row.organizationName?.trim() || 'Unfinished setup'}
                       </p>
                       <select
-                        className="pp-in mt-2 text-xs"
+                        className="pp-in mt-2 w-full min-w-0 text-xs"
                         value={row.productDecision}
                         onChange={(e) => {
                           if (!user) return

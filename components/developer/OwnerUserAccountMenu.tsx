@@ -68,7 +68,7 @@ export function OwnerUserAccountMenu({
 
   const menu = open ? (
     <div
-      className="fixed z-[80] w-56 rounded-xl border border-[var(--line)] bg-white p-1 shadow-lg"
+      className="fixed z-[80] w-56 rounded-xl border border-[var(--line)] bg-[var(--card)] p-1 shadow-lg"
       style={{
         top: menuPos.dropUp ? undefined : menuPos.top,
         bottom: menuPos.dropUp ? Math.max(12, window.innerHeight - menuPos.top) : undefined,
@@ -136,7 +136,7 @@ export function OwnerUserAccountMenu({
       {typeof document !== 'undefined' && menu ? createPortal(menu, document.body) : menu}
       {emailOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="true">
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+          <div className="w-full max-w-md rounded-2xl bg-[var(--card)] p-5 shadow-xl">
             <h2 className="text-lg font-extrabold">Change login email</h2>
             <p className="mt-2 text-sm text-[var(--ink2)]">
               Updates Firebase Auth for {ownerPersonName(user)} using their account id, then the user record. They sign in

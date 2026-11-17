@@ -82,7 +82,7 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
 
   return (
     <DeveloperShell title={name} back={{ href: '/developer/organisations', label: 'Organisations' }} eventsFrom={rangeEventsSince(range)}>
-      <p className="text-xs text-[var(--ink3)]">{organisationId}</p>
+      <p className="break-all text-xs text-[var(--ink3)]">{organisationId}</p>
       <DateRangePicker preset={preset} onChange={setPreset} />
       <DeveloperStatus error={error} loading={loading} />
       {notice ? (
@@ -90,7 +90,7 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
           {notice}
         </p>
       ) : null}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard label="Registered users" value={orgUsers.length} />
         <MetricCard label="Active in range" value={Math.max(activity?.activeUsers || 0, directoryActiveUsers(orgUsers, range))} />
         {events.length > 0 ? (
@@ -111,8 +111,8 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
         ) : visibleUsers.length === 0 ? (
           <EmptyState title="No matching users" description="Try a different name or email." />
         ) : (
-          <div className="card overflow-visible">
-            <table className="w-full text-left text-sm">
+          <div className="card overflow-x-auto">
+            <table className="w-full whitespace-nowrap text-left text-sm">
               <thead className="bg-[var(--soft)] text-xs uppercase text-[var(--ink3)]">
                 <tr>
                   <th className="px-4 py-2">Name</th>
@@ -167,7 +167,7 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
       </section>
       {confirmDelete ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="alertdialog" aria-modal="true" aria-labelledby="delete-org-title">
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+          <div className="w-full max-w-md rounded-2xl bg-[var(--card)] p-5 shadow-xl">
             <h2 id="delete-org-title" className="text-lg font-extrabold">
               Delete {name}?
             </h2>

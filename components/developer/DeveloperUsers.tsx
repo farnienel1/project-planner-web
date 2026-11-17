@@ -106,7 +106,7 @@ export function DeveloperUsersScreen() {
       <DateRangePicker preset={preset} onChange={setPreset} />
       <SearchField value={query} onChange={setQuery} placeholder="Search users, emails or organisations" />
       <DeveloperStatus error={error} loading={loading && users.length > 0} />
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <MetricCard label="Registered users" value={filteredUsers.length} />
         <MetricCard label="Active in range" value={directoryActiveUsers(filteredUsers, range)} hint="From last-seen on user records" />
         <MetricCard label="Organisations" value={organisations.length} href="/developer/organisations" />
@@ -121,7 +121,7 @@ export function DeveloperUsersScreen() {
       ) : (
         // The row menu is a portal (fixed), so the table can scroll sideways on a phone instead of the whole page.
         <div className="card overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="w-full whitespace-nowrap text-left text-sm">
             <thead className="bg-[var(--soft)] text-xs uppercase text-[var(--ink3)]">
               <tr>
                 <th className="px-4 py-2">Name</th>
@@ -151,7 +151,7 @@ export function DeveloperUsersScreen() {
                       <Link href={`/developer/organisations/${encodeURIComponent(user.organizationId)}`} className="font-semibold">
                         {orgName(user.organizationId, user.email)}
                       </Link>
-                      <p className="text-[11px] text-[var(--ink3)]">{user.organizationId}</p>
+                      <p className="max-w-[200px] truncate text-[11px] text-[var(--ink3)]" title={user.organizationId}>{user.organizationId}</p>
                     </td>
                     <td className="px-4 py-3">{ownerRoleLabel(user.role)}</td>
                     <td className="px-4 py-3">{rosterStatusLabel(user)}</td>

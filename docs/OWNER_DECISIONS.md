@@ -21,6 +21,7 @@ How to use it:
 | 4 Nov | 1.32: the rulebook version (e.g. "Rules 1.32.0") is shown to **everyone** at the bottom of Settings on web and iOS. | done web + rulebook (1.32.0 / PR #274); iOS open (hand-off) |
 | 4 Nov | Cross-referencing safeguards A–F ("all yes"): A screen map (web ↔ iOS ↔ rulebook functions per screen); B PR checklist enforced by CI; C an independent reviewer checks every PR against this register, the screen map and the other app before merge; D shared test scenarios for both apps; E a weekly drift check; F checkpoint test lists generated from this register. Accepted that changes take longer. | open (A, B, E being built; C applies from now; D after A; F at the next checkpoint) |
 | 11 Nov | **Fix on both apps.** Whatever platform an issue is reported on (web or iOS), it is checked and fixed on both apps and against the shared rulebook; the PR's 3-factor table says what changed on web, iOS and the rule, or why nothing needed to. | standing |
+| 17 Nov | Platform owner account signs out after 30 idle minutes, like everyone (owner: yes) | done web (this PR) |
 | 16 Nov | **Rules publish button:** Claude may publish Firestore rules, Storage rules and indexes through the GitHub Actions workflow (key stored by the owner as a GitHub secret), after the full rules bar passes; functions stay owner-deployed for now. Supersedes the rules part of 4 Nov 'deployed by the owner by hand'. (`.github/workflows/firebase-rules-deploy.yml`, `docs/firebase-rules-deploy.md`) | done (#346, merged 16 Nov): environment `firebase-rules` (main only) with its secret, key rotated; first run 16 Nov published main's 1.54.2 Firestore rules, Storage rules and indexes, live ruleset checked against main |
 
 ## Scheduling, bookings and working hours
@@ -897,10 +898,26 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 | 16 Nov | Review of #344: the invoice number is built from the stored original sheet (its id and stored `userId`): `TS-{the id's stamp}-{6 of the person's id}`, e.g. TS-1761955200-6A9632-REV1 (replaces the J3 form `TS-{YYYYMMDD}-…`). | done (1.55.0), owner to confirm |
 | 16 Nov | Review of #344 finding 5 (privatePay read of a missing settings doc) is fixed separately (`w-hotfix-settings-read`). | open (separate branch) |
 
+## 17 Nov decisions
+
+| Date | Decision | Status |
+|---|---|---|
+| 17 Nov | **iPhone idle sign-out: no.** The iPhone app does not get the web's 30-minute idle sign-out. | decided (no change) |
+| 17 Nov | **Keep the three extras from web PR #355** (owner idle sign-out): no owner exemption from idle sign-out; activity is shared across tabs; the reload path clears the MFA session. | done (#355) |
+| 17 Nov | **Server-side session cookie binding the MFA pass to the signed-in user: before launch.** | open (web PR in progress, branch `w-mfa-session-cookie`) |
+| 17 Nov | **1.56 Phase A (operatives read only their own leave): yes to all four choices.** (1) The `operativeOwnLeave` / `operativeOwnLeaveOrganizationIds` switch on `platformConfig/app` is read only by the Phase B security rules; (2) exact-ID matching; (3) a same-email second account is not searched; (4) 10 IDs per query. | done web + rulebook (1.56.0, PR #356) with two changes from the reviews, **owner to confirm**: (1) the switch now also turns on the app narrowing (nothing narrows while it is off — see "Change to the 17 Nov answer" under Annual leave); (4) 14 ids per query (one `userId` / `operativeId` query holds 14 ids plus the two email spellings, ≤ 30 conditions), the email sent on `userId` only |
+| 17 Nov | **Data quality "Unmark" also clears `isTest`: yes.** | done (#354) |
+| 17 Nov | **Organisations with no saved organisation document are not offered "Mark internal": yes.** | done (#354) |
+| 17 Nov | **Operatives lose the read-only "This week on site" grid on job scheduling: yes.** | done web (#353); iOS (iOS #244, open) |
+| 17 Nov | **iOS managers with no level flag get the Book labour button: yes.** | open (iOS #244) |
+| 17 Nov | **GitHub repos stay public until after launch.** Plan: lighter CI plus a read-only token, then go private. | decided |
+| 17 Nov | **Commit trailer rule:** commits use `Co-Authored-By: Claude <noreply@anthropic.com>` with no model name. | standing |
+
 ## Open questions for the owner
 
 | Date | Question |
 |---|---|
+| 17 Nov | Is anything still deployed from the `project-planner-email-backend` repo (a function, hosting site or scheduled job)? The owner replied "ok" on 17 Nov, which does not say yes or no. If nothing is deployed, the repo can be archived; if something is, it needs to be listed and owned. |
 | 14 Nov | ANSWERED 15 Nov (option (b), keep editable — see 15 Nov decisions). **(Rates audit, 1.46.0, third review of #324.)** An Edit hours review written **after** the line manager has counter-signed still re-prices the signed sheet (as before 1.46.0): the signed snapshot takes the new amount on the next save. Lock reviews after sign-off? Options: (a) keep as now; (b) after counter-signing, no review changes the signed sheet (a correction then needs the sheet un-signed and signed again). Not changed in 1.46.0. |
 | 14 Nov | ANSWERED 15 Nov (no change — bookings and the working day are on 15 / 30-minute steps; see 15 Nov decisions). **(Rates audit, 1.46.0.) Overtime of 3 minutes or less** (0.05h) is dropped from timesheets and invoices (both apps' timesheet collectors give a booking an overtime line only above 0.05h) but **counted on the weekly report**. Example: a booking 07:00–16:02 on a 07:00–16:00 day at ×2 shows £1.96 overtime on the weekly report and £0 on the timesheet and invoice. Options: (a) drop the cut-off everywhere — pay the exact minutes on timesheets and invoices too; (b) apply the cut-off everywhere — the weekly report also ignores 3 minutes or less. Either is a pay change (`minimumIosBuild` raised in its own release). Recommended (a): the booked minutes are the record, and every other rule prices exact minutes. Not changed in 1.46.0 (web names the cut-off `TIMESHEET_OVERTIME_LINE_MIN_HOURS`; Edit hours keeps it). |
 | 14 Nov | ANSWERED 16 Nov ((a) + (c), done in 1.54.0 — see 16 Nov decisions). **Sheets already half signed** (the person's signature cleared after their line manager signed, before 1.43.0): `timesheetListBucket` reads them `unsigned`, so they are in neither Awaiting nor Signed off on User Timesheets and Generate invoice is grey. Options: (a) leave them; the person signs again and the sheet returns to Signed off (their line manager's signature and snapshot are still stored); (b) list them under Awaiting with a "Needs the person's signature again" note; (c) a one-off owner-run script lists them for you to check. Recommended (a) + (c). Not changed in 1.43.0. |

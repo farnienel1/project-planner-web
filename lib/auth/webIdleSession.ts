@@ -34,6 +34,23 @@ export function isWebIdleExpired(
   return now - lastActivityAt >= timeoutMs
 }
 
+/**
+ * Whether the idle sign-out applies now. Everyone signed in on web is checked,
+ * the platform owner included (owner decision 17 Nov) — there is no exemption
+ * by email or organisation. Only an open 2-step check pauses it (the person is
+ * not signed in yet).
+ */
+export function webIdleSignOutDue(input: {
+  now: number
+  lastActivityAt: number | null
+  signedIn: boolean
+  mfaPending: boolean
+  timeoutMs?: number
+}): boolean {
+  if (!input.signedIn || input.mfaPending) return false
+  return isWebIdleExpired(input.now, input.lastActivityAt, input.timeoutMs ?? WEB_IDLE_TIMEOUT_MS)
+}
+
 /** Skip a write if we already stamped activity within the throttle window. */
 export function shouldTouchActivity(
   now: number,

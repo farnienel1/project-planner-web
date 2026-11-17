@@ -74,14 +74,14 @@ This file hands the work from one Claude Code chat to the next. A new chat start
 |---|---|---|
 | 1 | #335: annual leave report for a past year — which months? | Keep today's months |
 | 2 | #348: owner console audit log for list views | One entry per list or export |
-| 3 | The web repo is **public** on GitHub — intended? | Make it private before launch unless intended |
+| 3 | ANSWERED 17 Nov: the web repo is **public** on GitHub — intended? | Owner: repos stay public until after launch; then lighter CI plus a read-only token, then private (OWNER_DECISIONS 17 Nov) |
 | 4 | Branch protection "Part C" (optional) | Optional; not needed for launch |
 | 5–8 | 1.56 "operatives see only their own annual leave" (row F24), Q1–Q4 below | See below |
 
 1.56 questions:
 - **Q1.** On web, operatives see a job's week grid with colleagues' leave marks; after 1.56 only their own. OK? Recommended: yes.
 - **Q2.** Should operatives see colleagues' leave on jobs they're booked on? Recommended: no.
-- **Q3.** A new switch `operativeOwnLeave`, or tie it to `enforcedReads`? Recommended: new switch.
+- **Q3.** A new switch `operativeOwnLeave`, or tie it to `enforcedReads`? Recommended: new switch. ANSWERED 17 Nov: new switch `operativeOwnLeave` / `operativeOwnLeaveOrganizationIds`, read only by the Phase B rules; exact-ID matching, no same-email search, 10 IDs per query (OWNER_DECISIONS 17 Nov).
 - **Q4.** Leave stored under old keys: fix the data or keep the read open? Recommended: fix the data.
 
 **1.56 plan:**

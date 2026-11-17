@@ -128,7 +128,7 @@ export function RegisterInterestList() {
       }
     >
       {error ? <p className="text-sm font-semibold text-[var(--red)]">{error}</p> : null}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Counter label="Showing" value={visible.length} />
         <Counter label="This week" value={thisWeek} />
         <Counter label="This month" value={thisMonth} />

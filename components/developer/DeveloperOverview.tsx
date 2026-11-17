@@ -336,7 +336,7 @@ export function DeveloperOverviewScreen() {
             ))}
           </div>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
           {kpis.slice(0, 4).map((card) => (
             <div key={card.label} className="card pad">
               <p className="eyebrow flex items-center gap-1">
@@ -351,7 +351,7 @@ export function DeveloperOverviewScreen() {
           ))}
         </div>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {kpis.slice(4).map((card) => (
           <div key={card.label} className="card pad">
             <p className="eyebrow flex items-center gap-1">
@@ -366,7 +366,7 @@ export function DeveloperOverviewScreen() {
         ))}
       </div>
       <DeveloperStatus error={error} loading={loading && (users.length > 0 || organisations.length > 0)} />
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard label="Organisations" value={metrics.organisations} href="/developer/organisations" />
         <MetricCard label="Registered users" value={metrics.totalUsers} href="/developer/users" />
         <MetricCard label="MRR (from billing)" value={formatGbpFromPence(revenue.mrr)} hint={`${revenue.monthly} monthly · ${revenue.annual} annual · ${revenue.trial} trial`} />
@@ -393,7 +393,7 @@ export function DeveloperOverviewScreen() {
             Export CSV
           </button>
         </div>
-        <table className="w-full text-sm">
+        <table className="w-full whitespace-nowrap text-sm">
           <thead>
             <tr className="text-xs uppercase text-[var(--ink3)]">
               <th className="px-2 py-2 text-left">Metric</th>
@@ -461,7 +461,7 @@ export function DeveloperOverviewScreen() {
                 <li key={org.id}>
                   <Link
                     href={`/developer/organisations/${encodeURIComponent(org.id)}`}
-                    className="flex items-center justify-between rounded-xl bg-[var(--soft)] px-3 py-2 text-sm"
+                    className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-xl bg-[var(--soft)] px-3 py-2 text-sm"
                   >
                     <span>
                       <span className="font-semibold">{org.name}</span>
@@ -506,7 +506,7 @@ export function DeveloperOverviewScreen() {
               .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
               .slice(0, 50)
               .map((event) => (
-                <li key={event.id} className="flex justify-between gap-3 rounded-lg px-2 py-1 hover:bg-[var(--soft)]">
+                <li key={event.id} className="flex flex-wrap justify-between gap-x-3 rounded-lg px-2 py-1 hover:bg-[var(--soft)]">
                   <span>{event.eventName.replace(/_/g, ' ')}</span>
                   <span className="text-[var(--ink3)]">{event.createdAt.toLocaleString('en-GB')}</span>
                 </li>
