@@ -6,6 +6,7 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { useAnalyticsStore } from '@/lib/analytics/analyticsStore'
 import { DeveloperShell, DeveloperStatus, MetricCard } from '@/components/developer/DeveloperShell'
 import { PLATFORM_OWNER_EMAIL } from '@/lib/platform/owner'
+import { PASSKEYS_REMOVED_NOTICE, reportPasswordChanged } from '@/lib/auth/passkeys/passkeyClient'
 
 function AccountForm() {
   const search = useSearchParams()
@@ -17,6 +18,7 @@ function AccountForm() {
   const [confirm, setConfirm] = useState('')
   const [formError, setFormError] = useState('')
   const [saved, setSaved] = useState(false)
+  const [passkeysRemoved, setPasskeysRemoved] = useState(false)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -38,6 +40,9 @@ function AccountForm() {
     try {
       setSaving(true)
       await changePassword(currentPassword, nextPassword)
+      // Passkeys made before the change stop working; remove them now and say so (best effort).
+      const removed = await reportPasswordChanged({ signedIn: true })
+      setPasskeysRemoved(Boolean(removed && removed > 0))
       setCurrentPassword('')
       setNextPassword('')
       setConfirm('')
@@ -89,7 +94,7 @@ function AccountForm() {
         ) : null}
         {saved ? (
           <p className="banner" data-hue="green">
-            Password updated.
+            Password updated.{passkeysRemoved ? ` ${PASSKEYS_REMOVED_NOTICE}` : ''}
           </p>
         ) : null}
         <label className="f">
