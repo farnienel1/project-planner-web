@@ -116,6 +116,6 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('[owner/delete-unfinished-user]', error)
     await audit.fail(error)
-    return jsonError('Could not delete that user. Publish the updated Firestore rules first.', 502)
+    return jsonError('Could not delete that user. Nothing was deleted — try again.', 502)
   }
 }

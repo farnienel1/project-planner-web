@@ -133,6 +133,17 @@ for (const orgId of ['org-plain', 'org-test-only', 'org-billing']) {
   })
 }
 
+test('Unmark (isInternal false) stores both flags false and audits requested + completed again', async () => {
+  const response = await markInternal(request({ orgId: 'org-test-only', isInternal: false }))
+  const body = (await response.json()) as { ok?: boolean; error?: string }
+  assert.equal(response.status, 200, body.error)
+  const data = await stored('org-test-only')
+  assert.equal(data?.isInternal, false)
+  assert.equal(data?.isTest, false)
+  // Two runs on this organisation now: the mark above and this unmark.
+  assert.deepEqual(await auditPhases('org-test-only'), ['completed', 'completed', 'requested', 'requested'])
+})
+
 test('an organisation with no document is refused (404) and is never created by the patch', async () => {
   const response = await markInternal(request({ orgId: 'org-missing', isInternal: true }))
   assert.equal(response.status, 404)

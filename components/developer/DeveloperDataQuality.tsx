@@ -19,7 +19,16 @@ export function DeveloperDataQualityScreen() {
   const period = useConsolePrefs((state) => state.period)
   const { showFullEmails } = useConsolePrefs()
   const [notice, setNotice] = useState('')
-  const [busy, setBusy] = useState('')
+  /** Rows with a save in flight (several at once: one row finishing never re-enables another). */
+  const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(() => new Set())
+  const isBusy = (id: string) => busyIds.has(id)
+  const startBusy = (id: string) => setBusyIds((current) => new Set(current).add(id))
+  const endBusy = (id: string) =>
+    setBusyIds((current) => {
+      const next = new Set(current)
+      next.delete(id)
+      return next
+    })
   /** Owner bug 17 Nov: each click shows its own progress and result on its row, never only a banner at the top. */
   const [rowNotice, setRowNotice] = useState<Record<string, RowNotice>>({})
   /** Organisations whose flag a click changed; shown at once, until the reload agrees (`settledMarkOverrides`). */
@@ -54,7 +63,7 @@ export function DeveloperDataQualityScreen() {
   const shownMarkable = filterMarkableOrgs(rows.markableOrgs, orgQuery)
 
   async function setOrgInternal(orgId: string, isInternal: boolean) {
-    setBusy(orgId)
+    startBusy(orgId)
     setRowNotice((current) => ({ ...current, [orgId]: { tone: 'info', text: isInternal ? 'Marking…' : 'Unmarking…' } }))
     try {
       await ownerMarkInternal({ orgId, isInternal })
@@ -73,7 +82,7 @@ export function DeveloperDataQualityScreen() {
         [orgId]: { tone: 'red', text: err instanceof Error ? err.message : 'Could not update the internal flag.' },
       }))
     } finally {
-      setBusy('')
+      endBusy(orgId)
     }
   }
 
@@ -158,10 +167,10 @@ export function DeveloperDataQualityScreen() {
                         <button
                           type="button"
                           className="btn sm ghost"
-                          disabled={busy === user.id}
-                          aria-busy={busy === user.id}
+                          disabled={isBusy(user.id)}
+                          aria-busy={isBusy(user.id)}
                           onClick={async () => {
-                            setBusy(user.id)
+                            startBusy(user.id)
                             setRowNotice((current) => ({ ...current, [user.id]: { tone: 'info', text: 'Marking…' } }))
                             try {
                               await ownerMarkInternal({ uid: user.id, isInternal: true })
@@ -174,20 +183,20 @@ export function DeveloperDataQualityScreen() {
                                 [user.id]: { tone: 'red', text: err instanceof Error ? err.message : 'Could not mark internal.' },
                               }))
                             } finally {
-                              setBusy('')
+                              endBusy(user.id)
                             }
                           }}
                         >
-                          {busy === user.id ? 'Marking…' : 'Mark internal'}
+                          {isBusy(user.id) ? 'Marking…' : 'Mark internal'}
                         </button>
                       )}
                       <button
                         type="button"
                         className="btn sm ghost"
-                        disabled={busy === user.id}
+                        disabled={isBusy(user.id)}
                         onClick={async () => {
                           if (!window.confirm(`Delete unfinished account ${user.email}?`)) return
-                          setBusy(user.id)
+                          startBusy(user.id)
                           try {
                             await ownerDeleteUnfinishedUser(user.id)
                             setNotice('Deleted unfinished account.')
@@ -195,7 +204,7 @@ export function DeveloperDataQualityScreen() {
                           } catch (err) {
                             setNotice(err instanceof Error ? err.message : 'Could not delete.')
                           } finally {
-                            setBusy('')
+                            endBusy(user.id)
                           }
                         }}
                       >
@@ -230,11 +239,11 @@ export function DeveloperDataQualityScreen() {
                     <button
                       type="button"
                       className="btn sm ghost"
-                      disabled={busy === org.id}
-                      aria-busy={busy === org.id}
+                      disabled={isBusy(org.id)}
+                      aria-busy={isBusy(org.id)}
                       onClick={() => void setOrgInternal(org.id, false)}
                     >
-                      {busy === org.id ? 'Unmarking…' : 'Unmark'}
+                      {isBusy(org.id) ? 'Unmarking…' : 'Unmark'}
                     </button>
                   </div>
                 </div>
@@ -268,11 +277,11 @@ export function DeveloperDataQualityScreen() {
                     <button
                       type="button"
                       className="btn sm ghost"
-                      disabled={busy === org.id}
-                      aria-busy={busy === org.id}
+                      disabled={isBusy(org.id)}
+                      aria-busy={isBusy(org.id)}
                       onClick={() => void setOrgInternal(org.id, true)}
                     >
-                      {busy === org.id ? 'Marking…' : 'Mark internal'}
+                      {isBusy(org.id) ? 'Marking…' : 'Mark internal'}
                     </button>
                   </div>
                   <RowStatus notice={rowNotice[org.id]} />
