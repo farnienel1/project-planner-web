@@ -371,3 +371,45 @@ export async function adminDeleteAuthUser(uid: string): Promise<void> {
     throw new Error(data.error?.message || 'Could not delete the Firebase login.')
   }
 }
+
+/** The audience Firebase Auth requires on a custom token. */
+export const FIREBASE_CUSTOM_TOKEN_AUDIENCE =
+  'https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit'
+
+/**
+ * A Firebase custom token for one uid, signed with the configured service account (the same key the session cookie
+ * and admin reads use; no new secret). It lives `ttlSeconds` (at most an hour, Firebase's limit) and carries no extra
+ * claims, so signing in with it gives exactly the account's own ID token (its email, email_verified and the server's
+ * custom claims). Against the Auth emulator (`emulator: true`) the emulator's unsigned form is used.
+ */
+export function adminSignCustomToken(
+  uid: string,
+  options: { nowSec?: number; ttlSeconds?: number; emulator?: boolean } = {}
+): string {
+  if (!uid || uid.length > 128) throw new GoogleAccessTokenError('A custom token needs a uid of 1–128 characters.', 'setup')
+  const nowSec = options.nowSec ?? Math.floor(Date.now() / 1000)
+  const ttl = Math.max(60, Math.min(3600, options.ttlSeconds ?? 300))
+  if (options.emulator) {
+    const header = base64Url(JSON.stringify({ alg: 'none', typ: 'JWT' }))
+    const payload = base64Url(
+      JSON.stringify({ iss: 'firebase-auth-emulator@example.com', sub: 'firebase-auth-emulator@example.com', aud: FIREBASE_CUSTOM_TOKEN_AUDIENCE, iat: nowSec, exp: nowSec + ttl, uid })
+    )
+    return `${header}.${payload}.`
+  }
+  const sa = readServiceAccount()
+  if (!sa) throw new GoogleAccessTokenError('FIREBASE_SERVICE_ACCOUNT_JSON is not set on the server.', 'setup')
+  const header = base64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))
+  const payload = base64Url(
+    JSON.stringify({ iss: sa.client_email, sub: sa.client_email, aud: FIREBASE_CUSTOM_TOKEN_AUDIENCE, iat: nowSec, exp: nowSec + ttl, uid })
+  )
+  try {
+    const signer = createSign('RSA-SHA256')
+    signer.update(`${header}.${payload}`)
+    return `${header}.${payload}.${signer.sign(sa.private_key.replace(/\\n/g, '\n'), 'base64url')}`
+  } catch (signError) {
+    throw new GoogleAccessTokenError(
+      `The Firebase Admin service account private key could not be used (${privateKeyErrorName(signError)}).`,
+      'setup'
+    )
+  }
+}
