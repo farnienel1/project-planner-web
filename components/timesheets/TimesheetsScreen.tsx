@@ -59,7 +59,8 @@ import {
   signatureNotes,
   timesheetExportFileName,
 } from '@/lib/timesheets/timesheetExport'
-import { buildTimesheetInvoicePdf, shareTimesheetPdf, timesheetPdfBlob } from '@/lib/timesheets/invoicePdf'
+import { buildTimesheetInvoicePdf, timesheetPdfBlob } from '@/lib/timesheets/invoicePdf'
+import { downloadPdf } from '@/lib/pdf/downloadPdf'
 import { shouldAppearInOperativeTimesheetRoster, timesheetDayKeysForPeriod } from '@/lib/timesheets/timesheetPayrollPolicy'
 import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
 import { timesheetExportPath, uploadFile } from '@/lib/firebase/storageUtils'
@@ -657,7 +658,8 @@ export function TimesheetsScreen({
       if (rebuilt && typeof window !== 'undefined' && !window.confirm(EXPORT_REBUILT_CONFIRM)) return
       const extraNotes = rebuilt ? [exportRebuiltPdfNote(formatStampInZone(new Date(), timeZone))] : []
       const { pdf, fileName } = await buildExportPdf(row.user, sheet, period.start, period.end, extraNotes, sheet === full ? null : row.documentId)
-      await shareTimesheetPdf(pdf, fileName)
+      // Download PDF saves the file (no share sheet): the PDF is built after an await, so a share sheet could not open.
+      downloadPdf(pdf, fileName)
     } catch (error) {
       setExportMessage(`Couldn't build the PDF for ${displayName(row.user)}${error instanceof Error ? ` (${error.message})` : ''}.`)
     }
