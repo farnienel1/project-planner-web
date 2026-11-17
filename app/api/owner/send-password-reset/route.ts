@@ -4,46 +4,13 @@ import { requireOwner } from '@/lib/owner/requireOwner'
 import { OWNER_AUDIT_UNAVAILABLE_MESSAGE, beginOwnerAudit, type OwnerAuditRun } from '@/lib/owner/ownerAudit'
 import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
 import { isValidEmail } from '@/lib/security/validation'
-import { sendProjectPlannerEmail } from '@/lib/email/resendClient'
-import { adminLookupAuthEmail, adminPasswordResetLink, firebaseAdminConfigured } from '@/lib/owner/identityToolkitAdmin'
+import { adminLookupAuthEmail, firebaseAdminConfigured } from '@/lib/owner/identityToolkitAdmin'
+import { firebaseDefaultPasswordReset, sendBrandedPasswordReset } from '@/lib/auth/passwordResetServer'
 import { bearerToken, firestoreGet, readString } from '@/lib/owner/firestoreRest'
-import {
-  PASSWORD_RESET_EMAIL_SUBJECT,
-  buildPasswordResetEmailHtml,
-  buildPasswordResetEmailText,
-} from '@/lib/email/passwordResetEmail'
 
 export const runtime = 'nodejs'
 
 const lastSent = new Map<string, number>()
-
-async function sendOobViaApiKey(email: string, continueUrl: string) {
-  const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY
-  if (!apiKey) throw new Error('Firebase is not configured on the server.')
-  const run = async (includeContinue: boolean) =>
-    fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${encodeURIComponent(apiKey)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(
-        includeContinue
-          ? { requestType: 'PASSWORD_RESET', email, continueUrl }
-          : { requestType: 'PASSWORD_RESET', email }
-      ),
-    })
-  let response = await run(true)
-  if (!response.ok) response = await run(false)
-  const data = (await response.json().catch(() => ({}))) as { error?: { message?: string } }
-  if (!response.ok) {
-    const message = data.error?.message || ''
-    if (message.includes('EMAIL_NOT_FOUND')) {
-      throw new Error('No Firebase login exists for that email yet. They may still be on an unused invite.')
-    }
-    if (message.includes('INVALID_CONTINUE_URI')) {
-      throw new Error('Password reset continue URL is not allowed on this Firebase project.')
-    }
-    throw new Error(data.error?.message || 'Could not send a password reset email.')
-  }
-}
 
 export async function POST(request: NextRequest) {
   const limited = enforceRateLimit(request, 'owner-reset', 20, 10 * 60 * 1000)
@@ -90,15 +57,8 @@ export async function POST(request: NextRequest) {
     let sent = false
     if (firebaseAdminConfigured()) {
       try {
-        const link = await adminPasswordResetLink(email, settings.url)
-        await sendProjectPlannerEmail({
-          to: email,
-          subject: PASSWORD_RESET_EMAIL_SUBJECT,
-          // Transactional: no marketing content. The same branded email as Forgot password, worded for support.
-          html: buildPasswordResetEmailHtml({ to: email, link, reason: 'support' }),
-          text: buildPasswordResetEmailText({ to: email, link, reason: 'support' }),
-          idToken: token,
-        })
+        // The same branded email as Forgot password, worded for support.
+        await sendBrandedPasswordReset({ email, continueUrl: settings.url, reason: 'support', idToken: token })
         sent = true
       } catch (adminError) {
         // Never the link or the address in the log.
@@ -106,7 +66,7 @@ export async function POST(request: NextRequest) {
       }
     }
     if (!sent) {
-      await sendOobViaApiKey(email, settings.url)
+      await firebaseDefaultPasswordReset(email, settings.url)
     }
     lastSent.set(`${uid}:${email}`, Date.now())
     await audit.complete()

@@ -8,8 +8,9 @@ No rulebook change (rulebook unchanged; no packed-script change). Web PR: branch
 (no auth header). The server makes the Firebase reset link itself (`returnOobLink: true`, so Firebase sends no email) and
 sends the branded Project Planner email. Answers:
 
-- `200 { "ok": true }` for every valid request — account or not, per-email limit hit, send failed. Show the same
-  "check your email" message as today.
+- `200 { "ok": true }` for every valid request, after a fixed 1.5 seconds — account or not, per-email limit hit. The
+  link and email are sent after the answer; if the branded email fails the server asks Firebase to send its own.
+  Show the same "check your email" message as today.
 - `400 { "error": … }` — not a valid email.
 - `429 { "error": …, "retryAfterSec": n }` — too many requests from this address (10 per 15 minutes).
 - `503 { "ok": false, "fallback": "firebase" }` — the server cannot send at all. Only then call
@@ -30,10 +31,21 @@ same reason as `AccountDeletionClient.endpointURL`). `continueUrl` is optional; 
 2. `FirebaseBackend.swift` `resetPassword(email:)` (~line 1122): its three `auth.sendPasswordReset(withEmail: email)`
    fallbacks (~1130, ~1147, ~1154) call the same client. The invitation / verification-code path for users in the
    organisation (`sendPasswordResetVerificationEmail`) is a different email and is not changed here.
-3. `FirebaseBackend.swift` `resetUserPassword(email:)` (~line 7788, `UserStore.sendFirebaseAuthPasswordResetEmail`):
-   same client.
+3. `FirebaseBackend.swift` `resetUserPassword(email:)` (~line 7788, `UserStore.sendFirebaseAuthPasswordResetEmail`)
+   is an admin sending a reset to someone else: use the admin route below, not the public one.
 4. Tests: a `PasswordResetClientTests` for the URL (apex host, POST, JSON body), 200 / 429 / 503-fallback / other
    handling, and that Firebase is called only on the 503 fallback.
+
+### Admin "Send password reset" (Manage Users / Edit User)
+
+`POST https://projectplanner.us/api/users/send-password-reset`, `Authorization: Bearer <idToken>`, JSON
+`{ "organizationId": "<open organisation>", "userId": "<the person's users id>" }`. The server reads the stored email,
+checks the caller may edit that person (`canEditTargetUser`: admins, an Operatives manager for an operative, never the
+Super Admin unless the caller is one) and reports the real result: `200 { ok: true }` sent (branded, or Firebase's own
+when the branded email failed); `400` not set up yet (pending invite or ghost); `403` not allowed; `404` no login;
+`502` could not send. Show the route's `error`. No per-email cap. Use it from `UserStore.sendFirebaseAuthPasswordResetEmail`
+(~3915). `UserStore.sendPasswordResetEmail` / `FirebaseBackend.resetPassword(email:)` sends the invitation
+verification-code email and is not changed.
 
 `minimumIosBuild`: not needed (older builds keep sending Firebase's default email, which still works).
 
@@ -47,7 +59,7 @@ Same pattern, both need the signed-in user's Firebase ID token (`Authorization: 
 
 - `200 { ok: true }` → show the existing "We sent a link to …" message and remember the pending email as today
   (`pendingSignInEmailKey`). The answer is the same when the address already belongs to another login.
-- `400` invalid or same as the current email. `429` too many. `401 { code: "requires-recent-login" }` → the person
+- A failed send answers `503 { fallback: "firebase" }` too (below). `400` invalid or same as the current email. `429` too many. `401 { code: "requires-recent-login" }` → the person
   must sign in again (the server checks the ID token's `auth_time` is within 5 minutes, as Firebase does); show the
   route's `error`. `401` without a code → sign in again.
 - `503 { fallback: "firebase" }` → only then call `user.sendEmailVerification(beforeUpdatingEmail:)` as today.

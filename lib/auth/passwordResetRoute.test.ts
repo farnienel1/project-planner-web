@@ -58,8 +58,9 @@ const OOB_LINK = 'https://www.projectplanner.us/__/auth/action?mode=resetPasswor
 type Recorded = { url: string; body: unknown }
 
 /** Google OAuth, Identity Toolkit and the email function, with `known` the emails that have accounts. */
-function stubBackend(options: { known: string[]; emailFails?: boolean; configured?: boolean }) {
+function stubBackend(options: { known: string[]; emailFails?: boolean; configured?: boolean; linkFails?: boolean; fallbackFails?: boolean }) {
   delete process.env.GOOGLE_APPLICATION_CREDENTIALS
+  process.env.NEXT_PUBLIC_FIREBASE_API_KEY = 'test-key'
   process.env.NEXT_PUBLIC_APP_URL = 'https://www.projectplanner.us'
   process.env.EMAIL_FUNCTION_URL = 'https://email.test/sendEmail'
   if (options.configured === false) {
@@ -78,7 +79,13 @@ function stubBackend(options: { known: string[]; emailFails?: boolean; configure
     if (url.startsWith('https://oauth2.googleapis.com/token')) {
       return new Response(JSON.stringify({ access_token: 'tok', expires_in: 3600 }), { status: 200 })
     }
+    if (url.includes('accounts:sendOobCode?key=')) {
+      // Firebase's own email (the server-side fallback).
+      if (options.fallbackFails) return new Response(JSON.stringify({ error: { message: 'INTERNAL' } }), { status: 500 })
+      return new Response(JSON.stringify({ email: (body as { email?: string }).email }), { status: 200 })
+    }
     if (url.includes('accounts:sendOobCode')) {
+      if (options.linkFails) return new Response(JSON.stringify({ error: { message: 'INTERNAL' } }), { status: 500 })
       const email = String((body as { email?: string }).email || '')
       if (!options.known.includes(email)) {
         return new Response(JSON.stringify({ error: { message: 'EMAIL_NOT_FOUND' } }), { status: 400 })
@@ -115,60 +122,115 @@ function captureLogs(): string[] {
   return lines
 }
 
+/** Runs the route with no fixed wait, a memory per-email budget, and waits for its background work. */
+const budget = new Map<string, number>()
+async function run(body: unknown, ip?: string, extra: { fixedResponseMs?: number } = {}) {
+  const pending: Promise<unknown>[] = []
+  const res = await handlePasswordResetRequest(resetRequest(body, ip), {
+    fixedResponseMs: extra.fixedResponseMs ?? 0,
+    defer: (work) => pending.push(work),
+    allowEmail: async (email) => {
+      const used = budget.get(email) || 0
+      if (used >= PASSWORD_RESET_PER_EMAIL_LIMIT) return false
+      budget.set(email, used + 1)
+      return true
+    },
+  })
+  const statuses = await Promise.all(pending)
+  return { res, statuses }
+}
+
 test('the route answers exactly the same for an existing and an unknown email', async () => {
   const calls = stubBackend({ known: ['known@firm.com'] })
-  const known = await handlePasswordResetRequest(resetRequest({ email: 'Known@Firm.com' }), { minResponseMs: 0 })
-  const unknown = await handlePasswordResetRequest(resetRequest({ email: 'nobody@firm.com' }), { minResponseMs: 0 })
-  assert.equal(known.status, 200)
-  assert.equal(unknown.status, 200)
-  assert.equal(await known.text(), await unknown.text())
-  assert.equal(known.headers.get('cache-control'), unknown.headers.get('cache-control'))
+  const known = await run({ email: 'Known@Firm.com' })
+  const unknown = await run({ email: 'nobody@firm.com' })
+  assert.equal(known.res.status, 200)
+  assert.equal(unknown.res.status, 200)
+  assert.equal(await known.res.text(), await unknown.res.text())
+  assert.equal(known.res.headers.get('cache-control'), unknown.res.headers.get('cache-control'))
+  assert.deepEqual(known.statuses, ['sent'])
+  assert.deepEqual(unknown.statuses, ['no_account'])
   // Exactly one email, to the known account, carrying the Firebase link; Firebase was asked for a link, not to send.
   const sends = calls.filter((call) => call.url === 'https://email.test/sendEmail')
   assert.equal(sends.length, 1)
-  const payload = sends[0]!.body as { to: string[]; data: { subject: string; html: string; text: string } }
+  const payload = sends[0]!.body as { template: string; to: string[]; data: { subject: string; html: string; text: string } }
+  assert.equal(payload.template, 'auth_rendered')
   assert.deepEqual(payload.to, ['known@firm.com'])
   assert.equal(payload.data.subject, PASSWORD_RESET_EMAIL_SUBJECT)
   assert.ok(payload.data.html.includes('oobCode=SECRET-CODE-123'))
   assert.ok(payload.data.text.includes(OOB_LINK))
-  const oob = calls.filter((call) => call.url.includes('accounts:sendOobCode'))
+  const oob = calls.filter((call) => call.url.includes('/projects/demo/accounts:sendOobCode'))
   assert.ok(oob.length >= 2)
   for (const call of oob) {
     assert.equal((call.body as { returnOobLink?: boolean }).returnOobLink, true)
     assert.equal((call.body as { requestType?: string }).requestType, 'PASSWORD_RESET')
-    // The service-account endpoint, never the public API-key one that makes Firebase send its own email.
-    assert.ok(call.url.includes('/projects/demo/accounts:sendOobCode'))
   }
+  assert.equal(calls.filter((call) => call.url.includes('accounts:sendOobCode?key=')).length, 0)
 })
 
-test('a failed send still answers the same', async () => {
-  stubBackend({ known: ['known@firm.com'], emailFails: true })
-  const failed = await handlePasswordResetRequest(resetRequest({ email: 'known@firm.com' }), { minResponseMs: 0 })
-  assert.equal(failed.status, 200)
-  assert.deepEqual(await failed.json(), { ok: true })
+test('the answer time is fixed: the link and the send run after it', async () => {
+  stubBackend({ known: ['known@firm.com'] })
+  const pending: Promise<unknown>[] = []
+  let sendStarted = false
+  const realFetchStub = globalThis.fetch
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    if (String(input).includes('email.test')) sendStarted = true
+    return realFetchStub(input, init)
+  }) as typeof fetch
+  const started = Date.now()
+  const res = await handlePasswordResetRequest(resetRequest({ email: 'timing@firm.com' }), {
+    fixedResponseMs: 120,
+    defer: (work) => pending.push(work),
+    allowEmail: async () => true,
+  })
+  const elapsed = Date.now() - started
+  assert.equal(res.status, 200)
+  assert.ok(elapsed >= 110, `answered after ${elapsed}ms`)
+  assert.equal(pending.length, 1, 'the work is handed to after()')
+  await Promise.all(pending)
+  assert.equal(sendStarted, false, 'unknown address: nothing sent')
+})
+
+test('a failed send or link falls back to Firebase\'s own email, and still answers the same', async () => {
+  let calls = stubBackend({ known: ['known@firm.com'], emailFails: true })
+  let result = await run({ email: 'known@firm.com' })
+  assert.equal(result.res.status, 200)
+  assert.deepEqual(await result.res.json(), { ok: true })
+  assert.deepEqual(result.statuses, ['sent_firebase_fallback'])
+  const fallback = calls.filter((call) => call.url.includes('accounts:sendOobCode?key='))
+  assert.equal(fallback.length, 1)
+  assert.equal((fallback[0]!.body as { returnOobLink?: boolean }).returnOobLink, undefined)
+
+  calls = stubBackend({ known: ['known2@firm.com'], linkFails: true })
+  result = await run({ email: 'known2@firm.com' })
+  assert.deepEqual(result.statuses, ['sent_firebase_fallback'])
+  assert.equal(calls.filter((call) => call.url === 'https://email.test/sendEmail').length, 0)
+
+  stubBackend({ known: ['known3@firm.com'], linkFails: true, fallbackFails: true })
+  result = await run({ email: 'known3@firm.com' })
+  assert.equal(result.res.status, 200)
+  assert.deepEqual(result.statuses, ['fallback_failed'])
 })
 
 test('the route never logs the link, the code or the address', async () => {
   stubBackend({ known: ['private@firm.com'], emailFails: true })
   const lines = captureLogs()
-  await handlePasswordResetRequest(resetRequest({ email: 'private@firm.com' }), { minResponseMs: 0 })
-  await handlePasswordResetRequest(resetRequest({ email: 'ghost@firm.com' }), { minResponseMs: 0 })
-  stubBackend({ known: ['private@firm.com'] })
-  await handlePasswordResetRequest(resetRequest({ email: 'private@firm.com' }), { minResponseMs: 0 })
+  await run({ email: 'private@firm.com' })
+  await run({ email: 'ghost@firm.com' })
+  stubBackend({ known: ['private2@firm.com'] })
+  await run({ email: 'private2@firm.com' })
   const joined = lines.join('\n')
   assert.ok(lines.length >= 3)
-  for (const secret of ['SECRET-CODE-123', 'oobCode', 'private@firm.com', 'ghost@firm.com', 'resetPassword']) {
+  for (const secret of ['SECRET-CODE-123', 'oobCode', 'private@firm.com', 'private2@firm.com', 'ghost@firm.com', 'resetPassword']) {
     assert.ok(!joined.includes(secret), `log contains ${secret}`)
   }
-  assert.match(joined, /\[auth\/password-reset\] (sent|send_failed|no_account)/)
+  assert.match(joined, /\[auth\/password-reset\] (sent|sent_firebase_fallback|no_account)/)
 })
 
 test('an invalid email is refused before anything is looked up', async () => {
   const calls = stubBackend({ known: [] })
-  const bad = await handlePasswordResetRequest(resetRequest({ email: 'not-an-email' }), { minResponseMs: 0 })
-  assert.equal(bad.status, 400)
-  const missing = await handlePasswordResetRequest(resetRequest({}), { minResponseMs: 0 })
-  assert.equal(missing.status, 400)
+  assert.equal((await run({ email: 'not-an-email' })).res.status, 400)
+  assert.equal((await run({})).res.status, 400)
   assert.equal(calls.length, 0)
 })
 
@@ -176,39 +238,31 @@ test('per-IP rate limit answers 429 after the limit', async () => {
   stubBackend({ known: [] })
   const ip = '198.51.100.77'
   for (let i = 0; i < PASSWORD_RESET_PER_IP_LIMIT; i += 1) {
-    const ok = await handlePasswordResetRequest(resetRequest({ email: `p${i}@firm.com` }, ip), { minResponseMs: 0 })
-    assert.equal(ok.status, 200)
+    assert.equal((await run({ email: `p${i}@firm.com` }, ip)).res.status, 200)
   }
-  const limited = await handlePasswordResetRequest(resetRequest({ email: 'p-last@firm.com' }, ip), { minResponseMs: 0 })
-  assert.equal(limited.status, 429)
+  assert.equal((await run({ email: 'p-last@firm.com' }, ip)).res.status, 429)
 })
 
-test('per-email limit stops sending but still answers the same', async () => {
+test('per-email budget stops sending but still answers the same', async () => {
   const calls = stubBackend({ known: ['busy@firm.com'] })
+  const statuses: unknown[] = []
   for (let i = 0; i < PASSWORD_RESET_PER_EMAIL_LIMIT + 2; i += 1) {
-    const res = await handlePasswordResetRequest(resetRequest({ email: 'busy@firm.com' }), { minResponseMs: 0 })
-    assert.equal(res.status, 200)
-    assert.deepEqual(await res.json(), { ok: true })
+    const result = await run({ email: 'busy@firm.com' })
+    assert.equal(result.res.status, 200)
+    assert.deepEqual(await result.res.json(), { ok: true })
+    statuses.push(...result.statuses)
   }
-  const sends = calls.filter((call) => call.url === 'https://email.test/sendEmail')
-  assert.equal(sends.length, PASSWORD_RESET_PER_EMAIL_LIMIT)
+  assert.equal(calls.filter((call) => call.url === 'https://email.test/sendEmail').length, PASSWORD_RESET_PER_EMAIL_LIMIT)
+  assert.deepEqual(statuses.slice(-2), ['email_throttled', 'email_throttled'])
 })
 
 test('a server that cannot send answers 503 fallback before looking up any account', async () => {
   const calls = stubBackend({ known: ['known@firm.com'], configured: false })
-  const res = await handlePasswordResetRequest(resetRequest({ email: 'known@firm.com' }), { minResponseMs: 0 })
-  assert.equal(res.status, 503)
-  assert.deepEqual(await res.json(), { ok: false, fallback: 'firebase' })
+  const known = await run({ email: 'known@firm.com' })
+  assert.equal(known.res.status, 503)
+  assert.deepEqual(await known.res.json(), { ok: false, fallback: 'firebase' })
+  assert.equal((await run({ email: 'other@firm.com' })).res.status, 503)
   assert.equal(calls.length, 0)
-  const unknown = await handlePasswordResetRequest(resetRequest({ email: 'other@firm.com' }), { minResponseMs: 0 })
-  assert.equal(unknown.status, 503)
-})
-
-test('the route waits at least the minimum time', async () => {
-  stubBackend({ known: [] })
-  const started = Date.now()
-  await handlePasswordResetRequest(resetRequest({ email: 'slow@firm.com' }), { minResponseMs: 120 })
-  assert.ok(Date.now() - started >= 110)
 })
 
 test('continueUrl is limited to projectplanner.us login paths; the path follows the email', () => {

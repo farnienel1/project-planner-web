@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { enforceRateLimit, isFirebaseUser, readJsonBody, requireFirebaseUser } from '@/lib/security/apiGuard'
-import { rateLimit } from '@/lib/security/rateLimit'
+import { consumeAuthEmailBudget } from '@/lib/auth/authEmailBudget'
 import { clampString, isValidEmail } from '@/lib/security/validation'
 import { getAppBaseUrl, sendProjectPlannerEmail } from '@/lib/email/resendClient'
 import {
@@ -25,6 +25,7 @@ import {
   PASSWORD_RESET_PER_EMAIL_WINDOW_MS,
   PASSWORD_RESET_PER_IP_LIMIT,
   PASSWORD_RESET_PER_IP_WINDOW_MS,
+  CHANGE_EMAIL_MIN_RESPONSE_MS,
   allowedAccountEmailContinueUrl,
   runPasswordReset,
   type PasswordResetStatus,
@@ -71,7 +72,9 @@ export function idTokenAuthTimeMs(idToken: string): number | null {
 function answer(status: PasswordResetStatus, route: string): NextResponse {
   // Status only: never the address, the link or the code.
   console.info(`[auth/${route}]`, status)
-  if (status === 'not_configured') {
+  // These act on the caller's own account, so a failed link or send is reported (review of #361): the client then
+  // asks Firebase to send its own email instead of being told "sent".
+  if (status === 'not_configured' || status === 'link_failed' || status === 'send_failed') {
     return NextResponse.json(PASSWORD_RESET_FALLBACK_RESPONSE, { status: 503, headers: NO_STORE })
   }
   return NextResponse.json(PASSWORD_RESET_GENERIC_RESPONSE, { status: 200, headers: NO_STORE })
@@ -85,7 +88,24 @@ function linkErrorDeps() {
   }
 }
 
-export async function handleVerifyEmailRequest(request: NextRequest): Promise<NextResponse> {
+export type AccountEmailRouteOptions = {
+  nowMs?: number
+  /** Change email: answer no sooner than this (tests pass 0). */
+  minResponseMs?: number
+  /** Per-account budget (tests use memory; production: Firestore, `consumeAuthEmailBudget`). */
+  allowAccount?: (scope: 'verify-email' | 'change-email', uid: string) => Promise<boolean>
+}
+
+function allowAccount(options: AccountEmailRouteOptions, scope: 'verify-email' | 'change-email', uid: string) {
+  return options.allowAccount
+    ? options.allowAccount(scope, uid)
+    : consumeAuthEmailBudget(scope, uid, PASSWORD_RESET_PER_EMAIL_LIMIT, PASSWORD_RESET_PER_EMAIL_WINDOW_MS)
+}
+
+export async function handleVerifyEmailRequest(
+  request: NextRequest,
+  options: AccountEmailRouteOptions = {}
+): Promise<NextResponse> {
   const limited = enforceRateLimit(request, 'verify-email', PASSWORD_RESET_PER_IP_LIMIT, PASSWORD_RESET_PER_IP_WINDOW_MS)
   if (limited) return limited
   const user = await requireFirebaseUser(request)
@@ -99,7 +119,7 @@ export async function handleVerifyEmailRequest(request: NextRequest): Promise<Ne
     { email, continueUrl: continueUrl || '' },
     {
       configured,
-      allowEmail: () => rateLimit(`verify-email-uid:${user.uid}`, PASSWORD_RESET_PER_EMAIL_LIMIT, PASSWORD_RESET_PER_EMAIL_WINDOW_MS).ok,
+      allowEmail: () => allowAccount(options, 'verify-email', user.uid),
       generateLink: (address) => adminEmailActionLink({ requestType: 'VERIFY_EMAIL', email: address, continueUrl }),
       ...linkErrorDeps(),
       sendEmail: async ({ to, link }) => {
@@ -109,6 +129,7 @@ export async function handleVerifyEmailRequest(request: NextRequest): Promise<Ne
           html: buildVerifyEmailHtml({ to, link }),
           text: buildVerifyEmailText({ to, link }),
           idToken: bearer(request),
+          rateBucket: 'auth',
         })
       },
     }
@@ -118,7 +139,7 @@ export async function handleVerifyEmailRequest(request: NextRequest): Promise<Ne
 
 export async function handleChangeEmailRequest(
   request: NextRequest,
-  options: { nowMs?: number } = {}
+  options: AccountEmailRouteOptions = {}
 ): Promise<NextResponse> {
   const limited = enforceRateLimit(request, 'change-email', PASSWORD_RESET_PER_IP_LIMIT, PASSWORD_RESET_PER_IP_WINDOW_MS)
   if (limited) return limited
@@ -146,11 +167,15 @@ export async function handleChangeEmailRequest(
     )
   }
   const continueUrl = allowedAccountEmailContinueUrl(body.value.continueUrl, getAppBaseUrl())
+  // Answer no sooner than the minimum, so an address already taken (no email) and a free one (link + email) answer
+  // at the same time unless the send itself is slower (review of #361, finding 5).
+  const started = Date.now()
+  const minResponseMs = options.minResponseMs ?? CHANGE_EMAIL_MIN_RESPONSE_MS
   const status = await runPasswordReset(
     { email: newEmail, continueUrl: continueUrl || '' },
     {
       configured,
-      allowEmail: () => rateLimit(`change-email-uid:${user.uid}`, PASSWORD_RESET_PER_EMAIL_LIMIT, PASSWORD_RESET_PER_EMAIL_WINDOW_MS).ok,
+      allowEmail: () => allowAccount(options, 'change-email', user.uid),
       // The account is the caller's own (`current`, from the verified token); `newEmail` is only the destination.
       generateLink: (destination) =>
         adminEmailActionLink({ requestType: 'VERIFY_AND_CHANGE_EMAIL', email: current, newEmail: destination, continueUrl }),
@@ -162,9 +187,12 @@ export async function handleChangeEmailRequest(
           html: buildChangeEmailHtml({ to, link }),
           text: buildChangeEmailText({ to, link }),
           idToken: bearer(request),
+          rateBucket: 'auth',
         })
       },
     }
   )
+  const wait = minResponseMs - (Date.now() - started)
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait))
   return answer(status, 'change-email')
 }

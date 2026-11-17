@@ -12,8 +12,8 @@ export const PASSWORD_RESET_LINK_VALID_TEXT = 'For your security, this link expi
 export const PASSWORD_RESET_IGNORE_TEXT =
   "If you didn't ask to reset your password, you can ignore this email. Your password stays the same."
 
-/** Who asked: the person themself (forgot password), Project Planner support (owner console), or a login email change. */
-export type PasswordResetEmailReason = 'self' | 'support' | 'emailChanged'
+/** Who asked: the person themself (forgot password), their admin (Manage Users), Project Planner support (owner console), or a login email change. */
+export type PasswordResetEmailReason = 'self' | 'admin' | 'support' | 'emailChanged'
 
 export type PasswordResetEmailParams = {
   to: string
@@ -22,6 +22,7 @@ export type PasswordResetEmailParams = {
 }
 
 function introText(reason: PasswordResetEmailReason): string {
+  if (reason === 'admin') return 'Your administrator has sent you a link to choose a new password.'
   if (reason === 'support') return 'Project Planner support has sent you a link to choose a new password.'
   if (reason === 'emailChanged') {
     return 'Your Project Planner login email was changed. Choose a password to sign in with this address.'

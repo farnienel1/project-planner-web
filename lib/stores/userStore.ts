@@ -4,7 +4,7 @@ import { create } from 'zustand'
 import { addPayProfileWrite } from '@/lib/pay/payProfileService'
 import { payEditorRecord, startPayEditorProfileRead } from '@/lib/pay/payProfileOverlay'
 import { collection, deleteField, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc, updateDoc, Timestamp, where, writeBatch } from 'firebase/firestore'
-import { requestPasswordReset } from '@/lib/auth/requestPasswordReset'
+import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
 import type { Operative, User } from '@/types'
 import { auth, db } from '@/lib/firebase/config'
 import { applyExclusiveRateFields, buildSaveUserPayload, changedUserPayload } from '@/lib/firebase/userPayload'
@@ -70,7 +70,8 @@ interface UserStoreState {
   /** Rulebook 1.31.0 `userActiveWrites`: `roster` is every users document of the organisation (same-email copies). */
   setUserActive: (userId: string, isActive: boolean, organizationId?: string, roster?: ReadonlyArray<User>) => Promise<void>
   deleteUser: (userId: string, opts?: { organizationId?: string; email?: string; roster?: ReadonlyArray<User> }) => Promise<void>
-  sendPasswordReset: (email: string) => Promise<void>
+  /** Manage Users / Edit User: an admin's reset for this person (`POST /api/users/send-password-reset`). */
+  sendPasswordReset: (user: Pick<User, 'id'>, organizationId?: string) => Promise<void>
   applyAccountType: (user: User, accountType: 'operative' | 'manager' | 'admin') => User
   /**
    * Rulebook 1.11.0 `accountTypeChangeWrites`: write the new user type to every document that decides it in this
@@ -637,8 +638,18 @@ export const useUserStore = create<UserStoreState>(() => ({
     return writes.length
   },
 
-  sendPasswordReset: async (email) => {
-    await requestPasswordReset(auth, email)
+  sendPasswordReset: async (user, organizationId) => {
+    // Review of #361: an admin's reset is not the public forgot-password route (no per-email cap; the server checks
+    // the caller may edit this person and reports the real result).
+    const orgId = organizationId || useAuthStore.getState().organization?.id || ''
+    const response = await fetch('/api/users/send-password-reset', {
+      method: 'POST',
+      headers: await jsonAuthHeaders(),
+      body: JSON.stringify({ organizationId: orgId, userId: user.id }),
+    })
+    if (response.ok) return
+    const data = (await response.json().catch(() => ({}))) as { error?: string }
+    throw new Error(data.error || 'Failed to send password reset.')
   },
 
   applyAccountType: (user, accountType) => applyAccountTypeChange(user, accountType),

@@ -102,6 +102,18 @@ function stubBackend(options: { accounts: Account[]; taken?: string[]; configure
   return calls
 }
 
+const used = new Map<string, number>()
+const opts = {
+  minResponseMs: 0,
+  allowAccount: async (scope: string, uid: string) => {
+    const key = `${scope}:${uid}`
+    const n = used.get(key) || 0
+    if (n >= PASSWORD_RESET_PER_EMAIL_LIMIT) return false
+    used.set(key, n + 1)
+    return true
+  },
+}
+
 let ip = 0
 function post(path: string, body: unknown, token?: string) {
   const headers: Record<string, string> = { 'Content-Type': 'application/json', 'x-forwarded-for': `192.0.2.${++ip % 250}` }
@@ -115,9 +127,9 @@ const bob: Account = { uid: 'bob', email: 'bob@firm.com', emailVerified: true }
 
 test('verify email: signed in only, own address, branded, Firebase sends nothing itself', async () => {
   const calls = stubBackend({ accounts: [alice, bob] })
-  const anon = await handleVerifyEmailRequest(post('/api/auth/verify-email', {}))
+  const anon = await handleVerifyEmailRequest(post('/api/auth/verify-email', {}), opts)
   assert.equal(anon.status, 401)
-  const res = await handleVerifyEmailRequest(post('/api/auth/verify-email', { email: 'evil@x.com' }, idToken('alice', now)))
+  const res = await handleVerifyEmailRequest(post('/api/auth/verify-email', { email: 'evil@x.com' }, idToken('alice', now)), opts)
   assert.equal(res.status, 200)
   assert.deepEqual(await res.json(), { ok: true })
   const oob = calls.filter((call) => call.url.includes('sendOobCode'))
@@ -129,7 +141,7 @@ test('verify email: signed in only, own address, branded, Firebase sends nothing
   assert.deepEqual(send.body!.to, ['alice@firm.com'])
   assert.equal((send.body!.data as { subject: string }).subject, VERIFY_EMAIL_SUBJECT)
   // Already verified: same answer, nothing sent.
-  const verified = await handleVerifyEmailRequest(post('/api/auth/verify-email', {}, idToken('bob', now)))
+  const verified = await handleVerifyEmailRequest(post('/api/auth/verify-email', {}, idToken('bob', now)), opts)
   assert.equal(verified.status, 200)
   assert.deepEqual(await verified.json(), { ok: true })
   assert.equal(calls.filter((call) => call.url === 'https://email.test/sendEmail').length, 1)
@@ -138,7 +150,7 @@ test('verify email: signed in only, own address, branded, Firebase sends nothing
 test('verify email: per-account limit is silent', async () => {
   const calls = stubBackend({ accounts: [{ uid: 'carol', email: 'carol@firm.com', emailVerified: false }] })
   for (let i = 0; i < PASSWORD_RESET_PER_EMAIL_LIMIT + 2; i += 1) {
-    const res = await handleVerifyEmailRequest(post('/api/auth/verify-email', {}, idToken('carol', now)))
+    const res = await handleVerifyEmailRequest(post('/api/auth/verify-email', {}, idToken('carol', now)), opts)
     assert.equal(res.status, 200)
   }
   assert.equal(calls.filter((call) => call.url === 'https://email.test/sendEmail').length, PASSWORD_RESET_PER_EMAIL_LIMIT)
@@ -146,20 +158,18 @@ test('verify email: per-account limit is silent', async () => {
 
 test('change email: acts only on the caller, needs a recent sign-in, same answer when the address is taken', async () => {
   const calls = stubBackend({ accounts: [alice, bob], taken: ['bob@firm.com'] })
-  const anon = await handleChangeEmailRequest(post('/api/auth/change-email', { newEmail: 'new@firm.com' }))
+  const anon = await handleChangeEmailRequest(post('/api/auth/change-email', { newEmail: 'new@firm.com' }), opts)
   assert.equal(anon.status, 401)
-  const stale = await handleChangeEmailRequest(post('/api/auth/change-email', { newEmail: 'new@firm.com' }, idToken('alice', now - 3600)))
+  const stale = await handleChangeEmailRequest(post('/api/auth/change-email', { newEmail: 'new@firm.com' }, idToken('alice', now - 3600)), opts)
   assert.equal(stale.status, 401)
   assert.equal((await stale.json()).code, CHANGE_EMAIL_RECENT_LOGIN_CODE)
-  const bad = await handleChangeEmailRequest(post('/api/auth/change-email', { newEmail: 'nope' }, idToken('alice', now)))
+  const bad = await handleChangeEmailRequest(post('/api/auth/change-email', { newEmail: 'nope' }, idToken('alice', now)), opts)
   assert.equal(bad.status, 400)
-  const same = await handleChangeEmailRequest(post('/api/auth/change-email', { newEmail: 'Alice@firm.com' }, idToken('alice', now)))
+  const same = await handleChangeEmailRequest(post('/api/auth/change-email', { newEmail: 'Alice@firm.com' }, idToken('alice', now)), opts)
   assert.equal(same.status, 400)
 
-  const ok = await handleChangeEmailRequest(
-    post('/api/auth/change-email', { newEmail: 'New@Firm.com', email: 'bob@firm.com' }, idToken('alice', now))
-  )
-  const taken = await handleChangeEmailRequest(post('/api/auth/change-email', { newEmail: 'bob@firm.com' }, idToken('alice', now)))
+  const ok = await handleChangeEmailRequest(post('/api/auth/change-email', { newEmail: 'New@Firm.com', email: 'bob@firm.com' }, idToken('alice', now)), opts)
+  const taken = await handleChangeEmailRequest(post('/api/auth/change-email', { newEmail: 'bob@firm.com' }, idToken('alice', now)), opts)
   assert.equal(ok.status, 200)
   assert.equal(taken.status, 200)
   assert.equal(await ok.text(), await taken.text())
@@ -179,10 +189,10 @@ test('change email: acts only on the caller, needs a recent sign-in, same answer
 
 test('account email routes fall back only when the server cannot send', async () => {
   const calls = stubBackend({ accounts: [alice], configured: false })
-  const verify = await handleVerifyEmailRequest(post('/api/auth/verify-email', {}, idToken('alice', now)))
+  const verify = await handleVerifyEmailRequest(post('/api/auth/verify-email', {}, idToken('alice', now)), opts)
   assert.equal(verify.status, 503)
   assert.deepEqual(await verify.json(), { ok: false, fallback: 'firebase' })
-  const change = await handleChangeEmailRequest(post('/api/auth/change-email', { newEmail: 'n@firm.com' }, idToken('alice', now)))
+  const change = await handleChangeEmailRequest(post('/api/auth/change-email', { newEmail: 'n@firm.com' }, idToken('alice', now)), opts)
   assert.equal(change.status, 503)
   assert.equal(calls.filter((call) => call.url.includes('sendOobCode')).length, 0)
 })
@@ -192,8 +202,8 @@ test('account email routes never log links, codes or addresses', async () => {
   const lines: string[] = []
   const capture = (...args: unknown[]) => lines.push(args.map((arg) => String(arg)).join(' '))
   Object.assign(console, { info: capture, warn: capture, error: capture, log: capture })
-  await handleVerifyEmailRequest(post('/api/auth/verify-email', {}, idToken('alice', now)))
-  await handleChangeEmailRequest(post('/api/auth/change-email', { newEmail: 'secret-new@firm.com' }, idToken('alice', now)))
+  await handleVerifyEmailRequest(post('/api/auth/verify-email', {}, idToken('alice', now)), opts)
+  await handleChangeEmailRequest(post('/api/auth/change-email', { newEmail: 'secret-new@firm.com' }, idToken('alice', now)), opts)
   const joined = lines.join('\n')
   assert.ok(lines.length >= 2)
   for (const secret of ['VERIFY-SECRET', 'CHANGE-SECRET', 'oobCode', 'alice@firm.com', 'secret-new@firm.com']) {
@@ -238,4 +248,30 @@ test('the action page recognises verify, change and undo links', () => {
   }
   assert.ok(!isApplyEmailAction(parseEmailActionSearch(new URLSearchParams('mode=resetPassword&oobCode=x'))))
   assert.ok(!isApplyEmailAction(parseEmailActionSearch(new URLSearchParams('mode=verifyEmail'))))
+})
+
+test('verify and change report a failed send as the fallback (they act on the caller only)', async () => {
+  const calls = stubBackend({ accounts: [{ uid: 'dan', email: 'dan@firm.com', emailVerified: false }], emailFails: true })
+  const verify = await handleVerifyEmailRequest(post('/api/auth/verify-email', {}, idToken('dan', now)), opts)
+  assert.equal(verify.status, 503)
+  assert.deepEqual(await verify.json(), { ok: false, fallback: 'firebase' })
+  const change = await handleChangeEmailRequest(post('/api/auth/change-email', { newEmail: 'dan2@firm.com' }, idToken('dan', now)), opts)
+  assert.equal(change.status, 503)
+  // Sent through the account-email rate bucket.
+  for (const send of calls.filter((call) => call.url === 'https://email.test/sendEmail')) {
+    assert.equal(send.body!.template, 'auth_rendered')
+  }
+})
+
+test('change email answers no sooner than the minimum, taken or free', async () => {
+  stubBackend({ accounts: [{ uid: 'eve', email: 'eve@firm.com', emailVerified: true }], taken: ['taken@firm.com'] })
+  for (const newEmail of ['taken@firm.com', 'free@firm.com']) {
+    const started = Date.now()
+    const res = await handleChangeEmailRequest(post('/api/auth/change-email', { newEmail }, idToken('eve', now)), {
+      ...opts,
+      minResponseMs: 150,
+    })
+    assert.equal(res.status, 200)
+    assert.ok(Date.now() - started >= 140, `${newEmail} answered early`)
+  }
 })

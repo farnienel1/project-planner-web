@@ -922,7 +922,7 @@ export function EditUserProfile({
     if (!target?.passwordSet) return
     setBusyAction('reset')
     try {
-      await sendPasswordReset(target.email)
+      await sendPasswordReset(target, organization?.id)
       setSuccess('Password reset email sent.')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to send password reset')

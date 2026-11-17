@@ -23,10 +23,16 @@ export const PASSWORD_RESET_PER_IP_LIMIT = 10
 export const PASSWORD_RESET_PER_IP_WINDOW_MS = 15 * 60 * 1000
 
 /**
- * The route never answers sooner than this, so a sent email (link + email function call) and an unknown address
- * (one quick lookup) take a similar time. It narrows the timing gap; it does not close it on a slow email send.
+ * Forgot password answers after exactly this long, whatever happened: the link and the send run in the background
+ * (`after()`), so the answer's time never depends on whether the account exists (review of #361).
  */
-export const PASSWORD_RESET_MIN_RESPONSE_MS = 1500
+export const PASSWORD_RESET_FIXED_RESPONSE_MS = 1500
+
+/**
+ * Change email waits at least this long and then for the result (it reports a failed send). An address already
+ * taken (no send) and a free one (link + send) both answer at this time unless the send itself is slower.
+ */
+export const CHANGE_EMAIL_MIN_RESPONSE_MS = 2500
 
 /** The one answer for a valid request, whatever happened to it. */
 export const PASSWORD_RESET_GENERIC_RESPONSE = { ok: true } as const
@@ -92,12 +98,14 @@ export type PasswordResetStatus =
   | 'link_failed'
   | 'send_failed'
   | 'not_configured'
+  | 'sent_firebase_fallback'
+  | 'fallback_failed'
 
 export type PasswordResetDeps = {
   /** True when this server can make reset links and send email (service account and email key set). */
   configured: () => boolean
   /** Per-email budget: true while this address may get another email. */
-  allowEmail: (email: string) => boolean
+  allowEmail: (email: string) => boolean | Promise<boolean>
   /** The Firebase reset link (`returnOobLink: true`: Firebase sends nothing itself). */
   generateLink: (email: string, continueUrl: string) => Promise<string>
   /** The link failed because the account is missing or disabled. */
@@ -118,7 +126,7 @@ export async function runPasswordReset(
   deps: PasswordResetDeps
 ): Promise<PasswordResetStatus> {
   if (!deps.configured()) return 'not_configured'
-  if (!deps.allowEmail(input.email)) return 'email_throttled'
+  if (!(await deps.allowEmail(input.email))) return 'email_throttled'
   let link: string
   try {
     link = await deps.generateLink(input.email, input.continueUrl)

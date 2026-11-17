@@ -411,6 +411,23 @@ test('handler: provider failure is a 502 with sent false', async () => {
 
 const webBody = { template: 'web_rendered', to: ['someone@example.com'], data: { subject: 'Your code', html: '<p>123456</p>', replyTo: 'visitor@example.com' } }
 
+test('server mode: auth_rendered counts in its own server-auth bucket, with or without a signed-in caller', async () => {
+  const { AUTH_LIMITS, AUTH_RATE_KEY } = require('./rateLimit')
+  const { handler, sent, rateCalls } = makeHandler()
+  const body = { ...webBody, template: 'auth_rendered' }
+  const anonymous = await call(handler, { headers: { 'X-Project-Planner-Server-Key': 'server-secret' }, body })
+  assert.equal(anonymous.code, 200, JSON.stringify(anonymous.payload))
+  const signedIn = await call(handler, { headers: { 'X-Project-Planner-Server-Key': 'server-secret', ...auth('A') }, body })
+  assert.equal(signedIn.code, 200, JSON.stringify(signedIn.payload))
+  assert.equal(sent.length, 2)
+  assert.deepEqual(rateCalls.map((row) => row.key), [AUTH_RATE_KEY, AUTH_RATE_KEY])
+  assert.equal(rateCalls[0].limits, AUTH_LIMITS)
+  // Not an app template: an app caller cannot use it.
+  const app = await call(handler, { headers: auth('A'), body: { ...body, orgId: ORG } })
+  assert.equal(app.code, 400)
+  assert.equal(SERVER_TEMPLATES.auth_rendered.maxRecipients, 1)
+})
+
 test('server mode: the server key is required and compared exactly; app templates are not available with it', async () => {
   const { handler, sent } = makeHandler()
   assert.equal((await call(handler, { headers: { 'X-Project-Planner-Server-Key': 'guess' }, body: webBody })).code, 401)

@@ -28,7 +28,7 @@ const crypto = require('crypto')
 const canonical = require('../loadCanonical')
 const { AttachmentError, parseAttachments } = require('./attachments')
 const { RecipientError, resolveRecipients } = require('./recipients')
-const { SERVER_LIMITS, USER_LIMITS } = require('./rateLimit')
+const { AUTH_LIMITS, AUTH_RATE_KEY, SERVER_LIMITS, USER_LIMITS } = require('./rateLimit')
 const {
   RequestIdError,
   parseRequestId,
@@ -344,7 +344,10 @@ function createSendEmailHandler(deps) {
     const cc = envelope.cc
     const ccFor = (email) => (cc.length && !cc.includes(normalizeEmail(email)) ? cc : [])
     const from = envelope.from || fromHeader(orgName)
-    const rateKey = caller ? caller.uid : 'server'
+    // Account emails (`rateBucket: 'auth'`) count in their own bucket, never the shared server one or a user's.
+    const authBucket = serverMode && template.rateBucket === 'auth'
+    const rateKey = authBucket ? AUTH_RATE_KEY : caller ? caller.uid : 'server'
+    const rateLimits = authBucket ? AUTH_LIMITS : caller ? USER_LIMITS : SERVER_LIMITS
 
     // Idempotency (requestDedupe.js, docs/EMAIL_FUNCTION.md "Request id"). The caller has passed the membership and
     // level checks above. A request that names itself with `requestId` claims its key now; a repeat (an iPhone
@@ -451,7 +454,7 @@ function createSendEmailHandler(deps) {
         template.render({ data, org: org || {}, orgName, caller: caller || {}, recipient, now: sentAt, attachments, firstContactName })
       )
 
-      const limited = await deps.consumeRateLimit(rateKey, recipients.length, caller ? USER_LIMITS : SERVER_LIMITS)
+      const limited = await deps.consumeRateLimit(rateKey, recipients.length, rateLimits)
       if (!limited.allowed) {
         throw new HttpError(429, 'Too many emails. Try again later.', { retryAfterSec: limited.retryAfterSec })
       }

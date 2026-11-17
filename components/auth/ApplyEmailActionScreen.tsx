@@ -2,26 +2,37 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { applyActionCode, checkActionCode } from 'firebase/auth'
+import { ActionCodeOperation, applyActionCode, checkActionCode } from 'firebase/auth'
 import { AppLogoMark } from '@/components/ui/AppLogoMark'
 import { awaitAppCheckToken, ensureAppCheck, initializedAppCheck } from '@/lib/firebase/appCheck'
 import { ensureFirebaseApp, getFirebaseAuth } from '@/lib/firebase/ensureFirebase'
 import { loginPathForResetEmail, type ParsedEmailAction } from '@/lib/auth/emailAction'
 
-type State =
-  | { kind: 'checking' }
-  | { kind: 'done'; email: string }
-  | { kind: 'error'; message: string }
+/** What the link does, from Firebase's own answer (`checkActionCode` → `operation`), never the URL's `mode`. */
+type Kind = 'verify' | 'change' | 'recover'
 
-const TITLES: Record<string, { checking: string; done: string }> = {
-  verifyEmail: { checking: 'Checking this link…', done: 'Email verified' },
-  verifyAndChangeEmail: { checking: 'Checking this link…', done: 'Email changed' },
-  recoverEmail: { checking: 'Checking this link…', done: 'Email change undone' },
+const COPY: Record<Kind, { title: string; button: string; done: string }> = {
+  verify: { title: 'Verify your email', button: 'Verify email', done: 'Email verified' },
+  change: { title: 'Confirm your new email', button: 'Confirm new email', done: 'Email changed' },
+  recover: { title: 'Undo email change', button: 'Undo email change', done: 'Email change undone' },
 }
 
-function doneText(mode: string, email: string): string {
-  if (mode === 'verifyAndChangeEmail') return `Sign in with ${email} from now on.`
-  if (mode === 'recoverEmail') {
+function kindOf(operation: string): Kind | null {
+  if (operation === ActionCodeOperation.VERIFY_EMAIL) return 'verify'
+  if (operation === ActionCodeOperation.VERIFY_AND_CHANGE_EMAIL) return 'change'
+  if (operation === ActionCodeOperation.RECOVER_EMAIL) return 'recover'
+  return null
+}
+
+function readyText(kind: Kind, email: string, previousEmail: string): string {
+  if (kind === 'change') return `Sign in with ${email} from now on${previousEmail ? ` instead of ${previousEmail}` : ''}.`
+  if (kind === 'recover') return `Change your login email back to ${email}.`
+  return `Confirm ${email} for your Project Planner login.`
+}
+
+function doneText(kind: Kind, email: string): string {
+  if (kind === 'change') return `Sign in with ${email} from now on.`
+  if (kind === 'recover') {
     return `Your login email is ${email} again. If you didn't ask for the change, reset your password now.`
   }
   return email ? `${email} is verified. You can sign in.` : 'Your email is verified. You can sign in.'
@@ -35,14 +46,21 @@ function errorText(error: unknown): string {
   return 'This link could not be used. Ask for a new one.'
 }
 
+type State =
+  | { step: 'checking' }
+  | { step: 'ready'; kind: Kind; email: string; previousEmail: string }
+  | { step: 'applying'; kind: Kind; email: string; previousEmail: string }
+  | { step: 'done'; kind: Kind; email: string }
+  | { step: 'error'; message: string }
+
 /**
- * Verify email, confirm a new login email and undo an email change (`mode` verifyEmail, verifyAndChangeEmail,
- * recoverEmail). Before 17 Nov /auth/action only handled password resets, so these links (Firebase's, which use the
- * same action URL) showed "This reset link is missing its code". Applies the code once and says what happened.
+ * Verify email, confirm a new login email and undo an email change. Before 17 Nov /auth/action only handled password
+ * resets, so these links showed "This reset link is missing its code". The link is checked first (`checkActionCode`,
+ * which does not use it up) and applied only when the person presses the button (review of #361: a mail scanner
+ * that opens links must not undo an email change by itself). What it does is read from Firebase's answer.
  */
 export function ApplyEmailActionScreen({ action }: { action: ParsedEmailAction }) {
-  const mode = action.mode || 'verifyEmail'
-  const [state, setState] = useState<State>({ kind: 'checking' })
+  const [state, setState] = useState<State>({ step: 'checking' })
 
   useEffect(() => {
     let cancelled = false
@@ -51,23 +69,35 @@ export function ApplyEmailActionScreen({ action }: { action: ParsedEmailAction }
         const app = ensureFirebaseApp()
         ensureAppCheck(app)
         await awaitAppCheckToken(initializedAppCheck())
-        const auth = getFirebaseAuth()
-        const info = await checkActionCode(auth, action.oobCode)
-        await applyActionCode(auth, action.oobCode)
-        // verifyEmail / verifyAndChangeEmail: the address now verified; recoverEmail: the address restored.
-        const email = info.data.email || ''
-        if (!cancelled) setState({ kind: 'done', email })
+        const info = await checkActionCode(getFirebaseAuth(), action.oobCode)
+        const kind = kindOf(info.operation)
+        if (cancelled) return
+        if (!kind) {
+          setState({ step: 'error', message: 'This link could not be used. Ask for a new one.' })
+          return
+        }
+        setState({ step: 'ready', kind, email: info.data.email || '', previousEmail: info.data.previousEmail || '' })
       } catch (error) {
-        if (!cancelled) setState({ kind: 'error', message: errorText(error) })
+        if (!cancelled) setState({ step: 'error', message: errorText(error) })
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [action.oobCode, mode])
+  }, [action.oobCode])
 
-  const titles = TITLES[mode] || TITLES.verifyEmail!
-  const loginHref = state.kind === 'done' ? loginPathForResetEmail(state.email) : '/login'
+  const apply = async () => {
+    if (state.step !== 'ready') return
+    setState({ ...state, step: 'applying' })
+    try {
+      await applyActionCode(getFirebaseAuth(), action.oobCode)
+      setState({ step: 'done', kind: state.kind, email: state.email })
+    } catch (error) {
+      setState({ step: 'error', message: errorText(error) })
+    }
+  }
+
+  const loginHref = state.step === 'done' ? loginPathForResetEmail(state.email) : '/login'
 
   return (
     <div className="login" style={{ gridTemplateColumns: '1fr' }}>
@@ -77,21 +107,34 @@ export function ApplyEmailActionScreen({ action }: { action: ParsedEmailAction }
             <AppLogoMark size={40} radius={12} />
             <b className="font-[family-name:var(--head)] text-lg">Project Planner</b>
           </div>
-          {state.kind === 'checking' ? (
-            <p className="muted">{titles.checking}</p>
-          ) : state.kind === 'done' ? (
+          {state.step === 'checking' ? (
+            <p className="muted">Checking this link…</p>
+          ) : state.step === 'ready' || state.step === 'applying' ? (
+            <>
+              <h1 className="text-[28px] font-extrabold">{COPY[state.kind].title}</h1>
+              <p className="muted mt-2">{readyText(state.kind, state.email, state.previousEmail)}</p>
+              <button
+                type="button"
+                className="btn primary block mt-6"
+                disabled={state.step === 'applying'}
+                onClick={() => void apply()}
+              >
+                {state.step === 'applying' ? 'Working…' : COPY[state.kind].button}
+              </button>
+            </>
+          ) : state.step === 'done' ? (
             <>
               <div className="ico-chip lg" data-hue="green">
                 ✓
               </div>
-              <h1 className="mt-4 text-[28px] font-extrabold">{titles.done}</h1>
-              <p className="muted mt-2">{doneText(mode, state.email)}</p>
-              {mode === 'recoverEmail' ? (
+              <h1 className="mt-4 text-[28px] font-extrabold">{COPY[state.kind].done}</h1>
+              <p className="muted mt-2">{doneText(state.kind, state.email)}</p>
+              {state.kind === 'recover' ? (
                 <Link href={`/reset-password?email=${encodeURIComponent(state.email)}`} className="btn primary block mt-6">
                   Reset password
                 </Link>
               ) : null}
-              <Link href={loginHref} className={`btn ${mode === 'recoverEmail' ? '' : 'primary '}block mt-3`}>
+              <Link href={loginHref} className={`btn ${state.kind === 'recover' ? '' : 'primary '}block mt-3`}>
                 {loginHref === '/developer-login' ? 'Developer login' : 'Sign in'}
               </Link>
             </>
