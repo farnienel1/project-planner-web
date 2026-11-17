@@ -1,7 +1,7 @@
 'use client'
-import '@/app/projects-ui.css'
+import '@/app/pages-ui.css'
 import { userCanEditJob } from '@/lib/access/bookingAccess'
-import { projectJobKind, projectStatusTone } from '@/lib/ui/projectWorkspaceUi'
+import '@/app/projects-ui.css'
 import { useEffect, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -44,7 +44,7 @@ import { subscribeParentVariations } from '@/lib/variations/variationStorage'
 import { assignedManagerLabel, assignedManagerNames } from '@/lib/projects/assignedManagers'
 import type { SectionHue } from '@/lib/ui/sectionHue'
 import type { Project, User } from '@/types'
-import { cn } from '@/lib/ui/cn'
+import { projectJobKind, projectStatusTone } from '@/lib/ui/projectWorkspaceUi'
 import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { openVariationCount } from '@/lib/canonical'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
@@ -288,7 +288,7 @@ export function ProjectWorkspaceChrome({
               <Link
                 key={tab.key}
                 href={tab.href ? `${basePath}/${tab.href}` : basePath}
-                className={cn('pj-tile', on && 'on')}
+                className={on ? 'pj-tile on' : 'pj-tile'}
                 aria-current={on ? 'page' : undefined}
               >
                 <span className="pj-ico" aria-hidden="true">

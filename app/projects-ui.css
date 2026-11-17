@@ -119,10 +119,10 @@
 .pj-dl dd.warn { color: var(--warn); }
 
 /* Not-found link */
-.pj-notfound-link { display: inline-flex; align-items: center; color: var(--pu-blue); text-decoration: none; margin-bottom: 1rem; }
-.pj-notfound-link[data-kind='sw'] { color: var(--pu-c-amber-ink); }
+.pj-notfound-link { display: inline-flex; align-items: center; color: var(--dash-blue); text-decoration: none; }
+.pj-notfound-link[data-kind='sw'] { color: var(--dash-tag-amber-ink); }
 .pj-notfound-link:hover { text-decoration: underline; }
-.pj-notfound-text { color: var(--pu-muted); }
+.pj-notfound-text { margin: 0; color: var(--dash-muted); }
 
 @media (max-width: 640px) {
   .pj-band { padding: 18px 16px; }
