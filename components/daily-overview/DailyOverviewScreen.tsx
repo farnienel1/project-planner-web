@@ -22,7 +22,8 @@ import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
 import { canViewDailyOverview, hasAdminAccess } from '@/lib/permissions'
 import { dateFromDayKey, dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
-import { leaveHalfDayLabel, overtimeTotalText, type JOB_SCHEDULE_LEGEND, type ScheduleCellTone } from '@/lib/canonical'
+import { formatWarningHours } from '@/lib/warnings/clashIntervals'
+import { formatClockMinutes, leaveHalfDayLabel, overtimeTotalText, type JOB_SCHEDULE_LEGEND, type ScheduleCellTone } from '@/lib/canonical'
 import { Card, Chip, DataTable, EmptyState, IconTile, Note, PageBand, PageShell, PuButton, StatRow, WarnIcon, type PuTone } from '@/components/ui/page'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { watchSubcontractorBookings } from '@/lib/weekly-report/loadSubcontractorBookings'
@@ -355,6 +356,45 @@ export function DailyOverviewScreen() {
                         <b>{name}</b>
                       </span>
                       <Chip tone="red">Unbooked</Chip>
+                    </div>
+                  ))}
+                </div>
+                {canBook ? (
+                  <div className="pu-card-b">
+                    <PuButton variant="primary" block onClick={() => setBookLabourOpen(true)}>
+                      Book labour
+                    </PuButton>
+                  </div>
+                ) : null}
+              </Card>
+            ) : null}
+
+            {mayPublish && model.leaveCoverRows.length > 0 ? (
+              <Card
+                title="Half-day leave not covered"
+                icon={
+                  <IconTile tone="amber" size="sm">
+                    <WarnIcon />
+                  </IconTile>
+                }
+                actions={<Chip tone="amber">{model.leaveCoverRows.length}</Chip>}
+              >
+                <div className="pu-list">
+                  {model.leaveCoverRows.map((row) => (
+                    <div key={row.id} className="pu-item">
+                      <IconTile tone="slate" size="sm">
+                        {initialsFrom(row.personName)}
+                      </IconTile>
+                      <span className="grow">
+                        <b>{row.personName}</b>
+                        <span className="pu-sub">
+                          {row.leaveLabel} annual leave · Not booked:{' '}
+                          {row.missing
+                            .map((interval) => `${formatClockMinutes(interval.start)}–${formatClockMinutes(interval.end)}`)
+                            .join(', ')}
+                        </span>
+                      </span>
+                      <Chip tone="amber">−{formatWarningHours(row.missingHours)}h</Chip>
                     </div>
                   ))}
                 </div>

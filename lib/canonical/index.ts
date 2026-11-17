@@ -2286,3 +2286,15 @@ export type { TimesheetRevisionCheck, TimesheetRevisionDifference, TimesheetVers
 // 1.56.0: leave records an operative would stop seeing under their own-leave query (owner Q4: fix the data).
 export { leaveLegacyKeyFindings } from './leaveReadAudit'
 export type { LeaveReadAuditFinding, LeaveReadAuditUser } from './leaveReadAudit'
+
+// 1.60.0 §5: a booking for more than one person never books someone already booked that day (owner 17 Nov).
+export {
+  MULTI_PERSON_ALREADY_BOOKED_MESSAGE,
+  MULTI_PERSON_ALREADY_BOOKED_REMOVE_LABEL,
+  multiPersonBookingBlocks,
+} from './multiPersonBooking'
+export type {
+  MultiPersonBookingBlock,
+  MultiPersonBookingPerson,
+  MultiPersonExistingBooking,
+} from './multiPersonBooking'

@@ -8,7 +8,7 @@ import type { MissedMaterialOrderWarning } from '@/lib/warnings/materialOrderWar
 import { groupUnbookedWarningsByDay, type UnbookedLabourWarning } from '@/lib/warnings/unbookedLabourWarnings'
 import { formatWarningHours } from '@/lib/warnings/clashIntervals'
 import type { QualificationExpiryWarning, UnverifiedOperativeWarning } from '@/lib/warnings/generateOrgWarnings'
-import type { LeaveCoverageWarning } from '@/lib/warnings/leaveCoverageWarnings'
+import { leaveWarningAnnualLeaveHref, type LeaveCoverageWarning } from '@/lib/warnings/leaveCoverageWarnings'
 import { formatClockMinutes, type WarningsSortDirection } from '@/lib/canonical'
 import { orderWarningListItems } from '@/lib/warnings/warningListOrder'
 import { projectMaterialsPath } from '@/lib/navigation/projectSchedulePaths'
@@ -184,7 +184,15 @@ function MaterialsCard({
   )
 }
 
-function LeaveCard({ warning, canBook }: { warning: LeaveCoverageWarning; canBook: boolean }) {
+function LeaveCard({
+  warning,
+  canBook,
+  viewer,
+}: {
+  warning: LeaveCoverageWarning
+  canBook: boolean
+  viewer: User | null
+}) {
   const isClash = warning.kind === 'leave_clash'
   const hue = isClash ? 'red' : 'warn'
   const range = (interval: { start: number; end: number }) =>
@@ -245,7 +253,7 @@ function LeaveCard({ warning, canBook }: { warning: LeaveCoverageWarning; canBoo
           <Link href={`/dashboard/daily-overview?date=${warning.dayKey}`} className="btn">
             Open daily overview
           </Link>
-          <Link href="/dashboard/annual-leave" className="btn">
+          <Link href={leaveWarningAnnualLeaveHref(warning, viewer)} className="btn">
             Annual leave
           </Link>
         </div>
@@ -616,7 +624,7 @@ export function WarningsScreen({
           )
         }
         if (item.kind === 'leave') {
-          return <LeaveCard key={item.warning.id} warning={item.warning} canBook={canBook} />
+          return <LeaveCard key={item.warning.id} warning={item.warning} canBook={canBook} viewer={user} />
         }
         if (item.kind === 'material') {
           return (
