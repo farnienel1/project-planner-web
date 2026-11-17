@@ -28,6 +28,7 @@ import { derivedRowId } from './derivedIds'
 import { materialOrderIncludesDeliveryRequired } from './materialDelivery'
 import {
   MATERIAL_QUANTITY_FIELDS,
+  materialBrandStored,
   materialLineText,
   materialQuantityModel,
   materialQuantityModelsEqual,
@@ -260,7 +261,7 @@ export function parseMaterialLineDocument(
     dateMs,
     status: normalizeMaterialWorkflowStatus(row.status),
     catalogueItemId: optionalText(row.catalogueItemId),
-    brand: optionalText(row.brand),
+    brand: materialBrandStored(row.brand) || null,
     productCode: optionalText(row.productCode),
     category: optionalText(row.category),
     size: optionalText(row.size),
@@ -362,7 +363,7 @@ export function materialLineFields(input: MaterialLineFieldsInput, timeZone?: st
     date: organizationDayStartMs(input?.dayKey, timeZone),
     status: normalizeMaterialWorkflowStatus(input?.status),
     catalogueItemId: blankToNull(input?.catalogueItemId),
-    brand: blankToNull(input?.brand),
+    brand: materialBrandStored(input?.brand) || null,
     productCode: blankToNull(input?.productCode),
     category: blankToNull(input?.category),
     size: blankToNull(input?.size),
@@ -388,6 +389,22 @@ export const MATERIAL_CATALOGUE_QUANTITY_WRITE_GROUP = [
 ] as const
 export const MATERIAL_NAME_WRITE_GROUP = ['material', 'name'] as const
 export const MATERIAL_DAY_WRITE_GROUP = ['dayKey', 'date'] as const
+
+/**
+ * A save that leaves the brand blank keeps a stored blank or legacy "Custom" brand exactly as stored (and adds no
+ * field where none was stored), so no document is rewritten only to tidy the placeholder (guardrail 3).
+ */
+function keepUnchangedBlankBrand(
+  before: Record<string, unknown> | null | undefined,
+  next: Record<string, unknown>
+): Record<string, unknown> {
+  if (!before || !('brand' in next)) return next
+  if (materialBrandStored(next.brand) || materialBrandStored(before.brand)) return next
+  const out = { ...next }
+  if ('brand' in before) out.brand = before.brand
+  else delete out.brand
+  return out
+}
 
 /**
  * 1.48.0: a document stored before the order-unit fields whose quantity meaning a save does not change (the same
@@ -419,7 +436,7 @@ export function materialLineWriteFields(
   before: Record<string, unknown> | null | undefined,
   next: Record<string, unknown>
 ): DocumentWriteFields {
-  return documentWriteFields(before, keepUnchangedLegacyQuantity(before, next, MATERIAL_LINE_QUANTITY_WRITE_GROUP), {
+  return documentWriteFields(before, keepUnchangedBlankBrand(before, keepUnchangedLegacyQuantity(before, next, MATERIAL_LINE_QUANTITY_WRITE_GROUP)), {
     together: [MATERIAL_LINE_QUANTITY_WRITE_GROUP, MATERIAL_NAME_WRITE_GROUP, MATERIAL_DAY_WRITE_GROUP],
     createOnly: [...CREATE_ONLY, 'addedAt', 'addedBy', 'addedByUserId'],
   })
@@ -446,7 +463,7 @@ export type MaterialCatalogueDocument = {
   /** Document id, stored case. */
   id: string
   name: string
-  /** Missing → "Custom" (web; iOS showed blank). */
+  /** '' when none; a stored legacy "Custom" reads as '' (1.58.0, `materialBrandStored`). Show with `materialBrandText`. */
   brand: string
   productCode: string | null
   /** The pre-1.48.0 unit (older builds read it). */
@@ -481,7 +498,7 @@ export function parseMaterialCatalogueDocument(
   return {
     id,
     name,
-    brand: text(row.brand) || 'Custom',
+    brand: materialBrandStored(row.brand),
     productCode: optionalText(row.productCode),
     defaultUnit: normalizeMaterialUnit(row.defaultUnit),
     orderUnit: model.orderUnit,
@@ -523,7 +540,7 @@ export function materialCatalogueItemFields(item: MaterialCatalogueItemInput): R
   const out: Record<string, unknown> = {
     id: text(item?.id),
     name: text(item?.name),
-    brand: text(item?.brand) || 'Custom',
+    brand: materialBrandStored(item?.brand),
     ...quantityFields(item, 'defaultUnit'),
     category: text(item?.category) || 'Other',
     productCode: blankToNull(item?.productCode) ?? null,
@@ -540,7 +557,7 @@ export function materialCatalogueItemWriteFields(
   before: Record<string, unknown> | null | undefined,
   next: Record<string, unknown>
 ): DocumentWriteFields {
-  return documentWriteFields(before, keepUnchangedLegacyQuantity(before, next, MATERIAL_CATALOGUE_QUANTITY_WRITE_GROUP), {
+  return documentWriteFields(before, keepUnchangedBlankBrand(before, keepUnchangedLegacyQuantity(before, next, MATERIAL_CATALOGUE_QUANTITY_WRITE_GROUP)), {
     together: [MATERIAL_CATALOGUE_QUANTITY_WRITE_GROUP],
     createOnly: [...CREATE_ONLY, 'createdByUserId', 'createdByName'],
   })
@@ -725,7 +742,7 @@ export function materialSendRecordCreateFields(input: {
           quantity: materialQuantity(line.quantity),
           unit: normalizeMaterialUnit(line.unit),
         }
-        if (text(line.brand)) out.brand = text(line.brand)
+        if (materialBrandStored(line.brand)) out.brand = materialBrandStored(line.brand)
         if (text(line.productCode)) out.productCode = text(line.productCode)
         if (text(line.lengthDisplay)) out.lengthDisplay = text(line.lengthDisplay)
         out.quantityText = text(line.quantityText) || materialLineText(line as Record<string, unknown>)

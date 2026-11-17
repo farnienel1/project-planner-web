@@ -1,7 +1,7 @@
 'use client'
 
 import { formatMoney } from '@/lib/canonical/money'
-import { useOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
+import { useOrganizationCurrency, useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -9,11 +9,11 @@ import { auth } from '@/lib/firebase/config'
 import { hasAdminAccess } from '@/lib/navigation/menuPermissions'
 import {
   forgetExportedTimesheetHistory,
+  isUnresolvedTimesheetPerson,
   loadExportedTimesheetHistory,
-  loadPayPeriodTimesheetDrafts,
   loadTimesheetDraft,
-  loadTimesheetDraftsByUserHistory,
-  mergeListedTimesheetDrafts,
+  loadTimesheetDraftAt,
+  loadTimesheetQueueDrafts,
   stampTimesheetExport,
   timesheetDocId,
   timesheetSourceDocumentId,
@@ -36,10 +36,19 @@ import {
 } from '@/lib/canonical'
 import { staffAccountRole } from '@/lib/permissions'
 import { loadTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
-import { currentPeriodTimesheetMembers } from '@/lib/timesheets/timesheetHubStats'
+import { useSnapshotAutoRepair } from '@/lib/timesheets/useSnapshotAutoRepair'
+import type { RepairSheet } from '@/lib/timesheets/snapshotAutoRepair'
+import {
+  draftsForMembers,
+  payRunKey,
+  timesheetMemberIds,
+  timesheetQueueRows,
+  type PayRun,
+  type TimesheetQueueRow,
+} from '@/lib/timesheets/timesheetQueue'
 import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride'
 import { exportedTimesheetRosterGroups, subjectForUser, timesheetRosterGroups, userIdsSharingEmail } from '@/lib/timesheets/timesheetWeekUtils'
-import { formatPaymentPeriodLine, listSelectablePayPeriods, periodStartKey } from '@/lib/timesheets/paymentRunCopy'
+import { formatPaymentPeriodLine, listSelectablePayPeriods, organizationCreatedAt, payRunListStartDayKey, periodStartKey } from '@/lib/timesheets/paymentRunCopy'
 import { collectTimesheetPayroll } from '@/lib/timesheets/timesheetPayrollCollector'
 import { periodBookingChanges, type BookingChangeCatalogue } from '@/lib/timesheets/timesheetBookingChanges'
 import {
@@ -101,6 +110,7 @@ import { EXPORT_DELIVERY_TAB_ID, exportDeliveryLiveElsewhere, exportDeliveryNoti
 /** Review of #363: PDFs built and backed up at once during an export's delivery. */
 const EXPORT_DELIVERY_CONCURRENCY = 3
 import type { PayrollTimePolicyState } from '@/lib/canonical'
+import { UNRESOLVED_BOOKING_PERSON_CHIP } from '@/lib/canonical'
 import { SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE, TIMESHEET_LATE_EXTRAS_EXPORT_SKIPPED_MESSAGE, signedTimesheetActions } from '@/lib/canonical'
 
 /** Third review #325: Export left a sheet out because the bookings or pay inputs were still loading. */
@@ -108,6 +118,16 @@ const EXPORT_INPUTS_LOADING_SKIPPED_MESSAGE = 'Not exported — the bookings or 
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 export type TeamTimesheetTab = 'awaiting' | 'signed' | 'exported'
+
+/**
+ * Review of #368 (S4): Download PDF for an exported sheet of nobody in the organisation is drawn from its stored signed
+ * snapshot; an older sheet exported without one cannot be rebuilt (there is no person, rate or booking list to price it).
+ */
+const UNRESOLVED_PDF_NO_SNAPSHOT_MESSAGE =
+  "This sheet was exported before signed copies were kept and its person is no longer in the organisation, so its PDF can't be rebuilt."
+
+/** 17 Nov follow-up: beside an exported sheet whose stored person is nobody in the organisation (as Data health's chip). */
+const UNKNOWN_TIMESHEET_PERSON_CHIP = UNRESOLVED_BOOKING_PERSON_CHIP
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
@@ -129,6 +149,7 @@ export function TimesheetsScreen({
   smallWorks = [],
   periodStart,
   periodEnd,
+  queuePeriods,
   payrollPolicy,
   payrollPolicyPrior = null,
   payrollPolicyEffectiveFrom = null,
@@ -156,6 +177,11 @@ export function TimesheetsScreen({
   smallWorks?: Project[]
   periodStart: Date
   periodEnd: Date
+  /**
+   * 17 Nov follow-up: the pay runs Awaiting / Signed off list (newest first, the current one included) — a signed sheet
+   * of an earlier run that was never exported stays listed with its own run. Missing: the current run only.
+   */
+  queuePeriods?: ReadonlyArray<PayRun>
   payrollPolicy: OrgPayrollTimePolicy
   payrollPolicyPrior?: OrgPayrollTimePolicy | null
   payrollPolicyEffectiveFrom?: string | null
@@ -171,7 +197,8 @@ export function TimesheetsScreen({
   const currency = useOrganizationCurrency()
   const router = useRouter()
   const { user, organization } = useAuthStore()
-  const [drafts, setDrafts] = useState<Map<string, TimesheetDraft>>(new Map())
+  // 17 Nov follow-up: per pay run (`payRunKey`), the sheets of the listed people keyed by their roster id.
+  const [queueDrafts, setQueueDrafts] = useState<Map<string, Map<string, TimesheetDraft>>>(new Map())
   const [exportedRows, setExportedRows] = useState<ExportedTimesheetHistoryRow[]>([])
   const [recordsLoading, setRecordsLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -191,27 +218,36 @@ export function TimesheetsScreen({
   const [exportTaxIds, setExportTaxIds] = useState(false)
   const [exportMessage, setExportMessage] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [checkingEarlier, setCheckingEarlier] = useState(false)
   const [exportedSearch, setExportedSearch] = useState('')
   const [exportedSort, setExportedSort] = useState<'firstName' | 'lastName' | 'dateNewest' | 'dateOldest'>('dateNewest')
   const [exportedRunKey, setExportedRunKey] = useState('all')
   const paintedListKey = useRef('')
   const reloadGeneration = useRef(0)
 
+  // 17 Nov follow-up: the pay runs the queue lists, newest first (the current run when none are given).
+  const runs = useMemo<PayRun[]>(() => {
+    const list = queuePeriods && queuePeriods.length > 0 ? [...queuePeriods] : [{ start: periodStart, end: periodEnd }]
+    return list.sort((a, b) => b.start.getTime() - a.start.getTime())
+  }, [queuePeriods, periodStart, periodEnd])
+  const runsKey = runs.map((run) => payRunKey(run, timeZone)).join(',')
+
   const groups = useMemo(() => {
     if (!user) return [] as User[][]
     // Rulebook 1.31.0: the Exported list is `exportedTimesheetHistorySubjects` (own sheets read-only, inactive people
     // in scope); the other tabs stay `userTimesheetSubjects`.
-    return (teamTab === 'exported' ? exportedTimesheetRosterGroups(user, users) : timesheetRosterGroups(user, users))
-      .map((group) =>
-        teamTab === 'exported'
-          ? group
-          : group.filter((member) =>
-              shouldAppearInOperativeTimesheetRoster(member, periodStart, periodEnd, invoicing, new Date(), timeZone)
-            )
-      )
-      .filter((group) => group.length > 0)
-  }, [user, users, teamTab, periodStart, periodEnd, invoicing, timeZone])
+    return teamTab === 'exported' ? exportedTimesheetRosterGroups(user, users) : timesheetRosterGroups(user, users)
+  }, [user, users, teamTab])
+
+  /** Rulebook 1.11.0 (`showsMyTimesheets`): a person is on a pay run's queue only when they had a self-employed day in it. */
+  const groupsFor = useCallback(
+    (run: PayRun) =>
+      groups
+        .map((group) =>
+          group.filter((member) => shouldAppearInOperativeTimesheetRoster(member, run.start, run.end, invoicing, new Date(), timeZone))
+        )
+        .filter((group) => group.length > 0),
+    [groups, invoicing, timeZone]
+  )
 
   const roster = useMemo(() => groups.flat(), [groups])
 
@@ -221,7 +257,7 @@ export function TimesheetsScreen({
     const stale = () => generation !== reloadGeneration.current
     const userIds = roster.map((row) => row.id)
     if (teamTab === 'exported') {
-      if (userIds.length === 0) {
+      if (userIds.length === 0 && !hasAdminAccess(user)) {
         setExportedRows([])
         setRecordsLoading(false)
         return
@@ -229,7 +265,16 @@ export function TimesheetsScreen({
       setRecordsLoading(true)
       setLoadError(null)
       try {
-        setExportedRows(await loadExportedTimesheetHistory({ organizationId: organization.id, users: roster }))
+        // 17 Nov follow-up (guardrail 3): sheets under any id a listed person goes by; admins also see a sheet whose
+        // person is nobody in the organisation, as "Unknown person · …", never dropped.
+        setExportedRows(
+          await loadExportedTimesheetHistory({
+            organizationId: organization.id,
+            users: roster,
+            roster: users,
+            includeUnresolved: hasAdminAccess(user),
+          })
+        )
       } catch {
         setLoadError('Timesheets did not finish loading. Check the connection and try again.')
       } finally {
@@ -238,45 +283,31 @@ export function TimesheetsScreen({
       return
     }
 
-    const listKey = `${organization.id}|${teamTab}|${periodStart.getTime()}|${periodEnd.getTime()}`
+    const listKey = `${organization.id}|${teamTab}|${runsKey}`
     if (paintedListKey.current !== listKey) {
       paintedListKey.current = listKey
-      setDrafts(new Map())
+      setQueueDrafts(new Map())
       setRecordsLoading(true)
     }
     setLoadError(null)
-    let listed = new Map<string, TimesheetDraft>()
     try {
-      const indexed = await loadPayPeriodTimesheetDrafts(organization.id, periodStart, timeZone)
+      // 17 Nov follow-up (guardrail 1): every id each listed person goes by (`personIdSet`), so a sheet filed under a
+      // former invite id or a second users document is found and listed under the person.
+      const aliasIds = roster.flatMap((member) => timesheetMemberIds(member, users))
+      const loaded = await loadTimesheetQueueDrafts({ organizationId: organization.id, userIds: aliasIds, periods: runs, timeZone })
       if (stale()) return
-      listed = mergeListedTimesheetDrafts(listed, indexed)
-      setDrafts((current) => mergeListedTimesheetDrafts(current, listed))
-    } catch (error) {
-      // Rulebook 1.26.0 §16: with `privatePay` on, the rules refuse a non-admin's period-wide query (it could return
-      // sheets of people whose pay they may not see). Only that refusal falls through to the per-person reads below;
-      // any other failure (offline, timeout, missing index) still shows the error.
-      const code = (error as { code?: unknown } | null)?.code
-      if (code !== 'permission-denied' || userIds.length === 0) {
-        if (!stale()) setLoadError('Timesheets did not finish loading. Check the connection and try again.')
-        return
+      const next = new Map<string, Map<string, TimesheetDraft>>()
+      for (const run of runs) {
+        const key = payRunKey(run, timeZone)
+        next.set(key, draftsForMembers(groups, loaded.get(key) ?? new Map(), users))
       }
+      setQueueDrafts(next)
+    } catch {
+      if (!stale()) setLoadError('Timesheets did not finish loading. Check the connection and try again.')
     } finally {
       if (!stale()) setRecordsLoading(false)
     }
-
-    const missing = userIds.filter((id) => !listed.has(id))
-    if (stale() || missing.length === 0) return
-    setCheckingEarlier(true)
-    try {
-      const extra = await loadTimesheetDraftsByUserHistory(organization.id, missing, periodStart, timeZone, periodEnd)
-      if (stale()) return
-      setDrafts((current) => mergeListedTimesheetDrafts(current, extra))
-    } catch {
-      // The pay-period rows already on screen stay. This scan is not allowed to blank the tab.
-    } finally {
-      if (!stale()) setCheckingEarlier(false)
-    }
-  }, [organization?.id, roster, periodStart, periodEnd, timeZone, teamTab])
+  }, [organization?.id, roster, groups, users, runs, runsKey, timeZone, teamTab])
 
   useEffect(() => {
     void reload()
@@ -324,17 +355,54 @@ export function TimesheetsScreen({
   // Third review #325: the people Export left out because the bookings or pay inputs were still loading.
   const inputsSkippedRef = useRef<string[]>([])
   changeCatalogueRef.current = changeCatalogue
-  const visible = useMemo(
+  // 17 Nov follow-up: one row per person and pay run, over the recent pay runs (`timesheetQueueRows`; the bucket stays
+  // the rulebook's `timesheetListBucket` with that run's booking change).
+  const visible = useMemo<TimesheetQueueRow[]>(
     () =>
       teamTab === 'exported'
         ? []
-        : currentPeriodTimesheetMembers(groups, drafts, teamTab, users, (member, draft) =>
-            periodBookingChanges(changeCatalogueRef.current, member, draft, { start: periodStart, end: periodEnd })
-          ),
+        : timesheetQueueRows({
+            runs,
+            groupsFor,
+            draftsFor: (run) => queueDrafts.get(payRunKey(run, timeZone)),
+            bucket: teamTab,
+            users,
+            timeZone,
+            bookingChange: (member, draft, run) => periodBookingChanges(changeCatalogueRef.current, member, draft, run),
+          }),
     // The catalogue is read through a ref; re-run when the bookings or pay inputs change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [groups, drafts, teamTab, users, bookings, managerSiteBookings, bookingsReady, periodStart, periodEnd]
+    [groupsFor, queueDrafts, teamTab, users, runs, timeZone, bookings, managerSiteBookings, bookingsReady]
   )
+
+  // Owner item 5 (17 Nov follow-up): every sheet of the loaded pay runs whose snapshot was frozen with no labour lines is
+  // rebuilt in the background (`useSnapshotAutoRepair`; signatures kept, never an exported sheet), once the bookings and
+  // pay inputs have loaded — never waiting for someone to open that one sheet.
+  const repairSheets = useMemo<RepairSheet[]>(
+    () =>
+      teamTab === 'exported'
+        ? []
+        : runs.flatMap((run) => {
+            const drafts = queueDrafts.get(payRunKey(run, timeZone))
+            if (!drafts) return []
+            return groupsFor(run)
+              .flat()
+              .flatMap((member) => {
+                const draft = drafts.get(member.id)
+                return draft ? [{ member, period: run, draft, documentId: timesheetSourceDocumentId(draft) }] : []
+              })
+          }),
+    [teamTab, runs, queueDrafts, groupsFor, timeZone]
+  )
+  useSnapshotAutoRepair({
+    organizationId: organization?.id,
+    viewer: user,
+    catalogue: changeCatalogue,
+    sheets: repairSheets,
+    ready: payInputs.ready,
+    payStatusOf: (member) => payStatusFor(member),
+    onRepaired: () => void reload(),
+  })
 
   // Review #325 nit: the viewer's own sheet is not "signed" while its bookings changed since they signed (1.47.0).
   const ownSheetChange = ownSheet && user ? periodBookingChanges(changeCatalogueRef.current, user, ownSheet.draft, { start: periodStart, end: periodEnd }) : null
@@ -386,12 +454,19 @@ export function TimesheetsScreen({
    * the person has not signed is left out; the snapshot is built (rebuilt if frozen empty,
    * `timesheetSnapshotNeedsRebuild`) BEFORE `exportedAt` is set, because an exported snapshot is never rebuilt.
    */
-  const prepareExport = async (
-    member: User,
-    exportedAt: Date
-  ): Promise<{ draft: TimesheetDraft; documentId: string | null; member: User } | { skip: 'exported' } | null> => {
+  type PreparedSheet = { draft: TimesheetDraft; documentId: string | null; member: User; period: PayRun }
+  const prepareExport = async (row: TimesheetQueueRow, exportedAt: Date): Promise<PreparedSheet | { skip: 'exported' } | null> => {
     if (!organization?.id || !user) return null
-    const full = await loadTimesheetDraft(organization.id, member.id, periodStart, timeZone, periodEnd)
+    const { member, period } = row
+    const periodStart = period.start
+    const periodEnd = period.end
+    // 17 Nov follow-up: re-read exactly the document the row listed (its own pay run and stored id — a sheet filed under
+    // a former invite id or a second users document included); the person's own id only when the row has none.
+    const ownerIds = timesheetMemberIds(member, users)
+    const listedId = timesheetSourceDocumentId(row.draft)
+    const full =
+      (listedId ? await loadTimesheetDraftAt(organization.id, listedId, timeZone, ownerIds) : null) ??
+      (await loadTimesheetDraft(organization.id, member.id, periodStart, timeZone, periodEnd, ownerIds))
     if (full.exportedAt) return { skip: 'exported' }
     if (!full.operativeSignedAt) return null
     // Second review #325: never export when the booking change cannot be read (bookings or pay inputs not loaded —
@@ -429,17 +504,18 @@ export function TimesheetsScreen({
       scheduleOptions,
       timeZone,
     })
-    return { draft: { ...built, exportedAt }, documentId: timesheetSourceDocumentId(full), member }
+    return { draft: { ...built, exportedAt }, documentId: timesheetSourceDocumentId(full) ?? listedId, member, period }
   }
 
-  const stampExport = async (sheet: { draft: TimesheetDraft; documentId: string | null; member: User }): Promise<boolean> => {
+  const stampExport = async (sheet: PreparedSheet): Promise<boolean> => {
     if (!organization?.id) return false
     // Rulebook 1.54.0 (third review of #337): only the export fields, in a transaction that re-reads the sheet — a late
     // extra added, edited or deleted since it was prepared is never written back over, and such a sheet is not stamped.
     const result = await stampTimesheetExport({
       organizationId: organization.id,
       userId: sheet.member.id,
-      weekStart: periodStart,
+      // 17 Nov follow-up: the row's own pay run and stored document, never the screen's current run.
+      weekStart: sheet.period.start,
       draft: sheet.draft,
       timeZone,
       documentId: sheet.documentId,
@@ -552,18 +628,28 @@ export function TimesheetsScreen({
       return
     }
     // Re-review #342 item 1: a PDF is never rebuilt from a record whose pay is not known (it would be the stripped one).
-    const refusal = exportedPdfPayRefusal(payStatusFor(row.user), displayName(row.user))
+    // Review of #368 (S4): a sheet whose person is nobody in the organisation has no pay record to read; its PDF is
+    // drawn only from the stored signed snapshot (below), which needs no pay read.
+    const unresolved = isUnresolvedTimesheetPerson(row.user)
+    const refusal = unresolved ? null : exportedPdfPayRefusal(payStatusFor(row.user), displayName(row.user))
     if (refusal) {
       setExportMessage(refusal)
       return
     }
     try {
-      const full = await loadTimesheetDraft(organization.id, row.user.id, period.start, timeZone, period.end)
+      // 17 Nov follow-up: the stored document the row came from (a sheet under a former id or an unknown person too).
+      const full =
+        (row.documentId ? await loadTimesheetDraftAt(organization.id, row.documentId, timeZone, timesheetMemberIds(row.user, users)) : null) ??
+        (await loadTimesheetDraft(organization.id, row.user.id, period.start, timeZone, period.end))
       // Rulebook 1.55.0: an earlier version (or a later open revision) is built from the listed copy of this version.
       const sheet = full.exportedAt && (full.revision ?? 0) === (row.draft.revision ?? 0) ? full : row.draft
       // Review r318: a sheet exported before signed copies were kept has no snapshot — its PDF is rebuilt from today's
       // bookings, rates and working hours, so say so before downloading and on the PDF.
       const rebuilt = exportedPdfIsRebuilt(sheet)
+      if (rebuilt && unresolved) {
+        setExportMessage(UNRESOLVED_PDF_NO_SNAPSHOT_MESSAGE)
+        return
+      }
       if (rebuilt && typeof window !== 'undefined' && !window.confirm(EXPORT_REBUILT_CONFIRM)) return
       const extraNotes = rebuilt ? [exportRebuiltPdfNote(formatStampInZone(new Date(), timeZone))] : []
       const { pdf, fileName } = await buildExportPdf(row.user, sheet, period.start, period.end, extraNotes, sheet === full ? null : row.documentId)
@@ -585,8 +671,10 @@ export function TimesheetsScreen({
     const recipientEmail = (auth?.currentUser?.email || user.email)?.trim()
     setExporting(true)
     setExportMessage(null)
-    const stamp = paymentRunDateStamp(periodStart, periodEnd, timeZone)
-    const periodLine = formatPaymentPeriodLine(periodStart, periodEnd, timeZone)
+    // 17 Nov follow-up: the export can hold several pay runs; the email names each one (the route caps the text).
+    const exportRuns = Array.from(new Map(visible.map((row) => [payRunKey(row.period, timeZone), row.period])).values())
+    const stamp = exportRuns.map((run) => paymentRunDateStamp(run.start, run.end, timeZone)).join(', ')
+    const periodLine = exportRuns.map((run) => formatPaymentPeriodLine(run.start, run.end, timeZone)).join('; ')
     const downloadLinks: Array<{ fileName: string; url: string }> = []
     const pdfAttachments: Array<{ fileName: string; content: string }> = []
     const backupSkipped: string[] = []
@@ -594,18 +682,18 @@ export function TimesheetsScreen({
     let emailProblem: string | null = null
     let stampedCount = 0
     const exportedAt = new Date()
-    const runKey = `${exportedAt.getTime()}|${periodStartKey(periodStart, timeZone)}|${dayKey(periodEnd, timeZone)}`
+    const runKey = `${exportedAt.getTime()}|${exportRuns.map((run) => payRunKey(run, timeZone)).join(',')}`
     const emptyProblemOf = () => emailProblem
     changedSkippedRef.current = []
     lateSkippedRef.current = []
     inputsSkippedRef.current = []
     // Review #342 item 1: a person whose pay could not be read is never exported on a stripped record; named below.
     const payUnknownSkipped = visible
-      .filter((member) => drafts.has(member.id) && payStatusFor(member) === 'failed')
-      .map((member) => displayName(member))
+      .filter((row) => payStatusFor(row.member) === 'failed')
+      .map((row) => displayName(row.member))
     // Re-review #342 item 5: pay still loading — skipped as "still loading" (export again), never exported stripped.
-    for (const member of visible) {
-      if (drafts.has(member.id) && payStatusFor(member) === 'loading') inputsSkippedRef.current.push(displayName(member))
+    for (const row of visible) {
+      if (payStatusFor(row.member) === 'loading') inputsSkippedRef.current.push(displayName(row.member))
     }
     const reasonOf = (error: unknown) => (error instanceof Error && error.message ? error.message : 'unknown error')
     // 17 Nov (owner: "Sending timesheets…" stayed on long after the export was done): the button finishes as soon as
@@ -635,12 +723,12 @@ export function TimesheetsScreen({
         .join(' ')
     try {
       const run = await runTimesheetExport({
-        members: visible.filter((member) => drafts.has(member.id) && !payUnknownFor(member)),
-        memberId: (member) => member.id,
-        memberName: (member) => displayName(member),
+        members: visible.filter((row) => !payUnknownFor(row.member)),
+        memberId: (row) => row.key,
+        memberName: (row) => (exportRuns.length > 1 ? `${displayName(row.member)} (${formatPaymentPeriodLine(row.period.start, row.period.end, timeZone)})` : displayName(row.member)),
         // Rulebook 1.43.0 (review r318): every person is prepared (and the gate checked) before anyone is stamped.
         gateReady: () => payInputsRef.current.ready,
-        prepare: (member) => prepareExport(member, exportedAt),
+        prepare: (row) => prepareExport(row, exportedAt),
         stamp: (row) => stampExport(row.sheet),
         forgetHistory: forgetExportedTimesheetHistory,
         deliverInBackground: true,
@@ -652,7 +740,7 @@ export function TimesheetsScreen({
           // follows the order of the people exported, never the order the uploads finished.
           const built = await mapWithConcurrency(rows, EXPORT_DELIVERY_CONCURRENCY, async (row) => {
             try {
-              const { pdf, fileName } = await buildExportPdf(row.sheet.member, row.sheet.draft, periodStart, periodEnd, [], row.sheet.documentId)
+              const { pdf, fileName } = await buildExportPdf(row.sheet.member, row.sheet.draft, row.sheet.period.start, row.sheet.period.end, [], row.sheet.documentId)
               let link: { fileName: string; url: string } | null = null
               try {
                 const url = await uploadFile(timesheetExportPath(organization.id, fileName), timesheetPdfBlob(pdf), 'application/pdf')
@@ -676,6 +764,12 @@ export function TimesheetsScreen({
             return
           }
           if (pdfAttachments.length === 0) return
+          // Review of #368: the email names only the pay runs whose sheets were actually exported.
+          const sentRuns = Array.from(
+            new Map(rows.map((row) => [payRunKey(row.sheet.period, timeZone), row.sheet.period])).values()
+          ).sort((a, b) => a.start.getTime() - b.start.getTime())
+          const sentStamp = sentRuns.map((run) => paymentRunDateStamp(run.start, run.end, timeZone)).join(', ')
+          const sentPeriodLine = sentRuns.map((run) => formatPaymentPeriodLine(run.start, run.end, timeZone)).join('; ')
           try {
             const response = await fetch('/api/timesheets/export-email', {
               method: 'POST',
@@ -685,8 +779,8 @@ export function TimesheetsScreen({
                 recipientEmail,
                 recipientName: `${user.firstName} ${user.surname}`.trim() || user.email,
                 organizationName: organization.name || 'Organisation',
-                weekTitle: periodLine,
-                paymentRunStamp: stamp,
+                weekTitle: sentPeriodLine || periodLine,
+                paymentRunStamp: sentStamp || stamp,
                 timesheetCount: pdfAttachments.length,
                 attachmentNames: pdfAttachments.map((attachment) => attachment.fileName),
                 downloadLinks,
@@ -825,7 +919,6 @@ export function TimesheetsScreen({
           title={emptyTitle}
           description={emptyDescription}
         >
-          {checkingEarlier ? <span>Checking the rest of the team…</span> : null}
         </EmptyState>
       </Card>
     )
@@ -833,15 +926,15 @@ export function TimesheetsScreen({
 
   return (
     <>
-      {checkingEarlier ? <Note tone="info">Checking the rest of the team…</Note> : null}
       <Card>
-      <MemberTable viewer={user}>
-        {visible.map((member) => {
-          const draft = drafts.get(member.id)
-          const summary = summaryFor(member, draft, periodStart, periodEnd)
+      <MemberTable viewer={user} payRun>
+        {visible.map((row) => {
+          const { member, draft, period } = row
+          const summary = summaryFor(member, draft, period.start, period.end)
           return (
             <MemberRow
-              key={member.id}
+              key={row.key}
+              payRunLine={formatPaymentPeriodLine(period.start, period.end, timeZone)}
               member={member}
               users={users}
               viewer={user}
@@ -855,8 +948,8 @@ export function TimesheetsScreen({
                   timesheetsTeamHref({
                     tab: teamTab,
                     user: member.id,
-                    period: periodStartKey(periodStart, timeZone),
-                    periodEnd: dayKey(periodEnd, timeZone),
+                    period: periodStartKey(period.start, timeZone),
+                    periodEnd: dayKey(period.end, timeZone),
                   })
                 )
               }
@@ -894,9 +987,11 @@ function formatQueueHours(hours: number): string {
 }
 
 /** Table shell for User Timesheets rows: the Line manager column only when the rows show it (admins). */
-function MemberTable({ viewer, exported, children }: { viewer: User | null; exported?: boolean; children: ReactNode }) {
+function MemberTable({ viewer, exported, payRun, children }: { viewer: User | null; exported?: boolean; payRun?: boolean; children: ReactNode }) {
   const columns: DataColumn[] = [
     { key: 'person', label: 'Person' },
+    // 17 Nov follow-up: Awaiting / Signed off list several pay runs; each row shows its own.
+    ...(payRun && !exported ? [{ key: 'run', label: 'Pay run' }] : []),
     ...(exported
       ? [
           { key: 'run', label: 'Pay run' },
@@ -928,7 +1023,13 @@ function MemberRow({
   onDownload,
   revisionLabel = '',
   payStatus = 'ready',
+  payRunLine,
+  unresolved = false,
 }: {
+  /** 17 Nov follow-up: the row's own pay run (Awaiting / Signed off). */
+  payRunLine?: string
+  /** 17 Nov follow-up: an exported sheet whose person is nobody in the organisation — no profile to open. */
+  unresolved?: boolean
   member: User
   users: User[]
   viewer: User | null
@@ -947,9 +1048,10 @@ function MemberRow({
 }) {
   const currency = useOrganizationCurrency()
   const payUnknown = payStatus !== 'ready'
-  const role = member.permissions.operativeMode ? 'Operative' : hasAdminAccess(member) ? 'Admin' : 'Manager'
+  const role = unresolved ? '—' : member.permissions?.operativeMode ? 'Operative' : hasAdminAccess(member) ? 'Admin' : 'Manager'
   const lineManager = (() => {
     if (!hasAdminAccess(viewer)) return null
+    if (unresolved) return '—'
     const managerId = member.assignedManagerUserIds?.[0] || member.assignedManagerUserId
     if (!managerId) return 'Unassigned'
     const manager = users.find((row) => row.id === managerId)
@@ -958,26 +1060,35 @@ function MemberRow({
   const name = displayName(member)
   const exportedColumns = periodLine !== undefined
   return (
-    <tr className="click" onClick={onClick}>
+    <tr className={unresolved ? undefined : 'click'} onClick={unresolved ? undefined : onClick}>
       <td>
         <span className="pu-who">
-          <IconTile tone={role === 'Operative' ? 'green' : role === 'Admin' ? 'purple' : 'blue'} size="sm" round>
-            {initials(name)}
+          <IconTile tone={unresolved ? 'amber' : role === 'Operative' ? 'green' : role === 'Admin' ? 'purple' : 'blue'} size="sm" round>
+            {unresolved ? '?' : initials(name)}
           </IconTile>
           <span>
-            <button
-              type="button"
-              className="pu-rowbtn"
-              onClick={(event) => {
-                event.stopPropagation()
-                onClick()
-              }}
-            >
-              <b>{name}</b>
-            </button>
+            {unresolved ? (
+              <>
+                <b>{name}</b> <Chip tone="amber">{UNKNOWN_TIMESHEET_PERSON_CHIP}</Chip>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="pu-rowbtn"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onClick()
+                }}
+              >
+                <b>{name}</b>
+              </button>
+            )}
           </span>
         </span>
       </td>
+      {payRunLine !== undefined && !exportedColumns ? (
+        <td style={{ color: 'var(--pu-blue)', fontWeight: 600, whiteSpace: 'nowrap' }}>{payRunLine}</td>
+      ) : null}
       {exportedColumns ? (
         <>
           <td style={{ color: 'var(--pu-blue)', fontWeight: 600, whiteSpace: 'nowrap' }}>{periodLine}</td>
@@ -1082,7 +1193,16 @@ function ExportedTimesheetsList({
   payStatusOf?: (member: User) => PayProfilesStatus
 }) {
   const observed = rows.map((row) => exportedRowPeriod(row, invoicing, timeZone))
-  const runs = listSelectablePayPeriods(invoicing, new Date(), 120, timeZone, observed)
+  // Owner item 6 (17 Nov follow-up): the picker starts at the organisation's creation day (else the earliest exported
+  // sheet); every run with an exported sheet is still listed.
+  // The stored `createdAt` of the live organisation document (the session copy reads a missing one as "now").
+  const createdAt = organizationCreatedAt(useOrganizationDocument().data)
+  const fromDayKey = payRunListStartDayKey({
+    createdAt,
+    storedDayKeys: observed.map((period) => dayKey(period.start, timeZone)),
+    timeZone,
+  })
+  const runs = listSelectablePayPeriods(invoicing, new Date(), 120, timeZone, observed, fromDayKey)
   const needle = search.trim().toLowerCase()
   const filtered = rows
     .map((row) => ({ row, period: exportedRowPeriod(row, invoicing, timeZone) }))
@@ -1179,6 +1299,7 @@ function ExportedTimesheetsList({
                 onDownload={onDownload ? () => onDownload(row, period) : undefined}
                 revisionLabel={timesheetRevisionLabel(row.draft.revision ?? 0)}
                 payStatus={payStatusOf ? payStatusOf(row.user) : 'ready'}
+                unresolved={isUnresolvedTimesheetPerson(row.user)}
               />
             )
             const earlier = row.earlierVersions ?? []

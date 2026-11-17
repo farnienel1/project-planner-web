@@ -398,7 +398,9 @@ function canSeeNavItem(item: DashboardNavItem, user: User, orgUsers: User[] = []
     case 'dashboard_add_user':
       return canManageUsers(user) || canManageOperativesOnly(user)
     case 'dashboard_manage_users':
-      return canManageUsers(user) || canManageOperativesOnly(user)
+      // Owner 17 Nov: one Operatives page. An Operatives manager manages people from `dashboard_operatives`;
+      // Manage users (every level) is admins only (`peopleManagementHref`).
+      return canManageUsers(user)
     case 'dashboard_help':
       return canViewHelp(user)
     default:

@@ -7,6 +7,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useDataParityMonitor } from '@/lib/dataParity/useDataParityMonitor'
+import { useMineChangedMonitor } from '@/lib/timesheets/useMineChangedMonitor'
 import { useOnlineStatus } from '@/lib/hooks/useOnlineStatus'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -100,8 +101,8 @@ function NavRow({
   compact?: boolean
 }) {
   const active = isDashboardNavActive(pathname, item.href)
-  // Owner decision 17 Nov: the hub's "bookings changed" triangle beside the Timesheets entry (the hub's own answer,
-  // `useMineChangedStore`). Beside the link, never inside it (the triangle is its own button).
+  // Owner decision 17 Nov / G: the "bookings changed" triangle beside the Timesheets entry — the app shell's own answer
+  // (`useMineChangedMonitor` → `useMineChangedStore`). Beside the link, never inside it (the triangle is its own button).
   const sessionKey = useAuthStore((state) => mineChangedKey(state.organization?.id, state.user?.id))
   const timesheetsChanged = useMineChangedStore((state) => mineChangedShown(state, sessionKey))
   const showChanged = item.href === TIMESHEETS_HUB_PATH && timesheetsChanged && !compact
@@ -222,6 +223,9 @@ function AppShellInner({ children }: { children: ReactNode }) {
 
   // Rulebook 1.38.0 §27: the read-only data check (server count vs this browser's lists), self-healing a list that differs.
   useDataParityMonitor(user ? organization?.id : null)
+  // Owner decision G (17 Nov follow-up): the signed-in person's own "a signed timesheet changed" answer, kept live from
+  // their own sheets and bookings — the sidebar triangle shows without opening the Timesheets hub first.
+  useMineChangedMonitor()
 
   useEffect(() => {
     // Rulebook 1.13.0 §14 (`signInEmailSyncWrites`): once per signed-in account.

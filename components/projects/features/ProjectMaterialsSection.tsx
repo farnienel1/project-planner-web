@@ -20,6 +20,7 @@ import { materialStatusLabel } from '@/lib/maps/siteLocation'
 import {
   canViewMaterialOrderHistory,
   formatMaterialDeliveryRequired,
+  materialBrandStored,
   materialSendLineText,
   materialSizeText,
 } from '@/lib/canonical'
@@ -370,7 +371,7 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
                         {record.lines.map((line) => (
                           <li key={line.materialId || line.name} className="text-[13px] text-slate-700">
                             {line.name} · {materialSendLineText(line)}
-                            {line.brand ? ` · ${line.brand}` : ''}
+                            {materialBrandStored(line.brand) ? ` · ${materialBrandStored(line.brand)}` : ''}
                             {line.productCode ? ` · ${line.productCode}` : ''}
                           </li>
                         ))}

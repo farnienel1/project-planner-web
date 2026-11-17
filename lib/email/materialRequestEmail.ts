@@ -8,7 +8,7 @@ import { format } from 'date-fns'
 import { escapeHtml } from '@/lib/security/htmlEscape'
 import { supplierGreeting } from '@/lib/materials/sendListLogic'
 import { materialRequestEmailSubject } from '@/lib/canonical/materialOrderAccess'
-import { materialLineText } from '@/lib/canonical/materialQuantity'
+import { materialBrandStored, materialBrandText, materialLineText } from '@/lib/canonical/materialQuantity'
 
 export type MaterialRequestLine = {
   material: string
@@ -84,7 +84,8 @@ function itemsTableHTML(materials: MaterialRequestLine[], isQuote: boolean): str
   return materials
     .map((material) => {
       const name = escapeHtml(material.material)
-      const manufacturer = escapeHtml(trim(material.brand) || '—')
+      // Rulebook 1.58.0: a missing (or legacy "Custom") brand reads "N/A".
+      const manufacturer = escapeHtml(materialBrandText(material.brand))
       const part = trim(material.productCode)
       const partHTML = part
         ? ` · Part: <span class="mr-muted" style="color:#475569;font-weight:600;">${escapeHtml(part)}</span>`
@@ -163,7 +164,7 @@ export function buildPlainTextEmail(context: MaterialRequestEmailContext, isQuot
           .map((item, index) => {
             const qty = materialLineText(item)
             const details = [
-              trim(item.brand) ? `Brand: ${trim(item.brand)}` : '',
+              materialBrandStored(item.brand) ? `Brand: ${materialBrandStored(item.brand)}` : '',
               trim(item.productCode) ? `Code: ${trim(item.productCode)}` : '',
               trim(item.notes) ? `Details: ${trim(item.notes)}` : '',
 

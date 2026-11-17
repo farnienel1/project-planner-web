@@ -35,7 +35,7 @@ import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useMaterialProjectStore } from '@/lib/stores/materialProjectStore'
 import {
   canBookWork,
-  canManageOperativesOnly,
+  peopleManagementHref,
   canManageUsers,
   canViewDailyOverview,
   canViewWarnings,
@@ -98,7 +98,7 @@ import { dateFromDayKey } from '@/lib/ios-parity/londonTime'
 import { filterTasksForView, getTaskDetailHref, resolveProjectName } from '@/lib/tasks/taskUtils'
 import { teamLeaveBookings, teamLeaveDecisionQueue, teamLeavePeople, teamLeaveTab } from '@/lib/annualLeave/teamLeaveQueue'
 import { getPendingHolidayApprovalsForUser, usersWithoutRequiredLineManager } from '@/lib/annualLeave/holidayApprovalUtils'
-import { matchesRosterSegment } from '@/lib/staff/userRosterUtils'
+import { getOperativeModeUsers, matchesRosterSegment } from '@/lib/staff/userRosterUtils'
 import { countUsersForTab, type ManageUsersTab } from '@/lib/staff/manageUsersUtils'
 import { payePaydayBanner } from '@/lib/canonical'
 
@@ -679,17 +679,22 @@ export function HomeScreen() {
         items.push({ key: 'paye-payday', label: 'PAYE payday not set', detail: payday, count: null, href: '/dashboard/settings/payment-runs' })
       }
     }
-    if ((canManageUsers(displayUser) || canManageOperativesOnly(displayUser)) && rosterReady) {
-      // The tabs Manage Users shows this viewer (operatives managers: Operatives only), Pending segment.
-      const tabs: ManageUsersTab[] = canManageUsers(displayUser) ? ['admins', 'managers', 'operatives'] : ['operatives']
-      const pending = tabs.reduce((sum, tab) => sum + countUsersForTab(users, tab, 'pending', claimedEmails), 0)
+    const peopleHref = peopleManagementHref(displayUser)
+    if (peopleHref && rosterReady) {
+      // The Pending rows of the page this viewer manages people on: admins Manage users (every tab); an Operatives
+      // manager the Operatives page (owner 17 Nov: one page), whose rows are `getOperativeModeUsers`.
+      const admin = canManageUsers(displayUser)
+      const tabs: ManageUsersTab[] = ['admins', 'managers', 'operatives']
+      const pending = admin
+        ? tabs.reduce((sum, tab) => sum + countUsersForTab(users, tab, 'pending', claimedEmails), 0)
+        : getOperativeModeUsers(users, claimedEmails).filter((member) => matchesRosterSegment(member, 'pending')).length
       if (pending > 0) {
         items.push({
           key: 'invites',
           label: pending === 1 ? 'Pending invite' : 'Pending invites',
-          detail: 'Not signed up yet · Manage users → Pending',
+          detail: admin ? 'Not signed up yet · Manage users → Pending' : 'Not signed up yet · Manage operatives → Pending',
           count: pending,
-          href: '/dashboard/settings/users',
+          href: peopleHref,
         })
       }
     }

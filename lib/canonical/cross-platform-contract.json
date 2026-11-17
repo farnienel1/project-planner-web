@@ -2143,7 +2143,7 @@
           "expected": {
             "id": "CAT1000-IOS",
             "name": "Screws 4x40",
-            "brand": "Custom",
+            "brand": "",
             "productCode": null,
             "defaultUnit": "Box",
             "orderUnit": "Box",
