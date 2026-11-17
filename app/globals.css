@@ -1610,7 +1610,7 @@ html {
 .wd-sec { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
 .wd-sec > .btn { width: 100%; min-width: 0; white-space: normal; text-align: center; line-height: 1.2; height: auto; min-height: 40px; padding: 8px 12px; }
 .wd-quiet {
-  display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 10px; border: 0; border-radius: 9px;
+  position: relative; display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 10px; border: 0; border-radius: 9px;
   background: transparent; color: var(--ink2); font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
 }
 .wd-quiet:hover { background: var(--soft2); color: var(--ink); }
@@ -1619,6 +1619,11 @@ html {
   outline: 2px solid var(--blue); outline-offset: 2px;
 }
 .wd-quiet svg { width: 15px; height: 15px; flex-shrink: 0; }
+/* Phones: the header keeps room for the title — Dismiss shows its icon only (its name stays for screen readers). */
+@media (max-width: 520px) {
+  .wd-quiet { width: 32px; height: 32px; padding: 0; justify-content: center; }
+  .wd-quiet .wd-quiet-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}
 .card-h .wd-head-end { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
 .wd-backdrop { position: fixed; inset: 0; z-index: 100; background: rgba(10, 20, 40, 0.45); backdrop-filter: blur(3px); border: 0; }
 .wd-sheet {
