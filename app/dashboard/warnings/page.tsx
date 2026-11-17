@@ -47,7 +47,11 @@ import {
   type WarningDecisionFailures,
 } from '@/lib/warnings/warningDecisionsLoad'
 import { activeOrgWarnings, generateOrgWarnings, type WarningDecisionInputs } from '@/lib/warnings/generateOrgWarnings'
-import { loadResolvedWarningKeys, watchResolvedWarningKeys } from '@/lib/warnings/warningResolutionStorage'
+import {
+  dismissWarningResolution,
+  loadResolvedWarningKeys,
+  watchResolvedWarningKeys,
+} from '@/lib/warnings/warningResolutionStorage'
 import {
   partitionRowsByOrganization,
   publishReadyWarningLanes,
@@ -568,6 +572,32 @@ export default function WarningsPage() {
     [organization?.id, user?.id, visible, resolvedKeys, acceptedClashes, dismissedKeys]
   )
 
+  // Owner bug 17 Nov: a permanent dismissal is `warningResolutions/{resolutionKey}` with status `dismissed`
+  // (`warningResolutionWriteFields`, what iOS writes), read back through `resolvedWarningKeys` / `isWarningActive`,
+  // so the count, the Home badge and iOS all drop it. The key is added here at once; the live listener confirms it.
+  const handleDismissWarning = useCallback(
+    async (resolutionKey: string) => {
+      if (!organization?.id || !user?.id) throw new Error('Sign in again to dismiss this warning.')
+      let written: string
+      try {
+        written = await dismissWarningResolution(organization.id, resolutionKey, user.id)
+      } catch (error) {
+        feedback('actionRefused')
+        throw error
+      }
+      const nextResolved = [...resolvedKeys, written]
+      setResolvedKeys(nextResolved)
+      feedback(
+        resolvedFeedbackEvent(visible, {
+          resolvedKeys: nextResolved,
+          acceptedClashes,
+          dismissedQualificationKeys: dismissedKeys,
+        })
+      )
+    },
+    [organization?.id, user?.id, visible, resolvedKeys, acceptedClashes, dismissedKeys]
+  )
+
   const handleAcceptClash = useCallback(
     async (clash: {
       bookingAId: string
@@ -711,6 +741,7 @@ export default function WarningsPage() {
       smallWorkIds={smallWorkIds}
       onAcceptClash={handleAcceptClash}
       onDismissQualification={handleDismissQualification}
+      onDismissWarning={handleDismissWarning}
       onDeleteBooking={handleDeleteBooking}
       onDeleteManagerBooking={handleDeleteManagerBooking}
       canRemoveClashEntry={canRemoveClashEntry}
