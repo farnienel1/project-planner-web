@@ -352,47 +352,42 @@ export function ProjectDetailsCard({
   ]
 
   return (
-    <section className="card">
-      <div className="card-h">
-        <h2 className="h2">Details</h2>
+    <section className="pj-card">
+      <div className="pj-card-h">
+        <h2 className="pj-card-title">Details</h2>
         {canEdit ? (
-          <div className="acts">
-            <Link href={`${basePath}/edit`} className="btn sm ghost">
-              Edit
-            </Link>
-          </div>
+          <Link href={`${basePath}/edit`} className="pj-link">
+            Edit
+          </Link>
         ) : null}
       </div>
-      <div className="card-b space-y-3">
-        {rows.map((row) => {
-          const Icon = row.icon
-          return (
-          <div key={row.label} className="row" data-hue={row.hue} style={{ padding: '4px 0' }}>
-            <span className="ico-chip sm">
-              <Icon className="h-4 w-4" />
-            </span>
-            <div className="grow">
-              <div className="eyebrow">{row.label}</div>
-              <div className="font-semibold" style={row.warn ? { color: 'var(--warn)' } : undefined}>
-                {row.value}
+      <div className="pj-card-b">
+        <dl className="pj-dl">
+          {rows.map((row) => {
+            const Icon = row.icon
+            const soft = !row.warn && row.label === 'Description' && !project.description
+            return (
+              <div key={row.label}>
+                <Icon className="pj-dl-icon h-4 w-4" aria-hidden="true" />
+                <div className="min-w-0">
+                  <dt>{row.label}</dt>
+                  <dd className={row.warn ? 'warn' : soft ? 'soft' : undefined}>{row.value}</dd>
+                </div>
+              </div>
+            )
+          })}
+          {project.notes ? (
+            <div>
+              <ChatBubbleLeftRightIcon className="pj-dl-icon h-4 w-4" aria-hidden="true" />
+              <div className="min-w-0">
+                <dt>Notes</dt>
+                <dd>{project.notes}</dd>
               </div>
             </div>
-          </div>
-          )
-        })}
-        {project.notes ? (
-          <div className="row" data-hue="lib" style={{ padding: '4px 0' }}>
-            <span className="ico-chip sm">
-              <ChatBubbleLeftRightIcon className="h-4 w-4" />
-            </span>
-            <div className="grow">
-              <div className="eyebrow">Notes</div>
-              <div className="font-semibold">{project.notes}</div>
-            </div>
-          </div>
-        ) : null}
+          ) : null}
+        </dl>
         {canEdit ? (
-          <Link href={`${basePath}/edit`} className="btn primary block">
+          <Link href={`${basePath}/edit`} className="pj-btn primary">
             Edit project details
           </Link>
         ) : null}
