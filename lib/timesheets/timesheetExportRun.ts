@@ -93,6 +93,24 @@ export async function runTimesheetExport<M, T>(input: TimesheetExportRunInput<M,
   return { stamped, skipped, stopped, delivery: null }
 }
 
+/**
+ * Review of #363: `work` over `items` with at most `width` running at once; results in the order of `items` (never the
+ * order they finished), so lists built from them (download links, attachments) are stable.
+ */
+export async function mapWithConcurrency<I, O>(items: ReadonlyArray<I>, width: number, work: (item: I, index: number) => Promise<O>): Promise<O[]> {
+  const out: O[] = new Array(items.length)
+  const limit = Math.max(1, Math.floor(width))
+  let next = 0
+  const lanes = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next++
+      out[index] = await work(items[index], index)
+    }
+  })
+  await Promise.all(lanes)
+  return out
+}
+
 /** Where an exported sheet's PDF can be fetched again (the Exported tab rebuilds it from the saved snapshot). */
 export const EXPORT_RECOVER_HINT = 'Open Exported to download any timesheet again.'
 

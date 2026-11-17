@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.56.0 → 1.57.0
-Packed hash: 42499322142fc9938ee85c3d2166b1a37fc7cd6d3c7d47eb386b0fdbbf67a296
-Rulebook sha256: cbca1832ad7b6086e45a76469196ae5293ed74da773acab61c509f47334fa1e3
+Rulebook version: 1.57.0 → 1.57.0
+Packed hash: 6aa0184804eaeb352d473d82068e9d766b5b44deb62a2ef87a4827e0cfbf0fa4
+Rulebook sha256: f0552b375e75270553eaf8f6236fc0383d1b0e0dd55d21015f4bc018627c1044
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,12 +22,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 5a8a7e4e6f56b91cb18f71e79207782b8840fccf0b63b695826c47e18e59a32e
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: timesheetClaimLatestSheets
+Exports added: none
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/canonical.test.ts, lib/canonical/payeClaims.ts, lib/canonical/timesheetBookingChanges.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/canonical.test.ts
 Done when:
-- [ ] Packed hash in iOS equals 42499322142fc9938ee85c3d2166b1a37fc7cd6d3c7d47eb386b0fdbbf67a296
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 cbca1832ad7b6086e45a76469196ae5293ed74da773acab61c509f47334fa1e3)
+- [ ] Packed hash in iOS equals 6aa0184804eaeb352d473d82068e9d766b5b44deb62a2ef87a4827e0cfbf0fa4
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 f0552b375e75270553eaf8f6236fc0383d1b0e0dd55d21015f4bc018627c1044)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.57.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -48,9 +48,6 @@ Done when:
 4. **PDF line details (owner, 17 Nov).** Web wraps a line's details onto as many lines as needed instead of cutting them with "…". Example: "0.29 days × £225.00/day = £66.18". Check the iOS invoice and timesheet PDFs for the same truncation.
 5. **Export speed.** Web now finishes Export once the sheets are stamped and sends the PDFs and the email in the background. iOS Export is its own code; compare if it also waits on the email.
 
-## New rulebook sections
-
-- 1.57.0 — 2026-11-17
 
 ## Workflow for the iOS agent
 

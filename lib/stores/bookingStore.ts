@@ -27,7 +27,7 @@ import { londonMidnight } from '@/lib/ios-parity/londonTime'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { serializeBooking } from '@/lib/ios-parity/converters'
 import { resolveBookingJobCollection } from '@/lib/bookings/jobCollection'
-import { announceSignedTimesheetDelete } from '@/lib/bookings/signedTimesheetDeleteNotice'
+import { announceSignedTimesheetDelete, announceSignedTimesheetMove } from '@/lib/bookings/signedTimesheetDeleteNotice'
 import type { Booking } from '@/types'
 import {
   bookingDownloadConstraints,
@@ -239,10 +239,16 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     if (!organizationContextStillCurrent(organizationId, captured)) return
     if (!get().bookings.some((row) => row.id === id)) set({ bookings: [...get().bookings, booking] })
     notifyBookingCreatedSoon(booking)
-    // Rulebook 1.33.0 §2: the move deleted the person's manager schedule booking — warn when its day is on a signed or
-    // exported timesheet of theirs (the same notice as Delete; the move has gone ahead). Same person, same day.
-    announceSignedTimesheetDelete({ organizationId, personId: booking.operativeId, date: booking.date })
-    const { notifyManagerSiteBookingRemovedSoon } = await import('@/lib/stores/managerScheduleStore')
+    const { notifyManagerSiteBookingRemovedSoon, useManagerScheduleStore } = await import('@/lib/stores/managerScheduleStore')
+    // Rulebook 1.33.0 §2: the move deleted the person's manager schedule booking — warn when its day (and, when the move
+    // changed the day, the new day too; review of #363) is on a signed or exported timesheet of theirs. The same notice
+    // as Delete; the move has gone ahead.
+    const moved = useManagerScheduleStore.getState().managerSiteBookings.find((row) => row.id === fromManagerSiteBookingId)
+    announceSignedTimesheetMove({
+      organizationId,
+      before: moved ? { personId: moved.userId, date: moved.date } : null,
+      after: { personId: booking.operativeId, date: booking.date },
+    })
     notifyManagerSiteBookingRemovedSoon(organizationId, fromManagerSiteBookingId)
   },
 

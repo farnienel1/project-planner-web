@@ -4,6 +4,8 @@
  */
 'use client'
 
+import { mineChangedKey, useMineChangedStore } from '@/lib/timesheets/mineChangedStore'
+import { periodStartKey } from '@/lib/timesheets/paymentRunCopy'
 import { feedback } from '@/lib/feedbackSounds/feedback'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -1064,6 +1066,9 @@ export function TimesheetPeriodPage({
       )
       // A self-signed person's signature on changed bookings rebuilds their snapshot (1.47.0).
       await persist(next, { rebuildSnapshot: bookingsReopened && sheetSelfSigned })
+      // Owner decision 17 Nov (review of #363): this pay run no longer waits for the person — the sidebar triangle drops it
+      // (the hub's own answer, `useMineChangedStore`; the hub replaces it the next time it works it out).
+      useMineChangedStore.getState().resolvePeriod(mineChangedKey(organization?.id, subjectUser.id), periodStartKey(periodStart, timeZone))
       if (organization?.id && requiresLineManagerCounterSign(subjectUser, users)) {
         try {
           await notifyTimesheetPendingManagerSignoff({

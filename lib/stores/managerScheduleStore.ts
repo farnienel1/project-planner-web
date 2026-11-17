@@ -6,7 +6,7 @@ import { doc, getDoc, setDoc, writeBatch } from 'firebase/firestore'
 import { addBookingDeleteWithTombstone, commitBookingMove, deleteBookingWithTombstone } from '@/lib/bookings/bookingTombstoneWrite'
 import { BOOKING_TOMBSTONE_COLLECTION, captureOrganizationContext, organizationContextStillCurrent } from '@/lib/canonical'
 import { resolveBookingJobCollection } from '@/lib/bookings/jobCollection'
-import { announceSignedTimesheetDelete } from '@/lib/bookings/signedTimesheetDeleteNotice'
+import { announceSignedTimesheetDelete, announceSignedTimesheetMove } from '@/lib/bookings/signedTimesheetDeleteNotice'
 import { auth, db } from '@/lib/firebase/config'
 import { MissingDocumentError, addPartialDocumentToBatch, createWritePayload, savePartialDocument } from '@/lib/firebase/partialWrite'
 import { commitBookingReplace, forgetReplacedBookings } from '@/lib/bookings/bookingReplaceWrite'
@@ -208,10 +208,16 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
     // The organisation was switched while the move was written: the write stands, this screen's lists are not touched.
     if (!organizationContextStillCurrent(organizationId, captured)) return
     set({ managerSiteBookings: [...get().managerSiteBookings.filter((row) => row.id !== next.id), next] })
-    const { notifyBookingRemovedSoon } = await import('@/lib/stores/bookingStore')
+    const { notifyBookingRemovedSoon, useBookingStore } = await import('@/lib/stores/bookingStore')
+    // Rulebook 1.33.0 §2: the move deleted the person's labour booking — the signed-timesheet notice, as for Delete, for
+    // its day and (when the move changed the day; review of #363) the new day. Read before the store forgets it.
+    const moved = useBookingStore.getState().bookings.find((row) => row.id === fromBookingId)
     notifyBookingRemovedSoon(fromBookingId)
-    // Rulebook 1.33.0 §2: the move deleted the person's labour booking — the signed-timesheet notice, as for Delete.
-    announceSignedTimesheetDelete({ organizationId, personId: next.userId, date: next.date })
+    announceSignedTimesheetMove({
+      organizationId,
+      before: moved ? { personId: moved.operativeId, date: moved.date } : null,
+      after: { personId: next.userId, date: next.date },
+    })
   },
 
   saveManagerSiteBooking: async (organizationId: string, booking: SaveManagerSiteBookingInput, options) => {

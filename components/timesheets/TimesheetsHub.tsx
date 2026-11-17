@@ -962,15 +962,20 @@ function MineChangedIndicator({
     }
   }, [organizationId, subject.id, invoicing, timeZone])
   // Only the pay runs the loaded window holds (`coversPeriod`, the last HUB_CHANGE_SCAN_RUNS); memoised per period.
-  const show = rows.some((row) => {
-    const change = periodBookingChanges(catalogue, subject, row.draft, row.period)
-    return change?.waitingFor === 'person' || revisionDueOf(row.draft, change)
-  })
-  // Owner decision 17 Nov: the sidebar's Timesheets entry shows this same answer (published, never recomputed).
+  const changedPeriods = rows
+    .filter((row) => {
+      const change = periodBookingChanges(catalogue, subject, row.draft, row.period)
+      return change?.waitingFor === 'person' || revisionDueOf(row.draft, change)
+    })
+    .map((row) => periodStartKey(row.period.start, timeZone))
+  const show = changedPeriods.length > 0
+  // Owner decision 17 Nov: the sidebar's Timesheets entry shows this same answer (published, never recomputed); the
+  // period page takes a pay run off when the person signs it again (review of #363).
   const publishMineChanged = useMineChangedStore((state) => state.publish)
+  const changedPeriodsKey = changedPeriods.join(',')
   useEffect(() => {
-    publishMineChanged(mineChangedKey(organizationId, subject.id), show)
-  }, [publishMineChanged, organizationId, subject.id, show])
+    publishMineChanged(mineChangedKey(organizationId, subject.id), changedPeriodsKey ? changedPeriodsKey.split(',') : [])
+  }, [publishMineChanged, organizationId, subject.id, changedPeriodsKey])
   return <WithChangedTriangle show={show}>{children}</WithChangedTriangle>
 }
 

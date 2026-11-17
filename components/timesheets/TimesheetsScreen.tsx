@@ -93,8 +93,13 @@ import {
   exportRebuiltPdfNote,
   exportSummaryMessage,
   exportedPdfIsRebuilt,
+  mapWithConcurrency,
   runTimesheetExport,
 } from '@/lib/timesheets/timesheetExportRun'
+import { exportDeliveryNotice, exportDeliveryPending, useExportDeliveryStore } from '@/lib/timesheets/exportDelivery'
+
+/** Review of #363: PDFs built and backed up at once during an export's delivery. */
+const EXPORT_DELIVERY_CONCURRENCY = 3
 import type { PayrollTimePolicyState } from '@/lib/canonical'
 import { SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE, TIMESHEET_LATE_EXTRAS_EXPORT_SKIPPED_MESSAGE, signedTimesheetActions } from '@/lib/canonical'
 
@@ -170,6 +175,15 @@ export function TimesheetsScreen({
   const [exportedRows, setExportedRows] = useState<ExportedTimesheetHistoryRow[]>([])
   const [recordsLoading, setRecordsLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
+  // Review of #363: an export's background delivery for this organisation (survives navigation and a reload).
+  const deliveryEntry = useExportDeliveryStore((state) => (organization?.id ? state.entries[organization.id] ?? null : null))
+  const deliveryPending = useExportDeliveryStore((state) => exportDeliveryPending(state, organization?.id))
+  const loadDelivery = useExportDeliveryStore((state) => state.load)
+  const dismissDelivery = useExportDeliveryStore((state) => state.dismiss)
+  useEffect(() => {
+    if (organization?.id) loadDelivery(organization.id)
+  }, [organization?.id, loadDelivery])
+  const deliveryNotice = exportDeliveryNotice(deliveryEntry, deliveryPending)
   // Exports leave UTR and VAT out unless an admin ticks the box (rulebook).
   const [exportTaxIds, setExportTaxIds] = useState(false)
   const [exportMessage, setExportMessage] = useState<string | null>(null)
@@ -577,6 +591,8 @@ export function TimesheetsScreen({
     let emailProblem: string | null = null
     let stampedCount = 0
     const exportedAt = new Date()
+    const runKey = `${exportedAt.getTime()}|${periodStartKey(periodStart, timeZone)}|${dayKey(periodEnd, timeZone)}`
+    const emptyProblemOf = () => emailProblem
     changedSkippedRef.current = []
     lateSkippedRef.current = []
     inputsSkippedRef.current = []
@@ -629,24 +645,29 @@ export function TimesheetsScreen({
         // delivered on their own: one failure never skips the people after them.
         deliver: async (rows) => {
           stampedCount = rows.length
-          const built = await Promise.all(
-            rows.map(async (row) => {
+          // Review of #363: at most EXPORT_DELIVERY_CONCURRENCY PDFs built and backed up at once; every list below
+          // follows the order of the people exported, never the order the uploads finished.
+          const built = await mapWithConcurrency(rows, EXPORT_DELIVERY_CONCURRENCY, async (row) => {
+            try {
+              const { pdf, fileName } = await buildExportPdf(row.sheet.member, row.sheet.draft, periodStart, periodEnd, [], row.sheet.documentId)
+              let link: { fileName: string; url: string } | null = null
               try {
-                const { pdf, fileName } = await buildExportPdf(row.sheet.member, row.sheet.draft, periodStart, periodEnd, [], row.sheet.documentId)
-                try {
-                  const url = await uploadFile(timesheetExportPath(organization.id, fileName), timesheetPdfBlob(pdf), 'application/pdf')
-                  downloadLinks.push({ fileName, url })
-                } catch {
-                  backupSkipped.push(row.name)
-                }
-                return { fileName, content: pdfBytesToBase64(pdf) }
-              } catch (error) {
-                notSent.push(`${row.name} (${reasonOf(error)})`)
-                return null
+                const url = await uploadFile(timesheetExportPath(organization.id, fileName), timesheetPdfBlob(pdf), 'application/pdf')
+                link = { fileName, url }
+              } catch {
+                link = null
               }
-            })
-          )
-          for (const attachment of built) if (attachment) pdfAttachments.push(attachment)
+              return { name: row.name, link, attachment: { fileName, content: pdfBytesToBase64(pdf) }, error: null as string | null }
+            } catch (error) {
+              return { name: row.name, link: null, attachment: null, error: reasonOf(error) }
+            }
+          })
+          for (const result of built) {
+            if (result.error != null) notSent.push(`${result.name} (${result.error})`)
+            else if (!result.link) backupSkipped.push(result.name)
+            if (result.link) downloadLinks.push(result.link)
+            if (result.attachment) pdfAttachments.push(result.attachment)
+          }
           if (!recipientEmail) {
             emailProblem = 'no email address on your account'
             return
@@ -683,14 +704,24 @@ export function TimesheetsScreen({
         return
       }
       setExportMessage(summaryNow(run, Boolean(run.delivery)))
-      if (run.stamped.length > 0) router.replace(timesheetsTeamHref({ tab: 'exported' }))
       if (run.delivery) {
+        // Review of #363: the result is kept per organisation (survives navigation and a reload) and Export stays off
+        // until this delivery finishes; the browser asks before the tab is closed while it is sending.
+        const deliveries = useExportDeliveryStore.getState()
+        const orgId = organization.id
+        deliveries.start(orgId, runKey, summaryNow(run, true))
         void run.delivery
-          .then(() => setExportMessage(summaryNow(run, false)))
+          .then(() => {
+            const failed = notSent.length > 0 || Boolean(emptyProblemOf())
+            useExportDeliveryStore.getState().finish(orgId, runKey, failed ? 'failed' : 'done', summaryNow(run, false))
+          })
           .catch((error: unknown) =>
-            setExportMessage(`${run.stamped.length} exported. Something went wrong while sending (${reasonOf(error)}). ${EXPORT_RECOVER_HINT}`)
+            useExportDeliveryStore
+              .getState()
+              .finish(orgId, runKey, 'failed', `${run.stamped.length} exported. Something went wrong while sending (${reasonOf(error)}). ${EXPORT_RECOVER_HINT}`)
           )
       }
+      if (run.stamped.length > 0) router.replace(timesheetsTeamHref({ tab: 'exported' }))
     } catch (error) {
       // After anything was stamped the summary above is the answer; only a failure before any stamp is "Export failed".
       if (stampedCount > 0) {
@@ -738,7 +769,18 @@ export function TimesheetsScreen({
   if (teamTab === 'exported') {
     return (
       <>
-      {exportMessage ? <Note tone="info" role="status">{exportMessage}</Note> : null}
+      {deliveryNotice ? (
+        <Note tone={deliveryEntry?.status === 'done' ? 'info' : deliveryEntry?.status === 'failed' || !deliveryPending ? 'amber' : 'info'} role="status">
+          {deliveryNotice}{' '}
+          {!deliveryPending && organization?.id ? (
+            <button type="button" className="pu-link" onClick={() => dismissDelivery(organization.id)}>
+              Dismiss
+            </button>
+          ) : null}
+        </Note>
+      ) : exportMessage ? (
+        <Note tone="info" role="status">{exportMessage}</Note>
+      ) : null}
       <ExportedTimesheetsList
         rows={exportedRows}
         invoicing={invoicing}
@@ -830,8 +872,8 @@ export function TimesheetsScreen({
             </label>
           ) : null}
           <PayInputsBanner inputs={payInputs} />
-          <PuButton variant="primary" block disabled={exporting || !payInputs.ready} onClick={() => void exportSigned()}>
-            {exporting ? 'Sending timesheets…' : `Email and export ${visible.length} timesheet${visible.length === 1 ? '' : 's'}`}
+          <PuButton variant="primary" block disabled={exporting || deliveryPending || !payInputs.ready} onClick={() => void exportSigned()}>
+            {exporting ? 'Exporting timesheets…' : deliveryPending ? 'Sending the last export…' : `Email and export ${visible.length} timesheet${visible.length === 1 ? '' : 's'}`}
           </PuButton>
           {ownSheetNotice ? <Note tone="amber">{ownSheetNotice}</Note> : null}
           {exportMessage ? <span className="pu-sub">{exportMessage}</span> : null}

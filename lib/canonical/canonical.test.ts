@@ -17407,3 +17407,28 @@ test('1.57.0 timesheetClaimRows lists each entry once, from the latest revision'
   assert.deepEqual(rows.map((row) => `${row.sheetId}:${row.amount}`).sort(), ['timesheet_u1_1793491200_rev2:200', 'timesheet_u1_1794787200:10'])
   assert.deepEqual(R112.timesheetClaimLatestSheets([{ id: 'not-a-sheet' }]).map((row) => row.id), ['not-a-sheet'])
 })
+
+test('1.57.0 snapshot gap: never for a PAYE day, a leave line, a repairable empty snapshot or legacy lines with no booking', () => {
+  const now = Date.now()
+  const line = (id: string, extra: Record<string, unknown> = {}) => ({ id: `op-${id}-normal`, bookingId: id, bookingCollection: 'bookings', bookingFingerprint: `${id}|2026-11-10|FULL DAY||||0|`, bookingCreatedAt: now - 86_400_000, bookingUpdatedAt: now - 86_400_000, ...extra })
+  const signedAt = new Date(now - 120_000)
+  const sheetWith = (lines: unknown[]) => ({
+    operativeSignedAt: signedAt,
+    operativeSignedBookings: ['a', 'b'].map((id) => ({ bookingId: id, collection: 'bookings', fingerprint: line(id).bookingFingerprint, personId: 'u1', place: '' })),
+    operativeSignedBookingsAt: signedAt,
+    operativeSignedBookingsSignedAt: signedAt,
+    managerSignedAt: new Date(now - 60_000),
+    weeklyReportOverride: { approvedAt: new Date(now - 60_000), lines },
+  })
+  const withB = sheetWith([{ id: 'op-b-normal', bookingId: 'b', bookingFingerprint: line('b').bookingFingerprint }])
+  // The missing booking is live only as a PAYE day, or as leave: never a timesheet line, never a gap.
+  assert.equal(R112.signedTimesheetBookingChanges({ sheet: withB, liveLines: [line('a', { isPayeDay: true }), line('b')], liveLoaded: true }).changed, false)
+  assert.equal(R112.signedTimesheetBookingChanges({ sheet: withB, liveLines: [line('a', { isLeave: true }), line('b')], liveLoaded: true }).changed, false)
+  // A signed copy frozen empty (1.43.0) is repaired, never reopened by the gap rule.
+  const empty = R112.signedTimesheetBookingChanges({ sheet: sheetWith([]), liveLines: [line('a'), line('b')], liveLoaded: true })
+  assert.equal(empty.changed, false)
+  assert.equal(R112.timesheetSnapshotNeedsRebuild(sheetWith([]), [line('a'), line('b')]), true)
+  // Legacy signed lines that name no booking cannot be compared.
+  const legacy = sheetWith([{ id: 'day-1', amount: 225 }, { id: 'day-2', amount: 225 }])
+  assert.equal(R112.signedTimesheetBookingChanges({ sheet: legacy, liveLines: [line('a'), line('b')], liveLoaded: true }).changed, false)
+})

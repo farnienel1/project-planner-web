@@ -232,3 +232,40 @@ test('(c) sheets are prepared a few at a time, in member order', async () => {
   assert.ok(most > 1)
   assert.deepEqual(run.stamped.map((row) => row.name), ['a', 'b', 'd', 'e'])
 })
+
+test('(g) the gap is read only through the screen ids: without the same-email ids the booking is not live, so nothing is flagged', () => {
+  const bookings = [booking('b1', '2026-11-10'), booking('mon', '2026-11-11', { operativeId: 'u1' })]
+  const signed = personSigns({ ...emptyTimesheetDraft() }, bookings, new Date(Date.now() - 60_000))
+  const draft = stored(
+    applyWeeklyReportOverride({
+      ...common,
+      aliasUserIds: ['u1'],
+      bookings,
+      draft: { ...signed, managerSignedAt: new Date(Date.now() - 30_000), managerSignedByName: 'Test Admin', managerSignedByUserId: 'mgr' },
+    })
+  )
+  // Live lines collected WITHOUT the same-email ids (an older build) leave b1 out: it is not live there, so no gap.
+  const ownIdsOnly = collectTimesheetPayroll({ ...common, periodStart: start, periodEnd: end, bookings, history: undefined as never, scheduleOptions: undefined as never, aliasUserIds: ['u1'] }).lineItems
+  const without = draftBookingChanges({ draft, lines: ownIdsOnly, bookings, managerSiteBookings: [], timeZone: tz, personIds: ['u1', 'u1-copy'], liveLoaded: true, selfSigned: false })
+  assert.equal(without?.addedBookingIds.includes('b1') ?? false, false)
+  // With the screen's ids (`userIdsSharingEmail`) b1 is live and missing from the signed copy.
+  assert.deepEqual(changes(draft, bookings)?.addedBookingIds, ['b1'])
+})
+
+test('invoice text is measured with the font metrics and never reaches the amount column', async () => {
+  const { pdfTextWidth } = await import('./invoicePdf.ts')
+  // Helvetica: "W" is 944/1000 em, "i" 222/1000 em.
+  assert.equal(pdfTextWidth('W', 10), 9.44)
+  assert.equal(pdfTextWidth('i', 10), 2.22)
+  assert.ok(pdfTextWidth('W', 10, true) >= pdfTextWidth('W', 10))
+  const wide = 'WWWWWWWWWW MMMMMMMMMM WWWWWWWWWW MMMMMMMMMM WWWWWWWWWW MMMMMMMMMM WWWWWWWWWW'
+  for (const [size, bold] of [[9.5, false], [11.5, true]] as const) {
+    const lines = wrapPdfText(wide, 370, size, bold)
+    assert.ok(lines.length > 1)
+    assert.ok(lines.every((line) => pdfTextWidth(line, size, bold) <= 370))
+    assert.equal(lines.join(' '), wide)
+  }
+  // One word longer than a line is split by character, nothing dropped.
+  const word = 'W'.repeat(60)
+  assert.equal(wrapPdfText(word, 100, 10).join(''), word)
+})
