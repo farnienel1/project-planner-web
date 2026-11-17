@@ -6,7 +6,7 @@ import { snapshotGapCounts } from './plan.mjs'
 const rulebook = loadRulebook()
 const tz = 'Europe/London'
 const at = (iso) => ({ seconds: Date.parse(iso) / 1000, nanoseconds: 0 })
-const fp = (id, day) => `${id}|${day}|FULL DAY||||0|`
+const fp = (id, day) => rulebook.overtimeBookingFingerprint({ id, personId: '', dayKey: day, timeSlot: 'FULL DAY', isBreakRemoved: false, otMultiplierOverride: null })
 
 function sheet({ id = 'timesheet_u1_1793491200', exported = false, lines, record = ['b1', 'b2'] } = {}) {
   return {
@@ -16,7 +16,7 @@ function sheet({ id = 'timesheet_u1_1793491200', exported = false, lines, record
       weekStart: at('2026-11-01T00:00:00Z'),
       weekEndKey: '2026-11-15',
       operativeSignedAt: at('2026-11-14T10:00:00Z'),
-      operativeSignedBookings: record.map((b) => ({ bookingId: b, collection: 'bookings', fingerprint: fp(b, '2026-11-10'), personId: 'u1-copy', place: 'p1' })),
+      operativeSignedBookings: record.map((b) => ({ bookingId: b, collection: 'bookings', fingerprint: fp(b, '2026-11-10'), personId: 'u1-copy', place: 'job|p1' })),
       operativeSignedBookingsSignedAt: at('2026-11-14T10:00:00Z'),
       operativeSignedBookingsAt: at('2026-11-14T10:00:01Z'),
       managerSignedAt: at('2026-11-14T11:00:00Z'),
@@ -80,4 +80,19 @@ test('empty signed copies: only the rule repair predicate counts as repaired on 
 test('a signed line with only an op-<id>-normal id names its booking, as the rule reads it', () => {
   const lines = [{ id: 'op-b1-normal' }, { id: 'op-b2-normal' }]
   assert.deepEqual(snapshotGapCounts(rulebook, base({ sheets: [sheet({ lines })] })), { sheetsChecked: 1, exported: 0, notExported: 0, gapOnly: 0, otherChange: 0, emptySnapshotRepair: 0, noRecord: 0 })
+})
+
+test('the 1.47.0 rule sees changes and removals of signed bookings (documents passed), so the split columns are its own answer', () => {
+  // b1 is the gap; b2 (on the signed copy) changed its slot after signing: a real change, so the gap is not gap-only.
+  const changed = new Map([
+    ['bookings|b1', booking()],
+    ['bookings|b2', { ...booking(), timeSlot: 'AM' }],
+  ])
+  const counts = snapshotGapCounts(rulebook, base({ sheets: [sheet()], bookings: changed }))
+  assert.equal(counts.notExported, 1)
+  assert.equal(counts.gapOnly, 0)
+  // b2 deleted (no document): removed, a 1.47.0 change.
+  const removed = snapshotGapCounts(rulebook, base({ sheets: [sheet()], bookings: new Map([['bookings|b1', booking()]]) }))
+  assert.equal(removed.otherChange + removed.notExported, 1)
+  assert.equal(removed.gapOnly, 0)
 })

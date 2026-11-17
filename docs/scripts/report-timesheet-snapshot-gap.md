@@ -31,6 +31,9 @@ This dry run says how many sheets each organisation has in each group, before th
 | `emptySnapshotRepairedOnOpen` | Not exported, no labour line, and a booking written before approval. The rule's own repair (`timesheetSnapshotNeedsRebuild`) rebuilds it when a reviewer opens it. |
 | `signedBefore147_noRecord` | Signed before 1.47.0, so there is no record of the signed bookings. This rule does not apply. |
 
-The counts are an upper bound:
-- PAYE days are not excluded; they rarely appear on a signed record.
-- Only the person's signed bookings are read as live lines. Another booking in the pay run could make an empty copy repairable, and that copy is counted as flagged here.
+How it counts: the script asks the rulebook itself (`signedTimesheetBookingChanges`, `timesheetSnapshotNeedsRebuild`). It passes each signed booking's live fingerprint, its stored booking document, its tombstone and the person's ids, so every column is the rule's own answer for those bookings.
+
+What it can still miss:
+- PAYE days are not excluded. They rarely appear on a signed record.
+- Only the person's signed bookings are read. A booking added to the pay run after signing is not seen, so `alreadyFlaggedBefore157` can undercount, and `ofWhichGapOnly` can overcount by the same sheets. Another booking in the pay run could also make an empty copy repairable that is counted as flagged here.
+- `notExported_counterSignAgain` and `exported_revisionDue` (the gap counts) do not depend on those bookings.

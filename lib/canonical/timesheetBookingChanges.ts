@@ -211,10 +211,17 @@ export const SNAPSHOT_GAP_FROM_MS: number | null = null
  * The booking change a report (weekly report feed, check line, Payrun Snapshot, revision report state) uses: under J1 a
  * change that is only a snapshot gap counts as no change (the signed figures stand); otherwise the change as given.
  */
-export function signedTimesheetChangeForReports<T extends { snapshotGapOnly?: boolean | null }>(change: T | null | undefined): T | null {
+export function signedTimesheetChangeForReports<
+  T extends { snapshotGapOnly?: boolean | null; lateExtrasWaiting?: boolean | null; bookingsChanged?: boolean | null }
+>(change: T | null | undefined): T | null {
   if (!change) return null
-  if (change.snapshotGapOnly === true && SNAPSHOT_GAP_REPORTS === 'signed') return null
-  return change
+  if (change.snapshotGapOnly !== true || SNAPSHOT_GAP_REPORTS !== 'signed') return change
+  // Late extras still wait for the line manager (`timesheetChangesWithLateExtras`): that stays (the check line and the
+  // Payrun Snapshot read Submitted), as a late-extras-only change — the signed figures stand, nothing re-priced.
+  if (change.lateExtrasWaiting === true) {
+    return { ...change, snapshotGapOnly: false, bookingsChanged: false, changed: true, reopened: true, waitingFor: 'lineManager' }
+  }
+  return null
 }
 
 function text(value: unknown): string {

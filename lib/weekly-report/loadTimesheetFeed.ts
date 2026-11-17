@@ -146,7 +146,7 @@ export async function loadWeeklyReportTimesheetFeed({
         // Fourth review of #337: the check line reads the snapshot's late rows only while still approved.
         sheet: draft ? timesheetSheetFields(draftWithCurrentLateRows(draft)) : null,
         status: draft ? timesheetStatusFieldsFromDraft(draft) : null,
-        change: checkChange ? { reopened: checkChange.reopened, changed: checkChange.changed, exported: checkChange.exported, waitingFor: checkChange.waitingFor, snapshotGapOnly: checkChange.snapshotGapOnly } : null,
+        change: checkChange ? { reopened: checkChange.reopened, changed: checkChange.changed, exported: checkChange.exported, waitingFor: checkChange.waitingFor, snapshotGapOnly: checkChange.snapshotGapOnly, lateExtrasWaiting: checkChange.lateExtrasWaiting } : null,
         payrollLines: payroll.lineItems,
         entryFingerprints: draft ? draftEntryFingerprints(draft) : null,
         // Rulebook 1.55.0: the latest version — the check line reads "· REV N", "Revision due" or "REV N waiting for signature".

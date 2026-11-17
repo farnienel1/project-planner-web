@@ -712,17 +712,19 @@ export function TimesheetsScreen({
         // until this delivery finishes; the browser asks before the tab is closed while it is sending.
         const deliveries = useExportDeliveryStore.getState()
         const orgId = organization.id
-        deliveries.start(orgId, runKey, summaryNow(run, true))
+        const shared = deliveries.start(orgId, runKey, summaryNow(run, true))
         void run.delivery
           .then(() => {
+            // Another tab owned the shared notice when this run started: its result is shown in this tab only.
+            if (!shared) setExportMessage(summaryNow(run, false))
             const failed = notSent.length > 0 || Boolean(emptyProblemOf())
             useExportDeliveryStore.getState().finish(orgId, runKey, failed ? 'failed' : 'done', summaryNow(run, false))
           })
-          .catch((error: unknown) =>
-            useExportDeliveryStore
-              .getState()
-              .finish(orgId, runKey, 'failed', `${run.stamped.length} exported. Something went wrong while sending (${reasonOf(error)}). ${EXPORT_RECOVER_HINT}`)
-          )
+          .catch((error: unknown) => {
+            const failure = `${run.stamped.length} exported. Something went wrong while sending (${reasonOf(error)}). ${EXPORT_RECOVER_HINT}`
+            if (!shared) setExportMessage(failure)
+            useExportDeliveryStore.getState().finish(orgId, runKey, 'failed', failure)
+          })
       }
       if (run.stamped.length > 0) router.replace(timesheetsTeamHref({ tab: 'exported' }))
     } catch (error) {
@@ -781,9 +783,8 @@ export function TimesheetsScreen({
             </button>
           ) : null}
         </Note>
-      ) : exportMessage ? (
-        <Note tone="info" role="status">{exportMessage}</Note>
       ) : null}
+      {exportMessage && exportMessage !== deliveryNotice ? <Note tone="info" role="status">{exportMessage}</Note> : null}
       <ExportedTimesheetsList
         rows={exportedRows}
         invoicing={invoicing}

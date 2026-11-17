@@ -22,9 +22,13 @@ export type ExportDeliveryEntry = {
   heartbeatMs?: number
 }
 
-/** How often a sending tab writes its heartbeat, and when a silent "sending" entry counts as abandoned. */
+/**
+ * How often a sending tab writes its heartbeat, and when a silent "sending" entry counts as abandoned. A hidden tab's
+ * timers can run as rarely as once a minute, so the stale window is two minutes, and a tab also beats when it is hidden
+ * or shown again (`visibilitychange`).
+ */
 export const EXPORT_DELIVERY_HEARTBEAT_MS = 5_000
-export const EXPORT_DELIVERY_STALE_MS = 20_000
+export const EXPORT_DELIVERY_STALE_MS = 120_000
 
 const STORAGE_PREFIX = 'pp.timesheetExportDelivery:'
 
@@ -84,7 +88,8 @@ type ExportDeliveryState = {
   live: Record<string, string>
   /** Re-read time, so a silent other tab's entry turns stale on screen. */
   nowMs: number
-  start: (organizationId: string, runKey: string, message: string) => void
+  /** False when another tab already owns a live send for the organisation (this run is then shown in this tab only). */
+  start: (organizationId: string, runKey: string, message: string) => boolean
   finish: (organizationId: string, runKey: string, status: 'done' | 'failed', message: string) => void
   load: (organizationId: string) => void
   dismiss: (organizationId: string) => void
@@ -105,6 +110,18 @@ function syncUnloadGuard(live: Record<string, string>) {
 }
 
 const heartbeats = new Map<string, ReturnType<typeof setInterval>>()
+/** Runs this tab sends without the shared entry (another tab owned it when they started). */
+const localOnly = new Set<string>()
+
+/** Writes this tab's heartbeat for a run it owns. */
+function beat(organizationId: string, runKey: string) {
+  const state = useExportDeliveryStore.getState()
+  const held = state.entries[organizationId]
+  if (!held || held.runKey !== runKey || held.status !== 'sending' || held.ownerTab !== EXPORT_DELIVERY_TAB_ID) return
+  const next = { ...held, heartbeatMs: Date.now() }
+  writeStored(organizationId, next)
+  useExportDeliveryStore.setState({ entries: { ...state.entries, [organizationId]: next } })
+}
 let staleTimer: ReturnType<typeof setTimeout> | null = null
 
 export const useExportDeliveryStore = create<ExportDeliveryState>((set, get) => ({
@@ -114,31 +131,35 @@ export const useExportDeliveryStore = create<ExportDeliveryState>((set, get) => 
   start: (organizationId, runKey, message) => {
     const now = Date.now()
     const entry: ExportDeliveryEntry = { runKey, status: 'sending', message, atMs: now, ownerTab: EXPORT_DELIVERY_TAB_ID, heartbeatMs: now }
-    writeStored(organizationId, entry)
     const live = { ...get().live, [organizationId]: runKey }
     syncUnloadGuard(live)
+    // Two tabs starting at once: re-read just before writing; if another tab already owns a live send, this tab sends
+    // its own run without taking the shared entry (its result is shown in this tab only).
+    const stored = typeof window === 'undefined' ? null : readStored(organizationId)
+    if (exportDeliveryLiveElsewhere(stored, EXPORT_DELIVERY_TAB_ID, now)) {
+      localOnly.add(runKey)
+      set({ live })
+      return false
+    }
+    writeStored(organizationId, entry)
     clearInterval(heartbeats.get(organizationId))
     if (typeof window !== 'undefined') {
-      heartbeats.set(
-        organizationId,
-        setInterval(() => {
-          const held = get().entries[organizationId]
-          if (!held || held.runKey !== runKey || held.status !== 'sending') return
-          const beat = { ...held, heartbeatMs: Date.now() }
-          writeStored(organizationId, beat)
-          set({ entries: { ...get().entries, [organizationId]: beat } })
-        }, EXPORT_DELIVERY_HEARTBEAT_MS)
-      )
+      heartbeats.set(organizationId, setInterval(() => beat(organizationId, runKey), EXPORT_DELIVERY_HEARTBEAT_MS))
     }
     set({ entries: { ...get().entries, [organizationId]: entry }, live })
+    return true
   },
   finish: (organizationId, runKey, status, message) => {
     if (get().live[organizationId] !== runKey) return
-    clearInterval(heartbeats.get(organizationId))
-    heartbeats.delete(organizationId)
     const live = { ...get().live }
     delete live[organizationId]
     syncUnloadGuard(live)
+    if (localOnly.delete(runKey)) {
+      set({ live })
+      return
+    }
+    clearInterval(heartbeats.get(organizationId))
+    heartbeats.delete(organizationId)
     const entry: ExportDeliveryEntry = { runKey, status, message, atMs: Date.now() }
     writeStored(organizationId, entry)
     set({ entries: { ...get().entries, [organizationId]: entry }, live })
@@ -172,8 +193,12 @@ function scheduleStaleCheck() {
   }, EXPORT_DELIVERY_HEARTBEAT_MS)
 }
 
-// Another tab of this browser started, beat, finished or dismissed a delivery: take its entry.
+// Another tab of this browser started, beat, finished or dismissed a delivery: take its entry. And beat when this tab
+// is hidden or shown again, since a hidden tab's timers may barely run.
 if (typeof window !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    for (const [organizationId, runKey] of Object.entries(useExportDeliveryStore.getState().live)) beat(organizationId, runKey)
+  })
   window.addEventListener('storage', (event) => {
     if (!event.key || !event.key.startsWith(STORAGE_PREFIX)) return
     const organizationId = event.key.slice(STORAGE_PREFIX.length)

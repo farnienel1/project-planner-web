@@ -34,6 +34,9 @@ test('another tab: live while its heartbeat is recent (Export blocked), stale af
   assert.equal(exportDeliveryLiveElsewhere(entry, EXPORT_DELIVERY_TAB_ID, now), true)
   assert.equal(exportDeliveryPending({ live: {}, entries: { org: entry }, nowMs: now }, 'org'), true)
   assert.match(exportDeliveryNotice(entry, false, true) ?? '', /another tab/)
+  // A hidden sending tab's timers may run once a minute: still live 90 s after its last beat.
+  assert.equal(exportDeliveryLiveElsewhere(entry, EXPORT_DELIVERY_TAB_ID, now + 90_000), true)
+  assert.ok(EXPORT_DELIVERY_STALE_MS >= 120_000)
   const later = now + EXPORT_DELIVERY_STALE_MS + 1
   assert.equal(exportDeliveryLiveElsewhere(entry, EXPORT_DELIVERY_TAB_ID, later), false)
   assert.equal(exportDeliveryPending({ live: {}, entries: { org: entry }, nowMs: later }, 'org'), false)
@@ -57,4 +60,32 @@ test('mapWithConcurrency caps the work running at once and keeps the input order
   assert.equal(most, 2)
   assert.deepEqual(out, [0, 1, 2, 3, 4])
   assert.deepEqual(await mapWithConcurrency([], 3, async () => 1), [])
+})
+
+test('two tabs starting at once: a tab that finds another live sender backs off the shared entry', () => {
+  const store = new Map<string, string>()
+  const fakeWindow = {
+    localStorage: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) },
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  }
+  const g = globalThis as unknown as { window?: unknown }
+  g.window = fakeWindow
+  try {
+    const other = { runKey: 'theirs', status: 'sending', message: 'Sending…', atMs: Date.now(), ownerTab: 'other-tab', heartbeatMs: Date.now() }
+    store.set('pp.timesheetExportDelivery:org9', JSON.stringify(other))
+    const shared = useExportDeliveryStore.getState().start('org9', 'mine', 'Sending mine…')
+    assert.equal(shared, false)
+    assert.equal(JSON.parse(store.get('pp.timesheetExportDelivery:org9')!).runKey, 'theirs', 'the other tab keeps its entry')
+    assert.equal(exportDeliveryPending(useExportDeliveryStore.getState(), 'org9'), true)
+    useExportDeliveryStore.getState().finish('org9', 'mine', 'done', 'done mine')
+    assert.equal(JSON.parse(store.get('pp.timesheetExportDelivery:org9')!).runKey, 'theirs', 'never overwritten by the backed-off run')
+    // With no live sender elsewhere the tab owns it (and clears its heartbeat on finish).
+    store.delete('pp.timesheetExportDelivery:org9')
+    assert.equal(useExportDeliveryStore.getState().start('org9', 'mine2', 'Sending…'), true)
+    useExportDeliveryStore.getState().finish('org9', 'mine2', 'done', 'Sent.')
+    assert.equal(JSON.parse(store.get('pp.timesheetExportDelivery:org9')!).status, 'done')
+  } finally {
+    delete g.window
+  }
 })

@@ -13,8 +13,11 @@
  * sheet's pay run and is still filed under one of the person's ids (users id, `formerUserIds`, `sameEmailUserIds`,
  * users documents and `operatives` rows on their email).
  *
- * Approximations: PAYE days are not excluded (rarely on a signed record), and only the person's signed bookings are
- * live lines (another booking of the pay run could make an empty copy repairable that is counted as flagged here).
+ * The rule is given the live fingerprints and the stored booking documents of the signed bookings (with tombstones and
+ * the person's ids), so every column is the rule's own answer for those bookings. Approximations: PAYE days are not
+ * excluded (rarely on a signed record), and only the person's signed bookings are read — a booking added to the pay run
+ * after signing is not seen, so `otherChange` can undercount, and another booking of the pay run could make an empty
+ * copy repairable that is counted as flagged here.
  * Only the latest version of each pay run counts (`parseTimesheetRevisionDocId`).
  */
 
@@ -85,11 +88,16 @@ export function snapshotGapCounts(rulebook, input) {
     const end = endDayKey(data, start, input.timeZone, rulebook)
     const ids = personIds(parsed?.userId || data.userId, input.users, input.operatives)
     const liveLines = []
+    // The stored booking documents of the signed bookings, as the app passes them (`signedTimesheetBookingDocuments`),
+    // so a deleted, cancelled, moved or reassigned signed booking reads as the 1.47.0 rule reads it.
+    const liveBookings = []
+    const tombstonedBookingIds = []
     for (const row of record) {
       const collection = key(row?.collection) === 'managersitebookings' ? 'managerSiteBookings' : 'bookings'
       const bookingId = String(row?.bookingId ?? '').trim()
       if (!bookingId) continue
       const docKey = `${collection}|${key(bookingId)}`
+      if (input.tombstoned.has(docKey)) tombstonedBookingIds.push({ collection, bookingId })
       const stored = input.bookings.get(docKey)
       if (!stored || input.tombstoned.has(docKey)) continue
       const read =
@@ -98,15 +106,35 @@ export function snapshotGapCounts(rulebook, input) {
           : rulebook.parseManagerSiteBookingDocument(bookingId, stored, { timeZone: input.timeZone })
       if (!read?.ok) continue
       const booking = read.booking
+      const day = booking.dateMs != null ? rulebook.dayKeyInOrganizationZone(booking.dateMs, input.timeZone) : ''
+      const shape = {
+        dayKey: day,
+        timeSlot: booking.timeSlot,
+        workStartTime: booking.workStartTime ?? stored.workStartTime,
+        workEndTime: booking.workEndTime ?? stored.workEndTime,
+        isBreakRemoved: booking.isBreakRemoved === true,
+        otMultiplierOverride: booking.otMultiplierOverride ?? stored.otMultiplierOverride ?? null,
+      }
+      liveBookings.push({
+        bookingId,
+        collection,
+        ...shape,
+        status: booking.status,
+        personId: collection === 'bookings' ? booking.operativeId : booking.userId,
+        projectId: booking.projectId,
+        locationType: booking.locationType,
+        locationId: booking.locationId ?? stored.locationId ?? '',
+        customLocationName: booking.customLocationName ?? stored.customLocationName ?? '',
+      })
       if (collection === 'bookings' && !rulebook.bookingOccupiesDay(booking.status)) continue
       if (!ids.has(key(collection === 'bookings' ? booking.operativeId : booking.userId))) continue
-      const day = booking.dateMs != null ? rulebook.dayKeyInOrganizationZone(booking.dateMs, input.timeZone) : null
       if (day && start && end && (day < start || day > end)) continue
+      // The live line's fingerprint as the timesheet collector writes it (no status part).
       liveLines.push({
         id: `${collection === 'bookings' ? 'op' : 'mgr'}-${bookingId}-normal`,
         bookingId,
         bookingCollection: collection,
-        bookingFingerprint: row.fingerprint,
+        bookingFingerprint: rulebook.overtimeBookingFingerprint({ id: bookingId, personId: '', ...shape }),
         bookingCreatedAt: stored.createdAt ?? null,
         bookingUpdatedAt: stored.updatedAt ?? null,
         scheduleOptionPlace: collection === 'managerSiteBookings' && !rulebook.isSiteLocationType(booking.locationType),
@@ -116,7 +144,7 @@ export function snapshotGapCounts(rulebook, input) {
       counts.emptySnapshotRepair += 1
       continue
     }
-    const change = rulebook.signedTimesheetBookingChanges({ sheet: data, liveLines, liveLoaded: true })
+    const change = rulebook.signedTimesheetBookingChanges({ sheet: data, liveLines, liveLoaded: true, liveBookings, tombstonedBookingIds, personIds: [...ids] })
     if ((change?.snapshotGapBookingIds ?? []).length === 0) {
       // Flagged already before 1.57.0 (a booking changed, was removed or added after signing): not this rule's doing.
       if (change?.changed) counts.otherChange += 1

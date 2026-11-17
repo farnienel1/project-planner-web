@@ -17455,3 +17455,29 @@ test('1.57.0 snapshot gap is reported apart; reports keep signed figures for a g
   assert.equal(R112.signedTimesheetChangeForReports(null), null)
   assert.deepEqual(R112.timesheetRevisionReportState({ revision: 0, exported: true, signedOff: true, change: { exported: true, changed: true } }).state, 'due')
 })
+
+test('1.57.0 J1 review: a gap-only change never hides late extras waiting for the line manager', () => {
+  const gap = R112.signedTimesheetBookingChanges({
+    sheet: {
+      operativeSignedAt: new Date(Date.now() - 120_000),
+      operativeSignedBookings: [{ bookingId: 'a', collection: 'bookings', fingerprint: 'a|2026-11-10|FULL DAY||||0|', personId: 'u1', place: '' }],
+      operativeSignedBookingsAt: new Date(Date.now() - 120_000),
+      operativeSignedBookingsSignedAt: new Date(Date.now() - 120_000),
+      managerSignedAt: new Date(Date.now() - 60_000),
+      weeklyReportOverride: { approvedAt: new Date(Date.now() - 60_000), lines: [{ id: 'op-b-normal', bookingId: 'b' }] },
+    },
+    liveLines: [{ id: 'op-a-normal', bookingId: 'a', bookingCollection: 'bookings', bookingFingerprint: 'a|2026-11-10|FULL DAY||||0|' }],
+    liveLoaded: true,
+  })
+  assert.equal(gap.snapshotGapOnly, true)
+  const late = R112.timesheetChangesWithLateExtras(gap, { waitingForLineManager: true })!
+  const report = R112.signedTimesheetChangeForReports(late)!
+  assert.ok(report, 'kept: late extras still wait')
+  assert.equal(report.bookingsChanged, false)
+  assert.equal(report.snapshotGapOnly, false)
+  // Read as waiting for the line manager (the check line and Payrun Snapshot: Submitted).
+  assert.equal(report.reopened, true)
+  assert.equal(report.waitingFor, 'lineManager')
+  // Without late extras the gap-only change is still dropped for reports (signed figures stand).
+  assert.equal(R112.signedTimesheetChangeForReports(R112.timesheetChangesWithLateExtras(gap, { waitingForLineManager: false })), null)
+})

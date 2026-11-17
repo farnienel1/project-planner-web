@@ -250,6 +250,12 @@ export function buildTimesheetInvoicePdf(input: InvoicePdfContext): Uint8Array {
           flushPage()
           continued = true
           cursor = y + 18
+          // The row carries on: its date and job number again, marked "(cont.)".
+          stream += rgbOf(INVOICE_PDF_STYLE.navy)
+          stream += text(line.date, MARGIN + 10, y + 18, 10.5, true, 70)
+          stream += rgbOf(INVOICE_PDF_STYLE.slate)
+          stream += text(line.jobNumber || '—', MARGIN + 10, y + 32, 9.5, false, 70)
+          stream += text('(cont.)', MARGIN + 10, y + 45, 9.5)
         }
         stream += rgbOf(color)
         stream += text(value, MARGIN + 84, cursor, size, bold)

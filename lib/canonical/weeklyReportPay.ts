@@ -117,7 +117,7 @@ export type WeeklyReportPaySheet = {
   sheet?: Record<string, unknown> | null
   payrollLines?: ReadonlyArray<InvoiceLineInput & { id: string; amount: number }> | null
   /** 1.57.0: `snapshotGapOnly` — under J1 (`SNAPSHOT_GAP_REPORTS`) a gap-only change keeps the signed figures. */
-  change?: { reopened?: boolean | null; changed?: boolean | null; exported?: boolean | null; waitingFor?: 'person' | 'lineManager' | null; snapshotGapOnly?: boolean | null } | null
+  change?: { reopened?: boolean | null; changed?: boolean | null; exported?: boolean | null; waitingFor?: 'person' | 'lineManager' | null; snapshotGapOnly?: boolean | null; lateExtrasWaiting?: boolean | null } | null
   /** The sheet's sign-off fields when the app holds a loaded copy (`parseTimesheetStatusFields` of the stored sheet). */
   status?: TimesheetStatusFields | null
   /** 1.45.0: the reader's entry fingerprints for a loaded copy (`timesheetInvoiceRows` `entryFingerprints`). */

@@ -116,6 +116,7 @@ async function main() {
     }
   }
   console.log(['TOTAL', total.sheetsChecked, total.notExported, total.exported, total.gapOnly, total.otherChange, total.emptySnapshotRepair, total.noRecord].join(','))
+  console.log('Note: bookings added to a pay run after signing are not read, so alreadyFlaggedBefore157 can be low and ofWhichGapOnly high by those sheets; the gap counts are not affected.')
   console.log('Nothing was written.')
 }
 

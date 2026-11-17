@@ -171,6 +171,8 @@ export type PayrunSnapshotSheet = {
     exported?: boolean | null
     /** 1.57.0: under J1 (`SNAPSHOT_GAP_REPORTS`) a gap-only change keeps the sheet's signed state here. */
     snapshotGapOnly?: boolean | null
+    /** 1.57.0: late extras still wait for the line manager — kept even when the booking change is gap-only. */
+    lateExtrasWaiting?: boolean | null
   } | null
   /** 1.55.0 §8: the stored document id, so an original and its revisions (`…_rev{N}`) count as one sheet. */
   documentId?: string | null
