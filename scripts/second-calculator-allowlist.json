@@ -303,6 +303,6 @@
     "path": "components/users/EditUserProfile.tsx",
     "pattern": "super-admin-hides-pay-fields",
     "count": 1,
-    "reason": "showPayrollFields hides only the legacy 'Timesheets enabled' toggle (timesheetsEnabled no longer decides who has a timesheet, rulebook §8) for every admin and the Super Admin alike; no pay, employment type or leave field. Follow-up: remove the toggle."
+    "reason": "showPayrollFields now gates only the legacy 'Timesheets enabled' toggle (timesheetsEnabled decides nothing since rulebook 1.11.0, §8), hidden for every admin and the Super Admin alike. Before review of #385 it also held the VAT/UTR fields; those now follow canViewSensitiveProfile (editUserTaxIdsSectionShown). Follow-up: remove the toggle."
   }
 ]

@@ -11,6 +11,7 @@ import type { User } from '../../types/index.ts'
 import {
   editUserAnnualLeaveSection,
   editUserEmploymentTypeSection,
+  editUserTaxIdsSectionShown,
   SUPER_ADMIN_PROFILE_READ_ONLY_NOTE,
 } from './editUserSections.ts'
 import { missingEmploymentTypeRows } from '../dataHealth/missingEmploymentTypeRows.ts'
@@ -90,13 +91,26 @@ test('nobody signed in sees nothing', () => {
   assert.equal(editUserAnnualLeaveSection(null, operative).shown, false)
 })
 
-test('Edit User never hides employment type or the leave allowance with isSuperAdmin again', () => {
+test('Edit User never hides employment type or the leave allowance with isSuperAdmin again', async () => {
+  const { superAdminHidesPayFieldHits } = await import('../../scripts/check-second-calculators.mjs')
   const source = readFileSync(new URL('../../components/users/EditUserProfile.tsx', import.meta.url), 'utf8')
-  for (const name of ['showEmploymentType', 'showAnnualLeave']) {
-    const match = new RegExp(`const ${name}\\s*=([\\s\\S]*?)\\n\\s*\\n`).exec(source)
-    assert.ok(match, `${name} is defined`)
-    assert.doesNotMatch(match[1], /isSuperAdmin/, `${name} must not look at isSuperAdmin`)
+  // The CI guard's own reading of the file: only the allow-listed legacy "Timesheets enabled" gate is left.
+  const hits = (superAdminHidesPayFieldHits(source) as Array<{ text: string }>).map((hit) => hit.text)
+  assert.deepEqual(hits, ['const showPayrollFields ='])
+  // Both sections come from the helpers, exactly.
+  assert.match(source, /\n\s*const showEmploymentType = employmentTypeSection\.shown\n/)
+  assert.match(source, /\n\s*const showAnnualLeave = annualLeaveSection\.shown\n/)
+})
+
+test('VAT / UTR follow canViewSensitiveProfile for every level (review of #385)', () => {
+  for (const [, target] of LEVELS) {
+    assert.equal(editUserTaxIdsSectionShown({ target, viewerMaySee: true, shownBefore: false }), true)
+    assert.equal(editUserTaxIdsSectionShown({ target, viewerMaySee: false, shownBefore: false }), false)
   }
+  // Operatives managers who saw "Held by admin" before still do.
+  assert.equal(editUserTaxIdsSectionShown({ target: operative, viewerMaySee: false, shownBefore: true }), true)
+  assert.equal(editUserTaxIdsSectionShown({ target: ghost, viewerMaySee: true, shownBefore: true }), false)
+  assert.equal(editUserTaxIdsSectionShown({ target: null, viewerMaySee: true, shownBefore: true }), false)
 })
 
 test('Data health lists a Super Admin whose employment type is not stored', () => {

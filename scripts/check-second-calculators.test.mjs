@@ -93,13 +93,48 @@ test('super-admin-hides-pay-fields: hiding employment type, pay or leave because
     '{target.isSuperAdmin ? null : <Field label="Day rate">{target.dayRate}</Field>}',
   ].join('\n')
   assert.deepEqual(superAdminHidesPayFieldHits(old).map((hit) => hit.line), [1, 7, 8, 9])
+  const root = fixture({ 'components/B.tsx': old })
+  assert.equal(scan(root).filter((hit) => hit.pattern === 'super-admin-hides-pay-fields').length, 4)
+})
+
+test('super-admin-hides-pay-fields: indirect forms (review of #385)', () => {
+  const lines = (text) => superAdminHidesPayFieldHits(text).map((hit) => hit.line)
+  // An alias, then a negated use beside a pay field.
+  assert.deepEqual(lines(['const hidePay = target.isSuperAdmin', 'return <div>{!hidePay && <PayBasisFields />}</div>'].join('\n')), [2])
+  // Compared with true / false.
+  assert.deepEqual(lines('const showPayRow = subject.isSuperAdmin !== true && canEdit'), [1])
+  assert.deepEqual(lines('const showLeave = row.isSuperAdmin === false && annualLeaveEnabled'), [1])
+  // The rulebook / app Super Admin functions on the subject.
+  assert.deepEqual(lines('const showEmploymentType = !isOrganizationSuperAdmin(target, organization)'), [1])
+  assert.deepEqual(lines('{!userIsOrganizationSuperAdmin(person, org) && <Field label="Employment type" value={person.employmentType} />}'), [1])
+  // An early return in a pay component.
+  const component = [
+    'export function PayRateCard({ target }) {',
+    '  if (target.isSuperAdmin) return null',
+    '  return <PayBasisFields value={target.dayRate} />',
+    '}',
+  ].join('\n')
+  assert.deepEqual(lines(component), [2])
+  // ...also in a component named for pay with no pay word after it.
+  assert.deepEqual(lines(['function AnnualLeaveSection({ person }) {', '  if (person.isSuperAdmin) return null', '  return <div />', '}'].join('\n')), [2])
+})
+
+test('super-admin-hides-pay-fields: the viewer and unrelated uses are not flagged', () => {
   const fine = [
     'const showEmploymentType = employmentTypeSection.shown',
     'const roleText = target.isSuperAdmin ? "Super Admin" : "Admin"',
     'if (!currentUser?.isSuperAdmin || target.id !== currentUser.id) return',
     '// a comment: !target.isSuperAdmin && employmentType',
+    'const canEditPay = !currentUser?.isSuperAdmin && dayRate',
+    'const showPayRow = viewer.role.isSuperAdmin ? payBasis : null',
+    '{!me.isSuperAdmin && <PayBasisFields />}',
+    'const viewerIsSuper = currentUser.isSuperAdmin',
+    'if (user.isSuperAdmin && item.id === "x") return false',
+    'if (a.isSuperAdmin !== b.isSuperAdmin) return a.isSuperAdmin ? -1 : 1',
+    'function Pay({ target }) {',
+    '  if (currentUser.isSuperAdmin) return null',
+    '  return <PayBasisFields />',
+    '}',
   ].join('\n')
   assert.deepEqual(superAdminHidesPayFieldHits(fine), [])
-  const root = fixture({ 'components/B.tsx': old })
-  assert.equal(scan(root).filter((hit) => hit.pattern === 'super-admin-hides-pay-fields').length, 4)
 })

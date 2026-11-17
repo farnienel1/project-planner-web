@@ -18,6 +18,11 @@ import { canEditTargetUser, canUseAdminAccountTools } from '@/lib/staff/userEdit
  *     `lineManagerRequiredError`) and the security rules.
  * A section shown but locked carries the reason (`note`). `scripts/check-second-calculators.mjs` refuses a screen that
  * hides pay, employment type or leave fields with `isSuperAdmin` again.
+ *
+ * Known duplication (review of #385, nit): this is a screen decision, so it is not in the rulebook, and iOS makes the
+ * same one in Swift (`EditUserView.shouldShowAnnualLeaveAccessToggle` / `shouldShowAnnualLeaveEntitlementSection`, the
+ * Employment type row's `canViewPay` / `canChangePay`, and `UserStore.mayChangeEmploymentAndLeaveFields`). Change both
+ * together; if they ever need to agree exactly, move the decision into lib/canonical.
  */
 export type EditUserSection = { shown: boolean; editable: boolean; note: string | null }
 
@@ -56,4 +61,19 @@ export function editUserAnnualLeaveSection(current: User | null, target: User | 
   const shown = editable || canUseAdminAccountTools(current)
   if (!shown) return HIDDEN
   return { shown, editable, note: editable ? null : lockedNote(current, target) }
+}
+
+/**
+ * Review of #385: whether Edit user shows the VAT / UTR fields. The rulebook decides who sees them
+ * (`canViewSensitiveProfile`, §12: the person themself and admins), for every level — so the Super Admin and admins
+ * now get them on Edit user (they sat inside the operative / manager-only "Timesheets enabled" block). A viewer who
+ * saw the "Held by admin" placeholder before (`shownBefore`) still does. Never a ghost (no tax ids, §11).
+ */
+export function editUserTaxIdsSectionShown(input: {
+  target: User | null
+  viewerMaySee: boolean
+  shownBefore: boolean
+}): boolean {
+  if (!input.target || isGhostUser(input.target)) return false
+  return input.viewerMaySee || input.shownBefore
 }

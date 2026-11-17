@@ -33,7 +33,7 @@ import { UserAvatar } from '@/components/users/UserAvatar'
 import { setupSectionIcon } from '@/lib/users/profileUi'
 import { PayBasisFields, payChoiceFromProfile, payChoiceToRates } from '@/components/users/PayBasisFields'
 import { maySetPayOf, userPayRateRequiredError } from '@/lib/staff/payRateRequired'
-import { editUserAnnualLeaveSection, editUserEmploymentTypeSection } from '@/lib/staff/editUserSections'
+import { editUserAnnualLeaveSection, editUserEmploymentTypeSection, editUserTaxIdsSectionShown } from '@/lib/staff/editUserSections'
 import { PreviousRatesList, usePaySaveGate } from '@/components/users/PayRateChangeDialogs'
 import {
   emptyDayRateHistory,
@@ -610,6 +610,15 @@ export function EditUserProfile({
     (target.permissions.operativeMode || target.permissions.manager) &&
     !target.permissions.adminAccess &&
     !target.isSuperAdmin
+
+  // Review of #385: VAT / UTR follow the rulebook (`canViewSensitiveProfile`, §12) — the person and admins — for every
+  // level, the Super Admin and admins included; before, they sat inside the operative / manager-only block above.
+  // Viewers who may edit the person but not see them keep "Held by admin" where they saw it before.
+  const showTaxIdFields = editUserTaxIdsSectionShown({
+    target,
+    viewerMaySee: canViewTaxIds,
+    shownBefore: Boolean(showPayrollFields),
+  })
 
   const lineManagerFieldShown = Boolean(
     target &&
@@ -1549,8 +1558,9 @@ export function EditUserProfile({
       )}
 
       {/* Employment & timesheets */}
-      {showPayrollFields && (
+      {(showPayrollFields || showTaxIdFields) && (
         <FormSection title="Employment & timesheets" icon="sheet" tone="blue">
+              {showPayrollFields ? (
               <ToggleRow
                 title="Timesheets enabled"
                 descriptions={['Allow this person to log and submit timesheets.']}
@@ -1563,6 +1573,7 @@ export function EditUserProfile({
                   />
                 }
               />
+              ) : null}
               {canViewTaxIds ? (
                 <div>
                   <FieldGrid>

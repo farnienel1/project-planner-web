@@ -116,7 +116,8 @@ export const PATTERNS = [
   {
     id: 'super-admin-hides-pay-fields',
     category: 4,
-    // Matched by `superAdminHidesPayFieldHits` (a declaration can span lines); never by this regex.
+    // Never matched by this regex: `superAdminHidesPayFieldHits` finds these (declarations span lines, aliases and
+    // early returns need the whole file).
     regex: /(?!)/,
     fix: 'show the field for every level; decide who may edit with canChangePersonPay / canEditTargetUser (lib/staff/editUserSections.ts)',
   },
@@ -127,43 +128,128 @@ export const PATTERNS = [
  * (commit 69099425), so the Super Admin could never be set to PAYE. The rulebook never hides a person's pay, employment
  * type or leave fields because of their level (§4.4, §8): who may change them is `canChangePersonPay` and the rules.
  *
+ * "The Super Admin" here is the person shown — a subject such as `target`, `person`, `subject`, `user`, `row` or a bare
+ * `isSuperAdmin` prop — never the viewer (`currentUser`, `viewer`, `actor`, `me`, …): a viewer check decides what the
+ * viewer may do, which is allowed. A subject test is:
+ *   `!x.isSuperAdmin`, `x.isSuperAdmin ? …`, `x.isSuperAdmin !== true` / `=== false` / `!= true` / `== false`,
+ *   `!isOrganizationSuperAdmin(x, …)` (also `userIsOrganizationSuperAdmin`, `isSuperAdminAccount`,
+ *   `isProtectedSuperAdmin`), and the same through an alias (`const hidePay = target.isSuperAdmin` … `!hidePay &&`).
+ *
  * Flags, outside lib/canonical:
- *   - a `const` / `let` whose name or value is about pay, employment type or leave and whose value tests
- *     `!….isSuperAdmin` or `….isSuperAdmin ? … : …` / `isSuperAdmin ||` (the declaration may span lines);
- *   - a line (JSX) that tests `!….isSuperAdmin` or `….isSuperAdmin ?` and names one of those fields.
+ *   - a `const` / `let` whose name or value is about pay, employment type or leave and whose value holds a subject
+ *     test (the declaration may span lines);
+ *   - a line (JSX) that holds a subject test and names one of those fields;
+ *   - an early return on the subject being the Super Admin (`if (target.isSuperAdmin) return null`) in a component or
+ *     function that is about those fields (its name, or the next 60 lines).
  */
 const PAY_FIELD_WORDS =
-  /[Ee]mploymentType|showEmployment|[Pp]ayBasis|PayBasisFields|dayRate|hourlyRate|[Pp]ayRate|[Pp]ayroll|[Aa]nnualLeave|[Ll]eaveAllowance|showPay/
-const SUPER_ADMIN_HIDES = /!\s*\(?\s*[\w?.]*\.?isSuperAdmin\b|[\w?.]*\.isSuperAdmin\s*\?(?!\.)/
+  /[Ee]mploymentType|showEmployment|[Pp]ayBasis|PayBasisFields|dayRate|hourlyRate|[Pp]ayRate|[Pp]ayroll|[Aa]nnualLeave|[Ll]eaveAllowance|showPay|hidePay|[Pp]ayFields|[Pp]ayProfile/
+const VIEWER_NAMES = new Set([
+  'currentuser', 'viewer', 'actor', 'me', 'signedinuser', 'authuser', 'sessionuser', 'writer', 'acting', 'actinguser',
+  'current', 'currentperson', 'loggedinuser', 'viewinguser', 'saver',
+])
+const SUPER_ADMIN_FUNCTIONS = 'isOrganizationSuperAdmin|userIsOrganizationSuperAdmin|isSuperAdminAccount|isProtectedSuperAdmin'
 const DECLARATION_START = /^\s*(?:export\s+)?(?:const|let)\s+(\w+)\s*=/
+const FUNCTION_START = /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function\s+(\w+)|(?:const|let)\s+(\w+)\s*=\s*(?:async\s*)?\()/
+
+function isViewer(owner) {
+  return Boolean(owner) && VIEWER_NAMES.has(owner.toLowerCase())
+}
+
+/** Every `isSuperAdmin` read on a subject (not the viewer): `{ index, end, negated, form }`. */
+function subjectSuperAdminReads(text, aliases) {
+  const reads = []
+  const property = /(!\s*\(?\s*)?((?:[A-Za-z_$][\w$]*\s*\??\.\s*)*)isSuperAdmin\b(?!\s*\()/g
+  for (let m; (m = property.exec(text)); ) {
+    const before = text[m.index - 1] ?? ''
+    if (!m[1] && /[\w$.]/.test(before)) continue
+    // Any part of the chain naming the viewer (`viewer.role.isSuperAdmin`, `currentUser?.isSuperAdmin`) is not a subject.
+    if ((m[2] || '').split(/\s*\??\.\s*/).some(isViewer)) continue
+    reads.push({ index: m.index, end: property.lastIndex, negated: Boolean(m[1]) })
+  }
+  const call = new RegExp(`(!\\s*)?\\b(?:${SUPER_ADMIN_FUNCTIONS})\\(\\s*([A-Za-z_$][\\w$]*)`, 'g')
+  for (let m; (m = call.exec(text)); ) {
+    if (isViewer(m[2])) continue
+    reads.push({ index: m.index, end: call.lastIndex, negated: Boolean(m[1]) })
+  }
+  for (const alias of aliases) {
+    const ref = new RegExp(`(!\\s*)?\\b${alias}\\b(?!\\s*[=:](?!=))`, 'g')
+    for (let m; (m = ref.exec(text)); ) reads.push({ index: m.index, end: ref.lastIndex, negated: Boolean(m[1]) })
+  }
+  return reads
+}
+
+/** A read used to hide: negated, a ternary on it, or compared with true / false. */
+function hidesOnSubject(text, aliases) {
+  for (const read of subjectSuperAdminReads(text, aliases)) {
+    if (read.negated) return true
+    const after = text.slice(read.end, read.end + 24)
+    if (/^\)?\s*\?(?!\.)/.test(after)) return true
+    if (/^\s*(?:!==?\s*true|===?\s*false|!=\s*true|==\s*false)\b/.test(after)) return true
+  }
+  return false
+}
+
+/** Names assigned straight from a subject Super Admin test: `const hidePay = target.isSuperAdmin`. */
+function superAdminAliases(lines) {
+  const aliases = []
+  for (const line of lines) {
+    const m = /^\s*(?:const|let)\s+(\w+)\s*=\s*([^;]+)$/.exec(line)
+    if (!m || /\bisSuperAdmin\b|SuperAdmin\w*\(/.test(m[2]) === false) continue
+    const rhs = m[2].trim().replace(/;$/, '')
+    if (subjectSuperAdminReads(rhs, []).some((read) => !read.negated) && !/[?&|]/.test(rhs)) aliases.push(m[1])
+  }
+  return aliases
+}
 
 export function superAdminHidesPayFieldHits(text) {
   const lines = text.split('\n')
+  const code = lines.map((line) => (isCommentLine(line) ? '' : line))
+  const aliases = superAdminAliases(code)
   const hits = []
   const covered = new Set()
-  for (let i = 0; i < lines.length; i += 1) {
-    const match = DECLARATION_START.exec(lines[i])
-    if (!match) continue
+  for (let i = 0; i < code.length; i += 1) {
+    const match = DECLARATION_START.exec(code[i])
+    if (!match || aliases.includes(match[1])) continue
     let end = i
     // The declaration's value: until a blank line or the next statement at the same or a lower indent.
-    const indent = lines[i].search(/\S/)
-    for (let j = i + 1; j < lines.length; j += 1) {
-      const line = lines[j]
+    const indent = code[i].search(/\S/)
+    for (let j = i + 1; j < code.length; j += 1) {
+      const line = code[j]
       if (!line.trim()) break
       if (line.search(/\S/) <= indent && !/^\s*[)\]}&|?:.]/.test(line)) break
       end = j
     }
-    const body = lines.slice(i, end + 1).filter((line) => !isCommentLine(line)).join('\n')
-    if (SUPER_ADMIN_HIDES.test(body) && (PAY_FIELD_WORDS.test(match[1]) || PAY_FIELD_WORDS.test(body))) {
+    const body = code.slice(i, end + 1).join('\n')
+    if (hidesOnSubject(body, aliases) && (PAY_FIELD_WORDS.test(match[1]) || PAY_FIELD_WORDS.test(body))) {
       hits.push({ line: i + 1, text: lines[i].trim() })
       for (let k = i; k <= end; k += 1) covered.add(k)
     }
   }
-  lines.forEach((line, index) => {
-    if (covered.has(index) || isCommentLine(line)) return
-    if (SUPER_ADMIN_HIDES.test(line) && PAY_FIELD_WORDS.test(line)) hits.push({ line: index + 1, text: line.trim() })
+  code.forEach((line, index) => {
+    if (covered.has(index) || !line.trim()) return
+    if (hidesOnSubject(line, aliases) && PAY_FIELD_WORDS.test(line)) {
+      hits.push({ line: index + 1, text: lines[index].trim() })
+      covered.add(index)
+      return
+    }
+    // An early return because the subject is the Super Admin, in a function about pay, employment or leave.
+    // Only a condition that is the subject test alone, returning nothing (`return null`, `return`, `return <></>`).
+    const early = /^\s*if\s*\((.*)\)\s*(?:\{\s*)?return\s*(?:null|false|undefined|<>\s*<\/>)?\s*;?\s*\}?\s*$/.exec(line)
+    if (!early) return
+    const condition = early[1].trim()
+    if (/&&|\|\||[=!]==?|[<>?]/.test(condition.replace(/^!/, '').replace(/\?\./g, '.'))) return
+    const reads = subjectSuperAdminReads(condition, aliases)
+    if (reads.length !== 1 || reads[0].negated) return
+    let name = ''
+    for (let k = index; k >= 0 && k > index - 200; k -= 1) {
+      const fn = FUNCTION_START.exec(code[k])
+      if (fn) { name = fn[1] || fn[2] || ''; break }
+    }
+    const ahead = code.slice(index + 1, index + 61).join('\n')
+    if (PAY_FIELD_WORDS.test(name) || PAY_FIELD_WORDS.test(ahead)) hits.push({ line: index + 1, text: lines[index].trim() })
   })
-  return hits
+  return hits.sort((a, b) => a.line - b.line)
 }
 
 function toPosix(path) {
