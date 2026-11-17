@@ -7,10 +7,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { useBookingStore, type BookingReplaceOptions } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
+import { useFormerPeople } from '@/lib/people/formerPeople'
 import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
 import { rosterDisplayName } from '@/lib/staff/userRosterUtils'
 import {
   UNKNOWN_BOOKING_PERSON_LABEL,
+  FORMER_PERSON_CHIP,
   UNRESOLVED_BOOKING_PERSON_CHIP,
   rosterAliasIdsFor,
   scheduleRowPerson,
@@ -118,6 +120,8 @@ type DayRow = {
    * (`scheduleRowPerson`). The row is shown — never hidden — marked "Not linked to a person", with no Quick Add.
    */
   unresolved?: boolean
+  /** Rulebook 1.59.0 §11: the id belongs to a deleted person (`deletedPeople`): "Former: <name>", chip "Former person". */
+  former?: boolean
   /** Every id this row's bookings are filed under (for the leave marks, `jobScheduleLeaveMarks`). */
   personIds: string[]
   email: string | null
@@ -152,6 +156,7 @@ type PersonWeek = {
   quickAdd: QuickAddTarget | null
   /** Rulebook 1.44.0 §21: an "Unknown person" row (see `DayRow.unresolved`). */
   unresolved?: boolean
+  former?: boolean
   personIds: string[]
   email: string | null
   cells: DayRow[][]
@@ -258,6 +263,8 @@ export function ProjectScheduleWeekOverview({
   } = useManagerScheduleStore()
   const currentUser = useAuthStore((state) => state.user)
   const { operatives, loadOperatives, managers } = useOperativeStore()
+  // Rulebook 1.59.0 §21: deleted people's old bookings read "Former: <name>" (staff only read the records).
+  const formerPeople = useFormerPeople(organizationId, canBookWork(currentUser))
   // Rulebook 1.10.0 (`canWriteBooking`): admins book on every job; managers only on jobs they manage; operatives never.
   const canQuickAdd =
     canBookWork(currentUser) &&
@@ -381,8 +388,11 @@ export function ProjectScheduleWeekOverview({
         aliasIds: rosterAliasIdsFor(u.id, userIdAliases),
       })),
       operatives: operatives.map((o) => ({ id: o.id, email: o.email ?? null })),
+      // Rulebook 1.59.0: managers rows (a manager site booking filed under one) and former people ("Former: Jane").
+      managers: managers.map((m) => ({ id: m.id, email: m.email ?? null })),
+      formerPeople,
     }),
-    [users, userIdAliases, operatives]
+    [users, userIdAliases, operatives, managers, formerPeople]
   )
   // The rows `scheduleRowPerson` returned, by the id it returned (exactly as stored).
   const userById = useMemo(() => new Map(users.map((u) => [u.id, u])), [users])
@@ -418,6 +428,7 @@ export function ProjectScheduleWeekOverview({
             // 1.44.0: an unlinked id gets no Quick Add (it would book more under an id nobody can name).
             quickAdd: who.unresolved ? null : { kind: 'operative' as const, operativeId: b.operativeId },
             unresolved: who.unresolved,
+            former: Boolean(who.former),
             personIds: [b.operativeId, op?.id, linkedUser?.id].filter((id): id is string => Boolean(id)),
             email: email?.trim() || null,
             booking: b,
@@ -436,6 +447,7 @@ export function ProjectScheduleWeekOverview({
           const who = scheduleRowPerson(b.userId, bookingPeople)
           const manager = who.accountId ? userById.get(who.accountId) : undefined
           const linkedOperative = who.operativeId ? operativeById.get(who.operativeId) : undefined
+          const managerRow = who.managerId ? managers.find((m) => m.id === who.managerId) : undefined
           const name = who.unresolved
             ? who.label || UNKNOWN_BOOKING_PERSON_LABEL
             : rosterDisplayName(manager) ||
@@ -443,6 +455,9 @@ export function ProjectScheduleWeekOverview({
                 linkedOperative
                   ? { firstName: linkedOperative.firstName, surname: linkedOperative.lastName, email: linkedOperative.email }
                   : null
+              ) ||
+              rosterDisplayName(
+                managerRow ? { firstName: managerRow.firstName, surname: managerRow.lastName, email: managerRow.email } : null
               ) ||
               UNKNOWN_BOOKING_PERSON_LABEL
           const role = manager ? roleForUser(manager) : { label: 'Mgr', tone: 'manager' as const }
@@ -461,6 +476,7 @@ export function ProjectScheduleWeekOverview({
                 ? { kind: 'operative' as const, operativeId: linkedOperative.id }
                 : { kind: 'manager' as const, userId: b.userId },
             unresolved: who.unresolved,
+            former: Boolean(who.former),
             personIds: [b.userId, manager?.id, linkedOperative?.id].filter((id): id is string => Boolean(id)),
             email: email?.trim() || null,
             managerBooking: b,
@@ -528,6 +544,7 @@ export function ProjectScheduleWeekOverview({
             firmName: row.firmName,
             quickAdd: row.quickAdd,
             unresolved: row.unresolved,
+            former: row.former,
             personIds: [],
             email: null,
             cells: weekDays.map(() => []),
@@ -985,9 +1002,13 @@ function PersonRow({
             // Rulebook 1.44.0 §21: never hidden; linked to a person from Settings → Data health.
             <span
               className="rounded-full bg-amber-100 px-1.5 py-px text-[9px] font-semibold text-amber-800"
-              title="This booking is filed under an ID that matches nobody. An admin can link it to a person in Settings → Data health."
+              title={
+                person.former
+                  ? 'This person was deleted; their past bookings keep their name. An admin can link them to a current person in Settings → Data health.'
+                  : 'This booking is filed under an ID that matches nobody. An admin can link it to a person in Settings → Data health.'
+              }
             >
-              {UNRESOLVED_BOOKING_PERSON_CHIP}
+              {person.former ? FORMER_PERSON_CHIP : UNRESOLVED_BOOKING_PERSON_CHIP}
             </span>
           ) : (
             <span className={`rounded-full px-1.5 py-px text-[9px] font-semibold ${toneClass(person.roleTone)}`}>
