@@ -5,10 +5,11 @@
  * The cookie is a Firebase Auth **session cookie**: a JWT minted by Firebase (`projects/{id}:createSessionCookie`)
  * from the caller's verified ID token, only by a Node API route that has also checked the MFA "ok" cookie belongs to
  * that same uid (lib/auth/mfa/mfaSessionCookieMint.ts). It is signed by Google, not by our MFA secret, so a leaked
- * `MFA_SIGNING_SECRET` alone can no longer open the dashboard: the middleware needs both cookies and the same uid.
+ * `MFA_SIGNING_SECRET` alone can no longer open the dashboard: the proxy (proxy.ts) needs both cookies and the same uid.
  *
- * Everything in this file is edge-safe (Web Crypto and `fetch` only) so the Next.js middleware can verify the cookie
- * itself: RS256 against Google's published session-cookie keys, issuer `https://session.firebase.google.com/{projectId}`,
+ * Everything in this file is edge-safe (Web Crypto and `fetch` only) so the Next.js proxy (proxy.ts) can verify the
+ * cookie itself whatever runtime runs it (Next 16 runs proxy on Node.js; Netlify runs it in a Deno edge function):
+ * RS256 against Google's published session-cookie keys, issuer `https://session.firebase.google.com/{projectId}`,
  * audience = the project id, not expired, issued and signed in (`auth_time`) in the past, a non-empty `sub` (the uid)
  * — the checks firebase-admin's `verifySessionCookie` makes. Revocation is not checked here (that needs an Admin call
  * per request); the cookie is short-lived and is cleared on sign-out, idle sign-out, user switch and MFA reset.
@@ -23,7 +24,7 @@
  */
 
 export const SESSION_COOKIE_KEYS_URL = 'https://identitytoolkit.googleapis.com/v1/sessionCookiePublicKeys'
-/** The session cookie lives as long as an MFA pass (MFA_OK_TTL_MS); the middleware needs both, so the shorter wins. */
+/** The session cookie lives as long as an MFA pass (MFA_OK_TTL_MS); the proxy needs both, so the shorter wins. */
 export const MFA_SESSION_TTL_MS = 12 * 60 * 60 * 1000
 /** A status check re-mints the cookie when less than this is left, so an active session does not bounce. */
 export const MFA_SESSION_REFRESH_BEFORE_MS = 60 * 60 * 1000
@@ -246,7 +247,7 @@ export const defaultSessionKeyFetcher: SessionKeyFetcher = createSessionKeyFetch
  * a Netlify build never has either.
  */
 export function sessionCookieAllowsUnsigned(
-  // Literal reads, so a Next build inlines NEXT_PUBLIC_USE_EMULATORS into the edge middleware.
+  // Literal reads, so a Next build inlines NEXT_PUBLIC_USE_EMULATORS into the proxy bundle.
   env: Record<string, string | undefined> = {
     NEXT_PUBLIC_USE_EMULATORS: process.env.NEXT_PUBLIC_USE_EMULATORS,
     FIREBASE_AUTH_EMULATOR_HOST: process.env.FIREBASE_AUTH_EMULATOR_HOST,
@@ -278,7 +279,7 @@ export type MfaPageGate =
   | { action: 'retry' }
 
 /**
- * The middleware's decision for /dashboard and /developer: both the MFA "ok" cookie and the session cookie must be
+ * The proxy's decision for /dashboard and /developer: both the MFA "ok" cookie and the session cookie must be
  * valid and name the same uid.
  */
 export function mfaPageGateDecision(ok: { uid: string } | null, session: SessionCookieCheck): MfaPageGate {

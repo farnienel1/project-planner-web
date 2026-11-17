@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
   // No `iat`: a granted skip is never a "fresh" second step for destructive owner actions (review of #348).
   writeMfaCookie(response.cookies, request, 'ok', encodeMfaOk(user.uid, Date.now() + MFA_OK_TTL_MS), MFA_OK_TTL_MS)
   // The server session cookie for this same uid (owner decision 17 Nov). Best effort: when it cannot be minted now,
-  // the next status check mints it (the middleware sends the person to /auth/mfa, which reads status and returns).
+  // the next status check mints it (the proxy sends the person to /auth/mfa, which reads status and returns).
   const session = await mintFirebaseSessionCookie(token)
   const check = session.status === 'ok' ? await verifyAppSessionCookie(session.cookie) : null
   if (session.status === 'ok' && check?.status === 'ok' && check.claims.uid === user.uid) {

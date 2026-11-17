@@ -166,7 +166,7 @@ test('shared status: background checks read the banner while the hook is mounted
   setConfirmedOffline(false)
 })
 
-test('probeReachability asks a path the middleware skips', async () => {
+test('probeReachability asks a path the proxy skips', async () => {
   let asked = ''
   const capture = (async (url: string) => {
     asked = url
