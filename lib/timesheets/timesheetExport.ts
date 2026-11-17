@@ -5,7 +5,6 @@ import { draftEntryFingerprints, timesheetSheetFields } from '@/lib/timesheets/t
 import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import type { TimesheetPayrollSummary } from '@/lib/timesheets/timesheetPayrollCollector'
 import { timesheetLabourDetails } from '@/lib/timesheets/timesheetPayrollCollector'
-import { formatTimesheetHours } from '@/lib/timesheets/timesheetHours'
 import { isClockSpanLabel, orgDayHours, payLineDisplay, roundPennies } from '@/lib/timesheets/payBasis'
 import { signedLabourSlice } from '@/lib/weekly-report/weeklyReportPayroll'
 import { formatAbbreviatedDayInZone, formatStampInZone } from '@/lib/orgTime/zoneTime'
@@ -217,9 +216,9 @@ export function invoiceLinesForTimesheet({
       })
       continue
     }
-    const entry = (row.stored ?? {}) as { title?: string; date?: Date; startDate?: Date }
+    const entry = (row.stored ?? {}) as { title?: string; details?: string; date?: Date; startDate?: Date }
     const label = row.kind === 'priceWork' ? 'Price work' : 'Expense'
-    const details = extraInvoiceDetails(String(entry.title ?? ''))
+    const details = extraInvoiceDetails(String(entry.title ?? ''), String(entry.details ?? ''))
     // Rulebook 1.30.1: the row's job number (`timesheetInvoiceRows` → `jobNumber`); price work with none shows "—"
     // (`priceWorkJobNumberText`).
     const jobNumber =
@@ -314,9 +313,14 @@ export function pdfBytesToBase64(bytes: Uint8Array): string {
   return btoa(binary)
 }
 
-/** iOS InvoicePDFGenerationSupport extras: details · 0h · rate not set */
-function extraInvoiceDetails(title: string): string {
-  return `${title} · ${formatTimesheetHours(0)}h · rate not set`
+/**
+ * A price work or expense row's details: its title, then its description when it has one. 17 Nov (owner): no
+ * "0h · rate not set" — that read as a missing pay rate; a price work or expense amount is never priced by a rate.
+ */
+export function extraInvoiceDetails(title: string, details = ''): string {
+  const name = title.trim()
+  const more = details.trim()
+  return more && more !== name ? `${name} · ${more}` : name
 }
 
 function escapeHtml(value: string): string {

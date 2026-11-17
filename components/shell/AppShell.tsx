@@ -24,6 +24,8 @@ import {
 import '@/app/brand-shell.css'
 import { TeamOnboardingPrompt } from '@/components/onboarding/TeamOnboardingPrompt'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { mineChangedKey, mineChangedShown, useMineChangedStore } from '@/lib/timesheets/mineChangedStore'
+import { BookingsChangedWarning } from '@/components/timesheets/BookingsChangedWarning'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import {
   dashboardPageTitle,
@@ -98,7 +100,12 @@ function NavRow({
   compact?: boolean
 }) {
   const active = isDashboardNavActive(pathname, item.href)
-  return (
+  // Owner decision 17 Nov: the hub's "bookings changed" triangle beside the Timesheets entry (the hub's own answer,
+  // `useMineChangedStore`). Beside the link, never inside it (the triangle is its own button).
+  const sessionKey = useAuthStore((state) => mineChangedKey(state.organization?.id, state.user?.id))
+  const timesheetsChanged = useMineChangedStore((state) => mineChangedShown(state, sessionKey))
+  const showChanged = item.href === TIMESHEETS_HUB_PATH && timesheetsChanged && !compact
+  const link = (
     <Link
       href={item.href}
       onClick={(event) => {
@@ -117,8 +124,17 @@ function NavRow({
     >
       <NavGlyph path={item.iconPath} className="sb-ico" />
       <span className={cn('min-w-0 flex-1 truncate', compact && 'hidden')}>{item.label}</span>
-      {compact ? null : <ChevronRightIcon className="sb-chev" aria-hidden />}
+      {compact || showChanged ? null : <ChevronRightIcon className="sb-chev" aria-hidden />}
     </Link>
+  )
+  if (!showChanged) return link
+  return (
+    <div style={{ position: 'relative', display: 'grid' }}>
+      {link}
+      <span style={{ position: 'absolute', top: '50%', right: 4, transform: 'translateY(-50%)' }}>
+        <BookingsChangedWarning />
+      </span>
+    </div>
   )
 }
 

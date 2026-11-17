@@ -124,7 +124,7 @@ test('plain-text option wraps the list in a pre block', () => {
   assert.doesNotMatch(html, /Manufacturer:/)
 })
 
-test('rulebook 1.57.0: a blank or legacy "Custom" brand reads "Manufacturer: N/A" and the plain text has no Brand line', () => {
+test('rulebook 1.58.0: a blank or legacy "Custom" brand reads "Manufacturer: N/A" and the plain text has no Brand line', () => {
   for (const brand of ['', 'Custom', ' custom ', undefined]) {
     const ctx = { ...context, materials: [{ ...context.materials[0], brand }] }
     const { html } = buildMaterialRequestEmail({ context: ctx, isQuote: true, sendAsPlainText: false, contactName: 'Alex Smith' })

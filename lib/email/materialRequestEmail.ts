@@ -84,7 +84,7 @@ function itemsTableHTML(materials: MaterialRequestLine[], isQuote: boolean): str
   return materials
     .map((material) => {
       const name = escapeHtml(material.material)
-      // Rulebook 1.57.0: a missing (or legacy "Custom") brand reads "N/A".
+      // Rulebook 1.58.0: a missing (or legacy "Custom") brand reads "N/A".
       const manufacturer = escapeHtml(materialBrandText(material.brand))
       const part = trim(material.productCode)
       const partHTML = part

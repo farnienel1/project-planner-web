@@ -1393,7 +1393,7 @@ test('speed: a takeover after an unconfirmed batch re-sends the identical batch 
   assert.equal(batches[1].body, batches[0].body, 'byte-for-byte the same payload, so Resend replays instead of 409')
 })
 
-test('rulebook 1.57.0 material email: a blank or legacy "Custom" brand reads "Manufacturer: N/A"; the plain text has no Brand line', () => {
+test('rulebook 1.58.0 material email: a blank or legacy "Custom" brand reads "Manufacturer: N/A"; the plain text has no Brand line', () => {
   const { buildMaterialRequestEmail, buildPlainTextEmail } = require('./materialRequestEmail')
   const base = {
     supplierName: 'Alex Smith', userName: 'Farnie', userEmail: 'farnie@example.com', userPhone: '', userCompany: 'Acme',

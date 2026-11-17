@@ -463,7 +463,7 @@ export type MaterialCatalogueDocument = {
   /** Document id, stored case. */
   id: string
   name: string
-  /** '' when none; a stored legacy "Custom" reads as '' (1.57.0, `materialBrandStored`). Show with `materialBrandText`. */
+  /** '' when none; a stored legacy "Custom" reads as '' (1.58.0, `materialBrandStored`). Show with `materialBrandText`. */
   brand: string
   productCode: string | null
   /** The pre-1.48.0 unit (older builds read it). */

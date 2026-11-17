@@ -167,6 +167,7 @@ export type RestValue =
   | { booleanValue: boolean }
   | { integerValue: string }
   | { arrayValue: { values: RestValue[] } }
+  | { timestampValue: string }
 
 export type RestFilter = Record<string, unknown>
 
@@ -186,6 +187,14 @@ export function restIn(field: string, values: readonly string[]): RestFilter {
       value: { arrayValue: { values: values.slice(0, 30).map((value) => ({ stringValue: value })) } },
     },
   }
+}
+
+/** `start <= field <= end` on a Timestamp field (a single-field range: no composite index needed). */
+export function restTimeRange(field: string, start: Date, end: Date): RestFilter {
+  const bound = (op: string, at: Date) => ({
+    fieldFilter: { field: { fieldPath: field }, op, value: { timestampValue: at.toISOString() } },
+  })
+  return { compositeFilter: { op: 'AND', filters: [bound('GREATER_THAN_OR_EQUAL', start), bound('LESS_THAN_OR_EQUAL', end)] } }
 }
 
 export function restAnd(filters: RestFilter[]): RestFilter | undefined {
@@ -239,6 +248,9 @@ export async function firestoreCount(idToken: string, query: Record<string, unkn
   if (!response.ok) throw new Error(`Count refused (${response.status})`)
   const rows = (await response.json().catch(() => [])) as { result?: { aggregateFields?: { n?: { integerValue?: string } } } }[]
   const raw = (Array.isArray(rows) ? rows : []).find((row) => row.result)?.result?.aggregateFields?.n?.integerValue
-  const value = Number(raw ?? 0)
-  return Number.isFinite(value) ? value : 0
+  // A reply without the count is an error, never 0 (review of #366).
+  if (raw === undefined || raw === null) throw new Error('Count reply had no count')
+  const value = Number(raw)
+  if (!Number.isFinite(value)) throw new Error('Count reply was not a number')
+  return value
 }
