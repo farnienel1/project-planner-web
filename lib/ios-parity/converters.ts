@@ -177,6 +177,10 @@ export function parseAppUserDocument(userId: string, data: Record<string, unknow
 
   // firestore.rules `truthyBool`: true or 1 at the top level only (see `User.storedTopLevelFlags`).
   const topLevel = (key: string) => data[key] === true || data[key] === 1
+  // firestore.rules `manageableOperative`: a privilege flag counts when true / 1 at the top level or in `permissions`.
+  const permissionsMap =
+    data.permissions && typeof data.permissions === 'object' ? (data.permissions as Record<string, unknown>) : {}
+  const eitherPlace = (key: string) => topLevel(key) || permissionsMap[key] === true || permissionsMap[key] === 1
   const storedTopLevelFlags = {
     manager: topLevel('manager'),
     operatives: topLevel('operatives'),
@@ -199,6 +203,12 @@ export function parseAppUserDocument(userId: string, data: Record<string, unknow
     storedPermissions,
     storedTopLevelFlags,
     storedRole: typeof data.role === 'string' ? data.role : undefined,
+    storedPrivilegeFlags: {
+      isSuperAdmin: eitherPlace('isSuperAdmin'),
+      adminAccess: eitherPlace('adminAccess'),
+      manager: eitherPlace('manager'),
+      operativeMode: eitherPlace('operativeMode'),
+    },
     assignedManagerUserIds: managerIds.length ? managerIds : undefined,
     assignedManagerUserId: managerIds[0],
     hasNoLineManager: doc.hasNoLineManager,

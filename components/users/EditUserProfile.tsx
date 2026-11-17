@@ -549,7 +549,7 @@ export function EditUserProfile({
       target.id !== currentUser.id &&
       // Rulebook `canManageOperatives`, only where firestore.rules `managerMayManageOperative` accepts it.
       canManageOperativesOnly(currentUser) &&
-      isManageableOperative(target)
+      isManageableOperative(target, currentUser.organizationId)
   )
 
   const showSetupCard =

@@ -2,24 +2,38 @@ import type { User } from '@/types'
 import { canManageOperativesOnly, canManageUsers } from '@/lib/navigation/menuPermissions'
 import { canViewOperatives } from '@/lib/permissions'
 
-const PRIVILEGE_ROLES = new Set(['admin', 'manager', 'super_admin', 'superadmin'])
+/** The organisation id a stored `organizationId` names: an id, or a path ending `organizations/{id}` (rules `orgIdsMatch`). */
+function organizationIdOf(value: string | undefined): string {
+  const text = String(value ?? '').trim()
+  const match = /(?:^|\/)organizations\/([^/]+)$/.exec(text)
+  return (match ? match[1] : text).toLowerCase()
+}
 
 /**
- * The target side of firestore.rules `manageableOperative` (lines ~426–433): an operative (`operativeMode` stored on,
- * top level or `permissions` map, or the `operative` role) with no admin or manager role and no stored `isSuperAdmin`,
- * `adminAccess` or `manager` flag. Reads the STORED flags (`storedPermissions`), never the parsed ones — the parsed
- * view (`effectivePermissions`) always reads `manager` off for an operative.
- * Known gap: `storedPermissions` keeps the top-level value when one is stored, so a top-level `false` with a `true` in
- * the `permissions` map reads false here while the rules refuse (the save then shows the refusal).
+ * The target side of firestore.rules `managerMayManageOperative` / `manageableOperative` (firestore.rules ~415–433):
+ *   - the target's users document names the open organisation (`orgIdsMatch(home.organizationId,
+ *     targetData.organizationId)`; the caller's home organisation is the open one, `operativesManagerWritesAllowed`);
+ *   - an operative: `operativeMode` true / 1 at the top level or in `permissions`, or the stored role exactly
+ *     `operative`;
+ *   - no stored role exactly `admin` or `manager`, and no `isSuperAdmin`, `adminAccess` or `manager` true / 1 in either
+ *     place (`User.storedPrivilegeFlags`, read from the raw document — never the parsed `permissions`, which always read
+ *     `manager` off for an operative).
+ * A user built without the stored fields (not read through `parseAppUserDocument`, e.g. a test fixture) falls back to
+ * the parsed values.
  */
-export function isManageableOperative(target: User): boolean {
-  const stored = target.storedPermissions ?? {}
-  // The stored role (the reader turns `role: 'manager'` on an operative-mode document into `operative`).
-  const role = String(target.storedRole ?? target.role ?? '').trim().toLowerCase()
-  if (target.isSuperAdmin === true || stored.isSuperAdmin === true) return false
-  if (stored.adminAccess === true || stored.manager === true) return false
-  if (PRIVILEGE_ROLES.has(role)) return false
-  return stored.operativeMode === true || target.permissions?.operativeMode === true || role === 'operative'
+export function isManageableOperative(target: User, openOrganizationId: string | undefined): boolean {
+  const targetOrganization = target.homeOrganizationId || target.organizationId
+  if (!openOrganizationId || organizationIdOf(targetOrganization) !== organizationIdOf(openOrganizationId)) return false
+  const flags = target.storedPrivilegeFlags ?? {
+    isSuperAdmin: target.isSuperAdmin === true,
+    adminAccess: target.permissions?.adminAccess === true,
+    manager: target.permissions?.manager === true,
+    operativeMode: target.permissions?.operativeMode === true,
+  }
+  const role = target.storedRole ?? String(target.role ?? '')
+  if (role === 'admin' || role === 'manager') return false
+  if (flags.isSuperAdmin || target.isSuperAdmin === true || flags.adminAccess || flags.manager) return false
+  return flags.operativeMode || role === 'operative'
 }
 
 /**
@@ -38,7 +52,7 @@ export function canEditTargetUser(current: User | null, target: User): boolean {
   if (canManageUsers(current)) return true
   if (!canManageOperativesOnly(current)) return false
   if (target.id === current.id) return false
-  return isManageableOperative(target)
+  return isManageableOperative(target, current.organizationId)
 }
 
 /**

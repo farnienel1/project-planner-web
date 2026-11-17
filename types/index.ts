@@ -189,6 +189,11 @@ export interface User {
   storedTopLevelFlags?: { manager: boolean; operatives: boolean; operativeMode: boolean };
   /** `role` exactly as stored on `users/{uid}` (the reader normalises `role`; firestore.rules reads the stored one). */
   storedRole?: string;
+  /**
+   * Privilege flags as firestore.rules `manageableOperative` reads them: true when the value is true or 1 (1.0) at the
+   * top level OR in the `permissions` map — either place counts.
+   */
+  storedPrivilegeFlags?: { isSuperAdmin: boolean; adminAccess: boolean; manager: boolean; operativeMode: boolean };
   assignedManagerUserId?: string;
   assignedManagerUserIds?: string[];
   /** iOS `hasNoLineManager` — admin/founder with no counter-sign. */
