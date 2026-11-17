@@ -1,10 +1,11 @@
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
+import { ref, uploadBytesResumable, getDownloadURL, getMetadata } from 'firebase/storage'
 import { qualificationCertificateStoragePath } from '@/lib/canonical/operativeQualifications'
 import { timesheetExportStoragePath } from '@/lib/canonical/timesheetPeriod'
 import { storage, auth } from '@/lib/firebase/config'
 import { withTimeout } from '@/lib/client/withTimeout'
 import { generatedStorageFileName } from '@/lib/security/uploadLimits'
 import { assertUploadAllowed } from '@/lib/security/uploadGuard'
+import { variationUploadStallReason } from '@/lib/variations/variationUploadStall'
 
 const UPLOAD_TIMEOUT_MS = 180_000
 
@@ -140,9 +141,18 @@ export async function uploadVariationEvidenceFile(
       }
       finish(() => reject(new Error(message)))
     }
+    let sentBytes = 0
+    let sawSnapshot = false
     const armStall = () => {
       if (stall) clearTimeout(stall)
-      stall = setTimeout(() => cancel('The evidence upload stopped for a minute and was cancelled. Check the connection and add the file again.'), VARIATION_UPLOAD_STALL_MS)
+      stall = setTimeout(() => {
+        if (settled) return
+        // 17 Nov bug: a refusal from the Storage rules comes back at once as storage/unauthorized (error callback
+        // below). A stall means File storage never answered: the SDK silently retries a request that got no reply
+        // (network, a blocked request, an App Check token that never arrived) for up to 10 minutes. Before giving up,
+        // ask Storage one quick question about the same path to say which it is, instead of a vague "stopped".
+        void variationUploadStallReason({ sentBytes, sawSnapshot }, () => withTimeout(getMetadata(storageRef), 10_000, 'no-answer')).then((reason) => cancel(reason))
+      }, VARIATION_UPLOAD_STALL_MS)
     }
     const overall = setTimeout(() => cancel('The evidence upload took too long and was cancelled. Add the file again.'), VARIATION_UPLOAD_MAX_MS)
     const finish = (outcome: () => void) => {
@@ -159,6 +169,8 @@ export async function uploadVariationEvidenceFile(
     task.on(
       'state_changed',
       (snapshot) => {
+        sawSnapshot = true
+        sentBytes = snapshot.bytesTransferred
         armStall()
         if (snapshot.totalBytes > 0) options.onProgress?.(snapshot.bytesTransferred / snapshot.totalBytes)
       },

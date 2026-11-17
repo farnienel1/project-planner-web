@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { VariationStatusButtons } from './VariationStatusButtons'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
@@ -243,7 +244,7 @@ export function VariationTrackerScreen({
                       }
                       return
                     }
-                    await disableTracker(organization.id, project.id).catch((error: Error) => setMessage({ text: error.message, tone: 'warn' }))
+                    await disableTracker(organization.id, project.id, parentType).catch((error: Error) => setMessage({ text: error.message, tone: 'warn' }))
                   }}
                 />
                 Tracker on
@@ -410,14 +411,11 @@ export function VariationTrackerScreen({
                       <InlineText label={`Description of ${row.voNumber}`} value={row.description} multiline onSave={(value) => patch(row, { description: value.trim() })} />
                     </td>
                     <td style={{ padding: '10px 8px', verticalAlign: 'top' }}>
-                      <select
-                        className="input"
-                        aria-label={`Status of ${row.voNumber}`}
+                      <VariationStatusButtons
+                        label={`Status of ${row.voNumber}`}
                         value={row.status}
-                        data-hue={STATUS_HUE[row.status]}
-                        onChange={async (event) => {
+                        onChange={async (status) => {
                           if (!organization?.id || !actor) return
-                          const status = event.target.value as VariationStatus
                           if (status === 'submitted' && !window.confirm('This variation has gone to the client. Its number will be pinned.')) return
                           try {
                             await setVariationStatus({ organizationId: organization.id, variation: row, status, actor })
@@ -425,11 +423,7 @@ export function VariationTrackerScreen({
                             setMessage({ text: error instanceof Error ? error.message : 'Could not change the status.', tone: 'warn' })
                           }
                         }}
-                      >
-                        <option value="open">Open</option>
-                        <option value="submitted">Submitted</option>
-                        <option value="closed">Closed</option>
-                      </select>
+                      />
                     </td>
                     <td className="tabular-nums" style={{ padding: '10px 8px', verticalAlign: 'top', textAlign: 'right' }}>{Math.round(t.labourHours * 100) / 100}</td>
                     <td className="xs" style={{ padding: '10px 8px', verticalAlign: 'top' }}>

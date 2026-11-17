@@ -719,10 +719,49 @@ export type VariationRenumberInputRow = {
   numberHistory?: ReadonlyArray<{ from?: unknown; to?: unknown }> | null
 }
 
-/** Submitted and Closed variations, and any whose number is locked, keep their numbers and do not move (owner 15 Nov). */
+const PINNED_VARIATION_STATUSES = new Set(['submitted', 'closed', 'sent', 'complete', 'completed', 'done'])
+
+function variationStatusPins(status: unknown): boolean {
+  return PINNED_VARIATION_STATUSES.has(text(status).toLowerCase())
+}
+
+/**
+ * Submitted and Closed variations keep their numbers and do not move (owner 15 Nov). 1.63.0 (owner decision 17 Nov,
+ * B): the status decides; a stored `voNumberLocked` no longer pins on its own (it is written with the status,
+ * `variationStatusWriteFields`), so a variation changed back to Open is unpinned and draggable again, even when an
+ * older save left the lock behind (`variationStaleNumberLocks`).
+ */
 export function variationIsPinned(row: VariationRenumberInputRow | null | undefined): boolean {
-  const status = text(row?.status).toLowerCase()
-  return status === 'submitted' || status === 'closed' || status === 'sent' || status === 'complete' || status === 'completed' || status === 'done' || documentBool(row?.voNumberLocked) === true
+  return variationStatusPins(row?.status)
+}
+
+/**
+ * 1.63.0 (§22, bug of 17 Nov): the status write of a variation — `{ status, voNumberLocked }`, written together in ONE
+ * partial update with the app's own `statusHistory` entry and stamps. Submitted and Closed lock the number; Open
+ * clears the lock, so a reopened variation is unpinned in the same write and the security rules (which read the
+ * stored `voNumberLocked`) accept its next renumber. Before 1.63.0 web kept the lock on reopen.
+ */
+export function variationStatusWriteFields(
+  stored: { status?: unknown; voNumberLocked?: unknown } | null | undefined,
+  status: unknown
+): { status: 'open' | 'submitted' | 'closed'; voNumberLocked: boolean } {
+  const word = text(status).toLowerCase()
+  const next: 'open' | 'submitted' | 'closed' = word === 'submitted' ? 'submitted' : word === 'closed' ? 'closed' : 'open'
+  void stored
+  return { status: next, voNumberLocked: next !== 'open' }
+}
+
+/**
+ * 1.63.0: the ids of stored variations that are Open but still carry `voNumberLocked: true` (left by a reopen before
+ * 1.63.0). The rules refuse a number change while that stored lock is true, so before a renumber the app clears it
+ * with its own update (`{ voNumberLocked: false }`, a user action, §1) and only then saves the new order. Deleted rows
+ * are left alone.
+ */
+export function variationStaleNumberLocks(rows: ReadonlyArray<VariationRenumberInputRow> | null | undefined): string[] {
+  return (rows || [])
+    .filter((row) => row && text(row.id) && documentBool(row.isDeleted) !== true)
+    .filter((row) => documentBool(row.voNumberLocked) === true && !variationIsPinned(row))
+    .map((row) => text(row.id))
 }
 
 export type VariationRenumberPlanRow = {

@@ -1876,6 +1876,8 @@ var ProjectPlannerCanonical = (() => {
     variationRenumberMissingRefusal: () => variationRenumberMissingRefusal,
     variationRenumberPlan: () => variationRenumberPlan,
     variationRenumberWriteFields: () => variationRenumberWriteFields,
+    variationStaleNumberLocks: () => variationStaleNumberLocks,
+    variationStatusWriteFields: () => variationStatusWriteFields,
     variationSubcontractorLineError: () => variationSubcontractorLineError,
     variationSubcontractorLineFields: () => variationSubcontractorLineFields,
     variationTotals: () => variationTotals,
@@ -13918,8 +13920,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.60.1" : "",
-      sha256: true ? "58d5a443f6d6c3063d62d82f06e06f6a64d9d0b1c780645391b40c93b80e0cad" : ""
+      version: true ? "1.63.0" : "",
+      sha256: true ? "2ba38c72c6aec8008b93bf561d18bf0dba4270e842c25caffc7ab626bf780f5a" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -16514,9 +16516,21 @@ var ProjectPlannerCanonical = (() => {
     const base = text22(jobNumber).replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
     return `${base || "variations"}-variations.xlsx`;
   }
+  var PINNED_VARIATION_STATUSES = /* @__PURE__ */ new Set(["submitted", "closed", "sent", "complete", "completed", "done"]);
+  function variationStatusPins(status) {
+    return PINNED_VARIATION_STATUSES.has(text22(status).toLowerCase());
+  }
   function variationIsPinned(row2) {
-    const status = text22(row2?.status).toLowerCase();
-    return status === "submitted" || status === "closed" || status === "sent" || status === "complete" || status === "completed" || status === "done" || documentBool(row2?.voNumberLocked) === true;
+    return variationStatusPins(row2?.status);
+  }
+  function variationStatusWriteFields(stored, status) {
+    const word = text22(status).toLowerCase();
+    const next = word === "submitted" ? "submitted" : word === "closed" ? "closed" : "open";
+    void stored;
+    return { status: next, voNumberLocked: next !== "open" };
+  }
+  function variationStaleNumberLocks(rows3) {
+    return (rows3 || []).filter((row2) => row2 && text22(row2.id) && documentBool(row2.isDeleted) !== true).filter((row2) => documentBool(row2.voNumberLocked) === true && !variationIsPinned(row2)).map((row2) => text22(row2.id));
   }
   function variationRenumberPlan(input) {
     const prefix = text22(input?.prefix) || DEFAULT_VARIATION_PREFIX;
@@ -17095,7 +17109,8 @@ var ProjectPlannerCanonical = (() => {
     const from = text23(row2.voNumber);
     const to = text23(input?.to);
     const sequence = Math.trunc(documentNumber(input?.sequence) ?? NaN);
-    const locked = documentBool(row2.voNumberLocked) === true && text23(input?.numberingMode) !== "resequenceAll";
+    const pinnedStatus = ["submitted", "closed", "sent", "complete", "completed", "done"].includes(text23(row2.status).toLowerCase());
+    const locked = pinnedStatus && text23(input?.numberingMode) !== "resequenceAll";
     const set = {};
     if (Number.isFinite(sequence) && sequence !== Math.trunc(documentNumber(row2.sequence) ?? NaN)) set.sequence = sequence;
     if (to && to !== from && !locked) {
@@ -17113,7 +17128,9 @@ var ProjectPlannerCanonical = (() => {
     return {
       parentId: text23(parentId) || text23(row2.parentId),
       parentType: text23(row2.parentType) === "smallWork" ? "smallWork" : "project",
-      enabled: documentBool(row2.enabled) === true,
+      // 1.63.0 (owner decision 17 Nov, A): the tracker is on by default — a job with no tracker document, or a document
+      // that never stored `enabled`, reads as on. Only a stored `enabled: false` (turned off) is off. Nothing is written.
+      enabled: documentBool(row2.enabled) !== false,
       enabledAtMs: documentInstantMs(row2.enabledAt),
       enabledByUid: optionalText4(row2.enabledByUid),
       numberingMode: text23(row2.numberingMode) === "resequenceAll" ? "resequenceAll" : "lockSubmitted",
@@ -17160,7 +17177,11 @@ var ProjectPlannerCanonical = (() => {
         break;
       }
       case "disable":
-        if (!row2) return null;
+        if (!row2) {
+          parentFields(action.parentId, action.parentType);
+          set.enabled = false;
+          break;
+        }
         if (documentBool(row2.enabled) !== false) set.enabled = false;
         removeLock();
         break;

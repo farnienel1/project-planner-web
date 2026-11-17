@@ -954,6 +954,15 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 | 17 Nov | **Item 5:** the repair is automatic — when a line manager or admin has the Timesheets hub or User Timesheets open, every frozen-empty snapshot of the loaded pay runs they may write is rebuilt in the background through the existing path (signatures kept, never exported), once per sheet per session, after bookings and pay settings load. The period page also loads a sheet filed under another id the person goes by. | done web |
 | 17 Nov | **Item 6:** past pay-run lists start at the organisation's creation day (`organizations/{orgId}.createdAt`; else the earliest stored sheet), and any run with a stored sheet is still listed. Web only, no rulebook change. | done web |
 
+## 17 Nov decisions (variations, 1.63)
+
+| Date | Decision | Status |
+|---|---|---|
+| 17 Nov | **(A) The VO tracker is on by default for every job.** A job with no stored tracker (or a tracker document that never stored `enabled`) reads as on; only a stored "off" is off. Derived in the rulebook reader (`parseVariationTrackerDocument`), nothing migrated or written. Guardrail 3 — who sees a change: on every job whose tracker was never turned on, the variations list sorts by tracker position, a new variation's VO number is assigned (shown "from tracker", not typed), and the VO tracker page no longer says "Tracker is off" — dragging open variations works there. A job whose tracker was turned off stays off. No variation is renumbered by this. | done web + rulebook (1.63.0, w-variations-upload-status); iOS (ios-variations-upload-status) |
+| 17 Nov | **(B) Reopening a Submitted or Closed VO unpins it** (draggable again). The status write clears the number lock in the same write (`variationStatusWriteFields`); `variationIsPinned` reads the status only. | done web + rulebook (1.63.0); iOS (ios-variations-upload-status) |
+| 17 Nov | **(C) Bug: "Nothing was renumbered: Missing or insufficient permissions" after reopening VO-003.** Root cause: web kept `voNumberLocked: true` on reopen; the live Firestore rules refuse a VO number change while the stored lock is true. Fixed in 1.63.0 (lock cleared with the status; a lock left by an earlier reopen is cleared by the renumber before its transaction). Also fixed: the renumber transaction read missing `variations/{id}` documents, which the read rule refuses. No rules change (emulator `tests/variationReopen.rules.test.ts`). | done web + rulebook (1.63.0); iOS (ios-variations-upload-status) |
+| 17 Nov | **Status as three buttons** (Open / Submitted / Closed) in the variation detail and tracker rows, web and iOS; UI only, same handler and write. | done web + iOS (1.63.0) |
+
 ## Open questions for the owner
 
 | Date | Question |
