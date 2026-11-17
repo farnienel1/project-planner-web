@@ -16,6 +16,8 @@ import {
 } from './personTimesheetDocs.ts'
 import { timesheetMemberIds } from './timesheetQueue.ts'
 import { exportedTimesheetSubjectIds, userTimesheetSubjectIds } from '../permissions.ts'
+import { exportedSheetOwnerResolver, isUnresolvedTimesheetPerson } from './timesheetStorage.ts'
+import { exportedTimesheetRosterGroups } from './timesheetWeekUtils.ts'
 
 const sheet = (userId: string | undefined, weekStartKey: string): Record<string, unknown> => ({
   ...(userId === undefined ? {} : { userId }),
@@ -179,4 +181,52 @@ test('people with no level flag are on an admin\'s User Timesheets and Exported 
   // Nothing previously listed drops out.
   assert.ok(exported.includes('op') && exported.includes('adm'))
   assert.ok(subjects.includes('op'))
+})
+
+/**
+ * Owner data, Raccord MEP (17 Nov read-only report): 9 exported sheets — 4 by Test Admin, 4 under a stored id nobody in
+ * the roster goes by (a deleted person, "QAlPe29v…"), 1 by Farnie Nel — and two users documents "Test Manager" on one
+ * email (1 and 3 sheets). Shapes only; no real ids.
+ */
+test('Raccord-shaped data: an admin sees the deleted person\'s sheets as Unknown person; the two Test Manager records are one person', () => {
+  const admin = user({ id: 'admin1', email: 'admin@raccord.test', firstName: 'Test', surname: 'Admin', role: 'admin', isSuperAdmin: true, permissions: { adminAccess: true } as never } as never)
+  const farnieNel = user({ id: 'farnie1', email: 'farnie.nel@raccord.test', firstName: 'Farnie', surname: 'Nel' })
+  const tmA = user({ id: 'TM-A', email: 'farnie@raccordmep.test', firstName: 'Test', surname: 'Manager', role: 'manager', permissions: { manager: true } as never })
+  const tmB = user({ id: 'tm-b', email: 'Farnie@RaccordMEP.test', firstName: 'Test', surname: 'Manager', role: 'manager', permissions: { manager: true } as never, passwordSet: false })
+  const roster = [admin, farnieNel, tmA, tmB]
+  const deletedId = 'QAlPe29vAbCdEfGhIjKlMnOpQr12'
+  const sheets: Array<{ id: string; userId?: string }> = [
+    ...[1, 2, 3, 4].map((n) => ({ id: `timesheet_admin1_${n}`, userId: 'admin1' })),
+    ...[1, 2, 3, 4].map((n) => ({ id: `timesheet_${deletedId}_${n}`, userId: deletedId })),
+    { id: 'timesheet_farnie1_1', userId: 'farnie1' },
+    { id: 'timesheet_TM-A_1', userId: 'TM-A' },
+    ...[1, 2, 3].map((n) => ({ id: `timesheet_tm-b_${n}` })), // stored without userId (older build)
+  ]
+  const listed = exportedTimesheetRosterGroups(admin, roster).flat()
+  // Both Test Manager records and Farnie are on the admin's Exported people list; so is the admin (own, read-only).
+  for (const id of ['admin1', 'farnie1', 'TM-A', 'tm-b']) assert.ok(listed.some((member) => member.id === id), id)
+
+  const owner = exportedSheetOwnerResolver({ users: listed, roster, includeUnresolved: true, organizationId: 'org' })
+  const byOwner = new Map<string, number>()
+  for (const sheet of sheets) {
+    const person = owner(sheet.userId ?? sheet.id.split('_')[1])
+    assert.ok(person, `${sheet.id} dropped`)
+    byOwner.set(`${person!.firstName} ${person!.surname}|${person!.id}`, (byOwner.get(`${person!.firstName} ${person!.surname}|${person!.id}`) ?? 0) + 1)
+  }
+  assert.equal(byOwner.get('Test Admin|admin1'), 4)
+  assert.equal(byOwner.get('Farnie Nel|farnie1'), 1)
+  // One person, listed under the signed-up record, with all 4 sheets.
+  assert.equal(byOwner.get('Test Manager|TM-A'), 4)
+  assert.ok(![...byOwner.keys()].some((key) => key.endsWith('|tm-b')))
+  // The deleted person: one stand-in, all 4 sheets, "Unknown person · QALPE29V", nothing to open.
+  const unknown = owner(deletedId)!
+  assert.equal(`${unknown.firstName} ${unknown.surname}`, 'Unknown person · QALPE29V')
+  assert.equal(byOwner.get(`Unknown person · QALPE29V|${deletedId}`), 4)
+  assert.ok(isUnresolvedTimesheetPerson(unknown))
+  assert.equal(owner(deletedId), unknown, 'one stand-in per stored id')
+
+  // Not an admin (or the roster still loading): no Unknown person rows, never a wrong person.
+  const noUnknown = exportedSheetOwnerResolver({ users: listed, roster, includeUnresolved: false, organizationId: 'org' })
+  assert.equal(noUnknown(deletedId), null)
+  assert.equal(noUnknown('admin1')?.id, 'admin1')
 })

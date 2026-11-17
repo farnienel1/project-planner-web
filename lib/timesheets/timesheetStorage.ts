@@ -1781,6 +1781,59 @@ export function unresolvedTimesheetPerson(storedUserId: string, organizationId: 
   return person
 }
 
+/**
+ * Review of #386 (owner data, Raccord MEP): who an exported sheet is listed under. `users` are the people on the viewer's
+ * Exported list, `roster` every users document of the organisation.
+ *   - The sheet's stored person id (its `userId`, else the id its document id names) is matched to a listed person under
+ *     every id they go by (`timesheetOwnerResolver` over `personIdSet`).
+ *   - Several users documents of ONE person (a second record on the same email, a former invite id) are one person
+ *     (`personIdSet`): every sheet is listed under one record of that person — the active, signed-up one, else the
+ *     first listed — so the Exported list shows them once, not once per record.
+ *   - An id nobody in the organisation goes by (a deleted person) is "Unknown person · <hint>" when `includeUnresolved`
+ *     (admins, once the roster has loaded), one stand-in per stored id; otherwise null.
+ */
+export function exportedSheetOwnerResolver({
+  users,
+  roster,
+  includeUnresolved,
+  organizationId,
+}: {
+  users: ReadonlyArray<import('@/types').User>
+  roster: ReadonlyArray<import('@/types').User>
+  includeUnresolved: boolean
+  organizationId: string
+}): (storedUserId: string | null | undefined) => import('@/types').User | null {
+  const fullRoster = roster.length > 0 ? roster : users
+  const ownerOf = timesheetOwnerResolver(users, fullRoster)
+  const rosterOwnerOf = timesheetOwnerResolver(fullRoster, fullRoster)
+  const rank = (member: import('@/types').User) => (member.isActive === false ? 2 : 0) + (member.passwordSet === false ? 1 : 0)
+  const primaryById = new Map<string, import('@/types').User>()
+  for (const member of users) {
+    const key = normalizeDocumentId(member.id)
+    if (primaryById.has(key)) continue
+    const ids = new Set(timesheetMemberIds(member, fullRoster).map((id) => normalizeDocumentId(id)))
+    const records = users.filter((other) => ids.has(normalizeDocumentId(other.id)))
+    const primary = records.reduce((best, other) => (rank(other) < rank(best) ? other : best), records[0] ?? member)
+    for (const other of records) primaryById.set(normalizeDocumentId(other.id), primary)
+    primaryById.set(key, primaryById.get(key) ?? primary)
+  }
+  const unknown = new Map<string, import('@/types').User>()
+  return (storedUserId) => {
+    const stored = (storedUserId ?? '').trim()
+    if (!stored) return null
+    const member = ownerOf(stored)
+    if (member) return primaryById.get(normalizeDocumentId(member.id)) ?? member
+    if (!includeUnresolved || rosterOwnerOf(stored)) return null
+    const key = normalizeDocumentId(stored)
+    let stand = unknown.get(key)
+    if (!stand) {
+      stand = unresolvedTimesheetPerson(stored, organizationId)
+      unknown.set(key, stand)
+    }
+    return stand
+  }
+}
+
 export async function loadExportedTimesheetHistory({
   organizationId,
   users,
@@ -1815,10 +1868,8 @@ export async function loadExportedTimesheetHistory({
     return exportedHistoryMemo.rows
   }
   const byId = new Map<string, ExportedTimesheetHistoryRow>()
-  const byUserId = new Map(users.map((user) => [user.id, user]))
   const fullRoster = roster && roster.length > 0 ? roster : users
-  const ownerOf = timesheetOwnerResolver(users, fullRoster)
-  const rosterOwnerOf = timesheetOwnerResolver(fullRoster, fullRoster)
+  const sheetOwner = exportedSheetOwnerResolver({ users, roster: fullRoster, includeUnresolved, organizationId })
 
   const ingestData = (member: import('@/types').User, weekStart: Date, data: Record<string, unknown>, documentId: string) => {
     ingestExportedRow(
@@ -1853,10 +1904,8 @@ export async function loadExportedTimesheetHistory({
       const weekStart = parseFirestoreDate(data.weekStart)
       if (!weekStart) continue
       // 17 Nov follow-up (guardrail 1): the person under every id they go by, never one exact id.
-      const member =
-        byUserId.get(userId) ??
-        ownerOf(userId) ??
-        (includeUnresolved && userId && !rosterOwnerOf(userId) ? unresolvedTimesheetPerson(userId, organizationId) : null)
+      // Review of #386: one person under every id and every record (`exportedSheetOwnerResolver`).
+      const member = sheetOwner(userId)
       if (!member) continue
       ingestData(member, weekStart, data, entry.id)
     }
@@ -1872,7 +1921,9 @@ export async function loadExportedTimesheetHistory({
     return rows
   }
 
-  const batches = await mapInBatches(users, 8, async (member) => {
+  // One read per person (their records fold into one, `exportedSheetOwnerResolver`).
+  const people = [...new Set(users.map((member) => sheetOwner(member.id) ?? member))]
+  const batches = await mapInBatches(people, 8, async (member) => {
     // Guardrail 1: every id the person goes by (a former invite id, a second users document on their email), and
     // sheets stored without `userId` whose document id names them — never one id per person.
     const rows = await listPersonTimesheetStates(organizationId, timesheetMemberIds(member, fullRoster), 400, 'all', !viewerIsOperative)
@@ -1881,7 +1932,7 @@ export async function loadExportedTimesheetHistory({
   for (const { member, rows } of batches) {
     for (const row of rows) {
       // A sheet filed under an id two listed documents share goes to the one it names exactly (`timesheetOwnerResolver`).
-      if (ownerOf(row.userId) !== member) continue
+      if (sheetOwner(row.userId) !== member) continue
       ingestExportedRow(byId, member, row.weekStart, row.draft, row.endDayKey, row.documentId)
     }
   }
