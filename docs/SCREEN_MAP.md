@@ -218,4 +218,4 @@ All web sections are `app/dashboard/settings/[section]/page.tsx` → `components
 
 ## Other web routes (not app screens)
 
-**web only**, no rulebook calls unless named: marketing `app/page.tsx`, `about`, `features`, `features/[module]`, `pricing`, `privacy`, `processors`, `terms`, `support`, `download`, `register-interest`, `interest/unsubscribe`; platform owner console `app/developer/**` (14 routes) and `app/dashboard/developer/**` (6 routes, `timesheetTotals`, `organizationTimeZone`), `app/developer-login`.
+**web only**, no rulebook calls unless named: marketing `app/page.tsx`, `about`, `features`, `features/[module]`, `pricing`, `privacy`, `processors`, `terms`, `support`, `download`, `register-interest`, `interest/unsubscribe`; platform owner console `app/developer/**` (14 routes) and `app/dashboard/developer/**` (6 routes, `timesheetTotals`, `organizationTimeZone`; the Overview's Bookings made, Projects created and the scoreboard's bookings / projects / small works / tasks completed rows are `count()` aggregations of each organisation's records through `GET /api/owner/activity`, `lib/owner/activityCounts.ts`, never product events), `app/developer-login`.
