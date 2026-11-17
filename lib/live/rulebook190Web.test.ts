@@ -43,10 +43,18 @@ test('1.9.0 live: shared collections load through live listeners scoped to the o
   ] as const) {
     const source = read(path)
     // 1.10.0 round 2: jobs go through `subscribeJobs` (the whole-collection listener, or the read plan §17).
-    const listener = path === 'lib/stores/projectStore.ts' && collection !== "'clients'" ? 'subscribeJobs' : 'subscribeOrgCollectionLoaded'
+    // 1.56.0: the leave store calls the same listener through `holidayListeners` (swappable in its store tests).
+    const listener =
+      path === 'lib/stores/projectStore.ts' && collection !== "'clients'"
+        ? 'subscribeJobs'
+        : path === 'lib/stores/holidayStore.ts'
+          ? 'holidayListeners\\.subscribeCollectionLoaded'
+          : 'subscribeOrgCollectionLoaded'
     assert.match(source, new RegExp(`${listener}\\([^)]*${collection}`), `${path} ${collection}`)
     assert.match(source, /liveResultStillCurrent\(organizationId\)/, path)
   }
+  // 1.56.0: the leave store's default listener is still the live collection listener.
+  assert.match(read('lib/stores/holidayStore.ts'), /subscribeCollectionLoaded: subscribeOrgCollectionLoaded,/)
   const auth = read('lib/stores/authStore.ts')
   const adopts = auth.match(/adoptCurrentOrganization\(/g)?.length ?? 0
   const teardowns = auth.match(/unsubscribeOrgCollectionsOutside\(currentOrganizationId\(\)\)/g)?.length ?? 0

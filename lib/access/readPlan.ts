@@ -4,11 +4,12 @@
  * the stores into their inputs and their query shapes into Firestore constraints, so the web app runs exactly the
  * queries iOS runs.
  */
-import { where, type QueryConstraint } from 'firebase/firestore'
+import { or, where, type QueryConstraint } from 'firebase/firestore'
 import {
   bookingIdsForAccount,
   bookingQueryPlan,
   jobQueryPlan,
+  leaveQueryPlan,
   type BookingPermissionCollection,
   type BookingQuery,
   type JobAccessViewer,
@@ -97,4 +98,62 @@ export function setBookingPlanInputs(visibleJobIds: ReadonlyArray<string>, ownBo
 
 export function bookingPlanInputs(): { visibleJobIds: string[]; ownBookingIds: string[] } {
   return { visibleJobIds: planVisibleJobIds, ownBookingIds: planOwnBookingIds }
+}
+
+/**
+ * Rulebook 1.56.0 §9 / §17 (`leaveQueryPlan`): the annual-leave parts for the viewer, or null when they read every
+ * leave record (the `operativeOwnLeave` switch off, or anyone not at the operative level: the existing
+ * whole-collection listener). With the switch on an operative gets one
+ * `userId in (ids + email) OR operativeId in ids` query per chunk of their own ids — never the whole collection, so
+ * the Phase B rules (switch `operativeOwnLeave`) can refuse colleagues' leave without breaking this app. Empty
+ * `ownIds` means "not known yet": the plan falls back to the viewer's users id and former ids.
+ */
+export function leavePlanParts(
+  viewer: JobAccessViewer | null,
+  ownIds: ReadonlyArray<string>,
+  email: string | null | undefined,
+  operativeOwnLeave = false
+): OrgPlanPart[] | null {
+  const plan = leaveQueryPlan(viewer, { ownIds, email, operativeOwnLeave })
+  if (plan.readsEveryLeave) return null
+  return plan.queries.flatMap((query) => {
+    if (query.kind !== 'own') return []
+    const [byUser, byOperative] = query.anyOf
+    return [
+      {
+        id: `own:${byUser.values.join(',')}|${byOperative.values.join(',')}`,
+        filter: or(where(byUser.field, 'in', byUser.values), where(byOperative.field, 'in', byOperative.values)),
+      },
+    ]
+  })
+}
+
+/** A stable name for a leave plan: `all`, or its parts' ids (an empty plan is `none`). */
+export function leavePlanKey(parts: ReadonlyArray<OrgPlanPart> | null): string {
+  if (parts === null) return 'all'
+  return parts.length === 0 ? 'none' : parts.map((part) => part.id).join('#')
+}
+
+/**
+ * The organisation whose leave listener must be planned again, or null. Re-plans the organisation last requested
+ * (never the one whose first snapshot arrived last) only while it is still the open organisation — after a company
+ * switch the old company is never re-opened; the new company's own `loadBookings` plans it — and only when the plan
+ * the current inputs give differs from the plan the listener runs. Nothing while signed out or before any
+ * organisation was requested. `currentOrgId` empty blocks once an organisation context has been adopted
+ * (`contextAdopted`, sign-out / mid-switch); before the first adoption (boot, tests) it does not.
+ */
+export function leaveReplanTarget(input: {
+  requestedOrgId: string | null
+  currentOrgId?: string | null
+  /** An organisation context has been adopted (epoch > 0): then "no organisation open" blocks too. */
+  contextAdopted?: boolean
+  plannedKey: string | null
+  nextKey: string
+  signedIn: boolean
+}): string | null {
+  if (!input.signedIn || !input.requestedOrgId) return null
+  const current = String(input.currentOrgId ?? '').trim().toLowerCase()
+  if (!current && input.contextAdopted) return null
+  if (current && current !== input.requestedOrgId.trim().toLowerCase()) return null
+  return input.plannedKey === input.nextKey ? null : input.requestedOrgId
 }

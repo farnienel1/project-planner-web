@@ -29,9 +29,15 @@ export function AnnualLeaveScreen() {
   const userIdAliases = useOrgUserStore((state) => state.userIdAliases)
   const operatives = useOperativeStore((state) => state.operatives)
   const loadRosterUsers = useOrgUserStore((state) => state.loadUsers)
+  const loadOperatives = useOperativeStore((state) => state.loadOperatives)
   useEffect(() => {
     if (organization?.id) void loadRosterUsers(organization.id).catch(() => undefined)
   }, [organization?.id, loadRosterUsers])
+  // Rulebook 1.56.0 (`leaveQueryPlan`): an operative's own leave is queried under their `operatives` rows too, so the
+  // rows are loaded here (the leave listener re-plans when they arrive).
+  useEffect(() => {
+    if (organization?.id) void loadOperatives(organization.id).catch(() => undefined)
+  }, [organization?.id, loadOperatives])
   // `canSelfBookAnnualLeave(user, roster)`: the self-book permission outside operative mode, or the Super Admin
   // (rulebook 1.28.0). Having no line manager is not self-booking for anyone.
   const booksOwnLeave = userCanSelfBookAnnualLeave(user, rosterUsers)

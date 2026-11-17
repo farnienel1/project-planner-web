@@ -13,6 +13,7 @@ import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { replanJobs, setJobPlanDocumentIds } from '@/lib/stores/projectStore'
 import { useTaskStore } from '@/lib/stores/taskStore'
 import { useDeadlineStore } from '@/lib/stores/deadlineStore'
+import { replanHolidayBookings } from '@/lib/stores/holidayStore'
 import { operativeJobDocumentIds } from '@/lib/access/workAccess'
 
 let started = false
@@ -27,6 +28,15 @@ function replanBookings(): void {
   if (bookingsOrg) void useBookingStore.getState().loadBookings(bookingsOrg).catch(() => undefined)
   const managerOrg = managerSiteBookingsOrganizationId()
   if (managerOrg) void useManagerScheduleStore.getState().loadManagerSiteBookings(managerOrg).catch(() => undefined)
+}
+
+/**
+ * Rulebook 1.56.0 (`leaveQueryPlan`): an operative's leave listener queries their own ids — the users id, former ids
+ * and the `operatives` rows on their email (`bookingIdsForAccount`). The holiday store re-plans the organisation it
+ * was last asked for whenever those change (and forgets its plan on sign-out). Staff keep one whole-collection plan.
+ */
+function replanLeave(): void {
+  replanHolidayBookings()
 }
 
 function replanOperativeJobs(): void {
@@ -111,6 +121,7 @@ function start(): void {
   useOperativeStore.subscribe((state, previous) => {
     if (state.operatives !== previous.operatives) {
       replanBookings()
+      replanLeave()
       replanOperativeJobs()
     }
   })
@@ -123,9 +134,18 @@ function start(): void {
   useAuthStore.subscribe((state, previous) => {
     if (state.user !== previous.user) {
       replanBookings()
+      replanLeave()
       replanOperativeJobs()
     }
   })
+}
+
+/**
+ * Rulebook 1.56.0: the leave store starts the sync. Idempotent, and it never re-plans (review of #356: the leave
+ * store calls it from inside `loadBookings`; a re-plan from here re-entered the load in a microtask loop).
+ */
+export function startReadPlanSync(): void {
+  start()
 }
 
 /** A job listener delivered: start the sync and re-plan the booking listeners when the job list changed. */

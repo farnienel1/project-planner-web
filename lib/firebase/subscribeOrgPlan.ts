@@ -15,7 +15,12 @@ import {
   onSnapshot,
   query,
   type FirestoreError,
+  type CollectionReference,
+  type DocumentData,
+  type Query,
+  type QueryCompositeFilterConstraint,
   type QueryConstraint,
+  type QueryNonFilterConstraint,
   type Unsubscribe,
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
@@ -29,8 +34,23 @@ import {
   republishHeldAsAuthoritative,
 } from '@/lib/firebase/orgCollectionMerge'
 
-/** One query of a plan: `constraints` on the collection, or one `documentId`. `id` names it stably. */
-export type OrgPlanPart = { id: string; constraints?: QueryConstraint[]; documentId?: string }
+/**
+ * One query of a plan: `constraints` on the collection, or one `documentId`. `id` names it stably. `filter` is an
+ * optional composite (`or`) filter applied before `constraints` (rulebook 1.56.0: an operative's own leave is one
+ * `userId in … OR operativeId in …` query); with it, `constraints` may hold only non-filter constraints.
+ */
+export type OrgPlanPart = {
+  id: string
+  constraints?: QueryConstraint[]
+  filter?: QueryCompositeFilterConstraint
+  documentId?: string
+}
+
+/** The part's query on `col` (the collection itself for a part with no constraints). */
+function partQuery(col: CollectionReference<DocumentData>, part: OrgPlanPart): Query<DocumentData> {
+  if (part.filter) return query(col, part.filter, ...((part.constraints ?? []) as unknown as QueryNonFilterConstraint[]))
+  return part.constraints?.length ? query(col, ...part.constraints) : col
+}
 
 type PartState = {
   unsub: Unsubscribe | null
@@ -145,7 +165,7 @@ function startPart(key: string, state: PlanState, part: OrgPlanPart, seed?: read
       return
     }
     const col = collection(firestore, 'organizations', state.organizationId, state.collectionName)
-    const source = part.constraints?.length ? query(col, ...part.constraints) : col
+    const source = partQuery(col, part)
     partState.unsub = onSnapshot(
       source,
       // Rulebook 1.38.0 §27: metadata changes only tell the data check the server answered.
@@ -315,7 +335,7 @@ export async function countOrgPlanPartsFromServer(key: string, organizationId: s
       if (!part || part.documentId) return null
       const col = collection(firestore, 'organizations', organizationId, state.collectionName)
       try {
-        const snap = await getCountFromServer(part.constraints?.length ? query(col, ...part.constraints) : col)
+        const snap = await getCountFromServer(partQuery(col, part))
         return snap.data().count
       } catch {
         return null
