@@ -227,3 +227,100 @@ test('Daily Overview screen source never renders a stored slot directly', () => 
   // `leaveHalfDayLabel(row.timeSlot, …)`, which is a call, not a bare child.
   assert.doesNotMatch(source, /\{\s*[\w.?]+\.(timeSlot|timeSlotRaw|cellSlot)\s*\}/)
 })
+
+/**
+ * Review of #387: an Other row reads exactly as a job's row for the same booking — overnight, a booking's own
+ * overtime rate, a weekend window and a booking with no times — and still adds nothing to the day's labour hours.
+ */
+function pairModel(dayKeyText: string, booking: Record<string, unknown>, withOffice = true, extraPolicy: Record<string, unknown> = {}) {
+  const day = dateFromDayKey(dayKeyText)
+  const f = fixture(false)
+  const onJob = { id: 'J', userId: 'u-mgr', date: day, locationType: 'project', locationId: 'P1', ...booking }
+  const inOffice = { id: 'O', userId: 'u-admin', date: day, locationType: 'office', ...booking }
+  return buildDailyOverview({
+    day,
+    today: day,
+    projects: [f.project] as never,
+    bookings: [],
+    managerBookings: (withOffice ? [onJob, inOffice] : [onJob]) as never,
+    holidays: [],
+    users: f.users as never,
+    userIdAliases: {},
+    operatives: [],
+    payrollPolicy: { ...policy, ...extraPolicy } as never,
+    timeZone: ZONE,
+  })
+}
+
+const PAIR_CASES: { label: string; dayKey: string; booking: Record<string, unknown>; policy?: Record<string, unknown> }[] = [
+  { label: 'overnight 22:00–06:00', dayKey: DAY_KEY, booking: { timeSlot: 'CUSTOM_HOURS', workStartTime: '22:00', workEndTime: '06:00' } },
+  { label: "the booking's own rate ×2", dayKey: DAY_KEY, booking: { timeSlot: 'CUSTOM_HOURS', workStartTime: '06:00', workEndTime: '17:30', otMultiplierOverride: 2 } },
+  {
+    label: 'a Saturday set window',
+    dayKey: '2026-11-21',
+    booking: { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '15:00' },
+    policy: {
+      saturday: { allHoursAtMultiplierMode: false, allHoursMultiplier: 2, definedWindowStart: '07:30', definedWindowEnd: '13:00', countsAsStandardHours: 8, outsideWindowMultiplier: 2 },
+    },
+  },
+  { label: 'custom hours with no times', dayKey: DAY_KEY, booking: { timeSlot: 'CUSTOM_HOURS' } },
+  { label: 'a full day with no times', dayKey: DAY_KEY, booking: { timeSlot: 'FULL_DAY' } },
+]
+
+for (const c of PAIR_CASES) {
+  test(`Daily Overview Other row matches a job row: ${c.label}`, () => {
+    const m = pairModel(c.dayKey, c.booking, true, c.policy)
+    const jobRow = m.projectCards[0].people[0]
+    const officeRow = m.otherGroups[0].rows[0]
+    assert.equal(officeRow.booking.id, 'O')
+    assert.equal(officeRow.pillText, jobRow.pillText)
+    assert.equal(officeRow.cell.tone, jobRow.cell.tone)
+    assert.equal(officeRow.cellPaidHours, jobRow.cellPaidHours)
+    assert.equal(officeRow.cellOvertimeHours, jobRow.cellOvertimeHours)
+    assert.deepEqual(officeRow.bookingParts, jobRow.bookingParts)
+    for (const part of officeRow.bookingParts) assert.ok(!RAW_SLOT.test(part.shift), `raw slot word "${part.shift}"`)
+    // The office booking is never counted in the day's labour figures.
+    const jobOnly = pairModel(c.dayKey, c.booking, false, c.policy)
+    assert.equal(m.labourHours, jobOnly.labourHours)
+    assert.equal(m.standardWorkedHours, jobOnly.standardWorkedHours)
+    assert.equal(m.overtimeWorkedHours, jobOnly.overtimeWorkedHours)
+    assert.equal(m.overtimeText, jobOnly.overtimeText)
+  })
+}
+
+test('Daily Overview Other rows: the cases above show what a job row shows', () => {
+  const own = pairModel(DAY_KEY, PAIR_CASES[1].booking)
+  // The booking's own ×2 is priced, not the organisation's ×1.5: 8.5h standard + 2.5h × 2 = 13.5h (×1.5 gives 12.25h).
+  assert.equal(own.otherGroups[0].rows[0].pillText, '13.5h')
+  assert.equal(own.otherGroups[0].rows[0].cell.tone, 'split')
+  const overnight = pairModel(DAY_KEY, PAIR_CASES[0].booking)
+  assert.deepEqual(overnight.otherGroups[0].rows[0].bookingParts, [{ shift: 'Custom', times: '22:00–06:00' }])
+  const noTimes = pairModel(DAY_KEY, PAIR_CASES[3].booking)
+  assert.deepEqual(noTimes.otherGroups[0].rows[0].bookingParts, [{ shift: 'Custom hours', times: null }])
+})
+
+test('Daily Overview Other groups: a custom place named like a fixed one keeps its own group', () => {
+  const day = dateFromDayKey(DAY_KEY)
+  const f = fixture(false)
+  const m = buildDailyOverview({
+    day,
+    today: day,
+    projects: [f.project] as never,
+    bookings: [],
+    managerBookings: [
+      { id: 'A', userId: 'u-admin', date: day, timeSlot: 'FULL_DAY', locationType: 'office' },
+      { id: 'B', userId: 'u-mgr', date: day, timeSlot: 'FULL_DAY', locationType: 'custom', customLocationName: 'Office' },
+    ] as never,
+    holidays: [],
+    users: f.users as never,
+    userIdAliases: {},
+    operatives: [],
+    payrollPolicy: policy as never,
+    timeZone: ZONE,
+  })
+  const keys = m.otherGroups.map((g) => `${g.kind}:${g.name}`)
+  assert.deepEqual(keys, ['office:Office', 'custom:Office'])
+  assert.equal(new Set(keys).size, keys.length)
+  // Every group shown has at least one row, so its label never stands alone or goes missing.
+  assert.ok(m.otherGroups.every((g) => g.rows.length > 0))
+})

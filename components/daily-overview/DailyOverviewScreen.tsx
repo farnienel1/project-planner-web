@@ -585,7 +585,9 @@ function PlaceRow({ row, onOpen }: { row: OverviewPlaceRow; onOpen?: (booking: M
         event.stopPropagation()
         onOpen(row.booking, row.name)
       }}
-      aria-label={`Change booking for ${row.name}`}
+      aria-label={`Change booking for ${row.name}: ${row.bookingParts
+        .map((part) => (part.times ? `${part.shift} ${part.times}` : part.shift))
+        .join(', ')}, ${kind.label}, ${row.pillText}`}
     >
       {inner}
     </button>
@@ -609,7 +611,7 @@ function OtherBlock({
   people,
   onOpen,
 }: {
-  groups: { name: string; rows: OverviewPlaceRow[] }[]
+  groups: { kind: string; name: string; rows: OverviewPlaceRow[] }[]
   /** Distinct people with an Office, Working from home or custom-place booking (the card's count, unchanged). */
   people: number
   onOpen?: (booking: ManagerSiteBooking, name?: string) => void
@@ -617,7 +619,8 @@ function OtherBlock({
   return (
     <Card title="Other" count={`${people} person${people === 1 ? '' : 's'}`}>
       {groups.map((group) => (
-        <div key={group.name}>
+        // Keyed by kind and name: a custom place may be called "Office" (review of #387).
+        <div key={`${group.kind}:${group.name}`}>
           <p className="pu-label pu-pad" style={{ paddingBottom: 0 }}>
             {group.name}
           </p>

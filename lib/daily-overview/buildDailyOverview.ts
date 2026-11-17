@@ -187,7 +187,7 @@ export type DailyOverviewModel = {
    * Display only (owner report 17 Nov): the "Other" card's rows under their place — Office, Working from home, then
    * each custom place by name — built like a job's rows. A booking whose person has no name is "Unknown person".
    */
-  otherGroups: { name: string; rows: OverviewPlaceRow[] }[]
+  otherGroups: { kind: 'office' | 'working_from_home' | 'custom'; name: string; rows: OverviewPlaceRow[] }[]
   /** Display only: the "Site survey" card's rows, built like `otherGroups`. */
   siteSurveyRows: OverviewPlaceRow[]
   holidays: HolidayBooking[]
@@ -733,9 +733,9 @@ export function buildDailyOverview(params: {
       ]
     })
   const otherGroups = [
-    { name: 'Office', rows: placeRows(officeBookings) },
-    { name: 'Working from home', rows: placeRows(wfhBookings) },
-    ...customGroups.map((group) => ({ name: group.name, rows: placeRows(group.bookings) })),
+    { kind: 'office' as const, name: 'Office', rows: placeRows(officeBookings) },
+    { kind: 'working_from_home' as const, name: 'Working from home', rows: placeRows(wfhBookings) },
+    ...customGroups.map((group) => ({ kind: 'custom' as const, name: group.name, rows: placeRows(group.bookings) })),
   ].filter((group) => group.rows.length > 0)
   const siteSurveyRows = placeRows(siteSurveyBookings)
 
