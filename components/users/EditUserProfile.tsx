@@ -58,7 +58,7 @@ import {
   isGhostUser,
   leaveRecordsForAccount,
 } from '@/lib/canonical'
-import { loadTaxIds, saveTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
+import { loadTaxIds, saveTaxIds, taxIdsValidationError } from '@/lib/sensitiveProfile/taxIdsService'
 import { LEAVE_DAYS_SAVE_MAX, parseBoundedNumber } from '@/lib/security/boundedValue'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useOrgBankHolidays } from '@/components/annual-leave/useOrgBankHolidays'
@@ -128,6 +128,7 @@ import { useWarnBeforeUnload } from '@/lib/client/useWarnBeforeUnload'
 import { withTimeout, withTimeoutFallback } from '@/lib/client/withTimeout'
 import { afterPrimaryWrite } from '@/lib/client/afterPrimaryWrite'
 import { PROFILE_SAVE_READ_TIMEOUT_MS, PROFILE_SAVE_READ_TIMEOUT_MESSAGE } from '@/lib/users/profileSaveReads'
+import { ProfileSaveStageError, sequenceProfileSave } from '@/lib/users/profileSaveSequence'
 import { ActionPanel, ActionRow, Field, FieldGrid, FormSection, SectionBlock, Switch, ToggleRow, ProfileBack, ProfileBand, ProfileBanner, SaveState, ProfileIcon, type ProfileIconName } from '@/components/users/profile-ui'
 import {
   Input,
@@ -342,6 +343,13 @@ export function EditUserProfile({
     }
   }, [])
   const anySaveNotice = useProfileSaveNotice((state) => state.notice)
+  // Second review of #371: the save this page is waiting on (queued, not answered yet). While it is set, Save and every
+  // edit are off, and a late answer is applied only when it belongs to this save and this person.
+  const [serverWaitSaveId, setServerWaitSaveId] = useState<number | null>(null)
+  const serverWaitRef = useRef<number | null>(null)
+  // The person this page shows, and whether it has unsaved edits (read by late answers).
+  const personIdRef = useRef<string | null>(null)
+  const dirtyRef = useRef(false)
   const [typeSaving, setTypeSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -558,7 +566,25 @@ export function EditUserProfile({
   // This person's save note (this organisation only, review of #371), and a reload warning while it waits.
   const thisPersonNotice = profileSaveNoticeFor(anySaveNotice, organization?.id)
   const pageSaveNotice = thisPersonNotice && target && thisPersonNotice.personId === target.id ? thisPersonNotice : null
-  useWarnBeforeUnload(pageSaveNotice?.status === 'pending')
+  // From the moment a batch is queued until the server answers (and while it reads "not confirmed"): Firestore keeps
+  // queued writes in memory only, so a reload would lose them.
+  useWarnBeforeUnload(
+    serverWaitSaveId != null || pageSaveNotice?.status === 'pending' || pageSaveNotice?.status === 'unconfirmed'
+  )
+  // Nothing on this page can be edited or saved while one of its saves waits for the server (second review of #371).
+  const saveLocked = serverWaitSaveId != null || pageSaveNotice?.status === 'pending'
+  // What a late answer reads: the person on this page and whether it has edits not saved yet.
+  const unsavedEdits =
+    Boolean(target) &&
+    baseline != null &&
+    (taxDraft.utrNumber !== null ||
+      taxDraft.vatNumber !== null ||
+      accountTypeRepair != null ||
+      (target ? profileSnapshot(target, draftAccountType, draftTypePermissions) !== baseline : false))
+  useEffect(() => {
+    personIdRef.current = target?.id ?? null
+    dirtyRef.current = unsavedEdits
+  }, [target?.id, unsavedEdits])
   const canEditIdentity = target ? canEditIdentityDetails(currentUser, target) : false
   const canEditMatrix = target ? canEditPermissionsMatrix(currentUser, target) : false
   const canAdminTools = canUseAdminAccountTools(currentUser)
@@ -711,7 +737,7 @@ export function EditUserProfile({
   const handleSave = async (e?: FormEvent) => {
     e?.preventDefault()
     if (!target || !organization?.id || !canEdit) return
-    if (saveInFlight.current || saving || typeSaving || payReloadingRef.current) return
+    if (saveInFlight.current || saving || typeSaving || payReloadingRef.current || serverWaitRef.current != null) return
     saveInFlight.current = true
     try {
       await runSave()
@@ -735,15 +761,70 @@ export function EditUserProfile({
     return true
   }
 
-  /** Rulebook 1.31.0 `jobManagerRemovalWrites`: off every job they manage after an operative / deactivate / delete change. */
-  const removeFromJobs = async (person: User, change: PersonAccessChange) => {
-    if (!organization?.id) return
+  const beginServerWait = (saveId: number) => {
+    serverWaitRef.current = saveId
+    setServerWaitSaveId(saveId)
+  }
+  const endServerWait = (saveId: number) => {
+    if (serverWaitRef.current !== saveId) return
+    serverWaitRef.current = null
+    if (mountedRef.current) setServerWaitSaveId(null)
+  }
+  /** Still on this person's page (a late answer never navigates or rewrites another person's page). */
+  const stillOnPerson = (personId: string) => mountedRef.current && personIdRef.current === personId
+  const reportStepFailure = (noticeTarget: ProfileSaveTarget, step: string) => (error: unknown) => {
+    const reason = error instanceof Error && error.message ? error.message : 'the server refused it.'
+    useProfileSaveNotice.getState().failed(noticeTarget, profileSaveStepFailedMessage(noticeTarget.name, step, reason))
+  }
+
+  /**
+   * Every write from this page goes through here (second review of #371): it is waited for at most
+   * `WRITE_CONFIRM_TIMEOUT_MS` — a refusal in that time is thrown, so the caller shows it and gives Save back; no answer
+   * yet returns 'pending' and the amber note shows (red after `WRITE_UNCONFIRMED_AFTER_MS`). Call it straight after the
+   * write is queued. A late answer runs `saved` / `refused` only when this page is still on that save and person.
+   */
+  const confirmPersonWrite = async (
+    noticeTarget: ProfileSaveTarget,
+    write: Promise<unknown>,
+    handlers: {
+      saved?: () => void
+      refused?: (message: string) => void
+      /** The note to show for a late refusal instead of the default "changes were not saved". */
+      refusedNotice?: (message: string) => string | null
+      pendingMessage?: string
+    } = {}
+  ): Promise<'saved' | 'pending'> => {
+    beginServerWait(noticeTarget.saveId)
+    const notices = useProfileSaveNotice.getState()
+    let answeredLate = false
+    let result: 'saved' | 'pending'
     try {
-      const count = await removeFromManagedJobs(person, change, organization.id, rosterDocs)
-      if (count > 0) setSuccess(`Removed as manager from ${count === 1 ? '1 job' : `${count} jobs`}.`)
-    } catch (err) {
-      setError(err instanceof Error ? `Saved, but removing them from their jobs failed: ${err.message}` : 'Removing them from their jobs failed.')
+      result = await confirmWriteWithin(write, (outcome) => {
+        if (outcome.status === 'unconfirmed') {
+          notices.settled(noticeTarget, outcome)
+          return
+        }
+        answeredLate = true
+        const applies = stillOnPerson(noticeTarget.personId) && serverWaitRef.current === noticeTarget.saveId
+        endServerWait(noticeTarget.saveId)
+        if (outcome.status === 'saved') {
+          notices.settled(noticeTarget, outcome)
+          if (applies) handlers.saved?.()
+          return
+        }
+        const custom = handlers.refusedNotice?.(outcome.message) ?? null
+        if (custom) notices.failed(noticeTarget, custom)
+        else notices.settled(noticeTarget, outcome)
+        if (applies) handlers.refused?.(outcome.message)
+      })
+    } catch (error) {
+      endServerWait(noticeTarget.saveId)
+      throw error
     }
+    if (result === 'saved') endServerWait(noticeTarget.saveId)
+    // The answer may already have come in the moment between the time limit and here: never show a stale "waiting".
+    else if (!answeredLate) notices.pending(noticeTarget, handlers.pendingMessage)
+    return result
   }
 
   const runSave = async () => {
@@ -789,6 +870,16 @@ export function EditUserProfile({
 
     const previous = target
     const previousBaseline = baseline
+    // Everything a late refusal puts back (second review of #371): the stored copy, the draft type, the tax draft and
+    // the starting pay figures, so the next Save sends the same change again — the type with it — never half of it.
+    const storedBefore = savedUser.current
+    const draftTypeBefore = draftAccountType
+    const draftPermissionsBefore = draftTypePermissions
+    const taxDraftBefore = taxDraft
+    const taxIdsBefore = taxIds
+    const originalDayRateBefore = originalDayRate
+    const originalPayBasisBefore = originalPayBasis
+    const originalEmploymentTypeBefore = originalEmploymentType
     const decision = await requestPaySave({
       existing: true,
       employmentType: target.employmentType,
@@ -867,7 +958,40 @@ export function EditUserProfile({
     }
     setSaving(true)
     let confirmed: 'saved' | 'pending' = 'saved'
+    const restoreBeforeSave = () => {
+      savedUser.current = storedBefore
+      if (storedBefore) {
+        patchListedUser(storedBefore)
+        setListedUserActive(storedBefore.id, storedBefore.isActive)
+      }
+      setTarget(previous)
+      setDraftAccountType(draftTypeBefore)
+      setDraftTypePermissions(draftPermissionsBefore)
+      setBaseline(previousBaseline)
+      setTaxDraft(taxDraftBefore)
+      setTaxIds(taxIdsBefore)
+      setOriginalDayRate(originalDayRateBefore)
+      setOriginalPayBasis(originalPayBasisBefore)
+      setOriginalEmploymentType(originalEmploymentTypeBefore)
+      setSaved(false)
+      setSuccess(null)
+    }
     try {
+      // One overall budget for every read before the batches are queued (second review of #371): the pay history and
+      // the prepare step together never wait longer than `PROFILE_SAVE_READ_TIMEOUT_MS`.
+      const readDeadline = Date.now() + PROFILE_SAVE_READ_TIMEOUT_MS
+      const readTimeLeft = () => Math.max(0, readDeadline - Date.now())
+      const taxNext =
+        canViewTaxIds && taxDirty && currentUser?.id
+          ? {
+              utrNumber: taxDraft.utrNumber ?? taxIds?.utrNumber ?? '',
+              vatNumber: taxDraft.vatNumber ?? taxIds?.vatNumber ?? '',
+            }
+          : null
+      const writerId = currentUser?.id ?? ''
+      // Checked before anything is queued (second review of #371): a tax id refusal never comes after the profile.
+      const taxError = taxNext ? taxIdsValidationError(taxNext, writerId) : null
+      if (taxError) throw new Error(taxError)
       // Rulebook 1.10.0 §8 (`payRateChangeWrites`): pay history rows go in the profile's batch; a history that did
       // not load refuses the save instead of writing a duplicate seed row.
       const nextRate = (toSave.payBasis === 'hourly' ? toSave.hourlyRate : toSave.dayRate) ?? null
@@ -877,15 +1001,11 @@ export function EditUserProfile({
         const { loadOperativeDayRateHistoryOrNull, payHistoryBatchRows } = await import('@/lib/timesheets/dayRateHistoryStorage')
         // Every id the stored history may be filed under: read once from the person as stored (`savedUser`, the
         // loaded profile), never from the email typed in this save — a new email would name another person's rows.
-        const historyIds = personRateHistoryIds(savedUser.current ?? previous, operatives, { roster: users })
+        const historyIds = personRateHistoryIds(storedBefore ?? previous, operatives, { roster: users })
         payHistoryRows = payHistoryBatchRows({
           // Bounded (review of #371): a history that does not load in time is "not loaded", so the save is refused
           // with PAY_HISTORY_NOT_LOADED_MESSAGE (nothing written) instead of waiting with no limit.
-          history: await withTimeoutFallback(
-            loadOperativeDayRateHistoryOrNull(organization.id),
-            PROFILE_SAVE_READ_TIMEOUT_MS,
-            null
-          ),
+          history: await withTimeoutFallback(loadOperativeDayRateHistoryOrNull(organization.id), readTimeLeft(), null),
           userId: toSave.id,
           // The row keeps one `operativeId` (the linked catalogue row, as before); the "history loaded and empty?"
           // test reads every id the person's history may be under (1.36.0, FU-5), so no duplicate seed row.
@@ -898,27 +1018,17 @@ export function EditUserProfile({
           seedEffective: toSave.createdAt ?? null,
         })
       }
-      let profileBaseline = savedUser.current
+      let profileBaseline = storedBefore
       const typeChange = Boolean(
         draftAccountType && draftTypePermissions && draftAccountType !== currentAccountType(previous)
       )
       if (typeChange && draftAccountType && draftTypePermissions && profileBaseline) {
-        // The type is saved by `changeAccountType` first: the profile save below sends only the other edits, never the
-        // type fields again.
+        // The type is saved by the type batch first: the profile batch sends only the other edits, never the type
+        // fields again.
         const typed = applyAccountType(cloneUser(profileBaseline), draftAccountType)
         profileBaseline = { ...typed, permissions: draftTypePermissions }
       }
-      const taxNext =
-        canViewTaxIds && taxDirty && currentUser?.id
-          ? {
-              utrNumber: taxDraft.utrNumber ?? taxIds?.utrNumber ?? '',
-              vatNumber: taxDraft.vatNumber ?? taxIds?.vatNumber ?? '',
-            }
-          : null
-      const writerId = currentUser?.id ?? ''
-      // Review of #371: the reads come first, bounded, and nothing is written if they fail or time out. Only then are
-      // the batches handed to Firestore (in order; Firestore sends them in that order) and only then does the
-      // confirmation timer start, so "saved on this device" is never shown before anything was queued.
+      // Review of #371: the reads come first, bounded, and nothing is written if they fail or time out.
       const prepared = await withTimeout(
         (async () => {
           const typePlan =
@@ -937,45 +1047,45 @@ export function EditUserProfile({
           })
           return { typePlan, profilePlan }
         })(),
-        PROFILE_SAVE_READ_TIMEOUT_MS,
+        readTimeLeft(),
         PROFILE_SAVE_READ_TIMEOUT_MESSAGE
       )
-      // Queued now, in order. Each promise resolves only when the server confirms it.
-      const commits: Promise<unknown>[] = []
-      if (prepared.typePlan) commits.push(prepared.typePlan.commit())
-      commits.push(prepared.profilePlan.commit())
-      if (taxNext) commits.push(saveTaxIds(toSave.id, taxNext, writerId))
-      const persist = Promise.all(commits).then(() => undefined)
-      // Owner bug 17 Nov: the save waited for the server's confirmation with no time limit, so when it was slow or
-      // never came the screen stayed on "Saving…" although the change already showed (Firestore applies it locally at
-      // once and sends it when it can). Wait at most `WRITE_CONFIRM_TIMEOUT_MS`: a refusal in that time is shown here
-      // and Save comes back; no answer yet returns to the list as any save does, and the list says it is waiting
-      // (`useProfileSaveNotice`) until the server confirms or refuses it, or says it is not confirmed after
-      // `WRITE_UNCONFIRMED_AFTER_MS` (Firestore retries some errors for ever). The same pattern as My Projects.
+      // Second review of #371: the batches are queued one after another, each only once the one before is confirmed —
+      // the type, then the profile, then the tax ids (`sequenceProfileSave`, the order before the split). A refused or
+      // unanswered type batch never lets the profile's fields go out on their own.
+      const typePlan = prepared.typePlan
+      const sequence = sequenceProfileSave({
+        type: typePlan ? () => typePlan.commit() : null,
+        profile: () => prepared.profilePlan.commit(),
+        tax: taxNext ? () => saveTaxIds(toSave.id, taxNext, writerId) : null,
+      })
+      const persist = sequence.all
+      // Owner bug 17 Nov: wait at most `WRITE_CONFIRM_TIMEOUT_MS`; a refusal in that time is shown here and Save comes
+      // back; otherwise this page stays open, locked, with the amber note until the server answers (owner answer 17
+      // Nov), red once `WRITE_UNCONFIRMED_AFTER_MS` has passed.
       const noticeTarget: ProfileSaveTarget = {
         saveId: Date.now(),
         organizationId: organization.id,
         personId: toSave.id,
         name: `${toSave.firstName} ${toSave.surname}`.trim() || toSave.email,
       }
-      const notices = useProfileSaveNotice.getState()
-      confirmed = await confirmWriteWithin(persist, (outcome) => {
-        notices.settled(noticeTarget, outcome)
-        if (!mountedRef.current) return
-        if (outcome.status === 'saved') {
-          // Confirmed while the person is still on this page: close it, as for any save.
-          router.push(hubHref || backHref)
-        } else if (outcome.status === 'refused') {
-          // Nothing was saved: the edits stay on screen and Save comes back to try again.
-          savedUser.current = previous
-          setListedUserActive(previous.id, previous.isActive)
-          setBaseline(previousBaseline)
-          setSaved(false)
-          setSuccess(null)
-        }
+      let failure: ProfileSaveStageError | null = null
+      persist.catch((error: unknown) => {
+        if (error instanceof ProfileSaveStageError) failure = error
       })
-      if (confirmed === 'pending') notices.pending(noticeTarget)
-      if (prepared.typePlan?.note) setSuccess(prepared.typePlan.note)
+      confirmed = await confirmPersonWrite(noticeTarget, persist, {
+        saved: () => {
+          // Confirmed while the person is still on this page and nothing was edited since: close it, as for any save.
+          if (!dirtyRef.current) router.push(hubHref || backHref)
+        },
+        refusedNotice: () => {
+          const stage = failure as ProfileSaveStageError | null
+          return stage?.partial ? `${noticeTarget.name}: ${stage.message}` : null
+        },
+        // A late refusal: everything is put back, so the edits stay on screen and Save sends the same change again.
+        refused: restoreBeforeSave,
+      })
+      if (typePlan?.note) setSuccess(typePlan.note)
       savedUser.current = toSave
       if (taxNext) {
         setTaxIds({ ...taxNext, source: 'private' })
@@ -998,16 +1108,13 @@ export function EditUserProfile({
         setSuccess(emailChangeNote)
       }
       if (emailChangeNote) setTarget({ ...toSave })
-      // Review of #371: the active flag and the linked operatives row follow the profile batch — never written when
-      // that batch was refused or has not reached the server. A failure is reported on the people list.
-      const reportStep = (step: string) => (error: unknown) => {
-        const reason = error instanceof Error && error.message ? error.message : 'the server refused it.'
-        useProfileSaveNotice.getState().failed(noticeTarget, profileSaveStepFailedMessage(noticeTarget.name, step, reason))
-      }
+      // The follow-up writes run off the profile batch's own confirmation — never when it was refused or has not
+      // reached the server. A failure is reported on the note.
+      const reportStep = (step: string) => reportStepFailure(noticeTarget, step)
       const afterProfile = (label: string, step: string, work: () => Promise<unknown>) =>
         afterPrimaryWrite(
           label,
-          persist.then(
+          sequence.profile.then(
             () => work().catch((error: unknown) => {
               reportStep(step)(error)
               throw error
@@ -1016,9 +1123,14 @@ export function EditUserProfile({
             () => undefined
           )
         )
-      afterProfile('setUserActive', 'changing whether they are active', () =>
-        setUserActive(toSave.id, toSave.isActive, organization.id, rosterDocs)
-      )
+      // Only when this save changes it (second review of #371): it also writes the membership, which another
+      // company's profile refuses — never run it on a save that leaves the active flag alone.
+      const wasActive = (storedBefore ?? previous).isActive !== false
+      if (wasActive !== (toSave.isActive !== false)) {
+        afterProfile('setUserActive', 'changing whether they are active', () =>
+          setUserActive(toSave.id, toSave.isActive, organization.id, rosterDocs)
+        )
+      }
       afterProfile('syncLinkedOperative', 'updating their Operatives record', () =>
         syncLinkedOperative(organization.id, toSave, operatives)
       )
@@ -1026,11 +1138,11 @@ export function EditUserProfile({
       const jobsChange: PersonAccessChange | null =
         draftAccountType === 'operative' && currentAccountType(previous) !== 'operative'
           ? { kind: 'level', to: 'operative' }
-          : previous.isActive !== false && toSave.isActive === false
+          : wasActive && toSave.isActive === false
             ? { kind: 'deactivate' }
             : null
       if (jobsChange) {
-        const jobs = persist.then(
+        const jobs = sequence.profile.then(
           () =>
             removeFromManagedJobs(previous, jobsChange, organization.id, rosterDocs).catch((error: unknown) => {
               reportStep('removing them from their jobs')(error)
@@ -1043,11 +1155,7 @@ export function EditUserProfile({
         if (confirmed === 'saved') await confirmWriteWithin(jobs, () => undefined).catch(() => undefined)
       }
     } catch (err: unknown) {
-      setTarget(previous)
-      setListedUserActive(previous.id, previous.isActive)
-      setBaseline(previousBaseline)
-      setSaved(false)
-      setSuccess(null)
+      restoreBeforeSave()
       setError(err instanceof Error ? err.message : 'Failed to save user')
       setSaving(false)
       return
@@ -1060,8 +1168,8 @@ export function EditUserProfile({
     )
     // Owner answer 17 Nov (#371): not confirmed yet — stay here with the note; it closes once the server confirms.
     if (confirmed === 'pending') return
-    // Owner request (1.12.2): a saved profile closes and returns to the people list.
-    router.push(hubHref || backHref)
+    // Owner request (1.12.2): a saved profile closes and returns to the people list — only while still on this page.
+    if (stillOnPerson(toSave.id)) router.push(hubHref || backHref)
   }
 
   const handlePasswordReset = async () => {
@@ -1098,6 +1206,7 @@ export function EditUserProfile({
 
   const handleToggleActive = async () => {
     if (!target || !(canAdminTools || mayManageAsOperativesManager) || activeSaving || target.isSuperAdmin) return
+    if (serverWaitRef.current != null) return
     const previous = target
     const next = !target.isActive
     if (!next && lineManagerBlocks(target, { kind: 'deactivate' })) return
@@ -1119,16 +1228,57 @@ export function EditUserProfile({
     setListedUserActive(target.id, next)
     setBaseline(profileSnapshot(nextUser, null, null))
     setSuccess(next ? 'User reactivated.' : 'User deactivated.')
-    try {
-      await setUserActive(target.id, next, organization?.id, rosterDocs)
-      if (savedUser.current) savedUser.current = { ...savedUser.current, isActive: next }
-      if (!next) await removeFromJobs(previous, { kind: 'deactivate' })
-      if (organization?.id) void syncLinkedOperative(organization.id, nextUser, operatives).catch(() => undefined)
-    } catch (err: unknown) {
+    const revert = () => {
+      if (savedUser.current) savedUser.current = { ...savedUser.current, isActive: previous.isActive }
       setTarget(previous)
       setListedUserActive(previous.id, previous.isActive)
       setBaseline(profileSnapshot(previous, null, null))
       setSuccess(null)
+    }
+    const noticeTarget: ProfileSaveTarget = {
+      saveId: Date.now(),
+      organizationId: organization?.id ?? '',
+      personId: previous.id,
+      name: `${previous.firstName} ${previous.surname}`.trim() || previous.email,
+    }
+    try {
+      // Bounded like every save (second review of #371): confirmed within 15 s, else the amber note, red at 90 s.
+      const write = setUserActive(target.id, next, organization?.id, rosterDocs)
+      const orgId = organization?.id
+      if (orgId) {
+        // Follow-ups off the flag's own confirmation; a failure is reported on the note.
+        if (!next) {
+          afterPrimaryWrite(
+            'removeFromManagedJobs',
+            write.then(
+              () =>
+                removeFromManagedJobs(previous, { kind: 'deactivate' }, orgId, rosterDocs).then(
+                  (count) => {
+                    if (count > 0 && stillOnPerson(previous.id)) {
+                      setSuccess(`Removed as manager from ${count === 1 ? '1 job' : `${count} jobs`}.`)
+                    }
+                  },
+                  (error: unknown) => {
+                    reportStepFailure(noticeTarget, 'removing them from their jobs')(error)
+                    throw error
+                  }
+                ),
+              () => undefined
+            )
+          )
+        }
+        afterPrimaryWrite('syncLinkedOperative', write.then(() => syncLinkedOperative(orgId, nextUser, operatives), () => undefined))
+      }
+      const confirmed = await confirmPersonWrite(noticeTarget, write, {
+        refused: (message) => {
+          revert()
+          setError(message)
+        },
+      })
+      if (savedUser.current) savedUser.current = { ...savedUser.current, isActive: next }
+      if (confirmed === 'pending') setSuccess(null)
+    } catch (err: unknown) {
+      revert()
       setError(err instanceof Error ? err.message : 'Failed to update status')
     } finally {
       setActiveSaving(false)
@@ -1137,30 +1287,56 @@ export function EditUserProfile({
 
   const handleDelete = async () => {
     if (!target || !mayDeleteTarget) return
+    if (serverWaitRef.current != null) return
     setConfirmDelete(false)
     if (lineManagerBlocks(target, { kind: 'delete' })) return
     setBusyAction('delete')
+    const deleted = target
+    const deletedName = `${deleted.firstName} ${deleted.surname}`.trim() || deleted.email
+    const noticeTarget: ProfileSaveTarget = {
+      saveId: Date.now(),
+      organizationId: organization?.id ?? '',
+      personId: deleted.id,
+      name: deletedName,
+    }
+    // Back to the list only while still on this person's page (second review of #371).
+    const backToList = () => {
+      if (stillOnPerson(deleted.id)) router.push(hubHref || backHref)
+    }
     try {
-      await deleteUser(target.id, { organizationId: organization?.id, email: target.email, roster: rosterDocs })
-      // Off their jobs (secondary): waits a bounded time, then returns to the list while it finishes (owner bug 17 Nov).
-      // A refusal is reported on the people list (review of #371), never swallowed.
+      // Bounded like every save (second review of #371): confirmed within 15 s, else the amber note, red at 90 s.
+      const write = deleteUser(deleted.id, { organizationId: organization?.id, email: deleted.email, roster: rosterDocs })
+      // Off their jobs (secondary) once the delete is confirmed. A refusal is reported, never swallowed.
+      let jobs: Promise<unknown> = Promise.resolve()
       if (organization?.id) {
         const orgId = organization.id
-        const deletedName = `${target.firstName} ${target.surname}`.trim() || target.email
-        const jobs = removeFromManagedJobs(target, { kind: 'delete' }, orgId, rosterDocs).catch((error: unknown) => {
-          const reason = error instanceof Error && error.message ? error.message : 'the server refused it.'
-          useProfileSaveNotice
-            .getState()
-            .failed(
-              { saveId: Date.now(), organizationId: orgId, personId: target.id, name: deletedName },
-              `${deletedName} was deleted, but removing them from their jobs failed: ${reason} Check their jobs' managers.`
-            )
-          throw error
-        })
+        jobs = write.then(
+          () =>
+            removeFromManagedJobs(deleted, { kind: 'delete' }, orgId, rosterDocs).catch((error: unknown) => {
+              const reason = error instanceof Error && error.message ? error.message : 'the server refused it.'
+              useProfileSaveNotice
+                .getState()
+                .failed(
+                  { ...noticeTarget, saveId: Date.now() },
+                  `${deletedName} was deleted, but removing them from their jobs failed: ${reason} Check their jobs' managers.`
+                )
+              throw error
+            }),
+          () => undefined
+        )
         afterPrimaryWrite('removeFromManagedJobs', jobs)
-        await confirmWriteWithin(jobs, () => undefined).catch(() => undefined)
       }
-      router.push(hubHref || backHref)
+      const confirmed = await confirmPersonWrite(noticeTarget, write, {
+        pendingMessage: `${deletedName}: delete sent from this device. Waiting for the server to confirm it — keep Project Planner open.`,
+        refusedNotice: (message) => `${deletedName} was not deleted: ${message}`,
+        saved: backToList,
+        refused: (message) => setError(message),
+      })
+      if (confirmed === 'saved') {
+        // Waits a bounded time for the job clean-up, then returns to the list while it finishes (owner bug 17 Nov).
+        await confirmWriteWithin(jobs, () => undefined).catch(() => undefined)
+        backToList()
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to delete user')
     } finally {
@@ -1207,7 +1383,10 @@ export function EditUserProfile({
   }
 
   const persistAccountType = async (accountType: 'operative' | 'manager' | 'admin') => {
-    if (!target || !organization?.id || typeSaving || payReloadingRef.current) return
+    if (!target || !organization?.id || typeSaving || payReloadingRef.current || serverWaitRef.current != null) return
+    const previous = target
+    const storedBefore = savedUser.current
+    const orgId = organization.id
     const next = applyAccountType(cloneUser(target), accountType)
     if (accountType !== currentAccountType(target) && lineManagerBlocks(target, { kind: 'level', to: accountType })) return
     // `lineManagerRequiredError` on the person as this change would save them.
@@ -1220,22 +1399,44 @@ export function EditUserProfile({
     setTypeSaving(true)
     setError(null)
     setSuccess(null)
+    const noticeTarget: ProfileSaveTarget = {
+      saveId: Date.now(),
+      organizationId: orgId,
+      personId: previous.id,
+      name: `${previous.firstName} ${previous.surname}`.trim() || previous.email,
+    }
     try {
-      // Rulebook 1.11.0 `accountTypeChangeWrites`: users docs, `members.{uid}` and the membership together.
-      const typeNote = await changeAccountType(target, accountType, organization.id, rosterDocs, next.permissions)
-      if (accountType === 'operative' && currentAccountType(target) !== 'operative') await removeFromJobs(target, { kind: 'level', to: 'operative' })
-      if (typeNote) {
+      // Rulebook 1.11.0 `accountTypeChangeWrites`: users docs, `members.{uid}` and the membership together; the profile
+      // save only after the type is confirmed, as before. Bounded like every save (second review of #371).
+      let typeNote: string | null = null
+      const write = (async () => {
+        typeNote = await changeAccountType(previous, accountType, orgId, rosterDocs, next.permissions)
         // Rulebook 1.11.0: a profile of another company is not rewritten; only this organisation's entry changed.
-        savedUser.current = next
-        patchListedUser(next)
-        setTarget(next)
-        setDraftAccountType(null)
-        setDraftTypePermissions(null)
-        setShowChangeType(false)
-        setSuccess(typeNote)
-        return
+        if (!typeNote) await saveUser(next, orgId, previous.email, { baseline: next })
+      })()
+      if (accountType === 'operative' && currentAccountType(previous) !== 'operative') {
+        afterPrimaryWrite(
+          'removeFromManagedJobs',
+          write.then(
+            () =>
+              removeFromManagedJobs(previous, { kind: 'level', to: 'operative' }, orgId, rosterDocs).catch((error: unknown) => {
+                reportStepFailure(noticeTarget, 'removing them from their jobs')(error)
+                throw error
+              }),
+            () => undefined
+          )
+        )
       }
-      await saveUser(next, organization.id, target.email, { baseline: next })
+      const confirmed = await confirmPersonWrite(noticeTarget, write, {
+        refused: (message) => {
+          savedUser.current = storedBefore
+          if (storedBefore) patchListedUser(storedBefore)
+          setTarget(previous)
+          setBaseline(profileSnapshot(previous, null, null))
+          setSuccess(null)
+          setError(message)
+        },
+      })
       savedUser.current = next
       patchListedUser(next)
       setTarget(next)
@@ -1243,7 +1444,10 @@ export function EditUserProfile({
       setDraftTypePermissions(null)
       setShowChangeType(false)
       setBaseline(profileSnapshot(next, null, null))
-      setSuccess(accountType === 'admin' ? 'This user is now an administrator.' : `Account type set to ${accountType}.`)
+      if (confirmed === 'saved') {
+        const note = typeNote as string | null
+        setSuccess(note ?? (accountType === 'admin' ? 'This user is now an administrator.' : `Account type set to ${accountType}.`))
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not change account type')
     } finally {
@@ -1286,6 +1490,12 @@ export function EditUserProfile({
         pending={backPending}
       />
 
+      {/* Second review of #371: nothing can be edited or saved while a save on this page waits for the server. */}
+      <fieldset
+        disabled={saveLocked}
+        aria-busy={saveLocked || undefined}
+        style={{ display: 'contents', border: 0, margin: 0, padding: 0, minWidth: 0 }}
+      >
       <ProfileBand
         avatar={<UserAvatar user={target} size={64} className="up-avatar-ring" gradient="from-[#7F77DD] to-[#534AB7]" />}
         eyebrow={pageTitle}
@@ -2155,6 +2365,7 @@ export function EditUserProfile({
           </div>
         </div>
       )}
+      </fieldset>
     </form>
   )
 }

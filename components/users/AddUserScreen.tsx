@@ -525,12 +525,12 @@ export function AddUserScreen() {
         try {
           const { jsonAuthHeaders } = await import('@/lib/security/clientAuthHeaders')
           // Secondary to the invite: bounded, so a slow email service never holds Save (owner bug 17 Nov).
-          const headers = await jsonAuthHeaders()
+          // The token fetch is inside the time limit too (review of #371).
           await withAbortTimeout(
-            (signal) =>
+            async (signal) =>
               fetch('/api/invites/send-org-addition-email', {
                 method: 'POST',
-                headers,
+                headers: await jsonAuthHeaders(),
                 signal,
                 body: JSON.stringify({
                   organizationId: organization.id,

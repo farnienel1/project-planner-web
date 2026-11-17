@@ -100,3 +100,19 @@ test('opening another organisation clears the notice; the same organisation keep
   store.keepOnlyOrganization('org-b')
   assert.equal(useProfileSaveNotice.getState().notice, null)
 })
+
+test('a failed follow-on step is not wiped when the rest of the same save is confirmed later', () => {
+  const store = useProfileSaveNotice.getState()
+  store.pending(target(11))
+  store.failed(target(11), 'step failed')
+  store.settled(target(11), { status: 'saved' })
+  assert.equal(useProfileSaveNotice.getState().notice?.message, 'step failed')
+  store.dismiss()
+})
+
+test('pending takes an optional message (a delete waiting for the server)', () => {
+  const store = useProfileSaveNotice.getState()
+  store.pending(target(12), 'Sam Smith: delete sent.')
+  assert.equal(useProfileSaveNotice.getState().notice?.message, 'Sam Smith: delete sent.')
+  store.dismiss()
+})

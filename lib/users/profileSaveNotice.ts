@@ -26,7 +26,8 @@ export type ProfileSaveTarget = { saveId: number; organizationId: string; person
 
 type State = {
   notice: ProfileSaveNotice | null
-  pending: (target: ProfileSaveTarget) => void
+  /** `message` replaces the default "saved on this device" wording (a delete, for example). */
+  pending: (target: ProfileSaveTarget, message?: string) => void
   settled: (
     target: ProfileSaveTarget,
     outcome: { status: 'saved' } | { status: 'refused'; message: string } | { status: 'unconfirmed' }
@@ -69,13 +70,15 @@ function noticeOf(target: ProfileSaveTarget, status: ProfileSaveNoticeStatus, me
 
 export const useProfileSaveNotice = create<State>((set, get) => ({
   notice: null,
-  pending: (target) => set({ notice: noticeOf(target, 'pending', profileSavePendingMessage(target.name)) }),
+  pending: (target, message) =>
+    set({ notice: noticeOf(target, 'pending', message ?? profileSavePendingMessage(target.name)) }),
   settled: (target, outcome) => {
     const current = get().notice
     const own = current?.saveId === target.saveId
     if (outcome.status === 'saved') {
-      // Only clears its own notice: a newer save's notice stays.
-      if (own) set({ notice: null })
+      // Only clears its own notice: a newer save's notice stays, and so does a failed follow-up step of this save
+      // (second review of #371: a step that failed before the last batch was confirmed must not be wiped).
+      if (own && current?.status !== 'failed') set({ notice: null })
       return
     }
     if (outcome.status === 'unconfirmed') {
