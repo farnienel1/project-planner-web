@@ -78,6 +78,7 @@ import {
   variationLabourText,
   variationLineTotal,
   variationListTotals,
+  compareVariationTrackerOrder,
   variationMaterialLineFields,
   variationMaterialQuantity,
   variationPreviousNumbers,
@@ -213,7 +214,7 @@ export function VariationsWorkspace({
   }
   const sorted = useMemo(() => {
     const copy = [...live]
-    if (tracker?.enabled) copy.sort((a, b) => a.sequence - b.sequence || b.createdAt.getTime() - a.createdAt.getTime())
+    if (tracker?.enabled) copy.sort(compareVariationTrackerOrder) // the tracker order (rulebook 1.63.0)
     else copy.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
     return copy
   }, [live, tracker?.enabled])

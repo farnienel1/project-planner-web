@@ -44,6 +44,9 @@ import {
 import type { AccountKind } from './userProfile'
 import { deadlineProjectKey } from './workDocumentReaders'
 import {
+  normalizeVariationStatus,
+  variationIsPinned,
+  type VariationStatusToken,
   variationExtraLineId,
   parseVariationCustomLines,
   parseVariationSubcontractorLines,
@@ -600,16 +603,7 @@ export function healthSafetySignatureRemovalWrites(
 
 // MARK: - Variations
 
-export const VARIATION_STATUS_TOKENS = ['open', 'submitted', 'closed'] as const
-export type VariationStatusToken = (typeof VARIATION_STATUS_TOKENS)[number]
-
-/** open / submitted / closed (any case; `sent` → submitted, `complete(d)` / `done` → closed). Unknown → open. */
-export function normalizeVariationStatus(raw: unknown): VariationStatusToken {
-  const value = text(raw).toLowerCase()
-  if (value === 'submitted' || value === 'sent') return 'submitted'
-  if (value === 'closed' || value === 'complete' || value === 'completed' || value === 'done') return 'closed'
-  return 'open'
-}
+export { VARIATION_STATUS_TOKENS, normalizeVariationStatus, type VariationStatusToken } from './variations'
 
 /** 1.52.0: `operatives` × `hoursEach` = `hours` (`variationLabourCrew`; one operative for rows from older builds). */
 export type VariationLabourLineDocument = { id: string; idStored: boolean; trade: string; hours: number; operatives: number; hoursEach: number }
@@ -922,8 +916,7 @@ export function variationRenumberWriteFields(input: {
   const to = text(input?.to)
   const sequence = Math.trunc(documentNumber(input?.sequence) ?? NaN)
   // 1.63.0: the status pins the number (`variationIsPinned`); a lock left on a reopened (Open) variation does not.
-  const pinnedStatus = ['submitted', 'closed', 'sent', 'complete', 'completed', 'done'].includes(text(row.status).toLowerCase())
-  const locked = pinnedStatus && text(input?.numberingMode) !== 'resequenceAll'
+  const locked = variationIsPinned(row) && text(input?.numberingMode) !== 'resequenceAll'
   const set: Record<string, unknown> = {}
   if (Number.isFinite(sequence) && sequence !== Math.trunc(documentNumber(row.sequence) ?? NaN)) set.sequence = sequence
   if (to && to !== from && !locked) {

@@ -142,7 +142,8 @@ export async function uploadVariationEvidenceFile(
       finish(() => reject(new Error(message)))
     }
     let sentBytes = 0
-    let sawSnapshot = false
+    // Bumped by every progress snapshot: a stall check only cancels when nothing arrived while it asked Storage.
+    let progressMark = 0
     const armStall = () => {
       if (stall) clearTimeout(stall)
       stall = setTimeout(() => {
@@ -151,7 +152,13 @@ export async function uploadVariationEvidenceFile(
         // below). A stall means File storage never answered: the SDK silently retries a request that got no reply
         // (network, a blocked request, an App Check token that never arrived) for up to 10 minutes. Before giving up,
         // ask Storage one quick question about the same path to say which it is, instead of a vague "stopped".
-        void variationUploadStallReason({ sentBytes, sawSnapshot }, () => withTimeout(getMetadata(storageRef), 10_000, 'no-answer')).then((reason) => cancel(reason))
+        // Review of #388: if the upload moves on or finishes during that question, it is not cancelled (a cancel
+        // then could leave a finished file unlinked).
+        const markAtStall = progressMark
+        void variationUploadStallReason({ sentBytes }, () => withTimeout(getMetadata(storageRef), 10_000, 'no-answer')).then((reason) => {
+          if (settled || progressMark !== markAtStall) return
+          cancel(reason)
+        })
       }, VARIATION_UPLOAD_STALL_MS)
     }
     const overall = setTimeout(() => cancel('The evidence upload took too long and was cancelled. Add the file again.'), VARIATION_UPLOAD_MAX_MS)
@@ -169,13 +176,15 @@ export async function uploadVariationEvidenceFile(
     task.on(
       'state_changed',
       (snapshot) => {
-        sawSnapshot = true
+        progressMark += 1
         sentBytes = snapshot.bytesTransferred
         armStall()
         if (snapshot.totalBytes > 0) options.onProgress?.(snapshot.bytesTransferred / snapshot.totalBytes)
       },
       (error) => finish(() => reject(error)),
       () => {
+        // Uploaded: a stall check still waiting must not cancel it while the link is fetched.
+        progressMark += 1
         withTimeout(getDownloadURL(storageRef), 15_000, 'The evidence file uploaded but its link could not be created. Try again.')
           .then((downloadURL) => finish(() => resolve({ storagePath, downloadURL, contentType, sizeBytes: file.size })))
           .catch((error) => finish(() => reject(error)))

@@ -19,17 +19,16 @@ test('status buttons hand the handler exactly what the dropdown did, so the stor
       const fromDropdown = dropdownChoice(current, pressed)
       assert.equal(fromButton, fromDropdown)
       if (fromButton && fromDropdown) {
-        const stored = { status: current, voNumberLocked: current !== 'open' }
-        assert.deepEqual(variationStatusWriteFields(stored, fromButton), variationStatusWriteFields(stored, fromDropdown))
+        assert.deepEqual(variationStatusWriteFields(fromButton), variationStatusWriteFields(fromDropdown))
       }
     }
   }
 })
 
 test('1.63.0: reopening clears the number lock in the same write; submit and close lock it', () => {
-  assert.deepEqual(variationStatusWriteFields({ status: 'submitted', voNumberLocked: true }, 'open'), { status: 'open', voNumberLocked: false })
-  assert.deepEqual(variationStatusWriteFields({ status: 'open' }, 'submitted'), { status: 'submitted', voNumberLocked: true })
-  assert.deepEqual(variationStatusWriteFields({ status: 'submitted', voNumberLocked: true }, 'closed'), { status: 'closed', voNumberLocked: true })
+  assert.deepEqual(variationStatusWriteFields('open'), { status: 'open', voNumberLocked: false })
+  assert.deepEqual(variationStatusWriteFields('submitted'), { status: 'submitted', voNumberLocked: true })
+  assert.deepEqual(variationStatusWriteFields('closed'), { status: 'closed', voNumberLocked: true })
 })
 
 test('arrow keys, Home and End move along Open / Submitted / Closed', () => {

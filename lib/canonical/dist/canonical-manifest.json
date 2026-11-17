@@ -1,7 +1,7 @@
 {
   "rulebookVersion": "1.63.0",
-  "rulebookSha256": "2ba38c72c6aec8008b93bf561d18bf0dba4270e842c25caffc7ab626bf780f5a",
-  "bundleSha256": "38b7e85ddbfb2ecef1416908f3e5cde2db5b700e82b70974a12d383240055025",
+  "rulebookSha256": "6e11824f72e3e6a7e92a8ccfe72bf06d12f8ec26575c101e4e49305efd9c1ca0",
+  "bundleSha256": "74212b1217612cdc34c9355e9ec1ebdb025da4cd8b84e90d0faf1a37c3be54e9",
   "crossPlatformContractSha256": "56f892a29d844eaaebe16028640ebdfb036324d3a229638968c34d10663159f3",
   "dataParityFixtureSha256": "c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f",
   "exports": [
@@ -842,6 +842,7 @@
     "companyDetailsWriteFields",
     "compareAppVersions",
     "compareInboxNotificationsByCreatedAt",
+    "compareVariationTrackerOrder",
     "compareWarningDayKeys",
     "coverageWindow",
     "crossPlatformContractReaderNames",
@@ -1865,6 +1866,7 @@
     "variationSubcontractorLineError",
     "variationSubcontractorLineFields",
     "variationTotals",
+    "variationTrackerOrder",
     "variationTrackerWriteFields",
     "variationTradesWriteFields",
     "variationWriteFields",

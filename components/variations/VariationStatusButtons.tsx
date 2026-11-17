@@ -6,8 +6,10 @@ import { VARIATION_STATUS_OPTIONS, variationStatusChoice, variationStatusKeyTarg
 
 /**
  * Open / Submitted / Closed as three buttons on one line (owner request 17 Nov; replaces the dropdown, UI only).
- * A radio group: one tab stop, arrow keys / Home / End move and choose, screen readers hear "Status of VO-003,
- * radio group, Open, selected". `onChange` gets exactly what the dropdown handed it (`variationStatusChoice`).
+ * A radio group: one tab stop; arrow keys / Home / End only move the focus (review of #388: a keystroke must never
+ * save — Closed → Open would reopen and unpin), Space / Enter (the button's own press) or a click chooses. Screen
+ * readers hear "Status of VO-003, radio group, Open, selected". `onChange` gets exactly what the dropdown handed it
+ * (`variationStatusChoice`).
  */
 export function VariationStatusButtons({
   value,
@@ -25,13 +27,13 @@ export function VariationStatusButtons({
     const next = variationStatusChoice(value, pressed)
     if (next) onChange(next)
   }
-  const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    const target = variationStatusKeyTarget(value, event.key)
+  // Moves the focus from the focused button; nothing is chosen until Space / Enter or a click.
+  const onKeyDown = (focused: VariationStatus) => (event: KeyboardEvent<HTMLButtonElement>) => {
+    const target = variationStatusKeyTarget(focused, event.key)
     if (!target) return
     event.preventDefault()
     const index = VARIATION_STATUS_OPTIONS.findIndex((option) => option.value === target)
     refs.current[index]?.focus()
-    choose(target)
   }
   return (
     <div className="seg" role="radiogroup" aria-label={label} aria-disabled={disabled || undefined} style={{ flexWrap: 'nowrap' }}>
@@ -50,7 +52,7 @@ export function VariationStatusButtons({
             className={on ? 'on' : ''}
             disabled={disabled}
             onClick={() => choose(option.value)}
-            onKeyDown={onKeyDown}
+            onKeyDown={onKeyDown(option.value)}
             style={{ padding: '0 12px', minHeight: 36, whiteSpace: 'nowrap' }}
           >
             {option.label}

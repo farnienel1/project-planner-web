@@ -23,7 +23,7 @@ function errorCode(error: unknown): string {
 
 /** `probe` reads the same path's metadata (with its own timeout); it settles one way or the other. */
 export async function variationUploadStallReason(
-  state: { sentBytes: number; sawSnapshot: boolean },
+  state: { sentBytes: number },
   probe: () => Promise<unknown>
 ): Promise<string> {
   try {

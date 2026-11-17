@@ -94,11 +94,11 @@ test('bug C reproduced: a reopen that keeps the stored lock (web before 1.63.0) 
 })
 
 test('1.63.0: submit, reopen (lock cleared in the same write), then renumber is accepted', async () => {
-  const submit = variationStatusWriteFields({ status: 'open', voNumberLocked: false }, 'submitted')
+  const submit = variationStatusWriteFields('submitted')
   await assertSucceeds(updateDoc(await ref('new-way'), submit))
   // While submitted the number is pinned.
   await assertFails(updateDoc(await ref('new-way'), { voNumber: 'VO-008' }))
-  const reopen = variationStatusWriteFields({ status: 'submitted', voNumberLocked: true }, 'open')
+  const reopen = variationStatusWriteFields('open')
   await assertSucceeds(updateDoc(await ref('new-way'), reopen))
   await assertSucceeds(
     (async () => {
@@ -113,9 +113,9 @@ test('1.63.0: submit, reopen (lock cleared in the same write), then renumber is 
 })
 
 test('1.63.0: a variation still submitted (or closed) is still refused a new number', async () => {
-  await assertSucceeds(updateDoc(await ref('stays-sub'), variationStatusWriteFields({ status: 'open' }, 'submitted')))
+  await assertSucceeds(updateDoc(await ref('stays-sub'), variationStatusWriteFields('submitted')))
   await assertFails(updateDoc(await ref('stays-sub'), { voNumber: 'VO-009' }))
-  await assertSucceeds(updateDoc(await ref('stays-sub'), variationStatusWriteFields({ status: 'submitted', voNumberLocked: true }, 'closed')))
+  await assertSucceeds(updateDoc(await ref('stays-sub'), variationStatusWriteFields('closed')))
   await assertFails(updateDoc(await ref('stays-sub'), { voNumber: 'VO-009' }))
   // Moving it in sequence is still allowed (unchanged).
   await assertSucceeds(updateDoc(await ref('stays-sub'), { sequence: 9 }))

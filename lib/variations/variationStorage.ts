@@ -713,7 +713,7 @@ export async function setVariationStatus(input: {
     ...input.variation,
     // Rulebook 1.63.0 (`variationStatusWriteFields`): Submitted / Closed lock the number; Open clears the lock in the
     // same write, so a reopened variation is unpinned (before 1.63.0 the lock stayed and the rules refused renumbering).
-    ...variationStatusWriteFields(input.variation, input.status),
+    ...variationStatusWriteFields(input.status),
     submittedAt: input.status === 'submitted' ? now : input.variation.submittedAt,
     closedAt: input.status === 'closed' ? now : input.variation.closedAt,
     statusHistory: [
@@ -812,7 +812,7 @@ export async function enableTracker(input: {
         ...row,
         sequence: index + 1,
         // 1.63.0: the lock follows the status (`variationStatusWriteFields`), so a stale lock on an Open row is cleared.
-        voNumberLocked: variationStatusWriteFields(row, row.status).voNumberLocked,
+        voNumberLocked: variationStatusWriteFields(row.status).voNumberLocked,
         updatedAt: now,
         updatedByUid: input.actorUid,
       },
@@ -912,10 +912,19 @@ export async function applyVariationOrder(input: {
   const now = Timestamp.now()
   const stamp = { updatedAt: now, updatedByUid: input.actor.uid, ...(writeMetadataFields(input.actor.uid, 'web') ?? {}) }
   // Rulebook 1.63.0 (`variationStaleNumberLocks`): an Open variation that still stores `voNumberLocked: true` (reopened
-  // before 1.63.0) is unlocked first, in its own update — the rules read the STORED lock, so a number change in the
-  // same transaction would be refused ("Missing or insufficient permissions", bug of 17 Nov).
+  // before 1.63.0) is unlocked first, in its own write — the rules read the STORED lock, so a number change in the
+  // same transaction would be refused ("Missing or insufficient permissions", bug of 17 Nov). Review of #388: each
+  // clear is a small transaction that re-reads the variation and clears the lock only while it is still Open with the
+  // lock set, so a variation submitted on another device meanwhile keeps its lock.
   for (const id of variationStaleNumberLocks(current.map(renumberRow))) {
-    await updateDoc(variationRef(input.organizationId, id), { voNumberLocked: false, ...stamp })
+    const docRef = variationRef(input.organizationId, id)
+    await runTransaction(db!, async (transaction) => {
+      const snap = await transaction.get(docRef)
+      if (!snap.exists()) return
+      const fresh = renumberRow(variationFromFirestore(id, snap.data() as Record<string, unknown>))
+      if (variationStaleNumberLocks([fresh]).length === 0) return
+      transaction.update(docRef, { voNumberLocked: false, ...stamp })
+    })
   }
   // Only ids with a `variations/{id}` document are read in the transaction: the read rule refuses a missing document
   // (its rule reads `resource.data`), which made the whole save fail with "Missing or insufficient permissions" on a

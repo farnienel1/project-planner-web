@@ -19,7 +19,7 @@ export function variationStatusChoice(current: VariationStatus, pressed: Variati
   return pressed === current ? null : pressed
 }
 
-/** Arrow keys move along the group (wrapping), Home / End to the ends; any other key is null. */
+/** The button arrow keys move the FOCUS to (wrapping), Home / End to the ends; any other key is null. Never chooses. */
 export function variationStatusKeyTarget(current: VariationStatus, key: string): VariationStatus | null {
   const index = VARIATION_STATUS_OPTIONS.findIndex((option) => option.value === current)
   const last = VARIATION_STATUS_OPTIONS.length - 1

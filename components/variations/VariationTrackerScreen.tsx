@@ -41,6 +41,7 @@ import {
   variationListTotals,
   variationPreviousNumbers,
   variationRenumberPlan,
+  variationTrackerOrder,
   variationTotals,
 } from '@/lib/canonical'
 import type { Project } from '@/types'
@@ -112,10 +113,9 @@ export function VariationTrackerScreen({
   }, [allowed, organization?.id, project.id])
 
   const live = useMemo(() => rows.filter((row) => !row.isDeleted), [rows])
-  const storedOrder = useMemo(
-    () => [...live].sort((a, b) => a.sequence - b.sequence || a.createdAt.getTime() - b.createdAt.getTime()).map((row) => row.id),
-    [live]
-  )
+  // Rulebook 1.63.0 `variationTrackerOrder`: the same order `variationRenumberPlan` reads, so opening the tracker plans
+  // no number change and a drop changes only what was moved.
+  const storedOrder = useMemo(() => variationTrackerOrder(live), [live])
   const byId = useMemo(() => new Map(live.map((row) => [row.id, row])), [live])
   // The order on screen is the OPEN variations only: pinned ones keep their places (`variationRenumberPlan`).
   const openIds = order || storedOrder.filter((id) => !variationIsPinned(byId.get(id) ?? {}))

@@ -12,10 +12,10 @@ import {
 const fail = (code: string) => () => Promise.reject(Object.assign(new Error(code), { code }))
 
 test('a stall says whether Storage refused, never answered, or stopped mid-file', async () => {
-  assert.equal(await variationUploadStallReason({ sentBytes: 0, sawSnapshot: false }, fail('storage/unauthorized')), VARIATION_UPLOAD_REFUSED_MESSAGE)
-  assert.equal(await variationUploadStallReason({ sentBytes: 0, sawSnapshot: false }, () => Promise.reject(new Error('no-answer'))), VARIATION_UPLOAD_NO_ANSWER_MESSAGE)
-  assert.equal(await variationUploadStallReason({ sentBytes: 0, sawSnapshot: false }, fail('storage/object-not-found')), VARIATION_UPLOAD_NEVER_STARTED_MESSAGE)
-  assert.equal(await variationUploadStallReason({ sentBytes: 4096, sawSnapshot: true }, fail('storage/object-not-found')), VARIATION_UPLOAD_SLOW_MESSAGE)
+  assert.equal(await variationUploadStallReason({ sentBytes: 0 }, fail('storage/unauthorized')), VARIATION_UPLOAD_REFUSED_MESSAGE)
+  assert.equal(await variationUploadStallReason({ sentBytes: 0 }, () => Promise.reject(new Error('no-answer'))), VARIATION_UPLOAD_NO_ANSWER_MESSAGE)
+  assert.equal(await variationUploadStallReason({ sentBytes: 0 }, fail('storage/object-not-found')), VARIATION_UPLOAD_NEVER_STARTED_MESSAGE)
+  assert.equal(await variationUploadStallReason({ sentBytes: 4096 }, fail('storage/object-not-found')), VARIATION_UPLOAD_SLOW_MESSAGE)
 })
 
 test('a refusal that comes back from Storage is shown at once with the real reason, never as a stall', () => {

@@ -858,6 +858,7 @@ var ProjectPlannerCanonical = (() => {
     companyDetailsWriteFields: () => companyDetailsWriteFields,
     compareAppVersions: () => compareAppVersions,
     compareInboxNotificationsByCreatedAt: () => compareInboxNotificationsByCreatedAt,
+    compareVariationTrackerOrder: () => compareVariationTrackerOrder,
     compareWarningDayKeys: () => compareWarningDayKeys,
     coverageWindow: () => coverageWindow,
     crossPlatformContractReaderNames: () => crossPlatformContractReaderNames,
@@ -1881,6 +1882,7 @@ var ProjectPlannerCanonical = (() => {
     variationSubcontractorLineError: () => variationSubcontractorLineError,
     variationSubcontractorLineFields: () => variationSubcontractorLineFields,
     variationTotals: () => variationTotals,
+    variationTrackerOrder: () => variationTrackerOrder,
     variationTrackerWriteFields: () => variationTrackerWriteFields,
     variationTradesWriteFields: () => variationTradesWriteFields,
     variationWriteFields: () => variationWriteFields,
@@ -13921,7 +13923,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.63.0" : "",
-      sha256: true ? "2ba38c72c6aec8008b93bf561d18bf0dba4270e842c25caffc7ab626bf780f5a" : ""
+      sha256: true ? "6e11824f72e3e6a7e92a8ccfe72bf06d12f8ec26575c101e4e49305efd9c1ca0" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -16516,30 +16518,35 @@ var ProjectPlannerCanonical = (() => {
     const base = text22(jobNumber).replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
     return `${base || "variations"}-variations.xlsx`;
   }
-  var PINNED_VARIATION_STATUSES = /* @__PURE__ */ new Set(["submitted", "closed", "sent", "complete", "completed", "done"]);
-  function variationStatusPins(status) {
-    return PINNED_VARIATION_STATUSES.has(text22(status).toLowerCase());
+  var VARIATION_STATUS_TOKENS = ["open", "submitted", "closed"];
+  function normalizeVariationStatus(raw) {
+    const value = text22(raw).toLowerCase();
+    if (value === "submitted" || value === "sent") return "submitted";
+    if (value === "closed" || value === "complete" || value === "completed" || value === "done") return "closed";
+    return "open";
   }
   function variationIsPinned(row2) {
-    return variationStatusPins(row2?.status);
+    return normalizeVariationStatus(row2?.status) !== "open";
   }
-  function variationStatusWriteFields(stored, status) {
-    const word = text22(status).toLowerCase();
-    const next = word === "submitted" ? "submitted" : word === "closed" ? "closed" : "open";
-    void stored;
+  function variationStatusWriteFields(status) {
+    const next = normalizeVariationStatus(status);
     return { status: next, voNumberLocked: next !== "open" };
   }
   function variationStaleNumberLocks(rows3) {
     return (rows3 || []).filter((row2) => row2 && text22(row2.id) && documentBool(row2.isDeleted) !== true).filter((row2) => documentBool(row2.voNumberLocked) === true && !variationIsPinned(row2)).map((row2) => text22(row2.id));
+  }
+  function compareVariationTrackerOrder(a, b) {
+    return (documentNumber(a.sequence) ?? 0) - (documentNumber(b.sequence) ?? 0) || variationNumberValue(a.voNumber) - variationNumberValue(b.voNumber) || normalizeDocumentId(a.id).localeCompare(normalizeDocumentId(b.id));
+  }
+  function variationTrackerOrder(rows3) {
+    return (rows3 || []).filter((row2) => row2 && text22(row2.id) && documentBool(row2.isDeleted) !== true).slice().sort(compareVariationTrackerOrder).map((row2) => text22(row2.id));
   }
   function variationRenumberPlan(input) {
     const prefix = text22(input?.prefix) || DEFAULT_VARIATION_PREFIX;
     const padding = Number.isFinite(Number(input?.padding)) && Number(input?.padding) >= 1 ? Number(input?.padding) : DEFAULT_VARIATION_PADDING;
     const all = (input?.rows || []).filter((row2) => row2 && text22(row2.id));
     const live = all.filter((row2) => documentBool(row2.isDeleted) !== true);
-    const stored = [...live].sort(
-      (a, b) => (documentNumber(a.sequence) ?? 0) - (documentNumber(b.sequence) ?? 0) || variationNumberValue(a.voNumber) - variationNumberValue(b.voNumber)
-    );
+    const stored = [...live].sort(compareVariationTrackerOrder);
     const byKey = new Map(live.map((row2) => [normalizeDocumentId(row2.id), row2]));
     const givenOrder = (input?.order || []).map((id2) => normalizeDocumentId(id2)).filter((key7) => byKey.has(key7));
     let refused = null;
@@ -16937,13 +16944,6 @@ var ProjectPlannerCanonical = (() => {
     if (removeFieldPaths.length === 0 && !signatures) return null;
     return { removeFieldPaths, signatures };
   }
-  var VARIATION_STATUS_TOKENS = ["open", "submitted", "closed"];
-  function normalizeVariationStatus(raw) {
-    const value = text23(raw).toLowerCase();
-    if (value === "submitted" || value === "sent") return "submitted";
-    if (value === "closed" || value === "complete" || value === "completed" || value === "done") return "closed";
-    return "open";
-  }
   function variationLineId(variationId, kind, index, row2) {
     const line = record8(row2);
     if (kind === "customLines" || kind === "subcontractorLines") return variationExtraLineId(variationId, kind, index, line);
@@ -17109,8 +17109,7 @@ var ProjectPlannerCanonical = (() => {
     const from = text23(row2.voNumber);
     const to = text23(input?.to);
     const sequence = Math.trunc(documentNumber(input?.sequence) ?? NaN);
-    const pinnedStatus = ["submitted", "closed", "sent", "complete", "completed", "done"].includes(text23(row2.status).toLowerCase());
-    const locked = pinnedStatus && text23(input?.numberingMode) !== "resequenceAll";
+    const locked = variationIsPinned(row2) && text23(input?.numberingMode) !== "resequenceAll";
     const set = {};
     if (Number.isFinite(sequence) && sequence !== Math.trunc(documentNumber(row2.sequence) ?? NaN)) set.sequence = sequence;
     if (to && to !== from && !locked) {
