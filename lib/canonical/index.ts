@@ -901,6 +901,7 @@ export {
   notificationCatalogRow,
   personIdSet,
   timesheetNotificationDedupeKey,
+  lineManagerPeerNoticeKey,
   timesheetSignedRecipients,
   timesheetSubmittedRecipients,
   toolboxTalkRecipients,

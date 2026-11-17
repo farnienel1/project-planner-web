@@ -1086,6 +1086,8 @@ export function TimesheetPeriodPage({
             weekStart: periodStart,
             timeZone,
             revision: draft.revision ?? null,
+            // Rulebook 1.60.1: one notice (and push) per signature, so a re-sign reaches the line manager.
+            signedAt,
           })
         } catch {
           // Signature is already saved; inbox delivery is best-effort like iOS Task {}.
@@ -1116,10 +1118,12 @@ export function TimesheetPeriodPage({
     setBusy(true)
     try {
       const name = `${viewer.firstName} ${viewer.surname}`.trim() || viewer.email
+      // Rulebook 1.60.1: the counter-sign instant also keys its notices, so a counter-sign again is its own row and push.
+      const managerSignedAt = new Date()
       await persist(
         {
         ...draft,
-        managerSignedAt: new Date(),
+        managerSignedAt,
         managerSignedByName: name,
         managerSignedByUserId: viewer.id,
         managerSignatureImageBase64: signature,
@@ -1140,6 +1144,7 @@ export function TimesheetPeriodPage({
             weekEnd: periodEnd,
             timeZone,
             revision: draft.revision ?? null,
+            signedAt: managerSignedAt,
           })
         } catch {
           // Counter-sign is already saved; inbox delivery is best-effort.

@@ -5761,6 +5761,41 @@ test('1.55.0 review of #344 (L4): a revision\'s timesheet notices have their own
   assert.equal(signed(100), signed(), 'not a revision number: the original key')
 })
 
+test('1.60.1 (owner report 17 Nov): each signature of a pay run gets its own timesheet notice key', () => {
+  const base = { subjectId: 'OP', periodStartDayKey: '2026-10-01', timeZone: 'Europe/London' }
+  const seconds = Date.parse('2026-09-30T23:00:00Z') / 1000
+  const pending = (signedAtMs?: number | null, revision?: number | null) =>
+    rulebook.timesheetNotificationDedupeKey({ ...base, type: 'timesheet_pending_manager_signoff', recipientId: 'LM', revision, signedAtMs })
+  const first = Date.parse('2026-10-10T09:00:00Z')
+  const again = Date.parse('2026-10-12T16:30:00Z')
+  // The re-sign (signature cleared, or a booking change reopened the sheet) is a new row, so a new push.
+  assert.equal(pending(first), `timesheetPending|OP|LM|${seconds}|sig${first}`)
+  assert.notEqual(pending(first), pending(again))
+  // A retry of the same signature builds the same key (no duplicate row).
+  assert.equal(pending(first), pending(first + 0.4))
+  assert.equal(pending(first, 2), `timesheetPending|OP|LM|${seconds}|rev2|sig${first}`)
+  // Older builds pass no instant: the key is unchanged.
+  for (const bad of [null, undefined, 0, -5, Number.NaN]) assert.equal(pending(bad), `timesheetPending|OP|LM|${seconds}`)
+  assert.equal(
+    rulebook.timesheetNotificationDedupeKey({ ...base, type: 'timesheet_signed_by_manager', signedAtMs: first }),
+    `timesheetSigned|OP|${seconds}|sig${first}`
+  )
+})
+
+test('1.60.1: lineManagerPeerNoticeKey — one peer row per counter-signature, leave keys unchanged', () => {
+  const base = { actorName: 'Lee', actionSummary: "Sam's timesheet (1–15 Nov)", peerId: 'lm-2', actionVerb: 'signed' }
+  const at = Date.parse('2026-11-06T10:00:00Z')
+  assert.equal(rulebook.lineManagerPeerNoticeKey(base), "lmPeer|Lee|Sam's timesheet (1–15 Nov)|lm-2|signed")
+  assert.equal(rulebook.lineManagerPeerNoticeKey({ ...base, signedAtMs: at + 0.6 }), `lmPeer|Lee|Sam's timesheet (1–15 Nov)|lm-2|signed|sig${at}`)
+  assert.notEqual(rulebook.lineManagerPeerNoticeKey({ ...base, signedAtMs: at }), rulebook.lineManagerPeerNoticeKey({ ...base, signedAtMs: at + 60_000 }))
+  // A leave decision passes no instant: its id is the one both apps have always written.
+  assert.equal(
+    rulebook.lineManagerPeerNoticeKey({ actorName: 'Lee', actionSummary: "Sam's annual leave", peerId: 'lm-2', actionVerb: 'approved', signedAtMs: null }),
+    "lmPeer|Lee|Sam's annual leave|lm-2|approved"
+  )
+  assert.equal(rulebook.lineManagerPeerNoticeKey({ ...base, peerId: ' ' }), null)
+})
+
 test('1.4.0: bank-holiday regions are one list per country, and a country change asks for the region', () => {
   const ids = (country: string) => rulebook.bankHolidayRegionsForCountry(country).map((region) => region.id)
   assert.deepEqual(ids('GB'), ['GB-ENG-WLS', 'GB-SCT', 'GB-NIR', 'GB'])

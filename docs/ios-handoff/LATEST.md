@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.60.0
+# iOS follow-on — rulebook 1.60.1
 
 Generated 2026-11-17 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.59.0 → 1.60.0
-Packed hash: 3c74c2db39ced024c2e0cfb06a3ab304ab376a9af485ac4da2bc5ad80f039db7
-Rulebook sha256: 5ab1e9d78dee09464b6cd98e68441d55506983e55065dc91232a800490222fe9
+Rulebook version: 1.60.1 → 1.60.1
+Packed hash: 116f99b51935923ea7e7a552ce799950c2421c0def745c18dcd39d52e7a04ef1
+Rulebook sha256: 58d5a443f6d6c3063d62d82f06e06f6a64d9d0b1c780645391b40c93b80e0cad
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,26 +22,22 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 5b2615b5540b55f716d40617dd791dbcda6290348ef18951186f47e2e5b7cd20
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: MULTI_PERSON_ALREADY_BOOKED_MESSAGE, MULTI_PERSON_ALREADY_BOOKED_REMOVE_LABEL, leaveCoverBookingWindow, multiPersonBookingBlocks
+Exports added: lineManagerPeerNoticeKey
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/leaveCoverage.ts, lib/canonical/multiPersonBooking.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/notificationRecipients.ts
 Done when:
-- [ ] Packed hash in iOS equals 3c74c2db39ced024c2e0cfb06a3ab304ab376a9af485ac4da2bc5ad80f039db7
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 5ab1e9d78dee09464b6cd98e68441d55506983e55065dc91232a800490222fe9)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.60.0)
+- [ ] Packed hash in iOS equals 116f99b51935923ea7e7a552ce799950c2421c0def745c18dcd39d52e7a04ef1
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 58d5a443f6d6c3063d62d82f06e06f6a64d9d0b1c780645391b40c93b80e0cad)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.60.1)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.60.0
+## What changed in 1.60.1
 
-- **More than one person, someone already booked** (§5, owner request 17 Nov): new `multiPersonBookingBlocks`, `MULTI_PERSON_ALREADY_BOOKED_MESSAGE`, `MULTI_PERSON_ALREADY_BOOKED_REMOVE_LABEL`. A booking for more than one person names each selected person who already has a booking on a selected day and cannot be saved until they are removed; one person keeps ✓ / ✕ / Replace. Web: Book labour multi-select, the Schedule wizard; iOS: Book labour multi-select, the Scheduling wizard (`ScheduleOperativeView`) and Select Operatives. Quick Add books one person (unchanged).
-- **Book labour and Daily Overview list "Half-day leave not covered"** (§5, owner report 17 Nov): Book labour lists the day's `leaveCoverageRows` `leave_cover` rows beside `unbookedLabourRowsOnDay` (before, "Book the PM" opened on "Everyone is booked"), prefilled with new `leaveCoverBookingWindow` (the first uncovered stretch, never across a booking); Daily Overview shows the day's rows in its scope. Must merge after 1.59.0 (#370).
+- **Timesheet notices: one per signature** (§13, owner report 17 Nov: line managers got no timesheet push on iPhone). `timesheetNotificationDedupeKey` takes `signedAtMs` and adds `|sig{ms}`, so a re-sign of the same pay run — after a cleared signature or a booking change that reopened the sheet (1.47.0) — writes its own `timesheet_pending_manager_signoff` row (and push) instead of hitting the first signature's row, which the create-once rule left alone (no write, no push, no log line). Without the instant the key is unchanged. Web and iOS pass the person's signature instant for the line manager's notice and the line manager's counter-sign instant for `timesheet_signed_by_manager` (so a counter-sign again after a reopen reaches the person) and for the `line_manager_peer_update` row it writes — new `lineManagerPeerNoticeKey` (both apps call it; leave-decision peer ids unchanged). A re-sign leaves the line manager two "needs sign-off" rows for that pay run, one per signature (by design).
 
-## New rulebook sections
-
-- 1.60.0 — 2026-11-17
 
 ## Workflow for the iOS agent
 
