@@ -1392,3 +1392,25 @@ test('speed: a takeover after an unconfirmed batch re-sends the identical batch 
   assert.equal(batches[1].key, batches[0].key, 'same Resend key')
   assert.equal(batches[1].body, batches[0].body, 'byte-for-byte the same payload, so Resend replays instead of 409')
 })
+
+test('rulebook 1.57.0 material email: a blank or legacy "Custom" brand reads "Manufacturer: N/A"; the plain text has no Brand line', () => {
+  const { buildMaterialRequestEmail, buildPlainTextEmail } = require('./materialRequestEmail')
+  const base = {
+    supplierName: 'Alex Smith', userName: 'Farnie', userEmail: 'farnie@example.com', userPhone: '', userCompany: 'Acme',
+    jobNumber: 'P-104', siteName: 'City Hall', deliveryAddress: '1 High Street',
+    sentAt: new Date('2026-09-20T10:00:00'),
+  }
+  for (const brand of ['', 'Custom', ' CUSTOM ', undefined]) {
+    const context = { ...base, materials: [{ material: 'Clips', quantity: 2, unit: 'Box', brand, productCode: 'C1', notes: '' }] }
+    const { html } = buildMaterialRequestEmail({ context, isQuote: true, sendAsPlainText: false, contactName: 'Alex Smith' })
+    assert.match(html, /Manufacturer: <span[^>]*>N\/A</)
+    assert.doesNotMatch(html, /Custom/i)
+    const body = buildPlainTextEmail(context, true)
+    assert.doesNotMatch(body, /Brand:/)
+    assert.doesNotMatch(body, /Custom/i)
+    assert.match(body, /Code: C1/)
+  }
+  // A real brand still prints.
+  const real = { ...base, materials: [{ material: 'Clips', quantity: 2, unit: 'Box', brand: 'Wago', productCode: '', notes: '' }] }
+  assert.match(buildPlainTextEmail(real, true), /Brand: Wago/)
+})

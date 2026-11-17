@@ -391,11 +391,6 @@ export const MATERIAL_NAME_WRITE_GROUP = ['material', 'name'] as const
 export const MATERIAL_DAY_WRITE_GROUP = ['dayKey', 'date'] as const
 
 /**
- * 1.48.0: a document stored before the order-unit fields whose quantity meaning a save does not change (the same
- * order unit and what is in one, `materialQuantityModel`) keeps its stored quantity fields — so an edit of the name,
- * or a catalogue import, never rewrites every older document just to add `orderUnit` or tidy "2.4000000000000004".
- */
-/**
  * A save that leaves the brand blank keeps a stored blank or legacy "Custom" brand exactly as stored (and adds no
  * field where none was stored), so no document is rewritten only to tidy the placeholder (guardrail 3).
  */
@@ -411,6 +406,11 @@ function keepUnchangedBlankBrand(
   return out
 }
 
+/**
+ * 1.48.0: a document stored before the order-unit fields whose quantity meaning a save does not change (the same
+ * order unit and what is in one, `materialQuantityModel`) keeps its stored quantity fields — so an edit of the name,
+ * or a catalogue import, never rewrites every older document just to add `orderUnit` or tidy "2.4000000000000004".
+ */
 function keepUnchangedLegacyQuantity(
   before: Record<string, unknown> | null | undefined,
   next: Record<string, unknown>,
