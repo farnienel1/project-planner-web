@@ -4,6 +4,7 @@
 'use client'
 
 import { userCanEditJob } from '@/lib/access/bookingAccess'
+import { canOpenJobScheduling } from '@/lib/permissions'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 
 import Link from 'next/link'
@@ -26,27 +27,32 @@ export function ProjectHub({
   const isSmallWork = basePath.includes('small-works')
   // 1.10.0 round 2 (`canEditJob`): a manager edits the details of a job they manage even without the toggle.
   const canEdit = userCanEditJob(user, project, isSmallWork ? 'smallWorks' : 'projects', useOperativeStore.getState().managers)
+  // Rulebook §2 `canScheduleOperatives`: operatives never schedule, so they get no "This week on site" panel and no
+  // Open scheduling button (owner 17 Nov: "they shouldn't even get to this stage").
+  const showScheduling = canOpenJobScheduling(user)
 
   return (
     <ProjectWorkspaceChrome project={project} basePath={basePath} taskCount={taskCount}>
       <div className="gmain grid">
         <div className="stack">
-          <section className="card">
-            <div className="card-h" data-hue="sched">
-              <span className="ico-chip sm">
-                <CalendarDaysIcon className="h-4 w-4" />
-              </span>
-              <h2 className="h2">This week on site</h2>
-              <div className="acts">
-                <Link href={`${basePath}/schedule`} className="btn sm tint" data-hue="sched">
-                  Open scheduling
-                </Link>
+          {showScheduling ? (
+            <section className="card">
+              <div className="card-h" data-hue="sched">
+                <span className="ico-chip sm">
+                  <CalendarDaysIcon className="h-4 w-4" />
+                </span>
+                <h2 className="h2">This week on site</h2>
+                <div className="acts">
+                  <Link href={`${basePath}/schedule`} className="btn sm tint" data-hue="sched">
+                    Open scheduling
+                  </Link>
+                </div>
               </div>
-            </div>
-            <div className="card-b">
-              <ProjectScheduleSection project={project} scheduleBasePath={`${basePath}/schedule`} variant="hub" />
-            </div>
-          </section>
+              <div className="card-b">
+                <ProjectScheduleSection project={project} scheduleBasePath={`${basePath}/schedule`} variant="hub" />
+              </div>
+            </section>
+          ) : null}
           <div className="g2 grid">
             <section className="card">
               <div className="card-h" data-hue="task">

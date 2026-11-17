@@ -12,6 +12,8 @@ export type JobHubTile = {
 
 export function jobHubTiles(input: {
   isOperative: boolean
+  /** May open the job's scheduling (`canOpenJobScheduling` → rulebook `canScheduleOperatives`). Missing = not operative. */
+  canSchedule?: boolean
   showViewTile: boolean
   canViewMaterials: boolean
   canViewSiteAudit: boolean
@@ -20,7 +22,7 @@ export function jobHubTiles(input: {
   locationCaption?: string
 }): JobHubTile[] {
   const tiles: JobHubTile[] = []
-  if (!input.isOperative) {
+  if (!input.isOperative && input.canSchedule !== false) {
     tiles.push({ href: 'schedule', label: 'Scheduling', desc: 'Bookings and operative schedule' })
   }
   if (input.showViewTile && !input.isOperative) {

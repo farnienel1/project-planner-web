@@ -32,7 +32,7 @@ import {
 import { visibleJobTypeLabel } from '@/lib/jobTypes/jobTypesStorage'
 import { formatSiteAddress } from '@/lib/maps/siteAddress'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { canBookWork, canViewMaterials, canViewSiteAudit } from '@/lib/permissions'
+import { canOpenJobScheduling, canViewMaterials, canViewSiteAudit } from '@/lib/permissions'
 import { canViewProjectActiveUsers } from '@/lib/projects/activeUsers'
 import { useActiveUserBadge } from '@/components/projects/features/ProjectActiveUsersSection'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
@@ -125,7 +125,8 @@ export function ProjectWorkspaceChrome({
   const remaining = daysLeftCaption(project.endDate, status, now, timeZone)
   // 1.10.0 round 2 (`canEditJob`): a manager edits the details of a job they manage even without the toggle.
   const canEdit = userCanEditJob(user, project, isSmallWork ? 'smallWorks' : 'projects', useOperativeStore.getState().managers)
-  const showBook = canBookWork(user) && !isOperativeMode(user)
+  // Rulebook §2 `canScheduleOperatives`: Book labour and the Scheduling tab are never offered to an operative.
+  const showBook = canOpenJobScheduling(user)
   const showViewTile = canConfigureProjectVisibility(user, isSmallWork)
   const isOperative = isOperativeMode(user)
   const { managers: rosterManagers, loadManagers } = useOperativeStore()
@@ -164,6 +165,7 @@ export function ProjectWorkspaceChrome({
 
   const tiles = jobHubTiles({
     isOperative,
+    canSchedule: showBook,
     showViewTile,
     canViewMaterials: canViewMaterials(user),
     canViewSiteAudit: canViewSiteAudit(user),
