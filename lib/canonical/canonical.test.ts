@@ -17831,9 +17831,9 @@ test('1.59.0 review M2: a booking under a managers row with no account stays in 
   assert.equal(R112.scheduleRowPerson('mgr-noacc', { accounts: [], operatives: [], managers: [{ id: 'MGR-NOACC' }] }).unresolved, false)
 })
 
-// MARK: - 1.61.0 site audit report (§29): one layout, nothing clipped, field limits
+// MARK: - 1.65.0 site audit report (§29): one layout, nothing clipped, field limits
 
-test('1.61.0 site audit report: the shared fixture lays out exactly as expected (text lines, page breaks, file names)', () => {
+test('1.65.0 site audit report: the shared fixture lays out exactly as expected (text lines, page breaks, file names)', () => {
   for (const { name, input } of R112.SITE_AUDIT_REPORT_FIXTURE_INPUTS) {
     const expected = R112.SITE_AUDIT_REPORT_FIXTURE_EXPECTED.find((row) => row.name === name)
     assert.ok(expected, name)
@@ -17848,7 +17848,7 @@ test('1.61.0 site audit report: the shared fixture lays out exactly as expected 
   assert.equal(forApps.expected.length, forApps.inputs.length)
 })
 
-test('1.61.0 site audit report: footers read "Page n of N" with the real total (owner bug: "Page 2 of 2" on 3 pages)', () => {
+test('1.65.0 site audit report: footers read "Page n of N" with the real total (owner bug: "Page 2 of 2" on 3 pages)', () => {
   const layout = R112.siteAuditReportLayout(R112.SITE_AUDIT_REPORT_FIXTURE_INPUTS[0].input)
   const total = layout.pages.length
   assert.ok(total > 1)
@@ -17857,7 +17857,7 @@ test('1.61.0 site audit report: footers read "Page n of N" with the real total (
   })
 })
 
-test('1.61.0 site audit report: no field text is dropped or clipped, and nothing is drawn off the page', () => {
+test('1.65.0 site audit report: no field text is dropped or clipped, and nothing is drawn off the page', () => {
   const squash = (value: string) => value.replace(/\s+/g, '')
   for (const { name, input } of R112.SITE_AUDIT_REPORT_FIXTURE_INPUTS) {
     const layout = R112.siteAuditReportLayout(input)
@@ -17881,23 +17881,77 @@ test('1.61.0 site audit report: no field text is dropped or clipped, and nothing
         }
         if (op.kind === 'rect' || op.kind === 'image') assert.ok(op.y + op.h <= layout.page.height + 0.01, `${name} ${op.kind} below the page`)
       }
-      // Body content stays above the footer line.
+      // Body content stays above the footer line; the footer is exactly three one-line texts.
       const footer = layout.page.height - 60
       for (const op of page.ops) {
         if (op.kind === 'image') assert.ok(op.y + op.h <= footer, `${name} photo over the footer`)
+        if (op.kind === 'rect') assert.ok(op.y + op.h <= footer + 0.01 || op.y >= footer, `${name} box over the footer`)
+        if (op.kind === 'text' && op.baseline < footer) assert.ok(op.baseline <= footer - 10, `${name} text over the footer: ${op.text.slice(0, 40)}`)
+      }
+      assert.equal(page.ops.filter((op) => op.kind === 'text' && op.baseline > footer).length, 3, `${name} footer lines`)
+    }
+    // Every printed field, header and details grid included, is in the report character for character (the footer
+    // is a repeat and is left out): the characters printed above the footer include every field's characters.
+    const footer = layout.page.height - 60
+    const printed = new Map<string, number>()
+    for (const page of layout.pages) {
+      for (const op of page.ops) {
+        if (op.kind !== 'text' || op.baseline > footer) continue
+        for (const ch of Array.from(squash(op.text))) printed.set(ch, (printed.get(ch) ?? 0) + 1)
       }
     }
+    const needed = new Map<string, number>()
+    const fields: unknown[] = [input.organizationName, input.clientName, input.siteAddress, input.audit.projectName, input.audit.type, input.audit.customTitle, input.audit.authorName]
+    for (const item of input.audit.items) fields.push(item.title, item.location, item.assignee, item.comments, item.annotations)
+    for (const field of fields) {
+      for (const ch of Array.from(squash(R112.siteAuditReportText(field ?? '')))) needed.set(ch, (needed.get(ch) ?? 0) + 1)
+    }
+    for (const [ch, n] of needed) assert.ok((printed.get(ch) ?? 0) >= n, `${name}: "${ch}" printed ${printed.get(ch) ?? 0} of ${n}`)
   }
 })
 
-test('1.61.0 site audit report: photos are whole (aspect kept), at most 200 wide and 240 tall', () => {
+test('1.65.0 site audit report: text normalised one character per grapheme, counters count graphemes', () => {
+  assert.equal(R112.siteAuditReportText('ﬁne ❤️ ©️ 👨‍👩‍👧 🇬🇧 Łódź\u200b\ufeff ｆｕｌｌ'), 'fine ? © ? ? Lódz full')
+  assert.equal(R112.siteAuditFieldLength('❤️👨‍👩‍👧🇬🇧é'), 4)
+  assert.equal(R112.siteAuditFieldCounter('title', '👍🏽'.repeat(120)).over, false)
+  assert.equal(R112.siteAuditReportFitLine('x'.repeat(500), 9, 100).endsWith('…'), true)
+  assert.ok(R112.siteAuditReportTextWidth(R112.siteAuditReportFitLine('x'.repeat(500), 9, 100), 9) <= 100.01)
+})
+
+test('1.65.0 site audit report input: the same audit gives the same input on both apps', () => {
+  const input = R112.siteAuditReportInput({
+    audit: {
+      id: 'A', projectJobNumber: 'C1', projectName: 'Job', type: 'General', authorName: 'Ann', dateMs: 0, createdAtMs: 0,
+      items: [
+        { id: 'loaded', imageURL: 'https://x/a.jpg' },
+        { id: 'failed', imageURL: 'https://x/b.jpg' },
+        { id: 'none' },
+      ],
+    },
+    organizationName: '  Raccord  ',
+    job: { clientName: 'RED', addressLine1: '71 Broadwick St', addressLine2: '', townCity: 'London', postcode: 'W1F 9QY' },
+    photos: { loaded: { width: 300, height: 400 }, failed: null },
+    logo: { width: 0, height: 10 },
+    timeZone: 'Europe/London',
+  })
+  assert.equal(input.siteAddress, '71 Broadwick St, London, W1F 9QY')
+  assert.equal(input.clientName, 'RED')
+  assert.equal(input.organizationName, 'Raccord')
+  assert.equal(input.logo, null)
+  assert.deepEqual(input.audit.items.map((item) => item.photo), [{ width: 300, height: 400 }, { width: 4, height: 3 }, null])
+  // Never map coordinates, never a client the job does not have.
+  assert.equal(R112.siteAuditReportSiteAddress({}), '')
+  assert.equal(R112.siteAuditReportInput({ audit: { items: [] }, job: null }).clientName, null)
+})
+
+test('1.65.0 site audit report: photos are whole (aspect kept), at most 200 wide and 240 tall', () => {
   assert.deepEqual(R112.siteAuditReportPhotoBox({ width: 1170, height: 2532 }), { w: 110.9, h: 240 })
   assert.deepEqual(R112.siteAuditReportPhotoBox({ width: 4032, height: 3024 }), { w: 200, h: 150 })
   assert.deepEqual(R112.siteAuditReportPhotoBox({ width: 4000, height: 600 }), { w: 200, h: 30 })
   assert.equal(R112.siteAuditReportPhotoBox(null), null)
 })
 
-test('1.61.0 site audit report: text the standard fonts cannot draw is replaced, never dropped; long words break', () => {
+test('1.65.0 site audit report: text the standard fonts cannot draw is replaced, never dropped; long words break', () => {
   assert.equal(R112.siteAuditReportText('Café Zoë — £5 “ok”'), 'Café Zoë — £5 “ok”')
   assert.equal(R112.siteAuditReportText('Łódź'), 'Lódz')
   assert.equal(R112.siteAuditReportText('Snag 🚧!'), 'Snag ?!')
@@ -17909,7 +17963,7 @@ test('1.61.0 site audit report: text the standard fonts cannot draw is replaced,
   assert.deepEqual(R112.wrapSiteAuditReportText('one\n\ntwo', 10, 300), ['one', '', 'two'])
 })
 
-test('1.61.0 site audit report: item rows, order, labels and empty values (owner Q2, Q3, Q5) and the taken time (Q1)', () => {
+test('1.65.0 site audit report: item rows, order, labels and empty values (owner Q2, Q3, Q5) and the taken time (Q1)', () => {
   assert.deepEqual(
     R112.siteAuditReportItemFields({ id: 'i', location: 'Hall', comments: '', annotations: '' }).map((row) => [row.label, row.value]),
     [['Location', 'Hall'], ['Assignee', '—'], ['Comments', '—'], ['Annotations', 'None']]
@@ -17920,7 +17974,7 @@ test('1.61.0 site audit report: item rows, order, labels and empty values (owner
   assert.equal(R112.siteAuditReferenceCode({ projectJobNumber: 'C 646', createdAtMs: 1794943857123 }), 'SA-C646-1794943857')
 })
 
-test('1.61.0 site audit field limits: counters, new edits limited, stored longer text never refused', () => {
+test('1.65.0 site audit field limits: counters, new edits limited, stored longer text never refused', () => {
   assert.deepEqual(R112.SITE_AUDIT_FIELD_LIMITS, { title: 120, location: 120, assignee: 80, comments: 2000, annotations: 2000, customTitle: 120 })
   assert.equal(R112.siteAuditFieldCounter('title', 'abc').label, '3 / 120')
   assert.equal(R112.siteAuditFieldLength('🚧🚧'), 2)
@@ -17931,7 +17985,7 @@ test('1.61.0 site audit field limits: counters, new edits limited, stored longer
   assert.equal(R112.siteAuditFieldLimitError({ comments: 'x'.repeat(2000) }), null)
 })
 
-test('1.61.0 site audit report: the company logo at the top right, fitted whole; the initials badge otherwise', () => {
+test('1.65.0 site audit report: the company logo at the top right, fitted whole; the initials badge otherwise', () => {
   const box = R112.SITE_AUDIT_REPORT_LOGO_BOX
   const pad = R112.SITE_AUDIT_REPORT_LOGO_PADDING
   const right = box.x + box.w

@@ -6,8 +6,9 @@ import { assertUploadAllowed } from '@/lib/security/uploadGuard'
 /**
  * A resumable upload that never hangs silently (owner bug 17 Nov: site audit stuck on "Uploading photo 1 of 6").
  * The Firebase Storage SDK retries a dropped connection or a 5xx for up to 10 minutes without reporting anything;
- * this cancels the task after `stallMs` without progress or `maxMs` in all and rejects with a `stalled` error, so the
- * caller can retry or show the photo as failed. A refusal (rules, signed out) rejects at once with its Storage code.
+ * this cancels the task after `stallMs` without progress and rejects with a `stalled` error, so the caller can retry
+ * or show the photo as failed. There is no total time limit by default (review of #389: a slow but moving upload is
+ * never cut off); `maxMs` sets one only when a caller asks for it. A refusal (rules, signed out) rejects at once with its Storage code.
  * Rulebook 1.50.0 §24: every upload is checked first (`assertUploadAllowed`) and written with the detected type.
  */
 export type WatchedUploadResult = { storagePath: string; downloadURL: string; contentType: string; sizeBytes: number }
@@ -21,7 +22,6 @@ export class UploadStalledError extends Error {
 }
 
 export const WATCHED_UPLOAD_STALL_MS = 45_000
-export const WATCHED_UPLOAD_MAX_MS = 180_000
 
 export async function watchedUpload(
   storagePath: string,
@@ -35,7 +35,7 @@ export async function watchedUpload(
   if (!user) throw Object.assign(new Error('You must be signed in to upload photos.'), { code: 'storage/unauthenticated' })
   await withTimeout(user.getIdToken(), 15_000, 'Sign-in did not finish. Try the upload again.')
   const stallMs = options.stallMs ?? WATCHED_UPLOAD_STALL_MS
-  const maxMs = options.maxMs ?? WATCHED_UPLOAD_MAX_MS
+  const maxMs = options.maxMs
   const storageRef = ref(storage, storagePath)
   return new Promise<WatchedUploadResult>((resolve, reject) => {
     let settled = false
@@ -45,7 +45,7 @@ export async function watchedUpload(
       if (settled) return
       settled = true
       if (stall) clearTimeout(stall)
-      clearTimeout(overall)
+      if (overall) clearTimeout(overall)
       outcome()
     }
     const cancel = (message: string) => {
@@ -60,7 +60,7 @@ export async function watchedUpload(
       if (stall) clearTimeout(stall)
       stall = setTimeout(() => cancel('The photo upload stopped (no progress). Check the connection and retry.'), stallMs)
     }
-    const overall = setTimeout(() => cancel('The photo upload took too long. Check the connection and retry.'), maxMs)
+    const overall = maxMs ? setTimeout(() => cancel('The photo upload took too long. Check the connection and retry.'), maxMs) : null
     armStall()
     task.on(
       'state_changed',

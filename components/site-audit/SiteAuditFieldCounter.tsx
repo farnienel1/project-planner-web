@@ -2,7 +2,7 @@
 
 import { siteAuditFieldCounter, type SiteAuditLimitedField } from '@/lib/canonical'
 
-/** The live "34 / 120" under a site audit field (rulebook 1.61.0 §29); red when the text is over the limit. */
+/** The live "34 / 120" under a site audit field (rulebook 1.65.0 §29); red when the text is over the limit. */
 export function SiteAuditFieldCounter({ field, value }: { field: SiteAuditLimitedField; value: string }) {
   const counter = siteAuditFieldCounter(field, value)
   return (

@@ -3,6 +3,7 @@
  *
  * A pure runner with an injected `upload`, so it is tested without Firebase:
  * - a few photos at a time (`concurrency`), each retried with a back-off when it stalls or the connection drops;
+ *   after a stall the rest go one at a time, so a slow connection is not shared three ways (review of #389);
  * - a refusal (rules, file type, signed out) is final at once and shows its real reason, never a fake stall;
  * - offline: the photo fails at once with "No connection" instead of waiting;
  * - a photo already uploaded (`done`, with its URL) is never sent again, so Retry only sends what failed.
@@ -98,6 +99,7 @@ export async function runPhotoUploads(options: RunPhotoUploadsOptions): Promise<
     photo.status === 'done' && photo.imageURL ? { ...photo } : { ...photo, status: 'pending', progress: 0, error: undefined, final: undefined, attempts: 0 }
   )
   const emit = () => options.onChange?.(photos.map((photo) => ({ ...photo })))
+  let stalled = false
   const queue = photos.map((_, index) => index).filter((index) => photos[index].status !== 'done')
   emit()
 
@@ -120,6 +122,7 @@ export async function runPhotoUploads(options: RunPhotoUploadsOptions): Promise<
         set({ status: 'done', progress: 1, imageURL: result.imageURL, storagePath: result.storagePath, error: undefined, final: undefined })
         return
       } catch (error) {
+        if (typeof error === 'object' && error && (error as { code?: unknown }).code === 'upload/stalled') stalled = true
         const { final, message } = classifyUploadError(error)
         if (final || attempt === maxAttempts) {
           set({ status: 'failed', error: message, final, progress: 0 })
@@ -131,8 +134,10 @@ export async function runPhotoUploads(options: RunPhotoUploadsOptions): Promise<
     }
   }
 
-  const workers = Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
+  const workers = Array.from({ length: Math.min(concurrency, queue.length) }, async (_, worker) => {
     for (;;) {
+      // After a stall only the first worker takes new photos: one at a time on a slow connection.
+      if (stalled && worker > 0) return
       const next = queue.shift()
       if (next === undefined) return
       await work(next)

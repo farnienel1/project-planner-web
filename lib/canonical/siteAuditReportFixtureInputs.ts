@@ -1,5 +1,5 @@
 /**
- * Inputs of the shared site audit report fixture (rulebook 1.61.0, §29). The expected pages are in
+ * Inputs of the shared site audit report fixture (rulebook 1.65.0, §29). The expected pages are in
  * `site-audit-report-fixture.json`; both apps' tests lay these out (web directly, iOS through the packed script) and
  * check the same text lines and page breaks, and that the renderer draws every op.
  */
@@ -130,4 +130,37 @@ export const SITE_AUDIT_REPORT_FIXTURE_INPUTS: ReadonlyArray<{ name: string; inp
       },
     },
   })),
+  {
+    // Review of #389 (owner rule "no text ever drops off"): every field the report prints, enormous — a 3,000-word
+    // item title, huge names, a 180+ character company name, a long type, title and address. Everything flows.
+    name: 'every-field-huge',
+    input: {
+      timeZone: 'Europe/London',
+      organizationName: repeat('Enormous Organisation Name Building Services Group ', 190),
+      clientName: repeat('A client with a very long trading name ', 900),
+      siteAddress: repeat('Unit 12, The Very Long Business Park Road, ', 700),
+      logo: { width: 400, height: 300 },
+      audit: {
+        projectJobNumber: repeat('J', 140),
+        projectName: repeat('Project name that goes on ', 600),
+        type: repeat('Stored audit type ', 200),
+        customTitle: repeat('Audit title written before the limits ', 900),
+        authorName: repeat('Authorname ', 400),
+        dateMs: Date.UTC(2026, 10, 17),
+        createdAtMs: Date.UTC(2026, 10, 17, 8),
+        items: [
+          {
+            id: 'h1',
+            title: repeat('word ', 15000),
+            location: repeat('Riser ', 400),
+            assignee: repeat('Assignee ', 300),
+            comments: repeat('Comment ', 2500),
+            annotations: repeat('Note ', 2500),
+            createdAtMs: Date.UTC(2026, 10, 17, 9),
+            photo: PORTRAIT,
+          },
+        ],
+      },
+    },
+  },
 ]

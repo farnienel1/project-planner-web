@@ -250,7 +250,7 @@ const WEB_STORE_SAMPLES: Record<string, { docId: string; data: Doc; webWriter: s
   siteAudits: {
     docId: 'AUD-1',
     webWriter: 'siteAuditStore save → siteAuditWriteFields',
-    // 1.61.0: a full item as web writes it (rulebook §29) — every item field, and `imageCapturedAt` like iOS.
+    // 1.65.0: a full item as web writes it (rulebook §29) — every item field, and `imageCapturedAt` like iOS.
     data: { id: 'AUD-1', organizationId: ORG, projectId: WEB_JOB, projectJobNumber: 'J-100', projectName: 'Shop fit', type: 'General', customTitle: 'Plant room snags', authorName: 'Ada Admin', date: ts(DAY), createdByUserId: 'user-web-1', visibleToOperatives: true, items: [{ id: 'web-item-1', title: 'Leak', location: 'Plant room', assignee: 'Bob', comments: 'Drip under the valve', annotations: 'Circled in red', imageURL: 'https://firebasestorage.googleapis.com/v0/b/x/o/a.jpg', imageCapturedAt: ts(CREATED), createdAt: ts(CREATED) }], createdAt: ts(CREATED), updatedAt: ts(UPDATED) },
   },
   tasks: {

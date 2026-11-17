@@ -1,7 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { classifyUploadError, runPhotoUploads, uploadSummary, type PhotoUpload } from './auditPhotoUploads'
-import { memoryOutboxStore, sendSiteAuditOutbox, type SiteAuditOutboxRecord } from './siteAuditOutbox'
+import {
+  indexedDbOutboxStore,
+  memoryOutboxStore,
+  outboxRecordsToPrune,
+  resilientOutboxStore,
+  sendSiteAuditOutbox,
+  type SiteAuditOutboxRecord,
+  type SiteAuditOutboxStore,
+} from './siteAuditOutbox'
 
 const noSleep = async () => {}
 const pending = (itemId: string): PhotoUpload => ({ itemId, status: 'pending', progress: 0, attempts: 0 })
@@ -188,4 +196,168 @@ test('outbox list is per organisation and user', async () => {
   await store.put(record(1, { id: 'audit-2', userId: 'u2' }))
   await store.put(record(1, { id: 'audit-3', organizationId: 'org-b' }))
   assert.deepEqual((await store.list('org-a', 'u1')).map((r) => r.id), ['audit-1'])
+})
+
+
+// Review of #389 ---------------------------------------------------------------------------------------------------
+
+/** A fake IndexedDB whose transactions end with `ending` (complete, error or abort), to test the browser store. */
+function fakeIndexedDb(ending: 'complete' | 'abort' | 'requestError') {
+  const db = {
+    objectStoreNames: { contains: () => true },
+    close() {},
+    transaction() {
+      const transaction: Record<string, unknown> = { error: null }
+      const request: Record<string, unknown> = { result: undefined, error: null }
+      const store = { put: () => request, get: () => request, getAll: () => request, delete: () => request }
+      transaction.objectStore = () => store
+      setTimeout(() => {
+        if (ending === 'complete') (transaction.oncomplete as () => void)?.()
+        else if (ending === 'abort') {
+          transaction.error = new DOMException('Quota exceeded', 'QuotaExceededError')
+          ;(transaction.onabort as () => void)?.()
+        } else {
+          request.error = new Error('request failed')
+          ;(request.onerror as () => void)?.()
+        }
+      }, 0)
+      return transaction
+    },
+  }
+  return {
+    open() {
+      const request: Record<string, unknown> = { result: db }
+      setTimeout(() => (request.onsuccess as () => void)?.(), 0)
+      return request
+    },
+  }
+}
+
+test('browser store: a quota-full abort or a failed request rejects (so the memory fallback takes over)', async () => {
+  const original = (globalThis as { indexedDB?: unknown }).indexedDB
+  try {
+    for (const ending of ['abort', 'requestError'] as const) {
+      ;(globalThis as { indexedDB?: unknown }).indexedDB = fakeIndexedDb(ending)
+      await assert.rejects(indexedDbOutboxStore().put(record(1)), ending)
+    }
+    ;(globalThis as { indexedDB?: unknown }).indexedDB = fakeIndexedDb('complete')
+    await indexedDbOutboxStore().put(record(1))
+  } finally {
+    ;(globalThis as { indexedDB?: unknown }).indexedDB = original
+  }
+})
+
+function failingStore(): SiteAuditOutboxStore & { fail: boolean } {
+  const inner = memoryOutboxStore()
+  const wrap = <A extends unknown[], R>(run: (...args: A) => Promise<R>) => async (...args: A) => {
+    if (state.fail) throw new DOMException('Quota exceeded', 'QuotaExceededError')
+    return run(...args)
+  }
+  const state = {
+    fail: true,
+    put: wrap(inner.put),
+    get: wrap(inner.get),
+    list: wrap(inner.list),
+    listAll: wrap(inner.listAll),
+    remove: wrap(inner.remove),
+  }
+  return state
+}
+
+test('fallback is per record: a refused write stays in this tab; removes reach both copies; later writes go back to the browser', async () => {
+  const primary = failingStore()
+  const memoryOnly = new Set<string>()
+  const store = resilientOutboxStore(primary, memoryOutboxStore(), memoryOnly)
+  await store.put(record(1, { id: 'a' }))
+  assert.deepEqual([...memoryOnly], ['a'])
+  assert.equal((await store.list('org-a', 'u1')).length, 1)
+  primary.fail = false
+  await store.put(record(1, { id: 'b' }))
+  assert.deepEqual([...memoryOnly], ['a'])
+  await store.put(record(1, { id: 'a', updatedAtMs: 5 }))
+  assert.deepEqual([...memoryOnly], [])
+  await store.remove('a')
+  assert.equal(await store.get('a'), null, 'removed from both copies: never comes back')
+  assert.deepEqual((await store.list('org-a', 'u1')).map((row) => row.id), ['b'])
+})
+
+test('a record whose audit is already saved is removed, never written again (no stale overwrite)', async () => {
+  const store = memoryOutboxStore()
+  let saves = 0
+  const result = await sendSiteAuditOutbox(record(2), {
+    store,
+    sleep: noSleep,
+    online: () => true,
+    uploadPhoto: async () => ({ imageURL: 'u', storagePath: 'p' }),
+    save: async () => {
+      saves += 1
+    },
+    savedAlready: async () => true,
+  })
+  assert.equal(result.saved, true)
+  assert.equal(saves, 0)
+  assert.equal(store.records.size, 0)
+})
+
+test('when it cannot tell whether the audit is saved (offline), it does not save: the record waits for Retry', async () => {
+  const store = memoryOutboxStore()
+  let checks = 0
+  const result = await sendSiteAuditOutbox(record(1), {
+    store,
+    sleep: noSleep,
+    online: () => true,
+    uploadPhoto: async () => ({ imageURL: 'u', storagePath: 'p' }),
+    save: async () => assert.fail('must not save'),
+    savedAlready: async () => {
+      checks += 1
+      if (checks === 1) return false
+      throw new Error('offline')
+    },
+  })
+  assert.equal(result.saved, false)
+  assert.equal(store.records.size, 1)
+  assert.equal(store.records.get('audit-1')?.items[0].upload.status, 'done', 'the uploaded photo is kept done for Retry')
+})
+
+test('pruning: older than 30 days, and this person\'s records in companies they left (complete list only)', () => {
+  const day = 24 * 60 * 60 * 1000
+  const now = 100 * day
+  const rows = [
+    { id: 'old', organizationId: 'org-a', userId: 'u1', createdAtMs: now - 40 * day, updatedAtMs: now - 31 * day },
+    { id: 'fresh', organizationId: 'org-a', userId: 'u1', createdAtMs: now - day, updatedAtMs: now - day },
+    { id: 'left', organizationId: 'org-x', userId: 'u1', createdAtMs: now - day, updatedAtMs: now - day },
+    { id: 'other-user', organizationId: 'org-x', userId: 'u2', createdAtMs: now - day, updatedAtMs: now - day },
+  ]
+  assert.deepEqual(outboxRecordsToPrune(rows, { nowMs: now }), ['old'])
+  assert.deepEqual(outboxRecordsToPrune(rows, { nowMs: now, userId: 'u1', memberOrganizationIds: ['org-a'] }), ['old', 'left'])
+})
+
+test('after a stall the rest go one at a time', async () => {
+  let stalledYet = false
+  let late = 0
+  let lateMost = 0
+  const order: string[] = []
+  await runPhotoUploads({
+    photos: ['a', 'b', 'c', 'd', 'e', 'f'].map(pending),
+    sleep: noSleep,
+    online: () => true,
+    upload: async (id, { attempt }) => {
+      if (id === 'a' && attempt === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 2))
+        stalledYet = true
+        throw Object.assign(new Error('stopped'), { code: 'upload/stalled' })
+      }
+      const startedLate = stalledYet && ['d', 'e', 'f'].includes(id)
+      if (startedLate) {
+        late += 1
+        lateMost = Math.max(lateMost, late)
+      }
+      order.push(id)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      if (startedLate) late -= 1
+      return { imageURL: `https://x/${id}`, storagePath: id }
+    },
+  })
+  assert.equal(order.length, 6)
+  assert.equal(lateMost, 1, 'photos after the stall upload one at a time')
 })

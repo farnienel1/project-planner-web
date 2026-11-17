@@ -1,71 +1,85 @@
 /**
- * The site audit PDF on web (rulebook 1.61.0 §29, owner decision 17 Nov: the same PDF as the iPhone). The rulebook
- * lays the report out (`siteAuditReportLayout`); this file only loads the pictures, measures them and hands the pages
- * to the pdf-lib renderer, then downloads the file. Before 1.61.0 web printed an HTML page, so the browser chose the
- * page breaks and the result differed from the iPhone's.
+ * The site audit PDF on web (rulebook 1.65.0 §29, owner decision 17 Nov: the same PDF as the iPhone). The rulebook
+ * composes the report's input (`siteAuditReportInput`) and lays it out (`siteAuditReportLayout`); this file only loads
+ * the pictures, measures them and hands the pages to the pdf-lib renderer, then downloads the file. Before 1.65.0 web
+ * printed an HTML page, so the browser chose the page breaks and the result differed from the iPhone's.
  */
-import { siteAuditReportLayout, type SiteAuditReportInput } from '@/lib/canonical'
+import { imageDimensionsFromHeader, siteAuditReportInput, siteAuditReportLayout } from '@/lib/canonical'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { downloadPdf } from '@/lib/pdf/downloadPdf'
 import { loadCompanyLogo } from '@/lib/pdf/companyLogo'
 import { withTimeout } from '@/lib/client/withTimeout'
 import { renderSiteAuditReportPdf, type SiteAuditReportImage } from '@/lib/siteAudit/siteAuditReportPdf'
+import { jpegExifOrientation } from '@/lib/siteAudit/jpegOrientation'
 import type { Project, SiteAudit } from '@/types'
 
 export interface SiteAuditPdfContext {
   organizationName?: string
   logoUrl?: string
-  clientName?: string
-  siteAddress?: string
+  /** The job: its client and address lines (`siteAuditReportSiteAddress`). */
+  job?: { clientName?: string; addressLine1?: string; addressLine2?: string; townCity?: string; postcode?: string } | null
   timeZone?: string
 }
 
-export function formatProjectSiteAddress(
-  project: Pick<Project, 'addressLine1' | 'addressLine2' | 'townCity' | 'postcode'>
-): string {
-  return [project.addressLine1, project.addressLine2, project.townCity, project.postcode]
-    .filter((part) => part && part.trim().length > 0)
-    .join(', ')
-}
+/** Photos are drawn at most this many pixels on their long side (the PDF stays small; the layout is unchanged). */
+export const SITE_AUDIT_PDF_PHOTO_MAX_PIXELS = 1600
 
-type LoadedPicture = { image: SiteAuditReportImage; width: number; height: number }
+type LoadedPicture = { image: SiteAuditReportImage | null; width: number; height: number }
 
-/** A picture as JPEG or PNG bytes with its pixel size; anything else (HEIC, WebP) is redrawn as a JPEG. */
-async function loadPicture(url: string): Promise<LoadedPicture | null> {
+/**
+ * A photo's bytes for the PDF and its size AS SHOWN (EXIF rotation applied, as the iPhone's `UIImage`): decoded and
+ * redrawn as a JPEG when it is rotated, too large, or not JPEG / PNG. When the browser cannot decode it (HEIC in
+ * Chrome), its size comes from the file header (rotated when the EXIF says so) and the box stays empty — the same box
+ * the iPhone draws the photo in, so both apps break pages in the same places (review of #389).
+ */
+export async function loadPicture(url: string): Promise<LoadedPicture | null> {
+  let bytes: Uint8Array
+  let blob: Blob
   try {
     const response = await withTimeout(fetch(url), 20_000, 'The photo took too long to load.')
     if (!response.ok) return null
-    const blob = await response.blob()
-    const bitmap = await createImageBitmap(blob)
-    const { width, height } = bitmap
-    const head = new Uint8Array(await blob.slice(0, 4).arrayBuffer())
-    const isJpeg = head[0] === 0xff && head[1] === 0xd8
-    const isPng = head[0] === 0x89 && head[1] === 0x50
-    if (isJpeg || isPng) {
-      bitmap.close()
-      return { image: { bytes: new Uint8Array(await blob.arrayBuffer()), format: isPng ? 'png' : 'jpg' }, width, height }
-    }
-    const canvas = document.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
-    const context = canvas.getContext('2d')
-    if (!context) {
-      bitmap.close()
-      return null
-    }
-    context.fillStyle = '#ffffff'
-    context.fillRect(0, 0, width, height)
-    context.drawImage(bitmap, 0, 0)
-    bitmap.close()
-    const jpeg = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85))
-    if (!jpeg) return null
-    return { image: { bytes: new Uint8Array(await jpeg.arrayBuffer()), format: 'jpg' }, width, height }
+    blob = await response.blob()
+    bytes = new Uint8Array(await blob.arrayBuffer())
   } catch {
     return null
   }
+  const isJpeg = bytes[0] === 0xff && bytes[1] === 0xd8
+  const isPng = bytes[0] === 0x89 && bytes[1] === 0x50
+  const orientation = isJpeg ? jpegExifOrientation(bytes) : 1
+  const header = imageDimensionsFromHeader(bytes)
+  const headerShown = header ? (orientation >= 5 ? { width: header.height, height: header.width } : header) : null
+  let bitmap: ImageBitmap | null = null
+  try {
+    bitmap = await createImageBitmap(blob, { imageOrientation: 'from-image' })
+  } catch {
+    bitmap = null
+  }
+  if (!bitmap) return headerShown ? { image: null, ...headerShown } : null
+  const { width, height } = bitmap
+  const longSide = Math.max(width, height)
+  if ((isJpeg || isPng) && orientation === 1 && longSide <= SITE_AUDIT_PDF_PHOTO_MAX_PIXELS) {
+    bitmap.close()
+    return { image: { bytes, format: isPng ? 'png' : 'jpg' }, width, height }
+  }
+  const scale = Math.min(1, SITE_AUDIT_PDF_PHOTO_MAX_PIXELS / longSide)
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(width * scale))
+  canvas.height = Math.max(1, Math.round(height * scale))
+  const context = canvas.getContext('2d')
+  if (!context) {
+    bitmap.close()
+    return { image: null, width, height }
+  }
+  context.fillStyle = '#ffffff'
+  context.fillRect(0, 0, canvas.width, canvas.height)
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+  bitmap.close()
+  const jpeg = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85))
+  if (!jpeg) return { image: null, width, height }
+  return { image: { bytes: new Uint8Array(await jpeg.arrayBuffer()), format: 'jpg' }, width, height }
 }
 
-/** Builds the report with the shared layout and downloads it. A photo that cannot be loaded keeps an empty box. */
+/** Builds the report with the shared input and layout and downloads it. A photo that cannot be loaded keeps its box. */
 export async function downloadSiteAuditPdf(audit: SiteAudit, context: SiteAuditPdfContext = {}): Promise<void> {
   const pictures = new Map<string, LoadedPicture | null>()
   const loads: Promise<void>[] = []
@@ -82,12 +96,15 @@ export async function downloadSiteAuditPdf(audit: SiteAudit, context: SiteAuditP
     if (item.imageURL) loads.push(loadPicture(item.imageURL).then((picture) => void pictures.set(item.id, picture)))
   }
   await Promise.all(loads)
-  const input: SiteAuditReportInput = {
+  const size = (picture: LoadedPicture | null | undefined) => (picture ? { width: picture.width, height: picture.height } : null)
+  const photos: Record<string, { width: number; height: number } | null> = {}
+  for (const item of audit.items) photos[item.id] = size(pictures.get(item.id))
+  const input = siteAuditReportInput({
     timeZone: context.timeZone || organizationZoneOr(),
     organizationName: context.organizationName,
-    clientName: context.clientName,
-    siteAddress: context.siteAddress,
-    logo: pictures.get('logo') ?? null,
+    job: context.job ?? null,
+    photos,
+    logo: size(pictures.get('logo')),
     audit: {
       id: audit.id,
       projectJobNumber: audit.projectJobNumber,
@@ -97,26 +114,22 @@ export async function downloadSiteAuditPdf(audit: SiteAudit, context: SiteAuditP
       authorName: audit.authorName,
       dateMs: audit.date.getTime(),
       createdAtMs: audit.createdAt.getTime(),
-      items: audit.items.map((item) => {
-        const picture = pictures.get(item.id)
-        return {
-          id: item.id,
-          title: item.title,
-          location: item.location,
-          assignee: item.assignee,
-          comments: item.comments,
-          annotations: item.annotations,
-          imageCapturedAtMs: item.imageCapturedAt?.getTime() ?? null,
-          createdAtMs: item.createdAt.getTime(),
-          // An item with a stored photo keeps its box even when the picture could not be loaded (same layout).
-          photo: picture ? { width: picture.width, height: picture.height } : item.imageURL ? { width: 4, height: 3 } : null,
-        }
-      }),
+      items: audit.items.map((item) => ({
+        id: item.id,
+        title: item.title,
+        location: item.location,
+        assignee: item.assignee,
+        comments: item.comments,
+        annotations: item.annotations,
+        imageURL: item.imageURL,
+        imageCapturedAtMs: item.imageCapturedAt?.getTime() ?? null,
+        createdAtMs: item.createdAt.getTime(),
+      })),
     },
-  }
+  })
   const layout = siteAuditReportLayout(input)
   const images: Record<string, SiteAuditReportImage> = {}
-  for (const [ref, picture] of pictures) if (picture) images[ref] = picture.image
+  for (const [ref, picture] of pictures) if (picture?.image) images[ref] = picture.image
   const bytes = await renderSiteAuditReportPdf(layout, images)
   downloadPdf(bytes, layout.fileName)
 }
@@ -136,7 +149,14 @@ export function buildSiteAuditPdfContextFromProject(
   return {
     organizationName: organization?.name,
     logoUrl: organization?.companyLogoURL,
-    clientName: project?.client?.name,
-    siteAddress: project ? formatProjectSiteAddress(project) : undefined,
+    job: project
+      ? {
+          clientName: project.client?.name,
+          addressLine1: project.addressLine1,
+          addressLine2: project.addressLine2,
+          townCity: project.townCity,
+          postcode: project.postcode,
+        }
+      : null,
   }
 }

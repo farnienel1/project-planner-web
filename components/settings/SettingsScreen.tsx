@@ -7,6 +7,7 @@ import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 
 import { doc, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { confirmChosenSignOut } from '@/lib/siteAudit/siteAuditSignOut'
 import { uploadFile, profilePhotoPath } from '@/lib/firebase/storageUtils'
 import { PROFILE_PHOTO_ACCEPT, validateProfilePhotoFile } from '@/lib/settings/profilePhotoUpload'
 import { ProfilePhotoCropModal } from '@/components/settings/ProfilePhotoCropModal'
@@ -708,7 +709,7 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
 
       {/* Sign out */}
       <SettingsCard>
-        <button type="button" onClick={async () => { if (window.confirm('Are you sure you want to sign out?')) await signOut() }}
+        <button type="button" onClick={async () => { if (await confirmChosenSignOut(useAuthStore.getState().firebaseUser?.uid ?? useAuthStore.getState().user?.id)) await signOut() }}
           className="flex w-full items-center justify-center gap-2 px-4 py-4 text-[var(--red)] hover:bg-[var(--red-t)] transition-colors">
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
           <span className="text-sm font-bold">Sign out</span>

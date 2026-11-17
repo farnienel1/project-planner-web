@@ -1,6 +1,6 @@
 /**
  * Standard Helvetica and Helvetica-Bold character widths (1/1000 em) for every character the PDF standard fonts can
- * draw (WinAnsi), taken from the Adobe font metrics pdf-lib ships. The site audit report (rulebook 1.61.0, §29) wraps
+ * draw (WinAnsi), taken from the Adobe font metrics pdf-lib ships. The site audit report (rulebook 1.65.0, §29) wraps
  * text with these on every platform, so web (pdf-lib, standard Helvetica) and iOS (UIKit Helvetica) break lines and
  * pages in the same places. Generated; do not edit by hand. Format: hex code point ':' width, comma separated.
  */

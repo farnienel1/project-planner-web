@@ -6,7 +6,11 @@
  */
 import { useEffect, useState } from 'react'
 import { deleteObject, ref } from 'firebase/storage'
-import { auth, storage } from '@/lib/firebase/config'
+import { doc, getDocFromServer } from 'firebase/firestore'
+import { auth, db, storage } from '@/lib/firebase/config'
+import { dateFromDayKeyInZone } from '@/lib/orgTime/zoneTime'
+import { PERSONAL_SITE_AUDITS_COLLECTION } from '@/lib/canonical/personalSiteAudits'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { watchedUpload } from '@/lib/firebase/watchedUpload'
 import { siteAuditImagePath } from '@/lib/firebase/storageUtils'
 import { personalSiteAuditImagePath } from '@/lib/canonical/personalSiteAudits'
@@ -16,40 +20,17 @@ import { useSiteAuditStore } from '@/lib/stores/siteAuditStore'
 import {
   indexedDbOutboxStore,
   memoryOutboxStore,
+  resilientOutboxStore,
+  outboxRecordsToPrune,
   sendSiteAuditOutbox,
   type SendOutboxResult,
   type SiteAuditOutboxRecord,
   type SiteAuditOutboxStore,
 } from '@/lib/siteAudit/siteAuditOutbox'
 
-let fallback: SiteAuditOutboxStore | null = null
-/** False when this browser cannot keep a copy (private window, storage blocked): the screens say so. */
-let persistent = true
+const memoryOnly = new Set<string>()
 
-function resilientStore(): SiteAuditOutboxStore {
-  const primary = typeof indexedDB === 'undefined' ? null : indexedDbOutboxStore()
-  const memory = () => (fallback ??= memoryOutboxStore())
-  const guard = async <T,>(run: (store: SiteAuditOutboxStore) => Promise<T>): Promise<T> => {
-    if (primary && persistent) {
-      try {
-        return await run(primary)
-      } catch {
-        persistent = false
-      }
-    } else {
-      persistent = false
-    }
-    return run(memory())
-  }
-  return {
-    put: (record) => guard((store) => store.put(record)),
-    get: (id) => guard((store) => store.get(id)),
-    list: (org, user) => guard((store) => store.list(org, user)),
-    remove: (id) => guard((store) => store.remove(id)),
-  }
-}
-
-const store = resilientStore()
+const store = resilientOutboxStore(typeof indexedDB === 'undefined' ? null : indexedDbOutboxStore(), memoryOutboxStore(), memoryOnly)
 const live = new Map<string, SiteAuditOutboxRecord>()
 const inFlight = new Map<string, Promise<SendOutboxResult>>()
 const listeners = new Set<() => void>()
@@ -70,7 +51,9 @@ async function uploadPhoto(record: SiteAuditOutboxRecord, item: SiteAuditOutboxR
           organizationId: record.organizationId,
           ownerUserId: record.userId,
           auditId: record.id,
-          unixMs: Date.now(),
+          // A stable name per item (the audit's created time plus the item's place), so a retry overwrites its own
+          // earlier upload instead of leaving another file behind.
+          unixMs: record.createdAtMs + record.items.findIndex((row) => row.id === item.id),
           extension: itemExtension(item.fileName, item.photo.type),
         })
       : siteAuditImagePath(record.organizationId, record.id, item.fileName)
@@ -79,7 +62,21 @@ async function uploadPhoto(record: SiteAuditOutboxRecord, item: SiteAuditOutboxR
   return { imageURL: result.downloadURL, storagePath: result.storagePath }
 }
 
+/** Whether the audit document is already saved (an earlier attempt, or edited since). Throws when it cannot tell. */
+async function savedAlready(record: SiteAuditOutboxRecord): Promise<boolean> {
+  if (!db) throw new Error('The database is not configured.')
+  const path =
+    record.kind === 'personal'
+      ? doc(db, 'organizations', record.organizationId, PERSONAL_SITE_AUDITS_COLLECTION, record.id)
+      : doc(db, 'organizations', record.organizationId, 'siteAudits', record.id)
+  return (await getDocFromServer(path)).exists()
+}
+
 async function save(record: SiteAuditOutboxRecord): Promise<void> {
+  // Signed out or switched to another person while the photos uploaded: never save under someone else.
+  if (auth?.currentUser?.uid !== record.userId) {
+    throw Object.assign(new Error('Sign in as the person who made this audit, then retry.'), { code: 'unauthenticated' })
+  }
   if (record.kind === 'personal') {
     await savePersonalSiteAudit(record.organizationId, record.id, {
       jobNumber: record.meta.jobNumber ?? '',
@@ -101,7 +98,8 @@ async function save(record: SiteAuditOutboxRecord): Promise<void> {
   }
   const project = record.project
   if (!project) throw new Error('This audit has no job.')
-  const [y, m, d] = record.meta.date.split('-').map(Number)
+  // The day as entered, at midnight in the organisation's time zone (never the browser's).
+  const date = dateFromDayKeyInZone(record.meta.date, organizationZoneOr())
   await useSiteAuditStore.getState().saveAudit(record.organizationId, {
     id: record.id,
     projectId: project.id,
@@ -110,7 +108,7 @@ async function save(record: SiteAuditOutboxRecord): Promise<void> {
     type: record.meta.type,
     customTitle: record.meta.customTitle || undefined,
     authorName: record.meta.authorName,
-    date: new Date(y, (m || 1) - 1, d || 1),
+    date,
     createdByUserId: record.userId,
     visibleToOperatives: record.meta.visibleToOperatives ?? true,
     items: record.items.map((item) => ({
@@ -135,6 +133,7 @@ export function sendSiteAudit(record: SiteAuditOutboxRecord): Promise<SendOutbox
     store,
     uploadPhoto,
     save,
+    savedAlready,
     onChange: (next) => {
       live.set(next.id, next)
       notify()
@@ -160,7 +159,17 @@ export async function retrySiteAudit(id: string): Promise<SendOutboxResult | nul
 export async function discardSiteAudit(id: string): Promise<void> {
   if (inFlight.has(id)) throw new Error('This audit is still uploading. Wait for it to finish or fail, then discard it.')
   const stored = await store.get(id)
-  if (stored && storage) {
+  // An audit whose document exists was saved (an earlier attempt finished): its photos are in use, so only this
+  // browser's copy goes (review of #389). When that cannot be checked (offline), the photos are kept too.
+  let saved = true
+  if (stored) {
+    try {
+      saved = await savedAlready(stored)
+    } catch {
+      saved = true
+    }
+  }
+  if (stored && storage && !saved) {
     await Promise.all(
       stored.items
         .map((item) => item.upload.storagePath)
@@ -172,12 +181,39 @@ export async function discardSiteAudit(id: string): Promise<void> {
   notify()
 }
 
+/** The signed-in person's unsent audits in this browser, any organisation (the sign-out warning). */
+export async function unsentSiteAuditCount(userId: string | null | undefined): Promise<number> {
+  if (!userId) return 0
+  const all = await store.listAll().catch(() => [])
+  return all.filter((record) => record.userId === userId).length
+}
+
+/**
+ * Removes the person's unsent audits from this browser — only after they chose to sign out and confirmed the warning
+ * (review of #389, as the iPhone since 14 Nov). A forced sign-out never calls this: their audits stay, hidden from
+ * anyone else, until they sign back in.
+ */
+export async function removeUnsentSiteAuditsFor(userId: string): Promise<void> {
+  const all = await store.listAll().catch(() => [])
+  for (const record of all) if (record.userId === userId && !inFlight.has(record.id)) await store.remove(record.id).catch(() => undefined)
+  notify()
+}
+
+/** Removes stale records (older than 30 days, or this person's in organisations they left — complete list only). */
+export async function pruneSiteAuditOutbox(options: { userId?: string | null; memberOrganizationIds?: ReadonlyArray<string> | null }): Promise<void> {
+  const all = await store.listAll().catch(() => [])
+  const ids = outboxRecordsToPrune(all, { nowMs: Date.now(), ...options }).filter((id) => !inFlight.has(id))
+  for (const id of ids) await store.remove(id).catch(() => undefined)
+  if (ids.length > 0) notify()
+}
+
 export function isSiteAuditSending(id: string): boolean {
   return inFlight.has(id)
 }
 
+/** False while any unsent audit is kept only in this tab (the browser refused to store it): the screens say so. */
 export function siteAuditOutboxPersistent(): boolean {
-  return persistent
+  return typeof indexedDB !== 'undefined' && memoryOnly.size === 0
 }
 
 /** Unsent audits of the signed-in user in this organisation, with live upload state; optional job filter. */
@@ -210,6 +246,7 @@ export function useSiteAuditOutbox(
         .catch(() => undefined)
     }
     load()
+    void pruneSiteAuditOutbox({ userId })
     listeners.add(load)
     return () => {
       active = false
