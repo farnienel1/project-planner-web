@@ -1,7 +1,11 @@
 import { afterEach, test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  clearMfaBounces,
   isMfaSetupError,
+  MFA_BOUNCE_KEY,
+  MFA_BOUNCE_LOOP_MESSAGE,
+  recordMfaBounce,
   isMfaStatusUnavailable,
   MFA_BOUNCE_LIMIT,
   MFA_BOUNCE_WINDOW_MS,
@@ -102,4 +106,31 @@ test('mfaBounceDecision: allows up to the limit within the window, then stops; o
   assert.equal(later.history.length, 1)
   // Junk and future stamps are ignored.
   assert.equal(mfaBounceDecision([Number.NaN, now + 999_999], now).history.length, 1)
+})
+
+/** Review of #359 (re-review 2): a reload within the window would hit the guard again, so "Try again" clears it. */
+test('loop guard: blocked after the limit; clearing the history (Try again) lets the next trip through', () => {
+  const store = new Map<string, string>()
+  const realWindow = (globalThis as { window?: unknown }).window
+  ;(globalThis as { window?: unknown }).window = {
+    sessionStorage: {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => void store.set(key, value),
+      removeItem: (key: string) => void store.delete(key),
+    },
+  }
+  try {
+    const now = 5_000_000
+    for (let i = 0; i < MFA_BOUNCE_LIMIT; i += 1) assert.equal(recordMfaBounce(now + i), true)
+    // A plain reload inside the window: still blocked (the history lives in session storage).
+    assert.equal(recordMfaBounce(now + 10), false)
+    assert.ok(store.has(MFA_BOUNCE_KEY))
+    clearMfaBounces()
+    assert.equal(store.has(MFA_BOUNCE_KEY), false)
+    assert.equal(recordMfaBounce(now + 20), true)
+    assert.doesNotMatch(MFA_BOUNCE_LOOP_MESSAGE, /reload/i)
+    assert.match(MFA_BOUNCE_LOOP_MESSAGE, /Try again/)
+  } finally {
+    ;(globalThis as { window?: unknown }).window = realWindow
+  }
 })

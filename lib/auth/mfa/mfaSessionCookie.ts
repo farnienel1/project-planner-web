@@ -178,7 +178,9 @@ export function createSessionKeyFetcher(
   async function load(): Promise<boolean> {
     try {
       const doFetch = options.fetchImpl || fetch
-      const response = await doFetch(url, { cache: 'no-store' })
+      // No fetch options: an edge runtime that rejects one (e.g. `cache`) would turn every page into the 503.
+      // Freshness is this module's own in-memory cache and its TTL (review of #359).
+      const response = await doFetch(url)
       if (!response.ok) return false
       const body = (await response.json()) as { keys?: Jwk[] }
       const next = new Map<string, CryptoKey>()

@@ -198,7 +198,9 @@ export const MFA_BOUNCE_LIMIT = 3
 export const MFA_BOUNCE_WINDOW_MS = 60_000
 export const MFA_BOUNCE_KEY = 'pp.mfa.bounces'
 export const MFA_BOUNCE_LOOP_MESSAGE =
-  "We couldn't finish signing you in: the app kept sending you back to this page. Reload the page, or sign out and sign in again. If it keeps happening, contact support."
+  "We couldn't finish signing you in: the app kept sending you back to this page. Press Try again, or sign out and sign in again. If it keeps happening, contact support."
+/** The button under the loop message: clears the guard's history (a reload alone would hit the guard again). */
+export const MFA_BOUNCE_TRY_AGAIN_LABEL = 'Try again'
 
 /** Pure: may another trip to the app go ahead, given the earlier trips (ms)? Returns the history to store. */
 export function mfaBounceDecision(

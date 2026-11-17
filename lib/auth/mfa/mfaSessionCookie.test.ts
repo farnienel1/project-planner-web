@@ -12,7 +12,7 @@ import {
   type SessionKeyFetcher,
 } from './mfaSessionCookie.ts'
 import { googleErrorCode, mintFirebaseSessionCookie } from './mfaSessionCookieMint.ts'
-import { GoogleAccessTokenError } from '../../owner/identityToolkitAdmin.ts'
+import { adminGoogleAccessToken, GoogleAccessTokenError, privateKeyErrorName } from '../../owner/identityToolkitAdmin.ts'
 import { clearMfaCookies, clearSessionCookie, MFA_SESSION_COOKIE_HOST, MFA_SESSION_COOKIE_LEGACY, mfaCookieNames } from './mfaCookiePolicy.ts'
 
 const PROJECT = 'demo-project'
@@ -436,5 +436,51 @@ test('cookies: sign-out (clearMfaCookies) and an MFA reset (clearSessionCookie) 
       assert.equal(row!.maxAge, 0)
       assert.equal(row!.httpOnly, true)
     }
+  }
+})
+
+/** Review of #359 (re-review 1): the key fetch passes no options an edge runtime might reject. */
+test('key fetcher: fetches the keys URL with no request options', async () => {
+  const seen: unknown[][] = []
+  const fetcher = createSessionKeyFetcher({
+    fetchImpl: (async (...args: unknown[]) => {
+      seen.push(args)
+      return new Response(JSON.stringify({ keys: [{ ...signer.jwk, kid: 'k1' }] }), { status: 200 })
+    }) as unknown as typeof fetch,
+    now: () => NOW,
+  })
+  assert.equal((await verify(await signCookie(claimsFor('u')), fetcher)).status, 'ok')
+  assert.equal(seen.length, 1)
+  assert.equal(seen[0].length, 1)
+})
+
+/** Review of #359 (re-review 3): a useful label for an unusable private key, never key material. */
+test('privateKeyErrorName: the error class and Node code only, never the message', () => {
+  const error = Object.assign(new TypeError('-----BEGIN PRIVATE KEY-----MIIEsecret'), { code: 'ERR_OSSL_UNSUPPORTED' })
+  assert.equal(privateKeyErrorName(error), 'TypeError ERR_OSSL_UNSUPPORTED')
+  assert.equal(privateKeyErrorName(new Error('MIIEsecret')), 'Error')
+  assert.equal(privateKeyErrorName(Object.assign(new Error('x'), { code: 'MIIE secret value' })), 'Error')
+  assert.equal(privateKeyErrorName('a string'), 'string')
+  assert.doesNotMatch(privateKeyErrorName(error), /MIIE|BEGIN/)
+})
+
+test('service account with an unusable private key: a setup error naming the error class, not the key', async () => {
+  const saved = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+  process.env.FIREBASE_SERVICE_ACCOUNT_JSON = JSON.stringify({
+    client_email: 'sa@demo-project.iam.gserviceaccount.com',
+    private_key: '-----BEGIN PRIVATE KEY-----\\nNOTAREALKEYsecretmaterial\\n-----END PRIVATE KEY-----',
+    project_id: PROJECT,
+  })
+  try {
+    await assert.rejects(adminGoogleAccessToken(['scope']), (error) => {
+      assert.ok(error instanceof GoogleAccessTokenError)
+      assert.equal(error.kind, 'setup')
+      assert.match(error.message, /could not be used \([A-Za-z]*Error( [A-Z0-9_]+)?\)\./)
+      assert.doesNotMatch(error.message, /NOTAREALKEY|secretmaterial|BEGIN/)
+      return true
+    })
+  } finally {
+    if (saved === undefined) delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+    else process.env.FIREBASE_SERVICE_ACCOUNT_JSON = saved
   }
 })

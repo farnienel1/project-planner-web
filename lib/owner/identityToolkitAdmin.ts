@@ -49,6 +49,15 @@ export function serviceAccountProjectId(): string | null {
   return readServiceAccount()?.project_id || null
 }
 
+/** A non-secret label for a failed signature: the error class name and its Node `code`, never the message. */
+export function privateKeyErrorName(error: unknown): string {
+  if (!error || typeof error !== 'object') return typeof error
+  const name = typeof (error as { name?: unknown }).name === 'string' ? (error as { name: string }).name : 'Error'
+  const code = (error as { code?: unknown }).code
+  const safeCode = typeof code === 'string' && /^[A-Z0-9_]{1,64}$/.test(code) ? ` ${code}` : ''
+  return `${/^[A-Za-z0-9_]{1,64}$/.test(name) ? name : 'Error'}${safeCode}`
+}
+
 async function googleAccessToken(scopes: string[]): Promise<{ token: string; projectId: string }> {
   const sa = readServiceAccount()
   if (!sa) {
@@ -71,8 +80,13 @@ async function googleAccessToken(scopes: string[]): Promise<{ token: string; pro
     const signer = createSign('RSA-SHA256')
     signer.update(`${header}.${payload}`)
     assertion = `${header}.${payload}.${signer.sign(sa.private_key.replace(/\\n/g, '\n'), 'base64url')}`
-  } catch {
-    throw new GoogleAccessTokenError('The Firebase Admin service account private key could not be used.', 'setup')
+  } catch (signError) {
+    // The error's name and Node code only (e.g. "Error ERR_OSSL_UNSUPPORTED") — never its message, which can quote
+    // key material.
+    throw new GoogleAccessTokenError(
+      `The Firebase Admin service account private key could not be used (${privateKeyErrorName(signError)}).`,
+      'setup'
+    )
   }
   let response: Response
   try {
