@@ -10,8 +10,10 @@ import { awaitAppCheckToken, ensureAppCheck, initializedAppCheck } from '@/lib/f
 import { ensureFirebaseApp, getFirebaseAuth } from '@/lib/firebase/ensureFirebase'
 import { HoneypotField } from '@/components/security/HoneypotField'
 import { postPublicForm } from '@/lib/security/publicFormClient'
+import { ApplyEmailActionScreen } from '@/components/auth/ApplyEmailActionScreen'
 import {
   formatPasswordResetError,
+  isApplyEmailAction,
   isPasswordResetAction,
   loginPathForResetEmail,
   minPasswordLengthForEmail,
@@ -98,6 +100,9 @@ export function CompletePasswordResetScreen() {
       setSaving(false)
     }
   }
+
+  // Verify email, confirm a new login email and undo an email change share this action URL (17 Nov).
+  if (isApplyEmailAction(action)) return <ApplyEmailActionScreen action={action} />
 
   return (
     <div className="login" style={{ gridTemplateColumns: '1fr' }}>

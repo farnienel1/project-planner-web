@@ -770,7 +770,7 @@ export function EditUserProfile({
     setSuccess(null)
     let toSave = { ...target, updatedAt: new Date() }
     // Rulebook 1.13.0 §14 (`selfEmailChangeAction`): a person's own email changes through Firebase Auth first
-    // (verifyBeforeUpdateEmail); this save keeps the stored email and the sign-in sync writes the new one later.
+    // (verifyBeforeUpdateEmail, sent by Project Planner from 17 Nov: requestEmailChange); this save keeps the stored email and the sign-in sync writes the new one later.
     let emailChangeNote: string | null = null
     if (currentUser?.id === target.id && savedUser.current) {
       const action = selfEmailChangeAction({ storedEmail: savedUser.current.email, nextEmail: target.email })
@@ -780,13 +780,14 @@ export function EditUserProfile({
       }
       if (action === 'verifyBeforeUpdate') {
         try {
-          const [{ verifyBeforeUpdateEmail }, { getFirebaseAuth }] = await Promise.all([
-            import('firebase/auth'),
+          const [{ requestEmailChange }, { getFirebaseAuth }] = await Promise.all([
+            import('@/lib/auth/requestAccountEmails'),
             import('@/lib/firebase/ensureFirebase'),
           ])
           const signedIn = getFirebaseAuth().currentUser
           if (!signedIn) throw new Error('Sign in again to change your email.')
-          await verifyBeforeUpdateEmail(signedIn, target.email.trim().toLowerCase())
+          // The branded confirm-new-email (owner request 17 Nov); Firebase's own email only when the server cannot send.
+          await requestEmailChange(signedIn, target.email.trim().toLowerCase())
           emailChangeNote = selfEmailChangeSentMessage(target.email)
         } catch (err) {
           setError(err instanceof Error ? err.message : 'Could not send the confirmation email.')

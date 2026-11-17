@@ -10,6 +10,7 @@ import {
   buildTrialWillEndEmailHtml,
 } from './billingPurchaseEmail.ts'
 import { buildPasswordResetEmailHtml } from './passwordResetEmail.ts'
+import { buildChangeEmailHtml, buildVerifyEmailHtml } from './accountEmails.ts'
 import { buildMaterialRequestEmail } from './materialRequestEmail.ts'
 import { buildMfaEmailHtml } from '../auth/mfa/mfaEmail.ts'
 import { supportContactMessage } from '../support/contactEmail.ts'
@@ -48,6 +49,8 @@ const templates: Record<string, string> = {
   trialWillEnd: buildTrialWillEndEmailHtml('19/11/2026', 'month'),
   paymentFailed: buildPaymentFailedEmailHtml('https://billing.example.com/p?a=1&b=2'),
   passwordReset: buildPasswordResetEmailHtml({ to: 'a@b.com', link: 'https://example.com/reset?a=1&b=2' }),
+  verifyEmail: buildVerifyEmailHtml({ to: 'a@b.com', link: 'https://example.com/v?a=1&b=2' }),
+  changeEmail: buildChangeEmailHtml({ to: 'a@b.com', link: 'https://example.com/c?a=1&b=2' }),
   passwordResetSupport: buildPasswordResetEmailHtml({ to: 'a@b.com', link: 'https://example.com/reset?a=1&b=2', reason: 'support' }),
   mfa: buildMfaEmailHtml('123456'),
   supportContact: supportContactMessage({ name: 'Ada', email: 'ada@example.com', topic: 'Billing', message: 'Hi' } as never).html,

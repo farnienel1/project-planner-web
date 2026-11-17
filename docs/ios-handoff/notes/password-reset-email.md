@@ -36,3 +36,38 @@ same reason as `AccountDeletionClient.endpointURL`). `continueUrl` is optional; 
    handling, and that Firebase is called only on the 503 fallback.
 
 `minimumIosBuild`: not needed (older builds keep sending Firebase's default email, which still works).
+
+## Also from 17 Nov: every account email from Project Planner
+
+Same pattern, both need the signed-in user's Firebase ID token (`Authorization: Bearer <idToken>`), apex host:
+
+### Confirm a new login email (was `user.sendEmailVerification(beforeUpdatingEmail:)`)
+
+`POST https://projectplanner.us/api/auth/change-email` with JSON `{ "newEmail": "<address>" }`.
+
+- `200 { ok: true }` → show the existing "We sent a link to …" message and remember the pending email as today
+  (`pendingSignInEmailKey`). The answer is the same when the address already belongs to another login.
+- `400` invalid or same as the current email. `429` too many. `401 { code: "requires-recent-login" }` → the person
+  must sign in again (the server checks the ID token's `auth_time` is within 5 minutes, as Firebase does); show the
+  route's `error`. `401` without a code → sign in again.
+- `503 { fallback: "firebase" }` → only then call `user.sendEmailVerification(beforeUpdatingEmail:)` as today.
+- File: `Project Planner/FirebaseBackend.swift` `sendVerifyBeforeUpdateEmail(to:)` (~line 6489; the call at ~6497),
+  used by `Core/UserStore.swift` (~2639). Get a fresh token with `user.getIDToken()`.
+
+### Resend email verification (`sendEmailVerification`)
+
+iOS does not send plain email verification today (no call on `origin/main`). If it ever does, use
+`POST https://projectplanner.us/api/auth/verify-email` with an empty JSON body and the same 200 / 429 / 503-fallback
+handling.
+
+### Links the apps open
+
+The verify, confirm-new-email and undo links land on `https://www.projectplanner.us/auth/action` (web); nothing to
+change on iOS. Web's action page now handles `verifyEmail`, `verifyAndChangeEmail` and `recoverEmail` (before 17 Nov
+it only handled password resets).
+
+### Stays a Firebase template
+
+The "your sign-in email was changed" notice Firebase sends to the **old** address after a change is applied
+(`recoverEmail`, with an undo link) is sent by Firebase automatically and cannot be replaced. The owner sets Sender
+name "Project Planner" on it (and on the other templates, for the fallback cases) in the Firebase console.

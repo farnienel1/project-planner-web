@@ -302,6 +302,56 @@ export async function adminPasswordResetLink(email: string, continueUrl: string)
   return data.oobLink
 }
 
+/** The new address already belongs to another login (`EMAIL_EXISTS`). The change route answers as if sent. */
+export class AuthEmailTakenError extends Error {
+  constructor() {
+    super('That email is already used by another login.')
+    this.name = 'AuthEmailTakenError'
+  }
+}
+
+/**
+ * A Firebase email action link made with the service account, so Firebase sends no email of its own
+ * (`returnOobLink: true`): `VERIFY_EMAIL` for `email`, or `VERIFY_AND_CHANGE_EMAIL` from `email` to `newEmail`.
+ * `continueUrl` is optional (left out when blank, and retried without it when Firebase refuses it).
+ */
+export async function adminEmailActionLink(input: {
+  requestType: 'VERIFY_EMAIL' | 'VERIFY_AND_CHANGE_EMAIL'
+  email: string
+  newEmail?: string
+  continueUrl?: string | null
+}): Promise<string> {
+  const { token, projectId } = await googleAccessToken([
+    'https://www.googleapis.com/auth/identitytoolkit',
+    'https://www.googleapis.com/auth/firebase',
+  ])
+  if (!projectId) throw new Error('Firebase project id is missing.')
+  const send = async (withContinue: boolean) => {
+    const body: Record<string, unknown> = { requestType: input.requestType, email: input.email, returnOobLink: true }
+    if (input.newEmail) body.newEmail = input.newEmail
+    if (withContinue && input.continueUrl) body.continueUrl = input.continueUrl
+    const response = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/accounts:sendOobCode`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }
+    )
+    const data = (await response.json().catch(() => ({}))) as { oobLink?: string; error?: { message?: string } }
+    return { ok: response.ok && Boolean(data.oobLink), data }
+  }
+  let result = await send(true)
+  if (!result.ok && input.continueUrl && (result.data.error?.message || '').includes('CONTINUE_URI')) result = await send(false)
+  if (!result.ok || !result.data.oobLink) {
+    const message = result.data.error?.message || ''
+    if (message.includes('EMAIL_EXISTS')) throw new AuthEmailTakenError()
+    if (resetAccountMissing(message)) throw new AuthAccountNotFoundError()
+    throw new Error(message || 'Could not create the email link.')
+  }
+  return result.data.oobLink
+}
+
 export async function adminUpdateAuthEmail(uid: string, email: string): Promise<void> {
   const { token, projectId } = await googleAccessToken([
     'https://www.googleapis.com/auth/identitytoolkit',

@@ -69,10 +69,25 @@ export function passwordResetContinueUrl(email: string, requested: unknown, appB
   return `${url.origin}${path}`
 }
 
+/**
+ * For the signed-in account emails (verify email, confirm new email): the `requested` continue URL when it is an
+ * allowed login page (`PASSWORD_RESET_CONTINUE_HOSTS` over https, or this server's own origin; `/login` or
+ * `/developer-login`; no query or fragment), else null and no continue URL is sent (Firebase's default, as today).
+ */
+export function allowedAccountEmailContinueUrl(requested: unknown, appBaseUrl: string): string | null {
+  if (typeof requested !== 'string' || !requested.trim() || requested.length > 500) return null
+  const url = originOf(requested.trim())
+  if (!url || !allowedOrigin(url, appBaseUrl)) return null
+  if (!(PASSWORD_RESET_CONTINUE_PATHS as readonly string[]).includes(url.pathname) || url.search || url.hash) return null
+  return `${url.origin}${url.pathname}`
+}
+
 /** What happened, for the log only. Never the address, the link or the code. */
 export type PasswordResetStatus =
   | 'sent'
   | 'no_account'
+  | 'email_taken'
+  | 'already_verified'
   | 'email_throttled'
   | 'link_failed'
   | 'send_failed'
@@ -87,6 +102,8 @@ export type PasswordResetDeps = {
   generateLink: (email: string, continueUrl: string) => Promise<string>
   /** The link failed because the account is missing or disabled. */
   isAccountMissing: (error: unknown) => boolean
+  /** Change email only: the new address already belongs to another login. */
+  isEmailTaken?: (error: unknown) => boolean
   /** True when the error means the server cannot make links at all (setup), checked before any account is known. */
   isSetupError: (error: unknown) => boolean
   sendEmail: (input: { to: string; link: string }) => Promise<void>
@@ -107,6 +124,7 @@ export async function runPasswordReset(
     link = await deps.generateLink(input.email, input.continueUrl)
   } catch (error) {
     if (deps.isAccountMissing(error)) return 'no_account'
+    if (deps.isEmailTaken?.(error)) return 'email_taken'
     if (deps.isSetupError(error)) return 'not_configured'
     return 'link_failed'
   }
