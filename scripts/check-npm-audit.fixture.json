@@ -1,0 +1,25 @@
+{
+  "auditReportVersion": 2,
+  "vulnerabilities": {
+    "picomatch": {
+      "name": "picomatch",
+      "severity": "high",
+      "via": [
+        { "source": 1247710, "name": "picomatch", "title": "picomatch vulnerable to ReDoS through single-branch repeated extglobs", "url": "https://github.com/advisories/GHSA-fc5q-39xc-vjpf", "severity": "high", "range": "<=4.0.7" }
+      ]
+    },
+    "micromatch": { "name": "micromatch", "severity": "high", "via": ["picomatch"] },
+    "fast-glob": { "name": "fast-glob", "severity": "high", "via": ["micromatch"] },
+    "tinyglobby": { "name": "tinyglobby", "severity": "high", "via": ["picomatch", "loop-a"] },
+    "loop-a": { "name": "loop-a", "severity": "high", "via": ["loop-b"] },
+    "loop-b": { "name": "loop-b", "severity": "high", "via": ["loop-a", "picomatch"] },
+    "qs": {
+      "name": "qs",
+      "severity": "moderate",
+      "via": [
+        { "source": 2, "name": "qs", "url": "https://github.com/advisories/GHSA-6pq8-jhm2-2vcw", "severity": "moderate", "range": "<=6.16.0" }
+      ]
+    },
+    "express-ish": { "name": "express-ish", "severity": "high", "via": ["qs", "picomatch"] }
+  }
+}
