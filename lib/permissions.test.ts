@@ -27,6 +27,7 @@ import {
   canOpenWorkForm,
   canViewMaterials,
   canBookWork,
+  canOpenJobScheduling,
   canAccessTeamSection,
   canAccessWholesalers,
   canManageOrganisationQualifications,
@@ -386,4 +387,24 @@ test('PAYE users with remaining My Timesheets do not see the disabled card copy'
   })
   assert.equal(shouldShowTimesheetsDisabledMessage(paye), true)
   assert.equal(shouldShowTimesheetsDisabledMessage(paye, true), false)
+})
+
+test('job scheduling: operatives never open it; admins and managers do (rulebook canScheduleOperatives)', () => {
+  const operative = user({ role: UserRole.OPERATIVE, permissions: { operativeMode: true, projects: true, smallWorks: true } })
+  const roleOnly = user({ role: UserRole.OPERATIVE })
+  const manager = user({ role: UserRole.MANAGER, permissions: { manager: true, operatives: false, projects: false } })
+  const admin = user({ role: UserRole.ADMIN, permissions: { adminAccess: true } })
+  // A stray operativeMode flag never demotes an admin (rulebook 1.11.0).
+  const adminWithStrayFlag = user({ role: UserRole.ADMIN, permissions: { adminAccess: true, operativeMode: true } })
+  assert.equal(canOpenJobScheduling(operative), false)
+  assert.equal(canOpenJobScheduling(roleOnly), false)
+  assert.equal(canOpenJobScheduling(manager), true)
+  assert.equal(canOpenJobScheduling(admin), true)
+  assert.equal(canOpenJobScheduling(adminWithStrayFlag), true)
+  // Not loaded yet: the scheduling pages wait; canBookWork keeps its old reading (true) for the menu and Home.
+  assert.equal(canOpenJobScheduling(null), false)
+  assert.equal(canBookWork(null), true)
+  assert.equal(canBookWork(operative), false)
+  assert.equal(canBookWork(roleOnly), false)
+  assert.equal(canBookWork(manager), true)
 })
