@@ -5,7 +5,7 @@
  * Doc id: timesheet_{userId}_{unixStartOfDay} using the organisation origin-country zone.
  * Legacy yyyy-MM-dd / ISO-week keys are still read so older web drafts are not lost.
  */
-import { collection, doc, getDoc, getDocs, query, runTransaction, serverTimestamp, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore'
+import { collection, doc, documentId, getDoc, getDocs, query, runTransaction, serverTimestamp, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase/config'
 import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
 import { parseFirestoreDate as parseSharedFirestoreDate, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
@@ -16,7 +16,8 @@ import { timesheetDocumentSubjectId } from '@/lib/canonical/timesheetPeriod'
 import { LONDON_TIME_ZONE, unixStartOfDay, dayKey } from '@/lib/ios-parity/londonTime'
 import { weekStartKey } from '@/lib/timesheets/timesheetWeekUtils'
 import { periodStartKey } from '@/lib/timesheets/paymentRunCopy'
-import { queryIdsSkippingRefused, timesheetOwnerResolver } from '@/lib/timesheets/timesheetQueue'
+import { queryIdsSkippingRefused, timesheetMemberIds, timesheetOwnerResolver } from '@/lib/timesheets/timesheetQueue'
+import { ownIdRowsLast, personTimesheetDocs, timesheetDocumentOwnerId } from '@/lib/timesheets/personTimesheetDocs'
 import { UNKNOWN_BOOKING_PERSON_LABEL, bookingPersonIdHint } from '@/lib/canonical'
 import {
   parseTimesheetEntries,
@@ -1652,6 +1653,44 @@ export async function listTimesheetStates(
   }
 }
 
+/**
+ * Guardrail 1 (`w-timesheet-lookups`): a person's timesheet rows under every id they go by (`personIdSet` →
+ * `timesheetMemberIds`), plus sheets stored without `userId` whose document id names one of those ids
+ * (`timesheetDocumentSubjectId`). `ids[0]` is the person's own id; each row's `userId` is the id it is filed under, and
+ * rows filed under the own id come last so a screen keying one row per pay run keeps that one (`ownIdRowsLast`). A
+ * query the rules refuse (an operative's own former id) is skipped, never an error. Sorted by weekStart, newest first.
+ */
+export async function listPersonTimesheetStates(
+  organizationId: string,
+  ids: ReadonlyArray<string>,
+  limit = 400,
+  versions: 'latest' | 'all' = 'latest'
+): Promise<TimesheetStateRow[]> {
+  const settings = collection(db, 'organizations', organizationId, 'settings')
+  const toDocs = (snap: Awaited<ReturnType<typeof getDocs>>) =>
+    snap.docs.map((entry) => ({ id: entry.id, data: entry.data() as Record<string, unknown> }))
+  const docs = await personTimesheetDocs(ids, {
+    byUserIds: async (chunk) =>
+      toDocs(
+        await getDocs(
+          chunk.length === 1 ? query(settings, where('userId', '==', chunk[0])) : query(settings, where('userId', 'in', chunk))
+        )
+      ),
+    byDocumentPrefix: async (id) => {
+      const prefix = `timesheet_${id}_`
+      return toDocs(await getDocs(query(settings, where(documentId(), '>=', prefix), where(documentId(), '<', `${prefix}\uf8ff`))))
+    },
+    warn: (message, detail) => console.warn(`[timesheets] ${message}`, detail),
+  })
+  const ownerOf = new Map(docs.map((entry) => [entry.id, timesheetDocumentOwnerId(entry)]))
+  const rows = timesheetStateRowsFromDocs(ids[0] ?? '', docs, versions).map((row) => ({
+    ...row,
+    userId: ownerOf.get(row.documentId) || row.userId,
+  }))
+  rows.sort((a, b) => b.weekStart.getTime() - a.weekStart.getTime())
+  return ownIdRowsLast(rows.slice(0, Math.max(1, limit)), ids[0] ?? '')
+}
+
 export type ExportedTimesheetHistoryRow = {
   id: string
   user: import('@/types').User
@@ -1808,11 +1847,17 @@ export async function loadExportedTimesheetHistory({
   }
 
   const batches = await mapInBatches(users, 8, async (member) => {
-    const rows = await listTimesheetStates(organizationId, member.id, 400, 'all')
+    // Guardrail 1: every id the person goes by (a former invite id, a second users document on their email), and
+    // sheets stored without `userId` whose document id names them — never one id per person.
+    const rows = await listPersonTimesheetStates(organizationId, timesheetMemberIds(member, fullRoster), 400, 'all')
     return { member, rows }
   })
   for (const { member, rows } of batches) {
-    for (const row of rows) ingestExportedRow(byId, member, row.weekStart, row.draft, row.endDayKey, row.documentId)
+    for (const row of rows) {
+      // A sheet filed under an id two listed documents share goes to the one it names exactly (`timesheetOwnerResolver`).
+      if (ownerOf(row.userId) !== member) continue
+      ingestExportedRow(byId, member, row.weekStart, row.draft, row.endDayKey, row.documentId)
+    }
   }
 
   const rows = Array.from(byId.values()).sort((a, b) => {

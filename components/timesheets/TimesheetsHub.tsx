@@ -52,7 +52,7 @@ import {
   loadExportedTimesheetHistory,
   loadTimesheetDraftsForStarts,
   loadTimesheetQueueDrafts,
-  listTimesheetStates,
+  listPersonTimesheetStates,
   timesheetSourceDocumentId,
 } from '@/lib/timesheets/timesheetStorage'
 import { emptyTimesheetDraft, type TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
@@ -691,12 +691,16 @@ function MineTimesheetsList({
 
   const periodKey = (period: { start: Date; end: Date }) =>
     `${periodStartKey(period.start, timeZone)}|${dayKey(period.end, timeZone)}`
+  // Guardrail 1: the person's past sheets under every id they go by (`personIdSet`: a former invite id, a second users
+  // document on their email) and sheets stored without `userId` whose document id names them; the own id first.
+  const subjectIds = useMemo(() => timesheetMemberIds(subject, users), [subject, users])
+  const subjectIdsKey = subjectIds.join('|')
 
   useEffect(() => {
     if (!organizationId) return
     let cancelled = false
     const currentKey = periodKey(currentPeriod)
-    listTimesheetStates(organizationId, subject.id, 400).then(async (rows) => {
+    listPersonTimesheetStates(organizationId, subjectIds, 400).then(async (rows) => {
       if (cancelled) return
       const byKey = new Map<string, { start: Date; end: Date }>()
       for (const period of pastPeriods) byKey.set(periodKey(period), period)
@@ -757,7 +761,9 @@ function MineTimesheetsList({
     return () => {
       cancelled = true
     }
-  }, [organizationId, subject.id, currentPeriod, pastPeriods, invoicing, timeZone])
+    // `subjectIds` is read through `subjectIdsKey` (a new roster array with the same ids does not reload).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [organizationId, subject.id, subjectIdsKey, currentPeriod, pastPeriods, invoicing, timeZone])
 
   // Rulebook 1.47.0 §8: a signed, unexported sheet whose bookings changed is back with the person.
   const changeOf = (period: { start: Date; end: Date }) =>
