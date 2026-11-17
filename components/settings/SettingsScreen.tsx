@@ -48,6 +48,7 @@ import {
 import { displayOrganizationName } from '@/lib/settings/organizationSettings'
 import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
 import { useSettingsDirty, useSettingsLeave } from '@/components/settings/SettingsDirty'
+import { PasskeysSection } from '@/components/settings/PasskeysSection'
 import { OrganisationHubPanel, type OrganisationHubDestination } from '@/components/settings/panels/OrganisationHubPanel'
 import { WarningsPanel } from '@/components/settings/panels/WarningsPanel'
 import { MaterialCutOffPanel } from '@/components/settings/panels/MaterialCutOffPanel'
@@ -462,6 +463,7 @@ function PasswordPanel({ onBack }: { onBack: () => void }) {
           onClick={changePassword}
         />
       </SaveBar>
+      <PasskeysSection />
     </div>
   )
 }
