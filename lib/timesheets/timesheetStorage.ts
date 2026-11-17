@@ -1653,6 +1653,9 @@ export async function listTimesheetStates(
   }
 }
 
+/** The end of a Firestore document-id prefix range: U+F8FF, the highest code point used in ids. */
+const DOCUMENT_ID_PREFIX_END = '\uf8ff'
+
 /**
  * Guardrail 1 (`w-timesheet-lookups`): a person's timesheet rows under every id they go by (`personIdSet` →
  * `timesheetMemberIds`), plus sheets stored without `userId` whose document id names one of those ids
@@ -1664,7 +1667,12 @@ export async function listPersonTimesheetStates(
   organizationId: string,
   ids: ReadonlyArray<string>,
   limit = 400,
-  versions: 'latest' | 'all' = 'latest'
+  versions: 'latest' | 'all' = 'latest',
+  /**
+   * Review of #386 (N1): ask the document-id prefix (sheets stored without `userId`) only when the viewer may run it —
+   * the rules refuse it to an operative (`tests/timesheetLookups.rules.test.ts`), so for them it only logged warnings.
+   */
+  includeDocumentPrefix = true
 ): Promise<TimesheetStateRow[]> {
   const settings = collection(db, 'organizations', organizationId, 'settings')
   const toDocs = (snap: Awaited<ReturnType<typeof getDocs>>) =>
@@ -1676,10 +1684,14 @@ export async function listPersonTimesheetStates(
           chunk.length === 1 ? query(settings, where('userId', '==', chunk[0])) : query(settings, where('userId', 'in', chunk))
         )
       ),
-    byDocumentPrefix: async (id) => {
-      const prefix = `timesheet_${id}_`
-      return toDocs(await getDocs(query(settings, where(documentId(), '>=', prefix), where(documentId(), '<', `${prefix}\uf8ff`))))
-    },
+    byDocumentPrefix: includeDocumentPrefix
+      ? async (id) => {
+          const prefix = `timesheet_${id}_`
+          return toDocs(
+            await getDocs(query(settings, where(documentId(), '>=', prefix), where(documentId(), '<', prefix + DOCUMENT_ID_PREFIX_END)))
+          )
+        }
+      : null,
     warn: (message, detail) => console.warn(`[timesheets] ${message}`, detail),
   })
   const ownerOf = new Map(docs.map((entry) => [entry.id, timesheetDocumentOwnerId(entry)]))
@@ -1773,7 +1785,9 @@ export async function loadExportedTimesheetHistory({
   organizationId,
   users,
   roster,
-  includeUnresolved = false,
+  includeUnresolved: includeUnresolvedAsked = false,
+  rosterLoaded = false,
+  viewerIsOperative = false,
 }: {
   organizationId: string
   users: import('@/types').User[]
@@ -1783,11 +1797,19 @@ export async function loadExportedTimesheetHistory({
    * Missing: `users`.
    */
   roster?: ReadonlyArray<import('@/types').User>
-  /** List an exported sheet whose stored person is nobody in the organisation as "Unknown person · …" (admins). */
+  /**
+   * List an exported sheet whose stored person is nobody in the organisation as "Unknown person · …" (admins). Review
+   * of #386 (S5): only once the whole roster has loaded (`rosterLoaded` and a non-empty `roster`), so a person still
+   * loading is never shown as unknown.
+   */
   includeUnresolved?: boolean
+  rosterLoaded?: boolean
+  /** Review of #386 (N1): the viewer is at the operative level (the rules refuse them the document-id prefix query). */
+  viewerIsOperative?: boolean
 }): Promise<ExportedTimesheetHistoryRow[]> {
+  const includeUnresolved = includeUnresolvedAsked && rosterLoaded && (roster?.length ?? 0) > 0
   if (users.length === 0 && !includeUnresolved) return []
-  const cacheKey = `${exportedHistoryCacheKey(organizationId, users)}|${includeUnresolved ? 'u' : ''}|${(roster ?? []).length}`
+  const cacheKey = `${exportedHistoryCacheKey(organizationId, users)}|${includeUnresolved ? 'u' : ''}|${(roster ?? []).length}|${viewerIsOperative ? 'o' : ''}`
   const now = Date.now()
   if (exportedHistoryMemo && exportedHistoryMemo.key === cacheKey && now - exportedHistoryMemo.at < EXPORTED_HISTORY_TTL_MS) {
     return exportedHistoryMemo.rows
@@ -1809,10 +1831,18 @@ export async function loadExportedTimesheetHistory({
     )
   }
 
+  // Review of #386 (S3): the per-person reads below run only when this company-wide read is REFUSED (or fails) — a
+  // read that answers with no exported sheets is the answer, never a reason to ask person by person.
+  let companyWide: Awaited<ReturnType<typeof getDocs>> | null = null
   try {
-    const snap = await getDocs(
+    companyWide = await getDocs(
       query(collection(db, 'organizations', organizationId, 'settings'), where('exportedAt', '!=', null))
     )
+  } catch {
+    // Missing index or rules — fall back to the per-person reads.
+  }
+  if (companyWide) {
+    const snap = companyWide
     for (const entry of snap.docs) {
       if (!entry.id.startsWith('timesheet_')) continue
       const data = entry.data() as Record<string, unknown>
@@ -1830,26 +1860,22 @@ export async function loadExportedTimesheetHistory({
       if (!member) continue
       ingestData(member, weekStart, data, entry.id)
     }
-    if (byId.size > 0) {
-      const rows = Array.from(byId.values()).sort((a, b) => {
-        const left = a.draft.exportedAt?.getTime() || 0
-        const right = b.draft.exportedAt?.getTime() || 0
-        if (left !== right) return right - left
-        const an = `${a.user.firstName} ${a.user.surname}`.trim()
-        const bn = `${b.user.firstName} ${b.user.surname}`.trim()
-        return an.localeCompare(bn)
-      })
-      exportedHistoryMemo = { key: cacheKey, rows, at: now }
-      return rows
-    }
-  } catch {
-    // Missing index or rules — fall back to per-user list.
+    const rows = Array.from(byId.values()).sort((a, b) => {
+      const left = a.draft.exportedAt?.getTime() || 0
+      const right = b.draft.exportedAt?.getTime() || 0
+      if (left !== right) return right - left
+      const an = `${a.user.firstName} ${a.user.surname}`.trim()
+      const bn = `${b.user.firstName} ${b.user.surname}`.trim()
+      return an.localeCompare(bn)
+    })
+    exportedHistoryMemo = { key: cacheKey, rows, at: now }
+    return rows
   }
 
   const batches = await mapInBatches(users, 8, async (member) => {
     // Guardrail 1: every id the person goes by (a former invite id, a second users document on their email), and
     // sheets stored without `userId` whose document id names them — never one id per person.
-    const rows = await listPersonTimesheetStates(organizationId, timesheetMemberIds(member, fullRoster), 400, 'all')
+    const rows = await listPersonTimesheetStates(organizationId, timesheetMemberIds(member, fullRoster), 400, 'all', !viewerIsOperative)
     return { member, rows }
   })
   for (const { member, rows } of batches) {

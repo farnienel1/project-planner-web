@@ -106,18 +106,40 @@ test('personTimesheetDocs: a refused alias query never costs the own sheets', as
   assert.ok(warnings.length > 0)
 })
 
-test('personTimesheetDocs: a viewer allowed every query gets every sheet once', async () => {
+/**
+ * Review of #386 (S1): Firestore matches ids exactly as stored, so these mocks do too — `userId ==` / `in` and the
+ * document-id prefix are case-sensitive.
+ */
+function caseSensitiveQueries(source: SettingsDocument[]) {
+  return {
+    byUserIds: async (chunk: string[]) => source.filter((entry) => chunk.includes(String(entry.data.userId ?? ''))),
+    byDocumentPrefix: async (id: string) => source.filter((entry) => entry.id.startsWith(`timesheet_${id}_`)),
+  }
+}
+
+test('personTimesheetDocs: a viewer allowed every query gets every sheet filed under an id as stored, once', async () => {
   const ids = timesheetMemberIds(farnie, roster)
-  const found = await personTimesheetDocs(ids, {
-    byUserIds: async (chunk) => {
-      const keys = chunk.map((id) => id.toLowerCase())
-      return docs.filter((entry) => keys.includes(String(entry.data.userId ?? '').toLowerCase()))
-    },
-    byDocumentPrefix: async (id) =>
-      docs.filter((entry) => entry.id.toLowerCase().startsWith(`timesheet_${id.toLowerCase()}_`)),
-  })
-  assert.equal(found.length, 5)
-  assert.equal(new Set(found.map((entry) => entry.id)).size, 5)
+  const found = (await personTimesheetDocs(ids, caseSensitiveQueries(docs))).map((entry) => entry.id).sort()
+  assert.deepEqual(found, [
+    'timesheet_INVITE-1_1759276800', // userId == the former invite id
+    'timesheet_u1_1754006400', // no userId, the own id's document-id prefix
+    'timesheet_u1_1761955200', // userId == own id
+    'timesheet_u1b_1760486400', // same-email second account
+  ].sort())
+  // The old one-id read (`userId == 'u1'`) lost nothing.
+  const before = docs.filter((entry) => entry.id.startsWith('timesheet_') && entry.data.userId === ids[0])
+  for (const entry of before) assert.ok(found.includes(entry.id), `${entry.id} dropped`)
+  // Known limit (S1): a sheet stored without userId under the former id in ANOTHER letter case
+  // (`timesheet_invite-1_…`) is not found by these case-sensitive queries.
+  assert.ok(!found.includes('timesheet_invite-1_1756684800'))
+})
+
+test('personTimesheetDocs: no document-id query when the viewer may not run it (an operative)', async () => {
+  const ids = timesheetMemberIds(farnie, roster)
+  const queries = caseSensitiveQueries(docs)
+  const found = (await personTimesheetDocs(ids, { ...queries, byDocumentPrefix: null })).map((entry) => entry.id)
+  assert.ok(!found.includes('timesheet_u1_1754006400'), 'the no-userId sheet needs the prefix query')
+  assert.ok(found.includes('timesheet_u1_1761955200'))
 })
 
 test('personTimesheetDocs: alias ids are asked in chunks of 10', async () => {

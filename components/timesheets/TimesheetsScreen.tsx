@@ -34,7 +34,7 @@ import {
   weekdayPaidHours,
   timesheetExportOwnSheetNotice,
 } from '@/lib/canonical'
-import { staffAccountRole } from '@/lib/permissions'
+import { isOperativeMode, staffAccountRole } from '@/lib/permissions'
 import { loadTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
 import { useSnapshotAutoRepair } from '@/lib/timesheets/useSnapshotAutoRepair'
 import type { RepairSheet } from '@/lib/timesheets/snapshotAutoRepair'
@@ -274,6 +274,9 @@ export function TimesheetsScreen({
             users: roster,
             roster: users,
             includeUnresolved: hasAdminAccess(user),
+            // Review of #386 (S5): "Unknown person" rows only once the roster has loaded.
+            rosterLoaded: !loading && users.length > 0,
+            viewerIsOperative: isOperativeMode(user),
           })
         )
       } catch {
@@ -308,7 +311,7 @@ export function TimesheetsScreen({
     } finally {
       if (!stale()) setRecordsLoading(false)
     }
-  }, [organization?.id, roster, groups, users, runs, runsKey, timeZone, teamTab])
+  }, [organization?.id, roster, groups, users, runs, runsKey, timeZone, teamTab, loading])
 
   useEffect(() => {
     void reload()

@@ -19,6 +19,7 @@ import {
   canAccessOperativeTimesheets,
   canAccessTimesheetsSurface,
   hasAdminAccess,
+  isOperativeMode,
   shouldShowTimesheetsDisabledMessage,
   userTimesheetSubjectIds,
   exportedTimesheetSubjectIds,
@@ -638,6 +639,7 @@ export function TimesheetsHub() {
               invoicing={invoicing}
               timeZone={timeZone}
               changeCatalogue={changeCatalogue}
+              rosterLoaded={!usersLoading && users.length > 0}
               onStats={setHubStats}
               onClick={() => router.push(timesheetsTeamHref({ tab: 'awaiting' }))}
             />
@@ -700,7 +702,8 @@ function MineTimesheetsList({
     if (!organizationId) return
     let cancelled = false
     const currentKey = periodKey(currentPeriod)
-    listPersonTimesheetStates(organizationId, subjectIds, 400).then(async (rows) => {
+    // Review of #386 (N1): no document-id query for an operative (the rules refuse it).
+    listPersonTimesheetStates(organizationId, subjectIds, 400, 'latest', !isOperativeMode(subject)).then(async (rows) => {
       if (cancelled) return
       const byKey = new Map<string, { start: Date; end: Date }>()
       for (const period of pastPeriods) byKey.set(periodKey(period), period)
@@ -947,11 +950,14 @@ function ManagerTimesheetsTile({
   invoicing,
   timeZone,
   changeCatalogue,
+  rosterLoaded,
   onStats,
   onClick,
 }: {
   /** Rulebook 1.47.0 §8: the live bookings, so a reopened sheet is counted where it now is. */
   changeCatalogue: BookingChangeCatalogue
+  /** Review of #386 (S5): the organisation roster has loaded (admins' "Unknown person" rows wait for it). */
+  rosterLoaded: boolean
   user: User
   users: User[]
   organizationId?: string
@@ -986,7 +992,7 @@ function ManagerTimesheetsTile({
 
   // Review of #368: the queries reload only when the people they ask about change (their ids), never on every roster
   // snapshot; the rows are mapped onto the people from the current roster below.
-  const queryKey = `${reviewIds.join(',')}#${exportedRoster.map((member) => member.id).join(',')}#${hasAdminAccess(user) ? 'admin' : ''}`
+  const queryKey = `${reviewIds.join(',')}#${exportedRoster.map((member) => member.id).join(',')}#${hasAdminAccess(user) ? 'admin' : ''}#${rosterLoaded ? 'roster' : ''}`
   const usersRef = useRef(users)
   usersRef.current = users
   const exportedRosterRef = useRef(exportedRoster)
@@ -1009,7 +1015,15 @@ function ManagerTimesheetsTile({
         : Promise.resolve(new Map<string, Map<string, TimesheetDraft>>()),
       // 17 Nov follow-up: the same Exported list as User Timesheets → Exported (former ids matched; admins also count
       // a sheet whose person is nobody in the organisation).
-      loadExportedTimesheetHistory({ organizationId, users: exportedRoster, roster: users, includeUnresolved: hasAdminAccess(user) }),
+      loadExportedTimesheetHistory({
+        organizationId,
+        users: exportedRoster,
+        roster: users,
+        includeUnresolved: hasAdminAccess(user),
+        // Review of #386 (S5): "Unknown person" rows only once the roster has loaded.
+        rosterLoaded,
+        viewerIsOperative: isOperativeMode(user),
+      }),
     ])
       .then(([byRun, exportedRows]) => {
         if (cancelled) return

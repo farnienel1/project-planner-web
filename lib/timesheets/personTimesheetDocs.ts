@@ -2,8 +2,11 @@
  * A person's timesheet documents under every id they go by (guardrail 1). The ids are the rulebook's `personIdSet`
  * (`timesheetMemberIds`: own id, `formerUserIds`, `sameEmailUserIds`, same-email users documents); a document belongs
  * to the person when its stored `userId` is one of them, or — for a sheet an older build stored without `userId` —
- * when its document id names one of them (`timesheetDocumentSubjectId`, rulebook 1.31.0). Ids compare without case
- * (`normalizeDocumentId`). No pay, period or status rule here: the rows go on to the existing readers.
+ * when its document id names one of them (`timesheetDocumentSubjectId`, rulebook 1.31.0). Firestore queries match ids
+ * exactly as stored (case-sensitive), so each id is asked as `personIdSet` lists it; the filter below then compares
+ * without case (`normalizeDocumentId`). A sheet stored under an id in another letter case than any id the person's
+ * documents list is not found by these queries (the company-wide Exported read still matches it). No pay, period or
+ * status rule here: the rows go on to the existing readers.
  */
 import { normalizeDocumentId } from '@/lib/canonical'
 import { timesheetDocumentSubjectId } from '@/lib/canonical/timesheetPeriod'
@@ -55,8 +58,11 @@ export function ownIdRowsLast<T extends { userId: string }>(rows: ReadonlyArray<
 export type PersonTimesheetQueries = {
   /** Settings documents with `userId ==` the one id given, or `userId in` the ids given. */
   byUserIds: (ids: string[]) => Promise<SettingsDocument[]>
-  /** Settings documents whose document id starts `timesheet_{id}_` (sheets stored without `userId`). */
-  byDocumentPrefix: (id: string) => Promise<SettingsDocument[]>
+  /**
+   * Settings documents whose document id starts `timesheet_{id}_` (sheets stored without `userId`); null when the
+   * viewer may not run that query (an operative, review of #386 N1).
+   */
+  byDocumentPrefix: ((id: string) => Promise<SettingsDocument[]>) | null
   /** Logged, never shown. */
   warn?: (message: string, detail: unknown) => void
 }
@@ -100,9 +106,10 @@ export async function personTimesheetDocs(
       )
     )
   }
-  for (const id of unique) {
+  const byDocumentPrefix = queries.byDocumentPrefix
+  for (const id of byDocumentPrefix ? unique : []) {
     tasks.push(
-      queries.byDocumentPrefix(id).then(
+      byDocumentPrefix!(id).then(
         (docs) => void found.push(...docs),
         (error) => warn('document-id query failed', { id, error })
       )

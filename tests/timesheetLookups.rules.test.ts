@@ -107,3 +107,32 @@ test('an operative: own userId query allowed; former-id and document-id queries 
   await assertFails(getDocs(query(settings, where('userId', '==', OP_INVITE))))
   await assertFails(getDocs(prefixQuery(fs, OP)))
 })
+
+test('privatePay on: admins every query; a line manager only their report\'s current id; the company-wide read refused to them', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'platformConfig', 'app'), { privatePay: true }, { merge: true })
+  })
+  try {
+    const admin = await db(ADMIN)
+    const adminSettings = collection(admin, 'organizations', ORG, 'settings')
+    await assertSucceeds(getDocs(query(adminSettings, where('userId', 'in', [OP_INVITE]))))
+    await assertSucceeds(getDocs(prefixQuery(admin, OP)))
+    await assertSucceeds(getDocs(query(adminSettings, where('exportedAt', '!=', null))))
+
+    // The line manager falls back to person-by-person reads (the company-wide read is refused) and gets the report's
+    // sheets under their current id; the former-id and document-id queries are refused and skipped by the apps.
+    const lm = await db(LM)
+    const lmSettings = collection(lm, 'organizations', ORG, 'settings')
+    await assertFails(getDocs(query(lmSettings, where('exportedAt', '!=', null))))
+    await assertSucceeds(getDocs(query(lmSettings, where('userId', '==', OP))))
+    await assertFails(getDocs(query(lmSettings, where('userId', 'in', [OP_INVITE]))))
+    await assertFails(getDocs(prefixQuery(lm, OP)))
+
+    const op = await db(OP)
+    await assertSucceeds(getDocs(query(collection(op, 'organizations', ORG, 'settings'), where('userId', '==', OP))))
+  } finally {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'platformConfig', 'app'), { privatePay: false }, { merge: true })
+    })
+  }
+})
