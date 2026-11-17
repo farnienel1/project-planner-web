@@ -43,6 +43,7 @@ function emulatorSession(uid: string, overrides: Record<string, unknown> = {}): 
     aud: 'demo-project',
     sub: uid,
     iat: nowS() - 10,
+    auth_time: nowS() - 20,
     exp: nowS() + 12 * 3600,
     ...overrides,
   }
@@ -50,7 +51,7 @@ function emulatorSession(uid: string, overrides: Record<string, unknown> = {}): 
 }
 
 function signedLooking(uid: string): string {
-  const claims = { iss: 'https://session.firebase.google.com/demo-project', aud: 'demo-project', sub: uid, iat: nowS() - 10, exp: nowS() + 3600 }
+  const claims = { iss: 'https://session.firebase.google.com/demo-project', aud: 'demo-project', sub: uid, iat: nowS() - 10, auth_time: nowS() - 20, exp: nowS() + 3600 }
   return `${b64({ alg: 'RS256', kid: 'unseen-kid', typ: 'JWT' })}.${b64(claims)}.${Buffer.from('sig').toString('base64url')}`
 }
 
@@ -114,7 +115,7 @@ test('middleware: pages outside /dashboard and /developer are unaffected', async
 })
 
 /** accounts:lookup verifies "token-<uid>"; createSessionCookie returns a fresh emulator cookie for that uid. */
-function stubAuth(createStatus = 200) {
+function stubAuth(createStatus = 200, options: { googleError?: string; mintedAudience?: string } = {}) {
   const calls = { create: 0 }
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
@@ -122,8 +123,12 @@ function stubAuth(createStatus = 200) {
     const uid = idToken?.startsWith('token-') ? idToken.slice(6) : ''
     if (url.includes(':createSessionCookie')) {
       calls.create += 1
-      if (createStatus !== 200) return new Response('{}', { status: createStatus })
-      return new Response(JSON.stringify({ sessionCookie: emulatorSession(uid) }))
+      if (createStatus !== 200) {
+        const body = options.googleError ? { error: { code: createStatus, message: `${options.googleError} : details` } } : {}
+        return new Response(JSON.stringify(body), { status: createStatus })
+      }
+      const overrides = options.mintedAudience ? { aud: options.mintedAudience } : {}
+      return new Response(JSON.stringify({ sessionCookie: emulatorSession(uid, overrides) }))
     }
     if (url.includes('accounts:lookup')) {
       if (!uid) return new Response('{}', { status: 400 })
@@ -199,8 +204,8 @@ for (const failure of [429, 500, 503]) {
   })
 }
 
-test('status: Firebase refuses the ID token at mint (400) → not verified, session cleared', async () => {
-  stubAuth(400)
+test('status: Firebase refuses the ID token at mint (400 INVALID_ID_TOKEN) → not verified, session cleared', async () => {
+  stubAuth(400, { googleError: 'INVALID_ID_TOKEN' })
   const response = await status(statusRequest({ ok: ok('userA'), session: emulatorSession('userB') }, 'token-userA'))
   assert.equal(response.status, 200)
   assert.equal(((await response.json()) as { verified?: boolean }).verified, false)
@@ -211,3 +216,56 @@ test('logout (sign-out, idle sign-out, user switch) expires the session cookie',
   const response = await logout(pageRequest('/api/auth/mfa/logout', { ok: ok('userA'), session: emulatorSession('userA') }, { method: 'POST' }))
   assert.equal(sessionCleared(response), true)
 })
+
+/** Review of #359, item 1: a minted cookie the middleware would refuse must never answer "verified". */
+test('status: a freshly minted cookie that fails the middleware check is a setup error, not "verified" (no loop)', async () => {
+  stubAuth(200, { mintedAudience: 'another-project' })
+  const errors: unknown[][] = []
+  const realError = console.error
+  console.error = (...args: unknown[]) => errors.push(args)
+  try {
+    const response = await status(statusRequest({ ok: ok('userA') }, 'token-userA'))
+    assert.equal(response.status, 503)
+    assert.deepEqual(await response.json(), { error: 'setup', retry: false })
+    assert.equal(setSessionValue(response), null)
+    assert.ok(errors.some((args) => String(args[0]).includes('SETUP ERROR')))
+  } finally {
+    console.error = realError
+  }
+})
+
+/** Review of #359, item 1: the emulator switch is the same for mint and verify. */
+test('status: with the emulator switch off, nothing is minted against the emulator', async () => {
+  delete process.env.NEXT_PUBLIC_USE_EMULATORS
+  const calls = stubAuth()
+  const realError = console.error
+  console.error = () => {}
+  try {
+    // No service account in tests: the server cannot mint → a setup error, never a cookie the middleware refuses.
+    const saved = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+    delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+    const response = await status(statusRequest({ ok: ok('userA') }, 'token-userA'))
+    if (saved !== undefined) process.env.FIREBASE_SERVICE_ACCOUNT_JSON = saved
+    assert.equal(response.status, 503)
+    assert.equal(((await response.json()) as { error?: string }).error, 'setup')
+    assert.equal(calls.create, 0)
+  } finally {
+    console.error = realError
+  }
+})
+
+/** Review of #359, item 2: Google 401 / 403 is a setup error with its own answer, not the "trying again" one. */
+for (const failure of [401, 403]) {
+  test(`status: createSessionCookie ${failure} is a setup error`, async () => {
+    stubAuth(failure, { googleError: 'PERMISSION_DENIED' })
+    const realError = console.error
+    console.error = () => {}
+    try {
+      const response = await status(statusRequest({ ok: ok('userA') }, 'token-userA'))
+      assert.equal(response.status, 503)
+      assert.deepEqual(await response.json(), { error: 'setup', retry: false })
+    } finally {
+      console.error = realError
+    }
+  })
+}

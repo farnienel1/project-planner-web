@@ -67,6 +67,7 @@ import {
   grantMfaSkip,
   isMfaGateOpen,
   isMfaRequiredError,
+  isMfaSetupError,
   isMfaStatusUnavailable,
   MfaRequiredError,
   mfaStatusRetryDelayMs,
@@ -273,6 +274,13 @@ async function syncMfaStatusFromCookie() {
       mfaStatusUnavailableRetries = 0
       break
     } catch (statusError) {
+      if (isMfaSetupError(statusError)) {
+        // A server setup problem (review of #359): retrying will not help. Send the person to the code screen,
+        // which shows the setup message, rather than retrying forever or reading it as a passing failure.
+        const latest = useAuthStore.getState()
+        useAuthStore.setState({ mfaStatusKnown: true, mfaVerified: false, mfaPending: Boolean(latest.firebaseUser || latest.user) })
+        return
+      }
       if (attempt < 2) {
         await new Promise((resolve) => setTimeout(resolve, authLoadRetryDelayMs(attempt)))
         continue

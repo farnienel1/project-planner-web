@@ -11,7 +11,8 @@ import {
   type SessionCookieCheck,
   type SessionKeyFetcher,
 } from './mfaSessionCookie.ts'
-import { mintFirebaseSessionCookie } from './mfaSessionCookieMint.ts'
+import { googleErrorCode, mintFirebaseSessionCookie } from './mfaSessionCookieMint.ts'
+import { GoogleAccessTokenError } from '../../owner/identityToolkitAdmin.ts'
 import { clearMfaCookies, clearSessionCookie, MFA_SESSION_COOKIE_HOST, MFA_SESSION_COOKIE_LEGACY, mfaCookieNames } from './mfaCookiePolicy.ts'
 
 const PROJECT = 'demo-project'
@@ -163,7 +164,7 @@ test('key fetcher: keys are cached, and stale keys still verify when a refresh f
 
 test('middleware gate: both cookies for the same uid open the page; anything else goes to the code screen', () => {
   const ok = { uid: 'user-a' }
-  const session = (uid: string): SessionCookieCheck => ({ status: 'ok', claims: { uid, exp: NOW + 3600_000, iat: NOW, authTime: null } })
+  const session = (uid: string): SessionCookieCheck => ({ status: 'ok', claims: { uid, exp: NOW + 3600_000, iat: NOW, authTime: NOW } })
   assert.deepEqual(mfaPageGateDecision(ok, session('user-a')), { action: 'allow' })
   // A cookie for user A while another user's session is in the browser: refused, and the session cookie cleared.
   assert.deepEqual(mfaPageGateDecision(ok, session('user-b')), { action: 'verify', clearSession: true })
@@ -175,7 +176,7 @@ test('middleware gate: both cookies for the same uid open the page; anything els
 })
 
 test('status plan: keep a fresh session for the same uid, otherwise mint', () => {
-  const session = (uid: string, exp: number): SessionCookieCheck => ({ status: 'ok', claims: { uid, exp, iat: NOW, authTime: null } })
+  const session = (uid: string, exp: number): SessionCookieCheck => ({ status: 'ok', claims: { uid, exp, iat: NOW, authTime: NOW } })
   assert.equal(sessionCookiePlan('a', session('a', NOW + 2 * MFA_SESSION_REFRESH_BEFORE_MS), NOW), 'keep')
   assert.equal(sessionCookiePlan('a', session('a', NOW + MFA_SESSION_REFRESH_BEFORE_MS - 1), NOW), 'mint')
   assert.equal(sessionCookiePlan('a', session('b', NOW + 2 * MFA_SESSION_REFRESH_BEFORE_MS), NOW), 'mint')
@@ -183,11 +184,40 @@ test('status plan: keep a fresh session for the same uid, otherwise mint', () =>
   assert.equal(sessionCookiePlan('a', { status: 'unavailable' }, NOW), 'mint')
 })
 
-test('mint: Firebase createSessionCookie with the service-account token; 400 is invalid, the rest is retry', async () => {
+function quietConsole() {
+  const lines: string[] = []
+  const realError = console.error
+  const realWarn = console.warn
+  console.error = (...args: unknown[]) => lines.push(args.map((arg) => (typeof arg === 'string' ? arg : JSON.stringify(arg))).join(' '))
+  console.warn = console.error
+  return {
+    lines,
+    restore() {
+      console.error = realError
+      console.warn = realWarn
+    },
+  }
+}
+
+const SECRET_TOKEN = 'id-token-SECRET-abc123'
+
+function respondWith(status: number, body: object = {}) {
+  return mintFirebaseSessionCookie(SECRET_TOKEN, {
+    emulator: false,
+    projectId: PROJECT,
+    serviceAccountProject: PROJECT,
+    accessToken: async () => ({ token: 'sa-token', projectId: PROJECT }),
+    fetchImpl: (async () => new Response(JSON.stringify(body), { status })) as typeof fetch,
+  })
+}
+
+test('mint: Firebase createSessionCookie with the service-account token, for the app project', async () => {
   let seen: { url: string; init: RequestInit } | null = null
   const ok = await mintFirebaseSessionCookie('id-token', {
     emulator: false,
     base: 'https://identitytoolkit.googleapis.com/v1',
+    projectId: PROJECT,
+    serviceAccountProject: PROJECT,
     accessToken: async () => ({ token: 'sa-token', projectId: PROJECT }),
     fetchImpl: (async (url: string, init: RequestInit) => {
       seen = { url, init }
@@ -198,35 +228,179 @@ test('mint: Firebase createSessionCookie with the service-account token; 400 is 
   assert.equal(seen!.url, `https://identitytoolkit.googleapis.com/v1/projects/${PROJECT}:createSessionCookie`)
   assert.equal((seen!.init.headers as Record<string, string>).Authorization, 'Bearer sa-token')
   assert.deepEqual(JSON.parse(String(seen!.init.body)), { idToken: 'id-token', validDuration: '43200' })
-
-  const respond = (status: number) =>
-    mintFirebaseSessionCookie('id-token', {
-      emulator: false,
-      accessToken: async () => ({ token: 't', projectId: PROJECT }),
-      fetchImpl: (async () => new Response('{}', { status })) as typeof fetch,
-    })
-  assert.deepEqual(await respond(400), { status: 'invalid' })
-  for (const status of [401, 403, 429, 500, 503]) assert.deepEqual(await respond(status), { status: 'unavailable' })
-  assert.deepEqual(
-    await mintFirebaseSessionCookie('id-token', {
-      emulator: false,
-      accessToken: async () => {
-        throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON is not set')
-      },
-    }),
-    { status: 'unavailable' }
-  )
-  assert.deepEqual(
-    await mintFirebaseSessionCookie('id-token', {
-      emulator: false,
-      accessToken: async () => ({ token: 't', projectId: PROJECT }),
-      fetchImpl: (async () => {
-        throw new Error('offline')
-      }) as typeof fetch,
-    }),
-    { status: 'unavailable' }
-  )
   assert.deepEqual(await mintFirebaseSessionCookie(''), { status: 'invalid' })
+})
+
+test('mint: a refused ID token (400 with an ID-token error) is invalid; 429 / 5xx are retry', async () => {
+  const quiet = quietConsole()
+  try {
+    for (const code of ['INVALID_ID_TOKEN', 'TOKEN_EXPIRED', 'USER_DISABLED']) {
+      assert.deepEqual(await respondWith(400, { error: { code: 400, message: `${code} : x` } }), { status: 'invalid' })
+    }
+    for (const status of [429, 500, 503]) assert.deepEqual(await respondWith(status), { status: 'unavailable' })
+  } finally {
+    quiet.restore()
+  }
+})
+
+test('mint: 401 / 403 and another 400 are setup errors, logged with the status and Google code only', async () => {
+  const quiet = quietConsole()
+  try {
+    assert.equal((await respondWith(401, { error: { message: 'UNAUTHENTICATED' } })).status, 'setup')
+    assert.equal((await respondWith(403, { error: { message: 'PERMISSION_DENIED : no' } })).status, 'setup')
+    assert.equal((await respondWith(400, { error: { message: 'INVALID_DURATION' } })).status, 'setup')
+    const text = quiet.lines.join('\n')
+    assert.match(text, /SETUP ERROR/)
+    assert.match(text, /403/)
+    assert.match(text, /PERMISSION_DENIED/)
+    assert.doesNotMatch(text, /SECRET|sa-token/)
+  } finally {
+    quiet.restore()
+  }
+})
+
+test('mint: a missing or unusable service account is a setup error; Google OAuth unreachable is retry', async () => {
+  const quiet = quietConsole()
+  try {
+    const failingToken = (kind: 'setup' | 'unavailable') =>
+      mintFirebaseSessionCookie(SECRET_TOKEN, {
+        emulator: false,
+        projectId: PROJECT,
+        serviceAccountProject: null,
+        accessToken: async () => {
+          throw new GoogleAccessTokenError('x', kind, kind === 'setup' ? 400 : 503, kind === 'setup' ? 'invalid_grant' : null)
+        },
+      })
+    assert.deepEqual(await failingToken('setup'), { status: 'setup', reason: 'service-account' })
+    assert.deepEqual(await failingToken('unavailable'), { status: 'unavailable' })
+    // A plain error (for example a missing account read by an older helper) is a setup error, never a retry loop.
+    assert.equal(
+      (
+        await mintFirebaseSessionCookie(SECRET_TOKEN, {
+          emulator: false,
+          projectId: PROJECT,
+          serviceAccountProject: null,
+          accessToken: async () => {
+            throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON is not set on the server.')
+          },
+        })
+      ).status,
+      'setup'
+    )
+    assert.deepEqual(
+      await mintFirebaseSessionCookie(SECRET_TOKEN, {
+        emulator: false,
+        projectId: PROJECT,
+        serviceAccountProject: PROJECT,
+        accessToken: async () => ({ token: 't', projectId: PROJECT }),
+        fetchImpl: (async () => {
+          throw new Error('offline')
+        }) as typeof fetch,
+      }),
+      { status: 'unavailable' }
+    )
+    assert.doesNotMatch(quiet.lines.join('\n'), /SECRET/)
+  } finally {
+    quiet.restore()
+  }
+})
+
+test('mint: a service account from another project than the app is a setup error (never a cookie the middleware refuses)', async () => {
+  const quiet = quietConsole()
+  let called = false
+  try {
+    const result = await mintFirebaseSessionCookie(SECRET_TOKEN, {
+      emulator: false,
+      projectId: PROJECT,
+      serviceAccountProject: 'other-project',
+      accessToken: async () => {
+        called = true
+        return { token: 't', projectId: 'other-project' }
+      },
+    })
+    assert.deepEqual(result, { status: 'setup', reason: 'project-mismatch' })
+    assert.equal(called, false)
+    assert.match(quiet.lines.join('\n'), /other-project/)
+    assert.deepEqual(await mintFirebaseSessionCookie(SECRET_TOKEN, { emulator: true, projectId: '' }), {
+      status: 'setup',
+      reason: 'no-project',
+    })
+  } finally {
+    quiet.restore()
+  }
+})
+
+test('googleErrorCode: reads Google\'s code and nothing else', () => {
+  assert.equal(googleErrorCode({ error: { message: 'INVALID_ID_TOKEN : Firebase ID token has expired' } }), 'INVALID_ID_TOKEN')
+  assert.equal(googleErrorCode({ error: { message: 'PERMISSION_DENIED' } }), 'PERMISSION_DENIED')
+  assert.equal(googleErrorCode({ error: { message: 'eyJhbGciOi.secret' } }), '')
+  assert.equal(googleErrorCode(null), '')
+})
+
+test('session cookie: a cookie without auth_time is refused, as firebase-admin does', async () => {
+  const claims = claimsFor('user-a') as Record<string, unknown>
+  delete claims.auth_time
+  assert.deepEqual(await verify(await signCookie(claims)), { status: 'invalid', reason: 'auth-time' })
+  assert.deepEqual(await verify(await signCookie(claimsFor('user-a', { auth_time: NOW_S + 3600 }))), {
+    status: 'invalid',
+    reason: 'auth-time',
+  })
+})
+
+/** Review of #359, item 3: a just-rotated key never clears a valid cookie. */
+test('key fetcher: an unknown kid within a minute of a refresh is "try again", then picked up on the next refresh', async () => {
+  let now = NOW
+  let published: object[] = [{ ...signer.jwk, kid: 'k1' }]
+  const counter = { calls: 0 }
+  const fetcher = createSessionKeyFetcher({
+    fetchImpl: (async () => {
+      counter.calls += 1
+      return new Response(JSON.stringify({ keys: published }), { status: 200 })
+    }) as typeof fetch,
+    now: () => now,
+  })
+  const check = async (raw: string) => verifyFirebaseSessionCookie(raw, { projectId: PROJECT, keys: fetcher, nowMs: NOW })
+  assert.equal((await check(await signCookie(claimsFor('u')))).status, 'ok')
+  // Google rotates: a cookie signed with the new key arrives 30 s after our fetch.
+  published = [{ ...signer.jwk, kid: 'k1' }, { ...otherSigner.jwk, kid: 'k2' }]
+  now = NOW + 30_000
+  const rotated = await signCookie(claimsFor('u'), { kid: 'k2', key: otherSigner.privateKey })
+  assert.deepEqual(await check(rotated), { status: 'unavailable' })
+  assert.equal(counter.calls, 1)
+  // A minute later the unseen kid forces a refetch and the cookie verifies.
+  now = NOW + 61_000
+  assert.equal((await check(rotated)).status, 'ok')
+  assert.equal(counter.calls, 2)
+})
+
+/** Review of #359, item 5: a fetch that throws synchronously never leaves a stuck "failed" refresh behind. */
+test('key fetcher: a synchronous throw from fetch does not wedge later refreshes', async () => {
+  let now = NOW
+  let throwNow = true
+  const fetcher = createSessionKeyFetcher({
+    fetchImpl: ((url: string) => {
+      if (throwNow) throw new TypeError('sync failure')
+      return Promise.resolve(new Response(JSON.stringify({ keys: [{ ...signer.jwk, kid: 'k1' }] }), { status: 200 }))
+    }) as unknown as typeof fetch,
+    now: () => now,
+  })
+  const raw = await signCookie(claimsFor('u'))
+  assert.deepEqual(await verifyFirebaseSessionCookie(raw, { projectId: PROJECT, keys: fetcher, nowMs: NOW }), { status: 'unavailable' })
+  throwNow = false
+  now = NOW + 1_000
+  assert.equal((await verifyFirebaseSessionCookie(raw, { projectId: PROJECT, keys: fetcher, nowMs: NOW })).status, 'ok')
+})
+
+/** Review of #359, item 5: concurrent lookups share one fetch. */
+test('key fetcher: concurrent lookups share one refresh', async () => {
+  const counter = { calls: 0 }
+  const fetcher = createSessionKeyFetcher({ fetchImpl: jwksFetch([{ ...signer.jwk, kid: 'k1' }], counter), now: () => NOW })
+  const raw = await signCookie(claimsFor('u'))
+  const results = await Promise.all(
+    [1, 2, 3].map(() => verifyFirebaseSessionCookie(raw, { projectId: PROJECT, keys: fetcher, nowMs: NOW }))
+  )
+  assert.deepEqual(results.map((result) => result.status), ['ok', 'ok', 'ok'])
+  assert.equal(counter.calls, 1)
 })
 
 test('mint: against the Auth emulator it uses the emulator owner token, never the service account', async () => {

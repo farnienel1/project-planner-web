@@ -11,8 +11,12 @@ import {
   clearMfaGate,
   isMfaGateOpen,
   readMfaGate,
+  isMfaSetupError,
   isMfaStatusUnavailable,
+  MFA_BOUNCE_LOOP_MESSAGE,
+  MFA_SETUP_ERROR_MESSAGE,
   readMfaStatus,
+  recordMfaBounce,
   readMfaStatusWithRetry,
   resendEmailMfa,
   safePostMfaPath,
@@ -48,10 +52,18 @@ export function MfaVerifyScreen() {
   }, [firebaseUser, loading, loginHref, mfaPending, router, uid, user])
 
   async function goToApp(nextPath?: string) {
+    // Loop guard (review of #359): if the app keeps sending the person back here, stop and say so.
+    if (!recordMfaBounce()) {
+      setNotice('')
+      setSubmitting(false)
+      submittingRef.current = false
+      setError(MFA_BOUNCE_LOOP_MESSAGE)
+      return
+    }
     clearMfaGate()
     markMfaVerified()
     const destination = safePostMfaPath(nextPath || requestedNext, fallback)
-    // The verification cookie has to be visible before the dashboard request,
+    // The verification and session cookies have to be visible before the dashboard request,
     // otherwise middleware sends the first navigation back here until a refresh.
     // A 503 / network failure here is "try again", never a reason to stay; the loop is bounded either way.
     for (let attempt = 0; attempt < 6; attempt += 1) {
@@ -59,6 +71,13 @@ export function MfaVerifyScreen() {
         const status = await readMfaStatus()
         if (status.verified) break
       } catch (statusError) {
+        if (isMfaSetupError(statusError)) {
+          setNotice('')
+          setSubmitting(false)
+          submittingRef.current = false
+          setError(MFA_SETUP_ERROR_MESSAGE)
+          return
+        }
         if (!isMfaStatusUnavailable(statusError)) break
       }
       await new Promise((resolve) => setTimeout(resolve, 200))
@@ -79,6 +98,11 @@ export function MfaVerifyScreen() {
           status = await readMfaStatusWithRetry(5)
         } catch (statusError) {
           if (cancelled) return
+          if (isMfaSetupError(statusError)) {
+            setNotice('')
+            setError(MFA_SETUP_ERROR_MESSAGE)
+            return
+          }
           if (isMfaStatusUnavailable(statusError)) {
             // Do not email a code when we could not tell whether this person is already verified.
             setNotice('')

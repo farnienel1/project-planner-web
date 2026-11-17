@@ -8,10 +8,18 @@
  * `MFA_SIGNING_SECRET` alone can no longer open the dashboard: the middleware needs both cookies and the same uid.
  *
  * Everything in this file is edge-safe (Web Crypto and `fetch` only) so the Next.js middleware can verify the cookie
- * itself: RS256 against Google's published keys (`sessionCookiePublicKeys`, the JWKS firebase-admin's
- * `verifySessionCookie` uses), issuer `https://session.firebase.google.com/{projectId}`, audience = the project id,
- * not expired, issued in the past, a non-empty `sub` (the uid). Revocation is not checked here (that needs an Admin
- * call per request); the cookie is short-lived and is cleared on sign-out, idle sign-out, user switch and MFA reset.
+ * itself: RS256 against Google's published session-cookie keys, issuer `https://session.firebase.google.com/{projectId}`,
+ * audience = the project id, not expired, issued and signed in (`auth_time`) in the past, a non-empty `sub` (the uid)
+ * — the checks firebase-admin's `verifySessionCookie` makes. Revocation is not checked here (that needs an Admin call
+ * per request); the cookie is short-lived and is cleared on sign-out, idle sign-out, user switch and MFA reset.
+ *
+ * Keys: firebase-admin reads them as X.509 PEM certificates from
+ * `https://www.googleapis.com/identitytoolkit/v3/relyingparty/publicKeys` (max-age=86400). This file reads the same
+ * keys as a JWKS from `https://identitytoolkit.googleapis.com/v1/sessionCookiePublicKeys` instead, because Web Crypto
+ * at the edge imports a JWK directly but cannot import an X.509 certificate without an ASN.1 parser (checked
+ * 17 Nov 2026: both endpoints list the same five key ids). The v1 endpoint answers `max-age=0`, so the cache keeps
+ * the keys for at least an hour (see `maxAgeMs`); a rotated key is still picked up because an unseen `kid` forces a
+ * refetch.
  */
 
 export const SESSION_COOKIE_KEYS_URL = 'https://identitytoolkit.googleapis.com/v1/sessionCookiePublicKeys'
@@ -28,8 +36,8 @@ export type SessionCookieClaims = {
   exp: number
   /** ms */
   iat: number
-  /** When the person signed in to Firebase (ms), when present. */
-  authTime: number | null
+  /** When the person signed in to Firebase (ms). */
+  authTime: number
 }
 
 export type SessionCookieCheck =
@@ -86,15 +94,12 @@ export function sessionCookieClaims(
   if (typeof iat !== 'number' || !Number.isFinite(iat) || iat * 1000 > nowMs + MFA_SESSION_SKEW_MS) {
     return { ok: false, reason: 'issued-at' }
   }
+  // Required, as firebase-admin requires it: when the person signed in to Firebase, in the past.
   const authTimeRaw = payload.auth_time
-  let authTime: number | null = null
-  if (authTimeRaw !== undefined) {
-    if (typeof authTimeRaw !== 'number' || !Number.isFinite(authTimeRaw) || authTimeRaw * 1000 > nowMs + MFA_SESSION_SKEW_MS) {
-      return { ok: false, reason: 'auth-time' }
-    }
-    authTime = authTimeRaw * 1000
+  if (typeof authTimeRaw !== 'number' || !Number.isFinite(authTimeRaw) || authTimeRaw * 1000 > nowMs + MFA_SESSION_SKEW_MS) {
+    return { ok: false, reason: 'auth-time' }
   }
-  return { ok: true, claims: { uid: sub, exp: exp * 1000, iat: iat * 1000, authTime } }
+  return { ok: true, claims: { uid: sub, exp: exp * 1000, iat: iat * 1000, authTime: authTimeRaw * 1000 } }
 }
 
 /**
@@ -170,38 +175,46 @@ export function createSessionKeyFetcher(
   let lastAttempt = 0
   let inflight: Promise<boolean> | null = null
 
-  async function refresh(): Promise<boolean> {
+  async function load(): Promise<boolean> {
+    try {
+      const doFetch = options.fetchImpl || fetch
+      const response = await doFetch(url, { cache: 'no-store' })
+      if (!response.ok) return false
+      const body = (await response.json()) as { keys?: Jwk[] }
+      const next = new Map<string, CryptoKey>()
+      for (const jwk of body.keys || []) {
+        if (!jwk.kid || jwk.kty !== 'RSA' || !jwk.n || !jwk.e) continue
+        const key = await crypto.subtle.importKey(
+          'jwk',
+          { kty: 'RSA', n: jwk.n, e: jwk.e, alg: 'RS256', ext: true },
+          { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+          false,
+          ['verify']
+        )
+        next.set(jwk.kid, key)
+      }
+      if (next.size === 0) return false
+      keys = next
+      freshUntil = now() + maxAgeMs(response.headers.get('cache-control'))
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  function refresh(): Promise<boolean> {
     if (inflight) return inflight
     lastAttempt = now()
-    inflight = (async () => {
-      try {
-        const doFetch = options.fetchImpl || fetch
-        const response = await doFetch(url, { cache: 'no-store' })
-        if (!response.ok) return false
-        const body = (await response.json()) as { keys?: Jwk[] }
-        const next = new Map<string, CryptoKey>()
-        for (const jwk of body.keys || []) {
-          if (!jwk.kid || jwk.kty !== 'RSA' || !jwk.n || !jwk.e) continue
-          const key = await crypto.subtle.importKey(
-            'jwk',
-            { kty: 'RSA', n: jwk.n, e: jwk.e, alg: 'RS256', ext: true },
-            { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-            false,
-            ['verify']
-          )
-          next.set(jwk.kid, key)
-        }
-        if (next.size === 0) return false
-        keys = next
-        freshUntil = now() + maxAgeMs(response.headers.get('cache-control'))
-        return true
-      } catch {
-        return false
-      } finally {
-        inflight = null
-      }
-    })()
-    return inflight
+    // Assigned before it is cleared: the clean-up runs in a later microtask, so a fetch that throws synchronously
+    // can never leave a finished promise stuck in `inflight` (review of #359).
+    const pending: Promise<boolean> = Promise.resolve()
+      .then(load)
+      .catch(() => false)
+      .finally(() => {
+        if (inflight === pending) inflight = null
+      })
+    inflight = pending
+    return pending
   }
 
   return {
@@ -209,7 +222,9 @@ export function createSessionKeyFetcher(
       const fresh = now() < freshUntil
       const cached = keys.get(kid)
       if (fresh && cached) return { status: 'ok', key: cached }
-      if (fresh && !cached && now() - lastAttempt < 60_000) return { status: 'unknown' }
+      // Keys were fetched under a minute ago and this kid is not among them: it may have been published since
+      // (a just-rotated key). Try again shortly — never "invalid", which would clear a valid cookie.
+      if (fresh && !cached && now() - lastAttempt < 60_000) return { status: 'unavailable' }
       const refreshed = await refresh()
       const key = keys.get(kid)
       if (key) return { status: 'ok', key }

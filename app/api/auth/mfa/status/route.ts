@@ -20,6 +20,19 @@ function unavailable() {
 }
 
 /**
+ * The server cannot issue a session cookie the middleware accepts (no or unusable service account, a project
+ * mismatch, Google 401 / 403, or a freshly minted cookie that fails the middleware's own check). Retrying will not
+ * help, so the browser shows its own message rather than the "trying again" one; the cause is in the server log.
+ * Never "not verified", so nobody is sent to the code screen in a loop.
+ */
+function setupError() {
+  return NextResponse.json(
+    { error: 'setup', retry: false },
+    { status: 503, headers: { 'Cache-Control': 'no-store' } }
+  )
+}
+
+/**
  * "verified" only when the ok cookie belongs to the person signed in now: the cookie's signed uid must equal the
  * uid of the caller's verified Firebase ID token. A cookie left in the browser by another account, or a request
  * with no (or an invalid) token, is never verified. When the token could not be checked for a passing reason
@@ -53,10 +66,21 @@ export async function GET(request: NextRequest) {
         if (sessionCookiePlan(lookup.user.uid, current) === 'mint') {
           const minted = await mintFirebaseSessionCookie(token)
           if (minted.status === 'unavailable') return unavailable()
+          if (minted.status === 'setup') return setupError()
           if (minted.status === 'invalid') {
             verified = false
             clearSession = Boolean(sessionRaw)
           } else {
+            // Check the new cookie exactly as the middleware will, so a cookie it would refuse (wrong project,
+            // emulator switch out of step) never answers "verified" and starts a redirect loop (review of #359).
+            const check = await verifyAppSessionCookie(minted.cookie)
+            if (check.status === 'unavailable') return unavailable()
+            if (check.status !== 'ok' || check.claims.uid !== lookup.user.uid) {
+              console.error('[auth/mfa/session] SETUP ERROR: a freshly minted session cookie fails the middleware check', {
+                reason: check.status === 'invalid' ? check.reason : check.status === 'ok' ? 'uid-mismatch' : check.status,
+              })
+              return setupError()
+            }
             mintedSession = { cookie: minted.cookie, maxAgeMs: Math.min(minted.maxAgeMs, Math.max(0, ok.exp - Date.now())) }
           }
         }

@@ -9,6 +9,7 @@ import {
 import { encodeMfaOk, MFA_OK_TTL_MS, writeMfaCookie } from '@/lib/auth/mfa/mfaCookies'
 import { clearSessionCookie } from '@/lib/auth/mfa/mfaCookiePolicy'
 import { mintFirebaseSessionCookie } from '@/lib/auth/mfa/mfaSessionCookieMint'
+import { verifyAppSessionCookie } from '@/lib/auth/mfa/mfaSessionCookie'
 import { bearerToken, firestoreGet, readBool, restFieldsToPlain } from '@/lib/owner/firestoreRest'
 import { isPlatformOwnerEmail } from '@/lib/platform/owner'
 import { clampString, isValidUuid } from '@/lib/security/validation'
@@ -110,7 +111,8 @@ export async function POST(request: NextRequest) {
   // The server session cookie for this same uid (owner decision 17 Nov). Best effort: when it cannot be minted now,
   // the next status check mints it (the middleware sends the person to /auth/mfa, which reads status and returns).
   const session = await mintFirebaseSessionCookie(token)
-  if (session.status === 'ok') {
+  const check = session.status === 'ok' ? await verifyAppSessionCookie(session.cookie) : null
+  if (session.status === 'ok' && check?.status === 'ok' && check.claims.uid === user.uid) {
     writeMfaCookie(response.cookies, request, 'session', session.cookie, Math.min(session.maxAgeMs, MFA_OK_TTL_MS))
   } else {
     clearSessionCookie(response.cookies, request)
