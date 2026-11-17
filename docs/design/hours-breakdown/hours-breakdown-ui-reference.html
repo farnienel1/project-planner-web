@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hours Breakdown Reference</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#EEF1F6;--card:#fff;--sheet:#F5F7FB;--line:#E3E8F0;--line-2:#EDF0F5;--ink:#0F1B33;--ink-2:#334155;--muted:#64748B;
+--blue:#2559D6;--amber-soft:#FFF8E6;--amber-ink:#8A4B00;--amber-line:#F6D49A;--red:#E5484D}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 Inter,system-ui,sans-serif}
+main{max-width:1180px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:20px;margin:0 0 4px}
+.lead{color:var(--muted);margin:0 0 16px;max-width:760px}
+.preview{border:1.5px dashed #9AA8C2;border-radius:14px;padding:10px 12px;margin-bottom:20px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.preview small{font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--muted);margin-right:4px}
+.preview button{height:34px;padding:0 14px;border-radius:999px;border:1px solid var(--line);background:#fff;font:inherit;font-weight:600;color:var(--ink-2);cursor:pointer}
+.preview button.on{background:var(--blue);border-color:var(--blue);color:#fff}
+.preview button:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}
+.col h2{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+.col h2 b{color:var(--ink)}
+.modal{background:var(--card);border-radius:20px;padding:20px;box-shadow:0 10px 30px rgba(15,27,51,.08);min-width:0}
+
+/* timeline stub (unchanged part, shown for context only) */
+.tl{background:var(--sheet);border-radius:12px;padding:12px 10px 8px}
+.tl .bar{position:relative;height:22px;border-radius:999px;background:#E2E7EF}
+.tl .seg{position:absolute;top:0;bottom:0}
+.tl .ot{background:#F8E3BF}
+.tl .std{background:linear-gradient(90deg,#2559D6,#3B7BF0);border-radius:6px}
+.tl .ticks{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:8px}
+.ctx{opacity:.55}
+
+/* ---------- the redesigned text ---------- */
+.summary{margin:10px 0 0;font-size:13.5px;color:var(--ink-2)}
+.summary b{color:var(--ink);font-weight:700}
+
+.bd{margin-top:14px;background:var(--sheet);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.bd-h{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:baseline;margin-bottom:6px}
+.bd-h span{font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
+.bd-h em{font-style:normal;font-size:12.5px;color:var(--muted)}
+.row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:start;padding:10px 0;border-top:1px solid var(--line-2)}
+.row:first-of-type{border-top:0}
+.row .l{min-width:0}
+.row .t{font-weight:600}
+.row .d{display:block;font-size:12.5px;color:var(--muted);margin-top:1px;word-break:break-word}
+.row .v{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}
+.row.ot{background:var(--amber-soft);border:1px solid var(--amber-line);border-radius:10px;padding:10px 12px;margin:4px 0}
+.row.ot .t{color:var(--amber-ink)}
+.row.ot + .row{border-top:0}
+.row.total{border-top:1.5px solid var(--line);margin-top:4px;padding-top:12px}
+.row.total .t{font-size:15px;font-weight:700}
+.row.total .v{font-size:20px;font-weight:700}
+
+/* ---------- "before" copy, as it is today ---------- */
+.old .sumline{font-size:13px;color:var(--muted);margin-top:10px}
+.old .otline{color:var(--amber-ink);font-weight:600;font-size:13px;margin-top:6px}
+.old .para{font-size:12.5px;color:var(--ink-2);margin-top:6px;line-height:1.6}
+.old .bd .k{display:flex;justify-content:space-between;gap:10px;padding:5px 0;font-size:13px;color:var(--ink-2)}
+.old .bd .k b{color:var(--ink)}
+.old .otbox{background:var(--amber-soft);border-radius:8px;padding:8px 10px;color:var(--amber-ink);font-weight:600;margin:6px 0}
+
+.notes{margin-top:22px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 18px;font-size:13px;color:var(--ink-2)}
+.notes b{color:var(--ink)}
+.notes ul{margin:6px 0 0;padding-left:18px}
+
+@media (max-width:900px){.cols{grid-template-columns:1fr}}
+@media (max-width:420px){.modal{padding:16px}.bd{padding:12px}}
+
+.preview + .preview{margin-top:-10px}
+.cols.dark .modal{--card:#13213F;--sheet:#0E1B36;--line:#22335A;--line-2:#1B2A4C;--ink:#EEF2F8;--ink-2:#C9D3E3;--muted:#9AA8C2;--amber-soft:rgba(245,165,36,.12);--amber-ink:#F5B54A;--amber-line:rgba(245,165,36,.38);color:var(--ink);box-shadow:none}
+.cols.dark .tl .bar{background:#22335A}.cols.dark .tl .ot{background:rgba(245,165,36,.35)}
+</style>
+</head>
+<body>
+<main>
+  <h1>Hours breakdown: simpler text (UI only)</h1>
+  <p class="lead">"Change this booking" → the summary line under the timeline and the Hours breakdown box. <b>Only the wording and layout change.</b> Every number comes from the existing calculation. The timeline, pickers, break toggle, overtime rate and Save stay exactly as they are.</p>
+
+  <div class="preview" role="tablist" aria-label="Preview only: example bookings">
+    <small>PREVIEW ONLY · DON'T BUILD</small>
+    <button class="on" data-v="0">Weekday with overtime</button>
+    <button data-v="1">No overtime</button>
+    <button data-v="2">Break turned off</button>
+    <button data-v="3">Saturday (all overtime)</button>
+    <button data-v="4">Different rate (×2)</button>
+  </div>
+
+  <div class="preview" aria-label="Preview only: colour mode">
+    <small>PREVIEW ONLY · MODE</small>
+    <button class="mode on" data-m="light">Light mode</button>
+    <button class="mode " data-m="dark">Dark mode</button>
+  </div>
+  <div class="cols light" id="cols">
+    <section class="col">
+      <h2><b>After</b>: what to build</h2>
+      <div class="modal">
+        <div class="tl ctx" aria-hidden="true">
+          <div class="bar"><div class="seg ot" id="tlo1"></div><div class="seg std" id="tls"></div><div class="seg ot" id="tlo2"></div></div>
+          <div class="ticks"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+        </div>
+        <p class="summary" id="summary"></p>
+        <div class="bd" id="bd" aria-label="Hours breakdown"></div>
+      </div>
+    </section>
+
+    <section class="col old">
+      <h2>Before: today, for comparison</h2>
+      <div class="modal" id="old"></div>
+    </section>
+  </div>
+
+  <div class="notes">
+    <b>Rules for the text</b>
+    <ul>
+      <li>Say each sum <b>once</b>: the rows read top to bottom and add up (Normal paid + Overtime paid = Total paid hours).</li>
+      <li>Hide a row that's zero (no overtime → no Overtime row; all overtime → no Normal hours row). Drop "less 30 min break" when the break is off.</li>
+      <li>Overtime shows the real hours <b>and</b> what they're worth: "2.5h at ×1.5" → 3.75h. The rate comes from the booking's selected overtime rate.</li>
+      <li>The long explanation paragraph and the repeated overtime sum under the timeline are removed. Nothing else is removed.</li>
+      <li>Numbers: up to 2 decimals, trailing zeros dropped (8.5h, 3.75h, 12h).</li>
+    </ul>
+  </div>
+</main>
+
+<script>
+// Example bookings: every figure here would come from the existing calculation in the app.
+const V=[
+ {day:'Tuesday',type:'full day',start:'06:00',end:'17:30',normal:{from:'07:00',to:'16:00',brk:30,paid:8.5},ot:{ranges:['06:00–07:00','16:00–17:30'],parts:[1,1.5],hrs:2.5,rate:1.5,paid:3.75},total:12.25,tl:[6,7,16,17.5]},
+ {day:'Tuesday',type:'full day',start:'07:00',end:'16:00',normal:{from:'07:00',to:'16:00',brk:30,paid:8.5},ot:null,total:8.5,tl:[7,7,16,16]},
+ {day:'Tuesday',type:'full day',start:'06:00',end:'17:30',normal:{from:'07:00',to:'16:00',brk:0,paid:9},ot:{ranges:['06:00–07:00','16:00–17:30'],parts:[1,1.5],hrs:2.5,rate:1.5,paid:3.75},total:12.75,tl:[6,7,16,17.5]},
+ {day:'Saturday',type:'overtime day',start:'08:00',end:'13:00',normal:null,ot:{ranges:['08:00–13:00'],parts:[5],hrs:5,rate:1.5,paid:7.5},total:7.5,tl:[8,8,8,13]},
+ {day:'Tuesday',type:'full day',start:'06:00',end:'17:30',normal:{from:'07:00',to:'16:00',brk:30,paid:8.5},ot:{ranges:['06:00–07:00','16:00–17:30'],parts:[1,1.5],hrs:2.5,rate:2,paid:5},total:13.5,tl:[6,7,16,17.5]},
+];
+const h=n=>(+n.toFixed(2)).toString()+'h';
+const pct=x=>(x/24*100)+'%';
+function render(i){
+  const v=V[i];
+  // timeline context
+  const [a,b,c,d]=v.tl;
+  Object.assign(document.getElementById('tlo1').style,{left:pct(a),width:pct(b-a)});
+  Object.assign(document.getElementById('tls').style,{left:pct(b),width:pct(c-b),display:c>b?'block':'none'});
+  Object.assign(document.getElementById('tlo2').style,{left:pct(v.normal?c:a),width:pct(v.normal?d-c:d-a)});
+  document.getElementById('summary').innerHTML=`${v.start}–${v.end} · <b>${(+v.total.toFixed(2))} paid hours</b>`;
+  let r=`<div class="bd-h"><span>Hours breakdown</span><em>${v.day}, ${v.type}</em></div>`;
+  if(v.normal) r+=`<div class="row"><div class="l"><span class="t">Normal hours</span><span class="d">${v.normal.from}–${v.normal.to}${v.normal.brk?`, less ${v.normal.brk} min break`:''}</span></div><div class="v">${h(v.normal.paid)}</div></div>`;
+  if(v.ot) r+=`<div class="row ot"><div class="l"><span class="t">Overtime</span><span class="d">${v.ot.ranges.join(' and ')}</span><span class="d">${h(v.ot.hrs)} at ×${v.ot.rate}</span></div><div class="v">${h(v.ot.paid)}</div></div>`;
+  r+=`<div class="row total"><div class="l"><span class="t">Total paid hours</span></div><div class="v">${h(v.total)}</div></div>`;
+  document.getElementById('bd').innerHTML=r;
+  // before
+  const n=v.normal, o=v.ot;
+  const sum=o?`${o.ranges.join(' + ')} = ${o.hrs} × ${o.rate} = ${o.paid}`:'';
+  const lines=[];
+  if(o) lines.push(`${o.ranges[0]} = ${o.parts[0]}h × ${o.rate} = ${+(o.parts[0]*o.rate).toFixed(2)}h`);
+  if(n) lines.push(`+ ${n.from}–${n.to} = ${n.paid}h (day${n.brk?`, less ${n.brk} min unpaid break`:''})`);
+  if(o&&o.ranges[1]) lines.push(`+ ${o.ranges[1]} = ${o.parts[1]}h × ${o.rate} = ${+(o.parts[1]*o.rate).toFixed(2)}h`);
+  if(lines[0]&&lines[0].startsWith('+ ')) lines[0]=lines[0].slice(2);
+  const para=`${v.day} ${v.type}: ${n?`${n.from}–${n.to}${n.brk?` − ${n.brk} min unpaid break (11:30–12:00)`:''} = ${n.paid}h, `:''}hours outside it at ${o?o.rate:1.5}×<br>`+lines.join('<br>')+`<br>→ <b>${v.total}h</b>`;
+  document.getElementById('old').innerHTML=
+   `<div class="sumline">${v.start}–${v.end} · ${v.total} hours</div>${o?`<div class="otline">${sum}</div>`:''}<div class="para">${para}</div>
+    <div class="bd"><div class="bd-h"><span>Hours breakdown</span></div>
+    <div class="k">Working hours <b>${v.start} - ${v.end}</b></div>${n?`<div class="k">Normal working hours <b>${n.from} - ${n.to}</b></div>`:''}${n&&n.brk?`<div class="k">Minus ${n.brk} minute break <b>-${n.brk/60}</b></div>`:''}
+    ${o?`<div class="k" style="color:var(--amber-ink);font-weight:700;font-size:11px;letter-spacing:.08em">OVERTIME</div><div class="otbox">${sum}</div>`:''}
+    <div class="k" style="border-top:1px solid var(--line);margin-top:6px;padding-top:10px"><b>Total paid hours</b><b style="font-size:18px">${v.total}</b></div>
+    <div class="para">${para}</div></div>`;
+  document.querySelectorAll('.preview button[data-v]').forEach(btn=>btn.classList.toggle('on',+btn.dataset.v===i));
+}
+document.querySelectorAll('.preview button[data-v]').forEach(btn=>btn.addEventListener('click',()=>render(+btn.dataset.v)));
+render(0);
+document.querySelectorAll('.preview button.mode').forEach(b=>b.addEventListener('click',()=>{const c=document.getElementById('cols');c.classList.remove('light','dark');c.classList.add(b.dataset.m);document.querySelectorAll('.preview button.mode').forEach(x=>x.classList.toggle('on',x===b))}));
+</script>
+</body>
+</html>

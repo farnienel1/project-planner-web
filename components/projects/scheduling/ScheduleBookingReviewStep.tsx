@@ -9,10 +9,9 @@ import {
 } from '@/lib/scheduling/draftProjectBooking'
 import { BOOKING_REPLACE_LABEL } from '@/lib/canonical'
 import { slotKey, slotToFirestore, type ScheduleDateSlot } from '@/lib/scheduling/scheduleUtils'
-import { weekdayExplanationForDate, weekendBreakdownForDates } from '@/lib/scheduling/bookingSlotRules'
+import { hoursBreakdownForDates } from '@/lib/scheduling/bookingSlotRules'
 import { useOrganizationPayrollPolicy } from '@/lib/scheduling/useOrganizationPayrollPolicy'
-import { BookingDayBreakdownRows } from '@/components/scheduling/BookingDayBreakdownRows'
-import { BookingHoursExplanationList } from '@/components/scheduling/BookingHoursExplanation'
+import { HoursBreakdownBox } from '@/components/scheduling/HoursBreakdownBox'
 
 function DayChip({
   date,
@@ -100,20 +99,25 @@ export function ScheduleBookingReviewStep({
           const hasWarning = draftPersonNeedsWarning(person)
           const expanded = expandedPersonId === person.personId
           const bookableDays = slots.filter((slot) => dayStateBooks(person.dayStates[slotKey(slot.date)]))
-          // Rulebook 1.18.0 (`weekendBookingBreakdown`): each weekend day this person is booked on, priced by its rule.
-          const weekendRows = bookableDays.flatMap((slot) => {
+          // Rulebook 1.62.0 (`bookingHoursBreakdownDays`): the Hours breakdown of each set of custom times this person is
+          // booked on — the days with the same times together (one box per group the rulebook returns).
+          const timeGroups = new Map<string, { start: string; end: string; dates: Date[] }>()
+          for (const slot of bookableDays) {
             const stored = slotToFirestore(slot)
-            return stored.timeSlot === 'CUSTOM_HOURS'
-              ? weekendBreakdownForDates([slot.date], stored.workStartTime, stored.workEndTime, false, policy, otMultiplierOverride)
-              : []
-          })
-          // Rulebook 1.39.0 (`bookingHoursExplanation`): custom weekday hours explained the same way.
-          const weekdayExplanations = bookableDays.map((slot) => {
-            const stored = slotToFirestore(slot)
-            return stored.timeSlot === 'CUSTOM_HOURS'
-              ? weekdayExplanationForDate(slot.date, stored.workStartTime, stored.workEndTime, false, policy, otMultiplierOverride)
-              : null
-          })
+            if (stored.timeSlot !== 'CUSTOM_HOURS' || !stored.workStartTime || !stored.workEndTime) continue
+            const key = `${stored.workStartTime}|${stored.workEndTime}`
+            const group = timeGroups.get(key) ?? { start: stored.workStartTime, end: stored.workEndTime, dates: [] }
+            group.dates.push(slot.date)
+            timeGroups.set(key, group)
+          }
+          const breakdowns = Array.from(timeGroups.values()).map((group) => ({
+            key: `${group.start}|${group.end}`,
+            breakdown: hoursBreakdownForDates(
+              group.dates,
+              { timeSlot: 'CUSTOM_HOURS', workStartTime: group.start, workEndTime: group.end, isBreakRemoved: false, otMultiplierOverride },
+              policy
+            ),
+          }))
 
           return (
             <div key={person.personId} className="overflow-hidden card shadow-sm">
@@ -153,12 +157,9 @@ export function ScheduleBookingReviewStep({
                         />
                       ))}
                     </div>
-                    {weekendRows.length > 0 ? (
-                      <div className="mt-2">
-                        <BookingDayBreakdownRows rows={weekendRows} />
-                      </div>
-                    ) : null}
-                    <BookingHoursExplanationList explanations={weekdayExplanations} className="mt-2" />
+                    {breakdowns.map((entry) => (
+                      <HoursBreakdownBox key={entry.key} breakdown={entry.breakdown} className="mt-2" />
+                    ))}
                   </div>
                 </button>
                 <button

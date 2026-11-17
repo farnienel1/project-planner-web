@@ -15,10 +15,9 @@ import {
   effectivePayrollTimePolicy,
   weekendBookingNotes,
   customHoursPrefillForDays,
-  weekendBookingBreakdown,
-  bookingHoursExplanation,
-  type BookingDayBreakdownRow,
-  type BookingHoursExplanation,
+  bookingHoursBreakdownDays,
+  type BookingHoursBreakdownBooking,
+  type BookingHoursBreakdownDays,
   formatClockMinutes,
   halfDayWindows,
   type CustomHoursPrefill,
@@ -164,49 +163,18 @@ export function customHoursPrefillForDate(
 }
 
 /**
- * Rulebook 1.18.0: the per-day hours rows for a booking whose selection holds a Saturday or Sunday
- * (`weekendBookingBreakdown`: each day priced by the timesheet pay rule under the working hours in effect on it), or
- * `[]` for a weekday-only selection, where the screen keeps its usual hours breakdown.
+ * Rulebook 1.62.0 §4.3 (`bookingHoursBreakdownDays`): the summary line and the Hours breakdown box of a booking on one
+ * or more dates (custom hours or a named slot), each day read under the working hours in effect on it (the live policy
+ * state, else the screen's `policy`). Null when the times are not valid or no day is given.
  */
-export function weekendBreakdownForDates(
+export function hoursBreakdownForDates(
   dates: ReadonlyArray<Date | string | number>,
-  start: string | null | undefined,
-  end: string | null | undefined,
-  breakRemoved: boolean | null | undefined,
-  policy?: OrgPayrollTimePolicy | null,
-  otMultiplierOverride?: number | null
-): BookingDayBreakdownRow[] {
+  booking: BookingHoursBreakdownBooking,
+  policy?: OrgPayrollTimePolicy | null
+): BookingHoursBreakdownDays | null {
+  if (dates.length === 0) return null
   const zone = openOrganizationZone()
-  const keys = dates.map((date) => bookingDayKey(date))
-  if (!keys.some((key) => isWeekendDayKey(key, zone))) return []
-  // 1.43.0: the booking's own overtime rate prices the hours outside the window (`otMultiplierOverride`).
-  return weekendBookingBreakdown(livePayrollState() ?? policy ?? null, keys, start, end, breakRemoved, zone, otMultiplierOverride ?? null)
-}
-
-/**
- * Rulebook 1.39.0 (`bookingHoursExplanation`): the words that explain one custom-hours booking's hours on a weekday —
- * the working day, the unpaid break and the hours at the overtime multiplier — read under the working hours in effect
- * on that day. Weekend days carry the same explanation on their `weekendBreakdownForDates` rows. Null on a weekend
- * day (its rows explain it) or invalid times.
- */
-export function weekdayExplanationForDate(
-  date: Date | string | number | null | undefined,
-  start: string | null | undefined,
-  end: string | null | undefined,
-  breakRemoved: boolean | null | undefined,
-  policy?: OrgPayrollTimePolicy | null,
-  otMultiplierOverride?: number | null
-): BookingHoursExplanation | null {
-  if (date == null) return null
-  const zone = openOrganizationZone()
-  const key = bookingDayKey(date)
-  if (isWeekendDayKey(key, zone)) return null
-  return bookingHoursExplanation(
-    livePayrollState() ?? policy ?? null,
-    key,
-    { workStartTime: start, workEndTime: end, isBreakRemoved: breakRemoved === true, otMultiplierOverride: otMultiplierOverride ?? null },
-    zone
-  )
+  return bookingHoursBreakdownDays(livePayrollState() ?? policy ?? null, dates.map((date) => bookingDayKey(date)), booking, zone)
 }
 
 /** `WEEKEND_WEEKDAY_MIX_MESSAGE` when the dates mix weekdays and weekend days (`bookingDaysMixWeekdayAndWeekend`). */

@@ -1,0 +1,26 @@
+/*
+ * The booking hours breakdown (rulebook 1.62.0 §4.3, docs/design/hours-breakdown/). Visual only; every colour is an
+ * existing theme token (app/globals.css, app/brand-shell.css), so light and dark follow the app theme.
+ * Contrast (AA): detail text --ink2 on --soft 7.3:1 light / 8.3:1 dark; overtime text --dash-tag-amber-ink on
+ * --dash-tag-amber-bg 4.9:1 light / 9.2:1 dark; detail text on the overtime card 7.0:1 / 7.7:1.
+ */
+.hb-summary { margin-top: 0.5rem; font-size: 13px; color: var(--ink2); font-variant-numeric: tabular-nums; }
+.hb-summary b { color: var(--ink); font-weight: 700; }
+.hb-box { border: 1px solid var(--line); background: var(--soft); border-radius: 14px; padding: 12px 14px; min-width: 0; }
+.hb-box + .hb-box { margin-top: 8px; }
+.hb-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin-bottom: 4px; }
+.hb-head span { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink2); }
+.hb-head em { font-style: normal; font-size: 12.5px; color: var(--ink2); }
+.hb-rows { margin: 0; }
+.hb-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 9px 0; border-top: 1px solid var(--line); }
+.hb-row:first-child { border-top: 0; }
+.hb-row dt { min-width: 0; margin: 0; }
+.hb-row dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; color: var(--ink); }
+.hb-t { display: block; font-size: 14px; font-weight: 600; color: var(--ink); }
+.hb-d { display: block; margin-top: 1px; font-size: 12.5px; color: var(--ink2); overflow-wrap: anywhere; }
+.hb-row.ot { margin: 4px 0; padding: 9px 12px; border: 1px solid color-mix(in srgb, var(--dash-amber) 45%, transparent); border-radius: 10px; background: var(--dash-tag-amber-bg); }
+.hb-row.ot .hb-t, .hb-row.ot dd { color: var(--dash-tag-amber-ink); }
+.hb-row.ot + .hb-row { border-top: 0; }
+.hb-row.total { margin-top: 2px; padding-top: 10px; border-top: 1.5px solid var(--line2); }
+.hb-row.total .hb-t { font-size: 15px; font-weight: 700; }
+.hb-row.total dd { font-size: 20px; font-weight: 700; }

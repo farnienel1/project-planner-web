@@ -6,7 +6,6 @@ import type { BookingReplaceOptions } from '@/lib/stores/bookingStore'
 import type { Booking } from '@/types'
 import { slotToFirestore, type ScheduleSlotChoice } from '@/lib/scheduling/scheduleUtils'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
-import { hoursBreakdown } from '@/lib/scheduling/paidHours'
 import { HoursBreakdownCard } from '@/components/schedule/HoursBreakdownCard'
 import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import {
@@ -15,8 +14,7 @@ import {
   policyForBookingDate,
   customHoursPrefillForDate,
   slotOfferedOnDate,
-  weekendBreakdownForDates,
-  weekdayExplanationForDate,
+  hoursBreakdownForDates,
   weekendNotesForDates,
 } from '@/lib/scheduling/bookingSlotRules'
 import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
@@ -88,19 +86,21 @@ export function BookingEditSheet({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Rulebook 1.62.0 (`bookingHoursBreakdownDays`): the Hours breakdown box for the slot and times on screen, under the
+  // working hours in effect on the booking day, with the booking's own overtime rate (null = the organisation's).
   const breakdown = useMemo(() => {
     const firestoreSlot = slotToFirestore({ date: new Date(booking.date), slot, workStartTime, workEndTime })
-    return hoursBreakdown({
-      timeSlot: firestoreSlot.timeSlot,
-      workStartTime: slot === 'CUSTOM' ? firestoreSlot.workStartTime || workStartTime : undefined,
-      workEndTime: slot === 'CUSTOM' ? firestoreSlot.workEndTime || workEndTime : undefined,
-      isBreakRemoved: slot === 'CUSTOM' ? breakRemoved : undefined,
-      // Rulebook 1.43.0 (§25): the booking's own overtime rate as chosen on screen (null = the organisation's).
-      otMultiplierOverride: overtimeRate,
-      // Rulebook 1.19.0: the working hours in effect on the booking day, never today's passed policy.
-      policy: policyForBookingDate(booking.date, payroll) ?? payroll,
-      dayKey: bookingDayKey(booking.date),
-    })
+    return hoursBreakdownForDates(
+      [booking.date],
+      {
+        timeSlot: firestoreSlot.timeSlot,
+        workStartTime: slot === 'CUSTOM' ? firestoreSlot.workStartTime || workStartTime : null,
+        workEndTime: slot === 'CUSTOM' ? firestoreSlot.workEndTime || workEndTime : null,
+        isBreakRemoved: slot === 'CUSTOM' ? breakRemoved : false,
+        otMultiplierOverride: overtimeRate,
+      },
+      payroll
+    )
   }, [booking.date, slot, workStartTime, workEndTime, breakRemoved, overtimeRate, payroll])
 
   // Rulebook 1.13.0 (Q2): Saturday and Sunday are custom hours only; a stored weekend FULL DAY / AM / PM is kept and shown.
@@ -226,6 +226,7 @@ export function BookingEditSheet({
               date={new Date(booking.date)}
               showBreak
               otMultiplierOverride={overtimeRate}
+              showBreakdown={false}
               onStart={setWorkStartTime}
               onEnd={setWorkEndTime}
               onBreak={setBreakRemoved}
@@ -244,20 +245,7 @@ export function BookingEditSheet({
             />
           ) : null}
 
-          <HoursBreakdownCard
-            breakdown={breakdown}
-            dayRows={
-              slot === 'CUSTOM'
-                ? weekendBreakdownForDates([new Date(booking.date)], workStartTime, workEndTime, breakRemoved, payroll, overtimeRate)
-                : []
-            }
-            explanation={
-              slot === 'CUSTOM'
-                ? // Review (11 Nov): the booking's own overtime rate is named in the explanation, as on iOS.
-                  weekdayExplanationForDate(new Date(booking.date), workStartTime, workEndTime, breakRemoved, payroll, overtimeRate ?? null)
-                : null
-            }
-          />
+          <HoursBreakdownCard breakdown={breakdown} />
 
           {booking.source !== 'manager' ? (
           <div>

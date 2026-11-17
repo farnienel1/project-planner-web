@@ -1042,6 +1042,7 @@ export {
 } from './bookingSlots'
 export { weekendFullDayWindow, weekendRuleForIsoWeekday } from './payrollHours'
 export { bookingHoursExplanation, bookingShortfall } from './bookingHoursExplanation'
+export { bookingHoursBreakdownRows, bookingHoursBreakdownDays } from './bookingHoursBreakdown'
 export {
   overtimeTotalText,
   overtimeIncludedText,

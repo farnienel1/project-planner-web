@@ -950,6 +950,25 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 | 17 Nov | **Item 5:** the repair is automatic — when a line manager or admin has the Timesheets hub or User Timesheets open, every frozen-empty snapshot of the loaded pay runs they may write is rebuilt in the background through the existing path (signatures kept, never exported), once per sheet per session, after bookings and pay settings load. The period page also loads a sheet filed under another id the person goes by. | done web |
 | 17 Nov | **Item 6:** past pay-run lists start at the organisation's creation day (`organizations/{orgId}.createdAt`; else the earliest stored sheet), and any run with a stored sheet is still listed. Web only, no rulebook change. | done web |
 
+## 17 Nov decisions (for 1.62, the simple hours breakdown)
+
+| Date | Decision | Status |
+|---|---|---|
+| 17 Nov | **Simplify the booking hours breakdown on web and iOS** (owner design `docs/design/hours-breakdown/`): one line under the timeline ("06:00–17:30 · **12.25 paid hours**"), then Normal hours / Overtime (amber) / Total paid hours, headed "{Day}, {day type}" (web "Hours breakdown", iOS "How the hours add up"). The long explanation, the repeated overtime sum and the old Working hours / Normal working hours / Minus break rows are removed. Same words on both apps from one rulebook function, `bookingHoursBreakdownRows` / `bookingHoursBreakdownDays` (§4.3); no figure, rule or write changes. Light and dark mode with existing tokens, AA contrast. | done web + rulebook (1.62.0, w162-hours-breakdown); iOS (ios-162-hours-breakdown) |
+
+## 1.62.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 17 Nov | Day-type words follow the rulebook's day rule, not the reference's examples: weekday "full day" (custom hours too, as the reference), a stored AM / PM "half day (AM)", a set-window weekend "full day 07:30–14:00 counts as 8h", a day paid every hour at a multiplier "every hour is overtime" (the reference said "overtime day"). | done, owner to confirm |
+| 17 Nov | Set-window weekend Normal row: "07:30–14:00, counts as a full day, unpaid break allowed for" or "07:30–11:00, part of the 07:30–14:00 window, pro rata (unpaid break not counted)" — no pro-rata sum is shown any more (the figure is the pay rule's). | done, owner to confirm |
+| 17 Nov | A booking that pays 0 (inside the unpaid break) keeps a Normal row "11:30–12:00, inside the unpaid break · 0h" so the 0 is explained; otherwise zero rows are hidden. | done, owner to confirm |
+| 17 Nov | Several days with the same times: one box per group that reads the same ("Tuesday/Wednesday, full day"); when the days' totals differ the summary reads "06:00–17:30 · paid hours vary by day". | done, owner to confirm |
+| 17 Nov | Titles kept as in the two prompts: web "Hours breakdown", iOS "How the hours add up"; every other word is the same on both apps. | done, owner to confirm |
+| 17 Nov | iOS Book labour on a weekend day now also shows "New booking" / "Total booked" lines (before, the weekend per-day row replaced them); iOS Select Operatives keeps its green / amber hours chip on weekdays, as before. | done iOS, owner to confirm |
+| 17 Nov | iOS overtime row detail lines use the amber text colour, not grey: grey on the light amber tint is 3.8:1 (below AA); amber is 5.3:1 light / 8.9:1 dark. | done iOS |
+| 17 Nov | Web: the sheets that already have the Hours breakdown card (the "Change this booking" sheet, Edit booking, Quick Add, the subcontractor sheet) show the summary line under the timeline and the box once, in the card; screens with only the timeline (Book labour, My Schedule, the Schedule wizard dates, Edit hours on a timesheet) show the box under the summary. | done web |
+
 ## Open questions for the owner
 
 | Date | Question |

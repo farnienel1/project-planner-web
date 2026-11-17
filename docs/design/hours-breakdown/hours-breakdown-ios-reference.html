@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>iOS Hours Breakdown</title>
+<style>
+:root{--page:#0A0F1C;--sheet:#1C1C1E;--card:#111114;--card-line:#2A2A2E;--ink:#F2F4F8;--muted:#9A9AA2;--amber:#F5A524;--amber-bg:rgba(245,165,36,.12);--amber-line:rgba(245,165,36,.35);--blue:#3B7BF0}
+*{box-sizing:border-box}
+body{margin:0;background:#E9EDF3;color:#0F1B33;font:15px/1.45 -apple-system,"SF Pro Text",system-ui,sans-serif}
+main{max-width:980px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:20px;margin:0 0 4px}
+.lead{color:#5B6B85;margin:0 0 16px;max-width:720px}
+.preview{border:1.5px dashed #9AA8C2;border-radius:14px;padding:10px 12px;margin-bottom:20px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.preview small{font-size:11px;font-weight:700;letter-spacing:.08em;color:#5B6B85}
+.preview button{height:34px;padding:0 14px;border-radius:999px;border:1px solid #D5DCE7;background:#fff;font:inherit;font-size:14px;font-weight:600;color:#334155;cursor:pointer}
+.preview button.on{background:#2559D6;border-color:#2559D6;color:#fff}
+.preview button:focus-visible{outline:3px solid #2559D6;outline-offset:2px}
+.cols{display:grid;grid-template-columns:repeat(2,minmax(0,390px));gap:24px;justify-content:center}
+.col h2{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#5B6B85;margin:0 0 8px}
+.col h2 b{color:#0F1B33}
+.phone{background:var(--sheet);color:var(--ink);border-radius:28px;padding:18px 16px 20px;min-width:0}
+.ctx{opacity:.45;font-size:13px;color:var(--muted);margin-bottom:12px}
+.ctx b{color:var(--ink);font-weight:600}
+.box{background:var(--card);border:1px solid var(--card-line);border-radius:16px;padding:14px 16px}
+.lbl{font-size:12px;font-weight:700;letter-spacing:.1em;color:var(--muted);text-transform:uppercase}
+.sub{font-size:13px;color:var(--muted);margin-left:6px;letter-spacing:0;text-transform:none;font-weight:500}
+.row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:start;padding:11px 0;border-top:1px solid var(--card-line)}
+.head + .row{border-top:0}
+.t{font-weight:600;font-size:16px}
+.d{display:block;font-size:13.5px;color:var(--muted);margin-top:2px;word-break:break-word}
+.v{font-weight:600;font-size:16px;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}
+.row.ot{background:var(--amber-bg);border:1px solid var(--amber-line);border-radius:12px;padding:11px 12px;margin:4px 0}
+.row.ot .t,.row.ot .v{color:var(--amber)}
+.row.ot + .row{border-top:0}
+.row.total{border-top:1px solid #3A3A40;margin-top:4px;padding-top:12px}
+.row.total .t{font-size:17px;font-weight:700}
+.row.total .v{font-size:22px;font-weight:700}
+.head{margin-bottom:6px}
+.old .para{font-size:14px;line-height:1.5;margin-top:8px;color:var(--ink)}
+.old .para .first{color:var(--muted);font-weight:600}
+.notes{margin-top:22px;background:#fff;border:1px solid #E3E8F0;border-radius:14px;padding:14px 18px;font-size:13.5px;color:#334155}
+.notes ul{margin:6px 0 0;padding-left:18px}
+@media (max-width:840px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.preview + .preview{margin-top:-10px}
+.cols.light .phone{--sheet:#F2F2F7;--card:#FFFFFF;--card-line:#E5E5EA;--ink:#1C1C1E;--muted:#6C6C70;--amber:#A35F00;--amber-bg:rgba(245,165,36,.14);--amber-line:rgba(245,165,36,.45);box-shadow:0 8px 24px rgba(15,27,51,.08)}
+.cols.light .row.total{border-top-color:#D1D1D6}
+</style>
+</head>
+<body>
+<main>
+  <h1>iOS Edit booking: "How the hours add up" (UI only)</h1>
+  <p class="lead">Only the card at the bottom of the Hours section changes. The header band, timeline, pickers, Unpaid break toggle, Overtime rate chips and the Save button stay exactly as they are. Every number comes from the existing calculation.</p>
+  <div class="preview" aria-label="Preview only: example bookings">
+    <small>PREVIEW ONLY · DON'T BUILD</small>
+    <button class="on" data-v="0">Weekday with overtime</button>
+    <button data-v="1">No overtime</button>
+    <button data-v="2">Break turned off</button>
+    <button data-v="3">Saturday (all overtime)</button>
+    <button data-v="4">×2 rate chosen</button>
+  </div>
+  <div class="preview" aria-label="Preview only: colour mode">
+    <small>PREVIEW ONLY · MODE</small>
+    <button class="mode " data-m="light">Light mode</button>
+    <button class="mode on" data-m="dark">Dark mode</button>
+  </div>
+  <div class="cols dark" id="cols">
+    <section class="col"><h2><b>After</b>: what to build</h2>
+      <div class="phone"><div class="ctx">… Overtime rate card (unchanged) …</div><div class="box" id="after"></div></div>
+    </section>
+    <section class="col old"><h2>Before: today</h2>
+      <div class="phone"><div class="ctx">… Overtime rate card (unchanged) …</div><div class="box" id="before"></div></div>
+    </section>
+  </div>
+  <div class="notes"><b>Rules</b>
+    <ul>
+      <li>Title becomes "HOW THE HOURS ADD UP · {Day}, {day type}". The rows read down and add up: Normal paid + Overtime paid = Total paid. It matches the "Save · 12.25 hours" button.</li>
+      <li>Hide zero rows. Drop "less 30 min break" when the break is off. The overtime rate follows the selected Overtime rate chip.</li>
+      <li>Numbers to 2 decimals max, trailing zeros dropped. Supports Dynamic Type: text wraps, figures never truncate.</li>
+      <li>Same text as the web app, so both platforms explain the hours the same way.</li>
+    </ul>
+  </div>
+</main>
+<script>
+const V=[
+ {day:'Wednesday',type:'full day',n:{from:'07:00',to:'16:00',brk:30,paid:8.5},o:{r:['06:00–07:00','16:00–17:30'],p:[1,1.5],hrs:2.5,rate:1.5,paid:3.75},total:12.25},
+ {day:'Wednesday',type:'full day',n:{from:'07:00',to:'16:00',brk:30,paid:8.5},o:null,total:8.5},
+ {day:'Wednesday',type:'full day',n:{from:'07:00',to:'16:00',brk:0,paid:9},o:{r:['06:00–07:00','16:00–17:30'],p:[1,1.5],hrs:2.5,rate:1.5,paid:3.75},total:12.75},
+ {day:'Saturday',type:'overtime day',n:null,o:{r:['08:00–13:00'],p:[5],hrs:5,rate:1.5,paid:7.5},total:7.5},
+ {day:'Wednesday',type:'full day',n:{from:'07:00',to:'16:00',brk:30,paid:8.5},o:{r:['06:00–07:00','16:00–17:30'],p:[1,1.5],hrs:2.5,rate:2,paid:5},total:13.5},
+];
+const f=x=>+(+x).toFixed(2);
+function render(i){
+  const {day,type,n,o,total}=V[i];
+  let a=`<div class="head"><span class="lbl">How the hours add up</span><span class="sub">${day}, ${type}</span></div>`;
+  if(n) a+=`<div class="row"><div><span class="t">Normal hours</span><span class="d">${n.from}–${n.to}${n.brk?`, less ${n.brk} min break`:''}</span></div><div class="v">${f(n.paid)}h</div></div>`;
+  if(o) a+=`<div class="row ot"><div><span class="t">Overtime</span><span class="d">${o.r.join(' and ')}</span><span class="d">${f(o.hrs)}h at ×${o.rate}</span></div><div class="v">${f(o.paid)}h</div></div>`;
+  a+=`<div class="row total"><div><span class="t">Total paid hours</span></div><div class="v">${f(total)}h</div></div>`;
+  document.getElementById('after').innerHTML=a;
+  const L=[];
+  if(o) L.push(`${o.r[0]} = ${o.p[0]}h × ${o.rate} = ${f(o.p[0]*o.rate)}h`);
+  if(n) L.push(`${L.length?'+ ':''}${n.from}–${n.to} = ${n.paid}h (day${n.brk?`, less ${n.brk} min unpaid break`:''})`);
+  if(o&&o.r[1]) L.push(`+ ${o.r[1]} = ${o.p[1]}h × ${o.rate} = ${f(o.p[1]*o.rate)}h`);
+  document.getElementById('before').innerHTML=`<span class="lbl">How the hours add up</span><div class="para"><span class="first">${day} ${type}: ${n?`${n.from}–${n.to}${n.brk?` – ${n.brk} min unpaid break (11:30–12:00)`:''} = ${n.paid}h, `:''}hours outside it at ${o?o.rate:1.5}×</span><br>${L.join('<br>')}<br>→ <b>${f(total)}h</b></div>`;
+  document.querySelectorAll('.preview button[data-v]').forEach(b=>b.classList.toggle('on',+b.dataset.v===i));
+}
+document.querySelectorAll('.preview button[data-v]').forEach(b=>b.addEventListener('click',()=>render(+b.dataset.v)));
+render(0);
+document.querySelectorAll('.preview button.mode').forEach(b=>b.addEventListener('click',()=>{const c=document.getElementById('cols');c.classList.remove('light','dark');c.classList.add(b.dataset.m);document.querySelectorAll('.preview button.mode').forEach(x=>x.classList.toggle('on',x===b))}));
+</script>
+</body>
+</html>
