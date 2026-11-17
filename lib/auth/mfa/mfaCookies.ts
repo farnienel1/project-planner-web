@@ -94,6 +94,14 @@ export function decodeMfaOk(raw: string | null | undefined, nowMs = Date.now()):
   return { kind: 'ok', uid: value.uid, exp: value.exp }
 }
 
+/**
+ * The ok cookie counts only for the account it was issued to: its signed uid must equal the uid of the
+ * signed-in user's verified ID token. No signed-in uid (no token, invalid token) is never a match.
+ */
+export function mfaOkBelongsTo(ok: MfaOk | null | undefined, signedInUid: string | null | undefined): boolean {
+  return Boolean(ok && typeof signedInUid === 'string' && signedInUid && ok.uid === signedInUid)
+}
+
 /** A challenge cookie — never an ok cookie. Expiry is left to the caller (it answers "expired" itself). */
 export function decodeMfaChallenge(raw: string | null | undefined): MfaChallenge | null {
   const value = decodeSigned<Partial<MfaChallenge> & { kind?: unknown }>(raw)

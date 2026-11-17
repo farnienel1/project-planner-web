@@ -1,4 +1,4 @@
-import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
+import { getClientAuthHeaders, jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
 import {
   MFA_GATE_KEY,
   MFA_SIGNED_OUT_KEY,
@@ -175,7 +175,7 @@ export async function clearMfaSession(): Promise<void> {
 
 export async function readMfaStatus(): Promise<{ pending: boolean; verified: boolean; next?: string }> {
   try {
-    const response = await fetch('/api/auth/mfa/status', FETCH_OPTS)
+    const response = await fetch('/api/auth/mfa/status', { ...FETCH_OPTS, headers: await getClientAuthHeaders() })
     const data = (await response.json().catch(() => ({}))) as { pending?: boolean; verified?: boolean; next?: string }
     return { pending: data.pending === true, verified: data.verified === true, next: data.next }
   } catch {
