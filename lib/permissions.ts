@@ -15,6 +15,7 @@ import {
   type UserTimesheetSubjectsInput,
   canOpenWeeklyReport,
   canManageMaterialCatalogue as canonicalCanManageMaterialCatalogue,
+  canScheduleOperatives,
 } from '@/lib/canonical'
 import { parseAppUserDocument } from '@/lib/ios-parity/converters'
 import { effectivePermissions, permissionLevelOf } from '@/lib/canonical/permissionLevels'
@@ -232,8 +233,25 @@ export function canEditQualifications(user: PermissionUser): boolean {
   return canViewQualifications(user)
 }
 
+/**
+ * Book or edit work (Book labour, Quick add, booking sheets, Home / menu Book labour): rulebook `canScheduleOperatives`
+ * (§2: may this person schedule at all — never an operative). A user not loaded yet reads true, as before; screens that
+ * must not flash for an operative use `canOpenJobScheduling`. Which jobs stays `canWriteBooking`.
+ */
 export function canBookWork(user: PermissionUser): boolean {
-  return !isOperativeMode(user)
+  if (!user) return true
+  return canScheduleOperatives(user)
+}
+
+/**
+ * Open a job's scheduling (the "This week on site" panel and Open scheduling on the job hub, the Scheduling tab, Book
+ * labour, and the `/schedule`, `/schedule/operatives` and `/schedule/subcontractors` pages of projects and small
+ * works): rulebook `canScheduleOperatives`. Operatives (and operative mode) never — owner 17 Nov: "They can never
+ * schedule so they shouldn't even get to this stage." Unlike `canBookWork`, a user not loaded yet reads false.
+ */
+export function canOpenJobScheduling(user: PermissionUser): boolean {
+  if (!user) return false
+  return canScheduleOperatives(user)
 }
 
 export function canManageSubcontractors(user: PermissionUser, profileLoading = false): boolean {

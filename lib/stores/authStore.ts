@@ -67,7 +67,9 @@ import {
   grantMfaSkip,
   isMfaGateOpen,
   isMfaRequiredError,
+  isMfaStatusUnavailable,
   MfaRequiredError,
+  mfaStatusRetryDelayMs,
   openMfaGate,
   readMfaGate,
   readMfaStatus,
@@ -231,6 +233,7 @@ function watchCurrentUserDocument(uid: string) {
   )
 }
 let mfaStatusFailures = 0
+let mfaStatusUnavailableRetries = 0
 const PROFILE_ATTEMPTS = 4
 
 function redirectAfterSignOut() {
@@ -267,11 +270,25 @@ async function syncMfaStatusFromCookie() {
     try {
       status = await withTimeout(readMfaStatus(), 8000, 'mfa-status')
       mfaStatusFailures = 0
+      mfaStatusUnavailableRetries = 0
       break
-    } catch {
+    } catch (statusError) {
       if (attempt < 2) {
         await new Promise((resolve) => setTimeout(resolve, authLoadRetryDelayMs(attempt)))
         continue
+      }
+      if (isMfaStatusUnavailable(statusError)) {
+        // The server could not check the sign-in right now (503 / no network): never read that as "not
+        // verified" (it would send the person to the code screen). Keep the current state and try again with
+        // backoff while someone is still signed in.
+        mfaStatusUnavailableRetries += 1
+        if (typeof window !== 'undefined') {
+          window.setTimeout(() => {
+            const latest = useAuthStore.getState()
+            if (latest.firebaseUser || latest.user) void syncMfaStatusFromCookie()
+          }, mfaStatusRetryDelayMs(mfaStatusUnavailableRetries))
+        }
+        return
       }
       mfaStatusFailures += 1
       if (mfaStatusFailures < 4 && typeof window !== 'undefined') {

@@ -53,3 +53,14 @@ test('Active users is a manager tile and stays hidden in operative mode', () => 
     false
   )
 })
+
+test('no Scheduling tile when the viewer may not schedule (canOpenJobScheduling false)', () => {
+  const tiles = jobHubTiles({
+    isOperative: false,
+    canSchedule: false,
+    showViewTile: false,
+    canViewMaterials: true,
+    canViewSiteAudit: true,
+  })
+  assert.equal(tiles.some((tile) => tile.href === 'schedule'), false)
+})
