@@ -13,7 +13,9 @@ import { DEFAULT_PAYROLL_POLICY, loadOrganizationDetails, type OrgPayrollTimePol
 import { organizationOvertimeMultiplier, overtimeMultiplierCreateFields, type PayrollTimePolicyState } from '@/lib/canonical'
 import { CreateOvertimeRateField } from '@/components/overtime/OvertimeRateField'
 import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
-import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
+import { dateFromDayKeyInZone, dayKeyInZone } from '@/lib/orgTime/zoneTime'
+import { MultiPersonBookingBlocks } from '@/components/scheduling/MultiPersonBookingBlocks'
+import { multiPersonBlockDaysText, webMultiPersonBookingBlocks } from '@/lib/scheduling/multiPersonBookingCheck'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { bookableWorks } from '@/lib/access/workAccess'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
@@ -140,7 +142,28 @@ export function ScheduleOperativeForm({
       }).length > 0,
     [project, user, operatives, managers]
   )
-  const canConfirm = allDraftPeopleResolved(draftPeople) && slotsList.length > 0 && jobBookable
+  // Rulebook 1.60.0 §5 (owner request 17 Nov 2026): with more than one person, anyone already booked on a selected
+  // day is named and must be removed; they are booked separately (one person keeps the ✓ / ✕ / Replace rows).
+  const multiBlocks = useMemo(
+    () =>
+      webMultiPersonBookingBlocks({
+        people: draftPeople.map((person) => ({
+          personKey: person.personId,
+          name: person.name,
+          id: person.personId,
+          email: person.email,
+        })),
+        dayKeys: slotsList.map((slot) => dayKeyInZone(slot.date, timeZone)),
+        bookings,
+        managerSiteBookings,
+        users,
+        operatives,
+        timeZone,
+      }),
+    [draftPeople, slotsList, bookings, managerSiteBookings, users, operatives, timeZone]
+  )
+  const multiBlocked = multiBlocks.length > 0
+  const canConfirm = allDraftPeopleResolved(draftPeople) && slotsList.length > 0 && jobBookable && !multiBlocked
 
   const handleSlotChange = (date: Date, patch: Partial<ScheduleDateSlot>) => {
     const key = slotKey(date)
@@ -380,6 +403,7 @@ export function ScheduleOperativeForm({
         setError('Select at least one person.')
         return
       }
+      if (multiBlocked) return
       if (!allDraftPeopleResolved(draftPeople)) {
         setError('Already booked people need ✓ to double-book that day, or ✕ to remove them.')
         return
@@ -400,7 +424,7 @@ export function ScheduleOperativeForm({
   const primaryEnabled = () => {
     if (saving) return false
     if (step === 'dates') return slotsList.length > 0
-    if (step === 'pick-person') return draftPeople.length > 0 && allDraftPeopleResolved(draftPeople)
+    if (step === 'pick-person') return draftPeople.length > 0 && allDraftPeopleResolved(draftPeople) && !multiBlocked
     if (step === 'review') return canConfirm
     return true
   }
@@ -510,6 +534,13 @@ export function ScheduleOperativeForm({
         />
       )}
 
+      {step === 'pick-person' || step === 'review' ? (
+        <MultiPersonBookingBlocks
+          blocks={multiBlocks}
+          daysText={(keys) => multiPersonBlockDaysText(keys, timeZone, (key) => dateFromDayKeyInZone(key, timeZone))}
+          onRemove={(personId) => setDraftPeople((prev) => prev.filter((p) => p.personId !== personId))}
+        />
+      ) : null}
       {error && <ErrorBanner message={error} />}
       {!jobBookable ? (
         <ErrorBanner message="This job can't be booked: it is inactive, or you don't manage it." />

@@ -288,6 +288,8 @@ var ProjectPlannerCanonical = (() => {
     MATERIAL_WHATSAPP_ITEM_LIMIT: () => MATERIAL_WHATSAPP_ITEM_LIMIT,
     MATERIAL_WORKFLOW_STATUSES: () => MATERIAL_WORKFLOW_STATUSES,
     MIN_HALF_DAY_MINUTES: () => MIN_HALF_DAY_MINUTES,
+    MULTI_PERSON_ALREADY_BOOKED_MESSAGE: () => MULTI_PERSON_ALREADY_BOOKED_MESSAGE,
+    MULTI_PERSON_ALREADY_BOOKED_REMOVE_LABEL: () => MULTI_PERSON_ALREADY_BOOKED_REMOVE_LABEL,
     MY_SCHEDULE_CLASH_APPROVED_MESSAGE: () => MY_SCHEDULE_CLASH_APPROVED_MESSAGE,
     MY_SCHEDULE_CLASH_APPROVED_TITLE: () => MY_SCHEDULE_CLASH_APPROVED_TITLE,
     MY_SCHEDULE_CLASH_ASK_MANAGER: () => MY_SCHEDULE_CLASH_ASK_MANAGER,
@@ -1092,6 +1094,7 @@ var ProjectPlannerCanonical = (() => {
     leaveAllowanceForWindow: () => leaveAllowanceForWindow,
     leaveApproverIds: () => leaveApproverIds,
     leaveComparableInterval: () => leaveComparableInterval,
+    leaveCoverBookingWindow: () => leaveCoverBookingWindow,
     leaveCoverageRows: () => leaveCoverageRows,
     leaveDayKind: () => leaveDayKind,
     leaveDaysInRange: () => leaveDaysInRange,
@@ -1203,6 +1206,7 @@ var ProjectPlannerCanonical = (() => {
     missingStarterQualificationCodes: () => missingStarterQualificationCodes,
     monthDayOffsetBefore: () => monthDayOffsetBefore,
     monthDayOrdinal: () => monthDayOrdinal,
+    multiPersonBookingBlocks: () => multiPersonBookingBlocks,
     multipliedHoursText: () => multipliedHoursText,
     myProfileBankHolidayRange: () => myProfileBankHolidayRange,
     myProfileSummary: () => myProfileSummary,
@@ -7146,6 +7150,21 @@ var ProjectPlannerCanonical = (() => {
       if (a.kind !== b.kind) return a.kind === "leave_clash" ? -1 : 1;
       return a.personName.localeCompare(b.personName, void 0, { sensitivity: "base" });
     });
+  }
+  function leaveCoverBookingWindow(row2, day) {
+    if (row2.kind !== "leave_cover") return null;
+    const gaps = [...row2.missing || []].filter((interval2) => interval2.end > interval2.start).sort((a, b) => a.start - b.start);
+    if (gaps.length === 0) return null;
+    const lunch = standardBreakWindow(bookingStandardDayOn(day, row2.dayKey));
+    const start = gaps[0].start;
+    let end = gaps[0].end;
+    for (const gap of gaps.slice(1)) {
+      const between = { start: end, end: gap.start };
+      const onlyLunch = Boolean(lunch) && between.start >= lunch.start && between.end <= lunch.end;
+      if (between.end > between.start && !onlyLunch) break;
+      end = gap.end;
+    }
+    return { start: formatClockMinutes(start), end: formatClockMinutes(end), startMinutes: start, endMinutes: end };
   }
 
   // lib/canonical/notificationPreferences.ts
@@ -13898,8 +13917,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.59.0" : "",
-      sha256: true ? "eb07186e855d40eddecf9cd874ae59c3b7c44b1857b6699c96a719aa273ed952" : ""
+      version: true ? "1.60.0" : "",
+      sha256: true ? "5ab1e9d78dee09464b6cd98e68441d55506983e55065dc91232a800490222fe9" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -28081,6 +28100,42 @@ var ProjectPlannerCanonical = (() => {
       });
     }
     return findings;
+  }
+
+  // lib/canonical/multiPersonBooking.ts
+  var MULTI_PERSON_ALREADY_BOOKED_MESSAGE = "This user already has hours booked for this day. Remove this user from the selection to continue with the booking. The user will have to be booked separately.";
+  var MULTI_PERSON_ALREADY_BOOKED_REMOVE_LABEL = "Remove";
+  function multiPersonBookingBlocks(input) {
+    if (input.people.length <= 1) return [];
+    const days = new Set(input.dayKeys.filter(Boolean));
+    if (days.size === 0) return [];
+    const ignore = new Set((input.ignoreBookingIds || []).map(idKey).filter(Boolean));
+    const bookedDaysById = /* @__PURE__ */ new Map();
+    for (const booking of input.bookings) {
+      const personId2 = idKey(booking.personId);
+      if (!personId2 || !days.has(booking.dayKey)) continue;
+      if (booking.id && ignore.has(idKey(booking.id))) continue;
+      const status = String(booking.status ?? "").trim();
+      if (status && !bookingOccupiesDay(status)) continue;
+      const set = bookedDaysById.get(personId2) || /* @__PURE__ */ new Set();
+      set.add(booking.dayKey);
+      bookedDaysById.set(personId2, set);
+    }
+    const blocks = [];
+    for (const person of input.people) {
+      const booked = /* @__PURE__ */ new Set();
+      for (const id2 of person.ids) {
+        for (const day of bookedDaysById.get(idKey(id2)) || []) booked.add(day);
+      }
+      if (booked.size === 0) continue;
+      blocks.push({
+        personKey: person.personKey,
+        name: person.name,
+        dayKeys: [...booked].sort(),
+        message: MULTI_PERSON_ALREADY_BOOKED_MESSAGE
+      });
+    }
+    return blocks;
   }
 
   // lib/canonical/taskPeople.ts
