@@ -65,3 +65,28 @@ test('1.60.0: a former id and a manager site booking count; cancelled and one pe
   })
   assert.deepEqual(cancelledOnly, [])
 })
+
+test('1.60.0: Book labour counts the id the booking is written under (bookingOperativeId)', () => {
+  const blocks = webMultiPersonBookingBlocks({
+    people: [{ ...people[0], extraIds: ['ROW-NO-EMAIL'] }, people[1]],
+    dayKeys: ['2026-11-23'],
+    bookings: [booking('B1', 'row-no-email')],
+    managerSiteBookings: [],
+    users,
+    operatives: [],
+    timeZone: ZONE,
+  })
+  assert.deepEqual(blocks.map((b) => b.personKey), ['U-ADA'])
+})
+
+test('1.60.0: Book labour Continue and the Schedule wizard Confirm wait for the multi-person block', async () => {
+  const { readFileSync } = await import('node:fs')
+  const flow = readFileSync(new URL('../../components/book-labour/BookLabourFlowScreen.tsx', import.meta.url), 'utf8')
+  // Continue does nothing and is disabled while anyone must be removed; the save re-checks.
+  assert.match(flow, /if \(selectedBlocks\.length > 0\) return/)
+  assert.match(flow, /disabled=\{selectedIds\.size === 0 \|\| continueBlocked\}/)
+  assert.match(flow, /const lateBlocks = multiPersonBlocksFor\(people\)/)
+  const wizard = readFileSync(new URL('../../components/projects/scheduling/ScheduleOperativeForm.tsx', import.meta.url), 'utf8')
+  assert.match(wizard, /jobBookable && !multiBlocked/)
+  assert.match(wizard, /allDraftPeopleResolved\(draftPeople\) && !multiBlocked/)
+})

@@ -1069,6 +1069,7 @@ var ProjectPlannerCanonical = (() => {
     leaveAllowanceForWindow: () => leaveAllowanceForWindow,
     leaveApproverIds: () => leaveApproverIds,
     leaveComparableInterval: () => leaveComparableInterval,
+    leaveCoverBookingWindow: () => leaveCoverBookingWindow,
     leaveCoverageRows: () => leaveCoverageRows,
     leaveDayKind: () => leaveDayKind,
     leaveDaysInRange: () => leaveDaysInRange,
@@ -7111,6 +7112,21 @@ var ProjectPlannerCanonical = (() => {
       if (a.kind !== b.kind) return a.kind === "leave_clash" ? -1 : 1;
       return a.personName.localeCompare(b.personName, void 0, { sensitivity: "base" });
     });
+  }
+  function leaveCoverBookingWindow(row2, day) {
+    if (row2.kind !== "leave_cover") return null;
+    const gaps = [...row2.missing || []].filter((interval2) => interval2.end > interval2.start).sort((a, b) => a.start - b.start);
+    if (gaps.length === 0) return null;
+    const lunch = standardBreakWindow(bookingStandardDayOn(day, row2.dayKey));
+    const start = gaps[0].start;
+    let end = gaps[0].end;
+    for (const gap of gaps.slice(1)) {
+      const between = { start: end, end: gap.start };
+      const onlyLunch = Boolean(lunch) && between.start >= lunch.start && between.end <= lunch.end;
+      if (between.end > between.start && !onlyLunch) break;
+      end = gap.end;
+    }
+    return { start: formatClockMinutes(start), end: formatClockMinutes(end), startMinutes: start, endMinutes: end };
   }
 
   // lib/canonical/notificationPreferences.ts
@@ -13703,7 +13719,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.60.0" : "",
-      sha256: true ? "ec65a757f15632927cd9d6d8c9aa2e483243b72c70c9534c137b97fa551a1a4b" : ""
+      sha256: true ? "159ed40a540b6b7d9840d08567582b2179f5cd86b019ad9cef3559ee4fccb4fb" : ""
     };
   }
   function rulebookVersionLabel(version) {

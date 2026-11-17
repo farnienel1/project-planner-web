@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.58.0 → 1.60.0
-Packed hash: 94c75ada9b2375ae5cafd521914c1484dddfd7c2f2272e5d6d4782572a0111fa
-Rulebook sha256: ec65a757f15632927cd9d6d8c9aa2e483243b72c70c9534c137b97fa551a1a4b
+Rulebook version: 1.60.0 → 1.60.0
+Packed hash: 40ec36a6ef0824aa9b5bf5b485e29eb0f8a15737a62923173294d43a7a3a1639
+Rulebook sha256: 159ed40a540b6b7d9840d08567582b2179f5cd86b019ad9cef3559ee4fccb4fb
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,12 +22,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 5b2615b5540b55f716d40617dd791dbcda6290348ef18951186f47e2e5b7cd20
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: MULTI_PERSON_ALREADY_BOOKED_MESSAGE, MULTI_PERSON_ALREADY_BOOKED_REMOVE_LABEL, multiPersonBookingBlocks
+Exports added: leaveCoverBookingWindow
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/multiPersonBooking.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/leaveCoverage.ts
 Done when:
-- [ ] Packed hash in iOS equals 94c75ada9b2375ae5cafd521914c1484dddfd7c2f2272e5d6d4782572a0111fa
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 ec65a757f15632927cd9d6d8c9aa2e483243b72c70c9534c137b97fa551a1a4b)
+- [ ] Packed hash in iOS equals 40ec36a6ef0824aa9b5bf5b485e29eb0f8a15737a62923173294d43a7a3a1639
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 159ed40a540b6b7d9840d08567582b2179f5cd86b019ad9cef3559ee4fccb4fb)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.60.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -36,12 +36,9 @@ Done when:
 
 ## What changed in 1.60.0
 
-- **More than one person, someone already booked** (§5, owner request 17 Nov): new `multiPersonBookingBlocks`, `MULTI_PERSON_ALREADY_BOOKED_MESSAGE`, `MULTI_PERSON_ALREADY_BOOKED_REMOVE_LABEL`. A booking for more than one person names each selected person who already has a booking on a selected day and cannot be saved until they are removed; one person keeps ✓ / ✕ / Replace. Web: Book labour multi-select, the Schedule wizard; iOS: Book labour, Quick Add, Select Operatives.
-- **Book labour and Daily Overview list "Half-day leave not covered"** (§5, owner report 17 Nov): Book labour lists the day's `leaveCoverageRows` `leave_cover` rows beside `unbookedLabourRowsOnDay` (before, "Book the PM" opened on "Everyone is booked"), prefilled with the uncovered time; Daily Overview shows the day's rows in its scope. No rule change. Must merge after 1.59.0 (#370).
+- **More than one person, someone already booked** (§5, owner request 17 Nov): new `multiPersonBookingBlocks`, `MULTI_PERSON_ALREADY_BOOKED_MESSAGE`, `MULTI_PERSON_ALREADY_BOOKED_REMOVE_LABEL`. A booking for more than one person names each selected person who already has a booking on a selected day and cannot be saved until they are removed; one person keeps ✓ / ✕ / Replace. Web: Book labour multi-select, the Schedule wizard; iOS: Book labour multi-select, the Scheduling wizard (`ScheduleOperativeView`) and Select Operatives. Quick Add books one person (unchanged).
+- **Book labour and Daily Overview list "Half-day leave not covered"** (§5, owner report 17 Nov): Book labour lists the day's `leaveCoverageRows` `leave_cover` rows beside `unbookedLabourRowsOnDay` (before, "Book the PM" opened on "Everyone is booked"), prefilled with new `leaveCoverBookingWindow` (the first uncovered stretch, never across a booking); Daily Overview shows the day's rows in its scope. Must merge after 1.59.0 (#370).
 
-## New rulebook sections
-
-- 1.60.0 — 2026-11-17
 
 ## Workflow for the iOS agent
 

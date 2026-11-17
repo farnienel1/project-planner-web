@@ -17561,3 +17561,34 @@ test('1.60.0 multiPersonBookingBlocks: more than one person, anyone already book
     []
   )
 })
+
+test('1.60.0 leaveCoverBookingWindow: the first uncovered stretch, across lunch, never across a booking', () => {
+  const day = { standardDayStart: '07:30', standardDayEnd: '16:00', breakWindowStart: '12:00', breakWindowEnd: '12:30' }
+  const leave = [{ id: 'L', userId: 'U', startDayKey: '2026-11-23', endDayKey: '2026-11-23', timeSlot: 'AM', approved: true }]
+  const rowsFor = (bookings: unknown[]) =>
+    R112.leaveCoverageRows({
+      timeZone: 'Europe/London',
+      startDayKey: '2026-11-23',
+      endDayKey: '2026-11-23',
+      day,
+      includeWeekends: false,
+      people: [{ personKey: 'U', name: 'Test Admin', userId: 'U' }],
+      leave,
+      bookings: bookings as never,
+    })
+  // Nothing booked: 11:45–12:00 and 12:30–16:00 are one stretch (only lunch between them).
+  const [open] = rowsFor([])
+  assert.deepEqual(R112.leaveCoverBookingWindow(open, day), { start: '11:45', end: '16:00', startMinutes: 705, endMinutes: 960 })
+  // Booked 13:00–14:00: the prefill stops at the booking (never 11:45–16:00, which would clash).
+  const [mid] = rowsFor([
+    { id: 'b', personId: 'U', kind: 'manager', dayKey: '2026-11-23', timeSlot: 'CUSTOM_HOURS', workStartTime: '13:00', workEndTime: '14:00' },
+  ])
+  assert.deepEqual(R112.leaveCoverBookingWindow(mid, day), { start: '11:45', end: '13:00', startMinutes: 705, endMinutes: 780 })
+  // Booked 11:45–12:00 already: the one remaining stretch.
+  const [late] = rowsFor([
+    { id: 'b', personId: 'U', kind: 'manager', dayKey: '2026-11-23', timeSlot: 'CUSTOM_HOURS', workStartTime: '11:45', workEndTime: '12:00' },
+  ])
+  assert.deepEqual(R112.leaveCoverBookingWindow(late, day), { start: '12:30', end: '16:00', startMinutes: 750, endMinutes: 960 })
+  // A leave_clash row has no booking window.
+  assert.equal(R112.leaveCoverBookingWindow({ ...open, kind: 'leave_clash' }, day), null)
+})

@@ -67,7 +67,7 @@ export {
   warningDayKeyIsDated,
 } from './warningSort'
 
-export { leaveCoverageRows, leaveSlotKind } from './leaveCoverage'
+export { leaveCoverageRows, leaveCoverBookingWindow, leaveSlotKind } from './leaveCoverage'
 
 export {
   canEditWorkCatalogue,

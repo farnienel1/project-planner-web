@@ -12,12 +12,14 @@ import { UserRole } from '@/types'
 import {
   isAnonymisedDeletedProfile,
   isWarningRowInScope,
+  leaveCoverBookingWindow,
   normalizeDocumentId,
   unbookedLabourRowsOnDay,
   type PayrollTimePolicyState,
   type WarningScope,
 } from '@/lib/canonical'
-import { leaveCoverBookingHours, leaveCoverageWarningsForDays } from '@/lib/warnings/leaveCoverageWarnings'
+import { leaveCoverageWarningsForDays } from '@/lib/warnings/leaveCoverageWarnings'
+import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import { dateFromDayKey } from '@/lib/ios-parity/londonTime'
 import { displayTradeType } from '@/lib/staff/staffTradeTypes'
 import { rosterDisplayName } from '@/lib/staff/userRosterUtils'
@@ -42,8 +44,8 @@ export type BookLabourCandidate = {
   canBookOtherLocations: boolean
   /**
    * Set when this person is listed because of a "Half-day leave not covered" row (`leaveCoverageRows`, rulebook
-   * §5 / §9) — the same row the Warnings card links from. `hours` is the uncovered time the rule names, to prefill
-   * custom hours (`leaveCoverBookingHours`). Absent for an `unbookedLabourRowsOnDay` person (nothing booked).
+   * §5 / §9) — the same row the Warnings card links from. `hours` is the time to prefill as custom hours
+   * (`leaveCoverBookingWindow`: the first uncovered stretch). Absent for an `unbookedLabourRowsOnDay` person (nothing booked).
    */
   leaveCover?: {
     leaveLabel: 'AM' | 'PM' | 'Full day'
@@ -244,7 +246,11 @@ export function buildBookLabourCandidates(input: {
       leaveLabel: row.leaveLabel,
       workingLabel: row.leaveSlot === 'PM' ? 'AM' : 'PM',
       missingHours: row.missingHours,
-      hours: leaveCoverBookingHours(row),
+      // Rulebook 1.60.0 `leaveCoverBookingWindow`: the first uncovered stretch, never across an existing booking.
+      hours: (() => {
+        const window = leaveCoverBookingWindow(row, input.payrollPolicyState ?? input.payrollPolicy ?? DEFAULT_PAYROLL_POLICY)
+        return window ? { start: window.start, end: window.end } : null
+      })(),
       message: row.message,
     })
   }

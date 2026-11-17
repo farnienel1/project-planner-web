@@ -1,7 +1,7 @@
 {
   "rulebookVersion": "1.60.0",
-  "rulebookSha256": "ec65a757f15632927cd9d6d8c9aa2e483243b72c70c9534c137b97fa551a1a4b",
-  "bundleSha256": "94c75ada9b2375ae5cafd521914c1484dddfd7c2f2272e5d6d4782572a0111fa",
+  "rulebookSha256": "159ed40a540b6b7d9840d08567582b2179f5cd86b019ad9cef3559ee4fccb4fb",
+  "bundleSha256": "40ec36a6ef0824aa9b5bf5b485e29eb0f8a15737a62923173294d43a7a3a1639",
   "crossPlatformContractSha256": "5b2615b5540b55f716d40617dd791dbcda6290348ef18951186f47e2e5b7cd20",
   "dataParityFixtureSha256": "c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f",
   "exports": [
@@ -1053,6 +1053,7 @@
     "leaveAllowanceForWindow",
     "leaveApproverIds",
     "leaveComparableInterval",
+    "leaveCoverBookingWindow",
     "leaveCoverageRows",
     "leaveDayKind",
     "leaveDaysInRange",

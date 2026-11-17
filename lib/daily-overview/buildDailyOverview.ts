@@ -35,7 +35,7 @@ import {
 } from '@/lib/subcontractors/bookingPeople'
 import { holidayBookingDayKeys, holidayBookingLabourInput } from '@/lib/annualLeave/holidayDayKeys'
 import type { WeekendCoverage } from '@/lib/canonical'
-import { dailyOverviewLeaveRows, normalizeDocumentId } from '@/lib/canonical'
+import { dailyOverviewLeaveRows, isAnonymisedDeletedProfile, normalizeDocumentId, type PayrollTimePolicyState } from '@/lib/canonical'
 import { leaveCoverageWarningsForDays, type LeaveCoverageWarning } from '@/lib/warnings/leaveCoverageWarnings'
 
 export type OverviewSubcontractorBooking = {
@@ -261,6 +261,8 @@ export function buildDailyOverview(params: {
   excludedUserIdsFromUnbookedWarnings?: readonly string[] | null
   /** Rulebook 1.19.0 §5: `warningDetection.weekendCoverage` (missing → both days on, default windows). */
   weekendCoverage?: WeekendCoverage | null
+  /** Rulebook 1.23.0: the working-hours state, so leave cover reads the day under the rules in effect on it. */
+  payrollPolicyState?: PayrollTimePolicyState | null
   /** Organisation business zone (`organizationTimeZone`). Default Europe/London. */
   timeZone?: string
   /**
@@ -637,11 +639,18 @@ export function buildDailyOverview(params: {
     includeWeekends: Boolean(params.includeWeekendsForUnbookedLabour),
     excludedUserIds: params.excludedUserIdsFromUnbookedWarnings,
     payrollPolicy: payroll,
+    payrollPolicyState: params.payrollPolicyState ?? null,
     startDayKey: overviewDayKey,
     endDayKey: overviewDayKey,
     timeZone: zone,
     userIdAliases: params.userIdAliases ?? null,
-  }).filter((row) => row.kind === 'leave_cover' && personInScope(row.userId, row.operativeId, row.personKey))
+  }).filter(
+    (row) =>
+      row.kind === 'leave_cover' &&
+      // Never a current row for an anonymised deleted profile (`isAnonymisedDeletedProfile`, as Warnings).
+      !isAnonymisedDeletedProfile({ name: row.personName }) &&
+      personInScope(row.userId, row.operativeId, row.personKey)
+  )
 
   const policy = params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY
   const labourResults = [

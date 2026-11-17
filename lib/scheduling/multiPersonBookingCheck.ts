@@ -21,6 +21,8 @@ export type MultiPersonSelection = {
   /** The users id, or the `operatives` row id for someone with no account. */
   id: string
   email?: string | null
+  /** Other ids their bookings are written under (Book labour's `bookingOperativeId`). */
+  extraIds?: readonly string[]
 }
 
 export function multiPersonBookingIds(person: MultiPersonSelection, users: User[], operatives: Operative[]): string[] {
@@ -39,7 +41,7 @@ export function multiPersonBookingIds(person: MultiPersonSelection, users: User[
     { id: person.id, email, formerIds: account?.formerUserIds ?? null, aliasIds: fromRoster },
     operatives
   )
-  return [...new Set([...fromRoster, ...fromOperatives, person.id])]
+  return [...new Set([...fromRoster, ...fromOperatives, person.id, ...(person.extraIds ?? [])].filter(Boolean))]
 }
 
 export function webMultiPersonBookingBlocks(input: {
