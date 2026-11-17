@@ -65,6 +65,8 @@ import { useOrganizationDocument, useOrganizationTimeZone } from '@/lib/stores/o
 import { webJobAccessViewer } from '@/lib/access/readPlan'
 import { enforcedReadsFor } from '@/lib/access/securitySwitches'
 import { feedback } from '@/lib/feedbackSounds/feedback'
+import { MultiPersonBookingBlocks } from '@/components/scheduling/MultiPersonBookingBlocks'
+import { multiPersonBlockDaysText, webMultiPersonBookingBlocks } from '@/lib/scheduling/multiPersonBookingCheck'
 
 type BookToTab = 'other' | 'projects' | 'smallWorks'
 type ManagerSlot = 'FULL_DAY' | 'AM' | 'PM' | 'CUSTOM_HOURS'
@@ -199,7 +201,18 @@ export function BookLabourFlowScreen({
   // Rulebook 1.18.0 (`customHoursPrefillForDays`): custom hours open with the day's default — a set-window weekend
   // day's window, else the standard day in effect on it — and reset when the day changes kind or the hours load.
   const bookingDays = useMemo(() => [day], [day])
+  // Owner report (17 Nov 2026): a person listed for "Half-day leave not covered" is booked for the uncovered time the
+  // rule names (`leaveCoverBookingHours`); the whole party must share it, else the usual custom-hours prefill applies.
+  const leaveCoverHours = useMemo(() => {
+    if (party.length === 0) return null
+    const first = party[0].leaveCover?.hours
+    if (!first) return null
+    return party.every((person) => person.leaveCover?.hours?.start === first.start && person.leaveCover?.hours?.end === first.end)
+      ? first
+      : null
+  }, [party])
   useCustomHoursPrefillOnKindChange(bookingDays, payroll, (hours) => {
+    if (leaveCoverHours) return
     setCustomStart(hours.start)
     setCustomEnd(hours.end)
   })
@@ -333,6 +346,30 @@ export function BookLabourFlowScreen({
     ]
   )
 
+  // Rulebook 1.60.0 §5 (owner request 17 Nov 2026): with more than one person selected, anyone who already has hours
+  // booked on this day is named (`multiPersonBookingBlocks`) and must be removed before the booking continues.
+  const multiPersonBlocksFor = (people: BookLabourCandidate[]) =>
+    webMultiPersonBookingBlocks({
+      people: people.map((person) => ({
+        personKey: person.id,
+        name: person.displayName,
+        id: person.user.id,
+        email: person.user.email,
+      })),
+      dayKeys: [orgDayKey(day, orgTimeZone)],
+      bookings,
+      managerSiteBookings,
+      users,
+      operatives,
+      timeZone: orgTimeZone,
+    })
+  const selectedBlocks = useMemo(
+    () => (multiSelect ? multiPersonBlocksFor(candidates.filter((person) => selectedIds.has(person.id))) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [multiSelect, candidates, selectedIds, bookings, managerSiteBookings, users, operatives, day, orgTimeZone]
+  )
+  const blockDaysText = (keys: string[]) => multiPersonBlockDaysText(keys, orgTimeZone, (key) => dateFromDayKey(key, orgTimeZone))
+
   const allWorks = useMemo(() => [...projects, ...smallWorks], [projects, smallWorks])
   // Rulebook 1.21.0 §21 (`bookableJobs`): the jobs this user may book onto — visible, not inactive and writable
   // (`canWriteBooking`; before 1.21.0 web skipped it). The job's dates are never checked.
@@ -432,6 +469,17 @@ export function BookLabourFlowScreen({
     setPhase({ kind: 'pickDestination' })
   }
 
+  /** A leave-cover party goes straight to custom hours, prefilled with the uncovered time; everyone else picks a slot. */
+  function toSlotManager(next: Omit<Extract<Phase, { kind: 'pickSlotManager' }>, 'kind'>) {
+    if (leaveCoverHours) {
+      setCustomStart(leaveCoverHours.start)
+      setCustomEnd(leaveCoverHours.end)
+      setPhase({ kind: 'pickCustomManager', ...next })
+      return
+    }
+    setPhase({ kind: 'pickSlotManager', ...next })
+  }
+
   function projectForLocation(locationType: ManagerLocationType, locationId?: string): Project | undefined {
     if ((locationType !== 'project' && locationType !== 'small_work') || !locationId) return undefined
     return allWorks.find((project) => project.id === locationId)
@@ -515,6 +563,14 @@ export function BookLabourFlowScreen({
   }) {
     const people = activeParty.filter((person) => !args.droppedUserIds?.has(person.user.id))
     if (people.length === 0 || !organization?.id || !user?.id) return
+    // Rulebook 1.60.0 §5: re-checked at save (a booking may have arrived since the selection).
+    const lateBlocks = multiPersonBlocksFor(people)
+    if (lateBlocks.length > 0) {
+      setErrorBanner(
+        `${lateBlocks.map((block) => block.name).join(', ')}: ${lateBlocks[0].message}`
+      )
+      return
+    }
     const resolvedProject = projectForLocation(args.locationType, args.locationId)
     const operativeSlot = operativeSlotFromManager(args.slot)
 
@@ -666,11 +722,16 @@ export function BookLabourFlowScreen({
   function onSelectProject(project: Project, smallWorksList: boolean) {
     const people = activeParty
     if (people.length === 1 && people[0].usesOperativeProjectBookings) {
+      if (leaveCoverHours) {
+        setCustomStart(leaveCoverHours.start)
+        setCustomEnd(leaveCoverHours.end)
+        setPhase({ kind: 'pickCustomOperative', project })
+        return
+      }
       setPhase({ kind: 'pickSlotOperative', project })
       return
     }
-    setPhase({
-      kind: 'pickSlotManager',
+    toSlotManager({
       locationType: smallWorksList ? 'small_work' : 'project',
       locationId: project.id,
       returnRoute: { projectList: smallWorksList },
@@ -739,7 +800,24 @@ export function BookLabourFlowScreen({
               })
             }}
             onPick={(person) => beginBooking([person])}
-            onContinue={() => beginBooking(candidates.filter((c) => selectedIds.has(c.id)))}
+            onContinue={() => {
+              if (selectedBlocks.length > 0) return
+              beginBooking(candidates.filter((c) => selectedIds.has(c.id)))
+            }}
+            blocked={
+              <MultiPersonBookingBlocks
+                blocks={selectedBlocks}
+                daysText={blockDaysText}
+                onRemove={(personKey) =>
+                  setSelectedIds((prev) => {
+                    const next = new Set(prev)
+                    next.delete(personKey)
+                    return next
+                  })
+                }
+              />
+            }
+            continueBlocked={selectedBlocks.length > 0}
           />
         )}
 
@@ -780,8 +858,7 @@ export function BookLabourFlowScreen({
           <LocationList
             picks={otherPicks}
             onPick={(pick) =>
-              setPhase({
-                kind: 'pickSlotManager',
+              toSlotManager({
                 locationType: pick.locationType,
                 customLocationName: pick.customLocationName,
                 returnRoute: 'other',
@@ -958,7 +1035,11 @@ function PickPerson({
   onToggleId,
   onPick,
   onContinue,
+  blocked,
+  continueBlocked,
 }: {
+  blocked?: ReactNode
+  continueBlocked?: boolean
   dayLine: string
   candidates: BookLabourCandidate[]
   phase: BookLabourListPhase
@@ -1048,15 +1129,22 @@ function PickPerson({
             <div className="min-w-0 flex-1">
               <p className="truncate text-[13px] font-medium">{person.displayName}</p>
               <RoleChips person={person} />
+              {person.leaveCover ? (
+                <p className="mt-0.5 text-[11px] text-[#854F0B]">
+                  {person.leaveCover.leaveLabel} annual leave · book the {person.leaveCover.workingLabel}
+                  {person.leaveCover.hours ? ` ${person.leaveCover.hours.start}–${person.leaveCover.hours.end}` : ''}
+                </p>
+              ) : null}
             </div>
             {!multiSelect ? <span className="text-[var(--ink3)]">›</span> : null}
           </button>
         ))}
       </div>
+      {multiSelect ? blocked : null}
       {multiSelect ? (
         <button
           type="button"
-          disabled={selectedIds.size === 0}
+          disabled={selectedIds.size === 0 || continueBlocked}
           onClick={onContinue}
           className="btn primary block disabled:bg-[var(--ink3)]"
         >

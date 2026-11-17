@@ -977,3 +977,21 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 | 17 Nov | One `or` query (`userId in ids + email OR operativeId in ids`, up to 14 ids; the email is never sent as an `operativeId`) so an ordinary operative has one query and the data check (§27) counts it exactly; with more than 14 ids the data check may count a record twice (it re-reads and logs). The Phase B rules must be proved on the emulator against this `or` query. | done (1.56.0), **owner confirmed 17 Nov** (20a) |
 | 17 Nov | Review of #356: only the operative level is narrowed; a legacy user with no level flag (manager level) and an admin with a stray operative-mode flag keep reading every leave record. The report includes members from another company and lists a record two operatives would claim as one `conflict` — only when none of their queries reaches it (a record one claimant already reaches is not reported). | done (1.56.0) |
 
+
+## 17 Nov decisions (for 1.60, leave cover and multi-person booking)
+
+| Date | Decision | Status |
+|---|---|---|
+| 17 Nov | **"Book the PM / AM" on "Half-day leave not covered" opens Book labour with that person**, for that day, with the uncovered half prefilled as custom hours (the gap `leaveCoverageRows` names). Before, Book labour said "Everyone is booked" (it listed only `unbookedLabourRowsOnDay`, which leaves half-leave days out). "Open daily overview" opens that day; "Annual leave" opens that person (My leave when it is the viewer). | done web (1.60.0, w-leave-cover-actions); iOS (ios-leave-cover-actions) |
+| 17 Nov | **iOS Warnings half-day leave card gets "Book the PM / AM", "Open daily overview" and "Annual leave"**, like web. | iOS (ios-leave-cover-actions) |
+| 17 Nov | **Daily Overview shows "Half-day leave not covered"** for the day, both apps, in the viewer's Daily Overview scope. | done web (1.60.0); iOS (ios-leave-cover-actions) |
+| 17 Nov | **More than one person selected, someone already booked that day:** the booking cannot be saved until they are removed; prompt `MULTI_PERSON_ALREADY_BOOKED_MESSAGE` names the person and day with a Remove action. Book labour multi-select, Quick Add, Schedule wizard / Select Operatives. | done web + rulebook (1.60.0); iOS (ios-leave-cover-actions) |
+
+## 1.60.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 17 Nov | A booking for ONE person keeps today's orange clash row with ✓ / ✕ / Replace; the "remove from the selection" prompt applies only to two or more people. | done, owner to confirm |
+| 17 Nov | "Already has hours booked" is any labour or manager schedule booking on the day whose status occupies the day (cancelled bookings do not count), under every id the person goes by — not only an overlapping one. | done, owner to confirm |
+| 17 Nov | A leave-cover person in Book labour goes straight to Custom hours with the gap prefilled (Full day / AM / PM are skipped; Back still shows them). The gap is one pair, from the start of the first uncovered range to the end of the last (it may span the lunch window, which the booking's break toggle handles). | done, owner to confirm |
+| 17 Nov | Home's "N people have nothing booked" banner still counts only people with nothing booked; leave-cover people are listed in Book labour but not in that count. | done, owner to confirm |

@@ -17529,3 +17529,35 @@ test('1.57.0 J1 review: a gap-only change never hides late extras waiting for th
   // Without late extras the gap-only change is still dropped for reports (signed figures stand).
   assert.equal(R112.signedTimesheetChangeForReports(R112.timesheetChangesWithLateExtras(gap, { waitingForLineManager: false })), null)
 })
+
+test('1.60.0 multiPersonBookingBlocks: more than one person, anyone already booked that day is named', () => {
+  const { multiPersonBookingBlocks, MULTI_PERSON_ALREADY_BOOKED_MESSAGE } = R112
+  const people = [
+    { personKey: 'A', name: 'Ada', ids: ['U-ADA', 'OP-ADA'] },
+    { personKey: 'B', name: 'Ben', ids: ['U-BEN'] },
+    { personKey: 'C', name: 'Cat', ids: ['U-CAT'] },
+  ]
+  const bookings = [
+    { id: 'b1', personId: 'op-ada', dayKey: '2026-11-23', status: 'Confirmed' },
+    { id: 'b2', personId: 'U-BEN', dayKey: '2026-11-24' },
+    { id: 'b3', personId: 'U-CAT', dayKey: '2026-11-23', status: 'Cancelled' },
+    { id: 'b4', personId: 'U-BEN', dayKey: '2026-11-30', status: 'Tentative' },
+  ]
+  const blocks = multiPersonBookingBlocks({ people, dayKeys: ['2026-11-23', '2026-11-24'], bookings })
+  assert.deepEqual(
+    blocks.map((b) => [b.personKey, b.dayKeys]),
+    [
+      ['A', ['2026-11-23']],
+      ['B', ['2026-11-24']],
+    ]
+  )
+  assert.equal(blocks[0].message, MULTI_PERSON_ALREADY_BOOKED_MESSAGE)
+  assert.match(MULTI_PERSON_ALREADY_BOOKED_MESSAGE, /^This user already has hours booked for this day\./)
+  // One person keeps the double-booking rows instead: nothing blocked.
+  assert.deepEqual(multiPersonBookingBlocks({ people: [people[0]], dayKeys: ['2026-11-23'], bookings }), [])
+  // The booking being edited never blocks itself.
+  assert.deepEqual(
+    multiPersonBookingBlocks({ people, dayKeys: ['2026-11-23'], bookings, ignoreBookingIds: ['B1'] }),
+    []
+  )
+})

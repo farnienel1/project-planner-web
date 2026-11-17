@@ -1,7 +1,7 @@
 {
-  "rulebookVersion": "1.58.0",
-  "rulebookSha256": "021d024080428fee353e0a264d42ff8a1e0a6bf0a19638d1ebfa11f9e6e414c8",
-  "bundleSha256": "ed36051c3eda321e195501d2ce00f3a1b54b4e6c1e993aaf20aed2277abdefa9",
+  "rulebookVersion": "1.60.0",
+  "rulebookSha256": "ec65a757f15632927cd9d6d8c9aa2e483243b72c70c9534c137b97fa551a1a4b",
+  "bundleSha256": "94c75ada9b2375ae5cafd521914c1484dddfd7c2f2272e5d6d4782572a0111fa",
   "crossPlatformContractSha256": "5b2615b5540b55f716d40617dd791dbcda6290348ef18951186f47e2e5b7cd20",
   "dataParityFixtureSha256": "c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f",
   "exports": [
@@ -257,6 +257,8 @@
     "MATERIAL_WHATSAPP_ITEM_LIMIT",
     "MATERIAL_WORKFLOW_STATUSES",
     "MIN_HALF_DAY_MINUTES",
+    "MULTI_PERSON_ALREADY_BOOKED_MESSAGE",
+    "MULTI_PERSON_ALREADY_BOOKED_REMOVE_LABEL",
     "MY_SCHEDULE_CLASH_APPROVED_MESSAGE",
     "MY_SCHEDULE_CLASH_APPROVED_TITLE",
     "MY_SCHEDULE_CLASH_ASK_MANAGER",
@@ -1156,6 +1158,7 @@
     "missingStarterQualificationCodes",
     "monthDayOffsetBefore",
     "monthDayOrdinal",
+    "multiPersonBookingBlocks",
     "multipliedHoursText",
     "myProfileBankHolidayRange",
     "myProfileSummary",

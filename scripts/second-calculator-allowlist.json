@@ -270,12 +270,6 @@
     "reason": "FU-5: timesheet subject identity (operative:{id} / user:{id}) is keyed on one catalogue row; changing it changes subject keys, own PR."
   },
   {
-    "path": "lib/warnings/leaveCoverageWarnings.ts",
-    "pattern": "londonMidnight",
-    "count": 2,
-    "reason": "FU-2: londonTime.ts helpers default to the open organisation's zone (organizationZoneOr, rulebook §1 since 1.9.0) despite the London name; rename to org-zone names is a follow-up, not a behaviour change."
-  },
-  {
     "path": "lib/warnings/unbookedLabourWarnings.ts",
     "pattern": "londonMidnight",
     "count": 3,

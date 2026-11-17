@@ -772,3 +772,107 @@ test('the Book labour day heading is the organisation day, not London', () => {
   assert.equal(bookLabourDayLine(new Date('2026-11-14T13:00:00Z'), 'Australia/Sydney'), 'Sunday 15 Nov')
   assert.equal(bookLabourDayLine(new Date('2026-11-15T00:00:00Z'), 'Europe/London'), 'Sunday 15 Nov')
 })
+
+// Owner report (17 Nov 2026): "Book the PM" on a "Half-day leave not covered" warning opened Book labour on
+// "Everyone is booked". Book labour now lists the day's leave_cover rows too, with the uncovered time.
+const MON_AM_LEAVE = '2026-11-23'
+const MON_AM_DATE = new Date('2026-11-23T12:00:00Z')
+function amLeave(userId: string, status = 'approved'): HolidayBooking {
+  return {
+    id: 'H-AM',
+    organizationId: 'org',
+    userId,
+    startDate: MON_AM_DATE,
+    endDate: MON_AM_DATE,
+    startDayKey: MON_AM_LEAVE,
+    endDayKey: MON_AM_LEAVE,
+    dayKeyTimeZone: 'Europe/London',
+    status,
+    timeSlot: 'AM',
+    createdAt: MON_AM_DATE,
+    updatedAt: MON_AM_DATE,
+  } as HolidayBooking
+}
+
+test('Book labour lists a half-day leave person not booked for the other half, with the gap as custom hours', () => {
+  const admin = user({
+    id: 'U-TA',
+    email: 'test.admin@site.test',
+    firstName: 'Test',
+    surname: 'Admin',
+    role: UserRole.ADMIN,
+    permissions: perms({ adminAccess: true }),
+  })
+  const base = {
+    dayKey: MON_AM_LEAVE,
+    timeZone: 'Europe/London',
+    users: [admin],
+    operatives: [],
+    managerSiteBookings: [],
+    warningDetection: WEEKDAYS_ONLY,
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+  }
+  const rows = buildBookLabourCandidates({ ...base, bookings: [], holidays: [amLeave('U-TA')], focusedUserIds: ['U-TA'] })
+  assert.deepEqual(rows.map((row) => row.id), ['U-TA'])
+  const cover = rows[0].leaveCover
+  assert.ok(cover)
+  assert.equal(cover.leaveLabel, 'AM')
+  assert.equal(cover.workingLabel, 'PM')
+  assert.ok(cover.hours)
+  assert.equal(cover.hours.end, DEFAULT_PAYROLL_POLICY.standardDayEnd)
+  assert.ok(cover.hours.start > '11:00' && cover.hours.start < '13:00', cover.hours.start)
+  // The same gap the Warnings card names (`leaveCoverageRows` `missing`).
+  assert.ok(cover.missingHours > 0)
+
+  // Booked for the whole gap → not listed (covered), as Warnings drops the row.
+  const covered = buildBookLabourCandidates({
+    ...base,
+    bookings: [
+      booking({
+        id: 'B-PM',
+        operativeId: 'U-TA',
+        date: MON_AM_DATE,
+        timeSlot: 'CUSTOM_HOURS' as Booking['timeSlot'],
+        workStartTime: cover.hours.start,
+        workEndTime: cover.hours.end,
+      }),
+    ],
+    holidays: [amLeave('U-TA')],
+  })
+  assert.deepEqual(covered.map((row) => row.id), [])
+
+  // A pending request is not leave: the person is plain unbooked labour (no leaveCover).
+  const pending = buildBookLabourCandidates({ ...base, bookings: [], holidays: [amLeave('U-TA', 'pending')] })
+  assert.deepEqual(pending.map((row) => [row.id, Boolean(row.leaveCover)]), [['U-TA', false]])
+})
+
+test('Book labour leave-cover rows follow the viewer warning scope', () => {
+  const report = user({ id: 'U-REP', email: 'rep@site.test', firstName: 'Re', surname: 'Port' })
+  const scope = { kind: 'jobs' as const, jobIds: [], personIds: ['u-other'], personEmails: [], unbookedLabour: true }
+  const rows = buildBookLabourCandidates({
+    dayKey: MON_AM_LEAVE,
+    timeZone: 'Europe/London',
+    users: [report],
+    operatives: [],
+    bookings: [],
+    managerSiteBookings: [],
+    holidays: [amLeave('U-REP')],
+    warningDetection: WEEKDAYS_ONLY,
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+    scope,
+  })
+  assert.deepEqual(rows, [])
+  const inScope = buildBookLabourCandidates({
+    dayKey: MON_AM_LEAVE,
+    timeZone: 'Europe/London',
+    users: [report],
+    operatives: [],
+    bookings: [],
+    managerSiteBookings: [],
+    holidays: [amLeave('U-REP')],
+    warningDetection: WEEKDAYS_ONLY,
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+    scope: { kind: 'jobs', jobIds: [], personIds: ['u-rep'], personEmails: [], unbookedLabour: true },
+  })
+  assert.deepEqual(inScope.map((row) => row.id), ['U-REP'])
+})
