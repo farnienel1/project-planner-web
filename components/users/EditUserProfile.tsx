@@ -21,6 +21,7 @@ import {
   canEditPermissionsMatrix,
   canEditTargetUser,
   canUseAdminAccountTools,
+  isManageableOperative,
   roleLabel,
   setupSectionTitle,
 } from '@/lib/staff/userEditPermissions'
@@ -83,12 +84,11 @@ import {
 } from '@/lib/qualifications/orgQualificationStorage'
 import { loadOrganisationQualificationsEnsuringStarter } from '@/lib/qualifications/starterLibrary'
 import { canonicalCertificateUrls, formatCertificateSaveError } from '@/lib/qualifications/certificateUpload'
-import { canManageOrganisationQualifications, staffAccountRole } from '@/lib/permissions'
+import { canManageOperativesOnly, canManageOrganisationQualifications, staffAccountRole } from '@/lib/permissions'
 import {
   LINE_MANAGER_LOCKED_MESSAGE,
   canChangeLineManager,
   canDeleteUser,
-  canManageOperatives,
   lineManagerChanged,
   lineManagerCandidates,
   lineManagerChangeBlock,
@@ -534,7 +534,8 @@ export function EditUserProfile({
         {
           creatorUserId: (organization as { creatorUserId?: string } | null)?.creatorUserId ?? null,
           // 1.31.0 (owner decision 7): a manager with the Operatives permission deletes operatives.
-          actorManagesOperatives: canManageOperatives({ ...currentUser.permissions, role: currentUser.role }),
+          // Where the security rules accept an Operatives manager's writes (`canManageOperativesOnly`).
+          actorManagesOperatives: canManageOperativesOnly(currentUser),
         }
       )
   )
@@ -546,8 +547,9 @@ export function EditUserProfile({
       currentUser &&
       !canAdminTools &&
       target.id !== currentUser.id &&
-      canManageOperatives({ ...currentUser.permissions, role: currentUser.role }) &&
-      currentAccountType(target) === 'operative'
+      // Rulebook `canManageOperatives`, only where firestore.rules `managerMayManageOperative` accepts it.
+      canManageOperativesOnly(currentUser) &&
+      isManageableOperative(target, currentUser.organizationId)
   )
 
   const showSetupCard =
@@ -1195,11 +1197,15 @@ export function EditUserProfile({
             </Field>
           ) : (
           <>
-          <Field label="Email">
+          <Field
+            label="Email"
+            // firestore.rules: an Operatives manager may not change a person's email (admins only).
+            hint={canEditIdentity && !canAdminTools ? 'Only an admin can change the email.' : undefined}
+          >
             <Input
               type="email"
               value={target.email}
-              disabled={!canEditIdentity}
+              disabled={!canEditIdentity || !canAdminTools}
               onChange={(e) => setTarget({ ...target, email: e.target.value })}
             />
           </Field>

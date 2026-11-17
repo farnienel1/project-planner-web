@@ -150,8 +150,10 @@ export function isQuickActionEligible(
     case 'staff-material-catalogue':
       return canManageMaterialCatalogue(user)
     case 'staff-add-user':
-    case 'staff-manage-users':
       return !op && (canManageUsers(user) || isActingManagerOperativeManagementOnly(user))
+    case 'staff-manage-users':
+      // Owner 17 Nov: an Operatives manager's people page is Operatives (`staff-operatives`); Manage users is admins only.
+      return !op && canManageUsers(user)
     case 'staff-help':
       return !op
     case 'staff-holiday':
