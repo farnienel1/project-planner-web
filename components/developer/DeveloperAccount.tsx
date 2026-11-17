@@ -64,7 +64,7 @@ function AccountForm() {
         </p>
       ) : null}
       <DeveloperStatus error={error} loading={loading && users.length > 0} />
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
         <MetricCard label="Organisations" value={organisations.length} href="/developer/organisations" />
         <MetricCard label="Registered users" value={users.length} href="/developer/users" />
       </div>

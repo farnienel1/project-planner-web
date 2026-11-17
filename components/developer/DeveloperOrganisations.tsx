@@ -75,7 +75,7 @@ export function DeveloperOrganisationsScreen() {
       <DateRangePicker preset={preset} onChange={setPreset} />
       <SearchField value={query} onChange={setQuery} placeholder="Search organisations" />
       <DeveloperStatus error={error} loading={loading && rows.length > 0} />
-      <div className="grid gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <MetricCard label="Organisations" value={visible.length} />
         <MetricCard label="Paying / trial" value={`${visible.filter((row) => orgById.get(row.id)?.billing?.status === 'active').length} / ${visible.filter((row) => orgById.get(row.id)?.billing?.status === 'trialing').length}`} />
         <MetricCard label="Registered users" value={users.length} href="/developer/users" />
@@ -95,8 +95,8 @@ export function DeveloperOrganisationsScreen() {
       ) : visible.length === 0 ? (
         <EmptyState title="No matching organisations" description="Try a different name or organisation id." />
       ) : (
-        <div className="card overflow-hidden">
-          <table className="w-full text-left text-sm">
+        <div className="card overflow-x-auto">
+          <table className="w-full whitespace-nowrap text-left text-sm">
             <thead className="bg-[var(--soft)] text-xs uppercase text-[var(--ink3)]">
               <tr>
                 <th className="px-4 py-2">Organisation</th>
@@ -116,7 +116,7 @@ export function DeveloperOrganisationsScreen() {
                     <Link href={`/developer/organisations/${encodeURIComponent(row.id)}`} className="font-semibold">
                       {row.name}
                     </Link>
-                    <p className="text-[11px] text-[var(--ink3)]">{row.id}</p>
+                    <p className="max-w-[220px] truncate text-[11px] text-[var(--ink3)]" title={row.id}>{row.id}</p>
                   </td>
                   <td className="px-4 py-3">{billingLabel(orgById.get(row.id)?.billing)}</td>
                   <td className="px-4 py-3">{billingStatusLabel(orgById.get(row.id)?.billing)}</td>
