@@ -34,7 +34,9 @@ const EXCLUDED_PREFIXES = [
 /**
  * Each pattern names one smell. `id` is what the allow-list refers to.
  * Category 1: own business calculations. Category 2: person matching by one id. Category 3: business dates from the
- * browser or London instead of the organisation zone.
+ * browser or London instead of the organisation zone. Category 4 (`super-admin-hides-pay-fields`) is found by
+ * `superAdminHidesPayFieldHits`, not a one-line regex: a screen that hides pay, employment type or leave fields because
+ * the person is the Super Admin.
  */
 export const PATTERNS = [
   {
@@ -111,7 +113,58 @@ export const PATTERNS = [
       /\.id\s*[!=]==\s*[\w.?]*[oO]perativeId\b|[oO]perativeId\s*[!=]==\s*[\w.?]*\.id\b|\.operativeId\s*[!=]==\s*[\w.?'"]|[\w)\]?]\s*[!=]==\s*[\w?]+(?:\.[\w?]+)*\.operativeId\b/,
     fix: 'personIdSet / bookingIdsForAccount (ids compare without case, normalizeDocumentId)',
   },
+  {
+    id: 'super-admin-hides-pay-fields',
+    category: 4,
+    // Matched by `superAdminHidesPayFieldHits` (a declaration can span lines); never by this regex.
+    regex: /(?!)/,
+    fix: 'show the field for every level; decide who may edit with canChangePersonPay / canEditTargetUser (lib/staff/editUserSections.ts)',
+  },
 ]
+
+/**
+ * 17 Nov owner bug: web Edit User hid Employment type and the Annual leave allowance with `!target.isSuperAdmin`
+ * (commit 69099425), so the Super Admin could never be set to PAYE. The rulebook never hides a person's pay, employment
+ * type or leave fields because of their level (§4.4, §8): who may change them is `canChangePersonPay` and the rules.
+ *
+ * Flags, outside lib/canonical:
+ *   - a `const` / `let` whose name or value is about pay, employment type or leave and whose value tests
+ *     `!….isSuperAdmin` or `….isSuperAdmin ? … : …` / `isSuperAdmin ||` (the declaration may span lines);
+ *   - a line (JSX) that tests `!….isSuperAdmin` or `….isSuperAdmin ?` and names one of those fields.
+ */
+const PAY_FIELD_WORDS =
+  /[Ee]mploymentType|showEmployment|[Pp]ayBasis|PayBasisFields|dayRate|hourlyRate|[Pp]ayRate|[Pp]ayroll|[Aa]nnualLeave|[Ll]eaveAllowance|showPay/
+const SUPER_ADMIN_HIDES = /!\s*\(?\s*[\w?.]*\.?isSuperAdmin\b|[\w?.]*\.isSuperAdmin\s*\?(?!\.)/
+const DECLARATION_START = /^\s*(?:export\s+)?(?:const|let)\s+(\w+)\s*=/
+
+export function superAdminHidesPayFieldHits(text) {
+  const lines = text.split('\n')
+  const hits = []
+  const covered = new Set()
+  for (let i = 0; i < lines.length; i += 1) {
+    const match = DECLARATION_START.exec(lines[i])
+    if (!match) continue
+    let end = i
+    // The declaration's value: until a blank line or the next statement at the same or a lower indent.
+    const indent = lines[i].search(/\S/)
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const line = lines[j]
+      if (!line.trim()) break
+      if (line.search(/\S/) <= indent && !/^\s*[)\]}&|?:.]/.test(line)) break
+      end = j
+    }
+    const body = lines.slice(i, end + 1).filter((line) => !isCommentLine(line)).join('\n')
+    if (SUPER_ADMIN_HIDES.test(body) && (PAY_FIELD_WORDS.test(match[1]) || PAY_FIELD_WORDS.test(body))) {
+      hits.push({ line: i + 1, text: lines[i].trim() })
+      for (let k = i; k <= end; k += 1) covered.add(k)
+    }
+  }
+  lines.forEach((line, index) => {
+    if (covered.has(index) || isCommentLine(line)) return
+    if (SUPER_ADMIN_HIDES.test(line) && PAY_FIELD_WORDS.test(line)) hits.push({ line: index + 1, text: line.trim() })
+  })
+  return hits
+}
 
 function toPosix(path) {
   return path.split(sep).join('/')
@@ -148,7 +201,9 @@ export function scan(root = ROOT) {
     for (const file of walk(join(root, dir), [])) {
       const rel = toPosix(relative(root, file))
       if (isExcluded(rel)) continue
-      const lines = readFileSync(file, 'utf8').split('\n')
+      const text = readFileSync(file, 'utf8')
+      const lines = text.split('\n')
+      for (const hit of superAdminHidesPayFieldHits(text)) hits.push({ path: rel, line: hit.line, pattern: 'super-admin-hides-pay-fields', text: hit.text })
       lines.forEach((line, index) => {
         if (isCommentLine(line)) return
         for (const pattern of PATTERNS) {

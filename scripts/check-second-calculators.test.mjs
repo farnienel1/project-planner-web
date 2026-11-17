@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PATTERNS, evaluate, loadAllowlist, scan } from './check-second-calculators.mjs'
+import { PATTERNS, evaluate, loadAllowlist, scan, superAdminHidesPayFieldHits } from './check-second-calculators.mjs'
 
 function fixture(files) {
   const root = mkdtempSync(join(tmpdir(), 'second-calc-'))
@@ -78,4 +78,28 @@ test('the committed allow-list is well formed and the repo passes', () => {
   const { violations, stale } = evaluate(scan(), rows)
   assert.deepEqual(violations, [])
   assert.deepEqual(stale, [])
+})
+
+test('super-admin-hides-pay-fields: hiding employment type, pay or leave because the person is the Super Admin is flagged (17 Nov owner bug)', () => {
+  const old = [
+    'const showAnnualLeave =',
+    '  target &&',
+    '  canEdit &&',
+    '  !target.isSuperAdmin &&',
+    '  (target.permissions.operativeMode || target.permissions.manager)',
+    '',
+    'const showEmploymentType = target && canEditMatrix && !target.isSuperAdmin && !ghostTarget',
+    '{!person.isSuperAdmin && <PayBasisFields value={x} />}',
+    '{target.isSuperAdmin ? null : <Field label="Day rate">{target.dayRate}</Field>}',
+  ].join('\n')
+  assert.deepEqual(superAdminHidesPayFieldHits(old).map((hit) => hit.line), [1, 7, 8, 9])
+  const fine = [
+    'const showEmploymentType = employmentTypeSection.shown',
+    'const roleText = target.isSuperAdmin ? "Super Admin" : "Admin"',
+    'if (!currentUser?.isSuperAdmin || target.id !== currentUser.id) return',
+    '// a comment: !target.isSuperAdmin && employmentType',
+  ].join('\n')
+  assert.deepEqual(superAdminHidesPayFieldHits(fine), [])
+  const root = fixture({ 'components/B.tsx': old })
+  assert.equal(scan(root).filter((hit) => hit.pattern === 'super-admin-hides-pay-fields').length, 4)
 })
