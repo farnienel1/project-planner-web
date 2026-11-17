@@ -86,7 +86,7 @@ function avatarGradient(user: User): string {
 type BadgeKind = 'role' | 'trade' | 'status'
 type Badge = { label: string; tone: PuTone; kind: BadgeKind }
 
-function badgesFor(user: User, showAdminBadge: boolean): Badge[] {
+function badgesFor(user: User, showAdminBadge: boolean, catalogueTrade?: string): Badge[] {
   const out: Badge[] = []
   if (user.isSuperAdmin) {
     out.push({ label: 'Super Admin', tone: 'amber', kind: 'role' })
@@ -98,7 +98,9 @@ function badgesFor(user: User, showAdminBadge: boolean): Badge[] {
     out.push({ label: 'Operative', tone: 'green', kind: 'role' })
   }
 
-  const trade = displayTradeType(user.tradeTypePreset, user.tradeTypeCustom)
+  // The Operatives page falls back to the person's `operatives` row trade, as the old Operatives list showed it.
+  const ownTrade = user.tradeTypePreset || user.tradeTypeCustom ? displayTradeType(user.tradeTypePreset, user.tradeTypeCustom) : ''
+  const trade = ownTrade && ownTrade !== '—' ? ownTrade : catalogueTrade || ownTrade
   if (trade && trade !== '—') {
     out.push({ label: trade, tone: 'outline', kind: 'trade' })
   }
@@ -223,14 +225,17 @@ export function ManageUsersScreen({ scope = 'all' }: { scope?: ManageUsersScope 
         : filterUsersForManageTab(users, effectiveTab, claimedEmails),
     [operativesScope, users, effectiveTab, claimedEmails]
   )
-  const phones = useMemo(() => {
-    const map: Record<string, string> = {}
-    if (!operativesScope) return map
+  // The person's `operatives` row (display and search only): its phone, and its trade when the account has none.
+  const { phones, catalogueTrades } = useMemo(() => {
+    const phoneMap: Record<string, string> = {}
+    const tradeMap: Record<string, string> = {}
+    if (!operativesScope) return { phones: phoneMap, catalogueTrades: tradeMap }
     for (const row of tabUsers) {
       const op = findOperativeForUser(row, operatives)
-      map[row.id] = op?.phone || row.mobileNumber || ''
+      phoneMap[row.id] = op?.phone || row.mobileNumber || ''
+      if (op?.tradeTypePreset) tradeMap[row.id] = op.tradeTypePreset
     }
-    return map
+    return { phones: phoneMap, catalogueTrades: tradeMap }
   }, [operativesScope, tabUsers, operatives])
 
   const counts = useMemo(() => {
@@ -475,7 +480,7 @@ export function ManageUsersScreen({ scope = 'all' }: { scope?: ManageUsersScope 
             {filtered.map((user) => {
               const showAdmin =
                 effectiveTab === 'managers' && (user.permissions.adminAccess || user.isSuperAdmin)
-              const badgeList = badgesFor(user, !!showAdmin)
+              const badgeList = badgesFor(user, !!showAdmin, catalogueTrades[user.id])
               // Rulebook 1.34.0: a ghost has no login — no password reset or sign-up email (Give app access is on its profile).
               const isGhost = isGhostUser(user)
               const showReset = user.passwordSet && !isGhost

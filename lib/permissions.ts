@@ -323,14 +323,40 @@ export function canManageSiteAuditOperativeVisibility(user: PermissionUser): boo
   return user.isSuperAdmin || flag(user, 'adminAccess') || flag(user, 'manager')
 }
 
+function sameOrganizationId(a: string | undefined, b: string | undefined): boolean {
+  return Boolean(a && b && a.trim().toLowerCase() === b.trim().toLowerCase())
+}
+
 /**
- * A manager (not an admin, not an operative) with the Operatives permission: rulebook `canManageOperatives` (§11) on a
- * manager-level account. It also asks for the manager flag, as the security rules do (`managerMayManageOperative`
- * reads the stored `manager` and `operatives` flags), so the screens never offer a save the rules refuse.
+ * The caller side of firestore.rules `managerMayManageOperative` (an Operatives manager's write on an operative's
+ * users document, delete plan and email claim; the rules' invitation and booking-delete paths read the same flags):
+ *   - `manager` and `operatives` true (or 1) at the TOP level of the caller's home users document, and `operativeMode`
+ *     not — a flag stored only in the `permissions` map does not count (`User.storedTopLevelFlags`);
+ *   - the caller's home users document names the organisation being worked in — an Operatives manager working in
+ *     another company through a membership is refused (`homeOrganizationId` set and different).
+ * A user built without `storedTopLevelFlags` (not read through `parseAppUserDocument`, e.g. a test fixture) falls back
+ * to the parsed toggles.
+ */
+export function operativesManagerWritesAllowed(user: PermissionUser): boolean {
+  if (!user) return false
+  const top = user.storedTopLevelFlags
+  const flagsOk = top
+    ? top.manager && top.operatives && !top.operativeMode
+    : user.permissions?.manager === true && user.permissions?.operatives === true && user.permissions?.operativeMode !== true
+  if (!flagsOk) return false
+  if (user.homeOrganizationId && !sameOrganizationId(user.homeOrganizationId, user.organizationId)) return false
+  return true
+}
+
+/**
+ * A manager (not an admin, not an operative) who may add, edit, deactivate and delete operatives: rulebook
+ * `canManageOperatives` (§11) on a manager-level account, and only where the security rules accept it
+ * (`operativesManagerWritesAllowed`), so the screens never offer a write the rules refuse. Viewing the Operatives page
+ * is `canViewOperatives`.
  */
 export function isActingManagerOperativeManagementOnly(user: PermissionUser): boolean {
   if (!user || permissionLevelOf(user) !== 'manager') return false
-  return flag(user, 'manager') && canonicalCanManageOperatives(user)
+  return flag(user, 'manager') && canonicalCanManageOperatives(user) && operativesManagerWritesAllowed(user)
 }
 
 export function canViewReports(user: PermissionUser): boolean {
@@ -523,12 +549,13 @@ export function getAddUserLabel(user: PermissionUser): string {
 
 /**
  * Where a viewer manages people (owner 17 Nov: one Operatives page). Admins: Manage users
- * (`/dashboard/settings/users`, every level). A manager with the Operatives permission: the Operatives page
- * (`/dashboard/operatives`) — Manage users redirects them there and the sidebar shows only that entry. Anyone else: none.
+ * (`/dashboard/settings/users`, every level). Anyone else who may open the Operatives page (`canViewOperatives`, or
+ * an Operatives manager): `/dashboard/operatives` — Manage users redirects them there and the sidebar shows only that
+ * entry. Anyone else: none.
  */
 export function peopleManagementHref(user: PermissionUser): string | null {
   if (canManageUsers(user)) return '/dashboard/settings/users'
-  if (canManageOperativesOnly(user)) return '/dashboard/operatives'
+  if (canManageOperativesOnly(user) || canViewOperatives(user)) return '/dashboard/operatives'
   return null
 }
 

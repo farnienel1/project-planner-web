@@ -180,6 +180,15 @@ export interface User {
    * (`accountTypePermissions`). Missing keys were never stored.
    */
   storedPermissions?: Partial<Record<string, boolean>>;
+  /**
+   * The `manager`, `operatives` and `operativeMode` values stored at the TOP level of `users/{uid}` (true, or 1, as
+   * firestore.rules `truthyBool` reads them), never the `permissions` map. firestore.rules `managerMayManageOperative`
+   * reads only these on the caller's home users document, so the screens offer an Operatives manager's writes only
+   * when they hold (`operativesManagerWritesAllowed`).
+   */
+  storedTopLevelFlags?: { manager: boolean; operatives: boolean; operativeMode: boolean };
+  /** `role` exactly as stored on `users/{uid}` (the reader normalises `role`; firestore.rules reads the stored one). */
+  storedRole?: string;
   assignedManagerUserId?: string;
   assignedManagerUserIds?: string[];
   /** iOS `hasNoLineManager` — admin/founder with no counter-sign. */

@@ -14,7 +14,14 @@ import {
   manageUsersAddButtonShown,
   peopleManagementHref,
 } from '../permissions.ts'
-import { canEditTargetUser, canOpenOperativeFromWarning } from './userEditPermissions.ts'
+import {
+  canEditTargetUser,
+  canOpenEditProfile,
+  canOpenOperativeFromWarning,
+  isManageableOperative,
+} from './userEditPermissions.ts'
+import { parseAppUserDocument } from '../ios-parity/converters.ts'
+import { operativesManagerWritesAllowed } from '../permissions.ts'
 
 function perms(partial: Partial<UserPermissions>): UserPermissions {
   return {
@@ -131,4 +138,61 @@ test('the Operatives page has an Add operative button for an Operatives manager'
   // Manage users (every level) keeps its Add user button for admins only.
   assert.equal(manageUsersAddButtonShown('all', admin), true)
   assert.equal(manageUsersAddButtonShown('all', opsManager), false)
+})
+
+function parsed(id: string, data: Record<string, unknown>): User {
+  const result = parseAppUserDocument(id, { email: `${id}@site.com`, organizationId: 'ORG', firstName: id, surname: 'X', ...data })
+  assert.ok(result.ok, `parse ${id}`)
+  return (result as { ok: true; value: User }).value
+}
+
+// The caller as a stored home users document: manager and operatives at the top level (firestore.rules reads only these).
+const storedOpsManager = parsed('stored-ops', { role: 'manager', manager: true, operatives: true })
+
+test('review #367: a target still carrying a stored manager flag or an admin / manager role is refused, as the rules do', () => {
+  const plain = parsed('t-plain', { role: 'operative', operativeMode: true })
+  const managerFlag = parsed('t-mgr-flag', { operativeMode: true, manager: true })
+  const managerFlagInMap = parsed('t-mgr-map', { operativeMode: true, permissions: { manager: true } })
+  const managerRole = parsed('t-mgr-role', { operativeMode: true, role: 'manager' })
+  const adminFlag = parsed('t-admin', { operativeMode: true, adminAccess: true })
+  assert.equal(isManageableOperative(plain), true)
+  assert.equal(isManageableOperative(managerFlag), false)
+  assert.equal(isManageableOperative(managerFlagInMap), false)
+  assert.equal(isManageableOperative(managerRole), false)
+  assert.equal(isManageableOperative(adminFlag), false)
+  assert.equal(canEditTargetUser(storedOpsManager, plain), true)
+  assert.equal(canEditTargetUser(storedOpsManager, managerFlag), false)
+  assert.equal(canEditTargetUser(storedOpsManager, managerRole), false)
+  // Admins still edit them.
+  const storedAdmin = parsed('stored-admin', { role: 'admin', adminAccess: true })
+  assert.equal(canEditTargetUser(storedAdmin, managerFlag), true)
+})
+
+test('review #367: the caller side mirrors managerMayManageOperative — top-level flags and the home organisation', () => {
+  const plain = parsed('t-plain-2', { role: 'operative', operativeMode: true })
+  assert.equal(operativesManagerWritesAllowed(storedOpsManager), true)
+  assert.equal(manageUsersAddButtonShown('operatives', storedOpsManager), true)
+  // Flags only in the permissions map: the rules refuse, so nothing is offered.
+  const mapOnly = parsed('map-only', { role: 'manager', permissions: { manager: true, operatives: true } })
+  assert.equal(operativesManagerWritesAllowed(mapOnly), false)
+  assert.equal(isActingManagerOperativeManagementOnly(mapOnly), false)
+  assert.equal(canEditTargetUser(mapOnly, plain), false)
+  assert.equal(manageUsersAddButtonShown('operatives', mapOnly), false)
+  // Working in another company through a membership: the home users document names another organisation.
+  const visiting: User = { ...storedOpsManager, organizationId: 'OTHER', homeOrganizationId: 'ORG' }
+  assert.equal(operativesManagerWritesAllowed(visiting), false)
+  assert.equal(canEditTargetUser(visiting, plain), false)
+  assert.equal(manageUsersAddButtonShown('operatives', visiting), false)
+  // Same organisation in another letter case still counts as home.
+  assert.equal(operativesManagerWritesAllowed({ ...storedOpsManager, homeOrganizationId: 'org' }), true)
+})
+
+test('review #367: admins keep the profile Edit button for everyone, the Super Admin included', () => {
+  const storedAdmin = parsed('stored-admin-2', { role: 'admin', adminAccess: true })
+  const founder = parsed('founder', { role: 'admin', adminAccess: true, isSuperAdmin: true })
+  assert.equal(canOpenEditProfile(storedAdmin, founder), true)
+  assert.equal(canEditTargetUser(storedAdmin, founder), false)
+  const plain = parsed('t-plain-3', { role: 'operative', operativeMode: true })
+  assert.equal(canOpenEditProfile(storedOpsManager, plain), true)
+  assert.equal(canOpenEditProfile(storedOpsManager, founder), false)
 })

@@ -175,6 +175,14 @@ export function parseAppUserDocument(userId: string, data: Record<string, unknow
     if (value != null) storedPermissions[key] = value
   }
 
+  // firestore.rules `truthyBool`: true or 1 at the top level only (see `User.storedTopLevelFlags`).
+  const topLevel = (key: string) => data[key] === true || data[key] === 1
+  const storedTopLevelFlags = {
+    manager: topLevel('manager'),
+    operatives: topLevel('operatives'),
+    operativeMode: topLevel('operativeMode'),
+  }
+
   return ok({
     id: doc.id,
     email,
@@ -189,6 +197,8 @@ export function parseAppUserDocument(userId: string, data: Record<string, unknow
     mobileNumber: doc.mobileNumber ?? undefined,
     permissions,
     storedPermissions,
+    storedTopLevelFlags,
+    storedRole: typeof data.role === 'string' ? data.role : undefined,
     assignedManagerUserIds: managerIds.length ? managerIds : undefined,
     assignedManagerUserId: managerIds[0],
     hasNoLineManager: doc.hasNoLineManager,
