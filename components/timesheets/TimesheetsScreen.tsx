@@ -93,8 +93,13 @@ import {
   exportRebuiltPdfNote,
   exportSummaryMessage,
   exportedPdfIsRebuilt,
+  mapWithConcurrency,
   runTimesheetExport,
 } from '@/lib/timesheets/timesheetExportRun'
+import { EXPORT_DELIVERY_TAB_ID, exportDeliveryLiveElsewhere, exportDeliveryNotice, exportDeliveryPending, useExportDeliveryStore } from '@/lib/timesheets/exportDelivery'
+
+/** Review of #363: PDFs built and backed up at once during an export's delivery. */
+const EXPORT_DELIVERY_CONCURRENCY = 3
 import type { PayrollTimePolicyState } from '@/lib/canonical'
 import { SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE, TIMESHEET_LATE_EXTRAS_EXPORT_SKIPPED_MESSAGE, signedTimesheetActions } from '@/lib/canonical'
 
@@ -170,6 +175,18 @@ export function TimesheetsScreen({
   const [exportedRows, setExportedRows] = useState<ExportedTimesheetHistoryRow[]>([])
   const [recordsLoading, setRecordsLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
+  // Review of #363: an export's background delivery for this organisation (survives navigation and a reload).
+  const deliveryEntry = useExportDeliveryStore((state) => (organization?.id ? state.entries[organization.id] ?? null : null))
+  const deliveryPending = useExportDeliveryStore((state) => exportDeliveryPending(state, organization?.id))
+  const loadDelivery = useExportDeliveryStore((state) => state.load)
+  const dismissDelivery = useExportDeliveryStore((state) => state.dismiss)
+  useEffect(() => {
+    if (organization?.id) loadDelivery(organization.id)
+  }, [organization?.id, loadDelivery])
+  const deliveryHere = useExportDeliveryStore((state) => Boolean(organization?.id && state.live[organization.id]))
+  const deliveryNowMs = useExportDeliveryStore((state) => state.nowMs)
+  const deliveryElsewhere = exportDeliveryLiveElsewhere(deliveryEntry, EXPORT_DELIVERY_TAB_ID, deliveryNowMs)
+  const deliveryNotice = exportDeliveryNotice(deliveryEntry, deliveryHere, deliveryElsewhere)
   // Exports leave UTR and VAT out unless an admin ticks the box (rulebook).
   const [exportTaxIds, setExportTaxIds] = useState(false)
   const [exportMessage, setExportMessage] = useState<string | null>(null)
@@ -577,6 +594,8 @@ export function TimesheetsScreen({
     let emailProblem: string | null = null
     let stampedCount = 0
     const exportedAt = new Date()
+    const runKey = `${exportedAt.getTime()}|${periodStartKey(periodStart, timeZone)}|${dayKey(periodEnd, timeZone)}`
+    const emptyProblemOf = () => emailProblem
     changedSkippedRef.current = []
     lateSkippedRef.current = []
     inputsSkippedRef.current = []
@@ -589,6 +608,31 @@ export function TimesheetsScreen({
       if (drafts.has(member.id) && payStatusFor(member) === 'loading') inputsSkippedRef.current.push(displayName(member))
     }
     const reasonOf = (error: unknown) => (error instanceof Error && error.message ? error.message : 'unknown error')
+    // 17 Nov (owner: "Sending timesheets…" stayed on long after the export was done): the button finishes as soon as
+    // the sheets are stamped exported; the PDFs, backups and the email go on in the background, each PDF built and
+    // backed up at the same time, and the message says what is still being sent, then what was sent.
+    const summaryNow = (run: { stamped: Array<{ name: string }>; skipped: string[]; stopped: { reason: string; error?: unknown } | null }, sending: boolean) =>
+      [
+        sending
+          ? `${run.stamped.length} exported. Sending the PDF${run.stamped.length === 1 ? '' : 's'}${recipientEmail ? ` to ${recipientEmail}` : ''}…`
+          : exportSummaryMessage({
+              stamped: run.stamped.map((row) => row.name),
+              notSent,
+              emailProblem,
+              recipientEmail: recipientEmail || null,
+              sentCount: pdfAttachments.length,
+              backupSkipped,
+              skipped: run.skipped,
+              stampError: run.stopped?.reason === 'stamp' ? reasonOf(run.stopped.error) : null,
+            }),
+        sending && run.skipped.length > 0 ? `Already exported, left as it was: ${run.skipped.join(', ')}.` : '',
+        changedSkippedRef.current.length > 0 ? `${SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE} (${changedSkippedRef.current.join(', ')})` : '',
+        lateSkippedRef.current.length > 0 ? `${TIMESHEET_LATE_EXTRAS_EXPORT_SKIPPED_MESSAGE} (${lateSkippedRef.current.join(', ')})` : '',
+        inputsSkippedRef.current.length > 0 ? `${EXPORT_INPUTS_LOADING_SKIPPED_MESSAGE} (${inputsSkippedRef.current.join(', ')})` : '',
+        payUnknownSkipped.length > 0 ? `${EXPORT_PAY_UNKNOWN_SKIPPED_MESSAGE} (${payUnknownSkipped.join(', ')})` : '',
+      ]
+        .filter(Boolean)
+        .join(' ')
     try {
       const run = await runTimesheetExport({
         members: visible.filter((member) => drafts.has(member.id) && !payUnknownFor(member)),
@@ -599,23 +643,33 @@ export function TimesheetsScreen({
         prepare: (member) => prepareExport(member, exportedAt),
         stamp: (row) => stampExport(row.sheet),
         forgetHistory: forgetExportedTimesheetHistory,
+        deliverInBackground: true,
         // Every sheet that was stamped gets its PDF, backup and email — also when a later stamp failed. Each person is
         // delivered on their own: one failure never skips the people after them.
         deliver: async (rows) => {
           stampedCount = rows.length
-          for (const row of rows) {
+          // Review of #363: at most EXPORT_DELIVERY_CONCURRENCY PDFs built and backed up at once; every list below
+          // follows the order of the people exported, never the order the uploads finished.
+          const built = await mapWithConcurrency(rows, EXPORT_DELIVERY_CONCURRENCY, async (row) => {
             try {
               const { pdf, fileName } = await buildExportPdf(row.sheet.member, row.sheet.draft, periodStart, periodEnd, [], row.sheet.documentId)
-              pdfAttachments.push({ fileName, content: pdfBytesToBase64(pdf) })
+              let link: { fileName: string; url: string } | null = null
               try {
                 const url = await uploadFile(timesheetExportPath(organization.id, fileName), timesheetPdfBlob(pdf), 'application/pdf')
-                downloadLinks.push({ fileName, url })
+                link = { fileName, url }
               } catch {
-                backupSkipped.push(row.name)
+                link = null
               }
+              return { name: row.name, link, attachment: { fileName, content: pdfBytesToBase64(pdf) }, error: null as string | null }
             } catch (error) {
-              notSent.push(`${row.name} (${reasonOf(error)})`)
+              return { name: row.name, link: null, attachment: null, error: reasonOf(error) }
             }
+          })
+          for (const result of built) {
+            if (result.error != null) notSent.push(`${result.name} (${result.error})`)
+            else if (!result.link) backupSkipped.push(result.name)
+            if (result.link) downloadLinks.push(result.link)
+            if (result.attachment) pdfAttachments.push(result.attachment)
           }
           if (!recipientEmail) {
             emailProblem = 'no email address on your account'
@@ -652,29 +706,26 @@ export function TimesheetsScreen({
         setExportMessage(EXPORT_STOPPED_MESSAGE)
         return
       }
-      const changedSkipped = changedSkippedRef.current
-      const lateSkipped = lateSkippedRef.current
-      const inputsSkipped = inputsSkippedRef.current
-      setExportMessage(
-        [
-          exportSummaryMessage({
-          stamped: run.stamped.map((row) => row.name),
-          notSent,
-          emailProblem,
-          recipientEmail: recipientEmail || null,
-          sentCount: pdfAttachments.length,
-          backupSkipped,
-          skipped: run.skipped,
-          stampError: run.stopped?.reason === 'stamp' ? reasonOf(run.stopped.error) : null,
-          }),
-          changedSkipped.length > 0 ? `${SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE} (${changedSkipped.join(', ')})` : '',
-          lateSkipped.length > 0 ? `${TIMESHEET_LATE_EXTRAS_EXPORT_SKIPPED_MESSAGE} (${lateSkipped.join(', ')})` : '',
-          inputsSkipped.length > 0 ? `${EXPORT_INPUTS_LOADING_SKIPPED_MESSAGE} (${inputsSkipped.join(', ')})` : '',
-          payUnknownSkipped.length > 0 ? `${EXPORT_PAY_UNKNOWN_SKIPPED_MESSAGE} (${payUnknownSkipped.join(', ')})` : '',
-        ]
-          .filter(Boolean)
-          .join(' ')
-      )
+      setExportMessage(summaryNow(run, Boolean(run.delivery)))
+      if (run.delivery) {
+        // Review of #363: the result is kept per organisation (survives navigation and a reload) and Export stays off
+        // until this delivery finishes; the browser asks before the tab is closed while it is sending.
+        const deliveries = useExportDeliveryStore.getState()
+        const orgId = organization.id
+        const shared = deliveries.start(orgId, runKey, summaryNow(run, true))
+        void run.delivery
+          .then(() => {
+            // Another tab owned the shared notice when this run started: its result is shown in this tab only.
+            if (!shared) setExportMessage(summaryNow(run, false))
+            const failed = notSent.length > 0 || Boolean(emptyProblemOf())
+            useExportDeliveryStore.getState().finish(orgId, runKey, failed ? 'failed' : 'done', summaryNow(run, false))
+          })
+          .catch((error: unknown) => {
+            const failure = `${run.stamped.length} exported. Something went wrong while sending (${reasonOf(error)}). ${EXPORT_RECOVER_HINT}`
+            if (!shared) setExportMessage(failure)
+            useExportDeliveryStore.getState().finish(orgId, runKey, 'failed', failure)
+          })
+      }
       if (run.stamped.length > 0) router.replace(timesheetsTeamHref({ tab: 'exported' }))
     } catch (error) {
       // After anything was stamped the summary above is the answer; only a failure before any stamp is "Export failed".
@@ -722,6 +773,18 @@ export function TimesheetsScreen({
 
   if (teamTab === 'exported') {
     return (
+      <>
+      {deliveryNotice ? (
+        <Note tone={deliveryEntry?.status === 'done' ? 'info' : deliveryEntry?.status === 'failed' || !deliveryPending ? 'amber' : 'info'} role="status">
+          {deliveryNotice}{' '}
+          {!deliveryPending && organization?.id ? (
+            <button type="button" className="pu-link" onClick={() => dismissDelivery(organization.id)}>
+              Dismiss
+            </button>
+          ) : null}
+        </Note>
+      ) : null}
+      {exportMessage && exportMessage !== deliveryNotice ? <Note tone="info" role="status">{exportMessage}</Note> : null}
       <ExportedTimesheetsList
         rows={exportedRows}
         invoicing={invoicing}
@@ -750,6 +813,7 @@ export function TimesheetsScreen({
           )
         }
       />
+      </>
     )
   }
 
@@ -812,8 +876,8 @@ export function TimesheetsScreen({
             </label>
           ) : null}
           <PayInputsBanner inputs={payInputs} />
-          <PuButton variant="primary" block disabled={exporting || !payInputs.ready} onClick={() => void exportSigned()}>
-            {exporting ? 'Sending timesheets…' : `Email and export ${visible.length} timesheet${visible.length === 1 ? '' : 's'}`}
+          <PuButton variant="primary" block disabled={exporting || deliveryPending || !payInputs.ready} onClick={() => void exportSigned()}>
+            {exporting ? 'Exporting timesheets…' : deliveryPending ? 'Sending the last export…' : `Email and export ${visible.length} timesheet${visible.length === 1 ? '' : 's'}`}
           </PuButton>
           {ownSheetNotice ? <Note tone="amber">{ownSheetNotice}</Note> : null}
           {exportMessage ? <span className="pu-sub">{exportMessage}</span> : null}

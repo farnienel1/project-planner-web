@@ -25,6 +25,13 @@ export type TimesheetExportRunInput<M, T> = {
   stamp: (prepared: TimesheetExportPrepared<T>) => Promise<void | boolean>
   deliver: (stamped: ReadonlyArray<TimesheetExportPrepared<T>>) => Promise<void>
   forgetHistory: () => void
+  /**
+   * 17 Nov (owner: Export sat on "Sending timesheets…" long after the sheets were exported): when true the run returns
+   * as soon as the stamps are written; delivery (PDFs, backups, the email) runs on and its promise is `delivery`.
+   */
+  deliverInBackground?: boolean
+  /** How many sheets are read and prepared at once (default 4; each is read only, nothing is written). */
+  prepareConcurrency?: number
 }
 
 export type TimesheetExportRunResult<T> = {
@@ -33,6 +40,8 @@ export type TimesheetExportRunResult<T> = {
   skipped: string[]
   /** Why the export stopped, or null. `gate` = nothing was stamped; `stamp` = some were, and were still delivered. */
   stopped: { reason: 'gate' | 'stamp'; error?: unknown } | null
+  /** With `deliverInBackground`: the delivery still running (resolved when it is done); null when nothing to deliver. */
+  delivery?: Promise<void> | null
 }
 
 function isSkip(value: unknown): value is { skip: 'exported' } {
@@ -42,15 +51,23 @@ function isSkip(value: unknown): value is { skip: 'exported' } {
 export async function runTimesheetExport<M, T>(input: TimesheetExportRunInput<M, T>): Promise<TimesheetExportRunResult<T>> {
   const prepared: Array<TimesheetExportPrepared<T>> = []
   const skipped: string[] = []
-  for (const member of input.members) {
+  const members = [...input.members]
+  const width = Math.max(1, Math.floor(input.prepareConcurrency ?? 4))
+  // 17 Nov: sheets are read and prepared a few at a time (reads only), in member order; the gate is checked before each.
+  for (let index = 0; index < members.length; index += width) {
+    const chunk = members.slice(index, index + width)
     if (!input.gateReady()) return { stamped: [], skipped, stopped: { reason: 'gate' } }
-    const sheet = await input.prepare(member)
-    if (sheet == null) continue
-    if (isSkip(sheet)) {
-      skipped.push(input.memberName(member))
-      continue
-    }
-    prepared.push({ memberId: input.memberId(member), name: input.memberName(member), sheet })
+    const results = await Promise.all(chunk.map((member) => (input.gateReady() ? input.prepare(member) : Promise.resolve('gate' as const))))
+    if (results.some((result) => result === 'gate')) return { stamped: [], skipped, stopped: { reason: 'gate' } }
+    results.forEach((sheet, offset) => {
+      const member = chunk[offset]
+      if (sheet == null || sheet === 'gate') return
+      if (isSkip(sheet)) {
+        skipped.push(input.memberName(member))
+        return
+      }
+      prepared.push({ memberId: input.memberId(member), name: input.memberName(member), sheet: sheet as T })
+    })
   }
   // The gate once more after the last read, still before anything is written.
   if (prepared.length > 0 && !input.gateReady()) return { stamped: [], skipped, stopped: { reason: 'gate' } }
@@ -66,11 +83,32 @@ export async function runTimesheetExport<M, T>(input: TimesheetExportRunInput<M,
       break
     }
   }
-  if (stamped.length > 0) {
-    input.forgetHistory()
-    await input.deliver(stamped)
+  if (stamped.length === 0) return { stamped, skipped, stopped, delivery: null }
+  input.forgetHistory()
+  if (input.deliverInBackground) {
+    const delivery = input.deliver(stamped)
+    return { stamped, skipped, stopped, delivery }
   }
-  return { stamped, skipped, stopped }
+  await input.deliver(stamped)
+  return { stamped, skipped, stopped, delivery: null }
+}
+
+/**
+ * Review of #363: `work` over `items` with at most `width` running at once; results in the order of `items` (never the
+ * order they finished), so lists built from them (download links, attachments) are stable.
+ */
+export async function mapWithConcurrency<I, O>(items: ReadonlyArray<I>, width: number, work: (item: I, index: number) => Promise<O>): Promise<O[]> {
+  const out: O[] = new Array(items.length)
+  const limit = Math.max(1, Math.floor(width))
+  let next = 0
+  const lanes = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next++
+      out[index] = await work(items[index], index)
+    }
+  })
+  await Promise.all(lanes)
+  return out
 }
 
 /** Where an exported sheet's PDF can be fetched again (the Exported tab rebuilds it from the saved snapshot). */
