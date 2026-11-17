@@ -67,7 +67,9 @@ export type BookingHoursBreakdown = {
   summary: string
   /** Normal (when there are normal hours), Overtime (when there is overtime), then Total — in that order. */
   rows: BookingHoursBreakdownRow[]
+  /** The Normal row's figure as shown (hundredths; with Overtime it adds up exactly to `totalPaidHours`). */
   normalPaidHours: number
+  /** The Overtime row's figure as shown (hundredths; 0 with no Overtime row). */
   overtimePaidHours: number
   /** `payrollHoursResult.totalPaidHours`, rounded to hundredths: the Save button's figure. */
   totalPaidHours: number
@@ -203,6 +205,16 @@ export function bookingHoursBreakdownRows(
   const normalPaid = sumPaid(standard)
   const overtimePaid = sumPaid(multiplied)
   const total = round(paid.totalPaidHours)
+  // The rows always add up exactly (owner, 17 Nov: the text only displays the calculation). Work in hundredths: the
+  // Total is `totalPaidHours` rounded; when both rows show, Overtime is its paid hours rounded and Normal is the
+  // shown Total less the shown Overtime; when only one row shows, it is the Total. Display only — every pay-rule
+  // value stays as `payrollHoursResult` gave it.
+  const showsOvertime = multiplied.length > 0
+  const totalCents = Math.round(total * 100)
+  let overtimeCents = showsOvertime ? Math.round(overtimePaid * 100) : 0
+  if (!(standard.length > 0 && (normalPaid > 0.001 || !showsOvertime))) overtimeCents = totalCents
+  const shownOvertime = showsOvertime ? overtimeCents / 100 : 0
+  const shownNormal = (totalCents - (showsOvertime ? overtimeCents : 0)) / 100
 
   // The day's break, as the pay rule read it (`payrollBreakOnDay`, `unpaidBreakAppliesOnDay`, the segments' own
   // `unpaidBreakHours`). Words only.
@@ -239,7 +251,7 @@ export function bookingHoursBreakdownRows(
       if (round(standardBreakHours) > 0) detail += `, less ${Math.round(standardBreakHours * 60)} min break`
       else if (!breakUnpaid && dayBreak && standard.some(coversBreak)) detail += `, ${dayBreak.minutes} min break paid`
     }
-    rows.push(row('normal', 'Normal hours', [detail], normalPaid))
+    rows.push(row('normal', 'Normal hours', [detail], shownNormal))
   }
   if (multiplied.length > 0) {
     const sum = payrollMultipliedHours(paid)
@@ -249,7 +261,7 @@ export function bookingHoursBreakdownRows(
       const rate = `${round(sum.clockHours)}h at ×${round(sum.multiplier)}`
       details.push(round(sum.breakHours) > 0 ? `${rate} − ${h(sum.breakHours)} break` : rate)
     }
-    rows.push(row('overtime', 'Overtime', details, overtimePaid))
+    rows.push(row('overtime', 'Overtime', details, shownOvertime))
   }
   rows.push(row('total', 'Total paid hours', [], total))
 
@@ -268,8 +280,8 @@ export function bookingHoursBreakdownRows(
     summaryHours,
     summary: `${range} · ${summaryHours}`,
     rows,
-    normalPaidHours: round(normalPaid),
-    overtimePaidHours: round(overtimePaid),
+    normalPaidHours: shownNormal,
+    overtimePaidHours: shownOvertime,
     totalPaidHours: total,
   }
 }
