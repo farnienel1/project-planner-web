@@ -547,16 +547,24 @@ export const useUserStore = create<UserStoreState>(() => ({
     // document) — the person's own record from their users document, and one per deleted operatives / managers row.
     const deletedBy = auth?.currentUser?.uid || actor?.id || ''
     const idList = (value: unknown) => (Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : [])
-    const formerPerson = keepFormer
+    // Read as the rules read them: anything that is not text is '' (a stored null is never "null").
+    const str = (value: unknown) => (typeof value === 'string' ? value : '')
+    // Review of #370 (S1, judgement call): only an admin writes the record of an invite placeholder (not signed up) or
+    // of an operatives / managers row — an operatives manager could create or edit those documents first. Their delete
+    // leaves it out and they are told (`formerRecordSkipped`); an admin can link the id later in Data health.
+    const adminDelete = !actorManagesOperatives
+    const placeholder = stored.passwordSet !== true
+    let formerRecordSkipped = keepFormer && !adminDelete && (placeholder || operativeRows.length + managerRows.length > 0)
+    const formerPerson = keepFormer && (adminDelete || !placeholder)
       ? formerPersonRecordFields({
           person: {
             id: userId,
-            firstName: String(stored.firstName ?? ''),
-            surname: String(stored.surname ?? ''),
-            lastName: String(stored.lastName ?? ''),
-            displayName: typeof stored.displayName === 'string' ? stored.displayName : null,
-            name: typeof stored.name === 'string' ? stored.name : null,
-            email: String(stored.email ?? ''),
+            firstName: str(stored.firstName),
+            surname: str(stored.surname),
+            lastName: str(stored.lastName),
+            displayName: str(stored.displayName) || null,
+            name: str(stored.name) || null,
+            email: str(stored.email),
             formerUserIds: idList(stored.formerUserIds),
             sameEmailUserIds: idList(stored.sameEmailUserIds),
           },
@@ -564,19 +572,19 @@ export const useUserStore = create<UserStoreState>(() => ({
         })
       : null
     const formerRows: Record<string, { fields: Record<string, unknown>; serverTimestampFields: string[] }> = {}
-    if (keepFormer) {
+    if (keepFormer && adminDelete) {
       for (const [collectionName, rows] of [['operatives', operativeRows], ['managers', managerRows]] as const) {
         for (const row of rows) {
           const data = row.data
           const record = formerPersonRecordFields({
             person: {
               id: row.id,
-              firstName: String(data.firstName ?? ''),
-              lastName: String(data.lastName ?? ''),
-              surname: String(data.surname ?? ''),
-              displayName: typeof data.displayName === 'string' ? data.displayName : null,
-              name: typeof data.name === 'string' ? data.name : null,
-              email: String(data.email ?? ''),
+              firstName: str(data.firstName),
+              lastName: str(data.lastName),
+              surname: str(data.surname),
+              displayName: str(data.displayName) || null,
+              name: str(data.name) || null,
+              email: str(data.email),
               linkedIds: [data.linkedUserId, data.userId, data.uid],
             },
             deletedBy,
@@ -619,7 +627,6 @@ export const useUserStore = create<UserStoreState>(() => ({
       }
       await batch.commit()
     }
-    let formerRecordSkipped = false
     for (const step of steps) {
       try {
         await commitStep(step.writes)

@@ -219,7 +219,11 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
       managers: managers.map((m) => ({
         id: m.id,
         email: m.email ?? null,
-        name: `${m.firstName ?? ''} ${m.lastName ?? ''}`.trim() || null,
+        // Review of #370 (N3): an older row may carry only a single `name`.
+        name:
+          `${m.firstName ?? ''} ${m.lastName ?? ''}`.trim() ||
+          (typeof (m as { name?: unknown }).name === 'string' ? ((m as { name?: string }).name ?? '').trim() : '') ||
+          null,
       })),
       formerPeople,
     }),

@@ -11,6 +11,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
+import assert from 'node:assert/strict'
 import { assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing'
 import { assertFails } from './rulesAssert.ts'
 import { claimsContext } from './authClaimsContext.ts'
@@ -143,20 +144,61 @@ test('review M1: the record is tied to the deleted users document — no forged 
   await assertSucceeds(deleteWith(ADMIN, ['users', OP], OP, opRecord(ADMIN, { displayName: 'Deleted user', email: '' })))
 })
 
-test('review M1: an operatives manager deleting a row linked to an admin cannot forge its email or ids', async () => {
+test('review M1 / S1: a row linked to an admin — an admin writes only the row\'s own record; an operatives manager writes none', async () => {
   const LINKED = 'dp-row-linked'
   const rowDoc = { firstName: 'Ada', lastName: 'Admin', email: `${ADMIN}@test.com`, linkedUserId: ADMIN }
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'organizations', ORG, 'operatives', LINKED), rowDoc)
   })
   const path = ['organizations', ORG, 'operatives', LINKED]
-  const honest = record(OPSMGR, { id: LINKED, ...rowDoc, linkedIds: [ADMIN] })
-  await assertFails(deleteWith(OPSMGR, path, LINKED, { ...honest, personIds: [LINKED, ADMIN, OP2] }))
-  await assertFails(deleteWith(OPSMGR, path, LINKED, { ...honest, personIds: [LINKED, OP2] }))
-  await assertFails(deleteWith(OPSMGR, path, LINKED, { ...honest, email: `${OP2}@test.com` }))
-  await assertFails(deleteWith(OPSMGR, path, LINKED, { ...honest, displayName: 'Ollie Op' }))
-  // Only what the row itself holds.
-  await assertSucceeds(deleteWith(OPSMGR, path, LINKED, honest))
+  const honest = (by: string) => record(by, { id: LINKED, ...rowDoc, linkedIds: [ADMIN] })
+  await assertFails(deleteWith(ADMIN, path, LINKED, { ...honest(ADMIN), personIds: [LINKED, ADMIN, OP2] }))
+  await assertFails(deleteWith(ADMIN, path, LINKED, { ...honest(ADMIN), email: `${OP2}@test.com` }))
+  await assertFails(deleteWith(ADMIN, path, LINKED, { ...honest(ADMIN), displayName: 'Ollie Op' }))
+  // S1: an operatives manager writes no record on the row path at all, even an honest one.
+  await assertFails(deleteWith(OPSMGR, path, LINKED, honest(OPSMGR)))
+  await assertSucceeds(deleteWith(ADMIN, path, LINKED, honest(ADMIN)))
+})
+
+test('review S1 route 1: an operatives manager creates a row with someone else\'s name and email, then deletes it with a record — refused', async () => {
+  const FAKE = 'dp-fake-row'
+  const forged = { firstName: 'Ada', lastName: 'Admin', email: `${ADMIN}@test.com` }
+  const opsmgr = await db(OPSMGR)
+  await assertSucceeds(setDoc(doc(opsmgr, 'organizations', ORG, 'operatives', FAKE), forged))
+  await assertFails(deleteWith(OPSMGR, ['organizations', ORG, 'operatives', FAKE], FAKE, record(OPSMGR, { id: FAKE, ...forged })))
+  // The row delete on its own still works (the app's fallback).
+  await assertSucceeds(deleteDoc(doc(opsmgr, 'organizations', ORG, 'operatives', FAKE)))
+})
+
+test('review S1 route 2: an invite placeholder — an operatives manager writes no record; an admin does', async () => {
+  const PH = 'dp-ops-placeholder'
+  const phDoc = { email: 'boss@test.com', organizationId: ORG, passwordSet: false, role: 'operative', operativeMode: true, firstName: 'Big', surname: 'Boss', assignedManagerUserIds: [MGR] }
+  const seed = () => env.withSecurityRulesDisabled(async (ctx) => { await setDoc(doc(ctx.firestore(), 'users', PH), phDoc) })
+  await seed()
+  await assertFails(deleteWith(OPSMGR, ['users', PH], PH, record(OPSMGR, { id: PH, ...phDoc })))
+  // The refusal is the record: the same manager deletes the placeholder on its own (the app's fallback).
+  await assertSucceeds(deleteDoc(doc(await db(OPSMGR), 'users', PH)))
+  await seed()
+  await assertSucceeds(deleteWith(ADMIN, ['users', PH], PH, record(ADMIN, { id: PH, ...phDoc })))
+})
+
+test('review S1 route 3: an operatives manager changes a row\'s email, then deletes it with a record — refused', async () => {
+  const opsmgr = await db(OPSMGR)
+  await assertSucceeds(updateDoc(doc(opsmgr, 'organizations', ORG, 'operatives', ROW), { email: `${ADMIN}@test.com` }))
+  const forged = { id: ROW, firstName: 'Row', lastName: 'Only', email: `${ADMIN}@test.com` }
+  await assertFails(deleteWith(OPSMGR, ['organizations', ORG, 'operatives', ROW], ROW, record(OPSMGR, forged)))
+  await assertSucceeds(deleteDoc(doc(opsmgr, 'organizations', ORG, 'operatives', ROW)))
+})
+
+test('review N1 / N2: a stored null name reads as blank, never "null"; a non-list id field reads as none', async () => {
+  const ODD = 'dp-odd'
+  const oddDoc = { email: 'odd@test.com', organizationId: ORG, passwordSet: true, role: 'operative', operativeMode: true, firstName: null, surname: 'Smith', formerUserIds: 'not-a-list' }
+  await env.withSecurityRulesDisabled(async (ctx) => { await setDoc(doc(ctx.firestore(), 'users', ODD), oddDoc) })
+  const honest = record(ADMIN, { id: ODD, ...oddDoc } as never)
+  assert.equal(honest.displayName, 'Smith')
+  assert.deepEqual(honest.personIds, [ODD])
+  await assertFails(deleteWith(ADMIN, ['users', ODD], ODD, { ...honest, displayName: 'null Smith' }))
+  await assertSucceeds(deleteWith(ADMIN, ['users', ODD], ODD, honest))
 })
 
 test('review M1: deleting an invitee placeholder cannot forge its record', async () => {
@@ -209,4 +251,9 @@ test('review L2: materialContacts — staff create an address once, with only th
   await assertFails(deleteDoc(ref(await db(ADMIN), 'new@wholesale.test')))
   await assertFails(setDoc(ref(await db(STRANGER), 'z@wholesale.test'), { firstSentAt: serverTimestamp() }))
   await assertSucceeds(getDoc(ref(await db(MGR), 'new@wholesale.test')))
+  // Review of #370 (S2): staff only — an operative neither reads nor lists them; another company never.
+  await assertFails(getDoc(ref(await db(OP), 'new@wholesale.test')))
+  await assertFails(getDocs(collection(await db(OP), 'organizations', ORG, 'materialContacts')))
+  await assertFails(getDoc(ref(await db(STRANGER), 'new@wholesale.test')))
+  await assertSucceeds(getDocs(collection(await db(ADMIN), 'organizations', ORG, 'materialContacts')))
 })

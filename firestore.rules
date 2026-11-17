@@ -2337,19 +2337,26 @@ service cloud.firestore {
       }
 
       match /deletedPeople/{personId} {
+        function formerText(v) {
+          return v is string ? v.trim() : '';
+        }
+        function formerIds(v) {
+          return v is list ? v : [];
+        }
         function formerCreate(d, u, r) {
           let user = exists(u);
           let row = exists(r) ? r : /databases/(default)/documents/organizations/$(organizationId)/managers/$(personId);
           let src = user ? get(u).data : get(row).data;
-          let f = string(src.get('firstName', '')).trim();
-          let e = string(src.get('email', '')).trim().lower();
-          return (user ? !existsAfter(u) && homeOrgIs(src, organizationId) &&
-              d.personIds.hasOnly([personId].concat(src.get('formerUserIds', [])).concat(src.get('sameEmailUserIds', [])))
-            : exists(row) && !existsAfter(row) && d.personIds.hasOnly([personId, src.get('linkedUserId', ''), src.get('userId', ''), src.get('uid', '')])) &&
+          let admin = callerOrg(organizationId)[0] == 'admin';
+          let f = formerText(src.get('firstName', ''));
+          let e = formerText(src.get('email', '')).lower();
+          return (user ? !existsAfter(u) && homeOrgIs(src, organizationId) && (src.get('passwordSet', false) == true || admin) &&
+              d.personIds.hasOnly([personId].concat(formerIds(src.get('formerUserIds', []))).concat(formerIds(src.get('sameEmailUserIds', []))))
+            : admin && exists(row) && !existsAfter(row) && d.personIds.hasOnly([personId, src.get('linkedUserId', ''), src.get('userId', ''), src.get('uid', '')])) &&
             d.keys().hasOnly(['displayName', 'email', 'personIds', 'deletedAt', 'deletedBy']) && d.deletedBy == request.auth.uid &&
             d.deletedAt == request.time && d.email in ['', e] && personId in d.personIds && d.personIds.size() <= 50 &&
-            d.displayName in [(f + ' ' + string(src.get('surname', '')).trim()).trim(), (f + ' ' + string(src.get('lastName', '')).trim()).trim(),
-              string(src.get('displayName', '')).trim(), string(src.get('name', '')).trim(), e, 'Deleted user'];
+            d.displayName in [(f + ' ' + formerText(src.get('surname', ''))).trim(), (f + ' ' + formerText(src.get('lastName', ''))).trim(),
+              formerText(src.get('displayName', '')), formerText(src.get('name', '')), e, 'Deleted user'];
         }
         allow read: if request.auth != null && callerOrg(organizationId)[0] in ['admin', 'manager'] && orgBillingOpen(organizationId);
         allow create: if formerCreate(request.resource.data, /databases/(default)/documents/users/$(personId),
@@ -2357,6 +2364,7 @@ service cloud.firestore {
       }
 
       match /materialContacts/{emailKey} {
+        allow read: if request.auth != null && callerOrg(organizationId)[0] in ['admin', 'manager'] && orgBillingOpen(organizationId);
         allow create: if request.auth != null && callerOrg(organizationId)[0] in ['admin', 'manager'] && orgBillingOpen(organizationId) &&
           request.resource.data.keys().hasOnly(['firstSentAt']) && request.resource.data.firstSentAt == request.time;
       }
@@ -2400,7 +2408,7 @@ service cloud.firestore {
             'projects', 'smallWorks', 'bookings', 'managerSiteBookings', 'subcontractorBookings',
             'payProfiles', 'operativeDayRateHistory', 'operativeProfiles', 'settings',
             'overtimeRequests', 'overtimeReviews', 'overtimeReports', 'priceWorkItems', 'expenseItems',
-            'payeClaimReports', 'payeClaimReviews', 'personalSiteAudits', 'worksListPicks', 'annualLeaveAdjustments', 'deletedPeople']);
+            'payeClaimReports', 'payeClaimReviews', 'personalSiteAudits', 'worksListPicks', 'annualLeaveAdjustments', 'deletedPeople', 'materialContacts']);
       }
     }
 

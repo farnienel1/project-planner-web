@@ -30,7 +30,14 @@ const root = path.resolve(here, '..')
 
 function arg(flag) {
   const index = process.argv.indexOf(flag)
-  return index >= 0 ? process.argv[index + 1] || null : null
+  if (index < 0) return null
+  const value = process.argv[index + 1]
+  // Review of #370 (N4): a flag with no value, or followed by another flag, is refused (never read as "--all").
+  if (!value || value.startsWith('--')) {
+    console.error(`${flag} needs a value.`)
+    process.exit(2)
+  }
+  return value
 }
 
 const projectId = arg('--project')

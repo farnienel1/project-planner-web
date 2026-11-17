@@ -422,18 +422,19 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
       // Review of #370 (M1): the record holds only what the row itself carries (the rules check it against the row).
       const rowSnap = await getDoc(operativeRef).catch(() => null)
       const rowData = (rowSnap?.exists() ? rowSnap.data() : {}) as Record<string, unknown>
+      const str = (value: unknown) => (typeof value === 'string' ? value : '')
       const bookingsLeft = await countBookingsUnder(organizationId, id)
       const keep = await formerPersonNeededFor(db, organizationId, [id], { bookings: bookingsLeft, managerSiteBookings: 0 })
       const record = keep
         ? formerPersonRecordFields({
             person: {
               id,
-              firstName: String(rowData.firstName ?? ''),
-              lastName: String(rowData.lastName ?? ''),
-              surname: String(rowData.surname ?? ''),
-              displayName: typeof rowData.displayName === 'string' ? rowData.displayName : null,
-              name: typeof rowData.name === 'string' ? rowData.name : null,
-              email: String(rowData.email ?? ''),
+              firstName: str(rowData.firstName),
+              lastName: str(rowData.lastName),
+              surname: str(rowData.surname),
+              displayName: str(rowData.displayName) || null,
+              name: str(rowData.name) || null,
+              email: str(rowData.email),
               linkedIds: [rowData.linkedUserId, rowData.userId, rowData.uid],
             },
             deletedBy: auth?.currentUser?.uid || '',
