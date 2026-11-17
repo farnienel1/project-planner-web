@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.56.0
+# iOS follow-on — rulebook 1.57.0
 
 Generated 2026-11-17 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.55.1 → 1.56.0
-Packed hash: 5e5f5feea3a0a674fcaf986ff07078537306a418739b5c7a5a642fb1644e2ee6
-Rulebook sha256: a7a65aa4f3a6befe7197bbfd88be4a39352bcff38e0743326391473656429af1
+Rulebook version: 1.56.0 → 1.57.0
+Packed hash: cde55aeaa180b9ae94fe1c8f9007352fe2a74940c8ffe33d9026d3b9d038781c
+Rulebook sha256: 377ce5a8178cabb632985603dff6cd18b4517a8a40148f0a287ce0b55870445d
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -19,44 +19,41 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web lib/canonical/parity-fixture.json             → iOS ProjectPlannerTests/CanonicalParityFixture.json
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
   web lib/canonical/data-parity-fixture.json        → iOS ProjectPlannerTests/DataParityFixture.json
-Contract sha256: 5a8a7e4e6f56b91cb18f71e79207782b8840fccf0b63b695826c47e18e59a32e
+Contract sha256: 5b2615b5540b55f716d40617dd791dbcda6290348ef18951186f47e2e5b7cd20
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: OPERATIVE_OWN_LEAVE_ORGANIZATION_IDS_FIELD, OPERATIVE_OWN_LEAVE_SWITCH_FIELD, OWN_LEAVE_IDS_PER_QUERY, leaveLegacyKeyFindings, leaveQueryPlan, leaveQueryValues, operativeOwnLeaveEnabled, readsOnlyOwnLeave
+Exports added: MATERIAL_BRAND_LEGACY_BLANK, MATERIAL_BRAND_MISSING_TEXT, materialBrandStored, materialBrandText
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/leaveReadAudit.ts, lib/canonical/platformConfig.ts, lib/canonical/staffAccess.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/cross-platform-contract.json, lib/canonical/index.ts, lib/canonical/materialCatalogueCsv.ts, lib/canonical/materialQuantity.ts, lib/canonical/materialWhatsApp.ts, lib/canonical/operationsDocuments.ts
 Done when:
-- [ ] Packed hash in iOS equals 5e5f5feea3a0a674fcaf986ff07078537306a418739b5c7a5a642fb1644e2ee6
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 a7a65aa4f3a6befe7197bbfd88be4a39352bcff38e0743326391473656429af1)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.56.0)
+- [ ] Packed hash in iOS equals cde55aeaa180b9ae94fe1c8f9007352fe2a74940c8ffe33d9026d3b9d038781c
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 377ce5a8178cabb632985603dff6cd18b4517a8a40148f0a287ce0b55870445d)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.57.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.56.0
+## What changed in 1.57.0
 
-- **Operatives read only their own annual leave — Phase A** (§9, §16, §17, §18; owner answers 17 Nov: Q1 ok, Q2 operatives see only their own schedule and leave, Q3 a new hidden switch, Q4 fix the data). New `leaveQueryPlan` / `leaveQueryValues` / `OWN_LEAVE_IDS_PER_QUERY`: admins, super admins and managers keep one whole-collection `holidayBookings` query; only the operative level (`readsOnlyOwnLeave`; never a no-flag user, never an admin with a stray operative-mode flag) runs one `or` query — `userId in` their own ids and email, `operativeId in` their own ids — per 14 ids, never the whole collection; empty own ids fall back to the users id and former ids. Only while the switch is on (review of #356: with it off everyone reads the whole collection, so nothing drops out of view before the data is fixed). Web holiday store (own ids worked out at plan time; re-plans the organisation last requested while it is open; follows `platformConfig/app` live; clears its rows on a user change, sign-out or a narrowing; plan kept only after a successful subscribe), `readPlanSync` and the §27 data check use it; `OrgPlanPart` takes a composite `filter`.
-- New switch `operativeOwnLeave` / `operativeOwnLeaveOrganizationIds` on `platformConfig/app` (`operativeOwnLeaveEnabled`, `OPERATIVE_OWN_LEAVE_SWITCH_FIELD`, `OPERATIVE_OWN_LEAVE_ORGANIZATION_IDS_FIELD`): turns on the app narrowing now and the Phase B rules later; missing = off. Web `operativeOwnLeaveFor`; Annual leave loads the `operatives` rows so they are planned.
-- New `leaveLegacyKeyFindings` and the read-only owner report `scripts/report-leave-legacy-keys.mjs`: an operative's own leave the query would miss (legacy key, letter case, a second users document on their email, the email stored as `operativeId`); members from another company included; a record two operatives claim that none of their queries reaches is one `conflict` (one already reached is not reported); the CSV neutralises formula-looking cells.
-- No security rules change in this release (Phase B follows after iOS 1.56 and the `minimumIosBuild` raise).
+- **A missing material brand reads "N/A", not "Custom"** (§28, owner decision 17 Nov; supersedes the 15 Nov "keep 'Custom' for now, tidy later"). New `materialBrandStored`, `materialBrandText`, `MATERIAL_BRAND_MISSING_TEXT` ("N/A"), `MATERIAL_BRAND_LEGACY_BLANK` ("Custom"). Display only on read: a stored blank or "Custom" brand (trimmed, any case) shows "N/A"; new saves with no brand store `''`; a save that leaves the brand blank never rewrites a stored "Custom" or adds a brand field (`materialCatalogueItemWriteFields`, `materialLineWriteFields`). Changed: `parseMaterialCatalogueDocument` brand `''` (was "Custom"), `materialCatalogueItemFields` brand `''` (was "Custom"), `parseMaterialLineDocument` / `materialLineFields` treat "Custom" as none, `materialSendRecordCreateFields` never writes "Custom", `materialWhatsAppRows` never prints it. Web: catalogue list, pickers, send history, wholesalers, the quote / order email (web route and the email function). No migration, no rules change.
 
-## iOS work for 1.56.0
+## iOS work for 1.57.0
 
-Operatives read only their own annual leave — **Phase A** (rulebook §9 "Who reads which leave", §16, §17 "Leave queries", §18; owner answers 17 Nov Q1–Q4; review of #356). **Nothing narrows until the switch `operativeOwnLeave` is on for the organisation**: the same switch turns on the app narrowing (this hand-off) and, later, the Phase B rules. Owner order: legacy-key report and data fixed → `minimumIosBuild` raised to this build → Phase B rules published → switch on per company. An older iPhone's whole-collection leave query would be refused for operatives once Phase B is on, so this build must be out first. Every rule below is a packed function — call it through `CanonicalBusinessEngine`; no Swift copy of the plan.
+A missing material brand reads **"N/A"**, not "Custom" (rulebook §28 1.57.0, owner decision 17 Nov, before launch). Display only on read; nothing stored is rewritten (guardrail 3). Every rule below is a packed function — call it through `CanonicalBusinessEngine`; keep no Swift copy of the "Custom" / "N/A" rule.
 
-1. **Plan** (`Core/Rulebook+JobAccess.swift`, beside `bookingQueryPlan`): add `leaveQueryPlan(viewer, { ownIds, email, operativeOwnLeave })` → `{ readsEveryLeave, queries }`, with `operativeOwnLeave` = `operativeOwnLeaveEnabled(platformConfig/app, organizationId)` (unknown / not read yet → false: the whole collection). Same viewer as `bookingQueryPlan`, with `role.isOperativeMode` = `permissionLevelOf(user) == operative` (only the operative level is narrowed: a no-flag user and an admin with a stray operative-mode flag read everything — `readsOnlyOwnLeave`); `ownIds` = the same own ids the booking plan gets (`bookingIdsForAccount` of the signed-in account: users id, `formerUserIds`, the `operatives` rows on their email), worked out when you plan — an empty list falls back to the users id and former ids; `email` = the signed-in account's email. Nil when the script does not answer → keep the current behaviour for staff, and for an operative run **no** leave query (never the whole collection).
-2. **Live listener** (`Core/HolidayStore.swift` `startLiveUpdates`, ~171): when `readsEveryLeave` keep today's `listenOrganizationQuery(key: "holidayBookings", query: { $0.collection("holidayBookings") })`. Otherwise one listener per `kind: "own"` query: `collection("holidayBookings").whereFilter(Filter.orFilter([Filter.whereField(anyOf[0].field, in: anyOf[0].values), Filter.whereField(anyOf[1].field, in: anyOf[1].values)]))`, merged by document id (the pattern of the own-bookings plan in `Core/FirebaseBackend+ReadPlans.swift`). The two `in` lists differ — the emails are on `userId` only — so use each part's own `values`. Ids are sent exactly as given — no upper / lower-case variants. Re-plan the organisation you last started (not an older one) when the signed-in user or the `operatives` rows change, and forget the plan and stop the listeners on organisation switch / sign-out.
-3. **One-off read** (`FirebaseBackend.swift` `loadHolidayBookings`, ~8863, used by `HolidayStore.loadData` and the screens listed in the plan): run the same queries (`getDocuments(source: .server)`, cache fallback as today) and merge by document id; never the whole collection for an operative.
-4. **Data check** (`Core/DataParityMonitor.swift`, `holidayBookings` ~295 / ~336): for an operative count the plan's own queries (`countPlan` over `PlannedReadSource.query` of each `or` query; `dataParitySumCounts`), and heal by re-starting those listeners — not `count()` of `org.collection("holidayBookings")` (it would be refused under Phase B and is the wrong number now).
-5. **Who drops out of view** (guardrail 3): an operative no longer receives colleagues' leave; no iPhone screen they can open shows it (they have no Daily Overview, Warnings, Book labour, Team tab or job week grid). Their own records stored only under a legacy key (`user_id`, `uid`, `user.id`), another letter case or a second users document on their email also stop loading — the owner's read-only report (`scripts/report-leave-legacy-keys.mjs`, `leaveLegacyKeyFindings`) lists them to be fixed in the data before Phase B. Admins and managers: no change.
-6. **Switch** (`operativeOwnLeaveEnabled`, `OPERATIVE_OWN_LEAVE_SWITCH_FIELD`, `OPERATIVE_OWN_LEAVE_ORGANIZATION_IDS_FIELD`): read it from `platformConfig/app` like `enforcedReads` (on launch, on return to the foreground and whenever the app already re-reads the document) and re-plan the leave listener when it changes for the open organisation. Off → whole collection for everyone. Re-plan only the organisation that is still open; clear the leave rows when the user changes, on sign-out and when the plan narrows from the whole collection to the own query.
-7. **Annual leave loads the `operatives` rows** before planning (their ids are part of the own query).
-8. **Tests**: with the switch off an operative reads the whole collection; with it on an operative's plan has no whole-collection query; the `or` query's values equal `leaveQueryValues`; an admin / manager keeps the whole collection; a viewer with no uid runs nothing.
+1. **Find every Swift place that defaults a brand**: search the iOS repo for `"Custom"` next to `brand` / `manufacturer` (catalogue model decode, `FirebaseBackend.materialCatalogueItemPayload`, the catalogue editor save, material pickers / Add material suggestions, send sheet, send history, `MaterialRequestEmailClient` payload, WhatsApp text, CSV import / export). Replace the default with the rulebook: saved value `materialBrandStored(brand)` (`''` for blank or the legacy word "Custom", trimmed, any case); shown value `materialBrandText(brand)` ("N/A" when none).
+2. **Brand slots show `materialBrandText`**: the catalogue list rows, material pickers / suggestions and any detail row labelled Brand / Manufacturer.
+3. **Appended text shows nothing when there is no brand** (`materialBrandStored`, never "Custom"): send history lines, any "· brand" suffix, the WhatsApp text (already `materialWhatsAppRows`).
+4. **Saves**: a catalogue item or job material line with no brand stores `''` / no brand (never "Custom"). Use the rulebook writers where iOS already does (`materialCatalogueItemFields`, `materialCatalogueItemWriteFields`, `materialLineFields`, `materialLineWriteFields`): a save that leaves the brand blank keeps a stored "Custom" exactly as stored and adds no brand field — so an edit of another field never rewrites it. If an iOS save builds its own payload, it must not send `brand` when the user left it blank and the stored value is blank or "Custom".
+5. **Reader change**: `parseMaterialCatalogueDocument(...).brand` is now `''` for a missing or "Custom" brand (was "Custom"); `parseMaterialLineDocument(...).brand` is `null` for "Custom". Any Swift code that compared with "Custom" must use `materialBrandStored(...) == ""` instead. Cross-platform contract: the iOS catalogue sample now expects `brand: ""`.
+6. **Brands count** (if iOS shows one): count distinct non-empty `materialBrandStored` values — "no brand" is not a brand.
+7. **Tests**: a stored "Custom" and a missing brand both show "N/A"; "Custom Cables Ltd" shows as typed; a new item with no brand saves `""`; editing the name of an item stored with "Custom" sends no `brand` field.
+8. `minimumIosBuild`: not needed (display only; an older build's "Custom" reads as "N/A" everywhere).
 
 ## New rulebook sections
 
-- 1.56.0 — 2026-11-17
+- 1.57.0 — 2026-11-17
 
 ## Workflow for the iOS agent
 

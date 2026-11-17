@@ -515,3 +515,26 @@ export function materialContentError(amount: unknown, measure: unknown, orderUni
   }
   return null
 }
+
+// MARK: - Material brand (1.57.0)
+
+/** What a missing brand reads as on every screen, email and export slot (owner decision 17 Nov). */
+export const MATERIAL_BRAND_MISSING_TEXT = 'N/A'
+
+/** The word older builds stored for a blank catalogue brand (before 1.57.0); read as no brand. */
+export const MATERIAL_BRAND_LEGACY_BLANK = 'Custom'
+
+/**
+ * The brand as the apps hold and save it (1.57.0): trimmed, '' for none. The stored word "Custom" (trimmed, any
+ * letter case) is the old placeholder for a blank brand, so it reads as none too. Never rewrites what is stored.
+ */
+export function materialBrandStored(value: unknown): string {
+  const brand = typeof value === 'string' ? value.trim() : ''
+  if (!brand) return ''
+  return brand.toLowerCase() === MATERIAL_BRAND_LEGACY_BLANK.toLowerCase() ? '' : brand
+}
+
+/** The brand shown in a brand slot (catalogue list, pickers, the email "Manufacturer"): "N/A" when none. */
+export function materialBrandText(value: unknown): string {
+  return materialBrandStored(value) || MATERIAL_BRAND_MISSING_TEXT
+}

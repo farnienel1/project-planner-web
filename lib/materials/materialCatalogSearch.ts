@@ -1,5 +1,6 @@
 import {
   catalogueRecordFromItem,
+  materialBrandStored,
   materialSearchScore,
   rankMaterialRecords,
 } from '@/lib/canonical'
@@ -58,7 +59,7 @@ export function searchMaterialCatalogue(
         id: `recent:${line.id}`,
         source: 'recent',
         name: line.material,
-        brand: line.brand || 'Custom',
+        brand: materialBrandStored(line.brand),
         productCode: line.productCode,
         unit: line.unit,
         orderUnit: line.orderUnit,
@@ -125,7 +126,7 @@ export function searchMaterialCatalogue(
       id: `recent:${line.id}`,
       source: 'recent',
       name: line.material,
-      brand: line.brand || 'Custom',
+      brand: materialBrandStored(line.brand),
       productCode: line.productCode,
       unit: line.unit,
       orderUnit: line.orderUnit,

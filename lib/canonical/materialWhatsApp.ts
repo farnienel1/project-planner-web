@@ -11,7 +11,7 @@
  */
 
 import { formatMaterialDeliveryRequired, materialOrderIncludesDeliveryRequired } from './materialDelivery'
-import { materialLineText } from './materialQuantity'
+import { materialBrandStored, materialLineText } from './materialQuantity'
 
 /** Lines listed in the message; the rest are summarised as "…and N more items". */
 export const MATERIAL_WHATSAPP_ITEM_LIMIT = 30
@@ -153,7 +153,7 @@ function orderItemLines(materials: readonly MaterialWhatsAppLine[]): string {
     // Rulebook 1.48.0: the quantity is `materialLineText` ("2no 50m drums"), so the length is not repeated.
     const extras = [
       materialLineText(item),
-      trim(item.brand),
+      materialBrandStored(item.brand),
       trim(item.productCode) ? `Code ${trim(item.productCode)}` : '',
       trim(item.notes),
     ].filter(Boolean)

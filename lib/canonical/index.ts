@@ -1114,6 +1114,7 @@ export {
   wholesalerContactId,
   wholesalerWriteFields,
 } from './operationsDocuments'
+export { MATERIAL_BRAND_LEGACY_BLANK, MATERIAL_BRAND_MISSING_TEXT, materialBrandStored, materialBrandText } from './materialQuantity'
 export {
   HEALTH_SAFETY_ARRAY_FIELDS,
   HS_ISSUE_STATUSES,

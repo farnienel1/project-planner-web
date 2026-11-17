@@ -231,6 +231,8 @@ var ProjectPlannerCanonical = (() => {
     MANAGER_PERMISSION_TOGGLES: () => MANAGER_PERMISSION_TOGGLES,
     MANAGER_SITE_BOOKING_LOCATION_WRITE_GROUP: () => MANAGER_SITE_BOOKING_LOCATION_WRITE_GROUP,
     MANAGER_TIME_SLOTS: () => MANAGER_TIME_SLOTS,
+    MATERIAL_BRAND_LEGACY_BLANK: () => MATERIAL_BRAND_LEGACY_BLANK,
+    MATERIAL_BRAND_MISSING_TEXT: () => MATERIAL_BRAND_MISSING_TEXT,
     MATERIAL_CATALOGUE_CSV_BINARY_MESSAGE: () => MATERIAL_CATALOGUE_CSV_BINARY_MESSAGE,
     MATERIAL_CATALOGUE_CSV_COLUMNS: () => MATERIAL_CATALOGUE_CSV_COLUMNS,
     MATERIAL_CATALOGUE_CSV_EMPTY_MESSAGE: () => MATERIAL_CATALOGUE_CSV_EMPTY_MESSAGE,
@@ -1118,6 +1120,8 @@ var ProjectPlannerCanonical = (() => {
     maskSensitiveValue: () => maskSensitiveValue,
     matchesRosterSegment: () => matchesRosterSegment,
     matchesUserRosterSegment: () => matchesUserRosterSegment,
+    materialBrandStored: () => materialBrandStored,
+    materialBrandText: () => materialBrandText,
     materialCatalogueCsvCell: () => materialCatalogueCsvCell,
     materialCatalogueCsvExport: () => materialCatalogueCsvExport,
     materialCatalogueCsvFileError: () => materialCatalogueCsvFileError,
@@ -9697,6 +9701,16 @@ var ProjectPlannerCanonical = (() => {
     }
     return null;
   }
+  var MATERIAL_BRAND_MISSING_TEXT = "N/A";
+  var MATERIAL_BRAND_LEGACY_BLANK = "Custom";
+  function materialBrandStored(value) {
+    const brand = typeof value === "string" ? value.trim() : "";
+    if (!brand) return "";
+    return brand.toLowerCase() === MATERIAL_BRAND_LEGACY_BLANK.toLowerCase() ? "" : brand;
+  }
+  function materialBrandText(value) {
+    return materialBrandStored(value) || MATERIAL_BRAND_MISSING_TEXT;
+  }
 
   // lib/canonical/materialWhatsApp.ts
   var MATERIAL_WHATSAPP_ITEM_LIMIT = 30;
@@ -9881,7 +9895,7 @@ var ProjectPlannerCanonical = (() => {
     const lines = shown.map((item) => {
       const extras = [
         materialLineText(item),
-        trim(item.brand),
+        materialBrandStored(item.brand),
         trim(item.productCode) ? `Code ${trim(item.productCode)}` : "",
         trim(item.notes)
       ].filter(Boolean);
@@ -13679,8 +13693,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.56.0" : "",
-      sha256: true ? "a7a65aa4f3a6befe7197bbfd88be4a39352bcff38e0743326391473656429af1" : ""
+      version: true ? "1.57.0" : "",
+      sha256: true ? "377ce5a8178cabb632985603dff6cd18b4517a8a40148f0a287ce0b55870445d" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -14556,7 +14570,7 @@ var ProjectPlannerCanonical = (() => {
       dateMs,
       status: normalizeMaterialWorkflowStatus(row2.status),
       catalogueItemId: optionalText3(row2.catalogueItemId),
-      brand: optionalText3(row2.brand),
+      brand: materialBrandStored(row2.brand) || null,
       productCode: optionalText3(row2.productCode),
       category: optionalText3(row2.category),
       size: optionalText3(row2.size),
@@ -14608,7 +14622,7 @@ var ProjectPlannerCanonical = (() => {
       date: organizationDayStartMs(input?.dayKey, timeZone),
       status: normalizeMaterialWorkflowStatus(input?.status),
       catalogueItemId: blankToNull(input?.catalogueItemId),
-      brand: blankToNull(input?.brand),
+      brand: materialBrandStored(input?.brand) || null,
       productCode: blankToNull(input?.productCode),
       category: blankToNull(input?.category),
       size: blankToNull(input?.size),
@@ -14632,6 +14646,14 @@ var ProjectPlannerCanonical = (() => {
   ];
   var MATERIAL_NAME_WRITE_GROUP = ["material", "name"];
   var MATERIAL_DAY_WRITE_GROUP = ["dayKey", "date"];
+  function keepUnchangedBlankBrand(before, next) {
+    if (!before || !("brand" in next)) return next;
+    if (materialBrandStored(next.brand) || materialBrandStored(before.brand)) return next;
+    const out = { ...next };
+    if ("brand" in before) out.brand = before.brand;
+    else delete out.brand;
+    return out;
+  }
   function keepUnchangedLegacyQuantity(before, next, group) {
     if (!before || normalizeMaterialOrderUnit(before.orderUnit)) return next;
     if (!materialQuantityModelsEqual(materialQuantityModel(before), materialQuantityModel(next))) return next;
@@ -14643,7 +14665,7 @@ var ProjectPlannerCanonical = (() => {
     return out;
   }
   function materialLineWriteFields(before, next) {
-    return documentWriteFields(before, keepUnchangedLegacyQuantity(before, next, MATERIAL_LINE_QUANTITY_WRITE_GROUP), {
+    return documentWriteFields(before, keepUnchangedBlankBrand(before, keepUnchangedLegacyQuantity(before, next, MATERIAL_LINE_QUANTITY_WRITE_GROUP)), {
       together: [MATERIAL_LINE_QUANTITY_WRITE_GROUP, MATERIAL_NAME_WRITE_GROUP, MATERIAL_DAY_WRITE_GROUP],
       createOnly: [...CREATE_ONLY, "addedAt", "addedBy", "addedByUserId"]
     });
@@ -14665,7 +14687,7 @@ var ProjectPlannerCanonical = (() => {
     return {
       id: id2,
       name,
-      brand: text19(row2.brand) || "Custom",
+      brand: materialBrandStored(row2.brand),
       productCode: optionalText3(row2.productCode),
       defaultUnit: normalizeMaterialUnit(row2.defaultUnit),
       orderUnit: model.orderUnit,
@@ -14685,7 +14707,7 @@ var ProjectPlannerCanonical = (() => {
     const out = {
       id: text19(item?.id),
       name: text19(item?.name),
-      brand: text19(item?.brand) || "Custom",
+      brand: materialBrandStored(item?.brand),
       ...quantityFields(item, "defaultUnit"),
       category: text19(item?.category) || "Other",
       productCode: blankToNull(item?.productCode) ?? null,
@@ -14697,7 +14719,7 @@ var ProjectPlannerCanonical = (() => {
     return out;
   }
   function materialCatalogueItemWriteFields(before, next) {
-    return documentWriteFields(before, keepUnchangedLegacyQuantity(before, next, MATERIAL_CATALOGUE_QUANTITY_WRITE_GROUP), {
+    return documentWriteFields(before, keepUnchangedBlankBrand(before, keepUnchangedLegacyQuantity(before, next, MATERIAL_CATALOGUE_QUANTITY_WRITE_GROUP)), {
       together: [MATERIAL_CATALOGUE_QUANTITY_WRITE_GROUP],
       createOnly: [...CREATE_ONLY, "createdByUserId", "createdByName"]
     });
@@ -14791,7 +14813,7 @@ var ProjectPlannerCanonical = (() => {
           quantity: materialQuantity(line.quantity),
           unit: normalizeMaterialUnit(line.unit)
         };
-        if (text19(line.brand)) out2.brand = text19(line.brand);
+        if (materialBrandStored(line.brand)) out2.brand = materialBrandStored(line.brand);
         if (text19(line.productCode)) out2.productCode = text19(line.productCode);
         if (text19(line.lengthDisplay)) out2.lengthDisplay = text19(line.lengthDisplay);
         out2.quantityText = text19(line.quantityText) || materialLineText(line);

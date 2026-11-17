@@ -58,7 +58,7 @@ function itemsTableHTML(materials, isQuote) {
   }
   return materials.map((material) => {
     const name = escapeHtml(material.material);
-    const manufacturer = escapeHtml(trim(material.brand) || "\u2014");
+    const manufacturer = escapeHtml(canonical.materialBrandText(material.brand));
     const part = trim(material.productCode);
     const partHTML = part ? ` \xB7 Part: <span class="mr-muted" style="color:#475569;font-weight:600;">${escapeHtml(part)}</span>` : "";
     const notes = trim(material.notes);
@@ -115,7 +115,7 @@ function buildPlainTextEmail(context, isQuote) {
   const materialLines = context.materials.length === 0 ? "- (No materials listed)" : context.materials.map((item, index) => {
     const qty = lineText(item);
     const details = [
-      trim(item.brand) ? `Brand: ${trim(item.brand)}` : "",
+      canonical.materialBrandStored(item.brand) ? `Brand: ${canonical.materialBrandStored(item.brand)}` : "",
       trim(item.productCode) ? `Code: ${trim(item.productCode)}` : "",
       trim(item.notes) ? `Details: ${trim(item.notes)}` : ""
     ].filter(Boolean);
