@@ -636,6 +636,7 @@ export {
   payrollOutsideClockHours,
   multipliedHoursText,
   payrollMultipliedHours,
+  multipliedHoursParts,
   parseMultipliedHoursText,
   payrollLineClockRanges,
   timesheetLineClockText,
@@ -1345,7 +1346,7 @@ export { payrollLineReview, payrollLineReviewKey } from './timesheetEntryReviews
 export type { PayrollLineLiveBooking } from './timesheetEntryReviews'
 export { inviteAcceptWrites } from './inviteAccept'
 export { timesheetParticipant } from './peopleDocuments'
-export { orgDayHours, payForHours, roundPennies } from './payRate'
+export { dayRateHourlyEquivalent, orgDayHours, payForHours, roundPennies } from './payRate'
 export type { TimesheetInvoiceRow, TimesheetInvoiceRowKind, TimesheetInvoiceRowsInput } from './reportPay'
 export type { PayrollLineReview } from './timesheetEntryReviews'
 export type { InviteAcceptMode, InviteAcceptPlan } from './inviteAccept'
@@ -2286,3 +2287,7 @@ export type { TimesheetRevisionCheck, TimesheetRevisionDifference, TimesheetVers
 // 1.56.0: leave records an operative would stop seeing under their own-leave query (owner Q4: fix the data).
 export { leaveLegacyKeyFindings } from './leaveReadAudit'
 export type { LeaveReadAuditFinding, LeaveReadAuditUser } from './leaveReadAudit'
+
+// 1.61.0: a day-rate overtime line reads in hours (owner decision 17 Nov), wording only.
+export { DAY_RATE_OVERTIME_ROUNDED_NOTE, dayRateOvertimeCalcText } from './dayRateOvertimeText'
+export type { DayRateOvertimeCalcInput, DayRateOvertimeCalcText } from './dayRateOvertimeText'

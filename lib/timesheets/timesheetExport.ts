@@ -121,6 +121,8 @@ function signedOverrideDetails(
     amount: number
     isOvertime: boolean
     payBasis?: string | null
+    /** The multiplier stored on the signed line (1.46.0 snapshots), when any. */
+    otMultiplier?: number | null
     details?: string
   },
   standardDayHours: number,
@@ -132,15 +134,25 @@ function signedOverrideDetails(
   const parsed = line.isOvertime ? parseMultipliedHoursText(line.details) : null
   const slice = signedLabourSlice(line, standard, parsed?.multiplier ?? 1)
   const withBreak = Number(slice.breakHours) > 0
+  // Rulebook 1.61.0 §8: a signed day-rate overtime line whose multiplier is known (stored, or read from its stored
+  // text) reads in hours from its stored hours, days and amount (`dayRateOvertimeCalcText` via `payLineDisplay`);
+  // never re-priced. A line whose multiplier is unknown keeps the older wording.
+  const knownMultiplier =
+    line.isOvertime && (Number(line.otMultiplier) > 0 || parsed != null) ? Number(slice.otMultiplier) : 0
+  const inHours = slice.payBasis === 'day' && knownMultiplier > 0
+  // The signed rate unrounded (amount ÷ stored days), so the day rate shown is the one that gave the signed amount
+  // (£238.24 ÷ 0.71 days ÷ 1.5 = £225.00, not the £225.01 a penny-rounded £337.51 would give).
+  const signedDayUnits = slice.paidHours / orgDayHours(slice.standardDayHours ?? standard)
+  const signedRate = inHours && signedDayUnits > 0.0001 ? slice.pay / signedDayUnits : slice.rate
   const equation = payLineDisplay({
     payBasis: slice.payBasis,
     paidHours: slice.paidHours,
     // 1.44.0 §8: the signed line's own paid day (stored days), never today's.
     standardDayHours: slice.standardDayHours ?? standard,
-    rate: slice.rate,
+    rate: signedRate,
     pay: slice.pay,
     currencyCode,
-    ...(withBreak
+    ...(withBreak || inHours
       ? { isOvertime: true, otMultiplier: slice.otMultiplier, clockHours: slice.clockHours ?? null, breakHours: slice.breakHours ?? null }
       : {}),
   }).equation

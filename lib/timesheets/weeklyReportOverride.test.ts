@@ -743,3 +743,48 @@ test('1.54.0 third review of #337 (2): an exported sheet with late extras is fro
   const legacy = applyWeeklyReportOverride({ ...base, draft: { ...exported, lateExtras: undefined } })
   assert.equal(legacy.weeklyReportOverride?.lines.find((row) => row.id === 'op-b1-normal')?.decision, 'declined')
 })
+
+test('1.61.0: a signed day-rate overtime line reads in hours from its stored values; never re-priced', () => {
+  const overtimeLine = (id: string, otMultiplier: number | null) => ({
+    id,
+    date: day,
+    jobNumber: 'J-1',
+    projectName: 'Site One (Overtime)',
+    locationKind: 'project' as const,
+    details: '16:00–22:00',
+    paidHours: 6,
+    days: 6 / 8.5,
+    amount: 238.24,
+    payBasis: 'day' as const,
+    isOvertime: true,
+    otMultiplier,
+    decision: 'approved' as const,
+    bookingId: id,
+  })
+  const lines = invoiceLinesForTimesheet({
+    payroll: { totalHours: 6, overtimeHours: 6, shiftCount: 1, baseAmount: 0, overtimeAmount: 238.24, workAmount: 238.24, lineItems: [] },
+    timeZone: 'Europe/London',
+    extrasMode: 'export',
+    standardDayHours: 8.5,
+    draft: {
+      ...emptyTimesheetDraft(),
+      weeklyReportOverride: {
+        approvedAt: day,
+        approvedByUserId: 'mgr',
+        approvedByName: 'Morgan',
+        selfSigned: false,
+        // b1 stored its multiplier (1.46.0); b2 is an older line with no multiplier and no multiplied text.
+        lines: [overtimeLine('b1', 1.5), overtimeLine('b2', null)],
+        priceWork: [],
+        expenses: [],
+      },
+    },
+  })
+  assert.equal(lines[0].amount, 238.24)
+  assert.equal(
+    lines[0].details,
+    '16:00–22:00 · 6h × 1.5 = 9h · 9h × £26.47/h (rounded) = £238.24 (£225.00/day ÷ 8.5h)'
+  )
+  // Multiplier unknown: the older wording stays (never a guessed ×1).
+  assert.equal(lines[1].details, '16:00–22:00 · 0.71 days × £337.51/day = £238.24')
+})

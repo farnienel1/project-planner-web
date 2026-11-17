@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.58.0
+# iOS follow-on — rulebook 1.61.0
 
 Generated 2026-11-17 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.57.0 → 1.58.0
-Packed hash: ed36051c3eda321e195501d2ce00f3a1b54b4e6c1e993aaf20aed2277abdefa9
-Rulebook sha256: 021d024080428fee353e0a264d42ff8a1e0a6bf0a19638d1ebfa11f9e6e414c8
+Rulebook version: 1.58.0 → 1.61.0
+Packed hash: 4a6831bf514f91d027d287ae47173d62e3d84a2024d41a3eeda34d552fc16cf6
+Rulebook sha256: ac37b63c86e491427c9d3066ffe012c040a322c27aa840f6f5e8eb124cb3fc60
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,38 +22,34 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 5b2615b5540b55f716d40617dd791dbcda6290348ef18951186f47e2e5b7cd20
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: SNAPSHOT_GAP_FROM_MS, SNAPSHOT_GAP_REPORTS, signedTimesheetChangeForReports, timesheetClaimLatestSheets
+Exports added: DAY_RATE_OVERTIME_ROUNDED_NOTE, dayRateHourlyEquivalent, dayRateOvertimeCalcText, multipliedHoursParts
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/materialCatalogueCsv.ts, lib/canonical/materialQuantity.ts, lib/canonical/operationsDocuments.ts, lib/canonical/payeClaims.ts, lib/canonical/payrunSnapshot.ts, lib/canonical/timesheetBookingChanges.ts, lib/canonical/timesheetLateExtras.ts, lib/canonical/weeklyReportPay.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/dayRateOvertimeText.test.ts, lib/canonical/dayRateOvertimeText.ts, lib/canonical/index.ts, lib/canonical/payRate.ts, lib/canonical/payrollHours.ts
 Done when:
-- [ ] Packed hash in iOS equals ed36051c3eda321e195501d2ce00f3a1b54b4e6c1e993aaf20aed2277abdefa9
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 021d024080428fee353e0a264d42ff8a1e0a6bf0a19638d1ebfa11f9e6e414c8)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.58.0)
+- [ ] Packed hash in iOS equals 4a6831bf514f91d027d287ae47173d62e3d84a2024d41a3eeda34d552fc16cf6
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 ac37b63c86e491427c9d3066ffe012c040a322c27aa840f6f5e8eb124cb3fc60)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.61.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.58.0
+## What changed in 1.61.0
 
-- **A missing material brand reads "N/A", not "Custom"** (§28, owner decision 17 Nov; supersedes the 15 Nov "keep 'Custom' for now, tidy later"). New `materialBrandStored`, `materialBrandText`, `MATERIAL_BRAND_MISSING_TEXT` ("N/A"), `MATERIAL_BRAND_LEGACY_BLANK` ("Custom"). Display only on read: a stored blank or "Custom" brand (trimmed, any case) shows "N/A"; new saves with no brand store `''`; a save that leaves the brand blank never rewrites a stored "Custom" or adds a brand field (`materialCatalogueItemWriteFields`, `materialLineWriteFields`). Changed: `parseMaterialCatalogueDocument` brand `''` (was "Custom"), `materialCatalogueItemFields` brand `''` (was "Custom"), `parseMaterialLineDocument` / `materialLineFields` treat "Custom" as none, `materialSendRecordCreateFields` never writes "Custom", `materialWhatsAppRows` never prints it. Web: catalogue list, pickers, send history, wholesalers, the quote / order email (web route and the email function). No migration, no rules change.
+- **A day-rate overtime line reads in hours** (§8, owner decision 17 Nov; wording only). New `dayRateOvertimeCalcText` and `DAY_RATE_OVERTIME_ROUNDED_NOTE` (`lib/canonical/dayRateOvertimeText.ts`): "6h × 1.5 = 9h · 9h × £26.47/h (rounded) = £238.24 (£225.00/day ÷ 8.5h)" instead of "0.71 days × £337.50/day = £238.24". The divisor is the part's day-rate divisor (`payrollDayRateHours`); the hours part is `multipliedHoursText`; the amount is the exact pay as priced and is never changed; the shown hourly rate is rounded to pennies and marked "(rounded)" when that changes it (owner confirmed 17 Nov). Standard lines, hourly-rate people and PAYE days are unchanged; a signed snapshot line uses it from its stored values when its multiplier is known. Web: `payLineDisplay` (the timesheet period and review page, the invoice HTML and PDF, the export email) calls it. `plainHoursText` is now exported from `payrollHours.ts` (module only). New `multipliedHoursParts` (`payrollMultipliedHours` uses it, same figures) and `dayRateHourlyEquivalent`; the text function now does no arithmetic of its own (a syntax-tree test) and carries `paidHours`, `pay`, `payShown`; callers fall back to the older wording when it would not show the line's own figures (owner 17 Nov: the calculation must never fail; property tests over generated bookings). Numbered 1.61.0 to merge after 1.59.0 (#370) and 1.60.0 (#373).
 
-## iOS work for 1.58.0
+## iOS work for 1.61.0
 
-A missing material brand reads **"N/A"**, not "Custom" (rulebook §28 1.58.0, owner decision 17 Nov, before launch). Display only on read; nothing stored is rewritten (guardrail 3). Every rule below is a packed function — call it through `CanonicalBusinessEngine`; keep no Swift copy of the "Custom" / "N/A" rule.
+Wording only — no figure, total, write or permission changes.
 
-1. **Find every Swift place that defaults a brand**: search the iOS repo for `"Custom"` next to `brand` / `manufacturer` (catalogue model decode, `FirebaseBackend.materialCatalogueItemPayload`, the catalogue editor save, material pickers / Add material suggestions, send sheet, send history, `MaterialRequestEmailClient` payload, WhatsApp text, CSV import / export). Replace the default with the rulebook: saved value `materialBrandStored(brand)` (`''` for blank or the legacy word "Custom", trimmed, any case); shown value `materialBrandText(brand)` ("N/A" when none).
-2. **Brand slots show `materialBrandText`**: the catalogue list rows, material pickers / suggestions and any detail row labelled Brand / Manufacturer.
-3. **Appended text shows nothing when there is no brand** (`materialBrandStored`, never "Custom"): send history lines, any "· brand" suffix, the WhatsApp text (already `materialWhatsAppRows`).
-4. **Saves**: a catalogue item or job material line with no brand stores `''` / no brand (never "Custom"). Use the rulebook writers where iOS already does (`materialCatalogueItemFields`, `materialCatalogueItemWriteFields`, `materialLineFields`, `materialLineWriteFields`): a save that leaves the brand blank keeps a stored "Custom" exactly as stored and adds no brand field — so an edit of another field never rewrites it. If an iOS save builds its own payload, it must not send `brand` when the user left it blank and the stored value is blank or "Custom".
-5. **Reader change**: `parseMaterialCatalogueDocument(...).brand` is now `''` for a missing or "Custom" brand (was "Custom"); `parseMaterialLineDocument(...).brand` is `null` for "Custom". Any Swift code that compared with "Custom" must use `materialBrandStored(...) == ""` instead. Cross-platform contract: the iOS catalogue sample now expects `brand: ""`.
-6. **Brands count** (if iOS shows one): count distinct non-empty `materialBrandStored` values — "no brand" is not a brand.
-7. **Tests**: a stored "Custom" and a missing brand both show "N/A"; "Custom Cables Ltd" shows as typed; a new item with no brand saves `""`; editing the name of an item stored with "Custom" sends no `brand` field.
-8. `minimumIosBuild`: not needed (display only; an older build's "Custom" reads as "N/A" everywhere).
+1. Sync the rulebook from this web branch with `scripts/sync-rulebook-from-web.sh` (never hand-edit the canonical files).
+2. Wherever iOS builds a day-rate timesheet or invoice **overtime** line's text ("0.71 days × £337.50/day = £238.24"), call `dayRateOvertimeCalcText` through `CanonicalBusinessEngine` with: `clockHours` (the line's clock hours at the multiplier, or its paid hours when there is no break), `multiplier`, `breakHours` (only when a break is taken off the multiplied hours), `dayRate` (the person's day rate — the line's multiplied rate ÷ the multiplier), `dayRateHours` (the line's own divisor, `standardDayHours`), `pay` (the line's amount, shown as given), `currency`. Show `text` (or `lines` on two rows). When it returns null, keep the current text.
+3. Standard lines, hourly-rate people and PAYE days keep their current text. A signed snapshot line uses it only when its multiplier is known (stored `otMultiplier`, or `parseMultipliedHoursText` of its stored details); compute the day rate from the stored amount ÷ stored days ÷ the multiplier (unrounded), never re-price.
+4. Tests: the owner example (£225/day, 8.5h, 6h × 1.5 → "6h × 1.5 = 9h · 9h × £26.47/h (rounded) = £238.24 (£225.00/day ÷ 8.5h)") and a line with an unpaid break.
 
 ## New rulebook sections
 
-- 1.58.0 — 2026-11-17
+- 1.61.0 — 2026-11-17
 
 ## Workflow for the iOS agent
 

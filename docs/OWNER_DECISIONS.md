@@ -950,6 +950,21 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 | 17 Nov | **Item 5:** the repair is automatic — when a line manager or admin has the Timesheets hub or User Timesheets open, every frozen-empty snapshot of the loaded pay runs they may write is rebuilt in the background through the existing path (signatures kept, never exported), once per sheet per session, after bookings and pay settings load. The period page also loads a sheet filed under another id the person goes by. | done web |
 | 17 Nov | **Item 6:** past pay-run lists start at the organisation's creation day (`organizations/{orgId}.createdAt`; else the earliest stored sheet), and any run with a stored sheet is still listed. Web only, no rulebook change. | done web |
 
+## 17 Nov decisions (for 1.61, day-rate overtime wording)
+
+| Date | Decision | Status |
+|---|---|---|
+| 17 Nov | **A day-rate overtime line reads in hours** on timesheets and invoices, never a multiplied day rate: "6h × 1.5 = 9h · 9h × £26.47/h (rounded) = £238.24 (£225.00/day ÷ 8.5h)" (was "0.71 days × £337.50/day = £238.24"). Divisor: the part's day-rate divisor (`payrollDayRateHours`; overtime always the weekday paid day of the working hours in effect that day). With an unpaid break the hours part follows `multipliedHoursText`. Standard lines, hourly-rate people and PAYE days unchanged; signed lines use it from stored values when their multiplier is known, never re-priced. Wording only: no figure or pay changes. Rule: `dayRateOvertimeCalcText` (§8). | done web + rulebook (1.61.0, w161-ot-wording); iOS open (ios-161-ot-wording) |
+| 17 Nov | **Rounded hourly rate confirmed**: the shown hourly rate is rounded to pennies and marked "£26.47/h (rounded)" when rounding changed it; the amount stays the exact pay (`payForHours`, rounded once) and is never changed to make the sum match. | done (1.61.0), owner confirmed 17 Nov |
+| 17 Nov | **The calculation must never fail** (owner: the new text is "way better"; it only shows the calculation that is actually used, and that calculation comes from the working hours and the rulebook). (1) Property tests over thousands of generated bookings — day rates, paid days 7–10h, multipliers 1–3 in 0.25 steps, paid and unpaid breaks, set-window Saturdays, every-hour Sundays — prove every number in the text is a rulebook output (`payrollHoursResult` / `payrollMultipliedHours`, `payrollDayRateHours`, `payForHours`), the £ shown is the line amount exactly and the hours sum is the overtime paid hours. (2) The text function does no arithmetic of its own: a test walks its syntax tree (web) and the hours and hourly rate come from `multipliedHoursParts` and `dayRateHourlyEquivalent`. (3) The rounded hourly rate is always `dayRate ÷ divisor` rounded to pennies (`dayRateHourlyEquivalent`). (4) The amount is priced first; the text never blocks or changes it — if the text cannot be built, throws, or would not show the line's own hours and amount, the line keeps the older wording (`dayRateOvertimeTextOrNull` on web, the same guard on iOS). | done web + rulebook (1.61.0, w161-ot-wording); iOS (ios-161-ot-wording, tests not run on a device) |
+
+## 1.61.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 17 Nov | One-line layout on every screen and the invoice: "hours sum · hours × hourly rate = amount (day rate ÷ paid day)"; the two-line form (`lines`) is available but not used on web. | done, owner confirmed 17 Nov |
+| 17 Nov | A signed overtime line whose multiplier is not stored and not in its stored text (older sheets) keeps the old "days × day rate" wording rather than guessing ×1. | done, owner confirmed 17 Nov |
+
 ## Open questions for the owner
 
 | Date | Question |

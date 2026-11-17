@@ -219,7 +219,7 @@ function roundHundredths(value: number): number {
   return Math.round(value * 100) / 100
 }
 
-function plainHoursText(hours: number): string {
+export function plainHoursText(hours: number): string {
   return `${roundHundredths(hours)}h`
 }
 
@@ -267,12 +267,30 @@ export function payrollMultipliedHours(
   const { outsideClockHours, outsideBreakHours } = payrollOutsideClockHours(result)
   if (!(outsideClockHours > 0)) return null
   const multiplier = Number(result.outsideMultiplier) > 0 ? Number(result.outsideMultiplier) : 1
+  return multipliedHoursParts({ clockHours: outsideClockHours, multiplier, breakHours: outsideBreakHours })
+}
+
+/**
+ * Rulebook 1.20.3 / 1.61.0 §8: the figures behind `multipliedHoursText` for clock hours, a multiplier and an unpaid
+ * break (plain hours) — the hours they pay (clock × N − break, never below 0) and the text. The one place this sum is
+ * worked out for display; `payrollMultipliedHours` returns it for a booking. Fields as `payrollMultipliedHours`.
+ */
+export function multipliedHoursParts(input: { clockHours: number; multiplier: number; breakHours?: number | null }): {
+  clockHours: number
+  multiplier: number
+  breakHours: number
+  paidHours: number
+  text: string
+} {
+  const clockHours = Math.max(0, Number(input.clockHours) || 0)
+  const multiplier = Number(input.multiplier) > 0 ? Number(input.multiplier) : 1
+  const breakHours = Math.max(0, Number(input.breakHours) || 0)
   return {
-    clockHours: outsideClockHours,
+    clockHours,
     multiplier,
-    breakHours: outsideBreakHours,
-    paidHours: Math.max(0, outsideClockHours * multiplier - outsideBreakHours),
-    text: multipliedHoursText({ clockHours: outsideClockHours, multiplier, breakHours: outsideBreakHours }),
+    breakHours,
+    paidHours: Math.max(0, clockHours * multiplier - breakHours),
+    text: multipliedHoursText({ clockHours, multiplier, breakHours }),
   }
 }
 

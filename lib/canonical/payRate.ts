@@ -391,6 +391,24 @@ export function roundPennies(amount: number): number {
   return Math.round(Number(amount) * 100) / 100
 }
 
+/**
+ * Rulebook 1.61.0 §8: the hourly rate a day rate works out at on one part of a booking — the day rate ÷ that part's
+ * day-rate divisor (`payrollDayRateHours`), rounded to pennies for display (`roundPennies`). Pay never uses the rounded
+ * figure (`payForHours` prices the exact hours). `rounded` is true when rounding changed it. Null for a day rate that
+ * is not above 0, or a divisor below 1 hour (`PAY_STANDARD_DAY_MIN_HOURS`) or not finite.
+ */
+export function dayRateHourlyEquivalent(
+  dayRate: number,
+  dayRateHours: number
+): { exactRate: number; hourlyRate: number; rounded: boolean } | null {
+  const rate = Number(dayRate)
+  const divisor = Number(dayRateHours)
+  if (!(rate > 0) || !Number.isFinite(rate) || !(divisor >= PAY_STANDARD_DAY_MIN_HOURS) || !Number.isFinite(divisor)) return null
+  const exactRate = rate / divisor
+  const hourlyRate = roundPennies(exactRate)
+  return { exactRate, hourlyRate, rounded: Math.abs(exactRate - hourlyRate) > 1e-9 }
+}
+
 /** The organisation's paid hours in a day (`payrollTimePolicy.standardPaidHours`); never 0 (0.01 floor), never 8 by default. */
 /** The shortest paid day a day rate is divided by (`PAYROLL_POLICY_LIMITS.paidHours.min`). */
 export const PAY_STANDARD_DAY_MIN_HOURS = 1

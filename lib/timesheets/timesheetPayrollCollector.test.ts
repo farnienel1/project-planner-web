@@ -420,13 +420,57 @@ test('1.20.3: overtime lines show clock hours and the break, never "6.25h × 2";
   assert.equal(summary.overtimeHours, 9.5)
 })
 
-test('1.20.3: a day-rate overtime line with a break shows the hours that pay as days at the day rate; pay unchanged', () => {
+test('1.20.3 / 1.61.0: a day-rate overtime line with a break reads in hours at the hourly rate; pay unchanged', () => {
   const summary = r1203Summary(user({ id: 'u1', dayRate: 200 }))
   const sunOt = summary.lineItems.find((line) => line.id === 'op-sun-ot')
   assert.ok(sunOt)
   // 6.25 / 8 × 2 × £200 = £312.50 = 12.5h / 8 × £200.
   assert.equal(sunOt.amount, 312.5)
-  assert.equal(timesheetHoursRateLine(sunOt), '6.5h × 2 − 0.5h break = 12.5h = 1.56 days × £200.00/day = £312.50')
+  // 1.61.0 (owner decision 17 Nov): the sum in hours, never a multiplied day rate (`dayRateOvertimeCalcText`).
+  assert.equal(
+    timesheetHoursRateLine(sunOt),
+    '6.5h × 2 − 0.5h break = 12.5h · 12.5h × £25.00/h = £312.50 (£200.00/day ÷ 8h)'
+  )
+})
+
+test('1.61.0: a day-rate weekday overtime line reads in hours; the standard line and the amounts are unchanged', () => {
+  const policy = {
+    ...DEFAULT_PAYROLL_POLICY,
+    standardDayStart: '07:00',
+    standardDayEnd: '16:00',
+    unpaidBreakMinutes: 30,
+    breakWindowStart: '12:00',
+    breakWindowEnd: '12:30',
+    breakPaid: false,
+    weekdayOutsideStandardMultiplier: 1.5,
+  }
+  const summary = collectTimesheetPayroll({
+    user: user({ id: 'u1', dayRate: 225 }),
+    bookings: [{ ...booking('b1', new Date('2026-11-11T10:00:00Z')), timeSlot: 'CUSTOM_HOURS', workStartTime: '07:00', workEndTime: '22:00' } as Booking],
+    managerSiteBookings: [],
+    operatives: [operative],
+    projects: [project],
+    smallWorks: [],
+    periodStart: new Date('2026-11-01T00:00:00Z'),
+    periodEnd: new Date('2026-11-15T00:00:00Z'),
+    payrollPolicy: policy,
+    timeZone: 'Europe/London',
+  })
+  const normal = summary.lineItems.find((line) => line.id === 'op-b1-normal')
+  const ot = summary.lineItems.find((line) => line.id === 'op-b1-ot')
+  assert.ok(normal && ot)
+  // Owner example: £225/day, 8.5h paid day, 6h of overtime at ×1.5 → £238.24 (was "0.71 days × £337.50/day").
+  assert.deepEqual([normal.amount, ot.amount], [225, 238.24])
+  assert.equal(timesheetHoursRateLine(normal), '1.00 day × £225.00/day = £225.00')
+  assert.equal(
+    timesheetHoursRateLine(ot),
+    '6h × 1.5 = 9h · 9h × £26.47/h (rounded) = £238.24 (£225.00/day ÷ 8.5h)'
+  )
+  assert.equal(
+    timesheetLabourDetails(ot),
+    '16:00–22:00 · 6h × 1.5 = 9h · 9h × £26.47/h (rounded) = £238.24 (£225.00/day ÷ 8.5h)'
+  )
+  for (const line of summary.lineItems) assert.equal(/337\.50/.test(timesheetHoursRateLine(line)), false, line.id)
 })
 
 // Rulebook 1.43.0 (owner rule, `payrollLineClockRanges`): the standard line shows the standard-window times and the
