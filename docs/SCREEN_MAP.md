@@ -207,7 +207,7 @@ All web sections are `app/dashboard/settings/[section]/page.tsx` → `components
 
 | Screen | Web file(s) | iOS file(s) | Rulebook functions | Ways in | Notes |
 |---|---|---|---|---|---|
-| Sign in | `app/login/page.tsx` → `components/auth/LoginBrandScreen.tsx` | `AuthenticationView.swift`, `PasswordResetView.swift` | W: — | App start | — |
+| Sign in | `app/login/page.tsx` → `components/auth/LoginBrandScreen.tsx` | `AuthenticationView.swift`, `PasswordResetView.swift` | W: — | App start | Web idle sign-out after 30 minutes without activity (`components/auth/WebIdleSessionGuard.tsx`, `lib/auth/webIdleSession.ts` `webIdleSignOutDue`) for everyone, the platform owner and `/developer` included (owner decision 17 Nov); the idle banner shows on `/login` and `/developer-login`. **web only**: iOS has no idle sign-out. |
 | Two-step sign-in (MFA) | `app/auth/mfa/page.tsx` | — | — | Sign in | **web only**. |
 | Email action / reset password | `app/auth/action/page.tsx`, `app/reset-password/page.tsx` | `PasswordResetView.swift` | W: `passwordMinLength` | Email link | — |
 | Set up password (accept invite) | `app/setup-password/page.tsx` | — | W: `inviteAcceptWrites`, `inviteMembershipWrites`, `invitationProfileFields`, `invitePayProfileCopyWrite`, `passwordPolicyError` +4 | Invite email | **web only** (iOS users accept on web, then sign in). |
