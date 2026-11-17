@@ -29,8 +29,8 @@ const logger = { warn() {}, error() {}, info() {} }
 
 test('a claims report with an inflated item is flagged for admins; the report itself is never written', async () => {
   const report = {
-    userId: 'sam', kind: 'expense', currency: 'GBP',
-    items: [{ id: 'E1', title: 'Fuel', amount: 400 }],
+    userId: 'sam', kind: 'expense', currency: 'GBP', rangeStart: '2026-11-01', rangeEnd: '2026-11-30',
+    items: [{ id: 'E1', title: 'Fuel', amount: 400, startDate: '2026-11-05' }],
     totals: { amount: 400, itemCount: 1 },
   }
   const store = fakeStore({
@@ -61,6 +61,26 @@ test('an overtime report with no stored review for a line is flagged; bad ids ar
   assert.equal(result.ok, false)
   assert.ok(result.problems.some((p) => p.code === 'not_reviewed' && p.recordId === 'B1'))
   assert.equal(await check.handle({ orgId: '../bad', collection: 'overtimeReports', reportId: 'R1', report }), null)
+})
+
+test('review of #391: the job printed on an overtime line is compared with the booking\'s job', async () => {
+  const booking = { operativeId: 'sam', projectId: 'P1', jobCollection: 'projects', date: Date.parse('2026-11-05T00:00:00Z'), timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '18:00', status: 'Confirmed' }
+  const input = { id: 'B1', collection: 'bookings', personId: 'sam', dayKey: '2026-11-05', timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '18:00', status: 'Confirmed' }
+  const org = { countryCode: 'GB' }
+  const figures = canonical.overtimeForBooking({ booking: input, organization: org, timeZone: 'Europe/London' })
+  const fingerprint = canonical.overtimeBookingFingerprint(input)
+  const line = { bookingId: 'B1', dayKey: '2026-11-05', jobNumber: 'J-1', jobName: 'Riverside', start: '07:30', end: '18:00', text: figures.text, clockHours: figures.clockHours, multiplier: figures.multiplier, overtimeHours: figures.overtimeHours, fingerprint }
+  const docs = {
+    [`organizations/${ORG}`]: org,
+    [`organizations/${ORG}/bookings/B1`]: booking,
+    [`organizations/${ORG}/projects/P1`]: { jobNumber: 'J-1', siteName: 'Riverside' },
+    [`organizations/${ORG}/overtimeReviews/sam_B1`]: { userId: 'sam', bookingId: 'B1', decision: 'approved', fingerprint, reviewedBy: 'lee' },
+  }
+  const report = (lines) => ({ userId: 'sam', kind: 'overtime', rangeStart: '2026-11-01', rangeEnd: '2026-11-30', lines, totals: { overtimeHours: figures.overtimeHours, lineCount: 1 } })
+  const check = createReportIntegrityCheck({ store: fakeStore(docs), canonical, logger, serverTimestamp: () => 'T' })
+  assert.equal((await check.handle({ orgId: ORG, collection: 'overtimeReports', reportId: 'R1', report: report([line]) })).ok, true)
+  const other = await check.handle({ orgId: ORG, collection: 'overtimeReports', reportId: 'R2', report: report([{ ...line, jobNumber: 'J-OTHER' }]) })
+  assert.deepEqual(other.problems.map((p) => p.code), ['job_differs'])
 })
 
 test('a failing store is logged, never thrown to the trigger', async () => {

@@ -74,6 +74,38 @@ test('review of #391: any request name, readJsonBody, and spreads of any body-de
   )
 })
 
+test('re-review of #391: Object.assign and handing the whole body to another function fail; parsers and fields pass', () => {
+  const root = fixture({
+    'app/api/c/route.ts': [
+      'export async function POST(request: NextRequest) {',
+      '  const body = await readApiBody(request, schema)',
+      '  const data = body.value',
+      '  Object.assign(target, body.value)',
+      '  Object.assign(target, { a: 1 }, data)',
+      '  await setDoc(ref, body.value)',
+      '  await save(data, { merge: true })',
+      '  const parsed2 = schema.safeParse(body.value)',
+      '  const narrowed = parseThing(body.value)',
+      '  await setDoc(ref, { name: body.value.name })',
+      '  const upstream = await fetch(url)',
+      '  const payload = await upstream.json()',
+      '  return NextResponse.json(payload)',
+      '}',
+    ].join('\n'),
+  })
+  assert.deepEqual(
+    scan(root).map((hit) => [hit.line, hit.pattern]),
+    [
+      [4, 'body-spread'],
+      [4, 'body-pass-through'],
+      [5, 'body-spread'],
+      [5, 'body-pass-through'],
+      [6, 'body-pass-through'],
+      [7, 'body-pass-through'],
+    ]
+  )
+})
+
 test('the repository passes', () => {
   const root = join(import.meta.dirname, '..')
   assert.deepEqual(violations(scan(root)), [])

@@ -49,6 +49,9 @@ function overtimeBooking(canonical, collection, id, data, timeZone) {
     isBreakRemoved: data.isBreakRemoved === true,
     otMultiplierOverride: typeof data.otMultiplierOverride === 'number' ? data.otMultiplierOverride : null,
     status: data.status,
+    // The booking's job (`bookingJobId`): '' for a place that is not a job. Its number and name are added below.
+    jobId: canonical.bookingJobId({ collection, projectId: data.projectId, locationType: data.locationType, locationId: data.locationId }) || '',
+    jobCollection: trimmed(data.jobCollection),
   }
 }
 
@@ -97,6 +100,34 @@ function createReportIntegrityCheck({ store, canonical, logger, serverTimestamp 
       })
     )
     const bookings = found.filter(Boolean)
+    // The job each booking is on (projects, else small works), so the report's job can be compared with it.
+    const jobIds = [...new Set(bookings.map((booking) => booking.jobId).filter((id) => DOC_ID.test(id)))]
+    const jobs = new Map(
+      await Promise.all(
+        jobIds.map(async (id) => {
+          const [project, smallWork] = await Promise.all([
+            store.getDoc(`organizations/${orgId}/projects/${id}`),
+            store.getDoc(`organizations/${orgId}/smallWorks/${id}`),
+          ])
+          return [id, { projects: project, smallWorks: smallWork }]
+        })
+      )
+    )
+    for (const booking of bookings) {
+      const collection = booking.jobCollection
+      delete booking.jobCollection
+      if (!booking.jobId) continue
+      const both = jobs.get(booking.jobId) || {}
+      // The booking's own `jobCollection` decides when both collections hold the id (older iOS builds).
+      const job = (collection === 'smallWorks' ? both.smallWorks || both.projects : both.projects || both.smallWorks) || null
+      if (!job) {
+        // A job that cannot be read: leave the job unchecked rather than flag every line.
+        delete booking.jobId
+        continue
+      }
+      booking.jobNumber = trimmed(job.jobNumber)
+      booking.jobName = trimmed(job.siteName)
+    }
     return canonical.overtimeReportIntegrity({
       reportId,
       report: plain(report),
@@ -112,17 +143,20 @@ function createReportIntegrityCheck({ store, canonical, logger, serverTimestamp 
     const timeZone = canonical.organizationTimeZone(org.countryCode)
     const kind = trimmed(report.kind) === 'priceWork' ? 'priceWork' : 'expense'
     const collection = kind === 'priceWork' ? 'priceWorkItems' : 'expenseItems'
-    const items = []
-    const reviews = []
     const rows = Array.isArray(report.items) ? report.items.slice(0, 500) : []
-    for (const row of rows) {
-      const id = trimmed(row && row.id)
-      if (!DOC_ID.test(id)) continue
-      const data = await store.getDoc(`organizations/${orgId}/${collection}/${id}`)
-      if (data) items.push({ id, data: plain(data) })
-      const review = await store.getDoc(`organizations/${orgId}/payeClaimReviews/${kind}_${id}`)
-      if (review) reviews.push({ id: `${kind}_${id}`, data: plain(review) })
-    }
+    // Each item id once (a repeated one is flagged by the rule), item and review read in parallel.
+    const ids = [...new Set(rows.map((row) => trimmed(row && row.id)).filter((id) => DOC_ID.test(id)))]
+    const found = await Promise.all(
+      ids.map(async (id) => {
+        const [data, review] = await Promise.all([
+          store.getDoc(`organizations/${orgId}/${collection}/${id}`),
+          store.getDoc(`organizations/${orgId}/payeClaimReviews/${kind}_${id}`),
+        ])
+        return { id, data, review }
+      })
+    )
+    const items = found.filter((row) => row.data).map((row) => ({ id: row.id, data: plain(row.data) }))
+    const reviews = found.filter((row) => row.review).map((row) => ({ id: `${kind}_${row.id}`, data: plain(row.review) }))
     const userId = trimmed(report.userId)
     return canonical.payeClaimReportIntegrity({
       reportId,

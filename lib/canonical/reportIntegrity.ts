@@ -26,6 +26,8 @@
 import { overtimeFingerprintsMatch } from './bookingFingerprint'
 import { idKey } from './personIds'
 import { roundPennies } from './payRate'
+import { formatClockMinutes, parseClockMinutes } from './engine'
+import { formatPaymentRunDay } from './paymentRuns'
 import {
   overtimeBookingFingerprint,
   overtimeForBooking,
@@ -47,6 +49,12 @@ export type ReportIntegrityProblemCode =
   | 'clock_differs'
   | 'duplicate_line'
   | 'duplicate_item'
+  | 'text_differs'
+  | 'details_differ'
+  | 'job_differs'
+  | 'outside_range'
+  | 'currency_differs'
+  | 'self_reviewed'
   | 'declined_line_counted'
   | 'not_reviewed'
   | 'differs_from_review'
@@ -92,6 +100,19 @@ function record(value: unknown): Record<string, unknown> {
 function storedNumber(value: unknown): number | null {
   const n = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN
   return Number.isFinite(n) ? n : null
+}
+
+const DAY = /^\d{4}-\d{2}-\d{2}$/
+
+/** A clock time as `HH:mm` ('' when blank or unreadable), so "7:30" and "07:30" are one time. */
+function clock24(value: unknown): string {
+  const minutes = parseClockMinutes(text(value))
+  return minutes == null ? '' : formatClockMinutes(minutes)
+}
+
+/** Text compared trimmed, without case, inner spaces as one. */
+function sameWords(a: unknown, b: unknown): boolean {
+  return text(a).toLowerCase().replace(/\s+/g, ' ') === text(b).toLowerCase().replace(/\s+/g, ' ')
 }
 
 const ZERO_STATES = new Set(['returnedDeclined', 'deleted'])
@@ -162,6 +183,21 @@ export function overtimeReportIntegrity(input: {
   const reviews = (input.reviews || []).map((row) => parseOvertimeReviewDocument(row.id, row.data))
   const bookings = new Map((input.bookings || []).filter(Boolean).map((booking) => [idKey(booking.id), booking]))
   const seen = new Set<string>()
+  // Review of #391 (should-fix 2): a line outside the report's own range could be claimed twice.
+  const rangeStart = text(report.rangeStart)
+  const rangeEnd = text(report.rangeEnd)
+  const hasRange = DAY.test(rangeStart) && DAY.test(rangeEnd)
+  if (!hasRange) {
+    problems.push({ code: 'outside_range', recordId: '', severity: 'mismatch', message: 'The report has no valid date range.' })
+  }
+  const inRange = (dayKey: string) => !hasRange || (DAY.test(dayKey) && dayKey >= rangeStart && dayKey <= rangeEnd)
+  const outOfRange = (recordId: string, label: string) =>
+    problems.push({
+      code: 'outside_range',
+      recordId,
+      severity: 'mismatch',
+      message: `${label}: the day is outside the report's range (${rangeStart} – ${rangeEnd}).`,
+    })
   let recomputed = 0
   for (const line of report.lines) {
     const id = line.bookingId
@@ -195,25 +231,49 @@ export function overtimeReportIntegrity(input: {
         severity: 'mismatch',
         message: `${label}: no confirmation or line-manager decision is stored for this line.`,
       })
-    } else if (ZERO_DECISIONS.has(review.decision) && line.overtimeHours > EPSILON) {
+    } else {
+      if (ZERO_DECISIONS.has(review.decision) && line.overtimeHours > EPSILON) {
+        problems.push({
+          code: 'declined_line_counted',
+          recordId: id,
+          severity: 'mismatch',
+          message: `${label}: the line was ${review.decision} but the report counts ${line.overtimeHours}h.`,
+        })
+      }
+      // Review of #391 (nit 6): the person confirmed their own line. Allowed when they may change that booking (no
+      // line manager; rulebook §25), so a note, never a mismatch.
+      if (review.reviewedBy && idKey(review.reviewedBy) === idKey(report.userId)) {
+        problems.push({
+          code: 'self_reviewed',
+          recordId: id,
+          severity: 'note',
+          message: `${label}: confirmed by the person themselves, not a line manager.`,
+        })
+      }
+    }
+    const zeroLine = zero || (review != null && ZERO_DECISIONS.has(review.decision))
+    if (zeroLine && !/(^|·\s*)0h$/.test(text(line.text))) {
       problems.push({
-        code: 'declined_line_counted',
+        code: 'text_differs',
         recordId: id,
         severity: 'mismatch',
-        message: `${label}: the line was ${review.decision} but the report counts ${line.overtimeHours}h.`,
+        message: `${label}: a 0h line prints "${text(line.text)}".`,
       })
     }
-    if (zero || (review && ZERO_DECISIONS.has(review.decision))) continue
     if (!fingerprint) {
-      problems.push({
-        code: 'missing_fingerprint',
-        recordId: id,
-        severity: 'mismatch',
-        message: `${label}: the line does not say which booking it was priced from.`,
-      })
+      if (!zeroLine) {
+        problems.push({
+          code: 'missing_fingerprint',
+          recordId: id,
+          severity: 'mismatch',
+          message: `${label}: the line does not say which booking it was priced from.`,
+        })
+      }
+      // With no booking the day can only be checked against the report's range.
+      if (!inRange(text(line.dayKey))) outOfRange(id, label)
       continue
     }
-    if (review && !overtimeFingerprintsMatch(review.fingerprint, fingerprint)) {
+    if (!zeroLine && review && !overtimeFingerprintsMatch(review.fingerprint, fingerprint)) {
       problems.push({
         code: 'differs_from_review',
         recordId: id,
@@ -222,16 +282,52 @@ export function overtimeReportIntegrity(input: {
       })
     }
     const live = bookings.get(key)
-    const booking = live && overtimeFingerprintsMatch(overtimeBookingFingerprint(live), fingerprint) ? live : bookingFromFingerprint(id, fingerprint)
-    if (booking && text(line.dayKey) && text(line.dayKey) !== text(booking.dayKey)) {
+    const liveMatches = live != null && overtimeFingerprintsMatch(overtimeBookingFingerprint(live), fingerprint)
+    const booking = liveMatches ? live : bookingFromFingerprint(id, fingerprint)
+    if (!booking) {
       problems.push({
-        code: 'differs_from_review',
+        code: 'missing_fingerprint',
         recordId: id,
         severity: 'mismatch',
-        message: `${label}: the line's day is not the booking's day.`,
+        message: `${label}: the line's booking fingerprint cannot be read.`,
+      })
+      if (!inRange(text(line.dayKey))) outOfRange(id, label)
+      continue
+    }
+    // Review of #391 (blocker): everything the PDF prints (`overtimeReportRows`) comes from the booking — the day, its
+    // label, the times, the job and the overtime text — never from the report.
+    if (!inRange(booking.dayKey)) outOfRange(id, label)
+    const details: string[] = []
+    if (text(line.dayKey) !== text(booking.dayKey)) details.push('day')
+    if (text(line.dayLabel) && text(line.dayLabel) !== formatPaymentRunDay(booking.dayKey)) details.push('day label')
+    if (clock24(line.start) !== clock24(booking.workStartTime) || clock24(line.end) !== clock24(booking.workEndTime)) {
+      details.push('start or finish')
+    }
+    if (details.length) {
+      problems.push({
+        code: 'details_differ',
+        recordId: id,
+        severity: 'mismatch',
+        message: `${label}: the ${details.join(', ')} printed on the report ${details.length > 1 ? 'are' : 'is'} not the booking's.`,
       })
     }
-    const figures = booking ? overtimeForBooking({ booking, organization: input.organization, timeZone: input.timeZone }) : null
+    // The job: checked when the booking's job was looked up (`jobId` given, '' / null for a place that is not a job).
+    if (liveMatches && live && live.jobId !== undefined) {
+      const jobId = text(live.jobId)
+      const sameJob = jobId
+        ? sameWords(line.jobNumber, live.jobNumber) && (!text(line.jobName) || sameWords(line.jobName, live.jobName))
+        : !text(line.jobNumber) && !text(line.jobName)
+      if (!sameJob) {
+        problems.push({
+          code: 'job_differs',
+          recordId: id,
+          severity: 'mismatch',
+          message: `${label}: the report names job "${[line.jobNumber, line.jobName].filter(Boolean).join(' ')}"; the booking is on ${jobId ? `"${[live.jobNumber, live.jobName].filter(Boolean).join(' ')}"` : 'no job'}.`,
+        })
+      }
+    }
+    if (zeroLine) continue
+    const figures = overtimeForBooking({ booking, organization: input.organization, timeZone: input.timeZone })
     const priced = figures ? figures.overtimeHours : 0
     const clock = figures ? figures.clockHours : 0
     const multiplier = figures ? figures.multiplier : null
@@ -254,10 +350,19 @@ export function overtimeReportIntegrity(input: {
         message: `${label}: the report says ${line.overtimeHours}h; the booking gives ${priced}h.`,
       })
     }
+    const expectedText = figures ? text(figures.text) : ''
+    if (text(line.text) !== expectedText) {
+      problems.push({
+        code: 'text_differs',
+        recordId: id,
+        severity: 'mismatch',
+        message: `${label}: the report prints "${text(line.text)}"; the booking gives "${expectedText}".`,
+      })
+    }
     recomputed += priced
   }
   return {
-    ok: problems.length === 0,
+    ok: problems.every((problem) => problem.severity === 'note'),
     kind: 'overtime',
     userId: report.userId,
     reportedTotal: round2(storedHours ?? sum),
@@ -304,6 +409,16 @@ export function payeClaimReportIntegrity(input: {
       message: `The report says ${storedCount} items but lists ${report.items.length}.`,
     })
   }
+  // Review of #391 (should-fix 2): every item inside the report's own range (expenses by their date, price work by
+  // its from–to overlapping it, as `payeClaimsInRange`), so one item is never claimed in two reports' periods.
+  const rangeStart = text(report.rangeStart)
+  const rangeEnd = text(report.rangeEnd)
+  const hasRange = DAY.test(rangeStart) && DAY.test(rangeEnd)
+  if (!hasRange) {
+    problems.push({ code: 'outside_range', recordId: '', severity: 'mismatch', message: 'The report has no valid date range.' })
+  }
+  const overlaps = (start: string, end: string) =>
+    !hasRange || (DAY.test(start) && start <= rangeEnd && (DAY.test(end) ? end : start) >= rangeStart)
   const ids = new Set([report.userId, ...(input.personIds || [])].map(idKey).filter(Boolean))
   const options = { timeZone: input.timeZone, organizationId: input.organizationId }
   const live = new Map<string, PayeClaimItem>()
@@ -347,6 +462,37 @@ export function payeClaimReportIntegrity(input: {
         message: `"${label}" belongs to someone else.`,
       })
       continue
+    }
+    const itemStart = item.kind === 'expense' ? item.date : item.startDate
+    const itemEnd = item.kind === 'expense' ? item.date : item.endDate || item.startDate
+    if (!overlaps(entry.startDate, entry.endDate) || !overlaps(itemStart, itemEnd)) {
+      problems.push({
+        code: 'outside_range',
+        recordId: entry.id,
+        severity: 'mismatch',
+        message: `"${label}" is dated outside the report's range (${rangeStart} – ${rangeEnd}).`,
+      })
+    }
+    // What the PDF prints for the item (`payeClaimReportRows`): its name, job number and dates, as stored.
+    const details: string[] = []
+    if (!sameWords(entry.title, item.title)) details.push('name')
+    if (!sameWords(entry.jobNumber, item.jobNumber)) details.push('job number')
+    if (text(entry.startDate) !== text(itemStart) || text(entry.endDate || entry.startDate) !== text(itemEnd)) details.push('dates')
+    if (details.length) {
+      problems.push({
+        code: 'details_differ',
+        recordId: entry.id,
+        severity: 'mismatch',
+        message: `"${label}": the ${details.join(', ')} printed on the report ${details.length > 1 ? 'are' : 'is'} not the stored item's.`,
+      })
+    }
+    if (text(item.currency) && text(item.currency) !== text(report.currency)) {
+      problems.push({
+        code: 'currency_differs',
+        recordId: entry.id,
+        severity: 'mismatch',
+        message: `"${label}" is in ${item.currency}; the report is in ${report.currency}.`,
+      })
     }
     if (Math.abs(roundPennies(item.amount) - roundPennies(entry.amount)) > 0.001) {
       problems.push({

@@ -8,8 +8,9 @@
  *     through `readApiBody` with a zod schema (lib/security/apiBody.ts);
  *   - calls the older `readJsonBody` (allow-listed per route while each is moved over), or
  *   - spreads the request body, or any name derived from it (`const data = body.value`, `const { items } = parsed.value`),
- *     into an object — the shape a Firestore write would take, so a caller could add `role`, `isAdmin`,
- *     `isSuperAdmin` or `organizationId`.
+ *     into an object, or `Object.assign`s it — the shape a Firestore write would take, so a caller could add `role`,
+ *     `isAdmin`, `isSuperAdmin` or `organizationId`; or
+ *   - hands the whole body (`body.value`, or a name holding it) to another function, which would see every key.
  *
  * A reviewed exception goes in ALLOWLIST with a one-line reason. Comments are not scanned.
  *
@@ -95,16 +96,52 @@ export function bodyDerivedNames(source, requests = requestNames(source)) {
   return [...tainted]
 }
 
+/**
+ * The names that hold the WHOLE request body (not one field of it): anything assigned straight from a body reader,
+ * and `const data = body.value` / `const copy = body` (review of #391, nit 8). A name assigned from something else
+ * (`payload = await upstream.json()`, a raw `request.text()` for a webhook signature) is not one.
+ */
+export function bodyObjectNames(source, requests = requestNames(source)) {
+  const names = new Set()
+  const req = requests.map(escape).join('|')
+  const sources = `readJsonBody|readApiBody|parseApiBody|JSON\\.parse|(?:${req})(?:\\.clone\\(\\))?\\.json`
+  let grew = true
+  while (grew) {
+    grew = false
+    const known = [...names].map(escape).join('|') || '(?!)'
+    const assign = new RegExp(
+      `(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*(?::[^=]+)?=\\s*(?:\\(\\s*)?(?:await\\s+)?(?:(?:${sources})\\b|(?:${known})(?:\\.value)?\\s*(?:as\\b|[;)\\n]|$))`,
+      'gm'
+    )
+    for (const match of source.matchAll(assign)) {
+      if (!names.has(match[1])) {
+        names.add(match[1])
+        grew = true
+      }
+    }
+  }
+  return [...names]
+}
+
 /** The patterns for one file (they depend on the file's request and body-derived names). */
 export function patternsFor(source) {
   const requests = requestNames(source)
   const names = bodyDerivedNames(source, requests)
+  const objects = bodyObjectNames(source, requests)
   const req = requests.map(escape).join('|')
   return [
     { id: 'raw-request-json', re: new RegExp(`\\b(?:${req})(?:\\.clone\\(\\))?\\.json\\s*\\(`) },
     { id: 'read-json-body', re: /\breadJsonBody\s*[<(]/ },
     { id: 'body-spread', re: new RegExp(`\\.\\.\\.\\s*\\(?\\s*(?:await\\s+)?(?:${names.map(escape).join('|')})\\b(?:\\??\\.[\\w$]+|\\[[^\\]]*\\])*(?![\\w$]|\\??\\.[\\w$]|\\[)(?!\\s*(?:\\?(?![.?])|&&|\\|\\||[=!]==?|[<>]))`) },
     { id: 'body-spread', re: new RegExp(`\\.\\.\\.\\s*\\(?\\s*await\\s+(?:${req}|readJsonBody|readApiBody)`) },
+    // `Object.assign(target, body.value)` is a spread by another name.
+    { id: 'body-spread', re: new RegExp(`\\bObject\\.assign\\s*\\([^;]*?[(,]\\s*(?:${names.map(escape).join('|')})\\b(?:\\??\\.[\\w$]+|\\[[^\\]]*\\])*\\s*[,)]`) },
+    // The whole body handed to another function (`setDoc(ref, body.value)`, `save(data)`): that function would see
+    // every key the caller sent.
+    // Handing it to a parser (`safeParse(body.value)`, `parseAccountDeleteBody(body.value)`) is how it is narrowed.
+    { id: 'body-pass-through', re: objects.length
+      ? new RegExp(`(?:(?<!\\b(?:safeParse|parse[\\w$]*)\\s*)\\(|,)\\s*(?:${objects.map(escape).join('|')})(?:\\.value)?\\s*(?:as\\s+[\\w$<>\\[\\]{}|&, ]+)?[,)]`)
+      : /(?!)/ },
   ]
 }
 
