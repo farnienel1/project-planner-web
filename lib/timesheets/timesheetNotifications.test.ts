@@ -64,6 +64,16 @@ test('1.55.0 review of #344 (L4): REV N notices are not swallowed as duplicates 
   assert.equal(await signed(), await signed(0), 'the original keeps its id')
 })
 
+test('1.60.1 (owner report 17 Nov): a re-sign of the same pay run is a new line-manager notice id', async () => {
+  const weekStart = new Date('2026-10-31T23:00:00Z')
+  const base = { subjectId: 'op-1', weekStart, timeZone: 'Europe/London', type: 'timesheet_pending_manager_signoff', recipientId: 'lm-1' }
+  const first = new Date('2026-11-05T09:00:00Z')
+  const again = new Date('2026-11-07T15:00:00Z')
+  assert.notEqual(await timesheetNoticeId({ ...base, signedAt: first }), await timesheetNoticeId({ ...base, signedAt: again }))
+  assert.equal(await timesheetNoticeId({ ...base, signedAt: first }), await timesheetNoticeId({ ...base, signedAt: new Date(first) }))
+  assert.notEqual(await timesheetNoticeId({ ...base, signedAt: first }), await timesheetNoticeId(base))
+})
+
 test('review of iOS #243 (L5): a revision-to-sign notice carries dayKey, the pay run\'s first day in the organisation zone', () => {
   const london = timesheetRevisionToSignLinkFields('op-1', new Date('2026-11-01T00:00:00Z'), 'Europe/London')
   assert.equal(london.dayKey, '2026-11-01')

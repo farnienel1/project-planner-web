@@ -119,6 +119,8 @@ How to use it:
 | 4 Nov | Nobody reviews their own timesheet. | done (1.30.2) |
 | 4 Nov | Exported history shows the viewer's own exported sheets (read-only) and inactive or deleted people's sheets (admins: all; managers: their reports). | done web (1.31.0); iOS open |
 | 4 Nov | 1.32: a notice when an export skips the exporter's own sheet. | done web + rulebook (1.32.0 / PR #274); iOS open (hand-off) |
+| 17 Nov | **Line managers get the timesheet push on iPhone** (owner report). Root cause: a re-sign of the same pay run reused the first signature's notice id, so nothing was written or pushed. Fix: one notice per signature (`timesheetNotificationDedupeKey` `signedAtMs`). | done web + rulebook (1.60.1, push-ts-lm); iOS open (hand-off v1.60.1) |
+| 17 Nov | **Daily Overview booking sheet: remove the "Currently booked to … Choose Other, a project, or small works, and set the start and finish." line.** UI only. iOS has no such line. | done web (push-ts-lm) |
 
 ## PAYE overtime, price work and expenses
 

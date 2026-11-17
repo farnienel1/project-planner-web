@@ -38,6 +38,8 @@ export async function timesheetNoticeId(input: {
   recipientId?: string
   /** Rulebook 1.55.0: REV N (0 / missing = the original) — a revision's notices are never de-duped with the original's. */
   revision?: number | null
+  /** Rulebook 1.60.1: the signature instant, so a re-sign of the same pay run is its own row and push. */
+  signedAt?: Date | null
 }): Promise<string | null> {
   const key = timesheetNotificationDedupeKey({
     type: input.type,
@@ -47,6 +49,7 @@ export async function timesheetNoticeId(input: {
     timeZone: input.timeZone,
     recipientId: input.recipientId ?? null,
     revision: input.revision ?? null,
+    signedAtMs: input.signedAt ? input.signedAt.getTime() : null,
   })
   return key ? syntheticUuidFromKey(key) : null
 }
@@ -62,6 +65,7 @@ export async function notifyTimesheetPendingManagerSignoff({
   weekStart,
   timeZone,
   revision,
+  signedAt,
 }: {
   organizationId: string
   signedByUser: User
@@ -71,6 +75,11 @@ export async function notifyTimesheetPendingManagerSignoff({
   timeZone: string
   /** Rulebook 1.55.0: the sheet's revision number (REV N), so its notice is not swallowed by the original's. */
   revision?: number | null
+  /**
+   * Rulebook 1.60.1: the person's signature instant (`operativeSignedAt`). Each signature is its own row, so a re-sign
+   * of the same pay run reaches the line manager (before, it hit the first signature's row and nothing was written).
+   */
+  signedAt?: Date | null
 }): Promise<void> {
   const roster = rulebookRoster(users)
   const recipients = timesheetSubmittedRecipients(rulebookPerson(signedByUser, users), roster)
@@ -83,6 +92,7 @@ export async function notifyTimesheetPendingManagerSignoff({
       timeZone,
       recipientId: managerId,
       revision,
+      signedAt,
     })
     if (!id) continue
     await saveInboxNotification({

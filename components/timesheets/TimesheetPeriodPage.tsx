@@ -1086,6 +1086,8 @@ export function TimesheetPeriodPage({
             weekStart: periodStart,
             timeZone,
             revision: draft.revision ?? null,
+            // Rulebook 1.60.1: one notice (and push) per signature, so a re-sign reaches the line manager.
+            signedAt,
           })
         } catch {
           // Signature is already saved; inbox delivery is best-effort like iOS Task {}.
