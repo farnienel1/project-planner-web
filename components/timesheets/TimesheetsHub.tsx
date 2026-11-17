@@ -88,6 +88,7 @@ import { OVERTIME_HUB_LABEL, overtimeHubAccess } from '@/lib/canonical'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import { OVERTIME_PATH } from '@/components/overtime/OvertimeScreen'
 import { BookingsChangedWarning } from '@/components/timesheets/BookingsChangedWarning'
+import { mineChangedKey, useMineChangedStore } from '@/lib/timesheets/mineChangedStore'
 import { bookingCoverageCoversDay, periodBookingChanges, type BookingChangeCatalogue } from '@/lib/timesheets/timesheetBookingChanges'
 import {
   SIGNED_TIMESHEET_CHANGED_STATUS,
@@ -965,6 +966,11 @@ function MineChangedIndicator({
     const change = periodBookingChanges(catalogue, subject, row.draft, row.period)
     return change?.waitingFor === 'person' || revisionDueOf(row.draft, change)
   })
+  // Owner decision 17 Nov: the sidebar's Timesheets entry shows this same answer (published, never recomputed).
+  const publishMineChanged = useMineChangedStore((state) => state.publish)
+  useEffect(() => {
+    publishMineChanged(mineChangedKey(organizationId, subject.id), show)
+  }, [publishMineChanged, organizationId, subject.id, show])
   return <WithChangedTriangle show={show}>{children}</WithChangedTriangle>
 }
 
