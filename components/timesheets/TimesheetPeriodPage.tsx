@@ -43,6 +43,7 @@ import {
   draftForFiguresWithRebuild,
   draftSignedBookingRecord,
   SNAPSHOT_BEING_REBUILT_NOTE,
+  SNAPSHOT_BEING_REBUILT_SELF_SIGNED_NOTE,
   timesheetPersonIds,
 } from '@/lib/timesheets/timesheetBookingChanges'
 import { BookingsChangedWarning } from '@/components/timesheets/BookingsChangedWarning'
@@ -509,6 +510,7 @@ export function TimesheetPeriodPage({
   const figures = draftForFiguresWithRebuild(draft, bookingChange, payroll.lineItems)
   const figuresDraft = figures.draft
   const snapshotBeingRebuilt = figures.beingRebuilt
+  const snapshotRebuiltNote = userTimesheetSelfSigned(subjectUser, users) ? SNAPSHOT_BEING_REBUILT_SELF_SIGNED_NOTE : SNAPSHOT_BEING_REBUILT_NOTE
   // Rulebook 1.43.0 §8: the person adds price work or expenses only until their line manager signs (a self-signed
   // sheet stays open; adding asks them to sign again).
   const extrasAllowed = timesheetOwnerCanAddExtras(draft, { selfSigned: userTimesheetSelfSigned(subjectUser, users) })
@@ -1466,7 +1468,7 @@ export function TimesheetPeriodPage({
       <PayInputsBanner inputs={payInputs} />
       {snapshotBeingRebuilt ? (
         <Note tone="info" role="status">
-          {SNAPSHOT_BEING_REBUILT_NOTE}
+          {snapshotRebuiltNote}
         </Note>
       ) : null}
       {error ? <Note tone="red" role="alert">{error}</Note> : null}
@@ -1788,7 +1790,7 @@ export function TimesheetPeriodPage({
                   <PuButton variant="green" block disabled={busy || !payInputs.ready || snapshotBeingRebuilt} onClick={() => void handleInvoice()}>
                     Generate Invoice
                   </PuButton>
-                  {snapshotBeingRebuilt ? <p className="pu-sub" style={{ textAlign: 'center' }}>{SNAPSHOT_BEING_REBUILT_NOTE}</p> : null}
+                  {snapshotBeingRebuilt ? <p className="pu-sub" style={{ textAlign: 'center' }}>{snapshotRebuiltNote}</p> : null}
                 </>
               ) : (
                 <>
@@ -3295,6 +3297,9 @@ function TimesheetRevisionPanel({
                     {card.signedAtMs != null ? (
                       <span className="pu-sub">Signed {formatStampInZone(new Date(card.signedAtMs), timeZone)}</span>
                     ) : null}
+                    {card.exportedAtMs != null && card.exportedAtMs > 0 ? (
+                      <span className="pu-sub">exported {formatStampInZone(new Date(card.exportedAtMs), timeZone)}</span>
+                    ) : null}
                   </span>
                   <b style={{ fontVariantNumeric: 'tabular-nums' }}>{card.totalText}</b>
                 </div>
@@ -3304,6 +3309,15 @@ function TimesheetRevisionPanel({
                       .filter(Boolean)
                       .join(' · ')}
                   </p>
+                ) : null}
+                {card.rows.length > 0 ? (
+                  <ul className="pu-sub" style={{ margin: '6px 0 0 16px', padding: 0 }}>
+                    {card.rows.map((row) => (
+                      <li key={row.key} style={{ overflowWrap: 'anywhere' }}>
+                        {row.title} — {row.amountText}
+                      </li>
+                    ))}
+                  </ul>
                 ) : null}
                 <p className="pu-sub" style={{ margin: '4px 0 0', overflowWrap: 'anywhere' }}>
                   <span>Changed in {card.nextLabel}: </span>

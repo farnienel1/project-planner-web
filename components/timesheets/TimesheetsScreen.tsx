@@ -119,6 +119,13 @@ import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 export type TeamTimesheetTab = 'awaiting' | 'signed' | 'exported'
 
+/**
+ * Review of #368 (S4): Download PDF for an exported sheet of nobody in the organisation is drawn from its stored signed
+ * snapshot; an older sheet exported without one cannot be rebuilt (there is no person, rate or booking list to price it).
+ */
+const UNRESOLVED_PDF_NO_SNAPSHOT_MESSAGE =
+  "This sheet was exported before signed copies were kept and its person is no longer in the organisation, so its PDF can't be rebuilt."
+
 /** 17 Nov follow-up: beside an exported sheet whose stored person is nobody in the organisation (as Data health's chip). */
 const UNKNOWN_TIMESHEET_PERSON_CHIP = UNRESOLVED_BOOKING_PERSON_CHIP
 
@@ -393,6 +400,7 @@ export function TimesheetsScreen({
     catalogue: changeCatalogue,
     sheets: repairSheets,
     ready: payInputs.ready,
+    payStatusOf: (member) => payStatusFor(member),
     onRepaired: () => void reload(),
   })
 
@@ -620,7 +628,10 @@ export function TimesheetsScreen({
       return
     }
     // Re-review #342 item 1: a PDF is never rebuilt from a record whose pay is not known (it would be the stripped one).
-    const refusal = exportedPdfPayRefusal(payStatusFor(row.user), displayName(row.user))
+    // Review of #368 (S4): a sheet whose person is nobody in the organisation has no pay record to read; its PDF is
+    // drawn only from the stored signed snapshot (below), which needs no pay read.
+    const unresolved = isUnresolvedTimesheetPerson(row.user)
+    const refusal = unresolved ? null : exportedPdfPayRefusal(payStatusFor(row.user), displayName(row.user))
     if (refusal) {
       setExportMessage(refusal)
       return
@@ -635,6 +646,10 @@ export function TimesheetsScreen({
       // Review r318: a sheet exported before signed copies were kept has no snapshot — its PDF is rebuilt from today's
       // bookings, rates and working hours, so say so before downloading and on the PDF.
       const rebuilt = exportedPdfIsRebuilt(sheet)
+      if (rebuilt && unresolved) {
+        setExportMessage(UNRESOLVED_PDF_NO_SNAPSHOT_MESSAGE)
+        return
+      }
       if (rebuilt && typeof window !== 'undefined' && !window.confirm(EXPORT_REBUILT_CONFIRM)) return
       const extraNotes = rebuilt ? [exportRebuiltPdfNote(formatStampInZone(new Date(), timeZone))] : []
       const { pdf, fileName } = await buildExportPdf(row.user, sheet, period.start, period.end, extraNotes, sheet === full ? null : row.documentId)
@@ -749,6 +764,12 @@ export function TimesheetsScreen({
             return
           }
           if (pdfAttachments.length === 0) return
+          // Review of #368: the email names only the pay runs whose sheets were actually exported.
+          const sentRuns = Array.from(
+            new Map(rows.map((row) => [payRunKey(row.sheet.period, timeZone), row.sheet.period])).values()
+          ).sort((a, b) => a.start.getTime() - b.start.getTime())
+          const sentStamp = sentRuns.map((run) => paymentRunDateStamp(run.start, run.end, timeZone)).join(', ')
+          const sentPeriodLine = sentRuns.map((run) => formatPaymentPeriodLine(run.start, run.end, timeZone)).join('; ')
           try {
             const response = await fetch('/api/timesheets/export-email', {
               method: 'POST',
@@ -758,8 +779,8 @@ export function TimesheetsScreen({
                 recipientEmail,
                 recipientName: `${user.firstName} ${user.surname}`.trim() || user.email,
                 organizationName: organization.name || 'Organisation',
-                weekTitle: periodLine,
-                paymentRunStamp: stamp,
+                weekTitle: sentPeriodLine || periodLine,
+                paymentRunStamp: sentStamp || stamp,
                 timesheetCount: pdfAttachments.length,
                 attachmentNames: pdfAttachments.map((attachment) => attachment.fileName),
                 downloadLinks,

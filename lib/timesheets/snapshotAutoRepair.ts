@@ -36,7 +36,8 @@ export function viewerReviewsTimesheet(viewer: User | null | undefined, member: 
 /**
  * The sheets to repair now: a stored document (its id known), a signed snapshot with no labour line, not exported,
  * `timesheetSnapshotNeedsRebuild` true against the period's live lines, a pay run the loaded bookings cover, a person
- * the viewer reviews, and not tried already this session (`tried`, by organisation and document id).
+ * the viewer reviews whose own pay has been read (`payReady`), and not tried already this session (`tried`, by
+ * organisation and document id).
  */
 export function snapshotRepairCandidates(input: {
   organizationId: string
@@ -45,6 +46,11 @@ export function snapshotRepairCandidates(input: {
   users: ReadonlyArray<User>
   liveLinesFor: (sheet: RepairSheet) => ReadonlyArray<TimesheetPayrollLineItem>
   coversPeriod?: (period: { start: Date; end: Date }) => boolean
+  /**
+   * Review of #368 (B2): this person's own pay has been read (`payStatusFor(member) === 'ready'`, as Export asks). A sheet
+   * whose person's pay is still loading or failed is left for a later pass — never rebuilt from a stripped record.
+   */
+  payReady?: (member: User) => boolean
   tried: ReadonlySet<string>
 }): Array<RepairSheet & { key: string }> {
   const out: Array<RepairSheet & { key: string }> = []
@@ -56,6 +62,7 @@ export function snapshotRepairCandidates(input: {
     const override = sheet.draft.weeklyReportOverride
     if (!override || override.lines.length > 0 || sheet.draft.exportedAt) continue
     if (input.coversPeriod && !input.coversPeriod(sheet.period)) continue
+    if (input.payReady && !input.payReady(sheet.member)) continue
     if (!viewerReviewsTimesheet(input.viewer, sheet.member, input.users)) continue
     if (!timesheetSnapshotNeedsRebuild(sheet.draft, input.liveLinesFor(sheet))) continue
     seen.add(key)

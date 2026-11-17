@@ -192,6 +192,8 @@ export function draftForFigures(
 
 /** 17 Nov follow-up: the note under the figures while a snapshot frozen empty waits for its rebuild. */
 export const SNAPSHOT_BEING_REBUILT_NOTE = "Being rebuilt from your bookings — your line manager's next visit saves it."
+/** Review of #368: the same note for a person who signs their own sheet (no line manager visit saves it). */
+export const SNAPSHOT_BEING_REBUILT_SELF_SIGNED_NOTE = "Being rebuilt from your bookings — these figures stand until it's re-signed."
 
 /**
  * 17 Nov follow-up: the figures of a sheet whose signed snapshot the rulebook already treats as broken

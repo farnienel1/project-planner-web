@@ -23,7 +23,7 @@ import { organizationDetailsFromData, DEFAULT_INVOICING, DEFAULT_MY_SCHEDULE } f
 import { useOwnPayUser } from '@/lib/pay/useOwnPayUser'
 import { withOwnPay } from '@/lib/pay/ownPayRecord'
 import { canAccessMyTimesheetsWithPolicy } from '@/lib/timesheets/timesheetPayrollPolicy'
-import { recentPayRuns, payRunsStartDayKey } from '@/lib/timesheets/timesheetQueue'
+import { isPermissionDenied, recentPayRuns, payRunsStartDayKey } from '@/lib/timesheets/timesheetQueue'
 import { mineChangedPeriodStarts, mineSheetRows } from '@/lib/timesheets/mineChanged'
 import { mineChangedKey, useMineChangedStore } from '@/lib/timesheets/mineChangedStore'
 import { timesheetStateRowsFromDocs, timesheetSourceDocumentId, type TimesheetStateRow } from '@/lib/timesheets/timesheetStorage'
@@ -57,6 +57,14 @@ function partsLoaded<T>(state: Parts<T>): boolean {
   return state.parts.every((part) => state.server.has(part))
 }
 
+/** A part the rules refused: loaded, with no rows. */
+function answeredEmpty<T>(state: Parts<T>, part: string): Parts<T> {
+  const next = { ...state, rows: new Map(state.rows), server: new Set(state.server) }
+  next.rows.set(part, [])
+  next.server.add(part)
+  return next
+}
+
 function partsRows<T>(state: Parts<T>): T[] {
   return state.parts.flatMap((part) => state.rows.get(part) ?? [])
 }
@@ -65,11 +73,15 @@ export function useMineChangedMonitor(): void {
   const user = useAuthStore((state) => state.user)
   const organizationId = useAuthStore((state) => state.organization?.id ?? '')
   const users = useOrgUserStore((state) => state.users)
+  // Review of #368 (S2): nothing is decided before the roster has loaded for this organisation (an empty roster on the
+  // first paint reads the person's former / same-email ids as missing — a false triangle).
+  const rosterLoadedOrgId = useOrgUserStore((state) => state.rosterLoadedOrgId)
   const orgDocument = useOrganizationDocument()
   const ownPay = useOwnPayUser()
   const publish = useMineChangedStore((state) => state.publish)
   const userId = user?.id ?? ''
   const sessionKey = mineChangedKey(organizationId, userId)
+  const rosterLoaded = Boolean(organizationId) && rosterLoadedOrgId === organizationId
 
   const details = useMemo(
     () =>
@@ -135,8 +147,9 @@ export function useMineChangedMonitor(): void {
         }
         setOwnOperatives({ key, rows, loaded: !snap.metadata.fromCache })
       },
-      // A refused or failed read: no rows, but loaded — bookings under the users ids still count.
-      () => setOwnOperatives({ key, rows: [], loaded: true })
+      // Review of #368 (S3): a refused read is loaded and empty (bookings under the users ids still count); any other
+      // failure is no answer, so no triangle is decided from a partial read.
+      (error) => setOwnOperatives({ key, rows: [], loaded: isPermissionDenied(error) })
     )
   }, [enabled, organizationId, email])
 
@@ -153,8 +166,10 @@ export function useMineChangedMonitor(): void {
   useEffect(() => {
     if (!enabled || !organizationId || !scanFromDayKey || personIds.length === 0) return
     const bound = bookingDownloadConstraints({ loadedFromDayKey: scanFromDayKey, fullHistory: false })
-    const labourParts = chunks(personIds, OWN_BOOKING_IDS_PER_QUERY).map((ids) => ids.join(','))
-    const siteParts = chunks(personIds, 10).map((ids) => ids.join(','))
+    // Review of #368 (S3): one listener per id, so an id the rules refuse (a former invite id whose users document is
+    // gone) is dropped on its own — that part is loaded and empty — and never blocks the others.
+    const labourParts = chunks(personIds, 1).map((ids) => ids.join(','))
+    const siteParts = chunks(personIds, 1).map((ids) => ids.join(','))
     setLabour(emptyParts(labourParts))
     setSite(emptyParts(siteParts))
     const stops: Unsubscribe[] = []
@@ -176,7 +191,9 @@ export function useMineChangedMonitor(): void {
               return next
             })
           },
-          () => undefined
+          (error) => {
+            if (isPermissionDenied(error)) setLabour((state) => answeredEmpty(state, part))
+          }
         )
       )
     }
@@ -198,14 +215,11 @@ export function useMineChangedMonitor(): void {
               return next
             })
           },
-          // An operative may not read manager site bookings while reads are enforced (they have none): loaded, empty.
-          () =>
-            setSite((state) => {
-              const next = { ...state, rows: new Map(state.rows), server: new Set(state.server) }
-              next.rows.set(part, [])
-              next.server.add(part)
-              return next
-            })
+          // A refused read (an operative may not read manager site bookings while reads are enforced; they have none)
+          // is loaded and empty; any other failure is no answer.
+          (error) => {
+            if (isPermissionDenied(error)) setSite((state) => answeredEmpty(state, part))
+          }
         )
       )
     }
@@ -222,7 +236,7 @@ export function useMineChangedMonitor(): void {
 
   const changedStarts = useMemo(() => {
     // Nothing is decided until the sheets and the bookings have a server answer (never "unchanged" from a partial read).
-    if (!enabled || !subject || !details || !liveLoaded || !sheets.loaded || sheets.key !== `${organizationId}|${userId}`) return null
+    if (!enabled || !rosterLoaded || !subject || !details || !liveLoaded || !sheets.loaded || sheets.key !== `${organizationId}|${userId}`) return null
     const catalogue: BookingChangeCatalogue = {
       users,
       liveLoaded,
@@ -248,7 +262,7 @@ export function useMineChangedMonitor(): void {
       timeZone,
       documentIdOf: timesheetSourceDocumentId,
     })
-  }, [enabled, subject, details, sheets, organizationId, userId, users, liveLoaded, timeZone, scanFromDayKey, labourRows, siteRows, ownOperatives.rows, invoicing])
+  }, [enabled, rosterLoaded, subject, details, sheets, organizationId, userId, users, liveLoaded, timeZone, scanFromDayKey, labourRows, siteRows, ownOperatives.rows, invoicing])
 
   const changedKey = changedStarts ? changedStarts.join(',') : null
   useEffect(() => {

@@ -62,6 +62,7 @@ import {
 import { retryOwnPayRead, useOwnPayUser } from '@/lib/pay/useOwnPayUser'
 import { withOwnPay } from '@/lib/pay/ownPayRecord'
 import { retryPayProfiles, usePayProfilesStatus, usePayStatusOf } from '@/lib/pay/usePayProfilesStatus'
+import type { PayProfilesStatus } from '@/lib/pay/payProfileOverlay'
 import { OWN_PAY_FAILED_MESSAGE, OWN_PAY_LOADING_MESSAGE, PayStatusNotice } from '@/components/pay/PayStatusNotice'
 import { canAccessMyTimesheetsWithPolicy, shouldAppearInOperativeTimesheetRoster, timesheetDayKeysForPeriod } from '@/lib/timesheets/timesheetPayrollPolicy'
 import { exportedTimesheetRosterGroups, timesheetRosterGroups } from '@/lib/timesheets/timesheetWeekUtils'
@@ -626,6 +627,7 @@ export function TimesheetsHub() {
               organizationId={organization?.id}
               runs={recentRuns}
               repairReady={teamPayInputs.ready && changeCatalogue.liveLoaded}
+              payStatusOf={payStatusOf}
               invoicing={invoicing}
               timeZone={timeZone}
               changeCatalogue={changeCatalogue}
@@ -928,6 +930,7 @@ function ManagerTimesheetsTile({
   organizationId,
   runs,
   repairReady,
+  payStatusOf,
   invoicing,
   timeZone,
   changeCatalogue,
@@ -943,13 +946,15 @@ function ManagerTimesheetsTile({
   runs: ReadonlyArray<PayRun>
   /** Owner item 5: the window's bookings (server-confirmed) and the pay inputs have loaded. */
   repairReady: boolean
+  /** Review of #368 (B2): each person's own pay status (the background repair rebuilds only `ready`). */
+  payStatusOf: (member: User) => PayProfilesStatus
   invoicing: OrgInvoicingSettings
   timeZone: string
   /** Reports the counts this tile loads so the hub band can repeat them (display only). */
   onStats?: (stats: { awaiting: number; signed: number; exported: number } | null) => void
   onClick: () => void
 }) {
-  const [loaded, setLoaded] = useState<{ drafts: Map<string, Map<string, TimesheetDraft>>; exportedCount: number } | 'empty' | null>(null)
+  const [loaded, setLoaded] = useState<{ byRun: Map<string, Map<string, TimesheetDraft>>; exportedCount: number } | 'empty' | null>(null)
   const [repairs, setRepairs] = useState(0)
   const reviewGroups = useMemo(() => timesheetRosterGroups(user, users), [user, users])
   const groupsFor = useMemo(
@@ -966,7 +971,16 @@ function ManagerTimesheetsTile({
   // Rulebook 1.31.0: the Exported count is `exportedTimesheetHistorySubjects` (own sheets and inactive people in scope).
   const exportedRoster = useMemo(() => exportedTimesheetRosterGroups(user, users).flat(), [user, users])
 
+  // Review of #368: the queries reload only when the people they ask about change (their ids), never on every roster
+  // snapshot; the rows are mapped onto the people from the current roster below.
+  const queryKey = `${reviewIds.join(',')}#${exportedRoster.map((member) => member.id).join(',')}#${hasAdminAccess(user) ? 'admin' : ''}`
+  const usersRef = useRef(users)
+  usersRef.current = users
+  const exportedRosterRef = useRef(exportedRoster)
+  exportedRosterRef.current = exportedRoster
   useEffect(() => {
+    const users = usersRef.current
+    const exportedRoster = exportedRosterRef.current
     if (!organizationId || users.length === 0) {
       setLoaded(null)
       return
@@ -986,12 +1000,7 @@ function ManagerTimesheetsTile({
     ])
       .then(([byRun, exportedRows]) => {
         if (cancelled) return
-        const drafts = new Map<string, Map<string, TimesheetDraft>>()
-        for (const run of runs) {
-          const key = payRunKey(run, timeZone)
-          drafts.set(key, draftsForMembers(reviewGroups, byRun.get(key) ?? new Map(), users))
-        }
-        setLoaded({ drafts, exportedCount: exportedRows.length })
+        setLoaded({ byRun, exportedCount: exportedRows.length })
       })
       .catch(() => {
         if (!cancelled) setLoaded('empty')
@@ -999,9 +1008,22 @@ function ManagerTimesheetsTile({
     return () => {
       cancelled = true
     }
+    // `runs` is read through `runsKey`, the people through `queryKey` (ids), the roster through a ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [organizationId, users.length === 0, queryKey, runsKey, timeZone, repairs])
+
+  // The loaded sheets on the people of the current roster (`draftsForMembers`), per pay run.
+  const draftsByRun = useMemo(() => {
+    if (loaded == null || loaded === 'empty') return null
+    const drafts = new Map<string, Map<string, TimesheetDraft>>()
+    for (const run of runs) {
+      const key = payRunKey(run, timeZone)
+      drafts.set(key, draftsForMembers(reviewGroups, loaded.byRun.get(key) ?? new Map(), users))
+    }
+    return drafts
     // `runs` is read through `runsKey`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [organizationId, users, reviewIds, reviewGroups, exportedRoster, runsKey, timeZone, repairs])
+  }, [loaded, reviewGroups, users, runsKey, timeZone])
 
   const catalogueRef = useRef(changeCatalogue)
   catalogueRef.current = changeCatalogue
@@ -1013,7 +1035,7 @@ function ManagerTimesheetsTile({
       timesheetQueueRows({
         runs,
         groupsFor,
-        draftsFor: (run) => loaded.drafts.get(payRunKey(run, timeZone)),
+        draftsFor: (run) => draftsByRun?.get(payRunKey(run, timeZone)),
         bucket,
         users,
         timeZone,
@@ -1023,14 +1045,14 @@ function ManagerTimesheetsTile({
     return { awaiting: count('awaiting'), signed: count('signed'), exported: loaded.exportedCount }
     // The catalogue is read through a ref; re-run when its bookings or load state change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, groupsFor, users, runsKey, timeZone, changeCatalogue.bookings, changeCatalogue.managerSiteBookings, changeCatalogue.liveLoaded])
+  }, [loaded, draftsByRun, groupsFor, users, runsKey, timeZone, changeCatalogue.bookings, changeCatalogue.managerSiteBookings, changeCatalogue.liveLoaded])
 
   // Owner item 5 (17 Nov follow-up): the hub repairs frozen-empty snapshots of the loaded pay runs in the background
   // too (`useSnapshotAutoRepair`), once the bookings of the window and the pay inputs have loaded.
   const repairSheets = useMemo<RepairSheet[]>(() => {
     if (loaded == null || loaded === 'empty') return []
     return runs.flatMap((run) => {
-      const drafts = loaded.drafts.get(payRunKey(run, timeZone))
+      const drafts = draftsByRun?.get(payRunKey(run, timeZone))
       if (!drafts) return []
       return groupsFor(run)
         .flat()
@@ -1041,13 +1063,14 @@ function ManagerTimesheetsTile({
     })
     // `runs` is read through `runsKey`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, runsKey, groupsFor, timeZone])
+  }, [loaded, draftsByRun, runsKey, groupsFor, timeZone])
   useSnapshotAutoRepair({
     organizationId,
     viewer: user,
     catalogue: changeCatalogue,
     sheets: repairSheets,
     ready: repairReady,
+    payStatusOf,
     onRepaired: () => setRepairs((value) => value + 1),
   })
 

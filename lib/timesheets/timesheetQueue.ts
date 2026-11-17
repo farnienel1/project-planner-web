@@ -161,3 +161,54 @@ export function timesheetQueueRows(input: {
   }
   return rows
 }
+
+/** Whether a Firestore error is the security rules refusing the read. */
+export function isPermissionDenied(error: unknown): boolean {
+  return (error as { code?: unknown } | null)?.code === 'permission-denied'
+}
+
+/**
+ * Review of #368 (S1): run one `in` query per chunk of ids; when the rules refuse a chunk (one id in it is not readable by
+ * this viewer — e.g. a former invite id whose users document is gone, under `privatePay`), ask for each id of that chunk
+ * on its own and skip only the refused ones, so one unreadable alias never empties the whole list. Any other error is
+ * thrown. Returns the rows and the ids refused.
+ */
+export async function queryIdsSkippingRefused<T>(
+  ids: ReadonlyArray<string>,
+  chunkSize: number,
+  run: (chunk: string[]) => Promise<T[]>
+): Promise<{ rows: T[]; refusedIds: string[] }> {
+  const rows: T[] = []
+  const refusedIds: string[] = []
+  const chunks: string[][] = []
+  for (let index = 0; index < ids.length; index += Math.max(1, chunkSize)) {
+    const chunk = ids.slice(index, index + Math.max(1, chunkSize))
+    if (chunk.length > 0) chunks.push(chunk)
+  }
+  await Promise.all(
+    chunks.map(async (chunk) => {
+      try {
+        rows.push(...(await run(chunk)))
+      } catch (error) {
+        if (!isPermissionDenied(error)) throw error
+        if (chunk.length === 1) {
+          refusedIds.push(chunk[0])
+          return
+        }
+        const singles = await Promise.all(
+          chunk.map(async (id) => {
+            try {
+              return await run([id])
+            } catch (single) {
+              if (!isPermissionDenied(single)) throw single
+              refusedIds.push(id)
+              return [] as T[]
+            }
+          })
+        )
+        for (const part of singles) rows.push(...part)
+      }
+    })
+  )
+  return { rows, refusedIds }
+}

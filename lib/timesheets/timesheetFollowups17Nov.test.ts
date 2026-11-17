@@ -247,3 +247,83 @@ test('item 3: earlier versions as cards — label, signed by whom, total and wha
   assert.match(cards[0].changeText, /^\+2 bookings · \+£/)
   assert.equal(earlierVersionCards({ chain: chain.slice(0, 1), latestTotal: 0, currency: 'GBP' }).length, 0)
 })
+
+// ---- Review of #368 ----
+
+test('B1: a sheet filed under an alias id is saved and stamped on that document only, under its stored id', async () => {
+  const { timesheetSaveTarget, timesheetDocId } = await import('./timesheetStorage.ts')
+  const start = run1.start
+  const aliasDoc = timesheetDocId('old-invite', start, tz)
+  const canonical = timesheetDocId('u1', start, tz)
+  // Every way in passes the person's current id and the stored document it loaded: the reviewer's save / counter-sign,
+  // the background repair (member.id + the listed document), the person's own save and Export's stamp.
+  for (const sourceId of [aliasDoc, aliasDoc.toUpperCase().replace('TIMESHEET_', 'timesheet_')]) {
+    const target = timesheetSaveTarget({ userId: 'u1', weekStart: start, timeZone: tz, sourceId })
+    assert.deepEqual(target.ids, [sourceId], 'exactly one document — never a second copy under the current id')
+    assert.notEqual(target.ids[0], canonical)
+    assert.equal(target.subjectUserId.toLowerCase(), 'old-invite')
+  }
+  // The person's own document (or none yet): unchanged — the canonical id, plus a differently formatted stored id.
+  assert.deepEqual(timesheetSaveTarget({ userId: 'u1', weekStart: start, timeZone: tz, sourceId: canonical }).ids, [canonical])
+  assert.deepEqual(timesheetSaveTarget({ userId: 'u1', weekStart: start, timeZone: tz, sourceId: null }).ids, [canonical])
+  assert.deepEqual(timesheetSaveTarget({ userId: 'U1', weekStart: start, timeZone: tz, sourceId: canonical }).ids.length, 2)
+  // A revision is written to its own document only.
+  assert.deepEqual(timesheetSaveTarget({ userId: 'u1', weekStart: start, timeZone: tz, sourceId: `${aliasDoc}_rev1` }).ids, [`${aliasDoc}_rev1`])
+  // Both writers go through the one target (no second id list of their own).
+  const source = (await import('node:fs')).readFileSync(new URL('./timesheetStorage.ts', import.meta.url), 'utf8')
+  const save = source.slice(source.indexOf('export async function saveTimesheetDraft'), source.indexOf(' * Where a save or an export stamp'))
+  const stamp = source.slice(source.indexOf('export async function stampTimesheetExport'), source.indexOf('/** Why `createTimesheetRevision`'))
+  for (const body of [save, stamp]) {
+    assert.match(body, /timesheetSaveTarget\(/)
+    assert.doesNotMatch(body, /\[canonicalId, sourceId\]|timesheetDocId\(userId, weekStart, timeZone\), sourceId/)
+  }
+})
+
+test('B2: the background repair skips a person whose own pay is loading or failed', () => {
+  const live = linesFor([booking()])
+  const sheets = [{ member: person, period: run1, draft: frozenEmpty(), documentId: 'timesheet_u1_1793491200' }]
+  const pick = (status: string) =>
+    snapshotRepairCandidates({ organizationId: 'org', sheets, viewer: manager, users, liveLinesFor: () => live, payReady: () => status === 'ready', tried: new Set() })
+  assert.equal(pick('ready').length, 1)
+  assert.equal(pick('loading').length, 0)
+  assert.equal(pick('failed').length, 0)
+})
+
+test('S1: a refused id in an `in` chunk is asked on its own and skipped; the rest load; other errors throw', async () => {
+  const { queryIdsSkippingRefused } = await import('./timesheetQueue.ts')
+  const denied = Object.assign(new Error('denied'), { code: 'permission-denied' })
+  const run = async (chunk: string[]) => {
+    if (chunk.includes('gone')) throw denied
+    return chunk.map((id) => `row-${id}`)
+  }
+  const result = await queryIdsSkippingRefused(['a', 'gone', 'b', 'c'], 10, run)
+  assert.deepEqual(result.rows.sort(), ['row-a', 'row-b', 'row-c'])
+  assert.deepEqual(result.refusedIds, ['gone'])
+  await assert.rejects(() => queryIdsSkippingRefused(['a'], 10, async () => { throw new Error('offline') }), /offline/)
+})
+
+test('item 3 (review): earlier version cards match bookings by collection and line prefix, and keep each row\'s amount', () => {
+  const signed = signedOff([booking()])
+  const asSnapshotOnly = (draft: TimesheetDraft) => ({
+    userId: 'u1',
+    managerSignedAt: draft.managerSignedAt,
+    weeklyReportOverride: draft.weeklyReportOverride,
+    exportedAt: new Date('2026-11-16T09:00:00Z'),
+  })
+  // The next version names the same booking through the record (bare id, collection) — not a change.
+  const withRecord = { ...asSnapshotOnly(signed), operativeSignedBookings: [{ bookingId: 'b1', collection: 'bookings', fingerprint: '' }], exportedAt: null }
+  const chain = timesheetVersionsForPeriod([
+    { documentId: 'timesheet_u1_1793491200', data: asSnapshotOnly(signed) },
+    { documentId: 'timesheet_u1_1793491200_rev1', data: withRecord },
+  ])[0]
+  const [card] = earlierVersionCards({ chain, latestTotal: null, currency: 'GBP' })
+  assert.match(card.changeText, /^No booking changes/)
+  assert.ok(card.rows.length > 0 && card.rows.every((row) => /£/.test(row.amountText)))
+  // A manager site booking with the same id is another booking.
+  const site = { ...withRecord, operativeSignedBookings: [{ bookingId: 'b1', collection: 'managerSiteBookings', fingerprint: '' }] }
+  const chain2 = timesheetVersionsForPeriod([
+    { documentId: 'timesheet_u1_1793491200', data: asSnapshotOnly(signed) },
+    { documentId: 'timesheet_u1_1793491200_rev1', data: site },
+  ])[0]
+  assert.match(earlierVersionCards({ chain: chain2, latestTotal: null, currency: 'GBP' })[0].changeText, /\+1 booking · −1 booking/)
+})

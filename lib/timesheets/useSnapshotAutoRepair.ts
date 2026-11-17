@@ -20,9 +20,23 @@ import { timesheetMemberIds } from '@/lib/timesheets/timesheetQueue'
 import { snapshotRepairCandidates, type RepairSheet } from '@/lib/timesheets/snapshotAutoRepair'
 import type { BookingChangeCatalogue } from '@/lib/timesheets/timesheetBookingChanges'
 import type { User } from '@/types'
+import type { PayProfilesStatus } from '@/lib/pay/payProfileOverlay'
 
-/** Tried this session, by organisation and document id (also across the hub and User Timesheets). */
+/**
+ * Tried this session, by organisation and document id (also across the hub and User Timesheets). Review of #368: cleared
+ * when the signed-in person or the open organisation changes (`triedSession`), so a sign-out or a company switch starts
+ * afresh.
+ */
 const tried = new Set<string>()
+let triedSession = ''
+
+function triedFor(session: string): Set<string> {
+  if (triedSession !== session) {
+    tried.clear()
+    triedSession = session
+  }
+  return tried
+}
 
 export function useSnapshotAutoRepair(input: {
   organizationId: string | null | undefined
@@ -32,6 +46,11 @@ export function useSnapshotAutoRepair(input: {
   sheets: ReadonlyArray<RepairSheet>
   /** Bookings (server-confirmed, covering the sheets' pay runs) and pay inputs have loaded. */
   ready: boolean
+  /**
+   * Review of #368 (B2): this person's own pay status (`payStatusFor(member)`, as Export asks). Only `ready` is
+   * repaired; a loading or failed pay read is left for a later pass, never frozen into the snapshot.
+   */
+  payStatusOf: (member: User) => PayProfilesStatus
   /** Called after a sheet was repaired (the screen reloads its rows). */
   onRepaired?: () => void
 }): void {
@@ -43,6 +62,7 @@ export function useSnapshotAutoRepair(input: {
     if (!ready || !organizationId || !viewer || running.current) return
     const { users, liveLoaded, coversPeriod, ...collector } = catalogue
     if (!liveLoaded) return
+    const triedSet = triedFor(`${organizationId}|${viewer.id}`)
     const payrollFor = (sheet: RepairSheet) =>
       collectTimesheetPayroll({
         ...collector,
@@ -58,7 +78,8 @@ export function useSnapshotAutoRepair(input: {
       users,
       liveLinesFor: (sheet) => payrollFor(sheet).lineItems,
       coversPeriod,
-      tried,
+      payReady: (member) => latest.current.payStatusOf(member) === 'ready',
+      tried: triedSet,
     })
     if (candidates.length === 0) return
     running.current = true
@@ -66,9 +87,11 @@ export function useSnapshotAutoRepair(input: {
       let repaired = 0
       try {
         for (const sheet of candidates) {
-          tried.add(sheet.key)
-          // Stop when the screen's inputs stopped being ready meanwhile (a re-plan, a network blip).
+          // Stop when the screen's inputs stopped being ready meanwhile (a re-plan, a network blip). Review of #368: a
+          // sheet is marked tried only once an attempt for it really starts.
           if (!latest.current.ready) break
+          if (latest.current.payStatusOf(sheet.member) !== 'ready') continue
+          triedFor(`${organizationId}|${viewer.id}`).add(sheet.key)
           try {
             const full = await loadTimesheetDraftAt(organizationId, sheet.documentId!, organizationZoneOr(collector.timeZone), timesheetMemberIds(sheet.member, users))
             if (!full || full.exportedAt) continue

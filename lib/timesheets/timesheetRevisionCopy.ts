@@ -5,6 +5,8 @@
  * joins them for a screen or document.
  */
 import {
+  signedTimesheetLineBookingKey,
+  timesheetInvoiceRows,
   TIMESHEET_ORIGINAL_VERSION_LABEL,
   documentInstantMs,
   formatMoney,
@@ -76,22 +78,31 @@ export type EarlierVersionCard = {
   nextLabel: string
   /** What the next version changed: "+2 bookings · 1 changed · −£66.18", "No booking changes · +£0.00". */
   changeText: string
+  /** The version's own rows as invoiced (`timesheetInvoiceRows`, decided): what each line paid. */
+  rows: Array<{ key: string; title: string; amountText: string }>
 }
 
+/**
+ * What a version signed, by booking (review of #368): the rulebook's own booking key (`signedTimesheetLineBookingKey`:
+ * the collection — `op-` / `mgr-` line prefixes read — and the booking id without case), so a labour and a manager site
+ * booking sharing an id stay apart and a line's prefixed id matches its record row. Leave and PAYE-day lines are not
+ * bookings on the sheet.
+ */
 function signedBookings(data: Record<string, unknown>): Map<string, string> {
   const out = new Map<string, string>()
   const record = Array.isArray(data.operativeSignedBookings) ? (data.operativeSignedBookings as Array<Record<string, unknown>>) : null
   if (record) {
     for (const row of record) {
-      const id = String(row?.bookingId ?? '').trim().toLowerCase()
-      if (id) out.set(id, String(row?.fingerprint ?? ''))
+      const key = signedTimesheetLineBookingKey({ bookingId: row?.bookingId, bookingCollection: row?.collection })
+      if (key) out.set(key, String(row?.fingerprint ?? ''))
     }
     return out
   }
   const override = data.weeklyReportOverride as { lines?: Array<Record<string, unknown>> } | null | undefined
   for (const line of override?.lines ?? []) {
-    const id = String(line?.bookingId ?? '').trim().toLowerCase()
-    if (id && !out.has(id)) out.set(id, String(line?.bookingFingerprint ?? ''))
+    if (line?.isLeave === true || line?.isPayeDay === true) continue
+    const key = signedTimesheetLineBookingKey(line as never)
+    if (key && !out.has(key)) out.set(key, String(line?.bookingFingerprint ?? ''))
   }
   return out
 }
@@ -101,7 +112,8 @@ function count(n: number, word: string): string {
 }
 
 /**
- * 17 Nov follow-up (display only): one card per earlier version of a pay run, newest first — its label, when and by whom
+ * 17 Nov follow-up (display only): one card per earlier version of a pay run, newest first (the order of
+ * `timesheetEarlierVersions`, whatever order `chain` is given in) — its label, when and by whom
  * it was signed, its total, and what the next version changed (bookings added, removed or changed, and the money
  * difference from `timesheetRevisionDifference`). Every figure is the rulebook's (`timesheetExportedTotal`,
  * `timesheetRevisionDifference`); bookings are compared by id from what each version signed (`operativeSignedBookings`,
@@ -151,6 +163,11 @@ export function earlierVersionCards(input: {
       totalText: total == null ? TIMESHEET_REVISION_DIFFERENCE_UNKNOWN.replace('Difference', 'Total') : formatMoney(total, input.currency),
       nextLabel: timesheetRevisionLabel(next.revision) || TIMESHEET_ORIGINAL_VERSION_LABEL,
       changeText: parts.join(' · '),
+      rows: timesheetInvoiceRows({ sheet: data, payrollLines: [], extrasMode: 'decided' }).map((row, rowIndex) => ({
+        key: `${row.kind}-${row.id}-${rowIndex}`,
+        title: String((row.stored as Record<string, unknown> | null)?.title ?? (row.stored as Record<string, unknown> | null)?.description ?? row.kind),
+        amountText: formatMoney(row.amount, input.currency),
+      })),
     })
   }
   return cards.reverse()

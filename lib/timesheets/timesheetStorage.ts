@@ -16,7 +16,7 @@ import { timesheetDocumentSubjectId } from '@/lib/canonical/timesheetPeriod'
 import { LONDON_TIME_ZONE, unixStartOfDay, dayKey } from '@/lib/ios-parity/londonTime'
 import { weekStartKey } from '@/lib/timesheets/timesheetWeekUtils'
 import { periodStartKey } from '@/lib/timesheets/paymentRunCopy'
-import { timesheetOwnerResolver } from '@/lib/timesheets/timesheetQueue'
+import { queryIdsSkippingRefused, timesheetOwnerResolver } from '@/lib/timesheets/timesheetQueue'
 import { UNKNOWN_BOOKING_PERSON_LABEL, bookingPersonIdHint } from '@/lib/canonical'
 import {
   parseTimesheetEntries,
@@ -898,28 +898,33 @@ async function loadTimesheetCandidatesByUserIds(
   userIds: string[],
   includeSignatures: boolean,
   // 1.43.0 (guardrail 2): stored end days are read in the organisation's zone, never London by default.
-  timeZone: string
+  timeZone: string,
+  /**
+   * Review of #368 (S1): when the rules refuse a chunk, ask for each id on its own and skip the refused ones (a former
+   * invite id whose users document is gone is unreadable to a line manager under `privatePay`). Off: a refused chunk
+   * throws, as before.
+   */
+  skipRefused = false
 ): Promise<Map<string, TimesheetPeriodCandidate[]>> {
   const grouped = new Map<string, TimesheetPeriodCandidate[]>()
   for (const userId of userIds) grouped.set(userId, [])
-  const chunks: string[][] = []
-  for (let index = 0; index < userIds.length; index += USER_ID_QUERY_CHUNK) {
-    const chunk = userIds.slice(index, index + USER_ID_QUERY_CHUNK)
-    if (chunk.length > 0) chunks.push(chunk)
-  }
-  const snaps = await Promise.all(
-    chunks.map((chunk) =>
-      getDocs(query(collection(db, 'organizations', organizationId, 'settings'), where('userId', 'in', chunk)))
-    )
-  )
-  for (const snap of snaps) {
-    for (const entry of snap.docs) {
-      const data = entry.data() as Record<string, unknown>
-      const userId = typeof data.userId === 'string' ? data.userId : ''
-      if (!grouped.has(userId)) continue
-      const row = timesheetStateFromDoc(entry.id, data, includeSignatures, timeZone)
-      if (row) grouped.get(userId)?.push(row)
-    }
+  const runChunk = async (chunk: string[]) =>
+    (await getDocs(query(collection(db, 'organizations', organizationId, 'settings'), where('userId', 'in', chunk)))).docs
+  const docs = skipRefused
+    ? (await queryIdsSkippingRefused(userIds, USER_ID_QUERY_CHUNK, runChunk)).rows
+    : (
+        await Promise.all(
+          Array.from({ length: Math.ceil(userIds.length / USER_ID_QUERY_CHUNK) }, (_, index) =>
+            runChunk(userIds.slice(index * USER_ID_QUERY_CHUNK, (index + 1) * USER_ID_QUERY_CHUNK))
+          )
+        )
+      ).flat()
+  for (const entry of docs) {
+    const data = entry.data() as Record<string, unknown>
+    const userId = typeof data.userId === 'string' ? data.userId : ''
+    if (!grouped.has(userId)) continue
+    const row = timesheetStateFromDoc(entry.id, data, includeSignatures, timeZone)
+    if (row) grouped.get(userId)?.push(row)
   }
   return grouped
 }
@@ -1180,7 +1185,7 @@ export async function loadTimesheetQueueDrafts(input: {
   if (userIds.length === 0) return out
   let grouped: Map<string, TimesheetPeriodCandidate[]>
   try {
-    grouped = await loadTimesheetCandidatesByUserIds(organizationId, userIds, false, timeZone)
+    grouped = await loadTimesheetCandidatesByUserIds(organizationId, userIds, false, timeZone, true)
   } catch (error) {
     if (periodQueriesRefused) throw error
     // The pay-run rows already found stay; the history scan may not blank the lists.
@@ -1233,15 +1238,16 @@ export async function saveTimesheetDraft({
 }): Promise<Record<string, TimesheetEntryReview> | null> {
   const writerId = auth?.currentUser?.uid || ''
   const reviewer = access?.reviewer ?? Boolean(writerId && writerId !== userId)
-  const canonicalId = timesheetDocId(userId, weekStart, timeZone)
   const sourceId = documentId || timesheetSourceDocumentId(draft)
-  // Rulebook 1.55.0: a revision is saved on its own document only — never also on the (frozen) original's id.
-  const ids = isTimesheetRevisionDocId(sourceId)
-    ? [sourceId as string]
-    : Array.from(new Set([canonicalId, sourceId].filter((id): id is string => Boolean(id))))
+  // Rulebook 1.55.0: a revision is saved on its own document only. Review of #368 (B1): a sheet filed under another id
+  // the person goes by is saved on that document only, under its own `userId` — never forked to the current id.
+  const target = timesheetSaveTarget({ userId, weekStart, timeZone, sourceId })
+  const ids = target.ids
+  const subjectUserId = target.subjectUserId
+  const canonicalId = timesheetDocId(subjectUserId, weekStart, timeZone)
   const end = weekEnd || weekStart
   const periodFields = timesheetPeriodWriteFields({
-    userId,
+    userId: subjectUserId,
     startDayKey: dayKey(weekStart, timeZone),
     endDayKey: dayKey(end, timeZone),
   })
@@ -1256,7 +1262,7 @@ export async function saveTimesheetDraft({
     return sanitizeForFirestore({
       ...sheetFields,
       ...periodFields,
-      userId,
+      userId: subjectUserId,
       weekStart: Timestamp.fromDate(weekStart),
       weekEnd: Timestamp.fromDate(end),
     }) as Record<string, unknown>
@@ -1287,7 +1293,7 @@ export async function saveTimesheetDraft({
       }
     }
     const next = draftToFirestoreMap(draft)
-    const ownerUserIds = timesheetEvidenceOwnerIds(canonicalId, { userId }, [writerId])
+    const ownerUserIds = timesheetEvidenceOwnerIds(canonicalId, { userId: subjectUserId }, [writerId, userId])
     const entriesError = timesheetOwnerEntriesError({
       previous,
       next: { priceWorkEntries: next.priceWorkEntries as unknown[], expenseEntries: next.expenseEntries as unknown[] },
@@ -1348,9 +1354,17 @@ export async function saveTimesheetDraft({
       }
       // 1.9.0: whether the line manager has signed comes from the stored copy, never from a stale local draft.
       const managerSigned = Boolean(draftFromFirestoreMap(stored, { includeSignatures: false }).managerSignedAt)
-      const payload = sheetPayload(managerSigned, draft)
+      // Review of #368 (B1): a stored `userId` is never rewritten (another letter case, or an alias sheet).
+      const keepStoredUserId = (fields: Record<string, unknown>) => {
+        if (typeof stored.userId === 'string' && stored.userId.trim()) fields.userId = stored.userId
+        return fields
+      }
+      const payload = keepStoredUserId(sheetPayload(managerSigned, draft))
       if (base) {
-        const write = timesheetChangedFields(sanitizeForFirestore(sheetPayload(managerSigned, base)) as Record<string, unknown>, payload)
+        const write = timesheetChangedFields(
+          keepStoredUserId(sanitizeForFirestore(sheetPayload(managerSigned, base)) as Record<string, unknown>),
+          payload
+        )
         // The period identity is always kept current; everything else only when this editor changed it.
         for (const key of Object.keys(periodFields)) {
           if (payload[key] !== undefined && stored[key] === undefined) write.set[key] = payload[key]
@@ -1367,6 +1381,35 @@ export async function saveTimesheetDraft({
   if (!reviewer) return draft.extraEntryReviews ?? null
   if (!hasReviewFields) return draft.extraEntryReviews ?? null
   return timesheetEntryReviewsAfterWrite(draft.extraEntryReviews ?? null, reviewFields)
+}
+
+/**
+ * Where a save or an export stamp of a sheet goes (review of #368, B1). Normally the person's canonical id and the stored
+ * document it was loaded from (an older id format) — as before. A sheet filed under another id the person goes by (the
+ * stored document's id names another user id: a former invite id, a second users document on their email) is written
+ * ONLY to that stored document and keeps that id as its `userId`, so a save never creates a second copy of the sheet
+ * under the person's current id. A revision is written to its own document only (1.55.0).
+ */
+export function timesheetSaveTarget(input: {
+  userId: string
+  weekStart: Date
+  timeZone: string
+  sourceId: string | null | undefined
+}): { ids: string[]; subjectUserId: string } {
+  const sourceId = input.sourceId || null
+  const canonicalId = timesheetDocId(input.userId, input.weekStart, input.timeZone)
+  if (isTimesheetRevisionDocId(sourceId)) {
+    const subject = timesheetDocumentSubjectId(sourceId)
+    return { ids: [sourceId as string], subjectUserId: subject || input.userId }
+  }
+  const sourceSubject = sourceId ? timesheetDocumentSubjectId(sourceId) : ''
+  if (sourceId && sourceSubject && sourceSubject.toLowerCase() !== input.userId.toLowerCase()) {
+    return { ids: [sourceId], subjectUserId: sourceSubject }
+  }
+  return {
+    ids: Array.from(new Set([canonicalId, sourceId].filter((id): id is string => Boolean(id)))),
+    subjectUserId: input.userId,
+  }
 }
 
 /** Why `stampTimesheetExport` did not stamp a sheet. */
@@ -1399,10 +1442,9 @@ export async function stampTimesheetExport({
   const writerId = auth?.currentUser?.uid || ''
   if (!draft.exportedAt || !draft.weeklyReportOverride) return 'missing'
   const sourceId = documentId || timesheetSourceDocumentId(draft)
-  // Rulebook 1.55.0: a revision is stamped on its own document only (its original is already exported).
-  const ids = isTimesheetRevisionDocId(sourceId)
-    ? [sourceId as string]
-    : Array.from(new Set([timesheetDocId(userId, weekStart, timeZone), sourceId].filter((id): id is string => Boolean(id))))
+  // Rulebook 1.55.0: a revision is stamped on its own document only (its original is already exported). Review of #368
+  // (B1): a sheet filed under another id the person goes by is stamped on that document only.
+  const { ids } = timesheetSaveTarget({ userId, weekStart, timeZone, sourceId })
   const fields = sanitizeForFirestore({
     weeklyReportOverride: weeklyReportOverrideToFirestore(draft.weeklyReportOverride),
     exportedAt: Timestamp.fromDate(draft.exportedAt),
