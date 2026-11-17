@@ -12,6 +12,7 @@ import { LoadingSpinner } from '@/components/dashboard/PageShell'
 import { isMfaGateOpen, isMfaRequiredError, mfaVerifyHref } from '@/lib/auth/mfa/mfaClient'
 import { HoneypotField } from '@/components/security/HoneypotField'
 import { postPublicForm } from '@/lib/security/publicFormClient'
+import { consumeWebIdleExpiredFlag } from '@/lib/auth/webIdleSession'
 
 const MIN_PASSWORD = 10
 
@@ -33,6 +34,7 @@ export function DeveloperLoginScreen() {
   const [notice, setNotice] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [website, setWebsite] = useState('')
+  const [idleNotice] = useState(() => consumeWebIdleExpiredFlag())
 
   const signedInOwner = isPlatformOwnerEmail(firebaseUser?.email || user?.email)
 
@@ -185,6 +187,11 @@ export function DeveloperLoginScreen() {
           <h1 className="text-[28px] font-extrabold">Developer login</h1>
           <p className="muted mt-1.5">Signed in as the platform owner only.</p>
 
+          {idleNotice ? (
+            <p className="banner mt-4" data-hue="warn">
+              Signed out after 30 minutes idle. Sign in to continue.
+            </p>
+          ) : null}
           {notice ? (
             <p className="banner mt-4" data-hue="green">
               {notice}

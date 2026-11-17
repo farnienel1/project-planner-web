@@ -53,12 +53,12 @@ import {
 } from '@/lib/auth/completeEmailSignIn'
 import {
   clearWebIdleActivity,
-  isWebIdleExpired,
   markWebIdleExpired,
   noteWebIdleActivity,
   readWebIdleLastActivity,
+  webIdleSignOutDue,
 } from '@/lib/auth/webIdleSession'
-import { isPlatformOwnerEmail, isPlatformOwnerSession, PLATFORM_OWNER_EMAIL } from '@/lib/platform/owner'
+import { isPlatformOwnerEmail, PLATFORM_OWNER_EMAIL } from '@/lib/platform/owner'
 import { platformOwnerProfilePayload, platformOwnerUser } from '@/lib/platform/ownerProfile'
 import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
 import {
@@ -790,12 +790,18 @@ export const useAuthStore = create<AuthState>((set) => {
         return
       }
       if (firebaseUser) {
+        // Idle sign-out on reload applies to everyone, the platform owner included (owner decision 17 Nov).
         if (
-          isWebIdleExpired(Date.now(), readWebIdleLastActivity()) &&
-          !useAuthStore.getState().mfaPending &&
-          !isMfaGateOpen(firebaseUser.uid) &&
-          !isPlatformOwnerSession(firebaseUser.email, useAuthStore.getState().user?.organizationId)
+          webIdleSignOutDue({
+            now: Date.now(),
+            lastActivityAt: readWebIdleLastActivity(),
+            signedIn: true,
+            mfaPending: useAuthStore.getState().mfaPending,
+          }) &&
+          !isMfaGateOpen(firebaseUser.uid)
         ) {
+          // Clear the 2-step cookie as a normal sign-out does (POST /api/auth/mfa/logout).
+          await clearMfaSession()
           try {
             await firebaseSignOut(getFirebaseAuth())
           } catch (idleSignOutError) {

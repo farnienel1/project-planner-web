@@ -73,7 +73,7 @@ function AccountForm() {
         <p className="mt-1 text-lg font-extrabold">{user?.email || PLATFORM_OWNER_EMAIL}</p>
         <p className="mt-2 text-sm text-[var(--ink2)]">
           This console is only for you. Organisation users never see it, and they cannot be granted access from User
-          settings. This login stays signed in — it is not signed out after 30 minutes idle.
+          settings. Like everyone else, this login is signed out after 30 minutes idle.
         </p>
         <p className="mt-3 text-sm text-[var(--ink2)]">
           Email verification (2FA) runs on every later sign-in after the owner password has been created. The first

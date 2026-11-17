@@ -3,40 +3,41 @@
 import { useEffect, useRef } from 'react'
 import { usePathname } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { isPlatformOwnerSession } from '@/lib/platform/owner'
 import {
   WEB_IDLE_STORAGE_KEY,
   WEB_IDLE_TIMEOUT_MS,
   isWebIdleExpired,
   noteWebIdleActivity,
   readWebIdleLastActivity,
+  webIdleSignOutDue,
 } from '@/lib/auth/webIdleSession'
 
 /**
  * Clicks, keys, pointer movement, scrolling, and route changes.
  * Visibility alone does not count — coming back only checks the deadline.
  */
-const ACTIVITY_EVENTS = ['pointerdown', 'pointermove', 'mousedown', 'click', 'keydown', 'wheel', 'scroll'] as const
+const ACTIVITY_EVENTS = ['pointerdown', 'pointermove', 'mousedown', 'click', 'keydown', 'input', 'wheel', 'scroll'] as const
 
 /**
  * Signs out after 30 minutes with no real use.
  * The deadline is last activity, not the login time. Each activity
  * re-arms the timer. A hard timeout started at sign-in is not used.
+ * It runs while the tab stays open (a timer plus the activity events), for
+ * everyone signed in, the platform owner and the owner console included
+ * (owner decision 17 Nov). Typing (keydown / input) counts as activity, so
+ * nobody is signed out mid-typing.
  */
 export function WebIdleSessionGuard() {
   const pathname = usePathname()
   const signedIn = useAuthStore((state) => Boolean(state.firebaseUser || state.user))
   const mfaPending = useAuthStore((state) => state.mfaPending)
-  const ownerEmail = useAuthStore((state) => state.firebaseUser?.email || state.user?.email)
-  const ownerOrg = useAuthStore((state) => state.user?.organizationId)
-  const ownerSession = isPlatformOwnerSession(ownerEmail, ownerOrg)
   const signOut = useAuthStore((state) => state.signOut)
   const signingOut = useRef(false)
   const armedFor = useRef(0)
   const rearmRef = useRef<() => void>(() => {})
 
   useEffect(() => {
-    if (!signedIn || ownerSession || mfaPending) {
+    if (!signedIn || mfaPending) {
       signingOut.current = false
       rearmRef.current = () => {}
       return
@@ -44,7 +45,7 @@ export function WebIdleSessionGuard() {
 
     const logoutIfIdle = () => {
       if (signingOut.current) return true
-      if (!isWebIdleExpired(Date.now(), readWebIdleLastActivity())) return false
+      if (!webIdleSignOutDue({ now: Date.now(), lastActivityAt: readWebIdleLastActivity(), signedIn, mfaPending })) return false
       signingOut.current = true
       void signOut({ idle: true }).catch(() => {
         signingOut.current = false
@@ -120,14 +121,14 @@ export function WebIdleSessionGuard() {
       window.clearTimeout(timer)
       armedFor.current = 0
     }
-  }, [mfaPending, ownerSession, signedIn, signOut])
+  }, [mfaPending, signedIn, signOut])
 
   useEffect(() => {
-    if (!signedIn || ownerSession || mfaPending || signingOut.current) return
+    if (!signedIn || mfaPending || signingOut.current) return
     if (isWebIdleExpired(Date.now(), readWebIdleLastActivity())) return
     noteWebIdleActivity()
     rearmRef.current()
-  }, [mfaPending, ownerSession, pathname, signedIn])
+  }, [mfaPending, pathname, signedIn])
 
   return null
 }
