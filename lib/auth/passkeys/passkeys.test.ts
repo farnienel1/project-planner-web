@@ -24,6 +24,7 @@ import {
   pruneStalePasskeys,
 } from './passkeyService.ts'
 import { sendPasskeyAddedNotice, sendPasskeysRemovedNotice } from './passkeyNotices.ts'
+import { padToMinimumDuration } from './passkeyRoute.ts'
 import { buildPasskeyAddedEmail, buildPasskeysRemovedEmail, PASSKEY_ADDED_EMAIL_SUBJECT } from '../../email/passkeyNoticeEmail.ts'
 import type { AuthAccount, NewPasskey, PasskeyAuthAccounts, PasskeyStore, StoredPasskey } from './passkeyStore.ts'
 import { newSoftAuthenticator, softAssertion, softRegistration } from './testAuthenticator.ts'
@@ -61,13 +62,15 @@ class MemoryStore implements PasskeyStore {
     this.rows.set(passkey.id, { ...live, counter: use.counter, lastUsedAtMs: use.lastUsedAtMs, updateTime: String(++this.version) })
     return 'ok' as const
   }
+  failDelete = false
   async delete(id: string) {
-    this.rows.delete(id)
+    if (this.failDelete) throw new Error('Firestore unavailable')
+    return this.rows.delete(id)
   }
   async deleteAllForUser(uid: string) {
-    const rows = await this.listForUser(uid)
-    rows.forEach((row) => this.rows.delete(row.id))
-    return rows.length
+    let removed = 0
+    for (const row of await this.listForUser(uid)) if (this.rows.delete(row.id)) removed += 1
+    return removed
   }
 }
 
@@ -476,4 +479,45 @@ test('notice emails: added (who, when, device, what to do) and removed; a failed
   assert.equal(failed, false)
   assert.equal(await sendPasskeyAddedNotice({ email: '', label: 'Mac' }, (async () => assert.fail('no email, no send')) as never), false)
   assert.equal(await sendPasskeysRemovedNotice({ email: 'pat@example.com', count: 0 }, (async () => assert.fail('nothing removed, no send')) as never), false)
+})
+
+test('dedupe: two prunes racing remove each passkey once, so only one "passkeys removed" email goes out', async () => {
+  const store = new MemoryStore()
+  const base = { uid: UID, publicKey: 'pk', counter: 0, transports: [], label: '', backedUp: false, deviceType: 'singleDevice', rpId: RP.rpID, userHandle: '' }
+  await store.create({ ...base, id: 'old-passkey-1-aaaaaaaaaa', createdAtMs: 1_000 })
+  await store.create({ ...base, id: 'old-passkey-2-aaaaaaaaaa', createdAtMs: 2_000 })
+  const accounts = auth({ [UID]: { passwordUpdatedAtMs: 5_000 } })
+  const [first, second] = await Promise.all([
+    pruneStalePasskeys({ uid: UID, store, auth: accounts }),
+    pruneStalePasskeys({ uid: UID, store, auth: accounts }),
+  ])
+  assert.equal(first + second, 2, 'each passkey is counted by the one request that removed it')
+  assert.equal(await pruneStalePasskeys({ uid: UID, store, auth: accounts }), 0)
+})
+
+test('a refused stale passkey still reads "removed because your password changed" when the delete fails', async () => {
+  const store = new MemoryStore()
+  const device = await enrol(store)
+  const created = [...store.rows.values()][0].createdAtMs as number
+  store.failDelete = true
+  const cookie = await loginCookie()
+  const result = await finishPasskeyLogin({
+    cookie,
+    response: softAssertion(device, { challenge: cookie.challenge, origin: RP.origin, rpID: RP.rpID }),
+    store,
+    auth: auth({ [UID]: { passwordUpdatedAtMs: created + 1 } }),
+  })
+  assert.equal(result.ok, false)
+  assert.equal(result.ok ? '' : result.error, PASSKEYS_REMOVED_AFTER_PASSWORD_MESSAGE)
+  assert.equal(result.ok ? -1 : result.removed, 0)
+})
+
+test('padToMinimumDuration waits out the rest of the minimum, never more', async () => {
+  let now = 1_000
+  const started = Date.now()
+  await padToMinimumDuration(started, 60)
+  assert.ok(Date.now() - started >= 55)
+  const t = Date.now()
+  await padToMinimumDuration(0, 1500, () => (now += 5_000))
+  assert.ok(Date.now() - t < 50, 'already past the minimum: no wait')
 })

@@ -6,6 +6,7 @@ import {
   passkeysOffResponse,
   passkeyUnavailable,
   requirePasskeyAccount,
+  runAfterResponse,
 } from '@/lib/auth/passkeys/passkeyRoute'
 import {
   finishPasskeyRegistration,
@@ -48,8 +49,10 @@ export async function POST(request: NextRequest) {
       store: firestorePasskeyStore(),
     })
     if (result.ok) {
-      // Security notice to the account (best effort: logged, never blocks the passkey).
-      await sendPasskeyAddedNotice({ email: account.email, label: result.passkey.label, idToken: bearerToken(request) })
+      // Security notice to the account, after answering (best effort: logged, never blocks the passkey).
+      const passkey = result.passkey
+      const idToken = bearerToken(request)
+      runAfterResponse('register-verify', () => sendPasskeyAddedNotice({ email: account.email, label: passkey.label, idToken }))
     }
     const response = result.ok
       ? NextResponse.json({ ok: true, passkey: result.passkey }, { headers: { 'Cache-Control': 'no-store' } })

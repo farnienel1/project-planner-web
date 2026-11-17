@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { clearSessionCookie } from '@/lib/auth/mfa/mfaCookiePolicy'
 import { encodeMfaOk, MFA_OK_TTL_MS, writeMfaCookie } from '@/lib/auth/mfa/mfaCookies'
 import { clearPasskeyCookie, decodePasskeyChallenge, readPasskeyCookie } from '@/lib/auth/passkeys/passkeyChallenge'
-import { passkeysOffResponse, passkeyUnavailable } from '@/lib/auth/passkeys/passkeyRoute'
+import { passkeysOffResponse, passkeyUnavailable, runAfterResponse } from '@/lib/auth/passkeys/passkeyRoute'
 import { finishPasskeyLogin, PASSKEY_LOGIN_FAILED_MESSAGE, pruneStalePasskeys } from '@/lib/auth/passkeys/passkeyService'
 import { sendPasskeysRemovedNotice } from '@/lib/auth/passkeys/passkeyNotices'
 import { firebasePasskeyAuthAccounts, firestorePasskeyStore } from '@/lib/auth/passkeys/passkeyStore'
@@ -33,10 +33,18 @@ export async function POST(request: NextRequest) {
     const auth = firebasePasskeyAuthAccounts()
     const result = await finishPasskeyLogin({ cookie, response: body.value.response, store, auth })
     if (!result.ok && result.reason === 'stale-after-password-change' && result.uid) {
-      // The password changed and the browser never reported it: remove the rest now and tell the account.
-      const more = await pruneStalePasskeys({ uid: result.uid, store, auth })
-      const account = await auth.lookup(result.uid)
-      await sendPasskeysRemovedNotice({ email: account.email, count: more + 1 })
+      // The password changed and the browser never reported it: remove the rest after answering and tell the
+      // account — only when this request removed at least one passkey (no duplicate emails). A failure here never
+      // changes the answer below.
+      const uid = result.uid
+      const removedHere = result.removed || 0
+      runAfterResponse('login-verify', async () => {
+        const more = await pruneStalePasskeys({ uid, store, auth })
+        if (removedHere + more > 0) {
+          const account = await auth.lookup(uid)
+          await sendPasskeysRemovedNotice({ email: account.email, count: removedHere + more })
+        }
+      })
     }
     if (!result.ok) {
       console.warn('[auth/passkey/login] refused', { reason: result.reason, ip: clientIp(request) })

@@ -48,7 +48,8 @@ export interface PasskeyStore {
   create(passkey: NewPasskey): Promise<'created' | 'exists'>
   /** `conflict` when the document changed since it was read (another sign-in with the same passkey raced it). */
   recordUse(passkey: StoredPasskey, use: { counter: number; lastUsedAtMs: number }): Promise<'ok' | 'conflict'>
-  delete(credentialId: string): Promise<void>
+  /** True only when this call removed the document (false when it was already gone), so notices are sent once. */
+  delete(credentialId: string): Promise<boolean>
   deleteAllForUser(uid: string): Promise<number>
 }
 
@@ -250,17 +251,24 @@ export function firestorePasskeyStore(options: { fetchImpl?: typeof fetch; beare
       return 'ok'
     },
     async delete(credentialId) {
-      if (!isPasskeyCredentialId(credentialId)) return
-      const response = await doFetch(`${base()}/${PASSKEY_COLLECTION}/${encodeURIComponent(passkeyDocumentId(credentialId))}`, {
-        method: 'DELETE',
-        headers: await headers(),
-      })
-      if (!response.ok && response.status !== 404) throw await failure(response, 'Removing a passkey')
+      if (!isPasskeyCredentialId(credentialId)) return false
+      const url = new URL(`${base()}/${PASSKEY_COLLECTION}/${encodeURIComponent(passkeyDocumentId(credentialId))}`)
+      url.searchParams.set('currentDocument.exists', 'true')
+      const response = await doFetch(url.toString(), { method: 'DELETE', headers: await headers() })
+      if (response.status === 404) return false
+      if (response.status === 400) {
+        const text = await response.text().catch(() => '')
+        if (/NOT_FOUND|FAILED_PRECONDITION|no entity/i.test(text)) return false
+        throw new Error(`Removing a passkey failed (400)`)
+      }
+      if (!response.ok) throw await failure(response, 'Removing a passkey')
+      return true
     },
     async deleteAllForUser(uid) {
       const rows = await this.listForUser(uid)
-      for (const row of rows) await this.delete(row.id)
-      return rows.length
+      let removed = 0
+      for (const row of rows) if (await this.delete(row.id)) removed += 1
+      return removed
     },
   }
 }

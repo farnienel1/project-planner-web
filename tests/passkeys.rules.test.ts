@@ -244,15 +244,34 @@ test('routes end to end: enrol, sign in (custom token + MFA ok cookie), replay r
 
   // A password reset (signed out, the email from the reset link) removes the passkeys made before it.
   const reset = await import('../app/api/auth/passkey/password-changed/route.ts')
+  const settle = async (check: () => Promise<boolean>) => {
+    for (let i = 0; i < 40 && !(await check()); i += 1) await new Promise((resolve) => setTimeout(resolve, 100))
+  }
   const untouched = await reset.POST(routeRequest('/api/auth/passkey/password-changed', { body: { email: `${USER}@example.com` } }))
   assert.equal(untouched.status, 200)
+  await new Promise((resolve) => setTimeout(resolve, 500))
   assert.equal((await store().listForUser(USER)).length, 1, 'no password change yet: nothing removed')
   passwordUpdatedAt[USER] = Date.now() + 1000
-  const unknown = await reset.POST(routeRequest('/api/auth/passkey/password-changed', { body: { email: 'nobody@example.com' } }))
-  assert.deepEqual(await unknown.json(), { ok: true }, 'never says whether the email has an account')
-  const removed = await reset.POST(routeRequest('/api/auth/passkey/password-changed', { body: { email: `${USER}@example.com` } }))
-  assert.deepEqual(await removed.json(), { ok: true })
+  const timed = async (email: string) => {
+    const started = Date.now()
+    const response = await reset.POST(routeRequest('/api/auth/passkey/password-changed', { body: { email } }))
+    return { body: await response.json(), ms: Date.now() - started }
+  }
+  const unknown = await timed('nobody@example.com')
+  const real = await timed(`${USER}@example.com`)
+  assert.deepEqual(unknown.body, { ok: true }, 'never says whether the email has an account')
+  assert.deepEqual(real.body, { ok: true })
+  assert.ok(unknown.ms >= 1450 && real.ms >= 1450, `both answers take the fixed minimum (${unknown.ms} / ${real.ms} ms)`)
+  assert.ok(Math.abs(unknown.ms - real.ms) < 400, 'the lookup and removal run after the answer')
+  await settle(async () => (await store().listForUser(USER)).length === 0)
   assert.equal((await store().listForUser(USER)).length, 0, 'the passkey made before the reset is gone')
+  // Per-email limit: the same address cannot be hammered from many IPs.
+  let limitedStatus = 0
+  for (let i = 0; i < 6 && limitedStatus !== 429; i += 1) {
+    const response = await reset.POST(routeRequest('/api/auth/passkey/password-changed', { body: { email: 'hammered@example.com' } }))
+    limitedStatus = response.status
+  }
+  assert.equal(limitedStatus, 429)
   const after = await signIn(USER)
   assert.equal(after.first.status, 401)
   assert.equal(cookieValue(after.first, okCookieName), '')

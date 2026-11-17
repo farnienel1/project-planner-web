@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { after, NextRequest, NextResponse } from 'next/server'
 
 import { readMfaCookie } from '@/lib/auth/mfa/mfaCookiePolicy'
 import { verifySignedMfaOk } from '@/lib/auth/mfa/mfaCookieVerify'
@@ -43,4 +43,26 @@ export function isPasskeyAccount(value: PasskeyAccountSession | NextResponse): v
 export function passkeyUnavailable(where: string, error: unknown): NextResponse {
   console.error(`[auth/passkey/${where}] unavailable`, error instanceof Error ? error.message.slice(0, 200) : String(error))
   return jsonError('Passkeys are unavailable right now. Sign in with your email and password, or try again shortly.', 503)
+}
+
+/**
+ * Run work after the response is sent (Next `after`, kept alive by the host). Outside a request scope (tests) it
+ * runs detached. Errors are logged, never thrown.
+ */
+export function runAfterResponse(where: string, task: () => Promise<unknown>) {
+  const run = () =>
+    task().catch((error) =>
+      console.error(`[auth/passkey/${where}] after-response task failed`, error instanceof Error ? error.message.slice(0, 200) : String(error))
+    )
+  try {
+    after(run)
+  } catch {
+    void run()
+  }
+}
+
+/** Waits until at least `minimumMs` have passed since `startedAt`, so every answer takes the same time. */
+export async function padToMinimumDuration(startedAt: number, minimumMs: number, nowMs = () => Date.now()) {
+  const remaining = minimumMs - (nowMs() - startedAt)
+  if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining))
 }

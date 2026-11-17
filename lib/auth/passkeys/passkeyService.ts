@@ -127,8 +127,9 @@ export async function pruneStalePasskeys(input: { uid: string; store: PasskeySto
   if (!rows.length) return 0
   const account = await input.auth.lookup(input.uid)
   const stale = account.exists ? rows.filter((row) => passkeyStaleAfterPasswordChange(row, account)) : rows
-  for (const row of stale) await input.store.delete(row.id)
-  return stale.length
+  let removed = 0
+  for (const row of stale) if (await input.store.delete(row.id)) removed += 1
+  return removed
 }
 
 export async function beginPasskeyRegistration(input: {
@@ -257,10 +258,11 @@ export async function beginPasskeyLogin(input: {
 
 export type PasskeyLoginResult =
   | { ok: true; uid: string; customToken: string; next: PostAuthPath }
-  | { ok: false; status: number; error: string; reason: string; uid?: string }
+  | { ok: false; status: number; error: string; reason: string; uid?: string; removed?: number }
 
-function refuse(status: number, reason: string, error = PASSKEY_LOGIN_FAILED_MESSAGE, uid?: string): PasskeyLoginResult {
-  return uid ? { ok: false, status, error, reason, uid } : { ok: false, status, error, reason }
+function refuse(status: number, reason: string, error = PASSKEY_LOGIN_FAILED_MESSAGE, uid?: string, removed?: number): PasskeyLoginResult {
+  const base = { ok: false as const, status, error, reason }
+  return uid ? { ...base, uid, ...(typeof removed === 'number' ? { removed } : {}) } : base
 }
 
 /**
@@ -319,8 +321,9 @@ export async function finishPasskeyLogin(input: {
   if (account.disabled) return refuse(403, 'account-disabled', 'This account has been disabled. Contact your administrator.')
   if (passkeyStaleAfterPasswordChange(stored, account)) {
     // The password was reset or changed after this passkey was added: it no longer counts (and is removed now).
-    await input.store.delete(stored.id)
-    return refuse(401, 'stale-after-password-change', PASSKEYS_REMOVED_AFTER_PASSWORD_MESSAGE, stored.uid)
+    // A failed delete never changes the answer: the passkey is refused either way (and pruned again later).
+    const removed = await input.store.delete(stored.id).then((done) => (done ? 1 : 0), () => 0)
+    return refuse(401, 'stale-after-password-change', PASSKEYS_REMOVED_AFTER_PASSWORD_MESSAGE, stored.uid, removed)
   }
   if (cookie.ownerOnly && !isVerifiedPlatformOwner({ email: account.email, emailVerified: account.emailVerified })) {
     return refuse(403, 'not-owner', PASSKEY_OWNER_ONLY_MESSAGE)
