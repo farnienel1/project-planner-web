@@ -4,7 +4,8 @@
  * UI only. These tests prove:
  *   1. every figure and count of the model is the one the model gave before the change (pinned from the builder on
  *      `main` before this change, run on the same fixture), and the place bookings still add nothing to the labour hours;
- *   2. the new rows carry the same words and hours as a job's row for the same booking;
+ *   2. the new rows carry the same words and hours as a job's row for the same booking, and a booking whose person
+ *      has no name is listed as "Unknown person" like a job's row (owner answer 17 Nov; it was hidden);
  *   3. no raw slot enum ("CUSTOM_HOURS", "FULL_DAY", …) is ever text on Daily Overview — in any row the model gives
  *      the screen, or in the screen's source.
  */
@@ -15,7 +16,7 @@ import path from 'node:path'
 import test from 'node:test'
 import { dateFromDayKey } from '@/lib/ios-parity/londonTime'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
-import { buildDailyOverview, type DailyOverviewModel } from './buildDailyOverview'
+import { buildDailyOverview, UNKNOWN_BOOKED_PERSON, type DailyOverviewModel } from './buildDailyOverview'
 
 const ZONE = 'Europe/London'
 const ORG = 'ORG-1'
@@ -65,7 +66,7 @@ function fixture(withPlaces = true) {
     { id: 'MW', userId: 'u-mgr', date: day, timeSlot: 'FULL_DAY', locationType: 'working_from_home' },
     { id: 'MY', userId: 'u-mgr', date: day, timeSlot: 'CUSTOM', workStartTime: '17:00', workEndTime: '19:00', locationType: 'custom', customLocationName: 'Yard' },
     { id: 'MS', userId: 'u-admin', date: day, timeSlot: 'AM', locationType: 'site_survey' },
-    // A booking whose person has no name: the card always hid it, and still does.
+    // A booking whose person has no name: shown as "Unknown person" (owner answer 17 Nov; it used to be hidden).
     { id: 'MX', userId: 'u-nobody', date: day, timeSlot: 'FULL DAY', locationType: 'office' },
   ]
   return { day, users, project, bookings, managerSiteBookings: [...onJob, ...(withPlaces ? places : [])] }
@@ -180,8 +181,8 @@ test('Daily Overview Other rows: grouped under their place, read like a job row'
   assert.deepEqual(
     m.otherGroups.map((g) => [g.name, g.rows.map((r) => r.booking.id)]),
     [
-      // The nameless office booking stays hidden, as the card always did.
-      ['Office', ['MO']],
+      // The nameless office booking is listed as "Unknown person", as a job's row is (owner answer 17 Nov).
+      ['Office', ['MO', 'MX']],
       ['Working from home', ['MW']],
       ['Yard', ['MY']],
     ]
@@ -194,6 +195,10 @@ test('Daily Overview Other rows: grouped under their place, read like a job row'
   assert.equal(office.pillText, jobRow.pillText)
   assert.equal(office.cell.tone, jobRow.cell.tone)
   assert.deepEqual(office.bookingParts, jobRow.bookingParts)
+  const unknown = m.otherGroups[0].rows[1]
+  assert.equal(unknown.name, UNKNOWN_BOOKED_PERSON)
+  assert.deepEqual(unknown.bookingParts, [{ shift: 'Full day', times: null }])
+  assert.equal(unknown.pillText, '8.5h')
   assert.deepEqual(m.otherGroups[1].rows[0].bookingParts, [{ shift: 'Full day', times: null }])
   assert.equal(m.otherGroups[2].rows[0].cell.tone, 'otOnly')
   assert.deepEqual(m.siteSurveyRows.map((r) => [r.booking.id, r.bookingParts[0].shift, r.cell.tone]), [['MS', 'Morning (AM)', 'halfDay']])
@@ -205,7 +210,7 @@ const RAW_SLOT = /\b[A-Z]+_[A-Z_]+\b|\b(?:FULL DAY|CUSTOM HOURS|CUSTOM|FULL|AM|P
 test('Daily Overview: no raw slot enum is text in any row the screen renders', () => {
   const m = model()
   const rows = [...m.projectCards.flatMap((c) => c.people), ...m.otherGroups.flatMap((g) => g.rows), ...m.siteSurveyRows]
-  assert.equal(rows.length, 6)
+  assert.equal(rows.length, 7)
   for (const row of rows) {
     const shown = [row.name, row.pillText, ...row.bookingParts.flatMap((p) => [p.shift, p.times ?? ''])]
     for (const text of shown) {

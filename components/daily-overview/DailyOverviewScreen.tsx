@@ -154,8 +154,9 @@ export function DailyOverviewScreen() {
           multiplier: model.overtimeMultiplier,
           breakHours: model.overtimeBreakHours,
         }) || '0h OT'
-  const openManagerBooking = (booking: ManagerSiteBooking) =>
-    setEditingRow(managerBookingToTarget(booking, personName(booking.userId, users, userIdAliases)))
+  // `name`: the row's own name ("Unknown person" when the person has none), so the sheet says who it is about.
+  const openManagerBooking = (booking: ManagerSiteBooking, name?: string) =>
+    setEditingRow(managerBookingToTarget(booking, name || personName(booking.userId, users, userIdAliases)))
 
   return (
     <>
@@ -537,7 +538,7 @@ function PersonRow({ row, onOpen }: { row: OverviewPersonRow; onOpen?: () => voi
  * and its times on two lines (`bookingTimesParts`), the tile kind (`scheduleCellKind`, `JOB_SCHEDULE_LEGEND` words),
  * the standard / overtime bar and the hours pill (`bookingHoursLabel`). The whole row opens the booking, as before.
  */
-function PlaceRow({ row, onOpen }: { row: OverviewPlaceRow; onOpen?: (booking: ManagerSiteBooking) => void }) {
+function PlaceRow({ row, onOpen }: { row: OverviewPlaceRow; onOpen?: (booking: ManagerSiteBooking, name?: string) => void }) {
   const kind = CELL_LABELS[row.cell.tone]
   const barTotal = row.cell.standardHours + row.cell.overtimeHours
   const stdWidth = barTotal > 0 ? (100 * row.cell.standardHours) / barTotal : 0
@@ -582,7 +583,7 @@ function PlaceRow({ row, onOpen }: { row: OverviewPlaceRow; onOpen?: (booking: M
       onClick={(event) => {
         event.preventDefault()
         event.stopPropagation()
-        onOpen(row.booking)
+        onOpen(row.booking, row.name)
       }}
       aria-label={`Change booking for ${row.name}`}
     >
@@ -593,7 +594,7 @@ function PlaceRow({ row, onOpen }: { row: OverviewPlaceRow; onOpen?: (booking: M
   )
 }
 
-function PlaceList({ rows, onOpen }: { rows: OverviewPlaceRow[]; onOpen?: (booking: ManagerSiteBooking) => void }) {
+function PlaceList({ rows, onOpen }: { rows: OverviewPlaceRow[]; onOpen?: (booking: ManagerSiteBooking, name?: string) => void }) {
   return (
     <div className="pu-list">
       {rows.map((row) => (
@@ -611,7 +612,7 @@ function OtherBlock({
   groups: { name: string; rows: OverviewPlaceRow[] }[]
   /** Distinct people with an Office, Working from home or custom-place booking (the card's count, unchanged). */
   people: number
-  onOpen?: (booking: ManagerSiteBooking) => void
+  onOpen?: (booking: ManagerSiteBooking, name?: string) => void
 }) {
   return (
     <Card title="Other" count={`${people} person${people === 1 ? '' : 's'}`}>

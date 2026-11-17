@@ -185,7 +185,7 @@ export type DailyOverviewModel = {
   customGroups: { name: string; bookings: ManagerSiteBooking[] }[]
   /**
    * Display only (owner report 17 Nov): the "Other" card's rows under their place — Office, Working from home, then
-   * each custom place by name — built like a job's rows. A booking whose person has no name is left out, as before.
+   * each custom place by name — built like a job's rows. A booking whose person has no name is "Unknown person".
    */
   otherGroups: { name: string; rows: OverviewPlaceRow[] }[]
   /** Display only: the "Site survey" card's rows, built like `otherGroups`. */
@@ -697,11 +697,13 @@ export function buildDailyOverview(params: {
   // Owner report (17 Nov 2026): the Other and Site survey rows read like a job's rows — shift and times
   // (`bookingTimesParts`), the tile kind (`scheduleCellHours` → `scheduleCellKind`) and the pay rule's hours
   // (`bookingHoursLabel`) — never the stored slot word ("CUSTOM_HOURS"). Display only: no figure above reads them.
-  // The name is the one the card always showed (the account by any id); a booking with none stays hidden.
+  // The person is resolved exactly as a job's manager row is (`userById`, then `findUserByAnyId` with the roster's
+  // aliases); a booking whose person has no name shows as "Unknown person" — never hidden (owner answer 17 Nov,
+  // guardrail 3: such rows used to be left off these two cards).
   const placeRows = (list: ManagerSiteBooking[]): OverviewPlaceRow[] =>
     list.flatMap((b) => {
-      const name = rosterDisplayName(findUserByAnyId(params.users, b.userId, params.userIdAliases))
-      if (!name) return []
+      const user = userById.get(b.userId) || findUserByAnyId(params.users, b.userId, userIdAliases)
+      const name = rosterDisplayName(user) || UNKNOWN_BOOKED_PERSON
       const priced = bookingPayrollHours({ ...b, policy, date: params.day, timeZone: zone })
       const shown = bookingHoursLabel(priced)
       const ot = payrollMultipliedHours(priced)
