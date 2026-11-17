@@ -367,6 +367,8 @@ export interface SiteAuditItem {
   comments: string;
   annotations?: string;
   imageURL?: string;
+  /** When the photo was taken (iOS `imageCapturedAt`; web writes it too from 17 Nov). */
+  imageCapturedAt?: Date;
   createdAt: Date;
 }
 

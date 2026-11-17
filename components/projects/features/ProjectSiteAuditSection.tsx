@@ -11,6 +11,7 @@ import { useSiteAuditStore } from '@/lib/stores/siteAuditStore'
 import { isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { EmptyState, LoadingSpinner } from '@/components/dashboard/PageShell'
 import { SiteAuditCreateFlow } from '@/components/projects/siteAudit/SiteAuditCreateFlow'
+import { UnsentSiteAudits } from '@/components/site-audit/UnsentSiteAudits'
 import { buildSiteAuditPdfContextFromProject, openSiteAuditPdf } from '@/lib/siteAudit/siteAuditPdf'
 import type { Project, SiteAudit } from '@/types'
 import {
@@ -174,6 +175,10 @@ export function ProjectSiteAuditSection({ project }: { project: Project }) {
           onCreated={() => loadAudits(organization.id)}
         />
       )}
+
+      <div className="mt-4">
+        <UnsentSiteAudits kind="project" projectId={project.id} />
+      </div>
 
       <div className="mt-4 space-y-2">
         {filteredAudits.length === 0 ? (

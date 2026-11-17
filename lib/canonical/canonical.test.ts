@@ -17830,3 +17830,103 @@ test('1.59.0 review M2: a booking under a managers row with no account stays in 
   // The grid still names it (not "Unknown person").
   assert.equal(R112.scheduleRowPerson('mgr-noacc', { accounts: [], operatives: [], managers: [{ id: 'MGR-NOACC' }] }).unresolved, false)
 })
+
+// MARK: - 1.61.0 site audit report (§29): one layout, nothing clipped, field limits
+
+test('1.61.0 site audit report: the shared fixture lays out exactly as expected (text lines, page breaks, file names)', () => {
+  for (const { name, input } of R112.SITE_AUDIT_REPORT_FIXTURE_INPUTS) {
+    const expected = R112.SITE_AUDIT_REPORT_FIXTURE_EXPECTED.find((row) => row.name === name)
+    assert.ok(expected, name)
+    const layout = R112.siteAuditReportLayout(input)
+    assert.equal(layout.fileName, expected!.fileName, name)
+    assert.equal(layout.pages.length, expected!.pageCount, name)
+    assert.equal(layout.pages.reduce((n, p) => n + p.ops.length, 0), expected!.opCount, name)
+    assert.deepEqual(R112.siteAuditReportTextLines(layout), expected!.pages, name)
+  }
+  const forApps = R112.siteAuditReportFixtureForApps()
+  assert.equal(forApps.inputs.length, R112.SITE_AUDIT_REPORT_FIXTURE_INPUTS.length)
+  assert.equal(forApps.expected.length, forApps.inputs.length)
+})
+
+test('1.61.0 site audit report: footers read "Page n of N" with the real total (owner bug: "Page 2 of 2" on 3 pages)', () => {
+  const layout = R112.siteAuditReportLayout(R112.SITE_AUDIT_REPORT_FIXTURE_INPUTS[0].input)
+  const total = layout.pages.length
+  assert.ok(total > 1)
+  layout.pages.forEach((page, index) => {
+    assert.ok(R112.siteAuditReportTextLines({ ...layout, pages: [page] })[0].includes(`Page ${index + 1} of ${total}`))
+  })
+})
+
+test('1.61.0 site audit report: no field text is dropped or clipped, and nothing is drawn off the page', () => {
+  const squash = (value: string) => value.replace(/\s+/g, '')
+  for (const { name, input } of R112.SITE_AUDIT_REPORT_FIXTURE_INPUTS) {
+    const layout = R112.siteAuditReportLayout(input)
+    // Field values are the 10.5-point lines and titles the 12-point lines (footers and "Continued" headers between
+    // the parts of a flowing card are other sizes).
+    const textOfSize = (size: number) =>
+      squash(layout.pages.flatMap((page) => page.ops.flatMap((op) => (op.kind === 'text' && op.size === size ? [op.text] : []))).join(''))
+    const values = textOfSize(10.5)
+    const titles = textOfSize(12)
+    for (const item of input.audit.items) {
+      for (const field of ['title', 'location', 'assignee', 'comments', 'annotations'] as const) {
+        const value = String(item[field] ?? '').trim()
+        if (value) assert.ok((field === 'title' ? titles : values).includes(squash(R112.siteAuditReportText(value))), `${name} ${item.id} ${field}`)
+      }
+    }
+    for (const page of layout.pages) {
+      for (const op of page.ops) {
+        if (op.kind === 'text') {
+          assert.ok(op.baseline <= layout.page.height, `${name} text below the page`)
+          assert.ok(op.x + R112.siteAuditReportTextWidth(op.text, op.size, op.bold) <= layout.page.width - 31, `${name} text past the right margin: ${op.text}`)
+        }
+        if (op.kind === 'rect' || op.kind === 'image') assert.ok(op.y + op.h <= layout.page.height + 0.01, `${name} ${op.kind} below the page`)
+      }
+      // Body content stays above the footer line.
+      const footer = layout.page.height - 60
+      for (const op of page.ops) {
+        if (op.kind === 'image') assert.ok(op.y + op.h <= footer, `${name} photo over the footer`)
+      }
+    }
+  }
+})
+
+test('1.61.0 site audit report: photos are whole (aspect kept), at most 200 wide and 240 tall', () => {
+  assert.deepEqual(R112.siteAuditReportPhotoBox({ width: 1170, height: 2532 }), { w: 110.9, h: 240 })
+  assert.deepEqual(R112.siteAuditReportPhotoBox({ width: 4032, height: 3024 }), { w: 200, h: 150 })
+  assert.deepEqual(R112.siteAuditReportPhotoBox({ width: 4000, height: 600 }), { w: 200, h: 30 })
+  assert.equal(R112.siteAuditReportPhotoBox(null), null)
+})
+
+test('1.61.0 site audit report: text the standard fonts cannot draw is replaced, never dropped; long words break', () => {
+  assert.equal(R112.siteAuditReportText('Café Zoë — £5 “ok”'), 'Café Zoë — £5 “ok”')
+  assert.equal(R112.siteAuditReportText('Łódź'), 'Lódz')
+  assert.equal(R112.siteAuditReportText('Snag 🚧!'), 'Snag ?!')
+  assert.equal(R112.siteAuditReportText('a\r\nb\tc'), 'a\nb c')
+  const lines = R112.wrapSiteAuditReportText(`https://example.com/${'x'.repeat(400)}`, 10, 100)
+  assert.ok(lines.length > 5)
+  assert.ok(lines.every((line) => R112.siteAuditReportTextWidth(line, 10) <= 100.01))
+  assert.equal(lines.join(''), `https://example.com/${'x'.repeat(400)}`)
+  assert.deepEqual(R112.wrapSiteAuditReportText('one\n\ntwo', 10, 300), ['one', '', 'two'])
+})
+
+test('1.61.0 site audit report: item rows, order, labels and empty values (owner Q2, Q3, Q5) and the taken time (Q1)', () => {
+  assert.deepEqual(
+    R112.siteAuditReportItemFields({ id: 'i', location: 'Hall', comments: '', annotations: '' }).map((row) => [row.label, row.value]),
+    [['Location', 'Hall'], ['Assignee', '—'], ['Comments', '—'], ['Annotations', 'None']]
+  )
+  assert.equal(R112.siteAuditItemTakenMs({ imageCapturedAtMs: 5, createdAtMs: 9 }), 5)
+  assert.equal(R112.siteAuditItemTakenMs({ imageCapturedAtMs: null, createdAtMs: 9 }), 9)
+  assert.equal(R112.siteAuditAuthorSignature('Zoë Anne Smith'), 'Z. Anne Smith')
+  assert.equal(R112.siteAuditReferenceCode({ projectJobNumber: 'C 646', createdAtMs: 1794943857123 }), 'SA-C646-1794943857')
+})
+
+test('1.61.0 site audit field limits: counters, new edits limited, stored longer text never refused', () => {
+  assert.deepEqual(R112.SITE_AUDIT_FIELD_LIMITS, { title: 120, location: 120, assignee: 80, comments: 2000, annotations: 2000, customTitle: 120 })
+  assert.equal(R112.siteAuditFieldCounter('title', 'abc').label, '3 / 120')
+  assert.equal(R112.siteAuditFieldLength('🚧🚧'), 2)
+  const long = 'x'.repeat(121)
+  assert.equal(R112.siteAuditFieldCounter('title', long).blocksSave, true)
+  assert.match(R112.siteAuditFieldLimitError({ title: long }) ?? '', /Title can be up to 120 characters \(121 now\)/)
+  assert.equal(R112.siteAuditFieldLimitError({ title: long }, { title: long }), null)
+  assert.equal(R112.siteAuditFieldLimitError({ comments: 'x'.repeat(2000) }), null)
+})

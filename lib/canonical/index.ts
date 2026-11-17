@@ -1800,6 +1800,9 @@ export * from './timesheetEntryEvidence'
 export * from './payeClaimReviews'
 export * from './priceWorkJobNumber'
 export * from './personalSiteAudits'
+export * from './siteAuditReport'
+export * from './siteAuditReportFixtureInputs'
+export * from './siteAuditReportFixture'
 
 // Rulebook 1.30.3 §11: job-manager candidates and how a job's stored managers read now.
 export {

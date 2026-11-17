@@ -23,7 +23,12 @@ import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { prepareAuditPhoto } from '@/lib/siteAudit/prepareAuditPhoto'
 import { uploadLimitError, uploadPickError } from '@/lib/security/uploadLimits'
 import { SITE_AUDIT_TYPES } from '@/components/projects/features/featureUi'
-import { discardPersonalAuditPhotos, listenPersonalSiteAudits, savePersonalSiteAudit, storedFileBytes, storedFileUrl, uploadPersonalAuditPhoto } from '@/lib/payeClaims/payeClaimsData'
+import { listenPersonalSiteAudits, storedFileBytes, storedFileUrl } from '@/lib/payeClaims/payeClaimsData'
+import { sendSiteAudit, useSiteAuditOutbox } from '@/lib/siteAudit/siteAuditSender'
+import { outboxSummary, type SiteAuditOutboxRecord } from '@/lib/siteAudit/siteAuditOutbox'
+import { UnsentSiteAudits } from '@/components/site-audit/UnsentSiteAudits'
+import { SiteAuditFieldCounter } from '@/components/site-audit/SiteAuditFieldCounter'
+import { siteAuditFieldLimitError } from '@/lib/canonical'
 
 import { downloadPdf } from '@/lib/pdf/downloadPdf'
 import { loadExportModule } from '@/lib/pdf/loadExportModule'
@@ -133,6 +138,7 @@ export function PersonalSiteAuditsView({ onBack }: { onBack: () => void }) {
       <button type="button" className="btn primary w-full" onClick={() => setCreating(true)}>
         {PERSONAL_SITE_AUDIT_CREATE_LABEL}
       </button>
+      <UnsentSiteAudits kind="personal" />
       {error ? <p className="muted">{error}</p> : null}
       {!loaded && !error ? <p className="muted">Loading…</p> : null}
       {loaded && audits.length === 0 ? <p className="muted">No personal site audits yet.</p> : null}
@@ -166,6 +172,9 @@ export function PersonalSiteAuditCreateFlow({ onClose }: { onClose: () => void }
   const [items, setItems] = useState<DraftItem[]>([])
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState<string | null>(null)
+  const [auditId] = useState(() => newUuid())
+  const outbox = useSiteAuditOutbox(organization?.id, user?.id, { kind: 'personal' })
+  const sending = outbox.find((record) => record.id === auditId)
   const itemsRef = useRef(items)
   itemsRef.current = items
   useEffect(() => () => itemsRef.current.forEach((item) => URL.revokeObjectURL(item.previewUrl)), [])
@@ -212,25 +221,43 @@ export function PersonalSiteAuditCreateFlow({ onClose }: { onClose: () => void }
       setError(shapeError)
       return
     }
-    setError(null)
-    const auditId = newUuid()
-    const uploaded: Array<{ id: string; title: string; location: string; comments: string; imagePath: string; takenAtMs: number }> = []
-    try {
-      for (let index = 0; index < items.length; index += 1) {
-        const item = items[index]
-        setSaving(`Uploading photo ${index + 1} of ${items.length}`)
-        const imagePath = await uploadPersonalAuditPhoto(organization.id, auditId, item.photo, item.photo.name)
-        uploaded.push({ id: item.id, title: item.title, location: item.location, comments: item.comments, imagePath, takenAtMs: item.takenAt.getTime() })
-      }
-      setSaving('Saving audit')
-      await savePersonalSiteAudit(organization.id, auditId, { jobNumber, jobName, type, customTitle, date, authorName, items: uploaded })
-      onClose()
-    } catch (e: unknown) {
-      await discardPersonalAuditPhotos(uploaded.map((item) => item.imagePath))
-      setError(e instanceof Error ? e.message : 'The audit could not be saved.')
-    } finally {
-      setSaving(null)
+    const limitError =
+      siteAuditFieldLimitError({ customTitle }) ?? items.map((item) => siteAuditFieldLimitError({ title: item.title, location: item.location, comments: item.comments })).find((m) => m) ?? null
+    if (limitError) {
+      setError(limitError)
+      return
     }
+    setError(null)
+    // Owner bug 17 Nov: kept in this browser before any upload; listed as "Not sent" with Retry until saved.
+    const record: SiteAuditOutboxRecord = {
+      id: auditId,
+      kind: 'personal',
+      organizationId: organization.id,
+      userId: user.id,
+      createdAtMs: Date.now(),
+      updatedAtMs: Date.now(),
+      meta: { type, customTitle, date, authorName, jobNumber, jobName },
+      items: items.map((item) => ({
+        id: item.id,
+        title: item.title,
+        location: item.location,
+        comments: item.comments,
+        assignee: '',
+        annotations: '',
+        takenAtMs: item.takenAt.getTime(),
+        photo: item.photo,
+        fileName: item.photo.name,
+        upload: { itemId: item.id, status: 'pending', progress: 0, attempts: 0 },
+      })),
+    }
+    setSaving('Uploading photos')
+    const result = await sendSiteAudit(record)
+    setSaving(null)
+    if (result.saved) {
+      onClose()
+      return
+    }
+    setError(`${result.error ?? 'The audit was not sent.'} It is kept on this device as "Not sent" — you can close this and retry from the list.`)
   }
 
   return (
@@ -265,7 +292,8 @@ export function PersonalSiteAuditCreateFlow({ onClose }: { onClose: () => void }
         </label>
         <label className="small">
           Title (optional)
-          <input className="input" value={customTitle} onChange={(e) => setCustomTitle(e.target.value)} maxLength={200} />
+          <input className="input" value={customTitle} onChange={(e) => setCustomTitle(e.target.value)} />
+          <SiteAuditFieldCounter field="customTitle" value={customTitle} />
         </label>
         <label className="small">
           Date
@@ -275,9 +303,12 @@ export function PersonalSiteAuditCreateFlow({ onClose }: { onClose: () => void }
           <div key={item.id} className="card pad stack" style={{ gap: 6 }}>
             <span className="small muted">PHOTO {index + 1} · Taken {format(item.takenAt, 'd MMM yyyy, HH:mm')}</span>
             <img src={item.previewUrl} alt="" className="w-full rounded-xl object-cover" style={{ maxHeight: 220 }} />
-            <input className="input" placeholder="Title" value={item.title} onChange={(e) => patch(item.id, { title: e.target.value })} />
-            <input className="input" placeholder="Location" value={item.location} onChange={(e) => patch(item.id, { location: e.target.value })} />
-            <textarea className="input" placeholder="Notes" rows={2} value={item.comments} onChange={(e) => patch(item.id, { comments: e.target.value })} />
+            <input className="input" placeholder="Title" aria-label="Title" value={item.title} onChange={(e) => patch(item.id, { title: e.target.value })} />
+            <SiteAuditFieldCounter field="title" value={item.title} />
+            <input className="input" placeholder="Location" aria-label="Location" value={item.location} onChange={(e) => patch(item.id, { location: e.target.value })} />
+            <SiteAuditFieldCounter field="location" value={item.location} />
+            <textarea className="input" placeholder="Comments" aria-label="Comments" rows={2} value={item.comments} onChange={(e) => patch(item.id, { comments: e.target.value })} />
+            <SiteAuditFieldCounter field="comments" value={item.comments} />
             <button type="button" className="btn sm ghost" style={{ color: 'var(--red)' }} onClick={() => setItems((current) => current.filter((row) => row.id !== item.id))}>
               Remove
             </button>
@@ -288,7 +319,7 @@ export function PersonalSiteAuditCreateFlow({ onClose }: { onClose: () => void }
           <input type="file" accept="image/*" multiple className="sr-only" onChange={(e) => { void addPhotos(e.target.files); e.target.value = '' }} />
         </label>
         <button type="button" className="btn primary" disabled={Boolean(saving)} onClick={() => void submit()}>
-          {saving || 'Save audit'}
+          {saving ? (sending ? outboxSummary(sending).label : saving) : 'Save audit'}
         </button>
       </div>
     </div>
