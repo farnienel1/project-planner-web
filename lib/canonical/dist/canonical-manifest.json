@@ -1,7 +1,7 @@
 {
-  "rulebookVersion": "1.61.0",
-  "rulebookSha256": "61d74ad112bde913c8ee9f592d33fc8f4304fd57be9ef40a6170a769d0726431",
-  "bundleSha256": "bcc9774abf1cdc3b4cbf27eba82fac47b944c96cfa1da6d514390e422f7787ce",
+  "rulebookVersion": "1.61.1",
+  "rulebookSha256": "c80d74b81beefb78f8b20db8825679f0635d311b96152ea3bb0549e3636b4eb9",
+  "bundleSha256": "e54d3febbc9ec1b588a9df56773acbbb6652ad12d264fd9b1a5807a7794c1bb1",
   "crossPlatformContractSha256": "8b94c46c4735a448870cfd962ba2097f14c5ede9baf5bc16f180ead937c17f1a",
   "dataParityFixtureSha256": "c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f",
   "exports": [
@@ -511,6 +511,8 @@
     "SITE_AUDIT_REPORT_CONTINUED",
     "SITE_AUDIT_REPORT_FIXTURE_EXPECTED",
     "SITE_AUDIT_REPORT_FIXTURE_INPUTS",
+    "SITE_AUDIT_REPORT_LOGO_BOX",
+    "SITE_AUDIT_REPORT_LOGO_PADDING",
     "SITE_AUDIT_REPORT_PAGE",
     "SMALL_WORKS_TOGGLE_HELP",
     "SMALL_WORKS_TOGGLE_LABEL",
@@ -1666,6 +1668,7 @@
     "siteAuditReportFixtureForApps",
     "siteAuditReportItemFields",
     "siteAuditReportLayout",
+    "siteAuditReportLogoPlacement",
     "siteAuditReportPageLabel",
     "siteAuditReportPhotoBox",
     "siteAuditReportText",

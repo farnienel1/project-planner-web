@@ -350,6 +350,42 @@ function textOps(
 }
 
 /**
+ * The company logo's box at the top right of the report header (owner request 17 Nov): the header's right-hand column,
+ * 110 × 64 points, its right edge on the page margin. The logo is drawn on a white tile (so a dark or transparent logo
+ * still shows on the navy header) with `SITE_AUDIT_REPORT_LOGO_PADDING` around it.
+ */
+export const SITE_AUDIT_REPORT_LOGO_BOX = Object.freeze({
+  x: round(SITE_AUDIT_REPORT_PAGE.width - MARGIN - 110),
+  y: 24,
+  w: 110,
+  h: 64,
+})
+export const SITE_AUDIT_REPORT_LOGO_PADDING = 6
+
+/**
+ * Where the logo goes: fitted whole inside the box less its padding (aspect ratio kept, never stretched or cropped,
+ * scaled up or down to fit), placed at the top right of the box, on a white tile just big enough for it. Null when
+ * there is no usable logo (none set, or the app could not load it): the report then shows the initials badge.
+ */
+export function siteAuditReportLogoPlacement(
+  logo: { width: number; height: number } | null | undefined
+): { tile: { x: number; y: number; w: number; h: number }; image: { x: number; y: number; w: number; h: number } } | null {
+  if (!logo || !(logo.width > 0) || !(logo.height > 0) || !Number.isFinite(logo.width) || !Number.isFinite(logo.height)) return null
+  const box = SITE_AUDIT_REPORT_LOGO_BOX
+  const pad = SITE_AUDIT_REPORT_LOGO_PADDING
+  const scale = Math.min((box.w - pad * 2) / logo.width, (box.h - pad * 2) / logo.height)
+  const w = round(logo.width * scale)
+  const h = round(logo.height * scale)
+  const tileW = round(w + pad * 2)
+  const tileH = round(h + pad * 2)
+  const tileX = round(box.x + box.w - tileW)
+  return {
+    tile: { x: tileX, y: box.y, w: tileW, h: tileH },
+    image: { x: round(tileX + pad), y: round(box.y + pad), w, h },
+  }
+}
+
+/**
  * The whole report, page by page. Pure: the same input gives the same pages on every platform. Photos and the logo
  * are referred to by `ref` (the item id, or 'logo'); the app draws its own copy of each picture into the box.
  */
@@ -392,11 +428,10 @@ export function siteAuditReportLayout(input: SiteAuditReportInput): SiteAuditRep
   hy = textOps(b.ops, subtitleLines, MARGIN, hy + 4, 12, 15, false, C.whiteSoft)
   textOps(b.ops, customLines, MARGIN, hy, 10.5, 13, false, C.whiteSoft)
   const logoBox = { x: W - 104, y: 24, w: 72, h: 64 }
-  if (input.logo && input.logo.width > 0 && input.logo.height > 0) {
-    const scale = Math.min(logoBox.w / input.logo.width, logoBox.h / input.logo.height)
-    const w = input.logo.width * scale
-    const h = input.logo.height * scale
-    b.ops.push({ kind: 'image', ref: 'logo', x: round(logoBox.x + (logoBox.w - w) / 2), y: round(logoBox.y + (logoBox.h - h) / 2), w: round(w), h: round(h) })
+  const placement = siteAuditReportLogoPlacement(input.logo)
+  if (placement) {
+    b.ops.push({ kind: 'rect', ...placement.tile, fill: C.white, radius: 6 })
+    b.ops.push({ kind: 'image', ref: 'logo', ...placement.image })
   } else {
     b.ops.push({ kind: 'rect', ...logoBox, fill: C.accent, radius: 10 })
     const initials = siteAuditReportText(

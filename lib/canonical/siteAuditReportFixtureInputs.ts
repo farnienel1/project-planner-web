@@ -104,4 +104,30 @@ export const SITE_AUDIT_REPORT_FIXTURE_INPUTS: ReadonlyArray<{ name: string; inp
       },
     },
   },
+  ...(
+    [
+      // Owner request 17 Nov: the company logo at the top right. A wide banner and a tall mark are fitted whole;
+      // a missing logo, or one the app could not load (it passes null), shows the initials badge.
+      ['logo-very-wide', { width: 2400, height: 200 }],
+      ['logo-very-tall', { width: 200, height: 2400 }],
+      ['logo-missing-or-failed', null],
+    ] as const
+  ).map(([name, logo]) => ({
+    name,
+    input: {
+      timeZone: 'Europe/London',
+      organizationName: 'Raccord MEP',
+      clientName: 'RED Construction',
+      logo,
+      audit: {
+        projectJobNumber: 'C646',
+        projectName: '1 Carnaby Street',
+        type: 'General',
+        authorName: 'Test Admin',
+        dateMs: Date.UTC(2026, 10, 17),
+        createdAtMs: 1794943857000,
+        items: [{ id: 'l1', title: 'Issue 1', createdAtMs: AT, photo: SQUARE }],
+      },
+    },
+  })),
 ]

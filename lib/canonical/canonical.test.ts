@@ -17930,3 +17930,44 @@ test('1.61.0 site audit field limits: counters, new edits limited, stored longer
   assert.equal(R112.siteAuditFieldLimitError({ title: long }, { title: long }), null)
   assert.equal(R112.siteAuditFieldLimitError({ comments: 'x'.repeat(2000) }), null)
 })
+
+test('1.61.0 site audit report: the company logo at the top right, fitted whole; the initials badge otherwise', () => {
+  const box = R112.SITE_AUDIT_REPORT_LOGO_BOX
+  const pad = R112.SITE_AUDIT_REPORT_LOGO_PADDING
+  const right = box.x + box.w
+  const close = (a: number, b: number) => Math.abs(a - b) < 0.02
+  const cases: [string, { width: number; height: number }][] = [
+    ['landscape', { width: 400, height: 300 }],
+    ['very wide', { width: 2400, height: 200 }],
+    ['very tall', { width: 200, height: 2400 }],
+    ['tiny', { width: 10, height: 10 }],
+  ]
+  for (const [name, logo] of cases) {
+    const placed = R112.siteAuditReportLogoPlacement(logo)
+    assert.ok(placed, name)
+    // Aspect ratio kept (never stretched), fits inside the box less its padding (never cropped).
+    assert.ok(Math.abs(placed.image.w / placed.image.h - logo.width / logo.height) / (logo.width / logo.height) < 0.02, `${name}: aspect`)
+    assert.ok(placed.image.w <= box.w - pad * 2 + 0.01 && placed.image.h <= box.h - pad * 2 + 0.01, `${name}: fits`)
+    assert.ok(close(placed.image.w, box.w - pad * 2) || close(placed.image.h, box.h - pad * 2), `${name}: fills one side`)
+    // Top right: the tile's right edge on the box's right edge (the page margin), its top on the box's top.
+    assert.ok(close(placed.tile.x + placed.tile.w, right) && placed.tile.y === box.y, `${name}: top right`)
+    assert.ok(close(right, R112.SITE_AUDIT_REPORT_PAGE.width - 32), `${name}: right margin`)
+  }
+  for (const bad of [null, undefined, { width: 0, height: 10 }, { width: Number.NaN, height: 10 }]) {
+    assert.equal(R112.siteAuditReportLogoPlacement(bad), null)
+  }
+  const fixture = R112.siteAuditReportFixtureForApps()
+  const ops = (name: string) => {
+    const entry = fixture.inputs.find((row) => row.name === name)!
+    return R112.siteAuditReportLayout(entry.input).pages[0].ops
+  }
+  for (const name of ['logo-very-wide', 'logo-very-tall', 'owner-c646']) {
+    const logoOps = ops(name).filter((op) => op.kind === 'image' && op.ref === 'logo')
+    assert.equal(logoOps.length, 1, `${name}: one logo drawn`)
+    assert.ok(!ops(name).some((op) => op.kind === 'text' && op.text === 'RM'), `${name}: no initials badge`)
+  }
+  // No logo, or one the app could not load (null): the initials badge, never an empty box.
+  const missing = ops('logo-missing-or-failed')
+  assert.ok(!missing.some((op) => op.kind === 'image' && op.ref === 'logo'))
+  assert.ok(missing.some((op) => op.kind === 'text' && op.text === 'RM'))
+})

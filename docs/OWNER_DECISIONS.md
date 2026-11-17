@@ -689,18 +689,22 @@ UI only, web only (`docs/design/user-profile-ui/user-profile-ui-spec.md`; branch
 | 17 Nov | **Q4 yes:** the fixed tagline "Mechanical & Electrical Contractors" is removed from both apps' reports. | done (1.61.0) |
 | 17 Nov | **Q5 yes:** empty values print "—" (Annotations "None"). | done (1.61.0) |
 | 17 Nov | **The iOS and web PDFs are identical** for the same audit: one shared layout (`siteAuditReportLayout`) both apps draw, with a shared fixture both apps' tests check (same text lines and page breaks). Cards grow and flow onto the next page; nothing is clipped; photos are whole; "Page n of N" is correct. | done web + rulebook (1.61.0); iOS (ios-site-audit-robust) |
+| 17 Nov | **The company logo at the top right of the site audit report** (organisation `companyLogoURL`), identical on both apps: fitted whole inside a 110 × 64 point box at the top right (aspect kept, never stretched or cropped); the initials badge only when there is no logo or it cannot be loaded (a timeout or error never blocks the PDF). Box and placement in the rulebook (`SITE_AUDIT_REPORT_LOGO_BOX`, `siteAuditReportLogoPlacement`), in the shared fixture (wide, tall, missing / failed). | done web + rulebook (1.61.0); iOS (ios-site-audit-robust) |
 | 17 Nov | **Field limits with a live counter** on both apps' editors, new edits only (stored longer text is never cut or refused, and prints whole). | done web + rulebook (1.61.0, `SITE_AUDIT_FIELD_LIMITS`); iOS (ios-site-audit-robust) |
 
 ## 1.61.0 judgement calls (owner to confirm)
 
 | Date | Choice | Status |
 |---|---|---|
-| 17 Nov | Limits: title 120, location 120, assignee 80, comments 2000, annotations 2000, the audit's own title 120 characters (an emoji counts as one). Personal site audits use the same limits (their custom title was 200 on web). | done, owner to confirm |
-| 17 Nov | Characters the standard PDF fonts cannot draw print as "?" on both apps (emoji, non-Latin scripts); accented letters without their own glyph print without the accent (Ł → L). Needed so both apps' PDFs are identical; nothing is dropped. | done, owner to confirm |
-| 17 Nov | Photos in the report are at most 200 points wide and 240 tall (about a third of the page), so two portrait-photo items fit a page; a phone screenshot prints about 11 cm tall. | done, owner to confirm |
+| 17 Nov | Limits: title 120, location 120, assignee 80, comments 2000, annotations 2000, the audit's own title 120 characters (an emoji counts as one). Personal site audits use the same limits (their custom title was 200 on web). | done, **owner confirmed 17 Nov** |
+| 17 Nov | Characters the standard PDF fonts cannot draw print as "?" on both apps (emoji, non-Latin scripts); accented letters without their own glyph print without the accent (Ł → L). Needed so both apps' PDFs are identical; nothing is dropped. | done, **owner confirmed 17 Nov** |
+| 17 Nov | Photos in the report are at most 200 points wide and 240 tall (about a third of the page), so two portrait-photo items fit a page; a phone screenshot prints about 11 cm tall. | done, **owner confirmed 17 Nov** |
 | 17 Nov | A card that does not fit the rest of a page moves whole to the next page; only a card taller than a page splits, its later parts headed "Continued from the previous page". | done, owner to confirm |
 | 17 Nov | Web's report button now downloads the PDF (it opened a print page); web has no separate preview. | done, owner to confirm |
-| 17 Nov | Web keeps an unsent audit in the browser it was made in, for that signed-in person only; it is not removed on sign-out (another person signing in never sees it). On a shared computer the photos stay in that browser until sent or discarded. | done, owner to confirm |
+| 17 Nov | When no logo is shown, the badge reads the company name's initials on both apps (the iPhone used the document abbreviation from Company details). | done, **owner confirmed 17 Nov** |
+| 17 Nov | The logo is drawn on a small white tile with 6 points of padding, so a dark or transparent logo still shows on the navy header; the tile is only as big as the fitted logo. | done, owner to confirm |
+| 17 Nov | Logo files: PNG and JPEG are drawn as they are; WebP and HEIC are converted (web: redrawn as PNG when the browser can read them; iPhone: read by the system); a PDF logo is not drawn — the initials badge shows instead. The logo is fetched for at most 10 seconds (web) / 15 seconds (iPhone), then the badge. | done, owner to confirm |
+| 17 Nov | Web keeps an unsent audit in the browser it was made in, for that signed-in person only; it is not removed on sign-out (another person signing in never sees it). On a shared computer the photos stay in that browser until sent or discarded. | done, **owner confirmed 17 Nov** |
 
 ## 1.51.0 judgement calls (owner to confirm)
 

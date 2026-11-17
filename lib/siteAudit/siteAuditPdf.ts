@@ -7,6 +7,7 @@
 import { siteAuditReportLayout, type SiteAuditReportInput } from '@/lib/canonical'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { downloadPdf } from '@/lib/pdf/downloadPdf'
+import { loadCompanyLogo } from '@/lib/pdf/companyLogo'
 import { withTimeout } from '@/lib/client/withTimeout'
 import { renderSiteAuditReportPdf, type SiteAuditReportImage } from '@/lib/siteAudit/siteAuditReportPdf'
 import type { Project, SiteAudit } from '@/types'
@@ -68,7 +69,15 @@ async function loadPicture(url: string): Promise<LoadedPicture | null> {
 export async function downloadSiteAuditPdf(audit: SiteAudit, context: SiteAuditPdfContext = {}): Promise<void> {
   const pictures = new Map<string, LoadedPicture | null>()
   const loads: Promise<void>[] = []
-  if (context.logoUrl) loads.push(loadPicture(context.logoUrl).then((picture) => void pictures.set('logo', picture)))
+  // The company logo (owner request 17 Nov): the shared loader; any failure, a timeout or a PDF logo gives null and
+  // the rulebook draws the initials badge instead (the PDF is never blocked).
+  if (context.logoUrl) {
+    loads.push(
+      loadCompanyLogo(context.logoUrl).then((logo) =>
+        void pictures.set('logo', logo ? { image: { bytes: logo.bytes, format: logo.format }, width: logo.width, height: logo.height } : null)
+      )
+    )
+  }
   for (const item of audit.items) {
     if (item.imageURL) loads.push(loadPicture(item.imageURL).then((picture) => void pictures.set(item.id, picture)))
   }
