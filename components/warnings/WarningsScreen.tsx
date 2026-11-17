@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import type { OperativeBookingClashWarning } from '@/lib/scheduling/bookingClashUtils'
 import type { ManagerBookingClashWarning } from '@/lib/warnings/managerClashWarnings'
@@ -14,7 +14,7 @@ import { orderWarningListItems } from '@/lib/warnings/warningListOrder'
 import { projectMaterialsPath } from '@/lib/navigation/projectSchedulePaths'
 import { ClashWarningCard } from '@/components/warnings/ClashWarningCard'
 import { displayTitle, type ClashTimelineEntry } from '@/lib/warnings/clashTimeline'
-import { canOpenWarningSettings, hasAdminAccess } from '@/lib/permissions'
+import { canOpenWarningSettings, canViewWarnings, hasAdminAccess } from '@/lib/permissions'
 import type { Operative, User } from '@/types'
 import { editUserHrefForOperative, findUserForOperative } from '@/lib/operatives/operativeRosterUtils'
 import { canOpenOperativeFromWarning } from '@/lib/staff/userEditPermissions'
@@ -24,6 +24,19 @@ import { notifyCompanyActivity } from '@/lib/notifications/companyActivity'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { normalizeDocumentId } from '@/lib/canonical'
 import { feedback } from '@/lib/feedbackSounds/feedback'
+import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
+import { WarningCardActions, WarningDismissButton, WarningDismissDialog } from '@/components/warnings/WarningCardActions'
+import {
+  leaveDismissRequest,
+  managerClashDismissRequest,
+  materialsDismissRequest,
+  operativeClashDismissRequest,
+  runWarningDismiss,
+  unbookedDayDismissRequest,
+  unverifiedDismissRequest,
+  warningRemovedNotice,
+  type WarningDismissRequest,
+} from '@/lib/warnings/warningDismissRequest'
 
 type FilterChip = 'all' | 'clashes' | 'unbooked' | 'leave' | 'materials' | 'qualifications'
 
@@ -53,14 +66,53 @@ function Avatar({ name, size = 32 }: { name: string; size?: number }) {
   )
 }
 
+const WARN_ICON =
+  'M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z'
+
+/** The card header: icon chip, title, then the severity chip and (when allowed) the quiet Dismiss. */
+function CardHeader({
+  icon = WARN_ICON,
+  title,
+  severity,
+  hue,
+  solid,
+  dismiss,
+}: {
+  icon?: string
+  title: string
+  severity: string
+  hue: string
+  solid?: boolean
+  dismiss?: ReactNode
+}) {
+  return (
+    <div className="card-h">
+      <div className="ico-chip sm">
+        <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8} aria-hidden="true">
+          <path strokeLinecap="round" strokeLinejoin="round" d={icon} />
+        </svg>
+      </div>
+      <h2 className="h2 grow" style={{ minWidth: 0 }}>{title}</h2>
+      <span className="wd-head-end">
+        <span className={solid ? 'pill solid' : 'pill'} data-hue={hue}>
+          {severity}
+        </span>
+        {dismiss}
+      </span>
+    </div>
+  )
+}
+
 function UnbookedDayCard({
   date,
   people,
   canBook,
+  onDismiss,
 }: {
   date: Date
   people: UnbookedLabourWarning[]
   canBook: boolean
+  onDismiss?: () => void
 }) {
   const parsed = people.map((person) => ({
     ...parseUnbookedPerson(`${person.operativeName} (missing ${formatWarningHours(person.missingHours)}h)`),
@@ -69,15 +121,12 @@ function UnbookedDayCard({
   }))
   return (
     <section className="card" data-hue="warn">
-      <div className="card-h">
-        <div className="ico-chip sm">
-          <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-          </svg>
-        </div>
-        <h2 className="h2 grow">Unbooked labour</h2>
-        <span className="pill" data-hue="red">HIGH</span>
-      </div>
+      <CardHeader
+        title="Unbooked labour"
+        severity="HIGH"
+        hue="red"
+        dismiss={onDismiss ? <WarningDismissButton onClick={onDismiss} label={`Unbooked labour on ${formatLongDay(date)}`} /> : null}
+      />
       <div className="card-b rows">
         <p className="small" style={{ marginBottom: 4 }}>
           {people.length} {people.length === 1 ? 'person is' : 'people are'} not booked on{' '}
@@ -97,21 +146,25 @@ function UnbookedDayCard({
             ) : null}
           </div>
         ))}
-        <div className="row wrap" style={{ paddingTop: 4 }}>
-          {canBook ? (
-            <Link
-              href={`/dashboard/book-labour?date=${dayKey(date)}&from=warnings&focus=${encodeURIComponent(
-                people.map((person) => person.userId || person.operativeId).filter(Boolean).join(',')
-              )}`}
-              className="btn primary"
-            >
-              Book labour for this day
-            </Link>
-          ) : null}
-          <Link href={`/dashboard/daily-overview?date=${dayKey(date)}`} className="btn">
-            Open daily overview
-          </Link>
-        </div>
+        <WarningCardActions
+          primary={
+            canBook ? (
+              <Link
+                href={`/dashboard/book-labour?date=${dayKey(date)}&from=warnings&focus=${encodeURIComponent(
+                  people.map((person) => person.userId || person.operativeId).filter(Boolean).join(',')
+                )}`}
+                className="btn primary block"
+              >
+                Book labour for this day
+              </Link>
+            ) : null
+          }
+          secondary={[
+            <Link key="day" href={`/dashboard/daily-overview?date=${dayKey(date)}`} className="btn sm">
+              Open daily overview
+            </Link>,
+          ]}
+        />
       </div>
     </section>
   )
@@ -120,105 +173,32 @@ function UnbookedDayCard({
 function MaterialsCard({
   warning,
   smallWorkIds,
-  users,
   onDismiss,
 }: {
   warning: MissedMaterialOrderWarning
   smallWorkIds: ReadonlySet<string>
-  users: User[]
-  onDismiss?: (resolutionKey: string) => Promise<void>
+  onDismiss?: () => void
 }) {
-  const organization = useAuthStore((state) => state.organization)
-  const user = useAuthStore((state) => state.user)
-  const [confirming, setConfirming] = useState(false)
-  const [dismissing, setDismissing] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  // Owner bug 17 Nov: Dismiss used to hide the card on this page only and write nothing, so the count stayed and the
-  // card came back on refresh. It now writes the permanent dismissal iOS writes (`warningResolutions/{warning.id}`,
-  // status `dismissed`, via `onDismiss`); the row leaves the list through `isWarningActive`, never a local flag.
-  async function dismiss() {
-    if (dismissing || !onDismiss) return
-    setDismissing(true)
-    setError(null)
-    try {
-      await onDismiss(warning.id)
-    } catch (caught) {
-      setError(caught instanceof Error && caught.message ? caught.message : 'Could not dismiss this warning. Try again.')
-      setDismissing(false)
-      return
-    }
-    setConfirming(false)
-    setDismissing(false)
-    const name = [user?.firstName, user?.surname].filter(Boolean).join(' ').trim() || user?.email || 'Someone'
-    if (organization?.id) {
-      try {
-        // One row per admin (companyActivityRecipients), never a row without userId (rulebook 1.4.0 §13).
-        await notifyCompanyActivity({
-          organizationId: organization.id,
-          type: 'warning_removed',
-          title: `Warning dismissed by ${name}`,
-          message: `${name} dismissed a materials cut-off warning. Dismissed warnings do not reappear.\n\n${warning.message}`,
-          requiresPermission: 'hasAdminAccess',
-          actor: user,
-          users,
-        })
-      } catch {
-        // The dismissal is saved; a failed notice never undoes it.
-      }
-    }
-  }
-
   return (
     <section className="card" data-hue="sw">
-      <div className="card-h">
-        <div className="ico-chip sm">
-          <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5l-9-4.5L3 7.5m18 0-9 4.5m9-4.5v9l-9 4.5M3 7.5l9 4.5M3 7.5v9l9 4.5m0-9v9" />
-          </svg>
-        </div>
-        <h2 className="h2 grow">{warning.title}</h2>
-        <span className="pill" data-hue="lib">LOW</span>
-      </div>
+      <CardHeader
+        icon="M21 7.5l-9-4.5L3 7.5m18 0-9 4.5m9-4.5v9l-9 4.5M3 7.5l9 4.5M3 7.5v9l9 4.5m0-9v9"
+        title={warning.title}
+        severity="LOW"
+        hue="lib"
+        dismiss={onDismiss ? <WarningDismissButton onClick={onDismiss} label={`${warning.title}, ${warning.projectLabel}`} /> : null}
+      />
       <div className="card-b stack" style={{ gap: 10 }}>
         <p className="small">{warning.message}</p>
         <p><b>{warning.projectLabel}</b></p>
         <p className="muted small">Managers should confirm material lists with site teams.</p>
-        {confirming ? (
-          <div className="stack" style={{ gap: 8 }} role="group" aria-label="Dismiss this warning?">
-            <p className="small"><b>Dismiss this warning?</b></p>
-            <p className="small">
-              Are you sure you would like to dismiss this warning? Any warnings that are dismissed will not reappear again.
-            </p>
-            <p className="muted small">
-              All admins will get a notification with who dismissed it and what was dismissed.
-            </p>
-            {error ? (
-              <p className="small" role="alert" style={{ color: 'var(--red, #b91c1c)' }}>
-                {error}
-              </p>
-            ) : null}
-            <div className="row" style={{ gap: 8 }}>
-              <button type="button" className="btn primary" onClick={() => void dismiss()} disabled={dismissing}>
-                {dismissing ? 'Dismissing…' : 'Dismiss permanently'}
-              </button>
-              <button type="button" className="btn" onClick={() => setConfirming(false)} disabled={dismissing}>
-                Keep warning
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="row" style={{ gap: 8 }}>
-            {onDismiss ? (
-              <button type="button" className="btn" onClick={() => setConfirming(true)}>
-                Dismiss
-              </button>
-            ) : null}
-            <Link href={projectMaterialsPath(warning.projectId, smallWorkIds)} className="btn primary">
+        <WarningCardActions
+          primary={
+            <Link href={projectMaterialsPath(warning.projectId, smallWorkIds)} className="btn primary block">
               Open materials
             </Link>
-          </div>
-        )}
+          }
+        />
       </div>
     </section>
   )
@@ -228,10 +208,12 @@ function LeaveCard({
   warning,
   canBook,
   viewer,
+  onDismiss,
 }: {
   warning: LeaveCoverageWarning
   canBook: boolean
   viewer: User | null
+  onDismiss?: () => void
 }) {
   const isClash = warning.kind === 'leave_clash'
   const hue = isClash ? 'red' : 'warn'
@@ -239,17 +221,17 @@ function LeaveCard({
     `${formatClockMinutes(interval.start)}–${formatClockMinutes(interval.end)}`
   return (
     <section className="card" data-hue={hue}>
-      <div className="card-h">
-        <div className="ico-chip sm">
-          <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364-.707-.707M6.343 6.343l-.707-.707m12.728 0-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-          </svg>
-        </div>
-        <h2 className="h2 grow">{warning.title}</h2>
-        <span className="pill" data-hue={hue}>
-          {isClash ? 'HIGH' : 'MEDIUM'}
-        </span>
-      </div>
+      <CardHeader
+        icon="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364-.707-.707M6.343 6.343l-.707-.707m12.728 0-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"
+        title={warning.title}
+        severity={isClash ? 'HIGH' : 'MEDIUM'}
+        hue={hue}
+        dismiss={
+          onDismiss ? (
+            <WarningDismissButton onClick={onDismiss} label={`${warning.title}, ${warning.personName}, ${formatLongDay(warning.date)}`} />
+          ) : null
+        }
+      />
       <div className="card-b stack" style={{ gap: 10 }}>
         <div className="ritem accent" data-hue={hue} style={{ cursor: 'default' }}>
           <Avatar name={warning.personName} />
@@ -279,24 +261,28 @@ function LeaveCard({
             Working half: {range(warning.workingWindow)} · Not booked: {warning.missing.map(range).join(', ')}
           </p>
         ) : null}
-        <div className="row wrap" style={{ paddingTop: 2 }}>
-          {canBook && !isClash ? (
-            <Link
-              href={`/dashboard/book-labour?date=${warning.dayKey}&from=warnings&focus=${encodeURIComponent(
-                warning.userId || warning.operativeId || ''
-              )}`}
-              className="btn primary"
-            >
-              Book the {warning.leaveSlot === 'PM' ? 'AM' : 'PM'}
-            </Link>
-          ) : null}
-          <Link href={`/dashboard/daily-overview?date=${warning.dayKey}`} className="btn">
-            Open daily overview
-          </Link>
-          <Link href={leaveWarningAnnualLeaveHref(warning, viewer)} className="btn">
-            Annual leave
-          </Link>
-        </div>
+        <WarningCardActions
+          primary={
+            canBook && !isClash ? (
+              <Link
+                href={`/dashboard/book-labour?date=${warning.dayKey}&from=warnings&focus=${encodeURIComponent(
+                  warning.userId || warning.operativeId || ''
+                )}`}
+                className="btn primary block"
+              >
+                Book the {warning.leaveSlot === 'PM' ? 'AM' : 'PM'}
+              </Link>
+            ) : null
+          }
+          secondary={[
+            <Link key="day" href={`/dashboard/daily-overview?date=${warning.dayKey}`} className="btn sm">
+              Open daily overview
+            </Link>,
+            <Link key="leave" href={leaveWarningAnnualLeaveHref(warning, viewer)} className="btn sm">
+              Annual leave
+            </Link>,
+          ]}
+        />
       </div>
     </section>
   )
@@ -315,6 +301,8 @@ function QualificationCard({
 }) {
   const [busy, setBusy] = useState(false)
   const expired = warning.daysUntilExpiry < 0
+  // Unchanged behaviour: an expired qualification is dismissed straight away into `dismissedWarnings` (iOS
+  // `dismissExpiredQualification`, no confirmation sheet and no admin notice); only its button moved to the header.
   const dismiss = async () => {
     if (!onDismiss || busy) return
     setBusy(true)
@@ -326,32 +314,35 @@ function QualificationCard({
   }
   return (
     <section className="card" data-hue="lib">
-      <div className="card-h">
-        <div className="ico-chip sm">
-          <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-          </svg>
-        </div>
-        <h2 className="h2 grow">{warning.title}</h2>
-        <span className="pill" data-hue="lib">LOW</span>
-      </div>
+      <CardHeader
+        title={warning.title}
+        severity="LOW"
+        hue="lib"
+        dismiss={
+          expired && onDismiss ? (
+            <WarningDismissButton
+              onClick={() => void dismiss()}
+              busy={busy}
+              text={busy ? 'Dismissing…' : 'Dismiss'}
+              label={warning.title}
+            />
+          ) : null
+        }
+      />
       <div className="card-b stack" style={{ gap: 10 }}>
         <p>{warning.message}</p>
-        <div className="row" style={{ gap: 8 }}>
-          {expired && onDismiss ? (
-            <button type="button" className="btn" onClick={() => void dismiss()} disabled={busy}>
-              {busy ? 'Dismissing…' : 'Dismiss'}
-            </button>
-          ) : null}
-          {showOpenOperative ? (
-            <Link href={operativeHref} className="btn primary">
-              Open operative
-            </Link>
-          ) : null}
-        </div>
         {expired ? (
           <p className="muted small">Dismissing hides this on web and iOS until a new expiry date is saved.</p>
         ) : null}
+        <WarningCardActions
+          primary={
+            showOpenOperative ? (
+              <Link href={operativeHref} className="btn primary block">
+                Open operative
+              </Link>
+            ) : null
+          }
+        />
       </div>
     </section>
   )
@@ -361,25 +352,22 @@ function LegacyCard({
   title,
   message,
   severity,
+  onDismiss,
 }: {
   title: string
   message: string
   severity: 'high' | 'medium' | 'low'
+  onDismiss?: () => void
 }) {
   const hue = severity === 'high' ? 'red' : severity === 'medium' ? 'warn' : 'lib'
   return (
     <section className="card" data-hue={hue}>
-      <div className="card-h">
-        <div className="ico-chip sm">
-          <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-          </svg>
-        </div>
-        <h2 className="h2 grow">{title}</h2>
-        <span className="pill" data-hue={hue}>
-          {severity.toUpperCase()}
-        </span>
-      </div>
+      <CardHeader
+        title={title}
+        severity={severity.toUpperCase()}
+        hue={hue}
+        dismiss={onDismiss ? <WarningDismissButton onClick={onDismiss} label={`${title}: ${message}`} /> : null}
+      />
       <div className="card-b">
         <p>{message}</p>
       </div>
@@ -431,8 +419,11 @@ export function WarningsScreen({
     pairs?: Array<{ bookingAId: string; bookingBId: string }>
   }) => Promise<void>
   onDismissQualification?: (warning: QualificationExpiryWarning) => Promise<void>
-  /** Permanent dismissal on every device: `warningResolutions/{resolutionKey}` status `dismissed`. Missing → no Dismiss. */
-  onDismissWarning?: (resolutionKey: string) => Promise<void>
+  /**
+   * Permanent dismissal on every device: `warningResolutions/{key}` status `dismissed` for every key of one card, in one
+   * batch. Missing → no Dismiss on any card except expired qualifications (`onDismissQualification`).
+   */
+  onDismissWarning?: (resolutionKeys: string[]) => Promise<void>
   onDeleteBooking: (bookingId: string) => Promise<void>
   onDeleteManagerBooking: (bookingId: string) => Promise<void>
   /** Rulebook §2 (1.33.0): `bookingRemoveAction` is `delete` for this clash row's booking; missing → no remove button. */
@@ -444,6 +435,58 @@ export function WarningsScreen({
   const [busyId, setBusyId] = useState<string | null>(null)
   const canBook = Boolean(user && (hasAdminAccess(user) || user.permissions?.manager))
   const isAdmin = Boolean(user && canOpenWarningSettings(user))
+  const organization = useAuthStore((state) => state.organization)
+  const timeZone = useOrganizationTimeZone()
+  // Admins and managers only (the `warningResolutions` rule is staff writes; iOS `canViewStaffWarnings`).
+  const canDismiss = Boolean(onDismissWarning && user && canViewWarnings(user))
+  const [pendingDismiss, setPendingDismiss] = useState<WarningDismissRequest | null>(null)
+  const [dismissing, setDismissing] = useState(false)
+  const [dismissError, setDismissError] = useState<string | null>(null)
+  const askDismiss = (request: WarningDismissRequest) => () => {
+    if (request.keys.length === 0) return
+    setDismissError(null)
+    setPendingDismiss(request)
+  }
+  const dismissFor = (request: WarningDismissRequest) => (canDismiss ? askDismiss(request) : undefined)
+  const cancelDismiss = useCallback(() => {
+    setPendingDismiss(null)
+    setDismissError(null)
+  }, [])
+
+  // Owner request 17 Nov: the dismissal is written first (every key of the card, one batch); only then are the admins
+  // told (`warning_removed`, `companyActivityRecipients`, the iOS text). A refused write keeps the card and the sheet.
+  async function confirmDismiss() {
+    const request = pendingDismiss
+    if (!request || dismissing || !onDismissWarning) return
+    setDismissing(true)
+    setDismissError(null)
+    const name = [user?.firstName, user?.surname].filter(Boolean).join(' ').trim() || user?.email || 'Someone'
+    const result = await runWarningDismiss({
+      request,
+      write: onDismissWarning,
+      notify: async () => {
+        if (!organization?.id) return
+        const notice = warningRemovedNotice({ actorName: name, request })
+        // One row per admin (companyActivityRecipients), never a row without userId (rulebook 1.4.0 §13).
+        await notifyCompanyActivity({
+          organizationId: organization.id,
+          type: 'warning_removed',
+          title: notice.title,
+          message: notice.message,
+          requiresPermission: 'hasAdminAccess',
+          actor: user,
+          users,
+        })
+      },
+    })
+    setDismissing(false)
+    if (!result.ok) {
+      setDismissError(result.error)
+      return
+    }
+    setPendingDismiss(null)
+  }
+
 
   const unbookedGroups = useMemo(() => groupUnbookedWarningsByDay(unbookedWarnings), [unbookedWarnings])
   const leaveClashCount = leaveWarnings.filter((warning) => warning.kind === 'leave_clash').length
@@ -663,11 +706,20 @@ export function WarningsScreen({
               date={item.group.date}
               people={item.group.people}
               canBook={canBook}
+              onDismiss={dismissFor(unbookedDayDismissRequest(item.group.date, item.group.people, timeZone))}
             />
           )
         }
         if (item.kind === 'leave') {
-          return <LeaveCard key={item.warning.id} warning={item.warning} canBook={canBook} viewer={user} />
+          return (
+            <LeaveCard
+              key={item.warning.id}
+              warning={item.warning}
+              canBook={canBook}
+              viewer={user}
+              onDismiss={dismissFor(leaveDismissRequest(item.warning, timeZone))}
+            />
+          )
         }
         if (item.kind === 'material') {
           return (
@@ -675,8 +727,7 @@ export function WarningsScreen({
               key={item.warning.id}
               warning={item.warning}
               smallWorkIds={smallWorkIds}
-              users={users}
-              onDismiss={onDismissWarning}
+              onDismiss={dismissFor(materialsDismissRequest(item.warning))}
             />
           )
         }
@@ -704,6 +755,7 @@ export function WarningsScreen({
               title="Unverified operative"
               message={item.warning.message}
               severity="low"
+              onDismiss={dismissFor(unverifiedDismissRequest(item.warning))}
             />
           )
         }
@@ -724,6 +776,7 @@ export function WarningsScreen({
               onApprove={() => handleAccept(item.warning)}
               onRemove={handleRemoveEntry}
               canRemove={canRemoveClashEntry}
+              onDismiss={dismissFor(managerClashDismissRequest(item.warning, timeZone))}
             />
           )
         }
@@ -742,9 +795,19 @@ export function WarningsScreen({
             onApprove={() => handleAccept(item.warning)}
             onRemove={handleRemoveEntry}
             canRemove={canRemoveClashEntry}
+            onDismiss={dismissFor(operativeClashDismissRequest(item.warning, timeZone))}
           />
         )
       })}
+      {pendingDismiss ? (
+        <WarningDismissDialog
+          request={pendingDismiss}
+          busy={dismissing}
+          error={dismissError}
+          onCancel={cancelDismiss}
+          onConfirm={() => void confirmDismiss()}
+        />
+      ) : null}
     </div>
   )
 }

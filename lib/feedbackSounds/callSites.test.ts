@@ -58,7 +58,7 @@ const SITES: Site[] = [
   { file: 'app/dashboard/warnings/page.tsx', fn: 'handleAcceptClash', success: [], after: ['approveBookingClashPairs', 'approveBookingClash'], refusal: true, rethrow: true },
   { file: 'app/dashboard/warnings/page.tsx', fn: 'handleDismissQualification', success: [], after: ['dismissQualificationWarning'], refusal: true, rethrow: true },
   // Owner bug 17 Nov: the materials (and any) Dismiss writes `warningResolutions` here; the card plays nothing itself.
-  { file: 'app/dashboard/warnings/page.tsx', fn: 'handleDismissWarning', success: [], after: ['dismissWarningResolution'], refusal: true, rethrow: true },
+  { file: 'app/dashboard/warnings/page.tsx', fn: 'handleDismissWarning', success: [], after: ['dismissWarningResolutions'], refusal: true, rethrow: true },
   { file: 'components/annual-leave/OperativeAnnualLeaveCalendar.tsx', fn: 'bookLeave', success: ['leaveBooked', 'leaveRequested'], after: ['createRequests'], notices: ['notifyLeaveChangedForPerson'], refusal: true, rethrow: true },
   { file: 'components/annual-leave/OperativeAnnualLeaveCalendar.tsx', fn: 'confirmChange', success: ['leaveEdited'], after: ['saveBooking'], refusal: true, rethrow: true },
   { file: 'components/annual-leave/OperativeAnnualLeaveCalendar.tsx', fn: 'approveRequest', success: ['leaveApproved'], after: ['decideBooking'], notices: ['notifyHolidayRequestDecisionToUser'], refusal: true, rethrow: true },

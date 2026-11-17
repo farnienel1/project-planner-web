@@ -1601,3 +1601,53 @@ html {
     @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ios-blue;
   }
 }
+
+/* ---------- Warning card actions and the Dismiss sheet (owner request 17 Nov) ----------
+   One pattern on every Warnings card: one full-width primary action, then equal-width secondary actions, and a quiet
+   Dismiss in the card header beside the severity chip. */
+.wd-acts { display: flex; flex-direction: column; gap: 8px; padding-top: 4px; }
+.wd-acts .btn.block { white-space: normal; text-align: center; line-height: 1.2; }
+.wd-sec { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+.wd-sec > .btn { width: 100%; min-width: 0; white-space: normal; text-align: center; line-height: 1.2; height: auto; min-height: 40px; padding: 8px 12px; }
+.wd-quiet {
+  display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 10px; border: 0; border-radius: 9px;
+  background: transparent; color: var(--ink2); font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.wd-quiet:hover { background: var(--soft2); color: var(--ink); }
+.wd-quiet:disabled { opacity: 0.45; cursor: not-allowed; }
+.wd-quiet:focus-visible, .wd-sheet .btn:focus-visible, .wd-acts .btn:focus-visible {
+  outline: 2px solid var(--blue); outline-offset: 2px;
+}
+.wd-quiet svg { width: 15px; height: 15px; flex-shrink: 0; }
+.card-h .wd-head-end { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
+.wd-backdrop { position: fixed; inset: 0; z-index: 100; background: rgba(10, 20, 40, 0.45); backdrop-filter: blur(3px); border: 0; }
+.wd-sheet {
+  position: fixed; z-index: 101; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(460px, calc(100vw - 32px)); max-height: 90vh; overflow-y: auto;
+  background: var(--bg, var(--soft)); color: var(--ink); border-radius: 24px; box-shadow: var(--sh-pop);
+  padding: 26px 22px 22px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px;
+}
+.wd-sheet .wd-icon {
+  width: 64px; height: 64px; border-radius: 20px; display: grid; place-items: center; color: #fff;
+  background: linear-gradient(180deg, #E5534B, #B3261E); box-shadow: 0 8px 20px rgba(179, 38, 30, 0.3); margin-bottom: 6px;
+}
+.wd-sheet .wd-icon svg { width: 32px; height: 32px; }
+.wd-sheet h2 { font-size: 21px; font-weight: 800; margin: 0; }
+.wd-sheet .wd-body { color: var(--ink2); font-size: 14.5px; line-height: 1.45; margin: 0 6px; }
+.wd-sheet .wd-summary {
+  align-self: stretch; text-align: left; background: var(--card); border-radius: 16px; padding: 14px 16px; margin-top: 8px;
+  display: flex; flex-direction: column; gap: 8px; box-shadow: var(--sh);
+}
+.wd-sheet .wd-summary b { font-size: 15.5px; }
+.wd-sheet .wd-summary p { margin: 0; color: var(--ink2); font-size: 14px; line-height: 1.4; white-space: pre-line; overflow-wrap: anywhere; }
+.wd-sheet .wd-note { display: flex; gap: 8px; align-items: flex-start; color: var(--ink2); font-size: 13px; line-height: 1.4; }
+.wd-sheet .wd-note svg { width: 15px; height: 15px; flex-shrink: 0; margin-top: 1px; color: var(--blue); }
+.wd-sheet .wd-error { align-self: stretch; text-align: left; background: var(--red-t); color: var(--wd-error-ink); border-radius: 12px; padding: 10px 12px; font-size: 13.5px; margin: 4px 0 0; }
+.wd-sheet .wd-buttons { align-self: stretch; display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.wd-sheet .btn.wd-danger { background: var(--red); color: var(--wd-danger-ink); box-shadow: 0 6px 16px rgba(179, 38, 30, 0.28); font-weight: 700; }
+:root { --wd-danger-ink: #fff; --wd-error-ink: #9E2A2A; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) { --wd-danger-ink: #0b1220; --wd-error-ink: #ffb4ab; }
+}
+:root[data-theme='dark'],
+.dark { --wd-danger-ink: #0b1220; --wd-error-ink: #ffb4ab; }
