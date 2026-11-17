@@ -111,7 +111,7 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
       <p className="whitespace-pre-wrap text-sm text-[var(--ink2)]">{suggestion.details}</p>
 
       <ConsoleEventsNotice from={range.start} />
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="card pad">
           <p className="eyebrow">Customer demand</p>
           <p className="text-2xl font-extrabold">{suggestion.voteCount} votes</p>

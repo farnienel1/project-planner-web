@@ -108,7 +108,7 @@ export function DeveloperDataQualityScreen() {
         </p>
       ) : null}
       <DeveloperStatus error={error} loading={loading && users.length > 0} />
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <div className="card pad">
           <p className="eyebrow">Unfinished setup</p>
           <p className="mt-1 text-2xl font-extrabold">{rows.unfinishedUsers.length}</p>
@@ -122,7 +122,7 @@ export function DeveloperDataQualityScreen() {
           <p className="mt-1 text-2xl font-extrabold">{rows.testOrgs.length}</p>
         </div>
       </div>
-      <section className="card overflow-hidden">
+      <section className="card overflow-x-auto">
         <div className="flex items-center justify-between px-4 py-3">
           <h2 className="h2">Orphaned and unfinished users</h2>
         </div>
@@ -131,7 +131,7 @@ export function DeveloperDataQualityScreen() {
             <EmptyState title="No unfinished accounts" description="Every live user is attached to an organisation document." />
           </div>
         ) : (
-          <table className="w-full text-left text-sm">
+          <table className="w-full whitespace-nowrap text-left text-sm">
             <thead className="bg-[var(--soft)] text-xs uppercase text-[var(--ink3)]">
               <tr>
                 <th className="px-4 py-2">Name</th>
@@ -156,7 +156,7 @@ export function DeveloperDataQualityScreen() {
                   <td className="px-4 py-3">
                     {formatOwnerWhen(user.createdAt)}
                     {isAbandonedUnfinishedSignup(user.createdAt) ? (
-                      <span className="ml-2 rounded-full bg-[var(--warn-bg,#fef3c7)] px-2 py-0.5 text-[11px] font-bold">12-month cleanup</span>
+                      <span className="ml-2 rounded-full bg-[var(--warn-t)] px-2 py-0.5 text-[11px] font-bold">12-month cleanup</span>
                     ) : null}
                   </td>
                   <td className="px-4 py-3">

@@ -17,6 +17,9 @@ import { activeConsoleHref, consolePageUsesPeriod, visibleConsoleNav } from '@/l
 import { useOwnerCounts } from '@/lib/owner/client/ownerApi'
 import { ConsoleSearch } from '@/components/developer/ConsoleSearch'
 import { ConsoleEventsNotice } from '@/components/developer/ConsoleEventsNotice'
+// The frame's classes (`app-frame`, `sb-*`, `tb-*`) and the `--dash-*` tokens live here. The customer AppShell imports
+// it; the console never went through AppShell, so opened directly it rendered an unstyled sidebar (owner, 17 Nov).
+import '@/app/brand-shell.css'
 
 /**
  * The console frame: the app's own sidebar and top bar (`app-frame`, `sb`, `tb` in app/brand-shell.css, owner answer
@@ -54,9 +57,12 @@ export function DeveloperAppShell({ children }: { children: ReactNode }) {
           <p className="sb-title truncate">Owner console</p>
           <p className="sb-org truncate">{user?.email || 'info@projectplanner.us'}</p>
         </div>
-        <button type="button" className="sb-signout lg:hidden" aria-label="Close menu" onClick={() => setMenuOpen(false)}>
-          <XMarkIcon className="h-5 w-5" />
-        </button>
+        {/* `sb-signout` sets display: grid, which beat `lg:hidden` on the same element; the wrapper hides it on desktop. */}
+        <span className="ml-auto lg:hidden">
+          <button type="button" className="sb-signout" aria-label="Close menu" onClick={() => setMenuOpen(false)}>
+            <XMarkIcon className="h-5 w-5" />
+          </button>
+        </span>
       </div>
       <nav className="sb-nav flex-1 overflow-y-auto" aria-label="Owner console" onClick={() => setMenuOpen(false)}>
         {groups
@@ -161,7 +167,7 @@ export function DeveloperAppShell({ children }: { children: ReactNode }) {
               <Bars3Icon className="h-5 w-5" />
             </button>
             <ConsoleSearch />
-            <div className="ml-auto flex flex-wrap items-center gap-3 text-[12.5px] text-[var(--dash-ink-2)]">
+            <div className="ml-auto flex flex-wrap items-center gap-3 text-[12.5px] text-[var(--dash-ink-2)] max-[640px]:ml-0 max-[640px]:w-full max-[640px]:justify-between">
               <button
                 type="button"
                 role="switch"
@@ -256,8 +262,8 @@ export function DeveloperShell({
           {back.label}
         </Link>
       ) : null}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <h1 className="text-xl font-extrabold text-[var(--ink)]">{title}</h1>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <h1 className="min-w-0 break-words text-xl font-extrabold leading-tight text-[var(--ink)]">{title}</h1>
         {actions}
       </div>
       {eventsFrom !== undefined ? <ConsoleEventsNotice from={eventsFrom} /> : null}
