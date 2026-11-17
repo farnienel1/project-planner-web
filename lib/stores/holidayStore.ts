@@ -446,6 +446,8 @@ async function runHolidayLoad(organizationId: string): Promise<void> {
       // Review of #356 (final, S1): the company switched while the switches were read. Free the slot so switching back
       // plans again, and leave no "loading" behind.
       releaseSlot()
+      // Another company's planned key must not stand in for this one on the way back (review of #356).
+      holidayPlannedKey = null
       useHolidayStore.setState({ loading: false })
       return
     }
@@ -482,6 +484,8 @@ async function runHolidayLoad(organizationId: string): Promise<void> {
         let failure: { message: string } | null = null
         await holidayListeners.subscribePlan(HOLIDAY_LISTENER_KEY, organizationId, 'holidayBookings', parts, onDocs, (error) => {
           failure = error
+          // An older load's listener never records a failure or shows an error once a newer load started.
+          if (superseded()) return
           // Review of #356 (final, S3): at most one failure per load, however many query parts are refused.
           if (!failureRecorded) recordHolidayFailure(organizationId, userId, key)
           failureRecorded = true
@@ -524,7 +528,12 @@ async function runHolidayLoad(organizationId: string): Promise<void> {
       }
     }
     if (superseded()) return waitForNewerLoad(token)
-    if (failed || !holidayResultCurrent(organizationId, captured)) return
+    if (!holidayResultCurrent(organizationId, captured)) {
+      // The company switched during the subscribe: leave no "loading" behind (as when it switches earlier).
+      useHolidayStore.setState({ loading: false })
+      return
+    }
+    if (failed) return
     useHolidayStore.setState({ loading: false })
     // The inputs may have changed while this load was in progress (re-plans were skipped): check once more.
     replanHolidayBookings()

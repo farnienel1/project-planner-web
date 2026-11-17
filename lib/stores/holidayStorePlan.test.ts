@@ -19,7 +19,7 @@ function harness(options: {
   refusePlan?: boolean
   refuseParts?: number
   collectionResolves?: boolean
-  holdReady?: boolean
+  holdReady?: boolean | ((call: number) => boolean)
   clock?: { now: number }
 }) {
   const readyGate: Array<() => void> = []
@@ -29,7 +29,8 @@ function harness(options: {
     now: () => options.clock?.now ?? Date.now(),
     switchesReady: async () => {
       calls.ready += 1
-      if (options.holdReady) await new Promise<void>((resolve) => readyGate.push(resolve))
+      const hold = typeof options.holdReady === 'function' ? options.holdReady(calls.ready) : options.holdReady
+      if (hold) await new Promise<void>((resolve) => readyGate.push(resolve))
     },
     operativeOwnLeave: () => (typeof options.ownLeave === 'function' ? options.ownLeave() : options.ownLeave),
     subscribeCollectionLoaded: ((_key: string, organizationId: string) => {
@@ -330,6 +331,69 @@ test('1.56.0 holiday store (S4): after a successful subscribe the load clears lo
     replanHolidayBookings()
     await settle(10)
     assert.deepEqual(calls.collection, ['ORG-L'])
+  } finally {
+    restore()
+  }
+})
+
+test('1.56.0 holiday store: a load stopped by a switch clears the planned key, so the way back to B subscribes B', async () => {
+  adoptCurrentOrganization('ORG-M', 'UID-OP')
+  useAuthStore.setState({ user: operative as never })
+  useOperativeStore.setState({ operatives: [] as never })
+  // The first load (A) reads the switches at once; the second (B) waits for them.
+  const { calls, readyGate, restore } = harness({ ownLeave: false, collectionResolves: true, holdReady: (call) => call === 2 })
+  try {
+    await useHolidayStore.getState().loadBookings('ORG-M') // A succeeds: planned key "all"
+    adoptCurrentOrganization('ORG-N', 'UID-OP')
+    void useHolidayStore.getState().loadBookings('ORG-N') // B starts and waits on the switches
+    await settle(5)
+    adoptCurrentOrganization('ORG-M', 'UID-OP') // switch to A during the switch read
+    readyGate.shift()?.()
+    await settle(10)
+    adoptCurrentOrganization('ORG-N', 'UID-OP') // and back to B
+    replanHolidayBookings()
+    await settle(10)
+    assert.deepEqual(calls.collection, ['ORG-M', 'ORG-N'], 'B is subscribed')
+  } finally {
+    restore()
+  }
+})
+
+test('1.56.0 holiday store: a company switch during the subscribe leaves no loading behind', async () => {
+  adoptCurrentOrganization('ORG-O', 'UID-OP')
+  useAuthStore.setState({ user: operative as never })
+  useOperativeStore.setState({ operatives: [] as never })
+  useHolidayStore.setState({ loadedOrgId: null, loading: false })
+  const { pending, restore } = harness({ ownLeave: false })
+  try {
+    const load = useHolidayStore.getState().loadBookings('ORG-O')
+    await settle(5)
+    assert.equal(useHolidayStore.getState().loading, true)
+    adoptCurrentOrganization('ORG-P', 'UID-OP')
+    pending[0].resolve()
+    await load
+    assert.equal(useHolidayStore.getState().loading, false)
+  } finally {
+    restore()
+  }
+})
+
+test('1.56.0 holiday store: an older load\'s listener error never shows once a newer load started', async () => {
+  adoptCurrentOrganization('ORG-Q', 'UID-OP')
+  useAuthStore.setState({ user: operative as never })
+  useOperativeStore.setState({ operatives: [] as never })
+  useHolidayStore.setState({ error: null })
+  const { pending, restore } = harness({ ownLeave: true })
+  try {
+    void useHolidayStore.getState().loadBookings('ORG-Q')
+    await settle(5)
+    void useHolidayStore.getState().loadBookings('ORG-Q') // a newer load starts
+    await settle(5)
+    pending[0].onError?.({ message: 'refused (old load)' })
+    await settle(5)
+    assert.equal(useHolidayStore.getState().error, null)
+    pending[1].onError?.({ message: 'refused (new load)' })
+    assert.equal(useHolidayStore.getState().error, 'refused (new load)')
   } finally {
     restore()
   }
