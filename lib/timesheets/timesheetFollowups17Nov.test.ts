@@ -263,10 +263,25 @@ test('B1: a sheet filed under an alias id is saved and stamped on that document 
     assert.notEqual(target.ids[0], canonical)
     assert.equal(target.subjectUserId.toLowerCase(), 'old-invite')
   }
-  // The person's own document (or none yet): unchanged — the canonical id, plus a differently formatted stored id.
-  assert.deepEqual(timesheetSaveTarget({ userId: 'u1', weekStart: start, timeZone: tz, sourceId: canonical }).ids, [canonical])
-  assert.deepEqual(timesheetSaveTarget({ userId: 'u1', weekStart: start, timeZone: tz, sourceId: null }).ids, [canonical])
-  assert.deepEqual(timesheetSaveTarget({ userId: 'U1', weekStart: start, timeZone: tz, sourceId: canonical }).ids.length, 2)
+  // Re-check of #368: whenever a stored document was loaded, that document only — never also the canonical id.
+  const one = (sourceId: string | null, userId = 'u1') => timesheetSaveTarget({ userId, weekStart: start, timeZone: tz, sourceId }).ids
+  assert.deepEqual(one(canonical), [canonical])
+  // Case-only difference: the stored `timesheet_U1_…` loaded for `u1` is saved there, not forked to `timesheet_u1_…`.
+  const upper = canonical.replace('timesheet_u1_', 'timesheet_U1_')
+  assert.deepEqual(one(upper), [upper])
+  assert.deepEqual(one(canonical, 'U1'), [canonical])
+  // Legacy stamp format (London midnight, or milliseconds) of the same person.
+  const legacyStamp = `timesheet_u1_${Math.floor(Date.parse('2026-11-01T00:00:00Z') / 1000) + 3600}`
+  assert.notEqual(legacyStamp, canonical)
+  assert.deepEqual(one(legacyStamp), [legacyStamp])
+  assert.deepEqual(one(`timesheet_u1_${Date.parse('2026-11-01T00:00:00Z')}`), [`timesheet_u1_${Date.parse('2026-11-01T00:00:00Z')}`])
+  // A legacy id that does not follow the timesheet_<id>_<stamp> pattern: that document only, the person's id as subject.
+  const odd = timesheetSaveTarget({ userId: 'u1', weekStart: start, timeZone: tz, sourceId: 'timesheet-u1-2026-11-01' })
+  assert.deepEqual(odd.ids, ['timesheet-u1-2026-11-01'])
+  assert.equal(odd.subjectUserId, 'u1')
+  // Only a brand-new sheet (nothing stored) goes to the canonical id.
+  assert.deepEqual(one(null), [canonical])
+  assert.deepEqual(one(''), [canonical])
   // A revision is written to its own document only.
   assert.deepEqual(timesheetSaveTarget({ userId: 'u1', weekStart: start, timeZone: tz, sourceId: `${aliasDoc}_rev1` }).ids, [`${aliasDoc}_rev1`])
   // Both writers go through the one target (no second id list of their own).

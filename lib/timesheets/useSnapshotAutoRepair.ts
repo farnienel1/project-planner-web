@@ -58,6 +58,8 @@ export function useSnapshotAutoRepair(input: {
   latest.current = input
   const running = useRef(false)
   const { organizationId, viewer, sheets, ready, catalogue } = input
+  // Re-check of #368: the effect runs again when a listed person's own pay status changes (loading → ready).
+  const payKey = sheets.map((sheet) => `${sheet.member.id}:${input.payStatusOf(sheet.member)}`).join(',')
   useEffect(() => {
     if (!ready || !organizationId || !viewer || running.current) return
     const { users, liveLoaded, coversPeriod, ...collector } = catalogue
@@ -138,5 +140,5 @@ export function useSnapshotAutoRepair(input: {
         if (repaired > 0) latest.current.onRepaired?.()
       }
     })()
-  }, [ready, organizationId, viewer, sheets, catalogue])
+  }, [ready, organizationId, viewer, sheets, catalogue, payKey])
 }

@@ -1384,11 +1384,12 @@ export async function saveTimesheetDraft({
 }
 
 /**
- * Where a save or an export stamp of a sheet goes (review of #368, B1). Normally the person's canonical id and the stored
- * document it was loaded from (an older id format) — as before. A sheet filed under another id the person goes by (the
- * stored document's id names another user id: a former invite id, a second users document on their email) is written
- * ONLY to that stored document and keeps that id as its `userId`, so a save never creates a second copy of the sheet
- * under the person's current id. A revision is written to its own document only (1.55.0).
+ * Where a save or an export stamp of a sheet goes (review of #368, B1 and its re-check). When the sheet was loaded from a
+ * stored document — under the person's id, another id they go by (a former invite id, a second users document on their
+ * email), another letter case, an older stamp or any older id format, or a revision — it is written to THAT document
+ * only (its exact id), never also to a canonical id, so a save can never create a second copy. Only a brand-new sheet
+ * (no stored document) goes to the canonical id. `subjectUserId` is the id the document names (the person's id when it
+ * names none); an update keeps the document's stored `userId` (`saveTimesheetDraft`).
  */
 export function timesheetSaveTarget(input: {
   userId: string
@@ -1396,20 +1397,9 @@ export function timesheetSaveTarget(input: {
   timeZone: string
   sourceId: string | null | undefined
 }): { ids: string[]; subjectUserId: string } {
-  const sourceId = input.sourceId || null
-  const canonicalId = timesheetDocId(input.userId, input.weekStart, input.timeZone)
-  if (isTimesheetRevisionDocId(sourceId)) {
-    const subject = timesheetDocumentSubjectId(sourceId)
-    return { ids: [sourceId as string], subjectUserId: subject || input.userId }
-  }
-  const sourceSubject = sourceId ? timesheetDocumentSubjectId(sourceId) : ''
-  if (sourceId && sourceSubject && sourceSubject.toLowerCase() !== input.userId.toLowerCase()) {
-    return { ids: [sourceId], subjectUserId: sourceSubject }
-  }
-  return {
-    ids: Array.from(new Set([canonicalId, sourceId].filter((id): id is string => Boolean(id)))),
-    subjectUserId: input.userId,
-  }
+  const sourceId = typeof input.sourceId === 'string' ? input.sourceId.trim() : ''
+  if (sourceId) return { ids: [sourceId], subjectUserId: timesheetDocumentSubjectId(sourceId) || input.userId }
+  return { ids: [timesheetDocId(input.userId, input.weekStart, input.timeZone)], subjectUserId: input.userId }
 }
 
 /** Why `stampTimesheetExport` did not stamp a sheet. */
