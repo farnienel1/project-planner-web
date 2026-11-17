@@ -375,6 +375,11 @@ export function TimesheetsScreen({
     [groupsFor, queueDrafts, teamTab, users, runs, timeZone, bookings, managerSiteBookings, bookingsReady]
   )
 
+  // Each listed person's own pay status (review #342 item 1). Declared before `useSnapshotAutoRepair`, which calls it
+  // while rendering (its `payKey`): declared after it, the first render with a loaded sheet threw "Cannot access
+  // 'payStatusFor' before initialization" and took the whole User Timesheets screen into the error boundary (17 Nov).
+  const payStatusFor = (member: User): PayProfilesStatus => (payStatusOf ? payStatusOf(member) : 'ready')
+
   // Owner item 5 (17 Nov follow-up): every sheet of the loaded pay runs whose snapshot was frozen with no labour lines is
   // rebuilt in the background (`useSnapshotAutoRepair`; signatures kept, never an exported sheet), once the bookings and
   // pay inputs have loaded — never waiting for someone to open that one sheet.
@@ -400,7 +405,7 @@ export function TimesheetsScreen({
     catalogue: changeCatalogue,
     sheets: repairSheets,
     ready: payInputs.ready,
-    payStatusOf: (member) => payStatusFor(member),
+    payStatusOf: payStatusFor,
     onRepaired: () => void reload(),
   })
 
@@ -445,7 +450,6 @@ export function TimesheetsScreen({
   // before each person — `coverage` can drop mid-export (a re-plan, a network blip).
   const payInputsRef = useRef(payInputs)
   payInputsRef.current = payInputs
-  const payStatusFor = (member: User): PayProfilesStatus => (payStatusOf ? payStatusOf(member) : 'ready')
   const payUnknownFor = (member: User): boolean => payStatusFor(member) !== 'ready'
 
   /**
