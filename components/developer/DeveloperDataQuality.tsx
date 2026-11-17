@@ -10,7 +10,7 @@ import { MaskedEmail } from '@/components/developer/MaskedEmail'
 import { ownerPersonName } from '@/lib/analytics/ownerDirectory'
 import { isUnfinishedSetupName, isAbandonedUnfinishedSignup, unfinishedSetupLabel } from '@/lib/owner/unfinishedSetup'
 import { useConsolePrefs } from '@/lib/analytics/consolePrefs'
-import { isTestOrganisation } from '@/lib/owner/testData'
+import { dataQualityTestOrgSections, filterMarkableOrgs, settledMarkOverrides } from '@/lib/owner/dataQualityTestOrgs'
 import { auditOwnerAction, ownerDeleteUnfinishedUser, ownerMarkInternal } from '@/lib/owner/ownerActions'
 import { formatOwnerWhen } from '@/lib/analytics/ownerDirectory'
 
@@ -20,6 +20,12 @@ export function DeveloperDataQualityScreen() {
   const { showFullEmails } = useConsolePrefs()
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState('')
+  /** Owner bug 17 Nov: each click shows its own progress and result on its row, never only a banner at the top. */
+  const [rowNotice, setRowNotice] = useState<Record<string, RowNotice>>({})
+  /** Organisations whose flag a click changed; shown at once, until the reload agrees (`settledMarkOverrides`). */
+  const [orgOverrides, setOrgOverrides] = useState<Record<string, boolean>>({})
+  const [markedUsers, setMarkedUsers] = useState<Record<string, true>>({})
+  const [orgQuery, setOrgQuery] = useState('')
 
   useEffect(() => {
     void load()
@@ -32,10 +38,44 @@ export function DeveloperDataQualityScreen() {
       return !org || org.unfinishedSetup || isUnfinishedSetupName(org.name)
     })
     const abandoned = unfinishedUsers.filter((user) => isAbandonedUnfinishedSignup(user.createdAt))
-    const testOrgs = organisations.filter((org) => isTestOrganisation(org))
+    const { marked: testOrgs, unmarked: markableOrgs } = dataQualityTestOrgSections(organisations, orgOverrides)
     const missingSource = events.filter((event) => !event.source && !event.path)
-    return { unfinishedUsers, abandoned, testOrgs, missingSource }
-  }, [organisations, users, events])
+    return { unfinishedUsers, abandoned, testOrgs, markableOrgs, missingSource }
+  }, [organisations, users, events, orgOverrides])
+
+  useEffect(() => {
+    setOrgOverrides((current) => {
+      if (!Object.keys(current).length) return current
+      const next = settledMarkOverrides(organisations, current)
+      return Object.keys(next).length === Object.keys(current).length ? current : next
+    })
+  }, [organisations])
+
+  const shownMarkable = filterMarkableOrgs(rows.markableOrgs, orgQuery)
+
+  async function setOrgInternal(orgId: string, isInternal: boolean) {
+    setBusy(orgId)
+    setRowNotice((current) => ({ ...current, [orgId]: { tone: 'info', text: isInternal ? 'Marking…' : 'Unmarking…' } }))
+    try {
+      await ownerMarkInternal({ orgId, isInternal })
+      setOrgOverrides((current) => ({ ...current, [orgId]: isInternal }))
+      setRowNotice((current) => ({
+        ...current,
+        [orgId]: {
+          tone: 'green',
+          text: isInternal ? 'Marked internal. It is now hidden from customer counts.' : 'Unmarked. It counts as a customer again.',
+        },
+      }))
+      void refresh()
+    } catch (err) {
+      setRowNotice((current) => ({
+        ...current,
+        [orgId]: { tone: 'red', text: err instanceof Error ? err.message : 'Could not update the internal flag.' },
+      }))
+    } finally {
+      setBusy('')
+    }
+  }
 
   if (loading && users.length === 0 && !error) return <LoadingSpinner label="Loading data quality…" />
 
@@ -69,7 +109,7 @@ export function DeveloperDataQualityScreen() {
           <p className="mt-1 text-2xl font-extrabold">{rows.abandoned.length}</p>
         </div>
         <div className="card pad">
-          <p className="eyebrow">Marked / likely test orgs</p>
+          <p className="eyebrow">Marked internal orgs</p>
           <p className="mt-1 text-2xl font-extrabold">{rows.testOrgs.length}</p>
         </div>
       </div>
@@ -112,25 +152,35 @@ export function DeveloperDataQualityScreen() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        className="btn sm ghost"
-                        disabled={busy === user.id}
-                        onClick={async () => {
-                          setBusy(user.id)
-                          try {
-                            await ownerMarkInternal({ uid: user.id, isInternal: true })
-                            setNotice('Marked internal / test.')
-                            await refresh()
-                          } catch (err) {
-                            setNotice(err instanceof Error ? err.message : 'Could not mark internal.')
-                          } finally {
-                            setBusy('')
-                          }
-                        }}
-                      >
-                        Mark internal
-                      </button>
+                      {user.isInternal === true || markedUsers[user.id] ? (
+                        <span className="pill" data-hue="green">Marked internal</span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn sm ghost"
+                          disabled={busy === user.id}
+                          aria-busy={busy === user.id}
+                          onClick={async () => {
+                            setBusy(user.id)
+                            setRowNotice((current) => ({ ...current, [user.id]: { tone: 'info', text: 'Marking…' } }))
+                            try {
+                              await ownerMarkInternal({ uid: user.id, isInternal: true })
+                              setMarkedUsers((current) => ({ ...current, [user.id]: true }))
+                              setRowNotice((current) => ({ ...current, [user.id]: { tone: 'green', text: 'Marked internal.' } }))
+                              void refresh()
+                            } catch (err) {
+                              setRowNotice((current) => ({
+                                ...current,
+                                [user.id]: { tone: 'red', text: err instanceof Error ? err.message : 'Could not mark internal.' },
+                              }))
+                            } finally {
+                              setBusy('')
+                            }
+                          }}
+                        >
+                          {busy === user.id ? 'Marking…' : 'Mark internal'}
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="btn sm ghost"
@@ -152,6 +202,7 @@ export function DeveloperDataQualityScreen() {
                         Delete
                       </button>
                     </div>
+                    <RowStatus notice={rowNotice[user.id]} />
                   </td>
                 </tr>
               ))}
@@ -159,37 +210,94 @@ export function DeveloperDataQualityScreen() {
           </table>
         )}
       </section>
-      <section className="card pad space-y-2">
+      <section className="card pad space-y-3">
         <h2 className="h2">Test organisations</h2>
+        <p className="text-sm text-[var(--ink2)]">
+          Organisations marked internal are your own test or demo companies. They are left out of customer counts.
+        </p>
         {rows.testOrgs.length === 0 ? (
-          <p className="text-sm text-[var(--ink3)]">None marked internal, and no obvious test names.</p>
+          <p className="text-sm text-[var(--ink3)]">No organisation is marked internal yet.</p>
         ) : (
-          <ul className="space-y-2 text-sm">
+          <ul className="space-y-2 text-sm" aria-label="Organisations marked internal">
             {rows.testOrgs.map((org) => (
-              <li key={org.id} className="flex items-center justify-between gap-3 rounded-xl bg-[var(--soft)] px-3 py-2">
-                <Link href={`/developer/organisations/${encodeURIComponent(org.id)}`} className="font-semibold">
-                  {org.name}
-                </Link>
-                <button
-                  type="button"
-                  className="btn sm ghost"
-                  onClick={async () => {
-                    try {
-                      await ownerMarkInternal({ orgId: org.id, isInternal: true })
-                      setNotice('Organisation marked internal.')
-                      await refresh()
-                    } catch (err) {
-                      setNotice(err instanceof Error ? err.message : 'Could not mark internal.')
-                    }
-                  }}
-                >
-                  Mark internal
-                </button>
+              <li key={org.id} className="rounded-xl bg-[var(--soft)] px-3 py-2">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <Link href={`/developer/organisations/${encodeURIComponent(org.id)}`} className="font-semibold">
+                    {org.name}
+                  </Link>
+                  <div className="flex items-center gap-2">
+                    <span className="pill" data-hue="green">Marked internal</span>
+                    <button
+                      type="button"
+                      className="btn sm ghost"
+                      disabled={busy === org.id}
+                      aria-busy={busy === org.id}
+                      onClick={() => void setOrgInternal(org.id, false)}
+                    >
+                      {busy === org.id ? 'Unmarking…' : 'Unmark'}
+                    </button>
+                  </div>
+                </div>
+                <RowStatus notice={rowNotice[org.id]} />
               </li>
             ))}
           </ul>
         )}
+        <div className="space-y-2 border-t border-[var(--line)] pt-3">
+          <h3 className="text-sm font-bold">Mark another organisation as internal</h3>
+          <input
+            type="search"
+            className="pp-in w-full sm:max-w-sm"
+            placeholder="Search organisations by name"
+            aria-label="Search organisations to mark internal"
+            value={orgQuery}
+            onChange={(event) => setOrgQuery(event.target.value)}
+          />
+          {rows.markableOrgs.length === 0 ? (
+            <p className="text-sm text-[var(--ink3)]">Every organisation is already marked internal.</p>
+          ) : shownMarkable.length === 0 ? (
+            <p className="text-sm text-[var(--ink3)]">No organisation matches that search.</p>
+          ) : (
+            <ul className="max-h-96 space-y-2 overflow-y-auto text-sm" aria-label="Organisations not marked internal">
+              {shownMarkable.map((org) => (
+                <li key={org.id} className="rounded-xl bg-[var(--soft)] px-3 py-2">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <Link href={`/developer/organisations/${encodeURIComponent(org.id)}`} className="font-semibold">
+                      {org.name}
+                    </Link>
+                    <button
+                      type="button"
+                      className="btn sm ghost"
+                      disabled={busy === org.id}
+                      aria-busy={busy === org.id}
+                      onClick={() => void setOrgInternal(org.id, true)}
+                    >
+                      {busy === org.id ? 'Marking…' : 'Mark internal'}
+                    </button>
+                  </div>
+                  <RowStatus notice={rowNotice[org.id]} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </section>
     </DeveloperShell>
+  )
+}
+
+type RowNotice = { tone: 'info' | 'green' | 'red'; text: string }
+
+/** The result of the last click on a row, right under it (announced to screen readers). */
+function RowStatus({ notice }: { notice?: RowNotice }) {
+  if (!notice) return null
+  return (
+    <p
+      className="banner mt-2 !px-3 !py-2 text-xs font-semibold"
+      data-hue={notice.tone === 'info' ? 'blue' : notice.tone}
+      role={notice.tone === 'red' ? 'alert' : 'status'}
+    >
+      {notice.text}
+    </p>
   )
 }

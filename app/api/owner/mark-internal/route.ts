@@ -8,6 +8,10 @@ import { bearerToken, boolField, firestoreGet, firestorePatch, readBool } from '
 
 export const runtime = 'nodejs'
 
+const MARK_INTERNAL_NO_ORG_MESSAGE = 'That organisation has no saved record yet (an unfinished sign-up), so it cannot be marked.'
+const MARK_INTERNAL_READ_FAILED_MESSAGE = 'Could not read that organisation. Try again.'
+const MARK_INTERNAL_WRITE_FAILED_MESSAGE = 'Could not save the internal flag. Try again.'
+
 export async function POST(request: NextRequest) {
   const limited = enforceRateLimit(request, 'owner-mark-internal', 20, 10 * 60 * 1000)
   if (limited) return limited
@@ -25,8 +29,16 @@ export async function POST(request: NextRequest) {
   // The values before the change (changed fields only, PLAN A4). An unreadable record is left out, never guessed.
   const before: Record<string, unknown> = {}
   if (orgId) {
-    const doc = await firestoreGet(token, `organizations/${orgId}`).catch(() => null)
-    if (doc) before.org = { isInternal: readBool(doc.fields, 'isInternal'), isTest: readBool(doc.fields, 'isTest') }
+    // An organisation with no document (an unfinished sign-up's company) is refused before the audit: the PATCH would
+    // otherwise try to create organizations/{orgId} with only the two flags, which the rules refuse (owner bug 17 Nov).
+    let doc: Awaited<ReturnType<typeof firestoreGet>>
+    try {
+      doc = await firestoreGet(token, `organizations/${orgId}`)
+    } catch {
+      return jsonError(MARK_INTERNAL_READ_FAILED_MESSAGE, 502)
+    }
+    if (!doc) return jsonError(MARK_INTERNAL_NO_ORG_MESSAGE, 404)
+    before.org = { isInternal: readBool(doc.fields, 'isInternal'), isTest: readBool(doc.fields, 'isTest') }
   }
   if (uid) {
     const doc = await firestoreGet(token, `users/${uid}`).catch(() => null)
@@ -64,6 +76,6 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('[owner/mark-internal]', error)
     await audit.fail(error)
-    return jsonError('Could not mark that record as internal. Publish the updated Firestore rules first.', 502)
+    return jsonError(MARK_INTERNAL_WRITE_FAILED_MESSAGE, 502)
   }
 }
