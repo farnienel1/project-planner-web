@@ -104,18 +104,18 @@ async function main() {
     for (const snap of (await db.collection('organizations').get()).docs) orgs.push({ id: snap.id, data: snap.data() })
   }
   console.log(`READ-ONLY dry run (nothing is written) — project ${projectId}, ${orgs.length} organisation(s)`)
-  console.log('organisationId,sheetsChecked,notExported_counterSignAgain,exported_revisionDue,emptySnapshotRepairedOnOpen,signedBefore147_noRecord')
-  const total = { sheetsChecked: 0, notExported: 0, exported: 0, emptySnapshotRepair: 0, noRecord: 0 }
+  console.log('organisationId,sheetsChecked,notExported_counterSignAgain,exported_revisionDue,ofWhichGapOnly_reportsKeepSigned,alreadyFlaggedBefore157,emptySnapshotRepairedOnOpen,signedBefore147_noRecord')
+  const total = { sheetsChecked: 0, notExported: 0, exported: 0, gapOnly: 0, otherChange: 0, emptySnapshotRepair: 0, noRecord: 0 }
   for (const org of orgs) {
     try {
       const counts = snapshotGapCounts(rulebook, await loadOrg(org.id, org.data))
       for (const name of Object.keys(total)) total[name] += counts[name]
-      console.log([org.id, counts.sheetsChecked, counts.notExported, counts.exported, counts.emptySnapshotRepair, counts.noRecord].join(','))
+      console.log([org.id, counts.sheetsChecked, counts.notExported, counts.exported, counts.gapOnly, counts.otherChange, counts.emptySnapshotRepair, counts.noRecord].join(','))
     } catch (error) {
       console.error(`ERROR organisation ${org.id}: ${error?.message || error}`)
     }
   }
-  console.log(['TOTAL', total.sheetsChecked, total.notExported, total.exported, total.emptySnapshotRepair, total.noRecord].join(','))
+  console.log(['TOTAL', total.sheetsChecked, total.notExported, total.exported, total.gapOnly, total.otherChange, total.emptySnapshotRepair, total.noRecord].join(','))
   console.log('Nothing was written.')
 }
 

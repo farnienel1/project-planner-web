@@ -2106,6 +2106,9 @@ export {
   signedTimesheetBookingRecord,
   signedTimesheetBookingWriteReopens,
   signedTimesheetLineBookingKey,
+  signedTimesheetChangeForReports,
+  SNAPSHOT_GAP_REPORTS,
+  SNAPSHOT_GAP_FROM_MS,
 } from './timesheetBookingChanges'
 export type {
   SignedTimesheetBooking,

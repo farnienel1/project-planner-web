@@ -59,6 +59,7 @@ import {
   type TimesheetStatusFields,
 } from './timesheetPeriod'
 import { timesheetRevisionReportState } from './timesheetRevisions'
+import { signedTimesheetChangeForReports } from './timesheetBookingChanges'
 import { isAnonymisedDeletedProfile, isGhostUser, rosterPersonName, rosterSegment } from './userRosterSegment'
 
 // MARK: - Copy
@@ -168,6 +169,8 @@ export type PayrunSnapshotSheet = {
     /** 1.55.0 (J4): `changed` and `exported` — an exported sheet whose bookings changed makes a revision due. */
     changed?: boolean | null
     exported?: boolean | null
+    /** 1.57.0: under J1 (`SNAPSHOT_GAP_REPORTS`) a gap-only change keeps the sheet's signed state here. */
+    snapshotGapOnly?: boolean | null
   } | null
   /** 1.55.0 §8: the stored document id, so an original and its revisions (`…_rev{N}`) count as one sheet. */
   documentId?: string | null
@@ -374,7 +377,9 @@ function timesheetCell(
       theirs.map((sheet) => ({ startDayKey: sheet.startDayKey, endDayKey: sheet.endDayKey || null, documentId: sheet.documentId ?? null })),
       run
     )
-    const bucket = index < 0 ? 'unsigned' : timesheetListBucket(theirs[index].status, lineManager, theirs[index].bookingsChange)
+    // 1.57.0: a change that is only a snapshot gap keeps the signed state here (J1, `SNAPSHOT_GAP_REPORTS`).
+    const reportChange = index < 0 ? null : signedTimesheetChangeForReports(theirs[index].bookingsChange)
+    const bucket = index < 0 ? 'unsigned' : timesheetListBucket(theirs[index].status, lineManager, reportChange)
     let state: TimesheetState = bucket === 'signed' || bucket === 'exported' ? 'signed' : bucket === 'awaiting' ? 'submitted' : 'notStarted'
     // Owner decision 16 Nov (J4): a revision due or open is not signed — "Revision due" / "REV 1 waiting for signature".
     const sheet = index < 0 ? null : theirs[index]
@@ -383,7 +388,7 @@ function timesheetCell(
           revision: parseTimesheetRevisionDocId(sheet.documentId)?.revision ?? 0,
           exported: sheet.status.exportedAtMs != null,
           signedOff: sheet.signedOff ?? sheet.status.managerSignedAtMs != null,
-          change: sheet.bookingsChange,
+          change: reportChange,
         })
       : null
     if (revision && revision.state !== 'none') state = revision.state === 'due' ? 'notStarted' : bucket === 'awaiting' ? 'submitted' : 'notStarted'

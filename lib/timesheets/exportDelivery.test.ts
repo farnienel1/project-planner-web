@@ -1,17 +1,24 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { exportDeliveryNotice, exportDeliveryPending, useExportDeliveryStore } from './exportDelivery.ts'
+import {
+  EXPORT_DELIVERY_STALE_MS,
+  EXPORT_DELIVERY_TAB_ID,
+  exportDeliveryLiveElsewhere,
+  exportDeliveryNotice,
+  exportDeliveryPending,
+  useExportDeliveryStore,
+} from './exportDelivery.ts'
 import { mapWithConcurrency } from './timesheetExportRun.ts'
 
 test('a delivery is pending until its own run finishes; a second run never overwrites it', () => {
   const store = useExportDeliveryStore.getState()
   store.start('org1', 'run1', '2 exported. Sending the PDFs…')
+  // A second start for the same organisation replaces it without stacking guards (nit 6).
+  useExportDeliveryStore.getState().start('org1', 'run1', '2 exported. Sending the PDFs…')
   assert.equal(exportDeliveryPending(useExportDeliveryStore.getState(), 'org1'), true)
   assert.equal(exportDeliveryPending(useExportDeliveryStore.getState(), 'org2'), false)
-  // A finish from another run is ignored.
   useExportDeliveryStore.getState().finish('org1', 'run0', 'done', 'old run')
   assert.equal(useExportDeliveryStore.getState().entries.org1.message, '2 exported. Sending the PDFs…')
-  // Dismiss is refused while sending.
   useExportDeliveryStore.getState().dismiss('org1')
   assert.ok(useExportDeliveryStore.getState().entries.org1)
   useExportDeliveryStore.getState().finish('org1', 'run1', 'failed', "2 exported. Couldn't send: the email.")
@@ -21,10 +28,19 @@ test('a delivery is pending until its own run finishes; a second run never overw
   assert.equal(useExportDeliveryStore.getState().entries.org1, undefined)
 })
 
-test('a delivery left "sending" by a closed or reloaded page says it may not have been sent and points to Download PDF', () => {
-  const entry = { runKey: 'r', status: 'sending' as const, message: '2 exported. Sending the PDFs…', atMs: 0 }
-  assert.equal(exportDeliveryNotice(entry, true), entry.message)
-  assert.match(exportDeliveryNotice(entry, false) ?? '', /may not have been sent.*Download PDF/)
+test('another tab: live while its heartbeat is recent (Export blocked), stale after; a closed tab reads "may not have been sent"', () => {
+  const now = 1_000_000
+  const entry = { runKey: 'r', status: 'sending' as const, message: '2 exported. Sending the PDFs…', atMs: now - 1000, ownerTab: 'other-tab', heartbeatMs: now - 1000 }
+  assert.equal(exportDeliveryLiveElsewhere(entry, EXPORT_DELIVERY_TAB_ID, now), true)
+  assert.equal(exportDeliveryPending({ live: {}, entries: { org: entry }, nowMs: now }, 'org'), true)
+  assert.match(exportDeliveryNotice(entry, false, true) ?? '', /another tab/)
+  const later = now + EXPORT_DELIVERY_STALE_MS + 1
+  assert.equal(exportDeliveryLiveElsewhere(entry, EXPORT_DELIVERY_TAB_ID, later), false)
+  assert.equal(exportDeliveryPending({ live: {}, entries: { org: entry }, nowMs: later }, 'org'), false)
+  assert.match(exportDeliveryNotice(entry, false, false) ?? '', /may not have been sent.*Download PDF/)
+  // Its own tab's entry is never "elsewhere"; a finished entry never blocks.
+  assert.equal(exportDeliveryLiveElsewhere({ ...entry, ownerTab: EXPORT_DELIVERY_TAB_ID }, EXPORT_DELIVERY_TAB_ID, now), false)
+  assert.equal(exportDeliveryLiveElsewhere({ ...entry, status: 'done' }, EXPORT_DELIVERY_TAB_ID, now), false)
   assert.equal(exportDeliveryNotice(null, false), null)
 })
 

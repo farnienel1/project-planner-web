@@ -166,7 +166,8 @@ test('(g) a signed snapshot that lacks a booking the person signed is stale: the
   const unexported = changes(draft, bookings)
   assert.equal(unexported?.reopened, true)
   assert.equal(unexported?.waitingFor, 'lineManager')
-  assert.deepEqual(unexported?.addedBookingIds, ['b1'])
+  assert.deepEqual(unexported?.snapshotGapBookingIds, ['b1'])
+  assert.equal(unexported?.snapshotGapOnly, true)
   // Exported: the sheet stays frozen and a revision becomes due.
   const exported = changes({ ...draft, exportedAt: new Date(), exportedAtStored: true }, bookings)
   assert.equal(exported?.exported, true)
@@ -247,9 +248,9 @@ test('(g) the gap is read only through the screen ids: without the same-email id
   // Live lines collected WITHOUT the same-email ids (an older build) leave b1 out: it is not live there, so no gap.
   const ownIdsOnly = collectTimesheetPayroll({ ...common, periodStart: start, periodEnd: end, bookings, history: undefined as never, scheduleOptions: undefined as never, aliasUserIds: ['u1'] }).lineItems
   const without = draftBookingChanges({ draft, lines: ownIdsOnly, bookings, managerSiteBookings: [], timeZone: tz, personIds: ['u1', 'u1-copy'], liveLoaded: true, selfSigned: false })
-  assert.equal(without?.addedBookingIds.includes('b1') ?? false, false)
+  assert.equal(without?.snapshotGapBookingIds.includes('b1') ?? false, false)
   // With the screen's ids (`userIdsSharingEmail`) b1 is live and missing from the signed copy.
-  assert.deepEqual(changes(draft, bookings)?.addedBookingIds, ['b1'])
+  assert.deepEqual(changes(draft, bookings)?.snapshotGapBookingIds, ['b1'])
 })
 
 test('invoice text is measured with the font metrics and never reaches the amount column', async () => {

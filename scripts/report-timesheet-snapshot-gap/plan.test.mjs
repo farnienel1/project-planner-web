@@ -25,7 +25,7 @@ function sheet({ id = 'timesheet_u1_1793491200', exported = false, lines, record
     },
   }
 }
-const booking = (person = 'u1-copy', status = 'Confirmed') => ({ operativeId: person, projectId: 'p1', date: at('2026-11-10T00:00:00Z'), timeSlot: 'FULL DAY', status })
+const booking = (person = 'u1-copy', status = 'Confirmed', written = '2026-11-09T09:00:00Z') => ({ operativeId: person, projectId: 'p1', date: at('2026-11-10T00:00:00Z'), timeSlot: 'FULL DAY', status, createdAt: at(written), updatedAt: at(written) })
 const users = [
   { id: 'u1', data: { email: 'f@x.com' } },
   { id: 'u1-copy', data: { email: 'F@x.com' } },
@@ -43,7 +43,7 @@ const base = (over = {}) => ({
 })
 
 test('a signed copy missing a live signed booking counts, split by exported', () => {
-  assert.deepEqual(snapshotGapCounts(rulebook, base({ sheets: [sheet()] })), { sheetsChecked: 1, exported: 0, notExported: 1, emptySnapshotRepair: 0, noRecord: 0 })
+  assert.deepEqual(snapshotGapCounts(rulebook, base({ sheets: [sheet()] })), { sheetsChecked: 1, exported: 0, notExported: 1, gapOnly: 1, otherChange: 0, emptySnapshotRepair: 0, noRecord: 0 })
   assert.equal(snapshotGapCounts(rulebook, base({ sheets: [sheet({ exported: true })] })).exported, 1)
 })
 
@@ -56,5 +56,28 @@ test('not counted: deleted, tombstoned, cancelled, someone else, empty snapshot,
   assert.equal(snapshotGapCounts(rulebook, base({ sheets: [sheet({ record: [] })] })).noRecord, 1)
   // An older version is ignored; the latest (complete) one counts nothing.
   const complete = sheet({ id: 'timesheet_u1_1793491200_rev1', lines: [{ id: 'op-b1-normal', bookingId: 'b1', bookingFingerprint: fp('b1', '2026-11-10') }, { id: 'op-b2-normal', bookingId: 'b2', bookingFingerprint: fp('b2', '2026-11-10') }] })
-  assert.deepEqual(snapshotGapCounts(rulebook, base({ sheets: [sheet(), complete] })), { sheetsChecked: 1, exported: 0, notExported: 0, emptySnapshotRepair: 0, noRecord: 0 })
+  assert.deepEqual(snapshotGapCounts(rulebook, base({ sheets: [sheet(), complete] })), { sheetsChecked: 1, exported: 0, notExported: 0, gapOnly: 0, otherChange: 0, emptySnapshotRepair: 0, noRecord: 0 })
+})
+
+test('empty signed copies: only the rule repair predicate counts as repaired on open', () => {
+  // Unexported, bookings written before approval: repaired when a reviewer opens it.
+  assert.equal(snapshotGapCounts(rulebook, base({ sheets: [sheet({ lines: [] })] })).emptySnapshotRepair, 1)
+  // Exported: never repaired, so the gap rule reads it ("Revision due").
+  const exported = snapshotGapCounts(rulebook, base({ sheets: [sheet({ lines: [], exported: true })] }))
+  assert.equal(exported.emptySnapshotRepair, 0)
+  assert.equal(exported.exported, 1)
+  // Bookings all written after approval: not repaired, and already flagged before 1.57.0 (added after signing).
+  const late = new Map([
+    ['bookings|b1', booking('u1-copy', 'Confirmed', '2026-11-14T12:00:00Z')],
+    ['bookings|b2', booking('u1-copy', 'Confirmed', '2026-11-14T12:00:00Z')],
+  ])
+  const after = snapshotGapCounts(rulebook, base({ sheets: [sheet({ lines: [] })], bookings: late }))
+  assert.equal(after.emptySnapshotRepair, 0)
+  assert.equal(after.notExported, 0)
+  assert.equal(after.otherChange, 1)
+})
+
+test('a signed line with only an op-<id>-normal id names its booking, as the rule reads it', () => {
+  const lines = [{ id: 'op-b1-normal' }, { id: 'op-b2-normal' }]
+  assert.deepEqual(snapshotGapCounts(rulebook, base({ sheets: [sheet({ lines })] })), { sheetsChecked: 1, exported: 0, notExported: 0, gapOnly: 0, otherChange: 0, emptySnapshotRepair: 0, noRecord: 0 })
 })

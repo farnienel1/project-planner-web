@@ -1,19 +1,21 @@
 /**
- * Rulebook 1.57.0 §8 (review of #363, guardrail 3): which signed timesheets the 1.57.0 rule newly reads as changed —
- * a signed copy (`weeklyReportOverride.lines`) that lacks a booking the person signed (`operativeSignedBookings`, the
- * current record) while that booking is still live. Not exported: the line manager must counter-sign again. Exported:
- * "Revision due". Counts only; pure (no Firestore).
+ * Rulebook 1.57.0 §8 (review of #363, guardrail 3): which signed timesheets the 1.57.0 rule newly flags — a signed copy
+ * (`weeklyReportOverride.lines`) that lacks a booking the person signed (`operativeSignedBookings`, the current record)
+ * while that booking is still live. Not exported: the line manager must counter-sign again. Exported: "Revision due".
+ * Counts only; pure (no Firestore).
  *
- * It asks the rulebook itself (`signedTimesheetBookingChanges`) with the person's own signed bookings that are still
- * live as the live lines, each carrying its signed fingerprint and no write time. Then nothing the 1.56.0 rule reads
- * (a fingerprint change, a removal, an addition after the signature) can fire, so `addedBookingIds` holds exactly the
- * 1.57.0 gap. A booking counts as live when its document exists, is not tombstoned, still occupies its day
- * (`bookingOccupiesDay`), is still on a day of the sheet's pay run and is still filed under one of the person's ids
- * (users id, `formerUserIds`, `sameEmailUserIds`, users documents and `operatives` rows on their email).
+ * It asks the rulebook itself: `signedTimesheetBookingChanges` (its `snapshotGapBookingIds`, kept apart from other
+ * changes; `snapshotGapOnly` when nothing else changed — under J1 reports keep the signed figures for those) and
+ * `timesheetSnapshotNeedsRebuild` (an empty signed copy the 1.43.0 repair rebuilds when a reviewer opens it — never an
+ * exported one, never one whose bookings were all written after approval). The live lines are the person's signed
+ * bookings that are still live, with their signed fingerprint and their stored write times. A booking counts as live
+ * when its document exists, is not tombstoned, still occupies its day (`bookingOccupiesDay`), is still on a day of the
+ * sheet's pay run and is still filed under one of the person's ids (users id, `formerUserIds`, `sameEmailUserIds`,
+ * users documents and `operatives` rows on their email).
  *
- * Upper bound: PAYE days are not excluded (a PAYE day is never on the signed record, so this rarely matters).
- * Only the latest version of each pay run counts (`parseTimesheetRevisionDocId`). A signed copy with no labour line
- * naming a booking is the 1.43.0 repair path (rebuilt when a reviewer opens it), counted on its own.
+ * Approximations: PAYE days are not excluded (rarely on a signed record), and only the person's signed bookings are
+ * live lines (another booking of the pay run could make an empty copy repairable that is counted as flagged here).
+ * Only the latest version of each pay run counts (`parseTimesheetRevisionDocId`).
  */
 
 const key = (value) => String(value ?? '').trim().toLowerCase()
@@ -59,7 +61,7 @@ function personIds(userId, users, operatives) {
  *   same keys. All values already `plain`.
  */
 export function snapshotGapCounts(rulebook, input) {
-  const counts = { sheetsChecked: 0, exported: 0, notExported: 0, emptySnapshotRepair: 0, noRecord: 0 }
+  const counts = { sheetsChecked: 0, exported: 0, notExported: 0, gapOnly: 0, otherChange: 0, emptySnapshotRepair: 0, noRecord: 0 }
   // Latest version of each pay run only.
   const latest = new Map()
   for (const sheet of input.sheets) {
@@ -73,11 +75,6 @@ export function snapshotGapCounts(rulebook, input) {
     const override = data.weeklyReportOverride
     if (!override || typeof override !== 'object' || !data.operativeSignedAt) continue
     counts.sheetsChecked += 1
-    const lines = Array.isArray(override.lines) ? override.lines : []
-    if (!lines.some((line) => line && line.isPayeDay !== true && line.isLeave !== true && key(line.bookingId))) {
-      counts.emptySnapshotRepair += 1
-      continue
-    }
     const record = Array.isArray(data.operativeSignedBookings) ? data.operativeSignedBookings : []
     if (record.length === 0) {
       counts.noRecord += 1
@@ -110,13 +107,24 @@ export function snapshotGapCounts(rulebook, input) {
         bookingId,
         bookingCollection: collection,
         bookingFingerprint: row.fingerprint,
+        bookingCreatedAt: stored.createdAt ?? null,
+        bookingUpdatedAt: stored.updatedAt ?? null,
         scheduleOptionPlace: collection === 'managerSiteBookings' && !rulebook.isSiteLocationType(booking.locationType),
       })
     }
+    if (rulebook.timesheetSnapshotNeedsRebuild(data, liveLines)) {
+      counts.emptySnapshotRepair += 1
+      continue
+    }
     const change = rulebook.signedTimesheetBookingChanges({ sheet: data, liveLines, liveLoaded: true })
-    if (!change?.changed || (change.addedBookingIds ?? []).length === 0) continue
+    if ((change?.snapshotGapBookingIds ?? []).length === 0) {
+      // Flagged already before 1.57.0 (a booking changed, was removed or added after signing): not this rule's doing.
+      if (change?.changed) counts.otherChange += 1
+      continue
+    }
     if (change.exported) counts.exported += 1
     else counts.notExported += 1
+    if (change.snapshotGapOnly) counts.gapOnly += 1
   }
   return counts
 }

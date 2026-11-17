@@ -24,9 +24,13 @@ This dry run says how many sheets each organisation has in each group, before th
 | Column | Meaning |
 |---|---|
 | `sheetsChecked` | Signed sheets with a signed copy (latest version of each pay run). |
-| `notExported_counterSignAgain` | Not exported: the line manager counter-signs again. |
-| `exported_revisionDue` | Exported: shows "Revision due". |
-| `emptySnapshotRepairedOnOpen` | The signed copy holds no labour line. It is rebuilt when a reviewer opens it (1.43.0); this rule does not apply to it. |
-| `signedBefore147_noRecord` | Signed before 1.47.0, so it has no record of the signed bookings. This rule does not apply to it. |
+| `notExported_counterSignAgain` | Not exported, with a gap: the line manager counter-signs again. |
+| `exported_revisionDue` | Exported, with a gap: shows "Revision due". Empty exported copies are here too: the 1.43.0 repair never runs on an exported sheet. |
+| `ofWhichGapOnly_reportsKeepSigned` | Of the two above, sheets whose only change is the gap. Under J1 (built), the weekly report and Payrun Snapshot keep their signed figures until the revision is signed. |
+| `alreadyFlaggedBefore157` | Changed already before 1.57.0: a booking was changed, removed or added after signing. Not this rule's doing. |
+| `emptySnapshotRepairedOnOpen` | Not exported, no labour line, and a booking written before approval. The rule's own repair (`timesheetSnapshotNeedsRebuild`) rebuilds it when a reviewer opens it. |
+| `signedBefore147_noRecord` | Signed before 1.47.0, so there is no record of the signed bookings. This rule does not apply. |
 
-The counts are an upper bound: PAYE days are not excluded, and they rarely appear in a signed record.
+The counts are an upper bound:
+- PAYE days are not excluded; they rarely appear on a signed record.
+- Only the person's signed bookings are read as live lines. Another booking in the pay run could make an empty copy repairable, and that copy is counted as flagged here.

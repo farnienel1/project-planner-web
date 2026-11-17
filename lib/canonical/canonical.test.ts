@@ -17143,6 +17143,9 @@ test('1.53.0 review: a new night shift clashes with the next morning\'s early bo
         .find((row) => row.personId === SUBJECT)?.cells.timesheet.label
     const exportedSheet = R.parsePayrunSnapshotSheet(ORIGINAL, original)!
     assert.equal(run([{ ...exportedSheet, bookingsChange: { reopened: false, waitingFor: null, changed: true, exported: true } }]), 'Revision due')
+    // 1.57.0 J1: a change that is only a snapshot gap keeps the sheet's signed state in the Payrun Snapshot.
+    assert.equal(run([{ ...exportedSheet, bookingsChange: { reopened: false, waitingFor: null, changed: true, exported: true, snapshotGapOnly: true } }]), run([exportedSheet]))
+    assert.notEqual(run([exportedSheet]), 'Revision due')
     const openRev = R.parsePayrunSnapshotSheet(`${ORIGINAL}_rev1`, { userId: SUBJECT, weekStartKey: '2026-11-01', weekEndKey: '2026-11-15' })!
     assert.equal(run([exportedSheet, openRev]), 'REV 1 waiting for signature')
     const signedRev = R.parsePayrunSnapshotSheet(`${ORIGINAL}_rev1`, { userId: SUBJECT, weekStartKey: '2026-11-01', weekEndKey: '2026-11-15', operativeSignedAt: signedAt, operativeSignedByName: 'S P', operativeSignatureImageBase64: 'x', managerSignedAt: signedAt, managerSignedByName: 'L M', managerSignatureImageBase64: 'y', weeklyReportOverride: { lines: [] } })!
@@ -17164,6 +17167,14 @@ test('1.55.0 weekly report check line names the revision used ("· REV 1")', () 
   const exportedSheet = { ...sheet, managerSignedAt: new Date('2026-11-16T11:00:00Z'), exportedAt: new Date('2026-11-17T10:00:00Z') }
   const due = wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...base, sheet: exportedSheet, change: { exported: true, changed: true } }] }).people[0].check?.label
   assert.match(String(due), /^Timesheet: Revision due/)
+  // 1.57.0 J1 (`SNAPSHOT_GAP_REPORTS` = 'signed'): a change that is only a snapshot gap keeps the signed check line.
+  const gapOnly = wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...base, sheet: exportedSheet, change: { exported: true, changed: true, snapshotGapOnly: true } }] }).people[0].check?.label
+  assert.doesNotMatch(String(gapOnly), /Revision due|changed since signed/)
+  const unexportedGap = wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...base, change: { reopened: true, changed: true, waitingFor: 'lineManager', snapshotGapOnly: true } }] }).people[0].check?.label
+  assert.equal(unexportedGap, 'Timesheet: Signed · Invoice £250.00 ✓')
+  // A real booking change still follows J4.
+  const real = wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...base, change: { reopened: true, changed: true, waitingFor: 'lineManager', snapshotGapOnly: false } }] }).people[0].check?.label
+  assert.notEqual(real, 'Timesheet: Signed · Invoice £250.00 ✓')
   assert.match(String(wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...base, sheet: { operativeSignedAt: null }, revision: 1 }] }).people[0].check?.label), /^Timesheet: REV 1 waiting for signature/)
   const signedOff = { ...sheet, managerSignedAt: new Date('2026-11-16T11:00:00Z') }
   assert.match(String(wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...base, sheet: signedOff, revision: 1 }] }).people[0].check?.label), /^Timesheet: Signed · REV 1/)
@@ -17374,7 +17385,9 @@ test('1.57.0 a snapshot lacking a booking the person signed (still live) is stal
   const open = R112.signedTimesheetBookingChanges({ sheet, liveLines: live, liveLoaded: true })
   assert.equal(open.reopened, true)
   assert.equal(open.waitingFor, 'lineManager')
-  assert.deepEqual(open.addedBookingIds, ['a'])
+  assert.deepEqual(open.snapshotGapBookingIds, ['a'])
+  assert.deepEqual(open.addedBookingIds, [])
+  assert.equal(open.snapshotGapOnly, true)
   const exported = R112.signedTimesheetBookingChanges({ sheet: { ...sheet, exportedAt: new Date(now - 10_000) }, liveLines: live, liveLoaded: true })
   assert.equal(exported.exported, true)
   assert.equal(exported.changed, true)
@@ -17431,4 +17444,14 @@ test('1.57.0 snapshot gap: never for a PAYE day, a leave line, a repairable empt
   // Legacy signed lines that name no booking cannot be compared.
   const legacy = sheetWith([{ id: 'day-1', amount: 225 }, { id: 'day-2', amount: 225 }])
   assert.equal(R112.signedTimesheetBookingChanges({ sheet: legacy, liveLines: [line('a'), line('b')], liveLoaded: true }).changed, false)
+})
+
+test('1.57.0 snapshot gap is reported apart; reports keep signed figures for a gap-only change (J1)', () => {
+  assert.equal(R112.SNAPSHOT_GAP_REPORTS, 'signed')
+  assert.equal(R112.SNAPSHOT_GAP_FROM_MS, null)
+  assert.equal(R112.signedTimesheetChangeForReports({ changed: true, snapshotGapOnly: true }), null)
+  const real = { changed: true, snapshotGapOnly: false }
+  assert.equal(R112.signedTimesheetChangeForReports(real), real)
+  assert.equal(R112.signedTimesheetChangeForReports(null), null)
+  assert.deepEqual(R112.timesheetRevisionReportState({ revision: 0, exported: true, signedOff: true, change: { exported: true, changed: true } }).state, 'due')
 })

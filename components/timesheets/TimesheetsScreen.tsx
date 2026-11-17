@@ -96,7 +96,7 @@ import {
   mapWithConcurrency,
   runTimesheetExport,
 } from '@/lib/timesheets/timesheetExportRun'
-import { exportDeliveryNotice, exportDeliveryPending, useExportDeliveryStore } from '@/lib/timesheets/exportDelivery'
+import { EXPORT_DELIVERY_TAB_ID, exportDeliveryLiveElsewhere, exportDeliveryNotice, exportDeliveryPending, useExportDeliveryStore } from '@/lib/timesheets/exportDelivery'
 
 /** Review of #363: PDFs built and backed up at once during an export's delivery. */
 const EXPORT_DELIVERY_CONCURRENCY = 3
@@ -183,7 +183,10 @@ export function TimesheetsScreen({
   useEffect(() => {
     if (organization?.id) loadDelivery(organization.id)
   }, [organization?.id, loadDelivery])
-  const deliveryNotice = exportDeliveryNotice(deliveryEntry, deliveryPending)
+  const deliveryHere = useExportDeliveryStore((state) => Boolean(organization?.id && state.live[organization.id]))
+  const deliveryNowMs = useExportDeliveryStore((state) => state.nowMs)
+  const deliveryElsewhere = exportDeliveryLiveElsewhere(deliveryEntry, EXPORT_DELIVERY_TAB_ID, deliveryNowMs)
+  const deliveryNotice = exportDeliveryNotice(deliveryEntry, deliveryHere, deliveryElsewhere)
   // Exports leave UTR and VAT out unless an admin ticks the box (rulebook).
   const [exportTaxIds, setExportTaxIds] = useState(false)
   const [exportMessage, setExportMessage] = useState<string | null>(null)

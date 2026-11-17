@@ -232,8 +232,9 @@ export function buildTimesheetInvoicePdf(input: InvoicePdfContext): Uint8Array {
       // The project name wraps too (review of #363: never over the amount); the details start under its last line.
       const detailsOffset = 34 + 14 * (nameLines.length - 1)
       const rowHeight = Math.max(50, detailsOffset + 12 * (detailLines.length - 1) + 16)
-      ensure(rowHeight)
-      const detailsTop = y + detailsOffset
+      // Review of #363: a row taller than a page continues on the next page (line by line), never off the bottom.
+      ensure(Math.min(rowHeight, PAGE_H - 40 - 60))
+      const rowTop = y
       stream += rgbOf(INVOICE_PDF_STYLE.hairline)
       stream += rect(MARGIN, top(y + 0.8), tableWidth, 0.8, true)
       stream += rgbOf(INVOICE_PDF_STYLE.navy)
@@ -241,16 +242,22 @@ export function buildTimesheetInvoicePdf(input: InvoicePdfContext): Uint8Array {
       stream += rgbOf(INVOICE_PDF_STYLE.slate)
       stream += text(line.jobNumber || '—', MARGIN + 10, y + 32, 9.5, false, 70)
       stream += rgbOf(INVOICE_PDF_STYLE.navy)
-      nameLines.forEach((name, index) => {
-        stream += text(name, MARGIN + 84, y + 18 + 14 * index, 11.5, true)
-      })
-      stream += rgbOf(INVOICE_PDF_STYLE.slate)
-      detailLines.forEach((detail, index) => {
-        stream += text(detail, MARGIN + 84, detailsTop + 12 * index, 9.5)
-      })
-      stream += rgbOf(INVOICE_PDF_STYLE.navy)
       stream += text(money(formatCurrency(line.amount, currencyCode)), MARGIN + tableWidth - 64, y + 26, 11.5, true, 56)
-      y += rowHeight
+      let cursor = y + 18
+      let continued = false
+      const placeLine = (value: string, size: number, bold: boolean, color: readonly [number, number, number], step: number) => {
+        if (cursor + 4 > PAGE_H - 40) {
+          flushPage()
+          continued = true
+          cursor = y + 18
+        }
+        stream += rgbOf(color)
+        stream += text(value, MARGIN + 84, cursor, size, bold)
+        cursor += step
+      }
+      nameLines.forEach((name, index) => placeLine(name, 11.5, true, INVOICE_PDF_STYLE.navy, index === nameLines.length - 1 ? 16 : 14))
+      detailLines.forEach((detail) => placeLine(detail, 9.5, false, INVOICE_PDF_STYLE.slate, 12))
+      y = continued ? cursor + 4 : rowTop + rowHeight
     }
   }
 
@@ -335,14 +342,15 @@ export function wrapPdfText(value: string, maxWidth: number, size: number, bold 
     }
     if (current) lines.push(current)
     current = ''
-    let rest = word
-    while (!fits(rest)) {
+    // By code point, never inside a surrogate pair.
+    let rest = Array.from(word)
+    while (!fits(rest.join(''))) {
       let cut = 1
-      while (cut < rest.length && fits(rest.slice(0, cut + 1))) cut += 1
-      lines.push(rest.slice(0, cut))
+      while (cut < rest.length && fits(rest.slice(0, cut + 1).join(''))) cut += 1
+      lines.push(rest.slice(0, cut).join(''))
       rest = rest.slice(cut)
     }
-    current = rest
+    current = rest.join('')
   }
   if (current) lines.push(current)
   return lines.length > 0 ? lines : ['']
@@ -350,9 +358,10 @@ export function wrapPdfText(value: string, maxWidth: number, size: number, bold 
 
 function clip(value: string, maxWidth: number, size: number, bold = false): string {
   if (pdfTextWidth(value, size, bold) <= maxWidth) return value
-  let cut = value.length
-  while (cut > 1 && pdfTextWidth(`${value.slice(0, cut)}…`, size, bold) > maxWidth) cut -= 1
-  return `${value.slice(0, cut)}…`
+  const chars = Array.from(value)
+  let cut = chars.length
+  while (cut > 1 && pdfTextWidth(`${chars.slice(0, cut).join('')}…`, size, bold) > maxWidth) cut -= 1
+  return `${chars.slice(0, cut).join('')}…`
 }
 
 function n(value: number): string {

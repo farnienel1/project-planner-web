@@ -19,6 +19,7 @@
  */
 
 import { timesheetRevisionReportState } from './timesheetRevisions'
+import { signedTimesheetChangeForReports } from './timesheetBookingChanges'
 import { dayKeyInZone } from '../orgTime/zoneTime'
 import { eachDayKey, isoWeekdayOfDayKey, zoneOrLondon } from './dayKeys'
 import { documentInstantMs } from './peopleDocuments'
@@ -115,7 +116,8 @@ export type WeeklyReportPaySheet = {
   endDayKey: string
   sheet?: Record<string, unknown> | null
   payrollLines?: ReadonlyArray<InvoiceLineInput & { id: string; amount: number }> | null
-  change?: { reopened?: boolean | null; changed?: boolean | null; exported?: boolean | null; waitingFor?: 'person' | 'lineManager' | null } | null
+  /** 1.57.0: `snapshotGapOnly` — under J1 (`SNAPSHOT_GAP_REPORTS`) a gap-only change keeps the signed figures. */
+  change?: { reopened?: boolean | null; changed?: boolean | null; exported?: boolean | null; waitingFor?: 'person' | 'lineManager' | null; snapshotGapOnly?: boolean | null } | null
   /** The sheet's sign-off fields when the app holds a loaded copy (`parseTimesheetStatusFields` of the stored sheet). */
   status?: TimesheetStatusFields | null
   /** 1.45.0: the reader's entry fingerprints for a loaded copy (`timesheetInvoiceRows` `entryFingerprints`). */
@@ -839,19 +841,21 @@ function checkLine(
     if (row.startDayKey < start || row.endDayKey > end) partialRun = true
     if (typeof row.revision === 'number' && Number.isInteger(row.revision) && row.revision > revision) revision = row.revision
     const fields = row.status ?? parseTimesheetStatusFields(row.sheet ?? null)
-    const bucket = timesheetListBucket(fields, person.hasLineManager === true, row.change ?? null)
+    // 1.57.0: a change that is only a snapshot gap keeps the signed figures here (J1, `SNAPSHOT_GAP_REPORTS`).
+    const reportChange = signedTimesheetChangeForReports(row.change)
+    const bucket = timesheetListBucket(fields, person.hasLineManager === true, reportChange)
     const revisionState = timesheetRevisionReportState({
       revision: row.revision,
       exported: fields.exportedAtMs != null,
       signedOff: fields.managerSignedAtMs != null || (fields.operativeSignedAtMs != null && Boolean((row.sheet as Record<string, unknown> | null)?.weeklyReportOverride)),
-      change: row.change,
+      change: reportChange,
     })
     if (revisionState.state !== 'none') {
       if (!revisionStateLabel) revisionStateLabel = revisionState.label
       states.push(bucket === 'awaiting' && revisionState.state === 'open' ? 'submitted' : 'notStarted')
       changedSinceSigned = changedSinceSigned || revisionState.state === 'due'
     } else states.push(bucket === 'exported' ? 'exported' : bucket === 'signed' ? 'signed' : bucket === 'awaiting' ? 'submitted' : 'notStarted')
-    if (row.change?.reopened === true || (row.change?.changed === true && fields.operativeSignedAtMs != null && bucket !== 'exported')) changedSinceSigned = true
+    if (reportChange?.reopened === true || (reportChange?.changed === true && fields.operativeSignedAtMs != null && bucket !== 'exported')) changedSinceSigned = true
     const days = eachDayKey(row.startDayKey, row.endDayKey, zone).filter((day) => counted.has(day))
     const approved = ctx.approvedRun(row)
     const invoiceRows = timesheetInvoiceRows({ sheet: row.sheet ?? null, payrollLines: row.payrollLines ?? [], extrasMode: 'decided', timesheetDays: days, timeZone: zone, entryFingerprints: row.entryFingerprints ?? null })
