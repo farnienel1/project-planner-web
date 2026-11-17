@@ -209,8 +209,10 @@ export function invoiceLinesForTimesheet({
     if (row.kind === 'labour') {
       const live = row.line
       const signed = row.source === 'override' ? (row.stored as unknown as SignedOverrideLine) : null
+      // Review of #378 (SF1): the details show the row's decided amount (after an Edit hours or other review), never
+      // the live line's own; a calculation that does not price to it falls back to the older wording.
       const details = live
-        ? timesheetLabourDetails(live, currencyCode)
+        ? timesheetLabourDetails(row.amount === live.amount ? live : { ...live, amount: row.amount }, currencyCode)
         : signedOverrideDetails(
             signed as SignedOverrideLine,
             signed?.date && standardDayHoursOn ? standardDayHoursOn(new Date(signed.date as Date)) : standardDayHours,

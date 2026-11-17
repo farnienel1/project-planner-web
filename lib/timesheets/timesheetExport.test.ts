@@ -239,3 +239,39 @@ test('1.36.0 FU-5: invoiceRateChangeNotes includes history under a former invite
   assert.ok(notes.some((note) => /^Rate updated to £230.00/.test(note)))
   assert.ok(notes.some((note) => /^Operative rate updated to £240.00/.test(note)))
 })
+
+test('1.61.0 review (SF1): an edited day-rate overtime row on the invoice never shows a sum that does not add up to its amount', () => {
+  const overtime = {
+    id: 'op-b1-ot',
+    date: new Date('2026-11-02T16:00:00Z'),
+    jobNumber: 'J-1',
+    projectName: 'Site One (Overtime)',
+    details: '16:00–22:00',
+    paidHours: 6,
+    payrollBasis: 'dayRate' as const,
+    dayRate: 337.5,
+    amount: 238.24,
+    isPayeDay: false,
+    isOvertimeLine: true,
+    hasRate: true,
+    standardDayHours: 8.5,
+    otMultiplier: 1.5,
+    otBaseRate: 225,
+  }
+  const payroll: TimesheetPayrollSummary = {
+    totalHours: 6, overtimeHours: 6, shiftCount: 1, baseAmount: 0, overtimeAmount: 238.24, workAmount: 238.24,
+    lineItems: [overtime],
+  }
+  const unrevised = invoiceLinesForTimesheet({ payroll, draft: emptyTimesheetDraft(), timeZone: 'Europe/London', extrasMode: 'export' })
+  assert.ok(unrevised[0].details.includes('6h × 1.5 = 9h · 9h × £26.47/h (rounded) = £238.24'), unrevised[0].details)
+  const draft = {
+    ...emptyTimesheetDraft(),
+    managerSignedAt: new Date('2026-11-16T10:00:00Z'),
+    payrollLineReviews: { 'op-b1-ot': { decision: 'edited' as const, revisedAmount: 300 } },
+  }
+  const revised = invoiceLinesForTimesheet({ payroll, draft, timeZone: 'Europe/London', extrasMode: 'export' })
+  assert.equal(revised[0].amount, 300)
+  assert.ok(!revised[0].details.includes('£26.47/h'), revised[0].details)
+  // The details show the amount paid, never the live line's £238.24.
+  assert.ok(revised[0].details.endsWith('£300.00'), revised[0].details)
+})

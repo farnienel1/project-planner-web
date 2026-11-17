@@ -21,7 +21,7 @@ export type HistoryPayRow = {
 
 // Rulebook 1.10.0 (L16): the pay arithmetic is the rulebook's (`payForHours`, `roundPennies`, `orgDayHours`).
 export { orgDayHours, payForHours, roundPennies } from '@/lib/canonical/payRate'
-import { orgDayHours, roundPennies } from '@/lib/canonical/payRate'
+import { orgDayHours, payForHours, roundPennies } from '@/lib/canonical/payRate'
 
 /** Organisation money (`formatMoney`). Pass the organisation currency; GBP when omitted. */
 export function money(amount: number, currencyCode?: string | null) {
@@ -37,8 +37,9 @@ export function quantityText(quantity: number, unit: 'hours' | 'days') {
 /**
  * Rulebook 1.61.0 §8 (owner 17 Nov): the hours wording of a day-rate overtime line, or null so the caller keeps the
  * older wording. Null also when the text throws, or when it would not show this line's own figures — its hours sum
- * must be the line's paid hours at the multiplier (`paidHours × N`, which equals clock × N − break) and its amount the
- * line's amount in pennies. Exported for tests.
+ * must be the line's paid hours at the multiplier (`paidHours × N`, which equals clock × N − break), and the line's
+ * amount must be exactly what `payForHours` pays for those hours at that day rate and divisor (a revised amount keeps
+ * the older wording). Exported for tests.
  */
 export function dayRateOvertimeTextOrNull(input: {
   paidHours: number
@@ -63,7 +64,18 @@ export function dayRateOvertimeTextOrNull(input: {
     })
     if (!calc) return null
     if (Math.abs(calc.paidHours - input.paidHours * input.multiplier) > 0.005) return null
-    if (calc.pay !== roundPennies(input.pay) || calc.payShown !== money(roundPennies(input.pay), input.currencyCode)) return null
+    // Review of #378 (SF1): the amount shown must be exactly what the rulebook pays for the hours, rate and divisor
+    // shown (`payForHours`) — not merely the amount passed in, which an Edit hours or other revision may have changed
+    // while the hours stayed the live line's. Otherwise the shown sum would not add up to the amount: older wording.
+    const priced = payForHours({
+      payBasis: 'day',
+      dayRate: input.dayRate,
+      paidHours: input.paidHours,
+      standardDayHours: input.standard,
+      otMultiplier: input.multiplier,
+    })
+    if (priced !== roundPennies(input.pay)) return null
+    if (calc.pay !== priced || calc.payShown !== money(priced, input.currencyCode)) return null
     return calc
   } catch {
     return null

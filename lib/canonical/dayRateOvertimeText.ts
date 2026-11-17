@@ -147,6 +147,11 @@ export function signedDayRateOvertimeText(
   if (priced !== roundPennies(Number(line.amount))) return null
   const parsed = parseMultipliedHoursText(line.details)
   if (parsed && parsed.multiplier !== multiplier) return null
+  // Second review of #378: both apps' collectors write the multiplied text into an overtime line's details whenever an
+  // unpaid break came off the multiplied hours, so details without it mean no break, and the stored paid hours are the
+  // clock hours (not back-calculated). Details that mention a break but cannot be read would show back-calculated
+  // base hours: the older wording instead.
+  if (!parsed && /break/i.test(String(line.details ?? ''))) return null
   const calc = dayRateOvertimeCalcText({
     clockHours: parsed ? parsed.clockHours : paidHours,
     multiplier,

@@ -59,3 +59,14 @@ test('1.61.0: the shown hourly rate is the person’s day rate ÷ divisor, even 
   assert.ok(display.equation.endsWith(`(${money(dayRate, 'GBP')}/day ÷ 8h)`), display.equation)
   assert.equal(display.pay, pay)
 })
+
+test('1.61.0 review (SF1): a live line whose decided amount differs from what its hours pay keeps the older wording', () => {
+  // Edit hours revised the line to £300 while the hours shown stay 6h × 1.5 at £225/day ÷ 8.5h (which pays £238.24).
+  const revised = line({ pay: 300 })
+  assert.match(revised.display.equation, OLD_WORDING)
+  assert.equal(revised.display.pay, 300)
+  assert.ok(revised.display.equation.endsWith(`= ${money(300, 'GBP')}`))
+  // A penny off is refused as well: the shown sum must price to the amount exactly.
+  assert.equal(dayRateOvertimeTextOrNull({ paidHours: 6, multiplier: 1.5, dayRate: 225, standard: 8.5, pay: 238.25, currencyCode: 'GBP' }), null)
+  assert.equal(dayRateOvertimeTextOrNull({ paidHours: 6, multiplier: 1.5, dayRate: 225, standard: 8.5, pay: 238.24, currencyCode: 'GBP' })?.pay, 238.24)
+})

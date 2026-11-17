@@ -256,6 +256,11 @@ test('1.61.0 S1: a signed line reads in hours only from the day rate and divisor
   assert.equal(R.signedDayRateOvertimeText(signedLine({ payBasis: 'hourly' })), null)
   assert.equal(R.signedDayRateOvertimeText(signedLine({ isOvertime: false })), null)
   assert.equal(R.signedDayRateOvertimeText(signedLine({ details: '16:00–22:30 · OT 6.5h × 2 − 0.5h break = 12.5h' })), null)
+  // Second review of #378: details that mention a break but carry no readable multiplied text would show
+  // back-calculated base hours as clock hours — the older wording instead.
+  assert.equal(R.signedDayRateOvertimeText(signedLine({ details: '16:00–22:30 · 0.5h unpaid break' })), null)
+  // No multiplied text and no break (the collectors write it whenever a break came off): the stored hours are the clock.
+  assert.ok(R.signedDayRateOvertimeText(signedLine({ details: 'OT 6h' }), { currency: 'GBP' }))
 })
 
 test('1.61.0 S1 property: a signed line shows its stored figures or the older wording, never a back-calculated rate', () => {
