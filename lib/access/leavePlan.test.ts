@@ -69,6 +69,11 @@ test('1.56.0 leave re-plan: the user changes before loadBookings(B) — operativ
   assert.equal(leaveReplanTarget({ requestedOrgId: 'ORG-B', currentOrgId: 'org-b', plannedKey: null, nextKey: asManagerInB, signedIn: true }), 'ORG-B')
 })
 
+test('1.56.0 leave re-plan: no organisation open blocks once a context was adopted (sign-out / mid-switch)', () => {
+  assert.equal(leaveReplanTarget({ requestedOrgId: 'ORG-A', currentOrgId: '', contextAdopted: true, plannedKey: 'all', nextKey: 'none', signedIn: true }), null)
+  assert.equal(leaveReplanTarget({ requestedOrgId: 'ORG-A', currentOrgId: '', contextAdopted: false, plannedKey: 'all', nextKey: 'none', signedIn: true }), 'ORG-A')
+})
+
 test('1.56.0 leave re-plan: nothing while signed out or before any organisation was requested', () => {
   assert.equal(leaveReplanTarget({ requestedOrgId: 'ORG-A', plannedKey: 'all', nextKey: 'none', signedIn: false }), null)
   assert.equal(leaveReplanTarget({ requestedOrgId: null, plannedKey: null, nextKey: 'own:a', signedIn: true }), null)

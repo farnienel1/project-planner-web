@@ -29,7 +29,7 @@ import { leavePlanKey, leavePlanParts, leaveReplanTarget, ownBookingIdsFor, webJ
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { onPlatformConfigChange, operativeOwnLeaveFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
-import { currentOrganizationId } from '@/lib/canonical'
+import { captureOrganizationContext, currentOrganizationId, organizationContextStillCurrent, type OrganizationContextSnapshot } from '@/lib/canonical'
 import { liveResultStillCurrent } from '@/lib/firebase/liveResult'
 import type { HolidayBooking, HolidayStatus, HolidayTimeSlot } from '@/types'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
@@ -145,7 +145,46 @@ const HOLIDAY_LISTENER_KEY = 'holidayStore:holidayBookings'
 let holidayRequestedOrgId: string | null = null
 let holidayPlannedKey: string | null = null
 let holidayPlannedUserId: string | null = null
+/**
+ * Review of #356 (third): the load in progress — recorded synchronously before any await — so a re-plan for the same
+ * organisation, user and plan never starts another load (no re-entry loop). `token` tells a superseded load to stop.
+ */
+let holidayInFlight: { token: number; orgId: string; userId: string | null; key: string } | null = null
+let holidayLoadToken = 0
 let followingPlatformConfig = false
+
+/** The listener calls, swappable in tests (a subscribe that stays pending, a refusal). */
+const holidayListeners = {
+  subscribeCollectionLoaded: subscribeOrgCollectionLoaded,
+  subscribePlan: subscribeOrgPlan,
+  unsubscribeCollection: unsubscribeOrgCollection,
+  unsubscribePlan: unsubscribeOrgPlan,
+  switchesReady: securitySwitchesReady,
+  operativeOwnLeave: operativeOwnLeaveFor,
+}
+
+/** Tests only: replace some listener calls; returns a restore function. */
+export function setHolidayListenersForTests(overrides: Partial<typeof holidayListeners>): () => void {
+  const saved = { ...holidayListeners }
+  Object.assign(holidayListeners, overrides)
+  return () => {
+    Object.assign(holidayListeners, saved)
+    holidayRequestedOrgId = null
+    holidayPlannedKey = null
+    holidayPlannedUserId = null
+    holidayInFlight = null
+    holidayOrgId = ''
+  }
+}
+
+/**
+ * Review of #356: an async result of a leave load still belongs to the screen — the organisation context it started
+ * in is still the open one (`organizationContextStillCurrent`: same company, same epoch, so a company switch or a
+ * sign-out after an organisation was adopted blocks it; nothing is gated before the first adoption).
+ */
+function holidayResultCurrent(organizationId: string, captured: OrganizationContextSnapshot): boolean {
+  return organizationContextStillCurrent(organizationId, captured)
+}
 
 /**
  * The signed-in user's leave plan for `organizationId` now (`leaveQueryPlan` through `leavePlanParts`): their own ids
@@ -158,7 +197,7 @@ function currentLeavePlanParts(organizationId: string) {
     webJobAccessViewer(user),
     ownBookingIdsFor(user, useOperativeStore.getState().operatives),
     user?.email ?? null,
-    operativeOwnLeaveFor(organizationId)
+    holidayListeners.operativeOwnLeave(organizationId)
   )
 }
 
@@ -171,7 +210,8 @@ function clearHolidayRows(): void {
 /**
  * Rulebook 1.56.0: re-plan the leave listener of the organisation last requested when the signed-in user, their
  * operatives rows or the `operativeOwnLeave` switch changed the plan (`leaveReplanTarget`) — only while that
- * organisation is still the open one. Signed out (or another user): forget the plan and the rows.
+ * organisation is still the open one, and never while a load of the same organisation, user and plan is in progress
+ * (review of #356: no re-entry). Signed out: forget the plan and the rows.
  */
 export function replanHolidayBookings(): void {
   const user = useAuthStore.getState().user
@@ -179,17 +219,23 @@ export function replanHolidayBookings(): void {
     holidayRequestedOrgId = null
     holidayPlannedKey = null
     holidayPlannedUserId = null
-    unsubscribeOrgCollection(HOLIDAY_LISTENER_KEY)
-    unsubscribeOrgPlan(HOLIDAY_LISTENER_KEY)
+    holidayInFlight = null
+    holidayLoadToken += 1
+    holidayListeners.unsubscribeCollection(HOLIDAY_LISTENER_KEY)
+    holidayListeners.unsubscribePlan(HOLIDAY_LISTENER_KEY)
     clearHolidayRows()
     return
   }
   if (!holidayRequestedOrgId) return
+  const nextKey = leavePlanKey(currentLeavePlanParts(holidayRequestedOrgId))
+  const inFlight = holidayInFlight
+  if (inFlight && inFlight.orgId === holidayRequestedOrgId && inFlight.userId === user.id && inFlight.key === nextKey) return
   const target = leaveReplanTarget({
     requestedOrgId: holidayRequestedOrgId,
     currentOrgId: currentOrganizationId(),
-    plannedKey: holidayPlannedUserId === user.id ? holidayPlannedKey : null,
-    nextKey: leavePlanKey(currentLeavePlanParts(holidayRequestedOrgId)),
+    contextAdopted: captureOrganizationContext().epoch > 0,
+    plannedKey: inFlight ? null : holidayPlannedUserId === user.id ? holidayPlannedKey : null,
+    nextKey,
     signedIn: true,
   })
   if (target) void useHolidayStore.getState().loadBookings(target).catch(() => undefined)
@@ -206,19 +252,26 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
   // on any platform arrives through the same listener.
   loadBookings: async (organizationId) => {
     if (!organizationId) return
-    if (get().loadedOrgId !== organizationId) set({ loading: true, error: null })
-    // Rulebook 1.56.0 §9 / §17: the organisation this listener is for (re-plans target it, never an older one), and
-    // readPlanSync re-plans it when the signed-in user or the operatives rows change; every read of platformConfig/app
-    // re-plans it when the `operativeOwnLeave` switch changes.
+    // Review of #356 (third): everything below up to the first await runs synchronously, so a re-plan triggered while
+    // this load is pending sees it in `holidayInFlight` and never starts another one.
+    const captured = captureOrganizationContext()
+    const token = ++holidayLoadToken
+    const startUserId = useAuthStore.getState().user?.id ?? null
     holidayRequestedOrgId = organizationId
+    holidayInFlight = { token, orgId: organizationId, userId: startUserId, key: leavePlanKey(currentLeavePlanParts(organizationId)) }
+    if (get().loadedOrgId !== organizationId) set({ loading: true, error: null })
+    // Rulebook 1.56.0 §9 / §17: readPlanSync re-plans this listener when the signed-in user or the operatives rows
+    // change; every read of platformConfig/app re-plans it when the `operativeOwnLeave` switch changes. Starting them
+    // never re-plans (no re-entry).
     void import('@/lib/access/readPlanSync').then((sync) => sync.startReadPlanSync()).catch(() => undefined)
     if (!followingPlatformConfig) {
       followingPlatformConfig = true
       onPlatformConfigChange(() => replanHolidayBookings())
     }
-    await securitySwitchesReady()
-    // A newer request (another company) or a company switch took over while the switches were read.
-    if (holidayRequestedOrgId !== organizationId || !liveResultStillCurrent(organizationId)) return
+    const superseded = () => holidayInFlight?.token !== token
+    await holidayListeners.switchesReady()
+    // A newer load (another company, user or plan) or a company switch took over while the switches were read.
+    if (superseded() || !holidayResultCurrent(organizationId, captured)) return
     const onDocs = (docs: OrgCollectionDoc[], meta?: { authoritative: boolean }) => {
       if (!liveResultStillCurrent(organizationId)) return
       const bookings = docs
@@ -235,41 +288,58 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
     const userId = useAuthStore.getState().user?.id ?? null
     const parts = currentLeavePlanParts(organizationId)
     const key = leavePlanKey(parts)
+    holidayInFlight = { token, orgId: organizationId, userId, key }
     // Review of #356: never keep another user's rows, or a whole company's rows once the plan narrows.
     if ((holidayPlannedUserId !== null && holidayPlannedUserId !== userId) || (holidayPlannedKey === 'all' && key !== 'all')) {
       clearHolidayRows()
     }
     holidayPlannedKey = null
+    let failed = false
     try {
       if (parts === null) {
-        unsubscribeOrgPlan(HOLIDAY_LISTENER_KEY)
-        await subscribeOrgCollectionLoaded(HOLIDAY_LISTENER_KEY, organizationId, 'holidayBookings', onDocs)
+        holidayListeners.unsubscribePlan(HOLIDAY_LISTENER_KEY)
+        await holidayListeners.subscribeCollectionLoaded(HOLIDAY_LISTENER_KEY, organizationId, 'holidayBookings', onDocs)
       } else {
-        unsubscribeOrgCollection(HOLIDAY_LISTENER_KEY)
+        holidayListeners.unsubscribeCollection(HOLIDAY_LISTENER_KEY)
         let failure: { message: string } | null = null
-        await subscribeOrgPlan(HOLIDAY_LISTENER_KEY, organizationId, 'holidayBookings', parts, onDocs, (error) => {
+        await holidayListeners.subscribePlan(HOLIDAY_LISTENER_KEY, organizationId, 'holidayBookings', parts, onDocs, (error) => {
           failure = error
+          // Review of #356: a later listener error (e.g. a refusal once the Phase B rules are on) reaches the screen
+          // too, not only the first load's.
+          if (holidayResultCurrent(organizationId, captured)) {
+            holidayPlannedKey = null
+            set({ error: error.message || 'Failed to load annual leave', loading: false })
+          }
         })
         if (failure) throw failure
-        if (parts.length === 0 && liveResultStillCurrent(organizationId)) {
+        if (parts.length === 0 && holidayResultCurrent(organizationId, captured)) {
           holidayOrgId = organizationId
           set({ bookings: [], loading: false, error: null, loadedOrgId: organizationId })
         }
       }
-      // Review of #356: the plan counts as running only after a successful subscribe, so a refused one is retried.
-      if (holidayRequestedOrgId === organizationId) {
-        holidayPlannedKey = key
-        holidayPlannedUserId = userId
-      }
-      if (liveResultStillCurrent(organizationId)) set({ loading: false })
     } catch (error: unknown) {
-      if (!liveResultStillCurrent(organizationId)) return
-      set({
-        error: error instanceof Error ? error.message : 'Failed to load annual leave',
-        loading: false,
-        loadedOrgId: organizationId,
-      })
+      failed = true
+      if (!superseded() && holidayResultCurrent(organizationId, captured)) {
+        set({
+          error: error instanceof Error ? error.message : (error as { message?: string })?.message || 'Failed to load annual leave',
+          loading: false,
+          loadedOrgId: organizationId,
+        })
+      }
+    } finally {
+      if (!superseded()) {
+        holidayInFlight = null
+        // The plan counts as running only after a successful subscribe, so a refused one is retried.
+        if (!failed) {
+          holidayPlannedKey = key
+          holidayPlannedUserId = userId
+        }
+      }
     }
+    if (failed || superseded() || !holidayResultCurrent(organizationId, captured)) return
+    set({ loading: false })
+    // The inputs may have changed while this load was in progress (re-plans were skipped): check once more.
+    replanHolidayBookings()
   },
 
   saveBooking: async (organizationId, booking) => {

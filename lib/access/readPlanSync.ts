@@ -140,10 +140,12 @@ function start(): void {
   })
 }
 
-/** Rulebook 1.56.0: the leave store starts the sync (and plans its own ids at once). Idempotent. */
+/**
+ * Rulebook 1.56.0: the leave store starts the sync. Idempotent, and it never re-plans (review of #356: the leave
+ * store calls it from inside `loadBookings`; a re-plan from here re-entered the load in a microtask loop).
+ */
 export function startReadPlanSync(): void {
   start()
-  replanLeave()
 }
 
 /** A job listener delivered: start the sync and re-plan the booking listeners when the job list changed. */

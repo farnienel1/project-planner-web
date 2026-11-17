@@ -139,17 +139,21 @@ export function leavePlanKey(parts: ReadonlyArray<OrgPlanPart> | null): string {
  * (never the one whose first snapshot arrived last) only while it is still the open organisation — after a company
  * switch the old company is never re-opened; the new company's own `loadBookings` plans it — and only when the plan
  * the current inputs give differs from the plan the listener runs. Nothing while signed out or before any
- * organisation was requested. `currentOrgId` empty (no organisation adopted yet) does not block.
+ * organisation was requested. `currentOrgId` empty blocks once an organisation context has been adopted
+ * (`contextAdopted`, sign-out / mid-switch); before the first adoption (boot, tests) it does not.
  */
 export function leaveReplanTarget(input: {
   requestedOrgId: string | null
   currentOrgId?: string | null
+  /** An organisation context has been adopted (epoch > 0): then "no organisation open" blocks too. */
+  contextAdopted?: boolean
   plannedKey: string | null
   nextKey: string
   signedIn: boolean
 }): string | null {
   if (!input.signedIn || !input.requestedOrgId) return null
   const current = String(input.currentOrgId ?? '').trim().toLowerCase()
+  if (!current && input.contextAdopted) return null
   if (current && current !== input.requestedOrgId.trim().toLowerCase()) return null
   return input.plannedKey === input.nextKey ? null : input.requestedOrgId
 }
