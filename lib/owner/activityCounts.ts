@@ -114,6 +114,40 @@ export function activityOrganisationIds(
     .sort()
 }
 
+/**
+ * Review of #366: one read per period and test-data choice is kept for OWNER_ACTIVITY_CACHE_MS in this server process
+ * (the `/api/owner/directory` pattern), so reloads and several tabs do not re-run every count. Only the platform owner
+ * reaches the route (the guard runs first). `refresh: true` (the Refresh button) reads again. A failed read is never kept.
+ */
+export const OWNER_ACTIVITY_CACHE_MS = 60_000
+
+type ActivityRead = ActivityCounts & { ranges: ActivityRange[] }
+const activityCache = new Map<string, { at: number; value: Promise<ActivityRead> }>()
+
+export function clearOwnerActivityCache(): void {
+  activityCache.clear()
+}
+
+export async function readOwnerActivityCountsCached(
+  token: string,
+  options: { period: ConsolePeriodId; includeTestData: boolean; refresh?: boolean; nowMs?: number }
+): Promise<ActivityRead & { cachedAt: string; fromCache: boolean }> {
+  const now = options.nowMs ?? Date.now()
+  const key = `${options.period}|${options.includeTestData ? 1 : 0}`
+  const existing = activityCache.get(key)
+  if (!options.refresh && existing && now - existing.at < OWNER_ACTIVITY_CACHE_MS) {
+    return { ...(await existing.value), cachedAt: new Date(existing.at).toISOString(), fromCache: true }
+  }
+  const entry = { at: now, value: readOwnerActivityCounts(token, { period: options.period, includeTestData: options.includeTestData, now: new Date(now) }) }
+  activityCache.set(key, entry)
+  try {
+    return { ...(await entry.value), cachedAt: new Date(now).toISOString(), fromCache: false }
+  } catch (error) {
+    if (activityCache.get(key) === entry) activityCache.delete(key)
+    throw error
+  }
+}
+
 /** Reads the organisations and every count with the owner's ID token (Firestore REST; the rules decide). */
 export async function readOwnerActivityCounts(
   token: string,

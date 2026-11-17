@@ -22,13 +22,19 @@ function matches(doc: Doc, filter: Record<string, unknown> | undefined): boolean
   const composite = filter.compositeFilter as { filters: Record<string, unknown>[] } | undefined
   if (composite) return composite.filters.every((inner) => matches(doc, inner))
   const field = filter.fieldFilter as { field: { fieldPath: string }; op: string; value: Record<string, unknown> }
-  const actual = plain(readPath(doc.data, field.field.fieldPath))
+  const stored = readPath(doc.data, field.field.fieldPath)
+  const actual = plain(stored)
   const expected = fromRestValue(field.value)
   if (field.op === 'EQUAL') return actual === expected
   if (field.op === 'IN') return Array.isArray(expected) && expected.includes(actual)
-  // Range filters on timestamps: both sides are ISO text here, which sorts in time order.
-  if (field.op === 'GREATER_THAN_OR_EQUAL') return typeof actual === 'string' && typeof expected === 'string' && actual >= expected
-  if (field.op === 'LESS_THAN_OR_EQUAL') return typeof actual === 'string' && typeof expected === 'string' && actual <= expected
+  // Range filters compare by type, as Firestore does: a timestamp bound matches only stored timestamps (Dates here),
+  // never a string that happens to hold ISO text.
+  if (field.op === 'GREATER_THAN_OR_EQUAL' || field.op === 'LESS_THAN_OR_EQUAL') {
+    const bound = (field.value as { timestampValue?: string }).timestampValue
+    if (typeof bound !== 'string' || !(stored instanceof Date)) return false
+    const diff = stored.getTime() - new Date(bound).getTime()
+    return field.op === 'GREATER_THAN_OR_EQUAL' ? diff >= 0 : diff <= 0
+  }
   throw new Error(`fake backend: op ${field.op} not supported`)
 }
 

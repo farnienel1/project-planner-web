@@ -248,6 +248,9 @@ export async function firestoreCount(idToken: string, query: Record<string, unkn
   if (!response.ok) throw new Error(`Count refused (${response.status})`)
   const rows = (await response.json().catch(() => [])) as { result?: { aggregateFields?: { n?: { integerValue?: string } } } }[]
   const raw = (Array.isArray(rows) ? rows : []).find((row) => row.result)?.result?.aggregateFields?.n?.integerValue
-  const value = Number(raw ?? 0)
-  return Number.isFinite(value) ? value : 0
+  // A reply without the count is an error, never 0 (review of #366).
+  if (raw === undefined || raw === null) throw new Error('Count reply had no count')
+  const value = Number(raw)
+  if (!Number.isFinite(value)) throw new Error('Count reply was not a number')
+  return value
 }

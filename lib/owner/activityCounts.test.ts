@@ -10,13 +10,14 @@ import { encodeMfaOk } from '../auth/mfa/mfaCookies.ts'
 import { mfaCookieName, shouldSecureMfaCookies } from '../auth/mfa/mfaCookiePolicy.ts'
 import { installFakeFirestore } from './fakeFirestoreRest.ts'
 import { resetRateLimitForTests } from '../security/rateLimit.ts'
-import { restTimeRange } from './firestoreRest.ts'
+import { firestoreCount, restTimeRange } from './firestoreRest.ts'
 import {
   ACTIVITY_METRICS,
   PREVIOUS_RANGE_ID,
   activityOrganisationIds,
   activityRanges,
   countActivity,
+  clearOwnerActivityCache,
 } from './activityCounts.ts'
 import { activityCell } from './activityDisplay.ts'
 import { PLATFORM_OWNER_SENTINEL_ORG } from '../platform/owner.ts'
@@ -27,6 +28,7 @@ const ENV = ['NEXT_PUBLIC_FIREBASE_API_KEY', 'NEXT_PUBLIC_FIREBASE_PROJECT_ID'] 
 const realEnv = Object.fromEntries(ENV.map((name) => [name, process.env[name]]))
 afterEach(() => {
   resetRateLimitForTests()
+  clearOwnerActivityCache()
   globalThis.fetch = realFetch
   for (const name of ENV) {
     if (realEnv[name] === undefined) delete process.env[name]
@@ -133,6 +135,8 @@ const collections = {
     { id: 'b2', data: { createdAt: recent(400) } },
     // An older record with no createdAt is not invented into a period.
     { id: 'b3', data: {} },
+    // A createdAt stored as text is not a Timestamp: Firestore's range never matches it, and neither does the fake.
+    { id: 'b4', data: { createdAt: new Date().toISOString() } },
   ],
   'organizations/org-a/managerSiteBookings': [{ id: 'm1', data: { createdAt: recent(0) } }],
   'organizations/org-a/projects': [{ id: 'p1', data: { createdAt: recent(0) } }],
@@ -175,4 +179,45 @@ test('route: signed out is 401 and reads nothing', async () => {
   const response = await activityGET(new NextRequest('http://localhost/api/owner/activity?period=today', { headers: { 'x-forwarded-for': '198.51.100.24' } }))
   assert.equal(response.status, 401)
   assert.equal(backend.calls.filter((call) => call.url.includes('/documents')).length, 0)
+})
+
+test('route: a signed-in user who is not the owner is 403 and reads nothing', async () => {
+  const backend = installFakeFirestore(collections, { localId: 'su-1', email: 'admin@company.example', emailVerified: true })
+  const request = get('/api/owner/activity?period=today', '198.51.100.25')
+  request.cookies.set(mfaCookieName('ok', shouldSecureMfaCookies(request)), encodeMfaOk('su-1', Date.now() + 60_000, Date.now()))
+  assert.equal((await activityGET(request)).status, 403)
+  assert.equal(backend.calls.filter((call) => call.url.includes('/documents')).length, 0)
+})
+
+test('route: the owner email without a verified address is 403 and reads nothing', async () => {
+  const backend = installFakeFirestore(collections, { ...owner, emailVerified: false })
+  assert.equal((await activityGET(get('/api/owner/activity?period=today', '198.51.100.26'))).status, 403)
+  assert.equal(backend.calls.filter((call) => call.url.includes('/documents')).length, 0)
+})
+
+test('route: a second read within 60 s is served from the cache; refresh=1 counts again', async () => {
+  const backend = installFakeFirestore(collections, owner)
+  const counts = () => backend.calls.filter((call) => call.url.endsWith(':runAggregationQuery')).length
+  const first = (await (await activityGET(get('/api/owner/activity?period=today', '198.51.100.27'))).json()) as { fromCache: boolean }
+  const afterFirst = counts()
+  assert.equal(first.fromCache, false)
+  assert.ok(afterFirst > 0)
+  const second = (await (await activityGET(get('/api/owner/activity?period=today', '198.51.100.28'))).json()) as { fromCache: boolean }
+  assert.equal(second.fromCache, true)
+  assert.equal(counts(), afterFirst)
+  // Another test-data choice is its own entry.
+  await activityGET(get('/api/owner/activity?period=today&includeTestData=1', '198.51.100.29'))
+  const afterOther = counts()
+  assert.ok(afterOther > afterFirst)
+  const refreshed = (await (await activityGET(get('/api/owner/activity?period=today&refresh=1', '198.51.100.30'))).json()) as { fromCache: boolean }
+  assert.equal(refreshed.fromCache, false)
+  assert.ok(counts() > afterOther)
+})
+
+test('firestoreCount throws when a 200 reply has no count (never 0)', async () => {
+  process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID = 'demo'
+  globalThis.fetch = (async () => new Response(JSON.stringify([{ readTime: '2026-11-17T00:00:00Z' }]))) as typeof fetch
+  await assert.rejects(() => firestoreCount('token', { from: [{ collectionId: 'bookings' }] }), /no count/)
+  globalThis.fetch = (async () => new Response(JSON.stringify([{ result: { aggregateFields: { n: { integerValue: '7' } } } }]))) as typeof fetch
+  assert.equal(await firestoreCount('token', { from: [{ collectionId: 'bookings' }] }), 7)
 })

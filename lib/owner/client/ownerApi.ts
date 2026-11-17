@@ -114,20 +114,22 @@ export type OwnerActivityState = { activity: OwnerActivityResponse | null; error
 
 /**
  * Activity counts read from the records themselves (bookings, projects, small works, completed tasks), per console
- * period. Read when the page opens, when the period or test-data choice changes, every 5 minutes and on Refresh.
+ * period. Read when the page opens, when the period or test-data choice changes, every 5 minutes while the tab is
+ * visible (the server keeps a read for 60 s), and on Refresh (which counts again).
  * While the first read is running, or after it failed, `activity` is null: the page shows "—", never 0.
  */
 export function useOwnerActivity(period: string, includeTestData: boolean, enabled = true): OwnerActivityState {
   const [activity, setActivity] = useState<OwnerActivityResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [tick, setTick] = useState(0)
-  const refresh = useCallback(() => setTick((value) => value + 1), [])
+  // `forced` asks the server to count again (Refresh) instead of its 60-second cache.
+  const [tick, setTick] = useState<{ n: number; forced: boolean }>({ n: 0, forced: false })
+  const refresh = useCallback(() => setTick((value) => ({ n: value.n + 1, forced: true })), [])
   useEffect(() => {
     if (!enabled) return
     const controller = new AbortController()
     setLoading(true)
-    ownerGet<OwnerActivityResponse>('/api/owner/activity', { period, includeTestData }, controller.signal)
+    ownerGet<OwnerActivityResponse>('/api/owner/activity', { period, includeTestData, refresh: tick.forced }, controller.signal)
       .then((value) => {
         setActivity(value)
         setError(null)
@@ -140,7 +142,11 @@ export function useOwnerActivity(period: string, includeTestData: boolean, enabl
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false)
       })
-    const timer = window.setInterval(() => setTick((value) => value + 1), 5 * 60_000)
+    // Re-count every 5 minutes, but not while the tab is hidden (review of #366: cost).
+    const timer = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      setTick((value) => ({ n: value.n + 1, forced: false }))
+    }, 5 * 60_000)
     return () => {
       controller.abort()
       window.clearInterval(timer)

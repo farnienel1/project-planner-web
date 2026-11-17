@@ -82,6 +82,15 @@ function countEvents(
   return events.filter((event) => set.has(event.eventName) && inRange(event.createdAt, start, end)).length
 }
 
+const ACTIVITY_ROW_DEFINITIONS: Record<ActivityMetricKey, string> = {
+  bookings:
+    'Labour, manager schedule and subcontractor bookings created in the period, counted from the bookings. Deleted bookings are not counted; moving a booking to another booking type, or Replace, creates a new booking. Bookings stored without a creation time are left out.',
+  projects: 'Projects created in the period, counted from the projects (web and iPhone). Records without a creation time are left out.',
+  smallWorks: 'Small works created in the period, counted from the small works (web and iPhone). Records without a creation time are left out.',
+  tasksCompleted:
+    'Tasks with a completion time in the period. The iPhone app does not yet set or clear the completion time when a task’s status changes, so tasks completed on the iPhone may be missing and tasks reopened there may still count.',
+}
+
 const ACTIVITY_ROW_LABELS = new Set(['Bookings made', 'Projects created', 'Small works created', 'Tasks completed'])
 
 function sumCells(a: number | null, b: number | null): number | null {
@@ -211,7 +220,7 @@ export function DeveloperOverviewScreen() {
     const covered = columns.map((col) => consoleEventsCover(eventsLoaded, col.range.start))
     const eventValues = (names: string[]) =>
       columns.map((col, index) => (covered[index] ? countEvents(events, names, col.range.start, col.range.end) : null))
-    const rows: { label: string; values: (number | null)[]; money?: boolean }[] = [
+    const rows: { label: string; values: (number | null)[]; money?: boolean; definition?: string }[] = [
       {
         label: 'Logins',
         values: eventValues(['login', 'user_logged_in']),
@@ -227,6 +236,7 @@ export function DeveloperOverviewScreen() {
       ...(['bookings', 'projects', 'smallWorks', 'tasksCompleted'] as ActivityMetricKey[]).map((metric) => ({
         label: { bookings: 'Bookings made', projects: 'Projects created', smallWorks: 'Small works created', tasksCompleted: 'Tasks completed' }[metric],
         values: columns.map((col) => activityCell(activity, metric, col.id)),
+        definition: ACTIVITY_ROW_DEFINITIONS[metric],
       })),
       {
         label: 'Timesheets signed (events)',
@@ -318,7 +328,7 @@ export function DeveloperOverviewScreen() {
       label: 'Bookings made',
       value: activityText(activityCell(activity, 'bookings', period), ownerActivity.loading),
       hint: activityHint(activity, 'bookings', period, ownerActivity),
-      definition: 'Labour, manager schedule and subcontractor bookings created in this period, counted from the bookings themselves (deleted bookings are not counted).',
+      definition: 'Labour, manager schedule and subcontractor bookings created in this period, counted from the bookings themselves. Deleted bookings are not counted; moving a booking to another booking type, or Replace, creates a new booking and counts again. Bookings stored without a creation time are left out.',
     },
     { label: 'Timesheets signed', value: formatCount(timesheetValue.loaded ? timesheetValue.sheetCount : periodMetrics.signed), hint: timesheetValue.loaded ? `${timesheetValue.sheetCount} fully signed sheets` : 'Reading sheets…', definition: METRIC_DEFINITIONS['Timesheets signed'] || 'Fully signed timesheets in the selected period.' },
     { label: 'Timesheet value', value: timesheetValue.loaded ? formatGbpFromPence(timesheetValue.valuePence) : '…', hint: deltaCopy(timesheetValue.valuePence, timesheetValue.previousPence).text, definition: 'Invoice total (timesheetTotals) of fully signed timesheets of GBP organisations: the signed snapshot when stored, else price work and expenses only. Other currencies are listed, never added.' },
@@ -458,7 +468,7 @@ export function DeveloperOverviewScreen() {
           <tbody>
             {scoreboard.rows.map((row) => (
               <tr key={row.label} className="border-t border-[var(--line)]">
-                <td className="px-2 py-2 font-semibold">{row.label}</td>
+                <td className="px-2 py-2 font-semibold" title={row.definition}>{row.label}</td>
                 {row.values.map((value, index) => (
                   <td
                     key={scoreboard.columns[index].id}
