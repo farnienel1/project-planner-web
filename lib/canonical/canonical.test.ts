@@ -17531,23 +17531,23 @@ test('1.57.0 J1 review: a gap-only change never hides late extras waiting for th
 })
 
 test('1.59.0 former people: record shape, reader and "Former: Jane Smith" on old bookings', () => {
-  const roster = [
-    { id: 'u1', email: 'jane@x.test', formerUserIds: ['PH-1'] },
-    { id: 'u2', email: 'JANE@x.test' },
-  ]
+  // Review of #370 (M1): only what the deleted document carries — its own ids, its email, its name.
   const write = R112.formerPersonRecordFields({
-    person: { id: 'u1', firstName: 'Jane', lastName: 'Smith', email: 'Jane@X.test', formerUserIds: ['PH-1'] },
-    roster,
-    catalogueRows: [{ id: 'op-9', email: 'jane@x.test' }, { id: 'op-other', email: 'bob@x.test' }],
+    person: { id: 'u1', firstName: 'Jane', surname: 'Smith', email: 'Jane@X.test', formerUserIds: ['PH-1'], sameEmailUserIds: ['u2'] },
     deletedBy: 'admin-1',
   })!
   assert.deepEqual(Object.keys(write.fields).sort(), ['deletedBy', 'displayName', 'email', 'personIds'])
   assert.deepEqual(write.serverTimestampFields, ['deletedAt'])
   assert.equal(write.fields.displayName, 'Jane Smith')
   assert.equal(write.fields.email, 'jane@x.test')
-  assert.equal(write.fields.personIds[0], 'u1')
-  assert.ok(write.fields.personIds.includes('PH-1') && write.fields.personIds.includes('u2') && write.fields.personIds.includes('op-9'))
-  assert.ok(!write.fields.personIds.includes('op-other'))
+  assert.deepEqual(write.fields.personIds, ['u1', 'PH-1', 'u2'])
+  const rowWrite = R112.formerPersonRecordFields({
+    person: { id: 'op-9', firstName: 'Row', lastName: 'Person', email: '', linkedIds: ['acc-1', null, 'acc-1'] },
+    deletedBy: 'admin-1',
+  })!
+  assert.deepEqual(rowWrite.fields.personIds, ['op-9', 'acc-1'])
+  assert.equal(rowWrite.fields.displayName, 'Row Person')
+  assert.equal(R112.formerPersonRecordFields({ person: { id: 'x', email: 'Only@Mail.test' }, deletedBy: 'a' })!.fields.displayName, 'only@mail.test')
   // Self-delete (§12): nothing that names them is kept.
   const anon = R112.formerPersonRecordFields({ person: { id: 'u1', firstName: 'Jane', email: 'jane@x.test' }, deletedBy: 'u1', anonymised: true })!
   assert.equal(anon.fields.displayName, R112.FORMER_PERSON_ANONYMOUS_NAME)
@@ -17586,7 +17586,7 @@ test('1.59.0 former people: record shape, reader and "Former: Jane Smith" on old
     formerPeople: [former],
     bookings: [
       { id: 'b1', personId: 'u1', dayKey: '2026-11-02', collection: 'bookings' },
-      { id: 'b2', personId: 'op-9', dayKey: '2026-11-03', collection: 'bookings' },
+      { id: 'b2', personId: 'ph-1', dayKey: '2026-11-03', collection: 'bookings' },
       { id: 'b3', personId: 'zz-unknown', dayKey: '2026-11-03', collection: 'bookings' },
     ],
   })
@@ -17659,18 +17659,21 @@ test('1.59.0 task person key: one key per person across records; ghost only when
   assert.equal(off.managers.size + off.operatives.size, 0)
 })
 
-test('1.59.0 safe-sender notice on the first email to a wholesaler address', () => {
-  const previous = R112.materialSendRecordRecipientEmails([
-    { recipients: [{ email: 'Orders@Wholesale.test' }, { email: '' }] },
-    null,
-    { recipients: null },
-  ])
-  assert.deepEqual(previous, ['orders@wholesale.test'])
-  assert.equal(R112.materialRequestSafeSenderNotice('orders@wholesale.test', previous), null)
-  assert.equal(R112.materialRequestSafeSenderNotice('new@wholesale.test', previous), R112.MATERIAL_REQUEST_SAFE_SENDER_NOTICE)
-  assert.equal(R112.materialRequestSafeSenderNotice('new@wholesale.test', []), R112.MATERIAL_REQUEST_SAFE_SENDER_NOTICE)
-  // Records could not be read: no box, the send goes ahead.
+test('1.59.0 safe-sender notice on the first email to a wholesaler address (one contact document per address)', () => {
+  assert.equal(R112.materialContactPath('org', ' Orders@Wholesale.test '), 'organizations/org/materialContacts/orders@wholesale.test')
+  assert.equal(R112.materialContactPath('org', 'a/b@x.test'), null)
+  assert.equal(R112.materialContactKey('__x__'), null)
+  assert.deepEqual(R112.materialContactCreateFields(), { fields: {}, serverTimestampFields: ['firstSentAt'] })
+  assert.equal(R112.materialRequestSafeSenderNotice('orders@wholesale.test', true), null)
+  assert.equal(R112.materialRequestSafeSenderNotice('new@wholesale.test', false), R112.MATERIAL_REQUEST_SAFE_SENDER_NOTICE)
+  // The contact could not be read: no box, the send goes ahead.
   assert.equal(R112.materialRequestSafeSenderNotice('new@wholesale.test', null), null)
+  assert.equal(R112.materialRequestSafeSenderNotice('', false), null)
+  // The backfill reads the stored send records.
+  assert.deepEqual(
+    R112.materialSendRecordRecipientEmails([{ recipients: [{ email: 'Orders@Wholesale.test' }, { email: '' }] }, null, { recipients: null }]),
+    ['orders@wholesale.test']
+  )
   assert.equal(R112.MATERIAL_REQUEST_SAFE_SENDER_NOTICE, 'Please add this email address to your safe senders list, or mark it as not spam, so you receive all quote and order requests from us.')
 })
 
@@ -17680,6 +17683,19 @@ test('1.59.0 userDeleteWrites puts the former-person record in the batch that de
     user: { id: 'u1', email: 'u1@x.test', role: { isAdmin: false, isSuperAdmin: false, isManager: false, isOperativeMode: true } as never },
   }
   const formerPerson = R112.formerPersonRecordFields({ person: { id: 'u1', firstName: 'Jane', email: 'u1@x.test' }, deletedBy: 'admin' })!
+  // Review of #370 (M1): a record per deleted roster row, each in a batch with that row's delete.
+  const rowRecord = R112.formerPersonRecordFields({ person: { id: 'op-1', firstName: 'Jane', email: 'u1@x.test' }, deletedBy: 'admin' })!
+  const withRows = R112.userDeleteWrites({
+    ...base,
+    formerPerson,
+    operativeRows: [{ id: 'op-1', email: 'u1@x.test' }, { id: 'op-2', email: 'u1@x.test' }],
+    formerRows: { 'operatives/op-1': rowRecord, 'operatives/u1': rowRecord },
+  })
+  const rowSteps = withRows.filter((step) => step.step === 'rosterRows')
+  assert.deepEqual(rowSteps.map((step) => step.writes.map((w) => w.path)), [
+    ['organizations/org/operatives/op-2'],
+    ['organizations/org/operatives/op-1', 'organizations/org/deletedPeople/op-1'],
+  ])
   const admin = R112.userDeleteWrites({ ...base, formerPerson })
   const record = admin[0].writes.find((w) => w.path === 'organizations/org/deletedPeople/u1')
   assert.ok(record && record.op === 'set' && record.optional === true)
@@ -17698,4 +17714,21 @@ test('1.59.0 taskCompletionFields: completedAt / completedBy move with the statu
   assert.deepEqual(R112.taskCompletionFields({ completedAt: then, completedBy: 'Bob' }, 'completed', { completedBy: 'Ann', now }), { completedAt: then, completedBy: 'Bob' })
   assert.deepEqual(R112.taskCompletionFields({ completedAt: then, completedBy: 'Bob' }, 'To Do', { completedBy: 'Ann', now }), { completedAt: null, completedBy: null })
   assert.deepEqual(R112.taskCompletionFields(null, 'In Progress', { completedBy: 'Ann', now }), { completedAt: null, completedBy: null })
+})
+
+test('1.59.0 review M2: a booking under a managers row with no account stays in Data health, flagged', () => {
+  const groups = R112.unresolvedBookingPeople({
+    accounts: [{ id: 'acc-1', email: 'linked@x.test' }],
+    operatives: [],
+    managers: [{ id: 'MGR-NOACC', email: 'nobody@x.test', name: 'Jo Bloggs' }, { id: 'MGR-LINKED', email: 'linked@x.test', name: 'Lin' }],
+    bookings: [
+      { id: 'b1', personId: 'mgr-noacc', dayKey: '2026-11-02', collection: 'managerSiteBookings' },
+      { id: 'b2', personId: 'mgr-linked', dayKey: '2026-11-02', collection: 'managerSiteBookings' },
+    ],
+  })
+  assert.equal(groups.length, 1)
+  assert.deepEqual(groups[0].unlinkedManagerRow, { id: 'MGR-NOACC', name: 'Jo Bloggs' })
+  assert.equal(groups[0].label, `Jo Bloggs · ${R112.MANAGER_ROW_NOT_LINKED_LABEL}`)
+  // The grid still names it (not "Unknown person").
+  assert.equal(R112.scheduleRowPerson('mgr-noacc', { accounts: [], operatives: [], managers: [{ id: 'MGR-NOACC' }] }).unresolved, false)
 })

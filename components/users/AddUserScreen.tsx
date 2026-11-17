@@ -11,6 +11,7 @@ import {
   formerPeopleForEmail,
   formerPersonLinkOfferMessage,
   formerPersonLinkWriteFields,
+  type FormerPerson,
 } from '@/lib/canonical/formerPeople'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -252,6 +253,7 @@ export function AddUserScreen() {
   // Rulebook 1.59.0 §11 (owner decision 17 Nov): a former person who used this email — offer to link their old ids
   // (bookings, leave, history) to the new person. Linking is an admin identity-link write (§16), so admins only.
   const formerPeople = useFormerPeople(organization?.id ?? null, canInviteAdmins)
+  const [formerOffer, setFormerOffer] = useState<FormerPerson[] | null>(null)
 
   useEffect(() => {
     if (organization?.id) loadUsers(organization.id)
@@ -388,7 +390,7 @@ export function AddUserScreen() {
     return false
   }
 
-  const handleSubmit = async (e?: FormEvent, options?: { nameConfirmed?: boolean }) => {
+  const handleSubmit = async (e?: FormEvent, options?: { nameConfirmed?: boolean; formerLink?: 'link' | 'skip' }) => {
     e?.preventDefault()
     if (!organization?.id || !user) return
     const nameConfirmed = options?.nameConfirmed === true
@@ -499,11 +501,12 @@ export function AddUserScreen() {
     const formerMatches = canInviteAdmins
       ? formerPeopleForEmail({ email, formerPeople, roster: users as never })
       : []
-    const linkFormer =
-      formerMatches.length > 0 &&
-      window.confirm(
-        `${FORMER_PERSON_LINK_TITLE}\n\n${formerPersonLinkOfferMessage(formerMatches)}\n\nOK: ${FORMER_PERSON_LINK_ACTION}. Cancel: ${FORMER_PERSON_LINK_SKIP}.`
-      )
+    // Rulebook 1.59.0 (review of #370, L3): the offer is the app's own dialog; its choice submits again.
+    if (formerMatches.length > 0 && !options?.formerLink) {
+      setFormerOffer(formerMatches)
+      return
+    }
+    const linkFormer = formerMatches.length > 0 && options?.formerLink === 'link'
 
     setSaving(true)
     setError(null)
@@ -578,11 +581,11 @@ export function AddUserScreen() {
             }),
           })
           setSuccess(
-            `${email} already has a Project Planner account. They will receive an email and can accept from Change organisation.`
+            `${email} already has a Project Planner account. They will receive an email and can accept from Change organisation.${formerLinkNote}`
           )
         } catch (emailError) {
           setSuccess(
-            `User linked to ${organization.name}, but notification email could not be sent (${emailError instanceof Error ? emailError.message : 'unknown error'}).`
+            `User linked to ${organization.name}, but notification email could not be sent (${emailError instanceof Error ? emailError.message : 'unknown error'}).${formerLinkNote}`
           )
         }
       } else {
@@ -599,7 +602,7 @@ export function AddUserScreen() {
           setSuccess(`Invitation sent to ${email}. They will receive an email to set their password.${formerLinkNote}`)
         } catch (emailError) {
           setSuccess(
-            `User invited but email could not be sent (${emailError instanceof Error ? emailError.message : 'unknown error'}).`
+            `User invited but email could not be sent (${emailError instanceof Error ? emailError.message : 'unknown error'}).${formerLinkNote}`
           )
         }
       }
@@ -1022,6 +1025,37 @@ export function AddUserScreen() {
             </li>
           ))}
         </ul>
+      </Modal>
+
+      <Modal
+        open={formerOffer !== null}
+        title={FORMER_PERSON_LINK_TITLE}
+        hue="user"
+        onClose={() => setFormerOffer(null)}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setFormerOffer(null)
+                void handleSubmit(undefined, { nameConfirmed: true, formerLink: 'skip' })
+              }}
+            >
+              {FORMER_PERSON_LINK_SKIP}
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                setFormerOffer(null)
+                void handleSubmit(undefined, { nameConfirmed: true, formerLink: 'link' })
+              }}
+            >
+              {FORMER_PERSON_LINK_ACTION}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-slate-700">{formerPersonLinkOfferMessage(formerOffer ?? [])}</p>
       </Modal>
 
       <div className="space-y-3 pt-2">

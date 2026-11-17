@@ -48,10 +48,36 @@ function createFirestoreReader(db) {
         .filter((doc) => normalizeEmail((doc.data() || {}).email) === wanted)
         .map((doc) => ({ id: doc.id, data: doc.data() || {} }))
     },
-    /** Rulebook 1.59.0 §16: every recipient address on the organisation's send records (first-contact check). */
-    async listMaterialSendRecipientEmails(orgId) {
-      const snap = await db.collection('organizations').doc(orgId).collection('materialSendRecords').select('recipients').get()
-      return canonical.materialSendRecordRecipientEmails(snap.docs.map((doc) => doc.data() || {}))
+    /**
+     * Rulebook 1.59.0 §16 (review of #370, L2): which of these addresses already have their
+     * `organizations/{orgId}/materialContacts/{email}` document — one read per address (`getAll`).
+     */
+    async knownMaterialContacts(orgId, emails) {
+      const keys = [...new Set((emails || []).map((email) => canonical.materialContactKey(email)).filter(Boolean))]
+      const known = new Set()
+      if (keys.length === 0) return known
+      const contacts = db.collection('organizations').doc(orgId).collection(canonical.MATERIAL_CONTACTS_COLLECTION)
+      const snaps = await db.getAll(...keys.map((key) => contacts.doc(key)))
+      snaps.forEach((snap, index) => {
+        if (snap.exists) known.add(keys[index])
+      })
+      return known
+    },
+    /** Creates the contact documents of these address keys (`materialContactCreateFields`); one already there is kept. */
+    async recordMaterialContacts(orgId, keys) {
+      const { FieldValue } = require('firebase-admin/firestore')
+      const contacts = db.collection('organizations').doc(orgId).collection(canonical.MATERIAL_CONTACTS_COLLECTION)
+      await Promise.all(
+        (keys || []).map((key) =>
+          contacts
+            .doc(key)
+            .create({ firstSentAt: FieldValue.serverTimestamp() })
+            .catch((error) => {
+              if (error && (error.code === 6 || /ALREADY_EXISTS/.test(String(error.message)))) return null
+              throw error
+            })
+        )
+      )
     },
     async listWholesalers(orgId) {
       const snap = await db.collection('organizations').doc(orgId).collection('wholesalers').limit(500).get()

@@ -2300,6 +2300,7 @@ export {
   FORMER_PERSON_LINK_SKIP,
   FORMER_PERSON_LINK_TITLE,
   FORMER_PERSON_NAME_MAX,
+  FORMER_PERSON_RECORD_SKIPPED_MESSAGE,
   formerPeopleForEmail,
   formerPersonDataHealthLabel,
   formerPersonForId,
@@ -2315,9 +2316,14 @@ export type { FormerPerson, FormerPersonInput, FormerPersonRecordWrite, FormerPe
 export { isTaskPersonSelected, taskPersonIndex, taskPersonKeys, toggleTaskPerson } from './taskPeople'
 export type { TaskPersonCatalogueRow, TaskPersonIndex, TaskPersonKeys, TaskPersonKind, TaskPersonRosterRow } from './taskPeople'
 export {
+  MATERIAL_CONTACTS_COLLECTION,
   MATERIAL_REQUEST_SAFE_SENDER_NOTICE,
+  materialContactCreateFields,
+  materialContactKey,
+  materialContactPath,
   materialRequestIsFirstContact,
   materialRequestSafeSenderNotice,
   materialSendRecordRecipientEmails,
 } from './materialSafeSender'
 export { taskCompletionFields } from './operationsDocuments'
+export { MANAGER_ROW_NOT_LINKED_LABEL } from './unresolvedBookingPeople'

@@ -72,7 +72,11 @@ interface UserStoreState {
   transferSuperAdmin: (organizationId: string, fromUserId: string, toUserId: string, roster: User[]) => Promise<void>
   /** Rulebook 1.31.0 `userActiveWrites`: `roster` is every users document of the organisation (same-email copies). */
   setUserActive: (userId: string, isActive: boolean, organizationId?: string, roster?: ReadonlyArray<User>) => Promise<void>
-  deleteUser: (userId: string, opts?: { organizationId?: string; email?: string; roster?: ReadonlyArray<User> }) => Promise<void>
+  /**
+   * Resolves with `formerRecordSkipped` true when a former-person record (rulebook 1.59.0) was refused and the delete
+   * went ahead without it — the screen tells the person (review of #370, L1).
+   */
+  deleteUser: (userId: string, opts?: { organizationId?: string; email?: string; roster?: ReadonlyArray<User> }) => Promise<{ formerRecordSkipped: boolean }>
   sendPasswordReset: (email: string) => Promise<void>
   applyAccountType: (user: User, accountType: 'operative' | 'manager' | 'admin') => User
   /**
@@ -469,13 +473,13 @@ export const useUserStore = create<UserStoreState>(() => ({
     const byEmail = async (collectionName: 'operatives' | 'managers') =>
       email
         ? (await getDocs(query(collection(db, 'organizations', orgId, collectionName), where('email', '==', email))).catch(() => null))
-            ?.docs.map((row) => ({ id: row.id, email: String(row.data().email || '') })) ?? []
+            ?.docs.map((row) => ({ id: row.id, email: String(row.data().email || ''), data: row.data() as Record<string, unknown> })) ?? []
         : []
     const [operativeRows, managerRows] = await Promise.all([byEmail('operatives'), byEmail('managers')])
     // Rulebook 1.34.0: a converted ghost keeps its operatives row under the same id (its email cleared).
     if (stored.ghost === true && !operativeRows.some((row) => row.id === userId)) {
       const own = await getDoc(doc(db, 'organizations', orgId, 'operatives', userId)).catch(() => null)
-      if (own?.exists()) operativeRows.push({ id: userId, email: '' })
+      if (own?.exists()) operativeRows.push({ id: userId, email: '', data: own.data() as Record<string, unknown> })
     }
     const lookup = Array.from(
       new Set([...personIds, ...operativeRows.map((row) => row.id)].flatMap((id) => [id, id.toUpperCase(), id.toLowerCase()]))
@@ -539,22 +543,51 @@ export const useUserStore = create<UserStoreState>(() => ({
       bookings: bookings.length,
       managerSiteBookings: managerSiteBookings.length,
     })
+    // Review of #370 (M1): each record holds only what its deleted document carries (the rules check it against that
+    // document) — the person's own record from their users document, and one per deleted operatives / managers row.
+    const deletedBy = auth?.currentUser?.uid || actor?.id || ''
+    const idList = (value: unknown) => (Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : [])
     const formerPerson = keepFormer
       ? formerPersonRecordFields({
           person: {
             id: userId,
-            firstName: String(stored.firstName || target?.firstName || ''),
-            lastName: String(stored.lastName || stored.surname || target?.surname || ''),
-            email,
-            formerUserIds: parseFormerUserIds(stored),
-            sameEmailUserIds: Array.isArray(stored.sameEmailUserIds) ? (stored.sameEmailUserIds as string[]) : [],
+            firstName: String(stored.firstName ?? ''),
+            surname: String(stored.surname ?? ''),
+            lastName: String(stored.lastName ?? ''),
+            displayName: typeof stored.displayName === 'string' ? stored.displayName : null,
+            name: typeof stored.name === 'string' ? stored.name : null,
+            email: String(stored.email ?? ''),
+            formerUserIds: idList(stored.formerUserIds),
+            sameEmailUserIds: idList(stored.sameEmailUserIds),
           },
-          catalogueRows: [...operativeRows, ...managerRows],
-          deletedBy: auth?.currentUser?.uid || actor?.id || '',
+          deletedBy,
         })
       : null
+    const formerRows: Record<string, { fields: Record<string, unknown>; serverTimestampFields: string[] }> = {}
+    if (keepFormer) {
+      for (const [collectionName, rows] of [['operatives', operativeRows], ['managers', managerRows]] as const) {
+        for (const row of rows) {
+          const data = row.data
+          const record = formerPersonRecordFields({
+            person: {
+              id: row.id,
+              firstName: String(data.firstName ?? ''),
+              lastName: String(data.lastName ?? ''),
+              surname: String(data.surname ?? ''),
+              displayName: typeof data.displayName === 'string' ? data.displayName : null,
+              name: typeof data.name === 'string' ? data.name : null,
+              email: String(data.email ?? ''),
+              linkedIds: [data.linkedUserId, data.userId, data.uid],
+            },
+            deletedBy,
+          })
+          if (record) formerRows[`${collectionName}/${row.id}`] = record
+        }
+      }
+    }
     const steps = userDeleteWrites({
       formerPerson,
+      formerRows,
       actorManagesOperatives,
       // 1.31.0: remove `members.{uid}` only when it is listed (an operatives manager may remove only a listed entry).
       listedInMembers: orgMembers ? Object.prototype.hasOwnProperty.call(orgMembers, userId) : true,
@@ -586,6 +619,7 @@ export const useUserStore = create<UserStoreState>(() => ({
       }
       await batch.commit()
     }
+    let formerRecordSkipped = false
     for (const step of steps) {
       try {
         await commitStep(step.writes)
@@ -595,6 +629,7 @@ export const useUserStore = create<UserStoreState>(() => ({
         const optional = step.writes.filter((write) => write.op === 'set' && write.optional === true)
         if (optional.length === 0 || !isPermissionDenied(error)) throw error
         console.warn('[userStore] former-person record skipped', error)
+        formerRecordSkipped = true
         await commitStep(step.writes.filter((write) => !(write.op === 'set' && write.optional === true)))
       }
     }
@@ -612,6 +647,7 @@ export const useUserStore = create<UserStoreState>(() => ({
         users: opts?.roster ?? [],
       }).catch((error) => console.warn('[userStore] operative_deleted notice skipped', error))
     }
+    return { formerRecordSkipped }
   },
 
   removeFromManagedJobs: async (person, change, organizationId, roster) => {

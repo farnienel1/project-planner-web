@@ -29,6 +29,29 @@ export async function firestorePatch(
   }
 }
 
+/**
+ * Creates `path` with only server-time fields (`serverTimeFields`), and only when it does not exist yet (a document
+ * already there is left as it is). Returns false when it was not written (already there, or refused).
+ */
+export async function firestoreCreateServerTime(idToken: string, path: string, serverTimeFields: readonly string[]): Promise<boolean> {
+  const base = firestoreDocumentsBase()
+  const name = `${base.replace(/^https?:\/\/[^/]+\/v1\//, '')}/${path}`
+  const response = await fetch(`${base}:commit`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      writes: [
+        {
+          update: { name, fields: {} },
+          currentDocument: { exists: false },
+          updateTransforms: serverTimeFields.map((fieldPath) => ({ fieldPath, setToServerValue: 'REQUEST_TIME' })),
+        },
+      ],
+    }),
+  })
+  return response.ok
+}
+
 /** Document paths under parentPath whose field equals value. Empty when the query is not allowed. */
 export async function firestoreQueryEqual(
   idToken: string,

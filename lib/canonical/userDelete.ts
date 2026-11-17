@@ -152,6 +152,13 @@ export type UserDeleteInput = {
    * written in the batch that deletes `users/{uid}` — the security rules accept it only there — as an `optional` set.
    */
   formerPerson?: { fields: Record<string, unknown>; serverTimestampFields: string[] } | null
+  /**
+   * 1.59.0 (review of #370, M1): a `deletedPeople` record per deleted `operatives` / `managers` row, keyed
+   * `"<collection>/<rowId>"` (`formerPersonRecordFields` of the row). Each goes, as an `optional` set, in its own batch
+   * with that row's delete (the rules accept it only there). A row whose id is the person's users id has none (the
+   * person's own record covers it).
+   */
+  formerRows?: Readonly<Record<string, { fields: Record<string, unknown>; serverTimestampFields: string[] }>> | null
 }
 
 /**
@@ -256,10 +263,34 @@ export function userDeleteWrites(input: UserDeleteInput): UserDeleteStep[] {
   for (const writes of bookingWrites) steps.push({ step: 'bookings', writes })
 
   if (rosterRows.length > 0) {
-    steps.push({
-      step: 'rosterRows',
-      writes: rosterRows.map((row) => ({ op: 'delete' as const, path: `organizations/${org}/${row.collection}/${row.id}` })),
-    })
+    const rowRecord = (row: { collection: string; id: string }): UserDeleteWrite | null => {
+      const record = input.formerRows?.[`${row.collection}/${row.id}`]
+      if (!record || key(row.id) === key(uid)) return null
+      return {
+        op: 'set',
+        path: `organizations/${org}/deletedPeople/${row.id}`,
+        fields: { ...record.fields },
+        serverTimestampFields: [...record.serverTimestampFields],
+        optional: true,
+      }
+    }
+    const plain = rosterRows.filter((row) => !rowRecord(row))
+    if (plain.length > 0) {
+      steps.push({
+        step: 'rosterRows',
+        writes: plain.map((row) => ({ op: 'delete' as const, path: `organizations/${org}/${row.collection}/${row.id}` })),
+      })
+    }
+    // A row with a record: its delete and its record in one batch of their own (the rules check the record against
+    // that row being deleted in the same batch).
+    for (const row of rosterRows) {
+      const record = rowRecord(row)
+      if (!record) continue
+      steps.push({
+        step: 'rosterRows',
+        writes: [{ op: 'delete' as const, path: `organizations/${org}/${row.collection}/${row.id}` }, record],
+      })
+    }
   }
   const invitations = (input.invitations || [])
     .filter((row) => email !== '' && key(row?.email) === email && text(row.id) && !text(row.id).includes('/'))

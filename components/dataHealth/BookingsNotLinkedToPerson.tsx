@@ -216,7 +216,11 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
         aliasIds: rosterAliasIdsFor(u.id, userIdAliases),
       })),
       operatives: operatives.map((o) => ({ id: o.id, email: o.email ?? null })),
-      managers: managers.map((m) => ({ id: m.id, email: m.email ?? null })),
+      managers: managers.map((m) => ({
+        id: m.id,
+        email: m.email ?? null,
+        name: `${m.firstName ?? ''} ${m.lastName ?? ''}`.trim() || null,
+      })),
       formerPeople,
     }),
     [users, userIdAliases, operatives, managers, formerPeople]
@@ -230,7 +234,9 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
   const sections = useMemo(
     () =>
       [
-        { title: null as string | null, rows: rows.filter((row) => !row.former) },
+        { title: null as string | null, rows: rows.filter((row) => !row.former && !row.unlinkedManagerRow) },
+        // Review of #370 (M2): managers list rows that match no account.
+        { title: 'Managers list rows not linked to an account' as string | null, rows: rows.filter((row) => row.unlinkedManagerRow) },
         { title: 'Former people' as string | null, rows: rows.filter((row) => row.former) },
       ].filter((section) => section.rows.length > 0),
     [rows]
@@ -346,7 +352,7 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
           {section.rows.map((row) => (
             <li key={row.personId} className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 text-sm">
               <p className="font-semibold">
-                {row.former ? row.label : `Unknown person · ID ${row.idHint}`}
+                {row.former || row.unlinkedManagerRow ? row.label : `Unknown person · ID ${row.idHint}`}
                 <span className="ml-2 font-normal text-[var(--ink3)]">
                   {row.count} booking{row.count === 1 ? '' : 's'} ·{' '}
                   {row.firstDayKey === row.lastDayKey

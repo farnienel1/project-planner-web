@@ -29,6 +29,12 @@ export const FORMER_PERSON_EMAIL_MAX = 320
 export const FORMER_PERSON_ANONYMOUS_NAME = 'Deleted user'
 /** The chip on a former person's scheduling row (in place of `UNRESOLVED_BOOKING_PERSON_CHIP`). */
 export const FORMER_PERSON_CHIP = 'Former person'
+/**
+ * Review of #370 (L1): shown to the person who deleted someone when the former-person record was refused (security
+ * rules older than 1.59.0, or the record did not match the deleted document). The delete itself went ahead.
+ */
+export const FORMER_PERSON_RECORD_SKIPPED_MESSAGE =
+  'Deleted. Their past bookings could not keep their name, so they will show as "Unknown person". An admin can link them to a person in Settings → Data health.'
 export const FORMER_PERSON_LINK_TITLE = 'This email belonged to a former person'
 export const FORMER_PERSON_LINK_ACTION = 'Link their old records'
 export const FORMER_PERSON_LINK_SKIP = 'Keep separate'
@@ -85,16 +91,17 @@ export type FormerPersonRecordWrite = {
 }
 
 /**
- * The record written when `person` is deleted (create only, document id = `person.id`). `personIds` = `personIdSet`
- * over the roster, then every `operatives` / `managers` row on their email (bookings filed under a row id), the
- * person's own id first, without case, at most `FORMER_PERSON_IDS_MAX`. `anonymised` (the person deleted their own
- * account, §12): the name is `FORMER_PERSON_ANONYMOUS_NAME` and no email is kept. Null when the id is unusable or the
- * deleter is unknown.
+ * The record written when `person` is deleted (create only, document id = `person.id`). Review of #370 (M1): it holds
+ * only what the deleted document itself carries, so the security rules can check it against that document —
+ * `personIds` = the id, then the document's `formerUserIds` and `sameEmailUserIds` (a users document) or its account
+ * links `linkedIds` (`linkedUserId` / `userId` / `uid` of an `operatives` / `managers` row), exactly as stored, at most
+ * `FORMER_PERSON_IDS_MAX`; `email` its email, trimmed and lower case; `displayName` "first surname" (else "first
+ * lastName"), else its `displayName`, `name` or email. Each deleted `operatives` / `managers` row gets its own record
+ * (bookings filed under a row id). `anonymised` (the person deleted their own account, §12): the name is
+ * `FORMER_PERSON_ANONYMOUS_NAME` and no email is kept. Null when the id is unusable or the deleter is unknown.
  */
 export function formerPersonRecordFields(input: {
-  person: FormerPersonSource
-  roster?: ReadonlyArray<PersonRosterRow> | null
-  catalogueRows?: ReadonlyArray<{ id: string; email?: string | null }> | null
+  person: FormerPersonSource & { linkedIds?: ReadonlyArray<unknown> | null }
   deletedBy: string
   anonymised?: boolean | null
 }): FormerPersonRecordWrite | null {
@@ -106,25 +113,29 @@ export function formerPersonRecordFields(input: {
   const ids: string[] = []
   const seen = new Set<string>()
   const add = (raw: unknown) => {
-    const value = text(raw)
-    const k = value.toLowerCase()
-    if (!value || seen.has(k) || ids.length >= FORMER_PERSON_IDS_MAX) return
+    // Exactly as stored (the rules compare stored values); blank and duplicate (without case) ids left out.
+    const value = typeof raw === 'string' ? raw : ''
+    const k = value.trim().toLowerCase()
+    if (!k || seen.has(k) || ids.length >= FORMER_PERSON_IDS_MAX) return
     seen.add(k)
     ids.push(value)
   }
   add(id)
-  for (const value of personIdSet(person, input.roster ?? null)) add(value)
-  if (email) for (const row of input.catalogueRows || []) if (idKey(row?.email) === email) add(row.id)
+  for (const list of [person.formerUserIds, person.sameEmailUserIds, person.linkedIds]) {
+    for (const value of Array.isArray(list) ? list : []) add(value)
+  }
   const anonymised = input.anonymised === true
+  const first = text(person.firstName)
+  const surname = text(person.surname)
   const name =
-    `${text(person.firstName)} ${text(person.surname) || text(person.lastName)}`.trim() ||
+    (surname ? `${first} ${surname}` : `${first} ${text(person.lastName)}`).trim() ||
     text(person.displayName) ||
     text(person.name) ||
-    text(person.email)
+    email
   return {
     fields: {
-      displayName: anonymised ? FORMER_PERSON_ANONYMOUS_NAME : (name || FORMER_PERSON_ANONYMOUS_NAME).slice(0, FORMER_PERSON_NAME_MAX),
-      email: anonymised ? '' : email.slice(0, FORMER_PERSON_EMAIL_MAX),
+      displayName: anonymised ? FORMER_PERSON_ANONYMOUS_NAME : name || FORMER_PERSON_ANONYMOUS_NAME,
+      email: anonymised ? '' : email,
       personIds: ids,
       deletedBy,
     },

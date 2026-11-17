@@ -23,6 +23,8 @@ export type BookingPersonAccount = {
 export type BookingPersonOperative = {
   id: string
   email?: string | null
+  /** 1.59.0 (review of #370, M2): a `managers` row's name, for Data health's "not linked to an account" rows. */
+  name?: string | null
 }
 
 export type BookingPersonInput = {

@@ -445,17 +445,23 @@ function createSendEmailHandler(deps) {
       const recipients = !serverMode && cc.length ? resolved.filter((row) => !row.isSelf) : resolved
       if (recipients.length === 0) throw new HttpError(400, 'At least one recipient other than yourself is required')
 
-      // Rulebook 1.59.0 §16 (owner decision 17 Nov) `materialRequestSafeSenderNotice`: the first email the organisation
-      // sends to an address (no earlier send record lists it) carries the red safe-sender box. A failed read shows none.
-      if (template.safeSenderNotice === true && orgId && typeof deps.reader.listMaterialSendRecipientEmails === 'function') {
-        let previous = null
+      // Rulebook 1.59.0 §16 (owner decision 17 Nov; review of #370, L2) `materialRequestSafeSenderNotice`: the first
+      // email the organisation sends to an address carries the red safe-sender box — one read of the address's
+      // `materialContacts` document per recipient (`materialContactPath`), the same read the web route makes. A failed
+      // read shows no box; the send goes ahead.
+      let contactsKnown = null
+      if (template.safeSenderNotice === true && orgId && typeof deps.reader.knownMaterialContacts === 'function') {
         try {
-          previous = await deps.reader.listMaterialSendRecipientEmails(orgId)
+          contactsKnown = await deps.reader.knownMaterialContacts(orgId, recipients.filter((row) => !row.isSelf).map((row) => row.email))
         } catch (error) {
-          logger.warn('sendEmail: send records not read; no safe-sender box', { error: String(error && error.message) })
+          logger.warn('sendEmail: contacts not read; no safe-sender box', { error: String(error && error.message) })
         }
         for (const recipient of recipients) {
-          recipient.safeSenderNotice = canonical.materialRequestSafeSenderNotice(recipient.email, previous)
+          const key = canonical.materialContactKey(recipient.email)
+          recipient.safeSenderNotice = canonical.materialRequestSafeSenderNotice(
+            recipient.email,
+            contactsKnown && key ? contactsKnown.has(key) : null
+          )
         }
       }
       const sentAt = renderAtMs != null ? new Date(renderAtMs) : now()
@@ -562,6 +568,22 @@ function createSendEmailHandler(deps) {
         attachments: attachments.length,
       })
 
+      // Review of #370 (L2): every address now sent to gets its `materialContacts` document (created once), so later
+      // sends carry no box. Best effort: a failed write only means a box next time.
+      if (contactsKnown && results.length > 0 && typeof deps.reader.recordMaterialContacts === 'function') {
+        const sentTo = new Set(results.map((row) => canonical.materialContactKey(row.to)).filter(Boolean))
+        const fresh = recipients
+          .filter((row) => !row.isSelf)
+          .map((row) => canonical.materialContactKey(row.email))
+          .filter((key) => key && sentTo.has(key) && !contactsKnown.has(key))
+        if (fresh.length > 0) {
+          try {
+            await deps.reader.recordMaterialContacts(orgId, fresh)
+          } catch (error) {
+            logger.warn('sendEmail: contacts not recorded', { error: String(error && error.message) })
+          }
+        }
+      }
       if (results.length === 0) {
         const reason = failures[0] ? `: ${failures[0].error}` : ''
         throw new HttpError(502, `The email provider did not accept the message${reason}`, { failed })

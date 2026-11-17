@@ -120,9 +120,18 @@ export type UnresolvedBookingPerson = {
    * Smith", `label`); they can still be linked to a current person.
    */
   former: { id: string; displayName: string } | null
-  /** "Former person · Jane Smith", or "Unknown person · 6A9632BA". */
+  /**
+   * 1.59.0 (review of #370, M2): the id is a `managers` row that matches no account (guardrail 3 — never dropped from
+   * this list). The grid names it from the row; here it is listed, flagged `MANAGER_ROW_NOT_LINKED_LABEL`, so an admin
+   * can link it to a person. Null otherwise.
+   */
+  unlinkedManagerRow: { id: string; name: string } | null
+  /** "Former person · Jane Smith", "Jo Bloggs · Not linked to an account", or "Unknown person · 6A9632BA". */
   label: string
 }
+
+/** 1.59.0 (review of #370, M2): the flag on a `managers` row that matches no account. */
+export const MANAGER_ROW_NOT_LINKED_LABEL = 'Not linked to an account'
 
 /**
  * Rulebook 1.44.0 §11 (Data health): every stored person id that no loaded person resolves (`resolveBookingPerson`),
@@ -142,14 +151,24 @@ export function unresolvedBookingPeople(input: BookingPersonInput & {
       row = scheduleRowPerson(booking.personId, input)
       rows.set(key, row)
     }
-    if (!row.unresolved) continue
+    // Review of #370 (M2): a managers row with no account (and no operatives row) is shown by name on the grid but is
+    // still listed here, flagged, so it can be linked to a person.
+    const managerRowOnly = !row.unresolved && !row.accountId && !row.operativeId && Boolean(row.managerId)
+    if (!row.unresolved && !managerRowOnly) continue
     let group = groups.get(key)
     if (!group) {
+      const managerRow = managerRowOnly
+        ? (input.managers || []).find((m) => idKey(m?.id) === idKey(row.managerId)) ?? null
+        : null
+      const managerName = text(managerRow?.name)
       group = {
         former: row.former,
+        unlinkedManagerRow: managerRowOnly ? { id: text(row.managerId), name: managerName } : null,
         label: row.former
           ? formerPersonDataHealthLabel(row.former.displayName)
-          : row.idHint ? `${UNKNOWN_BOOKING_PERSON_LABEL} · ${row.idHint}` : UNKNOWN_BOOKING_PERSON_LABEL,
+          : managerRowOnly
+            ? `${managerName || `Managers list row · ${row.idHint}`} · ${MANAGER_ROW_NOT_LINKED_LABEL}`
+            : row.idHint ? `${UNKNOWN_BOOKING_PERSON_LABEL} · ${row.idHint}` : UNKNOWN_BOOKING_PERSON_LABEL,
         personId: text(booking.personId),
         idHint: bookingPersonIdHint(booking.personId),
         count: 0,

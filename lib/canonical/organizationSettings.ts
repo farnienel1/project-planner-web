@@ -243,6 +243,7 @@ export const OPERATIONAL_COLLECTION_PATHS = {
   /** 1.40.0 (§4.4): manual annual-leave adjustments, written once (`annualLeaveAdjustmentCreateFields`). */
   annualLeaveAdjustments: 'organizations/{orgId}/annualLeaveAdjustments',
   deletedPeople: 'organizations/{orgId}/deletedPeople',
+  materialContacts: 'organizations/{orgId}/materialContacts',
 } as const
 
 /**
