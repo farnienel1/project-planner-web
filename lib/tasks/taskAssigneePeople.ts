@@ -35,9 +35,12 @@ type CatalogueRow = { id: string; email?: string | null; linkedUserId?: string |
  * stored changes, and tasks keep storing the catalogue row id they were given.
  */
 export type TaskPersonIndex = {
-  /** One key per person: `account:<id>` when a users document is found, else `email:<email>`, else `id:<id>`. Ids without case. */
+  /**
+   * One key per person, the same for every record of them: the smallest `account:<id>` of the person's users
+   * documents, else the smallest `email:<email>`, else the smallest `id:<id>`. Ids without case.
+   */
   keyOf(kind: TaskPersonKind, id: string): string
-  /** True when the person is a ghost operative (no login). */
+  /** True when every users document of the person is a ghost operative (no login). */
   isGhost(key: string): boolean
 }
 
@@ -50,34 +53,76 @@ export function taskPersonIndex(input: {
   const rosterById = new Map(roster.map((row) => [idKey(row.id), row]))
   const managersById = new Map(input.managers.map((row) => [idKey(row.id), row]))
   const operativesById = new Map(input.operatives.map((row) => [idKey(row.id), row]))
-  const ghostKeys = new Set<string>()
-  const cache = new Map<string, string>()
 
-  const keyFor = (seed: { id: string; email?: string | null; linkedUserId?: string | null }): string => {
-    const linked = idText(seed.linkedUserId)
-    const ids = personIdSet(
-      { id: idText(seed.id), email: seed.email ?? null, formerUserIds: linked ? [linked] : [] },
-      roster
-    )
-    const accounts = ids.map(idKey).filter((id) => rosterById.has(id)).sort()
-    if (accounts.length > 0) {
-      const key = `account:${accounts[0]}`
-      if (accounts.some((id) => isGhostUser(rosterById.get(id)))) ghostKeys.add(key)
-      return key
+  // The whole closure first (review of #364): every record of one person — users documents (folded with the
+  // rulebook's `personIdSet` over the whole roster), their emails, `operatives` / `managers` rows on those emails or
+  // ids and the accounts those rows link to — is one group, so every record gets the same key.
+  const parent = new Map<string, string>()
+  const find = (node: string): string => {
+    let root = node
+    while (parent.has(root) && parent.get(root) !== root) root = parent.get(root) as string
+    if (!parent.has(root)) parent.set(root, root)
+    let cur = node
+    while (cur !== root) {
+      const next = parent.get(cur) as string
+      parent.set(cur, root)
+      cur = next
     }
-    const email = emailKey(seed.email)
-    if (email) return `email:${email}`
-    return `id:${idKey(seed.id)}`
+    return root
+  }
+  const union = (a: string, b: string) => {
+    const ra = find(a)
+    const rb = find(b)
+    if (ra !== rb) parent.set(ra, rb)
+  }
+  const idNode = (id: string | null | undefined) => (idKey(id) ? `id:${idKey(id)}` : '')
+  const emailNode = (email: string | null | undefined) => (emailKey(email) ? `email:${emailKey(email)}` : '')
+  const join = (nodes: string[]) => {
+    const present = nodes.filter(Boolean)
+    for (let i = 1; i < present.length; i += 1) union(present[0], present[i])
+  }
+  for (const row of roster) {
+    join([idNode(row.id), emailNode(row.email), ...personIdSet(row, roster).map(idNode)])
+  }
+  for (const row of [...input.managers, ...input.operatives]) {
+    if (!row || !idText(row.id)) continue
+    join([idNode(row.id), emailNode(row.email), idNode(row.linkedUserId)])
+  }
+
+  // One deterministic key per group: the smallest account id, else the smallest email, else the smallest id.
+  type Group = { accounts: string[]; emails: string[]; ids: string[] }
+  const groups = new Map<string, Group>()
+  for (const node of [...parent.keys()]) {
+    const root = find(node)
+    const group = groups.get(root) || { accounts: [], emails: [], ids: [] }
+    groups.set(root, group)
+    if (node.startsWith('email:')) group.emails.push(node.slice(6))
+    else {
+      const id = node.slice(3)
+      group.ids.push(id)
+      if (rosterById.has(id)) group.accounts.push(id)
+    }
+  }
+  const keyByRoot = new Map<string, string>()
+  const ghostKeys = new Set<string>()
+  for (const [root, group] of groups) {
+    const smallest = (values: string[]) => [...values].sort()[0]
+    const key = group.accounts.length
+      ? `account:${smallest(group.accounts)}`
+      : group.emails.length
+        ? `email:${smallest(group.emails)}`
+        : `id:${smallest(group.ids)}`
+    keyByRoot.set(root, key)
+    // A ghost only when every account of the person is a ghost (a ghost's old record beside a live login is not).
+    if (group.accounts.length && group.accounts.every((id) => isGhostUser(rosterById.get(id)))) ghostKeys.add(key)
   }
 
   const keyOf = (kind: TaskPersonKind, id: string): string => {
-    const cacheKey = `${kind}:${idKey(id)}`
-    const known = cache.get(cacheKey)
-    if (known) return known
     const row = (kind === 'manager' ? managersById : operativesById).get(idKey(id))
-    const key = keyFor(row ? { id: row.id, email: row.email, linkedUserId: row.linkedUserId } : { id })
-    cache.set(cacheKey, key)
-    return key
+    const node = idNode(row ? row.id : id)
+    if (!node) return 'id:'
+    if (!parent.has(node)) return `id:${idKey(id)}`
+    return keyByRoot.get(find(node)) as string
   }
 
   return { keyOf, isGhost: (key) => ghostKeys.has(key) }

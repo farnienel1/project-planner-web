@@ -179,3 +179,32 @@ test('ticking a person adds the row shown; a second tick of the same person remo
   const removed = toggleTaskPerson(index, 'operative', 'op-pat', new Set(), new Set(['op-pat-2']))
   assert.equal(removed.operatives.size, 0)
 })
+
+test('review of #364: every record of one person gets the same key (closure first)', () => {
+  const roster: TaskPersonRosterRow[] = [
+    { id: 'u-a', email: 'a@x' },
+    { id: 'u-b', email: 'b@x' },
+  ]
+  const opA = operative({ id: 'op-a', email: 'b@x', linkedUserId: 'u-a' })
+  const opB = operative({ id: 'op-b', email: 'b@x' })
+  const index = taskPersonIndex({ managers: [], operatives: [opA, opB], roster })
+  assert.equal(index.keyOf('operative', 'op-a'), index.keyOf('operative', 'op-b'))
+  assert.equal(index.keyOf('operative', 'op-a'), 'account:u-a')
+  const picked = peopleForTaskPicker([], [opA, opB], 'operatives', roster, index)
+  assert.equal(picked.operatives.length, 1)
+})
+
+test('review of #364: a person is a ghost only when every account is a ghost', () => {
+  const roster: TaskPersonRosterRow[] = [
+    { id: 'g1', email: 'c@x', ghost: true },
+    { id: 'u-c', email: 'c@x' },
+  ]
+  const opC = operative({ id: 'op-c', email: 'c@x', firstName: 'Cal', lastName: 'Cee' })
+  const index = taskPersonIndex({ managers: [], operatives: [opC], roster })
+  assert.equal(index.isGhost(index.keyOf('operative', 'op-c')), false)
+  const picked = peopleForTaskPicker([], [opC], 'operatives', roster, index)
+  assert.deepEqual(picked.operatives.map((row) => row.id), ['op-c'])
+
+  const ghostOnly = taskPersonIndex({ managers: [], operatives: [opC], roster: [{ id: 'g1', email: 'c@x', ghost: true }] })
+  assert.equal(ghostOnly.isGhost(ghostOnly.keyOf('operative', 'op-c')), true)
+})
