@@ -8,6 +8,7 @@ import type { UnverifiedOperativeWarning } from '@/lib/warnings/generateOrgWarni
 import { formatWarningHours } from '@/lib/warnings/clashIntervals'
 import { analyse, displayTitle, formatDuration, FULL_DAY_WINDOW, type ClashTimelineEntry } from '@/lib/warnings/clashTimeline'
 import { formatClockMinutes } from '@/lib/canonical'
+import { dismissThenNotify } from '@/lib/warnings/warningDismiss'
 
 /**
  * Owner request 17 Nov: Dismiss on every web warning iOS can dismiss, with the iOS confirmation sheet
@@ -217,26 +218,28 @@ export function warningRemovedNotice(input: {
 }
 
 /**
- * The sheet's confirm, in order: write every key (one batch), then — only when the write succeeded — tell the admins.
- * A refused or failed write returns its message and notifies nobody, so the card stays and the sheet shows the error.
+ * The sheet's confirm, in order (`dismissThenNotify`, #372): write every key (one batch), then — only when the write
+ * succeeded — tell the admins, with `relatedId` the card's first key (rulebook §13, `notificationRelatedIdFor`). A
+ * refused or failed write returns its message and notifies nobody, so the card stays and the sheet shows the error.
  * A failed notice never undoes a saved dismissal.
  */
 export async function runWarningDismiss(input: {
   request: Pick<WarningDismissRequest, 'keys'>
   write: (keys: string[]) => Promise<unknown>
-  notify: () => Promise<unknown>
+  notify: (relatedId: string | null) => Promise<unknown>
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const keys = uniqueResolutionKeys(input.request.keys)
   if (keys.length === 0) return { ok: false, error: WARNING_DISMISS_COPY.failed }
   try {
-    await input.write(keys)
+    await dismissThenNotify({
+      resolutionKey: keys[0],
+      dismiss: async () => {
+        await input.write(keys)
+      },
+      notify: input.notify,
+    })
   } catch (caught) {
     return { ok: false, error: caught instanceof Error && caught.message ? caught.message : WARNING_DISMISS_COPY.failed }
-  }
-  try {
-    await input.notify()
-  } catch {
-    // The dismissal is saved; a failed notice never undoes it.
   }
   return { ok: true }
 }

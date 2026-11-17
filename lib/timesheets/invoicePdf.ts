@@ -11,6 +11,7 @@ import { formatStampInZone } from '@/lib/orgTime/zoneTime'
 import type { TimesheetSubject } from '@/lib/timesheets/timesheetWeekUtils'
 import type { TimesheetInvoiceLine } from '@/lib/timesheets/timesheetExport'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
+import { pdfBlob } from '@/lib/pdf/downloadPdf'
 
 const PAGE_W = 595
 const PAGE_H = 842
@@ -455,34 +456,5 @@ function concat(chunks: Uint8Array[]): Uint8Array {
 }
 
 export function timesheetPdfBlob(bytes: Uint8Array): Blob {
-  const copy = new ArrayBuffer(bytes.byteLength)
-  new Uint8Array(copy).set(bytes)
-  return new Blob([copy], { type: 'application/pdf' })
-}
-
-export function downloadTimesheetPdf(bytes: Uint8Array, filename: string): void {
-  const url = URL.createObjectURL(timesheetPdfBlob(bytes))
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
-}
-
-/** iOS InvoiceGeneratedSuccessSheet → UIActivityViewController; download if share is unavailable. */
-export async function shareTimesheetPdf(bytes: Uint8Array, filename: string): Promise<void> {
-  const file = new File([timesheetPdfBlob(bytes)], filename, { type: 'application/pdf' })
-  const data = { files: [file], title: filename }
-  if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-    const allowed = typeof navigator.canShare === 'function' ? navigator.canShare(data) : true
-    if (allowed) {
-      try {
-        await navigator.share(data)
-        return
-      } catch (error) {
-        if (error instanceof Error && error.name === 'AbortError') return
-      }
-    }
-  }
-  downloadTimesheetPdf(bytes, filename)
+  return pdfBlob(bytes)
 }

@@ -90,3 +90,49 @@ test('warningDismissDocument writes nothing without a key or a user', () => {
   const someKey = ['materials', 'job1', '2026-11-18'].join('-')
   assert.equal(warningDismissDocument({ resolutionKey: someKey, dismissedByUserId: '' }), null)
 })
+
+test('review of #372: a failed dismissal write sends no warning_removed notice', async () => {
+  const { dismissThenNotify } = await import('./warningDismiss.ts')
+  const key = ['materials', 'job1', '2026-11-18'].join('-')
+  let notified = 0
+  await assert.rejects(
+    dismissThenNotify({
+      resolutionKey: key,
+      dismiss: async () => {
+        throw new Error('Missing or insufficient permissions.')
+      },
+      notify: async () => {
+        notified += 1
+      },
+    }),
+    /insufficient permissions/
+  )
+  assert.equal(notified, 0, 'no notice when the write was refused')
+})
+
+test('review of #372: after the write, the notice carries the warning key as relatedId; a failed notice is swallowed', async () => {
+  const { dismissThenNotify } = await import('./warningDismiss.ts')
+  const key = ['materials', 'job1', '2026-11-18'].join('-')
+  const order: string[] = []
+  let relatedId: string | null = 'unset'
+  await dismissThenNotify({
+    resolutionKey: key,
+    dismiss: async (written) => {
+      order.push(`write:${written}`)
+    },
+    notify: async (id) => {
+      order.push('notify')
+      relatedId = id
+      throw new Error('push failed')
+    },
+  })
+  assert.deepEqual(order, [`write:${key}`, 'notify'])
+  assert.equal(relatedId, key, 'warning_removed relatedId is the warning key (rulebook §13)')
+})
+
+test('review of #372: withResolvedKey keeps keys delivered meanwhile and adds the new one once', async () => {
+  const { withResolvedKey } = await import('./warningDismiss.ts')
+  const key = ['materials', 'job1', '2026-11-18'].join('-')
+  assert.deepEqual(withResolvedKey(['from-listener'], key), ['from-listener', key])
+  assert.deepEqual(withResolvedKey(['from-listener', key.toUpperCase()], key), ['from-listener', key.toUpperCase()])
+})

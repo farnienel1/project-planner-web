@@ -464,7 +464,7 @@ export function WarningsScreen({
     const result = await runWarningDismiss({
       request,
       write: onDismissWarning,
-      notify: async () => {
+      notify: async (relatedId) => {
         if (!organization?.id) return
         const notice = warningRemovedNotice({ actorName: name, request })
         // One row per admin (companyActivityRecipients), never a row without userId (rulebook 1.4.0 §13).
@@ -473,6 +473,7 @@ export function WarningsScreen({
           type: 'warning_removed',
           title: notice.title,
           message: notice.message,
+          relatedId,
           requiresPermission: 'hasAdminAccess',
           actor: user,
           users,

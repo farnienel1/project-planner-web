@@ -252,20 +252,23 @@ test('confirm: a refused write keeps the card (error back, no admin notice); suc
 
   order.length = 0
   let written: string[] = []
+  let relatedId: string | null = 'unset'
   const ok = await runWarningDismiss({
     request: { keys: ['k1', 'K1', 'k2'] },
     write: async (keys) => {
       written = keys
       order.push('write')
     },
-    notify: async () => {
+    notify: async (id) => {
       order.push('notify')
+      relatedId = id
       throw new Error('inbox down')
     },
   })
   assert.deepEqual(ok, { ok: true }, 'a failed notice never undoes the saved dismissal')
   assert.deepEqual(written, ['k1', 'k2'])
   assert.deepEqual(order, ['write', 'notify'])
+  assert.equal(relatedId, 'k1', 'warning_removed relatedId is the warning key (rulebook §13)')
 
   const nothing = await runWarningDismiss({
     request: { keys: [] },

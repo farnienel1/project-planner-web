@@ -2,5 +2,5 @@
 a3ae43e881e4d0bab81b878fd2c7373094a8feb5:lib/canonical/parity-fixture.json:generic-api-key:910
 # Test data, not a secret: a fake private-key string in an MFA test (since split into parts, #359).
 2c21bee03a6464ce9bba93177d059f4d681cfc71:lib/auth/mfa/mfaSessionCookie.test.ts:private-key:459
-# Test data, not a secret: a sample warning resolution key in a dismiss test (renamed in the next commit, #372).
+# Test data, not a secret: a sample warning resolution key in a dismiss test (since built from parts, #372).
 a926ef050f8321a2a757afcfb3a9df59f08c1a1a:lib/warnings/warningDismiss.test.ts:generic-api-key:90
