@@ -35,6 +35,7 @@ import {
 } from '@/lib/tasks/projectTaskFilters'
 import { tasksAssignedToUser } from '@/lib/tasks/taskUtils'
 import { foldTaskFilterPeople, taskPersonIndex } from '@/lib/tasks/taskAssigneePeople'
+import { taskCompletionFields } from '@/lib/canonical/operationsDocuments'
 import type { Project, ProjectTask, ProjectTaskStatus } from '@/types'
 
 export function ProjectTasksSection({ project }: { project: Project }) {
@@ -197,8 +198,11 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
     await saveTask({
       ...task,
       status,
-      completedAt: status === 'Completed' ? task.completedAt || new Date() : undefined,
-      completedBy: status === 'Completed' ? task.completedBy || user?.email : undefined,
+      // Rulebook 1.59.0 `taskCompletionFields`: kept when already completed, set on completing, cleared otherwise.
+      ...(() => {
+        const fields = taskCompletionFields(task, status, { completedBy: user?.email ?? '', now: new Date() })
+        return { completedAt: fields.completedAt ?? undefined, completedBy: fields.completedBy ?? undefined }
+      })(),
       updatedAt: new Date(),
     })
   }

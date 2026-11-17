@@ -17529,3 +17529,173 @@ test('1.57.0 J1 review: a gap-only change never hides late extras waiting for th
   // Without late extras the gap-only change is still dropped for reports (signed figures stand).
   assert.equal(R112.signedTimesheetChangeForReports(R112.timesheetChangesWithLateExtras(gap, { waitingForLineManager: false })), null)
 })
+
+test('1.59.0 former people: record shape, reader and "Former: Jane Smith" on old bookings', () => {
+  const roster = [
+    { id: 'u1', email: 'jane@x.test', formerUserIds: ['PH-1'] },
+    { id: 'u2', email: 'JANE@x.test' },
+  ]
+  const write = R112.formerPersonRecordFields({
+    person: { id: 'u1', firstName: 'Jane', lastName: 'Smith', email: 'Jane@X.test', formerUserIds: ['PH-1'] },
+    roster,
+    catalogueRows: [{ id: 'op-9', email: 'jane@x.test' }, { id: 'op-other', email: 'bob@x.test' }],
+    deletedBy: 'admin-1',
+  })!
+  assert.deepEqual(Object.keys(write.fields).sort(), ['deletedBy', 'displayName', 'email', 'personIds'])
+  assert.deepEqual(write.serverTimestampFields, ['deletedAt'])
+  assert.equal(write.fields.displayName, 'Jane Smith')
+  assert.equal(write.fields.email, 'jane@x.test')
+  assert.equal(write.fields.personIds[0], 'u1')
+  assert.ok(write.fields.personIds.includes('PH-1') && write.fields.personIds.includes('u2') && write.fields.personIds.includes('op-9'))
+  assert.ok(!write.fields.personIds.includes('op-other'))
+  // Self-delete (§12): nothing that names them is kept.
+  const anon = R112.formerPersonRecordFields({ person: { id: 'u1', firstName: 'Jane', email: 'jane@x.test' }, deletedBy: 'u1', anonymised: true })!
+  assert.equal(anon.fields.displayName, R112.FORMER_PERSON_ANONYMOUS_NAME)
+  assert.equal(anon.fields.email, '')
+  assert.equal(R112.formerPersonRecordFields({ person: { id: '' }, deletedBy: 'a' }), null)
+  assert.equal(R112.formerPersonRecordFields({ person: { id: 'a/b' }, deletedBy: 'a' }), null)
+  assert.equal(R112.formerPersonPath('org', 'u1'), 'organizations/org/deletedPeople/u1')
+
+  // Needed only with records; an unreadable count keeps the record.
+  assert.equal(R112.formerPersonRecordNeeded({ bookings: 0, leaveRecords: 0 }), false)
+  assert.equal(R112.formerPersonRecordNeeded({ bookings: 0, managerSiteBookings: 2 }), true)
+  assert.equal(R112.formerPersonRecordNeeded({ bookings: 0, payHistoryRows: null }), true)
+  assert.equal(R112.formerPersonRecordNeeded({}), false)
+
+  const former = R112.parseFormerPersonDocument('u1', { ...write.fields, deletedAt: { seconds: 1_700_000_000, nanoseconds: 0 } })!
+  assert.equal(former.deletedAtMs, 1_700_000_000_000)
+  assert.equal(R112.parseFormerPersonDocument('x', {})!.displayName, R112.FORMER_PERSON_ANONYMOUS_NAME)
+  // Ids without case; the id first.
+  assert.equal(R112.formerPersonForId('ph-1', [former])!.id, 'u1')
+
+  const row = R112.scheduleRowPerson('PH-1', { accounts: [], operatives: [], formerPeople: [former] })
+  assert.equal(row.unresolved, true)
+  assert.equal(row.label, 'Former: Jane Smith')
+  assert.equal(row.key, 'former:u1')
+  assert.deepEqual(row.former, { id: 'u1', displayName: 'Jane Smith' })
+  // A live person always wins over a former record.
+  const live = R112.scheduleRowPerson('u1', { accounts: [{ id: 'u1' }], operatives: [], formerPeople: [former] })
+  assert.equal(live.unresolved, false)
+  assert.equal(live.former, null)
+  // Without a record: unchanged "Unknown person".
+  assert.equal(R112.scheduleRowPerson('6a9632ba-x', { accounts: [], operatives: [] }).label, 'Unknown person · 6A9632BA')
+
+  const groups = R112.unresolvedBookingPeople({
+    accounts: [],
+    operatives: [],
+    formerPeople: [former],
+    bookings: [
+      { id: 'b1', personId: 'u1', dayKey: '2026-11-02', collection: 'bookings' },
+      { id: 'b2', personId: 'op-9', dayKey: '2026-11-03', collection: 'bookings' },
+      { id: 'b3', personId: 'zz-unknown', dayKey: '2026-11-03', collection: 'bookings' },
+    ],
+  })
+  const formerGroups = groups.filter((g) => g.former)
+  assert.equal(formerGroups.length, 2)
+  assert.equal(formerGroups[0].label, 'Former person · Jane Smith')
+  assert.equal(groups.find((g) => !g.former)!.label, 'Unknown person · ZZ-UNKNO')
+})
+
+test('1.59.0 resolveBookingPerson reads managers rows (manager site bookings filed under a managers row id)', () => {
+  const input = { accounts: [{ id: 'acc-1', email: 'm@x.test' }], operatives: [], managers: [{ id: 'MGR-ROW', email: 'M@x.test' }] }
+  const person = R112.resolveBookingPerson('mgr-row', input)
+  assert.equal(person.accountId, 'acc-1')
+  assert.equal(person.managerId, 'MGR-ROW')
+  assert.equal(R112.bookingPersonKey('mgr-row', input), 'account:acc-1')
+  // A managers row with no account: its own key, never "Unknown person".
+  const rowOnly = { accounts: [], operatives: [], managers: [{ id: 'MGR-2', email: 'nobody@x.test' }] }
+  assert.equal(R112.scheduleRowPerson('mgr-2', rowOnly).unresolved, false)
+  assert.equal(R112.scheduleRowPerson('mgr-2', rowOnly).key, 'manager:mgr-2')
+  assert.ok(R112.bookingIdsForPerson('acc-1', input).includes('MGR-ROW'))
+  // Without `managers`, as before 1.59.0.
+  assert.equal(R112.resolveBookingPerson('mgr-row', { accounts: [], operatives: [] }).accountId, null)
+})
+
+test('1.59.0 Add User offers to link a former person on the same email; the link is an arrayUnion of their ids', () => {
+  const former = R112.parseFormerPersonDocument('old-1', { displayName: 'Jane Smith', email: 'jane@x.test', personIds: ['old-1', 'PH-OLD'] })!
+  const anon = R112.parseFormerPersonDocument('old-2', { displayName: 'Deleted user', email: '', personIds: ['old-2'] })!
+  assert.deepEqual(R112.formerPeopleForEmail({ email: 'JANE@x.test', formerPeople: [former, anon] }).map((p) => p.id), ['old-1'])
+  // Already linked to someone live: not offered.
+  assert.deepEqual(R112.formerPeopleForEmail({ email: 'jane@x.test', formerPeople: [former], roster: [{ id: 'n', formerUserIds: ['old-1', 'PH-OLD'] }] }), [])
+  assert.match(R112.formerPersonLinkOfferMessage([former]), /^Jane Smith used this email before they were deleted/)
+  const write = R112.formerPersonLinkWriteFields({ person: { id: 'new-1', formerUserIds: ['ph-old'] }, formerPeople: [former], actorUserId: 'admin', platform: 'web' })!
+  assert.deepEqual(write.arrayUnion.formerUserIds, ['old-1'])
+  assert.equal(write.set.updatedBy, 'admin')
+  assert.equal(R112.formerPersonLinkWriteFields({ person: { id: 'old-1' }, formerPeople: [anon].filter(() => false), actorUserId: 'a', platform: 'web' }), null)
+})
+
+test('1.59.0 invite accept: an existing account in this organisation keeps an unlinked placeholder', () => {
+  const invitation = { organizationId: 'org', role: 'operative' }
+  const placeholder = { email: 'p@x.test', passwordSet: false, organizationId: 'org' }
+  const unlinked = R112.inviteAcceptWrites({ existingProfile: { organizationId: 'org' }, placeholder, invitation, placeholderId: 'PH-1' })
+  assert.equal(unlinked.movePlaceholder, false)
+  assert.equal(unlinked.placeholderKeptUnlinked, true)
+  const retried = R112.inviteAcceptWrites({ existingProfile: { organizationId: 'org', formerUserIds: ['ph-1'] }, placeholder, invitation, placeholderId: 'PH-1' })
+  assert.equal(retried.movePlaceholder, true)
+  assert.equal(retried.placeholderKeptUnlinked, false)
+  const fresh = R112.inviteAcceptWrites({ existingProfile: null, placeholder, invitation, placeholderId: 'PH-1' })
+  assert.equal(fresh.movePlaceholder, true)
+})
+
+test('1.59.0 task person key: one key per person across records; ghost only when every account is a ghost', () => {
+  const roster = [
+    { id: 'u-ghost', email: '', ghost: true },
+    { id: 'u-live', email: 'sam@x.test' },
+  ]
+  const keys = R112.taskPersonKeys({
+    managers: [{ id: 'M1', email: 'Sam@x.test' }],
+    operatives: [{ id: 'u-ghost', email: '' }, { id: 'op-dup', email: '', linkedUserId: 'u-ghost' }, { id: 'op-sam', email: 'sam@x.test' }],
+    roster,
+  })
+  assert.equal(keys.keys['m1'], 'account:u-live')
+  assert.equal(keys.keys['op-sam'], 'account:u-live')
+  assert.equal(keys.keys['op-dup'], 'account:u-ghost')
+  assert.deepEqual(keys.ghostKeys, ['account:u-ghost'])
+  const index = R112.taskPersonIndex({ managers: [{ id: 'M1', email: 'sam@x.test' }], operatives: [{ id: 'op-sam', email: 'sam@x.test' }], roster })
+  assert.equal(index.keyOf('manager', 'm1'), index.keyOf('operative', 'OP-SAM'))
+  assert.equal(index.keyOf('operative', 'nobody'), 'id:nobody')
+  assert.equal(R112.isTaskPersonSelected(index, 'operative', 'op-sam', ['M1'], []), true)
+  const off = R112.toggleTaskPerson(index, 'operative', 'op-sam', ['M1'], ['op-sam'])
+  assert.equal(off.managers.size + off.operatives.size, 0)
+})
+
+test('1.59.0 safe-sender notice on the first email to a wholesaler address', () => {
+  const previous = R112.materialSendRecordRecipientEmails([
+    { recipients: [{ email: 'Orders@Wholesale.test' }, { email: '' }] },
+    null,
+    { recipients: null },
+  ])
+  assert.deepEqual(previous, ['orders@wholesale.test'])
+  assert.equal(R112.materialRequestSafeSenderNotice('orders@wholesale.test', previous), null)
+  assert.equal(R112.materialRequestSafeSenderNotice('new@wholesale.test', previous), R112.MATERIAL_REQUEST_SAFE_SENDER_NOTICE)
+  assert.equal(R112.materialRequestSafeSenderNotice('new@wholesale.test', []), R112.MATERIAL_REQUEST_SAFE_SENDER_NOTICE)
+  // Records could not be read: no box, the send goes ahead.
+  assert.equal(R112.materialRequestSafeSenderNotice('new@wholesale.test', null), null)
+  assert.equal(R112.MATERIAL_REQUEST_SAFE_SENDER_NOTICE, 'Please add this email address to your safe senders list, or mark it as not spam, so you receive all quote and order requests from us.')
+})
+
+test('1.59.0 userDeleteWrites puts the former-person record in the batch that deletes users/{uid}', () => {
+  const base = {
+    orgId: 'org', actorUserId: 'admin', platform: 'web' as const, nowIso: '2026-11-17T10:00:00Z',
+    user: { id: 'u1', email: 'u1@x.test', role: { isAdmin: false, isSuperAdmin: false, isManager: false, isOperativeMode: true } as never },
+  }
+  const formerPerson = R112.formerPersonRecordFields({ person: { id: 'u1', firstName: 'Jane', email: 'u1@x.test' }, deletedBy: 'admin' })!
+  const admin = R112.userDeleteWrites({ ...base, formerPerson })
+  const record = admin[0].writes.find((w) => w.path === 'organizations/org/deletedPeople/u1')
+  assert.ok(record && record.op === 'set' && record.optional === true)
+  assert.deepEqual(record.op === 'set' && record.serverTimestampFields, ['deletedAt'])
+  const ops = R112.userDeleteWrites({ ...base, formerPerson, actorManagesOperatives: true })
+  const withUsers = ops.find((step) => step.writes.some((w) => w.path === 'users/u1'))!
+  assert.ok(withUsers.writes.some((w) => w.path === 'organizations/org/deletedPeople/u1'))
+  // Without a record: the plan is exactly as before 1.59.0.
+  assert.ok(!R112.userDeleteWrites(base).some((step) => step.writes.some((w) => w.path.includes('deletedPeople'))))
+})
+
+test('1.59.0 taskCompletionFields: completedAt / completedBy move with the status', () => {
+  const now = new Date('2026-11-17T10:00:00Z')
+  const then = new Date('2026-11-01T10:00:00Z')
+  assert.deepEqual(R112.taskCompletionFields({}, 'Completed', { completedBy: 'Ann', now }), { completedAt: now, completedBy: 'Ann' })
+  assert.deepEqual(R112.taskCompletionFields({ completedAt: then, completedBy: 'Bob' }, 'completed', { completedBy: 'Ann', now }), { completedAt: then, completedBy: 'Bob' })
+  assert.deepEqual(R112.taskCompletionFields({ completedAt: then, completedBy: 'Bob' }, 'To Do', { completedBy: 'Ann', now }), { completedAt: null, completedBy: null })
+  assert.deepEqual(R112.taskCompletionFields(null, 'In Progress', { completedBy: 'Ann', now }), { completedAt: null, completedBy: null })
+})

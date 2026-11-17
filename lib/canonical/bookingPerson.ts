@@ -11,6 +11,7 @@
  */
 
 import { labourPersonIds } from './warningRows'
+import { formerPersonForId, type FormerPersonInput } from './formerPeople'
 
 export type BookingPersonAccount = {
   id: string
@@ -27,6 +28,13 @@ export type BookingPersonOperative = {
 export type BookingPersonInput = {
   accounts: readonly BookingPersonAccount[]
   operatives: readonly BookingPersonOperative[]
+  /**
+   * 1.59.0: `managers` catalogue rows (id, email). A manager site booking filed under a `managers` row id resolves to
+   * that row, and to the account on its email. Optional; missing reads as none (as before 1.59.0).
+   */
+  managers?: readonly BookingPersonOperative[] | null
+  /** 1.59.0 §11: `deletedPeople` records (`parseFormerPersonDocument`). Optional. */
+  formerPeople?: readonly FormerPersonInput[] | null
 }
 
 export type ResolvedBookingPerson = {
@@ -36,6 +44,13 @@ export type ResolvedBookingPerson = {
   operativeId: string | null
   /** Lower-case email of that person, or null. */
   email: string | null
+  /** 1.59.0: the `managers` row the booking names or that shares the account's email (absent when none). */
+  managerId?: string | null
+  /**
+   * 1.59.0 §11: when no account, catalogue row or managers row is found, the former person (`deletedPeople`) the id
+   * belongs to (absent when none).
+   */
+  former?: { id: string; displayName: string } | null
 }
 
 function idKey(value: unknown): string {
@@ -98,7 +113,9 @@ export function resolveBookingPerson(operativeId: unknown, input: BookingPersonI
   const needle = idKey(operativeId)
   if (!needle) return { accountId: null, operativeId: null, email: null }
 
+  const managers = input.managers || []
   const operative = input.operatives.find((row) => idKey(row.id) === needle) || null
+  const managerRow = operative ? null : managers.find((row) => idKey(row.id) === needle) || null
   let account =
     input.accounts.find((row) => idKey(row.id) === needle) ||
     input.accounts.find((row) => (row.formerIds || []).some((id) => idKey(id) === needle)) ||
@@ -106,20 +123,32 @@ export function resolveBookingPerson(operativeId: unknown, input: BookingPersonI
     null
 
   const operativeEmail = emailKey(operative?.email)
+  const managerEmail = emailKey(managerRow?.email)
   if (!account && operativeEmail) {
     account = input.accounts.find((row) => emailKey(row.email) === operativeEmail) || null
+  }
+  if (!account && managerEmail) {
+    account = input.accounts.find((row) => emailKey(row.email) === managerEmail) || null
   }
   const accountEmail = emailKey(account?.email)
   const linkedOperative =
     operative ||
     (accountEmail ? input.operatives.find((row) => emailKey(row.email) === accountEmail) || null : null)
+  const linkedManager =
+    managerRow || (accountEmail ? managers.find((row) => emailKey(row.email) === accountEmail) || null : null)
 
-  const email = operativeEmail || accountEmail || emailKey(linkedOperative?.email) || null
-  return {
+  const email = operativeEmail || managerEmail || accountEmail || emailKey(linkedOperative?.email) || null
+  const resolved = Boolean(account || linkedOperative || linkedManager)
+  const former = resolved ? null : formerPersonForId(operativeId, input.formerPeople)
+  // The 1.59.0 fields are present only when set, so every result from before 1.59.0 keeps its exact shape.
+  const result: ResolvedBookingPerson = {
     accountId: account ? account.id : null,
     operativeId: linkedOperative ? linkedOperative.id : null,
-    email: email || null,
+    email: email || (former ? emailKey(former.email) || null : null),
   }
+  if (linkedManager) result.managerId = linkedManager.id
+  if (former) result.former = { id: former.id, displayName: former.displayName }
+  return result
 }
 
 /**
@@ -131,6 +160,8 @@ export function bookingPersonKey(operativeId: unknown, input: BookingPersonInput
   const person = resolveBookingPerson(operativeId, input)
   if (person.accountId) return `account:${idKey(person.accountId)}`
   if (person.operativeId) return `operative:${idKey(person.operativeId)}`
+  if (person.managerId) return `manager:${idKey(person.managerId)}`
+  if (person.former) return `former:${idKey(person.former.id)}`
   return `id:${idKey(operativeId)}`
 }
 
@@ -153,6 +184,7 @@ export function bookingIdsForPerson(operativeId: unknown, input: BookingPersonIn
   add(first)
   const person = resolveBookingPerson(first, input)
   add(person.operativeId)
+  add(person.managerId)
   const account = person.accountId ? input.accounts.find((row) => row.id === person.accountId) : undefined
   if (account) for (const id of bookingIdsForAccount(account, input.operatives)) add(id)
   return ids

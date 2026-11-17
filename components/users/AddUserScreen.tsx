@@ -1,6 +1,17 @@
 'use client'
 
 import { FormEvent, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { arrayUnion, doc, serverTimestamp, updateDoc } from 'firebase/firestore'
+import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
+import { useFormerPeople } from '@/lib/people/formerPeople'
+import {
+  FORMER_PERSON_LINK_ACTION,
+  FORMER_PERSON_LINK_SKIP,
+  FORMER_PERSON_LINK_TITLE,
+  formerPeopleForEmail,
+  formerPersonLinkOfferMessage,
+  formerPersonLinkWriteFields,
+} from '@/lib/canonical/formerPeople'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
@@ -238,6 +249,9 @@ export function AddUserScreen() {
   // Rulebook 1.36.0 §11 (owner decision 10 Nov): people with the same first and last name (`usersWithSameName`).
   // A warning only — Add anyway saves as before, Cancel returns to the form.
   const [duplicateMatches, setDuplicateMatches] = useState<SameNamePerson[] | null>(null)
+  // Rulebook 1.59.0 §11 (owner decision 17 Nov): a former person who used this email — offer to link their old ids
+  // (bookings, leave, history) to the new person. Linking is an admin identity-link write (§16), so admins only.
+  const formerPeople = useFormerPeople(organization?.id ?? null, canInviteAdmins)
 
   useEffect(() => {
     if (organization?.id) loadUsers(organization.id)
@@ -482,6 +496,14 @@ export function AddUserScreen() {
       return
     }
     if (stopBeforeSave(firstName, surname, nameConfirmed)) return
+    const formerMatches = canInviteAdmins
+      ? formerPeopleForEmail({ email, formerPeople, roster: users as never })
+      : []
+    const linkFormer =
+      formerMatches.length > 0 &&
+      window.confirm(
+        `${FORMER_PERSON_LINK_TITLE}\n\n${formerPersonLinkOfferMessage(formerMatches)}\n\nOK: ${FORMER_PERSON_LINK_ACTION}. Cancel: ${FORMER_PERSON_LINK_SKIP}.`
+      )
 
     setSaving(true)
     setError(null)
@@ -519,6 +541,29 @@ export function AddUserScreen() {
         hasNoLineManager: mayHaveNoLineManager && form.hasNoLineManager,
       })
 
+      let formerLinkNote = ''
+      if (linkFormer) {
+        // Rulebook 1.59.0 `formerPersonLinkWriteFields`: arrayUnion of the former people's ids onto the new person's
+        // formerUserIds (accepting the invitation copies them onto the account). Best effort: the person is added
+        // either way, and an admin can still link the ids in Data health.
+        const write = formerPersonLinkWriteFields({
+          person: { id: result.userId },
+          formerPeople: formerMatches,
+          actorUserId: user.id,
+          platform: 'web',
+        })
+        if (write) {
+          try {
+            await updateDoc(doc(getFirebaseDb(), 'users', result.userId), {
+              formerUserIds: arrayUnion(...write.arrayUnion.formerUserIds),
+              ...write.set,
+              updatedAt: serverTimestamp(),
+            })
+          } catch {
+            formerLinkNote = ' Their old records could not be linked — link them in Settings → Data health.'
+          }
+        }
+      }
       if (result.inviteType === 'existing_user_org_add') {
         try {
           const { jsonAuthHeaders } = await import('@/lib/security/clientAuthHeaders')
@@ -551,7 +596,7 @@ export function AddUserScreen() {
             role: operativeInviteOnly || accountType === 'operative' ? 'operative' : accountType === 'admin' ? 'admin' : 'manager',
             to: email,
           })
-          setSuccess(`Invitation sent to ${email}. They will receive an email to set their password.`)
+          setSuccess(`Invitation sent to ${email}. They will receive an email to set their password.${formerLinkNote}`)
         } catch (emailError) {
           setSuccess(
             `User invited but email could not be sent (${emailError instanceof Error ? emailError.message : 'unknown error'}).`

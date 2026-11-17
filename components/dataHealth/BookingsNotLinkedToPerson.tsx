@@ -38,6 +38,7 @@ import {
   type UnresolvedBookingPerson,
 } from '@/lib/canonical'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
+import { useFormerPeople } from '@/lib/people/formerPeople'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { createLatestRequest } from '@/lib/dataHealth/latestRequest'
@@ -121,7 +122,9 @@ function jobLabel(data: Record<string, unknown>): string {
 
 export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: string }) {
   const { users, userIdAliases, loadUsers, rosterLoadedOrgId } = useOrgUserStore()
-  const { operatives, loadOperatives } = useOperativeStore()
+  const { operatives, loadOperatives, managers, loadManagers } = useOperativeStore()
+  // Rulebook 1.59.0 §11: deleted people's ids are listed apart, "Former person · Jane Smith".
+  const formerPeople = useFormerPeople(organizationId)
   const [loaded, setLoaded] = useState<Loaded | null>(null)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -143,7 +146,8 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
   useEffect(() => {
     void loadUsers(organizationId)
     void loadOperatives(organizationId)
-  }, [organizationId, loadUsers, loadOperatives])
+    void loadManagers(organizationId)
+  }, [organizationId, loadUsers, loadOperatives, loadManagers])
 
   const run = useCallback(async () => {
     setRunning(true)
@@ -212,13 +216,24 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
         aliasIds: rosterAliasIdsFor(u.id, userIdAliases),
       })),
       operatives: operatives.map((o) => ({ id: o.id, email: o.email ?? null })),
+      managers: managers.map((m) => ({ id: m.id, email: m.email ?? null })),
+      formerPeople,
     }),
-    [users, userIdAliases, operatives]
+    [users, userIdAliases, operatives, managers, formerPeople]
   )
 
   const rows: UnresolvedBookingPerson[] = useMemo(
     () => (loaded ? unresolvedBookingPeople({ ...people, bookings: loaded.bookings }) : []),
     [loaded, people]
+  )
+  // Rulebook 1.59.0: former people are listed apart, after the ids nobody can name.
+  const sections = useMemo(
+    () =>
+      [
+        { title: null as string | null, rows: rows.filter((row) => !row.former) },
+        { title: 'Former people' as string | null, rows: rows.filter((row) => row.former) },
+      ].filter((section) => section.rows.length > 0),
+    [rows]
   )
 
   // Rulebook 1.44.0 §11: every users document of the organisation (not the email fold), one option per person, never the
@@ -324,11 +339,14 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
       ) : rows.length === 0 ? (
         <p className="mt-2 text-sm text-[var(--ink3)]">{UNRESOLVED_BOOKINGS_EMPTY}</p>
       ) : (
+        sections.map((section) => (
+        <div key={section.title ?? 'unknown'}>
+        {section.title ? <h3 className="mt-4 text-[13px] font-bold">{section.title}</h3> : null}
         <ul className="mt-3 space-y-3">
-          {rows.map((row) => (
+          {section.rows.map((row) => (
             <li key={row.personId} className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 text-sm">
               <p className="font-semibold">
-                Unknown person · ID {row.idHint}
+                {row.former ? row.label : `Unknown person · ID ${row.idHint}`}
                 <span className="ml-2 font-normal text-[var(--ink3)]">
                   {row.count} booking{row.count === 1 ? '' : 's'} ·{' '}
                   {row.firstDayKey === row.lastDayKey
@@ -404,6 +422,8 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
             </li>
           ))}
         </ul>
+        </div>
+        ))
       )}
     </section>
   )

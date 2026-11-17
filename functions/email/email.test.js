@@ -1414,3 +1414,19 @@ test('rulebook 1.58.0 material email: a blank or legacy "Custom" brand reads "Ma
   const real = { ...base, materials: [{ material: 'Clips', quantity: 2, unit: 'Box', brand: 'Wago', productCode: '', notes: '' }] }
   assert.match(buildPlainTextEmail(real, true), /Brand: Wago/)
 })
+
+test('1.59.0 material_request: the first email to a wholesaler address carries the safe-sender box; later ones do not', async () => {
+  const withRecords = (emails) => (base) => ({ ...base, listMaterialSendRecipientEmails: async () => emails })
+  const first = makeHandler({ reader: withRecords([]) })
+  const res = await call(first.handler, { headers: auth('M'), body: iosMaterialBody({ requestType: 'quote' }) })
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  assert.ok(first.sent[0].html.includes(canonical.MATERIAL_REQUEST_SAFE_SENDER_NOTICE))
+  const later = makeHandler({ reader: withRecords(['wendy@pipes.example']) })
+  await call(later.handler, { headers: auth('M'), body: iosMaterialBody({ requestType: 'quote' }) })
+  assert.ok(!later.sent[0].html.includes(canonical.MATERIAL_REQUEST_SAFE_SENDER_NOTICE))
+  // The records could not be read: no box, the email still goes.
+  const failed = makeHandler({ reader: (base) => ({ ...base, listMaterialSendRecipientEmails: async () => { throw new Error('down') } }) })
+  const res3 = await call(failed.handler, { headers: auth('M'), body: iosMaterialBody({ requestType: 'quote' }) })
+  assert.equal(res3.code, 200)
+  assert.ok(!failed.sent[0].html.includes(canonical.MATERIAL_REQUEST_SAFE_SENDER_NOTICE))
+})

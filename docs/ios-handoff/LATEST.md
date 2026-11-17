@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.58.0
+# iOS follow-on — rulebook 1.59.0
 
 Generated 2026-11-17 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.57.0 → 1.58.0
-Packed hash: ed36051c3eda321e195501d2ce00f3a1b54b4e6c1e993aaf20aed2277abdefa9
-Rulebook sha256: 021d024080428fee353e0a264d42ff8a1e0a6bf0a19638d1ebfa11f9e6e414c8
+Rulebook version: 1.58.0 → 1.59.0
+Packed hash: e4ebba8befff197a5950aaf248b5dd030c8f1c43a798091abf07d2067142335d
+Rulebook sha256: 53c0c1cba7ff30b098a5f8eb2fb71cae2d951b7426a5d7c4061765db54560ebb
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,38 +22,45 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 5b2615b5540b55f716d40617dd791dbcda6290348ef18951186f47e2e5b7cd20
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: SNAPSHOT_GAP_FROM_MS, SNAPSHOT_GAP_REPORTS, signedTimesheetChangeForReports, timesheetClaimLatestSheets
+Exports added: DELETED_PEOPLE_COLLECTION, FORMER_PERSON_ANONYMOUS_NAME, FORMER_PERSON_CHIP, FORMER_PERSON_EMAIL_MAX, FORMER_PERSON_FIELDS, FORMER_PERSON_IDS_MAX, FORMER_PERSON_LINK_ACTION, FORMER_PERSON_LINK_ADMIN_ONLY_NOTE, FORMER_PERSON_LINK_SKIP, FORMER_PERSON_LINK_TITLE, FORMER_PERSON_NAME_MAX, MATERIAL_REQUEST_SAFE_SENDER_NOTICE, formerPeopleForEmail, formerPersonDataHealthLabel, formerPersonForId, formerPersonLabel, formerPersonLinkOfferMessage, formerPersonLinkWriteFields, formerPersonPath, formerPersonRecordFields, formerPersonRecordNeeded, isTaskPersonSelected, materialRequestIsFirstContact, materialRequestSafeSenderNotice, materialSendRecordRecipientEmails, parseFormerPersonDocument, taskCompletionFields, taskPersonIndex, taskPersonKeys, toggleTaskPerson
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/materialCatalogueCsv.ts, lib/canonical/materialQuantity.ts, lib/canonical/operationsDocuments.ts, lib/canonical/payeClaims.ts, lib/canonical/payrunSnapshot.ts, lib/canonical/timesheetBookingChanges.ts, lib/canonical/timesheetLateExtras.ts, lib/canonical/weeklyReportPay.ts
+Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bookingPerson.ts, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/crossPlatformContract.samples.ts, lib/canonical/formerPeople.ts, lib/canonical/index.ts, lib/canonical/inviteAccept.ts, lib/canonical/liveSources.ts, lib/canonical/materialSafeSender.ts, lib/canonical/operationsDocuments.ts, lib/canonical/organizationSettings.ts, lib/canonical/taskPeople.ts, lib/canonical/unresolvedBookingPeople.ts, lib/canonical/userDelete.ts
 Done when:
-- [ ] Packed hash in iOS equals ed36051c3eda321e195501d2ce00f3a1b54b4e6c1e993aaf20aed2277abdefa9
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 021d024080428fee353e0a264d42ff8a1e0a6bf0a19638d1ebfa11f9e6e414c8)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.58.0)
+- [ ] Packed hash in iOS equals e4ebba8befff197a5950aaf248b5dd030c8f1c43a798091abf07d2067142335d
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 53c0c1cba7ff30b098a5f8eb2fb71cae2d951b7426a5d7c4061765db54560ebb)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.59.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.58.0
+## What changed in 1.59.0
 
-- **A missing material brand reads "N/A", not "Custom"** (§28, owner decision 17 Nov; supersedes the 15 Nov "keep 'Custom' for now, tidy later"). New `materialBrandStored`, `materialBrandText`, `MATERIAL_BRAND_MISSING_TEXT` ("N/A"), `MATERIAL_BRAND_LEGACY_BLANK` ("Custom"). Display only on read: a stored blank or "Custom" brand (trimmed, any case) shows "N/A"; new saves with no brand store `''`; a save that leaves the brand blank never rewrites a stored "Custom" or adds a brand field (`materialCatalogueItemWriteFields`, `materialLineWriteFields`). Changed: `parseMaterialCatalogueDocument` brand `''` (was "Custom"), `materialCatalogueItemFields` brand `''` (was "Custom"), `parseMaterialLineDocument` / `materialLineFields` treat "Custom" as none, `materialSendRecordCreateFields` never writes "Custom", `materialWhatsAppRows` never prints it. Web: catalogue list, pickers, send history, wholesalers, the quote / order email (web route and the email function). No migration, no rules change.
+- **Former people on old bookings** (§11, §16, §21; owner decision 17 Nov, "yes, perfect solution"). New `organizations/{orgId}/deletedPeople/{id}` (`displayName`, `email`, `personIds`, `deletedAt`, `deletedBy` only) written by a person delete when they have records (`formerPersonRecordNeeded`, `formerPersonRecordFields`, `userDeleteWrites` `formerPerson`, an `optional` write); read with `parseFormerPersonDocument` / `formerPersonForId`. `resolveBookingPerson` (`formerPeople` → `former`), `scheduleRowPerson` ("Former: Jane Smith", `FORMER_PERSON_CHIP`) and `unresolvedBookingPeople` (`former`, `label`; Data health lists them apart, "Former person · Jane Smith") read it. Add User offers an admin to link a former person on the same email (`formerPeopleForEmail`, `formerPersonLinkOfferMessage`, `formerPersonLinkWriteFields`). Account self-delete leaves anonymised records ("Deleted user", no email). `LIVE_COLLECTIONS` / `OPERATIONAL_COLLECTION_PATHS` list `deletedPeople`; `CONTRACT_NO_READER` until iOS writes it. Security rules: create only in the batch that deletes the person's users document or operatives row; staff read; no update or delete; out of the catch-all read. Compile cost offset by folding `managerRowIsCaller` into `jobListsCaller`, dropping redundant parentheses in `lineManagerIdList` / `homeOrgIs` and merging the catch-all's collection list (no allow / deny change).
+- **`resolveBookingPerson` reads `managers` rows** (`BookingPersonInput.managers` → `managerId`): a manager site booking filed under a `managers` row id no longer reads "Unknown person"; `bookingPersonKey` / `scheduleRowPerson` key `manager:<id>`; `bookingIdsForPerson` includes the row. New result fields appear only when set (earlier shapes unchanged).
+- **Invite accept** (`inviteAcceptWrites` `placeholderId` → `placeholderKeptUnlinked`): an existing account in the same organisation removes the placeholder only when it already lists the placeholder's id; otherwise it is kept, never deleted unlinked.
+- **Task person key in the rulebook** (`taskPersonKeys`, `taskPersonIndex`, `isTaskPersonSelected`, `toggleTaskPerson`), moved from web `lib/tasks/taskAssigneePeople.ts` (web now calls it; same keys).
+- **Safe-sender notice** (§16, owner decision 17 Nov): `materialSendRecordRecipientEmails`, `materialRequestIsFirstContact`, `materialRequestSafeSenderNotice`, `MATERIAL_REQUEST_SAFE_SENDER_NOTICE`; the web send route and the email function's `material_request` add the red box on the first email to an address.
+- **Task completion** (`taskCompletionFields`, §23): `completedAt` / `completedBy` move with the status; web calls it (unchanged behaviour), iOS adopts it (hand-off).
 
-## iOS work for 1.58.0
+## iOS work for 1.59.0
 
-A missing material brand reads **"N/A"**, not "Custom" (rulebook §28 1.58.0, owner decision 17 Nov, before launch). Display only on read; nothing stored is rewritten (guardrail 3). Every rule below is a packed function — call it through `CanonicalBusinessEngine`; keep no Swift copy of the "Custom" / "N/A" rule.
+Former people on old bookings, managers rows, the task person key, task completion and the safe-sender notice (rulebook 1.59.0, owner decisions 17 Nov). Every rule below is a packed function — call it through `CanonicalBusinessEngine`; keep no Swift copy.
 
-1. **Find every Swift place that defaults a brand**: search the iOS repo for `"Custom"` next to `brand` / `manufacturer` (catalogue model decode, `FirebaseBackend.materialCatalogueItemPayload`, the catalogue editor save, material pickers / Add material suggestions, send sheet, send history, `MaterialRequestEmailClient` payload, WhatsApp text, CSV import / export). Replace the default with the rulebook: saved value `materialBrandStored(brand)` (`''` for blank or the legacy word "Custom", trimmed, any case); shown value `materialBrandText(brand)` ("N/A" when none).
-2. **Brand slots show `materialBrandText`**: the catalogue list rows, material pickers / suggestions and any detail row labelled Brand / Manufacturer.
-3. **Appended text shows nothing when there is no brand** (`materialBrandStored`, never "Custom"): send history lines, any "· brand" suffix, the WhatsApp text (already `materialWhatsAppRows`).
-4. **Saves**: a catalogue item or job material line with no brand stores `''` / no brand (never "Custom"). Use the rulebook writers where iOS already does (`materialCatalogueItemFields`, `materialCatalogueItemWriteFields`, `materialLineFields`, `materialLineWriteFields`): a save that leaves the brand blank keeps a stored "Custom" exactly as stored and adds no brand field — so an edit of another field never rewrites it. If an iOS save builds its own payload, it must not send `brand` when the user left it blank and the stored value is blank or "Custom".
-5. **Reader change**: `parseMaterialCatalogueDocument(...).brand` is now `''` for a missing or "Custom" brand (was "Custom"); `parseMaterialLineDocument(...).brand` is `null` for "Custom". Any Swift code that compared with "Custom" must use `materialBrandStored(...) == ""` instead. Cross-platform contract: the iOS catalogue sample now expects `brand: ""`.
-6. **Brands count** (if iOS shows one): count distinct non-empty `materialBrandStored` values — "no brand" is not a brand.
-7. **Tests**: a stored "Custom" and a missing brand both show "N/A"; "Custom Cables Ltd" shows as typed; a new item with no brand saves `""`; editing the name of an item stored with "Custom" sends no `brand` field.
-8. `minimumIosBuild`: not needed (display only; an older build's "Custom" reads as "N/A" everywhere).
+1. **Deleting a person writes a former-person record** (§11). Where iOS deletes a person (`UserStore` delete through `userDeleteWrites`, and any catalogue `operatives` row delete): work out whether they have records — any labour or manager site booking (every date) under `bookingIdsForAccount` ids, any `holidayBookings`, `operativeDayRateHistory` or `settings` timesheet with `userId` in those ids (`limit(1)` each; a refused read is `nil`) — and ask `formerPersonRecordNeeded({ bookings, managerSiteBookings, leaveRecords, timesheets, payHistoryRows })`. When true, pass `formerPersonRecordFields({ person, roster, catalogueRows, deletedBy })` as `formerPerson` to `userDeleteWrites`. The plan puts an `op: 'set'` write with `optional: true` and `serverTimestampFields: ['deletedAt']` into the batch that deletes `users/{uid}` (the account batch for an admin; the users-document step for an operatives manager). Execute it like the other sets (`FieldValue.serverTimestamp()` for `deletedAt`); **if that batch is refused with permission-denied, run the same batch again without the optional write** (rules older than 1.59.0). For a catalogue `operatives/{id}` row delete, write `organizations/{org}/deletedPeople/{id}` in the same batch as the row delete. Never write the record on its own — the rules refuse it.
+2. **Former people on screens** (§21). Staff (admins and managers) read `organizations/{org}/deletedPeople` once when the job week grid (Scheduling) opens, through `parseFormerPersonDocument`, and pass them as `formerPeople` to `scheduleRowPerson` / `resolveBookingPerson` with `managers` (the `managers` rows: `{ id, email }`). A row with `former` shows `label` ("Former: Jane Smith") and the chip `FORMER_PERSON_CHIP` ("Former person") instead of "Not linked to a person"; still no Quick Add. A row with `managerId` (a manager site booking filed under a `managers` row id) is a resolved person — name it from that row.
+3. **`resolveBookingPerson` callers pass `managers`** everywhere iOS builds `BookingPersonInput` (weekly report names, warnings, Daily Overview), so manager schedule bookings under a managers row id never read "Unknown". New result fields `managerId` and `former` are present only when set.
+4. **Add User link offer** (admins only): before saving an invite, `formerPeopleForEmail({ email, formerPeople, roster })`; when not empty, ask with `FORMER_PERSON_LINK_TITLE` / `formerPersonLinkOfferMessage(matches)` and buttons `FORMER_PERSON_LINK_ACTION` / `FORMER_PERSON_LINK_SKIP`. On link, after the placeholder is created, update `users/{placeholderId}` with `formerPersonLinkWriteFields(...)`: `FieldValue.arrayUnion` of `arrayUnion.formerUserIds`, plus `set` and `updatedAt`. A failure never stops the invite (say "link them in Data health on the web").
+5. **Task person key** (§21): replace the iOS task picker's own grouping (`TaskPeoplePickerSheet`, task filters, assignee names) with `taskPersonKeys({ managers, operatives, roster })` → `{ keys, ghostKeys }` (look ids up lower case; an unknown id is `id:<id>`). One row per person; ghosts (every account a ghost) not offered for a new assignment; existing assignments to an old row id stay shown and ticked. `isTaskPersonSelected` / `toggleTaskPerson` for ticking.
+6. **Task completion** (§23): every status change writes `taskCompletionFields(task, status, { completedBy, now })` — `completedAt` / `completedBy` kept when already completed, set on completing, `nil` (removed) for any other status, through `taskWriteFields`. iOS set the status without them.
+7. **Safe-sender notice**: no iOS code change — the email function decides it for `material_request` sends once deployed. Do not add it to the iOS payload.
+8. **Invite accept**: iOS has no accept flow (it opens the web link); nothing to do. `inviteAcceptWrites` now takes `placeholderId`.
+9. Tests: a deleted person's booking shows "Former: Jane Smith"; a managers-row booking resolves; the task picker lists a person with an `operatives` row and a `managers` row once; reopening a completed task clears `completedAt`.
+10. `minimumIosBuild`: not needed.
 
 ## New rulebook sections
 
-- 1.58.0 — 2026-11-17
+- 1.59.0 — 2026-11-17
 
 ## Workflow for the iOS agent
 

@@ -1,5 +1,7 @@
 'use strict'
 
+const canonical = require('../loadCanonical')
+
 /** The Firestore reads `sendEmail` needs (Admin SDK). Every read is one document or a bounded query. */
 
 const { normalizeEmail } = require('./text')
@@ -45,6 +47,11 @@ function createFirestoreReader(db) {
       return roster.docs
         .filter((doc) => normalizeEmail((doc.data() || {}).email) === wanted)
         .map((doc) => ({ id: doc.id, data: doc.data() || {} }))
+    },
+    /** Rulebook 1.59.0 §16: every recipient address on the organisation's send records (first-contact check). */
+    async listMaterialSendRecipientEmails(orgId) {
+      const snap = await db.collection('organizations').doc(orgId).collection('materialSendRecords').select('recipients').get()
+      return canonical.materialSendRecordRecipientEmails(snap.docs.map((doc) => doc.data() || {}))
     },
     async listWholesalers(orgId) {
       const snap = await db.collection('organizations').doc(orgId).collection('wholesalers').limit(500).get()

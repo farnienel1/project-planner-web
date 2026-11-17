@@ -11,6 +11,7 @@
  */
 
 import { resolveBookingPerson, type BookingPersonInput } from './bookingPerson'
+import { formerPersonDataHealthLabel, formerPersonLabel } from './formerPeople'
 import { rosterPersonGroups, rosterPersonName, type LineManagerRosterPerson } from './lineManagers'
 import { rosterSegment } from './userRosterSegment'
 import { writeMetadataFields } from './writeMetadata'
@@ -46,11 +47,18 @@ export type ScheduleRowPerson = {
   key: string
   accountId: string | null
   operativeId: string | null
+  /** 1.59.0: the `managers` row the id names (a manager site booking filed under a managers row id), or null. */
+  managerId: string | null
   /** True when the stored id names nobody loaded: the row is shown, marked, with no Quick Add. */
   unresolved: boolean
-  /** Unresolved only: "Unknown person · 6A9632BA". Resolved rows are named by the caller from the person found. */
+  /**
+   * Unresolved only: "Unknown person · 6A9632BA", or (1.59.0) "Former: Jane Smith" for a deleted person's id.
+   * Resolved rows are named by the caller from the person found.
+   */
   label: string | null
   idHint: string
+  /** 1.59.0 §11: the deleted person the id belongs to (`deletedPeople`), or null. Still `unresolved` (no Quick Add). */
+  former: { id: string; displayName: string } | null
 }
 
 /**
@@ -61,19 +69,24 @@ export type ScheduleRowPerson = {
 export function scheduleRowPerson(personId: unknown, input: BookingPersonInput): ScheduleRowPerson {
   const person = resolveBookingPerson(personId, input)
   const idHint = bookingPersonIdHint(personId)
-  if (person.accountId) {
-    return { key: `account:${idKey(person.accountId)}`, accountId: person.accountId, operativeId: person.operativeId, unresolved: false, label: null, idHint }
-  }
-  if (person.operativeId) {
-    return { key: `operative:${idKey(person.operativeId)}`, accountId: null, operativeId: person.operativeId, unresolved: false, label: null, idHint }
+  const base = { accountId: person.accountId, operativeId: person.operativeId, managerId: person.managerId ?? null, label: null, idHint, former: null }
+  if (person.accountId) return { ...base, key: `account:${idKey(person.accountId)}`, unresolved: false }
+  if (person.operativeId) return { ...base, key: `operative:${idKey(person.operativeId)}`, unresolved: false }
+  if (person.managerId) return { ...base, key: `manager:${idKey(person.managerId)}`, unresolved: false }
+  if (person.former) {
+    return {
+      ...base,
+      key: `former:${idKey(person.former.id)}`,
+      unresolved: true,
+      label: formerPersonLabel(person.former.displayName),
+      former: person.former,
+    }
   }
   return {
+    ...base,
     key: `id:${idKey(personId)}`,
-    accountId: null,
-    operativeId: null,
     unresolved: true,
     label: idHint ? `${UNKNOWN_BOOKING_PERSON_LABEL} · ${idHint}` : UNKNOWN_BOOKING_PERSON_LABEL,
-    idHint,
   }
 }
 
@@ -102,6 +115,13 @@ export type UnresolvedBookingPerson = {
   bookedBy: string[]
   bookingIds: string[]
   collections: Array<'bookings' | 'managerSiteBookings'>
+  /**
+   * 1.59.0 §11: the deleted person the id belongs to, or null. Data health lists these apart ("Former person · Jane
+   * Smith", `label`); they can still be linked to a current person.
+   */
+  former: { id: string; displayName: string } | null
+  /** "Former person · Jane Smith", or "Unknown person · 6A9632BA". */
+  label: string
 }
 
 /**
@@ -113,19 +133,23 @@ export function unresolvedBookingPeople(input: BookingPersonInput & {
   bookings: readonly UnresolvedBookingInput[]
 }): UnresolvedBookingPerson[] {
   const groups = new Map<string, UnresolvedBookingPerson>()
-  const resolved = new Map<string, boolean>()
+  const rows = new Map<string, ScheduleRowPerson>()
   for (const booking of input.bookings || []) {
     const key = idKey(booking.personId)
     if (!key) continue
-    let isResolved = resolved.get(key)
-    if (isResolved == null) {
-      isResolved = !scheduleRowPerson(booking.personId, input).unresolved
-      resolved.set(key, isResolved)
+    let row = rows.get(key)
+    if (!row) {
+      row = scheduleRowPerson(booking.personId, input)
+      rows.set(key, row)
     }
-    if (isResolved) continue
+    if (!row.unresolved) continue
     let group = groups.get(key)
     if (!group) {
       group = {
+        former: row.former,
+        label: row.former
+          ? formerPersonDataHealthLabel(row.former.displayName)
+          : row.idHint ? `${UNKNOWN_BOOKING_PERSON_LABEL} · ${row.idHint}` : UNKNOWN_BOOKING_PERSON_LABEL,
         personId: text(booking.personId),
         idHint: bookingPersonIdHint(booking.personId),
         count: 0,

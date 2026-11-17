@@ -411,11 +411,28 @@ export function buildStyledEmail(context: MaterialRequestEmailContext, isQuote: 
 </html>`
 }
 
+/**
+ * Rulebook 1.59.0 §16 (owner decision 17 Nov): the red safe-sender box at the very top of the first email to a
+ * wholesaler address (`materialRequestSafeSenderNotice` decides; the text is the rulebook's). Inserted right after
+ * `<body>`, in both the styled and the plain-text layouts.
+ */
+export function withSafeSenderNotice(html: string, notice: string | null | undefined): string {
+  const text = trim(notice)
+  if (!text) return html
+  const box = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 12px 0;"><tr><td bgcolor="#FEE2E2" style="background:#FEE2E2;background-color:#FEE2E2;border:2px solid #DC2626;border-radius:10px;padding:14px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:1.45;font-weight:700;color:#991B1B;">${escapeHtml(text)}</td></tr></table>`
+  const at = html.search(/<body[^>]*>/i)
+  if (at < 0) return box + html
+  const end = html.indexOf('>', at) + 1
+  return html.slice(0, end) + '\n' + box + html.slice(end)
+}
+
 export function buildMaterialRequestEmail(params: {
   context: MaterialRequestEmailContext
   isQuote: boolean
   sendAsPlainText: boolean
   contactName: string
+  /** Rulebook 1.59.0: the safe-sender box for a first contact (`materialRequestSafeSenderNotice`), or null. */
+  safeSenderNotice?: string | null
 }): { subject: string; html: string } {
   const greeting = supplierGreeting(params.contactName, params.sendAsPlainText)
   const context = { ...params.context, supplierName: greeting }
@@ -423,7 +440,7 @@ export function buildMaterialRequestEmail(params: {
     ? quoteSubject(params.context.jobNumber, params.context.userCompany)
     : orderSubject(params.context.jobNumber, params.context.userCompany)
   if (params.sendAsPlainText) {
-    return { subject, html: plainTextAsSimpleHTML(buildPlainTextEmail(context, params.isQuote)) }
+    return { subject, html: withSafeSenderNotice(plainTextAsSimpleHTML(buildPlainTextEmail(context, params.isQuote)), params.safeSenderNotice) }
   }
-  return { subject, html: buildStyledEmail(context, params.isQuote) }
+  return { subject, html: withSafeSenderNotice(buildStyledEmail(context, params.isQuote), params.safeSenderNotice) }
 }

@@ -1412,3 +1412,9 @@ With `privatePay` on, `settings/timesheet_*` reads by anyone who is not the id's
 
 - The 1.54.2 missing-document read branch is kept as merged, with the settings match's renamed helpers (`tsUid`, `tsReviewer`). `tsUid()` on a `get` of a missing document drops a trailing `_rev{N}` (1–99) before taking the person from the id, so a revision id that does not exist yet (`timesheet_{uid}_{stamp}_rev{N}`) is read by the same people as its original (tests in `tests/timesheetMissingRead.rules.test.ts`).
 - Byte budget (148,480, unchanged): `tsId()` / `tsOwn()` replace the repeated `settingId.matches('^timesheet_…')` tests, and the multi-line bodies of `tsReviewer`, `tsSame`, `tsSameInstant`, `tsOwnerLeaves`, `tsIsSubject` and two `&&` chains in the write allow are joined onto fewer lines. No allow/deny change.
+
+
+## 1.59.0 deletedPeople and compile-cost offsets
+
+- `organizations/{orgId}/deletedPeople/{id}` (rulebook §11, §16): create only in the batch that deletes `users/{id}` (a users document of this organisation, `!existsAfter`) or `organizations/{orgId}/operatives/{id}` — so the delete rules decide who may write it (admins; an operatives manager for an operative; the record never widens who may delete). Exact shape (`deletedPersonCreate`). Read: admins and managers (`callerOrg(…)[0]`, billing open). No update or delete; excluded from the catch-all read (its collection list is now one `in` list).
+- Offsets (no allow / deny change): `managerRowIsCaller` folded into `jobListsCaller` with a lazy `let row` path (it had one caller); redundant parentheses removed in `lineManagerIdList` and `homeOrgIs` (`&&` binds tighter than `||`, the ternary is lowest). Static compile cost 234,858 (live 1.55.1) → 234,446; bytes 148,367 → 149,039 (`firestoreRulesMaxBytes` raised to 149,504). Strict suites: the same 5 budget refusals as main; emulator type check 0 issues; in-process compile time within noise of main (1.42 s vs 1.48 s, min of 7, warm).

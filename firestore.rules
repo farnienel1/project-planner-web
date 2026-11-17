@@ -297,8 +297,8 @@ service cloud.firestore {
   function homeOrgIs(home, organizationId) {
     let v = home.get('organizationId', '');
     let org = organizationId.lower();
-    return (v is string && (v.trim().lower() == org || v.lower().matches('(^|.*/)organizations/' + org + '$'))) ||
-      (v is path && string(v).lower().matches('.*/organizations/' + org + '$'));
+    return v is string && (v.trim().lower() == org || v.lower().matches('(^|.*/)organizations/' + org + '$')) ||
+      v is path && string(v).lower().matches('.*/organizations/' + org + '$');
   }
   function callerOrgRole(organizationId) {
     return orgBillingOpen(organizationId) ? callerOrgRoleAnyBilling(organizationId) : '';
@@ -494,7 +494,7 @@ service cloud.firestore {
   function lineManagerIdList(data) {
     let many = data.get('assignedManagerUserIds', null);
     let one = data.get('assignedManagerUserId', null);
-    return (many is list && many.size() > 0) ? many : ((one is string && one.size() > 0) ? [one] : []);
+    return many is list && many.size() > 0 ? many : one is string && one.size() > 0 ? [one] : [];
   }
 
   function sameInstantValue(a, b) {
@@ -1279,14 +1279,12 @@ service cloud.firestore {
         let uid = request.auth.uid.lower();
         let primary = job.get('managerId', '');
         let pattern = '.*,(user:)?' + uid + ',.*';
+        let row = /databases/(default)/documents/organizations/$(organizationId)/managers/$(primary);
         return (',' + job.get('managerUserIds', []).join(',').lower() + ',').matches(pattern) ||
           (',' + job.get('managerIds', []).join(',').lower() + ',').matches(pattern) ||
           (primary is string && (primary.lower() in [uid, 'user:' + uid] || (
             primary.size() > 0 && !primary.matches('.*/.*') && request.auth.token.email is string &&
-            managerRowIsCaller(/databases/(default)/documents/organizations/$(organizationId)/managers/$(primary)))));
-      }
-      function managerRowIsCaller(path) {
-        return exists(path) && string(get(path).data.get('email', '')).lower() == request.auth.token.email.lower();
+            exists(row) && string(get(row).data.get('email', '')).lower() == request.auth.token.email.lower())));
       }
       function callerManagesJobAt(jobId) {
         let hp0 = /databases/(default)/documents/organizations/$(organizationId)/smallWorks/$(jobId);
@@ -2338,6 +2336,18 @@ service cloud.firestore {
           request.resource.data.get('updatedAt', null) == request.time;
       }
 
+      match /deletedPeople/{personId} {
+        function deletedPersonCreate(d, u, r) {
+          return d.keys().hasOnly(['displayName', 'email', 'personIds', 'deletedAt', 'deletedBy']) &&
+            d.deletedBy == request.auth.uid && d.deletedAt == request.time && d.displayName is string && d.email is string &&
+            d.personIds is list && d.personIds.size() <= 50 && personId in d.personIds &&
+            (exists(u) ? !existsAfter(u) && get(u).data.get('organizationId', '') == organizationId : exists(r) && !existsAfter(r));
+        }
+        allow read: if request.auth != null && callerOrg(organizationId)[0] in ['admin', 'manager'] && orgBillingOpen(organizationId);
+        allow create: if deletedPersonCreate(request.resource.data, /databases/(default)/documents/users/$(personId),
+          /databases/(default)/documents/organizations/$(organizationId)/operatives/$(personId));
+      }
+
       match /dashboardLayouts/{layoutUserId} {
         allow read: if canAccessOrganization(organizationId);
         allow create, update, delete: if canAccessOrganization(organizationId) &&
@@ -2373,15 +2383,11 @@ service cloud.firestore {
 
       match /{collection}/{document=**} {
         allow read: if canAccessOrganization(organizationId) &&
-          collection != 'variations' &&
-          collection != 'variationTrackers' &&
-          collection != 'notifications' &&
-          collection != 'materialSendRecords' &&
-          collection != 'fileReports' &&
-          !(collection in ['projects', 'smallWorks', 'bookings', 'managerSiteBookings', 'subcontractorBookings']) &&
-          !(collection in ['payProfiles', 'operativeDayRateHistory', 'operativeProfiles', 'settings']) &&
-          !(collection in ['overtimeRequests', 'overtimeReviews', 'overtimeReports']) &&
-          !(collection in ['priceWorkItems', 'expenseItems', 'payeClaimReports', 'payeClaimReviews', 'personalSiteAudits', 'worksListPicks', 'annualLeaveAdjustments']);
+          !(collection in ['variations', 'variationTrackers', 'notifications', 'materialSendRecords', 'fileReports',
+            'projects', 'smallWorks', 'bookings', 'managerSiteBookings', 'subcontractorBookings',
+            'payProfiles', 'operativeDayRateHistory', 'operativeProfiles', 'settings',
+            'overtimeRequests', 'overtimeReviews', 'overtimeReports', 'priceWorkItems', 'expenseItems',
+            'payeClaimReports', 'payeClaimReviews', 'personalSiteAudits', 'worksListPicks', 'annualLeaveAdjustments', 'deletedPeople']);
       }
     }
 

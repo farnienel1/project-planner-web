@@ -11,6 +11,7 @@ import {
   organizationLevelFor,
   parseWholesalerDocument,
 } from '@/lib/canonical'
+import { materialRequestSafeSenderNotice, materialSendRecordRecipientEmails } from '@/lib/canonical/materialSafeSender'
 import {
   MATERIAL_ORDER_SEND_REFUSED_MESSAGE,
   canSendMaterialOrders,
@@ -287,8 +288,14 @@ export async function POST(request: NextRequest) {
   // Every recipient's message is rendered here (each greets its own contact), then all of them go to the email
   // function in ONE call (`sendMaterialRequestMessages`): one cold start, one rate-limit count and one Resend batch,
   // instead of one call per recipient at the same time.
+  // Rulebook 1.59.0 §16 (owner decision 17 Nov) `materialRequestSafeSenderNotice`: the first email the organisation
+  // sends to an address (no earlier send record lists it) carries the red safe-sender box. A failed read shows none.
+  const previousRecipientEmails = await firestoreListCollection(idToken, `organizations/${access.organizationId}/materialSendRecords`)
+    .then((rows) => materialSendRecordRecipientEmails(rows.map((row) => restFieldsToPlain(row.fields) as { recipients?: Array<{ email?: unknown }> })))
+    .catch(() => null)
   const messages = recipients.map((recipient) => {
     const { html } = buildMaterialRequestEmail({
+      safeSenderNotice: materialRequestSafeSenderNotice(recipient.email, previousRecipientEmails),
       context: {
         supplierName: recipient.name,
         userName: senderName,

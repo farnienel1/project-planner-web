@@ -445,6 +445,19 @@ function createSendEmailHandler(deps) {
       const recipients = !serverMode && cc.length ? resolved.filter((row) => !row.isSelf) : resolved
       if (recipients.length === 0) throw new HttpError(400, 'At least one recipient other than yourself is required')
 
+      // Rulebook 1.59.0 §16 (owner decision 17 Nov) `materialRequestSafeSenderNotice`: the first email the organisation
+      // sends to an address (no earlier send record lists it) carries the red safe-sender box. A failed read shows none.
+      if (template.safeSenderNotice === true && orgId && typeof deps.reader.listMaterialSendRecipientEmails === 'function') {
+        let previous = null
+        try {
+          previous = await deps.reader.listMaterialSendRecipientEmails(orgId)
+        } catch (error) {
+          logger.warn('sendEmail: send records not read; no safe-sender box', { error: String(error && error.message) })
+        }
+        for (const recipient of recipients) {
+          recipient.safeSenderNotice = canonical.materialRequestSafeSenderNotice(recipient.email, previous)
+        }
+      }
       const sentAt = renderAtMs != null ? new Date(renderAtMs) : now()
       const firstContactName = (recipients.find((row) => row.contactName) || {}).contactName || ''
       const rendered = recipients.map((recipient) =>
