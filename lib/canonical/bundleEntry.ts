@@ -873,6 +873,7 @@ export {
   OWN_LEAVE_IDS_PER_QUERY,
   leaveQueryPlan,
   leaveQueryValues,
+  readsOnlyOwnLeave,
   ENFORCED_READS_ACTIVE,
   canChangeJobManagers,
   canCreateJob,

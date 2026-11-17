@@ -725,17 +725,18 @@ export function bookingQueryPlan(
 // MARK: - Annual leave reads (rulebook §9, §16, §17; 1.56.0, owner answers 17 Nov)
 
 /**
- * Own-leave id values per query. Each query is one disjunction `userId in values OR operativeId in values`, so it has
- * `2 × values` disjuncts (Firestore allows 30 in one query) and each value may cost the Phase B security rules one
- * lookup (an `operatives` row read for a row id; same 10-lookup budget as `OWN_BOOKING_IDS_PER_QUERY`). An operative
- * normally has 2–5 values (their uid, a former invite id, an `operatives` row on their email, the email), so one query
- * holds them all and the parts never overlap.
+ * Own ids per leave query. One query is `userId in (ids + emails) OR operativeId in ids`; Firestore allows 30
+ * disjuncts in one query, so 14 ids (2 × 14 = 28) leave room for the account email as stored and lower-cased (only
+ * on `userId`: an `operativeId` is never an email). An operative normally has 2–5 ids (their uid, a former invite id,
+ * an `operatives` row on their email), so one query holds them all and the data check (§27) counts it exactly. With
+ * more than 14 ids the plan has several queries and a record matched by two of them is counted twice by the data
+ * check (it re-reads and logs; nothing is lost).
  */
-export const OWN_LEAVE_IDS_PER_QUERY = 10
+export const OWN_LEAVE_IDS_PER_QUERY = 14
 
 /**
  * One annual-leave query: the whole `holidayBookings` collection, or the viewer's own leave — the records whose
- * `userId` OR `operativeId` is one of `values` (one Firestore `or` query; the two fields carry the same values).
+ * `userId` is one of `anyOf[0].values` OR whose `operativeId` is one of `anyOf[1].values` (one Firestore `or` query).
  */
 export type LeaveQuery =
   | { collection: 'holidayBookings'; kind: 'all' }
@@ -755,47 +756,57 @@ export type LeaveQueryPlan = {
 }
 
 /**
- * The id values an operative's own leave is stored under, exactly as stored (Firestore `in` is exact, so no case
+ * The values an operative's own leave is stored under, exactly as stored (Firestore `in` is exact, so no case
  * variants are sent; a record stored under another letter case is listed by the owner's legacy-key report and fixed
- * in the data, owner answer 17 Nov Q4): the signed-in uid, then `ownIds` (the account's `bookingIdsForAccount`: former
- * and same-email ids, the `operatives` rows on their email), then the account email trimmed as stored and lower-cased
- * (older iOS builds stored the email as `userId`, as `leaveRecordsForAccount` reads). Exact de-dupe, order kept.
+ * in the data, owner answer 17 Nov Q4): `ids` — the signed-in uid, then `ownIds` (the account's
+ * `bookingIdsForAccount`: its former invite ids and the `operatives` rows on its email; a second users document on
+ * the same email is not among them and is listed by the report) — and `emails` — the account email trimmed as stored
+ * and lower-cased (older iOS builds stored it as `userId`, as `leaveRecordsForAccount` reads). Exact de-dupe, order kept.
  */
 export function leaveQueryValues(
   uid: string | null | undefined,
   ownIds: ReadonlyArray<string> | null | undefined,
   email?: string | null
-): string[] {
-  const out: string[] = []
+): { ids: string[]; emails: string[] } {
+  const ids: string[] = []
+  const emails: string[] = []
   const seen = new Set<string>()
-  const add = (raw: unknown) => {
+  const add = (list: string[], raw: unknown) => {
     const value = typeof raw === 'string' ? raw.trim() : ''
     if (!value || seen.has(value)) return
     seen.add(value)
-    out.push(value)
+    list.push(value)
   }
-  add(uid)
-  for (const id of ownIds ?? []) add(id)
+  add(ids, uid)
+  for (const id of ownIds ?? []) add(ids, id)
   const mail = typeof email === 'string' ? email.trim() : ''
   if (mail.includes('@')) {
-    add(mail)
-    add(mail.toLowerCase())
+    add(emails, mail)
+    add(emails, mail.toLowerCase())
   }
-  return out
+  return { ids, emails }
 }
 
 /**
- * The annual-leave queries an app runs for the viewer (rulebook §9, §17; 1.56.0, owner answers 17 Nov Q2 — operatives
- * see only their own leave):
- *   - `readsEveryBooking`'s people (admins, super admins and every manager outside operative mode): the whole
- *     `holidayBookings` collection, as before 1.56.0 (line managers, booking leave conflicts, Daily Overview,
- *     warnings and the scheduling grid need everyone's leave);
- *   - everyone else with a role (operatives, operative mode): only their own leave — one `or` query per
- *     `OWN_LEAVE_IDS_PER_QUERY` values of `leaveQueryValues(uid, ownIds, email)`;
+ * Whether the viewer reads only their own leave (1.56.0, owner answer 17 Nov Q2: operatives only): the operative
+ * level — `role.isOperativeMode`, which apps set from `permissionLevelOf(user) === 'operative'` (an admin's stray
+ * operative-mode flag never counts). Every other viewer with a role reads every leave record: admins, super admins,
+ * managers and a legacy user with no level flag (manager level, rulebook 1.23.1 / 1.44.0 — they can be a line
+ * manager and decide leave).
+ */
+export function readsOnlyOwnLeave(viewer: JobAccessViewer | null | undefined): boolean {
+  return Boolean(viewer?.role?.isOperativeMode)
+}
+
+/**
+ * The annual-leave queries an app runs for the viewer (rulebook §9, §17; 1.56.0, owner answers 17 Nov Q2):
+ *   - everyone with a role who is not at the operative level (`readsOnlyOwnLeave` false: admins, super admins,
+ *     managers, a no-flag user): the whole `holidayBookings` collection, as before 1.56.0;
+ *   - the operative level: only their own leave — one `or` query per `OWN_LEAVE_IDS_PER_QUERY` ids of
+ *     `leaveQueryValues(uid, ownIds, email)`, the emails on the first query's `userId` part only;
  *   - no viewer, role or uid: no query at all (never a whole-collection query).
- * Phase A (1.56.0) plans this whatever the `operativeOwnLeave` switch says: the narrower query already works under the
- * open read rule, and it must be in every app before the Phase B rules (which read the switch) refuse an operative's
- * whole-collection query.
+ * `ownIds` empty or missing means "not known yet" and falls back to `viewer.ids` (users id and former ids), never to
+ * the uid alone. Planned whatever the `operativeOwnLeave` switch says (Phase A).
  */
 export function leaveQueryPlan(
   viewer: JobAccessViewer | null | undefined,
@@ -804,15 +815,16 @@ export function leaveQueryPlan(
   if (!viewer || !viewer.role) return { readsEveryLeave: false, queries: [] }
   const uid = viewerUid(viewer)
   if (!uid) return { readsEveryLeave: false, queries: [] }
-  if (readsEveryBooking(viewer)) {
+  if (!readsOnlyOwnLeave(viewer)) {
     return { readsEveryLeave: true, queries: [{ collection: 'holidayBookings', kind: 'all' }] }
   }
-  const values = leaveQueryValues(uid, options?.ownIds ?? viewer.ids ?? [], options?.email)
-  const queries: LeaveQuery[] = chunk(values, OWN_LEAVE_IDS_PER_QUERY).map((part) => ({
+  const known = options?.ownIds && options.ownIds.length > 0 ? options.ownIds : viewer.ids ?? []
+  const { ids, emails } = leaveQueryValues(uid, known, options?.email ?? viewer.email ?? null)
+  const queries: LeaveQuery[] = chunk(ids, OWN_LEAVE_IDS_PER_QUERY).map((part, index) => ({
     collection: 'holidayBookings' as const,
     kind: 'own' as const,
     anyOf: [
-      { field: 'userId' as const, op: 'in' as const, values: [...part] },
+      { field: 'userId' as const, op: 'in' as const, values: index === 0 ? [...part, ...emails] : [...part] },
       { field: 'operativeId' as const, op: 'in' as const, values: [...part] },
     ],
   }))

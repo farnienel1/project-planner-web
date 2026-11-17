@@ -1,7 +1,7 @@
 {
   "rulebookVersion": "1.56.0",
-  "rulebookSha256": "c1e9c619755edaf628805b84c5819d2255018f0cc940abf2f43a9d1a08148d43",
-  "bundleSha256": "39ab70643bb2c4b9343e776ee7e2be80a22952c0f3cedbd3300a7b8bb8b1bd83",
+  "rulebookSha256": "4be271e48f8d93445cba7c96bbbda402f6f98bb3acfae9590f5bad4f0d6e4903",
+  "bundleSha256": "24b8abfd4a9452400426edb824739386296cd7f40ca7739e416b966d37ca1bf9",
   "crossPlatformContractSha256": "5a8a7e4e6f56b91cb18f71e79207782b8840fccf0b63b695826c47e18e59a32e",
   "dataParityFixtureSha256": "c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f",
   "exports": [
@@ -1537,6 +1537,7 @@
     "readCrossPlatformSample",
     "readStoredRates",
     "readsEveryBooking",
+    "readsOnlyOwnLeave",
     "receivesJobNotification",
     "recordsToSave",
     "rememberedOrganizationSurvivesSignOut",

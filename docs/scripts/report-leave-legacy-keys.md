@@ -22,9 +22,11 @@ What each reason means and how to fix it:
 |---|---|---|
 | `letterCase` | the stored id is the person's id in another letter case or with spaces | set `userId` to the id in the `fix` column |
 | `sameEmailAccount` | filed under a second users document on the person's email | set `userId` to the person's main users id (the `fix` column) |
-| `legacyKey` | the person's id is only under an older key (`user_id`, `uid`, `user.id`, …) | add `userId` = the id in the `fix` column; leave the old key |
+| `legacyKey` | the person's id is only under an older key (`user_id`, `uid`, `user.id`, …), or their email is stored as `operativeId` | add `userId` = the id in the `fix` column; leave the old key |
+| `conflict` | two or more operatives would both claim the record (`otherPersonIds`) | decide whose leave it is, then set `userId` to that person's users id |
 
 Fix each listed record in the Firebase console (Firestore → `organizations/<company>/holidayBookings/<leaveId>` → add or
 edit the `userId` field), or send the CSV to Claude to prepare a reviewed fix. Run the report again until it lists 0,
-then the Phase B rules can be published. Ghost operatives (no login), managers and admins are not listed: they never run
-an own-leave query. A record with no readable start date is not listed (no app shows it today either).
+then the Phase B rules can be published. Every operative of the company is checked, including people whose account belongs to another company and who are an
+operative here through their membership. Ghost operatives (no login), managers, admins and people with no level flag
+are not listed: they never run an own-leave query. Cells that a spreadsheet could read as a formula start with `'`. A record with no readable start date is not listed (no app shows it today either).

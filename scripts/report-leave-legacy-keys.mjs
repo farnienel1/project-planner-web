@@ -78,14 +78,46 @@ async function orgUsers(orgId) {
   return [...byId.values()]
 }
 
+/**
+ * The organisation's users documents plus the users documents of its members from other companies (`members` keys and
+ * the creator, rulebook §1 anchored people) and those members' memberships here, so a person who is an operative here
+ * only through a membership is checked too.
+ */
+async function orgPeople(orgId, orgData) {
+  const users = await orgUsers(orgId)
+  const byId = new Map(users.map((user) => [user.id, user]))
+  const memberIds = new Set([...Object.keys(orgData?.members || {}), orgData?.creatorUserId].filter((id) => typeof id === 'string' && id))
+  const memberships = {}
+  for (const uid of memberIds) {
+    if (!byId.has(uid)) {
+      const snap = await db.collection('users').doc(uid).get()
+      if (snap.exists) byId.set(uid, { ...snap.data(), id: uid })
+    }
+    const membership = await db.collection('users').doc(uid).collection('orgMemberships').doc(orgId).get()
+    if (membership.exists) memberships[uid] = membership.data()
+  }
+  return { users: [...byId.values()], memberships }
+}
+
 async function reportOrg(orgId) {
   const orgRef = db.collection('organizations').doc(orgId)
   const orgSnap = await orgRef.get()
-  const timeZone = rulebook.organizationTimeZone(orgSnap.exists ? orgSnap.get('countryCode') : null)
-  const users = await orgUsers(orgId)
+  const orgData = orgSnap.exists ? orgSnap.data() || {} : {}
+  const timeZone = rulebook.organizationTimeZone(orgData.countryCode ?? null)
+  const { users, memberships } = await orgPeople(orgId, orgData)
   const operatives = (await orgRef.collection('operatives').get()).docs.map((doc) => ({ ...doc.data(), id: doc.id }))
   const leaveDocs = (await orgRef.collection('holidayBookings').get()).docs.map((doc) => ({ id: doc.id, data: doc.data() }))
-  return reportRows(orgId, rulebook.leaveLegacyKeyFindings({ users, operatives, leaveDocs, timeZone }))
+  const findings = rulebook.leaveLegacyKeyFindings({
+    organizationId: orgId,
+    users,
+    memberships,
+    members: orgData.members || {},
+    creatorUserId: orgData.creatorUserId ?? null,
+    operatives,
+    leaveDocs,
+    timeZone,
+  })
+  return reportRows(orgId, findings)
 }
 
 const orgIds = onlyOrg ? [onlyOrg] : (await db.collection('organizations').get()).docs.map((doc) => doc.id)

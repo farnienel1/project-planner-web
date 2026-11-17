@@ -102,9 +102,10 @@ export function bookingPlanInputs(): { visibleJobIds: string[]; ownBookingIds: s
 
 /**
  * Rulebook 1.56.0 §9 / §17 (`leaveQueryPlan`): the annual-leave parts for the viewer, or null when they read every
- * leave record (admins, super admins, managers: the existing whole-collection listener). An operative gets one
- * `userId in values OR operativeId in values` query per chunk of their own ids — never the whole collection, so the
- * Phase B rules (switch `operativeOwnLeave`) can refuse colleagues' leave without breaking this app.
+ * leave record (everyone not at the operative level: the existing whole-collection listener). An operative gets one
+ * `userId in (ids + email) OR operativeId in ids` query per chunk of their own ids — never the whole collection, so
+ * the Phase B rules (switch `operativeOwnLeave`) can refuse colleagues' leave without breaking this app. Empty
+ * `ownIds` means "not known yet": the plan falls back to the viewer's users id and former ids.
  */
 export function leavePlanParts(
   viewer: JobAccessViewer | null,
@@ -118,24 +119,31 @@ export function leavePlanParts(
     const [byUser, byOperative] = query.anyOf
     return [
       {
-        id: `own:${byUser.values.join(',')}`,
+        id: `own:${byUser.values.join(',')}|${byOperative.values.join(',')}`,
         filter: or(where(byUser.field, 'in', byUser.values), where(byOperative.field, 'in', byOperative.values)),
       },
     ]
   })
 }
 
-/** The leave plan's own ids (the signed-in user's `bookingIdsForAccount`), set by `readPlanSync` like the booking inputs. */
-let planOwnLeaveIds: string[] = []
-
-/** True when the own ids changed (the leave listener must re-plan). */
-export function setLeavePlanInputs(ownIds: ReadonlyArray<string>): boolean {
-  const own = [...new Set(ownIds.filter(Boolean))].sort()
-  if (own.join('|') === planOwnLeaveIds.join('|')) return false
-  planOwnLeaveIds = own
-  return true
+/** A stable name for a leave plan: `all`, or its parts' ids (an empty plan is `none`). */
+export function leavePlanKey(parts: ReadonlyArray<OrgPlanPart> | null): string {
+  if (parts === null) return 'all'
+  return parts.length === 0 ? 'none' : parts.map((part) => part.id).join('#')
 }
 
-export function leavePlanInputs(): { ownIds: string[] } {
-  return { ownIds: planOwnLeaveIds }
+/**
+ * The organisation whose leave listener must be planned again, or null. Re-plans the organisation last requested
+ * (never the one whose first snapshot arrived last, so a company switch never tears down the new company's listener)
+ * whenever the plan the current inputs give differs from the plan the listener runs; nothing while signed out or
+ * before any organisation was requested.
+ */
+export function leaveReplanTarget(input: {
+  requestedOrgId: string | null
+  plannedKey: string | null
+  nextKey: string
+  signedIn: boolean
+}): string | null {
+  if (!input.signedIn || !input.requestedOrgId) return null
+  return input.plannedKey === input.nextKey ? null : input.requestedOrgId
 }

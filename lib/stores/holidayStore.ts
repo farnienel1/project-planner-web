@@ -25,8 +25,9 @@ import {
   type OrgCollectionDoc,
 } from '@/lib/firebase/subscribeOrgCollection'
 import { forgetOrgPlanDoc, subscribeOrgPlan, unsubscribeOrgPlan } from '@/lib/firebase/subscribeOrgPlan'
-import { leavePlanInputs, leavePlanParts, webJobAccessViewer } from '@/lib/access/readPlan'
+import { leavePlanKey, leavePlanParts, leaveReplanTarget, ownBookingIdsFor, webJobAccessViewer } from '@/lib/access/readPlan'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { liveResultStillCurrent } from '@/lib/firebase/liveResult'
 import type { HolidayBooking, HolidayStatus, HolidayTimeSlot } from '@/types'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
@@ -138,6 +139,44 @@ export function isPendingHolidayRequest(booking: HolidayBooking): boolean {
 
 let holidayOrgId = ''
 const HOLIDAY_LISTENER_KEY = 'holidayStore:holidayBookings'
+/** Rulebook 1.56.0: the organisation `loadBookings` was last asked for, and the leave plan its listener runs. */
+let holidayRequestedOrgId: string | null = null
+let holidayPlannedKey: string | null = null
+
+/**
+ * The signed-in user's leave plan now (`leaveQueryPlan` through `leavePlanParts`): their own ids are worked out here,
+ * at plan time, from the auth user and the operatives rows (`bookingIdsForAccount`), never from inputs that may not
+ * have arrived yet.
+ */
+function currentLeavePlanParts() {
+  const user = useAuthStore.getState().user
+  return leavePlanParts(
+    webJobAccessViewer(user),
+    ownBookingIdsFor(user, useOperativeStore.getState().operatives),
+    user?.email ?? null
+  )
+}
+
+/**
+ * Rulebook 1.56.0: re-plan the leave listener of the organisation last requested when the signed-in user or their
+ * operatives rows changed the plan (`leaveReplanTarget`). Signed out: forget the plan, so the next sign-in plans
+ * afresh.
+ */
+export function replanHolidayBookings(): void {
+  const user = useAuthStore.getState().user
+  if (!user) {
+    holidayRequestedOrgId = null
+    holidayPlannedKey = null
+    return
+  }
+  const target = leaveReplanTarget({
+    requestedOrgId: holidayRequestedOrgId,
+    plannedKey: holidayPlannedKey,
+    nextKey: leavePlanKey(currentLeavePlanParts()),
+    signedIn: true,
+  })
+  if (target) void useHolidayStore.getState().loadBookings(target).catch(() => undefined)
+}
 
 export const useHolidayStore = create<HolidayState>((set, get) => ({
   bookings: [],
@@ -151,7 +190,9 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
   loadBookings: async (organizationId) => {
     if (!organizationId) return
     if (get().loadedOrgId !== organizationId) set({ loading: true, error: null })
-    // Rulebook 1.56.0 §9 / §17: the readPlanSync keeps the leave plan's own ids current (re-plans on roster changes).
+    // Rulebook 1.56.0 §9 / §17: the organisation this listener is for (re-plans target it, never an older one), and
+    // readPlanSync re-plans it when the signed-in user or the operatives rows change.
+    holidayRequestedOrgId = organizationId
     void import('@/lib/access/readPlanSync').then((sync) => sync.startReadPlanSync()).catch(() => undefined)
     const onDocs = (docs: OrgCollectionDoc[], meta?: { authoritative: boolean }) => {
       if (!liveResultStillCurrent(organizationId)) return
@@ -167,8 +208,8 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
     try {
       // Rulebook 1.56.0 (`leaveQueryPlan`, owner answers 17 Nov Q2): admins and managers keep the whole-collection
       // listener; an operative (and operative mode) listens only to their own leave — never the whole collection.
-      const user = useAuthStore.getState().user
-      const parts = leavePlanParts(webJobAccessViewer(user), leavePlanInputs().ownIds, user?.email ?? null)
+      const parts = currentLeavePlanParts()
+      holidayPlannedKey = leavePlanKey(parts)
       if (parts === null) {
         unsubscribeOrgPlan(HOLIDAY_LISTENER_KEY)
         await subscribeOrgCollectionLoaded(HOLIDAY_LISTENER_KEY, organizationId, 'holidayBookings', onDocs)

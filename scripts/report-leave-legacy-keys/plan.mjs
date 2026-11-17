@@ -14,17 +14,24 @@ export const REPORT_COLUMNS = [
   'storedOperativeId',
   'readerUserId',
   'readerOperativeId',
+  'otherPersonIds',
   'fix',
 ]
 
 export const REASON_TEXT = {
   letterCase: 'stored id differs only by letter case or spaces',
   sameEmailAccount: 'filed under a second users document on the same email',
-  legacyKey: 'person only under an older key (user_id, uid, user.id, …)',
+  legacyKey: 'person only under an older key (user_id, uid, user.id, …) or the email stored as operativeId',
+  conflict: 'two or more operatives would claim it — decide whose it is',
 }
 
-function csvCell(value) {
-  const text = value == null ? '' : String(value)
+/**
+ * One CSV cell. A cell that a spreadsheet would read as a formula (starting with = + - @, a tab or a carriage return)
+ * gets a leading apostrophe, so opening the report never runs anything stored in a leave record.
+ */
+export function csvCell(value) {
+  const raw = value == null ? '' : String(value)
+  const text = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
 }
 
@@ -40,6 +47,7 @@ export function reportRows(organizationId, findings) {
     storedOperativeId: finding.storedOperativeId ?? '',
     readerUserId: finding.readerUserId ?? '',
     readerOperativeId: finding.readerOperativeId ?? '',
+    otherPersonIds: (finding.otherPersonIds || []).join(';'),
     fix: String(finding.fix || '').replace('{orgId}', organizationId),
   }))
 }
@@ -55,7 +63,8 @@ export function reportLines(organizationId, rows) {
   if (!rows || rows.length === 0) return []
   const lines = [`Organisation ${organizationId}: ${rows.length} leave record(s) an operative would no longer see`]
   for (const row of rows) {
-    lines.push(`  ${row.leaveId} — ${row.personEmail || row.personId}: ${REASON_TEXT[row.reason] || row.reason}`)
+    const others = row.otherPersonIds ? ` (also ${row.otherPersonIds.replace(/;/g, ', ')})` : ''
+    lines.push(`  ${row.leaveId} — ${row.personEmail || row.personId}${others}: ${REASON_TEXT[row.reason] || row.reason}`)
     lines.push(`    stored userId "${row.storedUserId}", operativeId "${row.storedOperativeId}" → ${row.fix}`)
   }
   return lines

@@ -3,7 +3,7 @@
  * their operatives rows change and their job documents when their own bookings change. Loaded lazily by the stores so
  * they never import each other. 1.33.0: admins and every manager read whole collections and never re-plan here.
  */
-import { ownBookingIdsFor, setBookingPlanInputs, setLeavePlanInputs, webJobAccessViewer } from '@/lib/access/readPlan'
+import { ownBookingIdsFor, setBookingPlanInputs, webJobAccessViewer } from '@/lib/access/readPlan'
 import { onSecuritySwitchChange } from '@/lib/access/securitySwitches'
 import { bookingJobId, readsEveryBooking } from '@/lib/canonical'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -13,7 +13,7 @@ import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { replanJobs, setJobPlanDocumentIds } from '@/lib/stores/projectStore'
 import { useTaskStore } from '@/lib/stores/taskStore'
 import { useDeadlineStore } from '@/lib/stores/deadlineStore'
-import { useHolidayStore } from '@/lib/stores/holidayStore'
+import { replanHolidayBookings } from '@/lib/stores/holidayStore'
 import { operativeJobDocumentIds } from '@/lib/access/workAccess'
 
 let started = false
@@ -31,17 +31,12 @@ function replanBookings(): void {
 }
 
 /**
- * Rulebook 1.56.0 (`leaveQueryPlan`): an operative's leave listener queries their own ids — the users id, former and
- * same-email ids and the `operatives` rows on their email (`bookingIdsForAccount`). Re-plan it when those change.
- * Admins and managers read the whole collection and never re-plan here.
+ * Rulebook 1.56.0 (`leaveQueryPlan`): an operative's leave listener queries their own ids — the users id, former ids
+ * and the `operatives` rows on their email (`bookingIdsForAccount`). The holiday store re-plans the organisation it
+ * was last asked for whenever those change (and forgets its plan on sign-out). Staff keep one whole-collection plan.
  */
 function replanLeave(): void {
-  const viewer = webJobAccessViewer(useAuthStore.getState().user)
-  if (!viewer || readsEveryBooking(viewer)) return
-  const changed = setLeavePlanInputs(ownBookingIdsFor(useAuthStore.getState().user, useOperativeStore.getState().operatives))
-  if (!changed) return
-  const organizationId = useHolidayStore.getState().loadedOrgId
-  if (organizationId) void useHolidayStore.getState().loadBookings(organizationId).catch(() => undefined)
+  replanHolidayBookings()
 }
 
 function replanOperativeJobs(): void {
