@@ -54,10 +54,10 @@
     "reason": "Platform feedback timestamps (cross-organisation), display only."
   },
   {
-    "path": "components/operatives/OperativesListScreen.tsx",
+    "path": "components/users/ManageUsersScreen.tsx",
     "pattern": "findOperativeForUser",
-    "count": 2,
-    "reason": "Operatives list shows the account linked to a catalogue row (display: name, avatar, link)."
+    "count": 1,
+    "reason": "Operatives page search: the phone on the person's catalogue row, display and search only (was OperativesListScreen)."
   },
   {
     "path": "components/overtime/PayeClaimsScreen.tsx",
