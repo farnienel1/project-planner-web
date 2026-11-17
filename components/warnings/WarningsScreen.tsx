@@ -21,6 +21,7 @@ import { canOpenOperativeFromWarning } from '@/lib/staff/userEditPermissions'
 import { initialsFrom } from '@/lib/daily-overview/buildDailyOverview'
 import { dayKey, formatLongDay } from '@/lib/ios-parity/londonTime'
 import { notifyCompanyActivity } from '@/lib/notifications/companyActivity'
+import { dismissThenNotify } from '@/lib/warnings/warningDismiss'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { normalizeDocumentId } from '@/lib/canonical'
 import { feedback } from '@/lib/feedbackSounds/feedback'
@@ -141,8 +142,26 @@ function MaterialsCard({
     if (dismissing || !onDismiss) return
     setDismissing(true)
     setError(null)
+    const name = [user?.firstName, user?.surname].filter(Boolean).join(' ').trim() || user?.email || 'Someone'
     try {
-      await onDismiss(warning.id)
+      await dismissThenNotify({
+        resolutionKey: warning.id,
+        dismiss: onDismiss,
+        notify: async (relatedId) => {
+          if (!organization?.id) return
+          // One row per admin (companyActivityRecipients), never a row without userId (rulebook 1.4.0 §13).
+          await notifyCompanyActivity({
+            organizationId: organization.id,
+            type: 'warning_removed',
+            title: `Warning dismissed by ${name}`,
+            message: `${name} dismissed a materials cut-off warning. Dismissed warnings do not reappear.\n\n${warning.message}`,
+            relatedId,
+            requiresPermission: 'hasAdminAccess',
+            actor: user,
+            users,
+          })
+        },
+      })
     } catch (caught) {
       setError(caught instanceof Error && caught.message ? caught.message : 'Could not dismiss this warning. Try again.')
       setDismissing(false)
@@ -150,23 +169,6 @@ function MaterialsCard({
     }
     setConfirming(false)
     setDismissing(false)
-    const name = [user?.firstName, user?.surname].filter(Boolean).join(' ').trim() || user?.email || 'Someone'
-    if (organization?.id) {
-      try {
-        // One row per admin (companyActivityRecipients), never a row without userId (rulebook 1.4.0 §13).
-        await notifyCompanyActivity({
-          organizationId: organization.id,
-          type: 'warning_removed',
-          title: `Warning dismissed by ${name}`,
-          message: `${name} dismissed a materials cut-off warning. Dismissed warnings do not reappear.\n\n${warning.message}`,
-          requiresPermission: 'hasAdminAccess',
-          actor: user,
-          users,
-        })
-      } catch {
-        // The dismissal is saved; a failed notice never undoes it.
-      }
-    }
   }
 
   return (

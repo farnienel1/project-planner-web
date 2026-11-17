@@ -1,4 +1,4 @@
-import { warningResolutionWriteFields, writeMetadataFields } from '@/lib/canonical'
+import { notificationRelatedIdFor, warningResolutionWriteFields, writeMetadataFields } from '@/lib/canonical'
 
 /**
  * A permanent warning dismissal, the document iOS writes (`WarningResolutionStore.dismiss` →
@@ -22,5 +22,33 @@ export function warningDismissDocument(input: {
   return {
     documentId: write.documentId,
     fields: { ...write.fields, ...(writeMetadataFields(input.dismissedByUserId, 'web') ?? {}) },
+  }
+}
+
+/**
+ * The resolved keys with one more key added (once, compared without case as every reader does). Pure, so a
+ * `setState(prev => withResolvedKey(prev, key))` never drops keys a listener delivered while the write was running.
+ */
+export function withResolvedKey(keys: readonly string[], key: string): string[] {
+  const want = key.trim().toLowerCase()
+  if (!want || keys.some((existing) => existing.trim().toLowerCase() === want)) return [...keys]
+  return [...keys, key]
+}
+
+/**
+ * A card's Dismiss: write the dismissal first (`dismiss`, which throws on a refused or failed write), and only then
+ * tell the admins (`notify`, the `warning_removed` notice, `relatedId` = the warning key per rulebook §13 via
+ * `notificationRelatedIdFor`). A failed write sends no notice and rethrows; a failed notice never undoes the write.
+ */
+export async function dismissThenNotify(input: {
+  resolutionKey: string
+  dismiss: (resolutionKey: string) => Promise<void>
+  notify: (relatedId: string | null) => Promise<unknown>
+}): Promise<void> {
+  await input.dismiss(input.resolutionKey)
+  try {
+    await input.notify(notificationRelatedIdFor('warning_removed', input.resolutionKey))
+  } catch {
+    // The dismissal is saved; a failed notice never undoes it.
   }
 }

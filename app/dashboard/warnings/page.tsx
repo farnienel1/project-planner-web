@@ -47,6 +47,7 @@ import {
   type WarningDecisionFailures,
 } from '@/lib/warnings/warningDecisionsLoad'
 import { activeOrgWarnings, generateOrgWarnings, type WarningDecisionInputs } from '@/lib/warnings/generateOrgWarnings'
+import { withResolvedKey } from '@/lib/warnings/warningDismiss'
 import {
   dismissWarningResolution,
   loadResolvedWarningKeys,
@@ -98,6 +99,14 @@ export default function WarningsPage() {
   const [acceptedClashes, setAcceptedClashes] = useState<AcceptedBookingClash[]>([])
   const [dismissedWarnings, setDismissedWarnings] = useState<DismissedWarning[]>([])
   const [resolvedKeys, setResolvedKeys] = useState<string[]>([])
+  // The latest lists, for the feedback after an awaited write (review of #372): the copies a handler closed over at
+  // the click can miss keys the live listener delivered while the write was running.
+  const latestResolvedKeys = useRef<string[]>([])
+  const latestAcceptedClashes = useRef<AcceptedBookingClash[]>([])
+  useEffect(() => {
+    latestResolvedKeys.current = resolvedKeys
+    latestAcceptedClashes.current = acceptedClashes
+  }, [resolvedKeys, acceptedClashes])
   // Approvals and removals from any device: the list waits for them so the total never shows rows they hide.
   const [decisionsOrgId, setDecisionsOrgId] = useState<string | null>(null)
   // Which approval sources failed to load. While any has, approved and dismissed warnings are never shown as open.
@@ -585,17 +594,16 @@ export default function WarningsPage() {
         feedback('actionRefused')
         throw error
       }
-      const nextResolved = [...resolvedKeys, written]
-      setResolvedKeys(nextResolved)
+      setResolvedKeys((prev) => withResolvedKey(prev, written))
       feedback(
         resolvedFeedbackEvent(visible, {
-          resolvedKeys: nextResolved,
-          acceptedClashes,
+          resolvedKeys: withResolvedKey(latestResolvedKeys.current, written),
+          acceptedClashes: latestAcceptedClashes.current,
           dismissedQualificationKeys: dismissedKeys,
         })
       )
     },
-    [organization?.id, user?.id, visible, resolvedKeys, acceptedClashes, dismissedKeys]
+    [organization?.id, user?.id, visible, dismissedKeys]
   )
 
   const handleAcceptClash = useCallback(
@@ -635,8 +643,10 @@ export default function WarningsPage() {
       }))
       feedback(
         resolvedFeedbackEvent(visible, {
-          resolvedKeys: clash.resolutionKey ? [...resolvedKeys, clash.resolutionKey] : resolvedKeys,
-          acceptedClashes: [...acceptedClashes, ...approvedNow],
+          resolvedKeys: clash.resolutionKey
+            ? withResolvedKey(latestResolvedKeys.current, clash.resolutionKey)
+            : latestResolvedKeys.current,
+          acceptedClashes: [...latestAcceptedClashes.current, ...approvedNow],
           dismissedQualificationKeys: dismissedKeys,
         })
       )
@@ -647,7 +657,7 @@ export default function WarningsPage() {
       setAcceptedClashes(accepted)
       setResolvedKeys(resolved)
     },
-    [organization?.id, user?.id, visible, dismissedKeys, resolvedKeys, acceptedClashes]
+    [organization?.id, user?.id, visible, dismissedKeys]
   )
 
   const handleDeleteBooking = useCallback(
