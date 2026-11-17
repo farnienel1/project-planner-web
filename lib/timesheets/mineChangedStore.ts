@@ -1,11 +1,12 @@
 import { create } from 'zustand'
 
 /**
- * Rulebook 1.47.0 §8 (owner decision 17 Nov): the web sidebar's Timesheets entry shows the same yellow triangle as the
- * hub's "My timesheets" card. The hub works it out once (`MineChangedIndicator`: `periodBookingChanges` over the last
- * `HUB_CHANGE_SCAN_RUNS` pay runs) and publishes which pay runs need the person (by their start day key); the sidebar
- * only reads it — never a second computation. When the person signs one of them again on its period page, that page
- * takes that pay run off (`resolvePeriod`, review of #363) so the sidebar clears without waiting for the hub.
+ * Rulebook 1.47.0 §8 (owner decision 17 Nov, and G in the follow-up): the web sidebar's Timesheets entry and the hub's
+ * "My timesheets" card show the same yellow triangle. The app shell works it out once (`useMineChangedMonitor`:
+ * `mineChangedPeriodStarts` over the person's own sheets and bookings of the last `RECENT_PAY_RUN_COUNT` pay runs, kept
+ * live) and publishes which pay runs need the person (by their start day key); the sidebar and the hub only read it —
+ * never a second computation. When the person signs one of them again on its period page, that page takes that pay run
+ * off at once (`resolvePeriod`, review of #363); the live listeners then confirm it.
  * Keyed by organisation and person, so another company or another signed-in person never shows it.
  */
 export function mineChangedKey(organizationId: string | null | undefined, userId: string | null | undefined): string | null {
