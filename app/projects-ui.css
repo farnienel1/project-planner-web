@@ -110,13 +110,14 @@
 .pj-btn.primary:hover { filter: brightness(1.08); }
 
 /* Details fields */
-.pj-dl { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 0 24px; }
+.pj-dl { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 24px; }
+@media (min-width: 720px) { .pj-dl { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .pj-dl > div { display: flex; gap: 12px; padding: 11px 0; border-top: 1px solid var(--pu-line-2); min-width: 0; }
 .pj-dl-icon { color: var(--pu-muted); margin-top: 2px; flex-shrink: 0; }
 .pj-dl dt { font-size: 12px; color: var(--pu-muted); }
 .pj-dl dd { margin: 2px 0 0; font-size: 14px; font-weight: 600; color: var(--pu-ink); overflow-wrap: anywhere; }
 .pj-dl dd.soft { font-weight: 400; color: var(--pu-muted); }
-.pj-dl dd.warn { color: var(--warn); }
+.pj-dl dd.warn { color: var(--pu-c-amber-ink); } /* the darker amber (owner P4): --warn is 3.7:1 on white */
 
 /* Not-found link */
 .pj-notfound-link { display: inline-flex; align-items: center; color: var(--dash-blue); text-decoration: none; }
