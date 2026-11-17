@@ -171,6 +171,77 @@ export async function clearMfaCookiesOnly(): Promise<void> {
 export async function clearMfaSession(): Promise<void> {
   await clearMfaCookiesOnly()
   clearMfaGate()
+  clearMfaBounces()
+}
+
+/**
+ * The server cannot finish sign-in (a setup problem: the session cookie cannot be issued or fails its own check).
+ * Retrying will not help, so this is never shown as "trying again" and never as "not verified".
+ */
+export const MFA_SETUP_ERROR_MESSAGE =
+  "We can't finish signing you in because of a problem on our side. Please try again later or contact support."
+
+export class MfaSetupError extends Error {
+  readonly code = 'mfa_setup'
+  constructor(message = MFA_SETUP_ERROR_MESSAGE) {
+    super(message)
+    this.name = 'MfaSetupError'
+  }
+}
+
+export function isMfaSetupError(error: unknown): error is MfaSetupError {
+  return Boolean(error && typeof error === 'object' && 'code' in error && (error as { code: unknown }).code === 'mfa_setup')
+}
+
+/** Loop guard (review of #359): after this many trips from the code screen to the app within the window, stop. */
+export const MFA_BOUNCE_LIMIT = 3
+export const MFA_BOUNCE_WINDOW_MS = 60_000
+export const MFA_BOUNCE_KEY = 'pp.mfa.bounces'
+export const MFA_BOUNCE_LOOP_MESSAGE =
+  "We couldn't finish signing you in: the app kept sending you back to this page. Press Try again, or sign out and sign in again. If it keeps happening, contact support."
+/** The button under the loop message: clears the guard's history (a reload alone would hit the guard again). */
+export const MFA_BOUNCE_TRY_AGAIN_LABEL = 'Try again'
+
+/** Pure: may another trip to the app go ahead, given the earlier trips (ms)? Returns the history to store. */
+export function mfaBounceDecision(
+  history: readonly number[],
+  nowMs: number,
+  limit = MFA_BOUNCE_LIMIT,
+  windowMs = MFA_BOUNCE_WINDOW_MS
+): { allowed: boolean; history: number[] } {
+  const recent = history.filter((at) => Number.isFinite(at) && at <= nowMs && nowMs - at < windowMs)
+  if (recent.length >= limit) return { allowed: false, history: recent }
+  return { allowed: true, history: [...recent, nowMs] }
+}
+
+function readBounces(): number[] {
+  try {
+    const parsed = JSON.parse(window.sessionStorage.getItem(MFA_BOUNCE_KEY) || '[]') as unknown
+    return Array.isArray(parsed) ? parsed.filter((value): value is number => typeof value === 'number') : []
+  } catch {
+    return []
+  }
+}
+
+/** Records one trip from the code screen to the app; false when the loop guard says stop. */
+export function recordMfaBounce(nowMs = Date.now()): boolean {
+  if (typeof window === 'undefined') return true
+  const decision = mfaBounceDecision(readBounces(), nowMs)
+  try {
+    window.sessionStorage.setItem(MFA_BOUNCE_KEY, JSON.stringify(decision.history))
+  } catch {
+    /* private mode: no guard, as before */
+  }
+  return decision.allowed
+}
+
+export function clearMfaBounces() {
+  if (typeof window === 'undefined') return
+  try {
+    window.sessionStorage.removeItem(MFA_BOUNCE_KEY)
+  } catch {
+    /* private mode */
+  }
 }
 
 /** The status check could not be answered right now (server 503 or no network). Try again; never a "not verified". */
@@ -201,7 +272,11 @@ export async function readMfaStatus(): Promise<MfaStatus> {
   } catch {
     throw new MfaStatusUnavailableError()
   }
-  if (response.status === 503) throw new MfaStatusUnavailableError()
+  if (response.status === 503) {
+    const body = (await response.json().catch(() => ({}))) as { error?: string }
+    if (body.error === 'setup') throw new MfaSetupError()
+    throw new MfaStatusUnavailableError()
+  }
   const data = (await response.json().catch(() => ({}))) as { pending?: boolean; verified?: boolean; next?: string }
   return { pending: data.pending === true, verified: data.verified === true, next: data.next }
 }

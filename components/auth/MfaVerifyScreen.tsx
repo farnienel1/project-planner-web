@@ -11,8 +11,14 @@ import {
   clearMfaGate,
   isMfaGateOpen,
   readMfaGate,
+  clearMfaBounces,
+  isMfaSetupError,
+  MFA_BOUNCE_TRY_AGAIN_LABEL,
   isMfaStatusUnavailable,
+  MFA_BOUNCE_LOOP_MESSAGE,
+  MFA_SETUP_ERROR_MESSAGE,
   readMfaStatus,
+  recordMfaBounce,
   readMfaStatusWithRetry,
   resendEmailMfa,
   safePostMfaPath,
@@ -26,6 +32,7 @@ export function MfaVerifyScreen() {
   const { user, firebaseUser, signOut, loading, mfaPending, mfaNext, markMfaVerified } = useAuthStore()
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
+  const [looped, setLooped] = useState(false)
   const [notice, setNotice] = useState('Sending a verification code to your email…')
   const [submitting, setSubmitting] = useState(false)
   const [resending, setResending] = useState(false)
@@ -48,10 +55,20 @@ export function MfaVerifyScreen() {
   }, [firebaseUser, loading, loginHref, mfaPending, router, uid, user])
 
   async function goToApp(nextPath?: string) {
+    // Loop guard (review of #359): if the app keeps sending the person back here, stop and say so.
+    if (!recordMfaBounce()) {
+      setNotice('')
+      setSubmitting(false)
+      submittingRef.current = false
+      setLooped(true)
+      setError(MFA_BOUNCE_LOOP_MESSAGE)
+      return
+    }
+    setLooped(false)
     clearMfaGate()
     markMfaVerified()
     const destination = safePostMfaPath(nextPath || requestedNext, fallback)
-    // The verification cookie has to be visible before the dashboard request,
+    // The verification and session cookies have to be visible before the dashboard request,
     // otherwise middleware sends the first navigation back here until a refresh.
     // A 503 / network failure here is "try again", never a reason to stay; the loop is bounded either way.
     for (let attempt = 0; attempt < 6; attempt += 1) {
@@ -59,6 +76,13 @@ export function MfaVerifyScreen() {
         const status = await readMfaStatus()
         if (status.verified) break
       } catch (statusError) {
+        if (isMfaSetupError(statusError)) {
+          setNotice('')
+          setSubmitting(false)
+          submittingRef.current = false
+          setError(MFA_SETUP_ERROR_MESSAGE)
+          return
+        }
         if (!isMfaStatusUnavailable(statusError)) break
       }
       await new Promise((resolve) => setTimeout(resolve, 200))
@@ -79,6 +103,11 @@ export function MfaVerifyScreen() {
           status = await readMfaStatusWithRetry(5)
         } catch (statusError) {
           if (cancelled) return
+          if (isMfaSetupError(statusError)) {
+            setNotice('')
+            setError(MFA_SETUP_ERROR_MESSAGE)
+            return
+          }
           if (isMfaStatusUnavailable(statusError)) {
             // Do not email a code when we could not tell whether this person is already verified.
             setNotice('')
@@ -195,6 +224,21 @@ export function MfaVerifyScreen() {
             <p className="banner mt-4" data-hue="red">
               {error}
             </p>
+          ) : null}
+          {looped ? (
+            <button
+              type="button"
+              className="btn block mt-4"
+              onClick={() => {
+                // A deliberate retry starts the loop guard afresh (review of #359).
+                clearMfaBounces()
+                setLooped(false)
+                setError('')
+                void goToApp(requestedNext || fallback)
+              }}
+            >
+              {MFA_BOUNCE_TRY_AGAIN_LABEL}
+            </button>
           ) : null}
           <form onSubmit={(event) => void submit(event)} className="form mt-6" style={{ gridTemplateColumns: '1fr' }}>
             <label className="f">

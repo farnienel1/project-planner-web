@@ -26,10 +26,42 @@ function base64Url(value: string | Buffer): string {
   return Buffer.from(value).toString('base64url')
 }
 
+/**
+ * Why the service-account access token could not be had: `setup` (the account is missing or unusable, or Google
+ * refused it — a deploy problem that retrying will not fix) or `unavailable` (no answer, 429 or 5xx — try again).
+ * Callers that do not care read it as a plain Error with the same message as before.
+ */
+export class GoogleAccessTokenError extends Error {
+  readonly kind: 'setup' | 'unavailable'
+  readonly httpStatus: number | null
+  readonly googleError: string | null
+  constructor(message: string, kind: 'setup' | 'unavailable', httpStatus: number | null = null, googleError: string | null = null) {
+    super(message)
+    this.name = 'GoogleAccessTokenError'
+    this.kind = kind
+    this.httpStatus = httpStatus
+    this.googleError = googleError
+  }
+}
+
+/** The service account's own project id, or null when none is configured (never the key itself). */
+export function serviceAccountProjectId(): string | null {
+  return readServiceAccount()?.project_id || null
+}
+
+/** A non-secret label for a failed signature: the error class name and its Node `code`, never the message. */
+export function privateKeyErrorName(error: unknown): string {
+  if (!error || typeof error !== 'object') return typeof error
+  const name = typeof (error as { name?: unknown }).name === 'string' ? (error as { name: string }).name : 'Error'
+  const code = (error as { code?: unknown }).code
+  const safeCode = typeof code === 'string' && /^[A-Z0-9_]{1,64}$/.test(code) ? ` ${code}` : ''
+  return `${/^[A-Za-z0-9_]{1,64}$/.test(name) ? name : 'Error'}${safeCode}`
+}
+
 async function googleAccessToken(scopes: string[]): Promise<{ token: string; projectId: string }> {
   const sa = readServiceAccount()
   if (!sa) {
-    throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON is not set on the server.')
+    throw new GoogleAccessTokenError('FIREBASE_SERVICE_ACCOUNT_JSON is not set on the server.', 'setup')
   }
   const now = Math.floor(Date.now() / 1000)
   const header = base64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))
@@ -43,20 +75,41 @@ async function googleAccessToken(scopes: string[]): Promise<{ token: string; pro
       scope: scopes.join(' '),
     })
   )
-  const signer = createSign('RSA-SHA256')
-  signer.update(`${header}.${payload}`)
-  const assertion = `${header}.${payload}.${signer.sign(sa.private_key.replace(/\\n/g, '\n'), 'base64url')}`
-  const response = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-      assertion,
-    }),
-  })
-  const data = (await response.json().catch(() => ({}))) as { access_token?: string; error_description?: string }
+  let assertion: string
+  try {
+    const signer = createSign('RSA-SHA256')
+    signer.update(`${header}.${payload}`)
+    assertion = `${header}.${payload}.${signer.sign(sa.private_key.replace(/\\n/g, '\n'), 'base64url')}`
+  } catch (signError) {
+    // The error's name and Node code only (e.g. "Error ERR_OSSL_UNSUPPORTED") — never its message, which can quote
+    // key material.
+    throw new GoogleAccessTokenError(
+      `The Firebase Admin service account private key could not be used (${privateKeyErrorName(signError)}).`,
+      'setup'
+    )
+  }
+  let response: Response
+  try {
+    response = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+        assertion,
+      }),
+    })
+  } catch {
+    throw new GoogleAccessTokenError('Could not reach Google to authenticate the Firebase Admin service account.', 'unavailable')
+  }
+  const data = (await response.json().catch(() => ({}))) as { access_token?: string; error?: string; error_description?: string }
   if (!response.ok || !data.access_token) {
-    throw new Error(data.error_description || 'Could not authenticate the Firebase Admin service account.')
+    const passing = response.status === 429 || response.status >= 500
+    throw new GoogleAccessTokenError(
+      data.error_description || 'Could not authenticate the Firebase Admin service account.',
+      passing ? 'unavailable' : 'setup',
+      response.status,
+      typeof data.error === 'string' ? data.error : null
+    )
   }
   return {
     token: data.access_token,

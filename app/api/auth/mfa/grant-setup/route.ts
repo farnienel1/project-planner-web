@@ -7,6 +7,9 @@ import {
   requireFirebaseUser,
 } from '@/lib/security/apiGuard'
 import { encodeMfaOk, MFA_OK_TTL_MS, writeMfaCookie } from '@/lib/auth/mfa/mfaCookies'
+import { clearSessionCookie } from '@/lib/auth/mfa/mfaCookiePolicy'
+import { mintFirebaseSessionCookie } from '@/lib/auth/mfa/mfaSessionCookieMint'
+import { verifyAppSessionCookie } from '@/lib/auth/mfa/mfaSessionCookie'
 import { bearerToken, firestoreGet, readBool, restFieldsToPlain } from '@/lib/owner/firestoreRest'
 import { isPlatformOwnerEmail } from '@/lib/platform/owner'
 import { clampString, isValidUuid } from '@/lib/security/validation'
@@ -105,5 +108,14 @@ export async function POST(request: NextRequest) {
   writeMfaCookie(response.cookies, request, 'challenge', '', 0)
   // No `iat`: a granted skip is never a "fresh" second step for destructive owner actions (review of #348).
   writeMfaCookie(response.cookies, request, 'ok', encodeMfaOk(user.uid, Date.now() + MFA_OK_TTL_MS), MFA_OK_TTL_MS)
+  // The server session cookie for this same uid (owner decision 17 Nov). Best effort: when it cannot be minted now,
+  // the next status check mints it (the middleware sends the person to /auth/mfa, which reads status and returns).
+  const session = await mintFirebaseSessionCookie(token)
+  const check = session.status === 'ok' ? await verifyAppSessionCookie(session.cookie) : null
+  if (session.status === 'ok' && check?.status === 'ok' && check.claims.uid === user.uid) {
+    writeMfaCookie(response.cookies, request, 'session', session.cookie, Math.min(session.maxAgeMs, MFA_OK_TTL_MS))
+  } else {
+    clearSessionCookie(response.cookies, request)
+  }
   return response
 }

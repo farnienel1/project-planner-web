@@ -1,6 +1,19 @@
 import { afterEach, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { isMfaStatusUnavailable, mfaStatusRetryDelayMs, readMfaStatus, readMfaStatusWithRetry } from './mfaClient.ts'
+import {
+  clearMfaBounces,
+  isMfaSetupError,
+  MFA_BOUNCE_KEY,
+  MFA_BOUNCE_LOOP_MESSAGE,
+  recordMfaBounce,
+  isMfaStatusUnavailable,
+  MFA_BOUNCE_LIMIT,
+  MFA_BOUNCE_WINDOW_MS,
+  mfaBounceDecision,
+  mfaStatusRetryDelayMs,
+  readMfaStatus,
+  readMfaStatusWithRetry,
+} from './mfaClient.ts'
 
 /** The browser treats a 503 (or no network) from the status route as "try again", never as "not verified". */
 
@@ -60,4 +73,64 @@ test('mfaStatusRetryDelayMs backs off and is capped at 15s', () => {
   assert.equal(mfaStatusRetryDelayMs(0), 1000)
   assert.equal(mfaStatusRetryDelayMs(3), 8000)
   assert.equal(mfaStatusRetryDelayMs(10), 15000)
+})
+
+/** Review of #359, item 2: a server setup error is its own answer, never "trying again" and never retried. */
+test('readMfaStatus: a 503 setup error throws MfaSetupError, and the retry helper does not retry it', async () => {
+  let calls = 0
+  globalThis.fetch = (async () => {
+    calls += 1
+    return new Response(JSON.stringify({ error: 'setup', retry: false }), { status: 503 })
+  }) as typeof fetch
+  await assert.rejects(readMfaStatus(), (error) => isMfaSetupError(error) && !isMfaStatusUnavailable(error))
+  calls = 0
+  await assert.rejects(readMfaStatusWithRetry(5, async () => {}), (error) => isMfaSetupError(error))
+  assert.equal(calls, 1)
+})
+
+/** Review of #359, item 1: the code screen stops sending the person to the app after repeated bounces. */
+test('mfaBounceDecision: allows up to the limit within the window, then stops; old trips expire', () => {
+  const now = 1_000_000
+  let history: number[] = []
+  for (let i = 0; i < MFA_BOUNCE_LIMIT; i += 1) {
+    const decision = mfaBounceDecision(history, now + i * 1000)
+    assert.equal(decision.allowed, true)
+    history = decision.history
+  }
+  const blocked = mfaBounceDecision(history, now + 5000)
+  assert.equal(blocked.allowed, false)
+  assert.equal(blocked.history.length, MFA_BOUNCE_LIMIT)
+  // After the window, trips are forgotten and one more is allowed.
+  const later = mfaBounceDecision(blocked.history, now + 5000 + MFA_BOUNCE_WINDOW_MS)
+  assert.equal(later.allowed, true)
+  assert.equal(later.history.length, 1)
+  // Junk and future stamps are ignored.
+  assert.equal(mfaBounceDecision([Number.NaN, now + 999_999], now).history.length, 1)
+})
+
+/** Review of #359 (re-review 2): a reload within the window would hit the guard again, so "Try again" clears it. */
+test('loop guard: blocked after the limit; clearing the history (Try again) lets the next trip through', () => {
+  const store = new Map<string, string>()
+  const realWindow = (globalThis as { window?: unknown }).window
+  ;(globalThis as { window?: unknown }).window = {
+    sessionStorage: {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => void store.set(key, value),
+      removeItem: (key: string) => void store.delete(key),
+    },
+  }
+  try {
+    const now = 5_000_000
+    for (let i = 0; i < MFA_BOUNCE_LIMIT; i += 1) assert.equal(recordMfaBounce(now + i), true)
+    // A plain reload inside the window: still blocked (the history lives in session storage).
+    assert.equal(recordMfaBounce(now + 10), false)
+    assert.ok(store.has(MFA_BOUNCE_KEY))
+    clearMfaBounces()
+    assert.equal(store.has(MFA_BOUNCE_KEY), false)
+    assert.equal(recordMfaBounce(now + 20), true)
+    assert.doesNotMatch(MFA_BOUNCE_LOOP_MESSAGE, /reload/i)
+    assert.match(MFA_BOUNCE_LOOP_MESSAGE, /Try again/)
+  } finally {
+    ;(globalThis as { window?: unknown }).window = realWindow
+  }
 })
