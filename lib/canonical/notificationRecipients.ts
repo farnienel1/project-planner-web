@@ -377,6 +377,29 @@ export function timesheetNotificationDedupeKey(input: {
   return null
 }
 
+/**
+ * The de-dupe key of a `line_manager_peer_update` row (both apps hash it into the document id):
+ * `lmPeer|{actorName}|{actionSummary}|{peerId}|{actionVerb}`, as both apps have always written it. Rulebook 1.60.1:
+ * with `signedAtMs` (the counter-sign instant) it ends `|sig{ms}`, so a counter-sign again after a reopen (1.47.0) is
+ * its own row; without it (leave decisions, older builds) the key is unchanged. Null when the peer id is missing.
+ */
+export function lineManagerPeerNoticeKey(input: {
+  actorName: string
+  actionSummary: string
+  peerId: string
+  actionVerb: string
+  signedAtMs?: number | null
+}): string | null {
+  const peer = idText(input?.peerId)
+  if (!peer) return null
+  const actor = typeof input?.actorName === 'string' ? input.actorName : ''
+  const summary = typeof input?.actionSummary === 'string' ? input.actionSummary : ''
+  const verb = typeof input?.actionVerb === 'string' ? input.actionVerb : ''
+  const base = `lmPeer|${actor}|${summary}|${peer}|${verb}`
+  const signed = input.signedAtMs
+  return typeof signed === 'number' && Number.isFinite(signed) && signed > 0 ? `${base}|sig${Math.floor(signed)}` : base
+}
+
 export type NotificationWriter = 'web' | 'ios' | 'function'
 
 export type NotificationCatalogRow = {

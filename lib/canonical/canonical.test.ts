@@ -5782,6 +5782,20 @@ test('1.60.1 (owner report 17 Nov): each signature of a pay run gets its own tim
   )
 })
 
+test('1.60.1: lineManagerPeerNoticeKey — one peer row per counter-signature, leave keys unchanged', () => {
+  const base = { actorName: 'Lee', actionSummary: "Sam's timesheet (1–15 Nov)", peerId: 'lm-2', actionVerb: 'signed' }
+  const at = Date.parse('2026-11-06T10:00:00Z')
+  assert.equal(rulebook.lineManagerPeerNoticeKey(base), "lmPeer|Lee|Sam's timesheet (1–15 Nov)|lm-2|signed")
+  assert.equal(rulebook.lineManagerPeerNoticeKey({ ...base, signedAtMs: at + 0.6 }), `lmPeer|Lee|Sam's timesheet (1–15 Nov)|lm-2|signed|sig${at}`)
+  assert.notEqual(rulebook.lineManagerPeerNoticeKey({ ...base, signedAtMs: at }), rulebook.lineManagerPeerNoticeKey({ ...base, signedAtMs: at + 60_000 }))
+  // A leave decision passes no instant: its id is the one both apps have always written.
+  assert.equal(
+    rulebook.lineManagerPeerNoticeKey({ actorName: 'Lee', actionSummary: "Sam's annual leave", peerId: 'lm-2', actionVerb: 'approved', signedAtMs: null }),
+    "lmPeer|Lee|Sam's annual leave|lm-2|approved"
+  )
+  assert.equal(rulebook.lineManagerPeerNoticeKey({ ...base, peerId: ' ' }), null)
+})
+
 test('1.4.0: bank-holiday regions are one list per country, and a country change asks for the region', () => {
   const ids = (country: string) => rulebook.bankHolidayRegionsForCountry(country).map((region) => region.id)
   assert.deepEqual(ids('GB'), ['GB-ENG-WLS', 'GB-SCT', 'GB-NIR', 'GB'])
