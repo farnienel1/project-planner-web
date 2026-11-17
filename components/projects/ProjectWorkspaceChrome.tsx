@@ -1,7 +1,7 @@
 'use client'
-import '@/app/pages-ui.css'
+
 import { userCanEditJob } from '@/lib/access/bookingAccess'
-import '@/app/projects-ui.css'
+
 import { useEffect, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -48,6 +48,8 @@ import { projectJobKind, projectStatusTone } from '@/lib/ui/projectWorkspaceUi'
 import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { openVariationCount } from '@/lib/canonical'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
+import '@/app/pages-ui.css'
+import '@/app/projects-ui.css'
 
 function formatLondonDay(date: Date): string {
   return new Intl.DateTimeFormat('en-GB', {
@@ -369,20 +371,16 @@ export function ProjectDetailsCard({
             return (
               <div key={row.label}>
                 <Icon className="pj-dl-icon h-4 w-4" aria-hidden="true" />
-                <div className="min-w-0">
-                  <dt>{row.label}</dt>
-                  <dd className={row.warn ? 'warn' : soft ? 'soft' : undefined}>{row.value}</dd>
-                </div>
+                <dt>{row.label}</dt>
+                <dd className={row.warn ? 'warn' : soft ? 'soft' : undefined}>{row.value}</dd>
               </div>
             )
           })}
           {project.notes ? (
             <div>
               <ChatBubbleLeftRightIcon className="pj-dl-icon h-4 w-4" aria-hidden="true" />
-              <div className="min-w-0">
-                <dt>Notes</dt>
-                <dd>{project.notes}</dd>
-              </div>
+              <dt>Notes</dt>
+              <dd>{project.notes}</dd>
             </div>
           ) : null}
         </dl>

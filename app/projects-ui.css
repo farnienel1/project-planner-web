@@ -51,7 +51,7 @@
 .pj-bbtn.solid:hover { background: var(--pu-band-chip-ink); }
 
 /* Band figures (display only) */
-.pj-band-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(130px, 100%), 1fr)); gap: 10px; }
+.pj-band-stats { container: pj-band-stats / inline-size; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(130px, 100%), 1fr)); gap: 10px; }
 .pj-band-prog, .pj-band-stat {
   background: var(--pu-band-fill); border: 1px solid var(--pu-band-line); border-radius: 12px; padding: 12px 14px; min-width: 0;
 }
@@ -112,9 +112,11 @@
 /* Details fields */
 .pj-dl { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 24px; }
 @media (min-width: 720px) { .pj-dl { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.pj-dl > div { display: flex; gap: 12px; padding: 11px 0; border-top: 1px solid var(--pu-line-2); min-width: 0; }
-.pj-dl-icon { color: var(--pu-muted); margin-top: 2px; flex-shrink: 0; }
-.pj-dl dt { font-size: 12px; color: var(--pu-muted); }
+/* dl > div > dt/dd only (valid HTML): the icon sits in its own grid column beside dt and dd. */
+.pj-dl > div { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 12px; align-items: start; padding: 11px 0; border-top: 1px solid var(--pu-line-2); min-width: 0; }
+.pj-dl-icon { grid-column: 1; grid-row: 1 / span 2; color: var(--pu-muted); margin-top: 2px; flex-shrink: 0; }
+.pj-dl dt { grid-column: 2; min-width: 0; font-size: 12px; color: var(--pu-muted); }
+.pj-dl dd { grid-column: 2; min-width: 0; }
 .pj-dl dd { margin: 2px 0 0; font-size: 14px; font-weight: 600; color: var(--pu-ink); overflow-wrap: anywhere; }
 .pj-dl dd.soft { font-weight: 400; color: var(--pu-muted); }
 .pj-dl dd.warn { color: var(--pu-c-amber-ink); } /* the darker amber (owner P4): --warn is 3.7:1 on white */
@@ -134,6 +136,7 @@
 @media (max-width: 520px) {
   .pj-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-@media (max-width: 320px) {
+/* One stats column fits below 2 × 130px + 10px gap: drop the span so no implicit narrow column is made. */
+@container pj-band-stats (max-width: 269.98px) {
   .pj-band-prog { grid-column: auto; }
 }
