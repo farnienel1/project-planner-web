@@ -5,7 +5,13 @@ import { requireOwner } from '@/lib/owner/requireOwner'
 import { clearOwnerDirectoryCache } from '@/lib/owner/directoryServer'
 import { OWNER_AUDIT_UNAVAILABLE_MESSAGE, beginOwnerAudit, type OwnerAuditRun } from '@/lib/owner/ownerAudit'
 import { isValidEmail } from '@/lib/security/validation'
-import { adminListDocumentIds, adminUpdateAuthEmail, firebaseAdminConfigured } from '@/lib/owner/identityToolkitAdmin'
+import { adminListDocumentIds, adminPasswordResetLink, adminUpdateAuthEmail, firebaseAdminConfigured } from '@/lib/owner/identityToolkitAdmin'
+import { sendProjectPlannerEmail } from '@/lib/email/resendClient'
+import {
+  PASSWORD_RESET_EMAIL_SUBJECT,
+  buildPasswordResetEmailHtml,
+  buildPasswordResetEmailText,
+} from '@/lib/email/passwordResetEmail'
 import {
   bearerToken,
   firestoreDelete,
@@ -186,9 +192,24 @@ export async function POST(request: NextRequest) {
   if (!membershipRead.complete) incomplete.push(CHANGE_EMAIL_HOME_ONLY_NOTE)
 
   if (sendReset) {
+    const settings = passwordResetActionSettings(newEmail)
+    // The branded reset email (owner request 17 Nov); Firebase's own email only when it cannot be sent.
+    let branded = false
+    try {
+      const link = await adminPasswordResetLink(newEmail, settings.url)
+      await sendProjectPlannerEmail({
+        to: newEmail,
+        subject: PASSWORD_RESET_EMAIL_SUBJECT,
+        html: buildPasswordResetEmailHtml({ to: newEmail, link, reason: 'emailChanged' }),
+        text: buildPasswordResetEmailText({ to: newEmail, link, reason: 'emailChanged' }),
+        idToken: token,
+      })
+      branded = true
+    } catch {
+      branded = false
+    }
     const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY
-    if (apiKey) {
-      const settings = passwordResetActionSettings(newEmail)
+    if (!branded && apiKey) {
       await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${encodeURIComponent(apiKey)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

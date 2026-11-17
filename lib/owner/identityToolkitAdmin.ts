@@ -238,6 +238,21 @@ export async function adminLookupAuthUserByEmail(email: string): Promise<{ uid: 
   return uid ? { uid } : null
 }
 
+/**
+ * No reset link because the account is missing or disabled (`EMAIL_NOT_FOUND`, `USER_DISABLED`). Same message as
+ * before for the owner console; the public reset route treats it exactly like a sent email (no account enumeration).
+ */
+export class AuthAccountNotFoundError extends Error {
+  constructor() {
+    super('No Firebase login exists for that email yet.')
+    this.name = 'AuthAccountNotFoundError'
+  }
+}
+
+function resetAccountMissing(message: string): boolean {
+  return message.includes('EMAIL_NOT_FOUND') || message.includes('USER_DISABLED') || message.includes('USER_NOT_FOUND')
+}
+
 export async function adminPasswordResetLink(email: string, continueUrl: string): Promise<string> {
   const { token, projectId } = await googleAccessToken([
     'https://www.googleapis.com/auth/identitytoolkit',
@@ -274,14 +289,14 @@ export async function adminPasswordResetLink(email: string, continueUrl: string)
     data = (await retry.json().catch(() => ({}))) as { oobLink?: string; error?: { message?: string } }
     if (!retry.ok || !data.oobLink) {
       const message = data.error?.message || ''
-      if (message.includes('EMAIL_NOT_FOUND')) throw new Error('No Firebase login exists for that email yet.')
+      if (resetAccountMissing(message)) throw new AuthAccountNotFoundError()
       throw new Error(data.error?.message || 'Could not create a password reset link.')
     }
     return data.oobLink
   }
   if (!response.ok || !data.oobLink) {
     const message = data.error?.message || ''
-    if (message.includes('EMAIL_NOT_FOUND')) throw new Error('No Firebase login exists for that email yet.')
+    if (resetAccountMissing(message)) throw new AuthAccountNotFoundError()
     throw new Error(data.error?.message || 'Could not create a password reset link.')
   }
   return data.oobLink

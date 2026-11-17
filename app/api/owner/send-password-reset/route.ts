@@ -7,7 +7,11 @@ import { isValidEmail } from '@/lib/security/validation'
 import { sendProjectPlannerEmail } from '@/lib/email/resendClient'
 import { adminLookupAuthEmail, adminPasswordResetLink, firebaseAdminConfigured } from '@/lib/owner/identityToolkitAdmin'
 import { bearerToken, firestoreGet, readString } from '@/lib/owner/firestoreRest'
-import { buildOwnerPasswordResetEmailHtml } from '@/lib/email/ownerPasswordResetEmail'
+import {
+  PASSWORD_RESET_EMAIL_SUBJECT,
+  buildPasswordResetEmailHtml,
+  buildPasswordResetEmailText,
+} from '@/lib/email/passwordResetEmail'
 
 export const runtime = 'nodejs'
 
@@ -89,14 +93,16 @@ export async function POST(request: NextRequest) {
         const link = await adminPasswordResetLink(email, settings.url)
         await sendProjectPlannerEmail({
           to: email,
-          subject: 'Reset your Project Planner password',
-          // Transactional: no marketing content
-          html: buildOwnerPasswordResetEmailHtml(link),
+          subject: PASSWORD_RESET_EMAIL_SUBJECT,
+          // Transactional: no marketing content. The same branded email as Forgot password, worded for support.
+          html: buildPasswordResetEmailHtml({ to: email, link, reason: 'support' }),
+          text: buildPasswordResetEmailText({ to: email, link, reason: 'support' }),
           idToken: token,
         })
         sent = true
       } catch (adminError) {
-        console.warn('[owner/send-password-reset] admin path failed, trying Auth email', adminError)
+        // Never the link or the address in the log.
+        console.warn('[owner/send-password-reset] admin path failed, trying Auth email', adminError instanceof Error ? adminError.name : 'error')
       }
     }
     if (!sent) {

@@ -4,8 +4,7 @@ import { create } from 'zustand'
 import { addPayProfileWrite } from '@/lib/pay/payProfileService'
 import { payEditorRecord, startPayEditorProfileRead } from '@/lib/pay/payProfileOverlay'
 import { collection, deleteField, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc, updateDoc, Timestamp, where, writeBatch } from 'firebase/firestore'
-import { sendPasswordResetEmail } from 'firebase/auth'
-import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
+import { requestPasswordReset } from '@/lib/auth/requestPasswordReset'
 import type { Operative, User } from '@/types'
 import { auth, db } from '@/lib/firebase/config'
 import { applyExclusiveRateFields, buildSaveUserPayload, changedUserPayload } from '@/lib/firebase/userPayload'
@@ -639,7 +638,7 @@ export const useUserStore = create<UserStoreState>(() => ({
   },
 
   sendPasswordReset: async (email) => {
-    await sendPasswordResetEmail(auth, email.toLowerCase().trim(), passwordResetActionSettings(email))
+    await requestPasswordReset(auth, email)
   },
 
   applyAccountType: (user, accountType) => applyAccountTypeChange(user, accountType),
