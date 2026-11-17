@@ -31,7 +31,7 @@ export const CONSOLE_NAV: ConsoleNavGroup[] = [
     id: 'today',
     label: 'Today',
     items: [
-      { label: 'Command centre', href: '/developer', shown: true, usesPeriod: true, note: 'Today the Overview (users, organisations, billing, signed timesheet value); rebuilt as the Command centre in PR 2.', plannedIn: 'PR 2' },
+      { label: 'Overview', href: '/developer', shown: true, usesPeriod: true, note: 'Users, organisations, billing and signed timesheet value; to be rebuilt in PR 2.', plannedIn: 'PR 2' },
       { label: 'Needs you', href: null, shown: false, note: 'Not built yet (PR 3).', plannedIn: 'PR 3' },
     ],
   },

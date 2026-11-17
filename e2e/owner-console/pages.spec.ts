@@ -22,7 +22,7 @@ const PAGES = [
 ]
 
 const SIDEBAR = {
-  Today: ['Command centre'],
+  Today: ['Overview'],
   Customers: ['Organisations', 'People', 'Register interest'],
   Money: ['Revenue'],
   Product: ['Growth & engagement', 'Feature usage', 'Analytics', 'Feedback', 'Roadmap'],
