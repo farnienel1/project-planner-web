@@ -1,7 +1,7 @@
 'use client'
-
+import '@/app/projects-ui.css'
 import { userCanEditJob } from '@/lib/access/bookingAccess'
-
+import { projectJobKind, projectStatusTone } from '@/lib/ui/projectWorkspaceUi'
 import { useEffect, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -198,71 +198,88 @@ export function ProjectWorkspaceChrome({
   ]
 
   return (
-    <div>
-      <div className="mb-3">
-        <Link href={catalogue} className="btn sm ghost">
+    <div className="pj">
+      <div className="pj-back-row">
+        <Link href={catalogue} className="pj-back">
           ← {catalogueLabel}
         </Link>
       </div>
 
-      <section className="hero" data-hue={isSmallWork ? 'sw' : 'proj'} style={{ padding: '24px 28px' }}>
-        <div className="relative z-[1] flex flex-wrap items-start gap-[18px]">
-          <div className="min-w-0 grow" style={{ flexBasis: 'min(100%, 260px)' }}>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-[family-name:var(--head)] font-extrabold opacity-85">{project.jobNumber}</span>
-              {typeLabel ? (
-                <span className="tag" style={{ background: 'rgba(255,255,255,.18)', color: '#fff' }}>
-                  {typeLabel.toUpperCase()}
-                </span>
-              ) : null}
-              <span className="pill dot" style={{ background: 'rgba(255,255,255,.18)', color: '#fff' }}>
+      <section className="pj-band" data-kind={projectJobKind(isSmallWork)}>
+        <div className="pj-band-top">
+          <div className="pj-band-id">
+            <div className="pj-band-meta">
+              <span className="pj-band-num">
+                <span className="pj-kind-dot" aria-hidden="true" />
+                {project.jobNumber}
+              </span>
+              {typeLabel ? <span className="pj-band-chip">{typeLabel.toUpperCase()}</span> : null}
+              <span className="pj-band-chip" data-tone={projectStatusTone(workStatusLabel(status))}>
+                <i aria-hidden="true" />
                 {workStatusLabel(status)}
               </span>
             </div>
-            <div className="big" style={{ marginTop: 6 }}>
-              {project.siteName}
-            </div>
-            <div className="min-w-0 break-words" style={{ opacity: 0.85, marginTop: 4 }}>
+            {active === 'overview' ? (
+              <h1 className="pj-band-title">{project.siteName}</h1>
+            ) : (
+              <p className="pj-band-title">{project.siteName}</p>
+            )}
+            <p className="pj-band-sub">
               {project.client?.name || 'No client'} · {managers}
+            </p>
+          </div>
+          {canEdit || showBook ? (
+            <div className="pj-band-acts">
+              {canEdit ? (
+                <Link href={`${basePath}/edit`} className="pj-bbtn ghost">
+                  <PencilSquareIcon className="h-4 w-4" aria-hidden="true" />
+                  Edit
+                </Link>
+              ) : null}
+              {showBook ? (
+                <Link href={`${basePath}/schedule/operatives`} className="pj-bbtn solid">
+                  <PlusIcon className="h-4 w-4" aria-hidden="true" />
+                  Book labour
+                </Link>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+        <div className="pj-band-stats">
+          <div className="pj-band-prog">
+            <div className="pj-band-prog-line">
+              <b>{progress}% complete</b>
+              <span>
+                {remaining} · {formatLondonDay(new Date(project.startDate))} – {formatLondonDay(new Date(project.endDate))}
+              </span>
+            </div>
+            <div className="pj-band-bar">
+              <i style={{ width: `${Math.min(100, Math.max(0, progress))}%` }} />
             </div>
           </div>
-          <div className="flex flex-wrap gap-2.5">
-            {canEdit ? (
-              <Link href={`${basePath}/edit`} className="btn sm hbtn">
-                <PencilSquareIcon className="h-4 w-4" />
-                Edit
-              </Link>
-            ) : null}
-            {showBook ? (
-              <Link href={`${basePath}/schedule/operatives`} className="btn sm hbtn solid">
-                <PlusIcon className="h-4 w-4" />
-                Book labour
-              </Link>
-            ) : null}
-          </div>
-        </div>
-        <div className="relative z-[1]" style={{ marginTop: 20 }}>
-          <div className="row small" style={{ opacity: 0.9, marginBottom: 8 }}>
-            <b>{progress}% complete</b>
-            <span className="grow" />
-            {remaining} · {formatLondonDay(new Date(project.startDate))} – {formatLondonDay(new Date(project.endDate))}
-          </div>
-          <div style={{ height: 10, borderRadius: 99, background: 'rgba(255,255,255,.18)', overflow: 'hidden' }}>
-            <i
-              style={{
-                display: 'block',
-                height: '100%',
-                width: `${Math.min(100, Math.max(0, progress))}%`,
-                background: 'linear-gradient(90deg,#fff,#BFD8FF)',
-                borderRadius: 99,
-              }}
-            />
-          </div>
+          {showVariations ? (
+            <div className="pj-band-stat">
+              <span>Variations</span>
+              <b>{openVariations}</b>
+            </div>
+          ) : null}
+          {taskCount !== undefined ? (
+            <div className="pj-band-stat">
+              <span>Tasks</span>
+              <b>{taskCount}</b>
+            </div>
+          ) : null}
+          {showActiveUsers && activeUserCount !== undefined ? (
+            <div className="pj-band-stat">
+              <span>Active users</span>
+              <b>{activeUserCount}</b>
+            </div>
+          ) : null}
         </div>
       </section>
 
       {!hideTabs ? (
-        <nav className="ptabs" aria-label="Project sections">
+        <nav className="pj-tiles" aria-label="Project sections">
           {tabs.map((tab) => {
             const meta = TAB_META[tab.key] || TAB_META.overview
             const Icon = meta.icon
@@ -271,14 +288,14 @@ export function ProjectWorkspaceChrome({
               <Link
                 key={tab.key}
                 href={tab.href ? `${basePath}/${tab.href}` : basePath}
-                data-hue={meta.hue}
-                className={cn(tab.key === 'overview' && 'overview', on && 'on')}
+                className={cn('pj-tile', on && 'on')}
+                aria-current={on ? 'page' : undefined}
               >
-                <span className="ico-chip">
-                  <Icon className="h-[17px] w-[17px]" />
+                <span className="pj-ico" aria-hidden="true">
+                  <Icon className="h-4 w-4" />
                 </span>
-                {tab.label}
-                {tab.badge ? <span className="count">{tab.badge}</span> : null}
+                <span className="pj-tile-label">{tab.label}</span>
+                {tab.badge ? <span className="pj-tile-count">{tab.badge}</span> : null}
               </Link>
             )
           })}
