@@ -122,6 +122,7 @@ export async function notifyTimesheetSignedByManager({
   weekEnd,
   timeZone,
   revision,
+  signedAt,
 }: {
   organizationId: string
   subjectUser: User
@@ -134,6 +135,11 @@ export async function notifyTimesheetSignedByManager({
   timeZone: string
   /** Rulebook 1.55.0: the sheet's revision number (REV N), so its notice is not swallowed by the original's. */
   revision?: number | null
+  /**
+   * Rulebook 1.60.1: the line manager's counter-sign instant (`managerSignedAt`). Each counter-signature is its own
+   * row (and push, and peer row), so a counter-sign again after a 1.47 reopen reaches the person.
+   */
+  signedAt?: Date | null
 }): Promise<void> {
   const roster = rulebookRoster(users)
   const subject = rulebookPerson(subjectUser, users)
@@ -146,6 +152,7 @@ export async function notifyTimesheetSignedByManager({
       weekStart,
       timeZone,
       revision,
+      signedAt,
     })
     if (!signedId) continue
     await saveInboxNotification({
@@ -163,9 +170,7 @@ export async function notifyTimesheetSignedByManager({
   const periodLine = formatPaymentPeriodLine(weekStart, weekEnd, timeZone)
   const operativeName = displayName(subjectUser)
   for (const peerId of peers) {
-    const id = await syntheticUuidFromKey(
-      `lmPeer|${signedByName}|${operativeName}'s timesheet (${periodLine})|${peerId}|signed`
-    )
+    const id = await syntheticUuidFromKey(timesheetPeerNoticeKey({ signedByName, operativeName, periodLine, peerId, signedAt }))
     await saveInboxNotification({
       id,
       organizationId,
@@ -177,6 +182,22 @@ export async function notifyTimesheetSignedByManager({
       deepLinkWeekStart: weekStart,
     })
   }
+}
+
+/**
+ * The `line_manager_peer_update` id key for a counter-signature. Rulebook 1.60.1: with the counter-sign instant it
+ * ends `|sig{ms}`, so a counter-sign again is its own row; without it the key is as before.
+ */
+export function timesheetPeerNoticeKey(input: {
+  signedByName: string
+  operativeName: string
+  periodLine: string
+  peerId: string
+  signedAt?: Date | null
+}): string {
+  const base = `lmPeer|${input.signedByName}|${input.operativeName}'s timesheet (${input.periodLine})|${input.peerId}|signed`
+  const ms = input.signedAt ? input.signedAt.getTime() : Number.NaN
+  return Number.isFinite(ms) && ms > 0 ? `${base}|sig${Math.floor(ms)}` : base
 }
 
 export function timesheetNotificationHref(

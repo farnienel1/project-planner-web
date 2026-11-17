@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { timesheetNoticeId, timesheetNotificationHref, timesheetRevisionToSignLinkFields } from './timesheetNotifications.ts'
+import { timesheetNoticeId, timesheetNotificationHref, timesheetPeerNoticeKey, timesheetRevisionToSignLinkFields } from './timesheetNotifications.ts'
 import { notificationDestination } from '../canonical/index.ts'
 import { dayKey } from '../ios-parity/londonTime.ts'
 
@@ -72,6 +72,19 @@ test('1.60.1 (owner report 17 Nov): a re-sign of the same pay run is a new line-
   assert.notEqual(await timesheetNoticeId({ ...base, signedAt: first }), await timesheetNoticeId({ ...base, signedAt: again }))
   assert.equal(await timesheetNoticeId({ ...base, signedAt: first }), await timesheetNoticeId({ ...base, signedAt: new Date(first) }))
   assert.notEqual(await timesheetNoticeId({ ...base, signedAt: first }), await timesheetNoticeId(base))
+})
+
+test('1.60.1: a counter-sign again is a new signed notice id and a new peer notice key', async () => {
+  const weekStart = new Date('2026-10-31T23:00:00Z')
+  const base = { subjectId: 'op-1', weekStart, timeZone: 'Europe/London', type: 'timesheet_signed_by_manager' }
+  const first = new Date('2026-11-06T10:00:00Z')
+  const again = new Date('2026-11-09T11:00:00Z')
+  assert.notEqual(await timesheetNoticeId({ ...base, signedAt: first }), await timesheetNoticeId({ ...base, signedAt: again }))
+  assert.equal(await timesheetNoticeId({ ...base, signedAt: first }), await timesheetNoticeId({ ...base, signedAt: new Date(first) }))
+  const peer = { signedByName: 'Lee', operativeName: 'Sam', periodLine: '1–15 Nov', peerId: 'lm-2' }
+  assert.equal(timesheetPeerNoticeKey(peer), "lmPeer|Lee|Sam's timesheet (1–15 Nov)|lm-2|signed", 'older key unchanged')
+  assert.equal(timesheetPeerNoticeKey({ ...peer, signedAt: first }), `lmPeer|Lee|Sam's timesheet (1–15 Nov)|lm-2|signed|sig${first.getTime()}`)
+  assert.notEqual(timesheetPeerNoticeKey({ ...peer, signedAt: first }), timesheetPeerNoticeKey({ ...peer, signedAt: again }))
 })
 
 test('review of iOS #243 (L5): a revision-to-sign notice carries dayKey, the pay run\'s first day in the organisation zone', () => {
