@@ -26,7 +26,16 @@ import { taskAttachmentPath, uploadFile } from '@/lib/firebase/storageUtils'
 import { FormInput } from '@/components/forms/FormShell'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
 import { personDisplayName } from '@/lib/tasks/projectTaskFilters'
-import { activePeopleForAssignment, peopleForTaskPicker } from '@/lib/tasks/taskAssigneePeople'
+import {
+  activePeopleForAssignment,
+  isTaskPersonSelected,
+  peopleForTaskPicker,
+  taskPersonIndex,
+  taskPickerExtras,
+  toggleTaskPerson,
+  type TaskPersonIndex,
+  type TaskPersonRosterRow,
+} from '@/lib/tasks/taskAssigneePeople'
 import { compressTaskAttachment } from '@/lib/tasks/compressTaskAttachment'
 import { withTimeout } from '@/lib/client/withTimeout'
 import type { Manager, Operative, Project, ProjectTask, ProjectTaskItem, ProjectTaskPriority } from '@/types'
@@ -64,7 +73,12 @@ export function AddProjectTaskSheet({
   onClose,
 }: {
   project: Project
-  people: { operatives: Operative[]; managers: Manager[] }
+  /**
+   * `managers` are the managers offered for a new assignment; `allManagers` every `managers` row (an existing
+   * assignment to a row not offered still shows); `roster` every users document of the organisation, so a person
+   * with several records is listed once (`taskPersonIndex`).
+   */
+  people: { operatives: Operative[]; managers: Manager[]; allManagers?: Manager[]; roster?: ReadonlyArray<TaskPersonRosterRow> }
   existing?: ProjectTask | null
   onSave: (input: {
     id: string
@@ -527,6 +541,9 @@ export function AddProjectTaskSheet({
           route={peopleRoute}
           managers={activePeopleForAssignment(people.managers)}
           operatives={activePeopleForAssignment(people.operatives)}
+          allManagers={people.allManagers ?? people.managers}
+          allOperatives={people.operatives}
+          roster={people.roster ?? []}
           selectedManagers={selectedManagers}
           selectedOperatives={selectedOperatives}
           onChangeManagers={setSelectedManagers}
@@ -606,6 +623,9 @@ function PeoplePicker({
   route,
   managers,
   operatives,
+  allManagers,
+  allOperatives,
+  roster,
   selectedManagers,
   selectedOperatives,
   onChangeManagers,
@@ -615,6 +635,9 @@ function PeoplePicker({
   route: PeopleRoute
   managers: Manager[]
   operatives: Operative[]
+  allManagers: Manager[]
+  allOperatives: Operative[]
+  roster: ReadonlyArray<TaskPersonRosterRow>
   selectedManagers: Set<string>
   selectedOperatives: Set<string>
   onChangeManagers: (next: Set<string>) => void
@@ -626,7 +649,29 @@ function PeoplePicker({
   const q = search.trim().toLowerCase()
   const showManagers = route !== 'operatives'
   const showOperatives = route !== 'managers'
-  const { managers: pickerManagers, operatives: pickerOperatives } = peopleForTaskPicker(managers, operatives, route)
+  // Owner decision 17 Nov: one row per person. The index covers every row (inactive and old ones too), so a task
+  // already assigned to a person's old row id shows that person ticked.
+  const index: TaskPersonIndex = useMemo(
+    () => taskPersonIndex({ managers: allManagers, operatives: allOperatives, roster }),
+    [allManagers, allOperatives, roster]
+  )
+  const { managers: pickerManagers, operatives: pickerOperatives } = peopleForTaskPicker(managers, operatives, route, roster, index)
+  const extras = taskPickerExtras({
+    index,
+    shown: [
+      ...(showManagers ? pickerManagers.map((row) => ({ kind: 'manager' as const, id: row.id })) : []),
+      ...(showOperatives ? pickerOperatives.map((row) => ({ kind: 'operative' as const, id: row.id })) : []),
+    ],
+    selectedManagers: showManagers ? selectedManagers : new Set<string>(),
+    selectedOperatives: showOperatives ? selectedOperatives : new Set<string>(),
+    allManagers,
+    allOperatives,
+  })
+  const toggle = (kind: 'manager' | 'operative', id: string) => {
+    const next = toggleTaskPerson(index, kind, id, selectedManagers, selectedOperatives)
+    onChangeManagers(next.managers)
+    onChangeOperatives(next.operatives)
+  }
   const trades = [
     ...new Set(
       [...(showManagers ? pickerManagers : []), ...(showOperatives ? pickerOperatives : [])]
@@ -681,17 +726,13 @@ function PeoplePicker({
         <div className="flex-1 overflow-y-auto px-3 pb-4">
           {showManagers &&
             pickerManagers.filter(match).map((row) => {
-              const on = selectedManagers.has(row.id)
+              const on = isTaskPersonSelected(index, 'manager', row.id, selectedManagers, selectedOperatives)
               return (
                 <button
                   key={row.id}
                   type="button"
-                  onClick={() => {
-                    const next = new Set(selectedManagers)
-                    if (on) next.delete(row.id)
-                    else next.add(row.id)
-                    onChangeManagers(next)
-                  }}
+                  aria-pressed={on}
+                  onClick={() => toggle('manager', row.id)}
                   className="flex w-full items-center justify-between border-b border-slate-50 px-1 py-2.5 text-left"
                 >
                   <span>
@@ -704,17 +745,13 @@ function PeoplePicker({
             })}
           {showOperatives &&
             pickerOperatives.filter(match).map((row) => {
-              const on = selectedOperatives.has(row.id)
+              const on = isTaskPersonSelected(index, 'operative', row.id, selectedManagers, selectedOperatives)
               return (
                 <button
                   key={row.id}
                   type="button"
-                  onClick={() => {
-                    const next = new Set(selectedOperatives)
-                    if (on) next.delete(row.id)
-                    else next.add(row.id)
-                    onChangeOperatives(next)
-                  }}
+                  aria-pressed={on}
+                  onClick={() => toggle('operative', row.id)}
                   className="flex w-full items-center justify-between border-b border-slate-50 px-1 py-2.5 text-left"
                 >
                   <span>
@@ -725,6 +762,21 @@ function PeoplePicker({
                 </button>
               )
             })}
+          {extras.map((row) => (
+            <button
+              key={`${row.kind}:${row.id}`}
+              type="button"
+              aria-pressed
+              onClick={() => toggle(row.kind, row.id)}
+              className="flex w-full items-center justify-between border-b border-slate-50 px-1 py-2.5 text-left"
+            >
+              <span>
+                <span className="block text-sm font-medium">{row.label}</span>
+                <span className="text-[11px] text-slate-500">Already assigned · tap to remove</span>
+              </span>
+              <CheckIcon className="h-4 w-4 text-[var(--blue)]" />
+            </button>
+          ))}
         </div>
       </div>
     </div>
