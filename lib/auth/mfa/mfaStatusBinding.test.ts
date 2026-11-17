@@ -20,10 +20,12 @@ afterEach(() => {
 })
 
 /** Token "token-<uid>" verifies as that uid; anything else is refused. */
-function stubAccountsLookup() {
+function stubAccountsLookup(failure?: 'network' | 500 | 503 | 429) {
   process.env.NEXT_PUBLIC_FIREBASE_API_KEY = 'test-key'
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     if (String(input).includes('accounts:lookup')) {
+      if (failure === 'network') throw new TypeError('fetch failed')
+      if (typeof failure === 'number') return new Response('{}', { status: failure })
       const { idToken } = JSON.parse(String(init?.body || '{}')) as { idToken?: string }
       const uid = idToken?.startsWith('token-') ? idToken.slice(6) : ''
       if (!uid) return new Response('{}', { status: 400 })
@@ -33,12 +35,17 @@ function stubAccountsLookup() {
   }) as typeof fetch
 }
 
-async function statusWith(cookie: string, token?: string): Promise<{ verified?: boolean }> {
+async function statusResponse(cookie: string, token?: string): Promise<Response> {
   const headers: Record<string, string> = {}
   if (token) headers.authorization = `Bearer ${token}`
   const request = new NextRequest('http://localhost/api/auth/mfa/status', { headers })
   request.cookies.set(mfaCookieName('ok', shouldSecureMfaCookies(request)), cookie)
-  const response = await status(request)
+  return status(request)
+}
+
+async function statusWith(cookie: string, token?: string): Promise<{ verified?: boolean }> {
+  const response = await statusResponse(cookie, token)
+  assert.equal(response.status, 200)
   return (await response.json()) as { verified?: boolean }
 }
 
@@ -94,4 +101,29 @@ test('mfaOkBelongsTo: only the same uid matches', () => {
   assert.equal(mfaOkBelongsTo(ok, ''), false)
   assert.equal(mfaOkBelongsTo(ok, null), false)
   assert.equal(mfaOkBelongsTo(null, 'userA'), false)
+})
+
+for (const failure of ['network', 500, 503, 429] as const) {
+  test(`status: a valid ok cookie whose token lookup fails (${failure}) answers 503, not "not verified"`, async () => {
+    stubAccountsLookup(failure)
+    const response = await statusResponse(encodeMfaOk('userA', later()), 'token-userA')
+    assert.equal(response.status, 503)
+    const body = (await response.json()) as { verified?: boolean; error?: string }
+    assert.equal(body.verified, undefined)
+    assert.equal(body.error, 'unavailable')
+  })
+}
+
+test('status: a token Auth refuses (400) is "not verified", not 503', async () => {
+  stubAccountsLookup()
+  const body = await statusWith(encodeMfaOk('userA', later()), 'not-a-token')
+  assert.equal(body.verified, false)
+})
+
+test('status: no ok cookie never looks the token up and is "not verified" even when Auth is down', async () => {
+  stubAccountsLookup(503)
+  const request = new NextRequest('http://localhost/api/auth/mfa/status', { headers: { authorization: 'Bearer token-userA' } })
+  const response = await status(request)
+  assert.equal(response.status, 200)
+  assert.equal(((await response.json()) as { verified?: boolean }).verified, false)
 })

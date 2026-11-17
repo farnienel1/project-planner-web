@@ -94,12 +94,24 @@ export async function readJsonBody<T>(
   }
 }
 
-export async function verifyFirebaseIdToken(idToken: string): Promise<FirebaseAuthUser | null> {
-  const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY
-  if (!apiKey || !idToken) return null
+/**
+ * Looks up an ID token with Firebase Auth and says why it failed: `invalid` when Auth refused the token
+ * (a 4xx other than 429, or no account in the answer), `unavailable` when Auth could not be asked or answered
+ * badly (no API key, network error, 429, 5xx, unreadable body) — a caller may retry those.
+ */
+export type FirebaseIdTokenLookup =
+  | { status: 'ok'; user: FirebaseAuthUser }
+  | { status: 'invalid' }
+  | { status: 'unavailable' }
 
+export async function lookupFirebaseIdToken(idToken: string): Promise<FirebaseIdTokenLookup> {
+  if (!idToken) return { status: 'invalid' }
+  const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY
+  if (!apiKey) return { status: 'unavailable' }
+
+  let response: Response
   try {
-    const response = await fetch(
+    response = await fetch(
       `${identityToolkitBase()}/accounts:lookup?key=${encodeURIComponent(apiKey)}`,
       {
         method: 'POST',
@@ -107,23 +119,38 @@ export async function verifyFirebaseIdToken(idToken: string): Promise<FirebaseAu
         body: JSON.stringify({ idToken }),
       }
     )
-    if (!response.ok) return null
+  } catch {
+    return { status: 'unavailable' }
+  }
+  if (!response.ok) {
+    return response.status >= 400 && response.status < 500 && response.status !== 429
+      ? { status: 'invalid' }
+      : { status: 'unavailable' }
+  }
 
-    const data = (await response.json()) as {
-      users?: Array<{ localId?: string; email?: string; emailVerified?: boolean; createdAt?: string }>
-    }
-    const user = data.users?.[0]
-    if (!user?.localId) return null
+  let data: { users?: Array<{ localId?: string; email?: string; emailVerified?: boolean; createdAt?: string }> }
+  try {
+    data = (await response.json()) as typeof data
+  } catch {
+    return { status: 'unavailable' }
+  }
+  const user = data.users?.[0]
+  if (!user?.localId) return { status: 'invalid' }
 
-    return {
+  return {
+    status: 'ok',
+    user: {
       uid: user.localId,
       email: user.email ? user.email.toLowerCase() : null,
       emailVerified: Boolean(user.emailVerified),
       createdAtMs: parseAuthCreatedAtMs(user.createdAt),
-    }
-  } catch {
-    return null
+    },
   }
+}
+
+export async function verifyFirebaseIdToken(idToken: string): Promise<FirebaseAuthUser | null> {
+  const result = await lookupFirebaseIdToken(idToken)
+  return result.status === 'ok' ? result.user : null
 }
 
 export async function requireFirebaseUser(

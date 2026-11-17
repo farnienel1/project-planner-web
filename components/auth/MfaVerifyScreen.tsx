@@ -11,7 +11,9 @@ import {
   clearMfaGate,
   isMfaGateOpen,
   readMfaGate,
+  isMfaStatusUnavailable,
   readMfaStatus,
+  readMfaStatusWithRetry,
   resendEmailMfa,
   safePostMfaPath,
   startEmailMfa,
@@ -51,9 +53,14 @@ export function MfaVerifyScreen() {
     const destination = safePostMfaPath(nextPath || requestedNext, fallback)
     // The verification cookie has to be visible before the dashboard request,
     // otherwise middleware sends the first navigation back here until a refresh.
+    // A 503 / network failure here is "try again", never a reason to stay; the loop is bounded either way.
     for (let attempt = 0; attempt < 6; attempt += 1) {
-      const status = await readMfaStatus()
-      if (status.verified) break
+      try {
+        const status = await readMfaStatus()
+        if (status.verified) break
+      } catch (statusError) {
+        if (!isMfaStatusUnavailable(statusError)) break
+      }
       await new Promise((resolve) => setTimeout(resolve, 200))
     }
     window.location.assign(destination)
@@ -67,7 +74,19 @@ export function MfaVerifyScreen() {
     let cancelled = false
     void (async () => {
       try {
-        const status = await readMfaStatus()
+        let status
+        try {
+          status = await readMfaStatusWithRetry(5)
+        } catch (statusError) {
+          if (cancelled) return
+          if (isMfaStatusUnavailable(statusError)) {
+            // Do not email a code when we could not tell whether this person is already verified.
+            setNotice('')
+            setError('Could not check your sign-in right now. Reload the page to try again.')
+            return
+          }
+          throw statusError
+        }
         if (cancelled) return
         if (status.verified) {
           goToApp(status.next || fallback)

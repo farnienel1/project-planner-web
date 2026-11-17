@@ -173,12 +173,55 @@ export async function clearMfaSession(): Promise<void> {
   clearMfaGate()
 }
 
-export async function readMfaStatus(): Promise<{ pending: boolean; verified: boolean; next?: string }> {
+/** The status check could not be answered right now (server 503 or no network). Try again; never a "not verified". */
+export class MfaStatusUnavailableError extends Error {
+  readonly code = 'mfa_status_unavailable'
+  constructor(message = 'Could not check your sign-in right now. Trying again…') {
+    super(message)
+    this.name = 'MfaStatusUnavailableError'
+  }
+}
+
+export function isMfaStatusUnavailable(error: unknown): error is MfaStatusUnavailableError {
+  return Boolean(
+    error && typeof error === 'object' && 'code' in error && (error as { code: unknown }).code === 'mfa_status_unavailable'
+  )
+}
+
+export type MfaStatus = { pending: boolean; verified: boolean; next?: string }
+
+/**
+ * Throws `MfaStatusUnavailableError` on a 503 or a network failure, so callers retry rather than treat the
+ * person as not verified. Any other answer is read as before.
+ */
+export async function readMfaStatus(): Promise<MfaStatus> {
+  let response: Response
   try {
-    const response = await fetch('/api/auth/mfa/status', { ...FETCH_OPTS, headers: await getClientAuthHeaders() })
-    const data = (await response.json().catch(() => ({}))) as { pending?: boolean; verified?: boolean; next?: string }
-    return { pending: data.pending === true, verified: data.verified === true, next: data.next }
+    response = await fetch('/api/auth/mfa/status', { ...FETCH_OPTS, headers: await getClientAuthHeaders() })
   } catch {
-    return { pending: false, verified: false }
+    throw new MfaStatusUnavailableError()
+  }
+  if (response.status === 503) throw new MfaStatusUnavailableError()
+  const data = (await response.json().catch(() => ({}))) as { pending?: boolean; verified?: boolean; next?: string }
+  return { pending: data.pending === true, verified: data.verified === true, next: data.next }
+}
+
+/** Delay before retry `attempt` (0-based) of an unavailable status check: 1s, 2s, 4s … capped at 15s. */
+export function mfaStatusRetryDelayMs(attempt: number): number {
+  return Math.min(15_000, 1_000 * 2 ** Math.max(0, attempt))
+}
+
+/** `readMfaStatus`, retrying an unavailable answer up to `attempts` times with backoff; rethrows the last one. */
+export async function readMfaStatusWithRetry(
+  attempts = 4,
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+): Promise<MfaStatus> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await readMfaStatus()
+    } catch (error) {
+      if (!isMfaStatusUnavailable(error) || attempt + 1 >= attempts) throw error
+      await sleep(mfaStatusRetryDelayMs(attempt))
+    }
   }
 }
