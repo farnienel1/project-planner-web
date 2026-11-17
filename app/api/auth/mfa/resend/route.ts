@@ -20,6 +20,7 @@ import {
   writeMfaCookie,
   type MfaChallenge,
 } from '@/lib/auth/mfa/mfaCookies'
+import { clearSessionCookie } from '@/lib/auth/mfa/mfaCookiePolicy'
 
 export const runtime = 'nodejs'
 
@@ -70,6 +71,7 @@ export async function POST(request: NextRequest) {
     const response = NextResponse.json({ ok: true, sent: true })
     writeMfaCookie(response.cookies, request, 'challenge', encodeSigned(next), MFA_CODE_TTL_MS)
     writeMfaCookie(response.cookies, request, 'ok', '', 0)
+    clearSessionCookie(response.cookies, request)
     return response
   } catch (error) {
     console.error('[auth/mfa/resend]', error)

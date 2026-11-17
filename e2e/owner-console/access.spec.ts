@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { SEED_PASSWORD } from '../../scripts/owner-console-seed/seedConstants.mjs'
-import { addMfaCookie, apiHeaders, seedUser } from './helpers'
+import { addMfaCookie, apiHeaders, seedUser, SESSION_COOKIE } from './helpers'
 
 /** Spec §1.1 / §6.3.5: only the platform owner gets in; org roles are refused on every page and owner route. */
 const OWNER_ROUTES = [
@@ -54,4 +54,31 @@ test('an org Super Admin with a valid MFA cookie is sent away from /developer', 
   await page.goto('/developer')
   await page.waitForURL((url) => !url.pathname.startsWith('/developer') || url.pathname.startsWith('/developer-login'))
   await expect(page.getByTestId('owner-console')).toHaveCount(0)
+})
+
+/** Owner decision 17 Nov: the page gate needs the MFA cookie AND the Firebase session cookie, for the same uid. */
+test('a valid MFA cookie alone (no session cookie) never opens /dashboard', async ({ page, baseURL }) => {
+  await addMfaCookie(page.context(), baseURL as string, seedUser('superAdmin').uid)
+  await page.goto('/dashboard')
+  await expect(page).toHaveURL(/\/auth\/mfa/)
+})
+
+test('the session cookie is minted for the signed-in uid and an MFA cookie for another uid is refused', async ({ page, baseURL }) => {
+  await page.goto('/login')
+  await page.locator('input[type="email"]').first().fill(seedUser('superAdmin').email)
+  await page.locator('input[type="password"]').first().fill(SEED_PASSWORD)
+  await page.getByRole('button', { name: /^sign in$/i }).click()
+  await page.waitForURL(/\/auth\/mfa/)
+  await addMfaCookie(page.context(), baseURL as string, seedUser('superAdmin').uid)
+  await page.goto('/auth/mfa?next=%2Fdashboard')
+  await page.waitForURL(/\/dashboard(\/|\?|$)/)
+  const session = (await page.context().cookies()).find((cookie) => cookie.name === SESSION_COOKIE)
+  expect(session?.httpOnly).toBe(true)
+  expect(session?.secure).toBe(true)
+  expect(session?.sameSite).toBe('Lax')
+
+  // The same browser now carries an MFA cookie for a different person: the session (super admin) no longer matches.
+  await addMfaCookie(page.context(), baseURL as string, seedUser('operative').uid)
+  await page.goto('/dashboard')
+  await expect(page).toHaveURL(/\/auth\/mfa/)
 })

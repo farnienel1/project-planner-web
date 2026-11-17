@@ -29,6 +29,9 @@ export function mfaOkCookieValue(uid: string, iatMs = Date.now()): string {
 /** `next start` runs with NODE_ENV=production, so the cookie is the Secure `__Host-` one (lib/auth/mfa/mfaCookiePolicy.ts). */
 export const MFA_OK_COOKIE = '__Host-pp_mfa_ok'
 
+/** The Firebase session cookie the status route mints for the same uid (lib/auth/mfa/mfaSessionCookie.ts). */
+export const SESSION_COOKIE = '__Host-pp_session'
+
 export async function addMfaCookie(context: BrowserContext, baseURL: string, uid: string) {
   // Chromium treats http://localhost as a secure origin, so a Secure `__Host-` cookie is stored and sent there.
   const host = new URL(baseURL).hostname
@@ -54,7 +57,9 @@ export async function apiHeaders(request: APIRequestContext, role: SeedRole, wit
 
 /**
  * Signs the owner in through the real login page, then completes the second step with the signed cookie the verify
- * route would write (the emailed code itself is covered by the MFA unit tests; the emulator sends no email).
+ * route would write (the emailed code itself is covered by the MFA unit tests; the emulator sends no email). Opening
+ * /auth/mfa then calls the status route, which mints the Firebase session cookie from the Auth emulator for the same
+ * uid, so the middleware lets /developer through.
  */
 export async function signInOwner(page: Page, baseURL: string) {
   await page.goto('/developer-login')

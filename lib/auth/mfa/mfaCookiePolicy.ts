@@ -2,8 +2,11 @@ export const MFA_OK_COOKIE_LEGACY = 'pp_mfa_ok'
 export const MFA_CHALLENGE_COOKIE_LEGACY = 'pp_mfa_challenge'
 export const MFA_OK_COOKIE_HOST = '__Host-pp_mfa_ok'
 export const MFA_CHALLENGE_COOKIE_HOST = '__Host-pp_mfa_challenge'
+/** The Firebase session cookie that binds the MFA pass to the signed-in Firebase uid (lib/auth/mfa/mfaSessionCookie.ts). */
+export const MFA_SESSION_COOKIE_LEGACY = 'pp_session'
+export const MFA_SESSION_COOKIE_HOST = '__Host-pp_session'
 
-export type MfaCookieKind = 'ok' | 'challenge'
+export type MfaCookieKind = 'ok' | 'challenge' | 'session'
 
 type HeaderReader = { get(name: string): string | null }
 
@@ -24,10 +27,10 @@ export function shouldSecureMfaCookies(request?: { nextUrl?: { protocol?: string
   return process.env.NODE_ENV === 'production'
 }
 
-export function mfaCookieNames(secure: boolean): { ok: string; challenge: string } {
+export function mfaCookieNames(secure: boolean): { ok: string; challenge: string; session: string } {
   return secure
-    ? { ok: MFA_OK_COOKIE_HOST, challenge: MFA_CHALLENGE_COOKIE_HOST }
-    : { ok: MFA_OK_COOKIE_LEGACY, challenge: MFA_CHALLENGE_COOKIE_LEGACY }
+    ? { ok: MFA_OK_COOKIE_HOST, challenge: MFA_CHALLENGE_COOKIE_HOST, session: MFA_SESSION_COOKIE_HOST }
+    : { ok: MFA_OK_COOKIE_LEGACY, challenge: MFA_CHALLENGE_COOKIE_LEGACY, session: MFA_SESSION_COOKIE_LEGACY }
 }
 
 export function mfaCookieName(kind: MfaCookieKind, secure: boolean): string {
@@ -84,6 +87,18 @@ export function clearMfaCookies(
   const secure = request ? shouldSecureMfaCookies(request) : shouldSecureMfaCookies()
   cookies.set(MFA_OK_COOKIE_HOST, '', expireMfaCookieOptions(true))
   cookies.set(MFA_CHALLENGE_COOKIE_HOST, '', expireMfaCookieOptions(true))
+  cookies.set(MFA_SESSION_COOKIE_HOST, '', expireMfaCookieOptions(true))
   cookies.set(MFA_OK_COOKIE_LEGACY, '', expireMfaCookieOptions(secure))
   cookies.set(MFA_CHALLENGE_COOKIE_LEGACY, '', expireMfaCookieOptions(secure))
+  cookies.set(MFA_SESSION_COOKIE_LEGACY, '', expireMfaCookieOptions(secure))
+}
+
+/** Expire the session cookie only (an MFA reset, a user switch, a refused or mismatched session). */
+export function clearSessionCookie(
+  cookies: CookieSetter,
+  request?: { nextUrl?: { protocol?: string }; headers: HeaderReader }
+) {
+  const secure = request ? shouldSecureMfaCookies(request) : shouldSecureMfaCookies()
+  cookies.set(MFA_SESSION_COOKIE_HOST, '', expireMfaCookieOptions(true))
+  cookies.set(MFA_SESSION_COOKIE_LEGACY, '', expireMfaCookieOptions(secure))
 }

@@ -51,9 +51,12 @@ for (const path of ['/developer', '/developer/organisations', '/dashboard', '/da
   })
 }
 
-test('middleware: an ok cookie with kind ok opens /developer', async () => {
+test('middleware: an ok cookie with kind ok but no session cookie still goes to the code screen', async () => {
+  // Owner decision 17 Nov: the page gate also needs the Firebase session cookie for the same uid
+  // (lib/auth/mfa/mfaSessionGate.test.ts covers the cookie pair).
   const response = await middleware(withOkCookie('http://localhost/developer', encodeMfaOk('u1', Date.now() + 60_000)))
-  assert.equal(response.headers.get('location'), null)
+  assert.equal(response.status, 307)
+  assert.match(response.headers.get('location') || '', /mfa/i)
 })
 
 test('status route: a challenge cookie in the ok slot is not "verified"', async () => {

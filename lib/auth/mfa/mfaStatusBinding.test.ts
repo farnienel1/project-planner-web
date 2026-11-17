@@ -12,9 +12,20 @@ import { GET as status } from '../../../app/api/auth/mfa/status/route.ts'
 
 const realFetch = globalThis.fetch
 const realKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY
+const realProject = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID
+const realEmulators = process.env.NEXT_PUBLIC_USE_EMULATORS
+const realAuthHost = process.env.FIREBASE_AUTH_EMULATOR_HOST
+
+function restore(name: string, value: string | undefined) {
+  if (value === undefined) delete process.env[name]
+  else process.env[name] = value
+}
 
 afterEach(() => {
   globalThis.fetch = realFetch
+  restore('NEXT_PUBLIC_FIREBASE_PROJECT_ID', realProject)
+  restore('NEXT_PUBLIC_USE_EMULATORS', realEmulators)
+  restore('FIREBASE_AUTH_EMULATOR_HOST', realAuthHost)
   if (realKey === undefined) delete process.env.NEXT_PUBLIC_FIREBASE_API_KEY
   else process.env.NEXT_PUBLIC_FIREBASE_API_KEY = realKey
 })
@@ -22,7 +33,15 @@ afterEach(() => {
 /** Token "token-<uid>" verifies as that uid; anything else is refused. */
 function stubAccountsLookup(failure?: 'network' | 500 | 503 | 429) {
   process.env.NEXT_PUBLIC_FIREBASE_API_KEY = 'test-key'
+  // The session cookie is minted against the (stubbed) Auth emulator, so no service account is needed here.
+  process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID = 'demo-project'
+  process.env.NEXT_PUBLIC_USE_EMULATORS = '1'
+  process.env.FIREBASE_AUTH_EMULATOR_HOST = '127.0.0.1:9099'
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes(':createSessionCookie')) {
+      const { idToken } = JSON.parse(String(init?.body || '{}')) as { idToken?: string }
+      return new Response(JSON.stringify({ sessionCookie: `session-for-${idToken}` }))
+    }
     if (String(input).includes('accounts:lookup')) {
       if (failure === 'network') throw new TypeError('fetch failed')
       if (typeof failure === 'number') return new Response('{}', { status: failure })
@@ -57,7 +76,7 @@ test('status: ok cookie of user A with the ID token of user B is not verified', 
   assert.equal(body.verified, false)
 })
 
-test('status: ok cookie and ID token of the same user is verified', async () => {
+test('status: ok cookie and ID token of the same user is verified (and mints the session cookie)', async () => {
   stubAccountsLookup()
   const body = await statusWith(encodeMfaOk('userA', later(), Date.now()), 'token-userA')
   assert.equal(body.verified, true)
