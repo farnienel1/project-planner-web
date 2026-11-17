@@ -18,7 +18,15 @@ import {
   parseHolidayDocument,
   writeMetadataFields,
 } from '@/lib/canonical'
-import { forgetOrgCollectionDoc, subscribeOrgCollectionLoaded } from '@/lib/firebase/subscribeOrgCollection'
+import {
+  forgetOrgCollectionDoc,
+  subscribeOrgCollectionLoaded,
+  unsubscribeOrgCollection,
+  type OrgCollectionDoc,
+} from '@/lib/firebase/subscribeOrgCollection'
+import { forgetOrgPlanDoc, subscribeOrgPlan, unsubscribeOrgPlan } from '@/lib/firebase/subscribeOrgPlan'
+import { leavePlanInputs, leavePlanParts, webJobAccessViewer } from '@/lib/access/readPlan'
+import { useAuthStore } from '@/lib/stores/authStore'
 import { liveResultStillCurrent } from '@/lib/firebase/liveResult'
 import type { HolidayBooking, HolidayStatus, HolidayTimeSlot } from '@/types'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
@@ -143,18 +151,39 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
   loadBookings: async (organizationId) => {
     if (!organizationId) return
     if (get().loadedOrgId !== organizationId) set({ loading: true, error: null })
+    // Rulebook 1.56.0 §9 / §17: the readPlanSync keeps the leave plan's own ids current (re-plans on roster changes).
+    void import('@/lib/access/readPlanSync').then((sync) => sync.startReadPlanSync()).catch(() => undefined)
+    const onDocs = (docs: OrgCollectionDoc[], meta?: { authoritative: boolean }) => {
+      if (!liveResultStillCurrent(organizationId)) return
+      const bookings = docs
+        .map((entry) => mapHolidayBooking(entry.id, entry.data, organizationId))
+        .filter((item): item is HolidayBooking => item !== null)
+        .sort((a, b) => b.startDate.getTime() - a.startDate.getTime())
+      const previous = holidayOrgId === organizationId ? get().bookings : []
+      const kept = retainScopedRows(`holidayBookings:${organizationId}`, previous, bookings, meta)
+      holidayOrgId = organizationId
+      set({ bookings: kept, loading: false, error: null, loadedOrgId: organizationId })
+    }
     try {
-      await subscribeOrgCollectionLoaded(HOLIDAY_LISTENER_KEY, organizationId, 'holidayBookings', (docs, meta) => {
-        if (!liveResultStillCurrent(organizationId)) return
-        const bookings = docs
-          .map((entry) => mapHolidayBooking(entry.id, entry.data, organizationId))
-          .filter((item): item is HolidayBooking => item !== null)
-          .sort((a, b) => b.startDate.getTime() - a.startDate.getTime())
-        const previous = holidayOrgId === organizationId ? get().bookings : []
-        const kept = retainScopedRows(`holidayBookings:${organizationId}`, previous, bookings, meta)
-        holidayOrgId = organizationId
-        set({ bookings: kept, loading: false, error: null, loadedOrgId: organizationId })
-      })
+      // Rulebook 1.56.0 (`leaveQueryPlan`, owner answers 17 Nov Q2): admins and managers keep the whole-collection
+      // listener; an operative (and operative mode) listens only to their own leave — never the whole collection.
+      const user = useAuthStore.getState().user
+      const parts = leavePlanParts(webJobAccessViewer(user), leavePlanInputs().ownIds, user?.email ?? null)
+      if (parts === null) {
+        unsubscribeOrgPlan(HOLIDAY_LISTENER_KEY)
+        await subscribeOrgCollectionLoaded(HOLIDAY_LISTENER_KEY, organizationId, 'holidayBookings', onDocs)
+      } else {
+        unsubscribeOrgCollection(HOLIDAY_LISTENER_KEY)
+        let failure: { message: string } | null = null
+        await subscribeOrgPlan(HOLIDAY_LISTENER_KEY, organizationId, 'holidayBookings', parts, onDocs, (error) => {
+          failure = error
+        })
+        if (failure) throw failure
+        if (parts.length === 0 && liveResultStillCurrent(organizationId)) {
+          holidayOrgId = organizationId
+          set({ bookings: [], loading: false, error: null, loadedOrgId: organizationId })
+        }
+      }
       set({ loading: false })
     } catch (error: unknown) {
       set({
@@ -200,6 +229,7 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
     await deleteDoc(doc(db, 'organizations', organizationId, 'holidayBookings', id))
     markRowsRemoved(`holidayBookings:${organizationId}`, [id])
     forgetOrgCollectionDoc(HOLIDAY_LISTENER_KEY, organizationId, id)
+    forgetOrgPlanDoc(HOLIDAY_LISTENER_KEY, organizationId, id)
     if (!liveResultStillCurrent(organizationId)) return
     set({ bookings: get().bookings.filter((b) => b.id !== id) })
   },

@@ -4,11 +4,12 @@
  * the stores into their inputs and their query shapes into Firestore constraints, so the web app runs exactly the
  * queries iOS runs.
  */
-import { where, type QueryConstraint } from 'firebase/firestore'
+import { or, where, type QueryConstraint } from 'firebase/firestore'
 import {
   bookingIdsForAccount,
   bookingQueryPlan,
   jobQueryPlan,
+  leaveQueryPlan,
   type BookingPermissionCollection,
   type BookingQuery,
   type JobAccessViewer,
@@ -97,4 +98,44 @@ export function setBookingPlanInputs(visibleJobIds: ReadonlyArray<string>, ownBo
 
 export function bookingPlanInputs(): { visibleJobIds: string[]; ownBookingIds: string[] } {
   return { visibleJobIds: planVisibleJobIds, ownBookingIds: planOwnBookingIds }
+}
+
+/**
+ * Rulebook 1.56.0 §9 / §17 (`leaveQueryPlan`): the annual-leave parts for the viewer, or null when they read every
+ * leave record (admins, super admins, managers: the existing whole-collection listener). An operative gets one
+ * `userId in values OR operativeId in values` query per chunk of their own ids — never the whole collection, so the
+ * Phase B rules (switch `operativeOwnLeave`) can refuse colleagues' leave without breaking this app.
+ */
+export function leavePlanParts(
+  viewer: JobAccessViewer | null,
+  ownIds: ReadonlyArray<string>,
+  email: string | null | undefined
+): OrgPlanPart[] | null {
+  const plan = leaveQueryPlan(viewer, { ownIds, email })
+  if (plan.readsEveryLeave) return null
+  return plan.queries.flatMap((query) => {
+    if (query.kind !== 'own') return []
+    const [byUser, byOperative] = query.anyOf
+    return [
+      {
+        id: `own:${byUser.values.join(',')}`,
+        filter: or(where(byUser.field, 'in', byUser.values), where(byOperative.field, 'in', byOperative.values)),
+      },
+    ]
+  })
+}
+
+/** The leave plan's own ids (the signed-in user's `bookingIdsForAccount`), set by `readPlanSync` like the booking inputs. */
+let planOwnLeaveIds: string[] = []
+
+/** True when the own ids changed (the leave listener must re-plan). */
+export function setLeavePlanInputs(ownIds: ReadonlyArray<string>): boolean {
+  const own = [...new Set(ownIds.filter(Boolean))].sort()
+  if (own.join('|') === planOwnLeaveIds.join('|')) return false
+  planOwnLeaveIds = own
+  return true
+}
+
+export function leavePlanInputs(): { ownIds: string[] } {
+  return { ownIds: planOwnLeaveIds }
 }

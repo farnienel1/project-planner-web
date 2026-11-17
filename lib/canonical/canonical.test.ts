@@ -17168,3 +17168,130 @@ test('1.55.0 weekly report check line names the revision used ("· REV 1")', () 
   const signedOff = { ...sheet, managerSignedAt: new Date('2026-11-16T11:00:00Z') }
   assert.match(String(wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...base, sheet: signedOff, revision: 1 }] }).people[0].check?.label), /^Timesheet: Signed · REV 1/)
 })
+
+// MARK: - 1.56.0: operatives read only their own annual leave (§9, §16, §17, §18; owner answers 17 Nov)
+
+import {
+  OWN_LEAVE_IDS_PER_QUERY as l156PerQuery,
+  leaveQueryPlan as l156Plan,
+  leaveQueryValues as l156Values,
+  bookingIdsForAccount as l156BookingIds,
+  leaveRecordsForAccount as l156LeaveRecords,
+  operativeOwnLeaveEnabled as l156Switch,
+  OPERATIVE_OWN_LEAVE_SWITCH_FIELD as l156SwitchField,
+  OPERATIVE_OWN_LEAVE_ORGANIZATION_IDS_FIELD as l156SwitchListField,
+} from './index'
+
+const l156Admin = { isAdmin: true, isSuperAdmin: false, isManager: false, isOperativeMode: false }
+const l156Manager = { isAdmin: false, isSuperAdmin: false, isManager: true, isOperativeMode: false }
+const l156Operative = { isAdmin: false, isSuperAdmin: false, isManager: false, isOperativeMode: true }
+
+test('1.56.0 leaveQueryPlan: admins, super admins and managers read the whole holidayBookings collection', () => {
+  for (const role of [l156Admin, { ...l156Admin, isAdmin: false, isSuperAdmin: true }, l156Manager]) {
+    const plan = l156Plan({ role, ids: ['u'], uid: 'u' } as never, { ownIds: ['x'], email: 'u@x.com' })
+    assert.equal(plan.readsEveryLeave, true)
+    assert.deepEqual(plan.queries, [{ collection: 'holidayBookings', kind: 'all' }])
+  }
+})
+
+test('1.56.0 leaveQueryPlan: an operative (and a manager in operative mode) queries only their own leave', () => {
+  for (const role of [l156Operative, { ...l156Manager, isOperativeMode: true }, { ...l156Operative, isOperativeMode: false }]) {
+    const plan = l156Plan({ role, ids: ['UID-1'], uid: 'UID-1' } as never, { ownIds: ['UID-1', 'OP-ROW', 'old-invite'], email: ' Sam@Example.com ' })
+    assert.equal(plan.readsEveryLeave, false)
+    assert.equal(plan.queries.length, 1)
+    const query = plan.queries[0]
+    assert.equal(query.kind, 'own')
+    if (query.kind !== 'own') return
+    const values = ['UID-1', 'OP-ROW', 'old-invite', 'Sam@Example.com', 'sam@example.com']
+    assert.deepEqual(query.anyOf, [
+      { field: 'userId', op: 'in', values },
+      { field: 'operativeId', op: 'in', values },
+    ])
+  }
+})
+
+test('1.56.0 leaveQueryPlan: no viewer, role or uid → no query (never the whole collection)', () => {
+  assert.deepEqual(l156Plan(null), { readsEveryLeave: false, queries: [] })
+  assert.deepEqual(l156Plan({ ids: ['u'] } as never), { readsEveryLeave: false, queries: [] })
+  assert.deepEqual(l156Plan({ role: l156Operative, ids: [] } as never), { readsEveryLeave: false, queries: [] })
+})
+
+test('1.56.0 leaveQueryPlan: values chunk at OWN_LEAVE_IDS_PER_QUERY, within the 30-disjunct limit', () => {
+  assert.ok(l156PerQuery * 2 <= 30)
+  const ids = Array.from({ length: 13 }, (_, i) => `id-${i}`)
+  const plan = l156Plan({ role: l156Operative, ids: ['uid'], uid: 'uid' } as never, { ownIds: ids })
+  assert.deepEqual(plan.queries.map((q) => (q.kind === 'own' ? q.anyOf[0].values.length : 0)), [10, 4])
+})
+
+test('1.56.0 leaveQueryValues: stored case kept, exact de-dupe, email as stored and lower-cased, blanks dropped', () => {
+  assert.deepEqual(l156Values('A', ['a', 'A', '  ', 'B'], 'X@Y.com'), ['A', 'a', 'B', 'X@Y.com', 'x@y.com'])
+  assert.deepEqual(l156Values('A', [], 'not-an-email'), ['A'])
+  assert.deepEqual(l156Values('', null, null), [])
+})
+
+test('1.56.0 leaveQueryPlan: every record leaveRecordsForAccount gives the person (stored in the ids as written) is matched by the query', () => {
+  const account = { id: 'UID-1', email: 'Sam@Example.com', formerIds: ['invite-1'] }
+  const operatives = [{ id: 'OP-ROW', email: 'sam@example.com' }, { id: 'OTHER', email: 'pat@example.com' }]
+  const ownIds = l156BookingIds(account, operatives)
+  const plan = l156Plan({ role: l156Operative, ids: ['UID-1'], uid: 'UID-1' } as never, { ownIds, email: account.email })
+  const records = [
+    { id: 'r1', userId: 'UID-1', operativeId: null },
+    { id: 'r2', userId: null, operativeId: 'OP-ROW' },
+    { id: 'r3', userId: 'invite-1', operativeId: null },
+    { id: 'r4', userId: 'sam@example.com', operativeId: null },
+    { id: 'r5', userId: 'colleague', operativeId: 'OTHER' },
+  ]
+  const queried = new Set(
+    records
+      .filter((r) => plan.queries.some((q) => q.kind === 'own' && q.anyOf.some((f) => f.values.includes(String((r as Record<string, unknown>)[f.field] ?? '')))))
+      .map((r) => r.id)
+  )
+  const own = new Set(l156LeaveRecords(records, account, operatives).map((r) => r.id))
+  assert.deepEqual([...queried].sort(), [...own].sort())
+  assert.deepEqual([...queried].sort(), ['r1', 'r2', 'r3', 'r4'])
+})
+
+test('1.56.0 operativeOwnLeaveEnabled: exactly true, or the organisation listed; missing → off', () => {
+  assert.equal(l156SwitchField, 'operativeOwnLeave')
+  assert.equal(l156SwitchListField, 'operativeOwnLeaveOrganizationIds')
+  assert.equal(l156Switch(null, 'org'), false)
+  assert.equal(l156Switch({}, 'org'), false)
+  assert.equal(l156Switch({ operativeOwnLeave: 'true' }, 'org'), false)
+  assert.equal(l156Switch({ operativeOwnLeave: true }, 'org'), true)
+  assert.equal(l156Switch({ operativeOwnLeaveOrganizationIds: ['org'] }, 'org'), true)
+  assert.equal(l156Switch({ operativeOwnLeaveOrganizationIds: ['ORG'] }, 'org'), false)
+  assert.equal(l156Switch({ operativeOwnLeaveOrganizationIds: ['org'] }, ''), false)
+})
+
+import { leaveLegacyKeyFindings as l156Findings } from './index'
+
+test('1.56.0 leaveLegacyKeyFindings: lists an operative\'s leave the own-leave query would miss, with the reason', () => {
+  const users = [
+    { id: 'UID-OP', email: 'op@x.com', role: 'operative', operativeMode: true, sameEmailUserIds: ['second-doc'] },
+    { id: 'UID-MGR', email: 'm@x.com', role: 'manager', manager: true },
+    { id: 'GHOST', email: '', role: 'operative', operativeMode: true, ghost: true },
+  ]
+  const operatives = [{ id: 'OP-ROW', email: 'Op@X.com' }]
+  const leave = (id: string, extra: Record<string, unknown>) => ({ id, data: { startDate: '2026-11-20', status: 'approved', ...extra } })
+  const findings = l156Findings({
+    users,
+    operatives,
+    leaveDocs: [
+      leave('ok-user', { userId: 'UID-OP' }),
+      leave('ok-row', { operativeId: 'OP-ROW' }),
+      leave('ok-email', { userId: 'op@x.com' }),
+      leave('case', { userId: 'uid-op' }),
+      leave('legacy', { user_id: 'UID-OP' }),
+      leave('nested', { user: { id: 'UID-OP' } }),
+      leave('same-email', { userId: 'second-doc' }),
+      leave('manager', { user_id: 'UID-MGR' }),
+      leave('ghost', { user_id: 'GHOST' }),
+      leave('colleague', { userId: 'someone-else' }),
+    ],
+  })
+  assert.deepEqual(
+    findings.map((f) => `${f.leaveId}:${f.reason}`).sort(),
+    ['case:letterCase', 'legacy:legacyKey', 'nested:legacyKey', 'same-email:sameEmailAccount']
+  )
+  assert.ok(findings.every((f) => f.personId === 'UID-OP' && f.fix.includes('UID-OP')))
+})

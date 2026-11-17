@@ -186,3 +186,30 @@ export function dataCheckPanelEnabled(
 export function dataCheckPanelVisible(input: { viewerIsAdmin: boolean; dataCheckPanelEnabled?: boolean | null }): boolean {
   return input.viewerIsAdmin === true && input.dataCheckPanelEnabled === true
 }
+
+// MARK: - Operatives read only their own annual leave (rulebook §9, §16, §18; 1.56.0, owner answers 17 Nov)
+
+/**
+ * The `platformConfig/app` switch that narrows the `holidayBookings` read rule so an operative (and operative mode)
+ * reads only their own leave records (owner answers 17 Nov: Q2 operatives see only their own leave; Q3 a new hidden
+ * switch, changed only by the platform owner). On for every organisation when `operativeOwnLeave` is exactly `true`,
+ * or for one organisation when its id (exactly as stored) is in `operativeOwnLeaveOrganizationIds`; missing → off.
+ * **Read by the security rules only** (Phase B, a later rules release): the apps plan an operative's own-leave queries
+ * whatever it says (`leaveQueryPlan`, Phase A 1.56.0), so the switch can be turned on or off with no app change and
+ * rollback is data, never a deploy. Admins and managers read every leave record either way.
+ */
+export const OPERATIVE_OWN_LEAVE_SWITCH_FIELD = 'operativeOwnLeave'
+export const OPERATIVE_OWN_LEAVE_ORGANIZATION_IDS_FIELD = 'operativeOwnLeaveOrganizationIds'
+
+/** `operativeOwnLeave` exactly `true`, or the organisation's id in `operativeOwnLeaveOrganizationIds`; else off. */
+export function operativeOwnLeaveEnabled(
+  config: Record<string, unknown> | null | undefined,
+  organizationId: string | null | undefined
+): boolean {
+  return platformSwitchOn(
+    config,
+    organizationId,
+    OPERATIVE_OWN_LEAVE_SWITCH_FIELD,
+    OPERATIVE_OWN_LEAVE_ORGANIZATION_IDS_FIELD
+  )
+}

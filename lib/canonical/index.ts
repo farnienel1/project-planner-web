@@ -1275,6 +1275,10 @@ export {
   OWN_BOOKING_IDS_PER_QUERY,
   WARNING_SCOPE_ALL,
   bookingQueryPlan,
+  // 1.56.0: annual leave reads (§9, §17).
+  OWN_LEAVE_IDS_PER_QUERY,
+  leaveQueryPlan,
+  leaveQueryValues,
   ENFORCED_READS_ACTIVE,
   canChangeJobManagers,
   canCreateJob,
@@ -1302,6 +1306,8 @@ export type {
   JobManagerRosterRow,
   BookingQuery,
   BookingQueryPlan,
+  LeaveQuery,
+  LeaveQueryPlan,
   JobCollection,
   JobQuery,
   JobQueryPlan,
@@ -1430,6 +1436,10 @@ export {
   GHOST_ACCOUNTS_SWITCH_FIELD,
   GHOST_ACCOUNTS_ORGANIZATION_IDS_FIELD,
   ghostAccountsEnabled,
+  // 1.56.0: operatives read only their own annual leave (§9, §16, §18).
+  OPERATIVE_OWN_LEAVE_SWITCH_FIELD,
+  OPERATIVE_OWN_LEAVE_ORGANIZATION_IDS_FIELD,
+  operativeOwnLeaveEnabled,
 } from './platformConfig'
 export { LEAVE_YEAR_MONTHS_MESSAGE, leaveYearEndMonth, validateAnnualLeaveDefaults, validateLeaveYearMonths } from './annualLeaveBalance'
 export { PAY_STANDARD_DAY_MIN_HOURS } from './payRate'
@@ -2267,3 +2277,7 @@ export {
 } from './timesheetRevisions'
 export type { TimesheetRevisionLiveLine } from './timesheetRevisions'
 export type { TimesheetRevisionCheck, TimesheetRevisionDifference, TimesheetVersion, TimesheetVersionRef } from './timesheetRevisions'
+
+// 1.56.0: leave records an operative would stop seeing under their own-leave query (owner Q4: fix the data).
+export { leaveLegacyKeyFindings } from './leaveReadAudit'
+export type { LeaveReadAuditFinding, LeaveReadAuditUser } from './leaveReadAudit'
