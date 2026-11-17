@@ -1790,3 +1790,5 @@ export {
 
 // 1.56.0: leave records an operative would stop seeing under their own-leave query (owner Q4: fix the data).
 export { leaveLegacyKeyFindings } from './leaveReadAudit'
+// 1.62.0 §8: User Timesheets → Awaiting sign-off / Signed off from every stored sheet, however old (owner decision 17 Nov).
+export { userTimesheetQueue, userTimesheetQueueCounts } from './userTimesheetQueue'

@@ -11,7 +11,7 @@ import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
 import { showsMyTimesheets, timesheetDaysForPerson, type TimesheetPerson } from '@/lib/canonical/peopleDocuments'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
-function timesheetPerson(
+export function timesheetPerson(
   user: Pick<User, 'employmentType' | 'employmentTypeTransitionFrom' | 'employmentTypeEffectiveAt'> &
     Partial<Pick<User, 'isActive' | 'email' | 'firstName' | 'surname' | 'ghost'>>
 ): TimesheetPerson {

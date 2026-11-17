@@ -1,7 +1,7 @@
 {
-  "rulebookVersion": "1.58.0",
-  "rulebookSha256": "021d024080428fee353e0a264d42ff8a1e0a6bf0a19638d1ebfa11f9e6e414c8",
-  "bundleSha256": "ed36051c3eda321e195501d2ce00f3a1b54b4e6c1e993aaf20aed2277abdefa9",
+  "rulebookVersion": "1.62.0",
+  "rulebookSha256": "ad6dea37d1724e70296148940138b7b89b156027103deab20f269e664d895852",
+  "bundleSha256": "b05aeb9fed00324a2690c6dafbf85db64fd703a986cbe1d18159338c6378ee39",
   "crossPlatformContractSha256": "5b2615b5540b55f716d40617dd791dbcda6290348ef18951186f47e2e5b7cd20",
   "dataParityFixtureSha256": "c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f",
   "exports": [
@@ -1779,6 +1779,8 @@
     "userPermissionFlag",
     "userProfileWriteFields",
     "userRosterSegment",
+    "userTimesheetQueue",
+    "userTimesheetQueueCounts",
     "userTimesheetSubjects",
     "usersMissingEmploymentType",
     "usersMissingLevel",

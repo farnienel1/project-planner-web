@@ -6,10 +6,22 @@
  */
 import { listSelectablePayPeriods, periodStartKey } from '@/lib/timesheets/paymentRunCopy'
 import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
-import { currentPeriodTimesheetMembers } from '@/lib/timesheets/timesheetHubStats'
-import { normalizeDocumentId, personIdSet } from '@/lib/canonical'
+import {
+  normalizeDocumentId,
+  personIdSet,
+  timesheetStoredStartDayKey,
+  userTimesheetQueue,
+  type TimesheetListBucket,
+  type UserTimesheetQueueMember,
+  type UserTimesheetQueueSheet,
+} from '@/lib/canonical'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
-import { dayKey } from '@/lib/ios-parity/londonTime'
+import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
+import { userTimesheetAccessInput } from '@/lib/permissions'
+import { timesheetPerson } from '@/lib/timesheets/timesheetPayrollPolicy'
+import { userTimesheetSelfSigned } from '@/lib/timesheets/timesheetApprovalPolicy'
+import { timesheetStatusFieldsFromDraft } from '@/lib/timesheets/timesheetHubStats'
+import { timesheetDraftHasActivity, type TimesheetQueueStoredSheet } from '@/lib/timesheets/timesheetStorage'
 import type { OrgInvoicingSettings } from '@/lib/settings/organizationSettings'
 import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import type { User } from '@/types'
@@ -82,43 +94,6 @@ export function timesheetOwnerResolver(
   }
 }
 
-/**
- * Re-keys the sheets loaded by their stored `userId` to the roster members of `groups`: a member's own id first, then
- * any id they go by (a sheet filed under a former invite id or a second users document on their email).
- */
-export function draftsForMembers(
-  groups: ReadonlyArray<ReadonlyArray<User>>,
-  stored: ReadonlyMap<string, TimesheetDraft>,
-  roster: ReadonlyArray<User>
-): Map<string, TimesheetDraft> {
-  const byKey = new Map<string, TimesheetDraft>()
-  for (const [userId, draft] of stored) {
-    const key = normalizeDocumentId(userId)
-    if (key && !byKey.has(key)) byKey.set(key, draft)
-  }
-  const out = new Map<string, TimesheetDraft>()
-  const members = groups.flat()
-  const memberKeys = new Set(members.map((member) => normalizeDocumentId(member.id)))
-  for (const member of members) {
-    const own = byKey.get(normalizeDocumentId(member.id))
-    if (own) {
-      out.set(member.id, own)
-      continue
-    }
-    for (const id of timesheetMemberIds(member, roster)) {
-      const key = normalizeDocumentId(id)
-      // Another listed member's own sheet is theirs, never borrowed.
-      if (!key || memberKeys.has(key)) continue
-      const hit = byKey.get(key)
-      if (hit) {
-        out.set(member.id, hit)
-        break
-      }
-    }
-  }
-  return out
-}
-
 export type TimesheetQueueRow = {
   /** `memberId|start|end` — one row per person and pay run. */
   key: string
@@ -127,39 +102,72 @@ export type TimesheetQueueRow = {
   draft: TimesheetDraft
 }
 
+type BookingChangeOf = (
+  member: User,
+  draft: TimesheetDraft,
+  run: PayRun
+) => { reopened?: boolean | null; waitingFor?: 'person' | 'lineManager' | null } | null
+
+/** A queue row with the rulebook's bucket (`unsigned`, `awaiting`, `signed` or `exported`). */
+export type TimesheetQueueBucketRow = TimesheetQueueRow & { bucket: TimesheetListBucket }
+
 /**
- * The Awaiting / Signed off rows over several pay runs: per run, the members `currentPeriodTimesheetMembers` puts in
- * `bucket` (the rulebook's `timesheetListBucket`, with that run's booking change), newest run first. An exported sheet
- * is never in these buckets, so a run's rows disappear once exported.
+ * Rulebook 1.62.0 §8 (owner decision 17 Nov): User Timesheets → Awaiting sign-off / Signed off and their counts, from
+ * every stored sheet of the viewer's people, however old — `userTimesheetQueue` decides who, one row per person and pay
+ * run, PAYE runs, revisions and the bucket. This only shapes the web roster and sheets into its input and maps its rows
+ * back. A sheet's booking change is worked out only for a signed, unexported sheet (`bookingChange`, which reads a run
+ * whose bookings are not loaded as not changed). A stored sheet with no end day takes the end of the payment run that
+ * starts on its start day.
  */
-export function timesheetQueueRows(input: {
-  runs: ReadonlyArray<PayRun>
-  groupsFor: (run: PayRun) => User[][]
-  draftsFor: (run: PayRun) => ReadonlyMap<string, TimesheetDraft> | undefined
-  bucket: 'awaiting' | 'signed'
+export function userTimesheetQueueRows(input: {
+  viewer: User
   users: ReadonlyArray<User>
+  sheets: ReadonlyArray<TimesheetQueueStoredSheet>
+  invoicing: OrgInvoicingSettings
   timeZone: string
-  bookingChange?: (member: User, draft: TimesheetDraft, run: PayRun) => { reopened?: boolean | null; waitingFor?: 'person' | 'lineManager' | null } | null
-}): TimesheetQueueRow[] {
-  const rows: TimesheetQueueRow[] = []
-  const runs = [...input.runs].sort((a, b) => b.start.getTime() - a.start.getTime())
-  for (const run of runs) {
-    const drafts = input.draftsFor(run)
-    if (!drafts || drafts.size === 0) continue
-    const members = currentPeriodTimesheetMembers(
-      input.groupsFor(run),
-      drafts,
-      input.bucket,
-      input.users,
-      input.bookingChange ? (member, draft) => input.bookingChange!(member, draft, run) : undefined
-    )
-    for (const member of members) {
-      const draft = drafts.get(member.id)
-      if (!draft) continue
-      rows.push({ key: `${member.id}|${payRunKey(run, input.timeZone)}`, member, period: run, draft })
+  bookingChange?: BookingChangeOf
+}): TimesheetQueueBucketRow[] {
+  const { viewer, timeZone } = input
+  const users = [...input.users]
+  const access = userTimesheetAccessInput(viewer, users)
+  const byId = new Map(users.map((member) => [member.id, member]))
+  const members: UserTimesheetQueueMember[] = access.members.map((member) => {
+    const user = byId.get(member.id)
+    if (!user) return member
+    return {
+      ...member,
+      ...timesheetPerson(user),
+      ghost: member.ghost,
+      email: user.email,
+      formerUserIds: user.formerUserIds ?? [],
+      sameEmailUserIds: (user as { sameEmailUserIds?: string[] }).sameEmailUserIds ?? [],
+      timesheetSelfSigned: userTimesheetSelfSigned(user, users),
     }
-  }
-  return rows
+  })
+  const owner = timesheetOwnerResolver(users, users)
+  const sheets: UserTimesheetQueueSheet[] = input.sheets.map((sheet) => {
+    const startDayKey = timesheetStoredStartDayKey(sheet.weekStart, timeZone) || dayKey(sheet.weekStart, timeZone)
+    const endDayKey = sheet.endDayKey || dayKey(computeInvoicingPeriod(sheet.weekStart, input.invoicing, timeZone).end, timeZone)
+    const status = timesheetStatusFieldsFromDraft(sheet.draft)
+    const member = status.exportedAtMs == null && input.bookingChange ? owner(sheet.userId) : null
+    const run = { start: dateFromDayKey(startDayKey, timeZone), end: dateFromDayKey(endDayKey, timeZone) }
+    return {
+      userId: sheet.userId,
+      startDayKey,
+      endDayKey,
+      status,
+      documentId: sheet.documentId,
+      hasActivity: timesheetDraftHasActivity(sheet.draft),
+      bookingsChange: member && input.bookingChange ? input.bookingChange(member, sheet.draft, run) : null,
+    }
+  })
+  return userTimesheetQueue({ viewer: access.viewer, members, sheets, timeZone }).flatMap((row) => {
+    const member = byId.get(row.personId)
+    const stored = input.sheets[row.sheetIndex]
+    if (!member || !stored) return []
+    const period = { start: dateFromDayKey(row.startDayKey, timeZone), end: dateFromDayKey(row.endDayKey, timeZone) }
+    return [{ key: row.key, member, period, draft: stored.draft, bucket: row.bucket }]
+  })
 }
 
 /** Whether a Firestore error is the security rules refusing the read. */

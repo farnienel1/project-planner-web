@@ -2286,3 +2286,5 @@ export type { TimesheetRevisionCheck, TimesheetRevisionDifference, TimesheetVers
 // 1.56.0: leave records an operative would stop seeing under their own-leave query (owner Q4: fix the data).
 export { leaveLegacyKeyFindings } from './leaveReadAudit'
 export type { LeaveReadAuditFinding, LeaveReadAuditUser } from './leaveReadAudit'
+export { userTimesheetQueue, userTimesheetQueueCounts } from './userTimesheetQueue'
+export type { UserTimesheetQueueInput, UserTimesheetQueueMember, UserTimesheetQueueRow, UserTimesheetQueueSheet } from './userTimesheetQueue'

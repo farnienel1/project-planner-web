@@ -24778,6 +24778,1004 @@
         "missingHours": 5.5,
         "value": "5.5h"
       }
+    },
+    {
+      "name": "1.62.0 Awaiting sign-off: every waiting sheet however old, one row per person and pay run (aliases folded, PAYE runs, inactive people and the viewer left out, revisions read as their latest version)",
+      "function": "userTimesheetQueue",
+      "args": [
+        {
+          "viewer": {
+            "id": "admin",
+            "formerIds": [],
+            "aliasIds": [],
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": true,
+              "isManager": true,
+              "isOperativeMode": false
+            }
+          },
+          "timeZone": "Europe/London",
+          "members": [
+            {
+              "id": "admin",
+              "email": "admin@example.com",
+              "isActive": true,
+              "role": {
+                "isSuperAdmin": false,
+                "isAdmin": true,
+                "isManager": true,
+                "isOperativeMode": false
+              },
+              "employmentType": "self_employed",
+              "hasNoLineManager": true
+            },
+            {
+              "id": "OP-1",
+              "email": "worker@example.com",
+              "isActive": true,
+              "role": {
+                "isSuperAdmin": false,
+                "isAdmin": false,
+                "isManager": false,
+                "isOperativeMode": true
+              },
+              "employmentType": "self_employed",
+              "assignedManagerUserIds": [
+                "admin"
+              ],
+              "formerUserIds": [
+                "old-invite-1"
+              ]
+            },
+            {
+              "id": "op-1b",
+              "email": "Worker@Example.com",
+              "isActive": true,
+              "role": {
+                "isSuperAdmin": false,
+                "isAdmin": false,
+                "isManager": false,
+                "isOperativeMode": true
+              },
+              "employmentType": "self_employed",
+              "assignedManagerUserIds": [
+                "admin"
+              ]
+            },
+            {
+              "id": "paye-1",
+              "email": "paye@example.com",
+              "isActive": true,
+              "role": {
+                "isSuperAdmin": false,
+                "isAdmin": false,
+                "isManager": false,
+                "isOperativeMode": true
+              },
+              "employmentType": "paye",
+              "assignedManagerUserIds": [
+                "admin"
+              ]
+            },
+            {
+              "id": "op-3",
+              "email": "three@example.com",
+              "isActive": true,
+              "role": {
+                "isSuperAdmin": false,
+                "isAdmin": false,
+                "isManager": true,
+                "isOperativeMode": false
+              },
+              "employmentType": "self_employed",
+              "employmentTypeTransitionFrom": "paye",
+              "employmentTypeEffectiveAt": 1790809200000,
+              "assignedManagerUserIds": [
+                "admin"
+              ]
+            },
+            {
+              "id": "gone",
+              "email": "gone@example.com",
+              "isActive": false,
+              "role": {
+                "isSuperAdmin": false,
+                "isAdmin": false,
+                "isManager": false,
+                "isOperativeMode": true
+              },
+              "employmentType": "self_employed",
+              "assignedManagerUserIds": [
+                "admin"
+              ]
+            }
+          ],
+          "sheets": [
+            {
+              "userId": "OP-1",
+              "startDayKey": "2026-01-01",
+              "endDayKey": "2026-01-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker"
+              },
+              "documentId": "timesheet_OP-1_1767225600",
+              "hasActivity": true
+            },
+            {
+              "userId": "old-invite-1",
+              "startDayKey": "2026-02-01",
+              "endDayKey": "2026-02-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker"
+              },
+              "documentId": "timesheet_old-invite-1_1769904000",
+              "hasActivity": true
+            },
+            {
+              "userId": "op-1b",
+              "startDayKey": "2026-02-01",
+              "endDayKey": "2026-02-15",
+              "data": {},
+              "documentId": "timesheet_op-1b_1769904000"
+            },
+            {
+              "userId": "op-1",
+              "startDayKey": "2026-03-01",
+              "endDayKey": "2026-03-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker",
+                "managerSignedAt": 1792576800000,
+                "managerSignedByName": "Admin"
+              },
+              "documentId": "timesheet_op-1_1772323200",
+              "hasActivity": true
+            },
+            {
+              "userId": "OP-1",
+              "startDayKey": "2026-04-01",
+              "endDayKey": "2026-04-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker",
+                "managerSignedAt": 1792576800000,
+                "managerSignedByName": "Admin",
+                "exportedAt": 1792663200000
+              },
+              "documentId": "timesheet_OP-1_1775001600",
+              "hasActivity": true
+            },
+            {
+              "userId": "OP-1",
+              "startDayKey": "2026-05-01",
+              "endDayKey": "2026-05-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker",
+                "managerSignedAt": 1792576800000,
+                "managerSignedByName": "Admin",
+                "exportedAt": 1792663200000
+              },
+              "documentId": "timesheet_OP-1_1777590000",
+              "hasActivity": true
+            },
+            {
+              "userId": "OP-1",
+              "startDayKey": "2026-05-01",
+              "endDayKey": "2026-05-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker"
+              },
+              "documentId": "timesheet_OP-1_1777590000_rev1",
+              "hasActivity": true
+            },
+            {
+              "startDayKey": "2026-06-16",
+              "endDayKey": "2026-06-30",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker"
+              },
+              "documentId": "timesheet_OP-1_1781564400",
+              "hasActivity": true
+            },
+            {
+              "userId": "paye-1",
+              "startDayKey": "2026-06-01",
+              "endDayKey": "2026-06-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker"
+              },
+              "documentId": "timesheet_paye-1_1780268400",
+              "hasActivity": true
+            },
+            {
+              "userId": "op-3",
+              "startDayKey": "2026-09-01",
+              "endDayKey": "2026-09-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker"
+              },
+              "documentId": "timesheet_op-3_1788217200",
+              "hasActivity": true
+            },
+            {
+              "userId": "op-3",
+              "startDayKey": "2026-10-16",
+              "endDayKey": "2026-10-31",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker"
+              },
+              "documentId": "timesheet_op-3_1792105200",
+              "hasActivity": true
+            },
+            {
+              "userId": "admin",
+              "startDayKey": "2026-10-16",
+              "endDayKey": "2026-10-31",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker"
+              },
+              "documentId": "timesheet_admin_1792105200",
+              "hasActivity": true
+            },
+            {
+              "userId": "gone",
+              "startDayKey": "2026-10-16",
+              "endDayKey": "2026-10-31",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker"
+              },
+              "documentId": "timesheet_gone_1792105200",
+              "hasActivity": true
+            },
+            {
+              "userId": "OP-1",
+              "startDayKey": "2026-11-01",
+              "endDayKey": "2026-11-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker",
+                "managerSignedAt": 1792576800000,
+                "managerSignedByName": "Admin"
+              },
+              "documentId": "timesheet_OP-1_1793491200",
+              "hasActivity": true,
+              "bookingsChange": {
+                "reopened": true,
+                "waitingFor": "person"
+              }
+            },
+            {
+              "userId": "op-3",
+              "startDayKey": "2026-11-01",
+              "endDayKey": "2026-11-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker",
+                "managerSignedAt": 1792576800000,
+                "managerSignedByName": "Admin"
+              },
+              "documentId": "timesheet_op-3_1793491200",
+              "hasActivity": true,
+              "bookingsChange": {
+                "reopened": true,
+                "waitingFor": "lineManager"
+              }
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "key": "OP-1|2026-11-01|2026-11-15",
+          "personId": "OP-1",
+          "sheetUserId": "OP-1",
+          "startDayKey": "2026-11-01",
+          "endDayKey": "2026-11-15",
+          "documentId": "timesheet_OP-1_1793491200",
+          "sheetIndex": 13,
+          "bucket": "unsigned"
+        },
+        {
+          "key": "op-3|2026-11-01|2026-11-15",
+          "personId": "op-3",
+          "sheetUserId": "op-3",
+          "startDayKey": "2026-11-01",
+          "endDayKey": "2026-11-15",
+          "documentId": "timesheet_op-3_1793491200",
+          "sheetIndex": 14,
+          "bucket": "awaiting"
+        },
+        {
+          "key": "op-3|2026-10-16|2026-10-31",
+          "personId": "op-3",
+          "sheetUserId": "op-3",
+          "startDayKey": "2026-10-16",
+          "endDayKey": "2026-10-31",
+          "documentId": "timesheet_op-3_1792105200",
+          "sheetIndex": 10,
+          "bucket": "awaiting"
+        },
+        {
+          "key": "OP-1|2026-06-16|2026-06-30",
+          "personId": "OP-1",
+          "sheetUserId": "OP-1",
+          "startDayKey": "2026-06-16",
+          "endDayKey": "2026-06-30",
+          "documentId": "timesheet_OP-1_1781564400",
+          "sheetIndex": 7,
+          "bucket": "awaiting"
+        },
+        {
+          "key": "OP-1|2026-05-01|2026-05-15",
+          "personId": "OP-1",
+          "sheetUserId": "OP-1",
+          "startDayKey": "2026-05-01",
+          "endDayKey": "2026-05-15",
+          "documentId": "timesheet_OP-1_1777590000_rev1",
+          "sheetIndex": 6,
+          "bucket": "awaiting"
+        },
+        {
+          "key": "OP-1|2026-04-01|2026-04-15",
+          "personId": "OP-1",
+          "sheetUserId": "OP-1",
+          "startDayKey": "2026-04-01",
+          "endDayKey": "2026-04-15",
+          "documentId": "timesheet_OP-1_1775001600",
+          "sheetIndex": 4,
+          "bucket": "exported"
+        },
+        {
+          "key": "OP-1|2026-03-01|2026-03-15",
+          "personId": "OP-1",
+          "sheetUserId": "op-1",
+          "startDayKey": "2026-03-01",
+          "endDayKey": "2026-03-15",
+          "documentId": "timesheet_op-1_1772323200",
+          "sheetIndex": 3,
+          "bucket": "signed"
+        },
+        {
+          "key": "OP-1|2026-02-01|2026-02-15",
+          "personId": "OP-1",
+          "sheetUserId": "old-invite-1",
+          "startDayKey": "2026-02-01",
+          "endDayKey": "2026-02-15",
+          "documentId": "timesheet_old-invite-1_1769904000",
+          "sheetIndex": 1,
+          "bucket": "awaiting"
+        },
+        {
+          "key": "OP-1|2026-01-01|2026-01-15",
+          "personId": "OP-1",
+          "sheetUserId": "OP-1",
+          "startDayKey": "2026-01-01",
+          "endDayKey": "2026-01-15",
+          "documentId": "timesheet_OP-1_1767225600",
+          "sheetIndex": 0,
+          "bucket": "awaiting"
+        }
+      ]
+    },
+    {
+      "name": "1.62.0 Awaiting sign-off and Signed off counts (hub tile, iOS landing card)",
+      "function": "userTimesheetQueueCounts",
+      "args": [
+        {
+          "viewer": {
+            "id": "admin",
+            "formerIds": [],
+            "aliasIds": [],
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": true,
+              "isManager": true,
+              "isOperativeMode": false
+            }
+          },
+          "timeZone": "Europe/London",
+          "members": [
+            {
+              "id": "admin",
+              "email": "admin@example.com",
+              "isActive": true,
+              "role": {
+                "isSuperAdmin": false,
+                "isAdmin": true,
+                "isManager": true,
+                "isOperativeMode": false
+              },
+              "employmentType": "self_employed",
+              "hasNoLineManager": true
+            },
+            {
+              "id": "OP-1",
+              "email": "worker@example.com",
+              "isActive": true,
+              "role": {
+                "isSuperAdmin": false,
+                "isAdmin": false,
+                "isManager": false,
+                "isOperativeMode": true
+              },
+              "employmentType": "self_employed",
+              "assignedManagerUserIds": [
+                "admin"
+              ],
+              "formerUserIds": [
+                "old-invite-1"
+              ]
+            },
+            {
+              "id": "op-1b",
+              "email": "Worker@Example.com",
+              "isActive": true,
+              "role": {
+                "isSuperAdmin": false,
+                "isAdmin": false,
+                "isManager": false,
+                "isOperativeMode": true
+              },
+              "employmentType": "self_employed",
+              "assignedManagerUserIds": [
+                "admin"
+              ]
+            },
+            {
+              "id": "paye-1",
+              "email": "paye@example.com",
+              "isActive": true,
+              "role": {
+                "isSuperAdmin": false,
+                "isAdmin": false,
+                "isManager": false,
+                "isOperativeMode": true
+              },
+              "employmentType": "paye",
+              "assignedManagerUserIds": [
+                "admin"
+              ]
+            },
+            {
+              "id": "op-3",
+              "email": "three@example.com",
+              "isActive": true,
+              "role": {
+                "isSuperAdmin": false,
+                "isAdmin": false,
+                "isManager": true,
+                "isOperativeMode": false
+              },
+              "employmentType": "self_employed",
+              "employmentTypeTransitionFrom": "paye",
+              "employmentTypeEffectiveAt": 1790809200000,
+              "assignedManagerUserIds": [
+                "admin"
+              ]
+            },
+            {
+              "id": "gone",
+              "email": "gone@example.com",
+              "isActive": false,
+              "role": {
+                "isSuperAdmin": false,
+                "isAdmin": false,
+                "isManager": false,
+                "isOperativeMode": true
+              },
+              "employmentType": "self_employed",
+              "assignedManagerUserIds": [
+                "admin"
+              ]
+            }
+          ],
+          "sheets": [
+            {
+              "userId": "OP-1",
+              "startDayKey": "2026-01-01",
+              "endDayKey": "2026-01-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker"
+              },
+              "documentId": "timesheet_OP-1_1767225600",
+              "hasActivity": true
+            },
+            {
+              "userId": "old-invite-1",
+              "startDayKey": "2026-02-01",
+              "endDayKey": "2026-02-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker"
+              },
+              "documentId": "timesheet_old-invite-1_1769904000",
+              "hasActivity": true
+            },
+            {
+              "userId": "op-1b",
+              "startDayKey": "2026-02-01",
+              "endDayKey": "2026-02-15",
+              "data": {},
+              "documentId": "timesheet_op-1b_1769904000"
+            },
+            {
+              "userId": "op-1",
+              "startDayKey": "2026-03-01",
+              "endDayKey": "2026-03-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker",
+                "managerSignedAt": 1792576800000,
+                "managerSignedByName": "Admin"
+              },
+              "documentId": "timesheet_op-1_1772323200",
+              "hasActivity": true
+            },
+            {
+              "userId": "OP-1",
+              "startDayKey": "2026-04-01",
+              "endDayKey": "2026-04-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker",
+                "managerSignedAt": 1792576800000,
+                "managerSignedByName": "Admin",
+                "exportedAt": 1792663200000
+              },
+              "documentId": "timesheet_OP-1_1775001600",
+              "hasActivity": true
+            },
+            {
+              "userId": "OP-1",
+              "startDayKey": "2026-05-01",
+              "endDayKey": "2026-05-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker",
+                "managerSignedAt": 1792576800000,
+                "managerSignedByName": "Admin",
+                "exportedAt": 1792663200000
+              },
+              "documentId": "timesheet_OP-1_1777590000",
+              "hasActivity": true
+            },
+            {
+              "userId": "OP-1",
+              "startDayKey": "2026-05-01",
+              "endDayKey": "2026-05-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker"
+              },
+              "documentId": "timesheet_OP-1_1777590000_rev1",
+              "hasActivity": true
+            },
+            {
+              "startDayKey": "2026-06-16",
+              "endDayKey": "2026-06-30",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker"
+              },
+              "documentId": "timesheet_OP-1_1781564400",
+              "hasActivity": true
+            },
+            {
+              "userId": "paye-1",
+              "startDayKey": "2026-06-01",
+              "endDayKey": "2026-06-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker"
+              },
+              "documentId": "timesheet_paye-1_1780268400",
+              "hasActivity": true
+            },
+            {
+              "userId": "op-3",
+              "startDayKey": "2026-09-01",
+              "endDayKey": "2026-09-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker"
+              },
+              "documentId": "timesheet_op-3_1788217200",
+              "hasActivity": true
+            },
+            {
+              "userId": "op-3",
+              "startDayKey": "2026-10-16",
+              "endDayKey": "2026-10-31",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker"
+              },
+              "documentId": "timesheet_op-3_1792105200",
+              "hasActivity": true
+            },
+            {
+              "userId": "admin",
+              "startDayKey": "2026-10-16",
+              "endDayKey": "2026-10-31",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker"
+              },
+              "documentId": "timesheet_admin_1792105200",
+              "hasActivity": true
+            },
+            {
+              "userId": "gone",
+              "startDayKey": "2026-10-16",
+              "endDayKey": "2026-10-31",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker"
+              },
+              "documentId": "timesheet_gone_1792105200",
+              "hasActivity": true
+            },
+            {
+              "userId": "OP-1",
+              "startDayKey": "2026-11-01",
+              "endDayKey": "2026-11-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker",
+                "managerSignedAt": 1792576800000,
+                "managerSignedByName": "Admin"
+              },
+              "documentId": "timesheet_OP-1_1793491200",
+              "hasActivity": true,
+              "bookingsChange": {
+                "reopened": true,
+                "waitingFor": "person"
+              }
+            },
+            {
+              "userId": "op-3",
+              "startDayKey": "2026-11-01",
+              "endDayKey": "2026-11-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker",
+                "managerSignedAt": 1792576800000,
+                "managerSignedByName": "Admin"
+              },
+              "documentId": "timesheet_op-3_1793491200",
+              "hasActivity": true,
+              "bookingsChange": {
+                "reopened": true,
+                "waitingFor": "lineManager"
+              }
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "awaiting": 6,
+        "signed": 1
+      }
+    },
+    {
+      "name": "1.62.0 a run whose bookings are not loaded reads as not changed",
+      "function": "userTimesheetQueueCounts",
+      "args": [
+        {
+          "viewer": {
+            "id": "admin",
+            "formerIds": [],
+            "aliasIds": [],
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": true,
+              "isManager": true,
+              "isOperativeMode": false
+            }
+          },
+          "timeZone": "Europe/London",
+          "members": [
+            {
+              "id": "admin",
+              "email": "admin@example.com",
+              "isActive": true,
+              "role": {
+                "isSuperAdmin": false,
+                "isAdmin": true,
+                "isManager": true,
+                "isOperativeMode": false
+              },
+              "employmentType": "self_employed",
+              "hasNoLineManager": true
+            },
+            {
+              "id": "OP-1",
+              "email": "worker@example.com",
+              "isActive": true,
+              "role": {
+                "isSuperAdmin": false,
+                "isAdmin": false,
+                "isManager": false,
+                "isOperativeMode": true
+              },
+              "employmentType": "self_employed",
+              "assignedManagerUserIds": [
+                "admin"
+              ],
+              "formerUserIds": [
+                "old-invite-1"
+              ]
+            },
+            {
+              "id": "op-1b",
+              "email": "Worker@Example.com",
+              "isActive": true,
+              "role": {
+                "isSuperAdmin": false,
+                "isAdmin": false,
+                "isManager": false,
+                "isOperativeMode": true
+              },
+              "employmentType": "self_employed",
+              "assignedManagerUserIds": [
+                "admin"
+              ]
+            },
+            {
+              "id": "paye-1",
+              "email": "paye@example.com",
+              "isActive": true,
+              "role": {
+                "isSuperAdmin": false,
+                "isAdmin": false,
+                "isManager": false,
+                "isOperativeMode": true
+              },
+              "employmentType": "paye",
+              "assignedManagerUserIds": [
+                "admin"
+              ]
+            },
+            {
+              "id": "op-3",
+              "email": "three@example.com",
+              "isActive": true,
+              "role": {
+                "isSuperAdmin": false,
+                "isAdmin": false,
+                "isManager": true,
+                "isOperativeMode": false
+              },
+              "employmentType": "self_employed",
+              "employmentTypeTransitionFrom": "paye",
+              "employmentTypeEffectiveAt": 1790809200000,
+              "assignedManagerUserIds": [
+                "admin"
+              ]
+            },
+            {
+              "id": "gone",
+              "email": "gone@example.com",
+              "isActive": false,
+              "role": {
+                "isSuperAdmin": false,
+                "isAdmin": false,
+                "isManager": false,
+                "isOperativeMode": true
+              },
+              "employmentType": "self_employed",
+              "assignedManagerUserIds": [
+                "admin"
+              ]
+            }
+          ],
+          "sheets": [
+            {
+              "userId": "OP-1",
+              "startDayKey": "2026-01-01",
+              "endDayKey": "2026-01-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker"
+              },
+              "documentId": "timesheet_OP-1_1767225600",
+              "hasActivity": true,
+              "bookingsChange": null
+            },
+            {
+              "userId": "old-invite-1",
+              "startDayKey": "2026-02-01",
+              "endDayKey": "2026-02-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker"
+              },
+              "documentId": "timesheet_old-invite-1_1769904000",
+              "hasActivity": true,
+              "bookingsChange": null
+            },
+            {
+              "userId": "op-1b",
+              "startDayKey": "2026-02-01",
+              "endDayKey": "2026-02-15",
+              "data": {},
+              "documentId": "timesheet_op-1b_1769904000",
+              "bookingsChange": null
+            },
+            {
+              "userId": "op-1",
+              "startDayKey": "2026-03-01",
+              "endDayKey": "2026-03-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker",
+                "managerSignedAt": 1792576800000,
+                "managerSignedByName": "Admin"
+              },
+              "documentId": "timesheet_op-1_1772323200",
+              "hasActivity": true,
+              "bookingsChange": null
+            },
+            {
+              "userId": "OP-1",
+              "startDayKey": "2026-04-01",
+              "endDayKey": "2026-04-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker",
+                "managerSignedAt": 1792576800000,
+                "managerSignedByName": "Admin",
+                "exportedAt": 1792663200000
+              },
+              "documentId": "timesheet_OP-1_1775001600",
+              "hasActivity": true,
+              "bookingsChange": null
+            },
+            {
+              "userId": "OP-1",
+              "startDayKey": "2026-05-01",
+              "endDayKey": "2026-05-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker",
+                "managerSignedAt": 1792576800000,
+                "managerSignedByName": "Admin",
+                "exportedAt": 1792663200000
+              },
+              "documentId": "timesheet_OP-1_1777590000",
+              "hasActivity": true,
+              "bookingsChange": null
+            },
+            {
+              "userId": "OP-1",
+              "startDayKey": "2026-05-01",
+              "endDayKey": "2026-05-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker"
+              },
+              "documentId": "timesheet_OP-1_1777590000_rev1",
+              "hasActivity": true,
+              "bookingsChange": null
+            },
+            {
+              "startDayKey": "2026-06-16",
+              "endDayKey": "2026-06-30",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker"
+              },
+              "documentId": "timesheet_OP-1_1781564400",
+              "hasActivity": true,
+              "bookingsChange": null
+            },
+            {
+              "userId": "paye-1",
+              "startDayKey": "2026-06-01",
+              "endDayKey": "2026-06-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker"
+              },
+              "documentId": "timesheet_paye-1_1780268400",
+              "hasActivity": true,
+              "bookingsChange": null
+            },
+            {
+              "userId": "op-3",
+              "startDayKey": "2026-09-01",
+              "endDayKey": "2026-09-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker"
+              },
+              "documentId": "timesheet_op-3_1788217200",
+              "hasActivity": true,
+              "bookingsChange": null
+            },
+            {
+              "userId": "op-3",
+              "startDayKey": "2026-10-16",
+              "endDayKey": "2026-10-31",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker"
+              },
+              "documentId": "timesheet_op-3_1792105200",
+              "hasActivity": true,
+              "bookingsChange": null
+            },
+            {
+              "userId": "admin",
+              "startDayKey": "2026-10-16",
+              "endDayKey": "2026-10-31",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker"
+              },
+              "documentId": "timesheet_admin_1792105200",
+              "hasActivity": true,
+              "bookingsChange": null
+            },
+            {
+              "userId": "gone",
+              "startDayKey": "2026-10-16",
+              "endDayKey": "2026-10-31",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker"
+              },
+              "documentId": "timesheet_gone_1792105200",
+              "hasActivity": true,
+              "bookingsChange": null
+            },
+            {
+              "userId": "OP-1",
+              "startDayKey": "2026-11-01",
+              "endDayKey": "2026-11-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker",
+                "managerSignedAt": 1792576800000,
+                "managerSignedByName": "Admin"
+              },
+              "documentId": "timesheet_OP-1_1793491200",
+              "hasActivity": true,
+              "bookingsChange": null
+            },
+            {
+              "userId": "op-3",
+              "startDayKey": "2026-11-01",
+              "endDayKey": "2026-11-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker",
+                "managerSignedAt": 1792576800000,
+                "managerSignedByName": "Admin"
+              },
+              "documentId": "timesheet_op-3_1793491200",
+              "hasActivity": true,
+              "bookingsChange": null
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "awaiting": 5,
+        "signed": 3
+      }
     }
   ]
 }

@@ -115,6 +115,7 @@ How to use it:
 
 | Date | Decision | Status |
 |---|---|---|
+| 17 Nov | **Awaiting sign-off shows every timesheet waiting, however old** (User Timesheets list, hub tile count, iOS Timesheets landing count); both apps agree exactly. One rule, `userTimesheetQueue` (one row per person per pay run, people with several records once, PAYE runs left out, an old run whose bookings are not loaded read as not changed). Signed off also holds a signed, unexported sheet of any age. Guardrail 3: older awaiting / signed-not-exported sheets newly appear; on iOS a person's second record and PAYE runs stop being counted. | done web + rulebook (1.62.0, w162-awaiting-all); iOS (ios-1.62-awaiting-all) |
 | 4 Nov | Price work needs a job number (1–60 characters) on PAYE price work and on timesheet price work entries. New and edited entries only; old entries show "—". | done (1.30.1) |
 | 4 Nov | Nobody reviews their own timesheet. | done (1.30.2) |
 | 4 Nov | Exported history shows the viewer's own exported sheets (read-only) and inactive or deleted people's sheets (admins: all; managers: their reports). | done web (1.31.0); iOS open |

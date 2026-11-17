@@ -1149,54 +1149,38 @@ export async function loadTimesheetDraftAt(
   return latestVersionDraft(organizationId, documentId, data, { includeSignatures: true, timeZone, ownerUserIds })
 }
 
+export type TimesheetQueueStoredSheet = {
+  /** The stored document id (an original or a `…_rev{N}` revision). */
+  documentId: string
+  /** The stored `userId` (any id the person goes by). */
+  userId: string
+  weekStart: Date
+  /** `weekEndKey` / `weekEnd` in the organisation zone; null when the document has none. */
+  endDayKey: string | null
+  draft: TimesheetDraft
+}
+
 /**
- * User Timesheets → Awaiting / Signed off over several pay runs (17 Nov follow-up): the stored sheets of `userIds` (every
- * id each listed person goes by) for each of `periods`, keyed `start|end` (organisation-zone day keys) and then by the
- * stored `userId`. One `weekStartKey` query per pay run (iOS often leaves `weekStartKey` out) and one batched `userId in`
- * history query for everyone, picked per pay run with `pickTimesheetDraftForPeriod`. A refused period query
- * (`privatePay` on for a non-admin) falls through to the history query; any other failure throws.
+ * Rulebook 1.62.0 §8 (owner decision 17 Nov): every stored timesheet of `userIds` (each id every listed person goes by),
+ * however old — every version, so the rulebook (`userTimesheetQueue`) decides which one is a pay run's sheet. One batched
+ * `userId in` query per 10 ids; a chunk the rules refuse is asked id by id and only the refused ids are skipped (review of
+ * #368 S1). Any other failure throws (the list shows its error, never an empty queue).
  */
-export async function loadTimesheetQueueDrafts(input: {
+export async function loadTimesheetQueueSheets(input: {
   organizationId: string
   userIds: ReadonlyArray<string>
-  periods: ReadonlyArray<{ start: Date; end: Date }>
   timeZone: string
-}): Promise<Map<string, Map<string, TimesheetDraft>>> {
-  const { organizationId, periods, timeZone } = input
+}): Promise<TimesheetQueueStoredSheet[]> {
   const userIds = [...new Set(input.userIds.filter(Boolean))]
-  const out = new Map<string, Map<string, TimesheetDraft>>()
-  const keyOf = (period: { start: Date; end: Date }) => `${periodStartKey(period.start, timeZone)}|${dayKey(period.end, timeZone)}`
-  for (const period of periods) out.set(keyOf(period), new Map())
-  if (periods.length === 0) return out
-  let periodQueriesRefused = false
-  const keyed = await Promise.all(
-    periods.map((period) =>
-      loadPayPeriodTimesheetDrafts(organizationId, period.start, timeZone).catch((error) => {
-        if ((error as { code?: unknown } | null)?.code !== 'permission-denied') throw error
-        periodQueriesRefused = true
-        return new Map<string, TimesheetDraft>()
-      })
-    )
-  )
-  periods.forEach((period, index) => {
-    const target = out.get(keyOf(period))!
-    for (const [userId, draft] of keyed[index]) target.set(userId, draft)
-  })
-  if (userIds.length === 0) return out
-  let grouped: Map<string, TimesheetPeriodCandidate[]>
-  try {
-    grouped = await loadTimesheetCandidatesByUserIds(organizationId, userIds, false, timeZone, true)
-  } catch (error) {
-    if (periodQueriesRefused) throw error
-    // The pay-run rows already found stay; the history scan may not blank the lists.
-    return out
-  }
-  for (const period of periods) {
-    const target = out.get(keyOf(period))!
-    for (const userId of userIds) {
-      if (target.has(userId)) continue
-      const picked = pickTimesheetDraftForPeriod(grouped.get(userId) || [], period.start, period.end, timeZone)
-      if (picked) target.set(userId, picked.draft)
+  if (userIds.length === 0) return []
+  const grouped = await loadTimesheetCandidatesByUserIds(input.organizationId, userIds, false, input.timeZone, true)
+  const out: TimesheetQueueStoredSheet[] = []
+  const seen = new Set<string>()
+  for (const [userId, rows] of grouped) {
+    for (const row of rows) {
+      if (!row.documentId || seen.has(row.documentId)) continue
+      seen.add(row.documentId)
+      out.push({ documentId: row.documentId, userId, weekStart: row.weekStart, endDayKey: row.endDayKey ?? null, draft: row.draft })
     }
   }
   return out

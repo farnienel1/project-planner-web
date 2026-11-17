@@ -435,7 +435,7 @@ export function canAccessMyTimesheets(user: PermissionUser): boolean {
   return normalizeEmploymentType(user.employmentType) === 'self_employed'
 }
 
-function userTimesheetAccessInput(
+export function userTimesheetAccessInput(
   user: NonNullable<PermissionUser>,
   orgUsers: Array<NonNullable<PermissionUser>>
 ): UserTimesheetSubjectsInput {
