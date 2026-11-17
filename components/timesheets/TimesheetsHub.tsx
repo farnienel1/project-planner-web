@@ -43,6 +43,7 @@ import {
 import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
 import { TimesheetsScreen, type TeamTimesheetTab } from '@/components/timesheets/TimesheetsScreen'
 import { TimesheetPeriodPage } from '@/components/timesheets/TimesheetPeriodPage'
+import { TimesheetScreenBoundary } from '@/components/timesheets/TimesheetScreenBoundary'
 import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
 import { resolveTimesheetPeriod, timesheetPeriodFromInvoicing, type PayrollTimePolicyState } from '@/lib/canonical'
 import { organizationTimeZone } from '@/lib/canonical'
@@ -457,13 +458,15 @@ export function TimesheetsHub() {
     return (
       <PageShell className="pb-10">
         {periodParam ? (
-          <TimesheetPeriodPage
-            {...periodPageProps}
-            subjectUser={subject}
-            mode="mine"
-            heading="Timesheet"
-            back={{ label: 'My Timesheets', onClick: () => router.replace(mineBackHref) }}
-          />
+          <TimesheetScreenBoundary resetKey={searchParams.toString()} backLabel="My Timesheets" onBack={() => router.replace(mineBackHref)}>
+            <TimesheetPeriodPage
+              {...periodPageProps}
+              subjectUser={subject}
+              mode="mine"
+              heading="Timesheet"
+              back={{ label: 'My Timesheets', onClick: () => router.replace(mineBackHref) }}
+            />
+          </TimesheetScreenBoundary>
         ) : (
           <MineTimesheetsList
             organizationId={organization?.id}
@@ -498,17 +501,19 @@ export function TimesheetsHub() {
     return (
       <PageShell className="pb-10">
         {selectedUser ? (
-          <TimesheetPeriodPage
-            {...periodPageProps}
-            // Review #342 item 1: the reviewed person's own pay decides; another person's refused read never does.
-            payInputs={payInputsFor(
-              payProfilesInputLoad(payStatusOf(selectedUser), 'ready')
-            )}
-            subjectUser={selectedUser}
-            mode="review"
-            heading="Review Timesheet"
-            back={{ label: teamTitle, onClick: () => router.replace(teamBackHref) }}
-          />
+          <TimesheetScreenBoundary resetKey={searchParams.toString()} backLabel={teamTitle} onBack={() => router.replace(teamBackHref)}>
+            <TimesheetPeriodPage
+              {...periodPageProps}
+              // Review #342 item 1: the reviewed person's own pay decides; another person's refused read never does.
+              payInputs={payInputsFor(
+                payProfilesInputLoad(payStatusOf(selectedUser), 'ready')
+              )}
+              subjectUser={selectedUser}
+              mode="review"
+              heading="Review Timesheet"
+              back={{ label: teamTitle, onClick: () => router.replace(teamBackHref) }}
+            />
+          </TimesheetScreenBoundary>
         ) : (
           <>
             {userParam ? (
@@ -530,34 +535,36 @@ export function TimesheetsHub() {
             <Note tone={tab === 'exported' ? 'info' : 'amber'} icon={<ClockIcon />}>
               {TEAM_TABS.find((item) => item.id === tab)?.help}
             </Note>
-            <TimesheetsScreen
-              bookings={bookings}
-              managerSiteBookings={managerSiteBookings}
-              operatives={operatives}
-              users={users}
-              projects={projects}
-              smallWorks={smallWorks}
-              periodStart={currentPeriod.start}
-              periodEnd={currentPeriod.end}
-              // 17 Nov follow-up: a signed sheet of an earlier pay run that was never exported stays listed.
-              queuePeriods={recentRuns}
-              payrollPolicy={payrollPolicy}
-              payrollPolicyPrior={payrollPolicyPrior}
-              payrollPolicyEffectiveFrom={payrollPolicyEffectiveFrom}
-              payrollPolicyState={payrollPolicyState}
-              invoicing={invoicing}
-              loading={usersLoading && users.length === 0}
-              teamTab={tab}
-              timeZone={timeZone}
-              history={history}
-              scheduleOptions={scheduleOptions}
-              // Rulebook 1.43.0 (review r318): export stamps and freezes the signed snapshot, so it waits for the
-              // server-confirmed bookings as signing does (`withBookingsGate` → `timesheetSnapshotReady`).
-              payInputs={withBookingsGate(payInputs, { bookingsLoaded, bookingsFailed })}
-              // Review #342 item 1: people whose pay is not known (loading or failed) show no figures and are skipped by
-              // Export and Download PDF.
-              payStatusOf={payStatusOf}
-            />
+            <TimesheetScreenBoundary resetKey={searchParams.toString()}>
+              <TimesheetsScreen
+                bookings={bookings}
+                managerSiteBookings={managerSiteBookings}
+                operatives={operatives}
+                users={users}
+                projects={projects}
+                smallWorks={smallWorks}
+                periodStart={currentPeriod.start}
+                periodEnd={currentPeriod.end}
+                // 17 Nov follow-up: a signed sheet of an earlier pay run that was never exported stays listed.
+                queuePeriods={recentRuns}
+                payrollPolicy={payrollPolicy}
+                payrollPolicyPrior={payrollPolicyPrior}
+                payrollPolicyEffectiveFrom={payrollPolicyEffectiveFrom}
+                payrollPolicyState={payrollPolicyState}
+                invoicing={invoicing}
+                loading={usersLoading && users.length === 0}
+                teamTab={tab}
+                timeZone={timeZone}
+                history={history}
+                scheduleOptions={scheduleOptions}
+                // Rulebook 1.43.0 (review r318): export stamps and freezes the signed snapshot, so it waits for the
+                // server-confirmed bookings as signing does (`withBookingsGate` → `timesheetSnapshotReady`).
+                payInputs={withBookingsGate(payInputs, { bookingsLoaded, bookingsFailed })}
+                // Review #342 item 1: people whose pay is not known (loading or failed) show no figures and are skipped by
+                // Export and Download PDF.
+                payStatusOf={payStatusOf}
+              />
+            </TimesheetScreenBoundary>
           </>
         )}
       </PageShell>

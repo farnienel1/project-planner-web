@@ -7,6 +7,7 @@ import {
   firebaseAdminConfigured,
 } from '@/lib/owner/identityToolkitAdmin'
 import { firestoreValue } from '@/lib/stripe/writeOrgBilling'
+import { PASSKEY_COLLECTION } from '@/lib/auth/passkeys/passkeyStore'
 import {
   ACCOUNT_DELETE_JOB_EMAIL_FIELD,
   ACCOUNT_DELETE_JOB_TYPE,
@@ -660,6 +661,7 @@ async function finishAlreadyScrubbedAccount(
   }
   await deleteUnusedInvitesAndPlaceholders(session, input.uid, email)
   await adminDelete(session, `users/${input.uid}/private/taxIds`)
+  await deleteQueryMatches(session, '', PASSKEY_COLLECTION, 'uid', input.uid)
   await adminDelete(session, `users/${input.uid}`)
   await markAccountDeleteCompleted(session, input.uid, email)
   await writeAccountDeleteAudit(session, { uid: input.uid, orgIds, ip: input.ip })
@@ -724,6 +726,7 @@ export async function executeAccountDelete(input: {
 
   if (existing?.plain.status === 'completed' && existing.plain.type === ACCOUNT_DELETE_JOB_TYPE) {
     await deleteUnusedInvitesAndPlaceholders(session, input.uid, email)
+    await deleteQueryMatches(session, '', PASSKEY_COLLECTION, 'uid', input.uid)
     await adminRevokeRefreshTokens(input.uid).catch(() => undefined)
     await adminDeleteAuthUser(input.uid)
     return 'already'
@@ -758,6 +761,8 @@ export async function executeAccountDelete(input: {
   await deleteQueryMatches(session, '', 'productSessions', 'userId', input.uid)
   await anonymiseProductEvents(session, input.uid)
   await adminDelete(session, `users/${input.uid}/private/taxIds`)
+  // Passkeys of this account (server-only collection): a deleted account keeps no way back in.
+  await deleteQueryMatches(session, '', PASSKEY_COLLECTION, 'uid', input.uid)
   await adminDelete(session, `users/${input.uid}`)
 
   await persistAccountDeleteJob(session, {

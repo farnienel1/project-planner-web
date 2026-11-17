@@ -21,6 +21,7 @@ import { canOpenOperativeFromWarning } from '@/lib/staff/userEditPermissions'
 import { initialsFrom } from '@/lib/daily-overview/buildDailyOverview'
 import { dayKey, formatLongDay } from '@/lib/ios-parity/londonTime'
 import { notifyCompanyActivity } from '@/lib/notifications/companyActivity'
+import { dismissThenNotify } from '@/lib/warnings/warningDismiss'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { normalizeDocumentId } from '@/lib/canonical'
 import { feedback } from '@/lib/feedbackSounds/feedback'
@@ -121,39 +122,53 @@ function MaterialsCard({
   warning,
   smallWorkIds,
   users,
+  onDismiss,
 }: {
   warning: MissedMaterialOrderWarning
   smallWorkIds: ReadonlySet<string>
   users: User[]
+  onDismiss?: (resolutionKey: string) => Promise<void>
 }) {
   const organization = useAuthStore((state) => state.organization)
   const user = useAuthStore((state) => state.user)
-  const [hidden, setHidden] = useState(false)
+  const [confirming, setConfirming] = useState(false)
   const [dismissing, setDismissing] = useState(false)
-  if (hidden) return null
+  const [error, setError] = useState<string | null>(null)
 
+  // Owner bug 17 Nov: Dismiss used to hide the card on this page only and write nothing, so the count stayed and the
+  // card came back on refresh. It now writes the permanent dismissal iOS writes (`warningResolutions/{warning.id}`,
+  // status `dismissed`, via `onDismiss`); the row leaves the list through `isWarningActive`, never a local flag.
   async function dismiss() {
-    if (dismissing) return
+    if (dismissing || !onDismiss) return
     setDismissing(true)
+    setError(null)
     const name = [user?.firstName, user?.surname].filter(Boolean).join(' ').trim() || user?.email || 'Someone'
-    if (organization?.id) {
-      try {
-        // One row per admin (companyActivityRecipients), never a row without userId (rulebook 1.4.0 §13).
-        await notifyCompanyActivity({
-          organizationId: organization.id,
-          type: 'warning_removed',
-          title: `Warning dismissed by ${name}`,
-          message: `${name} dismissed a materials cut-off warning. Dismissed warnings do not reappear.\n\n${warning.message}`,
-          requiresPermission: 'hasAdminAccess',
-          actor: user,
-          users,
-        })
-      } catch {
-        // The card still leaves this device, matching an iPhone dismiss.
-      }
+    try {
+      await dismissThenNotify({
+        resolutionKey: warning.id,
+        dismiss: onDismiss,
+        notify: async (relatedId) => {
+          if (!organization?.id) return
+          // One row per admin (companyActivityRecipients), never a row without userId (rulebook 1.4.0 §13).
+          await notifyCompanyActivity({
+            organizationId: organization.id,
+            type: 'warning_removed',
+            title: `Warning dismissed by ${name}`,
+            message: `${name} dismissed a materials cut-off warning. Dismissed warnings do not reappear.\n\n${warning.message}`,
+            relatedId,
+            requiresPermission: 'hasAdminAccess',
+            actor: user,
+            users,
+          })
+        },
+      })
+    } catch (caught) {
+      setError(caught instanceof Error && caught.message ? caught.message : 'Could not dismiss this warning. Try again.')
+      setDismissing(false)
+      return
     }
-    setHidden(true)
-    feedback('warningResolved')
+    setConfirming(false)
+    setDismissing(false)
   }
 
   return (
@@ -171,14 +186,41 @@ function MaterialsCard({
         <p className="small">{warning.message}</p>
         <p><b>{warning.projectLabel}</b></p>
         <p className="muted small">Managers should confirm material lists with site teams.</p>
-        <div className="row" style={{ gap: 8 }}>
-          <button type="button" className="btn" onClick={() => void dismiss()} disabled={dismissing}>
-            Dismiss
-          </button>
-          <Link href={projectMaterialsPath(warning.projectId, smallWorkIds)} className="btn primary">
-            Open materials
-          </Link>
-        </div>
+        {confirming ? (
+          <div className="stack" style={{ gap: 8 }} role="group" aria-label="Dismiss this warning?">
+            <p className="small"><b>Dismiss this warning?</b></p>
+            <p className="small">
+              Are you sure you would like to dismiss this warning? Any warnings that are dismissed will not reappear again.
+            </p>
+            <p className="muted small">
+              All admins will get a notification with who dismissed it and what was dismissed.
+            </p>
+            {error ? (
+              <p className="small" role="alert" style={{ color: 'var(--red, #b91c1c)' }}>
+                {error}
+              </p>
+            ) : null}
+            <div className="row" style={{ gap: 8 }}>
+              <button type="button" className="btn primary" onClick={() => void dismiss()} disabled={dismissing}>
+                {dismissing ? 'Dismissing…' : 'Dismiss permanently'}
+              </button>
+              <button type="button" className="btn" onClick={() => setConfirming(false)} disabled={dismissing}>
+                Keep warning
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="row" style={{ gap: 8 }}>
+            {onDismiss ? (
+              <button type="button" className="btn" onClick={() => setConfirming(true)}>
+                Dismiss
+              </button>
+            ) : null}
+            <Link href={projectMaterialsPath(warning.projectId, smallWorkIds)} className="btn primary">
+              Open materials
+            </Link>
+          </div>
+        )}
       </div>
     </section>
   )
@@ -355,6 +397,7 @@ export function WarningsScreen({
   smallWorkIds,
   onAcceptClash,
   onDismissQualification,
+  onDismissWarning,
   onDeleteBooking,
   onDeleteManagerBooking,
   canRemoveClashEntry,
@@ -382,6 +425,8 @@ export function WarningsScreen({
     pairs?: Array<{ bookingAId: string; bookingBId: string }>
   }) => Promise<void>
   onDismissQualification?: (warning: QualificationExpiryWarning) => Promise<void>
+  /** Permanent dismissal on every device: `warningResolutions/{resolutionKey}` status `dismissed`. Missing → no Dismiss. */
+  onDismissWarning?: (resolutionKey: string) => Promise<void>
   onDeleteBooking: (bookingId: string) => Promise<void>
   onDeleteManagerBooking: (bookingId: string) => Promise<void>
   /** Rulebook §2 (1.33.0): `bookingRemoveAction` is `delete` for this clash row's booking; missing → no remove button. */
@@ -620,7 +665,13 @@ export function WarningsScreen({
         }
         if (item.kind === 'material') {
           return (
-            <MaterialsCard key={item.warning.id} warning={item.warning} smallWorkIds={smallWorkIds} users={users} />
+            <MaterialsCard
+              key={item.warning.id}
+              warning={item.warning}
+              smallWorkIds={smallWorkIds}
+              users={users}
+              onDismiss={onDismissWarning}
+            />
           )
         }
         if (item.kind === 'qualification') {

@@ -119,7 +119,7 @@ test('a scrubbed retry deletes the auth user without scanning events or other pe
     const duringExecute = calls.slice(afterEvaluate)
     const queries = duringExecute.filter((call) => call.url.includes(':runQuery'))
     assert.ok(queries.length > 0)
-    const allowedQueryCollections = new Set(['organizations', 'invitations', 'users', 'settings', 'operatives', 'managers'])
+    const allowedQueryCollections = new Set(['organizations', 'invitations', 'users', 'settings', 'operatives', 'managers', 'webauthnCredentials'])
     for (const query of queries) {
       const parsed = JSON.parse(query.body) as { structuredQuery: { from: { collectionId: string }[] } }
       const collectionId = parsed.structuredQuery.from[0]?.collectionId || ''
@@ -127,6 +127,8 @@ test('a scrubbed retry deletes the auth user without scanning events or other pe
     }
     assert.equal(duringExecute.some((call) => call.url.includes('/documents/invitations') || call.body.includes('"invitations"')), true)
     assert.equal(duringExecute.some((call) => call.url.includes('productEvents')), false)
+    // The account's passkeys are removed too (web passkeys, server-only collection).
+    assert.equal(duringExecute.some((call) => call.url.includes(':runQuery') && call.body.includes('"webauthnCredentials"') && call.body.includes(uid)), true)
     assert.equal(duringExecute.some((call) => call.url.includes(':commit')), false)
     assert.equal(
       duringExecute.some((call) => call.method === 'PATCH' && call.url.includes(`/adminJobs/${uid}`)),
