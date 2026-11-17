@@ -24,3 +24,22 @@ test('a throwing onError is contained (no unhandled rejection)', async () => {
   })
   await new Promise((r) => setTimeout(r, 5))
 })
+
+test('without onError a failure is logged, in production too (review of #371)', async () => {
+  const previousEnv = process.env.NODE_ENV
+  const previousWarn = console.warn
+  const warned: unknown[][] = []
+  console.warn = (...args: unknown[]) => {
+    warned.push(args)
+  }
+  ;(process.env as Record<string, string | undefined>).NODE_ENV = 'production'
+  try {
+    afterPrimaryWrite('notice', Promise.reject(new Error('denied')))
+    await new Promise((r) => setTimeout(r, 5))
+  } finally {
+    ;(process.env as Record<string, string | undefined>).NODE_ENV = previousEnv
+    console.warn = previousWarn
+  }
+  assert.equal(warned.length, 1)
+  assert.match(String(warned[0][0]), /notice failed/)
+})

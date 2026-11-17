@@ -12,7 +12,8 @@ export function afterPrimaryWrite(label: string, work: Promise<unknown>, onError
       } catch {
         // A failing handler never surfaces as an unhandled rejection.
       }
-    } else if (process.env.NODE_ENV !== 'production') {
+    } else {
+      // Kept in production too (review of #371): a failed secondary write must leave a trace in the browser log.
       console.warn(`[afterPrimaryWrite] ${label} failed`, error)
     }
   })

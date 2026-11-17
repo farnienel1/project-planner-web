@@ -71,8 +71,8 @@ import {
   ErrorBanner,
 } from '@/components/settings/primitives'
 import { feedback } from '@/lib/feedbackSounds/feedback'
-import { withTimeout } from '@/lib/client/withTimeout'
-import { INVITE_EMAIL_TIMEOUT_MESSAGE, INVITE_EMAIL_TIMEOUT_MS } from '@/lib/invites/inviteEmailTimeout'
+import { isTimeoutError, withAbortTimeout } from '@/lib/client/withTimeout'
+import { INVITE_EMAIL_TIMEOUT_MESSAGE, INVITE_EMAIL_TIMEOUT_MS, inviteEmailTimeoutNote } from '@/lib/invites/inviteEmailTimeout'
 
 function FormSection({ label, children }: { label?: string; children: ReactNode }) {
   return (
@@ -525,17 +525,20 @@ export function AddUserScreen() {
         try {
           const { jsonAuthHeaders } = await import('@/lib/security/clientAuthHeaders')
           // Secondary to the invite: bounded, so a slow email service never holds Save (owner bug 17 Nov).
-          await withTimeout(
-            fetch('/api/invites/send-org-addition-email', {
-              method: 'POST',
-              headers: await jsonAuthHeaders(),
-              body: JSON.stringify({
-                organizationId: organization.id,
-                organizationName: organization.name,
-                firstName,
-                to: email,
+          const headers = await jsonAuthHeaders()
+          await withAbortTimeout(
+            (signal) =>
+              fetch('/api/invites/send-org-addition-email', {
+                method: 'POST',
+                headers,
+                signal,
+                body: JSON.stringify({
+                  organizationId: organization.id,
+                  organizationName: organization.name,
+                  firstName,
+                  to: email,
+                }),
               }),
-            }),
             INVITE_EMAIL_TIMEOUT_MS,
             INVITE_EMAIL_TIMEOUT_MESSAGE
           )
@@ -544,28 +547,41 @@ export function AddUserScreen() {
           )
         } catch (emailError) {
           setSuccess(
-            `User linked to ${organization.name}, but notification email could not be sent (${emailError instanceof Error ? emailError.message : 'unknown error'}).`
+            isTimeoutError(emailError)
+              ? `User linked to ${organization.name}. ${inviteEmailTimeoutNote(email)}`
+              : `User linked to ${organization.name}, but notification email could not be sent (${emailError instanceof Error ? emailError.message : 'unknown error'}).`
           )
         }
       } else {
         try {
           const { requestInviteSetupEmail } = await import('@/lib/invites/requestSetupEmail')
-          await withTimeout(
-            requestInviteSetupEmail({
-              organizationId: organization.id,
-              invitationId: result.invitationId,
-              organizationName: organization.name,
-              firstName,
-              role: operativeInviteOnly || accountType === 'operative' ? 'operative' : accountType === 'admin' ? 'admin' : 'manager',
-              to: email,
-            }),
+          await withAbortTimeout(
+            (signal) =>
+              requestInviteSetupEmail(
+                {
+                  organizationId: organization.id,
+                  invitationId: result.invitationId,
+                  organizationName: organization.name,
+                  firstName,
+                  role:
+                    operativeInviteOnly || accountType === 'operative'
+                      ? 'operative'
+                      : accountType === 'admin'
+                        ? 'admin'
+                        : 'manager',
+                  to: email,
+                },
+                { signal }
+              ),
             INVITE_EMAIL_TIMEOUT_MS,
             INVITE_EMAIL_TIMEOUT_MESSAGE
           )
           setSuccess(`Invitation sent to ${email}. They will receive an email to set their password.`)
         } catch (emailError) {
           setSuccess(
-            `User invited but email could not be sent (${emailError instanceof Error ? emailError.message : 'unknown error'}).`
+            isTimeoutError(emailError)
+              ? `User invited. ${inviteEmailTimeoutNote(email)}`
+              : `User invited but email could not be sent (${emailError instanceof Error ? emailError.message : 'unknown error'}).`
           )
         }
       }

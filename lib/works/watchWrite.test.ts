@@ -1,6 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { WRITE_CONFIRM_TIMEOUT_MS, confirmWriteWithin, watchWrite, type WriteStatus } from './watchWrite.ts'
+import {
+  WRITE_CONFIRM_TIMEOUT_MS,
+  WRITE_UNCONFIRMED_AFTER_MS,
+  confirmWriteWithin,
+  watchWrite,
+  type LaterWriteStatus,
+  type WriteStatus,
+} from './watchWrite.ts'
 
 // The My Projects / My Small works ⚙ save never blocks the screen (iOS PR #210): the confirmation is bounded and
 // reported as saved / pending / refused.
@@ -56,7 +63,7 @@ test('the limit is 15 seconds, as on iOS', () => {
 // Edit user Save (owner bug 17 Nov): a bounded wait — saved, refused (thrown) or pending with the outcome later.
 
 test('confirmWriteWithin: confirmed in time is saved and nothing is reported later', async () => {
-  const later: WriteStatus[] = []
+  const later: LaterWriteStatus[] = []
   assert.equal(await confirmWriteWithin(Promise.resolve(), (s) => later.push(s), 50), 'saved')
   await new Promise((r) => setTimeout(r, 10))
   assert.deepEqual(later, [])
@@ -70,7 +77,7 @@ test('confirmWriteWithin: refused in time throws the refusal (the screen shows i
 })
 
 test('confirmWriteWithin: a write that never answers returns pending in time — never hangs the screen', async () => {
-  const later: WriteStatus[] = []
+  const later: LaterWriteStatus[] = []
   const started = Date.now()
   assert.equal(await confirmWriteWithin(new Promise(() => {}), (s) => later.push(s), 20), 'pending')
   assert.ok(Date.now() - started < 1000)
@@ -80,7 +87,7 @@ test('confirmWriteWithin: a write that never answers returns pending in time —
 test('confirmWriteWithin: a slow write is pending, then reported saved or refused once', async () => {
   let resolveWrite!: () => void
   const slow = new Promise<void>((r) => (resolveWrite = r))
-  const later: WriteStatus[] = []
+  const later: LaterWriteStatus[] = []
   assert.equal(await confirmWriteWithin(slow, (s) => later.push(s), 10), 'pending')
   resolveWrite()
   await new Promise((r) => setTimeout(r, 10))
@@ -88,9 +95,43 @@ test('confirmWriteWithin: a slow write is pending, then reported saved or refuse
 
   let rejectWrite!: (e: Error) => void
   const refused = new Promise<void>((_, r) => (rejectWrite = r))
-  const later2: WriteStatus[] = []
+  const later2: LaterWriteStatus[] = []
   assert.equal(await confirmWriteWithin(refused, (s) => later2.push(s), 10), 'pending')
   rejectWrite(new Error('nope'))
   await new Promise((r) => setTimeout(r, 10))
   assert.deepEqual(later2, [{ status: 'refused', message: 'nope' }])
+})
+
+// Review of #371: Firestore retries some failures for ever, so "waiting" has an upper limit.
+
+test('confirmWriteWithin: a write still not answered at the upper limit is reported unconfirmed, once', async () => {
+  const later: LaterWriteStatus[] = []
+  assert.equal(await confirmWriteWithin(new Promise(() => {}), (s) => later.push(s), 10, 30), 'pending')
+  await new Promise((r) => setTimeout(r, 60))
+  assert.deepEqual(later, [{ status: 'unconfirmed' }])
+})
+
+test('confirmWriteWithin: an answer after the upper limit is still reported', async () => {
+  let resolveWrite!: () => void
+  const slow = new Promise<void>((r) => (resolveWrite = r))
+  const later: LaterWriteStatus[] = []
+  assert.equal(await confirmWriteWithin(slow, (s) => later.push(s), 10, 20), 'pending')
+  await new Promise((r) => setTimeout(r, 40))
+  resolveWrite()
+  await new Promise((r) => setTimeout(r, 5))
+  assert.deepEqual(later, [{ status: 'unconfirmed' }, { status: 'saved' }])
+})
+
+test('confirmWriteWithin: a write confirmed before the upper limit is never reported unconfirmed', async () => {
+  let resolveWrite!: () => void
+  const slow = new Promise<void>((r) => (resolveWrite = r))
+  const later: LaterWriteStatus[] = []
+  assert.equal(await confirmWriteWithin(slow, (s) => later.push(s), 10, 40), 'pending')
+  resolveWrite()
+  await new Promise((r) => setTimeout(r, 60))
+  assert.deepEqual(later, [{ status: 'saved' }])
+})
+
+test('the upper limit is 90 seconds', () => {
+  assert.equal(WRITE_UNCONFIRMED_AFTER_MS, 90_000)
 })

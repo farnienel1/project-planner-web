@@ -8,9 +8,10 @@ export async function requestInviteSetupEmail(params: {
   firstName: string
   role: 'manager' | 'operative' | 'admin'
   to: string
-}): Promise<void> {
+}, options: { signal?: AbortSignal } = {}): Promise<void> {
   const response = await fetch('/api/invites/send-setup-email', {
     method: 'POST',
+    signal: options.signal,
     headers: await jsonAuthHeaders(),
     body: JSON.stringify(params),
   })

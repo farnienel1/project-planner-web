@@ -118,7 +118,16 @@ import {
 import { SUPER_ADMIN_SUCCESSOR_EMPTY, superAdminSuccessors } from '@/lib/staff/superAdminTransfer'
 import { displayedLineManagerId, userWithLineManagerChoice } from '@/lib/firebase/userPayload'
 import { confirmWriteWithin } from '@/lib/works/watchWrite'
-import { useProfileSaveNotice } from '@/lib/users/profileSaveNotice'
+import {
+  profileSaveNoticeFor,
+  profileSaveStepFailedMessage,
+  useProfileSaveNotice,
+  type ProfileSaveTarget,
+} from '@/lib/users/profileSaveNotice'
+import { useWarnBeforeUnload } from '@/lib/client/useWarnBeforeUnload'
+import { withTimeout, withTimeoutFallback } from '@/lib/client/withTimeout'
+import { afterPrimaryWrite } from '@/lib/client/afterPrimaryWrite'
+import { PROFILE_SAVE_READ_TIMEOUT_MS, PROFILE_SAVE_READ_TIMEOUT_MESSAGE } from '@/lib/users/profileSaveReads'
 import { ActionPanel, ActionRow, Field, FieldGrid, FormSection, SectionBlock, Switch, ToggleRow, ProfileBack, ProfileBand, ProfileBanner, SaveState, ProfileIcon, type ProfileIconName } from '@/components/users/profile-ui'
 import {
   Input,
@@ -298,8 +307,20 @@ export function EditUserProfile({
   const organizationTimeZone = useOrganizationTimeZone()
   const { users, userIdAliases, loadUsers, setListedUserActive, patchListedUser } = useOrgUserStore()
   const { operatives, loadOperatives, patchOperativeQualifications } = useOperativeStore()
-  const { getUser, saveUser, setUserActive, deleteUser, sendPasswordReset, applyAccountType, changeAccountType, syncLinkedOperative, transferSuperAdmin, removeFromManagedJobs } =
-    useUserStore()
+  const {
+    getUser,
+    saveUser,
+    prepareSaveUser,
+    setUserActive,
+    deleteUser,
+    sendPasswordReset,
+    applyAccountType,
+    changeAccountType,
+    prepareChangeAccountType,
+    syncLinkedOperative,
+    transferSuperAdmin,
+    removeFromManagedJobs,
+  } = useUserStore()
   // Rulebook 1.30.3 / 1.31.0 (audit finding 1): every write builder gets every users document of the organisation (the
   // unfolded roster), so a same-email copy is never missed by a type change, deactivation or the transfer.
   const rosterDocs = useRosterDocuments(organization?.id)
@@ -310,6 +331,17 @@ export function EditUserProfile({
   const savedUser = useRef<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  // Owner answer 17 Nov (#371): a save the server has not confirmed within 15 s keeps this page open with an amber note
+  // (red after `WRITE_UNCONFIRMED_AFTER_MS`); it returns to the list once the server confirms. The note lives in
+  // `useProfileSaveNotice`, so the people list shows it too if the person leaves the page.
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+  const anySaveNotice = useProfileSaveNotice((state) => state.notice)
   const [typeSaving, setTypeSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -523,6 +555,10 @@ export function EditUserProfile({
   }, [target, users, operatives, rateHistory])
 
   const canEdit = target ? canEditTargetUser(currentUser, target) : false
+  // This person's save note (this organisation only, review of #371), and a reload warning while it waits.
+  const thisPersonNotice = profileSaveNoticeFor(anySaveNotice, organization?.id)
+  const pageSaveNotice = thisPersonNotice && target && thisPersonNotice.personId === target.id ? thisPersonNotice : null
+  useWarnBeforeUnload(pageSaveNotice?.status === 'pending')
   const canEditIdentity = target ? canEditIdentityDetails(currentUser, target) : false
   const canEditMatrix = target ? canEditPermissionsMatrix(currentUser, target) : false
   const canAdminTools = canUseAdminAccountTools(currentUser)
@@ -830,6 +866,7 @@ export function EditUserProfile({
       return
     }
     setSaving(true)
+    let confirmed: 'saved' | 'pending' = 'saved'
     try {
       // Rulebook 1.10.0 §8 (`payRateChangeWrites`): pay history rows go in the profile's batch; a history that did
       // not load refuses the save instead of writing a duplicate seed row.
@@ -842,7 +879,13 @@ export function EditUserProfile({
         // loaded profile), never from the email typed in this save — a new email would name another person's rows.
         const historyIds = personRateHistoryIds(savedUser.current ?? previous, operatives, { roster: users })
         payHistoryRows = payHistoryBatchRows({
-          history: await loadOperativeDayRateHistoryOrNull(organization.id),
+          // Bounded (review of #371): a history that does not load in time is "not loaded", so the save is refused
+          // with PAY_HISTORY_NOT_LOADED_MESSAGE (nothing written) instead of waiting with no limit.
+          history: await withTimeoutFallback(
+            loadOperativeDayRateHistoryOrNull(organization.id),
+            PROFILE_SAVE_READ_TIMEOUT_MS,
+            null
+          ),
           userId: toSave.id,
           // The row keeps one `operativeId` (the linked catalogue row, as before); the "history loaded and empty?"
           // test reads every id the person's history may be under (1.36.0, FU-5), so no duplicate seed row.
@@ -873,31 +916,66 @@ export function EditUserProfile({
             }
           : null
       const writerId = currentUser?.id ?? ''
-      // Every write of this save, in order. Each `commit` resolves only when the server confirms it.
-      const persist = (async () => {
-        if (typeChange && draftAccountType && draftTypePermissions) {
-          // Rulebook 1.11.0 `accountTypeChangeWrites`: the new type on every document that decides it here, in one
-          // batch (1.12.2).
-          await changeAccountType(previous, draftAccountType, organization.id, rosterDocs, draftTypePermissions)
-        } else if (accountTypeRepair) {
-          // Rulebook 1.12.2 `accountTypeSyncState`: a user type only partly saved (older iOS build, interrupted save)
-          // is finished on every document from the profile's type.
-          await changeAccountType(previous, accountTypeRepair, organization.id, rosterDocs, previous.permissions)
-        }
-        await saveUser(toSave, organization.id, previous.email, { baseline: profileBaseline, payHistoryRows })
-        if (taxNext) await saveTaxIds(toSave.id, taxNext, writerId)
-      })()
+      // Review of #371: the reads come first, bounded, and nothing is written if they fail or time out. Only then are
+      // the batches handed to Firestore (in order; Firestore sends them in that order) and only then does the
+      // confirmation timer start, so "saved on this device" is never shown before anything was queued.
+      const prepared = await withTimeout(
+        (async () => {
+          const typePlan =
+            typeChange && draftAccountType && draftTypePermissions
+              ? // Rulebook 1.11.0 `accountTypeChangeWrites`: the new type on every document that decides it here, in
+                // one batch (1.12.2).
+                await prepareChangeAccountType(previous, draftAccountType, organization.id, rosterDocs, draftTypePermissions)
+              : accountTypeRepair
+                ? // Rulebook 1.12.2 `accountTypeSyncState`: a user type only partly saved (older iOS build, interrupted
+                  // save) is finished on every document from the profile's type.
+                  await prepareChangeAccountType(previous, accountTypeRepair, organization.id, rosterDocs, previous.permissions)
+                : null
+          const profilePlan = await prepareSaveUser(toSave, organization.id, previous.email, {
+            baseline: profileBaseline,
+            payHistoryRows,
+          })
+          return { typePlan, profilePlan }
+        })(),
+        PROFILE_SAVE_READ_TIMEOUT_MS,
+        PROFILE_SAVE_READ_TIMEOUT_MESSAGE
+      )
+      // Queued now, in order. Each promise resolves only when the server confirms it.
+      const commits: Promise<unknown>[] = []
+      if (prepared.typePlan) commits.push(prepared.typePlan.commit())
+      commits.push(prepared.profilePlan.commit())
+      if (taxNext) commits.push(saveTaxIds(toSave.id, taxNext, writerId))
+      const persist = Promise.all(commits).then(() => undefined)
       // Owner bug 17 Nov: the save waited for the server's confirmation with no time limit, so when it was slow or
       // never came the screen stayed on "Saving…" although the change already showed (Firestore applies it locally at
       // once and sends it when it can). Wait at most `WRITE_CONFIRM_TIMEOUT_MS`: a refusal in that time is shown here
       // and Save comes back; no answer yet returns to the list as any save does, and the list says it is waiting
-      // (`useProfileSaveNotice`) until the server confirms or refuses it. The same pattern as My Projects (4e55d280).
-      const saveId = Date.now()
-      const savedName = `${toSave.firstName} ${toSave.surname}`.trim() || toSave.email
-      const confirmed = await confirmWriteWithin(persist, (outcome) =>
-        useProfileSaveNotice.getState().settled(saveId, outcome, savedName)
-      )
-      if (confirmed === 'pending') useProfileSaveNotice.getState().pending(saveId, savedName)
+      // (`useProfileSaveNotice`) until the server confirms or refuses it, or says it is not confirmed after
+      // `WRITE_UNCONFIRMED_AFTER_MS` (Firestore retries some errors for ever). The same pattern as My Projects.
+      const noticeTarget: ProfileSaveTarget = {
+        saveId: Date.now(),
+        organizationId: organization.id,
+        personId: toSave.id,
+        name: `${toSave.firstName} ${toSave.surname}`.trim() || toSave.email,
+      }
+      const notices = useProfileSaveNotice.getState()
+      confirmed = await confirmWriteWithin(persist, (outcome) => {
+        notices.settled(noticeTarget, outcome)
+        if (!mountedRef.current) return
+        if (outcome.status === 'saved') {
+          // Confirmed while the person is still on this page: close it, as for any save.
+          router.push(hubHref || backHref)
+        } else if (outcome.status === 'refused') {
+          // Nothing was saved: the edits stay on screen and Save comes back to try again.
+          savedUser.current = previous
+          setListedUserActive(previous.id, previous.isActive)
+          setBaseline(previousBaseline)
+          setSaved(false)
+          setSuccess(null)
+        }
+      })
+      if (confirmed === 'pending') notices.pending(noticeTarget)
+      if (prepared.typePlan?.note) setSuccess(prepared.typePlan.note)
       savedUser.current = toSave
       if (taxNext) {
         setTaxIds({ ...taxNext, source: 'private' })
@@ -911,12 +989,39 @@ export function EditUserProfile({
       setShowChangeType(false)
       setBaseline(profileSnapshot(toSave, null, null))
       setOriginalEmploymentType(toSave.employmentType)
-      setSaved(true)
-      window.setTimeout(() => setSaved(false), 3000)
-      setSuccess(emailChangeNote ?? (toSave.isActive ? 'Profile saved.' : 'User deactivated.'))
+      if (confirmed === 'saved') {
+        setSaved(true)
+        window.setTimeout(() => setSaved(false), 3000)
+        setSuccess(emailChangeNote ?? (toSave.isActive ? 'Profile saved.' : 'User deactivated.'))
+      } else {
+        // Not confirmed yet: the amber note says so; no "Saved" until the server answers (owner answer 17 Nov).
+        setSuccess(emailChangeNote)
+      }
       if (emailChangeNote) setTarget({ ...toSave })
-      void setUserActive(toSave.id, toSave.isActive, organization.id, rosterDocs).catch(() => undefined)
-      void syncLinkedOperative(organization.id, toSave, operatives).catch(() => undefined)
+      // Review of #371: the active flag and the linked operatives row follow the profile batch — never written when
+      // that batch was refused or has not reached the server. A failure is reported on the people list.
+      const reportStep = (step: string) => (error: unknown) => {
+        const reason = error instanceof Error && error.message ? error.message : 'the server refused it.'
+        useProfileSaveNotice.getState().failed(noticeTarget, profileSaveStepFailedMessage(noticeTarget.name, step, reason))
+      }
+      const afterProfile = (label: string, step: string, work: () => Promise<unknown>) =>
+        afterPrimaryWrite(
+          label,
+          persist.then(
+            () => work().catch((error: unknown) => {
+              reportStep(step)(error)
+              throw error
+            }),
+            // The profile batch itself failed: already reported by its own notice; this step never runs.
+            () => undefined
+          )
+        )
+      afterProfile('setUserActive', 'changing whether they are active', () =>
+        setUserActive(toSave.id, toSave.isActive, organization.id, rosterDocs)
+      )
+      afterProfile('syncLinkedOperative', 'updating their Operatives record', () =>
+        syncLinkedOperative(organization.id, toSave, operatives)
+      )
       // Off their jobs once the save is through (it runs on if this screen stops waiting — never blocks Save).
       const jobsChange: PersonAccessChange | null =
         draftAccountType === 'operative' && currentAccountType(previous) !== 'operative'
@@ -925,8 +1030,17 @@ export function EditUserProfile({
             ? { kind: 'deactivate' }
             : null
       if (jobsChange) {
-        const jobs = persist.then(() => removeFromJobs(previous, jobsChange))
-        await confirmWriteWithin(jobs, () => undefined).catch(() => undefined)
+        const jobs = persist.then(
+          () =>
+            removeFromManagedJobs(previous, jobsChange, organization.id, rosterDocs).catch((error: unknown) => {
+              reportStep('removing them from their jobs')(error)
+              throw error
+            }),
+          () => undefined
+        )
+        afterPrimaryWrite('removeFromManagedJobs', jobs)
+        // Waits a bounded time only when the profile is already confirmed; otherwise it runs on in the background.
+        if (confirmed === 'saved') await confirmWriteWithin(jobs, () => undefined).catch(() => undefined)
       }
     } catch (err: unknown) {
       setTarget(previous)
@@ -944,6 +1058,8 @@ export function EditUserProfile({
     void import('@/lib/timesheets/dayRateHistoryStorage').then(({ loadOperativeDayRateHistory }) =>
       loadOperativeDayRateHistory(organization.id).then(setRateHistory)
     )
+    // Owner answer 17 Nov (#371): not confirmed yet — stay here with the note; it closes once the server confirms.
+    if (confirmed === 'pending') return
     // Owner request (1.12.2): a saved profile closes and returns to the people list.
     router.push(hubHref || backHref)
   }
@@ -1027,7 +1143,23 @@ export function EditUserProfile({
     try {
       await deleteUser(target.id, { organizationId: organization?.id, email: target.email, roster: rosterDocs })
       // Off their jobs (secondary): waits a bounded time, then returns to the list while it finishes (owner bug 17 Nov).
-      await confirmWriteWithin(removeFromJobs(target, { kind: 'delete' }), () => undefined).catch(() => undefined)
+      // A refusal is reported on the people list (review of #371), never swallowed.
+      if (organization?.id) {
+        const orgId = organization.id
+        const deletedName = `${target.firstName} ${target.surname}`.trim() || target.email
+        const jobs = removeFromManagedJobs(target, { kind: 'delete' }, orgId, rosterDocs).catch((error: unknown) => {
+          const reason = error instanceof Error && error.message ? error.message : 'the server refused it.'
+          useProfileSaveNotice
+            .getState()
+            .failed(
+              { saveId: Date.now(), organizationId: orgId, personId: target.id, name: deletedName },
+              `${deletedName} was deleted, but removing them from their jobs failed: ${reason} Check their jobs' managers.`
+            )
+          throw error
+        })
+        afterPrimaryWrite('removeFromManagedJobs', jobs)
+        await confirmWriteWithin(jobs, () => undefined).catch(() => undefined)
+      }
       router.push(hubHref || backHref)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to delete user')
@@ -1182,6 +1314,9 @@ export function EditUserProfile({
       />
 
       {error && <ProfileBanner tone="red">{error}</ProfileBanner>}
+      {pageSaveNotice ? (
+        <ProfileBanner tone={pageSaveNotice.status === 'pending' ? 'amber' : 'red'}>{pageSaveNotice.message}</ProfileBanner>
+      ) : null}
       {reportsBlock && reportsBlock.length > 0 ? (
         <ProfileBanner tone="amber">
           <ul>

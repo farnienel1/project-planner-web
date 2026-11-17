@@ -50,7 +50,8 @@ import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import { hasAdminAccess } from '@/lib/permissions'
 import { PLACEHOLDER_MANAGER_EXPLANATION } from '@/lib/staff/managerRosterUtils'
-import { useProfileSaveNotice } from '@/lib/users/profileSaveNotice'
+import { profileSaveNoticeFor, useProfileSaveNotice } from '@/lib/users/profileSaveNotice'
+import { useWarnBeforeUnload } from '@/lib/client/useWarnBeforeUnload'
 
 const ROLE_TABS: { tab: ManageUsersTab; label: string; section: string }[] = [
   { tab: 'admins', label: 'Admins', section: 'Administrators' },
@@ -192,7 +193,14 @@ export function ManageUsersScreen({ scope = 'all' }: { scope?: ManageUsersScope 
   const from = operativesScope ? 'operatives' : managersScope ? 'managers' : 'users'
   const [cleaning, setCleaning] = useState(false)
   // A profile save Edit user stopped waiting for (owner bug 17 Nov): waiting for the server, or refused by it.
-  const { notice: saveNotice, dismiss: dismissSaveNotice } = useProfileSaveNotice()
+  // Review of #371: only this organisation's notice is shown, and another organisation's is cleared on a switch.
+  const { notice: anySaveNotice, dismiss: dismissSaveNotice, keepOnlyOrganization } = useProfileSaveNotice()
+  const saveNotice = profileSaveNoticeFor(anySaveNotice, organization?.id)
+  useEffect(() => {
+    if (organization?.id) keepOnlyOrganization(organization.id)
+  }, [organization?.id, keepOnlyOrganization])
+  // A reload throws a queued write away (memory cache): while a save is still waiting, the browser asks first.
+  useWarnBeforeUnload(saveNotice?.status === 'pending')
   const [cleanupMessage, setCleanupMessage] = useState<string | null>(null)
 
   const [tab, setTab] = useState<ManageUsersTab>('admins')
@@ -420,9 +428,9 @@ export function ManageUsersScreen({ scope = 'all' }: { scope?: ManageUsersScope 
       </PageBand>
 
       {saveNotice ? (
-        <Note tone={saveNotice.status === 'refused' ? 'red' : 'amber'} role="status">
+        <Note tone={saveNotice.status === 'pending' ? 'amber' : 'red'} role="status">
           <b>{saveNotice.message}</b>
-          {saveNotice.status === 'refused' ? (
+          {saveNotice.status !== 'pending' ? (
             <span style={{ display: 'block', marginTop: 6 }}>
               <button type="button" className="pu-link" style={{ color: 'inherit' }} onClick={dismissSaveNotice}>
                 Dismiss
