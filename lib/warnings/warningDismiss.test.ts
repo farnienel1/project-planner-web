@@ -87,5 +87,6 @@ test('an iOS dismissal of the same row (other letter case) also hides it on web'
 
 test('warningDismissDocument writes nothing without a key or a user', () => {
   assert.equal(warningDismissDocument({ resolutionKey: '', dismissedByUserId: 'u' }), null)
-  assert.equal(warningDismissDocument({ resolutionKey: 'materials-x-2026-11-18', dismissedByUserId: '' }), null)
+  const someKey = ['materials', 'job1', '2026-11-18'].join('-')
+  assert.equal(warningDismissDocument({ resolutionKey: someKey, dismissedByUserId: '' }), null)
 })
