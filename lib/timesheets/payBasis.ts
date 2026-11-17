@@ -100,8 +100,8 @@ export function payLineDisplay({
   clockHours?: number | null
   breakHours?: number | null
   /**
-   * Rulebook 1.61.0: the person's own rate (never multiplied), when the caller has it, so the hourly rate shown is
-   * exactly `dayRate ÷ divisor` rounded to pennies. Missing: `rate ÷ otMultiplier`.
+   * Rulebook 1.61.0: the person's own rate (never multiplied), so the hourly rate shown is exactly `dayRate ÷ divisor`
+   * rounded to pennies. Missing: the older wording (a rate is never worked out backwards).
    */
   baseRate?: number | null
 }) {
@@ -121,7 +121,9 @@ export function payLineDisplay({
     rateType = `${kind} ${ot}`
   }
   const multiplier = Number(otMultiplier) > 0 ? Number(otMultiplier) : 1
-  if (isOvertime && !hourly && rate != null && Number(otMultiplier) > 0) {
+  // Rulebook 1.61.0 (review of #378, S1): only with the person's own rate (`baseRate`) — never a rate worked out
+  // backwards from the multiplied rate or an amount.
+  if (isOvertime && !hourly && rate != null && Number(otMultiplier) > 0 && Number(baseRate) > 0) {
     // Rulebook 1.61.0 §8 (owner decision 17 Nov): a day-rate overtime line reads in hours —
     // "6h × 1.5 = 9h · 9h × £26.47/h (rounded) = £238.24 (£225.00/day ÷ 8.5h)" — never a multiplied day
     // rate. `rate` is the multiplied rate the line was priced with; the person's day rate is rate ÷ N. `pay` as given.
@@ -133,7 +135,7 @@ export function payLineDisplay({
       clockHours,
       breakHours,
       multiplier,
-      dayRate: Number(baseRate) > 0 ? Number(baseRate) : rate / multiplier,
+      dayRate: Number(baseRate),
       standard,
       pay,
       currencyCode,

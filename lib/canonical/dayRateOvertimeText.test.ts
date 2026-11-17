@@ -227,3 +227,49 @@ test('1.61.0: the overtime text function does no arithmetic of its own (formatti
   assert.ok(caught.some((t) => t.startsWith('Math.round')), caught.join(' | '))
   assert.ok(caught.includes('-0'), caught.join(' | '))
 })
+
+// MARK: - Signed lines (review of #378, S1): never a rate worked out backwards from the signed amount
+
+const signedLine = (over: Partial<R.SignedDayRateOvertimeLine> = {}): R.SignedDayRateOvertimeLine => {
+  const pay = R.payForHours({ payBasis: 'day', dayRate: 225, paidHours: 6, standardDayHours: 8.5, otMultiplier: 1.5 })
+  return { isOvertime: true, payBasis: 'day', decision: 'approved', paidHours: 6, amount: pay, otMultiplier: 1.5, otBaseDayRate: 225, otDayRateHours: 8.5, details: '16:00–22:00', ...over }
+}
+
+test('1.61.0 S1: a signed line reads in hours only from the day rate and divisor stored at signing', () => {
+  assert.equal(R.signedDayRateOvertimeText(signedLine(), { currency: 'GBP' })?.text, '6h × 1.5 = 9h · 9h × £26.47/h (rounded) = £238.24 (£225.00/day ÷ 8.5h)')
+  // Short overtime, 0.25h × 2 on £225/day, 8.5h day → £13.24; the day rate shown is the stored £225, never £13.24 ÷ 0.03 days ÷ 2.
+  const shortPay = R.payForHours({ payBasis: 'day', dayRate: 225, paidHours: 0.25, standardDayHours: 8.5, otMultiplier: 2 })
+  const short = R.signedDayRateOvertimeText(signedLine({ paidHours: 0.25, amount: shortPay, otMultiplier: 2 }), { currency: 'GBP' })
+  assert.equal(short?.text, `0.25h × 2 = 0.5h · 0.5h × £26.47/h (rounded) = ${R.formatMoney(shortPay, 'GBP')} (£225.00/day ÷ 8.5h)`)
+  // An amount-only revision (the stored amount is not what the stored rate pays): the older wording.
+  assert.equal(R.signedDayRateOvertimeText(signedLine({ amount: 255 })), null)
+  assert.equal(R.signedDayRateOvertimeText(signedLine({ decision: 'edited' })), null)
+  assert.equal(R.signedDayRateOvertimeText(signedLine({ decision: 'declined', amount: 0 })), null)
+  // Rounded stored days are never read: the divisor is the one stored at signing (0.71 days would give £225.08/day).
+  const roundedDays = signedLine() as R.SignedDayRateOvertimeLine & { days: number }
+  roundedDays.days = 0.71
+  assert.ok(R.signedDayRateOvertimeText(roundedDays, { currency: 'GBP' })?.text.includes('£225.00/day ÷ 8.5h'))
+  // A line signed before 1.61.0 (no stored rate or divisor): the older wording.
+  assert.equal(R.signedDayRateOvertimeText(signedLine({ otBaseDayRate: undefined, otDayRateHours: undefined })), null)
+  assert.equal(R.signedDayRateOvertimeText(signedLine({ otDayRateHours: undefined })), null)
+  // Hourly people, standard lines and a multiplier that disagrees with the stored multiplied text: the older wording.
+  assert.equal(R.signedDayRateOvertimeText(signedLine({ payBasis: 'hourly' })), null)
+  assert.equal(R.signedDayRateOvertimeText(signedLine({ isOvertime: false })), null)
+  assert.equal(R.signedDayRateOvertimeText(signedLine({ details: '16:00–22:30 · OT 6.5h × 2 − 0.5h break = 12.5h' })), null)
+})
+
+test('1.61.0 S1 property: a signed line shows its stored figures or the older wording, never a back-calculated rate', () => {
+  for (let seed = 1; seed <= CASES; seed += 1) {
+    const c = generate(seed)
+    const { result, divisor, pay } = priced(c)
+    if (!(result.outsideHours > 0)) continue
+    const line = signedLine({ paidHours: result.outsideHours, amount: pay, otMultiplier: result.outsideMultiplier, otBaseDayRate: c.dayRate, otDayRateHours: divisor, details: '' })
+    const calc = R.signedDayRateOvertimeText(line, { currency: 'GBP' })
+    assert.ok(calc, `case ${seed}`)
+    assert.equal(calc.pay, pay)
+    assert.equal(calc.hourlyRate, R.roundPennies(c.dayRate / divisor))
+    assert.ok(calc.text.endsWith(`(${R.formatMoney(c.dayRate, 'GBP')}/day ÷ ${plainHoursText(divisor)})`), calc.text)
+    // A penny's revision of the amount always drops to the older wording.
+    assert.equal(R.signedDayRateOvertimeText({ ...line, amount: pay + 0.01 }), null, `case ${seed}`)
+  }
+})

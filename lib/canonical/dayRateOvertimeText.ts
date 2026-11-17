@@ -7,7 +7,7 @@
  * hours, with the hourly rate worked out from the day rate and that part's day-rate divisor (`payrollDayRateHours`:
  * the weekday paid day for every overtime part):
  *   "6h × 1.5 = 9h · 9h × £26.47/h (rounded) = £238.24 (£225.00/day ÷ 8.5h)"
- * The hourly rate shown is rounded to pennies, so hours × the shown rate can differ from the amount by a penny or two;
+ * The hourly rate shown is rounded to pennies, so hours × the shown rate can differ from the amount by a few pence;
  * it is then marked "(rounded)" (owner confirmed 17 Nov).
  *
  * Owner 17 Nov: the text only shows the calculation that is actually used. So this function does no arithmetic of its
@@ -18,8 +18,8 @@
  */
 
 import { formatMoney } from './money'
-import { dayRateHourlyEquivalent, roundPennies } from './payRate'
-import { multipliedHoursParts, plainHoursText } from './payrollHours'
+import { dayRateHourlyEquivalent, payForHours, roundPennies } from './payRate'
+import { multipliedHoursParts, parseMultipliedHoursText, plainHoursText } from './payrollHours'
 
 /** The figures behind the hours part (`payrollMultipliedHours` / `multipliedHoursParts`). */
 export type DayRateOvertimeMultipliedHours = {
@@ -104,4 +104,58 @@ export function dayRateOvertimeCalcText(input: DayRateOvertimeCalcInput): DayRat
     lines: [first, rateText],
     text: `${first} (${derivation})`,
   }
+}
+
+/** A signed timesheet snapshot line (`weeklyReportOverride.lines[]`) as both apps store it, for the 1.61.0 wording. */
+export type SignedDayRateOvertimeLine = {
+  isOvertime?: boolean | null
+  /** Missing on older snapshots means day rate. */
+  payBasis?: string | null
+  /** `approved`, `edited`, `declined`, …; an edited or declined line keeps the older wording. */
+  decision?: string | null
+  /** The hours priced at the multiplier (the collector's `outsideHours`). */
+  paidHours: number
+  amount: number
+  otMultiplier?: number | null
+  /** 1.61.0: the person's own day rate at signing (never multiplied, never worked out from the amount). */
+  otBaseDayRate?: number | null
+  /** 1.61.0: the line's day-rate divisor at signing (`payrollDayRateHours`), never stored days. */
+  otDayRateHours?: number | null
+  /** The stored details text; a multiplied text ("6.5h × 2 − 0.5h break = 12.5h") gives the clock hours and break. */
+  details?: string | null
+}
+
+/**
+ * Rulebook 1.61.0 §8 (review of #378, S1): the hours wording of a SIGNED day-rate overtime line, or null for the older
+ * "days × day rate" wording. Never works a rate out backwards from the signed amount: it needs the day rate and divisor
+ * stored on the line at signing (`otBaseDayRate`, `otDayRateHours`), a line that was not edited or declined, and the
+ * stored amount to be exactly what the rulebook pays for the stored hours at that rate (`payForHours`) — so an
+ * amount-only revision, a line signed before 1.61.0 or any line whose figures do not agree keeps the older wording.
+ */
+export function signedDayRateOvertimeText(
+  line: SignedDayRateOvertimeLine,
+  options: { currency?: string | null } = {}
+): DayRateOvertimeCalcText | null {
+  if (line.isOvertime !== true || line.payBasis === 'hourly') return null
+  if (line.decision === 'edited' || line.decision === 'declined') return null
+  const multiplier = Number(line.otMultiplier)
+  const dayRate = Number(line.otBaseDayRate)
+  const divisor = Number(line.otDayRateHours)
+  const paidHours = Number(line.paidHours)
+  if (!(multiplier > 0) || !(dayRate > 0) || !(divisor >= 1) || !(paidHours > 0) || !Number.isFinite(Number(line.amount))) return null
+  const priced = payForHours({ payBasis: 'day', dayRate, paidHours, standardDayHours: divisor, otMultiplier: multiplier })
+  if (priced !== roundPennies(Number(line.amount))) return null
+  const parsed = parseMultipliedHoursText(line.details)
+  if (parsed && parsed.multiplier !== multiplier) return null
+  const calc = dayRateOvertimeCalcText({
+    clockHours: parsed ? parsed.clockHours : paidHours,
+    multiplier,
+    breakHours: parsed ? parsed.breakHours : 0,
+    dayRate,
+    dayRateHours: divisor,
+    pay: priced,
+    currency: options.currency ?? null,
+  })
+  if (!calc || Math.abs(calc.paidHours - paidHours * multiplier) > 0.005) return null
+  return calc
 }

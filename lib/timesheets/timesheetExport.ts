@@ -14,6 +14,7 @@ import { personRateHistoryIds } from '@/lib/pay/personRateHistoryIds'
 import type { OperativeDayRateHistoryCollection, OperativeDayRateHistoryEntry } from '@/lib/timesheets/dayRateHistoryStorage'
 import { formatMoney } from '@/lib/canonical/money'
 import { parseMultipliedHoursText, timesheetLineClockText } from '@/lib/canonical/payrollHours'
+import { signedDayRateOvertimeText } from '@/lib/canonical/dayRateOvertimeText'
 import { timesheetInvoiceRows } from '@/lib/canonical/reportPay'
 import { priceWorkJobNumberText } from '@/lib/canonical/priceWorkJobNumber'
 import { emailDocument, emailHeading, emailLink, emailList, emailStrong, emailText } from '@/lib/email/emailTheme'
@@ -123,42 +124,45 @@ function signedOverrideDetails(
     payBasis?: string | null
     /** The multiplier stored on the signed line (1.46.0 snapshots), when any. */
     otMultiplier?: number | null
+    /** Rulebook 1.61.0: the day rate and divisor stored at signing, when any (never worked out from the amount). */
+    otBaseDayRate?: number | null
+    otDayRateHours?: number | null
+    decision?: string | null
     details?: string
   },
   standardDayHours: number,
   currencyCode?: string
 ): string {
+  // 1.43.0: the clock part only (`timesheetLineClockText`); the multiplied text is in the equation.
+  const clockPart = timesheetLineClockText(line.details)
+  const clock = clockPart && isClockSpanLabel(clockPart) ? `${clockPart} · ` : ''
+  // Rulebook 1.61.0 §8 (review of #378, S1): a signed day-rate overtime line reads in hours only from the day rate and
+  // divisor stored at signing, when its stored amount is exactly what they pay (`signedDayRateOvertimeText`). Never a
+  // rate worked out backwards from the signed amount; any other signed line keeps the older wording below.
+  try {
+    const calc = signedDayRateOvertimeText(line, { currency: currencyCode ?? null })
+    if (calc) return `${clock}${calc.text}`
+  } catch {
+    // The older wording; the amount is the stored one either way.
+  }
   const standard = orgDayHours(standardDayHours)
   // 1.20.3: a signed overtime line with a break shows "6.5h × 2 − 0.5h break = 12.5h" as a live line does
   // (`parseMultipliedHoursText` on its stored text); other signed lines are shown as before.
   const parsed = line.isOvertime ? parseMultipliedHoursText(line.details) : null
   const slice = signedLabourSlice(line, standard, parsed?.multiplier ?? 1)
   const withBreak = Number(slice.breakHours) > 0
-  // Rulebook 1.61.0 §8: a signed day-rate overtime line whose multiplier is known (stored, or read from its stored
-  // text) reads in hours from its stored hours, days and amount (`dayRateOvertimeCalcText` via `payLineDisplay`);
-  // never re-priced. A line whose multiplier is unknown keeps the older wording.
-  const knownMultiplier =
-    line.isOvertime && (Number(line.otMultiplier) > 0 || parsed != null) ? Number(slice.otMultiplier) : 0
-  const inHours = slice.payBasis === 'day' && knownMultiplier > 0
-  // The signed rate unrounded (amount ÷ stored days), so the day rate shown is the one that gave the signed amount
-  // (£238.24 ÷ 0.71 days ÷ 1.5 = £225.00, not the £225.01 a penny-rounded £337.51 would give).
-  const signedDayUnits = slice.paidHours / orgDayHours(slice.standardDayHours ?? standard)
-  const signedRate = inHours && signedDayUnits > 0.0001 ? slice.pay / signedDayUnits : slice.rate
   const equation = payLineDisplay({
     payBasis: slice.payBasis,
     paidHours: slice.paidHours,
     // 1.44.0 §8: the signed line's own paid day (stored days), never today's.
     standardDayHours: slice.standardDayHours ?? standard,
-    rate: signedRate,
+    rate: slice.rate,
     pay: slice.pay,
     currencyCode,
-    ...(withBreak || inHours
+    ...(withBreak
       ? { isOvertime: true, otMultiplier: slice.otMultiplier, clockHours: slice.clockHours ?? null, breakHours: slice.breakHours ?? null }
       : {}),
   }).equation
-  // 1.43.0: the clock part only (`timesheetLineClockText`); the multiplied text is in the equation.
-  const clockPart = timesheetLineClockText(line.details)
-  const clock = clockPart && isClockSpanLabel(clockPart) ? `${clockPart} · ` : ''
   return `${clock}${equation}`
 }
 

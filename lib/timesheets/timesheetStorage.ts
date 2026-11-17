@@ -416,6 +416,8 @@ function mapLabourLine(row: Record<string, unknown>): WeeklyReportLabourLine | n
     isLeave: row.isLeave === true,
     isOvertime: row.isOvertime === true,
     otMultiplier: typeof row.otMultiplier === 'number' ? row.otMultiplier : null,
+    ...(typeof row.otBaseDayRate === 'number' && row.otBaseDayRate > 0 ? { otBaseDayRate: row.otBaseDayRate } : {}),
+    ...(typeof row.otDayRateHours === 'number' && row.otDayRateHours > 0 ? { otDayRateHours: row.otDayRateHours } : {}),
     decision: asDecision(row.decision),
     bookingId,
     // 1.46.0: the booking as signed, so a later Edit hours review of another version never re-prices the line.
@@ -484,6 +486,8 @@ export function weeklyReportOverrideToFirestore(override: WeeklyReportOverride):
       isLeave: line.isLeave === true,
       isOvertime: line.isOvertime,
       ...(line.isOvertime && line.otMultiplier != null ? { otMultiplier: line.otMultiplier } : {}),
+      ...(line.isOvertime && line.otBaseDayRate != null ? { otBaseDayRate: line.otBaseDayRate } : {}),
+      ...(line.isOvertime && line.otDayRateHours != null ? { otDayRateHours: line.otDayRateHours } : {}),
       decision: line.decision,
       bookingId: line.bookingId || '',
       ...(line.bookingFingerprint ? { bookingFingerprint: line.bookingFingerprint } : {}),

@@ -67,7 +67,7 @@ export {
   warningDayKeyIsDated,
 } from './warningSort'
 
-export { leaveCoverageRows, leaveSlotKind } from './leaveCoverage'
+export { leaveCoverageRows, leaveCoverBookingWindow, leaveSlotKind } from './leaveCoverage'
 
 export {
   canEditWorkCatalogue,
@@ -902,6 +902,7 @@ export {
   notificationCatalogRow,
   personIdSet,
   timesheetNotificationDedupeKey,
+  lineManagerPeerNoticeKey,
   timesheetSignedRecipients,
   timesheetSubmittedRecipients,
   toolboxTalkRecipients,
@@ -2288,6 +2289,59 @@ export type { TimesheetRevisionCheck, TimesheetRevisionDifference, TimesheetVers
 export { leaveLegacyKeyFindings } from './leaveReadAudit'
 export type { LeaveReadAuditFinding, LeaveReadAuditUser } from './leaveReadAudit'
 
+// 1.60.0 §5: a booking for more than one person never books someone already booked that day (owner 17 Nov).
+export {
+  MULTI_PERSON_ALREADY_BOOKED_MESSAGE,
+  MULTI_PERSON_ALREADY_BOOKED_REMOVE_LABEL,
+  multiPersonBookingBlocks,
+} from './multiPersonBooking'
+export type {
+  MultiPersonBookingBlock,
+  MultiPersonBookingPerson,
+  MultiPersonExistingBooking,
+} from './multiPersonBooking'
+
+// 1.59.0: former people on old bookings (§11, §21), the task person key (§21) and the safe-sender notice (§16).
+export {
+  DELETED_PEOPLE_COLLECTION,
+  FORMER_PERSON_ANONYMOUS_NAME,
+  FORMER_PERSON_CHIP,
+  FORMER_PERSON_EMAIL_MAX,
+  FORMER_PERSON_FIELDS,
+  FORMER_PERSON_IDS_MAX,
+  FORMER_PERSON_LINK_ACTION,
+  FORMER_PERSON_LINK_ADMIN_ONLY_NOTE,
+  FORMER_PERSON_LINK_SKIP,
+  FORMER_PERSON_LINK_TITLE,
+  FORMER_PERSON_NAME_MAX,
+  FORMER_PERSON_RECORD_SKIPPED_MESSAGE,
+  formerPeopleForEmail,
+  formerPersonDataHealthLabel,
+  formerPersonForId,
+  formerPersonLabel,
+  formerPersonLinkOfferMessage,
+  formerPersonLinkWriteFields,
+  formerPersonPath,
+  formerPersonRecordFields,
+  formerPersonRecordNeeded,
+  parseFormerPersonDocument,
+} from './formerPeople'
+export type { FormerPerson, FormerPersonInput, FormerPersonRecordWrite, FormerPersonSource } from './formerPeople'
+export { isTaskPersonSelected, taskPersonIndex, taskPersonKeys, toggleTaskPerson } from './taskPeople'
+export type { TaskPersonCatalogueRow, TaskPersonIndex, TaskPersonKeys, TaskPersonKind, TaskPersonRosterRow } from './taskPeople'
+export {
+  MATERIAL_CONTACTS_COLLECTION,
+  MATERIAL_REQUEST_SAFE_SENDER_NOTICE,
+  materialContactCreateFields,
+  materialContactKey,
+  materialContactPath,
+  materialRequestIsFirstContact,
+  materialRequestSafeSenderNotice,
+  materialSendRecordRecipientEmails,
+} from './materialSafeSender'
+export { taskCompletionFields } from './operationsDocuments'
+export { MANAGER_ROW_NOT_LINKED_LABEL } from './unresolvedBookingPeople'
+
 // 1.61.0: a day-rate overtime line reads in hours (owner decision 17 Nov), wording only.
-export { DAY_RATE_OVERTIME_ROUNDED_NOTE, dayRateOvertimeCalcText } from './dayRateOvertimeText'
-export type { DayRateOvertimeCalcInput, DayRateOvertimeCalcText } from './dayRateOvertimeText'
+export { DAY_RATE_OVERTIME_ROUNDED_NOTE, dayRateOvertimeCalcText, signedDayRateOvertimeText } from './dayRateOvertimeText'
+export type { DayRateOvertimeCalcInput, DayRateOvertimeCalcText, SignedDayRateOvertimeLine } from './dayRateOvertimeText'

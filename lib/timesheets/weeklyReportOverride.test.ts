@@ -744,8 +744,8 @@ test('1.54.0 third review of #337 (2): an exported sheet with late extras is fro
   assert.equal(legacy.weeklyReportOverride?.lines.find((row) => row.id === 'op-b1-normal')?.decision, 'declined')
 })
 
-test('1.61.0: a signed day-rate overtime line reads in hours from its stored values; never re-priced', () => {
-  const overtimeLine = (id: string, otMultiplier: number | null) => ({
+test('1.61.0: a signed day-rate overtime line reads in hours only from the rate stored at signing (S1)', () => {
+  const overtimeLine = (id: string, otMultiplier: number | null, stored = false) => ({
     id,
     date: day,
     jobNumber: 'J-1',
@@ -758,6 +758,7 @@ test('1.61.0: a signed day-rate overtime line reads in hours from its stored val
     payBasis: 'day' as const,
     isOvertime: true,
     otMultiplier,
+    ...(stored ? { otBaseDayRate: 225, otDayRateHours: 8.5 } : {}),
     decision: 'approved' as const,
     bookingId: id,
   })
@@ -773,8 +774,9 @@ test('1.61.0: a signed day-rate overtime line reads in hours from its stored val
         approvedByUserId: 'mgr',
         approvedByName: 'Morgan',
         selfSigned: false,
-        // b1 stored its multiplier (1.46.0); b2 is an older line with no multiplier and no multiplied text.
-        lines: [overtimeLine('b1', 1.5), overtimeLine('b2', null)],
+        // b1 stored its rate and divisor at signing (1.61.0); b3 stored only its multiplier (signed before 1.61.0);
+        // b2 is an older line with no multiplier and no multiplied text.
+        lines: [overtimeLine('b1', 1.5, true), overtimeLine('b2', null), overtimeLine('b3', 1.5)],
         priceWork: [],
         expenses: [],
       },
@@ -787,4 +789,53 @@ test('1.61.0: a signed day-rate overtime line reads in hours from its stored val
   )
   // Multiplier unknown: the older wording stays (never a guessed ×1).
   assert.equal(lines[1].details, '16:00–22:00 · 0.71 days × £337.51/day = £238.24')
+  // Signed before 1.61.0 (no stored rate): the older wording, never a rate worked out from the amount.
+  assert.equal(lines[2].details, '16:00–22:00 · 0.71 days × £337.51/day = £238.24')
+  assert.deepEqual(lines.map((line) => line.amount), [238.24, 238.24, 238.24])
+})
+
+test('1.61.0 S1: signing stores the real day rate and divisor; amounts are the same with or without them', () => {
+  // Default working day 07:30–16:00 (8h), ×1.5; 07:30–19:00 at £200/day → 3h overtime.
+  const longDay = booking({ timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '19:00' } as Partial<Booking>)
+  const signedDraft = applyWeeklyReportOverride({
+    ...base,
+    bookings: [longDay],
+    draft: {
+      ...emptyTimesheetDraft(),
+      operativeSignedAt: day,
+      operativeSignedByName: 'Ada Booked',
+      managerSignedAt: day,
+      managerSignedByUserId: 'mgr',
+      managerSignedByName: 'Morgan Manager',
+    },
+  })
+  const override = signedDraft.weeklyReportOverride!
+  const ot = override.lines.find((row) => row.isOvertime)!
+  assert.ok(ot, 'an overtime line was signed')
+  assert.equal(ot.otBaseDayRate, 200, "the person's own day rate, never multiplied")
+  assert.equal(ot.otDayRateHours, 8)
+  // Firestore round trip keeps them.
+  const stored = weeklyReportOverrideFromFirestore(weeklyReportOverrideToFirestore(override))!
+  const storedOt = stored.lines.find((row) => row.isOvertime)!
+  assert.equal(storedOt.otBaseDayRate, 200)
+  assert.equal(storedOt.otDayRateHours, 8)
+  const payroll = collectTimesheetPayroll({ ...base, bookings: [longDay], periodStart: base.weekStart, periodEnd: base.weekEnd } as never)
+  const liveOt = payroll.lineItems.find((line) => line.isOvertimeLine)!
+  assert.equal(ot.amount, liveOt.amount)
+  const invoice = (lines: typeof override.lines) =>
+    invoiceLinesForTimesheet({
+      // The booking is gone from the period: the signed rows are shown from the snapshot alone.
+      payroll: { ...payroll, lineItems: [] },
+      timeZone: 'Europe/London',
+      extrasMode: 'export',
+      standardDayHours: 8,
+      draft: { ...emptyTimesheetDraft(), weeklyReportOverride: { ...override, lines } },
+    })
+  const withRate = invoice(stored.lines)
+  // "Before" (a line signed before 1.61.0): the same lines without the stored rate and divisor.
+  const withoutRate = invoice(stored.lines.map(({ otBaseDayRate: _r, otDayRateHours: _d, ...rest }) => rest))
+  assert.deepEqual(withRate.map((line) => line.amount), withoutRate.map((line) => line.amount), 'amounts never depend on the wording')
+  const otIndex = stored.lines.findIndex((row) => row.isOvertime)
+  assert.match(withRate[otIndex].details, new RegExp(`${ot.paidHours}h × 1\\.5 = .* × £25\\.00/h = `), withRate[otIndex].details)
+  assert.match(withoutRate[otIndex].details, /days? × £300\.00\/day/, withoutRate[otIndex].details)
 })
