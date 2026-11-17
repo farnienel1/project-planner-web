@@ -1051,3 +1051,11 @@ UI only, web only (`docs/design/projects-overview-ui/projects-overview-ui-spec.m
 | 17 Nov | **P11** The Materials card on the Overview is unchanged (shown to everyone, operatives included); logged as an owner question. | done (no change); question open |
 | 17 Nov | **P12** The new Overview layout changes the keyboard (Tab) order: Health & safety now comes before Details. Accepted. | done web |
 | 17 Nov | **P13** Book labour, the subcontractor booking page and Edit (which have no band) stay out of scope; the unused `hideWorkspaceTabs` check stays exactly as it is. | done (no change) |
+
+## Projects workspace restyle judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 17 Nov | The Details "No address yet. Add one so the team can find site." text uses the darker amber token (`--pu-c-amber-ink`, the same as P4) instead of `--warn`: `--warn` is 3.7:1 on white and fails the 4.5:1 rule (it failed before the restyle too). | done web, owner to confirm |
+| 17 Nov | "No description added" is shown muted (not bold), as the spec says; the text is unchanged. | done web, owner to confirm |
+| 17 Nov | Follow-up found while checking dark mode (not changed, inside the schedule grid): today's column header in "This week on site" is a white block in dark mode, before and after this restyle. | follow-up |
