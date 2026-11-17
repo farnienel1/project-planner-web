@@ -7144,7 +7144,9 @@ test('1.8.0 variations: stable line ids, recomputed counters, partial and renumb
     set: { sequence: 2, voNumber: 'VO-002', numberHistory: [{ from: 'VO-001', to: 'VO-002', at: 7, byUid: 'u' }] },
   })
   assert.equal(variationRenumberWriteFields({ stored: { voNumber: 'VO-001', sequence: 1 }, to: 'VO-001', sequence: 1, at: 7, byUid: 'u' }), null)
-  assert.equal(variationRenumberWriteFields({ stored: { voNumber: 'VO-001', sequence: 1, voNumberLocked: true }, to: 'VO-005', sequence: 1, at: 7, byUid: 'u' }), null)
+  // 1.63.0: the status pins the number; a lock left on an Open (reopened) variation no longer does.
+  assert.equal(variationRenumberWriteFields({ stored: { voNumber: 'VO-001', sequence: 1, status: 'submitted', voNumberLocked: true }, to: 'VO-005', sequence: 1, at: 7, byUid: 'u' }), null)
+  assert.equal(variationRenumberWriteFields({ stored: { voNumber: 'VO-001', sequence: 1, status: 'open', voNumberLocked: true }, to: 'VO-005', sequence: 1, at: 7, byUid: 'u' })?.set.voNumber, 'VO-005')
   assert.equal(parseVariationTrackerDocument('P1', undefined).prefix, 'VO-')
 })
 

@@ -44,6 +44,9 @@ import {
 import type { AccountKind } from './userProfile'
 import { deadlineProjectKey } from './workDocumentReaders'
 import {
+  normalizeVariationStatus,
+  variationIsPinned,
+  type VariationStatusToken,
   variationExtraLineId,
   parseVariationCustomLines,
   parseVariationSubcontractorLines,
@@ -600,16 +603,7 @@ export function healthSafetySignatureRemovalWrites(
 
 // MARK: - Variations
 
-export const VARIATION_STATUS_TOKENS = ['open', 'submitted', 'closed'] as const
-export type VariationStatusToken = (typeof VARIATION_STATUS_TOKENS)[number]
-
-/** open / submitted / closed (any case; `sent` → submitted, `complete(d)` / `done` → closed). Unknown → open. */
-export function normalizeVariationStatus(raw: unknown): VariationStatusToken {
-  const value = text(raw).toLowerCase()
-  if (value === 'submitted' || value === 'sent') return 'submitted'
-  if (value === 'closed' || value === 'complete' || value === 'completed' || value === 'done') return 'closed'
-  return 'open'
-}
+export { VARIATION_STATUS_TOKENS, normalizeVariationStatus, type VariationStatusToken } from './variations'
 
 /** 1.52.0: `operatives` × `hoursEach` = `hours` (`variationLabourCrew`; one operative for rows from older builds). */
 export type VariationLabourLineDocument = { id: string; idStored: boolean; trade: string; hours: number; operatives: number; hoursEach: number }
@@ -921,7 +915,8 @@ export function variationRenumberWriteFields(input: {
   const from = text(row.voNumber)
   const to = text(input?.to)
   const sequence = Math.trunc(documentNumber(input?.sequence) ?? NaN)
-  const locked = documentBool(row.voNumberLocked) === true && text(input?.numberingMode) !== 'resequenceAll'
+  // 1.63.0: the status pins the number (`variationIsPinned`); a lock left on a reopened (Open) variation does not.
+  const locked = variationIsPinned(row) && text(input?.numberingMode) !== 'resequenceAll'
   const set: Record<string, unknown> = {}
   if (Number.isFinite(sequence) && sequence !== Math.trunc(documentNumber(row.sequence) ?? NaN)) set.sequence = sequence
   if (to && to !== from && !locked) {
@@ -954,7 +949,7 @@ export type VariationTrackerDocument = {
   orderLockedAtMs: number | null
 }
 
-/** Read `variationTrackers/{parentId}`. A missing document is a disabled tracker (`VO-`, padding 3, version 0). */
+/** Read `variationTrackers/{parentId}`. A missing document is an enabled tracker (1.63.0; `VO-`, padding 3, version 0). */
 export function parseVariationTrackerDocument(
   parentId: string,
   data: Record<string, unknown> | null | undefined
@@ -964,7 +959,9 @@ export function parseVariationTrackerDocument(
   return {
     parentId: text(parentId) || text(row.parentId),
     parentType: text(row.parentType) === 'smallWork' ? 'smallWork' : 'project',
-    enabled: documentBool(row.enabled) === true,
+    // 1.63.0 (owner decision 17 Nov, A): the tracker is on by default — a job with no tracker document, or a document
+    // that never stored `enabled`, reads as on. Only a stored `enabled: false` (turned off) is off. Nothing is written.
+    enabled: documentBool(row.enabled) !== false,
     enabledAtMs: documentInstantMs(row.enabledAt),
     enabledByUid: optionalText(row.enabledByUid),
     numberingMode: text(row.numberingMode) === 'resequenceAll' ? 'resequenceAll' : 'lockSubmitted',
@@ -988,7 +985,7 @@ export const VARIATION_TRACKER_ORDER_LOCK_FIELDS = ['orderLocked', 'orderLockedB
 /** One change to `variationTrackers/{parentId}` (1.9.0). */
 export type VariationTrackerAction =
   | { kind: 'enable'; parentId: unknown; parentType: unknown; actorUid: unknown; at: unknown }
-  | { kind: 'disable' }
+  | { kind: 'disable'; parentId?: unknown; parentType?: unknown }
   | { kind: 'lock'; parentId: unknown; parentType: unknown; actorUid: unknown; actorName: unknown; at: unknown }
   | { kind: 'unlock' }
   | { kind: 'mode'; numberingMode: unknown }
@@ -1038,7 +1035,13 @@ export function variationTrackerWriteFields(
       break
     }
     case 'disable':
-      if (!row) return null
+      // 1.63.0: the tracker is on when nothing is stored, so turning it off on a job with no tracker document creates
+      // one with `enabled: false` (and its parent fields).
+      if (!row) {
+        parentFields(action.parentId, action.parentType)
+        set.enabled = false
+        break
+      }
       if (documentBool(row.enabled) !== false) set.enabled = false
       removeLock()
       break
