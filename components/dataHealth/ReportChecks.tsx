@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { collection, getDocs, limit, query, where } from 'firebase/firestore'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
-import { parseReportCheckDocument, REPORT_CHECKS_COLLECTION } from '@/lib/canonical'
+import { parseReportCheckDocument, personIdSet, REPORT_CHECKS_COLLECTION } from '@/lib/canonical'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { rosterDisplayName } from '@/lib/staff/userRosterUtils'
 
@@ -50,7 +50,9 @@ export function ReportChecks({ organizationId }: { organizationId: string }) {
 
   const nameOf = useMemo(
     () => (userId: string) => {
-      const person = users.find((row) => row.id === userId)
+      // The report's userId may be a former invite id or a same-email account: match under every id (`personIdSet`).
+      const key = userId.trim().toLowerCase()
+      const person = users.find((row) => personIdSet(row, users).some((id) => id.trim().toLowerCase() === key))
       return person ? rosterDisplayName(person) : `Person ${userId.slice(0, 8)}`
     },
     [users]

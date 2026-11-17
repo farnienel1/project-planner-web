@@ -82,19 +82,21 @@ function createReportIntegrityCheck({ store, canonical, logger, serverTimestamp 
     const reviews = userId
       ? await store.query(`organizations/${orgId}/overtimeReviews`, 'userId', userId)
       : []
-    const bookings = []
     const lines = Array.isArray(report.lines) ? report.lines.slice(0, 500) : []
-    for (const line of lines) {
-      const id = trimmed(line && line.bookingId)
-      if (!DOC_ID.test(id)) continue
-      for (const collection of ['bookings', 'managerSiteBookings']) {
-        const data = await store.getDoc(`organizations/${orgId}/${collection}/${id}`)
-        if (data) {
-          bookings.push(overtimeBooking(canonical, collection, id, data, timeZone))
-          break
-        }
-      }
-    }
+    // Each booking id once (a repeated one is flagged by the rule), read in parallel: labour, else manager site.
+    const ids = [...new Set(lines.map((line) => trimmed(line && line.bookingId)).filter((id) => DOC_ID.test(id)))]
+    const found = await Promise.all(
+      ids.map(async (id) => {
+        const [labour, site] = await Promise.all([
+          store.getDoc(`organizations/${orgId}/bookings/${id}`),
+          store.getDoc(`organizations/${orgId}/managerSiteBookings/${id}`),
+        ])
+        if (labour) return overtimeBooking(canonical, 'bookings', id, labour, timeZone)
+        if (site) return overtimeBooking(canonical, 'managerSiteBookings', id, site, timeZone)
+        return null
+      })
+    )
+    const bookings = found.filter(Boolean)
     return canonical.overtimeReportIntegrity({
       reportId,
       report: plain(report),

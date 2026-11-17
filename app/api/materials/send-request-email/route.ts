@@ -28,6 +28,9 @@ import { clampString, isValidEmail } from '@/lib/security/validation'
 import { requireOrgAccess } from '@/lib/security/requireOrgAccess'
 import { materialRequestSender } from '@/lib/materials/materialRequestSender'
 
+import { parseJobDocument } from '@/lib/canonical/workDocumentReaders'
+import { formatSiteAddress } from '@/lib/maps/siteAddress'
+
 export const runtime = 'nodejs'
 
 /**
@@ -133,7 +136,7 @@ async function materialJobCheck(
   jobNumber: string,
   /** The caller's users document, already read by the route (null when it could not be read). */
   callerDoc: Record<string, unknown> | null
-): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
+): Promise<{ ok: true; job: Record<string, unknown> | null } | { ok: false; status: number; message: string }> {
   const email = (user.email || '').trim().toLowerCase()
   // The sender's own documents and managers-list rows do not depend on the job: read them while the job is read.
   const callerReads = Promise.all([
@@ -182,7 +185,7 @@ async function materialJobCheck(
     managers: managerPaths.map((path) => ({ id: path.split('/').pop() || '', email })),
     jobNumber,
   })
-  return result.ok ? { ok: true } : { ok: false, status: result.status, message: result.message }
+  return result.ok ? { ok: true, job } : { ok: false, status: result.status, message: result.message }
 }
 
 export async function POST(request: NextRequest) {
@@ -236,10 +239,28 @@ export async function POST(request: NextRequest) {
   wholesalerRows.catch(() => {})
 
   const rawJobId = typeof body.value.jobId === 'string' ? body.value.jobId.trim() : ''
+  // Review of #391: with a job, the site name and delivery address are the stored job's, never the request's. Older
+  // clients that send no `jobId` keep the typed values (the job check cannot run for them either).
+  let siteName = body.value.siteName
+  let deliveryAddress = body.value.siteAddress
   if (body.value.jobId != null && body.value.jobId !== '') {
     if (!rawJobId || rawJobId.length > 128 || !/^[A-Za-z0-9_-]+$/.test(rawJobId)) return jsonError('jobId is not valid', 400)
     const check = await materialJobCheck(bearerToken(request), access.organizationId, access.user, membership, rawJobId, jobNumber, callerDoc)
     if (!check.ok) return jsonError(check.message, check.status)
+    const job = parseJobDocument(rawJobId, check.job)
+    siteName = job?.siteName || ''
+    deliveryAddress = job
+      ? formatSiteAddress({
+          addressLine1: job.addressLine1,
+          addressLine2: job.addressLine2 ?? undefined,
+          townCity: job.townCity,
+          postcode: job.postcode ?? undefined,
+          latitude: job.latitude ?? undefined,
+          longitude: job.longitude ?? undefined,
+          usesMapPinForLocation: job.usesMapPinForLocation,
+          siteAddress: job.siteAddress,
+        })
+      : ''
   }
 
   const recipients = parseRecipients(body.value.recipients)
@@ -319,8 +340,8 @@ export async function POST(request: NextRequest) {
         userPhone: senderPhone,
         userCompany: senderCompany,
         jobNumber,
-        siteName: body.value.siteName,
-        deliveryAddress: body.value.siteAddress,
+        siteName,
+        deliveryAddress,
         companyLogoURL,
         materials,
         sentAt,

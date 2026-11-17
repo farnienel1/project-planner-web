@@ -4,10 +4,12 @@
  * Firestore write.
  *
  * Fails when a route under app/api:
- *   - calls `request.json()` itself (bodies go through `readApiBody` with a zod schema, lib/security/apiBody.ts, or the
- *     older `readJsonBody` that is being moved over), or
- *   - spreads a request body into an object (`...body`, `...body.value`, `...parsed.value`, `...payload`) — the shape
- *     a Firestore write would take, so a caller could add `role`, `isAdmin`, `isSuperAdmin` or `organizationId`.
+ *   - calls `.json()` on its request object, under any name it is typed as (`NextRequest` / `Request`) — bodies go
+ *     through `readApiBody` with a zod schema (lib/security/apiBody.ts);
+ *   - calls the older `readJsonBody` (allow-listed per route while each is moved over), or
+ *   - spreads the request body, or any name derived from it (`const data = body.value`, `const { items } = parsed.value`),
+ *     into an object — the shape a Firestore write would take, so a caller could add `role`, `isAdmin`,
+ *     `isSuperAdmin` or `organizationId`.
  *
  * A reviewed exception goes in ALLOWLIST with a one-line reason. Comments are not scanned.
  *
@@ -17,16 +19,94 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+const READ_JSON_BODY_REASON =
+  'Reads named fields from the typed body one by one, never spreads it (the spread check still runs here); port to readApiBody is a follow-up (review of #391).'
+
 /** `{ path, pattern, reason }` — a reviewed hit that may stay. */
-export const ALLOWLIST = []
-
-const BODY_NAMES = '(?:body|parsed|payload|json|input|requestBody|reqBody)'
-
-export const PATTERNS = [
-  { id: 'raw-request-json', re: /\brequest\.json\s*\(/ },
-  { id: 'body-spread', re: new RegExp(`\\.\\.\\.\\s*${BODY_NAMES}(?:\\.value)?(?![\\w.\\[])`) },
-  { id: 'body-spread', re: /\.\.\.\s*\(?\s*await\s+request\.json/ },
+export const ALLOWLIST = [
+  { path: 'app/api/account/delete/route.ts', pattern: 'read-json-body', reason: READ_JSON_BODY_REASON },
+  { path: 'app/api/auth/mfa/grant-setup/route.ts', pattern: 'read-json-body', reason: READ_JSON_BODY_REASON },
+  { path: 'app/api/auth/mfa/start/route.ts', pattern: 'read-json-body', reason: READ_JSON_BODY_REASON },
+  { path: 'app/api/auth/mfa/verify/route.ts', pattern: 'read-json-body', reason: READ_JSON_BODY_REASON },
+  { path: 'app/api/auth/passkey/credentials/route.ts', pattern: 'read-json-body', reason: READ_JSON_BODY_REASON },
+  { path: 'app/api/auth/passkey/login/options/route.ts', pattern: 'read-json-body', reason: READ_JSON_BODY_REASON },
+  { path: 'app/api/auth/passkey/login/verify/route.ts', pattern: 'read-json-body', reason: READ_JSON_BODY_REASON },
+  { path: 'app/api/auth/passkey/password-changed/route.ts', pattern: 'read-json-body', reason: READ_JSON_BODY_REASON },
+  { path: 'app/api/auth/passkey/register/verify/route.ts', pattern: 'read-json-body', reason: READ_JSON_BODY_REASON },
+  { path: 'app/api/auth/public-gate/route.ts', pattern: 'read-json-body', reason: READ_JSON_BODY_REASON },
+  { path: 'app/api/geocode/route.ts', pattern: 'read-json-body', reason: READ_JSON_BODY_REASON },
+  { path: 'app/api/interest/unsubscribe/route.ts', pattern: 'read-json-body', reason: READ_JSON_BODY_REASON },
+  { path: 'app/api/invites/send-setup-email/route.ts', pattern: 'read-json-body', reason: READ_JSON_BODY_REASON },
+  { path: 'app/api/org-setup/live-org-lookup/route.ts', pattern: 'read-json-body', reason: READ_JSON_BODY_REASON },
+  { path: 'app/api/org-setup/send-confirm-email/route.ts', pattern: 'read-json-body', reason: READ_JSON_BODY_REASON },
+  { path: 'app/api/organization/delete/route.ts', pattern: 'read-json-body', reason: READ_JSON_BODY_REASON },
+  { path: 'app/api/organization/restore/route.ts', pattern: 'read-json-body', reason: READ_JSON_BODY_REASON },
+  { path: 'app/api/stripe/create-checkout-session/route.ts', pattern: 'read-json-body', reason: READ_JSON_BODY_REASON },
+  { path: 'app/api/stripe/create-portal-session/route.ts', pattern: 'read-json-body', reason: READ_JSON_BODY_REASON },
+  { path: 'app/api/timesheets/export-email/route.ts', pattern: 'read-json-body', reason: READ_JSON_BODY_REASON },
 ]
+
+/** Names a request body is held in before any taint is followed (the old fixed list). */
+const BASE_BODY_NAMES = ['body', 'parsed', 'payload', 'json', 'input', 'requestBody', 'reqBody']
+
+function escape(name) {
+  return name.replace(/[$]/g, '\\$')
+}
+
+/** The names a file holds the request object in: every parameter typed `NextRequest` / `Request`, plus `request` / `req`. */
+export function requestNames(source) {
+  const names = new Set(['request', 'req'])
+  for (const match of source.matchAll(/\b([A-Za-z_$][\w$]*)\s*:\s*(?:NextRequest|Request)\b/g)) names.add(match[1])
+  return [...names]
+}
+
+/**
+ * The names that hold the request body or anything read from it: assigned from `readJsonBody`, `readApiBody`,
+ * `parseApiBody`, `<request>.json()` or `JSON.parse`, or from another such name (`const data = body.value`,
+ * `const { items } = parsed.value`), followed until nothing new is found.
+ */
+export function bodyDerivedNames(source, requests = requestNames(source)) {
+  const tainted = new Set(BASE_BODY_NAMES)
+  const req = requests.map(escape).join('|')
+  const sources = `readJsonBody|readApiBody|parseApiBody|JSON\\.parse|(?:${req})(?:\\.clone\\(\\))?\\.json`
+  let grew = true
+  while (grew) {
+    grew = false
+    const names = [...tainted].map(escape).join('|')
+    const rhs = `(?:\\(\\s*)?(?:await\\s+)?(?:\\(\\s*)?(?:${sources}|(?:${names})\\b)`
+    const single = new RegExp(`(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*(?::[^=]+)?=\\s*${rhs}`, 'g')
+    const destructured = new RegExp(`(?:const|let|var)\\s*\\{([^}]*)\\}\\s*(?::[^=]+)?=\\s*${rhs}`, 'g')
+    for (const match of source.matchAll(single)) {
+      if (!tainted.has(match[1])) {
+        tainted.add(match[1])
+        grew = true
+      }
+    }
+    for (const match of source.matchAll(destructured)) {
+      for (const part of match[1].split(',')) {
+        const name = part.split(':').pop().split('=')[0].replace(/\.\.\./, '').trim()
+        if (/^[A-Za-z_$][\w$]*$/.test(name) && !tainted.has(name)) {
+          tainted.add(name)
+          grew = true
+        }
+      }
+    }
+  }
+  return [...tainted]
+}
+
+/** The patterns for one file (they depend on the file's request and body-derived names). */
+export function patternsFor(source) {
+  const requests = requestNames(source)
+  const names = bodyDerivedNames(source, requests)
+  const req = requests.map(escape).join('|')
+  return [
+    { id: 'raw-request-json', re: new RegExp(`\\b(?:${req})(?:\\.clone\\(\\))?\\.json\\s*\\(`) },
+    { id: 'read-json-body', re: /\breadJsonBody\s*[<(]/ },
+    { id: 'body-spread', re: new RegExp(`\\.\\.\\.\\s*\\(?\\s*(?:await\\s+)?(?:${names.map(escape).join('|')})\\b(?:\\??\\.[\\w$]+|\\[[^\\]]*\\])*(?![\\w$]|\\??\\.[\\w$]|\\[)(?!\\s*(?:\\?(?![.?])|&&|\\|\\||[=!]==?|[<>]))`) },
+    { id: 'body-spread', re: new RegExp(`\\.\\.\\.\\s*\\(?\\s*await\\s+(?:${req}|readJsonBody|readApiBody)`) },
+  ]
+}
 
 function stripComment(line) {
   const trimmed = line.trim()
@@ -54,17 +134,22 @@ function walk(dir, out) {
   return out
 }
 
-/** Every hit under `root/app/api`: `{ path, line, pattern, text }`. */
+/** Every hit under `root/app/api`: `{ path, line, pattern, text }`. Import lines are not scanned. */
 export function scan(root) {
   const hits = []
   for (const file of walk(join(root, 'app', 'api'), [])) {
     const path = relative(root, file).split('\\').join('/')
-    const lines = readFileSync(file, 'utf8').split('\n')
-    lines.forEach((raw, index) => {
+    const source = readFileSync(file, 'utf8')
+    const code = source
+      .split('\n')
+      .map(stripComment)
+      .join('\n')
+    const patterns = patternsFor(code)
+    source.split('\n').forEach((raw, index) => {
       const line = stripComment(raw)
-      if (!line) return
+      if (!line || /^\s*import\b/.test(line)) return
       const seen = new Set()
-      for (const { id, re } of PATTERNS) {
+      for (const { id, re } of patterns) {
         if (seen.has(id)) continue
         if (re.test(line)) {
           seen.add(id)

@@ -1,4 +1,4 @@
-import { parseOrganizationName } from '@/lib/canonical'
+import { parseOrganizationName, safeExternalUrl } from '@/lib/canonical'
 import { clampString } from '@/lib/security/validation'
 
 /**
@@ -26,6 +26,7 @@ export function materialRequestSender(input: {
   const name = clampString(`${first} ${surname}`.trim(), 120) || email
   const phone = clampString(caller.mobileNumber, 40) || clampString(caller.phone, 40) || ''
   const company = (parseOrganizationName(input.orgDoc ?? undefined) || '').slice(0, 200)
-  const logoURL = clampString(input.orgDoc?.companyLogoURL, 500) || ''
+  // https only (review of #391): a stored `javascript:`, `data:` or plain `http:` logo is never put in the email.
+  const logoURL = safeExternalUrl(clampString(input.orgDoc?.companyLogoURL, 500) || '') || ''
   return { name, email, phone, company, logoURL }
 }

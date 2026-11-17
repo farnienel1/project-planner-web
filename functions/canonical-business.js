@@ -13925,8 +13925,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.65.0" : "",
-      sha256: true ? "86f2c45d58c02a63d5a6832824f5eaab9408020db2f7400b767c45601426a410" : ""
+      version: true ? "1.65.1" : "",
+      sha256: true ? "e45e8d2901c4e3d3def0eff6431c34d768d402763c3c78bab2507fe1534b0c3c" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -24522,6 +24522,22 @@ var ProjectPlannerCanonical = (() => {
   }
   var ZERO_STATES = /* @__PURE__ */ new Set(["returnedDeclined", "deleted"]);
   var ZERO_DECISIONS = /* @__PURE__ */ new Set(["declined", "deleted", "cancelled"]);
+  function bookingFromFingerprint(id2, fingerprint) {
+    const parts3 = text39(fingerprint).split("|");
+    if (parts3.length < 7 || !/^\d{4}-\d{2}-\d{2}$/.test(parts3[0])) return null;
+    const rate = parts3[4] === "" ? null : Number(parts3[4]);
+    return {
+      id: id2,
+      personId: "",
+      dayKey: parts3[0],
+      timeSlot: parts3[1] || null,
+      workStartTime: parts3[2] || null,
+      workEndTime: parts3[3] || null,
+      otMultiplierOverride: rate != null && Number.isFinite(rate) && rate > 0 ? rate : null,
+      isBreakRemoved: parts3[5] === "nb",
+      status: parts3[6] || null
+    };
+  }
   function overtimeReportIntegrity(input) {
     const raw = record14(input.report);
     const report = parseOvertimeReportDocument(input.reportId, raw);
@@ -24548,70 +24564,97 @@ var ProjectPlannerCanonical = (() => {
     }
     const reviews = (input.reviews || []).map((row2) => parseOvertimeReviewDocument(row2.id, row2.data));
     const bookings = new Map((input.bookings || []).filter(Boolean).map((booking) => [idKey(booking.id), booking]));
+    const seen = /* @__PURE__ */ new Set();
     let recomputed = 0;
     for (const line of report.lines) {
       const id2 = line.bookingId;
+      const label = `${line.dayLabel || line.dayKey} ${line.jobNumber}`.trim();
+      const key7 = idKey(id2);
+      if (!key7 || seen.has(key7)) {
+        problems.push({
+          code: "duplicate_line",
+          recordId: id2,
+          severity: "mismatch",
+          message: key7 ? `${label}: this booking is listed more than once.` : `${label}: the line names no booking.`
+        });
+        continue;
+      }
+      seen.add(key7);
       const zero = ZERO_STATES.has(text39(line.state)) || line.declined === true;
-      let lineHours = line.overtimeHours;
       if (zero && line.overtimeHours > EPSILON) {
         problems.push({
           code: "declined_line_counted",
           recordId: id2,
           severity: "mismatch",
-          message: `${line.dayLabel || line.dayKey} ${line.jobNumber}: a declined or removed line counts ${line.overtimeHours}h (it should be 0h).`
-        });
-        lineHours = 0;
-      }
-      if (line.overtimeHours > round25(line.clockHours * line.multiplier) + EPSILON) {
-        problems.push({
-          code: "hours_exceed_clock",
-          recordId: id2,
-          severity: "mismatch",
-          message: `${line.dayLabel || line.dayKey} ${line.jobNumber}: ${line.overtimeHours}h is more than ${line.clockHours}h \xD7 ${line.multiplier}.`
+          message: `${label}: a declined or removed line counts ${line.overtimeHours}h (it should be 0h).`
         });
       }
-      const review = reviews.find((row2) => idKey(row2.bookingId) === idKey(id2) && idKey(row2.userId) === idKey(report.userId));
+      const fingerprint = text39(line.fingerprint);
+      const review = reviews.find((row2) => idKey(row2.bookingId) === key7 && idKey(row2.userId) === idKey(report.userId));
       if (!review) {
         problems.push({
           code: "not_reviewed",
           recordId: id2,
           severity: "mismatch",
-          message: `${line.dayLabel || line.dayKey} ${line.jobNumber}: no confirmation or line-manager decision is stored for this line.`
+          message: `${label}: no confirmation or line-manager decision is stored for this line.`
         });
-      } else {
-        if (text39(review.fingerprint) && text39(line.fingerprint) && !overtimeFingerprintsMatch(review.fingerprint, line.fingerprint)) {
-          problems.push({
-            code: "differs_from_review",
-            recordId: id2,
-            severity: "mismatch",
-            message: `${line.dayLabel || line.dayKey} ${line.jobNumber}: the report's booking is not the one that was reviewed.`
-          });
-        }
-        if (ZERO_DECISIONS.has(review.decision) && line.overtimeHours > EPSILON) {
-          problems.push({
-            code: "declined_line_counted",
-            recordId: id2,
-            severity: "mismatch",
-            message: `${line.dayLabel || line.dayKey} ${line.jobNumber}: the line was ${review.decision} but the report counts ${line.overtimeHours}h.`
-          });
-          lineHours = 0;
-        }
+      } else if (ZERO_DECISIONS.has(review.decision) && line.overtimeHours > EPSILON) {
+        problems.push({
+          code: "declined_line_counted",
+          recordId: id2,
+          severity: "mismatch",
+          message: `${label}: the line was ${review.decision} but the report counts ${line.overtimeHours}h.`
+        });
       }
-      const booking = bookings.get(idKey(id2));
-      if (!zero && booking && text39(line.fingerprint) && overtimeFingerprintsMatch(overtimeBookingFingerprint(booking), line.fingerprint)) {
-        const figures = overtimeForBooking({ booking, organization: input.organization, timeZone: input.timeZone });
-        const priced = figures ? figures.overtimeHours : 0;
-        if (Math.abs(priced - line.overtimeHours) > EPSILON) {
-          problems.push({
-            code: "hours_differ",
-            recordId: id2,
-            severity: "mismatch",
-            message: `${line.dayLabel || line.dayKey} ${line.jobNumber}: the report says ${line.overtimeHours}h; the booking gives ${priced}h.`
-          });
-          lineHours = priced;
-        }
+      if (zero || review && ZERO_DECISIONS.has(review.decision)) continue;
+      if (!fingerprint) {
+        problems.push({
+          code: "missing_fingerprint",
+          recordId: id2,
+          severity: "mismatch",
+          message: `${label}: the line does not say which booking it was priced from.`
+        });
+        continue;
       }
-      recomputed += lineHours;
+      if (review && !overtimeFingerprintsMatch(review.fingerprint, fingerprint)) {
+        problems.push({
+          code: "differs_from_review",
+          recordId: id2,
+          severity: "mismatch",
+          message: `${label}: the report's booking is not the one that was reviewed.`
+        });
+      }
+      const live = bookings.get(key7);
+      const booking = live && overtimeFingerprintsMatch(overtimeBookingFingerprint(live), fingerprint) ? live : bookingFromFingerprint(id2, fingerprint);
+      if (booking && text39(line.dayKey) && text39(line.dayKey) !== text39(booking.dayKey)) {
+        problems.push({
+          code: "differs_from_review",
+          recordId: id2,
+          severity: "mismatch",
+          message: `${label}: the line's day is not the booking's day.`
+        });
+      }
+      const figures = booking ? overtimeForBooking({ booking, organization: input.organization, timeZone: input.timeZone }) : null;
+      const priced = figures ? figures.overtimeHours : 0;
+      const clock4 = figures ? figures.clockHours : 0;
+      const multiplier = figures ? figures.multiplier : null;
+      if (Math.abs(clock4 - line.clockHours) > EPSILON || multiplier != null && Math.abs(multiplier - line.multiplier) > 1e-3) {
+        problems.push({
+          code: "clock_differs",
+          recordId: id2,
+          severity: "mismatch",
+          message: `${label}: the report says ${line.clockHours}h \xD7 ${line.multiplier}; the booking gives ${clock4}h \xD7 ${multiplier ?? "\u2014"}.`
+        });
+      }
+      if (Math.abs(priced - line.overtimeHours) > EPSILON) {
+        problems.push({
+          code: "hours_differ",
+          recordId: id2,
+          severity: "mismatch",
+          message: `${label}: the report says ${line.overtimeHours}h; the booking gives ${priced}h.`
+        });
+      }
+      recomputed += priced;
     }
     return {
       ok: problems.length === 0,
@@ -24656,8 +24699,20 @@ var ProjectPlannerCanonical = (() => {
     }
     const reviews = (input.reviews || []).map((row2) => parsePayeClaimReviewDocument(row2.id, row2.data));
     let recomputed = 0;
+    const seenItems = /* @__PURE__ */ new Set();
     for (const entry of report.items) {
-      const item = live.get(idKey(entry.id));
+      const itemKey = idKey(entry.id);
+      if (!itemKey || seenItems.has(itemKey)) {
+        problems.push({
+          code: "duplicate_item",
+          recordId: entry.id,
+          severity: "mismatch",
+          message: itemKey ? `"${entry.title || entry.id}" is listed more than once.` : `"${entry.title}" names no item.`
+        });
+        continue;
+      }
+      seenItems.add(itemKey);
+      const item = live.get(itemKey);
       const label = entry.title || entry.id;
       if (!item) {
         problems.push({

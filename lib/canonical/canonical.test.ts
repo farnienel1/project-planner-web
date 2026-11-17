@@ -17863,8 +17863,45 @@ test('1.65.0 overtimeReportIntegrity: a report built from its reviewed bookings 
   const raised = { ...report, lines: [{ ...line, overtimeHours: 9 }], totals: { ...report.totals, overtimeHours: 9 } }
   const bad = r129.overtimeReportIntegrity({ reportId: 'R', report: raised, reviews, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ })
   assert.equal(bad.ok, false)
-  assert.deepEqual(bad.problems.map((p) => p.code).sort(), ['hours_differ', 'hours_exceed_clock'])
+  assert.deepEqual(bad.problems.map((p) => p.code).sort(), ['hours_differ'])
   assert.equal(bad.recomputedTotal, 3)
+
+  // Review of #391, blocker 1: a blank fingerprint never skips the check. A forged 10h × 3 line with no fingerprint fails.
+  const forged = { ...line, fingerprint: '', clockHours: 10, multiplier: 3, overtimeHours: 30 }
+  const blank = r129.overtimeReportIntegrity({
+    reportId: 'R', report: { ...report, lines: [forged], totals: { overtimeHours: 30, lineCount: 1 } },
+    reviews, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ,
+  })
+  assert.equal(blank.ok, false)
+  assert.deepEqual(blank.problems.map((p) => p.code), ['missing_fingerprint'])
+  assert.equal(blank.recomputedTotal, 0)
+  // The same forged figures with the real fingerprint: clock and multiplier come from the booking, never the report.
+  const forgedClock = r129.overtimeReportIntegrity({
+    reportId: 'R', report: { ...report, lines: [{ ...forged, fingerprint }], totals: { overtimeHours: 30, lineCount: 1 } },
+    reviews, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ,
+  })
+  assert.deepEqual(forgedClock.problems.map((p) => p.code), ['clock_differs', 'hours_differ'])
+  assert.equal(forgedClock.recomputedTotal, 3)
+  // Booking deleted after the report: priced from the reviewed fingerprint (ok as built; forged figures still flagged).
+  assert.equal(r129.overtimeReportIntegrity({ reportId: 'R', report, reviews, bookings: [], organization: R129_ORG, timeZone: R129_TZ }).ok, true)
+  const gone = r129.overtimeReportIntegrity({
+    reportId: 'R', report: { ...report, lines: [{ ...forged, fingerprint }], totals: { overtimeHours: 30, lineCount: 1 } },
+    reviews, bookings: [], organization: R129_ORG, timeZone: R129_TZ,
+  })
+  assert.deepEqual(gone.problems.map((p) => p.code), ['clock_differs', 'hours_differ'])
+  // A review with no fingerprint, or another booking's, is not the line's review.
+  const blankReview = r129.overtimeReportIntegrity({
+    reportId: 'R', report, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ,
+    reviews: [{ id: 'sam_B1', data: { userId: 'sam', bookingId: 'B1', decision: 'approved', fingerprint: '' } }],
+  })
+  assert.deepEqual(blankReview.problems.map((p) => p.code), ['differs_from_review'])
+  // The same booking listed twice counts once.
+  const twice = r129.overtimeReportIntegrity({
+    reportId: 'R', report: { ...report, lines: [line, { ...line }], totals: { overtimeHours: 6, lineCount: 2 } },
+    reviews, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ,
+  })
+  assert.deepEqual(twice.problems.map((p) => p.code), ['duplicate_line'])
+  assert.equal(twice.recomputedTotal, 3)
 
   // Totals that do not add up, a missing review, and a declined line counted.
   const totals = r129.overtimeReportIntegrity({ reportId: 'R', report: { ...report, totals: { overtimeHours: 30, lineCount: 2 } }, reviews, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ })
@@ -17907,6 +17944,13 @@ test('1.65.0 payeClaimReportIntegrity: totals and items are checked against the 
   assert.deepEqual(other.problems.map((p) => p.code), ['not_their_item'])
   const missing = r129.payeClaimReportIntegrity({ reportId: 'P', report, items: [items[1]] })
   assert.deepEqual(missing.problems.map((p) => p.code), ['item_missing'])
+  // Review of #391: the same item listed twice is flagged and counted once.
+  const twice = r129.payeClaimReportIntegrity({
+    reportId: 'P', items,
+    report: { ...report, items: [...report.items, { ...report.items[0], id: 'e1' }], totals: { amount: 92.5, itemCount: 3 } },
+  })
+  assert.deepEqual(twice.problems.map((p) => p.code), ['duplicate_item'])
+  assert.equal(twice.recomputedTotal, 52.5)
 
   // A reviewer's rejection of that same version is a note: the review never gates the report (1.32.0).
   const parsed = r129.parseExpenseDocument('E1', items[0].data)

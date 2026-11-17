@@ -23,3 +23,13 @@ test('a caller with no name falls back to their email; no stored organisation gi
   assert.equal(sender.company, '')
   assert.equal(sender.phone, '')
 })
+
+test('review of #391: the stored logo is used only when it is an https link', () => {
+  for (const url of ['javascript:alert(1)', 'data:image/png;base64,AAAA', 'http://cdn.example/logo.png', 'cdn.example/logo.png']) {
+    assert.equal(materialRequestSender({ tokenEmail: 'a@x.com', callerDoc: null, orgDoc: { name: 'Acme', companyLogoURL: url } }).logoURL, '')
+  }
+  assert.equal(
+    materialRequestSender({ tokenEmail: 'a@x.com', callerDoc: null, orgDoc: { name: 'Acme', companyLogoURL: ' https://cdn.example/l.png ' } }).logoURL,
+    'https://cdn.example/l.png'
+  )
+})

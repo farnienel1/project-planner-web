@@ -10,12 +10,14 @@
  * (`organizations/{orgId}/reportChecks/{reportId}`, `REPORT_CHECKS_COLLECTION`).
  *
  * What is compared (stored data only, every figure from the rulebook):
- *   - Overtime: the stored totals against the sum of the stored lines; each line's hours against its own clock × rate;
- *     a line the line manager declined (or an approved red X deleted) must be 0h; each line's review
- *     (`overtimeReviews/{userId}_{bookingId}`) must exist and describe the same booking (fingerprint); and, while the
- *     booking is unchanged since the report (same fingerprint), its hours are priced again with `overtimeForBooking`
- *     under the working hours in effect that day.
- *   - Price work / expenses: the stored totals against the sum of the stored items (`payeClaimsTotal`); each item must
+ *   - Overtime: the stored totals against the sum of the stored lines; each booking once; a line the line manager
+ *     declined (or an approved red X deleted) must be 0h; every other line must carry its booking's fingerprint, its
+ *     review (`overtimeReviews/{userId}_{bookingId}`) must exist with that same fingerprint, and its clock hours,
+ *     multiplier and overtime hours are priced again with `overtimeForBooking` under the working hours in effect that
+ *     day — from the live booking while unchanged, else from the booking the fingerprint describes. The report's own
+ *     clock hours and multiplier are never trusted.
+ *   - Price work / expenses: the stored totals against the sum of the stored items (`payeClaimsTotal`); each item once;
+ *     each item must
  *     exist, be the person's, have the same amount (`roundPennies`); an item a reviewer rejected for that same version
  *     (`payeClaimReviewState`) is noted, not refused (the review never gates the report, 1.32.0).
  * A booking or item changed or deleted after the report was made is not a mismatch (the report is simply older); only
@@ -41,7 +43,10 @@ export const REPORT_CHECKS_COLLECTION = 'reportChecks'
 export type ReportIntegrityProblemCode =
   | 'totals_differ'
   | 'line_count_differs'
-  | 'hours_exceed_clock'
+  | 'missing_fingerprint'
+  | 'clock_differs'
+  | 'duplicate_line'
+  | 'duplicate_item'
   | 'declined_line_counted'
   | 'not_reviewed'
   | 'differs_from_review'
@@ -93,9 +98,35 @@ const ZERO_STATES = new Set(['returnedDeclined', 'deleted'])
 const ZERO_DECISIONS = new Set(['declined', 'deleted', 'cancelled'])
 
 /**
- * Checks a saved overtime report against its reviews and (where unchanged) its bookings.
+ * The booking a fingerprint (`dayKey|slot|start|end|rate|nb|status`, `overtimeBookingFingerprint`) describes, so a line
+ * whose booking changed or was deleted after the report is still priced from the booking as reviewed — never from the
+ * report's own clock hours or multiplier. Null when the fingerprint is blank or has no day.
+ */
+function bookingFromFingerprint(id: string, fingerprint: string): OvertimeBookingInput | null {
+  const parts = text(fingerprint).split('|')
+  if (parts.length < 7 || !/^\d{4}-\d{2}-\d{2}$/.test(parts[0])) return null
+  const rate = parts[4] === '' ? null : Number(parts[4])
+  return {
+    id,
+    personId: '',
+    dayKey: parts[0],
+    timeSlot: parts[1] || null,
+    workStartTime: parts[2] || null,
+    workEndTime: parts[3] || null,
+    otMultiplierOverride: rate != null && Number.isFinite(rate) && rate > 0 ? rate : null,
+    isBreakRemoved: parts[5] === 'nb',
+    status: parts[6] || null,
+  }
+}
+
+/**
+ * Checks a saved overtime report against its reviews and the bookings they describe.
  * `reviews` are the `overtimeReviews` documents of the report's person (`{ id, data }`); `bookings` the live labour and
  * manager site bookings the report names, as `OvertimeBookingInput` (missing ones are simply absent).
+ *
+ * Every counted line must carry the booking's fingerprint, that fingerprint must be the one its review stored, and the
+ * line's clock hours, multiplier and overtime hours must be the ones `overtimeForBooking` gives for that booking (the
+ * live booking while unchanged, else the booking as the fingerprint describes it). A booking named twice is flagged.
  */
 export function overtimeReportIntegrity(input: {
   reportId: string
@@ -130,70 +161,100 @@ export function overtimeReportIntegrity(input: {
   }
   const reviews = (input.reviews || []).map((row) => parseOvertimeReviewDocument(row.id, row.data))
   const bookings = new Map((input.bookings || []).filter(Boolean).map((booking) => [idKey(booking.id), booking]))
+  const seen = new Set<string>()
   let recomputed = 0
   for (const line of report.lines) {
     const id = line.bookingId
+    const label = `${line.dayLabel || line.dayKey} ${line.jobNumber}`.trim()
+    const key = idKey(id)
+    if (!key || seen.has(key)) {
+      problems.push({
+        code: 'duplicate_line',
+        recordId: id,
+        severity: 'mismatch',
+        message: key ? `${label}: this booking is listed more than once.` : `${label}: the line names no booking.`,
+      })
+      continue
+    }
+    seen.add(key)
     const zero = ZERO_STATES.has(text(line.state)) || line.declined === true
-    let lineHours = line.overtimeHours
     if (zero && line.overtimeHours > EPSILON) {
       problems.push({
         code: 'declined_line_counted',
         recordId: id,
         severity: 'mismatch',
-        message: `${line.dayLabel || line.dayKey} ${line.jobNumber}: a declined or removed line counts ${line.overtimeHours}h (it should be 0h).`,
-      })
-      lineHours = 0
-    }
-    if (line.overtimeHours > round2(line.clockHours * line.multiplier) + EPSILON) {
-      problems.push({
-        code: 'hours_exceed_clock',
-        recordId: id,
-        severity: 'mismatch',
-        message: `${line.dayLabel || line.dayKey} ${line.jobNumber}: ${line.overtimeHours}h is more than ${line.clockHours}h × ${line.multiplier}.`,
+        message: `${label}: a declined or removed line counts ${line.overtimeHours}h (it should be 0h).`,
       })
     }
-    const review = reviews.find((row) => idKey(row.bookingId) === idKey(id) && idKey(row.userId) === idKey(report.userId))
+    const fingerprint = text(line.fingerprint)
+    const review = reviews.find((row) => idKey(row.bookingId) === key && idKey(row.userId) === idKey(report.userId))
     if (!review) {
       problems.push({
         code: 'not_reviewed',
         recordId: id,
         severity: 'mismatch',
-        message: `${line.dayLabel || line.dayKey} ${line.jobNumber}: no confirmation or line-manager decision is stored for this line.`,
+        message: `${label}: no confirmation or line-manager decision is stored for this line.`,
       })
-    } else {
-      if (text(review.fingerprint) && text(line.fingerprint) && !overtimeFingerprintsMatch(review.fingerprint, line.fingerprint)) {
-        problems.push({
-          code: 'differs_from_review',
-          recordId: id,
-          severity: 'mismatch',
-          message: `${line.dayLabel || line.dayKey} ${line.jobNumber}: the report's booking is not the one that was reviewed.`,
-        })
-      }
-      if (ZERO_DECISIONS.has(review.decision) && line.overtimeHours > EPSILON) {
-        problems.push({
-          code: 'declined_line_counted',
-          recordId: id,
-          severity: 'mismatch',
-          message: `${line.dayLabel || line.dayKey} ${line.jobNumber}: the line was ${review.decision} but the report counts ${line.overtimeHours}h.`,
-        })
-        lineHours = 0
-      }
+    } else if (ZERO_DECISIONS.has(review.decision) && line.overtimeHours > EPSILON) {
+      problems.push({
+        code: 'declined_line_counted',
+        recordId: id,
+        severity: 'mismatch',
+        message: `${label}: the line was ${review.decision} but the report counts ${line.overtimeHours}h.`,
+      })
     }
-    const booking = bookings.get(idKey(id))
-    if (!zero && booking && text(line.fingerprint) && overtimeFingerprintsMatch(overtimeBookingFingerprint(booking), line.fingerprint)) {
-      const figures = overtimeForBooking({ booking, organization: input.organization, timeZone: input.timeZone })
-      const priced = figures ? figures.overtimeHours : 0
-      if (Math.abs(priced - line.overtimeHours) > EPSILON) {
-        problems.push({
-          code: 'hours_differ',
-          recordId: id,
-          severity: 'mismatch',
-          message: `${line.dayLabel || line.dayKey} ${line.jobNumber}: the report says ${line.overtimeHours}h; the booking gives ${priced}h.`,
-        })
-        lineHours = priced
-      }
+    if (zero || (review && ZERO_DECISIONS.has(review.decision))) continue
+    if (!fingerprint) {
+      problems.push({
+        code: 'missing_fingerprint',
+        recordId: id,
+        severity: 'mismatch',
+        message: `${label}: the line does not say which booking it was priced from.`,
+      })
+      continue
     }
-    recomputed += lineHours
+    if (review && !overtimeFingerprintsMatch(review.fingerprint, fingerprint)) {
+      problems.push({
+        code: 'differs_from_review',
+        recordId: id,
+        severity: 'mismatch',
+        message: `${label}: the report's booking is not the one that was reviewed.`,
+      })
+    }
+    const live = bookings.get(key)
+    const booking = live && overtimeFingerprintsMatch(overtimeBookingFingerprint(live), fingerprint) ? live : bookingFromFingerprint(id, fingerprint)
+    if (booking && text(line.dayKey) && text(line.dayKey) !== text(booking.dayKey)) {
+      problems.push({
+        code: 'differs_from_review',
+        recordId: id,
+        severity: 'mismatch',
+        message: `${label}: the line's day is not the booking's day.`,
+      })
+    }
+    const figures = booking ? overtimeForBooking({ booking, organization: input.organization, timeZone: input.timeZone }) : null
+    const priced = figures ? figures.overtimeHours : 0
+    const clock = figures ? figures.clockHours : 0
+    const multiplier = figures ? figures.multiplier : null
+    if (
+      Math.abs(clock - line.clockHours) > EPSILON ||
+      (multiplier != null && Math.abs(multiplier - line.multiplier) > 0.001)
+    ) {
+      problems.push({
+        code: 'clock_differs',
+        recordId: id,
+        severity: 'mismatch',
+        message: `${label}: the report says ${line.clockHours}h × ${line.multiplier}; the booking gives ${clock}h × ${multiplier ?? '—'}.`,
+      })
+    }
+    if (Math.abs(priced - line.overtimeHours) > EPSILON) {
+      problems.push({
+        code: 'hours_differ',
+        recordId: id,
+        severity: 'mismatch',
+        message: `${label}: the report says ${line.overtimeHours}h; the booking gives ${priced}h.`,
+      })
+    }
+    recomputed += priced
   }
   return {
     ok: problems.length === 0,
@@ -253,8 +314,20 @@ export function payeClaimReportIntegrity(input: {
   }
   const reviews = (input.reviews || []).map((row) => parsePayeClaimReviewDocument(row.id, row.data))
   let recomputed = 0
+  const seenItems = new Set<string>()
   for (const entry of report.items) {
-    const item = live.get(idKey(entry.id))
+    const itemKey = idKey(entry.id)
+    if (!itemKey || seenItems.has(itemKey)) {
+      problems.push({
+        code: 'duplicate_item',
+        recordId: entry.id,
+        severity: 'mismatch',
+        message: itemKey ? `"${entry.title || entry.id}" is listed more than once.` : `"${entry.title}" names no item.`,
+      })
+      continue
+    }
+    seenItems.add(itemKey)
+    const item = live.get(itemKey)
     const label = entry.title || entry.id
     if (!item) {
       problems.push({
