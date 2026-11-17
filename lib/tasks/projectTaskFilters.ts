@@ -155,15 +155,34 @@ function startOfDay(date: Date): Date {
   return next
 }
 
-export function applyJobTaskFilter(tasks: ProjectTask[], filter: JobTaskFilter): ProjectTask[] {
+/**
+ * `personKeyOf` (optional, `taskPersonIndex(...).keyOf`): when given, a person filter matches a task assigned to any of
+ * that person's records, of either kind (owner decision 17 Nov: a person with several records is one person). Without
+ * it the filter matches the chosen row id only, as before.
+ */
+export function applyJobTaskFilter(
+  tasks: ProjectTask[],
+  filter: JobTaskFilter,
+  personKeyOf?: (kind: 'manager' | 'operative', id: string) => string
+): ProjectTask[] {
+  const assignedTo = (task: ProjectTask, kind: 'manager' | 'operative', id: string): boolean => {
+    if (!personKeyOf) {
+      return (kind === 'manager' ? allAssignedManagerIds(task) : allAssignedOperativeIds(task)).includes(id)
+    }
+    const key = personKeyOf(kind, id)
+    return (
+      allAssignedManagerIds(task).some((assigned) => personKeyOf('manager', assigned) === key) ||
+      allAssignedOperativeIds(task).some((assigned) => personKeyOf('operative', assigned) === key)
+    )
+  }
   switch (filter.type) {
     case 'operative':
       return filter.operativeId
-        ? tasks.filter((task) => allAssignedOperativeIds(task).includes(filter.operativeId as string))
+        ? tasks.filter((task) => assignedTo(task, 'operative', filter.operativeId as string))
         : tasks
     case 'manager':
       return filter.managerId
-        ? tasks.filter((task) => allAssignedManagerIds(task).includes(filter.managerId as string))
+        ? tasks.filter((task) => assignedTo(task, 'manager', filter.managerId as string))
         : tasks
     case 'dateRange': {
       if (!filter.dateStart && !filter.dateEnd) return tasks
