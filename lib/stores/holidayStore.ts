@@ -162,6 +162,12 @@ export const HOLIDAY_RETRY_BACKOFF_MS = [30_000, 120_000] as const
 const holidayFailures = new Map<string, { count: number; nextAllowedAt: number }>()
 const failureKey = (orgId: string, userId: string | null, key: string) => `${orgId}|${userId ?? ''}|${key}`
 
+/** Review of #356 (final, S2): a plan that works for a company and user clears every failure record of that pair. */
+function clearHolidayFailuresFor(orgId: string, userId: string | null): void {
+  const prefix = `${orgId}|${userId ?? ''}|`
+  for (const id of [...holidayFailures.keys()]) if (id.startsWith(prefix)) holidayFailures.delete(id)
+}
+
 function recordHolidayFailure(orgId: string, userId: string | null, key: string): void {
   const id = failureKey(orgId, userId, key)
   const count = (holidayFailures.get(id)?.count ?? 0) + 1
@@ -241,6 +247,7 @@ export function replanHolidayBookings(): void {
     holidayPlannedUserId = null
     holidayInFlight = null
     holidayLoadToken += 1
+    holidayFailures.clear()
     holidayListeners.unsubscribeCollection(HOLIDAY_LISTENER_KEY)
     holidayListeners.unsubscribePlan(HOLIDAY_LISTENER_KEY)
     clearHolidayRows()
@@ -426,11 +433,22 @@ async function runHolidayLoad(organizationId: string): Promise<void> {
       followingPlatformConfig = true
       onPlatformConfigChange(() => replanHolidayBookings())
     }
-    const superseded = () => holidayInFlight?.token !== token
+    // Review of #356 (final, S4): superseded means a newer load (or a sign-out) started — never "this load freed its
+    // own in-flight slot", so the post-success check below still runs.
+    const superseded = () => holidayLoadToken !== token
+    const releaseSlot = () => {
+      if (holidayInFlight?.token === token) holidayInFlight = null
+    }
     await holidayListeners.switchesReady()
     // A newer load (another company, user or plan) or a company switch took over while the switches were read.
     if (superseded()) return waitForNewerLoad(token)
-    if (!holidayResultCurrent(organizationId, captured)) return
+    if (!holidayResultCurrent(organizationId, captured)) {
+      // Review of #356 (final, S1): the company switched while the switches were read. Free the slot so switching back
+      // plans again, and leave no "loading" behind.
+      releaseSlot()
+      useHolidayStore.setState({ loading: false })
+      return
+    }
     const onDocs = (docs: OrgCollectionDoc[], meta?: { authoritative: boolean }) => {
       if (!liveResultStillCurrent(organizationId)) return
       const bookings = docs
@@ -464,7 +482,8 @@ async function runHolidayLoad(organizationId: string): Promise<void> {
         let failure: { message: string } | null = null
         await holidayListeners.subscribePlan(HOLIDAY_LISTENER_KEY, organizationId, 'holidayBookings', parts, onDocs, (error) => {
           failure = error
-          recordHolidayFailure(organizationId, userId, key)
+          // Review of #356 (final, S3): at most one failure per load, however many query parts are refused.
+          if (!failureRecorded) recordHolidayFailure(organizationId, userId, key)
           failureRecorded = true
           // Review of #356: a later listener error (e.g. a refusal once the Phase B rules are on) reaches the screen
           // too, not only the first load's.
@@ -491,7 +510,7 @@ async function runHolidayLoad(organizationId: string): Promise<void> {
     } finally {
       if (!superseded()) {
         // Always free the in-flight slot, also after a company switch, so switching back re-plans (review of #356).
-        holidayInFlight = null
+        releaseSlot()
         if (failed) {
           // `failure` from the error callback was recorded there; a thrown refusal is recorded here.
           if (!failureRecorded) recordHolidayFailure(organizationId, userId, key)
@@ -500,7 +519,7 @@ async function runHolidayLoad(organizationId: string): Promise<void> {
           // is retried with backoff; one that finished after a company switch is planned again on the way back).
           holidayPlannedKey = key
           holidayPlannedUserId = userId
-          holidayFailures.delete(failureKey(organizationId, userId, key))
+          clearHolidayFailuresFor(organizationId, userId)
         }
       }
     }

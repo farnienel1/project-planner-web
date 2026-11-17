@@ -14,28 +14,42 @@ type Calls = { ready: number; collection: string[]; plan: string[] }
 
 type Pending = { resolve: () => void; reject: (error: Error) => void; onError?: (error: { message: string }) => void }
 
-function harness(options: { ownLeave: boolean; refusePlan?: boolean; clock?: { now: number } }) {
+function harness(options: {
+  ownLeave: boolean | (() => boolean)
+  refusePlan?: boolean
+  refuseParts?: number
+  collectionResolves?: boolean
+  holdReady?: boolean
+  clock?: { now: number }
+}) {
+  const readyGate: Array<() => void> = []
   const calls: Calls = { ready: 0, collection: [], plan: [] }
   const pending: Pending[] = []
   const restore = setHolidayListenersForTests({
     now: () => options.clock?.now ?? Date.now(),
     switchesReady: async () => {
       calls.ready += 1
+      if (options.holdReady) await new Promise<void>((resolve) => readyGate.push(resolve))
     },
-    operativeOwnLeave: () => options.ownLeave,
+    operativeOwnLeave: () => (typeof options.ownLeave === 'function' ? options.ownLeave() : options.ownLeave),
     subscribeCollectionLoaded: ((_key: string, organizationId: string) => {
       calls.collection.push(organizationId)
+      if (options.collectionResolves) return Promise.resolve()
       return new Promise<void>((resolve, reject) => pending.push({ resolve, reject }))
     }) as never,
     subscribePlan: ((_key: string, organizationId: string, _name: string, _parts: unknown, _onDocs: unknown, onError: (e: { message: string }) => void) => {
       calls.plan.push(organizationId)
+      if (options.refuseParts) {
+        for (let i = 0; i < options.refuseParts; i += 1) onError({ message: 'Missing or insufficient permissions.' })
+        return Promise.resolve()
+      }
       if (options.refusePlan) return Promise.reject(new Error('Missing or insufficient permissions.'))
       return new Promise<void>((resolve, reject) => pending.push({ resolve, reject, onError }))
     }) as never,
     unsubscribeCollection: () => undefined,
     unsubscribePlan: () => undefined,
   })
-  return { calls, pending, restore }
+  return { calls, pending, restore, readyGate }
 }
 
 const operative = { id: 'UID-OP', email: 'op@x.com', role: 'operative', operativeMode: true }
@@ -215,6 +229,107 @@ test('1.56.0 holiday store: retries after a refusal are capped — 30 s, then 2 
     useOperativeStore.setState({ operatives: [{ id: 'OP-ROW', email: 'op@x.com' }] as never })
     await replanMany()
     assert.equal(calls.plan.length, 4)
+  } finally {
+    restore()
+  }
+})
+
+test('1.56.0 holiday store (S1): a load that stops because the company switched frees its slot and its loading', async () => {
+  adoptCurrentOrganization('ORG-H', 'UID-OP')
+  useAuthStore.setState({ user: operative as never })
+  useOperativeStore.setState({ operatives: [] as never })
+  const { calls, readyGate, restore } = harness({ ownLeave: false, holdReady: true })
+  try {
+    useHolidayStore.setState({ loadedOrgId: null })
+    void useHolidayStore.getState().loadBookings('ORG-H')
+    await settle(5)
+    assert.equal(useHolidayStore.getState().loading, true)
+    adoptCurrentOrganization('ORG-I', 'UID-OP')
+    readyGate.shift()?.()
+    await settle(10)
+    assert.equal(useHolidayStore.getState().loading, false)
+    assert.deepEqual(calls.collection, [])
+    adoptCurrentOrganization('ORG-H', 'UID-OP')
+    replanHolidayBookings()
+    await settle(5)
+    readyGate.shift()?.()
+    await settle(10)
+    assert.deepEqual(calls.collection, ['ORG-H'], 'switching back plans and listens again')
+  } finally {
+    restore()
+  }
+})
+
+test('1.56.0 holiday store (S2): a plan that works clears the company+user failure records; sign-out clears them too', async () => {
+  const clock = { now: 5_000_000 }
+  let ownLeave = true
+  adoptCurrentOrganization('ORG-J', 'UID-OP')
+  useAuthStore.setState({ user: operative as never })
+  useOperativeStore.setState({ operatives: [] as never })
+  const { calls, restore } = harness({ ownLeave: () => ownLeave, refusePlan: true, collectionResolves: true, clock })
+  try {
+    await useHolidayStore.getState().loadBookings('ORG-J')
+    clock.now += HOLIDAY_RETRY_BACKOFF_MS[0] + 1
+    replanHolidayBookings()
+    await settle(10)
+    clock.now += HOLIDAY_RETRY_BACKOFF_MS[1] + 1
+    replanHolidayBookings()
+    await settle(10)
+    assert.equal(calls.plan.length, 3, 'the own plan used up its retries')
+    ownLeave = false // the switch flips off: the whole collection works
+    replanHolidayBookings()
+    await settle(10)
+    assert.deepEqual(calls.collection, ['ORG-J'])
+    ownLeave = true // and back on: the own plan is tried again at once
+    replanHolidayBookings()
+    await settle(10)
+    assert.equal(calls.plan.length, 4)
+    // Sign out and back in: the failure of the last try is forgotten.
+    useAuthStore.setState({ user: null })
+    replanHolidayBookings()
+    useAuthStore.setState({ user: operative as never })
+    await useHolidayStore.getState().loadBookings('ORG-J')
+    assert.equal(calls.plan.length, 5)
+    clock.now += HOLIDAY_RETRY_BACKOFF_MS[0] + 1
+    replanHolidayBookings()
+    await settle(10)
+    assert.equal(calls.plan.length, 6, 'after sign-in the first backoff is 30 s again')
+  } finally {
+    restore()
+  }
+})
+
+test('1.56.0 holiday store (S3): several refused query parts count as one failure for the load', async () => {
+  const clock = { now: 9_000_000 }
+  adoptCurrentOrganization('ORG-K', 'UID-OP')
+  useAuthStore.setState({ user: operative as never })
+  useOperativeStore.setState({ operatives: [] as never })
+  const { calls, restore } = harness({ ownLeave: true, refuseParts: 3, clock })
+  try {
+    await useHolidayStore.getState().loadBookings('ORG-K')
+    assert.equal(calls.plan.length, 1)
+    clock.now += HOLIDAY_RETRY_BACKOFF_MS[0] + 1
+    replanHolidayBookings()
+    await settle(10)
+    assert.equal(calls.plan.length, 2, 'retried after 30 s (one failure, not three)')
+  } finally {
+    restore()
+  }
+})
+
+test('1.56.0 holiday store (S4): after a successful subscribe the load clears loading and runs its check once more', async () => {
+  adoptCurrentOrganization('ORG-L', 'UID-OP')
+  useAuthStore.setState({ user: operative as never })
+  useOperativeStore.setState({ operatives: [] as never })
+  useHolidayStore.setState({ loadedOrgId: null, loading: false })
+  const { calls, restore } = harness({ ownLeave: false, collectionResolves: true })
+  try {
+    await useHolidayStore.getState().loadBookings('ORG-L')
+    assert.equal(useHolidayStore.getState().loading, false)
+    // The plan is recorded: a re-plan with the same inputs starts nothing.
+    replanHolidayBookings()
+    await settle(10)
+    assert.deepEqual(calls.collection, ['ORG-L'])
   } finally {
     restore()
   }
