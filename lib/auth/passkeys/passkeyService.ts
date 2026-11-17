@@ -207,6 +207,8 @@ export async function finishPasskeyRegistration(input: {
   }
   const info = verification.registrationInfo
   const existing = await input.store.listForUser(input.uid)
+  // Accepted race (security review of #369): two registrations at the same moment can each pass this count and
+  // leave the account one or two over the limit; the limit only bounds clutter, not access.
   if (existing.length >= PASSKEY_MAX_PER_USER) return { ok: false, status: 409, error: PASSKEY_LIMIT_MESSAGE }
   const row = {
     id: info.credential.id,
@@ -312,7 +314,16 @@ export async function finishPasskeyLogin(input: {
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : ''
-    return refuse(401, /counter/i.test(message) ? 'counter-regression' : 'verify-error')
+    if (/counter/i.test(message)) {
+      // The signature counter went backwards: possibly a cloned authenticator.
+      console.warn('[auth/passkey/login] counter regression refused: possible cloned credential', {
+        uid: stored.uid,
+        credential: passkeyChallengeId(stored.id).slice(0, 16),
+        storedCounter: stored.counter,
+      })
+      return refuse(401, 'counter-regression')
+    }
+    return refuse(401, 'verify-error')
   }
   if (!verification.verified || !verification.authenticationInfo.userVerified) return refuse(401, 'not-verified')
 

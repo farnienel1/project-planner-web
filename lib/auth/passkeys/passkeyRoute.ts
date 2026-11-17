@@ -57,9 +57,15 @@ export function runAfterResponse(where: string, task: () => Promise<unknown>) {
   try {
     after(run)
   } catch {
+    if (!warnedAfterUnavailable) {
+      warnedAfterUnavailable = true
+      console.warn('[passkeys] after() unavailable, running detached')
+    }
     void run()
   }
 }
+
+let warnedAfterUnavailable = false
 
 /** Waits until at least `minimumMs` have passed since `startedAt`, so every answer takes the same time. */
 export async function padToMinimumDuration(startedAt: number, minimumMs: number, nowMs = () => Date.now()) {
