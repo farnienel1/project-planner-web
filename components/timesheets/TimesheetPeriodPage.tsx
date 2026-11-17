@@ -1184,7 +1184,8 @@ export function TimesheetPeriodPage({
     const subject = subjectForUser(subjectUser, operatives)
     const lines = invoiceLinesForTimesheet({
       payroll,
-      draft,
+      // 17 Nov: the invoice is built from exactly the figures the screen shows (`draftForFigures`), never a stale copy.
+      draft: figuresDraft,
       timeZone,
       // Rulebook 1.53.0 (B12): once the line manager has signed, the invoice applies their decisions (`decided`),
       // even before a signed snapshot is written — the same invoice the summary shows.
@@ -1197,7 +1198,7 @@ export function TimesheetPeriodPage({
     })
     const invoiceHours = draftTimesheetTotals({
       lines: payroll.lineItems,
-      draft,
+      draft: figuresDraft,
       decided: Boolean(draft.managerSignedAt) || isRevision,
       timesheetDays: subjectUser ? timesheetDayKeysForPeriod(subjectUser, periodStart, periodEnd, timeZone) : [],
       timeZone,

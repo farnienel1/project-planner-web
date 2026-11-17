@@ -491,6 +491,26 @@ export function signedTimesheetBookingChanges(input: {
   const recordAddedAfter = recordReferenceMs == null ? null : recordReferenceMs - SIGNED_TIMESHEET_ADDITION_WINDOW_MS
   const personDiff = record ? diffSides(record, live, documents, recordAddedAfter) : snapshotDiff
 
+  // 1.57.0 (17 Nov owner test): a snapshot that lacks a booking the person signed (their current record) and that is
+  // still on the sheet was never counter-signed for that booking — e.g. web built it without the person's same-email
+  // ids, so the invoice lost labour the screen showed. That snapshot is stale: the line manager counter-signs again
+  // (unexported) or a revision is due (exported). Never for a repairable empty snapshot (repaired instead), a snapshot
+  // whose lines name no booking, or an Office / WFH / Site survey / custom-place booking (a repaired snapshot leaves
+  // those out by design).
+  if (record && snapshotDiff) {
+    const snapshotKeys = groupLines(Array.isArray(override?.lines) ? override.lines : []).byKey
+    const optionPlace = new Set(
+      (input.liveLines ?? [])
+        .filter((line) => line && line.scheduleOptionPlace === true)
+        .map((line) => signedTimesheetLineBookingKey(line))
+        .filter(Boolean)
+    )
+    for (const [key, row] of record) {
+      if (!live.has(key) || snapshotKeys.has(key) || optionPlace.has(key)) continue
+      if (!snapshotDiff.added.includes(row.bookingId)) snapshotDiff.added.push(row.bookingId)
+    }
+  }
+
   const personChanged = operativeSignedMs != null || override ? !isEmptyDiff(personDiff) : false
   const snapshotChanged = !isEmptyDiff(snapshotDiff)
   if (!personChanged && !snapshotChanged) return base

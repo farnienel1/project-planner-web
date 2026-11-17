@@ -210,6 +210,8 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
     set({ managerSiteBookings: [...get().managerSiteBookings.filter((row) => row.id !== next.id), next] })
     const { notifyBookingRemovedSoon } = await import('@/lib/stores/bookingStore')
     notifyBookingRemovedSoon(fromBookingId)
+    // Rulebook 1.33.0 §2: the move deleted the person's labour booking — the signed-timesheet notice, as for Delete.
+    announceSignedTimesheetDelete({ organizationId, personId: next.userId, date: next.date })
   },
 
   saveManagerSiteBooking: async (organizationId: string, booking: SaveManagerSiteBookingInput, options) => {

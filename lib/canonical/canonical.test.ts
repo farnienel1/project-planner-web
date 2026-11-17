@@ -17352,3 +17352,58 @@ test('1.56.0 leaveLegacyKeyFindings: a member from another company who is an ope
   assert.equal(findings.filter((f) => f.leaveId === 'both').length, 1)
   assert.equal(byId['both-reachable'], undefined)
 })
+
+// MARK: - 1.57.0 (17 Nov owner test): stale snapshot that lacks a signed booking; claim rows from the latest revision
+
+test('1.57.0 a snapshot lacking a booking the person signed (still live) is stale: line manager counter-signs again', () => {
+  const now = Date.now()
+  const line = (id: string) => ({ id: `op-${id}-normal`, bookingId: id, bookingCollection: 'bookings', bookingFingerprint: `${id}|2026-11-10|FULL DAY||||0|`, bookingCreatedAt: now - 86_400_000, bookingUpdatedAt: now - 86_400_000 })
+  const live = [line('a'), line('b')]
+  const signedAt = new Date(now - 120_000)
+  const sheet = {
+    operativeSignedAt: signedAt,
+    operativeSignedBookings: [
+      { bookingId: 'a', collection: 'bookings', fingerprint: line('a').bookingFingerprint, personId: 'u1', place: '' },
+      { bookingId: 'b', collection: 'bookings', fingerprint: line('b').bookingFingerprint, personId: 'u1', place: '' },
+    ],
+    operativeSignedBookingsAt: signedAt,
+    operativeSignedBookingsSignedAt: signedAt,
+    managerSignedAt: new Date(now - 60_000),
+    weeklyReportOverride: { approvedAt: new Date(now - 60_000), lines: [{ id: 'op-b-normal', bookingId: 'b', bookingFingerprint: line('b').bookingFingerprint }] },
+  }
+  const open = R112.signedTimesheetBookingChanges({ sheet, liveLines: live, liveLoaded: true })
+  assert.equal(open.reopened, true)
+  assert.equal(open.waitingFor, 'lineManager')
+  assert.deepEqual(open.addedBookingIds, ['a'])
+  const exported = R112.signedTimesheetBookingChanges({ sheet: { ...sheet, exportedAt: new Date(now - 10_000) }, liveLines: live, liveLoaded: true })
+  assert.equal(exported.exported, true)
+  assert.equal(exported.changed, true)
+  // Never for an Office / WFH / Site survey / custom-place booking (a repaired snapshot leaves those out by design).
+  const option = R112.signedTimesheetBookingChanges({ sheet, liveLines: [{ ...line('a'), scheduleOptionPlace: true }, line('b')], liveLoaded: true })
+  assert.equal(option.changed, false)
+  // A signed booking no longer live is judged as before (removed only from the booking documents), never "added".
+  const gone = R112.signedTimesheetBookingChanges({ sheet, liveLines: [line('b')], liveLoaded: true })
+  assert.equal(gone.changed, false)
+  // Without a current record (signed before 1.47.0) nothing new is read.
+  const noRecord = R112.signedTimesheetBookingChanges({ sheet: { ...sheet, operativeSignedBookings: null }, liveLines: live, liveLoaded: true })
+  assert.equal(noRecord.changed, false)
+})
+
+test('1.57.0 timesheetClaimRows lists each entry once, from the latest revision', () => {
+  const entries = (amount: number, id: string) => ({
+    priceWorkEntries: [{ id, title: 'Price work', details: '', jobNumber: 'C646', agreedManagerName: '', startDayKey: '2026-11-14', endDayKey: null, amount, managerRevisedAmount: null, managerDecision: 'approved', evidence: [] }],
+    expenseEntries: [],
+  })
+  const rows = R112.timesheetClaimRows(
+    [
+      { id: 'timesheet_u1_1793491200', entries: entries(195, 'pw1') as never },
+      { id: 'timesheet_u1_1793491200_rev2', entries: entries(200, 'PW-COPY') as never },
+      { id: 'timesheet_u1_1793491200_rev1', entries: entries(197, 'pw1') as never },
+      { id: 'timesheet_u1_1794787200', entries: entries(10, 'other') as never },
+    ],
+    'priceWork',
+    { start: '2026-11-01', end: '2026-11-30' }
+  )
+  assert.deepEqual(rows.map((row) => `${row.sheetId}:${row.amount}`).sort(), ['timesheet_u1_1793491200_rev2:200', 'timesheet_u1_1794787200:10'])
+  assert.deepEqual(R112.timesheetClaimLatestSheets([{ id: 'not-a-sheet' }]).map((row) => row.id), ['not-a-sheet'])
+})

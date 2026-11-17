@@ -589,6 +589,31 @@ export function TimesheetsScreen({
       if (drafts.has(member.id) && payStatusFor(member) === 'loading') inputsSkippedRef.current.push(displayName(member))
     }
     const reasonOf = (error: unknown) => (error instanceof Error && error.message ? error.message : 'unknown error')
+    // 17 Nov (owner: "Sending timesheets…" stayed on long after the export was done): the button finishes as soon as
+    // the sheets are stamped exported; the PDFs, backups and the email go on in the background, each PDF built and
+    // backed up at the same time, and the message says what is still being sent, then what was sent.
+    const summaryNow = (run: { stamped: Array<{ name: string }>; skipped: string[]; stopped: { reason: string; error?: unknown } | null }, sending: boolean) =>
+      [
+        sending
+          ? `${run.stamped.length} exported. Sending the PDF${run.stamped.length === 1 ? '' : 's'}${recipientEmail ? ` to ${recipientEmail}` : ''}…`
+          : exportSummaryMessage({
+              stamped: run.stamped.map((row) => row.name),
+              notSent,
+              emailProblem,
+              recipientEmail: recipientEmail || null,
+              sentCount: pdfAttachments.length,
+              backupSkipped,
+              skipped: run.skipped,
+              stampError: run.stopped?.reason === 'stamp' ? reasonOf(run.stopped.error) : null,
+            }),
+        sending && run.skipped.length > 0 ? `Already exported, left as it was: ${run.skipped.join(', ')}.` : '',
+        changedSkippedRef.current.length > 0 ? `${SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE} (${changedSkippedRef.current.join(', ')})` : '',
+        lateSkippedRef.current.length > 0 ? `${TIMESHEET_LATE_EXTRAS_EXPORT_SKIPPED_MESSAGE} (${lateSkippedRef.current.join(', ')})` : '',
+        inputsSkippedRef.current.length > 0 ? `${EXPORT_INPUTS_LOADING_SKIPPED_MESSAGE} (${inputsSkippedRef.current.join(', ')})` : '',
+        payUnknownSkipped.length > 0 ? `${EXPORT_PAY_UNKNOWN_SKIPPED_MESSAGE} (${payUnknownSkipped.join(', ')})` : '',
+      ]
+        .filter(Boolean)
+        .join(' ')
     try {
       const run = await runTimesheetExport({
         members: visible.filter((member) => drafts.has(member.id) && !payUnknownFor(member)),
@@ -599,24 +624,29 @@ export function TimesheetsScreen({
         prepare: (member) => prepareExport(member, exportedAt),
         stamp: (row) => stampExport(row.sheet),
         forgetHistory: forgetExportedTimesheetHistory,
+        deliverInBackground: true,
         // Every sheet that was stamped gets its PDF, backup and email — also when a later stamp failed. Each person is
         // delivered on their own: one failure never skips the people after them.
         deliver: async (rows) => {
           stampedCount = rows.length
-          for (const row of rows) {
-            try {
-              const { pdf, fileName } = await buildExportPdf(row.sheet.member, row.sheet.draft, periodStart, periodEnd, [], row.sheet.documentId)
-              pdfAttachments.push({ fileName, content: pdfBytesToBase64(pdf) })
+          const built = await Promise.all(
+            rows.map(async (row) => {
               try {
-                const url = await uploadFile(timesheetExportPath(organization.id, fileName), timesheetPdfBlob(pdf), 'application/pdf')
-                downloadLinks.push({ fileName, url })
-              } catch {
-                backupSkipped.push(row.name)
+                const { pdf, fileName } = await buildExportPdf(row.sheet.member, row.sheet.draft, periodStart, periodEnd, [], row.sheet.documentId)
+                try {
+                  const url = await uploadFile(timesheetExportPath(organization.id, fileName), timesheetPdfBlob(pdf), 'application/pdf')
+                  downloadLinks.push({ fileName, url })
+                } catch {
+                  backupSkipped.push(row.name)
+                }
+                return { fileName, content: pdfBytesToBase64(pdf) }
+              } catch (error) {
+                notSent.push(`${row.name} (${reasonOf(error)})`)
+                return null
               }
-            } catch (error) {
-              notSent.push(`${row.name} (${reasonOf(error)})`)
-            }
-          }
+            })
+          )
+          for (const attachment of built) if (attachment) pdfAttachments.push(attachment)
           if (!recipientEmail) {
             emailProblem = 'no email address on your account'
             return
@@ -652,30 +682,15 @@ export function TimesheetsScreen({
         setExportMessage(EXPORT_STOPPED_MESSAGE)
         return
       }
-      const changedSkipped = changedSkippedRef.current
-      const lateSkipped = lateSkippedRef.current
-      const inputsSkipped = inputsSkippedRef.current
-      setExportMessage(
-        [
-          exportSummaryMessage({
-          stamped: run.stamped.map((row) => row.name),
-          notSent,
-          emailProblem,
-          recipientEmail: recipientEmail || null,
-          sentCount: pdfAttachments.length,
-          backupSkipped,
-          skipped: run.skipped,
-          stampError: run.stopped?.reason === 'stamp' ? reasonOf(run.stopped.error) : null,
-          }),
-          changedSkipped.length > 0 ? `${SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE} (${changedSkipped.join(', ')})` : '',
-          lateSkipped.length > 0 ? `${TIMESHEET_LATE_EXTRAS_EXPORT_SKIPPED_MESSAGE} (${lateSkipped.join(', ')})` : '',
-          inputsSkipped.length > 0 ? `${EXPORT_INPUTS_LOADING_SKIPPED_MESSAGE} (${inputsSkipped.join(', ')})` : '',
-          payUnknownSkipped.length > 0 ? `${EXPORT_PAY_UNKNOWN_SKIPPED_MESSAGE} (${payUnknownSkipped.join(', ')})` : '',
-        ]
-          .filter(Boolean)
-          .join(' ')
-      )
+      setExportMessage(summaryNow(run, Boolean(run.delivery)))
       if (run.stamped.length > 0) router.replace(timesheetsTeamHref({ tab: 'exported' }))
+      if (run.delivery) {
+        void run.delivery
+          .then(() => setExportMessage(summaryNow(run, false)))
+          .catch((error: unknown) =>
+            setExportMessage(`${run.stamped.length} exported. Something went wrong while sending (${reasonOf(error)}). ${EXPORT_RECOVER_HINT}`)
+          )
+      }
     } catch (error) {
       // After anything was stamped the summary above is the answer; only a failure before any stamp is "Export failed".
       if (stampedCount > 0) {
@@ -722,6 +737,8 @@ export function TimesheetsScreen({
 
   if (teamTab === 'exported') {
     return (
+      <>
+      {exportMessage ? <Note tone="info" role="status">{exportMessage}</Note> : null}
       <ExportedTimesheetsList
         rows={exportedRows}
         invoicing={invoicing}
@@ -750,6 +767,7 @@ export function TimesheetsScreen({
           )
         }
       />
+      </>
     )
   }
 

@@ -225,7 +225,11 @@ export function buildTimesheetInvoicePdf(input: InvoicePdfContext): Uint8Array {
     y += 24
   } else {
     for (const line of lines) {
-      ensure(50)
+      // 17 Nov (owner): the details wrap onto as many lines as they need — never cut off with "…", so the sum
+      // ("0.29 days × £225.00/day = £66.18") is always readable.
+      const detailLines = wrapPdfText(line.details || line.description, INVOICE_DETAILS_WIDTH, 9.5)
+      const rowHeight = 50 + 12 * Math.max(0, detailLines.length - 1)
+      ensure(rowHeight)
       stream += rgbOf(INVOICE_PDF_STYLE.hairline)
       stream += rect(MARGIN, top(y + 0.8), tableWidth, 0.8, true)
       stream += rgbOf(INVOICE_PDF_STYLE.navy)
@@ -233,12 +237,14 @@ export function buildTimesheetInvoicePdf(input: InvoicePdfContext): Uint8Array {
       stream += rgbOf(INVOICE_PDF_STYLE.slate)
       stream += text(line.jobNumber || '—', MARGIN + 10, y + 32, 9.5)
       stream += rgbOf(INVOICE_PDF_STYLE.navy)
-      stream += text(line.projectName || line.description, MARGIN + 84, y + 18, 11.5, true, 190)
+      stream += text(line.projectName || line.description, MARGIN + 84, y + 18, 11.5, true, INVOICE_DETAILS_WIDTH)
       stream += rgbOf(INVOICE_PDF_STYLE.slate)
-      stream += text(line.details || line.description, MARGIN + 84, y + 34, 9.5, false, 190)
+      detailLines.forEach((detail, index) => {
+        stream += text(detail, MARGIN + 84, y + 34 + 12 * index, 9.5)
+      })
       stream += rgbOf(INVOICE_PDF_STYLE.navy)
       stream += text(money(formatCurrency(line.amount, currencyCode)), MARGIN + tableWidth - 64, y + 26, 11.5, true, 56)
-      y += 50
+      y += rowHeight
     }
   }
 
@@ -281,6 +287,39 @@ function text(value: string, x: number, fromTop: number, size: number, bold = fa
   const y = PAGE_H - fromTop
   const font = bold ? '/F2' : '/F1'
   return `BT ${font} ${n(size)} Tf ${n(x)} ${n(y)} Td (${pdfString(clipped)}) Tj ET\n`
+}
+
+/** The width the project name and the details may use (from the details column to the amount). */
+const INVOICE_DETAILS_WIDTH = 380
+
+/**
+ * Splits text into lines that fit `maxWidth` at font `size` (Helvetica, about 0.52 em per character on average), at
+ * spaces where it can; a word longer than a line is split. Never drops a character.
+ */
+export function wrapPdfText(value: string, maxWidth: number, size: number): string[] {
+  const maxChars = Math.max(8, Math.floor(maxWidth / (size * 0.52)))
+  const words = String(value ?? '').split(/\s+/).filter(Boolean)
+  const lines: string[] = []
+  let current = ''
+  for (const word of words) {
+    let rest = word
+    while (rest.length > maxChars) {
+      if (current) {
+        lines.push(current)
+        current = ''
+      }
+      lines.push(rest.slice(0, maxChars))
+      rest = rest.slice(maxChars)
+    }
+    if (!current) current = rest
+    else if (current.length + 1 + rest.length <= maxChars) current = `${current} ${rest}`
+    else {
+      lines.push(current)
+      current = rest
+    }
+  }
+  if (current) lines.push(current)
+  return lines.length > 0 ? lines : ['']
 }
 
 function clip(value: string, maxWidth: number, size: number): string {

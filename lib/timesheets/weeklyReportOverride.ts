@@ -27,6 +27,7 @@ import {
 } from '@/lib/timesheets/timesheetPayrollCollector'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import { orgDayHours } from '@/lib/timesheets/payBasis'
+import { userIdsSharingEmail } from '@/lib/timesheets/timesheetWeekUtils'
 import type { PayrollTimePolicyState } from '@/lib/canonical'
 import {
   payrollLineReviewKey,
@@ -58,6 +59,11 @@ export type WeeklyReportOverrideInput = {
   projects: Project[]
   smallWorks: Project[]
   history?: OperativeDayRateHistoryCollection
+  /**
+   * The person's same-email users ids (`userIdsSharingEmail`). Missing: worked out from `users`, exactly as every
+   * screen does (17 Nov fix: the period page and Export left it out, so a booking filed under a same-email document was
+   * on the screen but never in the signed snapshot — the invoice and the timesheet PDF lost it).
+   */
   aliasUserIds?: string[]
   payrollPolicy?: OrgPayrollTimePolicy
   payrollPolicyPrior?: OrgPayrollTimePolicy | null
@@ -203,7 +209,7 @@ function payrollSummaryFor(input: WeeklyReportOverrideInput) {
     timeZone: input.timeZone,
     history: input.history || emptyDayRateHistory(),
     scheduleOptions: input.scheduleOptions || DEFAULT_MY_SCHEDULE,
-    aliasUserIds: input.aliasUserIds,
+    aliasUserIds: input.aliasUserIds ?? userIdsSharingEmail(input.user, [...(input.users ?? [])]),
   })
 }
 

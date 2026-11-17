@@ -239,6 +239,9 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     if (!organizationContextStillCurrent(organizationId, captured)) return
     if (!get().bookings.some((row) => row.id === id)) set({ bookings: [...get().bookings, booking] })
     notifyBookingCreatedSoon(booking)
+    // Rulebook 1.33.0 §2: the move deleted the person's manager schedule booking — warn when its day is on a signed or
+    // exported timesheet of theirs (the same notice as Delete; the move has gone ahead). Same person, same day.
+    announceSignedTimesheetDelete({ organizationId, personId: booking.operativeId, date: booking.date })
     const { notifyManagerSiteBookingRemovedSoon } = await import('@/lib/stores/managerScheduleStore')
     notifyManagerSiteBookingRemovedSoon(organizationId, fromManagerSiteBookingId)
   },
