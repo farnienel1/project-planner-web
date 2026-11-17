@@ -310,6 +310,16 @@ button.pu-item:hover, a.pu-item:hover { background: var(--pu-row-hover); }
 button.pu-item:disabled { cursor: not-allowed; opacity: 0.55; }
 .pu-item .grow { flex: 1; min-width: 0; }
 .pu-item .grow b { display: block; font-weight: 600; }
+/* Daily overview "Other" / "Site survey" rows (owner report 17 Nov): name, shift and times on the left; hours,
+   tile kind and Change on the right. The name wraps only between words, and only when the card is too narrow. */
+.pu-item.pu-place { align-items: flex-start; }
+.pu-place-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pu-place-name { display: block; font-weight: 600; font-size: 14px; overflow-wrap: normal; word-break: normal; }
+.pu-place-when { display: block; margin-top: 2px; }
+.pu-place-shift { display: block; font-weight: 600; font-size: 13px; }
+.pu-place-side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex: none; }
+.pu-place-actions { display: inline-flex; align-items: center; gap: 8px; }
+.pu-place .pu-hbar { width: 56px; }
 .pu-totals { display: flex; flex-direction: column; gap: 6px; padding: 14px 18px; border-top: 1px solid var(--pu-line-2); }
 .pu-totals .r { display: flex; justify-content: space-between; gap: 12px; font-size: 13.5px; }
 .pu-totals .r.big { font-size: 17px; font-weight: 700; padding-top: 6px; border-top: 1px solid var(--pu-line-2); margin-top: 2px; }

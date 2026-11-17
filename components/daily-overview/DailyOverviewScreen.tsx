@@ -34,6 +34,7 @@ import {
   overviewFormatHours,
   shiftOverviewDay,
   type OverviewPersonRow,
+  type OverviewPlaceRow,
 } from '@/lib/daily-overview/buildDailyOverview'
 import { BookLabourFlowScreen } from '@/components/book-labour/BookLabourFlowScreen'
 import {
@@ -42,7 +43,6 @@ import {
   type OverviewBookingTarget,
 } from '@/components/daily-overview/DailyOverviewBookingSheet'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
-import type { User } from '@/types'
 import { overviewHolidayName as holidayName, overviewPersonName as personName } from '@/lib/daily-overview/dailyOverviewToday'
 import { useDailyOverviewModel } from '@/lib/daily-overview/useDailyOverviewModel'
 
@@ -430,18 +430,21 @@ export function DailyOverviewScreen() {
 
             {model.officeBookings.length > 0 || model.wfhBookings.length > 0 || model.customGroups.length > 0 ? (
               <OtherBlock
-                office={model.officeBookings}
-                wfh={model.wfhBookings}
-                custom={model.customGroups}
-                users={users}
-                aliases={userIdAliases}
+                groups={model.otherGroups}
+                people={
+                  new Set(
+                    [...model.officeBookings, ...model.wfhBookings, ...model.customGroups.flatMap((g) => g.bookings)].map(
+                      (b) => b.userId
+                    )
+                  ).size
+                }
                 onOpen={openManagerBooking}
               />
             ) : null}
 
             {model.siteSurveyBookings.length > 0 ? (
               <Card title="Site survey">
-                <ManagerList bookings={model.siteSurveyBookings} users={users} aliases={userIdAliases} onOpen={openManagerBooking} />
+                <PlaceList rows={model.siteSurveyRows} onOpen={openManagerBooking} />
               </Card>
             ) : null}
           </div>
@@ -529,86 +532,95 @@ function PersonRow({ row, onOpen }: { row: OverviewPersonRow; onOpen?: () => voi
   )
 }
 
-function ManagerList({
-  bookings,
-  users,
-  aliases,
-  onOpen,
-}: {
-  bookings: ManagerSiteBooking[]
-  users: User[]
-  aliases?: Record<string, string>
-  onOpen?: (booking: ManagerSiteBooking) => void
-}) {
-  return (
-    <div className="pu-list">
-      {bookings.map((b) => {
-        const name = personName(b.userId, users, aliases)
-        if (!name) return null
-        const inner = (
-          <>
-            <span className="grow">
-              <b>{name}</b>
-            </span>
-            <Chip tone="slate">{b.timeSlot}</Chip>
-          </>
-        )
-        return onOpen ? (
-          <button
-            key={b.id}
-            type="button"
-            className="pu-item"
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              onOpen(b)
-            }}
-            aria-label={`Change booking for ${name}`}
-          >
-            {inner}
+/**
+ * One "Other" / "Site survey" row, read like a job's row (owner report 17 Nov): the name on its own line, the shift
+ * and its times on two lines (`bookingTimesParts`), the tile kind (`scheduleCellKind`, `JOB_SCHEDULE_LEGEND` words),
+ * the standard / overtime bar and the hours pill (`bookingHoursLabel`). The whole row opens the booking, as before.
+ */
+function PlaceRow({ row, onOpen }: { row: OverviewPlaceRow; onOpen?: (booking: ManagerSiteBooking) => void }) {
+  const kind = CELL_LABELS[row.cell.tone]
+  const barTotal = row.cell.standardHours + row.cell.overtimeHours
+  const stdWidth = barTotal > 0 ? (100 * row.cell.standardHours) / barTotal : 0
+  const otWidth = barTotal > 0 ? (100 * row.cell.overtimeHours) / barTotal : 0
+  const inner = (
+    <>
+      <IconTile tone="blue" size="sm" round>
+        {row.initials}
+      </IconTile>
+      <span className="pu-place-main">
+        <b className="pu-place-name">{row.name}</b>
+        {row.bookingParts.map((part, index) => (
+          <span key={index} className="pu-place-when">
+            <span className="pu-place-shift">{part.shift}</span>
+            {part.times ? <span className="pu-sub">{part.times}</span> : null}
+          </span>
+        ))}
+      </span>
+      <span className="pu-place-side">
+        <span className="pu-hrs">
+          <span className="pu-hbar" aria-hidden="true">
+            {stdWidth > 0 ? <i className="std" style={{ width: `${stdWidth}%` }} /> : null}
+            {otWidth > 0 ? <i className="ot" style={{ width: `${otWidth}%` }} /> : null}
+          </span>
+          {row.pillText}
+        </span>
+        <span className="pu-place-actions">
+          <Chip tone={kind.tone}>{kind.label}</Chip>
+          {onOpen ? (
             <span className="pu-btn sm" aria-hidden="true">
               Change
             </span>
-          </button>
-        ) : (
-          <div key={b.id} className="pu-item">
-            {inner}
-          </div>
-        )
-      })}
+          ) : null}
+        </span>
+      </span>
+    </>
+  )
+  return onOpen ? (
+    <button
+      type="button"
+      className="pu-item pu-place"
+      onClick={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        onOpen(row.booking)
+      }}
+      aria-label={`Change booking for ${row.name}`}
+    >
+      {inner}
+    </button>
+  ) : (
+    <div className="pu-item pu-place">{inner}</div>
+  )
+}
+
+function PlaceList({ rows, onOpen }: { rows: OverviewPlaceRow[]; onOpen?: (booking: ManagerSiteBooking) => void }) {
+  return (
+    <div className="pu-list">
+      {rows.map((row) => (
+        <PlaceRow key={row.id} row={row} onOpen={onOpen} />
+      ))}
     </div>
   )
 }
 
 function OtherBlock({
-  office,
-  wfh,
-  custom,
-  users,
-  aliases,
+  groups,
+  people,
   onOpen,
 }: {
-  office: ManagerSiteBooking[]
-  wfh: ManagerSiteBooking[]
-  custom: { name: string; bookings: ManagerSiteBooking[] }[]
-  users: User[]
-  aliases?: Record<string, string>
+  groups: { name: string; rows: OverviewPlaceRow[] }[]
+  /** Distinct people with an Office, Working from home or custom-place booking (the card's count, unchanged). */
+  people: number
   onOpen?: (booking: ManagerSiteBooking) => void
 }) {
-  const people = new Set([...office, ...wfh, ...custom.flatMap((g) => g.bookings)].map((b) => b.userId))
-  const groups = [
-    ...(office.length > 0 ? [{ name: 'Office', bookings: office }] : []),
-    ...(wfh.length > 0 ? [{ name: 'Working from home', bookings: wfh }] : []),
-    ...custom,
-  ]
   return (
-    <Card title="Other" count={`${people.size} person${people.size === 1 ? '' : 's'}`}>
+    <Card title="Other" count={`${people} person${people === 1 ? '' : 's'}`}>
       {groups.map((group) => (
         <div key={group.name}>
           <p className="pu-label pu-pad" style={{ paddingBottom: 0 }}>
             {group.name}
           </p>
-          <ManagerList bookings={group.bookings} users={users} aliases={aliases} onOpen={onOpen} />
+          <PlaceList rows={group.rows} onOpen={onOpen} />
         </div>
       ))}
     </Card>
