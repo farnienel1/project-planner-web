@@ -362,3 +362,20 @@ test('item 3 (review): earlier version cards match bookings by collection and li
   ])[0]
   assert.match(earlierVersionCards({ chain: chain2, latestTotal: null, currency: 'GBP' })[0].changeText, /\+1 booking · −1 booking/)
 })
+
+test('1.66.0 (final review): the admin weekStartKey pass skips a refused key and keeps the others', async () => {
+  const { queryIdsSkippingRefused } = await import('./timesheetQueue.ts')
+  const denied = Object.assign(new Error('denied'), { code: 'permission-denied' })
+  const asked: string[] = []
+  const run = async ([key]: string[]) => {
+    asked.push(key)
+    if (key === '2026-10-01') throw denied
+    return [`sheet-${key}`]
+  }
+  const result = await queryIdsSkippingRefused(['2026-11-01', '2026-10-16', '2026-10-01'], 1, run)
+  assert.deepEqual(result.rows.sort(), ['sheet-2026-10-16', 'sheet-2026-11-01'])
+  assert.deepEqual(result.refusedIds, ['2026-10-01'])
+  // One query per key: a refused key is never retried as part of a chunk.
+  assert.deepEqual(asked.sort(), ['2026-10-01', '2026-10-16', '2026-11-01'])
+  await assert.rejects(() => queryIdsSkippingRefused(['2026-11-01'], 1, async () => { throw new Error('offline') }), /offline/)
+})

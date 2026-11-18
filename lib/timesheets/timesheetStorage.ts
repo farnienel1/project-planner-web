@@ -1239,22 +1239,19 @@ async function loadRecentRunTimesheetsForIds(
   const keys = [...new Set(startDayKeys.filter(Boolean))]
   if (keys.length === 0) return grouped
   const wanted = new Set(userIds.map((id) => id.toLowerCase()))
-  const snaps = await Promise.all(
-    keys.map((key) =>
-      getDocs(query(collection(db, 'organizations', organizationId, 'settings'), where('weekStartKey', '==', key)))
-    )
+  // One query per key; a key the rules refuse is skipped (as iOS and §8), any other failure still fails the list.
+  const { rows: docs } = await queryIdsSkippingRefused(keys, 1, async ([key]) =>
+    (await getDocs(query(collection(db, 'organizations', organizationId, 'settings'), where('weekStartKey', '==', key)))).docs
   )
-  for (const snap of snaps) {
-    for (const entry of snap.docs) {
-      const data = entry.data() as Record<string, unknown>
-      const stored = typeof data.userId === 'string' && data.userId.trim() ? data.userId : timesheetDocumentSubjectId(entry.id)
-      if (!stored || !wanted.has(stored.toLowerCase())) continue
-      const row = timesheetStateFromDoc(entry.id, data, false, timeZone)
-      if (!row) continue
-      const list = grouped.get(stored) ?? []
-      list.push(row)
-      grouped.set(stored, list)
-    }
+  for (const entry of docs) {
+    const data = entry.data() as Record<string, unknown>
+    const stored = typeof data.userId === 'string' && data.userId.trim() ? data.userId : timesheetDocumentSubjectId(entry.id)
+    if (!stored || !wanted.has(stored.toLowerCase())) continue
+    const row = timesheetStateFromDoc(entry.id, data, false, timeZone)
+    if (!row) continue
+    const list = grouped.get(stored) ?? []
+    list.push(row)
+    grouped.set(stored, list)
   }
   return grouped
 }

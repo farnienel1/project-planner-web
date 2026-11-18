@@ -964,6 +964,9 @@ function ManagerTimesheetsTile({
 }) {
   const [loaded, setLoaded] = useState<{ sheets: TimesheetQueueStoredSheet[]; exportedCount: number } | 'empty' | 'failed' | null>(null)
   const [repairs, setRepairs] = useState(0)
+  // Final review of #381: a failed load is tried again when the browser comes back online or the window regains focus
+  // (the tile is itself a button, so it cannot hold a Retry button).
+  const [retries, setRetries] = useState(0)
   const reviewGroups = useMemo(() => timesheetRosterGroups(user, users), [user, users])
   const reviewIds = useMemo(() => reviewGroups.flat().flatMap((member) => timesheetMemberIds(member, users)), [reviewGroups, users])
   const runsKey = runs.map((run) => payRunKey(run, timeZone)).join(',')
@@ -989,6 +992,8 @@ function ManagerTimesheetsTile({
       return
     }
     let cancelled = false
+    // A new attempt clears a previous failure (shown as '–' while it loads); every other state stays until it answers.
+    setLoaded((previous) => (previous === 'failed' ? null : previous))
     Promise.all([
       reviewIds.length > 0
         ? // Rulebook 1.66.0 §8 (owner decision 17 Nov): every stored sheet, however old — never only the recent runs.
@@ -1018,7 +1023,18 @@ function ManagerTimesheetsTile({
     }
     // `runs` is read through `runsKey`, the people through `queryKey` (ids), the roster through a ref.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [organizationId, users.length === 0, queryKey, runsKey, timeZone, repairs])
+  }, [organizationId, users.length === 0, queryKey, runsKey, timeZone, repairs, retries])
+
+  useEffect(() => {
+    if (loaded !== 'failed' || typeof window === 'undefined') return
+    const retry = () => setRetries((value) => value + 1)
+    window.addEventListener('online', retry)
+    window.addEventListener('focus', retry)
+    return () => {
+      window.removeEventListener('online', retry)
+      window.removeEventListener('focus', retry)
+    }
+  }, [loaded])
 
   const catalogueRef = useRef(changeCatalogue)
   catalogueRef.current = changeCatalogue
