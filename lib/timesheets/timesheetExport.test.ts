@@ -240,7 +240,7 @@ test('1.36.0 FU-5: invoiceRateChangeNotes includes history under a former invite
   assert.ok(notes.some((note) => /^Operative rate updated to £240.00/.test(note)))
 })
 
-test('1.61.0 review (SF1): an edited day-rate overtime row on the invoice never shows a sum that does not add up to its amount', () => {
+test('1.67.0 review (SF1): an edited day-rate overtime row on the invoice never shows a sum that does not add up to its amount', () => {
   const overtime = {
     id: 'op-b1-ot',
     date: new Date('2026-11-02T16:00:00Z'),

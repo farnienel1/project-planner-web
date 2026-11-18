@@ -271,7 +271,7 @@ export function payrollMultipliedHours(
 }
 
 /**
- * Rulebook 1.20.3 / 1.61.0 §8: the figures behind `multipliedHoursText` for clock hours, a multiplier and an unpaid
+ * Rulebook 1.20.3 / 1.67.0 §8: the figures behind `multipliedHoursText` for clock hours, a multiplier and an unpaid
  * break (plain hours) — the hours they pay (clock × N − break, never below 0) and the text. The one place this sum is
  * worked out for display; `payrollMultipliedHours` returns it for a booking. Fields as `payrollMultipliedHours`.
  */

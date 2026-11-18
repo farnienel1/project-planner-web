@@ -1,5 +1,5 @@
 /**
- * Rulebook 1.61.0 §8 (owner 17 Nov): the hours wording of a day-rate overtime line must never show a calculation other
+ * Rulebook 1.67.0 §8 (owner 17 Nov): the hours wording of a day-rate overtime line must never show a calculation other
  * than the one that pays. These tests prove, over many generated bookings, that every figure in the text comes from
  * the same rulebook outputs as the line's amount (`payrollHoursResult`, `payrollDayRateHours`, `payForHours`), that the
  * text function does no arithmetic of its own, and that the shown hourly rate is the day rate ÷ the divisor in pennies.
@@ -113,7 +113,7 @@ const hundredths = (n: number) => Math.round(n * 100) / 100
 
 const CASES = 4000
 
-test('1.61.0 property: the overtime text shows the calculation that pays, over many bookings', () => {
+test('1.67.0 property: the overtime text shows the calculation that pays, over many bookings', () => {
   let shown = 0
   const multipliersSeen = new Set<number>()
   const daysSeen = new Set<string>()
@@ -155,7 +155,7 @@ test('1.61.0 property: the overtime text shows the calculation that pays, over m
   assert.deepEqual([...daysSeen].sort(), [WEEKDAY, SATURDAY, SUNDAY].sort(), 'weekday, set-window Saturday and every-hour Sunday')
 })
 
-test('1.61.0 property: the rounded hourly rate is always dayRate ÷ divisor in pennies', () => {
+test('1.67.0 property: the rounded hourly rate is always dayRate ÷ divisor in pennies', () => {
   const r = rng(61)
   for (let i = 0; i < 20000; i += 1) {
     const dayRate = Math.round(r() * 100000) / 100 + 0.01
@@ -213,7 +213,7 @@ function arithmeticIn(source: string, name: string): string[] {
   return found
 }
 
-test('1.61.0: the overtime text function does no arithmetic of its own (formatting only)', () => {
+test('1.67.0: the overtime text function does no arithmetic of its own (formatting only)', () => {
   const source = readFileSync(new URL('./dayRateOvertimeText.ts', import.meta.url), 'utf8')
   assert.deepEqual(arithmeticIn(source, 'dayRateOvertimeCalcText'), [])
   // The check itself works: it catches a sum, a division, a negation and a Math call.
@@ -235,7 +235,7 @@ const signedLine = (over: Partial<R.SignedDayRateOvertimeLine> = {}): R.SignedDa
   return { isOvertime: true, payBasis: 'day', decision: 'approved', paidHours: 6, amount: pay, otMultiplier: 1.5, otBaseDayRate: 225, otDayRateHours: 8.5, details: '16:00–22:00', ...over }
 }
 
-test('1.61.0 S1: a signed line reads in hours only from the day rate and divisor stored at signing', () => {
+test('1.67.0 S1: a signed line reads in hours only from the day rate and divisor stored at signing', () => {
   assert.equal(R.signedDayRateOvertimeText(signedLine(), { currency: 'GBP' })?.text, '6h × 1.5 = 9h · 9h × £26.47/h (rounded) = £238.24 (£225.00/day ÷ 8.5h)')
   // Short overtime, 0.25h × 2 on £225/day, 8.5h day → £13.24; the day rate shown is the stored £225, never £13.24 ÷ 0.03 days ÷ 2.
   const shortPay = R.payForHours({ payBasis: 'day', dayRate: 225, paidHours: 0.25, standardDayHours: 8.5, otMultiplier: 2 })
@@ -249,7 +249,7 @@ test('1.61.0 S1: a signed line reads in hours only from the day rate and divisor
   const roundedDays = signedLine() as R.SignedDayRateOvertimeLine & { days: number }
   roundedDays.days = 0.71
   assert.ok(R.signedDayRateOvertimeText(roundedDays, { currency: 'GBP' })?.text.includes('£225.00/day ÷ 8.5h'))
-  // A line signed before 1.61.0 (no stored rate or divisor): the older wording.
+  // A line signed before 1.67.0 (no stored rate or divisor): the older wording.
   assert.equal(R.signedDayRateOvertimeText(signedLine({ otBaseDayRate: undefined, otDayRateHours: undefined })), null)
   assert.equal(R.signedDayRateOvertimeText(signedLine({ otDayRateHours: undefined })), null)
   // Hourly people, standard lines and a multiplier that disagrees with the stored multiplied text: the older wording.
@@ -263,7 +263,7 @@ test('1.61.0 S1: a signed line reads in hours only from the day rate and divisor
   assert.ok(R.signedDayRateOvertimeText(signedLine({ details: 'OT 6h' }), { currency: 'GBP' }))
 })
 
-test('1.61.0 S1 property: a signed line shows its stored figures or the older wording, never a back-calculated rate', () => {
+test('1.67.0 S1 property: a signed line shows its stored figures or the older wording, never a back-calculated rate', () => {
   for (let seed = 1; seed <= CASES; seed += 1) {
     const c = generate(seed)
     const { result, divisor, pay } = priced(c)

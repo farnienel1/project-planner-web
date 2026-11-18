@@ -141,7 +141,7 @@ function labourLine(
     isLeave: false,
     isOvertime: line.isOvertimeLine,
     otMultiplier: line.isOvertimeLine ? line.otMultiplier ?? null : null,
-    // 1.61.0: the real day rate and divisor at signing, for the hours wording (never worked out from the amount).
+    // 1.67.0: the real day rate and divisor at signing, for the hours wording (never worked out from the amount).
     ...(line.isOvertimeLine && line.payrollBasis !== 'hourly' && Number(line.otBaseRate) > 0 && Number(line.standardDayHours) >= 1
       ? { otBaseDayRate: Number(line.otBaseRate), otDayRateHours: Number(line.standardDayHours) }
       : {}),

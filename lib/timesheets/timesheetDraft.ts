@@ -91,9 +91,9 @@ export type WeeklyReportLabourLine = {
   /** Written on new overtime snapshots. Missing on older lines. */
   otMultiplier?: number | null
   /**
-   * Rulebook 1.61.0 (review of #378, S1): on a day-rate overtime line, the person's own day rate (never multiplied) and
+   * Rulebook 1.67.0 (review of #378, S1): on a day-rate overtime line, the person's own day rate (never multiplied) and
    * the line's day-rate divisor at signing, so the signed line can read in hours without working a rate out from its
-   * amount (`signedDayRateOvertimeText`). Missing on lines signed before 1.61.0 (older wording).
+   * amount (`signedDayRateOvertimeText`). Missing on lines signed before 1.67.0 (older wording).
    */
   otBaseDayRate?: number | null
   otDayRateHours?: number | null

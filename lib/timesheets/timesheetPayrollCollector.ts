@@ -64,7 +64,7 @@ export type TimesheetPayrollLineItem = {
    */
   otClockHours?: number
   otBreakHours?: number
-  /** Rulebook 1.61.0 (display only, never stored): an overtime line's own day or hourly rate, before the multiplier. */
+  /** Rulebook 1.67.0 (display only, never stored): an overtime line's own day or hourly rate, before the multiplier. */
   otBaseRate?: number
   /**
    * Rulebook 1.22.0 (`timesheetTotals`), on a booking's standard line only: the booking's weighted paid hours

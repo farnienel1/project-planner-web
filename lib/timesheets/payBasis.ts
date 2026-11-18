@@ -35,7 +35,7 @@ export function quantityText(quantity: number, unit: 'hours' | 'days') {
 }
 
 /**
- * Rulebook 1.61.0 §8 (owner 17 Nov): the hours wording of a day-rate overtime line, or null so the caller keeps the
+ * Rulebook 1.67.0 §8 (owner 17 Nov): the hours wording of a day-rate overtime line, or null so the caller keeps the
  * older wording. Null also when the text throws, or when it would not show this line's own figures — its hours sum
  * must be the line's paid hours at the multiplier (`paidHours × N`, which equals clock × N − break), and the line's
  * amount must be exactly what `payForHours` pays for those hours at that day rate and divisor (a revised amount keeps
@@ -112,7 +112,7 @@ export function payLineDisplay({
   clockHours?: number | null
   breakHours?: number | null
   /**
-   * Rulebook 1.61.0: the person's own rate (never multiplied), so the hourly rate shown is exactly `dayRate ÷ divisor`
+   * Rulebook 1.67.0: the person's own rate (never multiplied), so the hourly rate shown is exactly `dayRate ÷ divisor`
    * rounded to pennies. Missing: the older wording (a rate is never worked out backwards).
    */
   baseRate?: number | null
@@ -133,10 +133,10 @@ export function payLineDisplay({
     rateType = `${kind} ${ot}`
   }
   const multiplier = Number(otMultiplier) > 0 ? Number(otMultiplier) : 1
-  // Rulebook 1.61.0 (review of #378, S1): only with the person's own rate (`baseRate`) — never a rate worked out
+  // Rulebook 1.67.0 (review of #378, S1): only with the person's own rate (`baseRate`) — never a rate worked out
   // backwards from the multiplied rate or an amount.
   if (isOvertime && !hourly && rate != null && Number(otMultiplier) > 0 && Number(baseRate) > 0) {
-    // Rulebook 1.61.0 §8 (owner decision 17 Nov): a day-rate overtime line reads in hours —
+    // Rulebook 1.67.0 §8 (owner decision 17 Nov): a day-rate overtime line reads in hours —
     // "6h × 1.5 = 9h · 9h × £26.47/h (rounded) = £238.24 (£225.00/day ÷ 8.5h)" — never a multiplied day
     // rate. `rate` is the multiplied rate the line was priced with; the person's day rate is rate ÷ N. `pay` as given.
     // Owner 17 Nov: the amount is already priced (`pay`); the text only shows it. It never blocks or changes the

@@ -7144,7 +7144,9 @@ test('1.8.0 variations: stable line ids, recomputed counters, partial and renumb
     set: { sequence: 2, voNumber: 'VO-002', numberHistory: [{ from: 'VO-001', to: 'VO-002', at: 7, byUid: 'u' }] },
   })
   assert.equal(variationRenumberWriteFields({ stored: { voNumber: 'VO-001', sequence: 1 }, to: 'VO-001', sequence: 1, at: 7, byUid: 'u' }), null)
-  assert.equal(variationRenumberWriteFields({ stored: { voNumber: 'VO-001', sequence: 1, voNumberLocked: true }, to: 'VO-005', sequence: 1, at: 7, byUid: 'u' }), null)
+  // 1.63.0: the status pins the number; a lock left on an Open (reopened) variation no longer does.
+  assert.equal(variationRenumberWriteFields({ stored: { voNumber: 'VO-001', sequence: 1, status: 'submitted', voNumberLocked: true }, to: 'VO-005', sequence: 1, at: 7, byUid: 'u' }), null)
+  assert.equal(variationRenumberWriteFields({ stored: { voNumber: 'VO-001', sequence: 1, status: 'open', voNumberLocked: true }, to: 'VO-005', sequence: 1, at: 7, byUid: 'u' })?.set.voNumber, 'VO-005')
   assert.equal(parseVariationTrackerDocument('P1', undefined).prefix, 'VO-')
 })
 
@@ -17831,7 +17833,7 @@ test('1.59.0 review M2: a booking under a managers row with no account stays in 
   assert.equal(R112.scheduleRowPerson('mgr-noacc', { accounts: [], operatives: [], managers: [{ id: 'MGR-NOACC' }] }).unresolved, false)
 })
 
-test('1.61.0 dayRateOvertimeCalcText: a day-rate overtime line reads in hours, amount unchanged', () => {
+test('1.67.0 dayRateOvertimeCalcText: a day-rate overtime line reads in hours, amount unchanged', () => {
   // Owner example: 6h of overtime at ×1.5, £225/day, 8.5h paid day → £238.24 (payForHours).
   const pay = R112.payForHours({ payBasis: 'day', dayRate: 225, paidHours: 6, standardDayHours: 8.5, otMultiplier: 1.5 })
   assert.equal(pay, 238.24)
@@ -17857,7 +17859,7 @@ test('1.61.0 dayRateOvertimeCalcText: a day-rate overtime line reads in hours, a
   assert.equal(R112.DAY_RATE_OVERTIME_ROUNDED_NOTE, 'Hourly rate is rounded; amounts use the exact rate.')
 })
 
-test('1.61.0: multipliedHoursParts and dayRateHourlyEquivalent are the figures the overtime text shows', () => {
+test('1.67.0: multipliedHoursParts and dayRateHourlyEquivalent are the figures the overtime text shows', () => {
   assert.deepEqual(R112.multipliedHoursParts({ clockHours: 6.5, multiplier: 2, breakHours: 0.5 }), {
     clockHours: 6.5, multiplier: 2, breakHours: 0.5, paidHours: 12.5, text: '6.5h × 2 − 0.5h break = 12.5h',
   })

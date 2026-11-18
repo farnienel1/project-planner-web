@@ -124,7 +124,7 @@ function signedOverrideDetails(
     payBasis?: string | null
     /** The multiplier stored on the signed line (1.46.0 snapshots), when any. */
     otMultiplier?: number | null
-    /** Rulebook 1.61.0: the day rate and divisor stored at signing, when any (never worked out from the amount). */
+    /** Rulebook 1.67.0: the day rate and divisor stored at signing, when any (never worked out from the amount). */
     otBaseDayRate?: number | null
     otDayRateHours?: number | null
     decision?: string | null
@@ -136,7 +136,7 @@ function signedOverrideDetails(
   // 1.43.0: the clock part only (`timesheetLineClockText`); the multiplied text is in the equation.
   const clockPart = timesheetLineClockText(line.details)
   const clock = clockPart && isClockSpanLabel(clockPart) ? `${clockPart} · ` : ''
-  // Rulebook 1.61.0 §8 (review of #378, S1): a signed day-rate overtime line reads in hours only from the day rate and
+  // Rulebook 1.67.0 §8 (review of #378, S1): a signed day-rate overtime line reads in hours only from the day rate and
   // divisor stored at signing, when its stored amount is exactly what they pay (`signedDayRateOvertimeText`). Never a
   // rate worked out backwards from the signed amount; any other signed line keeps the older wording below.
   try {

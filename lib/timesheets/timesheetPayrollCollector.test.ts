@@ -420,20 +420,20 @@ test('1.20.3: overtime lines show clock hours and the break, never "6.25h × 2";
   assert.equal(summary.overtimeHours, 9.5)
 })
 
-test('1.20.3 / 1.61.0: a day-rate overtime line with a break reads in hours at the hourly rate; pay unchanged', () => {
+test('1.20.3 / 1.67.0: a day-rate overtime line with a break reads in hours at the hourly rate; pay unchanged', () => {
   const summary = r1203Summary(user({ id: 'u1', dayRate: 200 }))
   const sunOt = summary.lineItems.find((line) => line.id === 'op-sun-ot')
   assert.ok(sunOt)
   // 6.25 / 8 × 2 × £200 = £312.50 = 12.5h / 8 × £200.
   assert.equal(sunOt.amount, 312.5)
-  // 1.61.0 (owner decision 17 Nov): the sum in hours, never a multiplied day rate (`dayRateOvertimeCalcText`).
+  // 1.67.0 (owner decision 17 Nov): the sum in hours, never a multiplied day rate (`dayRateOvertimeCalcText`).
   assert.equal(
     timesheetHoursRateLine(sunOt),
     '6.5h × 2 − 0.5h break = 12.5h · 12.5h × £25.00/h = £312.50 (£200.00/day ÷ 8h)'
   )
 })
 
-test('1.61.0: a day-rate weekday overtime line reads in hours; the standard line and the amounts are unchanged', () => {
+test('1.67.0: a day-rate weekday overtime line reads in hours; the standard line and the amounts are unchanged', () => {
   const policy = {
     ...DEFAULT_PAYROLL_POLICY,
     standardDayStart: '07:00',

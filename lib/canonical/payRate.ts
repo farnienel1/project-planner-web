@@ -392,7 +392,7 @@ export function roundPennies(amount: number): number {
 }
 
 /**
- * Rulebook 1.61.0 §8: the hourly rate a day rate works out at on one part of a booking — the day rate ÷ that part's
+ * Rulebook 1.67.0 §8: the hourly rate a day rate works out at on one part of a booking — the day rate ÷ that part's
  * day-rate divisor (`payrollDayRateHours`), rounded to pennies for display (`roundPennies`). Pay never uses the rounded
  * figure (`payForHours` prices the exact hours). `rounded` is true when rounding changed it. Null for a day rate that
  * is not above 0, or a divisor below 1 hour (`PAY_STANDARD_DAY_MIN_HOURS`) or not finite.

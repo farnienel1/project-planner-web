@@ -1,9 +1,9 @@
 /**
- * Rulebook 1.61.0 §8 (owner decision 17 Nov): how a day-rate person's overtime line reads on a timesheet and its
+ * Rulebook 1.67.0 §8 (owner decision 17 Nov): how a day-rate person's overtime line reads on a timesheet and its
  * invoice. Wording only — the amount is always the exact pay as priced (`payForHours`, rounded once to pennies) and is
  * never changed to make the sum match.
  *
- * Before 1.61.0 the line read "0.71 days × £337.50/day = £238.24" (a multiplied day rate). It now reads the sum in
+ * Before 1.67.0 the line read "0.71 days × £337.50/day = £238.24" (a multiplied day rate). It now reads the sum in
  * hours, with the hourly rate worked out from the day rate and that part's day-rate divisor (`payrollDayRateHours`:
  * the weekday paid day for every overtime part):
  *   "6h × 1.5 = 9h · 9h × £26.47/h (rounded) = £238.24 (£225.00/day ÷ 8.5h)"
@@ -74,7 +74,7 @@ export type DayRateOvertimeCalcText = {
 export const DAY_RATE_OVERTIME_ROUNDED_NOTE = 'Hourly rate is rounded; amounts use the exact rate.'
 
 /**
- * Rulebook 1.61.0 §8: the wording of a day-rate overtime line. Null when it cannot be shown in hours (no positive
+ * Rulebook 1.67.0 §8: the wording of a day-rate overtime line. Null when it cannot be shown in hours (no positive
  * paid hours or day rate, or a divisor below 1 hour) — the caller then keeps its older wording. Formatting only: every
  * figure comes from a rulebook function or the caller (see the file comment).
  */
@@ -106,7 +106,7 @@ export function dayRateOvertimeCalcText(input: DayRateOvertimeCalcInput): DayRat
   }
 }
 
-/** A signed timesheet snapshot line (`weeklyReportOverride.lines[]`) as both apps store it, for the 1.61.0 wording. */
+/** A signed timesheet snapshot line (`weeklyReportOverride.lines[]`) as both apps store it, for the 1.67.0 wording. */
 export type SignedDayRateOvertimeLine = {
   isOvertime?: boolean | null
   /** Missing on older snapshots means day rate. */
@@ -117,20 +117,20 @@ export type SignedDayRateOvertimeLine = {
   paidHours: number
   amount: number
   otMultiplier?: number | null
-  /** 1.61.0: the person's own day rate at signing (never multiplied, never worked out from the amount). */
+  /** 1.67.0: the person's own day rate at signing (never multiplied, never worked out from the amount). */
   otBaseDayRate?: number | null
-  /** 1.61.0: the line's day-rate divisor at signing (`payrollDayRateHours`), never stored days. */
+  /** 1.67.0: the line's day-rate divisor at signing (`payrollDayRateHours`), never stored days. */
   otDayRateHours?: number | null
   /** The stored details text; a multiplied text ("6.5h × 2 − 0.5h break = 12.5h") gives the clock hours and break. */
   details?: string | null
 }
 
 /**
- * Rulebook 1.61.0 §8 (review of #378, S1): the hours wording of a SIGNED day-rate overtime line, or null for the older
+ * Rulebook 1.67.0 §8 (review of #378, S1): the hours wording of a SIGNED day-rate overtime line, or null for the older
  * "days × day rate" wording. Never works a rate out backwards from the signed amount: it needs the day rate and divisor
  * stored on the line at signing (`otBaseDayRate`, `otDayRateHours`), a line that was not edited or declined, and the
  * stored amount to be exactly what the rulebook pays for the stored hours at that rate (`payForHours`) — so an
- * amount-only revision, a line signed before 1.61.0 or any line whose figures do not agree keeps the older wording.
+ * amount-only revision, a line signed before 1.67.0 or any line whose figures do not agree keeps the older wording.
  */
 export function signedDayRateOvertimeText(
   line: SignedDayRateOvertimeLine,
