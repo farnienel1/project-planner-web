@@ -5,13 +5,14 @@ import {
   enforceRateLimit,
   isFirebaseUser,
   jsonError,
-  readJsonBody,
   requireFirebaseUser,
 } from '@/lib/security/apiGuard'
-import { clampString, isValidEmail } from '@/lib/security/validation'
+import { apiObject, apiText, readApiBody } from '@/lib/security/apiBody'
+import { isValidDocumentId, isValidEmail } from '@/lib/security/validation'
 import { getAppBaseUrl } from '@/lib/email/resendClient'
 import { PLATFORM_OWNER_EMAIL } from '@/lib/platform/owner'
-import { bearerToken, firestoreGet, readString } from '@/lib/owner/firestoreRest'
+import { bearerToken, firestoreGet, readString, restFieldsToPlain } from '@/lib/owner/firestoreRest'
+import { organizationMemberActive, parseOrganizationName } from '@/lib/canonical'
 import { requireOrgAccessForUser } from '@/lib/security/requireOrgAccess'
 import { LOGIN_EMAIL_FIX_INBOX, loginEmailFixMessage } from '@/lib/support/loginEmailFix'
 
@@ -22,26 +23,22 @@ export async function POST(request: NextRequest) {
   if (limited) return limited
   const user = await requireFirebaseUser(request)
   if (!isFirebaseUser(user)) return user
-  const body = await readJsonBody<{
-    orgId?: string
-    orgName?: string
-    targetUid?: string
-    targetName?: string
-    currentEmail?: string
-    suggestedEmail?: string
-    note?: string
-  }>(request)
+  // Mass-assignment audit 17 Nov: only these keys are read. The organisation name, the person's name and their current
+  // email come from the stored documents, never from the request (the old `orgName` / `targetName` / `currentEmail`
+  // hints are ignored).
+  const body = await readApiBody(
+    request,
+    apiObject({ orgId: apiText(80), targetUid: apiText(128), suggestedEmail: apiText(254), note: apiText(500) })
+  )
   if (!body.ok) return body.response
-  const orgId = clampString(body.value.orgId, 80) || ''
-  const targetUid = clampString(body.value.targetUid, 80) || ''
-  const suggestedEmail = (clampString(body.value.suggestedEmail, 254) || '').toLowerCase()
-  const note = clampString(body.value.note, 500) || ''
-  const orgNameHint = clampString(body.value.orgName, 160) || ''
-  const targetNameHint = clampString(body.value.targetName, 160) || ''
-  const currentEmailHint = (clampString(body.value.currentEmail, 254) || '').toLowerCase()
+  const orgId = body.value.orgId
+  const targetUid = body.value.targetUid
+  const suggestedEmail = body.value.suggestedEmail.toLowerCase()
+  const note = body.value.note
   if (!orgId || !targetUid || !isValidEmail(suggestedEmail)) {
     return jsonError('orgId, targetUid and a valid suggestedEmail are required', 400)
   }
+  if (!isValidDocumentId(targetUid)) return jsonError('targetUid is not valid', 400)
 
   const access = await requireOrgAccessForUser(request, user, orgId, 'admin')
   if (!access.ok) return access.response
@@ -49,6 +46,32 @@ export async function POST(request: NextRequest) {
   const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID
   const token = bearerToken(request)
   if (!projectId || !token) return jsonError('Sign in required', 401)
+
+  // Mass-assignment audit 17 Nov: the person must belong to the caller's organisation (rulebook
+  // `organizationMemberActive`: a key of `members`, the creator, a users document of it, or a membership there) before
+  // anything is stored or emailed — an admin of one company can never file a request about someone elsewhere.
+  let userDoc: Awaited<ReturnType<typeof firestoreGet>> = null
+  let orgDoc: Awaited<ReturnType<typeof firestoreGet>> = null
+  let membershipDoc: Awaited<ReturnType<typeof firestoreGet>> = null
+  try {
+    // A users document the security rules refuse to this admin is not one of their organisation's people: read as none.
+    ;[userDoc, orgDoc] = await Promise.all([
+      firestoreGet(token, `users/${targetUid}`).catch(() => null),
+      firestoreGet(token, `organizations/${access.organizationId}`),
+    ])
+    membershipDoc = await firestoreGet(token, `users/${targetUid}/orgMemberships/${access.organizationId}`).catch(() => null)
+  } catch (readError) {
+    console.error('[support/login-email] could not read org or user', readError)
+    return jsonError('Could not check that person. Try again.', 503)
+  }
+  const belongs = organizationMemberActive({
+    organizationId: access.organizationId,
+    userId: targetUid,
+    organization: orgDoc ? restFieldsToPlain(orgDoc.fields) : null,
+    user: userDoc ? restFieldsToPlain(userDoc.fields) : null,
+    membership: membershipDoc ? restFieldsToPlain(membershipDoc.fields) : null,
+  }).member
+  if (!userDoc || !belongs) return jsonError('That person is not in your organisation.', 404)
 
   try {
     const created = await fetch(
@@ -58,7 +81,7 @@ export async function POST(request: NextRequest) {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           fields: {
-            orgId: { stringValue: orgId },
+            orgId: { stringValue: access.organizationId },
             requestedByUid: { stringValue: user.uid },
             targetUid: { stringValue: targetUid },
             suggestedEmail: { stringValue: suggestedEmail },
@@ -72,25 +95,15 @@ export async function POST(request: NextRequest) {
     if (!created.ok) {
       console.error('[support/login-email] could not store the request', created.status)
     }
-    let userDoc: Awaited<ReturnType<typeof firestoreGet>> = null
-    let orgDoc: Awaited<ReturnType<typeof firestoreGet>> = null
-    try {
-      userDoc = await firestoreGet(token, `users/${targetUid}`)
-      orgDoc = await firestoreGet(token, `organizations/${orgId}`)
-    } catch (readError) {
-      console.error('[support/login-email] could not read org or user', readError)
-    }
-    const oldEmail = (userDoc ? readString(userDoc.fields, 'email') : currentEmailHint).toLowerCase()
-    const storedName = userDoc
-      ? `${readString(userDoc.fields, 'firstName')} ${readString(userDoc.fields, 'surname')}`.trim()
-      : ''
+    const oldEmail = readString(userDoc.fields, 'email').toLowerCase()
+    const storedName = `${readString(userDoc.fields, 'firstName')} ${readString(userDoc.fields, 'surname')}`.trim()
     const deepLink = `${getAppBaseUrl()}/developer/users?fix=${encodeURIComponent(targetUid)}`
     const message = loginEmailFixMessage({
-      organizationName: (orgDoc ? readString(orgDoc.fields, 'name') : '') || orgNameHint,
-      organizationId: orgId,
-      userName: storedName || targetNameHint,
+      organizationName: parseOrganizationName(orgDoc ? restFieldsToPlain(orgDoc.fields) : undefined),
+      organizationId: access.organizationId,
+      userName: storedName,
       userId: targetUid,
-      oldEmail: oldEmail || currentEmailHint,
+      oldEmail,
       newEmail: suggestedEmail,
       note,
     }, { ownerConsoleUrl: deepLink })

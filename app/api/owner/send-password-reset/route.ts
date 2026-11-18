@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { enforceRateLimit, isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
+import { apiObject, apiText, readApiBody } from '@/lib/security/apiBody'
+import { enforceRateLimit, isFirebaseUser, jsonError } from '@/lib/security/apiGuard'
 import { requireOwner } from '@/lib/owner/requireOwner'
 import { OWNER_AUDIT_UNAVAILABLE_MESSAGE, beginOwnerAudit, type OwnerAuditRun } from '@/lib/owner/ownerAudit'
 import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
-import { isValidEmail } from '@/lib/security/validation'
+import { isValidDocumentId, isValidEmail } from '@/lib/security/validation'
 import { adminLookupAuthEmail, firebaseAdminConfigured } from '@/lib/owner/identityToolkitAdmin'
 import { firebaseDefaultPasswordReset, sendBrandedPasswordReset } from '@/lib/auth/passwordResetServer'
 import { bearerToken, firestoreGet, readString } from '@/lib/owner/firestoreRest'
@@ -17,10 +18,12 @@ export async function POST(request: NextRequest) {
   if (limited) return limited
   const owner = await requireOwner(request)
   if (!isFirebaseUser(owner)) return owner
-  const body = await readJsonBody<{ uid?: string; email?: string }>(request)
+  const body = await readApiBody(request, apiObject({ uid: apiText(128), email: apiText(254) }))
   if (!body.ok) return body.response
   const uid = (body.value.uid || '').trim()
   let email = (body.value.email || '').trim().toLowerCase()
+  // Mass-assignment audit 17 Nov: the uid goes into a document path, so only a plain document id.
+  if (uid && !isValidDocumentId(uid)) return jsonError('uid is not valid', 400)
 
   const token = bearerToken(request)
   if (uid) {

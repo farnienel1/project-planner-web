@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { enforceRateLimit, isFirebaseUser, jsonError } from '@/lib/security/apiGuard'
 import { requireOwner } from '@/lib/owner/requireOwner'
 import { OWNER_AUDIT_UNAVAILABLE_MESSAGE, recordOwnerEvent } from '@/lib/owner/ownerAudit'
+import { apiObject, apiText, readApiBody } from '@/lib/security/apiBody'
 
 export const runtime = 'nodejs'
 
@@ -10,13 +11,14 @@ export async function POST(request: NextRequest) {
   if (limited) return limited
   const owner = await requireOwner(request)
   if (!isFirebaseUser(owner)) return owner
-  const body = (await request.json().catch(() => ({}))) as {
-    action?: string
-    targetUserId?: string
-    targetOrgId?: string
-    reason?: string
-  }
-  const action = (body.action || '').trim()
+  // Mass-assignment audit 17 Nov: only these keys are read (`readApiBody`); anything else is dropped.
+  const parsed = await readApiBody(
+    request,
+    apiObject({ action: apiText(200), targetUserId: apiText(128), targetOrgId: apiText(128), reason: apiText(1000) })
+  )
+  if (!parsed.ok) return parsed.response
+  const body = parsed.value
+  const action = body.action
   if (!action) return jsonError('action is required', 400)
   // A one-entry record (PLAN A4, phase completed): nothing changes, so there is no requested/completed pair.
   // The browser only names the action; the server adds who, when, IP and user agent. Removed with PR 11.
@@ -24,9 +26,9 @@ export async function POST(request: NextRequest) {
   try {
     const requestId = await recordOwnerEvent(request, owner.uid, {
       action,
-      targetUserId: body.targetUserId,
-      targetOrgId: body.targetOrgId,
-      reason: body.reason,
+      targetUserId: body.targetUserId || undefined,
+      targetOrgId: body.targetOrgId || undefined,
+      reason: body.reason || undefined,
     })
     return NextResponse.json({ ok: true, requestId })
   } catch {

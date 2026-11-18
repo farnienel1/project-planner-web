@@ -148,6 +148,8 @@ How to use it:
 
 | Date | Decision | Status |
 |---|---|---|
+| 17 Nov | **Mass-assignment fixes (audit 17 Nov, owner approved).** Server routes read only declared keys (`readApiBody`, zod, unknown keys stripped; CI guard `check-api-body-spread`); the material email's sender name, phone, company and logo, the support request's names and the org-addition email's organisation name come from stored documents, never the request; a support login-email request must name someone in the caller's organisation; the 2FA setup skip treats the owner email as the owner only when verified; owner routes check id formats; `isOrganizationSuperAdmin` has no blank fallback (rulebook 1.65.0). | done web (draft PR, branch `w-server-allowlist`); iOS (draft PR, branch `ios-mass-assignment`) |
+| 17 Nov | **Decision B: a server-side check of saved overtime and PAYE claim reports before launch.** On every new `overtimeReports` / `payeClaimReports` document a Cloud Function compares it with the reviews, bookings and items it was built from (`overtimeReportIntegrity`, `payeClaimReportIntegrity`) and stores `organizations/{orgId}/reportChecks/{reportId}`; admins see mismatches in Data health ("Reports that don't match their records"). Never blocks or changes a report. | done web + rulebook + functions (1.65.0, `w-server-allowlist`); rules (admin read, no client write, out of the catch-all) with the rules release `w-rules-allowlist`; functions deploy pending |
 | 3 Nov | Data export: a ZIP with one CSV per area plus a JSON copy; admins only. | done |
 | 4 Nov | File recovery and company restore windows are both 30 days; the privacy policy says so. Admins can still hard-delete files. Keep a `removedEvidence` list. Profile photos get versioned names. | done (1.27) |
 | 4 Nov | The invited rate is copied to private pay on accept. Operatives managers see catalogue operatives' rates. | done (1.27) |
@@ -971,6 +973,7 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 
 | Date | Question |
 |---|---|
+| 17 Nov | **Materials card on a job's Overview is shown to every viewer**, including operatives without the Materials permission (who get no Materials tile; its links go to the job's Materials page, which has its own access gate). Found in the Projects & Small works UI restyle (P11, kept unchanged there). Options: (a) keep as is; (b) show the card only to people with `canViewMaterials`, like the tile. A who-sees-what change, so not part of a UI-only pack. |
 | 17 Nov | ANSWERED 17 Nov (D = no, see below). **REV numbers before export.** The owner expected "REV 1" after signing a changed (not yet exported) timesheet again. Rulebook 1.55.0 (owner decisions 16 Nov) gives a REV number only after export; before export a changed signed sheet reopens in place, with the same invoice number and no REV. Should a re-signed, unexported sheet also get a REV (or a "re-signed" note on the invoice)? Not changed in 1.57.0. |
 | 17 Nov | ANSWERED 17 Nov (12b: not used by either app; password changed, repo made private — see 17 Nov decisions). Is anything still deployed from the `project-planner-email-backend` repo (a function, hosting site or scheduled job)? The owner replied "ok" on 17 Nov, which does not say yes or no. If nothing is deployed, the repo can be archived; if something is, it needs to be listed and owned. |
 | 14 Nov | ANSWERED 15 Nov (option (b), keep editable — see 15 Nov decisions). **(Rates audit, 1.46.0, third review of #324.)** An Edit hours review written **after** the line manager has counter-signed still re-prices the signed sheet (as before 1.46.0): the signed snapshot takes the new amount on the next save. Lock reviews after sign-off? Options: (a) keep as now; (b) after counter-signing, no review changes the signed sheet (a correction then needs the sheet un-signed and signed again). Not changed in 1.46.0. |
@@ -1041,6 +1044,35 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 | 17 Nov | **Follow-up (found in review of #370, not fixed here):** on main today any member of an organisation can rename someone else's `operatives` or `managers` row (the roster row rules check the email and pay fields, not the names). | open (follow-up) |
 | 17 Nov | Review of #370 (M2, guardrail 3): a booking filed under a `managers` list row that matches no account is shown by the row's name on the week grid and is also listed in Data health under "Managers list rows not linked to an account", so an admin can link it. | done, owner to confirm |
 | 17 Nov | Review of #370 (L4): the task pickers treat a catalogue row linked to an account through `userId` or `uid` (not only `linkedUserId`) as that same person, so such a person is listed once. | done, owner to confirm |
+
+## 17 Nov decisions (Projects & Small works workspace restyle, UI only)
+
+UI only, web only (`docs/design/projects-overview-ui/projects-overview-ui-spec.md`; branch `w-ui-projects-overview`). Owner answered "yes to all 13" Phase 1 recommendations, with the emphasis "make sure this UI upgrade does not break anything at all. It is all purely UI."
+
+| Date | Decision | Status |
+|---|---|---|
+| 17 Nov | **P1** The site name is the page heading (h1) on the Overview only; on section pages it is the same look as plain text, because those pages already have their own h1 (Tasks, Deadlines, Variations). | done web (w-ui-projects-overview) |
+| 17 Nov | **P2** The Tasks band figure on the Overview reads 0 until tasks have loaded, then the real count (the Tasks card text already does the same). | done web |
+| 17 Nov | **P3** The Active users band figure shows 0 when the count is 0 (as Variations); the tile's count pill still hides 0, as today. | done web |
+| 17 Nov | **P4** The not-found back link keeps its text and kind colour, from tokens that pass 4.5:1 in light and dark (blue, and a darker amber for small works). | done web |
+| 17 Nov | **P5** The Variations page and VO tracker keep their own coloured hero under the new navy band (section contents, out of scope). | follow-up |
+| 17 Nov | **P6** Section-page loading and the "Record not found." banner are unchanged (the shell is shared with Book labour and the subcontractor page). | done (no change) |
+| 17 Nov | **P7** The route-level loading skeleton (`RouteLoading`) is unchanged. | done (no change) |
+| 17 Nov | **P8** The band keeps today's wording "N days left" (the reference's "Starts in 14 days" is not code text). | done (no change) |
+| 17 Nov | **P9** The display-only helper (status pill tone, job kind) lives in `lib/ui/projectWorkspaceUi.ts` with a test. | done web |
+| 17 Nov | **P10** The old `.ptabs` CSS in `app/globals.css` is left in place (unused); removing it is a follow-up. | follow-up |
+| 17 Nov | **P11** The Materials card on the Overview is unchanged (shown to everyone, operatives included); logged as an owner question. | done (no change); question open |
+| 17 Nov | **P12** The new Overview layout changes the keyboard (Tab) order: Health & safety now comes before Details. Accepted. | done web |
+| 17 Nov | **P13** Book labour, the subcontractor booking page and Edit (which have no band) stay out of scope; the unused `hideWorkspaceTabs` check stays exactly as it is. | done (no change) |
+
+## Projects workspace restyle judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 17 Nov | The Details "No address yet. Add one so the team can find site." text uses the darker amber token (`--pu-c-amber-ink`, the same as P4) instead of `--warn`: `--warn` is 3.7:1 on white and fails the 4.5:1 rule (it failed before the restyle too). | done web, owner to confirm |
+| 17 Nov | "No description added" is shown muted (not bold), as the spec says; the text is unchanged. | done web, owner to confirm |
+| 17 Nov | Follow-up found while checking dark mode (not changed, inside the schedule grid): today's column header in "This week on site" is a white block in dark mode, before and after this restyle. | follow-up |
+| 17 Nov | 17 Nov colour choices (darker amber missing-address text; muted "No description added"): recommended options applied (owner: "just continue"). | done web, owner to confirm |
 
 ## 17 Nov decisions (for 1.64, allowlist security rules)
 

@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiObject, apiText, readApiBody } from '@/lib/security/apiBody'
+import { z } from 'zod'
 import { isPlatformOwnerEmail } from '@/lib/platform/owner'
-import { enforceRateLimit, isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
+import { enforceRateLimit, isFirebaseUser, jsonError } from '@/lib/security/apiGuard'
 import { requireOwner } from '@/lib/owner/requireOwner'
 import { clearOwnerDirectoryCache } from '@/lib/owner/directoryServer'
 import { OWNER_AUDIT_UNAVAILABLE_MESSAGE, beginOwnerAudit, type OwnerAuditRun } from '@/lib/owner/ownerAudit'
-import { isValidEmail } from '@/lib/security/validation'
+import { isValidDocumentId, isValidEmail } from '@/lib/security/validation'
 import { adminListDocumentIds, adminUpdateAuthEmail, firebaseAdminConfigured } from '@/lib/owner/identityToolkitAdmin'
 import { firebaseDefaultPasswordReset, sendBrandedPasswordReset } from '@/lib/auth/passwordResetServer'
 import {
@@ -70,13 +72,14 @@ export async function POST(request: NextRequest) {
   if (limited) return limited
   const owner = await requireOwner(request)
   if (!isFirebaseUser(owner)) return owner
-  const body = await readJsonBody<{ uid?: string; newEmail?: string; reason?: string; sendReset?: boolean }>(request)
+  const body = await readApiBody(request, apiObject({ uid: apiText(128), newEmail: apiText(254), reason: apiText(1000), sendReset: z.unknown().optional() }))
   if (!body.ok) return body.response
   const uid = (body.value.uid || '').trim()
   const newEmail = (body.value.newEmail || '').trim().toLowerCase()
   const reason = (body.value.reason || '').trim()
   const sendReset = body.value.sendReset !== false
   if (!uid || !isValidEmail(newEmail)) return jsonError('Choose a user and enter a valid new login email.', 400)
+  if (!isValidDocumentId(uid)) return jsonError('uid is not valid', 400)
   if (isPlatformOwnerEmail(newEmail)) return jsonError('That email is reserved for the platform owner.', 400)
   if (uid === owner.uid) return jsonError('The owner login email cannot be changed from this console.', 400)
   if (!firebaseAdminConfigured()) {
