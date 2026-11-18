@@ -15,10 +15,11 @@
  *   - PAYE runs: skipped — a person is listed for a run only when they were self-employed on a day of it
  *     (`showsMyTimesheets`);
  *   - the bucket: `timesheetListBucket` (counter-signed unless `timesheetSelfSigned`) with the sheet's change. When the
- *     caller has that run's bookings it passes `bookingsChange` (`signedTimesheetBookingChanges` folded with the late
- *     extras, `timesheetChangesWithLateExtras`). When it does not (an old run), it passes none and the change is the
- *     late extras alone, read here from the stored `data` (`timesheetLateExtrasSummary`): bookings read as not changed
- *     (§8 1.47.0), but a late extra waiting for the line manager still puts an old sheet in Awaiting (§8 1.54.0).
+ *     run is in the booking-change window (the last six pay runs, the same on every screen and both apps) the caller passes
+ *     `bookingsChange` (`signedTimesheetBookingChanges` folded with the late extras, `timesheetChangesWithLateExtras`).
+ *     For an older run it passes the late extras alone, or none and the change is read here from the stored `data`
+ *     (`timesheetLateExtrasSummary`): bookings read as not changed (§8 1.47.0), but a late extra waiting for the line
+ *     manager still puts an old sheet in Awaiting (§8 1.54.0).
  *
  * Pure: the apps load the sheets and the roster, and only render these rows.
  */

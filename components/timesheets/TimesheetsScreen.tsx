@@ -40,7 +40,10 @@ import { loadTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
 import { useSnapshotAutoRepair } from '@/lib/timesheets/useSnapshotAutoRepair'
 import type { RepairSheet } from '@/lib/timesheets/snapshotAutoRepair'
 import {
+  RECENT_PAY_RUN_COUNT,
   payRunKey,
+  payRunsStartDayKey,
+  recentPayRuns,
   timesheetMemberIds,
   userTimesheetQueueRows,
   type PayRun,
@@ -286,7 +289,16 @@ export function TimesheetsScreen({
       // former invite id or a second users document is found and listed under the person.
       const aliasIds = roster.flatMap((member) => timesheetMemberIds(member, users))
       // Rulebook 1.66.0 §8 (owner decision 17 Nov): every stored sheet, however old — never a window of recent runs.
-      const loaded = await loadTimesheetQueueSheets({ organizationId: organization.id, userIds: aliasIds, timeZone })
+      const loaded = await loadTimesheetQueueSheets({
+        organizationId: organization.id,
+        userIds: aliasIds,
+        timeZone,
+        // Admins: the recent runs are also read by `weekStartKey`, so a sheet stored under another spelling of an id (or
+        // with no `userId`) stays listed for them (guardrail 3).
+        recentRunStartDayKeys: hasAdminAccess(user)
+          ? recentPayRuns(invoicing, new Date(), timeZone, RECENT_PAY_RUN_COUNT).map((run) => periodStartKey(run.start, timeZone))
+          : undefined,
+      })
       if (stale()) return
       setQueueSheets(loaded)
     } catch {
@@ -294,7 +306,7 @@ export function TimesheetsScreen({
     } finally {
       if (!stale()) setRecordsLoading(false)
     }
-  }, [organization?.id, roster, user, users, timeZone, teamTab])
+  }, [organization?.id, roster, user, users, timeZone, teamTab, invoicing])
 
   useEffect(() => {
     void reload()
@@ -342,9 +354,16 @@ export function TimesheetsScreen({
   // Third review #325: the people Export left out because the bookings or pay inputs were still loading.
   const inputsSkippedRef = useRef<string[]>([])
   changeCatalogueRef.current = changeCatalogue
+  // Rulebook 1.66.0 §8: the list checks booking changes over the same window as the hub tile (the last
+  // RECENT_PAY_RUN_COUNT pay runs, `recentPayRuns`), so both count the same rows. Older runs read their bookings as not
+  // changed (their waiting late extras still count). Export keeps its own full check before it stamps a sheet.
+  const queueChangeFromDayKey = useMemo(
+    () => payRunsStartDayKey(recentPayRuns(invoicing, new Date(), timeZone, RECENT_PAY_RUN_COUNT), timeZone),
+    [invoicing, timeZone]
+  )
   // Rulebook 1.66.0 §8 (owner decision 17 Nov): one row per person and pay run over every stored sheet, however old
-  // (`userTimesheetQueue`; the bucket is `timesheetListBucket` with that sheet's booking change — a run whose bookings
-  // are not loaded reads as not changed).
+  // (`userTimesheetQueue`; the bucket is `timesheetListBucket` with that sheet's booking change — a run outside the
+  // window above reads as not changed).
   const queueRows = useMemo<TimesheetQueueBucketRow[]>(
     () =>
       teamTab === 'exported' || !user
@@ -355,11 +374,17 @@ export function TimesheetsScreen({
             sheets: queueSheets,
             invoicing,
             timeZone,
-            bookingChange: (member, draft, run) => periodBookingChanges(changeCatalogueRef.current, member, draft, run),
+            bookingChange: (member, draft, run) =>
+              periodBookingChanges(
+                { ...changeCatalogueRef.current, coversPeriod: (period) => periodStartKey(period.start, timeZone) >= queueChangeFromDayKey },
+                member,
+                draft,
+                run
+              ),
           }),
     // The catalogue is read through a ref; re-run when the bookings or pay inputs change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [queueSheets, teamTab, user, users, invoicing, timeZone, bookings, managerSiteBookings, bookingsReady]
+    [queueSheets, teamTab, user, users, invoicing, timeZone, bookings, managerSiteBookings, bookingsReady, queueChangeFromDayKey]
   )
   const visible = useMemo<TimesheetQueueRow[]>(
     () => queueRows.filter((row) => row.bucket === teamTab),

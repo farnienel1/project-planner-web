@@ -991,7 +991,14 @@ function ManagerTimesheetsTile({
     Promise.all([
       reviewIds.length > 0
         ? // Rulebook 1.66.0 §8 (owner decision 17 Nov): every stored sheet, however old — never only the recent runs.
-          loadTimesheetQueueSheets({ organizationId, userIds: reviewIds, timeZone })
+          loadTimesheetQueueSheets({
+            organizationId,
+            userIds: reviewIds,
+            timeZone,
+            // Admins: the recent runs are also read by `weekStartKey`, so a sheet stored under another spelling of an id
+            // (or with no `userId`) stays listed for them (guardrail 3).
+            recentRunStartDayKeys: hasAdminAccess(user) ? runs.map((run) => periodStartKey(run.start, timeZone)) : undefined,
+          })
         : Promise.resolve([] as TimesheetQueueStoredSheet[]),
       // 17 Nov follow-up: the same Exported list as User Timesheets → Exported (former ids matched; admins also count
       // a sheet whose person is nobody in the organisation).
@@ -1009,7 +1016,7 @@ function ManagerTimesheetsTile({
     }
     // `runs` is read through `runsKey`, the people through `queryKey` (ids), the roster through a ref.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [organizationId, users.length === 0, queryKey, timeZone, repairs])
+  }, [organizationId, users.length === 0, queryKey, runsKey, timeZone, repairs])
 
   const catalogueRef = useRef(changeCatalogue)
   catalogueRef.current = changeCatalogue
