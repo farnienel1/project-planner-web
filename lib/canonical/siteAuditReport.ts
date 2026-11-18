@@ -30,6 +30,9 @@ export const SITE_AUDIT_FIELD_LIMITS = {
   comments: 2000,
   annotations: 2000,
   customTitle: 120,
+  /** Personal audits (review of #389: the job number and name were cut at 60 / 200 without a word). */
+  jobNumber: 60,
+  jobName: 200,
 } as const
 
 export type SiteAuditLimitedField = keyof typeof SITE_AUDIT_FIELD_LIMITS
@@ -42,6 +45,8 @@ export const SITE_AUDIT_FIELD_LABELS: Readonly<Record<SiteAuditLimitedField, str
   comments: 'Comments',
   annotations: 'Annotations',
   customTitle: 'Title (optional)',
+  jobNumber: 'Job number',
+  jobName: 'Job name',
 }
 
 const isCombiningMark = (code: number) =>

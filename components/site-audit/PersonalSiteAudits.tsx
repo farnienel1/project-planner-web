@@ -274,11 +274,13 @@ export function PersonalSiteAuditCreateFlow({ onClose }: { onClose: () => void }
         {error ? <p className="small" style={{ color: 'var(--red)' }}>{error}</p> : null}
         <label className="small">
           Job number
-          <input className="input" value={jobNumber} onChange={(e) => setJobNumber(e.target.value)} maxLength={60} />
+          <input className="input" value={jobNumber} onChange={(e) => setJobNumber(e.target.value)} />
+          <SiteAuditFieldCounter field="jobNumber" value={jobNumber} />
         </label>
         <label className="small">
           Job name
-          <input className="input" value={jobName} onChange={(e) => setJobName(e.target.value)} maxLength={200} />
+          <input className="input" value={jobName} onChange={(e) => setJobName(e.target.value)} />
+          <SiteAuditFieldCounter field="jobName" value={jobName} />
         </label>
         <label className="small">
           Audit type

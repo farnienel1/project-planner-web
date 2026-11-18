@@ -7,6 +7,8 @@ import {
   outboxRecordsToPrune,
   resilientOutboxStore,
   sendSiteAuditOutbox,
+  siteAuditPhotoPath,
+  uploadSiteAuditPhoto,
   type SiteAuditOutboxRecord,
   type SiteAuditOutboxStore,
 } from './siteAuditOutbox'
@@ -360,4 +362,93 @@ test('after a stall the rest go one at a time', async () => {
   })
   assert.equal(order.length, 6)
   assert.equal(lateMost, 1, 'photos after the stall upload one at a time')
+})
+
+test('review of #389: three photos uploaded at once never share a name, and a retry keeps each name', async () => {
+  const audit = record(3, { userId: 'UID1abc', createdAtMs: 1_763_400_000_000 })
+  const paths: string[] = []
+  // Every upload "starts" in the same millisecond: the names must still differ.
+  const upload = async (path: string) => {
+    paths.push(path)
+    return { imageURL: `https://x/${path}`, storagePath: path }
+  }
+  const sent = await sendSiteAuditOutbox(audit, {
+    store: memoryOutboxStore(),
+    concurrency: 3,
+    sleep: noSleep,
+    online: () => true,
+    now: () => 1_763_400_000_000,
+    uploadPhoto: (rec, item, onProgress) => uploadSiteAuditPhoto(rec, item.id, onProgress, { upload, existingImageURL: async () => null }),
+    save: async () => {},
+  })
+  assert.equal(sent.saved, true)
+  assert.equal(new Set(paths).size, 3, 'three distinct objects')
+  assert.deepEqual(
+    paths.slice().sort(),
+    [0, 1, 2].map((i) => `organizations/org-a/siteAudits/audit-1/images/UID1abc_${1_763_400_000_000 + i}.jpg`).sort()
+  )
+  // A retry of the same audit asks for the same names again (it replaces its own earlier upload).
+  assert.equal(siteAuditPhotoPath(audit, 'i2'), paths.find((p) => p.endsWith('_1763400000001.jpg')))
+  assert.equal(siteAuditPhotoPath(audit, 'i2'), siteAuditPhotoPath({ ...audit, updatedAtMs: 99 }, 'i2'))
+  // Personal audits follow the same rule under their own folder.
+  const personal = { ...audit, kind: 'personal' as const }
+  assert.equal(siteAuditPhotoPath(personal, 'i1'), 'organizations/org-a/personalSiteAudits/UID1abc/audit-1/UID1abc_1763400000000.jpg')
+  assert.equal(siteAuditPhotoPath(audit, 'missing'), null)
+})
+
+test('review of #389: a refused overwrite of a photo that is already there counts as uploaded', async () => {
+  const audit = record(1, { userId: 'UID1abc', createdAtMs: 5 })
+  const refused = Object.assign(new Error('refused'), { code: 'storage/unauthorized' })
+  const done = await uploadSiteAuditPhoto(audit, 'i1', () => {}, {
+    upload: async () => {
+      throw refused
+    },
+    existingImageURL: async (path) => `https://cdn/${path}`,
+  })
+  assert.deepEqual(done, { imageURL: 'https://cdn/organizations/org-a/siteAudits/audit-1/images/UID1abc_5.jpg', storagePath: 'organizations/org-a/siteAudits/audit-1/images/UID1abc_5.jpg' })
+  // Not there: still refused, with the real error.
+  await assert.rejects(
+    uploadSiteAuditPhoto(audit, 'i1', () => {}, { upload: async () => { throw refused }, existingImageURL: async () => null }),
+    /refused/
+  )
+  // Any other failure is not looked up.
+  let looked = false
+  await assert.rejects(
+    uploadSiteAuditPhoto(audit, 'i1', () => {}, {
+      upload: async () => { throw Object.assign(new Error('net'), { code: 'storage/retry-limit-exceeded' }) },
+      existingImageURL: async () => { looked = true; return 'x' },
+    }),
+    /net/
+  )
+  assert.equal(looked, false)
+})
+
+test('review of #389: an aborted send uploads nothing more and never saves', async () => {
+  const controller = new AbortController()
+  let saved = false
+  const started: string[] = []
+  const store = memoryOutboxStore()
+  const result = await sendSiteAuditOutbox(record(3), {
+    store,
+    concurrency: 1,
+    sleep: noSleep,
+    online: () => true,
+    signal: controller.signal,
+    uploadPhoto: async (_rec, item) => {
+      started.push(item.id)
+      if (item.id === 'i1') {
+        controller.abort()
+        return { imageURL: 'u1', storagePath: 'p1' }
+      }
+      throw Object.assign(new Error('The upload was stopped.'), { code: 'upload/aborted' })
+    },
+    save: async () => {
+      saved = true
+    },
+  })
+  assert.equal(saved, false)
+  assert.equal(result.saved, false)
+  // The photo that finished keeps its path, so the sign-out removal can delete it.
+  assert.equal(result.record.items[0].upload.storagePath, 'p1')
+  assert.ok(started.length <= 3)
 })

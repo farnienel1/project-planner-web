@@ -36,6 +36,7 @@ const FINAL_CODES = new Set([
   'storage/invalid-argument',
   'storage/invalid-checksum',
   'storage/canceled',
+  'upload/aborted',
   'permission-denied',
   'unauthenticated',
 ])

@@ -27,7 +27,7 @@ export async function watchedUpload(
   storagePath: string,
   file: Blob,
   claimedContentType: string | null | undefined,
-  options: { onProgress?: (fraction: number) => void; stallMs?: number; maxMs?: number } = {}
+  options: { onProgress?: (fraction: number) => void; stallMs?: number; maxMs?: number; signal?: AbortSignal } = {}
 ): Promise<WatchedUploadResult> {
   if (!storage) throw new Error('File storage is not configured.')
   const contentType = await assertUploadAllowed(storagePath, file, claimedContentType)
@@ -61,6 +61,20 @@ export async function watchedUpload(
       stall = setTimeout(() => cancel('The photo upload stopped (no progress). Check the connection and retry.'), stallMs)
     }
     const overall = maxMs ? setTimeout(() => cancel('The photo upload took too long. Check the connection and retry.'), maxMs) : null
+    // The caller gave up (the person signed out and the audit is being removed): stop at once, never retried.
+    const abort = () => {
+      finish(() => reject(Object.assign(new Error('The upload was stopped.'), { code: 'upload/aborted' })))
+      try {
+        task.cancel()
+      } catch {
+        /* already finished */
+      }
+    }
+    if (options.signal?.aborted) {
+      abort()
+      return
+    }
+    options.signal?.addEventListener('abort', abort, { once: true })
     armStall()
     task.on(
       'state_changed',

@@ -201,15 +201,6 @@ function generatedObjectName(originalName: string, uid: string): string {
   return generatedStorageFileName(originalName, uid)
 }
 
-export function siteAuditImagePath(
-  organizationId: string,
-  auditId: string,
-  imageName: string
-): string {
-  const uid = auth.currentUser?.uid || 'web'
-  return `organizations/${organizationId}/siteAudits/${auditId}/images/${generatedObjectName(imageName, uid)}`
-}
-
 /** Evidence sits under healthSafety, the prefix other job files already upload to. */
 export function variationEvidencePath(
   organizationId: string,

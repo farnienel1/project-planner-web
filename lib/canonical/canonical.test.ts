@@ -17977,7 +17977,7 @@ test('1.68.0 site audit report: item rows, order, labels and empty values (owner
 })
 
 test('1.68.0 site audit field limits: counters, new edits limited, stored longer text never refused', () => {
-  assert.deepEqual(R112.SITE_AUDIT_FIELD_LIMITS, { title: 120, location: 120, assignee: 80, comments: 2000, annotations: 2000, customTitle: 120 })
+  assert.deepEqual(R112.SITE_AUDIT_FIELD_LIMITS, { title: 120, location: 120, assignee: 80, comments: 2000, annotations: 2000, customTitle: 120, jobNumber: 60, jobName: 200 })
   assert.equal(R112.siteAuditFieldCounter('title', 'abc').label, '3 / 120')
   assert.equal(R112.siteAuditFieldLength('🚧🚧'), 2)
   const long = 'x'.repeat(121)
@@ -17985,6 +17985,29 @@ test('1.68.0 site audit field limits: counters, new edits limited, stored longer
   assert.match(R112.siteAuditFieldLimitError({ title: long }) ?? '', /Title can be up to 120 characters \(121 now\)/)
   assert.equal(R112.siteAuditFieldLimitError({ title: long }, { title: long }), null)
   assert.equal(R112.siteAuditFieldLimitError({ comments: 'x'.repeat(2000) }), null)
+  // Review of #389: personal audits refuse a long job number / name instead of cutting it.
+  assert.equal(R112.siteAuditFieldCounter('jobNumber', 'J-1').label, '3 / 60')
+  assert.match(R112.siteAuditFieldLimitError({ jobName: 'n'.repeat(201) }) ?? '', /Job name can be up to 200 characters \(201 now\)/)
+  const draft = (jobNumber: string, jobName: string) => ({ jobNumber, jobName, date: '2026-11-18', items: [{ id: 'i', title: 'T' }] })
+  assert.match(R112.personalSiteAuditValidationError(draft('9'.repeat(61), 'Job')) ?? '', /Job number can be up to 60 characters/)
+  assert.equal(R112.personalSiteAuditValidationError(draft('9'.repeat(60), 'n'.repeat(200))), null)
+  const fields = R112.personalSiteAuditWriteFields({
+    ownerUserId: 'U1',
+    organizationId: 'org',
+    draft: { ...draft('9'.repeat(60), 'n'.repeat(200)), items: [{ id: 'i', title: 'T', imagePath: 'organizations/org/personalSiteAudits/U1/a/U1_5.jpg' }] },
+  })
+  assert.equal(fields?.jobName, 'n'.repeat(200))
+  assert.equal(R112.personalSiteAuditWriteFields({ ownerUserId: 'U1', draft: draft('1', 'n'.repeat(201)) }), null)
+})
+
+test('1.68.0 site audit photo object path: unique per item, the same on every retry', () => {
+  const base = { organizationId: 'org', userId: 'U1abc', auditId: 'A1', createdAtMs: 1_763_400_000_000, extension: 'jpg' }
+  const project = [0, 1, 2].map((index) => R112.siteAuditPhotoObjectPath({ ...base, kind: 'project', index }))
+  assert.deepEqual(project, [0, 1, 2].map((i) => `organizations/org/siteAudits/A1/images/U1abc_${1_763_400_000_000 + i}.jpg`))
+  assert.equal(R112.siteAuditPhotoObjectPath({ ...base, kind: 'project', index: 1 }), project[1])
+  assert.equal(R112.siteAuditPhotoObjectPath({ ...base, kind: 'personal', index: 0 }), 'organizations/org/personalSiteAudits/U1abc/A1/U1abc_1763400000000.jpg')
+  assert.equal(R112.siteAuditPhotoObjectPath({ ...base, kind: 'project', index: -1 }), null)
+  assert.equal(R112.siteAuditPhotoObjectPath({ ...base, kind: 'project', auditId: 'a/b', index: 0 }), null)
 })
 
 test('1.68.0 site audit report: the company logo at the top right, fitted whole; the initials badge otherwise', () => {

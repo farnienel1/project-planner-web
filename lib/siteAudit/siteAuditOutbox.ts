@@ -8,6 +8,7 @@
  * cache; the audit document is still the one source of truth once saved).
  */
 import { runPhotoUploads, uploadSummary, type PhotoUpload, type UploadSummary } from '@/lib/siteAudit/auditPhotoUploads'
+import { siteAuditPhotoObjectPath } from '@/lib/canonical/personalSiteAudits'
 
 export type SiteAuditOutboxItem = {
   id: string
@@ -55,6 +56,65 @@ export interface SiteAuditOutboxStore {
   /** Every record in this browser, any organisation or user (pruning only). */
   listAll(): Promise<SiteAuditOutboxRecord[]>
   remove(id: string): Promise<void>
+}
+
+/** The photo's file extension: from its name, else from its type. */
+export function siteAuditPhotoExtension(fileName: string, type: string): string {
+  const fromName = /\.([a-z0-9]{1,8})$/i.exec(fileName.trim())?.[1]?.toLowerCase()
+  if (fromName) return fromName
+  return type === 'image/png' ? 'png' : type === 'image/webp' ? 'webp' : type.includes('hei') ? 'heic' : 'jpg'
+}
+
+/**
+ * Where one item's photo is stored (rulebook §24 object name `{uid}_{ms}.{ext}`). The name is the audit's created
+ * time plus the item's place in the audit (review of #389): unique per item — parallel uploads never share a name,
+ * where `Date.now()` could give two photos the same millisecond and one silently replaced the other — and the same on
+ * every retry, so a retry replaces its own earlier upload instead of leaving another file behind.
+ */
+export function siteAuditPhotoPath(record: Pick<SiteAuditOutboxRecord, 'id' | 'kind' | 'organizationId' | 'userId' | 'createdAtMs' | 'items'>, itemId: string): string | null {
+  const index = record.items.findIndex((row) => row.id === itemId)
+  if (index < 0) return null
+  const item = record.items[index]
+  return siteAuditPhotoObjectPath({
+    kind: record.kind,
+    organizationId: record.organizationId,
+    userId: record.userId,
+    auditId: record.id,
+    createdAtMs: record.createdAtMs,
+    index,
+    extension: siteAuditPhotoExtension(item.fileName, item.photo.type),
+  })
+}
+
+export type SiteAuditPhotoUploadDeps = {
+  upload: (path: string, onProgress: (fraction: number) => void) => Promise<{ imageURL: string; storagePath: string }>
+  /** The download URL of an object already stored at `path`, or null when there is none. */
+  existingImageURL: (path: string) => Promise<string | null>
+}
+
+/**
+ * Uploads one item's photo to its stable path. A refused overwrite where the object is already there means an earlier
+ * attempt finished on the server (the person's own file under this item's name, past the 15-minute overwrite window,
+ * rulebook §24): that photo counts as uploaded instead of being refused for ever.
+ */
+export async function uploadSiteAuditPhoto(
+  record: SiteAuditOutboxRecord,
+  itemId: string,
+  onProgress: (fraction: number) => void,
+  deps: SiteAuditPhotoUploadDeps
+): Promise<{ imageURL: string; storagePath: string }> {
+  const path = siteAuditPhotoPath(record, itemId)
+  if (!path) throw Object.assign(new Error('This photo has no valid place to upload to.'), { code: 'storage/invalid-argument' })
+  try {
+    return await deps.upload(path, onProgress)
+  } catch (error) {
+    const code = typeof error === 'object' && error && 'code' in error ? String((error as { code?: unknown }).code) : ''
+    if (code !== 'storage/unauthorized') throw error
+    const existing = await deps.existingImageURL(path).catch(() => null)
+    if (!existing) throw error
+    onProgress(1)
+    return { imageURL: existing, storagePath: path }
+  }
 }
 
 /** Unsent audits older than this are removed from the browser (privacy; review of #389). */
@@ -267,6 +327,8 @@ export type SendOutboxDeps = {
   online?: () => boolean
   sleep?: (ms: number) => Promise<void>
   concurrency?: number
+  /** Aborted when the audit is being removed (a chosen sign-out): nothing more is uploaded, saved or stored. */
+  signal?: AbortSignal
 }
 
 export type SendOutboxResult = { saved: boolean; record: SiteAuditOutboxRecord; summary: UploadSummary; error?: string }
@@ -323,6 +385,9 @@ export async function sendSiteAuditOutbox(input: SiteAuditOutboxRecord, deps: Se
   await persisting
   record = { ...record, items: record.items.map((item) => ({ ...item, upload: finalPhotos.find((photo) => photo.itemId === item.id) ?? item.upload })) }
   const summary = uploadSummary(finalPhotos)
+  if (deps.signal?.aborted) {
+    return { saved: false, record, summary, error: 'Stopped.' }
+  }
   if (summary.done !== summary.total) {
     const firstError = finalPhotos.find((photo) => photo.status === 'failed')?.error
     record = { ...record, lastError: firstError ? `${summary.label}. ${firstError}` : summary.label, updatedAtMs: now() }

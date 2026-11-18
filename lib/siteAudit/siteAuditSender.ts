@@ -5,16 +5,13 @@
  * closes, every screen sees the same live state, and an audit that is not sent stays listed with Retry / Discard.
  */
 import { useEffect, useState } from 'react'
-import { deleteObject, ref } from 'firebase/storage'
+import { deleteObject, getDownloadURL, ref } from 'firebase/storage'
 import { doc, getDocFromServer } from 'firebase/firestore'
 import { auth, db, storage } from '@/lib/firebase/config'
 import { dateFromDayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { PERSONAL_SITE_AUDITS_COLLECTION } from '@/lib/canonical/personalSiteAudits'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { watchedUpload } from '@/lib/firebase/watchedUpload'
-import { siteAuditImagePath } from '@/lib/firebase/storageUtils'
-import { personalSiteAuditImagePath } from '@/lib/canonical/personalSiteAudits'
-import { fileExtension } from '@/lib/security/uploadLimits'
 import { savePersonalSiteAudit } from '@/lib/payeClaims/payeClaimsData'
 import { useSiteAuditStore } from '@/lib/stores/siteAuditStore'
 import {
@@ -23,6 +20,7 @@ import {
   resilientOutboxStore,
   outboxRecordsToPrune,
   sendSiteAuditOutbox,
+  uploadSiteAuditPhoto,
   type SendOutboxResult,
   type SiteAuditOutboxRecord,
   type SiteAuditOutboxStore,
@@ -33,33 +31,30 @@ const memoryOnly = new Set<string>()
 const store = resilientOutboxStore(typeof indexedDB === 'undefined' ? null : indexedDbOutboxStore(), memoryOutboxStore(), memoryOnly)
 const live = new Map<string, SiteAuditOutboxRecord>()
 const inFlight = new Map<string, Promise<SendOutboxResult>>()
+const controllers = new Map<string, AbortController>()
 const listeners = new Set<() => void>()
 const notify = () => listeners.forEach((listener) => listener())
-
-function itemExtension(fileName: string, type: string): string {
-  return fileExtension(fileName) || (type === 'image/png' ? 'png' : type === 'image/webp' ? 'webp' : type.includes('hei') ? 'heic' : 'jpg')
-}
 
 async function uploadPhoto(record: SiteAuditOutboxRecord, item: SiteAuditOutboxRecord['items'][number], onProgress: (f: number) => void) {
   const signedIn = auth?.currentUser?.uid
   if (!signedIn || signedIn !== record.userId) {
     throw Object.assign(new Error('Sign in as the person who made this audit, then retry.'), { code: 'storage/unauthenticated' })
   }
-  const path =
-    record.kind === 'personal'
-      ? personalSiteAuditImagePath({
-          organizationId: record.organizationId,
-          ownerUserId: record.userId,
-          auditId: record.id,
-          // A stable name per item (the audit's created time plus the item's place), so a retry overwrites its own
-          // earlier upload instead of leaving another file behind.
-          unixMs: record.createdAtMs + record.items.findIndex((row) => row.id === item.id),
-          extension: itemExtension(item.fileName, item.photo.type),
-        })
-      : siteAuditImagePath(record.organizationId, record.id, item.fileName)
-  if (!path) throw Object.assign(new Error('This photo has no valid place to upload to.'), { code: 'storage/invalid-argument' })
-  const result = await watchedUpload(path, item.photo, item.photo.type, { onProgress })
-  return { imageURL: result.downloadURL, storagePath: result.storagePath }
+  const signal = controllers.get(record.id)?.signal
+  return uploadSiteAuditPhoto(record, item.id, onProgress, {
+    upload: async (path, progress) => {
+      const result = await watchedUpload(path, item.photo, item.photo.type, { onProgress: progress, signal })
+      return { imageURL: result.downloadURL, storagePath: result.storagePath }
+    },
+    existingImageURL: async (path) => {
+      if (!storage) return null
+      try {
+        return await getDownloadURL(ref(storage, path))
+      } catch {
+        return null
+      }
+    },
+  })
 }
 
 /** Whether the audit document is already saved (an earlier attempt, or edited since). Throws when it cannot tell. */
@@ -73,6 +68,7 @@ async function savedAlready(record: SiteAuditOutboxRecord): Promise<boolean> {
 }
 
 async function save(record: SiteAuditOutboxRecord): Promise<void> {
+  if (controllers.get(record.id)?.signal.aborted) throw new Error('Stopped.')
   // Signed out or switched to another person while the photos uploaded: never save under someone else.
   if (auth?.currentUser?.uid !== record.userId) {
     throw Object.assign(new Error('Sign in as the person who made this audit, then retry.'), { code: 'unauthenticated' })
@@ -129,8 +125,11 @@ async function save(record: SiteAuditOutboxRecord): Promise<void> {
 export function sendSiteAudit(record: SiteAuditOutboxRecord): Promise<SendOutboxResult> {
   const running = inFlight.get(record.id)
   if (running) return running
+  const controller = new AbortController()
+  controllers.set(record.id, controller)
   const promise = sendSiteAuditOutbox(record, {
     store,
+    signal: controller.signal,
     uploadPhoto,
     save,
     savedAlready,
@@ -140,6 +139,7 @@ export function sendSiteAudit(record: SiteAuditOutboxRecord): Promise<SendOutbox
     },
   }).finally(() => {
     inFlight.delete(record.id)
+    controllers.delete(record.id)
     live.delete(record.id)
     notify()
   })
@@ -153,31 +153,34 @@ export async function retrySiteAudit(id: string): Promise<SendOutboxResult | nul
 }
 
 /**
- * Removes an unsent audit from this browser. Photos it already uploaded are deleted when the rules allow (the
- * uploader within the 15-minute undo window, rulebook §24); otherwise they are kept for recovery.
+ * Removes one unsent audit from this browser. Photos it already uploaded are deleted when the rules allow (the
+ * uploader within the 15-minute undo window, rulebook §24); otherwise they are kept for recovery. An audit whose
+ * document exists was saved (an earlier attempt finished): its photos are in use, so only this browser's copy goes
+ * (review of #389). When that cannot be checked (offline), the photos are kept too.
  */
-export async function discardSiteAudit(id: string): Promise<void> {
-  if (inFlight.has(id)) throw new Error('This audit is still uploading. Wait for it to finish or fail, then discard it.')
-  const stored = await store.get(id)
-  // An audit whose document exists was saved (an earlier attempt finished): its photos are in use, so only this
-  // browser's copy goes (review of #389). When that cannot be checked (offline), the photos are kept too.
+async function removeRecord(stored: SiteAuditOutboxRecord): Promise<void> {
   let saved = true
-  if (stored) {
-    try {
-      saved = await savedAlready(stored)
-    } catch {
-      saved = true
-    }
+  try {
+    saved = await savedAlready(stored)
+  } catch {
+    saved = true
   }
-  if (stored && storage && !saved) {
+  if (storage && !saved) {
     await Promise.all(
       stored.items
         .map((item) => item.upload.storagePath)
         .filter((path): path is string => Boolean(path))
-        .map((path) => deleteObject(ref(storage, path)).catch(() => undefined))
+        .map((path) => deleteObject(ref(storage!, path)).catch(() => undefined))
     )
   }
-  await store.remove(id)
+  await store.remove(stored.id)
+}
+
+export async function discardSiteAudit(id: string): Promise<void> {
+  if (inFlight.has(id)) throw new Error('This audit is still uploading. Wait for it to finish or fail, then discard it.')
+  const stored = await store.get(id)
+  if (stored) await removeRecord(stored)
+  else await store.remove(id)
   notify()
 }
 
@@ -195,7 +198,19 @@ export async function unsentSiteAuditCount(userId: string | null | undefined): P
  */
 export async function removeUnsentSiteAuditsFor(userId: string): Promise<void> {
   const all = await store.listAll().catch(() => [])
-  for (const record of all) if (record.userId === userId && !inFlight.has(record.id)) await store.remove(record.id).catch(() => undefined)
+  for (const record of all) {
+    if (record.userId !== userId) continue
+    let latest: SiteAuditOutboxRecord | null = record
+    const running = inFlight.get(record.id)
+    if (running) {
+      // Still uploading: stop it, wait for it to stop, then remove what it uploaded — so "removes it" is true.
+      controllers.get(record.id)?.abort()
+      const result = await running.catch(() => null)
+      if (result?.saved) continue
+      latest = result?.record ?? (await store.get(record.id).catch(() => null)) ?? record
+    }
+    await removeRecord(latest).catch(() => store.remove(record.id).catch(() => undefined))
+  }
   notify()
 }
 
