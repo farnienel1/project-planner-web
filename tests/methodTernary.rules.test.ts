@@ -190,8 +190,8 @@ test('1.33.1: a notification with a server-timestamp createdAt answers (allowed 
   await allowed(SA, (db) => setDoc(orgDoc(db, 'notifications', 'mt-n1'), notificationRow(OP, SA)))
   await allowed(MGR, (db) => setDoc(orgDoc(db, 'notifications', 'mt-n2'), notificationRow(SA, MGR, { type: 'client_created' })))
   await allowed(OP, (db) => setDoc(orgDoc(db, 'notifications', 'mt-n3'), notificationRow(MGR, OP, { type: 'holiday_request_submitted' })))
-  // Scheduled rows have no actor (rulebook §13); push_test is addressed to its sender.
-  await allowed(OP, (db) => setDoc(orgDoc(db, 'notifications', 'mt-n4'), notificationRow(OP, null, { type: 'push_test' })))
+  // push_test is addressed to its sender, who is its actor (1.64.0: every row but the three scheduled types names its actor).
+  await allowed(OP, (db) => setDoc(orgDoc(db, 'notifications', 'mt-n4'), notificationRow(OP, OP, { type: 'push_test' })))
   // Web writes one row per admin in one batch.
   await allowed(SA, (db) => {
     const batch = writeBatch(db)
@@ -213,7 +213,8 @@ test('1.33.1: marking a notification read with a server-timestamp updatedAt answ
   await allowed(OP, (db) => updateDoc(orgDoc(db, 'notifications', 'mt-note-op'), { isRead: true, ...meta(OP, 'ios') }))
   // A merge-set or full set of an existing row is an update for the rules; with a server timestamp both hung on 1.33.0.
   await allowed(OP, (db) => setDoc(orgDoc(db, 'notifications', 'mt-note-op'), { isRead: true, ...meta(OP, 'ios') }, { merge: true }))
-  await allowed(OP, (db) =>
+  // 1.64.0: a full set rewrites the row's text and dates (allowlist: isRead / readAt / write metadata only), so it is refused — but it answers.
+  await refused(OP, (db) =>
     setDoc(orgDoc(db, 'notifications', 'mt-note-op'), { userId: OP, type: 'task_created', isRead: true, createdAt: Timestamp.now(), ...meta(OP, 'web') })
   )
   await refused(MGR, (db) => updateDoc(orgDoc(db, 'notifications', 'mt-note-op'), { isRead: false, ...meta(MGR, 'web') }))
