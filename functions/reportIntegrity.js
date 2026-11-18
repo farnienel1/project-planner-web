@@ -89,30 +89,34 @@ function displayNameOf(canonical, id, data) {
 }
 
 /**
- * `store`: { getDoc(path) → data | null, query(collectionPath, field, value) → [{ id, data }], setDoc(path, data) }.
+ * `store`: { getDoc(path) → data | null, query(collectionPath, field, value) → [{ id, data }], list(collectionPath) →
+ * [{ id, data }], setDoc(path, data) }.
  */
 function createReportIntegrityCheck({ store, canonical, logger, serverTimestamp }) {
   /**
-   * The report's person: their users document (read through `parseUserDocument`), every id they go by (`personIdSet`
-   * over their users document and the `operatives` rows on their email) and whether they have an active line manager
-   * (`hasActiveLineManager` over their listed line managers' users documents).
+   * The report's person, as both apps see them (fifth review of #391):
+   *   - every id they go by is `overtimePersonIds` over the organisation's users roster (the person's own document with
+   *     its stored `formerUserIds` and `sameEmailUserIds`, and every users document of this organisation on their email,
+   *     compared with `emailKey`) and the organisation's `operatives` rows (read once, matched with `emailKey`);
+   *   - "has a line manager" is `hasActiveLineManager` over their listed line managers' users documents, and false for
+   *     the organisation's Super Admin (`isOrganizationSuperAdmin`), who changes their own overtime directly (§25);
+   *   - their name is `parseUserDocument`'s first name and surname, else email.
    */
-  async function personOf(orgId, userId) {
+  async function personOf(orgId, userId, org) {
+    const none = { raw: null, ids: [userId], hasLineManager: null, name: null }
     const raw = await store.getDoc(`users/${userId}`).catch(() => null)
-    if (!raw) return { raw: null, ids: [userId], hasLineManager: null }
+    if (!raw) return none
     const user = canonical.parseUserDocument(userId, raw, {})
-    if (!user) return { raw, ids: [userId], hasLineManager: null, name: null }
-    const email = trimmed(user && user.email)
-    const emails = [...new Set([email, email.toLowerCase()].filter(Boolean))]
+    if (!user) return { ...none, raw }
+    const emailKey = (value) => trimmed(value).toLowerCase()
+    const email = emailKey(raw.email || user.email)
+    const listOf = (value) => (Array.isArray(value) ? value.map(trimmed).filter(Boolean) : [])
     const managerIds = [
-      ...new Set(
-        [...(Array.isArray(raw.assignedManagerUserIds) ? raw.assignedManagerUserIds : []), raw.assignedManagerUserId]
-          .map(trimmed)
-          .filter((id) => DOC_ID.test(id))
-      ),
+      ...new Set([...listOf(raw.assignedManagerUserIds), trimmed(raw.assignedManagerUserId)].filter((id) => DOC_ID.test(id))),
     ]
-    const [rows, managers] = await Promise.all([
-      Promise.all(emails.map((value) => store.query(`organizations/${orgId}/operatives`, 'email', value).catch(() => []))),
+    const [orgUsers, operativeRows, managers] = await Promise.all([
+      store.query('users', 'organizationId', orgId).catch(() => []),
+      listCollection(`organizations/${orgId}/operatives`),
       Promise.all(
         managerIds.map(async (id) => {
           const doc = await store.getDoc(`users/${id}`).catch(() => null)
@@ -120,11 +124,36 @@ function createReportIntegrityCheck({ store, canonical, logger, serverTimestamp 
         })
       ),
     ])
-    const operativeRows = rows.flat().map((row) => ({ id: row.id, email: trimmed(row.data && row.data.email) }))
-    const roster = [user, ...managers.filter(Boolean), ...operativeRows]
-    const ids = canonical.personIdSet(user, roster)
-    const hasLineManager = canonical.hasActiveLineManager(user, [user, ...managers.filter(Boolean)])
+    // Roster rows keep the stored alias lists (the reader does not return `sameEmailUserIds`).
+    const rosterRow = (id, data) => ({
+      id,
+      email: trimmed(data && data.email),
+      isActive: !(data && data.isActive === false),
+      formerUserIds: listOf(data && data.formerUserIds),
+      sameEmailUserIds: listOf(data && data.sameEmailUserIds),
+    })
+    const self = rosterRow(userId, raw)
+    const sameEmail = email
+      ? orgUsers.filter((row) => row.id !== userId && emailKey(row.data && row.data.email) === email).map((row) => rosterRow(row.id, row.data))
+      : []
+    const ids = canonical.overtimePersonIds({
+      person: self,
+      roster: [self, ...sameEmail],
+      operatives: operativeRows.map((row) => ({ id: row.id, email: trimmed(row.data && row.data.email) })),
+    })
+    const superAdmin =
+      canonical.isOrganizationSuperAdmin(
+        { id: userId, isSuperAdmin: raw.isSuperAdmin === true, organizationId: canonical.documentOrganizationId(raw.organizationId) || '' },
+        { id: orgId, creatorUserId: trimmed(org && org.creatorUserId) }
+      ) === true
+    const hasLineManager = superAdmin ? false : canonical.hasActiveLineManager(user, [user, ...managers.filter(Boolean)])
     return { raw, ids: ids.length ? ids : [userId], hasLineManager, name: displayNameOf(canonical, userId, raw) }
+  }
+
+  /** Every document of a collection (`store.list`), else none. */
+  async function listCollection(path) {
+    if (typeof store.list !== 'function') return []
+    return store.list(path).catch(() => [])
   }
 
   async function organizationOf(orgId) {
@@ -137,10 +166,10 @@ function createReportIntegrityCheck({ store, canonical, logger, serverTimestamp 
     const lines = Array.isArray(report.lines) ? report.lines.slice(0, 500) : []
     // Each booking id once (a repeated one is flagged by the rule).
     const ids = [...new Set(lines.map((line) => trimmed(line && line.bookingId)).filter((id) => DOC_ID.test(id)))]
-    const [{ org, timeZone }, person] = await Promise.all([
-      organizationOf(orgId),
-      DOC_ID.test(userId) ? personOf(orgId, userId) : Promise.resolve({ raw: null, ids: [userId], hasLineManager: null, name: null }),
-    ])
+    const { org, timeZone } = await organizationOf(orgId)
+    const person = DOC_ID.test(userId)
+      ? await personOf(orgId, userId, org)
+      : { raw: null, ids: [userId], hasLineManager: null, name: null }
     // Per line, in parallel: its review (`overtimeReviews/{userId}_{bookingId}`, exact), its labour or manager site
     // booking, and — for a declined review — the decider's users document.
     const found = await Promise.all(
@@ -222,9 +251,9 @@ function createReportIntegrityCheck({ store, canonical, logger, serverTimestamp 
     // Each item id once (a repeated one is flagged by the rule); the organisation, the person, every item and its
     // review read in parallel.
     const ids = [...new Set(rows.map((row) => trimmed(row && row.id)).filter((id) => DOC_ID.test(id)))]
-    const [{ org, timeZone }, person, found] = await Promise.all([
-      organizationOf(orgId),
-      DOC_ID.test(userId) ? personOf(orgId, userId) : Promise.resolve({ raw: null, ids: [userId], hasLineManager: null, name: null }),
+    const { org, timeZone } = await organizationOf(orgId)
+    const [person, found] = await Promise.all([
+      DOC_ID.test(userId) ? personOf(orgId, userId, org) : Promise.resolve({ raw: null, ids: [userId], hasLineManager: null, name: null }),
       Promise.all(
         ids.map(async (id) => {
           const [data, review] = await Promise.all([
@@ -288,6 +317,10 @@ function createAdminReportIntegrityStore(db) {
     },
     async query(collectionPath, field, value) {
       const snap = await db.collection(collectionPath).where(field, '==', value).get()
+      return snap.docs.map((doc) => ({ id: doc.id, data: doc.data() }))
+    },
+    async list(collectionPath) {
+      const snap = await db.collection(collectionPath).get()
       return snap.docs.map((doc) => ({ id: doc.id, data: doc.data() }))
     },
     async setDoc(path, data) {

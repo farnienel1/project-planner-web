@@ -1,7 +1,7 @@
 {
-  "rulebookVersion": "1.65.4",
-  "rulebookSha256": "9ae92cd7b4689dd468ce74381b38ff52b488439ff1e70af719f670ba7bfa1026",
-  "bundleSha256": "ca6efbca81f2f8b686aebf22f2d889997720dfa24d05f15d0a8ecca0440e3dcf",
+  "rulebookVersion": "1.65.5",
+  "rulebookSha256": "7134f1dc00eb9fe32d6248c0406cf989dcce7df873dbee48be2b03ef874841bd",
+  "bundleSha256": "93b659750e1602041e6da923a5cb6e60f50fa4b5580f1a2ed953fffc6e10a6de",
   "crossPlatformContractSha256": "56f892a29d844eaaebe16028640ebdfb036324d3a229638968c34d10663159f3",
   "dataParityFixtureSha256": "c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f",
   "exports": [

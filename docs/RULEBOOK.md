@@ -1,6 +1,6 @@
 # Project Planner Rulebook
 
-Version: 1.65.4
+Version: 1.65.5
 Updated: 2026-11-17
 
 This is the one rulebook for every Project Planner platform: web, iOS and (later) Android. It is written platform-neutral. Each rule names the shared function in `lib/canonical` that implements it; platforms call that function (web `@/lib/canonical`, iOS `CanonicalBusinessEngine`, Android the same packed script) and never keep a second copy.
@@ -964,6 +964,9 @@ No Functions, index or Storage change; no migration writes; `minimumIosBuild` un
 **1.10.0** (full order and checks in `docs/DEPLOY_1.10.0.md`): 1. merge the web change; 2. `node scripts/backfill-job-manager-user-ids.mjs --project <id> --all` (dry run, the default) and review the per-job diff; 3. the same with `--apply` (writes only `managerUserIds`, partial updates, idempotent, no write metadata — `updatedFrom` takes only `web` / `ios` / `android`); 4. `firebase deploy --only firestore:rules,firestore:indexes,functions`; 5. release iOS 1.10.0. The read rules (§17) refuse whole-collection job and booking queries for managers without a job toggle and for operatives, so app builds that predate 1.10.0 lose those lists for them until they update.
 
 ## Changelog
+
+### 1.65.5 — 2026-11-17
+- **Report check: the person as the apps see them** (§26, fifth review of #391; Cloud Functions only, no rule function changes). The person's ids are `overtimePersonIds` over their users document with its stored `formerUserIds` and `sameEmailUserIds`, every users document of the organisation on their email and the organisation's `operatives` rows, both matched with `emailKey` (trimmed, lower case) — the same set for `not_their_booking` and `not_their_item`. The organisation's Super Admin (`isOrganizationSuperAdmin`) counts as having no line manager (§25 `canEditOwnBookingOvertime`: they change their own overtime directly), so their self-confirmed line is a note. Real reports filed under a same-email account, an `operatives` row whose email differs in case or spaces, or by a Super Admin with a line manager were flagged before.
 
 ### 1.65.4 — 2026-11-17
 - **Report check reads like the apps** (§26, §1, fourth review of #391). The Cloud Functions read bookings only through `parseBookingDocument` / `parseManagerSiteBookingDocument` (legacy `projectID`, a missing `locationType`, "7:30 AM" or Timestamp clock times now read as the apps read them, so real reports are no longer flagged), take the job from the parsed `projectId` or, for a manager site booking at a project or small works, its `locationId`, fingerprint manager site bookings without a status, read each line's review `overtimeReviews/{userId}_{bookingId}` exactly, and build names with `parseUserDocument` (first name and surname, else email, as both apps). New inputs (`ReportPersonContext`): `personIds` — a live booking that is not the report person's is `not_their_booking`; `personHasLineManager` — a self-confirmed line is a mismatch when the person has an active line manager (`hasActiveLineManager`); `personName` / `organizationName` — the printed person and company are compared (a blank on either side passes). A decider the server could not read leaves "Declined by" unchecked with a note (`decider_unknown`); the report's own name is never the expected one.
