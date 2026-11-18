@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
- * READ-ONLY report (prints counts only, never writes): how many timesheets each organisation stores, how many carry an
+ * READ-ONLY report (never writes; prints counts plus organisation and people names and some document ids, so do not
+ * paste its output into a PR or issue): how many timesheets each organisation stores, how many carry an
  * export marker, and how many the User Timesheets → Exported list would show on web and on iPhone, with the reason
  * each one is left out. The decisions are `scripts/report-timesheet-history/plan.mjs` (packed rulebook functions, the
- * same way the apps call them). Owner steps: docs/scripts/report-timesheet-history.md.
+ * same way the apps call them). Owner steps: run the command below (dry, read-only; there is nothing to apply).
  *
  *   node scripts/report-timesheet-history.mjs --project <firebaseProjectId> (--org <orgId> | --all-orgs) [--viewer <uid>]
  *
