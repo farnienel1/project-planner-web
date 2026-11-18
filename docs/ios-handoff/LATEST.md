@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.65.0 → 1.68.0
-Packed hash: f927beceff3fed2425855cac7703b5fe385c32e78603adca8824bc6063681eb7
-Rulebook sha256: a76a76820fa47c664c635d53490a2da29c087f955235aec7bdca45b10505c548
+Rulebook version: 1.64.0 → 1.68.0
+Packed hash: c9adedb7eca2fb70d26ffd540d4940ac3a751a814f276cbf10a1f94a94f5c344
+Rulebook sha256: 9781f4b7f4e548ae6939e255a5bf8bb1ba6968f3298e7481d6122e9b497e8c3d
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,12 +22,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 926b910948b674b1fa259e8f933ddd15f14bad00b8e0b050ccbd88c723bf64aa
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: compareVariationTrackerOrder, variationStaleNumberLocks, variationStatusWriteFields, variationTrackerOrder
+Exports added: SITE_AUDIT_FIELD_LABELS, SITE_AUDIT_FIELD_LIMITS, SITE_AUDIT_REPORT_COLORS, SITE_AUDIT_REPORT_CONTINUED, SITE_AUDIT_REPORT_FIXTURE_EXPECTED, SITE_AUDIT_REPORT_FIXTURE_INPUTS, SITE_AUDIT_REPORT_LOGO_BOX, SITE_AUDIT_REPORT_LOGO_PADDING, SITE_AUDIT_REPORT_MISSING_PHOTO, SITE_AUDIT_REPORT_PAGE, siteAuditAuthorSignature, siteAuditFieldCounter, siteAuditFieldLength, siteAuditFieldLimitError, siteAuditGraphemes, siteAuditItemTakenMs, siteAuditReferenceCode, siteAuditReportFitLine, siteAuditReportFixtureForApps, siteAuditReportInput, siteAuditReportItemFields, siteAuditReportLayout, siteAuditReportLogoPlacement, siteAuditReportPageLabel, siteAuditReportPhotoBox, siteAuditReportSiteAddress, siteAuditReportText, siteAuditReportTextLines, siteAuditReportTextWidth, wrapSiteAuditReportText
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/canonical.test.ts, lib/canonical/cross-platform-contract.json, lib/canonical/crossPlatformContract.samples.ts, lib/canonical/recordsDocuments.ts, lib/canonical/siteAuditReport.ts, lib/canonical/siteAuditReportFixture.ts, lib/canonical/siteAuditReportFixtureInputs.ts, lib/canonical/siteAuditReportFont.ts, lib/canonical/variationTrackerOrder.test.ts, lib/canonical/variations.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/cross-platform-contract.json, lib/canonical/crossPlatformContract.samples.ts, lib/canonical/index.ts, lib/canonical/siteAuditReport.ts, lib/canonical/siteAuditReportFixture.ts, lib/canonical/siteAuditReportFixtureInputs.ts, lib/canonical/siteAuditReportFont.ts
 Done when:
-- [ ] Packed hash in iOS equals f927beceff3fed2425855cac7703b5fe385c32e78603adca8824bc6063681eb7
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 a76a76820fa47c664c635d53490a2da29c087f955235aec7bdca45b10505c548)
+- [ ] Packed hash in iOS equals c9adedb7eca2fb70d26ffd540d4940ac3a751a814f276cbf10a1f94a94f5c344
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 9781f4b7f4e548ae6939e255a5bf8bb1ba6968f3298e7481d6122e9b497e8c3d)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.68.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -47,7 +47,6 @@ Done when:
 
 - 29. Site audits: saving and the report (1.68.0)
 - 1.68.0 — 2026-11-18
-- 1.63.0 — 2026-11-17
 
 ## Workflow for the iOS agent
 
