@@ -1749,11 +1749,9 @@ export function EditUserProfile({
                         method: 'POST',
                         headers: await jsonAuthHeaders(),
                         body: JSON.stringify({
+                          // The route reads the names and current email from the stored documents.
                           orgId: organization.id,
-                          orgName: organization.name,
                           targetUid: target.id,
-                          targetName: `${target.firstName} ${target.surname}`.trim(),
-                          currentEmail: target.email,
                           suggestedEmail: fixEmail,
                           note: fixNote,
                         }),
