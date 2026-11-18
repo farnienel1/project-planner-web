@@ -7,6 +7,7 @@
  */
 import { collection, doc, documentId, getDoc, getDocs, query, runTransaction, serverTimestamp, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase/config'
+import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
 import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
 import { parseFirestoreDate as parseSharedFirestoreDate, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
 import { changedFirestoreFields } from '@/lib/firebase/changedFields'
@@ -17,7 +18,7 @@ import { LONDON_TIME_ZONE, unixStartOfDay, dayKey } from '@/lib/ios-parity/londo
 import { weekStartKey } from '@/lib/timesheets/timesheetWeekUtils'
 import { periodStartKey } from '@/lib/timesheets/paymentRunCopy'
 import { queryIdsSkippingRefused, timesheetMemberIds, timesheetOwnerResolver } from '@/lib/timesheets/timesheetQueue'
-import { newestFirstOwnIdLast, personTimesheetDocs, timesheetDocumentOwnerId } from '@/lib/timesheets/personTimesheetDocs'
+import { newestFirstOwnIdLast, personTimesheetDocs, timesheetLookupPlan, timesheetDocumentOwnerId } from '@/lib/timesheets/personTimesheetDocs'
 import { UNKNOWN_BOOKING_PERSON_LABEL, bookingPersonIdHint } from '@/lib/canonical'
 import {
   parseTimesheetEntries,
@@ -1841,6 +1842,7 @@ export async function loadExportedTimesheetHistory({
   includeUnresolved: includeUnresolvedAsked = false,
   rosterLoaded = false,
   viewerIsOperative = false,
+  viewerIsAdmin = false,
 }: {
   organizationId: string
   users: import('@/types').User[]
@@ -1859,10 +1861,15 @@ export async function loadExportedTimesheetHistory({
   rosterLoaded?: boolean
   /** Review of #386 (N1): the viewer is at the operative level (the rules refuse them the document-id prefix query). */
   viewerIsOperative?: boolean
+  /**
+   * Final review of #386: the viewer is an admin of this organisation. While `privatePay` is on only admins may ask a
+   * person's other ids and the document-id prefix (`timesheetLookupPlan`).
+   */
+  viewerIsAdmin?: boolean
 }): Promise<ExportedTimesheetHistoryRow[]> {
   const includeUnresolved = includeUnresolvedAsked && rosterLoaded && (roster?.length ?? 0) > 0
   if (users.length === 0 && !includeUnresolved) return []
-  const cacheKey = `${exportedHistoryCacheKey(organizationId, users)}|${includeUnresolved ? 'u' : ''}|${(roster ?? []).length}|${viewerIsOperative ? 'o' : ''}`
+  const cacheKey = `${exportedHistoryCacheKey(organizationId, users)}|${includeUnresolved ? 'u' : ''}|${(roster ?? []).length}|${viewerIsOperative ? 'o' : ''}|${viewerIsAdmin ? 'a' : ''}`
   const now = Date.now()
   if (exportedHistoryMemo && exportedHistoryMemo.key === cacheKey && now - exportedHistoryMemo.at < EXPORTED_HISTORY_TTL_MS) {
     return exportedHistoryMemo.rows
@@ -1923,17 +1930,14 @@ export async function loadExportedTimesheetHistory({
 
   // One read per person (their records fold into one, `exportedSheetOwnerResolver`).
   const people = [...new Set(users.map((member) => sheetOwner(member.id) ?? member))]
+  await securitySwitchesReady()
+  const privatePay = privatePayFor(organizationId)
   const batches = await mapInBatches(people, 8, async (member) => {
     // Guardrail 1: every id the person goes by (a former invite id, a second users document on their email), and
-    // sheets stored without `userId` whose document id names them — never one id per person.
-    const rows = await listPersonTimesheetStates(
-      organizationId,
-      // Review of #386: an operative asks only their own id (the rules refuse their alias and document-id queries).
-      viewerIsOperative ? [member.id] : timesheetMemberIds(member, fullRoster),
-      400,
-      'all',
-      !viewerIsOperative
-    )
+    // sheets stored without `userId` whose document id names them — when this viewer's rules allow those queries
+    // (`timesheetLookupPlan`: not for an operative; while `privatePay` is on, admins only).
+    const plan = timesheetLookupPlan({ ids: timesheetMemberIds(member, fullRoster), viewerIsOperative, viewerIsAdmin, privatePay })
+    const rows = await listPersonTimesheetStates(organizationId, plan.ids, 400, 'all', plan.includeDocumentPrefix)
     return { member, rows }
   })
   for (const { member, rows } of batches) {

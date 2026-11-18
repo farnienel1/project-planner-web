@@ -56,6 +56,24 @@ export function newestFirstOwnIdLast<T extends { userId: string; weekStart: Date
   return [...rows].sort((a, b) => b.weekStart.getTime() - a.weekStart.getTime() || isOwn(a) - isOwn(b))
 }
 
+/**
+ * Final review of #386: which of a person's timesheet queries this viewer's rules allow, so nobody sends doomed
+ * queries. An operative may query only their own `userId` (tests/timesheetLookups.rules.test.ts). While `privatePay` is
+ * on for the organisation (`securitySwitchOn(config, orgId, 'privatePay')`) only admins may query a person's other ids
+ * or the document-id prefix; a manager or line manager is refused both, so they ask the person's current id only.
+ * Returns the ids to ask (`ids[0]`, the person's current id, first) and whether to ask the document-id prefix.
+ */
+export function timesheetLookupPlan(input: {
+  ids: ReadonlyArray<string>
+  viewerIsOperative: boolean
+  viewerIsAdmin: boolean
+  privatePay: boolean
+}): { ids: string[]; includeDocumentPrefix: boolean } {
+  const ids = input.ids.map((id) => id.trim()).filter(Boolean)
+  const extended = !input.viewerIsOperative && (input.viewerIsAdmin || !input.privatePay)
+  return extended ? { ids, includeDocumentPrefix: true } : { ids: ids.slice(0, 1), includeDocumentPrefix: false }
+}
+
 export type PersonTimesheetQueries = {
   /** Settings documents with `userId ==` the one id given, or `userId in` the ids given. */
   byUserIds: (ids: string[]) => Promise<SettingsDocument[]>
@@ -96,14 +114,17 @@ export async function personTimesheetDocs(
       (error) => warn('own userId query failed', error)
     ),
   ]
-  if (aliases.length > 0) {
+  // Final review of #386: each chunk on its own, so a failure that is not a refusal (offline, unavailable) drops only
+  // that chunk (as iOS); a refused chunk is asked id by id (`queryIdsSkippingRefused`).
+  for (let index = 0; index < aliases.length; index += PERSON_TIMESHEET_ID_CHUNK) {
+    const chunk = aliases.slice(index, index + PERSON_TIMESHEET_ID_CHUNK)
     tasks.push(
-      queryIdsSkippingRefused(aliases, PERSON_TIMESHEET_ID_CHUNK, queries.byUserIds).then(
+      queryIdsSkippingRefused(chunk, PERSON_TIMESHEET_ID_CHUNK, queries.byUserIds).then(
         ({ rows, refusedIds }) => {
           found.push(...rows)
           if (refusedIds.length > 0) warn('alias userId query refused', refusedIds)
         },
-        (error) => warn('alias userId query failed', error)
+        (error) => warn('alias userId query failed', { chunk, error })
       )
     )
   }

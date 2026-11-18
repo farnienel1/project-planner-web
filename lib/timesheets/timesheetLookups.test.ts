@@ -10,6 +10,7 @@ import type { User } from '../../types/index.ts'
 import {
   newestFirstOwnIdLast,
   personTimesheetDocs,
+  timesheetLookupPlan,
   timesheetDocsForPerson,
   timesheetDocumentOwnerId,
   type SettingsDocument,
@@ -155,6 +156,41 @@ test('personTimesheetDocs: alias ids are asked in chunks of 10', async () => {
     byDocumentPrefix: async () => [],
   })
   assert.deepEqual(sizes.sort((a, b) => a - b), [1, 3, 10, 10])
+})
+
+test('personTimesheetDocs: a failure that is not a refusal drops only that alias chunk (as iOS)', async () => {
+  const many = ['own', ...Array.from({ length: 12 }, (_, index) => `alias${index}`)]
+  const docs = many.map((id) => ({ id: `timesheet_${id}_1761955200`, data: { userId: id } }))
+  const warnings: string[] = []
+  const asked: string[][] = []
+  const found = await personTimesheetDocs(many, {
+    byUserIds: async (chunk) => {
+      asked.push(chunk)
+      if (chunk.includes('alias0')) throw Object.assign(new Error('offline'), { code: 'unavailable' })
+      return docs.filter((entry) => chunk.includes(String(entry.data.userId)))
+    },
+    byDocumentPrefix: null,
+    warn: (message) => warnings.push(message),
+  })
+  // The failing chunk (alias0–alias9) is dropped and not retried id by id; the own sheet and alias10–11 stay.
+  assert.deepEqual(found.map((entry) => entry.data.userId).sort(), ['alias10', 'alias11', 'own'])
+  assert.equal(asked.filter((chunk) => chunk.length === 1 && chunk[0].startsWith('alias')).length, 0)
+  assert.ok(warnings.includes('alias userId query failed'))
+})
+
+test('timesheetLookupPlan: only the queries the viewer may run (operatives own id; privatePay on, admins only)', () => {
+  const ids = ['U1', 'INVITE-1', 'U1B']
+  const admin = { viewerIsOperative: false, viewerIsAdmin: true }
+  const manager = { viewerIsOperative: false, viewerIsAdmin: false }
+  const operative = { viewerIsOperative: true, viewerIsAdmin: false }
+  // privatePay off: admins and managers ask every id and the document-id prefix; an operative their own id only.
+  assert.deepEqual(timesheetLookupPlan({ ids, ...admin, privatePay: false }), { ids, includeDocumentPrefix: true })
+  assert.deepEqual(timesheetLookupPlan({ ids, ...manager, privatePay: false }), { ids, includeDocumentPrefix: true })
+  assert.deepEqual(timesheetLookupPlan({ ids, ...operative, privatePay: false }), { ids: ['U1'], includeDocumentPrefix: false })
+  // privatePay on (production): only admins keep the extra lookups; a manager or line manager asks the current id.
+  assert.deepEqual(timesheetLookupPlan({ ids, ...admin, privatePay: true }), { ids, includeDocumentPrefix: true })
+  assert.deepEqual(timesheetLookupPlan({ ids, ...manager, privatePay: true }), { ids: ['U1'], includeDocumentPrefix: false })
+  assert.deepEqual(timesheetLookupPlan({ ids, ...operative, privatePay: true }), { ids: ['U1'], includeDocumentPrefix: false })
 })
 
 test('newestFirstOwnIdLast: newest pay run first; within a pay run the own-id sheet comes last and wins', () => {

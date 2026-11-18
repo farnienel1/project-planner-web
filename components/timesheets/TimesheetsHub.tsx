@@ -56,6 +56,8 @@ import {
   listPersonTimesheetStates,
   timesheetSourceDocumentId,
 } from '@/lib/timesheets/timesheetStorage'
+import { timesheetLookupPlan } from '@/lib/timesheets/personTimesheetDocs'
+import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
 import { emptyTimesheetDraft, type TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import {
   awaitingManagerSignOff,
@@ -171,7 +173,7 @@ export function TimesheetsHub() {
     error: managerBookingsError,
   } = useManagerScheduleStore()
   const { operatives, loadOperatives } = useOperativeStore()
-  const { users, loadUsers, loading: usersLoading, rosterLoadedOrgId } = useOrgUserStore()
+  const { users, loadUsers, loading: usersLoading, rosterServerOrgId } = useOrgUserStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const [invoicing, setInvoicing] = useState<OrgInvoicingSettings>(DEFAULT_INVOICING)
   const [payrollPolicy, setPayrollPolicy] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
@@ -640,7 +642,7 @@ export function TimesheetsHub() {
               timeZone={timeZone}
               changeCatalogue={changeCatalogue}
               rosterLoaded={
-                !usersLoading && users.length > 0 && Boolean(organization?.id) && rosterLoadedOrgId === organization?.id
+                !usersLoading && users.length > 0 && Boolean(organization?.id) && rosterServerOrgId === organization?.id
               }
               onStats={setHubStats}
               onClick={() => router.push(timesheetsTeamHref({ tab: 'awaiting' }))}
@@ -697,20 +699,28 @@ function MineTimesheetsList({
     `${periodStartKey(period.start, timeZone)}|${dayKey(period.end, timeZone)}`
   // Guardrail 1: the person's past sheets under every id they go by (`personIdSet`: a former invite id, a second users
   // document on their email) and sheets stored without `userId` whose document id names them; the own id first.
-  // Review of #386: an operative asks only their own id — the rules refuse their alias and document-id queries (as iOS).
+  // Final review of #386: only the queries this viewer's rules allow (`timesheetLookupPlan`): an operative asks their own
+  // id only; while `privatePay` is on so does everyone but an admin (as iOS).
   const subjectIsOperative = isOperativeMode(subject)
-  const subjectIds = useMemo(
-    () => (subjectIsOperative ? [subject.id] : timesheetMemberIds(subject, users)),
-    [subject, users, subjectIsOperative]
-  )
+  const subjectIsAdmin = hasAdminAccess(subject)
+  const subjectIds = useMemo(() => timesheetMemberIds(subject, users), [subject, users])
   const subjectIdsKey = subjectIds.join('|')
 
   useEffect(() => {
     if (!organizationId) return
     let cancelled = false
     const currentKey = periodKey(currentPeriod)
-    // Review of #386 (N1): no document-id query for an operative (the rules refuse it).
-    listPersonTimesheetStates(organizationId, subjectIds, 400, 'latest', !subjectIsOperative).then(async (rows) => {
+    securitySwitchesReady()
+      .then(() => {
+        const plan = timesheetLookupPlan({
+          ids: subjectIds,
+          viewerIsOperative: subjectIsOperative,
+          viewerIsAdmin: subjectIsAdmin,
+          privatePay: privatePayFor(organizationId),
+        })
+        return listPersonTimesheetStates(organizationId, plan.ids, 400, 'latest', plan.includeDocumentPrefix)
+      })
+      .then(async (rows) => {
       if (cancelled) return
       const byKey = new Map<string, { start: Date; end: Date }>()
       for (const period of pastPeriods) byKey.set(periodKey(period), period)
@@ -773,7 +783,7 @@ function MineTimesheetsList({
     }
     // `subjectIds` is read through `subjectIdsKey` (a new roster array with the same ids does not reload).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [organizationId, subject.id, subjectIdsKey, currentPeriod, pastPeriods, invoicing, timeZone])
+  }, [organizationId, subject.id, subjectIdsKey, subjectIsOperative, subjectIsAdmin, currentPeriod, pastPeriods, invoicing, timeZone])
 
   // Rulebook 1.47.0 §8: a signed, unexported sheet whose bookings changed is back with the person.
   const changeOf = (period: { start: Date; end: Date }) =>
@@ -1030,6 +1040,7 @@ function ManagerTimesheetsTile({
         // Review of #386 (S5): "Unknown person" rows only once the roster has loaded.
         rosterLoaded,
         viewerIsOperative: isOperativeMode(user),
+        viewerIsAdmin: hasAdminAccess(user),
       }),
     ])
       .then(([byRun, exportedRows]) => {
