@@ -59,6 +59,8 @@ export type ReportIntegrityProblemCode =
   | 'self_reviewed'
   | 'state_differs'
   | 'booking_changed_since'
+  | 'not_their_booking'
+  | 'decider_unknown'
   | 'declined_line_counted'
   | 'not_reviewed'
   | 'differs_from_review'
@@ -128,6 +130,43 @@ function evidenceKeys(list: ReadonlyArray<{ path?: unknown; name?: unknown }> | 
     .join('|')
 }
 
+/**
+ * What the server knows about the report's person and organisation (fourth review of #391). Each is optional: a value
+ * the server could not read is left unchecked.
+ */
+export type ReportPersonContext = {
+  /** Every id the report's person goes by (`personIdSet`: own, former, same-email, `operatives` rows on their email). */
+  personIds?: ReadonlyArray<string> | null
+  /** `hasActiveLineManager` for the report's person; a self-confirmed line is a mismatch when true. */
+  personHasLineManager?: boolean | null
+  /** The person's name as the apps show it (`parseUserDocument`: first name and surname, else email). */
+  personName?: string | null
+  /** The organisation's name (`parseOrganizationName`). */
+  organizationName?: string | null
+}
+
+/** The report's printed person and company against the stored ones (relaxed: a blank value on either side passes). */
+function headerProblems(report: { userName?: unknown; companyName?: unknown }, context: ReportPersonContext): ReportIntegrityProblem[] {
+  const out: ReportIntegrityProblem[] = []
+  if (text(report.userName) && text(context.personName) && !sameWords(report.userName, context.personName)) {
+    out.push({
+      code: 'details_differ',
+      recordId: '',
+      severity: 'mismatch',
+      message: `The report is for "${text(report.userName)}"; the person is "${text(context.personName)}".`,
+    })
+  }
+  if (text(report.companyName) && text(context.organizationName) && !sameWords(report.companyName, context.organizationName)) {
+    out.push({
+      code: 'details_differ',
+      recordId: '',
+      severity: 'mismatch',
+      message: `The report names the company "${text(report.companyName)}"; the organisation is "${text(context.organizationName)}".`,
+    })
+  }
+  return out
+}
+
 const ZERO_STATES = new Set(['returnedDeclined', 'deleted'])
 const ZERO_DECISIONS = new Set(['declined', 'deleted', 'cancelled'])
 
@@ -171,7 +210,7 @@ export function overtimeReportIntegrity(input: {
   timeZone?: string | null
   /** Reviewer user id → their roster name (first name and surname, else email), for "Declined by {name}". */
   reviewerNames?: Record<string, string> | null
-}): ReportIntegrityResult {
+} & ReportPersonContext): ReportIntegrityResult {
   const raw = record(input.report)
   const report = parseOvertimeReportDocument(input.reportId, raw)
   const problems: ReportIntegrityProblem[] = []
@@ -197,6 +236,8 @@ export function overtimeReportIntegrity(input: {
   }
   const reviews = (input.reviews || []).map((row) => parseOvertimeReviewDocument(row.id, row.data))
   const bookings = new Map((input.bookings || []).filter(Boolean).map((booking) => [idKey(booking.id), booking]))
+  problems.push(...headerProblems(report, input))
+  const personKeys = input.personIds && input.personIds.length ? new Set(input.personIds.map(idKey).filter(Boolean)) : null
   // Reviewer id → roster name (`personName`), when the caller could read it; an id not listed is unknown (not checked).
   const names = new Map(Object.entries(input.reviewerNames || {}).map(([uid, name]) => [idKey(uid), text(name)]))
   const seen = new Set<string>()
@@ -244,6 +285,15 @@ export function overtimeReportIntegrity(input: {
     const review = reviews.find((row) => idKey(row.bookingId) === key && idKey(row.userId) === idKey(report.userId))
     const selfReviewed = review != null && review.reviewedBy != null && idKey(review.reviewedBy) === idKey(report.userId)
     const live = bookings.get(key)
+    // Fourth review (S1): the booking must be the report person's (any id they go by).
+    if (live && personKeys && !personKeys.has(idKey(live.personId))) {
+      problems.push({
+        code: 'not_their_booking',
+        recordId: id,
+        severity: 'mismatch',
+        message: `${label}: the booking belongs to someone else.`,
+      })
+    }
     if (!review) {
       problems.push({
         code: 'not_reviewed',
@@ -262,12 +312,17 @@ export function overtimeReportIntegrity(input: {
       }
       // Review of #391 (nit 6): the person confirmed their own line. Allowed when they may change that booking (no
       // line manager; rulebook §25), so a note, never a mismatch.
+      // Fourth review (S2): with an active line manager the person never confirms their own line (§25: it is a
+      // request), so then it is a mismatch.
       if (selfReviewed) {
+        const hasManager = input.personHasLineManager === true
         problems.push({
           code: 'self_reviewed',
           recordId: id,
-          severity: 'note',
-          message: `${label}: confirmed by the person themselves, not a line manager.`,
+          severity: hasManager ? 'mismatch' : 'note',
+          message: hasManager
+            ? `${label}: confirmed by the person themselves although they have a line manager.`
+            : `${label}: confirmed by the person themselves, not a line manager.`,
         })
       }
     }
@@ -296,6 +351,16 @@ export function overtimeReportIntegrity(input: {
     if (zeroLine) {
       // The exact text the snapshot writes (`overtimeReportSnapshot`): `${note} · 0h`, the note from the state.
       const knownName = review && review.reviewedBy ? names.get(idKey(review.reviewedBy)) : undefined
+      // Fourth review (N3): a decider the server could not read is left unchecked (a note); the report's own name is
+      // never taken as the expected one.
+      if (declinedLine && knownName === undefined) {
+        problems.push({
+          code: 'decider_unknown',
+          recordId: id,
+          severity: 'note',
+          message: `${label}: the decider could not be read, so "Declined by" was not checked.`,
+        })
+      }
       if (declinedLine && knownName !== undefined && !sameWords(line.declinedByName, knownName)) {
         problems.push({
           code: 'details_differ',
@@ -305,12 +370,19 @@ export function overtimeReportIntegrity(input: {
         })
       }
       const note = declinedLine
-        ? `Declined by ${(knownName !== undefined ? knownName : text(line.declinedByName)) || 'your line manager'}`
+        ? knownName !== undefined
+          ? `Declined by ${knownName || 'your line manager'}`
+          : ''
         : state === 'deleted'
           ? OVERTIME_LINE_STATE_LABELS.deleted
           : ''
       const expectedZeroText = note ? `${note} · 0h` : ''
-      if (!expectedZeroText ? !/(^|·\s*)0h$/.test(text(line.text)) : !sameWords(line.text, expectedZeroText)) {
+      const textOk = expectedZeroText
+        ? sameWords(line.text, expectedZeroText)
+        : declinedLine
+          ? /^Declined by .+ · 0h$/.test(text(line.text))
+          : /(^|·\s*)0h$/.test(text(line.text))
+      if (!textOk) {
         problems.push({
           code: 'text_differs',
           recordId: id,
@@ -456,7 +528,7 @@ export function payeClaimReportIntegrity(input: {
   personIds?: ReadonlyArray<string> | null
   /** The organisation document: its currency (`resolveOrganizationCurrency`) must be the report's. Not checked when absent. */
   organization?: unknown
-}): ReportIntegrityResult {
+} & Omit<ReportPersonContext, 'personIds'>): ReportIntegrityResult {
   const raw = record(input.report)
   const report = parsePayeClaimReportDocument(input.reportId, raw)
   const problems: ReportIntegrityProblem[] = []
@@ -490,6 +562,7 @@ export function payeClaimReportIntegrity(input: {
   }
   const overlaps = (start: string, end: string) =>
     !hasRange || (DAY.test(start) && start <= rangeEnd && (DAY.test(end) ? end : start) >= rangeStart)
+  problems.push(...headerProblems(report, input))
   // Third review of #391 (N1): the report's currency is the organisation's (`resolveOrganizationCurrency`).
   if (input.organization !== undefined) {
     const orgCurrency = resolveOrganizationCurrency(input.organization)

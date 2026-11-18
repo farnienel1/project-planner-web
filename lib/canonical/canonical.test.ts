@@ -17949,7 +17949,7 @@ test('1.65.0 overtimeReportIntegrity: a report built from its reviewed bookings 
     zeroRun([{ ...zeroLine, declinedByName: 'Someone', text: 'Declined by Someone · 0h' }]).problems.map((p) => p.code),
     ['details_differ', 'text_differs']
   )
-  assert.deepEqual(zeroRun([zeroLine], reviews).problems.map((p) => p.code), ['state_differs'], 'declined on the report, approved in the review')
+  assert.deepEqual(zeroRun([zeroLine], reviews).problems.map((p) => p.code), ['state_differs', 'decider_unknown'], 'declined on the report, approved in the review')
   assert.deepEqual(zeroRun([{ ...zeroLine, fingerprint: '' }]).problems.map((p) => p.code), ['missing_fingerprint'])
   assert.deepEqual(zeroRun([{ ...zeroLine, start: '06:00' }]).problems.map((p) => p.code), ['details_differ'])
   const removedReview = [{ id: 'sam_B1', data: { userId: 'sam', bookingId: 'B1', decision: 'deleted', fingerprint, reviewedBy: 'lee', requestId: 'Q1' } }]
@@ -17969,6 +17969,39 @@ test('1.65.0 overtimeReportIntegrity: a report built from its reviewed bookings 
   const changedSelf = r129.overtimeReportIntegrity({ reportId: 'R', report, reviews: selfReviews, bookings: [changedLive], organization: R129_ORG, timeZone: R129_TZ })
   assert.equal(changedSelf.ok, false)
   assert.deepEqual(changedSelf.problems.map((p) => [p.code, p.severity]), [['self_reviewed', 'note'], ['booking_changed_since', 'mismatch']])
+
+  // Fourth review of #391. N3: a decider the server could not read — a note, and the report's own name is never
+  // the expected one (only the "Declined by … · 0h" form is checked).
+  const unknownDecider = r129.overtimeReportIntegrity({
+    reportId: 'R', report: { ...report, lines: [zeroLine], totals: { overtimeHours: 0, lineCount: 1 } },
+    reviews: declinedReview as never, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ,
+  })
+  assert.equal(unknownDecider.ok, true)
+  assert.deepEqual(unknownDecider.problems.map((p) => [p.code, p.severity]), [['decider_unknown', 'note']])
+  const unknownForged = r129.overtimeReportIntegrity({
+    reportId: 'R', report: { ...report, lines: [{ ...zeroLine, text: '12h × 2 = 24h' }], totals: { overtimeHours: 0, lineCount: 1 } },
+    reviews: declinedReview as never, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ,
+  })
+  assert.deepEqual(unknownForged.problems.map((p) => p.code), ['decider_unknown', 'text_differs'])
+  // S1: a booking that is not the report person's (under any id they go by).
+  assert.deepEqual(
+    r129.overtimeReportIntegrity({ reportId: 'R', report, reviews, bookings: [{ ...booking, personId: 'ann' }], organization: R129_ORG, timeZone: R129_TZ, personIds: ['sam', 'sam-old'] }).problems.map((p) => p.code),
+    ['not_their_booking']
+  )
+  assert.equal(r129.overtimeReportIntegrity({ reportId: 'R', report, reviews, bookings: [{ ...booking, personId: 'SAM-OLD' }], organization: R129_ORG, timeZone: R129_TZ, personIds: ['sam', 'sam-old'] }).ok, true)
+  // S2: a self-confirmed line when the person has an active line manager is a mismatch.
+  const selfWithManager = r129.overtimeReportIntegrity({
+    reportId: 'R', report, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ, personHasLineManager: true,
+    reviews: [{ id: 'sam_B1', data: { userId: 'sam', bookingId: 'B1', decision: 'approved', fingerprint, reviewedBy: 'sam' } }],
+  })
+  assert.deepEqual(selfWithManager.problems.map((p) => [p.code, p.severity]), [['self_reviewed', 'mismatch']])
+  // N4: the printed person and company against the stored ones (a blank on either side passes).
+  const named = { ...report, userName: 'Sam Smith', companyName: 'Acme Electrical' }
+  assert.equal(r129.overtimeReportIntegrity({ reportId: 'R', report: named, reviews, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ, personName: 'sam  smith', organizationName: 'Acme Electrical' }).ok, true)
+  assert.deepEqual(
+    r129.overtimeReportIntegrity({ reportId: 'R', report: named, reviews, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ, personName: 'Kim Jones', organizationName: 'Other Ltd' }).problems.map((p) => p.code),
+    ['details_differ', 'details_differ']
+  )
 
   // Nit 6: the person confirmed their own line — a note, still ok.
   const self = r129.overtimeReportIntegrity({

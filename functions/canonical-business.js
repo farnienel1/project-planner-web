@@ -13929,8 +13929,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.65.3" : "",
-      sha256: true ? "c2b73a5d0b5a9e3ede055d196985bdeb84fe0bd5129ebd66e44cbc5ddc621418" : ""
+      version: true ? "1.65.4" : "",
+      sha256: true ? "9ae92cd7b4689dd468ce74381b38ff52b488439ff1e70af719f670ba7bfa1026" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -24551,6 +24551,26 @@ var ProjectPlannerCanonical = (() => {
   function evidenceKeys(list) {
     return (list || []).map((entry) => text39(entry?.path) || text39(entry?.name)).filter(Boolean).sort().join("|");
   }
+  function headerProblems(report, context) {
+    const out = [];
+    if (text39(report.userName) && text39(context.personName) && !sameWords(report.userName, context.personName)) {
+      out.push({
+        code: "details_differ",
+        recordId: "",
+        severity: "mismatch",
+        message: `The report is for "${text39(report.userName)}"; the person is "${text39(context.personName)}".`
+      });
+    }
+    if (text39(report.companyName) && text39(context.organizationName) && !sameWords(report.companyName, context.organizationName)) {
+      out.push({
+        code: "details_differ",
+        recordId: "",
+        severity: "mismatch",
+        message: `The report names the company "${text39(report.companyName)}"; the organisation is "${text39(context.organizationName)}".`
+      });
+    }
+    return out;
+  }
   var ZERO_STATES = /* @__PURE__ */ new Set(["returnedDeclined", "deleted"]);
   var ZERO_DECISIONS = /* @__PURE__ */ new Set(["declined", "deleted", "cancelled"]);
   function bookingFromFingerprint(id2, fingerprint) {
@@ -24595,6 +24615,8 @@ var ProjectPlannerCanonical = (() => {
     }
     const reviews = (input.reviews || []).map((row2) => parseOvertimeReviewDocument(row2.id, row2.data));
     const bookings = new Map((input.bookings || []).filter(Boolean).map((booking) => [idKey(booking.id), booking]));
+    problems.push(...headerProblems(report, input));
+    const personKeys = input.personIds && input.personIds.length ? new Set(input.personIds.map(idKey).filter(Boolean)) : null;
     const names = new Map(Object.entries(input.reviewerNames || {}).map(([uid, name]) => [idKey(uid), text39(name)]));
     const seen = /* @__PURE__ */ new Set();
     const rangeStart = text39(report.rangeStart);
@@ -24639,6 +24661,14 @@ var ProjectPlannerCanonical = (() => {
       const review = reviews.find((row2) => idKey(row2.bookingId) === key7 && idKey(row2.userId) === idKey(report.userId));
       const selfReviewed = review != null && review.reviewedBy != null && idKey(review.reviewedBy) === idKey(report.userId);
       const live = bookings.get(key7);
+      if (live && personKeys && !personKeys.has(idKey(live.personId))) {
+        problems.push({
+          code: "not_their_booking",
+          recordId: id2,
+          severity: "mismatch",
+          message: `${label}: the booking belongs to someone else.`
+        });
+      }
       if (!review) {
         problems.push({
           code: "not_reviewed",
@@ -24656,11 +24686,12 @@ var ProjectPlannerCanonical = (() => {
           });
         }
         if (selfReviewed) {
+          const hasManager = input.personHasLineManager === true;
           problems.push({
             code: "self_reviewed",
             recordId: id2,
-            severity: "note",
-            message: `${label}: confirmed by the person themselves, not a line manager.`
+            severity: hasManager ? "mismatch" : "note",
+            message: hasManager ? `${label}: confirmed by the person themselves although they have a line manager.` : `${label}: confirmed by the person themselves, not a line manager.`
           });
         }
       }
@@ -24685,6 +24716,14 @@ var ProjectPlannerCanonical = (() => {
       const zeroLine = zero || review != null && ZERO_DECISIONS.has(review.decision);
       if (zeroLine) {
         const knownName = review && review.reviewedBy ? names.get(idKey(review.reviewedBy)) : void 0;
+        if (declinedLine && knownName === void 0) {
+          problems.push({
+            code: "decider_unknown",
+            recordId: id2,
+            severity: "note",
+            message: `${label}: the decider could not be read, so "Declined by" was not checked.`
+          });
+        }
         if (declinedLine && knownName !== void 0 && !sameWords(line.declinedByName, knownName)) {
           problems.push({
             code: "details_differ",
@@ -24693,9 +24732,10 @@ var ProjectPlannerCanonical = (() => {
             message: `${label}: declined by "${text39(line.declinedByName)}" on the report; the decision was ${knownName ? `"${knownName}"'s` : "not named"}.`
           });
         }
-        const note = declinedLine ? `Declined by ${(knownName !== void 0 ? knownName : text39(line.declinedByName)) || "your line manager"}` : state === "deleted" ? OVERTIME_LINE_STATE_LABELS.deleted : "";
+        const note = declinedLine ? knownName !== void 0 ? `Declined by ${knownName || "your line manager"}` : "" : state === "deleted" ? OVERTIME_LINE_STATE_LABELS.deleted : "";
         const expectedZeroText = note ? `${note} \xB7 0h` : "";
-        if (!expectedZeroText ? !/(^|·\s*)0h$/.test(text39(line.text)) : !sameWords(line.text, expectedZeroText)) {
+        const textOk = expectedZeroText ? sameWords(line.text, expectedZeroText) : declinedLine ? /^Declined by .+ · 0h$/.test(text39(line.text)) : /(^|·\s*)0h$/.test(text39(line.text));
+        if (!textOk) {
           problems.push({
             code: "text_differs",
             recordId: id2,
@@ -24841,6 +24881,7 @@ var ProjectPlannerCanonical = (() => {
       problems.push({ code: "outside_range", recordId: "", severity: "mismatch", message: "The report has no valid date range." });
     }
     const overlaps2 = (start, end) => !hasRange || DAY.test(start) && start <= rangeEnd && (DAY.test(end) ? end : start) >= rangeStart;
+    problems.push(...headerProblems(report, input));
     if (input.organization !== void 0) {
       const orgCurrency = resolveOrganizationCurrency(input.organization);
       if (orgCurrency && text39(report.currency) !== orgCurrency) {
