@@ -52,6 +52,8 @@ function overtimeBooking(canonical, collection, id, data, timeZone) {
     // The booking's job (`bookingJobId`): '' for a place that is not a job. Its number and name are added below.
     jobId: canonical.bookingJobId({ collection, projectId: data.projectId, locationType: data.locationType, locationId: data.locationId }) || '',
     jobCollection: trimmed(data.jobCollection),
+    // A manager site booking at a place that is not a job: the app shows its custom name as the job name.
+    customLocationName: trimmed(data.customLocationName),
   }
 }
 
@@ -128,10 +130,28 @@ function createReportIntegrityCheck({ store, canonical, logger, serverTimestamp 
       booking.jobNumber = trimmed(job.jobNumber)
       booking.jobName = trimmed(job.siteName)
     }
+    // "Declined by {name}": the decider's roster name (first name and surname, else email, as the apps show it).
+    const deciders = [
+      ...new Set(
+        reviews
+          .filter((row) => row.data && row.data.decision === 'declined')
+          .map((row) => trimmed(row.data.reviewedBy))
+          .filter((id) => DOC_ID.test(id))
+      ),
+    ]
+    const reviewerNames = {}
+    await Promise.all(
+      deciders.map(async (id) => {
+        const user = await store.getDoc(`users/${id}`).catch(() => null)
+        if (!user) return
+        reviewerNames[id] = [trimmed(user.firstName), trimmed(user.surname)].filter(Boolean).join(' ') || trimmed(user.email)
+      })
+    )
     return canonical.overtimeReportIntegrity({
       reportId,
       report: plain(report),
       reviews: reviews.map((row) => ({ id: row.id, data: plain(row.data) })),
+      reviewerNames,
       bookings,
       organization: plain(org),
       timeZone,
@@ -165,6 +185,7 @@ function createReportIntegrityCheck({ store, canonical, logger, serverTimestamp 
       reviews,
       timeZone,
       organizationId: orgId,
+      organization: plain(org),
       personIds: userId ? await personIds(orgId, userId) : [],
     })
   }

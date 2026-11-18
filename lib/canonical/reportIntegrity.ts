@@ -26,9 +26,11 @@
 import { overtimeFingerprintsMatch } from './bookingFingerprint'
 import { idKey } from './personIds'
 import { roundPennies } from './payRate'
+import { resolveOrganizationCurrency } from './money'
 import { formatClockMinutes, parseClockMinutes } from './engine'
 import { formatPaymentRunDay } from './paymentRuns'
 import {
+  OVERTIME_LINE_STATE_LABELS,
   overtimeBookingFingerprint,
   overtimeForBooking,
   parseOvertimeReportDocument,
@@ -55,6 +57,8 @@ export type ReportIntegrityProblemCode =
   | 'outside_range'
   | 'currency_differs'
   | 'self_reviewed'
+  | 'state_differs'
+  | 'booking_changed_since'
   | 'declined_line_counted'
   | 'not_reviewed'
   | 'differs_from_review'
@@ -115,6 +119,15 @@ function sameWords(a: unknown, b: unknown): boolean {
   return text(a).toLowerCase().replace(/\s+/g, ' ') === text(b).toLowerCase().replace(/\s+/g, ' ')
 }
 
+/** A claim's evidence as one comparable key: its storage paths (else names) exactly as stored, sorted. */
+function evidenceKeys(list: ReadonlyArray<{ path?: unknown; name?: unknown }> | null | undefined): string {
+  return (list || [])
+    .map((entry) => text(entry?.path) || text(entry?.name))
+    .filter(Boolean)
+    .sort()
+    .join('|')
+}
+
 const ZERO_STATES = new Set(['returnedDeclined', 'deleted'])
 const ZERO_DECISIONS = new Set(['declined', 'deleted', 'cancelled'])
 
@@ -153,9 +166,11 @@ export function overtimeReportIntegrity(input: {
   reportId: string
   report: Record<string, unknown> | null | undefined
   reviews?: ReadonlyArray<{ id: string; data: Record<string, unknown> | null | undefined }> | null
-  bookings?: ReadonlyArray<OvertimeBookingInput> | null
+  bookings?: ReadonlyArray<OvertimeBookingInput & { customLocationName?: string | null }> | null
   organization: OvertimeOrganization
   timeZone?: string | null
+  /** Reviewer user id → their roster name (first name and surname, else email), for "Declined by {name}". */
+  reviewerNames?: Record<string, string> | null
 }): ReportIntegrityResult {
   const raw = record(input.report)
   const report = parseOvertimeReportDocument(input.reportId, raw)
@@ -182,6 +197,8 @@ export function overtimeReportIntegrity(input: {
   }
   const reviews = (input.reviews || []).map((row) => parseOvertimeReviewDocument(row.id, row.data))
   const bookings = new Map((input.bookings || []).filter(Boolean).map((booking) => [idKey(booking.id), booking]))
+  // Reviewer id → roster name (`personName`), when the caller could read it; an id not listed is unknown (not checked).
+  const names = new Map(Object.entries(input.reviewerNames || {}).map(([uid, name]) => [idKey(uid), text(name)]))
   const seen = new Set<string>()
   // Review of #391 (should-fix 2): a line outside the report's own range could be claimed twice.
   const rangeStart = text(report.rangeStart)
@@ -213,7 +230,8 @@ export function overtimeReportIntegrity(input: {
       continue
     }
     seen.add(key)
-    const zero = ZERO_STATES.has(text(line.state)) || line.declined === true
+    const state = text(line.state)
+    const zero = ZERO_STATES.has(state) || line.declined === true
     if (zero && line.overtimeHours > EPSILON) {
       problems.push({
         code: 'declined_line_counted',
@@ -224,6 +242,8 @@ export function overtimeReportIntegrity(input: {
     }
     const fingerprint = text(line.fingerprint)
     const review = reviews.find((row) => idKey(row.bookingId) === key && idKey(row.userId) === idKey(report.userId))
+    const selfReviewed = review != null && review.reviewedBy != null && idKey(review.reviewedBy) === idKey(report.userId)
+    const live = bookings.get(key)
     if (!review) {
       problems.push({
         code: 'not_reviewed',
@@ -242,7 +262,7 @@ export function overtimeReportIntegrity(input: {
       }
       // Review of #391 (nit 6): the person confirmed their own line. Allowed when they may change that booking (no
       // line manager; rulebook §25), so a note, never a mismatch.
-      if (review.reviewedBy && idKey(review.reviewedBy) === idKey(report.userId)) {
+      if (selfReviewed) {
         problems.push({
           code: 'self_reviewed',
           recordId: id,
@@ -251,29 +271,66 @@ export function overtimeReportIntegrity(input: {
         })
       }
     }
-    const zeroLine = zero || (review != null && ZERO_DECISIONS.has(review.decision))
-    if (zeroLine && !/(^|·\s*)0h$/.test(text(line.text))) {
+    // Third review of #391 (S1): a 0h line's state is its review's (`payeOvertimeLines`): declined lines are
+    // `returnedDeclined` from a `declined` review; removed lines are `deleted` from a `deleted` review with no booking
+    // left. A state the review does not give is a mismatch either way.
+    const decision = review ? review.decision : ''
+    const declinedLine = state === 'returnedDeclined' || line.declined === true
+    const stateProblems: string[] = []
+    if (declinedLine && (decision !== 'declined' || state !== 'returnedDeclined' || line.declined !== true)) {
+      stateProblems.push('declined without a matching line-manager decline')
+    }
+    if (!declinedLine && decision === 'declined') stateProblems.push('declined by the line manager but not shown as declined')
+    if (state === 'deleted' && decision !== 'deleted') stateProblems.push('shown as removed without a removal')
+    if (state === 'deleted' && live) stateProblems.push('shown as removed while the booking still exists')
+    if (state !== 'deleted' && decision === 'deleted') stateProblems.push('removed but not shown as removed')
+    if (stateProblems.length) {
       problems.push({
-        code: 'text_differs',
+        code: 'state_differs',
         recordId: id,
         severity: 'mismatch',
-        message: `${label}: a 0h line prints "${text(line.text)}".`,
+        message: `${label}: ${stateProblems.join('; ')}.`,
       })
     }
-    if (!fingerprint) {
-      if (!zeroLine) {
+    const zeroLine = zero || (review != null && ZERO_DECISIONS.has(review.decision))
+    if (zeroLine) {
+      // The exact text the snapshot writes (`overtimeReportSnapshot`): `${note} · 0h`, the note from the state.
+      const knownName = review && review.reviewedBy ? names.get(idKey(review.reviewedBy)) : undefined
+      if (declinedLine && knownName !== undefined && !sameWords(line.declinedByName, knownName)) {
         problems.push({
-          code: 'missing_fingerprint',
+          code: 'details_differ',
           recordId: id,
           severity: 'mismatch',
-          message: `${label}: the line does not say which booking it was priced from.`,
+          message: `${label}: declined by "${text(line.declinedByName)}" on the report; the decision was ${knownName ? `"${knownName}"'s` : 'not named'}.`,
         })
       }
+      const note = declinedLine
+        ? `Declined by ${(knownName !== undefined ? knownName : text(line.declinedByName)) || 'your line manager'}`
+        : state === 'deleted'
+          ? OVERTIME_LINE_STATE_LABELS.deleted
+          : ''
+      const expectedZeroText = note ? `${note} · 0h` : ''
+      if (!expectedZeroText ? !/(^|·\s*)0h$/.test(text(line.text)) : !sameWords(line.text, expectedZeroText)) {
+        problems.push({
+          code: 'text_differs',
+          recordId: id,
+          severity: 'mismatch',
+          message: `${label}: a 0h line prints "${text(line.text)}"${expectedZeroText ? `; expected "${expectedZeroText}"` : ''}.`,
+        })
+      }
+    }
+    if (!fingerprint) {
+      problems.push({
+        code: 'missing_fingerprint',
+        recordId: id,
+        severity: 'mismatch',
+        message: `${label}: the line does not say which booking it was priced from.`,
+      })
       // With no booking the day can only be checked against the report's range.
       if (!inRange(text(line.dayKey))) outOfRange(id, label)
       continue
     }
-    if (!zeroLine && review && !overtimeFingerprintsMatch(review.fingerprint, fingerprint)) {
+    if (review && !overtimeFingerprintsMatch(review.fingerprint, fingerprint)) {
       problems.push({
         code: 'differs_from_review',
         recordId: id,
@@ -281,8 +338,19 @@ export function overtimeReportIntegrity(input: {
         message: `${label}: the report's booking is not the one that was reviewed.`,
       })
     }
-    const live = bookings.get(key)
     const liveMatches = live != null && overtimeFingerprintsMatch(overtimeBookingFingerprint(live), fingerprint)
+    // Third review of #391 (S3): the booking changed after the report — normal (the report is older), so a note; but
+    // when the person wrote the review themselves, nobody else confirmed the old version, so a mismatch.
+    if (live && !liveMatches && state !== 'deleted') {
+      problems.push({
+        code: 'booking_changed_since',
+        recordId: id,
+        severity: selfReviewed ? 'mismatch' : 'note',
+        message: selfReviewed
+          ? `${label}: the booking is no longer the one the person confirmed themselves.`
+          : `${label}: the booking has changed since the report; the line is checked against the reviewed version.`,
+      })
+    }
     const booking = liveMatches ? live : bookingFromFingerprint(id, fingerprint)
     if (!booking) {
       problems.push({
@@ -295,7 +363,7 @@ export function overtimeReportIntegrity(input: {
       continue
     }
     // Review of #391 (blocker): everything the PDF prints (`overtimeReportRows`) comes from the booking — the day, its
-    // label, the times, the job and the overtime text — never from the report.
+    // label, the times, the job and the overtime text — never from the report. 0h lines too (S1).
     if (!inRange(booking.dayKey)) outOfRange(id, label)
     const details: string[] = []
     if (text(line.dayKey) !== text(booking.dayKey)) details.push('day')
@@ -311,18 +379,19 @@ export function overtimeReportIntegrity(input: {
         message: `${label}: the ${details.join(', ')} printed on the report ${details.length > 1 ? 'are' : 'is'} not the booking's.`,
       })
     }
-    // The job: checked when the booking's job was looked up (`jobId` given, '' / null for a place that is not a job).
+    // The job: checked when the booking's job was looked up (`jobId` given, '' / null for a place that is not a job,
+    // where the app shows the custom place's name — third review of #391, B1).
     if (liveMatches && live && live.jobId !== undefined) {
       const jobId = text(live.jobId)
       const sameJob = jobId
         ? sameWords(line.jobNumber, live.jobNumber) && (!text(line.jobName) || sameWords(line.jobName, live.jobName))
-        : !text(line.jobNumber) && !text(line.jobName)
+        : !text(line.jobNumber) && (!text(line.jobName) || sameWords(line.jobName, live.customLocationName))
       if (!sameJob) {
         problems.push({
           code: 'job_differs',
           recordId: id,
           severity: 'mismatch',
-          message: `${label}: the report names job "${[line.jobNumber, line.jobName].filter(Boolean).join(' ')}"; the booking is on ${jobId ? `"${[live.jobNumber, live.jobName].filter(Boolean).join(' ')}"` : 'no job'}.`,
+          message: `${label}: the report names job "${[line.jobNumber, line.jobName].filter(Boolean).join(' ')}"; the booking is on ${jobId ? `"${[live.jobNumber, live.jobName].filter(Boolean).join(' ')}"` : text(live.customLocationName) ? `"${text(live.customLocationName)}"` : 'no job'}.`,
         })
       }
     }
@@ -385,6 +454,8 @@ export function payeClaimReportIntegrity(input: {
   organizationId?: string | null
   /** Every id the report's person goes by (`personIdSet`); the report's `userId` when not given. */
   personIds?: ReadonlyArray<string> | null
+  /** The organisation document: its currency (`resolveOrganizationCurrency`) must be the report's. Not checked when absent. */
+  organization?: unknown
 }): ReportIntegrityResult {
   const raw = record(input.report)
   const report = parsePayeClaimReportDocument(input.reportId, raw)
@@ -419,6 +490,18 @@ export function payeClaimReportIntegrity(input: {
   }
   const overlaps = (start: string, end: string) =>
     !hasRange || (DAY.test(start) && start <= rangeEnd && (DAY.test(end) ? end : start) >= rangeStart)
+  // Third review of #391 (N1): the report's currency is the organisation's (`resolveOrganizationCurrency`).
+  if (input.organization !== undefined) {
+    const orgCurrency = resolveOrganizationCurrency(input.organization)
+    if (orgCurrency && text(report.currency) !== orgCurrency) {
+      problems.push({
+        code: 'currency_differs',
+        recordId: '',
+        severity: 'mismatch',
+        message: `The report is in ${report.currency}; the organisation's currency is ${orgCurrency}.`,
+      })
+    }
+  }
   const ids = new Set([report.userId, ...(input.personIds || [])].map(idKey).filter(Boolean))
   const options = { timeZone: input.timeZone, organizationId: input.organizationId }
   const live = new Map<string, PayeClaimItem>()
@@ -477,6 +560,10 @@ export function payeClaimReportIntegrity(input: {
     const details: string[] = []
     if (!sameWords(entry.title, item.title)) details.push('name')
     if (!sameWords(entry.jobNumber, item.jobNumber)) details.push('job number')
+    // Third review of #391 (S2): the description, the approver's name (price work) and the evidence listed.
+    if (!sameWords(entry.details, item.details)) details.push('description')
+    if (item.kind === 'priceWork' && !sameWords(entry.approvedByName, item.approvedByName)) details.push('approver')
+    if (evidenceKeys(entry.evidence) !== evidenceKeys(item.evidence)) details.push('evidence')
     if (text(entry.startDate) !== text(itemStart) || text(entry.endDate || entry.startDate) !== text(itemEnd)) details.push('dates')
     if (details.length) {
       problems.push({

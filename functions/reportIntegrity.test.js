@@ -83,6 +83,31 @@ test('review of #391: the job printed on an overtime line is compared with the b
   assert.deepEqual(other.problems.map((p) => p.code), ['job_differs'])
 })
 
+test('third review of #391: a custom place passes its name; a decline is checked against the decider\'s name', async () => {
+  const input = { id: 'M1', collection: 'managerSiteBookings', personId: 'sam', dayKey: '2026-11-05', timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '18:00', status: 'Confirmed' }
+  const org = { countryCode: 'GB', currencyCode: 'GBP' }
+  const figures = canonical.overtimeForBooking({ booking: input, organization: org, timeZone: 'Europe/London' })
+  const fingerprint = canonical.overtimeBookingFingerprint(input)
+  const base = { bookingId: 'M1', dayKey: '2026-11-05', jobNumber: '', jobName: 'Head office', start: '07:30', end: '18:00', fingerprint }
+  const docs = {
+    [`organizations/${ORG}`]: org,
+    [`organizations/${ORG}/managerSiteBookings/M1`]: { userId: 'sam', locationType: 'custom', customLocationName: 'Head office', date: Date.parse('2026-11-05T00:00:00Z'), timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '18:00' },
+    'users/lee': { firstName: 'Lee', surname: 'Manager' },
+  }
+  const report = (line) => ({ userId: 'sam', kind: 'overtime', rangeStart: '2026-11-01', rangeEnd: '2026-11-30', lines: [line], totals: { overtimeHours: line.overtimeHours, lineCount: 1 } })
+  const approved = { ...docs, [`organizations/${ORG}/overtimeReviews/sam_M1`]: { userId: 'sam', bookingId: 'M1', decision: 'approved', fingerprint, reviewedBy: 'lee' } }
+  const priced = { ...base, text: figures.text, clockHours: figures.clockHours, multiplier: figures.multiplier, overtimeHours: figures.overtimeHours, state: 'returnedApproved' }
+  const check = createReportIntegrityCheck({ store: fakeStore(approved), canonical, logger, serverTimestamp: () => 'T' })
+  assert.equal((await check.handle({ orgId: ORG, collection: 'overtimeReports', reportId: 'R1', report: report(priced) })).ok, true)
+
+  const declined = { ...docs, [`organizations/${ORG}/overtimeReviews/sam_M1`]: { userId: 'sam', bookingId: 'M1', decision: 'declined', fingerprint, reviewedBy: 'lee', requestId: 'Q1' } }
+  const zero = { ...base, text: 'Declined by Lee Manager · 0h', clockHours: 0, multiplier: 1, overtimeHours: 0, state: 'returnedDeclined', declined: true, declinedByName: 'Lee Manager' }
+  const check2 = createReportIntegrityCheck({ store: fakeStore(declined), canonical, logger, serverTimestamp: () => 'T' })
+  assert.equal((await check2.handle({ orgId: ORG, collection: 'overtimeReports', reportId: 'R2', report: report(zero) })).ok, true)
+  const forged = await check2.handle({ orgId: ORG, collection: 'overtimeReports', reportId: 'R3', report: report({ ...zero, declinedByName: 'Nobody', text: 'Declined by Nobody · 0h' }) })
+  assert.deepEqual(forged.problems.map((p) => p.code), ['details_differ', 'text_differs'])
+})
+
 test('a failing store is logged, never thrown to the trigger', async () => {
   const store = { getDoc: async () => { throw new Error('down') }, query: async () => [], setDoc: async () => {} }
   const errors = []

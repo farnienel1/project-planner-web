@@ -13929,8 +13929,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.65.2" : "",
-      sha256: true ? "328e67ba6d6bf84fbb680d66363dde1dfdfc6005950b0ff910730a2ae7a8a096" : ""
+      version: true ? "1.65.3" : "",
+      sha256: true ? "c2b73a5d0b5a9e3ede055d196985bdeb84fe0bd5129ebd66e44cbc5ddc621418" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -24548,6 +24548,9 @@ var ProjectPlannerCanonical = (() => {
   function sameWords(a, b) {
     return text39(a).toLowerCase().replace(/\s+/g, " ") === text39(b).toLowerCase().replace(/\s+/g, " ");
   }
+  function evidenceKeys(list) {
+    return (list || []).map((entry) => text39(entry?.path) || text39(entry?.name)).filter(Boolean).sort().join("|");
+  }
   var ZERO_STATES = /* @__PURE__ */ new Set(["returnedDeclined", "deleted"]);
   var ZERO_DECISIONS = /* @__PURE__ */ new Set(["declined", "deleted", "cancelled"]);
   function bookingFromFingerprint(id2, fingerprint) {
@@ -24592,6 +24595,7 @@ var ProjectPlannerCanonical = (() => {
     }
     const reviews = (input.reviews || []).map((row2) => parseOvertimeReviewDocument(row2.id, row2.data));
     const bookings = new Map((input.bookings || []).filter(Boolean).map((booking) => [idKey(booking.id), booking]));
+    const names = new Map(Object.entries(input.reviewerNames || {}).map(([uid, name]) => [idKey(uid), text39(name)]));
     const seen = /* @__PURE__ */ new Set();
     const rangeStart = text39(report.rangeStart);
     const rangeEnd = text39(report.rangeEnd);
@@ -24621,7 +24625,8 @@ var ProjectPlannerCanonical = (() => {
         continue;
       }
       seen.add(key7);
-      const zero = ZERO_STATES.has(text39(line.state)) || line.declined === true;
+      const state = text39(line.state);
+      const zero = ZERO_STATES.has(state) || line.declined === true;
       if (zero && line.overtimeHours > EPSILON) {
         problems.push({
           code: "declined_line_counted",
@@ -24632,6 +24637,8 @@ var ProjectPlannerCanonical = (() => {
       }
       const fingerprint = text39(line.fingerprint);
       const review = reviews.find((row2) => idKey(row2.bookingId) === key7 && idKey(row2.userId) === idKey(report.userId));
+      const selfReviewed = review != null && review.reviewedBy != null && idKey(review.reviewedBy) === idKey(report.userId);
+      const live = bookings.get(key7);
       if (!review) {
         problems.push({
           code: "not_reviewed",
@@ -24648,7 +24655,7 @@ var ProjectPlannerCanonical = (() => {
             message: `${label}: the line was ${review.decision} but the report counts ${line.overtimeHours}h.`
           });
         }
-        if (review.reviewedBy && idKey(review.reviewedBy) === idKey(report.userId)) {
+        if (selfReviewed) {
           problems.push({
             code: "self_reviewed",
             recordId: id2,
@@ -24657,28 +24664,57 @@ var ProjectPlannerCanonical = (() => {
           });
         }
       }
-      const zeroLine = zero || review != null && ZERO_DECISIONS.has(review.decision);
-      if (zeroLine && !/(^|·\s*)0h$/.test(text39(line.text))) {
+      const decision = review ? review.decision : "";
+      const declinedLine = state === "returnedDeclined" || line.declined === true;
+      const stateProblems = [];
+      if (declinedLine && (decision !== "declined" || state !== "returnedDeclined" || line.declined !== true)) {
+        stateProblems.push("declined without a matching line-manager decline");
+      }
+      if (!declinedLine && decision === "declined") stateProblems.push("declined by the line manager but not shown as declined");
+      if (state === "deleted" && decision !== "deleted") stateProblems.push("shown as removed without a removal");
+      if (state === "deleted" && live) stateProblems.push("shown as removed while the booking still exists");
+      if (state !== "deleted" && decision === "deleted") stateProblems.push("removed but not shown as removed");
+      if (stateProblems.length) {
         problems.push({
-          code: "text_differs",
+          code: "state_differs",
           recordId: id2,
           severity: "mismatch",
-          message: `${label}: a 0h line prints "${text39(line.text)}".`
+          message: `${label}: ${stateProblems.join("; ")}.`
         });
       }
-      if (!fingerprint) {
-        if (!zeroLine) {
+      const zeroLine = zero || review != null && ZERO_DECISIONS.has(review.decision);
+      if (zeroLine) {
+        const knownName = review && review.reviewedBy ? names.get(idKey(review.reviewedBy)) : void 0;
+        if (declinedLine && knownName !== void 0 && !sameWords(line.declinedByName, knownName)) {
           problems.push({
-            code: "missing_fingerprint",
+            code: "details_differ",
             recordId: id2,
             severity: "mismatch",
-            message: `${label}: the line does not say which booking it was priced from.`
+            message: `${label}: declined by "${text39(line.declinedByName)}" on the report; the decision was ${knownName ? `"${knownName}"'s` : "not named"}.`
           });
         }
+        const note = declinedLine ? `Declined by ${(knownName !== void 0 ? knownName : text39(line.declinedByName)) || "your line manager"}` : state === "deleted" ? OVERTIME_LINE_STATE_LABELS.deleted : "";
+        const expectedZeroText = note ? `${note} \xB7 0h` : "";
+        if (!expectedZeroText ? !/(^|·\s*)0h$/.test(text39(line.text)) : !sameWords(line.text, expectedZeroText)) {
+          problems.push({
+            code: "text_differs",
+            recordId: id2,
+            severity: "mismatch",
+            message: `${label}: a 0h line prints "${text39(line.text)}"${expectedZeroText ? `; expected "${expectedZeroText}"` : ""}.`
+          });
+        }
+      }
+      if (!fingerprint) {
+        problems.push({
+          code: "missing_fingerprint",
+          recordId: id2,
+          severity: "mismatch",
+          message: `${label}: the line does not say which booking it was priced from.`
+        });
         if (!inRange2(text39(line.dayKey))) outOfRange(id2, label);
         continue;
       }
-      if (!zeroLine && review && !overtimeFingerprintsMatch(review.fingerprint, fingerprint)) {
+      if (review && !overtimeFingerprintsMatch(review.fingerprint, fingerprint)) {
         problems.push({
           code: "differs_from_review",
           recordId: id2,
@@ -24686,8 +24722,15 @@ var ProjectPlannerCanonical = (() => {
           message: `${label}: the report's booking is not the one that was reviewed.`
         });
       }
-      const live = bookings.get(key7);
       const liveMatches = live != null && overtimeFingerprintsMatch(overtimeBookingFingerprint(live), fingerprint);
+      if (live && !liveMatches && state !== "deleted") {
+        problems.push({
+          code: "booking_changed_since",
+          recordId: id2,
+          severity: selfReviewed ? "mismatch" : "note",
+          message: selfReviewed ? `${label}: the booking is no longer the one the person confirmed themselves.` : `${label}: the booking has changed since the report; the line is checked against the reviewed version.`
+        });
+      }
       const booking = liveMatches ? live : bookingFromFingerprint(id2, fingerprint);
       if (!booking) {
         problems.push({
@@ -24716,13 +24759,13 @@ var ProjectPlannerCanonical = (() => {
       }
       if (liveMatches && live && live.jobId !== void 0) {
         const jobId = text39(live.jobId);
-        const sameJob = jobId ? sameWords(line.jobNumber, live.jobNumber) && (!text39(line.jobName) || sameWords(line.jobName, live.jobName)) : !text39(line.jobNumber) && !text39(line.jobName);
+        const sameJob = jobId ? sameWords(line.jobNumber, live.jobNumber) && (!text39(line.jobName) || sameWords(line.jobName, live.jobName)) : !text39(line.jobNumber) && (!text39(line.jobName) || sameWords(line.jobName, live.customLocationName));
         if (!sameJob) {
           problems.push({
             code: "job_differs",
             recordId: id2,
             severity: "mismatch",
-            message: `${label}: the report names job "${[line.jobNumber, line.jobName].filter(Boolean).join(" ")}"; the booking is on ${jobId ? `"${[live.jobNumber, live.jobName].filter(Boolean).join(" ")}"` : "no job"}.`
+            message: `${label}: the report names job "${[line.jobNumber, line.jobName].filter(Boolean).join(" ")}"; the booking is on ${jobId ? `"${[live.jobNumber, live.jobName].filter(Boolean).join(" ")}"` : text39(live.customLocationName) ? `"${text39(live.customLocationName)}"` : "no job"}.`
           });
         }
       }
@@ -24798,6 +24841,17 @@ var ProjectPlannerCanonical = (() => {
       problems.push({ code: "outside_range", recordId: "", severity: "mismatch", message: "The report has no valid date range." });
     }
     const overlaps2 = (start, end) => !hasRange || DAY.test(start) && start <= rangeEnd && (DAY.test(end) ? end : start) >= rangeStart;
+    if (input.organization !== void 0) {
+      const orgCurrency = resolveOrganizationCurrency(input.organization);
+      if (orgCurrency && text39(report.currency) !== orgCurrency) {
+        problems.push({
+          code: "currency_differs",
+          recordId: "",
+          severity: "mismatch",
+          message: `The report is in ${report.currency}; the organisation's currency is ${orgCurrency}.`
+        });
+      }
+    }
     const ids = new Set([report.userId, ...input.personIds || []].map(idKey).filter(Boolean));
     const options = { timeZone: input.timeZone, organizationId: input.organizationId };
     const live = /* @__PURE__ */ new Map();
@@ -24855,6 +24909,9 @@ var ProjectPlannerCanonical = (() => {
       const details = [];
       if (!sameWords(entry.title, item.title)) details.push("name");
       if (!sameWords(entry.jobNumber, item.jobNumber)) details.push("job number");
+      if (!sameWords(entry.details, item.details)) details.push("description");
+      if (item.kind === "priceWork" && !sameWords(entry.approvedByName, item.approvedByName)) details.push("approver");
+      if (evidenceKeys(entry.evidence) !== evidenceKeys(item.evidence)) details.push("evidence");
       if (text39(entry.startDate) !== text39(itemStart) || text39(entry.endDate || entry.startDate) !== text39(itemEnd)) details.push("dates");
       if (details.length) {
         problems.push({
