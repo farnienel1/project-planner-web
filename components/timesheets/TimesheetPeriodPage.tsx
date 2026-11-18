@@ -1079,20 +1079,17 @@ export function TimesheetPeriodPage({
       // (the hub's own answer, `useMineChangedStore`; the hub replaces it the next time it works it out).
       useMineChangedStore.getState().resolvePeriod(mineChangedKey(organization?.id, subjectUser.id), periodStartKey(periodStart, timeZone))
       if (organization?.id && requiresLineManagerCounterSign(subjectUser, users)) {
-        try {
-          afterPrimaryWrite('notifyTimesheetPendingManagerSignoff', notifyTimesheetPendingManagerSignoff({
-            organizationId: organization.id,
-            signedByUser: subjectUser,
-            users,
-            weekStart: periodStart,
-            timeZone,
-            revision: draft.revision ?? null,
-            // Rulebook 1.60.1: one notice (and push) per signature, so a re-sign reaches the line manager.
-            signedAt,
-          }))
-        } catch {
-          // Signature is already saved; inbox delivery is best-effort like iOS Task {}.
-        }
+        // Signature is already saved; inbox delivery is best-effort like iOS Task {}.
+        afterPrimaryWrite('notifyTimesheetPendingManagerSignoff', notifyTimesheetPendingManagerSignoff({
+          organizationId: organization.id,
+          signedByUser: subjectUser,
+          users,
+          weekStart: periodStart,
+          timeZone,
+          revision: draft.revision ?? null,
+          // Rulebook 1.60.1: one notice (and push) per signature, so a re-sign reaches the line manager.
+          signedAt,
+        }))
       }
       setSignOpen(false)
       setSignature(null)
@@ -1134,22 +1131,19 @@ export function TimesheetPeriodPage({
         { rebuildSnapshot: bookingsReopened }
       )
       if (organization?.id) {
-        try {
-          afterPrimaryWrite('notifyTimesheetSignedByManager', notifyTimesheetSignedByManager({
-            organizationId: organization.id,
-            subjectUser,
-            signedByName: name,
-            signedByUserId: viewer.id,
-            users,
-            weekStart: periodStart,
-            weekEnd: periodEnd,
-            timeZone,
-            revision: draft.revision ?? null,
-            signedAt: managerSignedAt,
-          }))
-        } catch {
-          // Counter-sign is already saved; inbox delivery is best-effort.
-        }
+        // Counter-sign is already saved; inbox delivery is best-effort.
+        afterPrimaryWrite('notifyTimesheetSignedByManager', notifyTimesheetSignedByManager({
+          organizationId: organization.id,
+          subjectUser,
+          signedByName: name,
+          signedByUserId: viewer.id,
+          users,
+          weekStart: periodStart,
+          weekEnd: periodEnd,
+          timeZone,
+          revision: draft.revision ?? null,
+          signedAt: managerSignedAt,
+        }))
       }
       setManagerSignOpen(false)
       setSignature(null)

@@ -120,7 +120,7 @@ import {
 } from '@/lib/staff/userPermissionDescriptions'
 import { SUPER_ADMIN_SUCCESSOR_EMPTY, superAdminSuccessors } from '@/lib/staff/superAdminTransfer'
 import { displayedLineManagerId, userWithLineManagerChoice } from '@/lib/firebase/userPayload'
-import { confirmWriteWithin } from '@/lib/works/watchWrite'
+import { confirmWriteWithin, whenQueued } from '@/lib/works/watchWrite'
 import {
   profileSaveNoticeFor,
   profileSaveStepFailedMessage,
@@ -320,7 +320,6 @@ export function EditUserProfile({
     deleteUser,
     sendPasswordReset,
     applyAccountType,
-    changeAccountType,
     prepareChangeAccountType,
     syncLinkedOperative,
     transferSuperAdmin,
@@ -1256,7 +1255,8 @@ export function EditUserProfile({
     }
     try {
       // Bounded like every save (second review of #371): confirmed within 15 s, else the amber note, red at 90 s.
-      const write = setUserActive(target.id, next, organization?.id, rosterDocs)
+      // Review of #371: the wait starts only once the write is queued, never during the reads before it.
+      const { write } = await whenQueued((onQueued) => setUserActive(target.id, next, organization?.id, rosterDocs, { onQueued }))
       const orgId = organization?.id
       if (orgId) {
         // Follow-ups off the flag's own confirmation; a failure is reported on the note.
@@ -1318,7 +1318,10 @@ export function EditUserProfile({
     }
     try {
       // Bounded like every save (second review of #371): confirmed within 15 s, else the amber note, red at 90 s.
-      const write = deleteUser(deleted.id, { organizationId: organization?.id, email: deleted.email, roster: rosterDocs })
+      // Review of #371: the wait starts only once the first batch is queued, never during the reads before it.
+      const { write } = await whenQueued((onQueued) =>
+        deleteUser(deleted.id, { organizationId: organization?.id, email: deleted.email, roster: rosterDocs, onQueued })
+      )
       // Rulebook 1.59.0 (review of #370, L1): say so when the former-person record was refused (the delete went ahead).
       void write.then(
         (outcome) => {
@@ -1406,6 +1409,9 @@ export function EditUserProfile({
     if (!target || !organization?.id || typeSaving || payReloadingRef.current || serverWaitRef.current != null) return
     const previous = target
     const storedBefore = savedUser.current
+    const draftTypeBefore = draftAccountType
+    const draftPermissionsBefore = draftTypePermissions
+    const showChangeTypeBefore = showChangeType
     const orgId = organization.id
     const next = applyAccountType(cloneUser(target), accountType)
     if (accountType !== currentAccountType(target) && lineManagerBlocks(target, { kind: 'level', to: accountType })) return
@@ -1428,9 +1434,15 @@ export function EditUserProfile({
     try {
       // Rulebook 1.11.0 `accountTypeChangeWrites`: users docs, `members.{uid}` and the membership together; the profile
       // save only after the type is confirmed, as before. Bounded like every save (second review of #371).
-      let typeNote: string | null = null
+      // Review of #371: the reads run first (bounded); the wait starts only once the type batch is queued.
+      const typePlan = await withTimeout(
+        prepareChangeAccountType(previous, accountType, orgId, rosterDocs, next.permissions),
+        PROFILE_SAVE_READ_TIMEOUT_MS,
+        PROFILE_SAVE_READ_TIMEOUT_MESSAGE
+      )
+      const typeNote = typePlan.note
       const write = (async () => {
-        typeNote = await changeAccountType(previous, accountType, orgId, rosterDocs, next.permissions)
+        await typePlan.commit()
         // Rulebook 1.11.0: a profile of another company is not rewritten; only this organisation's entry changed.
         if (!typeNote) await saveUser(next, orgId, previous.email, { baseline: next })
       })()
@@ -1452,6 +1464,10 @@ export function EditUserProfile({
           savedUser.current = storedBefore
           if (storedBefore) patchListedUser(storedBefore)
           setTarget(previous)
+          // As `restoreBeforeSave`: the chooser comes back as it was, so the same change can be sent again.
+          setDraftAccountType(draftTypeBefore)
+          setDraftTypePermissions(draftPermissionsBefore)
+          setShowChangeType(showChangeTypeBefore)
           setBaseline(profileSnapshot(previous, null, null))
           setSuccess(null)
           setError(message)
@@ -1465,8 +1481,7 @@ export function EditUserProfile({
       setShowChangeType(false)
       setBaseline(profileSnapshot(next, null, null))
       if (confirmed === 'saved') {
-        const note = typeNote as string | null
-        setSuccess(note ?? (accountType === 'admin' ? 'This user is now an administrator.' : `Account type set to ${accountType}.`))
+        setSuccess(typeNote ?? (accountType === 'admin' ? 'This user is now an administrator.' : `Account type set to ${accountType}.`))
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not change account type')

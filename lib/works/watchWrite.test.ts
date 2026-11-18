@@ -5,6 +5,7 @@ import {
   WRITE_UNCONFIRMED_AFTER_MS,
   confirmWriteWithin,
   watchWrite,
+  whenQueued,
   type LaterWriteStatus,
   type WriteStatus,
 } from './watchWrite.ts'
@@ -134,4 +135,41 @@ test('confirmWriteWithin: a write confirmed before the upper limit is never repo
 
 test('the upper limit is 90 seconds', () => {
   assert.equal(WRITE_UNCONFIRMED_AFTER_MS, 90_000)
+})
+
+// Review of #371: a write that reads first is only waited on once it is queued.
+test('whenQueued resolves only when the write is handed over, and gives back the write to wait on', async () => {
+  let release: () => void = () => undefined
+  const reads = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let started = false
+  const starting = whenQueued(async (queued) => {
+    await reads
+    queued()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    return 'done'
+  }).then((value) => {
+    started = true
+    return value
+  })
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  assert.equal(started, false, 'still reading: nothing to wait on yet')
+  release()
+  const { write } = await starting
+  assert.equal(await write, 'done')
+})
+
+test('whenQueued throws a failure that comes before anything is queued', async () => {
+  await assert.rejects(
+    whenQueued(async () => {
+      throw new Error('The super admin cannot be deactivated.')
+    }),
+    /super admin cannot be deactivated/
+  )
+})
+
+test('whenQueued also resolves for a write that finishes without queuing (nothing to write)', async () => {
+  const { write } = await whenQueued(async () => 7)
+  assert.equal(await write, 7)
 })

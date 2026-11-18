@@ -85,12 +85,23 @@ interface UserStoreState {
   ) => Promise<{ commit: () => Promise<void> }>
   transferSuperAdmin: (organizationId: string, fromUserId: string, toUserId: string, roster: User[]) => Promise<void>
   /** Rulebook 1.31.0 `userActiveWrites`: `roster` is every users document of the organisation (same-email copies). */
-  setUserActive: (userId: string, isActive: boolean, organizationId?: string, roster?: ReadonlyArray<User>) => Promise<void>
+  setUserActive: (
+    userId: string,
+    isActive: boolean,
+    organizationId?: string,
+    roster?: ReadonlyArray<User>,
+    /** `onQueued` is called just before the first write is handed to Firestore (`whenQueued`, review of #371). */
+    opts?: { onQueued?: () => void }
+  ) => Promise<void>
   /**
    * Resolves with `formerRecordSkipped` true when a former-person record (rulebook 1.59.0) was refused and the delete
    * went ahead without it — the screen tells the person (review of #370, L1).
    */
-  deleteUser: (userId: string, opts?: { organizationId?: string; email?: string; roster?: ReadonlyArray<User> }) => Promise<{ formerRecordSkipped: boolean }>
+  deleteUser: (
+    userId: string,
+    /** `onQueued` is called just before the first batch is handed to Firestore (`whenQueued`, review of #371). */
+    opts?: { organizationId?: string; email?: string; roster?: ReadonlyArray<User>; onQueued?: () => void }
+  ) => Promise<{ formerRecordSkipped: boolean }>
   sendPasswordReset: (email: string) => Promise<void>
   applyAccountType: (user: User, accountType: 'operative' | 'manager' | 'admin') => User
   /**
@@ -478,7 +489,7 @@ export const useUserStore = create<UserStoreState>(() => ({
     await batch.commit()
   },
 
-  setUserActive: async (userId, isActive, organizationId, roster) => {
+  setUserActive: async (userId, isActive, organizationId, roster, opts) => {
     if (!isActive) {
       const existing = await getDoc(doc(db, 'users', userId))
       if (existing.exists() && existing.data().isSuperAdmin === true) {
@@ -487,6 +498,7 @@ export const useUserStore = create<UserStoreState>(() => ({
     }
     const orgId = organizationId?.trim()
     if (!orgId) {
+      opts?.onQueued?.()
       await updateDoc(doc(db, 'users', userId), { isActive, updatedAt: Timestamp.now() })
       return
     }
@@ -519,6 +531,7 @@ export const useUserStore = create<UserStoreState>(() => ({
     if (profileWrites === 0 && memberships.length === 0) {
       throw new Error('This account belongs to another company. Only an admin can change whether it is active here.')
     }
+    opts?.onQueued?.()
     if (profileWrites > 0) await batch.commit()
     // Admins can update a membership but cannot read it: an update, so a missing membership stays missing (it fails
     // and is skipped once the users documents are saved, as on iOS). With no users document here, it is the change.
@@ -713,6 +726,7 @@ export const useUserStore = create<UserStoreState>(() => ({
       }
       await batch.commit()
     }
+    opts?.onQueued?.()
     for (const step of steps) {
       try {
         await commitStep(step.writes)

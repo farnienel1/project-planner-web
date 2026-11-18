@@ -56,6 +56,22 @@ export type LaterWriteStatus = { status: 'saved' } | { status: 'refused'; messag
 export const WRITE_UNCONFIRMED_AFTER_MS = 90_000
 
 /**
+ * Starts a write that reads before it writes, and resolves once it has been handed to Firestore (review of #371):
+ * `start` gets a `queued` callback and calls it just before its first write. The returned `write` is what
+ * `confirmWriteWithin` then waits on, so "saved on this device" never shows while the reads are still running.
+ * A failure before anything is queued (a refused read, a rule check) is thrown here.
+ */
+export async function whenQueued<T>(start: (queued: () => void) => Promise<T>): Promise<{ write: Promise<T> }> {
+  let mark: () => void = () => undefined
+  const queued = new Promise<void>((resolve) => {
+    mark = resolve
+  })
+  const write = start(mark)
+  await Promise.race([queued, write])
+  return { write }
+}
+
+/**
  * Waits for `write` for up to `timeoutMs` (owner bug 17 Nov: Edit user stuck on "Saving…" although the change showed).
  * Start it only once the write has been handed to Firestore (`batch.commit()` called), never while reads that come
  * before it are still running. Confirmed in time → `'saved'`. Refused in time → throws the refusal, so the screen shows
