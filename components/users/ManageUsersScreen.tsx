@@ -18,7 +18,9 @@ import {
   type ManageUsersTab,
 } from '@/lib/staff/manageUsersUtils'
 import {
+  emptyRosterTitle,
   filterRosterByNameQuery,
+  getManagersRosterUsers,
   getOperativeModeUsers,
   matchesRosterSegment,
   type RosterSegment,
@@ -46,6 +48,10 @@ import { accountTypeSubject } from '@/lib/staff/accountTypeChange'
 import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
+import { hasAdminAccess } from '@/lib/permissions'
+import { PLACEHOLDER_MANAGER_EXPLANATION } from '@/lib/staff/managerRosterUtils'
+import { profileSaveNoticeFor, useProfileSaveNotice } from '@/lib/users/profileSaveNotice'
+import { useWarnBeforeUnload } from '@/lib/client/useWarnBeforeUnload'
 
 const ROLE_TABS: { tab: ManageUsersTab; label: string; section: string }[] = [
   { tab: 'admins', label: 'Admins', section: 'Administrators' },
@@ -60,7 +66,7 @@ const SEGMENTS: { key: RosterSegment; title: string }[] = [
 ]
 
 /** A person's profile, opened from Manage users or the Operatives page (Back returns to the page it came from). */
-function userHref(user: User, from: 'users' | 'operatives'): string {
+function userHref(user: User, from: 'users' | 'operatives' | 'managers'): string {
   return `/dashboard/users/${user.id}?from=${from}`
 }
 
@@ -70,8 +76,11 @@ function userHref(user: User, from: 'users' | 'operatives'): string {
  *   - `operatives`: the one Operatives page at `/dashboard/operatives` (admins and Operatives managers). Its rows are
  *     the rulebook's Operatives list (`rosterListFor('operatives')` via `getOperativeModeUsers`), searched by name,
  *     email or phone, exactly as the old Operatives list was.
+ *   - `managers`: the admin Managers page at `/dashboard/managers` (owner 17 Nov: the same table). Its rows are the
+ *     rulebook's Managers list (`rosterListFor('managers')` via `getManagersRosterUsers`), searched by name, email or
+ *     phone, exactly as the old Managers list was. No Add button (the old page had none).
  */
-export type ManageUsersScope = 'all' | 'operatives'
+export type ManageUsersScope = 'all' | 'operatives' | 'managers'
 
 function displayName(user: User): string {
   return `${user.firstName} ${user.surname}`.trim() || user.email
@@ -170,8 +179,29 @@ export function ManageUsersScreen({ scope = 'all' }: { scope?: ManageUsersScope 
   const { users, error: rosterError, rosterLoadedOrgId, claimedEmails, loadUsers } = useOrgUserStore()
   const { sendPasswordReset } = useUserStore()
   const operativesScope = scope === 'operatives'
-  const { operatives, loadOperatives } = useOperativeStore()
-  const from = operativesScope ? 'operatives' : 'users'
+  const managersScope = scope === 'managers'
+  // One list (no role tabs), searched by name, email or phone: the Operatives and Managers pages.
+  const singleListScope = operativesScope || managersScope
+  const {
+    operatives,
+    loadOperatives,
+    managers,
+    placeholderManagerCount,
+    loadManagers,
+    cleanupLegacyPlaceholderManagers,
+  } = useOperativeStore()
+  const from = operativesScope ? 'operatives' : managersScope ? 'managers' : 'users'
+  const [cleaning, setCleaning] = useState(false)
+  // A profile save Edit user stopped waiting for (owner bug 17 Nov): waiting for the server, or refused by it.
+  // Review of #371: only this organisation's notice is shown, and another organisation's is cleared on a switch.
+  const { notice: anySaveNotice, dismiss: dismissSaveNotice, keepOnlyOrganization } = useProfileSaveNotice()
+  const saveNotice = profileSaveNoticeFor(anySaveNotice, organization?.id)
+  useEffect(() => {
+    if (organization?.id) keepOnlyOrganization(organization.id)
+  }, [organization?.id, keepOnlyOrganization])
+  // A reload throws a queued write away (memory cache): while a save is still waiting, the browser asks first.
+  useWarnBeforeUnload(saveNotice?.status === 'pending')
+  const [cleanupMessage, setCleanupMessage] = useState<string | null>(null)
 
   const [tab, setTab] = useState<ManageUsersTab>('admins')
   const [segment, setSegment] = useState<RosterSegment>('active')
@@ -181,8 +211,12 @@ export function ManageUsersScreen({ scope = 'all' }: { scope?: ManageUsersScope 
 
   const canManage = canManageUsers(currentUser)
   // The role tabs are Manage users (admins) only; the Operatives page is one list.
-  const showRoleTabs = canManage && !operativesScope
-  const title = operativesScope ? 'Manage operatives' : getManageUsersLabel(currentUser, organization)
+  const showRoleTabs = canManage && !singleListScope
+  const title = operativesScope
+    ? 'Manage operatives'
+    : managersScope
+      ? 'Managers'
+      : getManageUsersLabel(currentUser, organization)
   const addLabel = getAddUserLabel(currentUser)
   const canAdd = manageUsersAddButtonShown(scope, currentUser)
 
@@ -196,6 +230,11 @@ export function ManageUsersScreen({ scope = 'all' }: { scope?: ManageUsersScope 
   useEffect(() => {
     if (operativesScope && organization?.id) loadOperatives(organization.id)
   }, [operativesScope, organization?.id, loadOperatives])
+
+  // The Managers page shows the `managers` row's phone and trade, and the legacy placeholder clean-up (as before).
+  useEffect(() => {
+    if (managersScope && organization?.id) loadManagers(organization.id)
+  }, [managersScope, organization?.id, loadManagers])
 
   useEffect(() => {
     if (!organization?.id) return
@@ -215,20 +254,32 @@ export function ManageUsersScreen({ scope = 'all' }: { scope?: ManageUsersScope 
     setSearch('')
   }, [tab])
 
-  const effectiveTab: ManageUsersTab = showRoleTabs ? tab : 'operatives'
+  const effectiveTab: ManageUsersTab = showRoleTabs ? tab : managersScope ? 'managers' : 'operatives'
   const section = ROLE_TABS.find((item) => item.tab === effectiveTab)?.section ?? 'Users'
 
   const tabUsers = useMemo(
     () =>
       operativesScope
         ? getOperativeModeUsers(users, claimedEmails)
-        : filterUsersForManageTab(users, effectiveTab, claimedEmails),
-    [operativesScope, users, effectiveTab, claimedEmails]
+        : managersScope
+          ? getManagersRosterUsers(users, claimedEmails)
+          : filterUsersForManageTab(users, effectiveTab, claimedEmails),
+    [operativesScope, managersScope, users, effectiveTab, claimedEmails]
   )
   // The person's `operatives` row (display and search only): its phone, and its trade when the account has none.
   const { phones, catalogueTrades } = useMemo(() => {
     const phoneMap: Record<string, string> = {}
     const tradeMap: Record<string, string> = {}
+    if (managersScope) {
+      // As the old Managers list: the account's mobile, else the `managers` row on the same email (display only).
+      for (const row of tabUsers) {
+        const email = row.email.trim().toLowerCase()
+        const record = email ? managers.find((m) => m.email.trim().toLowerCase() === email) : undefined
+        phoneMap[row.id] = row.mobileNumber || record?.mobile || record?.phone || ''
+        if (record?.tradeTypePreset) tradeMap[row.id] = record.tradeTypePreset
+      }
+      return { phones: phoneMap, catalogueTrades: tradeMap }
+    }
     if (!operativesScope) return { phones: phoneMap, catalogueTrades: tradeMap }
     for (const row of tabUsers) {
       const op = findOperativeForUser(row, operatives)
@@ -236,7 +287,7 @@ export function ManageUsersScreen({ scope = 'all' }: { scope?: ManageUsersScope 
       if (op?.tradeTypePreset) tradeMap[row.id] = op.tradeTypePreset
     }
     return { phones: phoneMap, catalogueTrades: tradeMap }
-  }, [operativesScope, tabUsers, operatives])
+  }, [operativesScope, managersScope, tabUsers, operatives, managers])
 
   const counts = useMemo(() => {
     const result: Record<RosterSegment, number> = { active: 0, inactive: 0, pending: 0 }
@@ -247,7 +298,7 @@ export function ManageUsersScreen({ scope = 'all' }: { scope?: ManageUsersScope 
   }, [tabUsers])
 
   const filtered = useMemo(() => {
-    if (operativesScope) {
+    if (singleListScope) {
       const bySegment = tabUsers.filter((user) => matchesRosterSegment(user, segment))
       return filterRosterByNameQuery(bySegment, search, phones).sort((a, b) => displayName(a).localeCompare(displayName(b)))
     }
@@ -259,7 +310,7 @@ export function ManageUsersScreen({ scope = 'all' }: { scope?: ManageUsersScope 
       )
     }
     return list.sort((a, b) => displayName(a).localeCompare(displayName(b)))
-  }, [operativesScope, tabUsers, phones, users, effectiveTab, segment, search, claimedEmails])
+  }, [singleListScope, tabUsers, phones, users, effectiveTab, segment, search, claimedEmails])
 
   // `usersMissingLineManager`: active people saved before the line-manager rule who still need one. Admins only.
   const viewerRole = staffAccountRole(currentUser)
@@ -352,7 +403,9 @@ export function ManageUsersScreen({ scope = 'all' }: { scope?: ManageUsersScope 
         subtitle={
           operativesScope
             ? 'Your field team: details, trades and invitations.'
-            : 'Roles, access and invitations for your organisation.'
+            : managersScope
+              ? 'Who runs the jobs and signs off time'
+              : 'Roles, access and invitations for your organisation.'
         }
         actions={
           canAdd ? (
@@ -373,6 +426,19 @@ export function ManageUsersScreen({ scope = 'all' }: { scope?: ManageUsersScope 
           />
         ) : null}
       </PageBand>
+
+      {saveNotice ? (
+        <Note tone={saveNotice.status === 'pending' ? 'amber' : 'red'} role="status">
+          <b>{saveNotice.message}</b>
+          {saveNotice.status !== 'pending' ? (
+            <span style={{ display: 'block', marginTop: 6 }}>
+              <button type="button" className="pu-link" style={{ color: 'inherit' }} onClick={dismissSaveNotice}>
+                Dismiss
+              </button>
+            </span>
+          ) : null}
+        </Note>
+      ) : null}
 
       {toast ? (
         <Note tone={toast.kind === 'success' ? 'green' : 'red'} role="status">
@@ -417,6 +483,47 @@ export function ManageUsersScreen({ scope = 'all' }: { scope?: ManageUsersScope 
           people={missingPayRate}
           onOpen={selectUser}
         />
+      ) : null}
+
+      {managersScope && hasAdminAccess(currentUser) && placeholderManagerCount > 0 ? (
+        <Note tone="amber">
+          <b>
+            {placeholderManagerCount} legacy placeholder manager record
+            {placeholderManagerCount === 1 ? '' : 's'} in Firestore
+          </b>
+          <span style={{ display: 'block', fontSize: 12.5, marginTop: 2 }}>{PLACEHOLDER_MANAGER_EXPLANATION}</span>
+          <span style={{ display: 'block', marginTop: 8 }}>
+            <button
+              type="button"
+              className="pu-btn sm"
+              disabled={cleaning || !organization?.id}
+              onClick={async () => {
+                if (!organization?.id) return
+                if (
+                  !window.confirm(
+                    `Remove ${placeholderManagerCount} placeholder manager record${placeholderManagerCount === 1 ? '' : 's'} from Firestore? This cannot be undone.`
+                  )
+                ) {
+                  return
+                }
+                setCleaning(true)
+                try {
+                  const removed = await cleanupLegacyPlaceholderManagers(organization.id)
+                  setCleanupMessage(`Removed ${removed} placeholder manager record${removed === 1 ? '' : 's'}.`)
+                } finally {
+                  setCleaning(false)
+                }
+              }}
+            >
+              {cleaning ? 'Removing…' : 'Remove placeholder managers from Firestore'}
+            </button>
+          </span>
+          {cleanupMessage ? (
+            <span role="status" style={{ display: 'block', fontSize: 12.5, marginTop: 6 }}>
+              {cleanupMessage}
+            </span>
+          ) : null}
+        </Note>
       ) : null}
 
       <Card
@@ -464,7 +571,11 @@ export function ManageUsersScreen({ scope = 'all' }: { scope?: ManageUsersScope 
         ) : listPhase === 'empty' ? (
           <EmptyState
             tile={<IconTile tone="slate" size="lg"><UserGroupIcon /></IconTile>}
-            title={`No ${segment} ${section.toLowerCase()}`}
+            title={
+              managersScope
+                ? emptyRosterTitle(segment, 'managers', tabUsers.length > 0)
+                : `No ${segment} ${section.toLowerCase()}`
+            }
             description={canAdd ? `Try another filter or add someone new from ${addLabel}.` : 'Try another filter.'}
           />
         ) : (
