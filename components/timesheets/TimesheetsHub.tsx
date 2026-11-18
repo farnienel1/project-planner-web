@@ -57,7 +57,7 @@ import {
   timesheetSourceDocumentId,
 } from '@/lib/timesheets/timesheetStorage'
 import { timesheetLookupPlan } from '@/lib/timesheets/personTimesheetDocs'
-import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
+import { privatePayFor, securitySwitchesLoaded, securitySwitchesReady } from '@/lib/access/securitySwitches'
 import { emptyTimesheetDraft, type TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import {
   awaitingManagerSignOff,
@@ -716,7 +716,8 @@ function MineTimesheetsList({
           ids: subjectIds,
           viewerIsOperative: subjectIsOperative,
           viewerIsAdmin: subjectIsAdmin,
-          privatePay: privatePayFor(organizationId),
+          // Not read yet counts as on (no query the rules might refuse).
+          privatePay: !securitySwitchesLoaded() || privatePayFor(organizationId),
         })
         return listPersonTimesheetStates(organizationId, plan.ids, 400, 'latest', plan.includeDocumentPrefix)
       })

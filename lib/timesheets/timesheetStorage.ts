@@ -7,7 +7,7 @@
  */
 import { collection, doc, documentId, getDoc, getDocs, query, runTransaction, serverTimestamp, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase/config'
-import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
+import { privatePayFor, securitySwitchesLoaded, securitySwitchesReady } from '@/lib/access/securitySwitches'
 import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
 import { parseFirestoreDate as parseSharedFirestoreDate, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
 import { changedFirestoreFields } from '@/lib/firebase/changedFields'
@@ -1931,7 +1931,8 @@ export async function loadExportedTimesheetHistory({
   // One read per person (their records fold into one, `exportedSheetOwnerResolver`).
   const people = [...new Set(users.map((member) => sheetOwner(member.id) ?? member))]
   await securitySwitchesReady()
-  const privatePay = privatePayFor(organizationId)
+  // Not read yet counts as on: no query the rules might refuse is sent before the switch is known.
+  const privatePay = !securitySwitchesLoaded() || privatePayFor(organizationId)
   const batches = await mapInBatches(people, 8, async (member) => {
     // Guardrail 1: every id the person goes by (a former invite id, a second users document on their email), and
     // sheets stored without `userId` whose document id names them — when this viewer's rules allow those queries
