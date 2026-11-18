@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.63.0 → 1.66.0
-Packed hash: 6f6f010c2662440c3f24013b1304f2f485d1c9799602fd5b825918965edbc691
-Rulebook sha256: 3a9cd61cd9eded80957ebc391f7b01fc1aea90600657fc115023d2f8be230990
+Rulebook version: 1.64.0 → 1.66.0
+Packed hash: a2765788eb32918f21c6cdc77d8e8c874d5e57e1be6ffa2394e228270c4d3989
+Rulebook sha256: 64d646f2c7e9154b09e3d967560c27232e64de495ae1d1409bd23705f6083866
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -26,8 +26,8 @@ Exports added: timesheetSheetHasActivity, userTimesheetQueue, userTimesheetQueue
 Exports removed: none
 Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/index.ts, lib/canonical/parity-fixture.json, lib/canonical/userTimesheetQueue.scenario.ts, lib/canonical/userTimesheetQueue.test.ts, lib/canonical/userTimesheetQueue.ts
 Done when:
-- [ ] Packed hash in iOS equals 6f6f010c2662440c3f24013b1304f2f485d1c9799602fd5b825918965edbc691
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 3a9cd61cd9eded80957ebc391f7b01fc1aea90600657fc115023d2f8be230990)
+- [ ] Packed hash in iOS equals a2765788eb32918f21c6cdc77d8e8c874d5e57e1be6ffa2394e228270c4d3989
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 64d646f2c7e9154b09e3d967560c27232e64de495ae1d1409bd23705f6083866)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.66.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
