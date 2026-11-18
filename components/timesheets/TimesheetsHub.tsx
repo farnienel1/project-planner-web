@@ -19,6 +19,7 @@ import {
   canAccessOperativeTimesheets,
   canAccessTimesheetsSurface,
   hasAdminAccess,
+  isOperativeMode,
   shouldShowTimesheetsDisabledMessage,
   userTimesheetSubjectIds,
   exportedTimesheetSubjectIds,
@@ -52,9 +53,12 @@ import {
   loadExportedTimesheetHistory,
   loadTimesheetDraftsForStarts,
   loadTimesheetQueueDrafts,
-  listTimesheetStates,
+  listPersonTimesheetStates,
+  timesheetLookupPrivatePay,
   timesheetSourceDocumentId,
 } from '@/lib/timesheets/timesheetStorage'
+import { timesheetLookupPlan } from '@/lib/timesheets/personTimesheetDocs'
+import { onPlatformConfigChange } from '@/lib/access/securitySwitches'
 import { emptyTimesheetDraft, type TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import {
   awaitingManagerSignOff,
@@ -170,7 +174,7 @@ export function TimesheetsHub() {
     error: managerBookingsError,
   } = useManagerScheduleStore()
   const { operatives, loadOperatives } = useOperativeStore()
-  const { users, loadUsers, loading: usersLoading } = useOrgUserStore()
+  const { users, loadUsers, loading: usersLoading, rosterServerOrgId } = useOrgUserStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const [invoicing, setInvoicing] = useState<OrgInvoicingSettings>(DEFAULT_INVOICING)
   const [payrollPolicy, setPayrollPolicy] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
@@ -638,6 +642,9 @@ export function TimesheetsHub() {
               invoicing={invoicing}
               timeZone={timeZone}
               changeCatalogue={changeCatalogue}
+              rosterLoaded={
+                !usersLoading && users.length > 0 && Boolean(organization?.id) && rosterServerOrgId === organization?.id
+              }
               onStats={setHubStats}
               onClick={() => router.push(timesheetsTeamHref({ tab: 'awaiting' }))}
             />
@@ -691,12 +698,35 @@ function MineTimesheetsList({
 
   const periodKey = (period: { start: Date; end: Date }) =>
     `${periodStartKey(period.start, timeZone)}|${dayKey(period.end, timeZone)}`
+  // Guardrail 1: the person's past sheets under every id they go by (`personIdSet`: a former invite id, a second users
+  // document on their email) and sheets stored without `userId` whose document id names them; the own id first.
+  // Final review of #386: only the queries this viewer's rules allow (`timesheetLookupPlan`): an operative asks their own
+  // id only; while `privatePay` is on so does everyone but an admin (as iOS).
+  const subjectIsOperative = isOperativeMode(subject)
+  const subjectIsAdmin = hasAdminAccess(subject)
+  const subjectIds = useMemo(() => timesheetMemberIds(subject, users), [subject, users])
+  const subjectIdsKey = subjectIds.join('|')
+  // Re-check of #386: the switch as the lookups read it, followed live — when `platformConfig/app` arrives after the
+  // first read (privatePay off), the list is planned again and widens.
+  const [lookupPrivatePay, setLookupPrivatePay] = useState(() => timesheetLookupPrivatePay(organizationId ?? ''))
+  useEffect(() => {
+    const update = () => setLookupPrivatePay(timesheetLookupPrivatePay(organizationId ?? ''))
+    update()
+    return onPlatformConfigChange(update)
+  }, [organizationId])
 
   useEffect(() => {
     if (!organizationId) return
     let cancelled = false
     const currentKey = periodKey(currentPeriod)
-    listTimesheetStates(organizationId, subject.id, 400).then(async (rows) => {
+    const plan = timesheetLookupPlan({
+      ids: subjectIds,
+      viewerIsOperative: subjectIsOperative,
+      viewerIsAdmin: subjectIsAdmin,
+      privatePay: lookupPrivatePay,
+    })
+    listPersonTimesheetStates(organizationId, plan.ids, 400, 'latest', plan.includeDocumentPrefix)
+      .then(async (rows) => {
       if (cancelled) return
       const byKey = new Map<string, { start: Date; end: Date }>()
       for (const period of pastPeriods) byKey.set(periodKey(period), period)
@@ -757,7 +787,9 @@ function MineTimesheetsList({
     return () => {
       cancelled = true
     }
-  }, [organizationId, subject.id, currentPeriod, pastPeriods, invoicing, timeZone])
+    // `subjectIds` is read through `subjectIdsKey` (a new roster array with the same ids does not reload).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [organizationId, subject.id, subjectIdsKey, subjectIsOperative, subjectIsAdmin, lookupPrivatePay, currentPeriod, pastPeriods, invoicing, timeZone])
 
   // Rulebook 1.47.0 §8: a signed, unexported sheet whose bookings changed is back with the person.
   const changeOf = (period: { start: Date; end: Date }) =>
@@ -941,11 +973,14 @@ function ManagerTimesheetsTile({
   invoicing,
   timeZone,
   changeCatalogue,
+  rosterLoaded,
   onStats,
   onClick,
 }: {
   /** Rulebook 1.47.0 §8: the live bookings, so a reopened sheet is counted where it now is. */
   changeCatalogue: BookingChangeCatalogue
+  /** Review of #386 (S5): the organisation roster has loaded (admins' "Unknown person" rows wait for it). */
+  rosterLoaded: boolean
   user: User
   users: User[]
   organizationId?: string
@@ -980,7 +1015,7 @@ function ManagerTimesheetsTile({
 
   // Review of #368: the queries reload only when the people they ask about change (their ids), never on every roster
   // snapshot; the rows are mapped onto the people from the current roster below.
-  const queryKey = `${reviewIds.join(',')}#${exportedRoster.map((member) => member.id).join(',')}#${hasAdminAccess(user) ? 'admin' : ''}`
+  const queryKey = `${reviewIds.join(',')}#${exportedRoster.map((member) => member.id).join(',')}#${hasAdminAccess(user) ? 'admin' : ''}#${rosterLoaded ? 'roster' : ''}`
   const usersRef = useRef(users)
   usersRef.current = users
   const exportedRosterRef = useRef(exportedRoster)
@@ -1003,7 +1038,16 @@ function ManagerTimesheetsTile({
         : Promise.resolve(new Map<string, Map<string, TimesheetDraft>>()),
       // 17 Nov follow-up: the same Exported list as User Timesheets → Exported (former ids matched; admins also count
       // a sheet whose person is nobody in the organisation).
-      loadExportedTimesheetHistory({ organizationId, users: exportedRoster, roster: users, includeUnresolved: hasAdminAccess(user) }),
+      loadExportedTimesheetHistory({
+        organizationId,
+        users: exportedRoster,
+        roster: users,
+        includeUnresolved: hasAdminAccess(user),
+        // Review of #386 (S5): "Unknown person" rows only once the roster has loaded.
+        rosterLoaded,
+        viewerIsOperative: isOperativeMode(user),
+        viewerIsAdmin: hasAdminAccess(user),
+      }),
     ])
       .then(([byRun, exportedRows]) => {
         if (cancelled) return
