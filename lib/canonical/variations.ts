@@ -719,10 +719,80 @@ export type VariationRenumberInputRow = {
   numberHistory?: ReadonlyArray<{ from?: unknown; to?: unknown }> | null
 }
 
-/** Submitted and Closed variations, and any whose number is locked, keep their numbers and do not move (owner 15 Nov). */
+export const VARIATION_STATUS_TOKENS = ['open', 'submitted', 'closed'] as const
+export type VariationStatusToken = (typeof VARIATION_STATUS_TOKENS)[number]
+
+/** open / submitted / closed (any case; `sent` → submitted, `complete(d)` / `done` → closed). Unknown → open. */
+export function normalizeVariationStatus(raw: unknown): VariationStatusToken {
+  const value = text(raw).toLowerCase()
+  if (value === 'submitted' || value === 'sent') return 'submitted'
+  if (value === 'closed' || value === 'complete' || value === 'completed' || value === 'done') return 'closed'
+  return 'open'
+}
+
+/**
+ * Submitted and Closed variations keep their numbers and do not move (owner 15 Nov). 1.63.0 (owner decision 17 Nov,
+ * B): the status decides (`normalizeVariationStatus`, so a legacy `sent` / `complete` / `done` pins too); a stored
+ * `voNumberLocked` no longer pins on its own (it is written with the status, `variationStatusWriteFields`), so a
+ * variation changed back to Open is unpinned and draggable again, even when an older save left the lock behind
+ * (`variationStaleNumberLocks`).
+ */
 export function variationIsPinned(row: VariationRenumberInputRow | null | undefined): boolean {
-  const status = text(row?.status).toLowerCase()
-  return status === 'submitted' || status === 'closed' || status === 'sent' || status === 'complete' || status === 'completed' || status === 'done' || documentBool(row?.voNumberLocked) === true
+  return normalizeVariationStatus(row?.status) !== 'open'
+}
+
+/**
+ * 1.63.0 (§22, bug of 17 Nov): the status write of a variation — `{ status, voNumberLocked }`, written together in ONE
+ * partial update with the app's own `statusHistory` entry and stamps. The status is read with
+ * `normalizeVariationStatus` (the same reader `variationIsPinned` uses, so a legacy word never locks one way and pins
+ * the other); Submitted and Closed lock the number, Open clears the lock, so a reopened variation is unpinned in the
+ * same write and the security rules (which read the stored `voNumberLocked`) accept its next renumber. Before 1.63.0
+ * web kept the lock on reopen.
+ */
+export function variationStatusWriteFields(status: unknown): { status: VariationStatusToken; voNumberLocked: boolean } {
+  const next = normalizeVariationStatus(status)
+  return { status: next, voNumberLocked: next !== 'open' }
+}
+
+/**
+ * 1.63.0: the ids of stored variations that are Open but still carry `voNumberLocked: true` (left by a reopen before
+ * 1.63.0). The rules refuse a number change while that stored lock is true, so before a renumber the app clears it
+ * with its own update (`{ voNumberLocked: false }`, a user action, §1) and only then saves the new order. Deleted rows
+ * are left alone.
+ */
+export function variationStaleNumberLocks(rows: ReadonlyArray<VariationRenumberInputRow> | null | undefined): string[] {
+  return (rows || [])
+    .filter((row) => row && text(row.id) && documentBool(row.isDeleted) !== true)
+    .filter((row) => documentBool(row.voNumberLocked) === true && !variationIsPinned(row))
+    .map((row) => text(row.id))
+}
+
+/**
+ * 1.63.0 (review of #388): the one tracker order — stored `sequence` (missing = 0), then the VO number's value, then
+ * the id (without case). `variationRenumberPlan` reads the stored order with it and every screen that shows the
+ * tracker order (the tracker, the variations list while the tracker is on) sorts with it, so opening the tracker on a
+ * job whose variations were never given positions (no `sequence`, or all the same — the tracker was never switched
+ * on before 1.63.0) plans no number change until someone moves a row. Before, the screen broke ties by creation date
+ * and the plan by number, so the first drop also swapped rows nobody moved.
+ */
+export function compareVariationTrackerOrder(
+  a: Pick<VariationRenumberInputRow, 'id' | 'voNumber' | 'sequence'>,
+  b: Pick<VariationRenumberInputRow, 'id' | 'voNumber' | 'sequence'>
+): number {
+  return (
+    (documentNumber(a.sequence) ?? 0) - (documentNumber(b.sequence) ?? 0) ||
+    variationNumberValue(a.voNumber) - variationNumberValue(b.voNumber) ||
+    normalizeDocumentId(a.id).localeCompare(normalizeDocumentId(b.id))
+  )
+}
+
+/** The ids of the live (not deleted) variations in the tracker order (`compareVariationTrackerOrder`). */
+export function variationTrackerOrder(rows: ReadonlyArray<VariationRenumberInputRow> | null | undefined): string[] {
+  return (rows || [])
+    .filter((row) => row && text(row.id) && documentBool(row.isDeleted) !== true)
+    .slice()
+    .sort(compareVariationTrackerOrder)
+    .map((row) => text(row.id))
 }
 
 export type VariationRenumberPlanRow = {
@@ -760,9 +830,7 @@ export function variationRenumberPlan(input: {
   const padding = Number.isFinite(Number(input?.padding)) && Number(input?.padding) >= 1 ? Number(input?.padding) : DEFAULT_VARIATION_PADDING
   const all = (input?.rows || []).filter((row) => row && text(row.id))
   const live = all.filter((row) => documentBool(row.isDeleted) !== true)
-  const stored = [...live].sort(
-    (a, b) => (documentNumber(a.sequence) ?? 0) - (documentNumber(b.sequence) ?? 0) || variationNumberValue(a.voNumber) - variationNumberValue(b.voNumber)
-  )
+  const stored = [...live].sort(compareVariationTrackerOrder)
   const byKey = new Map(live.map((row) => [normalizeDocumentId(row.id), row]))
   const givenOrder = (input?.order || []).map((id) => normalizeDocumentId(id)).filter((key) => byKey.has(key))
   let refused: string | null = null

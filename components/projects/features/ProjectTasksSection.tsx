@@ -34,6 +34,8 @@ import {
   type ProjectTaskListScope,
 } from '@/lib/tasks/projectTaskFilters'
 import { tasksAssignedToUser } from '@/lib/tasks/taskUtils'
+import { foldTaskFilterPeople, taskPersonIndex } from '@/lib/tasks/taskAssigneePeople'
+import { taskCompletionFields } from '@/lib/canonical/operationsDocuments'
 import type { Project, ProjectTask, ProjectTaskStatus } from '@/types'
 
 export function ProjectTasksSection({ project }: { project: Project }) {
@@ -79,6 +81,21 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
     [managers, managerRoster, organization?.id]
   )
 
+  // Owner decision 17 Nov: a person with several records (a converted ghost's old `operatives` row, a duplicate row,
+  // a row linked to an account, a managers row) is one person in every task picker, filter and assignee list.
+  const personIndex = useMemo(
+    () => taskPersonIndex({ managers, operatives, roster: managerRoster }),
+    [managers, operatives, managerRoster]
+  )
+  const filterOperatives = useMemo(
+    () => foldTaskFilterPeople(operatives, 'operative', personIndex),
+    [operatives, personIndex]
+  )
+  const filterManagers = useMemo(
+    () => foldTaskFilterPeople(assignableManagers, 'manager', personIndex),
+    [assignableManagers, personIndex]
+  )
+
   const projectTasks = useMemo(
     () => tasks.filter((t) => t.projectId.toLowerCase() === project.id.toLowerCase()),
     [tasks, project.id]
@@ -105,10 +122,10 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
   const filterOpts = useMemo(() => ({ assignedTaskIds }), [assignedTaskIds])
 
   const visibleBase = useMemo(() => {
-    const filtered = applyJobTaskFilter(projectTasks, taskFilter)
+    const filtered = applyJobTaskFilter(projectTasks, taskFilter, personIndex.keyOf)
     if (canViewAll) return filtered
     return filtered.filter((task) => assignedTaskIds.has(task.id))
-  }, [canViewAll, projectTasks, taskFilter, assignedTaskIds])
+  }, [canViewAll, projectTasks, taskFilter, assignedTaskIds, personIndex])
 
   const scoped = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -181,8 +198,11 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
     await saveTask({
       ...task,
       status,
-      completedAt: status === 'Completed' ? task.completedAt || new Date() : undefined,
-      completedBy: status === 'Completed' ? task.completedBy || user?.email : undefined,
+      // Rulebook 1.59.0 `taskCompletionFields`: kept when already completed, set on completing, cleared otherwise.
+      ...(() => {
+        const fields = taskCompletionFields(task, status, { completedBy: user?.email ?? '', now: new Date() })
+        return { completedAt: fields.completedAt ?? undefined, completedBy: fields.completedBy ?? undefined }
+      })(),
       updatedAt: new Date(),
     })
   }
@@ -322,6 +342,7 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
               task={task}
               operatives={operatives}
               managers={managers}
+              personIndex={personIndex}
               canEdit={canEdit}
               onOpen={() => setOpenTask(task)}
               onEdit={() => {
@@ -336,7 +357,7 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
       {showForm && (
         <AddProjectTaskSheet
           project={project}
-          people={{ operatives, managers: assignableManagers }}
+          people={{ operatives, managers: assignableManagers, allManagers: managers, roster: managerRoster }}
           existing={editing}
           onSave={handleSaveForm}
           onClose={() => {
@@ -349,11 +370,11 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
       {showFilter && (
         <ProjectTaskFilterSheet
           filter={taskFilter}
-          operatives={operatives}
-          managers={assignableManagers}
+          operatives={filterOperatives}
+          managers={filterManagers}
           onApply={(next) => {
-            if (next.type === 'operative' && !next.operativeId) next.operativeId = operatives[0]?.id
-            if (next.type === 'manager' && !next.managerId) next.managerId = assignableManagers[0]?.id
+            if (next.type === 'operative' && !next.operativeId) next.operativeId = filterOperatives[0]?.id
+            if (next.type === 'manager' && !next.managerId) next.managerId = filterManagers[0]?.id
             setTaskFilter(next)
           }}
           onClose={() => setShowFilter(false)}
@@ -365,6 +386,7 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
           task={liveOpenTask}
           operatives={operatives}
           managers={managers}
+          personIndex={personIndex}
           canEdit={canEdit}
           canDelete={canEdit}
           siteAuditHref={

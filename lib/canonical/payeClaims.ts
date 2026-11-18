@@ -48,6 +48,7 @@ import type { NotificationRosterMember } from './notificationRecipients'
 import { priceWorkJobNumberError, priceWorkJobNumberText, PRICE_WORK_JOB_NUMBER_MAX } from './priceWorkJobNumber'
 import type { TimesheetEntriesDocument } from './workDocumentReaders'
 import { reportGeneratedText } from './reportHeader'
+import { parseTimesheetRevisionDocId } from './timesheetPeriod'
 
 // MARK: - Constants and copy
 
@@ -712,9 +713,27 @@ export type TimesheetClaimRow = {
 }
 
 /**
+ * 1.57.0 (17 Nov): of the versions of one timesheet (an original and its `…_rev{N}` revisions, §8), only the latest —
+ * a revision copies the entries, so reading every version listed each entry twice. Sheets without revisions, and ids
+ * that are not timesheet ids, are kept as they are, in their order.
+ */
+export function timesheetClaimLatestSheets<T extends { id: string }>(sheets: ReadonlyArray<T> | null | undefined): T[] {
+  const latest = new Map<string, number>()
+  for (const sheet of sheets || []) {
+    const ref = parseTimesheetRevisionDocId(sheet?.id)
+    if (!ref) continue
+    latest.set(ref.baseDocumentId, Math.max(latest.get(ref.baseDocumentId) ?? 0, ref.revision))
+  }
+  return (sheets || []).filter((sheet) => {
+    const ref = parseTimesheetRevisionDocId(sheet?.id)
+    return !ref || latest.get(ref.baseDocumentId) === ref.revision
+  })
+}
+
+/**
  * A self-employed person's price work or expense entries from their timesheets (`parseTimesheetEntries` per sheet),
  * in the same row shape, for the range (expenses by date; price work by overlap of start–end), oldest first. Read-only:
- * their figures stay on My Timesheets.
+ * their figures stay on My Timesheets. 1.57.0: each pay run's latest version only (`timesheetClaimLatestSheets`).
  */
 export function timesheetClaimRows(
   sheets: ReadonlyArray<{ id: string; entries: TimesheetEntriesDocument }> | null | undefined,
@@ -724,7 +743,7 @@ export function timesheetClaimRows(
   if (!range || !isDayKey(range.start) || !isDayKey(range.end)) return []
   const out: TimesheetClaimRow[] = []
   const seen = new Set<string>()
-  for (const sheet of sheets || []) {
+  for (const sheet of timesheetClaimLatestSheets(sheets)) {
     if (kind === 'expense') {
       for (const entry of sheet.entries.expenseEntries) {
         const day = entry.dayKey || ''

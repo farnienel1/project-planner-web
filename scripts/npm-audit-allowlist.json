@@ -1,0 +1,7 @@
+[
+  {
+    "id": "GHSA-fc5q-39xc-vjpf",
+    "reason": "dev-only (lint/TS tooling); no patched picomatch on npm as of 17 Nov 2026",
+    "expires": "2026-12-17"
+  }
+]

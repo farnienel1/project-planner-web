@@ -19,6 +19,8 @@ import { isMfaGateOpen, isMfaRequiredError, mfaVerifyHref, safePostMfaPath } fro
 import { HoneypotField } from '@/components/security/HoneypotField'
 import { postPublicForm } from '@/lib/security/publicFormClient'
 import { LegalLinks } from '@/components/legal/LegalLinks'
+import { PasskeySignIn } from '@/components/auth/PasskeySignIn'
+import { passkeysEnabled } from '@/lib/auth/passkeys/passkeyConfig'
 
 export function LoginBrandScreen() {
   const router = useRouter()
@@ -182,7 +184,7 @@ export function LoginBrandScreen() {
               Email
               <input
                 type="email"
-                autoComplete="username"
+                autoComplete={passkeysEnabled() ? 'username webauthn' : 'username'}
                 inputMode="email"
                 placeholder="your@email.com"
                 value={email}
@@ -229,6 +231,7 @@ export function LoginBrandScreen() {
               {submitting ? 'Signing in…' : 'Sign In'}
             </button>
           </form>
+          <PasskeySignIn next={nextPath} autofill onError={setLocalError} />
 
           <p className="muted small mt-[18px] text-center">
             New company?{' '}

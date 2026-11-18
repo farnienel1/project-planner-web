@@ -403,6 +403,8 @@ const NO_BOOKING_CHANGE: SignedTimesheetBookingChanges = {
   removedBookingIds: [],
   message: null,
   reviewerMessage: null,
+  snapshotGapBookingIds: [],
+  snapshotGapOnly: false,
 }
 
 /**

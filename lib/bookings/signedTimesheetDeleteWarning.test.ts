@@ -133,3 +133,16 @@ test('signedTimesheetWarningForBookings: any one replaced booking on a signed da
   })
   assert.equal(warning, BOOKING_DELETE_SIGNED_TIMESHEET_WARNING)
 })
+
+test('review of #363: a move is checked for the old booking day and, when the day or person changed, the new one', async () => {
+  const { signedTimesheetMoveTargets } = await import('@/lib/bookings/signedTimesheetDeleteWarning')
+  const tz = 'Europe/London'
+  const before = { personId: 'u1', date: new Date('2026-11-10T00:00:00Z') }
+  // Same person, same day: one check (the deleted booking's).
+  assert.deepEqual(signedTimesheetMoveTargets(before, { personId: 'U1', date: new Date('2026-11-10T09:00:00Z') }, tz), [before])
+  // Day changed: both days.
+  const after = { personId: 'u1', date: new Date('2026-11-17T00:00:00Z') }
+  assert.deepEqual(signedTimesheetMoveTargets(before, after, tz), [before, after])
+  // Old booking not loaded: the new day only.
+  assert.deepEqual(signedTimesheetMoveTargets(null, after, tz), [after])
+})

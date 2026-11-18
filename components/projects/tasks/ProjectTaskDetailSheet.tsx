@@ -14,9 +14,9 @@ import { uploadPickError } from '@/lib/security/uploadLimits'
 import {
   allAssignedManagerIds,
   allAssignedOperativeIds,
-  personDisplayName,
 } from '@/lib/tasks/projectTaskFilters'
 import { completionFileLabel } from '@/lib/tasks/completionFiles'
+import { taskAssigneeNames, taskPersonIndex, type TaskPersonIndex } from '@/lib/tasks/taskAssigneePeople'
 import type { Manager, Operative, ProjectTask, ProjectTaskStatus } from '@/types'
 import { ReportFileLink } from '@/components/fileReports/ReportFileLink'
 import { safeExternalUrl } from '@/lib/canonical/uploadPolicy'
@@ -25,6 +25,7 @@ export function ProjectTaskDetailSheet({
   task,
   operatives,
   managers,
+  personIndex,
   siteAuditHref,
   onStatusChange,
   onToggleItem,
@@ -38,6 +39,8 @@ export function ProjectTaskDetailSheet({
   task: ProjectTask
   operatives: Operative[]
   managers: Manager[]
+  /** One index for the list (`taskPersonIndex` with the organisation's users documents). */
+  personIndex?: TaskPersonIndex
   siteAuditHref?: string | null
   onStatusChange: (status: ProjectTaskStatus) => void
   onToggleItem: (itemId: string) => void
@@ -57,9 +60,12 @@ export function ProjectTaskDetailSheet({
   const items = task.items || []
   const completed = new Set(task.completedItemIds || [])
   const allTicked = items.length === 0 || items.every((item) => completed.has(item.id))
-  const operativeNames = namesFor(allAssignedOperativeIds(task), operatives)
-  const managerNames = namesFor(allAssignedManagerIds(task), managers)
-  const assigned = [...managerNames, ...operativeNames]
+  // Owner decision 17 Nov: one name per person, however many of their records the task names (`taskAssigneeNames`).
+  const assignedNames = taskAssigneeNames(
+    { managerIds: allAssignedManagerIds(task), operativeIds: allAssignedOperativeIds(task) },
+    { managers, operatives, index: personIndex ?? taskPersonIndex({ managers, operatives }) }
+  )
+  const assigned = assignedNames.map((entry) => entry.name)
   const dueLabel = task.dueDate ? format(task.dueDate, 'd MMM yyyy') : 'No due date'
   const priorityHue =
     task.priority === 'Urgent' || task.priority === 'High' ? 'red' : task.priority === 'Low' ? 'lib' : 'task'
@@ -279,15 +285,6 @@ export function ProjectTaskDetailSheet({
   )
 }
 
-function namesFor(
-  ids: string[],
-  people: { id: string; firstName: string; lastName: string; email: string }[]
-): string[] {
-  return ids
-    .map((id) => people.find((row) => row.id === id))
-    .filter((row): row is { id: string; firstName: string; lastName: string; email: string } => Boolean(row))
-    .map((row) => personDisplayName(row))
-}
 
 function CompleteTaskForm({
   task,

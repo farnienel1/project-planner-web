@@ -1409,3 +1409,51 @@ test('speed: a takeover after an unconfirmed batch re-sends the identical batch 
   assert.equal(batches[1].key, batches[0].key, 'same Resend key')
   assert.equal(batches[1].body, batches[0].body, 'byte-for-byte the same payload, so Resend replays instead of 409')
 })
+
+test('rulebook 1.58.0 material email: a blank or legacy "Custom" brand reads "Manufacturer: N/A"; the plain text has no Brand line', () => {
+  const { buildMaterialRequestEmail, buildPlainTextEmail } = require('./materialRequestEmail')
+  const base = {
+    supplierName: 'Alex Smith', userName: 'Farnie', userEmail: 'farnie@example.com', userPhone: '', userCompany: 'Acme',
+    jobNumber: 'P-104', siteName: 'City Hall', deliveryAddress: '1 High Street',
+    sentAt: new Date('2026-09-20T10:00:00'),
+  }
+  for (const brand of ['', 'Custom', ' CUSTOM ', undefined]) {
+    const context = { ...base, materials: [{ material: 'Clips', quantity: 2, unit: 'Box', brand, productCode: 'C1', notes: '' }] }
+    const { html } = buildMaterialRequestEmail({ context, isQuote: true, sendAsPlainText: false, contactName: 'Alex Smith' })
+    assert.match(html, /Manufacturer: <span[^>]*>N\/A</)
+    assert.doesNotMatch(html, /Custom/i)
+    const body = buildPlainTextEmail(context, true)
+    assert.doesNotMatch(body, /Brand:/)
+    assert.doesNotMatch(body, /Custom/i)
+    assert.match(body, /Code: C1/)
+  }
+  // A real brand still prints.
+  const real = { ...base, materials: [{ material: 'Clips', quantity: 2, unit: 'Box', brand: 'Wago', productCode: '', notes: '' }] }
+  assert.match(buildPlainTextEmail(real, true), /Brand: Wago/)
+})
+
+test('1.59.0 material_request: the first email to a wholesaler address carries the safe-sender box and records it; later ones do not', async () => {
+  const contacts = (known, written) => (base) => ({
+    ...base,
+    knownMaterialContacts: async (_org, emails) => new Set(emails.map((e) => e.toLowerCase()).filter((e) => known.includes(e))),
+    recordMaterialContacts: async (_org, keys) => { written.push(...keys) },
+  })
+  const written = []
+  const first = makeHandler({ reader: contacts([], written) })
+  const res = await call(first.handler, { headers: auth('M'), body: iosMaterialBody({ requestType: 'quote' }) })
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  assert.ok(first.sent[0].html.includes(canonical.MATERIAL_REQUEST_SAFE_SENDER_NOTICE))
+  assert.deepEqual(written, ['wendy@pipes.example'])
+  const again = []
+  const later = makeHandler({ reader: contacts(['wendy@pipes.example'], again) })
+  await call(later.handler, { headers: auth('M'), body: iosMaterialBody({ requestType: 'quote' }) })
+  assert.ok(!later.sent[0].html.includes(canonical.MATERIAL_REQUEST_SAFE_SENDER_NOTICE))
+  assert.deepEqual(again, [])
+  // The contacts could not be read: no box, nothing recorded, the email still goes.
+  const none = []
+  const failed = makeHandler({ reader: (base) => ({ ...base, knownMaterialContacts: async () => { throw new Error('down') }, recordMaterialContacts: async (_o, k) => { none.push(...k) } }) })
+  const res3 = await call(failed.handler, { headers: auth('M'), body: iosMaterialBody({ requestType: 'quote' }) })
+  assert.equal(res3.code, 200)
+  assert.ok(!failed.sent[0].html.includes(canonical.MATERIAL_REQUEST_SAFE_SENDER_NOTICE))
+  assert.deepEqual(none, [])
+})

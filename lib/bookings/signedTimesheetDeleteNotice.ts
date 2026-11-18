@@ -19,7 +19,7 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
-import { bookedPersonTimesheetUserIds, signedTimesheetDeleteWarningFromDocs } from '@/lib/bookings/signedTimesheetDeleteWarning'
+import { bookedPersonTimesheetUserIds, signedTimesheetDeleteWarningFromDocs, signedTimesheetMoveTargets } from '@/lib/bookings/signedTimesheetDeleteWarning'
 
 /** "Booking deleted" — the iOS alert title for this notice (`OfflineStatusBanner`). */
 export const BOOKING_DELETED_NOTICE_TITLE = 'Booking deleted'
@@ -96,3 +96,22 @@ export function announceSignedTimesheetDelete(input: { organizationId: string; p
     if (warning) useBookingDeleteNoticeStore.getState().show(warning)
   })().catch(() => undefined)
 }
+
+/**
+ * Review of #363: a Daily Overview move (labour ↔ manager schedule) deletes the old booking and writes a new one. The
+ * notice is checked for the old booking's day and person (what was deleted) and, when the move changed the day or the
+ * person, for the new one too — shown once, the same text as Delete. `before` is null when the old booking was not in
+ * the loaded list (then only the new day is checked). Never throws.
+ */
+export function announceSignedTimesheetMove(input: {
+  organizationId: string
+  before: { personId: string | null | undefined; date: Date | string | number | null | undefined } | null
+  after: { personId: string | null | undefined; date: Date | string | number | null | undefined }
+}): void {
+  const targets = signedTimesheetMoveTargets(input.before, input.after, organizationZoneOr())
+  // Each check shows the same text in the one notice slot, so two days on signed sheets still show it once.
+  for (const target of targets) {
+    announceSignedTimesheetDelete({ organizationId: input.organizationId, personId: target.personId, date: target.date })
+  }
+}
+

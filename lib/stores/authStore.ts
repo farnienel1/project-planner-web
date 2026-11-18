@@ -9,6 +9,7 @@ import {
   EmailAuthProvider,
   reauthenticateWithCredential,
   updatePassword,
+  signInWithCustomToken,
 } from 'firebase/auth'
 import { deleteDoc, doc, getDoc, onSnapshot, setDoc, updateDoc, Timestamp } from 'firebase/firestore'
 import { seedOrgDefaultDashboard } from '@/lib/dashboard/dashboardLayoutStorage'
@@ -104,6 +105,12 @@ interface AuthState {
   setMfaPending: (value: boolean) => void
   markMfaVerified: () => void
   signIn: (email: string, password: string, opts?: { next?: string }) => Promise<void>
+  /**
+   * Finish a passkey sign-in: the server has checked the passkey and set the MFA pass for its account; sign in to
+   * Firebase with the custom token it returned. Throws MfaRequiredError like `signIn`, so the caller opens /auth/mfa,
+   * whose status check finds the pass, mints the session cookie and goes on to the app.
+   */
+  signInWithPasskey: (customToken: string, opts?: { next?: string }) => Promise<void>
   signUp: (email: string, password: string, organizationName: string) => Promise<void>
   signUpOwner: (password: string) => Promise<void>
   changePassword: (currentPassword: string, nextPassword: string) => Promise<void>
@@ -931,6 +938,50 @@ export const useAuthStore = create<AuthState>((set) => {
           mfaVerified: false,
           mfaStatusKnown: true,
         })
+        const message = error instanceof Error ? error.message : 'Sign in failed'
+        set({ loading: false, error: message })
+        throw error
+      } finally {
+        signingIn = false
+        try {
+          const current = getFirebaseAuth().currentUser
+          if (current && useAuthStore.getState().user?.id !== current.uid) {
+            void loadProfileWithRetries(current).catch((error) => profileLoadFailed(current, error))
+          }
+        } catch {
+          /* Auth is not ready yet. The listener will load the profile. */
+        }
+      }
+    },
+
+    signInWithPasskey: async (customToken: string, opts) => {
+      const nextPath = safePostMfaPath(opts?.next, opts?.next?.startsWith('/developer') ? '/developer' : '/dashboard')
+      signingIn = true
+      writeSignedOutFlag(false)
+      noteWebIdleActivity()
+      try {
+        set({ loading: true, error: null, mfaPending: true, mfaVerified: false, mfaStatusKnown: true, mfaNext: nextPath })
+        const auth = getFirebaseAuth()
+        // Never clear the MFA cookies here: the passkey route has just set the pass for this account.
+        const credential = await signInWithCustomToken(auth, customToken)
+        openMfaGate(credential.user.uid, nextPath)
+        set({
+          firebaseUser: credential.user,
+          mfaPending: true,
+          mfaVerified: false,
+          mfaStatusKnown: true,
+          mfaNext: nextPath,
+          loading: false,
+          error: null,
+        })
+        throw new MfaRequiredError('Finishing your passkey sign-in…')
+      } catch (error: unknown) {
+        if (isMfaRequiredError(error)) {
+          set({ loading: false, error: null, mfaPending: true, mfaVerified: false, mfaStatusKnown: true })
+          throw error
+        }
+        set({ loading: false, mfaPending: false, mfaVerified: false, mfaStatusKnown: true })
+        await clearMfaCookiesOnly()
         const message = error instanceof Error ? error.message : 'Sign in failed'
         set({ loading: false, error: message })
         throw error

@@ -16,6 +16,7 @@ import {
   canOpenWeeklyReport,
   canManageMaterialCatalogue as canonicalCanManageMaterialCatalogue,
   canScheduleOperatives,
+  canManageOperatives as canonicalCanManageOperatives,
 } from '@/lib/canonical'
 import { parseAppUserDocument } from '@/lib/ios-parity/converters'
 import { effectivePermissions, permissionLevelOf } from '@/lib/canonical/permissionLevels'
@@ -322,9 +323,40 @@ export function canManageSiteAuditOperativeVisibility(user: PermissionUser): boo
   return user.isSuperAdmin || flag(user, 'adminAccess') || flag(user, 'manager')
 }
 
+function sameOrganizationId(a: string | undefined, b: string | undefined): boolean {
+  return Boolean(a && b && a.trim().toLowerCase() === b.trim().toLowerCase())
+}
+
+/**
+ * The caller side of firestore.rules `managerMayManageOperative` (an Operatives manager's write on an operative's
+ * users document, delete plan and email claim; the rules' invitation and booking-delete paths read the same flags):
+ *   - `manager` and `operatives` true (or 1) at the TOP level of the caller's home users document, and `operativeMode`
+ *     not — a flag stored only in the `permissions` map does not count (`User.storedTopLevelFlags`);
+ *   - the caller's home users document names the organisation being worked in — an Operatives manager working in
+ *     another company through a membership is refused (`homeOrganizationId` set and different).
+ * A user built without `storedTopLevelFlags` (not read through `parseAppUserDocument`, e.g. a test fixture) falls back
+ * to the parsed toggles.
+ */
+export function operativesManagerWritesAllowed(user: PermissionUser): boolean {
+  if (!user) return false
+  const top = user.storedTopLevelFlags
+  const flagsOk = top
+    ? top.manager && top.operatives && !top.operativeMode
+    : user.permissions?.manager === true && user.permissions?.operatives === true && user.permissions?.operativeMode !== true
+  if (!flagsOk) return false
+  if (user.homeOrganizationId && !sameOrganizationId(user.homeOrganizationId, user.organizationId)) return false
+  return true
+}
+
+/**
+ * A manager (not an admin, not an operative) who may add, edit, deactivate and delete operatives: rulebook
+ * `canManageOperatives` (§11) on a manager-level account, and only where the security rules accept it
+ * (`operativesManagerWritesAllowed`), so the screens never offer a write the rules refuse. Viewing the Operatives page
+ * is `canViewOperatives`.
+ */
 export function isActingManagerOperativeManagementOnly(user: PermissionUser): boolean {
-  if (!user || isOperativeMode(user) || hasAdminAccess(user)) return false
-  return flag(user, 'manager') && flag(user, 'operatives')
+  if (!user || permissionLevelOf(user) !== 'manager') return false
+  return flag(user, 'manager') && canonicalCanManageOperatives(user) && operativesManagerWritesAllowed(user)
 }
 
 export function canViewReports(user: PermissionUser): boolean {
@@ -403,6 +435,17 @@ export function canAccessMyTimesheets(user: PermissionUser): boolean {
   return normalizeEmploymentType(user.employmentType) === 'self_employed'
 }
 
+/**
+ * A roster member's role for the timesheet rules (`userTimesheetSubjects`, `exportedTimesheetHistorySubjects`). A
+ * person with no level flag at all reads as manager level (rulebook §11, 1.23.1: `permissionLevelOf`), so they are a
+ * timesheet user for an admin like any other manager; before, `staffAccountRole` gave them no role and their sheets
+ * were left off User Timesheets and the Exported list. Members only — the viewer's own access is unchanged.
+ */
+function timesheetMemberRole(member: NonNullable<PermissionUser>): StaffAccountRole {
+  const role = staffAccountRole(member)
+  return permissionLevelOf(member) === 'manager' ? { ...role, isManager: true } : role
+}
+
 function userTimesheetAccessInput(
   user: NonNullable<PermissionUser>,
   orgUsers: Array<NonNullable<PermissionUser>>
@@ -417,7 +460,7 @@ function userTimesheetAccessInput(
       id: member.id,
       email: member.email,
       isActive: member.isActive !== false,
-      role: staffAccountRole(member),
+      role: timesheetMemberRole(member),
       assignedManagerUserIds: member.assignedManagerUserIds ?? [],
       assignedManagerUserId: member.assignedManagerUserId ?? null,
       hasNoLineManager: member.hasNoLineManager === true,
@@ -513,4 +556,24 @@ export function getManageUsersLabel(user: PermissionUser, _organization?: unknow
 export function getAddUserLabel(user: PermissionUser): string {
   if (canManageUsers(user)) return 'Add user'
   return 'Add operative'
+}
+
+/**
+ * Where a viewer manages people (owner 17 Nov: one Operatives page). Admins: Manage users
+ * (`/dashboard/settings/users`, every level). Anyone else who may open the Operatives page (`canViewOperatives`, or
+ * an Operatives manager): `/dashboard/operatives` — Manage users redirects them there and the sidebar shows only that
+ * entry. Anyone else: none.
+ */
+export function peopleManagementHref(user: PermissionUser): string | null {
+  if (canManageUsers(user)) return '/dashboard/settings/users'
+  if (canManageOperativesOnly(user) || canViewOperatives(user)) return '/dashboard/operatives'
+  return null
+}
+
+/**
+ * The Add button on a people page: Manage users (`all`, admins) or the Operatives page (`operatives`: anyone who may
+ * invite an operative — admins and Operatives managers, "Add operative" for the latter, `getAddUserLabel`).
+ */
+export function manageUsersAddButtonShown(scope: 'all' | 'operatives', user: PermissionUser): boolean {
+  return scope === 'operatives' ? canInviteOperatives(user) : canManageUsers(user)
 }

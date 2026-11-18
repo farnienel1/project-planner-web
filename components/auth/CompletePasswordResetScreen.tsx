@@ -9,6 +9,8 @@ import { AppLogoMark } from '@/components/ui/AppLogoMark'
 import { awaitAppCheckToken, ensureAppCheck, initializedAppCheck } from '@/lib/firebase/appCheck'
 import { ensureFirebaseApp, getFirebaseAuth } from '@/lib/firebase/ensureFirebase'
 import { HoneypotField } from '@/components/security/HoneypotField'
+import { PASSKEYS_MAYBE_REMOVED_NOTICE, reportPasswordChanged } from '@/lib/auth/passkeys/passkeyClient'
+import { passkeysEnabled } from '@/lib/auth/passkeys/passkeyConfig'
 import { postPublicForm } from '@/lib/security/publicFormClient'
 import { ApplyEmailActionScreen } from '@/components/auth/ApplyEmailActionScreen'
 import {
@@ -93,6 +95,8 @@ export function CompletePasswordResetScreen() {
       if (!gated.proceed) return
       await awaitAppCheckToken(initializedAppCheck())
       await confirmPasswordReset(getFirebaseAuth(), action.oobCode, password)
+      // Passkeys made before this reset stop working; ask the server to remove them now (best effort).
+      await reportPasswordChanged({ email })
       setDone(true)
     } catch (err) {
       setError(formatPasswordResetError(err))
@@ -121,6 +125,7 @@ export function CompletePasswordResetScreen() {
               </div>
               <h1 className="mt-4 text-[28px] font-extrabold">Password updated</h1>
               <p className="muted mt-2">Sign in with your new password.</p>
+              {passkeysEnabled() ? <p className="muted mt-2">{PASSKEYS_MAYBE_REMOVED_NOTICE}</p> : null}
               <Link href={loginHref} className="btn primary block mt-6">
                 {loginHref === '/developer-login' ? 'Developer login' : 'Sign in'}
               </Link>

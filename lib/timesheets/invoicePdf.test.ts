@@ -50,3 +50,24 @@ test('timesheetInvoicePdfFileName uses iOS Invoice-Name-timestamp.pdf', () => {
     'Invoice-Ada_Booked-1758384000.pdf'
   )
 })
+
+test('review of #363: a row taller than a page continues on the next page; every text line stays on a page', () => {
+  const details = Array.from({ length: 120 }, (_, i) => `part${i} 07:00–16:00 · 1.00 day × £225.00/day = £225.00`).join(' ')
+  const pdf = buildTimesheetInvoicePdf({
+    organizationName: 'Acme',
+    subject: { key: 'u1', name: 'Ada', kind: 'operative' },
+    weekStart: new Date('2026-11-01T00:00:00Z'),
+    weekEnd: new Date('2026-11-15T00:00:00Z'),
+    amount: 225,
+    timeZone: 'Europe/London',
+    generatedAt: new Date('2026-11-17T08:30:00Z'),
+    lines: [{ date: 'Tue 10 Nov', jobNumber: 'C646', projectName: '1 Carnaby Street', details, description: '', amount: 225 }],
+  })
+  const text = latin1(pdf)
+  assert.ok((text.match(/\/Type \/Page\b/g) ?? []).length >= 2, 'more than one page')
+  assert.match(text, /part119 /)
+  assert.match(text, /\(\\\(cont\.\\\)\) Tj/)
+  assert.ok((text.match(/\(Tue 10 Nov\) Tj/g) ?? []).length >= 2, 'the date repeats on the next page')
+  // No text is placed below the page's bottom margin (y below 40 points from the bottom).
+  for (const [, y] of text.matchAll(/ ([\d.]+) Td \(/g)) assert.ok(Number(y) >= 30, `text at y=${y}`)
+})

@@ -58,7 +58,7 @@ function itemsTableHTML(materials, isQuote) {
   }
   return materials.map((material) => {
     const name = escapeHtml(material.material);
-    const manufacturer = escapeHtml(trim(material.brand) || "\u2014");
+    const manufacturer = escapeHtml(canonical.materialBrandText(material.brand));
     const part = trim(material.productCode);
     const partHTML = part ? ` \xB7 Part: <span class="mr-muted" style="color:#475569;font-weight:600;">${escapeHtml(part)}</span>` : "";
     const notes = trim(material.notes);
@@ -115,7 +115,7 @@ function buildPlainTextEmail(context, isQuote) {
   const materialLines = context.materials.length === 0 ? "- (No materials listed)" : context.materials.map((item, index) => {
     const qty = lineText(item);
     const details = [
-      trim(item.brand) ? `Brand: ${trim(item.brand)}` : "",
+      canonical.materialBrandStored(item.brand) ? `Brand: ${canonical.materialBrandStored(item.brand)}` : "",
       trim(item.productCode) ? `Code: ${trim(item.productCode)}` : "",
       trim(item.notes) ? `Details: ${trim(item.notes)}` : ""
     ].filter(Boolean);
@@ -343,9 +343,23 @@ function buildMaterialRequestEmail(params) {
   const context = { ...params.context, supplierName: greeting };
   const subject = params.isQuote ? quoteSubject(params.context.jobNumber, params.context.userCompany) : orderSubject(params.context.jobNumber, params.context.userCompany);
   if (params.sendAsPlainText) {
-    return { subject, html: plainTextAsSimpleHTML(buildPlainTextEmail(context, params.isQuote)) };
+    return { subject, html: withSafeSenderNotice(plainTextAsSimpleHTML(buildPlainTextEmail(context, params.isQuote)), params.safeSenderNotice) };
   }
-  return { subject, html: buildStyledEmail(context, params.isQuote) };
+  return { subject, html: withSafeSenderNotice(buildStyledEmail(context, params.isQuote), params.safeSenderNotice) };
+}
+
+/**
+ * Rulebook 1.59.0 §16: the red safe-sender box at the very top of the first email to a wholesaler address (the same
+ * markup as web `withSafeSenderNotice`; the handler decides with `materialRequestSafeSenderNotice`).
+ */
+function withSafeSenderNotice(html, notice) {
+  const text = typeof notice === 'string' ? notice.trim() : '';
+  if (!text) return html;
+  const box = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 12px 0;"><tr><td bgcolor="#FEE2E2" style="background:#FEE2E2;background-color:#FEE2E2;border:2px solid #DC2626;border-radius:10px;padding:14px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:1.45;font-weight:700;color:#991B1B;">${escapeHtml(text)}</td></tr></table>`;
+  const at = html.search(/<body[^>]*>/i);
+  if (at < 0) return box + html;
+  const end = html.indexOf('>', at) + 1;
+  return html.slice(0, end) + '\n' + box + html.slice(end);
 }
 
 module.exports = {
@@ -356,4 +370,5 @@ module.exports = {
   plainTextAsSimpleHTML,
   quoteSubject,
   supplierGreeting,
+  withSafeSenderNotice,
 }

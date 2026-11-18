@@ -5,7 +5,7 @@
 'use client'
 
 import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
-import { dayKeyInOrganizationZone, materialSendLineText } from '@/lib/canonical'
+import { dayKeyInOrganizationZone, materialBrandStored, materialSendLineText } from '@/lib/canonical'
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { BuildingOffice2Icon, PlusIcon } from '@heroicons/react/24/solid'
@@ -540,7 +540,7 @@ function HistorySheet({
                         <div>
                           <p className="font-medium">{line.name}</p>
                           <p className="text-[13px] text-[var(--ink3)]">
-                            {[line.brand, line.productCode].filter(Boolean).join(' · ') || '—'}
+                            {[materialBrandStored(line.brand), line.productCode].filter(Boolean).join(' · ') || '—'}
                           </p>
                         </div>
                         <p className="shrink-0 font-semibold">

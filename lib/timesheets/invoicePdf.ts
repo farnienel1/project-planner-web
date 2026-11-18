@@ -11,6 +11,7 @@ import { formatStampInZone } from '@/lib/orgTime/zoneTime'
 import type { TimesheetSubject } from '@/lib/timesheets/timesheetWeekUtils'
 import type { TimesheetInvoiceLine } from '@/lib/timesheets/timesheetExport'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
+import { pdfBlob } from '@/lib/pdf/downloadPdf'
 
 const PAGE_W = 595
 const PAGE_H = 842
@@ -225,20 +226,45 @@ export function buildTimesheetInvoicePdf(input: InvoicePdfContext): Uint8Array {
     y += 24
   } else {
     for (const line of lines) {
-      ensure(50)
+      // 17 Nov (owner): the details wrap onto as many lines as they need — never cut off with "…", so the sum
+      // ("0.29 days × £225.00/day = £66.18") is always readable.
+      const nameLines = wrapPdfText(line.projectName || line.description, INVOICE_DETAILS_WIDTH, 11.5, true)
+      const detailLines = wrapPdfText(line.details || line.description, INVOICE_DETAILS_WIDTH, 9.5)
+      // The project name wraps too (review of #363: never over the amount); the details start under its last line.
+      const detailsOffset = 34 + 14 * (nameLines.length - 1)
+      const rowHeight = Math.max(50, detailsOffset + 12 * (detailLines.length - 1) + 16)
+      // Review of #363: a row taller than a page continues on the next page (line by line), never off the bottom.
+      ensure(Math.min(rowHeight, PAGE_H - 40 - 60))
+      const rowTop = y
       stream += rgbOf(INVOICE_PDF_STYLE.hairline)
       stream += rect(MARGIN, top(y + 0.8), tableWidth, 0.8, true)
       stream += rgbOf(INVOICE_PDF_STYLE.navy)
       stream += text(line.date, MARGIN + 10, y + 18, 10.5, true)
       stream += rgbOf(INVOICE_PDF_STYLE.slate)
-      stream += text(line.jobNumber || '—', MARGIN + 10, y + 32, 9.5)
-      stream += rgbOf(INVOICE_PDF_STYLE.navy)
-      stream += text(line.projectName || line.description, MARGIN + 84, y + 18, 11.5, true, 190)
-      stream += rgbOf(INVOICE_PDF_STYLE.slate)
-      stream += text(line.details || line.description, MARGIN + 84, y + 34, 9.5, false, 190)
+      stream += text(line.jobNumber || '—', MARGIN + 10, y + 32, 9.5, false, 70)
       stream += rgbOf(INVOICE_PDF_STYLE.navy)
       stream += text(money(formatCurrency(line.amount, currencyCode)), MARGIN + tableWidth - 64, y + 26, 11.5, true, 56)
-      y += 50
+      let cursor = y + 18
+      let continued = false
+      const placeLine = (value: string, size: number, bold: boolean, color: readonly [number, number, number], step: number) => {
+        if (cursor + 4 > PAGE_H - 40) {
+          flushPage()
+          continued = true
+          cursor = y + 18
+          // The row carries on: its date and job number again, marked "(cont.)".
+          stream += rgbOf(INVOICE_PDF_STYLE.navy)
+          stream += text(line.date, MARGIN + 10, y + 18, 10.5, true, 70)
+          stream += rgbOf(INVOICE_PDF_STYLE.slate)
+          stream += text(line.jobNumber || '—', MARGIN + 10, y + 32, 9.5, false, 70)
+          stream += text('(cont.)', MARGIN + 10, y + 45, 9.5)
+        }
+        stream += rgbOf(color)
+        stream += text(value, MARGIN + 84, cursor, size, bold)
+        cursor += step
+      }
+      nameLines.forEach((name, index) => placeLine(name, 11.5, true, INVOICE_PDF_STYLE.navy, index === nameLines.length - 1 ? 16 : 14))
+      detailLines.forEach((detail) => placeLine(detail, 9.5, false, INVOICE_PDF_STYLE.slate, 12))
+      y = continued ? cursor + 4 : rowTop + rowHeight
     }
   }
 
@@ -277,16 +303,72 @@ function rect(x: number, y: number, w: number, h: number, fillShape: boolean): s
 }
 
 function text(value: string, x: number, fromTop: number, size: number, bold = false, maxWidth?: number): string {
-  const clipped = maxWidth ? clip(value, maxWidth, size) : value
+  const clipped = maxWidth ? clip(value, maxWidth, size, bold) : value
   const y = PAGE_H - fromTop
   const font = bold ? '/F2' : '/F1'
   return `BT ${font} ${n(size)} Tf ${n(x)} ${n(y)} Td (${pdfString(clipped)}) Tj ET\n`
 }
 
-function clip(value: string, maxWidth: number, size: number): string {
-  const maxChars = Math.max(8, Math.floor(maxWidth / (size * 0.5)))
-  if (value.length <= maxChars) return value
-  return `${value.slice(0, maxChars - 1)}…`
+/**
+ * The width the project name and the details may use: from the details column (x = MARGIN + 84) to 10 pt before the
+ * amount (x = MARGIN + tableWidth − 64), less a further 11 pt margin (review of #363: text never runs into the amount).
+ */
+const INVOICE_DETAILS_WIDTH = 370
+
+/** Helvetica / Helvetica-Bold advance widths (Adobe AFM, 1/1000 em) for ASCII 32–126. */
+const HELVETICA_WIDTHS = [278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,556,333,556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,334,260,334,584]
+const HELVETICA_BOLD_WIDTHS = [278,333,474,556,556,889,722,238,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,333,333,584,584,584,611,975,722,722,722,722,667,611,778,722,278,556,722,611,833,722,778,667,778,722,667,611,722,667,944,667,667,611,333,278,333,584,556,333,556,611,556,611,556,333,611,611,278,278,556,278,889,611,611,611,611,389,556,333,611,556,778,556,556,500,389,280,389,584]
+/** WinAnsi characters outside ASCII the invoice prints (both weights); anything else is measured as a full em. */
+const HELVETICA_EXTRA_WIDTHS: Record<string, number> = { '£': 556, '–': 556, '—': 1000, '×': 584, '…': 1000, '·': 278, '€': 556, '’': 222, '‘': 222 }
+
+/** The printed width in points of `value` at font `size` (Helvetica, or Helvetica-Bold), from the font's own metrics. */
+export function pdfTextWidth(value: string, size: number, bold = false): number {
+  const table = bold ? HELVETICA_BOLD_WIDTHS : HELVETICA_WIDTHS
+  let units = 0
+  for (const char of String(value ?? '')) {
+    const code = char.codePointAt(0) ?? 0
+    units += code >= 32 && code <= 126 ? table[code - 32] : HELVETICA_EXTRA_WIDTHS[char] ?? 1000
+  }
+  return (units * size) / 1000
+}
+
+/**
+ * Splits text into lines that fit `maxWidth` at font `size`, measured with the font's own metrics (`pdfTextWidth`),
+ * at spaces where it can; a word longer than a line is split by character. Never drops a character.
+ */
+export function wrapPdfText(value: string, maxWidth: number, size: number, bold = false): string[] {
+  const fits = (line: string) => pdfTextWidth(line, size, bold) <= maxWidth
+  const words = String(value ?? '').split(/\s+/).filter(Boolean)
+  const lines: string[] = []
+  let current = ''
+  for (const word of words) {
+    const joined = current ? `${current} ${word}` : word
+    if (fits(joined)) {
+      current = joined
+      continue
+    }
+    if (current) lines.push(current)
+    current = ''
+    // By code point, never inside a surrogate pair.
+    let rest = Array.from(word)
+    while (!fits(rest.join(''))) {
+      let cut = 1
+      while (cut < rest.length && fits(rest.slice(0, cut + 1).join(''))) cut += 1
+      lines.push(rest.slice(0, cut).join(''))
+      rest = rest.slice(cut)
+    }
+    current = rest.join('')
+  }
+  if (current) lines.push(current)
+  return lines.length > 0 ? lines : ['']
+}
+
+function clip(value: string, maxWidth: number, size: number, bold = false): string {
+  if (pdfTextWidth(value, size, bold) <= maxWidth) return value
+  const chars = Array.from(value)
+  let cut = chars.length
+  while (cut > 1 && pdfTextWidth(`${chars.slice(0, cut).join('')}…`, size, bold) > maxWidth) cut -= 1
+  return `${chars.slice(0, cut).join('')}…`
 }
 
 function n(value: number): string {
@@ -374,34 +456,5 @@ function concat(chunks: Uint8Array[]): Uint8Array {
 }
 
 export function timesheetPdfBlob(bytes: Uint8Array): Blob {
-  const copy = new ArrayBuffer(bytes.byteLength)
-  new Uint8Array(copy).set(bytes)
-  return new Blob([copy], { type: 'application/pdf' })
-}
-
-export function downloadTimesheetPdf(bytes: Uint8Array, filename: string): void {
-  const url = URL.createObjectURL(timesheetPdfBlob(bytes))
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
-}
-
-/** iOS InvoiceGeneratedSuccessSheet → UIActivityViewController; download if share is unavailable. */
-export async function shareTimesheetPdf(bytes: Uint8Array, filename: string): Promise<void> {
-  const file = new File([timesheetPdfBlob(bytes)], filename, { type: 'application/pdf' })
-  const data = { files: [file], title: filename }
-  if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-    const allowed = typeof navigator.canShare === 'function' ? navigator.canShare(data) : true
-    if (allowed) {
-      try {
-        await navigator.share(data)
-        return
-      } catch (error) {
-        if (error instanceof Error && error.name === 'AbortError') return
-      }
-    }
-  }
-  downloadTimesheetPdf(bytes, filename)
+  return pdfBlob(bytes)
 }

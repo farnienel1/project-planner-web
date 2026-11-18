@@ -12,6 +12,7 @@ import {
 } from '@heroicons/react/24/solid'
 import { FeatureCard, StatusPill } from '@/components/projects/features/featureUi'
 import { allAssignedManagerIds, allAssignedOperativeIds, isTaskOverdue } from '@/lib/tasks/projectTaskFilters'
+import { taskAssigneeNames, taskPersonIndex, type TaskPersonIndex } from '@/lib/tasks/taskAssigneePeople'
 import type { Manager, Operative, ProjectTask, ProjectTaskPriority, ProjectTaskStatus } from '@/types'
 
 const PRIORITY_BG: Record<ProjectTaskPriority, string> = {
@@ -27,20 +28,12 @@ const STATUS_TONE: Record<ProjectTaskStatus, 'amber' | 'blue' | 'green'> = {
   Completed: 'green',
 }
 
-function namesFor(
-  ids: string[],
-  people: { id: string; firstName: string; lastName: string; email: string }[]
-): string[] {
-  return ids
-    .map((id) => people.find((row) => row.id === id))
-    .filter((row): row is { id: string; firstName: string; lastName: string; email: string } => Boolean(row))
-    .map((row) => `${row.firstName} ${row.lastName}`.trim() || row.email)
-}
 
 export function ProjectTaskRow({
   task,
   operatives,
   managers,
+  personIndex,
   canEdit,
   onOpen,
   onEdit,
@@ -48,12 +41,19 @@ export function ProjectTaskRow({
   task: ProjectTask
   operatives: Operative[]
   managers: Manager[]
+  /** One index for the list (`taskPersonIndex` with the organisation's users documents). */
+  personIndex?: TaskPersonIndex
   canEdit: boolean
   onOpen: () => void
   onEdit: () => void
 }) {
-  const operativeNames = namesFor(allAssignedOperativeIds(task), operatives)
-  const managerNames = namesFor(allAssignedManagerIds(task), managers)
+  // Owner decision 17 Nov: one name per person, however many of their records the task names (`taskAssigneeNames`).
+  const assignedNames = taskAssigneeNames(
+    { managerIds: allAssignedManagerIds(task), operativeIds: allAssignedOperativeIds(task) },
+    { managers, operatives, index: personIndex ?? taskPersonIndex({ managers, operatives }) }
+  )
+  const operativeNames = assignedNames.filter((entry) => entry.kind === 'operative').map((entry) => entry.name)
+  const managerNames = assignedNames.filter((entry) => entry.kind === 'manager').map((entry) => entry.name)
   const overdue = isTaskOverdue(task)
 
   return (

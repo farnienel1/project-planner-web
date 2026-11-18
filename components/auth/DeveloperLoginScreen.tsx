@@ -13,6 +13,7 @@ import { isMfaGateOpen, isMfaRequiredError, mfaVerifyHref } from '@/lib/auth/mfa
 import { HoneypotField } from '@/components/security/HoneypotField'
 import { postPublicForm } from '@/lib/security/publicFormClient'
 import { consumeWebIdleExpiredFlag } from '@/lib/auth/webIdleSession'
+import { PasskeySignIn } from '@/components/auth/PasskeySignIn'
 
 const MIN_PASSWORD = 10
 
@@ -257,6 +258,7 @@ export function DeveloperLoginScreen() {
                     : 'Sign in'}
             </button>
           </form>
+          {mode === 'sign-in' ? <PasskeySignIn next="/developer" ownerOnly onError={setLocalError} /> : null}
 
           <div className="muted small mt-[18px] space-y-2 text-center">
             {mode !== 'create' ? (

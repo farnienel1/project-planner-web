@@ -37,6 +37,7 @@ import { orgMembershipWriteFields } from '../lib/canonical/orgMembership.ts'
 import { writeMetadataFields } from '../lib/canonical/writeMetadata.ts'
 import { inviteMembershipWrites } from '../lib/canonical/inviteAccept.ts'
 import { ghostCreateWrites } from '../lib/canonical/ghostOperatives.ts'
+import { warningDismissDocument } from '../lib/warnings/warningDismiss.ts'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const rules = readFileSync(path.join(root, 'firestore.rules'), 'utf8')
@@ -411,8 +412,12 @@ test('a stale email pointer can be reclaimed, but that alone does not let a non-
     ageConfirmedAt: Timestamp.now(),
   }
   await assertFails(setDoc(doc(db, 'users', uid), { ...profile, role: 'admin' }))
-  await assertSucceeds(setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: uid }))
-  // The claim now names this account, but company A's members map does not list it.
+  // 1.64.0: a person with no tie to the organisation (claims, members map, membership or users document) cannot claim it.
+  await assertFails(setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: uid }))
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG_A, 'userEmails', email), { userId: uid })
+  })
+  // Even with the claim naming this account, company A's members map does not list it.
   await assertFails(setDoc(doc(db, 'users', uid), { ...profile, role: 'admin' }))
   await assertFails(setDoc(doc(db, 'users', uid), profile))
 })
@@ -1280,6 +1285,35 @@ test('warningResolutions: a manager writes their own approval in their company o
   await assertSucceeds(deleteDoc(doc(await authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'warningResolutions', key)))
 })
 
+test('warningResolutions: the web Dismiss document (warningDismissDocument, server times): a manager may, an operative may not (#372)', async () => {
+  const MANAGER_DISMISS = 'manager-a-dismiss'
+  const managerEmail = `${MANAGER_DISMISS}@test.com`
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', MANAGER_DISMISS), {
+      email: managerEmail,
+      organizationId: ORG_A,
+      role: 'manager',
+      manager: true,
+      permissions: { manager: true, operativeMode: false },
+    })
+  })
+  const key = ['materials', 'job1', '2026-11-18'].join('-')
+  // Exactly what dismissWarningResolution writes: the rulebook fields plus server-time resolvedAt / updatedAt.
+  const shape = (uid: string) => {
+    const write = warningDismissDocument({ resolutionKey: key, dismissedByUserId: uid })
+    assert.ok(write)
+    assert.equal(write.documentId, key)
+    return { ...write.fields, resolvedAt: serverTimestamp(), updatedAt: serverTimestamp() }
+  }
+  const opRef = doc(await authDb(OP_A, 'op-a@test.com'), 'organizations', ORG_A, 'warningResolutions', key)
+  await assertFails(setDoc(opRef, shape(OP_A)))
+  const mgrRef = doc(await authDb(MANAGER_DISMISS, managerEmail), 'organizations', ORG_A, 'warningResolutions', key)
+  await assertSucceeds(setDoc(mgrRef, shape(MANAGER_DISMISS)))
+  const stored = await getDoc(mgrRef)
+  assert.equal(stored.data()?.status, 'dismissed')
+  assert.equal(stored.data()?.updatedFrom, 'web')
+})
+
 // ---------------------------------------------------------------------------
 // Security tightening: leave approval, timesheet sign-off, staff-only warning
 // decisions and settings, self-update locks, organisation ownership, and
@@ -1478,21 +1512,18 @@ test('self-update: a person cannot change their own pay, line manager, active st
   await assertFails(updateDoc(me, { 'permissions.materials': true }))
   // Leaving operative mode is an escalation (role 'operative' alone still marks an operative).
   await assertFails(updateDoc(me, { operativeMode: false, 'permissions.operativeMode': false, role: 'manager' }))
-  // iOS saveUser full merge with the same values (defaults written out, legacy line manager as a list): allowed.
+  // A save that resends every stored value unchanged (a full merge of the stored profile) plus a changed name: allowed
+  // (diff-based). 1.64.0: iPhone builds from 31 Oct save changed fields only; a whole-profile merge that ADDS default
+  // permission, pay or leave keys the person never had (builds before 31 Oct) is no longer supported.
   await assertSucceeds(setDoc(me, {
-    email: 'report-a@test.com', organizationId: ORG_A, role: 'operative', firstName: 'Rae', surname: 'Ray',
-    isActive: true, passwordSet: true, adminAccess: false, manager: false, operatives: false, skills: false,
-    qualifications: false, materials: false, projects: false, smallWorks: false, operativeMode: true,
-    annualLeaveSelfBook: false, weeklyReports: false, dailyOverview: true, subContractors: false, siteAudit: false,
-    wholesalersOrderHistory: true, isSuperAdmin: false, employmentType: 'paye', hasNoLineManager: false,
-    assignedManagerUserId: LM_A, assignedManagerUserIds: [LM_A], dayRate: 200.0,
-    permissions: {
-      adminAccess: false, manager: false, operatives: false, skills: false, qualifications: false, materials: false,
-      projects: false, smallWorks: false, operativeMode: true, siteAudit: false, subContractors: false,
-      wholesalersOrderHistory: true, annualLeaveSelfBook: false, weeklyReports: false, dailyOverview: true,
-    },
-    updatedAt: Timestamp.now(),
+    email: 'report-a@test.com', organizationId: ORG_A, role: 'operative', operativeMode: true,
+    assignedManagerUserId: LM_A, dayRate: 200,
+    permissions: { operativeMode: true, manager: false, materials: false, siteAudit: false },
+    firstName: 'Rae', surname: 'Ray', mobileNumber: '07700 900123', updatedAt: Timestamp.now(),
   }, { merge: true }))
+  // 1.64.0: a missing employment type stays missing (it reads as self-employed); an older iPhone's full merge that wrote
+  // the 'paye' default onto a person with none is refused (current builds save changed fields only).
+  await assertFails(setDoc(me, { email: 'report-a@test.com', firstName: 'Rae', employmentType: 'paye' }, { merge: true }))
   // Turning a toggle off is not an escalation.
   await assertSucceeds(updateDoc(me, { dailyOverview: false, 'permissions.dailyOverview': false }))
   // A manager's iOS self-save forces materials and siteAudit on: allowed for a non-operative.
@@ -2362,12 +2393,14 @@ test('1.28.0: nobody changes their own self-manage toggles; another admin sets t
   await assertFails(updateDoc(doc(await authDb(NOLM_MGR_A, 'nolm-mgr-a@test.com'), 'users', NOLM_MGR_A), { 'permissions.timesheetSelfSign': true }))
 })
 
-test('1.3.0 B: a notification actorUserId, when written, is the signed-in user', async () => {
+test('1.3.0 B / 1.64.0: a notification names its actor, the signed-in user (except the three scheduled types)', async () => {
   const ref = (db: Awaited<ReturnType<typeof authDb>>, id: string) => doc(db, 'organizations', ORG_A, 'notifications', id)
   const op = await authDb(OP_A, 'op-a@test.com')
   const row = (extra: Record<string, unknown> = {}) => ({ userId: ADMIN_A, type: 'holiday_request_submitted', isRead: false, title: 't', message: 'm', ...extra })
   await assertSucceeds(setDoc(ref(op, 'n130-1'), row({ actorUserId: OP_A })))
-  await assertSucceeds(setDoc(ref(op, 'n130-2'), row()))
+  // 1.64.0: required, except a scheduled type (nobody caused it).
+  await assertFails(setDoc(ref(op, 'n130-2'), row()))
+  await assertSucceeds(setDoc(ref(op, 'n130-2s'), row({ type: 'deadline_reminder' })))
   await assertFails(setDoc(ref(op, 'n130-3'), row({ actorUserId: ADMIN_A })))
   await assertFails(setDoc(ref(op, 'n130-4'), row({ actorUserId: null })))
   // Another company's member cannot write here at all.
@@ -2376,7 +2409,8 @@ test('1.3.0 B: a notification actorUserId, when written, is the signed-in user',
   const admin = await authDb(ADMIN_A, 'admin-a@test.com')
   await assertSucceeds(updateDoc(ref(admin, 'n130-1'), { isRead: true }))
   await assertFails(updateDoc(ref(admin, 'n130-1'), { actorUserId: OP_A + '-x' }))
-  await assertSucceeds(updateDoc(ref(admin, 'n130-1'), { actorUserId: ADMIN_A }))
+  // 1.64.0: an update touches only isRead / readAt / write metadata, so the actor never changes.
+  await assertFails(updateDoc(ref(admin, 'n130-1'), { actorUserId: ADMIN_A }))
 })
 
 test('1.9.0: a staff material status write may carry updatedBy / updatedFrom (validated)', async () => {

@@ -1,6 +1,6 @@
-# iOS follow-on — rulebook 1.56.0
+# iOS follow-on — rulebook 1.64.0
 
-Generated 2026-11-17 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
+Generated 2026-11-18 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
 
 ```
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.55.1 → 1.56.0
-Packed hash: 5e5f5feea3a0a674fcaf986ff07078537306a418739b5c7a5a642fb1644e2ee6
-Rulebook sha256: a7a65aa4f3a6befe7197bbfd88be4a39352bcff38e0743326391473656429af1
+Rulebook version: 1.56.0 → 1.64.0
+Packed hash: dce801d962cd8c4c75be420e9d2bf8d48f705ef77180fa2e376a79895c24bfda
+Rulebook sha256: fe3f89e39e831bd5efe8a7c60e79c1da951da78b223e2f23910f9f2c5aac23c7
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -19,44 +19,38 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web lib/canonical/parity-fixture.json             → iOS ProjectPlannerTests/CanonicalParityFixture.json
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
   web lib/canonical/data-parity-fixture.json        → iOS ProjectPlannerTests/DataParityFixture.json
-Contract sha256: 5a8a7e4e6f56b91cb18f71e79207782b8840fccf0b63b695826c47e18e59a32e
+Contract sha256: 56f892a29d844eaaebe16028640ebdfb036324d3a229638968c34d10663159f3
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: OPERATIVE_OWN_LEAVE_ORGANIZATION_IDS_FIELD, OPERATIVE_OWN_LEAVE_SWITCH_FIELD, OWN_LEAVE_IDS_PER_QUERY, leaveLegacyKeyFindings, leaveQueryPlan, leaveQueryValues, operativeOwnLeaveEnabled, readsOnlyOwnLeave
+Exports added: DELETED_PEOPLE_COLLECTION, FORMER_PERSON_ANONYMOUS_NAME, FORMER_PERSON_CHIP, FORMER_PERSON_EMAIL_MAX, FORMER_PERSON_FIELDS, FORMER_PERSON_IDS_MAX, FORMER_PERSON_LINK_ACTION, FORMER_PERSON_LINK_ADMIN_ONLY_NOTE, FORMER_PERSON_LINK_SKIP, FORMER_PERSON_LINK_TITLE, FORMER_PERSON_NAME_MAX, FORMER_PERSON_RECORD_SKIPPED_MESSAGE, MANAGER_ROW_NOT_LINKED_LABEL, MATERIAL_BRAND_LEGACY_BLANK, MATERIAL_BRAND_MISSING_TEXT, MATERIAL_CONTACTS_COLLECTION, MATERIAL_REQUEST_SAFE_SENDER_NOTICE, MULTI_PERSON_ALREADY_BOOKED_MESSAGE, MULTI_PERSON_ALREADY_BOOKED_REMOVE_LABEL, SNAPSHOT_GAP_FROM_MS, SNAPSHOT_GAP_REPORTS, compareVariationTrackerOrder, formerPeopleForEmail, formerPersonDataHealthLabel, formerPersonForId, formerPersonLabel, formerPersonLinkOfferMessage, formerPersonLinkWriteFields, formerPersonPath, formerPersonRecordFields, formerPersonRecordNeeded, isTaskPersonSelected, leaveCoverBookingWindow, lineManagerPeerNoticeKey, materialBrandStored, materialBrandText, materialContactCreateFields, materialContactKey, materialContactPath, materialRequestIsFirstContact, materialRequestSafeSenderNotice, materialSendRecordRecipientEmails, multiPersonBookingBlocks, parseFormerPersonDocument, signedTimesheetChangeForReports, taskCompletionFields, taskPersonIndex, taskPersonKeys, timesheetClaimLatestSheets, toggleTaskPerson, variationStaleNumberLocks, variationStatusWriteFields, variationTrackerOrder
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/leaveReadAudit.ts, lib/canonical/platformConfig.ts, lib/canonical/staffAccess.ts
+Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/authClaims.test.ts, lib/canonical/bookingPerson.ts, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/cross-platform-contract.json, lib/canonical/crossPlatformContract.samples.ts, lib/canonical/formerPeople.ts, lib/canonical/index.ts, lib/canonical/inviteAccept.ts, lib/canonical/leaveCoverage.ts, lib/canonical/liveSources.ts, lib/canonical/materialCatalogueCsv.ts, lib/canonical/materialQuantity.ts, lib/canonical/materialSafeSender.ts, lib/canonical/materialWhatsApp.ts, lib/canonical/multiPersonBooking.ts, lib/canonical/notificationRecipients.ts, lib/canonical/operationsDocuments.ts, lib/canonical/organizationSettings.ts, lib/canonical/payeClaims.ts, lib/canonical/payrunSnapshot.ts, lib/canonical/recordsDocuments.ts, lib/canonical/taskPeople.ts, lib/canonical/timesheetBookingChanges.ts, lib/canonical/timesheetLateExtras.ts, lib/canonical/unresolvedBookingPeople.ts, lib/canonical/userDelete.ts, lib/canonical/variationTrackerOrder.test.ts, lib/canonical/variations.ts, lib/canonical/weeklyReportPay.ts
 Done when:
-- [ ] Packed hash in iOS equals 5e5f5feea3a0a674fcaf986ff07078537306a418739b5c7a5a642fb1644e2ee6
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 a7a65aa4f3a6befe7197bbfd88be4a39352bcff38e0743326391473656429af1)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.56.0)
+- [ ] Packed hash in iOS equals dce801d962cd8c4c75be420e9d2bf8d48f705ef77180fa2e376a79895c24bfda
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 fe3f89e39e831bd5efe8a7c60e79c1da951da78b223e2f23910f9f2c5aac23c7)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.64.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.56.0
+## What changed in 1.64.0
 
-- **Operatives read only their own annual leave — Phase A** (§9, §16, §17, §18; owner answers 17 Nov: Q1 ok, Q2 operatives see only their own schedule and leave, Q3 a new hidden switch, Q4 fix the data). New `leaveQueryPlan` / `leaveQueryValues` / `OWN_LEAVE_IDS_PER_QUERY`: admins, super admins and managers keep one whole-collection `holidayBookings` query; only the operative level (`readsOnlyOwnLeave`; never a no-flag user, never an admin with a stray operative-mode flag) runs one `or` query — `userId in` their own ids and email, `operativeId in` their own ids — per 14 ids, never the whole collection; empty own ids fall back to the users id and former ids. Only while the switch is on (review of #356: with it off everyone reads the whole collection, so nothing drops out of view before the data is fixed). Web holiday store (own ids worked out at plan time; re-plans the organisation last requested while it is open; follows `platformConfig/app` live; clears its rows on a user change, sign-out or a narrowing; plan kept only after a successful subscribe), `readPlanSync` and the §27 data check use it; `OrgPlanPart` takes a composite `filter`.
-- New switch `operativeOwnLeave` / `operativeOwnLeaveOrganizationIds` on `platformConfig/app` (`operativeOwnLeaveEnabled`, `OPERATIVE_OWN_LEAVE_SWITCH_FIELD`, `OPERATIVE_OWN_LEAVE_ORGANIZATION_IDS_FIELD`): turns on the app narrowing now and the Phase B rules later; missing = off. Web `operativeOwnLeaveFor`; Annual leave loads the `operatives` rows so they are planned.
-- New `leaveLegacyKeyFindings` and the read-only owner report `scripts/report-leave-legacy-keys.mjs`: an operative's own leave the query would miss (legacy key, letter case, a second users document on their email, the email stored as `operativeId`); members from another company included; a record two operatives claim that none of their queries reaches is one `conflict` (one already reached is not reported); the CSV neutralises formula-looking cells.
-- No security rules change in this release (Phase B follows after iOS 1.56 and the `minimumIosBuild` raise).
-
-## iOS work for 1.56.0
-
-Operatives read only their own annual leave — **Phase A** (rulebook §9 "Who reads which leave", §16, §17 "Leave queries", §18; owner answers 17 Nov Q1–Q4; review of #356). **Nothing narrows until the switch `operativeOwnLeave` is on for the organisation**: the same switch turns on the app narrowing (this hand-off) and, later, the Phase B rules. Owner order: legacy-key report and data fixed → `minimumIosBuild` raised to this build → Phase B rules published → switch on per company. An older iPhone's whole-collection leave query would be refused for operatives once Phase B is on, so this build must be out first. Every rule below is a packed function — call it through `CanonicalBusinessEngine`; no Swift copy of the plan.
-
-1. **Plan** (`Core/Rulebook+JobAccess.swift`, beside `bookingQueryPlan`): add `leaveQueryPlan(viewer, { ownIds, email, operativeOwnLeave })` → `{ readsEveryLeave, queries }`, with `operativeOwnLeave` = `operativeOwnLeaveEnabled(platformConfig/app, organizationId)` (unknown / not read yet → false: the whole collection). Same viewer as `bookingQueryPlan`, with `role.isOperativeMode` = `permissionLevelOf(user) == operative` (only the operative level is narrowed: a no-flag user and an admin with a stray operative-mode flag read everything — `readsOnlyOwnLeave`); `ownIds` = the same own ids the booking plan gets (`bookingIdsForAccount` of the signed-in account: users id, `formerUserIds`, the `operatives` rows on their email), worked out when you plan — an empty list falls back to the users id and former ids; `email` = the signed-in account's email. Nil when the script does not answer → keep the current behaviour for staff, and for an operative run **no** leave query (never the whole collection).
-2. **Live listener** (`Core/HolidayStore.swift` `startLiveUpdates`, ~171): when `readsEveryLeave` keep today's `listenOrganizationQuery(key: "holidayBookings", query: { $0.collection("holidayBookings") })`. Otherwise one listener per `kind: "own"` query: `collection("holidayBookings").whereFilter(Filter.orFilter([Filter.whereField(anyOf[0].field, in: anyOf[0].values), Filter.whereField(anyOf[1].field, in: anyOf[1].values)]))`, merged by document id (the pattern of the own-bookings plan in `Core/FirebaseBackend+ReadPlans.swift`). The two `in` lists differ — the emails are on `userId` only — so use each part's own `values`. Ids are sent exactly as given — no upper / lower-case variants. Re-plan the organisation you last started (not an older one) when the signed-in user or the `operatives` rows change, and forget the plan and stop the listeners on organisation switch / sign-out.
-3. **One-off read** (`FirebaseBackend.swift` `loadHolidayBookings`, ~8863, used by `HolidayStore.loadData` and the screens listed in the plan): run the same queries (`getDocuments(source: .server)`, cache fallback as today) and merge by document id; never the whole collection for an operative.
-4. **Data check** (`Core/DataParityMonitor.swift`, `holidayBookings` ~295 / ~336): for an operative count the plan's own queries (`countPlan` over `PlannedReadSource.query` of each `or` query; `dataParitySumCounts`), and heal by re-starting those listeners — not `count()` of `org.collection("holidayBookings")` (it would be refused under Phase B and is the wrong number now).
-5. **Who drops out of view** (guardrail 3): an operative no longer receives colleagues' leave; no iPhone screen they can open shows it (they have no Daily Overview, Warnings, Book labour, Team tab or job week grid). Their own records stored only under a legacy key (`user_id`, `uid`, `user.id`), another letter case or a second users document on their email also stop loading — the owner's read-only report (`scripts/report-leave-legacy-keys.mjs`, `leaveLegacyKeyFindings`) lists them to be fixed in the data before Phase B. Admins and managers: no change.
-6. **Switch** (`operativeOwnLeaveEnabled`, `OPERATIVE_OWN_LEAVE_SWITCH_FIELD`, `OPERATIVE_OWN_LEAVE_ORGANIZATION_IDS_FIELD`): read it from `platformConfig/app` like `enforcedReads` (on launch, on return to the foreground and whenever the app already re-reads the document) and re-plan the leave listener when it changes for the open organisation. Off → whole collection for everyone. Re-plan only the organisation that is still open; clear the leave rows when the user changes, on sign-out and when the plan narrows from the whole collection to the own query.
-7. **Annual leave loads the `operatives` rows** before planning (their ids are part of the own query).
-8. **Tests**: with the switch off an operative reads the whole collection; with it on an operative's plan has no whole-collection query; the `or` query's values equal `leaveQueryValues`; an admin / manager keeps the whole collection; a viewer with no uid runs nothing.
+- **Allowlist rules** (§16; owner decisions 17 Nov A–D; emulator audit of main d3927045): write paths that were denylists, or used `diff().changedKeys().hasOnly` (blind to added and removed keys), now list the keys they may touch. Operatives manager's update of an operative `affectedKeys()` (removing `passwordSet` then changing the line manager, or adding `ghost` / `invitationId` / `accountConfirmed` / `role`, is refused); a person's own `users` update allowlisted (no `annualLeave*`, `timesheetsEnabled`, `invitationId`, feedback admin overlays; a missing `employmentType` stays missing; `passwordSet` and `accountConfirmed` only ever to true); organisation create in the exact `organizationCreateFields` shape with the creator alone as admin and pending billing (decision A); leave create owned by its `userId`, never an `operativeId` beside another person's `userId`; notification create keys and `actorUserId` required except scheduled types, addressee update `isRead` / `readAt` only; `operatives` / `managers` rows updated by staff only, an operative's own row qualifications only (decision C); task `createdByUserId` the creator and never rewritten, operatives change completion keys only; account confirmation create shape; own email claim needs a tie to the organisation; product feedback idea, vote, comment and session allowlists. Same allow / deny for every write shape web and iOS send today (positive tests). No new rulebook function (rules only); the packed script changes only in its rulebook stamp.
+- Rules compile cost kept below main: the identical `users` get and list allows are one `read`, the duplicated invite self-create block is evaluated once, the operatives update's shared tail is written once, and `affected()` names `request.resource.data.diff(resource.data).affectedKeys()`.
+- **`reportChecks` rules** (coordinated with web #391, rulebook 1.65.0): admins read, nobody writes, out of the catch-all read; emulator test in `tests/privilegeEscalation.rules.test.ts`. The release order is free: until #391 merges nothing writes the collection.
+- **Notifications (review of the suites):** the admin update path is kept, now limited to the same keys as the addressee's (`isRead`, `readAt`, write metadata); a full set of an existing row (no app writes one) is refused. `push_test` names its sender as actor, as both apps already write it.
+- **Review of #392 (18 Nov):** `isActive` / `hasNoLineManager` pinned to the exact stored value (a deactivated person could write `null` or `0` and be active again on the next token — on main too); an operative's task save may carry the `taskWriteFields` tidy form of a task stored before 1.8.0; no `employmentType: null` added; the admin self-save pins `isActive` / `hasNoLineManager` too (re-review); task items are tidied only when the stored items have no ids and their number is unchanged; own leave's `operativeId` is not checked (iOS sends it upper-cased; follow-up); `callerOrg` reads the token claims with one nested `get` (compile cost, same decisions); an Operatives manager may remove the legacy `utrNumber` / `vatNumber`. Scheduled-type notices and the own `ppIdeas` copies stay open (follow-ups: the apps write scheduled rows for other people, and the rules cannot walk a map of ideas).
 
 ## New rulebook sections
 
-- 1.56.0 — 2026-11-17
+- 1.64.0 — 2026-11-17
+- 1.63.0 — 2026-11-17
+- 1.60.1 — 2026-11-17
+- 1.60.0 — 2026-11-17
+- 1.59.0 — 2026-11-17
+- 1.58.0 — 2026-11-17
+- 1.57.0 — 2026-11-17
 
 ## Workflow for the iOS agent
 

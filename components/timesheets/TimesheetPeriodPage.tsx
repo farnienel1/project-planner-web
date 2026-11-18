@@ -4,6 +4,8 @@
  */
 'use client'
 
+import { mineChangedKey, useMineChangedStore } from '@/lib/timesheets/mineChangedStore'
+import { periodStartKey } from '@/lib/timesheets/paymentRunCopy'
 import { feedback } from '@/lib/feedbackSounds/feedback'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -38,7 +40,10 @@ import {
   clearSignedBookingsPending,
   draftBookingChanges,
   draftForFigures,
+  draftForFiguresWithRebuild,
   draftSignedBookingRecord,
+  SNAPSHOT_BEING_REBUILT_NOTE,
+  SNAPSHOT_BEING_REBUILT_SELF_SIGNED_NOTE,
   timesheetPersonIds,
 } from '@/lib/timesheets/timesheetBookingChanges'
 import { BookingsChangedWarning } from '@/components/timesheets/BookingsChangedWarning'
@@ -90,7 +95,7 @@ import {
   timesheetSourceDocumentId,
   timesheetVersionChain,
 } from '@/lib/timesheets/timesheetStorage'
-import { timesheetRevisionCopy } from '@/lib/timesheets/timesheetRevisionCopy'
+import { earlierVersionCards, timesheetRevisionCopy } from '@/lib/timesheets/timesheetRevisionCopy'
 import {
   TIMESHEET_CREATE_REVISION_HELP,
   TIMESHEET_CREATE_REVISION_LABEL,
@@ -122,7 +127,6 @@ import {
 import { buildTimesheetInvoiceHtml, printTimesheetInvoice } from '@/lib/timesheets/invoiceGenerator'
 import {
   buildTimesheetInvoicePdf,
-  shareTimesheetPdf,
   timesheetInvoicePdfFileName,
 } from '@/lib/timesheets/invoicePdf'
 import {
@@ -196,6 +200,7 @@ import { timesheetLeaveLinesForAccount } from '@/lib/timesheets/timesheetLeave'
 import type { TimesheetLeaveLine } from '@/lib/canonical'
 import { useOrgBankHolidays } from '@/components/annual-leave/useOrgBankHolidays'
 import { PayInputsBanner } from '@/components/timesheets/PayInputsBanner'
+import { PdfFileButtons } from '@/components/pdf/PdfFileButtons'
 import { BriefcaseIcon, CheckCircleIcon, ClockIcon, ReceiptPercentIcon } from '@heroicons/react/24/solid'
 import {
   Card,
@@ -500,7 +505,12 @@ export function TimesheetPeriodPage({
   // 1.47.0: a reopened sheet is not signed off until it is signed (and counter-signed) again.
   const fullyApproved = isTimesheetFullyApproved(draft, subjectUser, users) && !bookingChange.reopened
   // 1.47.0: a reopened sheet's figures are the live bookings — its stale signed snapshot is never shown or invoiced.
-  const figuresDraft = draftForFigures(draft, bookingChange)
+  // 17 Nov follow-up: a snapshot the rulebook already treats as broken (`timesheetSnapshotNeedsRebuild`) shows the live
+  // bookings' figures too, never its empty total, until a reviewer's visit saves the rebuild below.
+  const figures = draftForFiguresWithRebuild(draft, bookingChange, payroll.lineItems)
+  const figuresDraft = figures.draft
+  const snapshotBeingRebuilt = figures.beingRebuilt
+  const snapshotRebuiltNote = userTimesheetSelfSigned(subjectUser, users) ? SNAPSHOT_BEING_REBUILT_SELF_SIGNED_NOTE : SNAPSHOT_BEING_REBUILT_NOTE
   // Rulebook 1.43.0 §8: the person adds price work or expenses only until their line manager signs (a self-signed
   // sheet stays open; adding asks them to sign again).
   const extrasAllowed = timesheetOwnerCanAddExtras(draft, { selfSigned: userTimesheetSelfSigned(subjectUser, users) })
@@ -1064,6 +1074,9 @@ export function TimesheetPeriodPage({
       )
       // A self-signed person's signature on changed bookings rebuilds their snapshot (1.47.0).
       await persist(next, { rebuildSnapshot: bookingsReopened && sheetSelfSigned })
+      // Owner decision 17 Nov (review of #363): this pay run no longer waits for the person — the sidebar triangle drops it
+      // (the hub's own answer, `useMineChangedStore`; the hub replaces it the next time it works it out).
+      useMineChangedStore.getState().resolvePeriod(mineChangedKey(organization?.id, subjectUser.id), periodStartKey(periodStart, timeZone))
       if (organization?.id && requiresLineManagerCounterSign(subjectUser, users)) {
         try {
           await notifyTimesheetPendingManagerSignoff({
@@ -1073,6 +1086,8 @@ export function TimesheetPeriodPage({
             weekStart: periodStart,
             timeZone,
             revision: draft.revision ?? null,
+            // Rulebook 1.60.1: one notice (and push) per signature, so a re-sign reaches the line manager.
+            signedAt,
           })
         } catch {
           // Signature is already saved; inbox delivery is best-effort like iOS Task {}.
@@ -1103,10 +1118,12 @@ export function TimesheetPeriodPage({
     setBusy(true)
     try {
       const name = `${viewer.firstName} ${viewer.surname}`.trim() || viewer.email
+      // Rulebook 1.60.1: the counter-sign instant also keys its notices, so a counter-sign again is its own row and push.
+      const managerSignedAt = new Date()
       await persist(
         {
         ...draft,
-        managerSignedAt: new Date(),
+        managerSignedAt,
         managerSignedByName: name,
         managerSignedByUserId: viewer.id,
         managerSignatureImageBase64: signature,
@@ -1127,6 +1144,7 @@ export function TimesheetPeriodPage({
             weekEnd: periodEnd,
             timeZone,
             revision: draft.revision ?? null,
+            signedAt: managerSignedAt,
           })
         } catch {
           // Counter-sign is already saved; inbox delivery is best-effort.
@@ -1180,11 +1198,12 @@ export function TimesheetPeriodPage({
 
   // Download only — iOS Generate Invoice does not set exportedAt. Email and export does.
   const runInvoiceGeneration = (taxIds: { utrNumber?: string; vatNumber?: string } = invoiceTaxIds) => {
-    if (!organization || !fullyApproved || !payInputs.ready) return
+    if (!organization || !fullyApproved || !payInputs.ready || snapshotBeingRebuilt) return
     const subject = subjectForUser(subjectUser, operatives)
     const lines = invoiceLinesForTimesheet({
       payroll,
-      draft,
+      // 17 Nov: the invoice is built from exactly the figures the screen shows (`draftForFigures`), never a stale copy.
+      draft: figuresDraft,
       timeZone,
       // Rulebook 1.53.0 (B12): once the line manager has signed, the invoice applies their decisions (`decided`),
       // even before a signed snapshot is written — the same invoice the summary shows.
@@ -1197,7 +1216,7 @@ export function TimesheetPeriodPage({
     })
     const invoiceHours = draftTimesheetTotals({
       lines: payroll.lineItems,
-      draft,
+      draft: figuresDraft,
       decided: Boolean(draft.managerSignedAt) || isRevision,
       timesheetDays: subjectUser ? timesheetDayKeysForPeriod(subjectUser, periodStart, periodEnd, timeZone) : [],
       timeZone,
@@ -1452,6 +1471,11 @@ export function TimesheetPeriodPage({
         <StatRow items={bandStats} />
       </PageBand>
       <PayInputsBanner inputs={payInputs} />
+      {snapshotBeingRebuilt ? (
+        <Note tone="info" role="status">
+          {snapshotRebuiltNote}
+        </Note>
+      ) : null}
       {error ? <Note tone="red" role="alert">{error}</Note> : null}
       {updatedElsewhere ? (
         <Note tone="amber" role="status">
@@ -1474,6 +1498,8 @@ export function TimesheetPeriodPage({
         canCreate={revisionCheck.allowed && (mode === 'mine' ? revisionDue.due : true)}
         busy={busy || !signInputsLoaded || !payInputs.ready || !snapshotState.ready}
         earlier={timesheetEarlierVersions(versionChain)}
+        chain={versionChain}
+        latestTotal={total}
         timeZone={timeZone}
         currency={currency}
         onCreate={() => void handleCreateRevision()}
@@ -1765,9 +1791,11 @@ export function TimesheetPeriodPage({
                       {SENSITIVE_EXPORT_OPTION_LABEL}
                     </label>
                   ) : null}
-                  <PuButton variant="green" block disabled={busy || !payInputs.ready} onClick={() => void handleInvoice()}>
+                  {/* 17 Nov follow-up: never an invoice from a snapshot frozen empty — the rebuild saves it first. */}
+                  <PuButton variant="green" block disabled={busy || !payInputs.ready || snapshotBeingRebuilt} onClick={() => void handleInvoice()}>
                     Generate Invoice
                   </PuButton>
+                  {snapshotBeingRebuilt ? <p className="pu-sub" style={{ textAlign: 'center' }}>{snapshotRebuiltNote}</p> : null}
                 </>
               ) : (
                 <>
@@ -2007,23 +2035,25 @@ export function TimesheetPeriodPage({
             </PuButton>
           }
           footer={
-            <PuButton
-              variant="green"
-              block
-              disabled={invoiceEvidenceBusy}
-              onClick={() => {
-                if (invoicePdf) {
-                  void shareTimesheetPdf(
-                    invoicePdf,
-                    timesheetInvoicePdfFileName(subjectForUser(subjectUser, operatives).name)
-                  )
-                  return
-                }
-                printTimesheetInvoice(invoiceHtml)
-              }}
-            >
-              {invoiceEvidenceBusy ? 'Adding evidence…' : 'Share invoice'}
-            </PuButton>
+            invoicePdf ? (
+              <PdfFileButtons
+                bytes={invoicePdf}
+                fileName={timesheetInvoicePdfFileName(subjectForUser(subjectUser, operatives).name)}
+                downloadLabel="Download invoice"
+                shareLabel="Share invoice"
+                busyLabel="Adding evidence…"
+                disabled={invoiceEvidenceBusy}
+              />
+            ) : (
+              <PuButton
+                variant="green"
+                block
+                disabled={invoiceEvidenceBusy}
+                onClick={() => printTimesheetInvoice(invoiceHtml)}
+              >
+                {invoiceEvidenceBusy ? 'Adding evidence…' : 'Share invoice'}
+              </PuButton>
+            )
           }
         >
           {invoiceEvidenceNote ? <p className="pu-sub" style={{ fontSize: 13 }}>{invoiceEvidenceNote}</p> : null}
@@ -3205,10 +3235,16 @@ function TimesheetRevisionPanel({
   canCreate,
   busy,
   earlier,
+  chain,
+  latestTotal,
   timeZone,
   currency,
   onCreate,
 }: {
+  /** The pay run's stored versions, oldest first (the cards compare each with the next). */
+  chain: TimesheetVersion[]
+  /** The total the page shows for the latest version. */
+  latestTotal: number
   mode: 'mine' | 'review'
   revisionLabel: string
   differenceText: string | null
@@ -3243,33 +3279,60 @@ function TimesheetRevisionPanel({
         </div>
       ) : null}
       {earlier.length > 0 ? (
+        // 17 Nov follow-up (display only): each earlier version as a small card — label, signed (organisation zone) and
+        // by whom, total, and what the next version changed (`earlierVersionCards`).
         <details className="pu-card" style={{ padding: 12 }}>
           <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
             {TIMESHEET_EARLIER_VERSIONS_LABEL} ({earlier.length})
           </summary>
-          {earlier.map((version) => {
-            const rows = timesheetInvoiceRows({ sheet: version.data, payrollLines: [], extrasMode: 'decided' })
-            const exportedMs = version.data.exportedAt ? new Date(Number((version.data.exportedAt as { seconds?: number }).seconds ?? 0) * 1000) : null
-            return (
-              <div key={version.documentId} style={{ marginTop: 10 }}>
-                <p>
-                  <b>{timesheetRevisionLabel(version.revision) || TIMESHEET_ORIGINAL_VERSION_LABEL}</b>
-                  {exportedMs && exportedMs.getTime() > 0 ? ` · exported ${formatStampInZone(exportedMs, timeZone)}` : ''} ·{' '}
-                  {(() => {
-                    const exportedTotal = timesheetExportedTotal(version.data)
-                    return exportedTotal == null ? TIMESHEET_REVISION_DIFFERENCE_UNKNOWN.replace('Difference', 'Total') : money(exportedTotal, currency)
-                  })()}
+          <ul style={{ listStyle: 'none', margin: '10px 0 0', padding: 0, display: 'grid', gap: 8 }}>
+            {earlierVersionCards({ chain, latestTotal, currency }).map((card) => (
+              <li
+                key={card.documentId}
+                aria-label={`${card.label}, ${card.totalText}`}
+                style={{
+                  border: '1px solid var(--pu-line, var(--line, rgba(127,127,127,.35)))',
+                  borderRadius: 10,
+                  padding: '10px 12px',
+                  background: 'var(--pu-card2, transparent)',
+                  minWidth: 0,
+                }}
+              >
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <Chip tone="slate">{card.label}</Chip>
+                    {card.signedAtMs != null ? (
+                      <span className="pu-sub">Signed {formatStampInZone(new Date(card.signedAtMs), timeZone)}</span>
+                    ) : null}
+                    {card.exportedAtMs != null && card.exportedAtMs > 0 ? (
+                      <span className="pu-sub">exported {formatStampInZone(new Date(card.exportedAtMs), timeZone)}</span>
+                    ) : null}
+                  </span>
+                  <b style={{ fontVariantNumeric: 'tabular-nums' }}>{card.totalText}</b>
+                </div>
+                {card.personName || card.lineManagerName ? (
+                  <p className="pu-sub" style={{ margin: '4px 0 0', overflowWrap: 'anywhere' }}>
+                    {[card.personName ? `Signed by ${card.personName}` : '', card.lineManagerName ? `counter-signed by ${card.lineManagerName}` : '']
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </p>
+                ) : null}
+                {card.rows.length > 0 ? (
+                  <ul className="pu-sub" style={{ margin: '6px 0 0 16px', padding: 0 }}>
+                    {card.rows.map((row) => (
+                      <li key={row.key} style={{ overflowWrap: 'anywhere' }}>
+                        {row.title} — {row.amountText}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                <p className="pu-sub" style={{ margin: '4px 0 0', overflowWrap: 'anywhere' }}>
+                  <span>Changed in {card.nextLabel}: </span>
+                  <b>{card.changeText}</b>
                 </p>
-                <ul className="pu-sub" style={{ margin: '4px 0 0 16px' }}>
-                  {rows.map((row) => (
-                    <li key={`${row.kind}-${row.id}`}>
-                      {String((row.stored as Record<string, unknown> | null)?.title ?? (row.stored as Record<string, unknown> | null)?.description ?? row.kind)} — {money(row.amount, currency)}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )
-          })}
+              </li>
+            ))}
+          </ul>
         </details>
       ) : null}
     </>
