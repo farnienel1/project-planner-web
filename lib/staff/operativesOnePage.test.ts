@@ -215,3 +215,30 @@ test('re-review #367: the target must name the open organisation, and flags coun
   assert.equal(isManageableOperative(parsed('t-map-mode', { permissions: { operativeMode: 1 } }), 'ORG'), true)
   assert.equal(isManageableOperative(parsed('t-role-op', { role: 'operative' }), 'ORG'), true)
 })
+
+// Owner 17 Nov (Managers page restyle): the admin Managers page is the same table, Managers only, with no Add button
+// (it had none) and the same viewers as before (`canViewManagers`: admins only).
+test('the Managers page keeps no Add button and stays admins only', async () => {
+  const { canViewManagers } = await import('../permissions.ts')
+  for (const viewer of [admin, superAdmin, opsManager, plainManager, operative]) {
+    assert.equal(manageUsersAddButtonShown('managers', viewer), false)
+  }
+  assert.equal(canViewManagers(admin), true)
+  assert.equal(canViewManagers(superAdmin), true)
+  assert.equal(canViewManagers(opsManager), false)
+  assert.equal(canViewManagers(plainManager), false)
+  assert.equal(canViewManagers(operative), false)
+})
+
+test('the Managers page lists the rulebook Managers list, exactly as before (guardrail 3)', async () => {
+  const { getManagersRosterUsers } = await import('./userRosterUtils.ts')
+  const people = [
+    parsed('m-active', { role: 'manager', manager: true, isActive: true, passwordSet: true }),
+    parsed('m-flagless', { role: 'member', isActive: true, passwordSet: true }),
+    parsed('a-admin', { role: 'admin', adminAccess: true, isActive: true, passwordSet: true }),
+    parsed('o-op', { role: 'operative', operativeMode: true, isActive: true, passwordSet: true }),
+  ]
+  const ids = getManagersRosterUsers(people).map((u) => u.id).sort()
+  // Admins are on Admins only, operatives on Operatives; a flagless person is manager level (rulebook §11, 1.23.1).
+  assert.deepEqual(ids, ['m-active', 'm-flagless'])
+})

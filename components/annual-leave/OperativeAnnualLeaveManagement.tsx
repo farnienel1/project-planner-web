@@ -29,6 +29,7 @@ import { OperativeAnnualLeaveCalendar } from './OperativeAnnualLeaveCalendar'
 import { AnnualLeaveLegend, LeaveDayCalendar } from './LeaveDayCalendar'
 import { useOrgBankHolidays } from './useOrgBankHolidays'
 import { feedback } from '@/lib/feedbackSounds/feedback'
+import { afterPrimaryWrite } from '@/lib/client/afterPrimaryWrite'
 
 type HubTab = 'manage' | 'approved' | 'requests'
 
@@ -207,7 +208,7 @@ export function OperativeAnnualLeaveManagement({
         // The approver's decision on a cancellation request, played once it is saved (before the notice).
         feedback(status === 'approved' ? 'leaveApproved' : 'leaveDeclined')
         // Rulebook §9 / 1.9.0: the requester hears the cancellation decision (`holidayDecisionRecipients`).
-        await notifyHolidayRequestDecisionToUser({
+        afterPrimaryWrite('notifyHolidayRequestDecisionToUser', notifyHolidayRequestDecisionToUser({
           organizationId: organization.id,
           booking,
           approved: status === 'approved',
@@ -216,7 +217,7 @@ export function OperativeAnnualLeaveManagement({
           decidedByUserId: user?.id ?? null,
           users,
           operatives,
-        })
+        }))
         return
       }
       // `holidayDecisionWriteFields`: status, approver and the optional note in one partial update.
@@ -224,7 +225,7 @@ export function OperativeAnnualLeaveManagement({
       saved = true
       // The approver's decision on a request, played once it is saved (before the notice).
       feedback(status === 'approved' ? 'leaveApproved' : 'leaveDeclined')
-      await notifyHolidayRequestDecisionToUser({
+      afterPrimaryWrite('notifyHolidayRequestDecisionToUser', notifyHolidayRequestDecisionToUser({
         organizationId: organization.id,
         booking,
         approved: status === 'approved',
@@ -233,7 +234,7 @@ export function OperativeAnnualLeaveManagement({
         reason: decisionNote,
         users,
         operatives,
-      })
+      }))
     } catch (error) {
       // Owner decision 8: the refusal sound, then the error goes where it went before. Once the decision is saved a
       // failed notice plays nothing more (one sound per action).
