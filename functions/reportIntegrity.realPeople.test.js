@@ -99,3 +99,37 @@ test('claims: an item filed under an unlisted same-email users document is the p
   const other = await check.handle({ orgId: ORG, collection: 'payeClaimReports', reportId: 'C', report: JSON.parse(JSON.stringify(snap)) })
   assert.deepEqual(other.problems.map((p) => p.code), ['not_their_item'])
 })
+
+test('sixth check: field masks on the roster reads, and the line reads start alongside the organisation read', async () => {
+  const docs = {
+    [`organizations/${ORG}`]: org,
+    'users/sam': { firstName: 'Sam', surname: 'Smith', email: 'sam@x.com', organizationId: ORG },
+    [`organizations/${ORG}/operatives/OP1`]: { email: 'SAM@x.com ' },
+  }
+  const base = fakeStore(docs)
+  const calls = []
+  let releaseOrg
+  const orgGate = new Promise((resolve) => { releaseOrg = resolve })
+  const store = {
+    ...base,
+    async getDoc(p) {
+      calls.push(['get', p])
+      if (p === `organizations/${ORG}`) await orgGate
+      return base.getDoc(p)
+    },
+    async query(cp, f, v, fields) { calls.push(['query', cp, fields]); return base.query(cp, f, v) },
+    async list(cp, fields) { calls.push(['list', cp, fields]); return base.list(cp) },
+  }
+  const report = { userId: 'sam', kind: 'overtime', rangeStart: '2026-11-01', rangeEnd: '2026-11-30', lines: [{ bookingId: 'B1', dayKey: '2026-11-05', overtimeHours: 0 }], totals: { overtimeHours: 0, lineCount: 1 } }
+  const run = createReportIntegrityCheck({ store, canonical, logger, serverTimestamp: () => 'T' }).handle({ orgId: ORG, collection: 'overtimeReports', reportId: 'R', report })
+  // While the organisation read is still waiting, the line's booking and review reads have already started.
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.ok(calls.some(([kind, p]) => kind === 'get' && p === `organizations/${ORG}/bookings/B1`))
+  assert.ok(calls.some(([kind, p]) => kind === 'get' && p === `organizations/${ORG}/overtimeReviews/sam_B1`))
+  releaseOrg()
+  await run
+  const usersQuery = calls.find(([kind, p]) => kind === 'query' && p === 'users')
+  assert.ok(usersQuery, 'the organisation roster is read')
+  for (const field of ['email', 'formerUserIds', 'sameEmailUserIds', 'isActive']) assert.ok(usersQuery[2].includes(field), field)
+  assert.deepEqual(calls.find(([kind, p]) => kind === 'list' && p === `organizations/${ORG}/operatives`)[2], ['email'])
+})
