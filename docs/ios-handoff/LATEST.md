@@ -1,6 +1,6 @@
-# iOS follow-on — rulebook 1.63.0
+# iOS follow-on — rulebook 1.64.0
 
-Generated 2026-11-17 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
+Generated 2026-11-18 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
 
 ```
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.60.1 → 1.63.0
-Packed hash: 74212b1217612cdc34c9355e9ec1ebdb025da4cd8b84e90d0faf1a37c3be54e9
-Rulebook sha256: 6e11824f72e3e6a7e92a8ccfe72bf06d12f8ec26575c101e4e49305efd9c1ca0
+Rulebook version: 1.63.0 → 1.64.0
+Packed hash: dce801d962cd8c4c75be420e9d2bf8d48f705ef77180fa2e376a79895c24bfda
+Rulebook sha256: fe3f89e39e831bd5efe8a7c60e79c1da951da78b223e2f23910f9f2c5aac23c7
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,28 +22,29 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 56f892a29d844eaaebe16028640ebdfb036324d3a229638968c34d10663159f3
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: compareVariationTrackerOrder, variationStaleNumberLocks, variationStatusWriteFields, variationTrackerOrder
+Exports added: none
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/canonical.test.ts, lib/canonical/cross-platform-contract.json, lib/canonical/recordsDocuments.ts, lib/canonical/variationTrackerOrder.test.ts, lib/canonical/variations.ts
+Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/authClaims.test.ts
 Done when:
-- [ ] Packed hash in iOS equals 74212b1217612cdc34c9355e9ec1ebdb025da4cd8b84e90d0faf1a37c3be54e9
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 6e11824f72e3e6a7e92a8ccfe72bf06d12f8ec26575c101e4e49305efd9c1ca0)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.63.0)
+- [ ] Packed hash in iOS equals dce801d962cd8c4c75be420e9d2bf8d48f705ef77180fa2e376a79895c24bfda
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 fe3f89e39e831bd5efe8a7c60e79c1da951da78b223e2f23910f9f2c5aac23c7)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.64.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.63.0
+## What changed in 1.64.0
 
-- **Reopening a variation unpins it** (§22, owner decision 17 Nov, B; bug C): new `variationStatusWriteFields(status)` → `{ status, voNumberLocked }` (read with `normalizeVariationStatus`, now in `variations.ts` and re-exported unchanged; Submitted / Closed lock, Open unlocks, one write); `variationIsPinned` is the status only (a stored `voNumberLocked` no longer pins on its own); `variationRenumberWriteFields` keeps a pinned status's number, not a stale lock; new `variationStaleNumberLocks(rows)` — Open rows still storing the lock, unlocked by the renumber before its transaction. Root cause: web `setVariationStatus` kept `voNumberLocked: true` on reopen, so the row kept its pin and the rules (which read the stored lock) refused its renumber with "Missing or insufficient permissions". Also fixed: the web renumber transaction read missing `variations/{id}` documents (settings-only rows), which the read rule refuses — it now reads only existing documents.
-- **The VO tracker is on by default** (§22, owner decision 17 Nov, A): `parseVariationTrackerDocument` reads a missing document, or one without `enabled`, as on; `variationTrackerWriteFields` `disable` creates `{ parentId, parentType, enabled: false }` when no document exists. Cross-platform contract regenerated (the tracker samples store no `enabled`, so they now read on).
-- **One tracker order** (§22, review of #388): new `compareVariationTrackerOrder` and `variationTrackerOrder` (sequence, then VO number, then id); `variationRenumberPlan` uses it, and so do the web tracker and variations list. Opening the tracker on a job never switched on no longer plans a swap of rows with equal positions. Stale number locks are cleared in a small transaction each.
-- **Status buttons** (owner request 17 Nov, UI only): Open / Submitted / Closed buttons replace the dropdown on web (variation detail, tracker rows) and iOS (variation editor / detail); same handler, same write.
+- **Allowlist rules** (§16; owner decisions 17 Nov A–D; emulator audit of main d3927045): write paths that were denylists, or used `diff().changedKeys().hasOnly` (blind to added and removed keys), now list the keys they may touch. Operatives manager's update of an operative `affectedKeys()` (removing `passwordSet` then changing the line manager, or adding `ghost` / `invitationId` / `accountConfirmed` / `role`, is refused); a person's own `users` update allowlisted (no `annualLeave*`, `timesheetsEnabled`, `invitationId`, feedback admin overlays; a missing `employmentType` stays missing; `passwordSet` and `accountConfirmed` only ever to true); organisation create in the exact `organizationCreateFields` shape with the creator alone as admin and pending billing (decision A); leave create owned by its `userId`, never an `operativeId` beside another person's `userId`; notification create keys and `actorUserId` required except scheduled types, addressee update `isRead` / `readAt` only; `operatives` / `managers` rows updated by staff only, an operative's own row qualifications only (decision C); task `createdByUserId` the creator and never rewritten, operatives change completion keys only; account confirmation create shape; own email claim needs a tie to the organisation; product feedback idea, vote, comment and session allowlists. Same allow / deny for every write shape web and iOS send today (positive tests). No new rulebook function (rules only); the packed script changes only in its rulebook stamp.
+- Rules compile cost kept below main: the identical `users` get and list allows are one `read`, the duplicated invite self-create block is evaluated once, the operatives update's shared tail is written once, and `affected()` names `request.resource.data.diff(resource.data).affectedKeys()`.
+- **`reportChecks` rules** (coordinated with web #391, rulebook 1.65.0): admins read, nobody writes, out of the catch-all read; emulator test in `tests/privilegeEscalation.rules.test.ts`. The release order is free: until #391 merges nothing writes the collection.
+- **Notifications (review of the suites):** the admin update path is kept, now limited to the same keys as the addressee's (`isRead`, `readAt`, write metadata); a full set of an existing row (no app writes one) is refused. `push_test` names its sender as actor, as both apps already write it.
+- **Review of #392 (18 Nov):** `isActive` / `hasNoLineManager` pinned to the exact stored value (a deactivated person could write `null` or `0` and be active again on the next token — on main too); an operative's task save may carry the `taskWriteFields` tidy form of a task stored before 1.8.0; no `employmentType: null` added; the admin self-save pins `isActive` / `hasNoLineManager` too (re-review); task items are tidied only when the stored items have no ids and their number is unchanged; own leave's `operativeId` is not checked (iOS sends it upper-cased; follow-up); `callerOrg` reads the token claims with one nested `get` (compile cost, same decisions); an Operatives manager may remove the legacy `utrNumber` / `vatNumber`. Scheduled-type notices and the own `ppIdeas` copies stay open (follow-ups: the apps write scheduled rows for other people, and the rules cannot walk a map of ideas).
 
 ## New rulebook sections
 
-- 1.63.0 — 2026-11-17
+- 1.64.0 — 2026-11-17
 
 ## Workflow for the iOS agent
 
