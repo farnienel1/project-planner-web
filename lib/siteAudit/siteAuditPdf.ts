@@ -1,7 +1,7 @@
 /**
- * The site audit PDF on web (rulebook 1.65.0 §29, owner decision 17 Nov: the same PDF as the iPhone). The rulebook
+ * The site audit PDF on web (rulebook 1.68.0 §29, owner decision 17 Nov: the same PDF as the iPhone). The rulebook
  * composes the report's input (`siteAuditReportInput`) and lays it out (`siteAuditReportLayout`); this file only loads
- * the pictures, measures them and hands the pages to the pdf-lib renderer, then downloads the file. Before 1.65.0 web
+ * the pictures, measures them and hands the pages to the pdf-lib renderer, then downloads the file. Before 1.68.0 web
  * printed an HTML page, so the browser chose the page breaks and the result differed from the iPhone's.
  */
 import { imageDimensionsFromHeader, siteAuditReportInput, siteAuditReportLayout } from '@/lib/canonical'

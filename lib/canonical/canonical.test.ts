@@ -7144,7 +7144,9 @@ test('1.8.0 variations: stable line ids, recomputed counters, partial and renumb
     set: { sequence: 2, voNumber: 'VO-002', numberHistory: [{ from: 'VO-001', to: 'VO-002', at: 7, byUid: 'u' }] },
   })
   assert.equal(variationRenumberWriteFields({ stored: { voNumber: 'VO-001', sequence: 1 }, to: 'VO-001', sequence: 1, at: 7, byUid: 'u' }), null)
-  assert.equal(variationRenumberWriteFields({ stored: { voNumber: 'VO-001', sequence: 1, voNumberLocked: true }, to: 'VO-005', sequence: 1, at: 7, byUid: 'u' }), null)
+  // 1.63.0: the status pins the number; a lock left on an Open (reopened) variation no longer does.
+  assert.equal(variationRenumberWriteFields({ stored: { voNumber: 'VO-001', sequence: 1, status: 'submitted', voNumberLocked: true }, to: 'VO-005', sequence: 1, at: 7, byUid: 'u' }), null)
+  assert.equal(variationRenumberWriteFields({ stored: { voNumber: 'VO-001', sequence: 1, status: 'open', voNumberLocked: true }, to: 'VO-005', sequence: 1, at: 7, byUid: 'u' })?.set.voNumber, 'VO-005')
   assert.equal(parseVariationTrackerDocument('P1', undefined).prefix, 'VO-')
 })
 
@@ -17831,9 +17833,9 @@ test('1.59.0 review M2: a booking under a managers row with no account stays in 
   assert.equal(R112.scheduleRowPerson('mgr-noacc', { accounts: [], operatives: [], managers: [{ id: 'MGR-NOACC' }] }).unresolved, false)
 })
 
-// MARK: - 1.65.0 site audit report (§29): one layout, nothing clipped, field limits
+// MARK: - 1.68.0 site audit report (§29): one layout, nothing clipped, field limits
 
-test('1.65.0 site audit report: the shared fixture lays out exactly as expected (text lines, page breaks, file names)', () => {
+test('1.68.0 site audit report: the shared fixture lays out exactly as expected (text lines, page breaks, file names)', () => {
   for (const { name, input } of R112.SITE_AUDIT_REPORT_FIXTURE_INPUTS) {
     const expected = R112.SITE_AUDIT_REPORT_FIXTURE_EXPECTED.find((row) => row.name === name)
     assert.ok(expected, name)
@@ -17848,7 +17850,7 @@ test('1.65.0 site audit report: the shared fixture lays out exactly as expected 
   assert.equal(forApps.expected.length, forApps.inputs.length)
 })
 
-test('1.65.0 site audit report: footers read "Page n of N" with the real total (owner bug: "Page 2 of 2" on 3 pages)', () => {
+test('1.68.0 site audit report: footers read "Page n of N" with the real total (owner bug: "Page 2 of 2" on 3 pages)', () => {
   const layout = R112.siteAuditReportLayout(R112.SITE_AUDIT_REPORT_FIXTURE_INPUTS[0].input)
   const total = layout.pages.length
   assert.ok(total > 1)
@@ -17857,7 +17859,7 @@ test('1.65.0 site audit report: footers read "Page n of N" with the real total (
   })
 })
 
-test('1.65.0 site audit report: no field text is dropped or clipped, and nothing is drawn off the page', () => {
+test('1.68.0 site audit report: no field text is dropped or clipped, and nothing is drawn off the page', () => {
   const squash = (value: string) => value.replace(/\s+/g, '')
   for (const { name, input } of R112.SITE_AUDIT_REPORT_FIXTURE_INPUTS) {
     const layout = R112.siteAuditReportLayout(input)
@@ -17910,7 +17912,7 @@ test('1.65.0 site audit report: no field text is dropped or clipped, and nothing
   }
 })
 
-test('1.65.0 site audit report: text normalised one character per grapheme, counters count graphemes', () => {
+test('1.68.0 site audit report: text normalised one character per grapheme, counters count graphemes', () => {
   assert.equal(R112.siteAuditReportText('ﬁne ❤️ ©️ 👨‍👩‍👧 🇬🇧 Łódź\u200b\ufeff ｆｕｌｌ'), 'fine ? © ? ? Lódz full')
   assert.equal(R112.siteAuditFieldLength('❤️👨‍👩‍👧🇬🇧é'), 4)
   assert.equal(R112.siteAuditFieldCounter('title', '👍🏽'.repeat(120)).over, false)
@@ -17918,7 +17920,7 @@ test('1.65.0 site audit report: text normalised one character per grapheme, coun
   assert.ok(R112.siteAuditReportTextWidth(R112.siteAuditReportFitLine('x'.repeat(500), 9, 100), 9) <= 100.01)
 })
 
-test('1.65.0 site audit report input: the same audit gives the same input on both apps', () => {
+test('1.68.0 site audit report input: the same audit gives the same input on both apps', () => {
   const input = R112.siteAuditReportInput({
     audit: {
       id: 'A', projectJobNumber: 'C1', projectName: 'Job', type: 'General', authorName: 'Ann', dateMs: 0, createdAtMs: 0,
@@ -17944,14 +17946,14 @@ test('1.65.0 site audit report input: the same audit gives the same input on bot
   assert.equal(R112.siteAuditReportInput({ audit: { items: [] }, job: null }).clientName, null)
 })
 
-test('1.65.0 site audit report: photos are whole (aspect kept), at most 200 wide and 240 tall', () => {
+test('1.68.0 site audit report: photos are whole (aspect kept), at most 200 wide and 240 tall', () => {
   assert.deepEqual(R112.siteAuditReportPhotoBox({ width: 1170, height: 2532 }), { w: 110.9, h: 240 })
   assert.deepEqual(R112.siteAuditReportPhotoBox({ width: 4032, height: 3024 }), { w: 200, h: 150 })
   assert.deepEqual(R112.siteAuditReportPhotoBox({ width: 4000, height: 600 }), { w: 200, h: 30 })
   assert.equal(R112.siteAuditReportPhotoBox(null), null)
 })
 
-test('1.65.0 site audit report: text the standard fonts cannot draw is replaced, never dropped; long words break', () => {
+test('1.68.0 site audit report: text the standard fonts cannot draw is replaced, never dropped; long words break', () => {
   assert.equal(R112.siteAuditReportText('Café Zoë — £5 “ok”'), 'Café Zoë — £5 “ok”')
   assert.equal(R112.siteAuditReportText('Łódź'), 'Lódz')
   assert.equal(R112.siteAuditReportText('Snag 🚧!'), 'Snag ?!')
@@ -17963,7 +17965,7 @@ test('1.65.0 site audit report: text the standard fonts cannot draw is replaced,
   assert.deepEqual(R112.wrapSiteAuditReportText('one\n\ntwo', 10, 300), ['one', '', 'two'])
 })
 
-test('1.65.0 site audit report: item rows, order, labels and empty values (owner Q2, Q3, Q5) and the taken time (Q1)', () => {
+test('1.68.0 site audit report: item rows, order, labels and empty values (owner Q2, Q3, Q5) and the taken time (Q1)', () => {
   assert.deepEqual(
     R112.siteAuditReportItemFields({ id: 'i', location: 'Hall', comments: '', annotations: '' }).map((row) => [row.label, row.value]),
     [['Location', 'Hall'], ['Assignee', '—'], ['Comments', '—'], ['Annotations', 'None']]
@@ -17974,7 +17976,7 @@ test('1.65.0 site audit report: item rows, order, labels and empty values (owner
   assert.equal(R112.siteAuditReferenceCode({ projectJobNumber: 'C 646', createdAtMs: 1794943857123 }), 'SA-C646-1794943857')
 })
 
-test('1.65.0 site audit field limits: counters, new edits limited, stored longer text never refused', () => {
+test('1.68.0 site audit field limits: counters, new edits limited, stored longer text never refused', () => {
   assert.deepEqual(R112.SITE_AUDIT_FIELD_LIMITS, { title: 120, location: 120, assignee: 80, comments: 2000, annotations: 2000, customTitle: 120 })
   assert.equal(R112.siteAuditFieldCounter('title', 'abc').label, '3 / 120')
   assert.equal(R112.siteAuditFieldLength('🚧🚧'), 2)
@@ -17985,7 +17987,7 @@ test('1.65.0 site audit field limits: counters, new edits limited, stored longer
   assert.equal(R112.siteAuditFieldLimitError({ comments: 'x'.repeat(2000) }), null)
 })
 
-test('1.65.0 site audit report: the company logo at the top right, fitted whole; the initials badge otherwise', () => {
+test('1.68.0 site audit report: the company logo at the top right, fitted whole; the initials badge otherwise', () => {
   const box = R112.SITE_AUDIT_REPORT_LOGO_BOX
   const pad = R112.SITE_AUDIT_REPORT_LOGO_PADDING
   const right = box.x + box.w

@@ -1,5 +1,5 @@
 /**
- * Rulebook 1.65.0 §29 — the site audit report (owner decisions 17 Nov).
+ * Rulebook 1.68.0 §29 — the site audit report (owner decisions 17 Nov).
  *
  * ONE layout for every platform: `siteAuditReportLayout` returns each page as a list of drawing operations (text at
  * a position, rectangles, lines, circles and photo boxes). Web draws them with pdf-lib and iOS with UIKit, both in

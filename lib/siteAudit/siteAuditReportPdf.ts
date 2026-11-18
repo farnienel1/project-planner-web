@@ -1,5 +1,5 @@
 /**
- * Draws the rulebook's site audit report layout (`siteAuditReportLayout`, rulebook 1.65.0 §29) with pdf-lib. Every
+ * Draws the rulebook's site audit report layout (`siteAuditReportLayout`, rulebook 1.68.0 §29) with pdf-lib. Every
  * op is drawn exactly where the layout puts it, in standard Helvetica, so the web PDF matches the iPhone's. This file
  * decides nothing about the report: no wrapping, sizing or page breaks happen here.
  */

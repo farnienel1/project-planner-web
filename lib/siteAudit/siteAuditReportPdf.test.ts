@@ -4,7 +4,7 @@ import { PDFDocument } from 'pdf-lib'
 import { SITE_AUDIT_REPORT_FIXTURE_EXPECTED, SITE_AUDIT_REPORT_FIXTURE_INPUTS, siteAuditReportLayout } from '@/lib/canonical'
 import { renderSiteAuditReportPdf, type SiteAuditReportDrawLog } from './siteAuditReportPdf'
 
-test('web draws every op of the shared site audit layout, page for page (rulebook 1.65.0 §29)', async () => {
+test('web draws every op of the shared site audit layout, page for page (rulebook 1.68.0 §29)', async () => {
   for (const { name, input } of SITE_AUDIT_REPORT_FIXTURE_INPUTS) {
     const expected = SITE_AUDIT_REPORT_FIXTURE_EXPECTED.find((row) => row.name === name)!
     const log: SiteAuditReportDrawLog = []

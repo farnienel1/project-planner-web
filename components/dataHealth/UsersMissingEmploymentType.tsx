@@ -11,13 +11,14 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { collection, getDocs, query, where } from 'firebase/firestore'
-import { USER_MISSING_EMPLOYMENT_TYPE_MESSAGE, usersMissingEmploymentType } from '@/lib/canonical'
+import { USER_MISSING_EMPLOYMENT_TYPE_MESSAGE } from '@/lib/canonical'
+import { missingEmploymentTypeRows, type MissingEmploymentTypeRow } from '@/lib/dataHealth/missingEmploymentTypeRows'
 import { db } from '@/lib/firebase/config'
 import { overlayRosterPay, payProfilesSettled } from '@/lib/pay/payProfileOverlay'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { rosterDisplayName } from '@/lib/staff/userRosterUtils'
 
-type Row = { id: string; firstName?: string; surname?: string; email?: string }
+type Row = MissingEmploymentTypeRow
 
 export function UsersMissingEmploymentType({ organizationId }: { organizationId: string }) {
   const { loadUsers, rosterLoadedOrgId } = useOrgUserStore()
@@ -42,17 +43,7 @@ export function UsersMissingEmploymentType({ organizationId }: { organizationId:
           ...overlayRosterPay(organizationId, row.id, row.data() as Record<string, unknown>),
           id: row.id,
         }))
-        const ids = new Set(usersMissingEmploymentType(docs as never))
-        setMissing(
-          docs
-            .filter((row) => ids.has(row.id))
-            .map((row) => ({
-              id: row.id,
-              firstName: typeof row.firstName === 'string' ? row.firstName : undefined,
-              surname: typeof row.surname === 'string' ? row.surname : undefined,
-              email: typeof row.email === 'string' ? row.email : undefined,
-            }))
-        )
+        setMissing(missingEmploymentTypeRows(docs))
       })
       .catch(() => {
         if (!cancelled) setError('Could not read the people list for this check.')

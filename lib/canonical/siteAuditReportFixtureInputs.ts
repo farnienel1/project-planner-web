@@ -1,5 +1,5 @@
 /**
- * Inputs of the shared site audit report fixture (rulebook 1.65.0, §29). The expected pages are in
+ * Inputs of the shared site audit report fixture (rulebook 1.68.0, §29). The expected pages are in
  * `site-audit-report-fixture.json`; both apps' tests lay these out (web directly, iOS through the packed script) and
  * check the same text lines and page breaks, and that the renderer draws every op.
  */

@@ -1,6 +1,6 @@
-# iOS follow-on — rulebook 1.65.0
+# iOS follow-on — rulebook 1.68.0
 
-Generated 2026-11-17 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
+Generated 2026-11-18 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
 
 ```
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.61.1 → 1.65.0
-Packed hash: dacbb885a4e0e0be3c6e61bb51d7f8261348554b3ea015ed6289aae3701b1e3c
-Rulebook sha256: 1ea112630bab0ae845a7044191b97869f8c6c21fecf139d51aaa976ac67533f6
+Rulebook version: 1.65.0 → 1.68.0
+Packed hash: f927beceff3fed2425855cac7703b5fe385c32e78603adca8824bc6063681eb7
+Rulebook sha256: a76a76820fa47c664c635d53490a2da29c087f955235aec7bdca45b10505c548
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -19,22 +19,22 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web lib/canonical/parity-fixture.json             → iOS ProjectPlannerTests/CanonicalParityFixture.json
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
   web lib/canonical/data-parity-fixture.json        → iOS ProjectPlannerTests/DataParityFixture.json
-Contract sha256: 8b94c46c4735a448870cfd962ba2097f14c5ede9baf5bc16f180ead937c17f1a
+Contract sha256: 926b910948b674b1fa259e8f933ddd15f14bad00b8e0b050ccbd88c723bf64aa
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: SITE_AUDIT_REPORT_MISSING_PHOTO, siteAuditGraphemes, siteAuditReportFitLine, siteAuditReportInput, siteAuditReportSiteAddress
+Exports added: compareVariationTrackerOrder, variationStaleNumberLocks, variationStatusWriteFields, variationTrackerOrder
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/canonical.test.ts, lib/canonical/crossPlatformContract.samples.ts, lib/canonical/siteAuditReport.ts, lib/canonical/siteAuditReportFixture.ts, lib/canonical/siteAuditReportFixtureInputs.ts, lib/canonical/siteAuditReportFont.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/canonical.test.ts, lib/canonical/cross-platform-contract.json, lib/canonical/crossPlatformContract.samples.ts, lib/canonical/recordsDocuments.ts, lib/canonical/siteAuditReport.ts, lib/canonical/siteAuditReportFixture.ts, lib/canonical/siteAuditReportFixtureInputs.ts, lib/canonical/siteAuditReportFont.ts, lib/canonical/variationTrackerOrder.test.ts, lib/canonical/variations.ts
 Done when:
-- [ ] Packed hash in iOS equals dacbb885a4e0e0be3c6e61bb51d7f8261348554b3ea015ed6289aae3701b1e3c
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 1ea112630bab0ae845a7044191b97869f8c6c21fecf139d51aaa976ac67533f6)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.65.0)
+- [ ] Packed hash in iOS equals f927beceff3fed2425855cac7703b5fe385c32e78603adca8824bc6063681eb7
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 a76a76820fa47c664c635d53490a2da29c087f955235aec7bdca45b10505c548)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.68.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.65.0
+## What changed in 1.68.0
 
 - **Site audits** (new §29; owner bug and decisions 17 Nov). Saving keeps the audit on the device before any upload and lists it as Not sent with Retry / Discard until saved; uploads run a few at a time, a stalled one is cancelled and retried, a refusal fails at once with its reason (web outbox and watched upload; iOS stall watchdog on site audit photos). Web reads and writes `imageCapturedAt` (owner Q1).
 - **One report on both apps**: `siteAuditReportLayout` (pages of drawing ops, shared Helvetica widths `siteAuditReportFont.ts`), `wrapSiteAuditReportText`, `siteAuditReportText`, `siteAuditReportTextWidth`, `siteAuditReportPhotoBox`, `siteAuditReportItemFields`, `siteAuditItemTakenMs`, `siteAuditReportPageLabel`, `siteAuditReferenceCode`, `siteAuditAuthorSignature`, `siteAuditReportTextLines`, `SITE_AUDIT_REPORT_CONTINUED`, `SITE_AUDIT_REPORT_PAGE`, `SITE_AUDIT_REPORT_COLORS`, and the shared fixture `SITE_AUDIT_REPORT_FIXTURE_INPUTS` / `SITE_AUDIT_REPORT_FIXTURE_EXPECTED` (`siteAuditReportFixtureForApps`). Fixes the iPhone report: fixed-height cards cut off Annotations, photos were a strip in a grey box, "Page n of n". Web's HTML print is replaced by a downloaded PDF from the same layout. Owner Q2–Q5: "Location", report order Location / Assignee / Comments / Annotations, tagline removed, "—" / "None".
@@ -45,8 +45,9 @@ Done when:
 
 ## New rulebook sections
 
-- 29. Site audits: saving and the report (1.65.0)
-- 1.65.0 — 2026-11-17
+- 29. Site audits: saving and the report (1.68.0)
+- 1.68.0 — 2026-11-18
+- 1.63.0 — 2026-11-17
 
 ## Workflow for the iOS agent
 
