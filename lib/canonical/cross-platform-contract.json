@@ -2824,7 +2824,7 @@
           "expected": {
             "parentId": "a1b2c3d4-0000-4000-8000-00000000000a",
             "parentType": "project",
-            "enabled": false,
+            "enabled": true,
             "enabledAtMs": null,
             "enabledByUid": null,
             "numberingMode": "lockSubmitted",
@@ -2852,7 +2852,7 @@
           "expected": {
             "parentId": "A1B2C3D4-0000-4000-8000-00000000000B",
             "parentType": "project",
-            "enabled": false,
+            "enabled": true,
             "enabledAtMs": null,
             "enabledByUid": null,
             "numberingMode": "lockSubmitted",
