@@ -196,7 +196,7 @@ export async function addInterestNote(id: string, body: string, authorName: stri
   const text = body.trim()
   if (!text) return
   if (!preferClient) {
-    const mode = await patchInterest(id, { note: text, authorName })
+    const mode = await patchInterest(id, { note: text })
     if (mode === 'api') {
       bump()
       return

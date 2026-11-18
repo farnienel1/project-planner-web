@@ -11,6 +11,16 @@ export function isValidUuid(value: string): boolean {
   return UUID_PATTERN.test(value.trim())
 }
 
+/**
+ * A Firestore document id the server may put in a path: 1–128 letters, digits, `_` or `-` (Firebase Auth uids,
+ * UUIDs, auto ids). Never a `/`, `.` or `..`, so a body value can never point a read or write at another path.
+ */
+const DOCUMENT_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/
+
+export function isValidDocumentId(value: unknown): value is string {
+  return typeof value === 'string' && DOCUMENT_ID_PATTERN.test(value)
+}
+
 export function clampString(value: unknown, maxLength: number): string | null {
   if (typeof value !== 'string') return null
   const trimmed = value.trim()

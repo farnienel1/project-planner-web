@@ -3,7 +3,9 @@ import { InterestAdminUnavailable } from '@/lib/interest/adminStore'
 import { removeInterestRegistration, updateInterestNote, updateInterestStatus } from '@/lib/interest/repository'
 import { INTEREST_STATUSES, type InterestStatus } from '@/lib/interest/registration'
 import { requireOwner } from '@/lib/owner/requireOwner'
-import { enforceRateLimit, isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
+import { enforceRateLimit, isFirebaseUser, jsonError } from '@/lib/security/apiGuard'
+import { apiObject, apiText, readApiBody } from '@/lib/security/apiBody'
+import { z } from 'zod'
 
 export const runtime = 'nodejs'
 
@@ -18,7 +20,14 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   if (!isFirebaseUser(owner)) return owner
   const id = cleanId((await context.params).id)
   if (!id) return jsonError('That registration is not on the list.', 404)
-  const body = await readJsonBody<{ status?: string; note?: string; authorName?: string }>(request)
+  // The note's author is the verified caller, never a name in the body (mass-assignment review of #391).
+  const body = await readApiBody(
+    request,
+    apiObject({
+      status: z.unknown().optional().transform((value) => (typeof value === 'string' ? value : undefined)),
+      note: apiText(4000),
+    })
+  )
   if (!body.ok) return body.response
   try {
     if (typeof body.value.status === 'string') {
@@ -28,7 +37,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       await updateInterestStatus(id, body.value.status as InterestStatus)
     }
     if (typeof body.value.note === 'string' && body.value.note.trim()) {
-      await updateInterestNote(id, body.value.note, body.value.authorName || owner.email || 'Owner')
+      await updateInterestNote(id, body.value.note, owner.email || 'Owner')
     }
     return NextResponse.json({ ok: true })
   } catch (error) {

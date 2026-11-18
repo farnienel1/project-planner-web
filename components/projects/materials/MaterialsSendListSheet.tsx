@@ -336,11 +336,8 @@ export function MaterialsSendListSheet({
           jobNumber: project.jobNumber,
           siteName: project.siteName,
           siteAddress,
-          senderName,
-          senderEmail: user.email,
-          senderPhone: user.mobileNumber,
-          senderCompany: organization.name,
-          companyLogoURL: organization.companyLogoURL,
+          // Mass-assignment audit 17 Nov: the sender's name, email, phone, company and logo are read by the route
+          // from the signed-in user's own users document and the stored organisation, never sent from here.
           recipients: recipients.map((row) => ({ name: row.name, email: row.email })),
           materials: items.map((item) => ({
             material: item.material,

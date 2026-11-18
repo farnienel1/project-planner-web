@@ -581,8 +581,8 @@ export function AddUserScreen() {
                 headers: await jsonAuthHeaders(),
                 signal,
                 body: JSON.stringify({
+                  // The route reads the organisation name from the stored organisation document.
                   organizationId: organization.id,
-                  organizationName: organization.name,
                   firstName,
                   to: email,
                 }),

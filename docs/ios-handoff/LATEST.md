@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.64.0
+# iOS follow-on — rulebook 1.65.5
 
 Generated 2026-11-18 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.63.0 → 1.64.0
-Packed hash: dce801d962cd8c4c75be420e9d2bf8d48f705ef77180fa2e376a79895c24bfda
-Rulebook sha256: fe3f89e39e831bd5efe8a7c60e79c1da951da78b223e2f23910f9f2c5aac23c7
+Rulebook version: 1.64.0 → 1.65.5
+Packed hash: 4a25d2086dafd317d268705b724490c4535a60b780a738254a7a6e6c0d67acf4
+Rulebook sha256: a1588be9587f572ddc5f15a317ebf5f930868b155bb4f576c310f5c965408156
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,29 +22,43 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 56f892a29d844eaaebe16028640ebdfb036324d3a229638968c34d10663159f3
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: none
+Exports added: REPORT_CHECKS_COLLECTION, overtimeReportIntegrity, parseReportCheckDocument, payeClaimReportIntegrity, reportCheckWriteFields
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/authClaims.test.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/crossPlatformContract.samples.ts, lib/canonical/index.ts, lib/canonical/liveSources.ts, lib/canonical/organizationDeletion.ts, lib/canonical/organizationSettings.ts, lib/canonical/reportIntegrity.ts
 Done when:
-- [ ] Packed hash in iOS equals dce801d962cd8c4c75be420e9d2bf8d48f705ef77180fa2e376a79895c24bfda
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 fe3f89e39e831bd5efe8a7c60e79c1da951da78b223e2f23910f9f2c5aac23c7)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.64.0)
+- [ ] Packed hash in iOS equals 4a25d2086dafd317d268705b724490c4535a60b780a738254a7a6e6c0d67acf4
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 a1588be9587f572ddc5f15a317ebf5f930868b155bb4f576c310f5c965408156)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.65.5)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.64.0
+## What changed in 1.65.5
 
-- **Allowlist rules** (§16; owner decisions 17 Nov A–D; emulator audit of main d3927045): write paths that were denylists, or used `diff().changedKeys().hasOnly` (blind to added and removed keys), now list the keys they may touch. Operatives manager's update of an operative `affectedKeys()` (removing `passwordSet` then changing the line manager, or adding `ghost` / `invitationId` / `accountConfirmed` / `role`, is refused); a person's own `users` update allowlisted (no `annualLeave*`, `timesheetsEnabled`, `invitationId`, feedback admin overlays; a missing `employmentType` stays missing; `passwordSet` and `accountConfirmed` only ever to true); organisation create in the exact `organizationCreateFields` shape with the creator alone as admin and pending billing (decision A); leave create owned by its `userId`, never an `operativeId` beside another person's `userId`; notification create keys and `actorUserId` required except scheduled types, addressee update `isRead` / `readAt` only; `operatives` / `managers` rows updated by staff only, an operative's own row qualifications only (decision C); task `createdByUserId` the creator and never rewritten, operatives change completion keys only; account confirmation create shape; own email claim needs a tie to the organisation; product feedback idea, vote, comment and session allowlists. Same allow / deny for every write shape web and iOS send today (positive tests). No new rulebook function (rules only); the packed script changes only in its rulebook stamp.
-- Rules compile cost kept below main: the identical `users` get and list allows are one `read`, the duplicated invite self-create block is evaluated once, the operatives update's shared tail is written once, and `affected()` names `request.resource.data.diff(resource.data).affectedKeys()`.
-- **`reportChecks` rules** (coordinated with web #391, rulebook 1.65.0): admins read, nobody writes, out of the catch-all read; emulator test in `tests/privilegeEscalation.rules.test.ts`. The release order is free: until #391 merges nothing writes the collection.
-- **Notifications (review of the suites):** the admin update path is kept, now limited to the same keys as the addressee's (`isRead`, `readAt`, write metadata); a full set of an existing row (no app writes one) is refused. `push_test` names its sender as actor, as both apps already write it.
-- **Review of #392 (18 Nov):** `isActive` / `hasNoLineManager` pinned to the exact stored value (a deactivated person could write `null` or `0` and be active again on the next token — on main too); an operative's task save may carry the `taskWriteFields` tidy form of a task stored before 1.8.0; no `employmentType: null` added; the admin self-save pins `isActive` / `hasNoLineManager` too (re-review); task items are tidied only when the stored items have no ids and their number is unchanged; own leave's `operativeId` is not checked (iOS sends it upper-cased; follow-up); `callerOrg` reads the token claims with one nested `get` (compile cost, same decisions); an Operatives manager may remove the legacy `utrNumber` / `vatNumber`. Scheduled-type notices and the own `ppIdeas` copies stay open (follow-ups: the apps write scheduled rows for other people, and the rules cannot walk a map of ideas).
+- **Report check: the person as the apps see them** (§26, fifth review of #391; Cloud Functions only, no rule function changes). The person's ids are `overtimePersonIds` over their users document with its stored `formerUserIds` and `sameEmailUserIds`, every users document of the organisation on their email and the organisation's `operatives` rows, both matched with `emailKey` (trimmed, lower case) — the same set for `not_their_booking` and `not_their_item`. The organisation's Super Admin (`isOrganizationSuperAdmin`) counts as having no line manager (§25 `canEditOwnBookingOvertime`: they change their own overtime directly), so their self-confirmed line is a note. Real reports filed under a same-email account, an `operatives` row whose email differs in case or spaces, or by a Super Admin with a line manager were flagged before.
+
+## iOS work for 1.65.5
+
+Super Admin of an organisation has no blank fallback, and a server check of saved reports (rulebook 1.65.0, mass-assignment audit 17 Nov, owner approved). Every rule below is a packed function — call it through `CanonicalBusinessEngine`; keep no Swift copy.
+
+1. **`isOrganizationSuperAdmin`** (§20): a viewer's `isSuperAdmin` flag now counts only when their home `organizationId` names the open organisation exactly; a blank home organisation (or a blank organisation id) is never a match. The creator is unchanged. iOS callers (`CanonicalBusinessEngine.isOrganizationSuperAdmin` in `Core/Rulebook+PermissionLevels.swift` → `OrganizationSuperAdminCache`, `AppUser.organizationSuperAdmin`; `accountDeletionPath` in `Views/DeleteMyAccountView.swift`) already pass `viewerOrganizationId` / `organizationId`; nothing to change unless an `AppUser` is built with an empty `organizationId` for the signed-in user — then the Super Admin answer is now false (correct: the rules' `callerIsSuperAdminOf` never allowed it). Check `RulebookParityTests` and `Rulebook1280Tests` still pass after the sync.
+2. **Report checks** (§26): nothing for iOS to write or show — the Cloud Functions check every new `overtimeReports` / `payeClaimReports` document and admins read the results in web Data health. Do not write `reportChecks` from the app.
+3. `minimumIosBuild`: not needed.
+4. **1.65.1** (review of #391): the report check is stricter (a line with no booking fingerprint, a repeated booking or item, and clock hours or a multiplier that are not the booking's are flagged). Still server only: the iPhone already writes `fingerprint` on every overtime report line (`overtimeReportSnapshot`); nothing to change.
+5. **1.65.2** (re-review of #391): the report check also compares the printed text, day, times and job of each overtime line, each claim item's name, job number, dates and currency, and each line or item against the report's range. Still server only; the iPhone writes reports through `overtimeReportSnapshot` / `payeClaimReportSnapshot`, which already produce the expected values. Nothing to change.
+6. **1.65.3** (third review of #391): 0h lines, custom places and claim descriptions / approvers / evidence are checked too. Server only. For a manager site booking at a place that is not a job, iOS leaves the overtime line's job name blank (`OvertimeBookingInput.withJobs` finds no job) and web shows `customLocationName`; the check accepts both. Nothing to change.
+7. **1.65.4** (fourth review of #391): the server reads bookings and names through the rulebook readers and also checks the booking's person, self-confirmation with a line manager, and the printed person and company. Server only; nothing to change on iOS.
+8. **1.65.5** (fifth review of #391): server only — the check finds the person's ids and Super Admin status as the apps do. Nothing to change on iOS.
 
 ## New rulebook sections
 
-- 1.64.0 — 2026-11-17
+- 1.65.5 — 2026-11-17
+- 1.65.4 — 2026-11-17
+- 1.65.3 — 2026-11-17
+- 1.65.2 — 2026-11-17
+- 1.65.1 — 2026-11-17
+- 1.65.0 — 2026-11-17
 
 ## Workflow for the iOS agent
 
