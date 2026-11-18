@@ -1654,6 +1654,15 @@ export async function listTimesheetStates(
   }
 }
 
+/**
+ * Final review of #386: the `privatePay` switch as the timesheet lookups read it (`timesheetLookupPlan`) — on until
+ * `platformConfig/app` has been read, so no query the rules might refuse is sent before the switch is known. Screens
+ * re-plan when the config arrives (`onPlatformConfigChange`), so a non-admin's list widens when it turns out off.
+ */
+export function timesheetLookupPrivatePay(organizationId: string): boolean {
+  return !securitySwitchesLoaded() || privatePayFor(organizationId)
+}
+
 /** The end of a Firestore document-id prefix range: U+F8FF, the highest code point used in ids. */
 const DOCUMENT_ID_PREFIX_END = '\uf8ff'
 
@@ -1931,8 +1940,7 @@ export async function loadExportedTimesheetHistory({
   // One read per person (their records fold into one, `exportedSheetOwnerResolver`).
   const people = [...new Set(users.map((member) => sheetOwner(member.id) ?? member))]
   await securitySwitchesReady()
-  // Not read yet counts as on: no query the rules might refuse is sent before the switch is known.
-  const privatePay = !securitySwitchesLoaded() || privatePayFor(organizationId)
+  const privatePay = timesheetLookupPrivatePay(organizationId)
   const batches = await mapInBatches(people, 8, async (member) => {
     // Guardrail 1: every id the person goes by (a former invite id, a second users document on their email), and
     // sheets stored without `userId` whose document id names them — when this viewer's rules allow those queries

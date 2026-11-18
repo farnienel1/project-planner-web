@@ -17,7 +17,8 @@ import {
 } from './personTimesheetDocs.ts'
 import { timesheetMemberIds } from './timesheetQueue.ts'
 import { exportedTimesheetSubjectIds, userTimesheetSubjectIds } from '../permissions.ts'
-import { exportedSheetOwnerResolver, isUnresolvedTimesheetPerson } from './timesheetStorage.ts'
+import { exportedSheetOwnerResolver, isUnresolvedTimesheetPerson, timesheetLookupPrivatePay } from './timesheetStorage.ts'
+import { setSecuritySwitchConfigForTests, setSecuritySwitchesUnreadForTests } from '../access/securitySwitches.ts'
 import { exportedTimesheetRosterGroups } from './timesheetWeekUtils.ts'
 
 const sheet = (userId: string | undefined, weekStartKey: string): Record<string, unknown> => ({
@@ -272,4 +273,15 @@ test('Raccord-shaped data: an admin sees the deleted person\'s sheets as Unknown
   const noUnknown = exportedSheetOwnerResolver({ users: listed, roster, includeUnresolved: false, organizationId: 'org' })
   assert.equal(noUnknown(deletedId), null)
   assert.equal(noUnknown('admin1')?.id, 'admin1')
+})
+
+test('timesheetLookupPrivatePay: on until platformConfig/app is read; then the organisation\'s own switch', () => {
+  setSecuritySwitchesUnreadForTests()
+  assert.equal(timesheetLookupPrivatePay('ORG1'), true, 'not read yet: no query the rules might refuse')
+  setSecuritySwitchConfigForTests({ privatePay: false })
+  assert.equal(timesheetLookupPrivatePay('ORG1'), false, 'read and off: the list widens')
+  setSecuritySwitchConfigForTests({ privatePayOrganizationIds: ['ORG1'] })
+  assert.equal(timesheetLookupPrivatePay('ORG1'), true)
+  assert.equal(timesheetLookupPrivatePay('ORG2'), false)
+  setSecuritySwitchConfigForTests(null)
 })

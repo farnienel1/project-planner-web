@@ -54,10 +54,11 @@ import {
   loadTimesheetDraftsForStarts,
   loadTimesheetQueueDrafts,
   listPersonTimesheetStates,
+  timesheetLookupPrivatePay,
   timesheetSourceDocumentId,
 } from '@/lib/timesheets/timesheetStorage'
 import { timesheetLookupPlan } from '@/lib/timesheets/personTimesheetDocs'
-import { privatePayFor, securitySwitchesLoaded, securitySwitchesReady } from '@/lib/access/securitySwitches'
+import { onPlatformConfigChange } from '@/lib/access/securitySwitches'
 import { emptyTimesheetDraft, type TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import {
   awaitingManagerSignOff,
@@ -705,22 +706,26 @@ function MineTimesheetsList({
   const subjectIsAdmin = hasAdminAccess(subject)
   const subjectIds = useMemo(() => timesheetMemberIds(subject, users), [subject, users])
   const subjectIdsKey = subjectIds.join('|')
+  // Re-check of #386: the switch as the lookups read it, followed live — when `platformConfig/app` arrives after the
+  // first read (privatePay off), the list is planned again and widens.
+  const [lookupPrivatePay, setLookupPrivatePay] = useState(() => timesheetLookupPrivatePay(organizationId ?? ''))
+  useEffect(() => {
+    const update = () => setLookupPrivatePay(timesheetLookupPrivatePay(organizationId ?? ''))
+    update()
+    return onPlatformConfigChange(update)
+  }, [organizationId])
 
   useEffect(() => {
     if (!organizationId) return
     let cancelled = false
     const currentKey = periodKey(currentPeriod)
-    securitySwitchesReady()
-      .then(() => {
-        const plan = timesheetLookupPlan({
-          ids: subjectIds,
-          viewerIsOperative: subjectIsOperative,
-          viewerIsAdmin: subjectIsAdmin,
-          // Not read yet counts as on (no query the rules might refuse).
-          privatePay: !securitySwitchesLoaded() || privatePayFor(organizationId),
-        })
-        return listPersonTimesheetStates(organizationId, plan.ids, 400, 'latest', plan.includeDocumentPrefix)
-      })
+    const plan = timesheetLookupPlan({
+      ids: subjectIds,
+      viewerIsOperative: subjectIsOperative,
+      viewerIsAdmin: subjectIsAdmin,
+      privatePay: lookupPrivatePay,
+    })
+    listPersonTimesheetStates(organizationId, plan.ids, 400, 'latest', plan.includeDocumentPrefix)
       .then(async (rows) => {
       if (cancelled) return
       const byKey = new Map<string, { start: Date; end: Date }>()
@@ -784,7 +789,7 @@ function MineTimesheetsList({
     }
     // `subjectIds` is read through `subjectIdsKey` (a new roster array with the same ids does not reload).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [organizationId, subject.id, subjectIdsKey, subjectIsOperative, subjectIsAdmin, currentPeriod, pastPeriods, invoicing, timeZone])
+  }, [organizationId, subject.id, subjectIdsKey, subjectIsOperative, subjectIsAdmin, lookupPrivatePay, currentPeriod, pastPeriods, invoicing, timeZone])
 
   // Rulebook 1.47.0 §8: a signed, unexported sheet whose bookings changed is back with the person.
   const changeOf = (period: { start: Date; end: Date }) =>
