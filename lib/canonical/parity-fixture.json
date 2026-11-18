@@ -24780,7 +24780,7 @@
       }
     },
     {
-      "name": "1.62.0 Awaiting sign-off: every waiting sheet however old, one row per person and pay run (aliases folded, PAYE runs, inactive people and the viewer left out, revisions read as their latest version)",
+      "name": "1.66.0 Awaiting sign-off: every waiting sheet however old, one row per person and pay run (aliases folded, PAYE runs, inactive people and the viewer left out, revisions read as their latest version)",
       "function": "userTimesheetQueue",
       "args": [
         {
@@ -25040,6 +25040,45 @@
             },
             {
               "userId": "OP-1",
+              "startDayKey": "2026-07-01",
+              "endDayKey": "2026-07-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker",
+                "managerSignedAt": 1792576800000,
+                "managerSignedByName": "Admin",
+                "lateExtras": [
+                  {
+                    "id": "late-1",
+                    "kind": "expense",
+                    "title": "Parking",
+                    "amount": 12,
+                    "date": "2026-07-03"
+                  }
+                ]
+              },
+              "documentId": "timesheet_OP-1_1782860400"
+            },
+            {
+              "userId": "op-1b",
+              "startDayKey": "2026-08-01",
+              "endDayKey": "2026-08-15",
+              "data": {},
+              "documentId": "timesheet_op-1b_1785538800"
+            },
+            {
+              "userId": "OP-1",
+              "startDayKey": "2026-08-01",
+              "endDayKey": "2026-08-15",
+              "data": {
+                "weeklyReportOverride": {
+                  "lines": []
+                }
+              },
+              "documentId": "timesheet_OP-1_1785538800"
+            },
+            {
+              "userId": "OP-1",
               "startDayKey": "2026-11-01",
               "endDayKey": "2026-11-15",
               "data": {
@@ -25083,7 +25122,7 @@
           "startDayKey": "2026-11-01",
           "endDayKey": "2026-11-15",
           "documentId": "timesheet_OP-1_1793491200",
-          "sheetIndex": 13,
+          "sheetIndex": 16,
           "bucket": "unsigned"
         },
         {
@@ -25093,7 +25132,7 @@
           "startDayKey": "2026-11-01",
           "endDayKey": "2026-11-15",
           "documentId": "timesheet_op-3_1793491200",
-          "sheetIndex": 14,
+          "sheetIndex": 17,
           "bucket": "awaiting"
         },
         {
@@ -25104,6 +25143,26 @@
           "endDayKey": "2026-10-31",
           "documentId": "timesheet_op-3_1792105200",
           "sheetIndex": 10,
+          "bucket": "awaiting"
+        },
+        {
+          "key": "OP-1|2026-08-01|2026-08-15",
+          "personId": "OP-1",
+          "sheetUserId": "OP-1",
+          "startDayKey": "2026-08-01",
+          "endDayKey": "2026-08-15",
+          "documentId": "timesheet_OP-1_1785538800",
+          "sheetIndex": 15,
+          "bucket": "unsigned"
+        },
+        {
+          "key": "OP-1|2026-07-01|2026-07-15",
+          "personId": "OP-1",
+          "sheetUserId": "OP-1",
+          "startDayKey": "2026-07-01",
+          "endDayKey": "2026-07-15",
+          "documentId": "timesheet_OP-1_1782860400",
+          "sheetIndex": 13,
           "bucket": "awaiting"
         },
         {
@@ -25169,7 +25228,7 @@
       ]
     },
     {
-      "name": "1.62.0 Awaiting sign-off and Signed off counts (hub tile, iOS landing card)",
+      "name": "1.66.0 Awaiting sign-off and Signed off counts (hub tile, iOS landing card)",
       "function": "userTimesheetQueueCounts",
       "args": [
         {
@@ -25429,6 +25488,45 @@
             },
             {
               "userId": "OP-1",
+              "startDayKey": "2026-07-01",
+              "endDayKey": "2026-07-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker",
+                "managerSignedAt": 1792576800000,
+                "managerSignedByName": "Admin",
+                "lateExtras": [
+                  {
+                    "id": "late-1",
+                    "kind": "expense",
+                    "title": "Parking",
+                    "amount": 12,
+                    "date": "2026-07-03"
+                  }
+                ]
+              },
+              "documentId": "timesheet_OP-1_1782860400"
+            },
+            {
+              "userId": "op-1b",
+              "startDayKey": "2026-08-01",
+              "endDayKey": "2026-08-15",
+              "data": {},
+              "documentId": "timesheet_op-1b_1785538800"
+            },
+            {
+              "userId": "OP-1",
+              "startDayKey": "2026-08-01",
+              "endDayKey": "2026-08-15",
+              "data": {
+                "weeklyReportOverride": {
+                  "lines": []
+                }
+              },
+              "documentId": "timesheet_OP-1_1785538800"
+            },
+            {
+              "userId": "OP-1",
               "startDayKey": "2026-11-01",
               "endDayKey": "2026-11-15",
               "data": {
@@ -25465,12 +25563,12 @@
         }
       ],
       "expected": {
-        "awaiting": 6,
+        "awaiting": 7,
         "signed": 1
       }
     },
     {
-      "name": "1.62.0 a run whose bookings are not loaded reads as not changed",
+      "name": "1.66.0 a run whose bookings are not loaded reads as not changed, unless a late extra waits for the line manager",
       "function": "userTimesheetQueueCounts",
       "args": [
         {
@@ -25743,6 +25841,48 @@
             },
             {
               "userId": "OP-1",
+              "startDayKey": "2026-07-01",
+              "endDayKey": "2026-07-15",
+              "data": {
+                "operativeSignedAt": 1792490400000,
+                "operativeSignedByName": "Worker",
+                "managerSignedAt": 1792576800000,
+                "managerSignedByName": "Admin",
+                "lateExtras": [
+                  {
+                    "id": "late-1",
+                    "kind": "expense",
+                    "title": "Parking",
+                    "amount": 12,
+                    "date": "2026-07-03"
+                  }
+                ]
+              },
+              "documentId": "timesheet_OP-1_1782860400",
+              "bookingsChange": null
+            },
+            {
+              "userId": "op-1b",
+              "startDayKey": "2026-08-01",
+              "endDayKey": "2026-08-15",
+              "data": {},
+              "documentId": "timesheet_op-1b_1785538800",
+              "bookingsChange": null
+            },
+            {
+              "userId": "OP-1",
+              "startDayKey": "2026-08-01",
+              "endDayKey": "2026-08-15",
+              "data": {
+                "weeklyReportOverride": {
+                  "lines": []
+                }
+              },
+              "documentId": "timesheet_OP-1_1785538800",
+              "bookingsChange": null
+            },
+            {
+              "userId": "OP-1",
               "startDayKey": "2026-11-01",
               "endDayKey": "2026-11-15",
               "data": {
@@ -25773,7 +25913,7 @@
         }
       ],
       "expected": {
-        "awaiting": 5,
+        "awaiting": 6,
         "signed": 3
       }
     }

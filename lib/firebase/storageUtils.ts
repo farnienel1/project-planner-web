@@ -1,10 +1,11 @@
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
+import { ref, uploadBytesResumable, getDownloadURL, getMetadata } from 'firebase/storage'
 import { qualificationCertificateStoragePath } from '@/lib/canonical/operativeQualifications'
 import { timesheetExportStoragePath } from '@/lib/canonical/timesheetPeriod'
 import { storage, auth } from '@/lib/firebase/config'
 import { withTimeout } from '@/lib/client/withTimeout'
 import { generatedStorageFileName } from '@/lib/security/uploadLimits'
 import { assertUploadAllowed } from '@/lib/security/uploadGuard'
+import { variationUploadStallReason } from '@/lib/variations/variationUploadStall'
 
 const UPLOAD_TIMEOUT_MS = 180_000
 
@@ -140,9 +141,25 @@ export async function uploadVariationEvidenceFile(
       }
       finish(() => reject(new Error(message)))
     }
+    let sentBytes = 0
+    // Bumped by every progress snapshot: a stall check only cancels when nothing arrived while it asked Storage.
+    let progressMark = 0
     const armStall = () => {
       if (stall) clearTimeout(stall)
-      stall = setTimeout(() => cancel('The evidence upload stopped for a minute and was cancelled. Check the connection and add the file again.'), VARIATION_UPLOAD_STALL_MS)
+      stall = setTimeout(() => {
+        if (settled) return
+        // 17 Nov bug: a refusal from the Storage rules comes back at once as storage/unauthorized (error callback
+        // below). A stall means File storage never answered: the SDK silently retries a request that got no reply
+        // (network, a blocked request, an App Check token that never arrived) for up to 10 minutes. Before giving up,
+        // ask Storage one quick question about the same path to say which it is, instead of a vague "stopped".
+        // Review of #388: if the upload moves on or finishes during that question, it is not cancelled (a cancel
+        // then could leave a finished file unlinked).
+        const markAtStall = progressMark
+        void variationUploadStallReason({ sentBytes }, () => withTimeout(getMetadata(storageRef), 10_000, 'no-answer')).then((reason) => {
+          if (settled || progressMark !== markAtStall) return
+          cancel(reason)
+        })
+      }, VARIATION_UPLOAD_STALL_MS)
     }
     const overall = setTimeout(() => cancel('The evidence upload took too long and was cancelled. Add the file again.'), VARIATION_UPLOAD_MAX_MS)
     const finish = (outcome: () => void) => {
@@ -159,11 +176,15 @@ export async function uploadVariationEvidenceFile(
     task.on(
       'state_changed',
       (snapshot) => {
+        progressMark += 1
+        sentBytes = snapshot.bytesTransferred
         armStall()
         if (snapshot.totalBytes > 0) options.onProgress?.(snapshot.bytesTransferred / snapshot.totalBytes)
       },
       (error) => finish(() => reject(error)),
       () => {
+        // Uploaded: a stall check still waiting must not cancel it while the link is fetched.
+        progressMark += 1
         withTimeout(getDownloadURL(storageRef), 15_000, 'The evidence file uploaded but its link could not be created. Try again.')
           .then((downloadURL) => finish(() => resolve({ storagePath, downloadURL, contentType, sizeBytes: file.size })))
           .catch((error) => finish(() => reject(error)))

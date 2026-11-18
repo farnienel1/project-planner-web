@@ -1,7 +1,7 @@
 import type { UserTimesheetQueueInput } from './userTimesheetQueue'
 
 /**
- * 1.62.0 §8: the shared Awaiting sign-off scenario. Its cases are in `parity-fixture.json`, which web
+ * 1.66.0 §8: the shared Awaiting sign-off scenario. Its cases are in `parity-fixture.json`, which web
  * (`canonical.test.ts`) and iOS (`CanonicalParityFixtureTests`) both run through the packed script, so both apps
  * count the same rows for the same data.
  */
@@ -61,6 +61,19 @@ export function awaitingQueueScenario(): UserTimesheetQueueInput {
       // The viewer's own sheet: never listed.
       { userId: 'admin', startDayKey: '2026-10-16', endDayKey: '2026-10-31', data: awaiting, documentId: 'timesheet_admin_1792105200', hasActivity: true },
       { userId: 'gone', startDayKey: '2026-10-16', endDayKey: '2026-10-31', data: awaiting, documentId: 'timesheet_gone_1792105200', hasActivity: true },
+      // 1.66.0: an old signed-off run whose bookings are not loaded (no bookingsChange) with a late extra waiting for the
+      // line manager: the late extras in the stored sheet decide alone — Awaiting (§8 1.54.0).
+      {
+        userId: 'OP-1',
+        startDayKey: '2026-07-01',
+        endDayKey: '2026-07-15',
+        data: { ...signedOff, lateExtras: [{ id: 'late-1', kind: 'expense', title: 'Parking', amount: 12, date: '2026-07-03' }] },
+        documentId: 'timesheet_OP-1_1782860400',
+      },
+      // 1.66.0: two copies of one run, neither flagged: the one with activity (here only a signed snapshot,
+      // `timesheetSheetHasActivity`) is picked over the empty one stored first.
+      { userId: 'op-1b', startDayKey: '2026-08-01', endDayKey: '2026-08-15', data: {}, documentId: 'timesheet_op-1b_1785538800' },
+      { userId: 'OP-1', startDayKey: '2026-08-01', endDayKey: '2026-08-15', data: { weeklyReportOverride: { lines: [] } }, documentId: 'timesheet_OP-1_1785538800' },
       // Signed off, but a booking changed and the person must sign again: neither Awaiting nor Signed off.
       { userId: 'OP-1', startDayKey: '2026-11-01', endDayKey: '2026-11-15', data: signedOff, documentId: 'timesheet_OP-1_1793491200', hasActivity: true, bookingsChange: { reopened: true, waitingFor: 'person' } },
       // Signed by the person, changed, signed again: Awaiting the counter-signature again.

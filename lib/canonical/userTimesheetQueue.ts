@@ -1,19 +1,24 @@
 /**
- * User Timesheets → Awaiting sign-off / Signed off, and every count of them (rulebook §8, 1.62.0, owner decision 17 Nov:
+ * User Timesheets → Awaiting sign-off / Signed off, and every count of them (rulebook §8, 1.66.0, owner decision 17 Nov:
  * "Awaiting sign-off must show EVERY timesheet waiting for sign-off, however old; both apps must agree exactly").
  *
  * One row per person per pay run, built from the viewer's stored timesheet documents — never from a window of recent
  * pay runs (web 1.58 looked at the last six only) and never once per users document (iOS counted a person with two
  * records twice):
  *   - who: `userTimesheetSubjects` (never the viewer, under any of their ids);
- *   - one person: subjects whose `personIdSet` meet are one person, and a sheet filed under any id they go by is theirs;
+ *   - one person: subjects whose `personIdSet` meet are one person, and a sheet whose `userId` (or, when it has none,
+ *     the id in its document id) is any id they go by, without case, is theirs. The apps load sheets by `userId`, so a
+ *     sheet stored with no `userId` reaches this rule only when the app already holds it (a known limit, §8);
  *   - which pay runs: the runs the person's stored sheets name (start and end day keys), however old; one sheet per run
- *     (`pickTimesheetRowForPeriod`: exact start+end first, the latest version of a revised sheet);
+ *     (`pickTimesheetRowForPeriod`: exact start+end first, the latest version of a revised sheet, a sheet with
+ *     activity — `timesheetSheetHasActivity` — before an empty one);
  *   - PAYE runs: skipped — a person is listed for a run only when they were self-employed on a day of it
  *     (`showsMyTimesheets`);
- *   - the bucket: `timesheetListBucket` (counter-signed unless `timesheetSelfSigned`) with the sheet's own
- *     `signedTimesheetBookingChanges` when the caller has that run's bookings. A run whose bookings are not loaded is
- *     passed without a change and reads as not changed (§8 1.47.0), so an old sheet still lands in Awaiting or Signed off.
+ *   - the bucket: `timesheetListBucket` (counter-signed unless `timesheetSelfSigned`) with the sheet's change. When the
+ *     caller has that run's bookings it passes `bookingsChange` (`signedTimesheetBookingChanges` folded with the late
+ *     extras, `timesheetChangesWithLateExtras`). When it does not (an old run), it passes none and the change is the
+ *     late extras alone, read here from the stored `data` (`timesheetLateExtrasSummary`): bookings read as not changed
+ *     (§8 1.47.0), but a late extra waiting for the line manager still puts an old sheet in Awaiting (§8 1.54.0).
  *
  * Pure: the apps load the sheets and the roster, and only render these rows.
  */
@@ -30,6 +35,7 @@ import {
   type TimesheetStatusFields,
 } from './timesheetPeriod'
 import { userTimesheetSubjects, type UserTimesheetMember, type UserTimesheetViewer } from './userTimesheetAccess'
+import { timesheetChangesWithLateExtras, timesheetLateExtrasSummary } from './timesheetLateExtras'
 
 /** A roster member as the queue reads it: User Timesheets access, the person-id fields and the employment fields. */
 export type UserTimesheetQueueMember = UserTimesheetMember &
@@ -56,11 +62,15 @@ export type UserTimesheetQueueSheet = {
   status?: TimesheetStatusFields | null
   data?: Record<string, unknown> | null
   documentId?: string | null
-  /** The sheet has a signature, entries or a note (`pickTimesheetRowForPeriod` prefers such a row). */
+  /**
+   * The sheet has a signature, entries, late extras, a signed snapshot or a note (`pickTimesheetRowForPeriod` prefers
+   * such a row). Missing: `timesheetSheetHasActivity(data)`.
+   */
   hasActivity?: boolean | null
   /**
-   * The sheet's `signedTimesheetBookingChanges` when the caller has the live bookings of its pay run; null/missing when
-   * it has not (an old run whose bookings are not loaded): the sheet then reads as not changed (rulebook §8 1.47.0).
+   * The sheet's `signedTimesheetBookingChanges` folded with its late extras (`timesheetChangesWithLateExtras`) when the
+   * caller has the live bookings of its pay run. Null/missing when it has not (an old run whose bookings are not
+   * loaded): the bookings then read as not changed (rulebook §8 1.47.0), and the late extras in `data` decide alone.
    */
   bookingsChange?: { reopened?: boolean | null; waitingFor?: 'person' | 'lineManager' | null } | null
 }
@@ -99,6 +109,34 @@ function text(value: unknown): string {
 
 function sheetOwnerKey(sheet: UserTimesheetQueueSheet): string {
   return idKey(sheet.userId) || idKey(timesheetDocumentSubjectId(sheet.documentId ?? ''))
+}
+
+function filled(value: unknown): boolean {
+  if (value == null || value === false) return false
+  if (typeof value === 'string') return value.trim().length > 0
+  if (typeof value === 'number') return Number.isFinite(value) && value !== 0
+  if (Array.isArray(value)) return value.length > 0
+  return true
+}
+
+/**
+ * Rulebook §8 (1.66.0): whether a stored timesheet has anything on it — a person or line-manager signature, an export,
+ * price work, expenses, late extras, a signed snapshot (`weeklyReportOverride`) or a note to the manager. One rule for
+ * both apps (web `timesheetDraftHasActivity`, iOS `UserTimesheetQueueRulebook`); `pickTimesheetRowForPeriod` prefers a
+ * sheet with activity over an empty one for the same pay run.
+ */
+export function timesheetSheetHasActivity(data: Record<string, unknown> | null | undefined): boolean {
+  const sheet = data && typeof data === 'object' ? data : {}
+  return [
+    'operativeSignedAt',
+    'managerSignedAt',
+    'exportedAt',
+    'expenseEntries',
+    'priceWorkEntries',
+    'lateExtras',
+    'managerNote',
+    'weeklyReportOverride',
+  ].some((key) => filled(sheet[key]))
 }
 
 function sheetEnd(sheet: UserTimesheetQueueSheet): string {
@@ -162,7 +200,7 @@ export function userTimesheetQueue(input: UserTimesheetQueueInput): UserTimeshee
     const candidates = own.map(({ sheet }) => ({
       startDayKey: text(sheet.startDayKey),
       endDayKey: DAY_KEY.test(text(sheet.endDayKey)) ? text(sheet.endDayKey) : null,
-      hasActivity: sheet.hasActivity === true,
+      hasActivity: typeof sheet.hasActivity === 'boolean' ? sheet.hasActivity : timesheetSheetHasActivity(sheet.data),
       documentId: text(sheet.documentId) || null,
     }))
     const runs = new Map<string, { startDayKey: string; endDayKey: string }>()
@@ -183,7 +221,11 @@ export function userTimesheetQueue(input: UserTimesheetQueueInput): UserTimeshee
       const status = sheet.status ?? parseTimesheetStatusFields(sheet.data ?? {})
       const selfSigned =
         typeof member.timesheetSelfSigned === 'boolean' ? member.timesheetSelfSigned : timesheetSelfSigned(member as LeaveSelfBookUser)
-      const bucket = timesheetListBucket(status, !selfSigned, sheet.bookingsChange ?? null)
+      // No booking change from the caller (an old run): the late extras alone, read from the stored sheet (1.54.0).
+      const change =
+        sheet.bookingsChange ??
+        (sheet.data ? timesheetChangesWithLateExtras(null, timesheetLateExtrasSummary(sheet.data, { sheetDocId: text(sheet.documentId) || null })) : null)
+      const bucket = timesheetListBucket(status, !selfSigned, change)
       rows.push({
         key: `${member.id}|${run.startDayKey}|${run.endDayKey}`,
         personId: member.id,

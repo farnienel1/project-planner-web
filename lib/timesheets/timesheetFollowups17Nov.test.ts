@@ -135,7 +135,7 @@ test('item 1: a signed, unexported sheet of an earlier pay run stays on Signed o
   assert.deepEqual(queueRows(sheets, 'signed').map((row) => row.member.id), ['u2'])
 })
 
-test('1.62.0: a sheet waiting for sign-off is listed however old (no six-run window), once per person', () => {
+test('1.66.0: a sheet waiting for sign-off is listed however old (no six-run window), once per person', () => {
   const april = { start: new Date('2026-04-01T00:00:00+01:00'), end: new Date('2026-04-15T00:00:00+01:00') }
   const waiting = { ...emptyTimesheetDraft(), operativeSignedAt: new Date('2026-04-16T09:00:00Z'), operativeSignedByName: 'Farnie Nel' }
   const sheets = [

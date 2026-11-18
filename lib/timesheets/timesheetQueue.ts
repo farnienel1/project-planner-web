@@ -1,8 +1,9 @@
 /**
- * User Timesheets → Awaiting sign-off / Signed off across the recent pay runs (17 Nov follow-up): a signed sheet of an
- * earlier pay run that was never exported stays listed (with its own run) until it is exported. Which bucket a sheet is
- * in stays the rulebook's (`timesheetListBucket` via `currentPeriodTimesheetMembers`); which sheets are a person's
- * stays the rulebook's person-id rule (`personIdSet`). This file only walks the pay runs and keys the rows.
+ * User Timesheets → Awaiting sign-off / Signed off (rulebook 1.66.0 §8, owner decision 17 Nov): every stored sheet of the
+ * viewer's people, however old. Who is listed, one row per person and pay run, PAYE runs, revisions and the bucket are the
+ * rulebook's `userTimesheetQueue`; which sheets are a person's is the rulebook's person-id rule (`personIdSet`). This file
+ * shapes the web roster and sheets into its input, maps the rows back, and keeps the recent-pay-run window the background
+ * snapshot repair and the booking-change check use.
  */
 import { listSelectablePayPeriods, periodStartKey } from '@/lib/timesheets/paymentRunCopy'
 import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
@@ -112,7 +113,7 @@ type BookingChangeOf = (
 export type TimesheetQueueBucketRow = TimesheetQueueRow & { bucket: TimesheetListBucket }
 
 /**
- * Rulebook 1.62.0 §8 (owner decision 17 Nov): User Timesheets → Awaiting sign-off / Signed off and their counts, from
+ * Rulebook 1.66.0 §8 (owner decision 17 Nov): User Timesheets → Awaiting sign-off / Signed off and their counts, from
  * every stored sheet of the viewer's people, however old — `userTimesheetQueue` decides who, one row per person and pay
  * run, PAYE runs, revisions and the bucket. This only shapes the web roster and sheets into its input and maps its rows
  * back. A sheet's booking change is worked out only for a signed, unexported sheet (`bookingChange`, which reads a run

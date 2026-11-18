@@ -990,7 +990,7 @@ function ManagerTimesheetsTile({
     let cancelled = false
     Promise.all([
       reviewIds.length > 0
-        ? // Rulebook 1.62.0 §8 (owner decision 17 Nov): every stored sheet, however old — never only the recent runs.
+        ? // Rulebook 1.66.0 §8 (owner decision 17 Nov): every stored sheet, however old — never only the recent runs.
           loadTimesheetQueueSheets({ organizationId, userIds: reviewIds, timeZone })
         : Promise.resolve([] as TimesheetQueueStoredSheet[]),
       // 17 Nov follow-up: the same Exported list as User Timesheets → Exported (former ids matched; admins also count
@@ -1013,7 +1013,7 @@ function ManagerTimesheetsTile({
 
   const catalogueRef = useRef(changeCatalogue)
   catalogueRef.current = changeCatalogue
-  // Rulebook 1.62.0 §8: the same rows User Timesheets lists — every stored sheet however old (`userTimesheetQueue`), a
+  // Rulebook 1.66.0 §8: the same rows User Timesheets lists — every stored sheet however old (`userTimesheetQueue`), a
   // reopened sheet where `timesheetListBucket` now puts it (an old run whose bookings are not loaded: not changed).
   const queueRows = useMemo(() => {
     if (loaded == null || loaded === 'empty') return []

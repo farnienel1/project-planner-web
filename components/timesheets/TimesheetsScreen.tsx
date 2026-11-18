@@ -181,7 +181,7 @@ export function TimesheetsScreen({
   periodEnd: Date
   /**
    * The recent pay runs (newest first, the current one included) whose frozen-empty snapshots are repaired in the
-   * background. Rulebook 1.62.0 §8 (owner decision 17 Nov): Awaiting / Signed off list every stored sheet, however old,
+   * background. Rulebook 1.66.0 §8 (owner decision 17 Nov): Awaiting / Signed off list every stored sheet, however old,
    * whatever this holds. Missing: the current run only.
    */
   queuePeriods?: ReadonlyArray<PayRun>
@@ -200,7 +200,7 @@ export function TimesheetsScreen({
   const currency = useOrganizationCurrency()
   const router = useRouter()
   const { user, organization } = useAuthStore()
-  // Rulebook 1.62.0 §8: every stored sheet of the listed people (under every id they go by), however old.
+  // Rulebook 1.66.0 §8: every stored sheet of the listed people (under every id they go by), however old.
   const [queueSheets, setQueueSheets] = useState<TimesheetQueueStoredSheet[]>([])
   const [exportedRows, setExportedRows] = useState<ExportedTimesheetHistoryRow[]>([])
   const [recordsLoading, setRecordsLoading] = useState(false)
@@ -285,7 +285,7 @@ export function TimesheetsScreen({
       // 17 Nov follow-up (guardrail 1): every id each listed person goes by (`personIdSet`), so a sheet filed under a
       // former invite id or a second users document is found and listed under the person.
       const aliasIds = roster.flatMap((member) => timesheetMemberIds(member, users))
-      // Rulebook 1.62.0 §8 (owner decision 17 Nov): every stored sheet, however old — never a window of recent runs.
+      // Rulebook 1.66.0 §8 (owner decision 17 Nov): every stored sheet, however old — never a window of recent runs.
       const loaded = await loadTimesheetQueueSheets({ organizationId: organization.id, userIds: aliasIds, timeZone })
       if (stale()) return
       setQueueSheets(loaded)
@@ -342,7 +342,7 @@ export function TimesheetsScreen({
   // Third review #325: the people Export left out because the bookings or pay inputs were still loading.
   const inputsSkippedRef = useRef<string[]>([])
   changeCatalogueRef.current = changeCatalogue
-  // Rulebook 1.62.0 §8 (owner decision 17 Nov): one row per person and pay run over every stored sheet, however old
+  // Rulebook 1.66.0 §8 (owner decision 17 Nov): one row per person and pay run over every stored sheet, however old
   // (`userTimesheetQueue`; the bucket is `timesheetListBucket` with that sheet's booking change — a run whose bookings
   // are not loaded reads as not changed).
   const queueRows = useMemo<TimesheetQueueBucketRow[]>(
@@ -376,7 +376,7 @@ export function TimesheetsScreen({
   // pay inputs have loaded — never waiting for someone to open that one sheet.
   const repairSheets = useMemo<RepairSheet[]>(() => {
     if (teamTab === 'exported') return []
-    // The recent pay runs only (as before 1.62.0); an exported sheet is never repaired.
+    // The recent pay runs only (as before 1.66.0); an exported sheet is never repaired.
     const recent = new Set(runs.map((run) => payRunKey(run, timeZone)))
     return queueRows
       .filter((row) => row.bucket !== 'exported' && recent.has(payRunKey(row.period, timeZone)))

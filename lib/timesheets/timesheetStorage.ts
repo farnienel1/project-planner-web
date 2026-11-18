@@ -13,6 +13,7 @@ import { changedFirestoreFields } from '@/lib/firebase/changedFields'
 import { firestoreUpdateFields } from '@/lib/firebase/partialWrite'
 import { timesheetChangedFields } from '@/lib/canonical/timesheetEntryReviews'
 import { timesheetDocumentSubjectId } from '@/lib/canonical/timesheetPeriod'
+import { timesheetSheetHasActivity } from '@/lib/canonical/userTimesheetQueue'
 import { LONDON_TIME_ZONE, unixStartOfDay, dayKey } from '@/lib/ios-parity/londonTime'
 import { weekStartKey } from '@/lib/timesheets/timesheetWeekUtils'
 import { periodStartKey } from '@/lib/timesheets/paymentRunCopy'
@@ -702,17 +703,18 @@ export function samePayPeriodStart(stored: Date, periodStart: Date, timeZone: st
   return Math.abs(stored.getTime() - periodStart.getTime()) <= PAY_PERIOD_START_SKEW_MS
 }
 
+/** Rulebook 1.66.0 §8 `timesheetSheetHasActivity` (one rule with iOS) over the web draft's fields. */
 export function timesheetDraftHasActivity(draft: TimesheetDraft): boolean {
-  return Boolean(
-    draft.operativeSignedAt ||
-      draft.managerSignedAt ||
-      draft.exportedAt ||
-      draft.expenseEntries.length ||
-      draft.priceWorkEntries.length ||
-      (draft.lateExtras?.length ?? 0) ||
-      draft.managerNote.trim() ||
-      draft.weeklyReportOverride
-  )
+  return timesheetSheetHasActivity({
+    operativeSignedAt: draft.operativeSignedAt,
+    managerSignedAt: draft.managerSignedAt,
+    exportedAt: draft.exportedAt,
+    expenseEntries: draft.expenseEntries,
+    priceWorkEntries: draft.priceWorkEntries,
+    lateExtras: draft.lateExtras ?? [],
+    managerNote: draft.managerNote,
+    weeklyReportOverride: draft.weeklyReportOverride ?? null,
+  })
 }
 
 export type TimesheetPeriodCandidate = {
@@ -1160,11 +1162,37 @@ export type TimesheetQueueStoredSheet = {
   draft: TimesheetDraft
 }
 
+const UUID_SHAPED = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 /**
- * Rulebook 1.62.0 §8 (owner decision 17 Nov): every stored timesheet of `userIds` (each id every listed person goes by),
+ * The other letter-case spellings of a UUID-shaped id that are not already asked for (an iPhone stores
+ * `UUID.uuidString` upper case, web lower case). Firestore `in` matches exactly, so the queue asks for these too.
+ * Other ids (Firebase Auth uids are mixed case) are asked for as stored only.
+ */
+export function timesheetQueueCaseVariants(userIds: ReadonlyArray<string>): string[] {
+  const asked = new Set(userIds)
+  const out: string[] = []
+  for (const id of userIds) {
+    if (!UUID_SHAPED.test(id)) continue
+    for (const variant of [id.toUpperCase(), id.toLowerCase()]) {
+      if (asked.has(variant)) continue
+      asked.add(variant)
+      out.push(variant)
+    }
+  }
+  return out
+}
+
+/**
+ * Rulebook 1.66.0 §8 (owner decision 17 Nov): every stored timesheet of `userIds` (each id every listed person goes by),
  * however old — every version, so the rulebook (`userTimesheetQueue`) decides which one is a pay run's sheet. One batched
  * `userId in` query per 10 ids; a chunk the rules refuse is asked id by id and only the refused ids are skipped (review of
  * #368 S1). Any other failure throws (the list shows its error, never an empty queue).
+ *
+ * Case (guardrail 3): Firestore `in` is exact. A UUID-shaped id is also asked for in upper and lower case (a second pass,
+ * its own chunks, so a variant the rules refuse never refuses a real id), and the rulebook matches the stored `userId`
+ * without case. A mixed-case id stored in another spelling is not found (known limit). A sheet stored with no `userId`
+ * is not loaded by this query at all (known limit, §8).
  */
 export async function loadTimesheetQueueSheets(input: {
   organizationId: string
@@ -1173,10 +1201,16 @@ export async function loadTimesheetQueueSheets(input: {
 }): Promise<TimesheetQueueStoredSheet[]> {
   const userIds = [...new Set(input.userIds.filter(Boolean))]
   if (userIds.length === 0) return []
-  const grouped = await loadTimesheetCandidatesByUserIds(input.organizationId, userIds, false, input.timeZone, true)
+  const variants = timesheetQueueCaseVariants(userIds)
+  const [grouped, variantGrouped] = await Promise.all([
+    loadTimesheetCandidatesByUserIds(input.organizationId, userIds, false, input.timeZone, true),
+    variants.length > 0
+      ? loadTimesheetCandidatesByUserIds(input.organizationId, variants, false, input.timeZone, true)
+      : Promise.resolve(new Map<string, TimesheetPeriodCandidate[]>()),
+  ])
   const out: TimesheetQueueStoredSheet[] = []
   const seen = new Set<string>()
-  for (const [userId, rows] of grouped) {
+  for (const [userId, rows] of [...grouped, ...variantGrouped]) {
     for (const row of rows) {
       if (!row.documentId || seen.has(row.documentId)) continue
       seen.add(row.documentId)

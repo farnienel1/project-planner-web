@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { NextRequest } from 'next/server'
-import { bearerToken, firestoreGet, firestoreListCollection, firestoreQueryEqual, restFieldsToPlain } from '@/lib/owner/firestoreRest'
+import { bearerToken, firestoreCreateServerTime, firestoreGet, firestoreListCollection, firestoreQueryEqual, restFieldsToPlain } from '@/lib/owner/firestoreRest'
 import { defaultMaterialRequestSendDeps, sendMaterialRequestMessages } from '@/lib/email/materialRequestSend'
 import { MATERIAL_EMAIL_UNCONFIRMED_MESSAGE } from '@/lib/email/resendClient'
 import { buildMaterialRequestEmail } from '@/lib/email/materialRequestEmail'
@@ -11,6 +11,7 @@ import {
   organizationLevelFor,
   parseWholesalerDocument,
 } from '@/lib/canonical'
+import { materialContactCreateFields, materialContactPath, materialRequestSafeSenderNotice } from '@/lib/canonical/materialSafeSender'
 import {
   MATERIAL_ORDER_SEND_REFUSED_MESSAGE,
   canSendMaterialOrders,
@@ -287,8 +288,21 @@ export async function POST(request: NextRequest) {
   // Every recipient's message is rendered here (each greets its own contact), then all of them go to the email
   // function in ONE call (`sendMaterialRequestMessages`): one cold start, one rate-limit count and one Resend batch,
   // instead of one call per recipient at the same time.
+  // Rulebook 1.59.0 §16 (owner decision 17 Nov; review of #370, L2) `materialRequestSafeSenderNotice`: the first email
+  // the organisation sends to an address carries the red safe-sender box. One read per recipient of its
+  // `materialContacts` document (`materialContactPath`) — the same read the email function makes. A failed read shows
+  // no box; the send goes ahead either way.
+  const contactKnown = new Map<string, boolean | null>()
+  await Promise.all(
+    recipients.map(async (recipient) => {
+      const path = materialContactPath(access.organizationId, recipient.email)
+      const known = path ? await firestoreGet(idToken, path).then((doc) => doc !== null).catch(() => null) : null
+      contactKnown.set(recipient.email, known)
+    })
+  )
   const messages = recipients.map((recipient) => {
     const { html } = buildMaterialRequestEmail({
+      safeSenderNotice: materialRequestSafeSenderNotice(recipient.email, contactKnown.get(recipient.email) ?? null),
       context: {
         supplierName: recipient.name,
         userName: senderName,
@@ -325,6 +339,19 @@ export async function POST(request: NextRequest) {
     }
   )
   const { sent, copies, failed, failures, messageIds } = outcome
+  // Review of #370 (L2): every address that was sent to now has its `materialContacts` document (created once, never
+  // changed), so later sends carry no box. Best effort: a refused or failed write only means a box next time.
+  const failedEmails = new Set(failures.map((row) => row.email.trim().toLowerCase()))
+  await Promise.all(
+    recipients
+      .filter((recipient) => contactKnown.get(recipient.email) === false && !failedEmails.has(recipient.email.trim().toLowerCase()))
+      .map((recipient) => {
+        const path = materialContactPath(access.organizationId, recipient.email)
+        return path
+          ? firestoreCreateServerTime(idToken, path, materialContactCreateFields().serverTimestampFields).catch(() => false)
+          : false
+      })
+  )
   if (outcome.unconfirmed) {
     // It may have gone: never "Email not sent". The same request id is never sent twice by the function.
     return Response.json({ ok: false, unconfirmed: true, error: MATERIAL_EMAIL_UNCONFIRMED_MESSAGE }, { status: 502 })

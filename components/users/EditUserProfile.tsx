@@ -4,6 +4,8 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { reseedUntouchedPayFields, watchPayEditorPrivatePay, withPayFieldsFrom } from '@/lib/pay/payEditorSwitchReload'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { useToast } from '@/components/ui/ToastProvider'
+import { FORMER_PERSON_RECORD_SKIPPED_MESSAGE } from '@/lib/canonical/formerPeople'
 import { usePendingNavigation } from '@/lib/navigation/usePendingNavigation'
 import { EditUserSkeleton } from '@/components/users/profile-ui/skeletons'
 import { format } from 'date-fns'
@@ -31,6 +33,7 @@ import { UserAvatar } from '@/components/users/UserAvatar'
 import { setupSectionIcon } from '@/lib/users/profileUi'
 import { PayBasisFields, payChoiceFromProfile, payChoiceToRates } from '@/components/users/PayBasisFields'
 import { maySetPayOf, userPayRateRequiredError } from '@/lib/staff/payRateRequired'
+import { editUserAnnualLeaveSection, editUserEmploymentTypeSection, editUserTaxIdsSectionShown } from '@/lib/staff/editUserSections'
 import { PreviousRatesList, usePaySaveGate } from '@/components/users/PayRateChangeDialogs'
 import {
   emptyDayRateHistory,
@@ -291,6 +294,7 @@ export function EditUserProfile({
   hubHref?: string
 }) {
   const router = useRouter()
+  const toast = useToast()
   const { navigate: navigateBack, pending: backPending } = usePendingNavigation()
   const { user: currentUser, organization, reloadSignedInProfile } = useAuthStore()
   const organizationTimeZone = useOrganizationTimeZone()
@@ -557,15 +561,15 @@ export function EditUserProfile({
     canEditMatrix &&
     (target.permissions.operativeMode || target.permissions.manager || target.permissions.adminAccess)
 
-  const showAnnualLeave =
-    target &&
-    canEdit &&
-    !target.isSuperAdmin &&
-    (target.permissions.operativeMode || target.permissions.manager || target.permissions.adminAccess)
+  // 17 Nov (owner bug): never hidden for the Super Admin — `editUserAnnualLeaveSection` / `editUserEmploymentTypeSection`
+  // decide every level the same way; locked sections show their reason.
+  const annualLeaveSection = editUserAnnualLeaveSection(currentUser, target)
+  const showAnnualLeave = annualLeaveSection.shown
 
   // Rulebook 1.34.0 §11: a ghost is always self-employed and has no login, timesheets, email or phone.
   const ghostTarget = Boolean(target && isGhostUser(target))
-  const showEmploymentType = target && canEditMatrix && !target.isSuperAdmin && !ghostTarget
+  const employmentTypeSection = editUserEmploymentTypeSection(currentUser, target, users)
+  const showEmploymentType = employmentTypeSection.shown
   const showQualifications = Boolean(target && canEdit)
   const canManageOrgQuals = canManageOrganisationQualifications(currentUser)
   const canViewTaxIds = Boolean(
@@ -606,6 +610,15 @@ export function EditUserProfile({
     (target.permissions.operativeMode || target.permissions.manager) &&
     !target.permissions.adminAccess &&
     !target.isSuperAdmin
+
+  // Review of #385: VAT / UTR follow the rulebook (`canViewSensitiveProfile`, §12) — the person and admins — for every
+  // level, the Super Admin and admins included; before, they sat inside the operative / manager-only block above.
+  // Viewers who may edit the person but not see them keep "Held by admin" where they saw it before.
+  const showTaxIdFields = editUserTaxIdsSectionShown({
+    target,
+    viewerMaySee: canViewTaxIds,
+    shownBefore: Boolean(showPayrollFields),
+  })
 
   const lineManagerFieldShown = Boolean(
     target &&
@@ -996,7 +1009,9 @@ export function EditUserProfile({
     if (lineManagerBlocks(target, { kind: 'delete' })) return
     setBusyAction('delete')
     try {
-      await deleteUser(target.id, { organizationId: organization?.id, email: target.email, roster: rosterDocs })
+      const outcome = await deleteUser(target.id, { organizationId: organization?.id, email: target.email, roster: rosterDocs })
+      // Rulebook 1.59.0 (review of #370, L1): say so when the former-person record was refused (the delete went ahead).
+      if (outcome?.formerRecordSkipped) toast(FORMER_PERSON_RECORD_SKIPPED_MESSAGE, 9000)
       await removeFromJobs(target, { kind: 'delete' })
       router.push(hubHref || backHref)
     } catch (err: unknown) {
@@ -1231,10 +1246,10 @@ export function EditUserProfile({
           )}
           {showEmploymentType && (
             <>
-              <Field label="Employment type">
+              <Field label="Employment type" hint={employmentTypeSection.note ?? undefined}>
                 <Select
                   value={normalizeEmploymentType(target.employmentType)}
-                  disabled={!canEditMatrix}
+                  disabled={!employmentTypeSection.editable}
                   onChange={(e) => {
                     setRateError(null)
                     setTarget({ ...target, employmentType: e.target.value })
@@ -1402,6 +1417,7 @@ export function EditUserProfile({
           shown or hidden exactly as before (the allowance toggle with `showAnnualLeave`, the rest only while it is on). */}
       {showAnnualLeave && (
         <FormSection title="Annual leave" icon="sun" tone="amber">
+          {annualLeaveSection.note ? <p className="up-f-hint">{annualLeaveSection.note}</p> : null}
           <ToggleRow
             title={ANNUAL_LEAVE_ALLOWANCE_COPY.toggleTitle}
             descriptions={[ANNUAL_LEAVE_ALLOWANCE_COPY.toggleDescription, ANNUAL_LEAVE_ALLOWANCE_COPY.toggleNote]}
@@ -1542,8 +1558,9 @@ export function EditUserProfile({
       )}
 
       {/* Employment & timesheets */}
-      {showPayrollFields && (
+      {(showPayrollFields || showTaxIdFields) && (
         <FormSection title="Employment & timesheets" icon="sheet" tone="blue">
+              {showPayrollFields ? (
               <ToggleRow
                 title="Timesheets enabled"
                 descriptions={['Allow this person to log and submit timesheets.']}
@@ -1556,6 +1573,7 @@ export function EditUserProfile({
                   />
                 }
               />
+              ) : null}
               {canViewTaxIds ? (
                 <div>
                   <FieldGrid>

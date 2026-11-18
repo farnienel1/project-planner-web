@@ -8,6 +8,8 @@ import { sendPasswordResetEmail } from 'firebase/auth'
 import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
 import type { Operative, User } from '@/types'
 import { auth, db } from '@/lib/firebase/config'
+import { formerPersonNeededFor, isPermissionDenied } from '@/lib/people/formerPeople'
+import { formerPersonRecordFields } from '@/lib/canonical/formerPeople'
 import { applyExclusiveRateFields, buildSaveUserPayload, changedUserPayload } from '@/lib/firebase/userPayload'
 import {
   ORG_MEMBERSHIP_PERMISSION_KEYS,
@@ -70,7 +72,11 @@ interface UserStoreState {
   transferSuperAdmin: (organizationId: string, fromUserId: string, toUserId: string, roster: User[]) => Promise<void>
   /** Rulebook 1.31.0 `userActiveWrites`: `roster` is every users document of the organisation (same-email copies). */
   setUserActive: (userId: string, isActive: boolean, organizationId?: string, roster?: ReadonlyArray<User>) => Promise<void>
-  deleteUser: (userId: string, opts?: { organizationId?: string; email?: string; roster?: ReadonlyArray<User> }) => Promise<void>
+  /**
+   * Resolves with `formerRecordSkipped` true when a former-person record (rulebook 1.59.0) was refused and the delete
+   * went ahead without it — the screen tells the person (review of #370, L1).
+   */
+  deleteUser: (userId: string, opts?: { organizationId?: string; email?: string; roster?: ReadonlyArray<User> }) => Promise<{ formerRecordSkipped: boolean }>
   sendPasswordReset: (email: string) => Promise<void>
   applyAccountType: (user: User, accountType: 'operative' | 'manager' | 'admin') => User
   /**
@@ -467,13 +473,13 @@ export const useUserStore = create<UserStoreState>(() => ({
     const byEmail = async (collectionName: 'operatives' | 'managers') =>
       email
         ? (await getDocs(query(collection(db, 'organizations', orgId, collectionName), where('email', '==', email))).catch(() => null))
-            ?.docs.map((row) => ({ id: row.id, email: String(row.data().email || '') })) ?? []
+            ?.docs.map((row) => ({ id: row.id, email: String(row.data().email || ''), data: row.data() as Record<string, unknown> })) ?? []
         : []
     const [operativeRows, managerRows] = await Promise.all([byEmail('operatives'), byEmail('managers')])
     // Rulebook 1.34.0: a converted ghost keeps its operatives row under the same id (its email cleared).
     if (stored.ghost === true && !operativeRows.some((row) => row.id === userId)) {
       const own = await getDoc(doc(db, 'organizations', orgId, 'operatives', userId)).catch(() => null)
-      if (own?.exists()) operativeRows.push({ id: userId, email: '' })
+      if (own?.exists()) operativeRows.push({ id: userId, email: '', data: own.data() as Record<string, unknown> })
     }
     const lookup = Array.from(
       new Set([...personIds, ...operativeRows.map((row) => row.id)].flatMap((id) => [id, id.toUpperCase(), id.toLowerCase()]))
@@ -530,7 +536,66 @@ export const useUserStore = create<UserStoreState>(() => ({
     const invitations = Array.from(invitationRows.values())
     const orgData = useOrganizationDocumentStore.getState().data
     const orgMembers = orgData && typeof orgData.members === 'object' && orgData.members ? (orgData.members as Record<string, unknown>) : null
+    // Rulebook 1.59.0 §11: keep a former-person record when they have bookings, leave, pay history or timesheets, so
+    // old bookings read "Former: Jane Smith" (`formerPersonRecordNeeded`, `formerPersonRecordFields`).
+    const allPersonIds = Array.from(new Set([...personIds, ...operativeRows.map((row) => row.id), ...managerRows.map((row) => row.id)]))
+    const keepFormer = await formerPersonNeededFor(db, orgId, allPersonIds, {
+      bookings: bookings.length,
+      managerSiteBookings: managerSiteBookings.length,
+    })
+    // Review of #370 (M1): each record holds only what its deleted document carries (the rules check it against that
+    // document) — the person's own record from their users document, and one per deleted operatives / managers row.
+    const deletedBy = auth?.currentUser?.uid || actor?.id || ''
+    const idList = (value: unknown) => (Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : [])
+    // Read as the rules read them: anything that is not text is '' (a stored null is never "null").
+    const str = (value: unknown) => (typeof value === 'string' ? value : '')
+    // Review of #370 (S1, judgement call): only an admin writes the record of an invite placeholder (not signed up) or
+    // of an operatives / managers row — an operatives manager could create or edit those documents first. Their delete
+    // leaves it out and they are told (`formerRecordSkipped`); an admin can link the id later in Data health.
+    const adminDelete = !actorManagesOperatives
+    const placeholder = stored.passwordSet !== true
+    let formerRecordSkipped = keepFormer && !adminDelete && (placeholder || operativeRows.length + managerRows.length > 0)
+    const formerPerson = keepFormer && (adminDelete || !placeholder)
+      ? formerPersonRecordFields({
+          person: {
+            id: userId,
+            firstName: str(stored.firstName),
+            surname: str(stored.surname),
+            lastName: str(stored.lastName),
+            displayName: str(stored.displayName) || null,
+            name: str(stored.name) || null,
+            email: str(stored.email),
+            formerUserIds: idList(stored.formerUserIds),
+            sameEmailUserIds: idList(stored.sameEmailUserIds),
+          },
+          deletedBy,
+        })
+      : null
+    const formerRows: Record<string, { fields: Record<string, unknown>; serverTimestampFields: string[] }> = {}
+    if (keepFormer && adminDelete) {
+      for (const [collectionName, rows] of [['operatives', operativeRows], ['managers', managerRows]] as const) {
+        for (const row of rows) {
+          const data = row.data
+          const record = formerPersonRecordFields({
+            person: {
+              id: row.id,
+              firstName: str(data.firstName),
+              lastName: str(data.lastName),
+              surname: str(data.surname),
+              displayName: str(data.displayName) || null,
+              name: str(data.name) || null,
+              email: str(data.email),
+              linkedIds: [data.linkedUserId, data.userId, data.uid],
+            },
+            deletedBy,
+          })
+          if (record) formerRows[`${collectionName}/${row.id}`] = record
+        }
+      }
+    }
     const steps = userDeleteWrites({
+      formerPerson,
+      formerRows,
       actorManagesOperatives,
       // 1.31.0: remove `members.{uid}` only when it is listed (an operatives manager may remove only a listed entry).
       listedInMembers: orgMembers ? Object.prototype.hasOwnProperty.call(orgMembers, userId) : true,
@@ -546,9 +611,9 @@ export const useUserStore = create<UserStoreState>(() => ({
       nowIso: new Date().toISOString(),
       tz: organizationTimeZone(orgData && typeof orgData.countryCode === 'string' ? orgData.countryCode : null),
     })
-    for (const step of steps) {
+    const commitStep = async (writes: (typeof steps)[number]['writes']) => {
       const batch = writeBatch(db)
-      for (const write of step.writes) {
+      for (const write of writes) {
         const ref = doc(db, write.path)
         if (write.op === 'delete') batch.delete(ref)
         else if (write.op === 'update') {
@@ -561,6 +626,19 @@ export const useUserStore = create<UserStoreState>(() => ({
         }
       }
       await batch.commit()
+    }
+    for (const step of steps) {
+      try {
+        await commitStep(step.writes)
+      } catch (error) {
+        // Rulebook 1.59.0: the former-person record is optional — security rules older than 1.59.0 refuse it, and
+        // the delete must still happen. The same batch runs again without it.
+        const optional = step.writes.filter((write) => write.op === 'set' && write.optional === true)
+        if (optional.length === 0 || !isPermissionDenied(error)) throw error
+        console.warn('[userStore] former-person record skipped', error)
+        formerRecordSkipped = true
+        await commitStep(step.writes.filter((write) => !(write.op === 'set' && write.optional === true)))
+      }
     }
     // Rulebook 1.31.0 §13: the admins hear that an operative was deleted (`operative_deleted`, company activity,
     // never the actor). Best effort — the delete is done.
@@ -576,6 +654,7 @@ export const useUserStore = create<UserStoreState>(() => ({
         users: opts?.roster ?? [],
       }).catch((error) => console.warn('[userStore] operative_deleted notice skipped', error))
     }
+    return { formerRecordSkipped }
   },
 
   removeFromManagedJobs: async (person, change, organizationId, roster) => {
