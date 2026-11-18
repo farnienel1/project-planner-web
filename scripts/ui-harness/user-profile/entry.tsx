@@ -155,6 +155,14 @@ useUserStore.setState({
   deleteUser: record('deleteUser'),
   sendPasswordReset: record('sendPasswordReset'),
   changeAccountType: record('changeAccountType', realUserStore.changeAccountType),
+  // Edit user Save reads first, then queues the batch (review of #371): recorded as the same calls as before.
+  prepareSaveUser: async (...args: any[]) => ({
+    commit: () => record('saveUser', realUserStore.saveUser)(...args),
+  }),
+  prepareChangeAccountType: async (...args: any[]) => ({
+    commit: () => record('changeAccountType', realUserStore.changeAccountType)(...args),
+    note: null,
+  }),
   syncLinkedOperative: record('syncLinkedOperative'),
   transferSuperAdmin: record('transferSuperAdmin'),
   removeFromManagedJobs: async (...args: any[]) => {
