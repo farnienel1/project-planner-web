@@ -335,6 +335,13 @@ export const TIMESHEET_SIGNED_NOTICE_TYPE = 'timesheet_signed_by_manager'
  * `unixStartOfDay` in the organisation zone), so both apps build the same key from the same period:
  * pending `timesheetPending|{subjectId}|{recipientId}|{seconds}`, signed `timesheetSigned|{subjectId}|{seconds}`.
  * Null for another type, a missing id or a bad day key.
+ *
+ * Rulebook 1.60.1 (owner report 17 Nov): `signedAtMs` is the instant of the signature the notice is about (the person's
+ * `operativeSignedAt` for pending, the line manager's `managerSignedAt` for signed). With it the key ends `|sig{ms}`,
+ * so each signature of the same pay run (a re-sign after the line manager's signature was cleared, or after a booking
+ * change reopened the sheet, 1.47.0) writes its own row — and its own push — instead of hitting the first signature's
+ * row, which the create-once rule (`notificationCreateFields`) left alone. A retry of the same signature builds the
+ * same key. Missing / not a positive number: the key is as before (older builds).
  */
 export function timesheetNotificationDedupeKey(input: {
   type: string
@@ -348,6 +355,8 @@ export function timesheetNotificationDedupeKey(input: {
    * so its notices get their own key (`…|rev{N}`); 0 / missing is the original (the key is unchanged).
    */
   revision?: number | null
+  /** Rulebook 1.60.1: the signature instant (epoch ms) — one notice per signature. */
+  signedAtMs?: number | null
 }): string | null {
   const type = idText(input?.type)
   const subject = idText(input?.subjectId)
@@ -356,13 +365,39 @@ export function timesheetNotificationDedupeKey(input: {
   const seconds = Math.floor(dateFromDayKeyInZone(dayKey, zoneOrLondon(input.timeZone)).getTime() / 1000)
   if (!Number.isFinite(seconds)) return null
   const rev = input.revision
-  const suffix = typeof rev === 'number' && Number.isInteger(rev) && rev >= 1 && rev <= 99 ? `|rev${rev}` : ''
+  const revSuffix = typeof rev === 'number' && Number.isInteger(rev) && rev >= 1 && rev <= 99 ? `|rev${rev}` : ''
+  const signed = input.signedAtMs
+  const sigSuffix = typeof signed === 'number' && Number.isFinite(signed) && signed > 0 ? `|sig${Math.floor(signed)}` : ''
+  const suffix = `${revSuffix}${sigSuffix}`
   if (type === TIMESHEET_PENDING_NOTICE_TYPE) {
     const recipient = idText(input.recipientId)
     return recipient ? `timesheetPending|${subject}|${recipient}|${seconds}${suffix}` : null
   }
   if (type === TIMESHEET_SIGNED_NOTICE_TYPE) return `timesheetSigned|${subject}|${seconds}${suffix}`
   return null
+}
+
+/**
+ * The de-dupe key of a `line_manager_peer_update` row (both apps hash it into the document id):
+ * `lmPeer|{actorName}|{actionSummary}|{peerId}|{actionVerb}`, as both apps have always written it. Rulebook 1.60.1:
+ * with `signedAtMs` (the counter-sign instant) it ends `|sig{ms}`, so a counter-sign again after a reopen (1.47.0) is
+ * its own row; without it (leave decisions, older builds) the key is unchanged. Null when the peer id is missing.
+ */
+export function lineManagerPeerNoticeKey(input: {
+  actorName: string
+  actionSummary: string
+  peerId: string
+  actionVerb: string
+  signedAtMs?: number | null
+}): string | null {
+  const peer = idText(input?.peerId)
+  if (!peer) return null
+  const actor = typeof input?.actorName === 'string' ? input.actorName : ''
+  const summary = typeof input?.actionSummary === 'string' ? input.actionSummary : ''
+  const verb = typeof input?.actionVerb === 'string' ? input.actionVerb : ''
+  const base = `lmPeer|${actor}|${summary}|${peer}|${verb}`
+  const signed = input.signedAtMs
+  return typeof signed === 'number' && Number.isFinite(signed) && signed > 0 ? `${base}|sig${Math.floor(signed)}` : base
 }
 
 export type NotificationWriter = 'web' | 'ios' | 'function'

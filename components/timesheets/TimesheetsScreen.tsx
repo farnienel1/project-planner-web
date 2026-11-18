@@ -5,6 +5,7 @@ import { useOrganizationCurrency, useOrganizationDocument } from '@/lib/stores/o
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { auth } from '@/lib/firebase/config'
 import { hasAdminAccess } from '@/lib/navigation/menuPermissions'
 import {
@@ -34,7 +35,7 @@ import {
   weekdayPaidHours,
   timesheetExportOwnSheetNotice,
 } from '@/lib/canonical'
-import { staffAccountRole } from '@/lib/permissions'
+import { isOperativeMode, staffAccountRole } from '@/lib/permissions'
 import { loadTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
 import { useSnapshotAutoRepair } from '@/lib/timesheets/useSnapshotAutoRepair'
 import type { RepairSheet } from '@/lib/timesheets/snapshotAutoRepair'
@@ -115,6 +116,11 @@ import { UNRESOLVED_BOOKING_PERSON_CHIP } from '@/lib/canonical'
 import { SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE, TIMESHEET_LATE_EXTRAS_EXPORT_SKIPPED_MESSAGE, signedTimesheetActions } from '@/lib/canonical'
 
 /** Third review #325: Export left a sheet out because the bookings or pay inputs were still loading. */
+/**
+ * Re-check of #386: shown on Exported to admins while the roster read has failed (former people not checked). The
+ * note reads "Some former people's timesheets could not be checked — try again.", "try again" being the retry link.
+ */
+const EXPORTED_FORMER_PEOPLE_UNCHECKED_NOTE = "Some former people's timesheets could not be checked — "
 const EXPORT_INPUTS_LOADING_SKIPPED_MESSAGE = 'Not exported — the bookings or pay settings were still loading; export again.'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
@@ -198,6 +204,10 @@ export function TimesheetsScreen({
   const currency = useOrganizationCurrency()
   const router = useRouter()
   const { user, organization } = useAuthStore()
+  // Review of #386: the roster counts as loaded only once the server has answered this organisation's roster read in
+  // full (`rosterServerOrgId`) — never the stored copy or a timed-out read.
+  const { loading: rosterReading, rosterServerOrgId, error: rosterError, loadUsers: reloadRoster } = useOrgUserStore()
+  const rosterLoadedHere = Boolean(organization?.id) && rosterServerOrgId === organization?.id && !rosterReading
   // 17 Nov follow-up: per pay run (`payRunKey`), the sheets of the listed people keyed by their roster id.
   const [queueDrafts, setQueueDrafts] = useState<Map<string, Map<string, TimesheetDraft>>>(new Map())
   const [exportedRows, setExportedRows] = useState<ExportedTimesheetHistoryRow[]>([])
@@ -274,6 +284,10 @@ export function TimesheetsScreen({
             users: roster,
             roster: users,
             includeUnresolved: hasAdminAccess(user),
+            // Review of #386 (S5): "Unknown person" rows only once the roster has loaded.
+            rosterLoaded: rosterLoadedHere && users.length > 0,
+            viewerIsOperative: isOperativeMode(user),
+            viewerIsAdmin: hasAdminAccess(user),
           })
         )
       } catch {
@@ -308,7 +322,7 @@ export function TimesheetsScreen({
     } finally {
       if (!stale()) setRecordsLoading(false)
     }
-  }, [organization?.id, roster, groups, users, runs, runsKey, timeZone, teamTab])
+  }, [organization?.id, roster, groups, users, runs, runsKey, timeZone, teamTab, loading, rosterLoadedHere])
 
   useEffect(() => {
     void reload()
@@ -885,6 +899,17 @@ export function TimesheetsScreen({
         </Note>
       ) : null}
       {exportMessage && exportMessage !== deliveryNotice ? <Note tone="info" role="status">{exportMessage}</Note> : null}
+      {/* Re-check of #386: a failed roster read means deleted people's sheets cannot be told apart, so they are left out —
+          say so instead of silence (admins, who are the only ones shown them). */}
+      {organization?.id && hasAdminAccess(user) && !rosterReading && rosterError && rosterServerOrgId !== organization.id ? (
+        <Note tone="amber" role="status">
+          {EXPORTED_FORMER_PEOPLE_UNCHECKED_NOTE}
+          <button type="button" className="pu-link" onClick={() => void reloadRoster(organization.id, { force: true })}>
+            try again
+          </button>
+          .
+        </Note>
+      ) : null}
       <ExportedTimesheetsList
         rows={exportedRows}
         invoicing={invoicing}

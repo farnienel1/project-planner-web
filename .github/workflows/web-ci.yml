@@ -30,6 +30,9 @@ jobs:
       - name: No second calculators outside lib/canonical
         # Own weekend cut-offs, browser / London business dates, single-id person matching (feature-completeness.md).
         run: npm run check:calculators
+      - name: No request body spread into writes in API routes
+        # Mass-assignment audit 17 Nov: route bodies go through readApiBody (lib/security/apiBody.ts), never spread.
+        run: npm run check:api-bodies
       - name: Security rules size and compile-cost budget
         # firestore.rules / storage.rules byte budget, and firestore.rules static compile cost (scripts/rules-cost/metric.py
         # total2, needs python3) in scripts/rules-budget.json (platform-guardrails.md §5, firestore-rules-notes.md "Compile cost").

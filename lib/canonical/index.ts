@@ -901,6 +901,7 @@ export {
   notificationCatalogRow,
   personIdSet,
   timesheetNotificationDedupeKey,
+  lineManagerPeerNoticeKey,
   timesheetSignedRecipients,
   timesheetSubmittedRecipients,
   toolboxTalkRecipients,
@@ -1797,6 +1798,8 @@ export * from './payeClaims'
 export * from './claimEvidence'
 export * from './timesheetEntryEvidence'
 export * from './payeClaimReviews'
+// Rulebook 1.65.0 (§25, §26): server-side check that a saved overtime or claims report agrees with its records.
+export * from './reportIntegrity'
 export * from './priceWorkJobNumber'
 export * from './personalSiteAudits'
 

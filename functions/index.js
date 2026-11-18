@@ -50,6 +50,7 @@ const { createAdminRequestDedupe } = require('./email/requestDedupe')
 const { FieldPath, FieldValue, Timestamp } = require('firebase-admin/firestore')
 const { createAuthClaimsSync, createAdminAuthClaimsStore } = require('./authClaims')
 const { createTimesheetBookingNotice, createAdminTimesheetNoticeStore } = require('./timesheetBookingNotice')
+const { createReportIntegrityCheck, createAdminReportIntegrityStore } = require('./reportIntegrity')
 
 initializeApp()
 
@@ -414,6 +415,41 @@ for (const [exportName, collection] of [
           message: (error && error.message) || String(error),
         })
       }
+    }
+  )
+}
+
+/**
+ * Rulebook 1.65.0 §25 / §26 (mass-assignment audit 17 Nov, owner decision B): check every new overtime report and price
+ * work / expenses report against the reviews, bookings and items it was built from, and store the result for admins at
+ * `organizations/{orgId}/reportChecks/{reportId}`. Never blocks, edits or deletes the report. `reportIntegrity.js`
+ * holds the reads; the rule is the packed rulebook's (`overtimeReportIntegrity`, `payeClaimReportIntegrity`).
+ */
+let reportCheck = null
+function reportIntegrityHandler() {
+  if (reportCheck) return reportCheck
+  reportCheck = createReportIntegrityCheck({
+    store: createAdminReportIntegrityStore(getFirestore()),
+    canonical,
+    logger,
+    serverTimestamp: () => FieldValue.serverTimestamp(),
+  })
+  return reportCheck
+}
+
+for (const [exportName, collection] of [
+  ['overtimeReportIntegrityCheck', 'overtimeReports'],
+  ['payeClaimReportIntegrityCheck', 'payeClaimReports'],
+]) {
+  exports[exportName] = onDocumentCreated(
+    { document: `organizations/{orgId}/${collection}/{reportId}`, region: 'us-central1' },
+    async (event) => {
+      await reportIntegrityHandler().handle({
+        orgId: event.params.orgId,
+        collection,
+        reportId: event.params.reportId,
+        report: eventDocData(event.data),
+      })
     }
   )
 }

@@ -184,7 +184,12 @@ export function organizationDeletionWriteFields(input: {
   }
 }
 
-/** The organisation's super admin: its creator, or a users document of it flagged `isSuperAdmin`. */
+/**
+ * The organisation's super admin: its creator, or a users document of it flagged `isSuperAdmin`. 1.65.0: the flag
+ * counts only when the viewer's users document names this organisation exactly (id or `organizations/{id}` path,
+ * without case); a blank home organisation or a blank organisation id is never a match (before 1.65.0 either blank
+ * let any `isSuperAdmin` flag through — the rules' `callerIsSuperAdminOf` never did).
+ */
 export function isOrganizationSuperAdmin(
   viewer: { id?: string | null; isSuperAdmin?: boolean | null; organizationId?: string | null } | null | undefined,
   org: { id?: string | null; creatorUserId?: unknown } | null | undefined
@@ -197,7 +202,7 @@ export function isOrganizationSuperAdmin(
   const orgId = text(org?.id)
   const home = text(viewer?.organizationId)
   const homeId = home.includes('/') ? home.split('/').filter(Boolean).pop() ?? '' : home
-  return !orgId || !homeId || homeId.toLowerCase() === orgId.toLowerCase()
+  return !!orgId && !!homeId && homeId.toLowerCase() === orgId.toLowerCase()
 }
 
 /**
