@@ -8,6 +8,7 @@ import { clearOwnerDirectoryCache } from '@/lib/owner/directoryServer'
 import { OWNER_AUDIT_UNAVAILABLE_MESSAGE, beginOwnerAudit, type OwnerAuditRun } from '@/lib/owner/ownerAudit'
 import { isValidDocumentId, isValidEmail } from '@/lib/security/validation'
 import { adminListDocumentIds, adminUpdateAuthEmail, firebaseAdminConfigured } from '@/lib/owner/identityToolkitAdmin'
+import { firebaseDefaultPasswordReset, sendBrandedPasswordReset } from '@/lib/auth/passwordResetServer'
 import {
   bearerToken,
   firestoreDelete,
@@ -189,14 +190,12 @@ export async function POST(request: NextRequest) {
   if (!membershipRead.complete) incomplete.push(CHANGE_EMAIL_HOME_ONLY_NOTE)
 
   if (sendReset) {
-    const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY
-    if (apiKey) {
-      const settings = passwordResetActionSettings(newEmail)
-      await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${encodeURIComponent(apiKey)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requestType: 'PASSWORD_RESET', email: newEmail, continueUrl: settings.url }),
-      }).catch(() => undefined)
+    const settings = passwordResetActionSettings(newEmail)
+    // The branded reset email (owner request 17 Nov); Firebase's own email only when it cannot be sent.
+    try {
+      await sendBrandedPasswordReset({ email: newEmail, continueUrl: settings.url, reason: 'emailChanged', idToken: token })
+    } catch {
+      await firebaseDefaultPasswordReset(newEmail, settings.url).catch(() => undefined)
     }
   }
 

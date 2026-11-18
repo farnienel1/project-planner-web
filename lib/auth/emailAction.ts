@@ -1,7 +1,7 @@
 import { isPlatformOwnerEmail } from '@/lib/platform/owner'
 import { passwordMinLength } from '@/lib/canonical/passwordPolicy'
 
-export const EMAIL_ACTION_MODES = ['resetPassword', 'verifyEmail', 'recoverEmail', 'signIn'] as const
+export const EMAIL_ACTION_MODES = ['resetPassword', 'verifyEmail', 'verifyAndChangeEmail', 'recoverEmail', 'signIn'] as const
 export type EmailActionMode = (typeof EMAIL_ACTION_MODES)[number]
 
 export type ParsedEmailAction = {
@@ -18,6 +18,17 @@ export function parseEmailActionSearch(search: { get(name: string): string | nul
     oobCode: (search.get('oobCode') || search.get('oobcode') || '').trim(),
     continueUrl: (search.get('continueUrl') || search.get('continueurl') || '').trim(),
   }
+}
+
+/**
+ * A verify / confirm-new-email / undo-email-change link the action page applies with `applyActionCode`
+ * (17 Nov: the branded verify and change emails, and Firebase's own revert notice, land on /auth/action).
+ */
+export function isApplyEmailAction(action: ParsedEmailAction): boolean {
+  return (
+    (action.mode === 'verifyEmail' || action.mode === 'verifyAndChangeEmail' || action.mode === 'recoverEmail') &&
+    action.oobCode.length > 0
+  )
 }
 
 export function isPasswordResetAction(action: ParsedEmailAction): boolean {

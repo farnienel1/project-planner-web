@@ -367,7 +367,7 @@ export function ManageUsersScreen({ scope = 'all' }: { scope?: ManageUsersScope 
   async function sendReset(user: User) {
     setBusyRow(user.id)
     try {
-      await sendPasswordReset(user.email)
+      await sendPasswordReset(user, organization?.id)
       flash('success', `Password reset email sent to ${user.email}.`)
     } catch (error) {
       flash('error', error instanceof Error ? error.message : 'Failed to send password reset.')
