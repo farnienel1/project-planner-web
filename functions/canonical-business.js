@@ -858,6 +858,7 @@ var ProjectPlannerCanonical = (() => {
     companyDetailsWriteFields: () => companyDetailsWriteFields,
     compareAppVersions: () => compareAppVersions,
     compareInboxNotificationsByCreatedAt: () => compareInboxNotificationsByCreatedAt,
+    compareVariationTrackerOrder: () => compareVariationTrackerOrder,
     compareWarningDayKeys: () => compareWarningDayKeys,
     coverageWindow: () => coverageWindow,
     crossPlatformContractReaderNames: () => crossPlatformContractReaderNames,
@@ -1876,9 +1877,12 @@ var ProjectPlannerCanonical = (() => {
     variationRenumberMissingRefusal: () => variationRenumberMissingRefusal,
     variationRenumberPlan: () => variationRenumberPlan,
     variationRenumberWriteFields: () => variationRenumberWriteFields,
+    variationStaleNumberLocks: () => variationStaleNumberLocks,
+    variationStatusWriteFields: () => variationStatusWriteFields,
     variationSubcontractorLineError: () => variationSubcontractorLineError,
     variationSubcontractorLineFields: () => variationSubcontractorLineFields,
     variationTotals: () => variationTotals,
+    variationTrackerOrder: () => variationTrackerOrder,
     variationTrackerWriteFields: () => variationTrackerWriteFields,
     variationTradesWriteFields: () => variationTradesWriteFields,
     variationWriteFields: () => variationWriteFields,
@@ -13918,8 +13922,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.60.1" : "",
-      sha256: true ? "58d5a443f6d6c3063d62d82f06e06f6a64d9d0b1c780645391b40c93b80e0cad" : ""
+      version: true ? "1.64.0" : "",
+      sha256: true ? "fe3f89e39e831bd5efe8a7c60e79c1da951da78b223e2f23910f9f2c5aac23c7" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -16514,18 +16518,35 @@ var ProjectPlannerCanonical = (() => {
     const base = text22(jobNumber).replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
     return `${base || "variations"}-variations.xlsx`;
   }
+  var VARIATION_STATUS_TOKENS = ["open", "submitted", "closed"];
+  function normalizeVariationStatus(raw) {
+    const value = text22(raw).toLowerCase();
+    if (value === "submitted" || value === "sent") return "submitted";
+    if (value === "closed" || value === "complete" || value === "completed" || value === "done") return "closed";
+    return "open";
+  }
   function variationIsPinned(row2) {
-    const status = text22(row2?.status).toLowerCase();
-    return status === "submitted" || status === "closed" || status === "sent" || status === "complete" || status === "completed" || status === "done" || documentBool(row2?.voNumberLocked) === true;
+    return normalizeVariationStatus(row2?.status) !== "open";
+  }
+  function variationStatusWriteFields(status) {
+    const next = normalizeVariationStatus(status);
+    return { status: next, voNumberLocked: next !== "open" };
+  }
+  function variationStaleNumberLocks(rows3) {
+    return (rows3 || []).filter((row2) => row2 && text22(row2.id) && documentBool(row2.isDeleted) !== true).filter((row2) => documentBool(row2.voNumberLocked) === true && !variationIsPinned(row2)).map((row2) => text22(row2.id));
+  }
+  function compareVariationTrackerOrder(a, b) {
+    return (documentNumber(a.sequence) ?? 0) - (documentNumber(b.sequence) ?? 0) || variationNumberValue(a.voNumber) - variationNumberValue(b.voNumber) || normalizeDocumentId(a.id).localeCompare(normalizeDocumentId(b.id));
+  }
+  function variationTrackerOrder(rows3) {
+    return (rows3 || []).filter((row2) => row2 && text22(row2.id) && documentBool(row2.isDeleted) !== true).slice().sort(compareVariationTrackerOrder).map((row2) => text22(row2.id));
   }
   function variationRenumberPlan(input) {
     const prefix = text22(input?.prefix) || DEFAULT_VARIATION_PREFIX;
     const padding = Number.isFinite(Number(input?.padding)) && Number(input?.padding) >= 1 ? Number(input?.padding) : DEFAULT_VARIATION_PADDING;
     const all = (input?.rows || []).filter((row2) => row2 && text22(row2.id));
     const live = all.filter((row2) => documentBool(row2.isDeleted) !== true);
-    const stored = [...live].sort(
-      (a, b) => (documentNumber(a.sequence) ?? 0) - (documentNumber(b.sequence) ?? 0) || variationNumberValue(a.voNumber) - variationNumberValue(b.voNumber)
-    );
+    const stored = [...live].sort(compareVariationTrackerOrder);
     const byKey = new Map(live.map((row2) => [normalizeDocumentId(row2.id), row2]));
     const givenOrder = (input?.order || []).map((id2) => normalizeDocumentId(id2)).filter((key7) => byKey.has(key7));
     let refused = null;
@@ -16923,13 +16944,6 @@ var ProjectPlannerCanonical = (() => {
     if (removeFieldPaths.length === 0 && !signatures) return null;
     return { removeFieldPaths, signatures };
   }
-  var VARIATION_STATUS_TOKENS = ["open", "submitted", "closed"];
-  function normalizeVariationStatus(raw) {
-    const value = text23(raw).toLowerCase();
-    if (value === "submitted" || value === "sent") return "submitted";
-    if (value === "closed" || value === "complete" || value === "completed" || value === "done") return "closed";
-    return "open";
-  }
   function variationLineId(variationId, kind, index, row2) {
     const line = record8(row2);
     if (kind === "customLines" || kind === "subcontractorLines") return variationExtraLineId(variationId, kind, index, line);
@@ -17095,7 +17109,7 @@ var ProjectPlannerCanonical = (() => {
     const from = text23(row2.voNumber);
     const to = text23(input?.to);
     const sequence = Math.trunc(documentNumber(input?.sequence) ?? NaN);
-    const locked = documentBool(row2.voNumberLocked) === true && text23(input?.numberingMode) !== "resequenceAll";
+    const locked = variationIsPinned(row2) && text23(input?.numberingMode) !== "resequenceAll";
     const set = {};
     if (Number.isFinite(sequence) && sequence !== Math.trunc(documentNumber(row2.sequence) ?? NaN)) set.sequence = sequence;
     if (to && to !== from && !locked) {
@@ -17113,7 +17127,9 @@ var ProjectPlannerCanonical = (() => {
     return {
       parentId: text23(parentId) || text23(row2.parentId),
       parentType: text23(row2.parentType) === "smallWork" ? "smallWork" : "project",
-      enabled: documentBool(row2.enabled) === true,
+      // 1.63.0 (owner decision 17 Nov, A): the tracker is on by default — a job with no tracker document, or a document
+      // that never stored `enabled`, reads as on. Only a stored `enabled: false` (turned off) is off. Nothing is written.
+      enabled: documentBool(row2.enabled) !== false,
       enabledAtMs: documentInstantMs(row2.enabledAt),
       enabledByUid: optionalText4(row2.enabledByUid),
       numberingMode: text23(row2.numberingMode) === "resequenceAll" ? "resequenceAll" : "lockSubmitted",
@@ -17160,7 +17176,11 @@ var ProjectPlannerCanonical = (() => {
         break;
       }
       case "disable":
-        if (!row2) return null;
+        if (!row2) {
+          parentFields(action.parentId, action.parentType);
+          set.enabled = false;
+          break;
+        }
         if (documentBool(row2.enabled) !== false) set.enabled = false;
         removeLock();
         break;
