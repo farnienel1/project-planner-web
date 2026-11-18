@@ -435,6 +435,17 @@ export function canAccessMyTimesheets(user: PermissionUser): boolean {
   return normalizeEmploymentType(user.employmentType) === 'self_employed'
 }
 
+/**
+ * A roster member's role for the timesheet rules (`userTimesheetSubjects`, `exportedTimesheetHistorySubjects`). A
+ * person with no level flag at all reads as manager level (rulebook §11, 1.23.1: `permissionLevelOf`), so they are a
+ * timesheet user for an admin like any other manager; before, `staffAccountRole` gave them no role and their sheets
+ * were left off User Timesheets and the Exported list. Members only — the viewer's own access is unchanged.
+ */
+function timesheetMemberRole(member: NonNullable<PermissionUser>): StaffAccountRole {
+  const role = staffAccountRole(member)
+  return permissionLevelOf(member) === 'manager' ? { ...role, isManager: true } : role
+}
+
 function userTimesheetAccessInput(
   user: NonNullable<PermissionUser>,
   orgUsers: Array<NonNullable<PermissionUser>>
@@ -449,7 +460,7 @@ function userTimesheetAccessInput(
       id: member.id,
       email: member.email,
       isActive: member.isActive !== false,
-      role: staffAccountRole(member),
+      role: timesheetMemberRole(member),
       assignedManagerUserIds: member.assignedManagerUserIds ?? [],
       assignedManagerUserId: member.assignedManagerUserId ?? null,
       hasNoLineManager: member.hasNoLineManager === true,
