@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.64.0 → 1.67.0
-Packed hash: d84f418713f1e41bfd017ffe7d52c12b1d5e72260144fa8f718b12b91e58f532
-Rulebook sha256: c42e6f8f08cda4fea0f081c2bc67e5796dfa9944fec7dc13e6b0c3d68a916b13
+Packed hash: 5eefcf02e70e1622e6177a011f2b4046463270313fd50bfe9953fb3b73faa2f9
+Rulebook sha256: 31b33e29385e2af4621e5c64a91b587f58238e47e5b5193c7cdef01c6aeed8a5
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,12 +22,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 56f892a29d844eaaebe16028640ebdfb036324d3a229638968c34d10663159f3
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: DAY_RATE_OVERTIME_ROUNDED_NOTE, dayRateHourlyEquivalent, dayRateOvertimeCalcText, multipliedHoursParts, signedDayRateOvertimeText
+Exports added: DAY_RATE_OVERTIME_ROUNDED_NOTE, dayRateHourlyEquivalent, dayRateOvertimeCalcText, liveDayRateOvertimeText, multipliedHoursParts, signedDayRateOvertimeText
 Exports removed: none
 Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/dayRateOvertimeText.test.ts, lib/canonical/dayRateOvertimeText.ts, lib/canonical/index.ts, lib/canonical/payRate.ts, lib/canonical/payrollHours.ts
 Done when:
-- [ ] Packed hash in iOS equals d84f418713f1e41bfd017ffe7d52c12b1d5e72260144fa8f718b12b91e58f532
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 c42e6f8f08cda4fea0f081c2bc67e5796dfa9944fec7dc13e6b0c3d68a916b13)
+- [ ] Packed hash in iOS equals 5eefcf02e70e1622e6177a011f2b4046463270313fd50bfe9953fb3b73faa2f9
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 31b33e29385e2af4621e5c64a91b587f58238e47e5b5193c7cdef01c6aeed8a5)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.67.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -36,7 +36,7 @@ Done when:
 
 ## What changed in 1.67.0
 
-- **A day-rate overtime line reads in hours** (§8, owner decision 17 Nov; wording only). New `dayRateOvertimeCalcText` and `DAY_RATE_OVERTIME_ROUNDED_NOTE` (`lib/canonical/dayRateOvertimeText.ts`): "6h × 1.5 = 9h · 9h × £26.47/h (rounded) = £238.24 (£225.00/day ÷ 8.5h)" instead of "0.71 days × £337.50/day = £238.24". The divisor is the part's day-rate divisor (`payrollDayRateHours`); the hours part is `multipliedHoursText`; the amount is the exact pay as priced and is never changed; the shown hourly rate is rounded to pennies and marked "(rounded)" when that changes it (owner confirmed 17 Nov). Standard lines, hourly-rate people and PAYE days are unchanged; a signed snapshot line reads in hours only when it stores the day rate and divisor at signing (`otBaseDayRate`, `otDayRateHours`) and its stored amount is exactly what `payForHours` pays for its stored hours at that rate (see the review note below). Web: `payLineDisplay` (the timesheet period and review page, the invoice HTML and PDF, the export email) calls it. `plainHoursText` is now exported from `payrollHours.ts` (module only). New `multipliedHoursParts` (`payrollMultipliedHours` uses it, same figures) and `dayRateHourlyEquivalent`; the text function now does no arithmetic of its own (a syntax-tree test) and carries `paidHours`, `pay`, `payShown`; callers fall back to the older wording when it would not show the line's own figures (owner 17 Nov: the calculation must never fail; property tests over generated bookings). Review of #378: signed lines read in hours only from the day rate and divisor stored at signing (new snapshot fields `otBaseDayRate`, `otDayRateHours`; `signedDayRateOvertimeText`) when the stored amount is exactly what they pay — never a rate worked out from the signed amount; live lines only with the person's own rate (no `rate ÷ multiplier`); iOS invoice and export rows carry the live line's multiplier, rate and divisor. Second review of #378: a live invoice row shows the hours wording only when its decided amount is exactly what `payForHours` pays for the shown hours, rate and divisor (an Edit-hours-revised amount keeps the older wording; web invoice details show the decided amount); a signed line whose details mention a break but cannot be read keeps the older wording. Merged after 1.59.0 (#370), 1.60.0 (#373), 1.60.1 (#375), 1.63.0 (#388) and 1.64.0 (#392); drafted as 1.61.0 and renumbered.
+- **A day-rate overtime line reads in hours** (§8, owner decision 17 Nov; wording only). New `dayRateOvertimeCalcText` and `DAY_RATE_OVERTIME_ROUNDED_NOTE` (`lib/canonical/dayRateOvertimeText.ts`): "6h × 1.5 = 9h · 9h × £26.47/h (rounded) = £238.24 (£225.00/day ÷ 8.5h)" instead of "0.71 days × £337.50/day = £238.24". The divisor is the part's day-rate divisor (`payrollDayRateHours`); the hours part is `multipliedHoursText`; the amount is the exact pay as priced and is never changed; the shown hourly rate is rounded to pennies and marked "(rounded)" when that changes it (owner confirmed 17 Nov). Standard lines, hourly-rate people and PAYE days are unchanged; a signed snapshot line reads in hours only when it stores the day rate and divisor at signing (`otBaseDayRate`, `otDayRateHours`) and its stored amount is exactly what `payForHours` pays for its stored hours at that rate (see the review note below). Web: `payLineDisplay` (the timesheet period and review page, the invoice HTML and PDF, the export email) calls it. `plainHoursText` is now exported from `payrollHours.ts` (module only). New `multipliedHoursParts` (`payrollMultipliedHours` uses it, same figures) and `dayRateHourlyEquivalent`; the text function now does no arithmetic of its own (a syntax-tree test) and carries `paidHours`, `pay`, `payShown`; callers fall back to the older wording when it would not show the line's own figures (owner 17 Nov: the calculation must never fail; property tests over generated bookings). Review of #378: signed lines read in hours only from the day rate and divisor stored at signing (new snapshot fields `otBaseDayRate`, `otDayRateHours`; `signedDayRateOvertimeText`) when the stored amount is exactly what they pay — never a rate worked out from the signed amount; live lines only with the person's own rate (no `rate ÷ multiplier`); iOS invoice and export rows carry the live line's multiplier, rate and divisor. Second review of #378: a live invoice row shows the hours wording only when its decided amount is exactly what `payForHours` pays for the shown hours, rate and divisor (an Edit-hours-revised amount keeps the older wording; web invoice details show the decided amount); a signed line whose details mention a break but cannot be read keeps the older wording. Final review of #378: that live-line rule is the rulebook's `liveDayRateOvertimeText` (new; type `LiveDayRateOvertimeLine`), called by web `payLineDisplay` (web's own `dayRateOvertimeTextOrNull` is removed) and by iOS instead of a Swift copy. Merged after 1.59.0 (#370), 1.60.0 (#373), 1.60.1 (#375), 1.63.0 (#388) and 1.64.0 (#392); drafted as 1.61.0 and renumbered.
 
 ## iOS work for 1.67.0
 
@@ -58,6 +58,10 @@ Wording only — no figure, total, write or permission changes.
 - **Live rows, non-circular check (SF1):** `InvoiceLineItem.dayRateOvertimeText` shows the hours wording only when the row's `amount` equals `payForHours` (day rate, the row's paid hours, divisor, multiplier); comparing with the script's own `pay` is circular (it is the amount given). A row revised by Edit hours keeps the older wording. Test: a live row at £300 whose hours pay £238.24.
 - **Compile fix:** read `otBaseDayRate` / `otDayRateHours` as `((row["…"] as? NSNumber)?.doubleValue).flatMap { … }`.
 - **Signed lines:** details that mention a break but carry no readable multiplied text keep the older wording (in the script; nothing to do in Swift).
+
+## Final review of #378 (also in this release)
+
+- **Live lines call the rulebook:** `InvoiceLineItem` gets its text from `liveDayRateOvertimeText({ paidHours, clockHours, breakHours, multiplier, dayRate, dayRateHours, amount }, { currency })` through `CanonicalBusinessEngine` (clock hours and break from `parseMultipliedHoursText` of the details, or the collector's `otClockHours`; `dayRate` the collector's `otBaseDayRate`; `amount` the row's decided amount). Remove the Swift checks (`abs(calc.paidHours − paidHours × multiplier)`, the `payForHoursIfCalculated` comparison) from `computeDayRateOvertimeText`: the rulebook function does both and returns null for the older wording.
 
 ## New rulebook sections
 

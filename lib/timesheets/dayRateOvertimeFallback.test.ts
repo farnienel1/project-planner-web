@@ -5,7 +5,8 @@
  */
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { dayRateOvertimeTextOrNull, money, payForHours, payLineDisplay, roundPennies } from './payBasis.ts'
+import { money, payForHours, payLineDisplay, roundPennies } from './payBasis.ts'
+import { liveDayRateOvertimeText } from '../canonical/dayRateOvertimeText.ts'
 
 const OLD_WORDING = /days? × £/
 
@@ -42,9 +43,9 @@ test('1.67.0: a text whose hours or amount would not match the line is never sho
   assert.match(wrongHours.display.equation, OLD_WORDING)
   assert.equal(wrongHours.display.pay, wrongHours.pay)
   // Not a finite amount: no text.
-  assert.equal(dayRateOvertimeTextOrNull({ paidHours: 6, multiplier: 1.5, dayRate: 225, standard: 8.5, pay: Number.NaN }), null)
+  assert.equal(liveDayRateOvertimeText({ paidHours: 6, multiplier: 1.5, dayRate: 225, dayRateHours: 8.5, amount: Number.NaN }), null)
   // A good line passes the same check.
-  const good = dayRateOvertimeTextOrNull({ paidHours: 6, multiplier: 1.5, dayRate: 225, standard: 8.5, pay: 238.24, currencyCode: 'GBP' })
+  const good = liveDayRateOvertimeText({ paidHours: 6, multiplier: 1.5, dayRate: 225, dayRateHours: 8.5, amount: 238.24 }, { currency: 'GBP' })
   assert.equal(good?.pay, 238.24)
   assert.equal(good?.paidHours, 9)
 })
@@ -67,6 +68,6 @@ test('1.67.0 review (SF1): a live line whose decided amount differs from what it
   assert.equal(revised.display.pay, 300)
   assert.ok(revised.display.equation.endsWith(`= ${money(300, 'GBP')}`))
   // A penny off is refused as well: the shown sum must price to the amount exactly.
-  assert.equal(dayRateOvertimeTextOrNull({ paidHours: 6, multiplier: 1.5, dayRate: 225, standard: 8.5, pay: 238.25, currencyCode: 'GBP' }), null)
-  assert.equal(dayRateOvertimeTextOrNull({ paidHours: 6, multiplier: 1.5, dayRate: 225, standard: 8.5, pay: 238.24, currencyCode: 'GBP' })?.pay, 238.24)
+  assert.equal(liveDayRateOvertimeText({ paidHours: 6, multiplier: 1.5, dayRate: 225, dayRateHours: 8.5, amount: 238.25 }, { currency: 'GBP' }), null)
+  assert.equal(liveDayRateOvertimeText({ paidHours: 6, multiplier: 1.5, dayRate: 225, dayRateHours: 8.5, amount: 238.24 }, { currency: 'GBP' })?.pay, 238.24)
 })

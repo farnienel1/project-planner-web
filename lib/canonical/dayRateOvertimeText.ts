@@ -164,3 +164,58 @@ export function signedDayRateOvertimeText(
   if (!calc || Math.abs(calc.paidHours - paidHours * multiplier) > 0.005) return null
   return calc
 }
+
+/** A LIVE day-rate overtime line (the timesheet collector's line, or an invoice / export row built from it). */
+export type LiveDayRateOvertimeLine = {
+  /** The hours priced at the multiplier (the collector's `outsideHours`, the line's `paidHours`). */
+  paidHours: number
+  /** Clock hours at the multiplier when known (`payrollMultipliedHours.clockHours`); else the paid hours are the clock. */
+  clockHours?: number | null
+  /** Unpaid break taken off the multiplied hours (1.20.3); only used with `clockHours`. */
+  breakHours?: number | null
+  multiplier: number
+  /** The person's own day rate (the collector's own rate; never the multiplied rate ÷ N). */
+  dayRate: number
+  /** The line's day-rate divisor (`payrollDayRateHours`, the line's `standardDayHours`). */
+  dayRateHours: number
+  /** The amount the row shows — after any review (Edit hours) on an invoice or export row. */
+  amount: number
+}
+
+/**
+ * Rulebook 1.67.0 §8 (final review of #378): the hours wording of a LIVE day-rate overtime line, or null for the older
+ * wording — the one rule both apps call (web `payLineDisplay`, iOS `InvoiceLineItem`). The text is shown only when it
+ * shows the line's own figures: its hours sum must be the line's paid hours × the multiplier, and the line's amount
+ * must be exactly what `payForHours` pays for those hours at that day rate and divisor (so an Edit-hours-revised amount
+ * keeps the older wording). Never throws: anything it cannot read gives null. The amount never depends on the text.
+ */
+export function liveDayRateOvertimeText(
+  line: LiveDayRateOvertimeLine,
+  options: { currency?: string | null } = {}
+): DayRateOvertimeCalcText | null {
+  try {
+    const paidHours = Number(line.paidHours)
+    const multiplier = Number(line.multiplier)
+    const dayRate = Number(line.dayRate)
+    const divisor = Number(line.dayRateHours)
+    if (!(paidHours > 0) || !(multiplier > 0) || !(dayRate > 0) || !(divisor >= 1) || !Number.isFinite(Number(line.amount))) return null
+    const priced = payForHours({ payBasis: 'day', dayRate, paidHours, standardDayHours: divisor, otMultiplier: multiplier })
+    if (priced !== roundPennies(Number(line.amount))) return null
+    const hasClock = Number(line.clockHours) > 0
+    const currency = options.currency ?? null
+    const calc = dayRateOvertimeCalcText({
+      clockHours: hasClock ? Number(line.clockHours) : paidHours,
+      multiplier,
+      breakHours: hasClock ? Number(line.breakHours) || 0 : 0,
+      dayRate,
+      dayRateHours: divisor,
+      pay: priced,
+      currency,
+    })
+    if (!calc || Math.abs(calc.paidHours - paidHours * multiplier) > 0.005) return null
+    if (calc.pay !== priced || calc.payShown !== formatMoney(priced, currency)) return null
+    return calc
+  } catch {
+    return null
+  }
+}

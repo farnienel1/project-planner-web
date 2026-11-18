@@ -7,7 +7,7 @@
 import { historyPayRowOnDay, readStoredRates, type PayBasis } from '@/lib/canonical/payRate'
 import { formatMoney } from '@/lib/canonical/money'
 import { multipliedHoursText } from '@/lib/canonical/payrollHours'
-import { dayRateOvertimeCalcText } from '@/lib/canonical/dayRateOvertimeText'
+import { liveDayRateOvertimeText } from '@/lib/canonical/dayRateOvertimeText'
 
 export type { PayBasis, StoredPay } from '@/lib/canonical/payRate'
 
@@ -21,7 +21,7 @@ export type HistoryPayRow = {
 
 // Rulebook 1.10.0 (L16): the pay arithmetic is the rulebook's (`payForHours`, `roundPennies`, `orgDayHours`).
 export { orgDayHours, payForHours, roundPennies } from '@/lib/canonical/payRate'
-import { orgDayHours, payForHours, roundPennies } from '@/lib/canonical/payRate'
+import { orgDayHours, roundPennies } from '@/lib/canonical/payRate'
 
 /** Organisation money (`formatMoney`). Pass the organisation currency; GBP when omitted. */
 export function money(amount: number, currencyCode?: string | null) {
@@ -32,54 +32,6 @@ export function quantityText(quantity: number, unit: 'hours' | 'days') {
   const number = Number(quantity).toFixed(2)
   if (unit === 'hours') return Math.abs(quantity - 1) < 0.001 ? `${number} hour` : `${number} hours`
   return Math.abs(quantity - 1) < 0.001 ? `${number} day` : `${number} days`
-}
-
-/**
- * Rulebook 1.67.0 §8 (owner 17 Nov): the hours wording of a day-rate overtime line, or null so the caller keeps the
- * older wording. Null also when the text throws, or when it would not show this line's own figures — its hours sum
- * must be the line's paid hours at the multiplier (`paidHours × N`, which equals clock × N − break), and the line's
- * amount must be exactly what `payForHours` pays for those hours at that day rate and divisor (a revised amount keeps
- * the older wording). Exported for tests.
- */
-export function dayRateOvertimeTextOrNull(input: {
-  paidHours: number
-  clockHours?: number | null
-  breakHours?: number | null
-  multiplier: number
-  dayRate: number
-  standard: number
-  pay: number
-  currencyCode?: string | null
-}): ReturnType<typeof dayRateOvertimeCalcText> {
-  try {
-    const hasClock = Number(input.clockHours) > 0
-    const calc = dayRateOvertimeCalcText({
-      clockHours: hasClock ? Number(input.clockHours) : input.paidHours,
-      multiplier: input.multiplier,
-      breakHours: hasClock ? Number(input.breakHours) || 0 : 0,
-      dayRate: input.dayRate,
-      dayRateHours: input.standard,
-      pay: input.pay,
-      currency: input.currencyCode ?? null,
-    })
-    if (!calc) return null
-    if (Math.abs(calc.paidHours - input.paidHours * input.multiplier) > 0.005) return null
-    // Review of #378 (SF1): the amount shown must be exactly what the rulebook pays for the hours, rate and divisor
-    // shown (`payForHours`) — not merely the amount passed in, which an Edit hours or other revision may have changed
-    // while the hours stayed the live line's. Otherwise the shown sum would not add up to the amount: older wording.
-    const priced = payForHours({
-      payBasis: 'day',
-      dayRate: input.dayRate,
-      paidHours: input.paidHours,
-      standardDayHours: input.standard,
-      otMultiplier: input.multiplier,
-    })
-    if (priced !== roundPennies(input.pay)) return null
-    if (calc.pay !== priced || calc.payShown !== money(priced, input.currencyCode)) return null
-    return calc
-  } catch {
-    return null
-  }
 }
 
 export function payLineDisplay({
@@ -137,21 +89,14 @@ export function payLineDisplay({
   // backwards from the multiplied rate or an amount.
   if (isOvertime && !hourly && rate != null && Number(otMultiplier) > 0 && Number(baseRate) > 0) {
     // Rulebook 1.67.0 §8 (owner decision 17 Nov): a day-rate overtime line reads in hours —
-    // "6h × 1.5 = 9h · 9h × £26.47/h (rounded) = £238.24 (£225.00/day ÷ 8.5h)" — never a multiplied day
-    // rate. `rate` is the multiplied rate the line was priced with; the person's day rate is rate ÷ N. `pay` as given.
-    // Owner 17 Nov: the amount is already priced (`pay`); the text only shows it. It never blocks or changes the
-    // amount: if it cannot be built, throws, or does not show this line's own hours and amount, the older wording
-    // below is used.
-    const calc = dayRateOvertimeTextOrNull({
-      paidHours,
-      clockHours,
-      breakHours,
-      multiplier,
-      dayRate: Number(baseRate),
-      standard,
-      pay,
-      currencyCode,
-    })
+    // "6h × 1.5 = 9h · 9h × £26.47/h (rounded) = £238.24 (£225.00/day ÷ 8.5h)" — never a multiplied day rate.
+    // The rule is the rulebook's `liveDayRateOvertimeText`: shown only when the line's amount is exactly what
+    // `payForHours` pays for the hours, the person's own day rate and divisor shown; otherwise null and the older
+    // wording below. The amount never depends on the text.
+    const calc = liveDayRateOvertimeText(
+      { paidHours, clockHours, breakHours, multiplier, dayRate: Number(baseRate), dayRateHours: standard, amount: pay },
+      { currency: currencyCode ?? null }
+    )
     if (calc) {
       return { rateType, quantityText: calc.hoursText, rateText: calc.rateText, equation: calc.text, pay: roundPennies(pay) }
     }

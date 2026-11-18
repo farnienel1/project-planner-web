@@ -278,3 +278,54 @@ test('1.67.0 S1 property: a signed line shows its stored figures or the older wo
     assert.equal(R.signedDayRateOvertimeText({ ...line, amount: pay + 0.01 }), null, `case ${seed}`)
   }
 })
+
+// MARK: - Live lines (final review of #378): one rule both apps call, never re-written in an app
+
+test('1.67.0 live: a live line reads in hours only when its amount is what the shown hours pay', () => {
+  const pay = R.payForHours({ payBasis: 'day', dayRate: 225, paidHours: 6, standardDayHours: 8.5, otMultiplier: 1.5 })
+  const line = { paidHours: 6, multiplier: 1.5, dayRate: 225, dayRateHours: 8.5, amount: pay }
+  assert.equal(R.liveDayRateOvertimeText(line, { currency: 'GBP' })?.text, '6h × 1.5 = 9h · 9h × £26.47/h (rounded) = £238.24 (£225.00/day ÷ 8.5h)')
+  // With an unpaid break in the multiplied hours (clock 6.5h × 2 − 0.5h = 12.5h; paid hours 6.25 at ×2).
+  const breakPay = R.payForHours({ payBasis: 'day', dayRate: 200, paidHours: 6.25, standardDayHours: 8, otMultiplier: 2 })
+  assert.equal(
+    R.liveDayRateOvertimeText({ paidHours: 6.25, clockHours: 6.5, breakHours: 0.5, multiplier: 2, dayRate: 200, dayRateHours: 8, amount: breakPay }, { currency: 'GBP' })?.text,
+    '6.5h × 2 − 0.5h break = 12.5h · 12.5h × £25.00/h = £312.50 (£200.00/day ÷ 8h)'
+  )
+  // An Edit-hours-revised amount (£300) or a penny off: the older wording.
+  assert.equal(R.liveDayRateOvertimeText({ ...line, amount: 300 }), null)
+  assert.equal(R.liveDayRateOvertimeText({ ...line, amount: pay + 0.01 }), null)
+  // Clock hours that are not the line's own (9h × 1.5 ≠ 6h × 1.5): the older wording.
+  assert.equal(R.liveDayRateOvertimeText({ ...line, clockHours: 9 }), null)
+  // Nothing it cannot read: no rate, a divisor below 1 hour, no multiplier, a non-finite amount, a throwing value.
+  assert.equal(R.liveDayRateOvertimeText({ ...line, dayRate: 0 }), null)
+  assert.equal(R.liveDayRateOvertimeText({ ...line, dayRateHours: 0.5 }), null)
+  assert.equal(R.liveDayRateOvertimeText({ ...line, multiplier: 0 }), null)
+  assert.equal(R.liveDayRateOvertimeText({ ...line, amount: Number.NaN }), null)
+  const throwing = { valueOf() { throw new Error('boom') } } as unknown as number
+  assert.equal(R.liveDayRateOvertimeText({ ...line, clockHours: throwing }), null)
+})
+
+test('1.67.0 live property: a live line shows its own priced figures, and any other amount drops to the older wording', () => {
+  let checked = 0
+  for (let seed = 1; seed <= CASES; seed += 1) {
+    const c = generate(seed)
+    const { result, divisor, pay, multiplied, calc } = priced(c)
+    if (!(result.outsideHours > 0) || !multiplied) continue
+    const line = {
+      paidHours: result.outsideHours,
+      clockHours: multiplied.clockHours,
+      breakHours: multiplied.breakHours,
+      multiplier: result.outsideMultiplier,
+      dayRate: c.dayRate,
+      dayRateHours: divisor,
+      amount: pay,
+    }
+    const live = R.liveDayRateOvertimeText(line, { currency: 'GBP' })
+    assert.ok(live, `case ${seed}`)
+    assert.equal(live.text, calc?.text, `case ${seed}`)
+    assert.equal(live.pay, pay)
+    assert.equal(R.liveDayRateOvertimeText({ ...line, amount: pay + 0.01 }), null, `case ${seed}`)
+    checked += 1
+  }
+  assert.ok(checked > 100, String(checked))
+})

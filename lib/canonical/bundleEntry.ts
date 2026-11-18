@@ -1840,4 +1840,4 @@ export { taskCompletionFields } from './operationsDocuments'
 export { MANAGER_ROW_NOT_LINKED_LABEL } from './unresolvedBookingPeople'
 
 // 1.67.0: a day-rate overtime line reads in hours (owner decision 17 Nov), wording only.
-export { DAY_RATE_OVERTIME_ROUNDED_NOTE, dayRateOvertimeCalcText, signedDayRateOvertimeText } from './dayRateOvertimeText'
+export { DAY_RATE_OVERTIME_ROUNDED_NOTE, dayRateOvertimeCalcText, liveDayRateOvertimeText, signedDayRateOvertimeText } from './dayRateOvertimeText'
