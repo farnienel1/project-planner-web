@@ -1420,3 +1420,44 @@ With `privatePay` on, `settings/timesheet_*` reads by anyone who is not the id's
 - `organizations/{orgId}/materialContacts/{email}` (§16, review of #370 L2 / S2): create only, by admins and managers, with only `firstSentAt` = the request time; read by admins and managers (billing open); no update or delete; excluded from the catch-all read.
 - Re-review of #370: (S1) on the row path and for a users document with `passwordSet` not true, the record needs `callerOrg(…)[0] == 'admin'`; (N1) text fields go through `formerText` (non-text → ''); (N2) id lists through `formerIds` (non-list → []). Static compile cost 233,336 (live 234,858); 150,099 bytes.
 - Offsets (no allow / deny change): `managerRowIsCaller` folded into `jobListsCaller` with a lazy `let row` path (it had one caller); redundant parentheses removed in `lineManagerIdList` and `homeOrgIs` (`&&` binds tighter than `||`, the ternary is lowest). Review of #370: 169 redundant parentheses around `&&` operands of `||` removed across the file (`(A && B) || C` → `A && B || C`; `&&` binds tighter). Static compile cost 234,858 (live 1.55.1) → 232,856; bytes 148,367 → 149,648 (`firestoreRulesMaxBytes` raised to 150,528). Emulator type check 0 issues; strict suites: the same 5 budget refusals as main. Strict suites: the same 5 budget refusals as main; emulator type check 0 issues; in-process compile time within noise of main (1.42 s vs 1.48 s, min of 7, warm).
+
+## 1.64.0 — allowlists instead of denylists (17 Nov)
+
+Why: an emulator audit of main d3927045 found write paths guarded by denylists, or by `diff().changedKeys().hasOnly(...)`. `changedKeys()` lists only keys present on both sides with a different value, so a key that is **added** or **removed** passes any `changedKeys` list. Proven attack: an Operatives manager deletes `passwordSet` from a signed-up operative (a removal, not a change), after which the line-manager lock for signed-up people no longer applies and they change the line manager. Every tightened path now uses `affectedKeys()` (added + removed + changed) or, on a create, `keys().hasOnly(...)`. `affected()` is `request.resource.data.diff(resource.data).affectedKeys()`.
+
+Paths (each has attacks, an extra-key sweep and positive app shapes in `tests/privilegeEscalation.rules.test.ts`):
+- `users/{uid}` Operatives-manager update (`phone` added to the key list: the app writes it beside `mobileNumber`): `affected().hasOnly([...])` replaces the `hasAny([...email...])` denylist + `changedKeys().hasOnly([...])`.
+- `users/{uid}` own update (non-admin, `selfUpdateKeepsManagedFields`): an allowlist of profile keys plus the keys the 1.31.1 checks pin to their stored value. Keys an app writes back unchanged are not in `affected()`, so an older full merge still passes. `passwordSet` and `accountConfirmed` only ever to true. `employmentType` compares raw (a missing value stays missing; before, both sides defaulted to `'paye'`, so adding `paye` passed).
+- `organizations/{orgId}` create: `orgCreateShape` (keys, creator, members, billing, subscription). The old create only required `members[caller] == 'admin'`.
+- `holidayBookings` create: ownership by `userId` (an `operativeId` is the owner only when `userId` is empty).
+- `notifications`: create key list, `isRead == false`, `actorUserId == caller` (default for the three scheduled types is the caller, so they may omit it); update `affected().hasOnly(['isRead','readAt', metadata])` by the addressee or an admin (the admin path is kept, narrowed to the same keys). `push_test` names its sender as actor (both apps do).
+- `operatives` / `managers`: update staff only; an operative's own row (row email = token email) qualifications, plus the name / phone / trade their own profile save copies onto it (iPhone `UserStore`). The operatives update was restructured as `typed && (privileged ? gate : true) && who && payStaysPrivate && metadata`; before, the `who && payStaysPrivate && metadata` tail was written in both branches.
+- `tasks`: one `create, update` allow with a `resource == null` ternary (not `request.method`, see "1.33.1 notifications crash").
+- `accountConfirmations`, own `userEmails` claim (`userEmailClaimerTied`), `productFeedback`, `productFeedbackComments`, `productSessions`.
+
+Compile-cost offsets (no allow / deny change): the `users` `get` and `list` allows had identical conditions and are one `read`; the invite self-create block (`request.auth.uid == userId ? (...)`) was written twice in the create rule and is now evaluated once: `A ? (invitationId != '' || privilegeCreateTyped) : (invitationId == '' && privilegeCreateTyped && (rest))`, the same truth table; the notification update no longer evaluates `isOrgAdminOrOwner`.
+
+Measurements: see the PR body (static compile cost, bytes, type check, suites, strict budget). Bytes: the key lists are new text with no comment left in `firestore.rules` to move, so `firestoreRulesMaxBytes` is raised to the next KB; the static compile cost (what Google's compiler limits) is below main.
+
+### 1.64.0 addendum — `reportChecks` and the users-create ternary
+
+- `organizations/{orgId}/reportChecks/{reportId}` (web #391, rulebook 1.65.0): `allow read: if isOrganizationAdmin(organizationId)` (claims admin and `orgBillingOpen`), `allow write: if false`, and listed in the catch-all exclusion so the member-wide read never re-opens it.
+- The users create first used the invite self-create block as a **ternary predicate** (`A ? X : Y` where `A` is itself a nested ternary). On the emulator an admin's users create carrying a server timestamp then hung (`methodTernary` "users admin create: hang", the 1.33.1 crash class). It is now `A && X || (Y)` with `A` written once: same decisions, same compile cost, answers. Wrapping `A` in a function instead raised the static compile cost by about 3,100, so it is inlined.
+- Owner console A4 (`adminAuditLog`): create only, in its shape, by the owner as `actorUid`; never updated or deleted (comment moved here from firestore.rules in 1.64.0).
+
+### 1.64.0 — review of #392 (18 Nov)
+
+- `isActive` / `hasNoLineManager` on a person's own update compare the exact stored value (`next.get('isActive', true) == prev.get('isActive', true)`); `truthyBool` let `null` / `0` through while the auth claims treat only exactly `false` as inactive.
+- `employmentType` compares with a `0` default, so adding `employmentType: null` is a change.
+- Tasks (`taskTidyOnly`): an operative's save (`taskWriteFields` against the stored task) may also carry the reader's tidy form of a task saved before 1.8.0: the same priority in another case (or `Normal` for an unknown word), trimmed text, the document id, and the items with derived ids (never more items than stored). Re-review: items only when the stored items have no ids (first and last checked) and their number is unchanged; otherwise they must be unchanged. Known limit: on such a legacy task, item titles are not compared one by one (a list cannot be walked).
+- Operatives manager: may remove `utrNumber` / `vatNumber` (added or changed is refused).
+- Not narrowed: scheduled-type notices (apps write them for other people) and the own `ppIdeas` copies (a map of ideas cannot be walked).
+
+### 1.64.0 — re-review of #392 (18 Nov)
+
+- The pins on `isActive` / `hasNoLineManager` run before the admin / non-admin split in `selfUpdateKeepsManagedFields`, and on the admin's own path in `userUpdateAllowed`, so a deactivated admin cannot reactivate themself either.
+- Leave create no longer checks `operativeId` beside the caller's own `userId` (back to main): iOS sends it upper-cased and `callerOwnsBookingId` looks rows up with the exact case.
+- Compile-cost offsets, no allow / deny change: `callerOrg`, `callerHomeFlags` and the home organisation claim read the token with one nested `get([...], default)` instead of chained `get`s (the same default at every missing step, as `orgBillingOpen` since 1.52.0).
+- Known limit (third review): the tidy check reads only the first and last stored item for an `id`. A pre-1.8.0 task whose items are only partly without ids cannot be completed by an operative (the tidied items differ from the stored ones and the check refuses them); a manager or admin completes it.
+- The nested `get(['pp', 'o', org], default)` (and `['pp', 'u']`, `['pp', 'h']`) is the same as the chained `get`s only because the claims function always writes `pp` and `pp.o` as maps (and `pp.u` as a list). `authClaimsForPerson` / `parseAuthClaims` are pinned to that shape by a unit test in `lib/canonical/authClaims.test.ts`; a change to the claims shape must revisit these reads.
+- Own line manager: an admin, the Super Admin included, cannot change their own `hasNoLineManager` (§8, §11). The apps should hide or lock the line-manager picker on your own profile (follow-up for web Edit User and iOS).
