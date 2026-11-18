@@ -41,6 +41,7 @@ import { useSnapshotAutoRepair } from '@/lib/timesheets/useSnapshotAutoRepair'
 import type { RepairSheet } from '@/lib/timesheets/snapshotAutoRepair'
 import {
   RECENT_PAY_RUN_COUNT,
+  TIMESHEETS_LOAD_FAILED_MESSAGE,
   payRunKey,
   payRunsStartDayKey,
   recentPayRuns,
@@ -270,7 +271,7 @@ export function TimesheetsScreen({
           })
         )
       } catch {
-        setLoadError('Timesheets did not finish loading. Check the connection and try again.')
+        setLoadError(TIMESHEETS_LOAD_FAILED_MESSAGE)
       } finally {
         setRecordsLoading(false)
       }
@@ -302,7 +303,7 @@ export function TimesheetsScreen({
       if (stale()) return
       setQueueSheets(loaded)
     } catch {
-      if (!stale()) setLoadError('Timesheets did not finish loading. Check the connection and try again.')
+      if (!stale()) setLoadError(TIMESHEETS_LOAD_FAILED_MESSAGE)
     } finally {
       if (!stale()) setRecordsLoading(false)
     }

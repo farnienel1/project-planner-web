@@ -27,6 +27,9 @@ import type { OrgInvoicingSettings } from '@/lib/settings/organizationSettings'
 import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import type { User } from '@/types'
 
+/** The load error User Timesheets and the hub tile show when the sheets did not load (never 0 / 0 / 0). */
+export const TIMESHEETS_LOAD_FAILED_MESSAGE = 'Timesheets did not finish loading. Check the connection and try again.'
+
 /** How many pay runs (the current one included) the hub and User Timesheets look back over. */
 export const RECENT_PAY_RUN_COUNT = 6
 

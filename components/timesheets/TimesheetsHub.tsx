@@ -99,6 +99,7 @@ import type { RepairSheet } from '@/lib/timesheets/snapshotAutoRepair'
 import { revisionDueOf as revisionDueFor } from '@/lib/timesheets/mineChanged'
 import {
   RECENT_PAY_RUN_COUNT,
+  TIMESHEETS_LOAD_FAILED_MESSAGE,
   payRunKey,
   payRunsStartDayKey,
   recentPayRuns,
@@ -961,7 +962,7 @@ function ManagerTimesheetsTile({
   onStats?: (stats: { awaiting: number; signed: number; exported: number } | null) => void
   onClick: () => void
 }) {
-  const [loaded, setLoaded] = useState<{ sheets: TimesheetQueueStoredSheet[]; exportedCount: number } | 'empty' | null>(null)
+  const [loaded, setLoaded] = useState<{ sheets: TimesheetQueueStoredSheet[]; exportedCount: number } | 'empty' | 'failed' | null>(null)
   const [repairs, setRepairs] = useState(0)
   const reviewGroups = useMemo(() => timesheetRosterGroups(user, users), [user, users])
   const reviewIds = useMemo(() => reviewGroups.flat().flatMap((member) => timesheetMemberIds(member, users)), [reviewGroups, users])
@@ -1009,7 +1010,8 @@ function ManagerTimesheetsTile({
         setLoaded({ sheets, exportedCount: exportedRows.length })
       })
       .catch(() => {
-        if (!cancelled) setLoaded('empty')
+        // Rulebook 1.66.0 §8: a failed load is shown (the message User Timesheets uses), never 0 / 0 / 0.
+        if (!cancelled) setLoaded('failed')
       })
     return () => {
       cancelled = true
@@ -1023,7 +1025,7 @@ function ManagerTimesheetsTile({
   // Rulebook 1.66.0 §8: the same rows User Timesheets lists — every stored sheet however old (`userTimesheetQueue`), a
   // reopened sheet where `timesheetListBucket` now puts it (an old run whose bookings are not loaded: not changed).
   const queueRows = useMemo(() => {
-    if (loaded == null || loaded === 'empty') return []
+    if (loaded == null || loaded === 'empty' || loaded === 'failed') return []
     return userTimesheetQueueRows({
       viewer: user,
       users,
@@ -1036,7 +1038,7 @@ function ManagerTimesheetsTile({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded, user, users, invoicing, timeZone, changeCatalogue.bookings, changeCatalogue.managerSiteBookings, changeCatalogue.liveLoaded])
   const stats = useMemo(() => {
-    if (loaded == null) return null
+    if (loaded == null || loaded === 'failed') return null
     if (loaded === 'empty') return { awaiting: 0, signed: 0, exported: 0 }
     return {
       awaiting: queueRows.filter((row) => row.bucket === 'awaiting').length,
@@ -1094,6 +1096,11 @@ function ManagerTimesheetsTile({
           <span>Exported</span>
         </span>
       </span>
+      {loaded === 'failed' ? (
+        <p className="pu-err" role="alert" style={{ marginTop: 6 }}>
+          {TIMESHEETS_LOAD_FAILED_MESSAGE}
+        </p>
+      ) : null}
     </ActionCard>
   )
 }
