@@ -5,6 +5,7 @@ import { useOrganizationCurrency, useOrganizationDocument } from '@/lib/stores/o
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { auth } from '@/lib/firebase/config'
 import { hasAdminAccess } from '@/lib/navigation/menuPermissions'
 import {
@@ -198,6 +199,10 @@ export function TimesheetsScreen({
   const currency = useOrganizationCurrency()
   const router = useRouter()
   const { user, organization } = useAuthStore()
+  // Review of #386: the roster counts as loaded only once this organisation's roster read has finished (the `loading`
+  // prop is true only while the list is still empty, so it reads loaded while a stale roster is refreshing).
+  const { loading: rosterReading, rosterLoadedOrgId } = useOrgUserStore()
+  const rosterLoadedHere = Boolean(organization?.id) && rosterLoadedOrgId === organization?.id && !rosterReading
   // 17 Nov follow-up: per pay run (`payRunKey`), the sheets of the listed people keyed by their roster id.
   const [queueDrafts, setQueueDrafts] = useState<Map<string, Map<string, TimesheetDraft>>>(new Map())
   const [exportedRows, setExportedRows] = useState<ExportedTimesheetHistoryRow[]>([])
@@ -275,7 +280,7 @@ export function TimesheetsScreen({
             roster: users,
             includeUnresolved: hasAdminAccess(user),
             // Review of #386 (S5): "Unknown person" rows only once the roster has loaded.
-            rosterLoaded: !loading && users.length > 0,
+            rosterLoaded: rosterLoadedHere && users.length > 0,
             viewerIsOperative: isOperativeMode(user),
           })
         )
@@ -311,7 +316,7 @@ export function TimesheetsScreen({
     } finally {
       if (!stale()) setRecordsLoading(false)
     }
-  }, [organization?.id, roster, groups, users, runs, runsKey, timeZone, teamTab, loading])
+  }, [organization?.id, roster, groups, users, runs, runsKey, timeZone, teamTab, loading, rosterLoadedHere])
 
   useEffect(() => {
     void reload()

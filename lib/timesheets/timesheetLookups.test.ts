@@ -8,7 +8,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { User } from '../../types/index.ts'
 import {
-  ownIdRowsLast,
+  newestFirstOwnIdLast,
   personTimesheetDocs,
   timesheetDocsForPerson,
   timesheetDocumentOwnerId,
@@ -157,16 +157,23 @@ test('personTimesheetDocs: alias ids are asked in chunks of 10', async () => {
   assert.deepEqual(sizes.sort((a, b) => a - b), [1, 3, 10, 10])
 })
 
-test('ownIdRowsLast: the sheet filed under the own id wins its pay run', () => {
+test('newestFirstOwnIdLast: newest pay run first; within a pay run the own-id sheet comes last and wins', () => {
+  const run = (key: string) => new Date(`${key}T00:00:00Z`)
   const rows = [
-    { userId: 'u1', key: 'own' },
-    { userId: 'INVITE-1', key: 'alias' },
+    { userId: 'u1', weekStart: run('2026-10-01'), key: 'own-oct' },
+    { userId: 'INVITE-1', weekStart: run('2026-11-01'), key: 'alias-nov' },
+    { userId: 'u1', weekStart: run('2026-11-01'), key: 'own-nov' },
+    { userId: 'INVITE-1', weekStart: run('2026-09-01'), key: 'alias-sep' },
   ]
-  const ordered = ownIdRowsLast(rows, 'U1')
-  assert.equal(ordered[ordered.length - 1].key, 'own')
-  const byRun = new Map<string, string>()
-  for (const row of ordered) byRun.set('run', row.key)
-  assert.equal(byRun.get('run'), 'own')
+  const ordered = newestFirstOwnIdLast(rows, 'U1')
+  assert.deepEqual(
+    ordered.map((row) => row.key),
+    ['alias-nov', 'own-nov', 'own-oct', 'alias-sep']
+  )
+  const byRun = new Map<number, string>()
+  for (const row of ordered) byRun.set(row.weekStart.getTime(), row.key)
+  assert.equal(byRun.get(run('2026-11-01').getTime()), 'own-nov')
+  assert.equal(byRun.get(run('2026-09-01').getTime()), 'alias-sep')
 })
 
 test('people with no level flag are on an admin\'s User Timesheets and Exported lists (rulebook §11, 1.23.1)', () => {

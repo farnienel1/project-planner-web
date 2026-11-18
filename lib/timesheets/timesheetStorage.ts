@@ -17,7 +17,7 @@ import { LONDON_TIME_ZONE, unixStartOfDay, dayKey } from '@/lib/ios-parity/londo
 import { weekStartKey } from '@/lib/timesheets/timesheetWeekUtils'
 import { periodStartKey } from '@/lib/timesheets/paymentRunCopy'
 import { queryIdsSkippingRefused, timesheetMemberIds, timesheetOwnerResolver } from '@/lib/timesheets/timesheetQueue'
-import { ownIdRowsLast, personTimesheetDocs, timesheetDocumentOwnerId } from '@/lib/timesheets/personTimesheetDocs'
+import { newestFirstOwnIdLast, personTimesheetDocs, timesheetDocumentOwnerId } from '@/lib/timesheets/personTimesheetDocs'
 import { UNKNOWN_BOOKING_PERSON_LABEL, bookingPersonIdHint } from '@/lib/canonical'
 import {
   parseTimesheetEntries,
@@ -1659,9 +1659,10 @@ const DOCUMENT_ID_PREFIX_END = '\uf8ff'
 /**
  * Guardrail 1 (`w-timesheet-lookups`): a person's timesheet rows under every id they go by (`personIdSet` →
  * `timesheetMemberIds`), plus sheets stored without `userId` whose document id names one of those ids
- * (`timesheetDocumentSubjectId`). `ids[0]` is the person's own id; each row's `userId` is the id it is filed under, and
- * rows filed under the own id come last so a screen keying one row per pay run keeps that one (`ownIdRowsLast`). A
- * query the rules refuse (an operative's own former id) is skipped, never an error. Sorted by weekStart, newest first.
+ * (`timesheetDocumentSubjectId`). `ids[0]` is the person's own id; each row's `userId` is the id it is filed under.
+ * Sorted newest pay run first; within one pay run the row filed under the own id comes last, so a screen keying one
+ * row per pay run keeps that one (`newestFirstOwnIdLast`). A refused query is skipped, never an error. An operative's
+ * screen passes only their own id (the rules refuse an operative's alias and document-id queries).
  */
 export async function listPersonTimesheetStates(
   organizationId: string,
@@ -1699,8 +1700,7 @@ export async function listPersonTimesheetStates(
     ...row,
     userId: ownerOf.get(row.documentId) || row.userId,
   }))
-  rows.sort((a, b) => b.weekStart.getTime() - a.weekStart.getTime())
-  return ownIdRowsLast(rows.slice(0, Math.max(1, limit)), ids[0] ?? '')
+  return newestFirstOwnIdLast(rows, ids[0] ?? '').slice(0, Math.max(1, limit))
 }
 
 export type ExportedTimesheetHistoryRow = {
@@ -1926,7 +1926,14 @@ export async function loadExportedTimesheetHistory({
   const batches = await mapInBatches(people, 8, async (member) => {
     // Guardrail 1: every id the person goes by (a former invite id, a second users document on their email), and
     // sheets stored without `userId` whose document id names them — never one id per person.
-    const rows = await listPersonTimesheetStates(organizationId, timesheetMemberIds(member, fullRoster), 400, 'all', !viewerIsOperative)
+    const rows = await listPersonTimesheetStates(
+      organizationId,
+      // Review of #386: an operative asks only their own id (the rules refuse their alias and document-id queries).
+      viewerIsOperative ? [member.id] : timesheetMemberIds(member, fullRoster),
+      400,
+      'all',
+      !viewerIsOperative
+    )
     return { member, rows }
   })
   for (const { member, rows } of batches) {

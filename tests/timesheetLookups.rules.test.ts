@@ -81,10 +81,13 @@ test.after(async () => {
   await env?.cleanup()
 })
 
+/** The end of a document-id prefix range: U+F8FF, the highest code point used in ids (as the app's query). */
+const DOCUMENT_ID_PREFIX_END = '\uf8ff'
+
 function prefixQuery(fs: Awaited<ReturnType<typeof db>>, id: string) {
   const settings = collection(fs, 'organizations', ORG, 'settings')
   const prefix = `timesheet_${id}_`
-  return query(settings, where(documentId(), '>=', prefix), where(documentId(), '<', `${prefix}`))
+  return query(settings, where(documentId(), '>=', prefix), where(documentId(), '<', prefix + DOCUMENT_ID_PREFIX_END))
 }
 
 test('admins and line managers run every per-person timesheet query', async () => {

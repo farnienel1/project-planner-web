@@ -171,7 +171,7 @@ export function TimesheetsHub() {
     error: managerBookingsError,
   } = useManagerScheduleStore()
   const { operatives, loadOperatives } = useOperativeStore()
-  const { users, loadUsers, loading: usersLoading } = useOrgUserStore()
+  const { users, loadUsers, loading: usersLoading, rosterLoadedOrgId } = useOrgUserStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const [invoicing, setInvoicing] = useState<OrgInvoicingSettings>(DEFAULT_INVOICING)
   const [payrollPolicy, setPayrollPolicy] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
@@ -639,7 +639,9 @@ export function TimesheetsHub() {
               invoicing={invoicing}
               timeZone={timeZone}
               changeCatalogue={changeCatalogue}
-              rosterLoaded={!usersLoading && users.length > 0}
+              rosterLoaded={
+                !usersLoading && users.length > 0 && Boolean(organization?.id) && rosterLoadedOrgId === organization?.id
+              }
               onStats={setHubStats}
               onClick={() => router.push(timesheetsTeamHref({ tab: 'awaiting' }))}
             />
@@ -695,7 +697,12 @@ function MineTimesheetsList({
     `${periodStartKey(period.start, timeZone)}|${dayKey(period.end, timeZone)}`
   // Guardrail 1: the person's past sheets under every id they go by (`personIdSet`: a former invite id, a second users
   // document on their email) and sheets stored without `userId` whose document id names them; the own id first.
-  const subjectIds = useMemo(() => timesheetMemberIds(subject, users), [subject, users])
+  // Review of #386: an operative asks only their own id — the rules refuse their alias and document-id queries (as iOS).
+  const subjectIsOperative = isOperativeMode(subject)
+  const subjectIds = useMemo(
+    () => (subjectIsOperative ? [subject.id] : timesheetMemberIds(subject, users)),
+    [subject, users, subjectIsOperative]
+  )
   const subjectIdsKey = subjectIds.join('|')
 
   useEffect(() => {
@@ -703,7 +710,7 @@ function MineTimesheetsList({
     let cancelled = false
     const currentKey = periodKey(currentPeriod)
     // Review of #386 (N1): no document-id query for an operative (the rules refuse it).
-    listPersonTimesheetStates(organizationId, subjectIds, 400, 'latest', !isOperativeMode(subject)).then(async (rows) => {
+    listPersonTimesheetStates(organizationId, subjectIds, 400, 'latest', !subjectIsOperative).then(async (rows) => {
       if (cancelled) return
       const byKey = new Map<string, { start: Date; end: Date }>()
       for (const period of pastPeriods) byKey.set(periodKey(period), period)

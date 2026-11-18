@@ -46,13 +46,14 @@ export function timesheetDocsForPerson(ids: ReadonlyArray<string>, docs: Readonl
 }
 
 /**
- * Orders rows so a person's own-id sheet comes last for its pay run: a screen that keys one sheet per pay run and lets
- * the later row win then keeps the sheet filed under the person's current id, and shows an alias's sheet only for a
- * pay run that has none under it. Stable otherwise.
+ * Newest pay run first; within one pay run (same `weekStart`) the sheet filed under the person's own id comes last, so
+ * a screen that keys one sheet per pay run and lets the later row win keeps the own-id sheet and shows an alias's sheet
+ * only for a pay run that has none under the own id. Review of #386: the order across pay runs stays newest first.
  */
-export function ownIdRowsLast<T extends { userId: string }>(rows: ReadonlyArray<T>, ownId: string): T[] {
+export function newestFirstOwnIdLast<T extends { userId: string; weekStart: Date }>(rows: ReadonlyArray<T>, ownId: string): T[] {
   const own = normalizeDocumentId(ownId)
-  return [...rows].sort((a, b) => Number(normalizeDocumentId(a.userId) === own) - Number(normalizeDocumentId(b.userId) === own))
+  const isOwn = (row: T) => Number(normalizeDocumentId(row.userId) === own)
+  return [...rows].sort((a, b) => b.weekStart.getTime() - a.weekStart.getTime() || isOwn(a) - isOwn(b))
 }
 
 export type PersonTimesheetQueries = {
