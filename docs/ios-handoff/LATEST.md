@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.65.4 → 1.65.5
-Packed hash: 93b659750e1602041e6da923a5cb6e60f50fa4b5580f1a2ed953fffc6e10a6de
-Rulebook sha256: 7134f1dc00eb9fe32d6248c0406cf989dcce7df873dbee48be2b03ef874841bd
+Rulebook version: 1.64.0 → 1.65.5
+Packed hash: 4a25d2086dafd317d268705b724490c4535a60b780a738254a7a6e6c0d67acf4
+Rulebook sha256: a1588be9587f572ddc5f15a317ebf5f930868b155bb4f576c310f5c965408156
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,12 +22,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 56f892a29d844eaaebe16028640ebdfb036324d3a229638968c34d10663159f3
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: none
+Exports added: REPORT_CHECKS_COLLECTION, overtimeReportIntegrity, parseReportCheckDocument, payeClaimReportIntegrity, reportCheckWriteFields
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/crossPlatformContract.samples.ts, lib/canonical/index.ts, lib/canonical/liveSources.ts, lib/canonical/organizationDeletion.ts, lib/canonical/organizationSettings.ts, lib/canonical/reportIntegrity.ts
 Done when:
-- [ ] Packed hash in iOS equals 93b659750e1602041e6da923a5cb6e60f50fa4b5580f1a2ed953fffc6e10a6de
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 7134f1dc00eb9fe32d6248c0406cf989dcce7df873dbee48be2b03ef874841bd)
+- [ ] Packed hash in iOS equals 4a25d2086dafd317d268705b724490c4535a60b780a738254a7a6e6c0d67acf4
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 a1588be9587f572ddc5f15a317ebf5f930868b155bb4f576c310f5c965408156)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.65.5)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -54,6 +54,11 @@ Super Admin of an organisation has no blank fallback, and a server check of save
 ## New rulebook sections
 
 - 1.65.5 — 2026-11-17
+- 1.65.4 — 2026-11-17
+- 1.65.3 — 2026-11-17
+- 1.65.2 — 2026-11-17
+- 1.65.1 — 2026-11-17
+- 1.65.0 — 2026-11-17
 
 ## Workflow for the iOS agent
 
