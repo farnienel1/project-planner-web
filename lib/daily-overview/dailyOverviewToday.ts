@@ -8,7 +8,7 @@
  * `dailyOverviewToday.test.ts` compares the output with the wiring Daily Overview had before.
  */
 
-import { effectivePayrollTimePolicy, type JobAccessViewer, type WeekendCoverage } from '@/lib/canonical'
+import { effectivePayrollTimePolicy, type JobAccessViewer, type PayrollTimePolicyState, type WeekendCoverage } from '@/lib/canonical'
 import { dayKey } from '@/lib/ios-parity/londonTime'
 import { policyForBookingDate } from '@/lib/scheduling/bookingSlotRules'
 import { DEFAULT_PAYROLL_POLICY, organizationDetailsFromData, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
@@ -25,6 +25,8 @@ export type DailyOverviewSettings = {
   excludedUserIdsFromUnbookedWarnings: string[]
   /** Rulebook 1.19.0 §5: the weekend "Hours to cover" toggles and windows (`warningDetection.weekendCoverage`). */
   weekendCoverage: WeekendCoverage | null
+  /** Rulebook 1.23.0: the whole working-hours state (leave cover reads the day under it); null before it loads. */
+  payrollPolicyState?: PayrollTimePolicyState | null
 }
 
 /** What Daily Overview showed before the organisation document arrived. */
@@ -55,6 +57,7 @@ export function dailyOverviewSettings(input: {
     includeWeekendsForUnbookedLabour: details.warningDetection.includeWeekendsForUnbookedLabour,
     excludedUserIdsFromUnbookedWarnings: details.warningDetection.excludedUserIdsFromUnbookedWarnings ?? [],
     weekendCoverage: details.warningDetection.weekendCoverage ?? null,
+    payrollPolicyState: details.payrollTimePolicyState ?? null,
   }
 }
 
@@ -100,6 +103,7 @@ export function dailyOverviewInput(input: {
     includeWeekendsForUnbookedLabour: input.settings.includeWeekendsForUnbookedLabour,
     excludedUserIdsFromUnbookedWarnings: input.settings.excludedUserIdsFromUnbookedWarnings,
     weekendCoverage: input.settings.weekendCoverage,
+    payrollPolicyState: input.settings.payrollPolicyState ?? null,
     timeZone: input.timeZone,
     bankHolidayDayKeys: input.bankHolidayDayKeys ?? [],
   }

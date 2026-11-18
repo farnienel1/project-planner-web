@@ -10,10 +10,10 @@ import type { OrgPayrollTimePolicy, OrgWarningDetectionSettings } from '@/lib/se
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import { leaveCoverageRows, type LeaveCoverageRow, type LeavePerson } from '@/lib/canonical'
 import { isActiveBookingStatus } from '@/lib/ios-parity/enums'
-import { dateFromDayKey, dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
+import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
 import { isPlaceholderOperative } from '@/lib/operatives/operativeRosterUtils'
-import { computeWarningCoverageWindow, isDateWithinWarningWindow } from '@/lib/warnings/warningLookahead'
-import { bookingJobLabel } from '@/lib/canonical'
+import { computeWarningCoverageWindow } from '@/lib/warnings/warningLookahead'
+import { bookingJobLabel, normalizeDocumentId } from '@/lib/canonical'
 import { holidayBookingLabourInput } from '@/lib/annualLeave/holidayDayKeys'
 
 export type LeaveCoverageWarning = LeaveCoverageRow & {
@@ -81,6 +81,81 @@ export function leavePeopleFrom(
   return people
 }
 
+export type LeaveCoverageStoresInput = {
+  bookings: Booking[]
+  managerSiteBookings?: ManagerSiteBooking[]
+  operatives: Operative[]
+  users: User[]
+  projects: Project[]
+  holidays: HolidayBooking[]
+  includeWeekends: boolean
+  excludedUserIds?: readonly string[] | null
+  payrollPolicy?: OrgPayrollTimePolicy
+  /** Rulebook 1.23.0: the whole working-hours state, so each day uses the rules in effect on it. */
+  payrollPolicyState?: import('@/lib/canonical').PayrollTimePolicyState | null
+  /** First and last organisation-zone day keys to scan, inclusive. */
+  startDayKey: string
+  endDayKey: string
+  timeZone?: string
+  /** Folded same-email `users` id → the id the roster kept (rulebook 1.53.0: leave under either id counts). */
+  userIdAliases?: Readonly<Record<string, string>> | null
+}
+
+/**
+ * `leaveCoverageRows` (rulebook §5 / §9) for a range of organisation days, from the app's stores. Shared by the
+ * Warnings scan (its coverage window), Book labour and Daily Overview (one day), so all three list the same rows.
+ */
+export function leaveCoverageWarningsForDays(input: LeaveCoverageStoresInput): LeaveCoverageWarning[] {
+  const { timeZone, startDayKey, endDayKey } = input
+  const inRange = (date: Date): boolean => {
+    const key = dayKey(date, timeZone)
+    return key >= startDayKey && key <= endDayKey
+  }
+  const projectsById = new Map(input.projects.map((project) => [project.id, `${project.jobNumber} ${project.siteName}`.trim()]))
+
+  const rows = leaveCoverageRows({
+    timeZone,
+    startDayKey,
+    endDayKey,
+    day: input.payrollPolicyState ?? input.payrollPolicy ?? DEFAULT_PAYROLL_POLICY,
+    includeWeekends: input.includeWeekends,
+    excludedUserIds: input.excludedUserIds,
+    people: leavePeopleFrom(input.users, input.operatives, input.userIdAliases ?? null),
+    // Parsed day keys from `parseHolidayDocument` (rulebook §9), never recomputed here.
+    leave: input.holidays.map((holiday) => holidayBookingLabourInput(holiday, timeZone)),
+    bookings: [
+      ...input.bookings
+        .filter(
+          (booking) => isActiveBookingStatus(booking.status) && Boolean(booking.operativeId) && inRange(booking.date)
+        )
+        .map((booking) => ({
+          id: booking.id,
+          personId: booking.operativeId,
+          kind: 'operative' as const,
+          dayKey: dayKey(booking.date, timeZone),
+          timeSlot: String(booking.timeSlot),
+          workStartTime: booking.workStartTime,
+          workEndTime: booking.workEndTime,
+          label: bookingJobLabel(projectsById.get(booking.projectId)),
+        })),
+      ...(input.managerSiteBookings || [])
+        .filter((booking) => Boolean(booking.userId) && inRange(booking.date))
+        .map((booking) => ({
+          id: booking.id,
+          personId: booking.userId,
+          kind: 'manager' as const,
+          dayKey: dayKey(booking.date, timeZone),
+          timeSlot: booking.timeSlot,
+          workStartTime: booking.workStartTime,
+          workEndTime: booking.workEndTime,
+          label: managerSiteBookingDisplayTitle(booking, projectsById),
+        })),
+    ],
+  })
+
+  return rows.map((row) => ({ ...row, date: dateFromDayKey(row.dayKey, timeZone) }))
+}
+
 export function computeLeaveCoverageWarnings({
   bookings,
   managerSiteBookings = [],
@@ -113,54 +188,39 @@ export function computeLeaveCoverageWarnings({
   userIdAliases?: Readonly<Record<string, string>> | null
 }): LeaveCoverageWarning[] {
   const window = computeWarningCoverageWindow(referenceDate, warningDetection, invoicing, timeZone)
-  const windowStart = londonMidnight(window.start, timeZone)
-  const windowEnd = londonMidnight(window.end, timeZone)
-  const projectsById = new Map(projects.map((project) => [project.id, `${project.jobNumber} ${project.siteName}`.trim()]))
-
-  const rows = leaveCoverageRows({
-    timeZone,
-    startDayKey: window.startDayKey,
-    endDayKey: window.endDayKey,
-    day: payrollPolicyState ?? payrollPolicy,
+  return leaveCoverageWarningsForDays({
+    bookings,
+    managerSiteBookings,
+    operatives,
+    users,
+    projects,
+    holidays,
     includeWeekends: warningDetection.includeWeekendsForUnbookedLabour,
     excludedUserIds: warningDetection.excludedUserIdsFromUnbookedWarnings,
-    people: leavePeopleFrom(users, operatives, userIdAliases),
-    // Parsed day keys from `parseHolidayDocument` (rulebook §9), never recomputed here.
-    leave: holidays.map((holiday) => holidayBookingLabourInput(holiday, timeZone)),
-    bookings: [
-      ...bookings
-        .filter(
-          (booking) =>
-            isActiveBookingStatus(booking.status) &&
-            Boolean(booking.operativeId) &&
-            isDateWithinWarningWindow(booking.date, windowStart, windowEnd, timeZone)
-        )
-        .map((booking) => ({
-          id: booking.id,
-          personId: booking.operativeId,
-          kind: 'operative' as const,
-          dayKey: dayKey(booking.date, timeZone),
-          timeSlot: String(booking.timeSlot),
-          workStartTime: booking.workStartTime,
-          workEndTime: booking.workEndTime,
-          label: bookingJobLabel(projectsById.get(booking.projectId)),
-        })),
-      ...managerSiteBookings
-        .filter(
-          (booking) => Boolean(booking.userId) && isDateWithinWarningWindow(booking.date, windowStart, windowEnd, timeZone)
-        )
-        .map((booking) => ({
-          id: booking.id,
-          personId: booking.userId,
-          kind: 'manager' as const,
-          dayKey: dayKey(booking.date, timeZone),
-          timeSlot: booking.timeSlot,
-          workStartTime: booking.workStartTime,
-          workEndTime: booking.workEndTime,
-          label: managerSiteBookingDisplayTitle(booking, projectsById),
-        })),
-    ],
+    payrollPolicy,
+    payrollPolicyState,
+    startDayKey: window.startDayKey,
+    endDayKey: window.endDayKey,
+    timeZone,
+    userIdAliases,
   })
+}
 
-  return rows.map((row) => ({ ...row, date: dateFromDayKey(row.dayKey, timeZone) }))
+/**
+ * Where a leave warning's "Annual leave" button goes: the viewer's own leave (My leave) when the row is about them,
+ * else that person on the Team tab (`?tab=team&person=`, the page matches every id they go by).
+ */
+export function leaveWarningAnnualLeaveHref(
+  row: Pick<LeaveCoverageRow, 'userId' | 'operativeId' | 'personKey'>,
+  viewer: { id: string; formerUserIds?: string[] | null; sameEmailUserIds?: string[] | null } | null | undefined
+): string {
+  const personId = row.userId || row.operativeId || row.personKey || ''
+  if (!personId) return '/dashboard/annual-leave'
+  const viewerIds = new Set(
+    [viewer?.id, ...(viewer?.formerUserIds ?? []), ...(viewer?.sameEmailUserIds ?? [])]
+      .map((id) => normalizeDocumentId(id ?? ''))
+      .filter(Boolean)
+  )
+  if (viewerIds.has(normalizeDocumentId(personId))) return '/dashboard/annual-leave'
+  return `/dashboard/annual-leave?tab=team&person=${encodeURIComponent(personId)}`
 }

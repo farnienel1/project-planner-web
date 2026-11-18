@@ -183,6 +183,45 @@ export type SignedTimesheetBookingChanges = {
   message: string | null
   /** The reviewer's note (counter-sign blocked, counter-sign again, or the exported warning), else null. */
   reviewerMessage: string | null
+  /**
+   * 1.57.0: bookings the person signed (current record) that are still live but missing from the signed copy — the
+   * signed copy was never counter-signed for them. Kept apart from `addedBookingIds`.
+   */
+  snapshotGapBookingIds: string[]
+  /** 1.57.0: the only change is that gap (no booking changed, was removed or added since signing). */
+  snapshotGapOnly: boolean
+}
+
+/**
+ * Rulebook 1.57.0 (review of #363, owner to confirm): how reports treat a sheet whose ONLY change is a snapshot gap.
+ * - `'signed'` (J1, built): the sheet is flagged (counter-sign again / "Revision due"), but the weekly report feed, its
+ *   check line and the Payrun Snapshot keep the signed figures until the revision is signed.
+ * - `'live'` (J2): reports use the live bookings, as for any other booking change (J4, 1.55.0).
+ * Switching is this one line. A real booking change always follows J4.
+ */
+export const SNAPSHOT_GAP_REPORTS: 'signed' | 'live' = 'signed'
+
+/**
+ * Rulebook 1.57.0 (J3, off): when set (epoch ms), the snapshot gap is read only on sheets the person signed at or after
+ * it, so older signed sheets are never flagged by it. Null = every sheet with a current record. One line to switch.
+ */
+export const SNAPSHOT_GAP_FROM_MS: number | null = null
+
+/**
+ * The booking change a report (weekly report feed, check line, Payrun Snapshot, revision report state) uses: under J1 a
+ * change that is only a snapshot gap counts as no change (the signed figures stand); otherwise the change as given.
+ */
+export function signedTimesheetChangeForReports<
+  T extends { snapshotGapOnly?: boolean | null; lateExtrasWaiting?: boolean | null; bookingsChanged?: boolean | null }
+>(change: T | null | undefined): T | null {
+  if (!change) return null
+  if (change.snapshotGapOnly !== true || SNAPSHOT_GAP_REPORTS !== 'signed') return change
+  // Late extras still wait for the line manager (`timesheetChangesWithLateExtras`): that stays (the check line and the
+  // Payrun Snapshot read Submitted), as a late-extras-only change — the signed figures stand, nothing re-priced.
+  if (change.lateExtrasWaiting === true) {
+    return { ...change, snapshotGapOnly: false, bookingsChanged: false, changed: true, reopened: true, waitingFor: 'lineManager' }
+  }
+  return null
 }
 
 function text(value: unknown): string {
@@ -434,6 +473,8 @@ export function signedTimesheetBookingChanges(input: {
     removedBookingIds: [],
     message: null,
     reviewerMessage: null,
+    snapshotGapBookingIds: [],
+    snapshotGapOnly: false,
   }
   const sheet = input.sheet
   if (!sheet) return none
@@ -491,12 +532,58 @@ export function signedTimesheetBookingChanges(input: {
   const recordAddedAfter = recordReferenceMs == null ? null : recordReferenceMs - SIGNED_TIMESHEET_ADDITION_WINDOW_MS
   const personDiff = record ? diffSides(record, live, documents, recordAddedAfter) : snapshotDiff
 
+  // 1.57.0 (17 Nov owner test): a snapshot that lacks a booking the person signed (their current record) and that is
+  // still on the sheet was never counter-signed for that booking — e.g. web built it without the person's same-email
+  // ids, so the invoice lost labour the screen showed. That snapshot is stale: the line manager counter-signs again
+  // (unexported) or a revision is due (exported). Kept apart (`snapshotGapBookingIds`, `snapshotGapOnly`) so reports can
+  // treat it on its own (`SNAPSHOT_GAP_REPORTS`). Never for a repairable empty snapshot (repaired instead), a snapshot
+  // whose lines name no booking, or a manager schedule booking that is not on a job (Office, WFH, Site survey, a custom
+  // place: `scheduleOptionPlace`, which a repaired snapshot leaves out by design).
+  const gap: string[] = []
+  const gapAllowed = SNAPSHOT_GAP_FROM_MS == null || (operativeSignedMs != null && operativeSignedMs >= SNAPSHOT_GAP_FROM_MS)
+  if (record && snapshotDiff && gapAllowed) {
+    const snapshotKeys = groupLines(Array.isArray(override?.lines) ? override.lines : []).byKey
+    const optionPlace = new Set(
+      (input.liveLines ?? [])
+        .filter((line) => line && line.scheduleOptionPlace === true)
+        .map((line) => signedTimesheetLineBookingKey(line))
+        .filter(Boolean)
+    )
+    const already = new Set([...snapshotDiff.added, ...(personDiff?.added ?? [])].map((id) => normalizeDocumentId(id)))
+    for (const [key, row] of record) {
+      if (!live.has(key) || snapshotKeys.has(key) || optionPlace.has(key)) continue
+      const id = normalizeDocumentId(row.bookingId)
+      if (already.has(id)) continue
+      already.add(id)
+      gap.push(row.bookingId)
+    }
+  }
+
   const personChanged = operativeSignedMs != null || override ? !isEmptyDiff(personDiff) : false
   const snapshotChanged = !isEmptyDiff(snapshotDiff)
-  if (!personChanged && !snapshotChanged) return base
+  const gapChanged = gap.length > 0
+  if (!personChanged && !snapshotChanged && !gapChanged) return base
+  const gapFields = { snapshotGapBookingIds: gap, snapshotGapOnly: gapChanged && !personChanged && !snapshotChanged }
+  if (!personChanged && !snapshotChanged) {
+    // Only the gap: the person signed these bookings; the line manager counter-signs again (or a revision is due).
+    const ids = { basis: record ? ('fingerprint' as const) : ('bookingIds' as const), changedBookingIds: [], addedBookingIds: [], removedBookingIds: [] }
+    if (exported) return { ...base, ...ids, ...gapFields, changed: true, reviewerMessage: SIGNED_TIMESHEET_EXPORTED_CHANGED_MESSAGE }
+    const waitingFor: SignedTimesheetWaitingFor = input.selfSigned === true ? 'person' : 'lineManager'
+    return {
+      ...base,
+      ...ids,
+      ...gapFields,
+      changed: true,
+      reopened: true,
+      waitingFor,
+      message: waitingFor === 'person' ? SIGNED_TIMESHEET_CHANGED_MESSAGE : null,
+      reviewerMessage: waitingFor === 'person' ? SIGNED_TIMESHEET_CHANGED_REVIEWER_MESSAGE : SIGNED_TIMESHEET_CHANGED_COUNTERSIGN_MESSAGE,
+    }
+  }
 
   const used = (personChanged ? personDiff : snapshotDiff) as Diff
   const ids = {
+    ...gapFields,
     basis: used.basis,
     changedBookingIds: used.changed,
     addedBookingIds: used.added,

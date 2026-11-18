@@ -36,6 +36,11 @@ export type InviteAcceptPlan = {
   /** True when the account's own profile names another organisation (a second company). */
   joinsAnotherCompany: boolean
   /**
+   * 1.59.0: an existing account in this organisation whose `formerUserIds` does not list the placeholder's id — the
+   * placeholder is kept (not removed) so nothing filed under its id is left unlinked; an admin links it in Data health.
+   */
+  placeholderKeptUnlinked?: boolean
+  /**
    * 1.34.0: placeholder fields the account never copies — the ghost markers (`ghost`, `inviteEmailHint`) of a ghost an
    * admin gave app access (`inviteAcceptPlaceholderFields` in ghostOperatives.ts removes them).
    */
@@ -87,6 +92,13 @@ export function inviteAcceptWrites(input: {
   existingProfile: Record<string, unknown> | null | undefined
   placeholder: Record<string, unknown> | null | undefined
   invitation: Record<string, unknown> | null | undefined
+  /**
+   * 1.59.0: the placeholder's document id. With an existing account in this organisation, the placeholder is moved
+   * and removed only when the account's `formerUserIds` already lists this id (without case); otherwise it is kept
+   * (`placeholderKeptUnlinked`), because removing it would leave everything filed under its id unlinked and nobody
+   * writes their own `formerUserIds` (§16, the rules refuse it).
+   */
+  placeholderId?: string | null
 }): InviteAcceptPlan {
   const invitation = record(input.invitation) ?? {}
   const placeholder = record(input.placeholder)
@@ -115,11 +127,19 @@ export function inviteAcceptWrites(input: {
   if (existing) {
     const another = organizationId !== '' && !sameOrganization(existing.organizationId, organizationId)
     // Same organisation: a retried Continue whose profile write already landed — finish moving the placeholder.
+    // 1.59.0: only when the account already lists the placeholder's id in `formerUserIds` (the retry case); an
+    // account that does not keeps the placeholder, so its id still resolves (same-email fold) until an admin links it.
+    const placeholderId = text(input.placeholderId).toLowerCase()
+    const listed = Array.isArray(existing.formerUserIds)
+      ? existing.formerUserIds.some((id) => text(id).toLowerCase() === placeholderId)
+      : false
+    const linked = placeholderId === '' || listed
     return {
       mode: 'existingAccount',
       writeProfile: false,
       profileSource: null,
-      movePlaceholder: !another && Boolean(placeholder),
+      movePlaceholder: !another && Boolean(placeholder) && linked,
+      placeholderKeptUnlinked: !another && Boolean(placeholder) && !linked,
       claimToAccount: !another,
       role,
       permissions,
@@ -139,6 +159,7 @@ export function inviteAcceptWrites(input: {
     permissions,
     pay,
     joinsAnotherCompany: false,
+    placeholderKeptUnlinked: false,
     dropPlaceholderFields: [...ACCEPT_DROPPED_FIELDS],
   }
 }

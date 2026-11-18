@@ -19,6 +19,7 @@ import {
   canAccessOperativeTimesheets,
   canAccessTimesheetsSurface,
   hasAdminAccess,
+  isOperativeMode,
   shouldShowTimesheetsDisabledMessage,
   userTimesheetSubjectIds,
   exportedTimesheetSubjectIds,
@@ -36,22 +37,28 @@ import {
   currentPaymentRunCopy,
   formatPaymentPeriodLine,
   listSelectablePayPeriods,
+  organizationCreatedAt,
+  payRunListStartDayKey,
   periodStartKey,
 } from '@/lib/timesheets/paymentRunCopy'
+import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
 import { TimesheetsScreen, type TeamTimesheetTab } from '@/components/timesheets/TimesheetsScreen'
 import { TimesheetPeriodPage } from '@/components/timesheets/TimesheetPeriodPage'
+import { TimesheetScreenBoundary } from '@/components/timesheets/TimesheetScreenBoundary'
 import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
 import { resolveTimesheetPeriod, timesheetPeriodFromInvoicing, type PayrollTimePolicyState } from '@/lib/canonical'
 import { organizationTimeZone } from '@/lib/canonical'
 import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
 import {
   loadExportedTimesheetHistory,
-  loadTimesheetDrafts,
   loadTimesheetDraftsForStarts,
-  listTimesheetStates,
+  loadTimesheetQueueDrafts,
+  listPersonTimesheetStates,
+  timesheetLookupPrivatePay,
   timesheetSourceDocumentId,
 } from '@/lib/timesheets/timesheetStorage'
-import { timesheetReviewerHubStats } from '@/lib/timesheets/timesheetHubStats'
+import { timesheetLookupPlan } from '@/lib/timesheets/personTimesheetDocs'
+import { onPlatformConfigChange } from '@/lib/access/securitySwitches'
 import { emptyTimesheetDraft, type TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import {
   awaitingManagerSignOff,
@@ -60,6 +67,7 @@ import {
 import { retryOwnPayRead, useOwnPayUser } from '@/lib/pay/useOwnPayUser'
 import { withOwnPay } from '@/lib/pay/ownPayRecord'
 import { retryPayProfiles, usePayProfilesStatus, usePayStatusOf } from '@/lib/pay/usePayProfilesStatus'
+import type { PayProfilesStatus } from '@/lib/pay/payProfileOverlay'
 import { OWN_PAY_FAILED_MESSAGE, OWN_PAY_LOADING_MESSAGE, PayStatusNotice } from '@/components/pay/PayStatusNotice'
 import { canAccessMyTimesheetsWithPolicy, shouldAppearInOperativeTimesheetRoster, timesheetDayKeysForPeriod } from '@/lib/timesheets/timesheetPayrollPolicy'
 import { exportedTimesheetRosterGroups, timesheetRosterGroups } from '@/lib/timesheets/timesheetWeekUtils'
@@ -88,14 +96,26 @@ import { OVERTIME_HUB_LABEL, overtimeHubAccess } from '@/lib/canonical'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import { OVERTIME_PATH } from '@/components/overtime/OvertimeScreen'
 import { BookingsChangedWarning } from '@/components/timesheets/BookingsChangedWarning'
+import { mineChangedKey, mineChangedShown, useMineChangedStore } from '@/lib/timesheets/mineChangedStore'
+import { useSnapshotAutoRepair } from '@/lib/timesheets/useSnapshotAutoRepair'
+import type { RepairSheet } from '@/lib/timesheets/snapshotAutoRepair'
+import { revisionDueOf as revisionDueFor } from '@/lib/timesheets/mineChanged'
+import {
+  RECENT_PAY_RUN_COUNT,
+  draftsForMembers,
+  payRunKey,
+  payRunsStartDayKey,
+  recentPayRuns,
+  timesheetMemberIds,
+  timesheetQueueRows,
+  type PayRun,
+} from '@/lib/timesheets/timesheetQueue'
 import { bookingCoverageCoversDay, periodBookingChanges, type BookingChangeCatalogue } from '@/lib/timesheets/timesheetBookingChanges'
 import {
   SIGNED_TIMESHEET_CHANGED_STATUS,
   TIMESHEET_REVISION_DUE_MESSAGE,
   TIMESHEET_REVISION_DUE_STATUS,
-  timesheetRevisionDue,
   timesheetRevisionLabel,
-  timesheetVersionsForPeriod,
 } from '@/lib/canonical'
 import {
   ActionCard,
@@ -112,7 +132,7 @@ import {
 } from '@/components/ui/page'
 
 /** Review #325 item 7: how many pay runs (the current one included) the hub checks for changed signed sheets. */
-const HUB_CHANGE_SCAN_RUNS = 6
+const HUB_CHANGE_SCAN_RUNS = RECENT_PAY_RUN_COUNT
 
 const PAYE_DISABLED_BODY =
   'My Timesheets is for self-employed pay. PAYE accounts keep the current pay run until it is paid, then schedule hours no longer fill the next timesheet. Switch the person back to self-employed if they need timesheets again.'
@@ -154,7 +174,7 @@ export function TimesheetsHub() {
     error: managerBookingsError,
   } = useManagerScheduleStore()
   const { operatives, loadOperatives } = useOperativeStore()
-  const { users, loadUsers, loading: usersLoading } = useOrgUserStore()
+  const { users, loadUsers, loading: usersLoading, rosterServerOrgId } = useOrgUserStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const [invoicing, setInvoicing] = useState<OrgInvoicingSettings>(DEFAULT_INVOICING)
   const [payrollPolicy, setPayrollPolicy] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
@@ -245,16 +265,9 @@ export function TimesheetsHub() {
   const needsNestedCatalogue = surface === 'mine' || surface === 'team' || (surface == null && (showMine || showTeam))
   // Review #325 item 7: on the hub itself only the last HUB_CHANGE_SCAN_RUNS pay runs are checked, so the bookings are
   // loaded from the earliest of their starts — never the whole archive.
-  const hubScanFromDayKey = useMemo(() => {
-    const current = computeInvoicingPeriod(new Date(), invoicing, timeZone)
-    const runs = [current, ...listSelectablePayPeriods(invoicing, new Date(), HUB_CHANGE_SCAN_RUNS + 1, timeZone)]
-      .sort((a, b) => b.start.getTime() - a.start.getTime())
-      .slice(0, HUB_CHANGE_SCAN_RUNS)
-    return runs.reduce((earliest, period) => {
-      const key = periodStartKey(period.start, timeZone)
-      return key < earliest ? key : earliest
-    }, periodStartKey(current.start, timeZone))
-  }, [invoicing, timeZone])
+  // 17 Nov follow-up: the same recent pay runs User Timesheets → Awaiting / Signed off list (`recentPayRuns`).
+  const recentRuns = useMemo(() => recentPayRuns(invoicing, new Date(), timeZone, HUB_CHANGE_SCAN_RUNS), [invoicing, timeZone])
+  const hubScanFromDayKey = useMemo(() => payRunsStartDayKey(recentRuns, timeZone), [recentRuns, timeZone])
 
   useEffect(() => {
     if (!organization?.id || !needsNestedCatalogue) return
@@ -302,14 +315,21 @@ export function TimesheetsHub() {
     () => computeInvoicingPeriod(new Date(), invoicing, timeZone),
     [invoicing, timeZone]
   )
+  // Owner item 6 (17 Nov follow-up): past pay runs start at the organisation's creation day; My Timesheets still adds
+  // every run with a stored sheet (`MineTimesheetsList`), so no sheet is hidden.
+  const orgDocument = useOrganizationDocument()
+  const listFromDayKey = useMemo(
+    () => payRunListStartDayKey({ createdAt: organizationCreatedAt(orgDocument.data), timeZone }),
+    [orgDocument.data, timeZone]
+  )
   const pastPeriods = useMemo(
     () =>
-      listSelectablePayPeriods(invoicing, new Date(), 120, timeZone).filter(
+      listSelectablePayPeriods(invoicing, new Date(), 120, timeZone, [], listFromDayKey).filter(
         (period) =>
           `${periodStartKey(period.start, timeZone)}|${dayKey(period.end, timeZone)}` !==
           `${periodStartKey(currentPeriod.start, timeZone)}|${dayKey(currentPeriod.end, timeZone)}`
       ),
-    [invoicing, timeZone, currentPeriod]
+    [invoicing, timeZone, currentPeriod, listFromDayKey]
   )
   const selectedPeriod = useMemo(() => {
     if (!periodParam) return currentPeriod
@@ -442,13 +462,15 @@ export function TimesheetsHub() {
     return (
       <PageShell className="pb-10">
         {periodParam ? (
-          <TimesheetPeriodPage
-            {...periodPageProps}
-            subjectUser={subject}
-            mode="mine"
-            heading="Timesheet"
-            back={{ label: 'My Timesheets', onClick: () => router.replace(mineBackHref) }}
-          />
+          <TimesheetScreenBoundary resetKey={searchParams.toString()} backLabel="My Timesheets" onBack={() => router.replace(mineBackHref)}>
+            <TimesheetPeriodPage
+              {...periodPageProps}
+              subjectUser={subject}
+              mode="mine"
+              heading="Timesheet"
+              back={{ label: 'My Timesheets', onClick: () => router.replace(mineBackHref) }}
+            />
+          </TimesheetScreenBoundary>
         ) : (
           <MineTimesheetsList
             organizationId={organization?.id}
@@ -483,17 +505,19 @@ export function TimesheetsHub() {
     return (
       <PageShell className="pb-10">
         {selectedUser ? (
-          <TimesheetPeriodPage
-            {...periodPageProps}
-            // Review #342 item 1: the reviewed person's own pay decides; another person's refused read never does.
-            payInputs={payInputsFor(
-              payProfilesInputLoad(payStatusOf(selectedUser), 'ready')
-            )}
-            subjectUser={selectedUser}
-            mode="review"
-            heading="Review Timesheet"
-            back={{ label: teamTitle, onClick: () => router.replace(teamBackHref) }}
-          />
+          <TimesheetScreenBoundary resetKey={searchParams.toString()} backLabel={teamTitle} onBack={() => router.replace(teamBackHref)}>
+            <TimesheetPeriodPage
+              {...periodPageProps}
+              // Review #342 item 1: the reviewed person's own pay decides; another person's refused read never does.
+              payInputs={payInputsFor(
+                payProfilesInputLoad(payStatusOf(selectedUser), 'ready')
+              )}
+              subjectUser={selectedUser}
+              mode="review"
+              heading="Review Timesheet"
+              back={{ label: teamTitle, onClick: () => router.replace(teamBackHref) }}
+            />
+          </TimesheetScreenBoundary>
         ) : (
           <>
             {userParam ? (
@@ -515,32 +539,36 @@ export function TimesheetsHub() {
             <Note tone={tab === 'exported' ? 'info' : 'amber'} icon={<ClockIcon />}>
               {TEAM_TABS.find((item) => item.id === tab)?.help}
             </Note>
-            <TimesheetsScreen
-              bookings={bookings}
-              managerSiteBookings={managerSiteBookings}
-              operatives={operatives}
-              users={users}
-              projects={projects}
-              smallWorks={smallWorks}
-              periodStart={currentPeriod.start}
-              periodEnd={currentPeriod.end}
-              payrollPolicy={payrollPolicy}
-              payrollPolicyPrior={payrollPolicyPrior}
-              payrollPolicyEffectiveFrom={payrollPolicyEffectiveFrom}
-              payrollPolicyState={payrollPolicyState}
-              invoicing={invoicing}
-              loading={usersLoading && users.length === 0}
-              teamTab={tab}
-              timeZone={timeZone}
-              history={history}
-              scheduleOptions={scheduleOptions}
-              // Rulebook 1.43.0 (review r318): export stamps and freezes the signed snapshot, so it waits for the
-              // server-confirmed bookings as signing does (`withBookingsGate` → `timesheetSnapshotReady`).
-              payInputs={withBookingsGate(payInputs, { bookingsLoaded, bookingsFailed })}
-              // Review #342 item 1: people whose pay is not known (loading or failed) show no figures and are skipped by
-              // Export and Download PDF.
-              payStatusOf={payStatusOf}
-            />
+            <TimesheetScreenBoundary resetKey={searchParams.toString()}>
+              <TimesheetsScreen
+                bookings={bookings}
+                managerSiteBookings={managerSiteBookings}
+                operatives={operatives}
+                users={users}
+                projects={projects}
+                smallWorks={smallWorks}
+                periodStart={currentPeriod.start}
+                periodEnd={currentPeriod.end}
+                // 17 Nov follow-up: a signed sheet of an earlier pay run that was never exported stays listed.
+                queuePeriods={recentRuns}
+                payrollPolicy={payrollPolicy}
+                payrollPolicyPrior={payrollPolicyPrior}
+                payrollPolicyEffectiveFrom={payrollPolicyEffectiveFrom}
+                payrollPolicyState={payrollPolicyState}
+                invoicing={invoicing}
+                loading={usersLoading && users.length === 0}
+                teamTab={tab}
+                timeZone={timeZone}
+                history={history}
+                scheduleOptions={scheduleOptions}
+                // Rulebook 1.43.0 (review r318): export stamps and freezes the signed snapshot, so it waits for the
+                // server-confirmed bookings as signing does (`withBookingsGate` → `timesheetSnapshotReady`).
+                payInputs={withBookingsGate(payInputs, { bookingsLoaded, bookingsFailed })}
+                // Review #342 item 1: people whose pay is not known (loading or failed) show no figures and are skipped by
+                // Export and Download PDF.
+                payStatusOf={payStatusOf}
+              />
+            </TimesheetScreenBoundary>
           </>
         )}
       </PageShell>
@@ -571,13 +599,7 @@ export function TimesheetsHub() {
       ) : (
         <div className="pu-gridAuto">
           {showMine ? (
-            <MineChangedIndicator
-              organizationId={organization?.id}
-              subject={users.find((row) => row.id === user.id) || user}
-              invoicing={invoicing}
-              timeZone={timeZone}
-              catalogue={changeCatalogue}
-            >
+            <MineChangedIndicator organizationId={organization?.id} userId={user.id}>
             <ActionCard
               tile={<IconTile tone="blue"><ClockIcon /></IconTile>}
               title="My timesheets"
@@ -614,11 +636,15 @@ export function TimesheetsHub() {
               user={user}
               users={users}
               organizationId={organization?.id}
-              periodStart={currentPeriod.start}
-              periodEnd={currentPeriod.end}
+              runs={recentRuns}
+              repairReady={teamPayInputs.ready && changeCatalogue.liveLoaded}
+              payStatusOf={payStatusOf}
               invoicing={invoicing}
               timeZone={timeZone}
               changeCatalogue={changeCatalogue}
+              rosterLoaded={
+                !usersLoading && users.length > 0 && Boolean(organization?.id) && rosterServerOrgId === organization?.id
+              }
               onStats={setHubStats}
               onClick={() => router.push(timesheetsTeamHref({ tab: 'awaiting' }))}
             />
@@ -672,12 +698,35 @@ function MineTimesheetsList({
 
   const periodKey = (period: { start: Date; end: Date }) =>
     `${periodStartKey(period.start, timeZone)}|${dayKey(period.end, timeZone)}`
+  // Guardrail 1: the person's past sheets under every id they go by (`personIdSet`: a former invite id, a second users
+  // document on their email) and sheets stored without `userId` whose document id names them; the own id first.
+  // Final review of #386: only the queries this viewer's rules allow (`timesheetLookupPlan`): an operative asks their own
+  // id only; while `privatePay` is on so does everyone but an admin (as iOS).
+  const subjectIsOperative = isOperativeMode(subject)
+  const subjectIsAdmin = hasAdminAccess(subject)
+  const subjectIds = useMemo(() => timesheetMemberIds(subject, users), [subject, users])
+  const subjectIdsKey = subjectIds.join('|')
+  // Re-check of #386: the switch as the lookups read it, followed live — when `platformConfig/app` arrives after the
+  // first read (privatePay off), the list is planned again and widens.
+  const [lookupPrivatePay, setLookupPrivatePay] = useState(() => timesheetLookupPrivatePay(organizationId ?? ''))
+  useEffect(() => {
+    const update = () => setLookupPrivatePay(timesheetLookupPrivatePay(organizationId ?? ''))
+    update()
+    return onPlatformConfigChange(update)
+  }, [organizationId])
 
   useEffect(() => {
     if (!organizationId) return
     let cancelled = false
     const currentKey = periodKey(currentPeriod)
-    listTimesheetStates(organizationId, subject.id, 400).then(async (rows) => {
+    const plan = timesheetLookupPlan({
+      ids: subjectIds,
+      viewerIsOperative: subjectIsOperative,
+      viewerIsAdmin: subjectIsAdmin,
+      privatePay: lookupPrivatePay,
+    })
+    listPersonTimesheetStates(organizationId, plan.ids, 400, 'latest', plan.includeDocumentPrefix)
+      .then(async (rows) => {
       if (cancelled) return
       const byKey = new Map<string, { start: Date; end: Date }>()
       for (const period of pastPeriods) byKey.set(periodKey(period), period)
@@ -738,7 +787,9 @@ function MineTimesheetsList({
     return () => {
       cancelled = true
     }
-  }, [organizationId, subject.id, currentPeriod, pastPeriods, invoicing, timeZone])
+    // `subjectIds` is read through `subjectIdsKey` (a new roster array with the same ids does not reload).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [organizationId, subject.id, subjectIdsKey, subjectIsOperative, subjectIsAdmin, lookupPrivatePay, currentPeriod, pastPeriods, invoicing, timeZone])
 
   // Rulebook 1.47.0 §8: a signed, unexported sheet whose bookings changed is back with the person.
   const changeOf = (period: { start: Date; end: Date }) =>
@@ -841,20 +892,12 @@ function MineTimesheetsList({
   )
 }
 
-/**
- * Rulebook 1.55.0 §8 (`timesheetRevisionDue`): the listed draft is the period's latest version; it is passed as a
- * one-version chain (its stored id and its resolved `exportedAt`, the leftover rule already applied), with its
- * `signedTimesheetBookingChanges`.
- */
+/** Rulebook 1.55.0 §8 (`timesheetRevisionDue`): the shared reading (`mineChanged.revisionDueOf`) for a listed draft. */
 function revisionDueOf(
   draft: TimesheetDraft | undefined,
   change: { exported?: boolean | null; changed?: boolean | null } | null | undefined
 ): boolean {
-  if (!draft) return false
-  const documentId = timesheetSourceDocumentId(draft)
-  if (!documentId) return false
-  const chain = timesheetVersionsForPeriod([{ documentId, data: { exportedAt: draft.exportedAt ?? null } }])[0] ?? []
-  return timesheetRevisionDue({ chain, change }).due
+  return revisionDueFor(draft, draft ? timesheetSourceDocumentId(draft) : null, change)
 }
 
 /** Rulebook 1.55.0: the "REV N" badge of a listed version (nothing for an original). */
@@ -903,68 +946,20 @@ function WithChangedTriangle({ show, children }: { show: boolean; children: Reac
 }
 
 /**
- * Rulebook 1.47.0 §8: the hub's "My timesheets" entry with the yellow triangle when any of the person's signed,
- * unexported sheets has bookings that changed since they signed (`signedTimesheetBookingChanges`, waiting for them).
+ * Rulebook 1.47.0 §8 / owner decision G (17 Nov follow-up): the hub's "My timesheets" entry with the yellow triangle when
+ * any of the person's signed sheets needs them (bookings changed, or a revision due). It only reads the app shell's
+ * answer (`useMineChangedMonitor` → `useMineChangedStore`) — one computation for the sidebar and the hub.
  */
 function MineChangedIndicator({
   organizationId,
-  subject,
-  invoicing,
-  timeZone,
-  catalogue,
+  userId,
   children,
 }: {
   organizationId?: string
-  subject: User
-  invoicing: OrgInvoicingSettings
-  timeZone: string
-  catalogue: BookingChangeCatalogue
+  userId: string
   children: ReactNode
 }) {
-  const [rows, setRows] = useState<Array<{ period: { start: Date; end: Date }; draft: TimesheetDraft }>>([])
-  useEffect(() => {
-    if (!organizationId) return
-    let cancelled = false
-    listTimesheetStates(organizationId, subject.id, 400)
-      .then((stored) => {
-        if (cancelled) return
-        const live = timesheetPeriodFromInvoicing({
-          paymentRunMode: invoicing.paymentRunMode,
-          ranges: invoicing.paymentRunDateRanges,
-          recurringRunStartDay: invoicing.recurringRunStartDay,
-          recurringRunEndDay: invoicing.recurringRunEndDay,
-          referenceDayKey: dayKey(new Date(), timeZone),
-          timeZone,
-        })
-        setRows(
-          stored
-            // Signed sheets: an unexported one reopens; 1.55.0: the latest version exported makes a revision due.
-            .filter((row) => Boolean(row.draft.operativeSignedAt) || Boolean(row.draft.exportedAt))
-            .map((row) => {
-              const resolved = resolveTimesheetPeriod({
-                storedStartDayKey: dayKey(row.weekStart, timeZone),
-                storedEndDayKey: row.endDayKey,
-                currentPeriod: live,
-              })
-              return {
-                period: { start: dateFromDayKey(resolved.startDayKey, timeZone), end: dateFromDayKey(resolved.endDayKey, timeZone) },
-                draft: row.draft,
-              }
-            })
-        )
-      })
-      .catch(() => {
-        if (!cancelled) setRows([])
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [organizationId, subject.id, invoicing, timeZone])
-  // Only the pay runs the loaded window holds (`coversPeriod`, the last HUB_CHANGE_SCAN_RUNS); memoised per period.
-  const show = rows.some((row) => {
-    const change = periodBookingChanges(catalogue, subject, row.draft, row.period)
-    return change?.waitingFor === 'person' || revisionDueOf(row.draft, change)
-  })
+  const show = useMineChangedStore((state) => mineChangedShown(state, mineChangedKey(organizationId, userId)))
   return <WithChangedTriangle show={show}>{children}</WithChangedTriangle>
 }
 
@@ -972,65 +967,91 @@ function ManagerTimesheetsTile({
   user,
   users,
   organizationId,
-  periodStart,
-  periodEnd,
+  runs,
+  repairReady,
+  payStatusOf,
   invoicing,
   timeZone,
   changeCatalogue,
+  rosterLoaded,
   onStats,
   onClick,
 }: {
   /** Rulebook 1.47.0 §8: the live bookings, so a reopened sheet is counted where it now is. */
   changeCatalogue: BookingChangeCatalogue
+  /** Review of #386 (S5): the organisation roster has loaded (admins' "Unknown person" rows wait for it). */
+  rosterLoaded: boolean
   user: User
   users: User[]
   organizationId?: string
-  periodStart: Date
-  periodEnd: Date
+  /** 17 Nov follow-up: the recent pay runs the Awaiting / Signed off lists hold (newest first). */
+  runs: ReadonlyArray<PayRun>
+  /** Owner item 5: the window's bookings (server-confirmed) and the pay inputs have loaded. */
+  repairReady: boolean
+  /** Review of #368 (B2): each person's own pay status (the background repair rebuilds only `ready`). */
+  payStatusOf: (member: User) => PayProfilesStatus
   invoicing: OrgInvoicingSettings
   timeZone: string
   /** Reports the counts this tile loads so the hub band can repeat them (display only). */
   onStats?: (stats: { awaiting: number; signed: number; exported: number } | null) => void
   onClick: () => void
 }) {
-  const [loaded, setLoaded] = useState<{ drafts: Map<string, TimesheetDraft>; exportedCount: number } | 'empty' | null>(null)
+  const [loaded, setLoaded] = useState<{ byRun: Map<string, Map<string, TimesheetDraft>>; exportedCount: number } | 'empty' | null>(null)
+  const [repairs, setRepairs] = useState(0)
   const reviewGroups = useMemo(() => timesheetRosterGroups(user, users), [user, users])
-  const currentGroups = useMemo(
-    () =>
+  const groupsFor = useMemo(
+    () => (run: PayRun) =>
       reviewGroups
         .map((group) =>
-          group.filter((member) =>
-            shouldAppearInOperativeTimesheetRoster(member, periodStart, periodEnd, invoicing, new Date(), timeZone)
-          )
+          group.filter((member) => shouldAppearInOperativeTimesheetRoster(member, run.start, run.end, invoicing, new Date(), timeZone))
         )
         .filter((group) => group.length > 0),
-    [reviewGroups, periodStart, periodEnd, invoicing, timeZone]
+    [reviewGroups, invoicing, timeZone]
   )
-  const currentRosterIds = useMemo(() => currentGroups.flat().map((member) => member.id), [currentGroups])
+  const reviewIds = useMemo(() => reviewGroups.flat().flatMap((member) => timesheetMemberIds(member, users)), [reviewGroups, users])
+  const runsKey = runs.map((run) => payRunKey(run, timeZone)).join(',')
   // Rulebook 1.31.0: the Exported count is `exportedTimesheetHistorySubjects` (own sheets and inactive people in scope).
   const exportedRoster = useMemo(() => exportedTimesheetRosterGroups(user, users).flat(), [user, users])
 
+  // Review of #368: the queries reload only when the people they ask about change (their ids), never on every roster
+  // snapshot; the rows are mapped onto the people from the current roster below.
+  const queryKey = `${reviewIds.join(',')}#${exportedRoster.map((member) => member.id).join(',')}#${hasAdminAccess(user) ? 'admin' : ''}#${rosterLoaded ? 'roster' : ''}`
+  const usersRef = useRef(users)
+  usersRef.current = users
+  const exportedRosterRef = useRef(exportedRoster)
+  exportedRosterRef.current = exportedRoster
   useEffect(() => {
+    const users = usersRef.current
+    const exportedRoster = exportedRosterRef.current
     if (!organizationId || users.length === 0) {
       setLoaded(null)
       return
     }
-    if (currentRosterIds.length === 0 && exportedRoster.length === 0) {
+    if (reviewIds.length === 0 && exportedRoster.length === 0 && !hasAdminAccess(user)) {
       setLoaded('empty')
       return
     }
     let cancelled = false
     Promise.all([
-      currentRosterIds.length > 0
-        ? loadTimesheetDrafts(organizationId, currentRosterIds, periodStart, timeZone, periodEnd)
-        : Promise.resolve(new Map<string, TimesheetDraft>()),
-      exportedRoster.length > 0
-        ? loadExportedTimesheetHistory({ organizationId, users: exportedRoster })
-        : Promise.resolve([]),
+      reviewIds.length > 0
+        ? loadTimesheetQueueDrafts({ organizationId, userIds: reviewIds, periods: runs, timeZone })
+        : Promise.resolve(new Map<string, Map<string, TimesheetDraft>>()),
+      // 17 Nov follow-up: the same Exported list as User Timesheets → Exported (former ids matched; admins also count
+      // a sheet whose person is nobody in the organisation).
+      loadExportedTimesheetHistory({
+        organizationId,
+        users: exportedRoster,
+        roster: users,
+        includeUnresolved: hasAdminAccess(user),
+        // Review of #386 (S5): "Unknown person" rows only once the roster has loaded.
+        rosterLoaded,
+        viewerIsOperative: isOperativeMode(user),
+        viewerIsAdmin: hasAdminAccess(user),
+      }),
     ])
-      .then(([drafts, exportedRows]) => {
+      .then(([byRun, exportedRows]) => {
         if (cancelled) return
-        setLoaded({ drafts, exportedCount: exportedRows.length })
+        setLoaded({ byRun, exportedCount: exportedRows.length })
       })
       .catch(() => {
         if (!cancelled) setLoaded('empty')
@@ -1038,25 +1059,71 @@ function ManagerTimesheetsTile({
     return () => {
       cancelled = true
     }
-  }, [organizationId, users.length, currentRosterIds, currentGroups, exportedRoster, periodStart, periodEnd, timeZone])
+    // `runs` is read through `runsKey`, the people through `queryKey` (ids), the roster through a ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [organizationId, users.length === 0, queryKey, runsKey, timeZone, repairs])
+
+  // The loaded sheets on the people of the current roster (`draftsForMembers`), per pay run.
+  const draftsByRun = useMemo(() => {
+    if (loaded == null || loaded === 'empty') return null
+    const drafts = new Map<string, Map<string, TimesheetDraft>>()
+    for (const run of runs) {
+      const key = payRunKey(run, timeZone)
+      drafts.set(key, draftsForMembers(reviewGroups, loaded.byRun.get(key) ?? new Map(), users))
+    }
+    return drafts
+    // `runs` is read through `runsKey`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, reviewGroups, users, runsKey, timeZone])
 
   const catalogueRef = useRef(changeCatalogue)
   catalogueRef.current = changeCatalogue
   const stats = useMemo(() => {
     if (loaded == null) return null
     if (loaded === 'empty') return { awaiting: 0, signed: 0, exported: 0 }
-    return timesheetReviewerHubStats({
-      groups: currentGroups,
-      currentPeriodDrafts: loaded.drafts,
-      exportedHistoryCount: loaded.exportedCount,
-      users,
-      // Rulebook 1.47.0 §8: a reopened sheet counts where `timesheetListBucket` now puts it.
-      bookingChange: (member, draft) =>
-        periodBookingChanges(catalogueRef.current, member, draft, { start: periodStart, end: periodEnd }),
-    })
+    // 17 Nov follow-up: the same rows User Timesheets lists (every recent pay run, `timesheetQueueRows`).
+    const count = (bucket: 'awaiting' | 'signed') =>
+      timesheetQueueRows({
+        runs,
+        groupsFor,
+        draftsFor: (run) => draftsByRun?.get(payRunKey(run, timeZone)),
+        bucket,
+        users,
+        timeZone,
+        // Rulebook 1.47.0 §8: a reopened sheet counts where `timesheetListBucket` now puts it.
+        bookingChange: (member, draft, run) => periodBookingChanges(catalogueRef.current, member, draft, run),
+      }).length
+    return { awaiting: count('awaiting'), signed: count('signed'), exported: loaded.exportedCount }
     // The catalogue is read through a ref; re-run when its bookings or load state change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, currentGroups, users, periodStart, periodEnd, changeCatalogue.bookings, changeCatalogue.managerSiteBookings, changeCatalogue.liveLoaded])
+  }, [loaded, draftsByRun, groupsFor, users, runsKey, timeZone, changeCatalogue.bookings, changeCatalogue.managerSiteBookings, changeCatalogue.liveLoaded])
+
+  // Owner item 5 (17 Nov follow-up): the hub repairs frozen-empty snapshots of the loaded pay runs in the background
+  // too (`useSnapshotAutoRepair`), once the bookings of the window and the pay inputs have loaded.
+  const repairSheets = useMemo<RepairSheet[]>(() => {
+    if (loaded == null || loaded === 'empty') return []
+    return runs.flatMap((run) => {
+      const drafts = draftsByRun?.get(payRunKey(run, timeZone))
+      if (!drafts) return []
+      return groupsFor(run)
+        .flat()
+        .flatMap((member) => {
+          const draft = drafts.get(member.id)
+          return draft ? [{ member, period: run, draft, documentId: timesheetSourceDocumentId(draft) }] : []
+        })
+    })
+    // `runs` is read through `runsKey`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, draftsByRun, runsKey, groupsFor, timeZone])
+  useSnapshotAutoRepair({
+    organizationId,
+    viewer: user,
+    catalogue: changeCatalogue,
+    sheets: repairSheets,
+    ready: repairReady,
+    payStatusOf,
+    onRepaired: () => setRepairs((value) => value + 1),
+  })
 
   useEffect(() => {
     onStats?.(stats)

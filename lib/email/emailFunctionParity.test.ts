@@ -59,6 +59,23 @@ for (const isQuote of [true, false]) {
   }
 }
 
+test('1.59.0 function material email matches the web builder with the safe-sender box', () => {
+  for (const sendAsPlainText of [true, false]) {
+    const notice = 'Please add this email address to your safe senders list, or mark it as not spam, so you receive all quote and order requests from us.'
+    const web = buildMaterialRequestEmail({ context: { ...baseContext, sentAt }, isQuote: true, sendAsPlainText, contactName: 'W', safeSenderNotice: notice })
+    const fn = fnMaterial.buildMaterialRequestEmail({
+      context: { ...baseContext, sentLabel: format(sentAt, "EEEE, d MMMM yyyy 'at' HH:mm") },
+      isQuote: true,
+      sendAsPlainText,
+      contactName: 'W',
+      safeSenderNotice: notice,
+    })
+    assert.equal(fn.html, web.html)
+    assert.ok(web.html.includes(notice))
+    assert.ok(web.html.indexOf(notice) < web.html.indexOf('P-104'))
+  }
+})
+
 test('function timesheet export email matches managerExportEmailHTML', () => {
   for (const downloadLinks of [[], [{ fileName: "O'Neil.pdf", url: 'https://firebasestorage.googleapis.com/x?a=1&b=2' }]]) {
     for (const timesheetCount of [1, 3]) {

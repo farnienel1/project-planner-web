@@ -5761,6 +5761,41 @@ test('1.55.0 review of #344 (L4): a revision\'s timesheet notices have their own
   assert.equal(signed(100), signed(), 'not a revision number: the original key')
 })
 
+test('1.60.1 (owner report 17 Nov): each signature of a pay run gets its own timesheet notice key', () => {
+  const base = { subjectId: 'OP', periodStartDayKey: '2026-10-01', timeZone: 'Europe/London' }
+  const seconds = Date.parse('2026-09-30T23:00:00Z') / 1000
+  const pending = (signedAtMs?: number | null, revision?: number | null) =>
+    rulebook.timesheetNotificationDedupeKey({ ...base, type: 'timesheet_pending_manager_signoff', recipientId: 'LM', revision, signedAtMs })
+  const first = Date.parse('2026-10-10T09:00:00Z')
+  const again = Date.parse('2026-10-12T16:30:00Z')
+  // The re-sign (signature cleared, or a booking change reopened the sheet) is a new row, so a new push.
+  assert.equal(pending(first), `timesheetPending|OP|LM|${seconds}|sig${first}`)
+  assert.notEqual(pending(first), pending(again))
+  // A retry of the same signature builds the same key (no duplicate row).
+  assert.equal(pending(first), pending(first + 0.4))
+  assert.equal(pending(first, 2), `timesheetPending|OP|LM|${seconds}|rev2|sig${first}`)
+  // Older builds pass no instant: the key is unchanged.
+  for (const bad of [null, undefined, 0, -5, Number.NaN]) assert.equal(pending(bad), `timesheetPending|OP|LM|${seconds}`)
+  assert.equal(
+    rulebook.timesheetNotificationDedupeKey({ ...base, type: 'timesheet_signed_by_manager', signedAtMs: first }),
+    `timesheetSigned|OP|${seconds}|sig${first}`
+  )
+})
+
+test('1.60.1: lineManagerPeerNoticeKey — one peer row per counter-signature, leave keys unchanged', () => {
+  const base = { actorName: 'Lee', actionSummary: "Sam's timesheet (1–15 Nov)", peerId: 'lm-2', actionVerb: 'signed' }
+  const at = Date.parse('2026-11-06T10:00:00Z')
+  assert.equal(rulebook.lineManagerPeerNoticeKey(base), "lmPeer|Lee|Sam's timesheet (1–15 Nov)|lm-2|signed")
+  assert.equal(rulebook.lineManagerPeerNoticeKey({ ...base, signedAtMs: at + 0.6 }), `lmPeer|Lee|Sam's timesheet (1–15 Nov)|lm-2|signed|sig${at}`)
+  assert.notEqual(rulebook.lineManagerPeerNoticeKey({ ...base, signedAtMs: at }), rulebook.lineManagerPeerNoticeKey({ ...base, signedAtMs: at + 60_000 }))
+  // A leave decision passes no instant: its id is the one both apps have always written.
+  assert.equal(
+    rulebook.lineManagerPeerNoticeKey({ actorName: 'Lee', actionSummary: "Sam's annual leave", peerId: 'lm-2', actionVerb: 'approved', signedAtMs: null }),
+    "lmPeer|Lee|Sam's annual leave|lm-2|approved"
+  )
+  assert.equal(rulebook.lineManagerPeerNoticeKey({ ...base, peerId: ' ' }), null)
+})
+
 test('1.4.0: bank-holiday regions are one list per country, and a country change asks for the region', () => {
   const ids = (country: string) => rulebook.bankHolidayRegionsForCountry(country).map((region) => region.id)
   assert.deepEqual(ids('GB'), ['GB-ENG-WLS', 'GB-SCT', 'GB-NIR', 'GB'])
@@ -6936,14 +6971,16 @@ test('1.8.0 material catalogue: never delete-all and rewrite; an empty or failed
   assert.equal(result.write.length, 1)
   assert.equal(result.write[0].id, 'C3')
   assert.equal(result.write[0].create, true)
-  assert.equal(result.write[0].set.brand, 'Custom')
+  // 1.57.0: a new item with no brand stores '' (was "Custom").
+  assert.equal(result.write[0].set.brand, '')
   // A failed load: nothing removed.
   assert.deepEqual(materialCatalogueWrites({ stored, next, loaded: false }).remove, [])
   // An empty list: nothing removed.
   assert.deepEqual(materialCatalogueWrites({ stored, next: [], loaded: true }), { write: [], remove: [] })
   const item = parseMaterialCatalogueDocument('not-a-uuid', { name: 'Box', sizeOrLength: '5', lengthUnit: 'mm' })!
   assert.equal(item.id, 'not-a-uuid')
-  assert.equal(item.brand, 'Custom')
+  // 1.57.0: a missing brand reads as '' and shows as "N/A" (`materialBrandText`).
+  assert.equal(item.brand, '')
   assert.equal(item.lengthUnit, 'MM')
 })
 
@@ -7107,7 +7144,9 @@ test('1.8.0 variations: stable line ids, recomputed counters, partial and renumb
     set: { sequence: 2, voNumber: 'VO-002', numberHistory: [{ from: 'VO-001', to: 'VO-002', at: 7, byUid: 'u' }] },
   })
   assert.equal(variationRenumberWriteFields({ stored: { voNumber: 'VO-001', sequence: 1 }, to: 'VO-001', sequence: 1, at: 7, byUid: 'u' }), null)
-  assert.equal(variationRenumberWriteFields({ stored: { voNumber: 'VO-001', sequence: 1, voNumberLocked: true }, to: 'VO-005', sequence: 1, at: 7, byUid: 'u' }), null)
+  // 1.63.0: the status pins the number; a lock left on an Open (reopened) variation no longer does.
+  assert.equal(variationRenumberWriteFields({ stored: { voNumber: 'VO-001', sequence: 1, status: 'submitted', voNumberLocked: true }, to: 'VO-005', sequence: 1, at: 7, byUid: 'u' }), null)
+  assert.equal(variationRenumberWriteFields({ stored: { voNumber: 'VO-001', sequence: 1, status: 'open', voNumberLocked: true }, to: 'VO-005', sequence: 1, at: 7, byUid: 'u' })?.set.voNumber, 'VO-005')
   assert.equal(parseVariationTrackerDocument('P1', undefined).prefix, 'VO-')
 })
 
@@ -17143,6 +17182,9 @@ test('1.53.0 review: a new night shift clashes with the next morning\'s early bo
         .find((row) => row.personId === SUBJECT)?.cells.timesheet.label
     const exportedSheet = R.parsePayrunSnapshotSheet(ORIGINAL, original)!
     assert.equal(run([{ ...exportedSheet, bookingsChange: { reopened: false, waitingFor: null, changed: true, exported: true } }]), 'Revision due')
+    // 1.57.0 J1: a change that is only a snapshot gap keeps the sheet's signed state in the Payrun Snapshot.
+    assert.equal(run([{ ...exportedSheet, bookingsChange: { reopened: false, waitingFor: null, changed: true, exported: true, snapshotGapOnly: true } }]), run([exportedSheet]))
+    assert.notEqual(run([exportedSheet]), 'Revision due')
     const openRev = R.parsePayrunSnapshotSheet(`${ORIGINAL}_rev1`, { userId: SUBJECT, weekStartKey: '2026-11-01', weekEndKey: '2026-11-15' })!
     assert.equal(run([exportedSheet, openRev]), 'REV 1 waiting for signature')
     const signedRev = R.parsePayrunSnapshotSheet(`${ORIGINAL}_rev1`, { userId: SUBJECT, weekStartKey: '2026-11-01', weekEndKey: '2026-11-15', operativeSignedAt: signedAt, operativeSignedByName: 'S P', operativeSignatureImageBase64: 'x', managerSignedAt: signedAt, managerSignedByName: 'L M', managerSignatureImageBase64: 'y', weeklyReportOverride: { lines: [] } })!
@@ -17164,6 +17206,14 @@ test('1.55.0 weekly report check line names the revision used ("· REV 1")', () 
   const exportedSheet = { ...sheet, managerSignedAt: new Date('2026-11-16T11:00:00Z'), exportedAt: new Date('2026-11-17T10:00:00Z') }
   const due = wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...base, sheet: exportedSheet, change: { exported: true, changed: true } }] }).people[0].check?.label
   assert.match(String(due), /^Timesheet: Revision due/)
+  // 1.57.0 J1 (`SNAPSHOT_GAP_REPORTS` = 'signed'): a change that is only a snapshot gap keeps the signed check line.
+  const gapOnly = wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...base, sheet: exportedSheet, change: { exported: true, changed: true, snapshotGapOnly: true } }] }).people[0].check?.label
+  assert.doesNotMatch(String(gapOnly), /Revision due|changed since signed/)
+  const unexportedGap = wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...base, change: { reopened: true, changed: true, waitingFor: 'lineManager', snapshotGapOnly: true } }] }).people[0].check?.label
+  assert.equal(unexportedGap, 'Timesheet: Signed · Invoice £250.00 ✓')
+  // A real booking change still follows J4.
+  const real = wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...base, change: { reopened: true, changed: true, waitingFor: 'lineManager', snapshotGapOnly: false } }] }).people[0].check?.label
+  assert.notEqual(real, 'Timesheet: Signed · Invoice £250.00 ✓')
   assert.match(String(wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...base, sheet: { operativeSignedAt: null }, revision: 1 }] }).people[0].check?.label), /^Timesheet: REV 1 waiting for signature/)
   const signedOff = { ...sheet, managerSignedAt: new Date('2026-11-16T11:00:00Z') }
   assert.match(String(wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...base, sheet: signedOff, revision: 1 }] }).people[0].check?.label), /^Timesheet: Signed · REV 1/)
@@ -17351,4 +17401,434 @@ test('1.56.0 leaveLegacyKeyFindings: a member from another company who is an ope
   assert.deepEqual([byId.both.personId, ...byId.both.otherPersonIds].sort(), ['HOME-OP', 'HOME-OP2'])
   assert.equal(findings.filter((f) => f.leaveId === 'both').length, 1)
   assert.equal(byId['both-reachable'], undefined)
+})
+
+test('1.58.0 material brand: a missing or legacy "Custom" brand shows "N/A" and stores blank; nothing stored is rewritten', () => {
+  const { materialBrandStored, materialBrandText, MATERIAL_BRAND_MISSING_TEXT, materialCatalogueItemFields, materialCatalogueItemWriteFields, materialCatalogueWrites, parseMaterialCatalogueDocument, parseMaterialLineDocument, materialLineFields, materialLineWriteFields, parseMaterialCatalogueCsv, materialCatalogueCsvExport } = R112
+  assert.equal(MATERIAL_BRAND_MISSING_TEXT, 'N/A')
+  // Display: blank, missing, the legacy word in any case → "N/A"; a real brand as typed (trimmed).
+  for (const v of [undefined, null, '', '  ', 'Custom', ' custom ', 'CUSTOM', 5]) {
+    assert.equal(materialBrandText(v), 'N/A')
+    assert.equal(materialBrandStored(v), '')
+  }
+  assert.equal(materialBrandText(' Prysmian '), 'Prysmian')
+  assert.equal(materialBrandText('Custom Cables Ltd'), 'Custom Cables Ltd')
+  // Reader: '' for a missing or legacy brand.
+  assert.equal(parseMaterialCatalogueDocument('C1', { name: 'Clips', brand: 'Custom' })!.brand, '')
+  assert.equal(parseMaterialCatalogueDocument('C1', { name: 'Clips' })!.brand, '')
+  assert.equal(parseMaterialCatalogueDocument('C1', { name: 'Clips', brand: 'Wago' })!.brand, 'Wago')
+  // Writer: a new item with no brand (or typed "Custom") stores ''.
+  assert.equal(materialCatalogueItemFields({ id: 'C9', name: 'Tape' }).brand, '')
+  assert.equal(materialCatalogueItemFields({ id: 'C9', name: 'Tape', brand: 'Custom' }).brand, '')
+  assert.equal(materialCatalogueItemFields({ id: 'C9', name: 'Tape', brand: ' 3M ' }).brand, '3M')
+  // Guardrail 3: saving an item whose stored brand is "Custom" (or missing) with no brand never rewrites the brand.
+  const stored = { id: 'C2', name: 'Clips', brand: 'Custom', defaultUnit: 'Box', category: 'Other' }
+  const edit = materialCatalogueItemWriteFields(stored, materialCatalogueItemFields({ ...parseMaterialCatalogueDocument('C2', stored)!, name: 'Cable clips' }))
+  assert.deepEqual(edit.set, { name: 'Cable clips' })
+  assert.deepEqual(edit.remove, [])
+  const noBrandField = { id: 'C3', name: 'Tape', defaultUnit: 'Number', category: 'Other' }
+  const edit3 = materialCatalogueItemWriteFields(noBrandField, materialCatalogueItemFields({ id: 'C3', name: 'Tape', defaultUnit: 'Number', category: 'Other' }))
+  assert.equal('brand' in edit3.set, false)
+  // A real brand typed over the legacy word is written.
+  assert.equal(materialCatalogueItemWriteFields(stored, materialCatalogueItemFields({ ...stored, brand: 'Wago' })).set.brand, 'Wago')
+  // An export → import round trip of a "Custom" item writes nothing.
+  const csv = materialCatalogueCsvExport([parseMaterialCatalogueDocument('C2', stored)!])
+  const rows = parseMaterialCatalogueCsv(csv).rows
+  assert.equal(rows[0].brand, '')
+  assert.deepEqual(materialCatalogueWrites({ stored: [{ id: 'C2', data: stored }], next: rows, loaded: true }).write, [])
+  // Job lines: a legacy "Custom" copied from the catalogue reads and stores as no brand; an edit keeps the stored word.
+  const line = parseMaterialLineDocument('L1', { projectId: 'P1', material: 'Clips', brand: 'Custom', quantity: 2, dayKey: '2026-11-17' }, 'Europe/London')!
+  assert.equal(line.brand, null)
+  assert.equal(materialLineFields({ id: 'L2', projectId: 'P1', material: 'Clips', brand: 'Custom', quantity: 1, dayKey: '2026-11-17' }, 'Europe/London').brand, null)
+  const storedLine = { ...materialLineFields({ id: 'L1', projectId: 'P1', material: 'Clips', quantity: 2, dayKey: '2026-11-17' }, 'Europe/London'), brand: 'Custom' }
+  const lineEdit = materialLineWriteFields(storedLine, { ...storedLine, brand: null, quantity: 3 })
+  assert.deepEqual(lineEdit.set, { quantity: 3 })
+  assert.deepEqual(lineEdit.remove, [])
+  // WhatsApp never prints the legacy word.
+  const [wa] = R112.materialWhatsAppRows({ ...WA_BASE, materials: [{ ...WA_BASE.materials[0], brand: 'Custom' }] })
+  assert.equal(wa.message.includes('Custom'), false)
+})
+
+// MARK: - 1.57.0 (17 Nov owner test): stale snapshot that lacks a signed booking; claim rows from the latest revision
+
+test('1.57.0 a snapshot lacking a booking the person signed (still live) is stale: line manager counter-signs again', () => {
+  const now = Date.now()
+  const line = (id: string) => ({ id: `op-${id}-normal`, bookingId: id, bookingCollection: 'bookings', bookingFingerprint: `${id}|2026-11-10|FULL DAY||||0|`, bookingCreatedAt: now - 86_400_000, bookingUpdatedAt: now - 86_400_000 })
+  const live = [line('a'), line('b')]
+  const signedAt = new Date(now - 120_000)
+  const sheet = {
+    operativeSignedAt: signedAt,
+    operativeSignedBookings: [
+      { bookingId: 'a', collection: 'bookings', fingerprint: line('a').bookingFingerprint, personId: 'u1', place: '' },
+      { bookingId: 'b', collection: 'bookings', fingerprint: line('b').bookingFingerprint, personId: 'u1', place: '' },
+    ],
+    operativeSignedBookingsAt: signedAt,
+    operativeSignedBookingsSignedAt: signedAt,
+    managerSignedAt: new Date(now - 60_000),
+    weeklyReportOverride: { approvedAt: new Date(now - 60_000), lines: [{ id: 'op-b-normal', bookingId: 'b', bookingFingerprint: line('b').bookingFingerprint }] },
+  }
+  const open = R112.signedTimesheetBookingChanges({ sheet, liveLines: live, liveLoaded: true })
+  assert.equal(open.reopened, true)
+  assert.equal(open.waitingFor, 'lineManager')
+  assert.deepEqual(open.snapshotGapBookingIds, ['a'])
+  assert.deepEqual(open.addedBookingIds, [])
+  assert.equal(open.snapshotGapOnly, true)
+  const exported = R112.signedTimesheetBookingChanges({ sheet: { ...sheet, exportedAt: new Date(now - 10_000) }, liveLines: live, liveLoaded: true })
+  assert.equal(exported.exported, true)
+  assert.equal(exported.changed, true)
+  // Never for an Office / WFH / Site survey / custom-place booking (a repaired snapshot leaves those out by design).
+  const option = R112.signedTimesheetBookingChanges({ sheet, liveLines: [{ ...line('a'), scheduleOptionPlace: true }, line('b')], liveLoaded: true })
+  assert.equal(option.changed, false)
+  // A signed booking no longer live is judged as before (removed only from the booking documents), never "added".
+  const gone = R112.signedTimesheetBookingChanges({ sheet, liveLines: [line('b')], liveLoaded: true })
+  assert.equal(gone.changed, false)
+  // Without a current record (signed before 1.47.0) nothing new is read.
+  const noRecord = R112.signedTimesheetBookingChanges({ sheet: { ...sheet, operativeSignedBookings: null }, liveLines: live, liveLoaded: true })
+  assert.equal(noRecord.changed, false)
+})
+
+test('1.57.0 timesheetClaimRows lists each entry once, from the latest revision', () => {
+  const entries = (amount: number, id: string) => ({
+    priceWorkEntries: [{ id, title: 'Price work', details: '', jobNumber: 'C646', agreedManagerName: '', startDayKey: '2026-11-14', endDayKey: null, amount, managerRevisedAmount: null, managerDecision: 'approved', evidence: [] }],
+    expenseEntries: [],
+  })
+  const rows = R112.timesheetClaimRows(
+    [
+      { id: 'timesheet_u1_1793491200', entries: entries(195, 'pw1') as never },
+      { id: 'timesheet_u1_1793491200_rev2', entries: entries(200, 'PW-COPY') as never },
+      { id: 'timesheet_u1_1793491200_rev1', entries: entries(197, 'pw1') as never },
+      { id: 'timesheet_u1_1794787200', entries: entries(10, 'other') as never },
+    ],
+    'priceWork',
+    { start: '2026-11-01', end: '2026-11-30' }
+  )
+  assert.deepEqual(rows.map((row) => `${row.sheetId}:${row.amount}`).sort(), ['timesheet_u1_1793491200_rev2:200', 'timesheet_u1_1794787200:10'])
+  assert.deepEqual(R112.timesheetClaimLatestSheets([{ id: 'not-a-sheet' }]).map((row) => row.id), ['not-a-sheet'])
+})
+
+test('1.57.0 snapshot gap: never for a PAYE day, a leave line, a repairable empty snapshot or legacy lines with no booking', () => {
+  const now = Date.now()
+  const line = (id: string, extra: Record<string, unknown> = {}) => ({ id: `op-${id}-normal`, bookingId: id, bookingCollection: 'bookings', bookingFingerprint: `${id}|2026-11-10|FULL DAY||||0|`, bookingCreatedAt: now - 86_400_000, bookingUpdatedAt: now - 86_400_000, ...extra })
+  const signedAt = new Date(now - 120_000)
+  const sheetWith = (lines: unknown[]) => ({
+    operativeSignedAt: signedAt,
+    operativeSignedBookings: ['a', 'b'].map((id) => ({ bookingId: id, collection: 'bookings', fingerprint: line(id).bookingFingerprint, personId: 'u1', place: '' })),
+    operativeSignedBookingsAt: signedAt,
+    operativeSignedBookingsSignedAt: signedAt,
+    managerSignedAt: new Date(now - 60_000),
+    weeklyReportOverride: { approvedAt: new Date(now - 60_000), lines },
+  })
+  const withB = sheetWith([{ id: 'op-b-normal', bookingId: 'b', bookingFingerprint: line('b').bookingFingerprint }])
+  // The missing booking is live only as a PAYE day, or as leave: never a timesheet line, never a gap.
+  assert.equal(R112.signedTimesheetBookingChanges({ sheet: withB, liveLines: [line('a', { isPayeDay: true }), line('b')], liveLoaded: true }).changed, false)
+  assert.equal(R112.signedTimesheetBookingChanges({ sheet: withB, liveLines: [line('a', { isLeave: true }), line('b')], liveLoaded: true }).changed, false)
+  // A signed copy frozen empty (1.43.0) is repaired, never reopened by the gap rule.
+  const empty = R112.signedTimesheetBookingChanges({ sheet: sheetWith([]), liveLines: [line('a'), line('b')], liveLoaded: true })
+  assert.equal(empty.changed, false)
+  assert.equal(R112.timesheetSnapshotNeedsRebuild(sheetWith([]), [line('a'), line('b')]), true)
+  // Legacy signed lines that name no booking cannot be compared.
+  const legacy = sheetWith([{ id: 'day-1', amount: 225 }, { id: 'day-2', amount: 225 }])
+  assert.equal(R112.signedTimesheetBookingChanges({ sheet: legacy, liveLines: [line('a'), line('b')], liveLoaded: true }).changed, false)
+})
+
+test('1.57.0 snapshot gap is reported apart; reports keep signed figures for a gap-only change (J1)', () => {
+  assert.equal(R112.SNAPSHOT_GAP_REPORTS, 'signed')
+  assert.equal(R112.SNAPSHOT_GAP_FROM_MS, null)
+  assert.equal(R112.signedTimesheetChangeForReports({ changed: true, snapshotGapOnly: true }), null)
+  const real = { changed: true, snapshotGapOnly: false }
+  assert.equal(R112.signedTimesheetChangeForReports(real), real)
+  assert.equal(R112.signedTimesheetChangeForReports(null), null)
+  assert.deepEqual(R112.timesheetRevisionReportState({ revision: 0, exported: true, signedOff: true, change: { exported: true, changed: true } }).state, 'due')
+})
+
+test('1.57.0 J1 review: a gap-only change never hides late extras waiting for the line manager', () => {
+  const gap = R112.signedTimesheetBookingChanges({
+    sheet: {
+      operativeSignedAt: new Date(Date.now() - 120_000),
+      operativeSignedBookings: [{ bookingId: 'a', collection: 'bookings', fingerprint: 'a|2026-11-10|FULL DAY||||0|', personId: 'u1', place: '' }],
+      operativeSignedBookingsAt: new Date(Date.now() - 120_000),
+      operativeSignedBookingsSignedAt: new Date(Date.now() - 120_000),
+      managerSignedAt: new Date(Date.now() - 60_000),
+      weeklyReportOverride: { approvedAt: new Date(Date.now() - 60_000), lines: [{ id: 'op-b-normal', bookingId: 'b' }] },
+    },
+    liveLines: [{ id: 'op-a-normal', bookingId: 'a', bookingCollection: 'bookings', bookingFingerprint: 'a|2026-11-10|FULL DAY||||0|' }],
+    liveLoaded: true,
+  })
+  assert.equal(gap.snapshotGapOnly, true)
+  const late = R112.timesheetChangesWithLateExtras(gap, { waitingForLineManager: true })!
+  const report = R112.signedTimesheetChangeForReports(late)!
+  assert.ok(report, 'kept: late extras still wait')
+  assert.equal(report.bookingsChanged, false)
+  assert.equal(report.snapshotGapOnly, false)
+  // Read as waiting for the line manager (the check line and Payrun Snapshot: Submitted).
+  assert.equal(report.reopened, true)
+  assert.equal(report.waitingFor, 'lineManager')
+  // Without late extras the gap-only change is still dropped for reports (signed figures stand).
+  assert.equal(R112.signedTimesheetChangeForReports(R112.timesheetChangesWithLateExtras(gap, { waitingForLineManager: false })), null)
+})
+
+test('1.60.0 multiPersonBookingBlocks: more than one person, anyone already booked that day is named', () => {
+  const { multiPersonBookingBlocks, MULTI_PERSON_ALREADY_BOOKED_MESSAGE } = R112
+  const people = [
+    { personKey: 'A', name: 'Ada', ids: ['U-ADA', 'OP-ADA'] },
+    { personKey: 'B', name: 'Ben', ids: ['U-BEN'] },
+    { personKey: 'C', name: 'Cat', ids: ['U-CAT'] },
+  ]
+  const bookings = [
+    { id: 'b1', personId: 'op-ada', dayKey: '2026-11-23', status: 'Confirmed' },
+    { id: 'b2', personId: 'U-BEN', dayKey: '2026-11-24' },
+    { id: 'b3', personId: 'U-CAT', dayKey: '2026-11-23', status: 'Cancelled' },
+    { id: 'b4', personId: 'U-BEN', dayKey: '2026-11-30', status: 'Tentative' },
+  ]
+  const blocks = multiPersonBookingBlocks({ people, dayKeys: ['2026-11-23', '2026-11-24'], bookings })
+  assert.deepEqual(
+    blocks.map((b) => [b.personKey, b.dayKeys]),
+    [
+      ['A', ['2026-11-23']],
+      ['B', ['2026-11-24']],
+    ]
+  )
+  assert.equal(blocks[0].message, MULTI_PERSON_ALREADY_BOOKED_MESSAGE)
+  assert.match(MULTI_PERSON_ALREADY_BOOKED_MESSAGE, /^This user already has hours booked for this day\./)
+  // One person keeps the double-booking rows instead: nothing blocked.
+  assert.deepEqual(multiPersonBookingBlocks({ people: [people[0]], dayKeys: ['2026-11-23'], bookings }), [])
+  // The booking being edited never blocks itself.
+  assert.deepEqual(
+    multiPersonBookingBlocks({ people, dayKeys: ['2026-11-23'], bookings, ignoreBookingIds: ['B1'] }),
+    []
+  )
+})
+
+test('1.60.0 leaveCoverBookingWindow: the first uncovered stretch, across lunch, never across a booking', () => {
+  const day = { standardDayStart: '07:30', standardDayEnd: '16:00', breakWindowStart: '12:00', breakWindowEnd: '12:30' }
+  const leave = [{ id: 'L', userId: 'U', startDayKey: '2026-11-23', endDayKey: '2026-11-23', timeSlot: 'AM', approved: true }]
+  const rowsFor = (bookings: unknown[]) =>
+    R112.leaveCoverageRows({
+      timeZone: 'Europe/London',
+      startDayKey: '2026-11-23',
+      endDayKey: '2026-11-23',
+      day,
+      includeWeekends: false,
+      people: [{ personKey: 'U', name: 'Test Admin', userId: 'U' }],
+      leave,
+      bookings: bookings as never,
+    })
+  // Nothing booked: 11:45–12:00 and 12:30–16:00 are one stretch (only lunch between them).
+  const [open] = rowsFor([])
+  assert.deepEqual(R112.leaveCoverBookingWindow(open, day), { start: '11:45', end: '16:00', startMinutes: 705, endMinutes: 960 })
+  // Booked 13:00–14:00: the prefill stops at the booking (never 11:45–16:00, which would clash).
+  const [mid] = rowsFor([
+    { id: 'b', personId: 'U', kind: 'manager', dayKey: '2026-11-23', timeSlot: 'CUSTOM_HOURS', workStartTime: '13:00', workEndTime: '14:00' },
+  ])
+  assert.deepEqual(R112.leaveCoverBookingWindow(mid, day), { start: '11:45', end: '13:00', startMinutes: 705, endMinutes: 780 })
+  // Booked 11:45–12:00 already: the one remaining stretch.
+  const [late] = rowsFor([
+    { id: 'b', personId: 'U', kind: 'manager', dayKey: '2026-11-23', timeSlot: 'CUSTOM_HOURS', workStartTime: '11:45', workEndTime: '12:00' },
+  ])
+  assert.deepEqual(R112.leaveCoverBookingWindow(late, day), { start: '12:30', end: '16:00', startMinutes: 750, endMinutes: 960 })
+  // A leave_clash row has no booking window.
+  assert.equal(R112.leaveCoverBookingWindow({ ...open, kind: 'leave_clash' }, day), null)
+})
+
+test('1.59.0 former people: record shape, reader and "Former: Jane Smith" on old bookings', () => {
+  // Review of #370 (M1): only what the deleted document carries — its own ids, its email, its name.
+  const write = R112.formerPersonRecordFields({
+    person: { id: 'u1', firstName: 'Jane', surname: 'Smith', email: 'Jane@X.test', formerUserIds: ['PH-1'], sameEmailUserIds: ['u2'] },
+    deletedBy: 'admin-1',
+  })!
+  assert.deepEqual(Object.keys(write.fields).sort(), ['deletedBy', 'displayName', 'email', 'personIds'])
+  assert.deepEqual(write.serverTimestampFields, ['deletedAt'])
+  assert.equal(write.fields.displayName, 'Jane Smith')
+  assert.equal(write.fields.email, 'jane@x.test')
+  assert.deepEqual(write.fields.personIds, ['u1', 'PH-1', 'u2'])
+  const rowWrite = R112.formerPersonRecordFields({
+    person: { id: 'op-9', firstName: 'Row', lastName: 'Person', email: '', linkedIds: ['acc-1', null, 'acc-1'] },
+    deletedBy: 'admin-1',
+  })!
+  assert.deepEqual(rowWrite.fields.personIds, ['op-9', 'acc-1'])
+  assert.equal(rowWrite.fields.displayName, 'Row Person')
+  assert.equal(R112.formerPersonRecordFields({ person: { id: 'x', email: 'Only@Mail.test' }, deletedBy: 'a' })!.fields.displayName, 'only@mail.test')
+  // Self-delete (§12): nothing that names them is kept.
+  const anon = R112.formerPersonRecordFields({ person: { id: 'u1', firstName: 'Jane', email: 'jane@x.test' }, deletedBy: 'u1', anonymised: true })!
+  assert.equal(anon.fields.displayName, R112.FORMER_PERSON_ANONYMOUS_NAME)
+  assert.equal(anon.fields.email, '')
+  assert.equal(R112.formerPersonRecordFields({ person: { id: '' }, deletedBy: 'a' }), null)
+  assert.equal(R112.formerPersonRecordFields({ person: { id: 'a/b' }, deletedBy: 'a' }), null)
+  assert.equal(R112.formerPersonPath('org', 'u1'), 'organizations/org/deletedPeople/u1')
+
+  // Needed only with records; an unreadable count keeps the record.
+  assert.equal(R112.formerPersonRecordNeeded({ bookings: 0, leaveRecords: 0 }), false)
+  assert.equal(R112.formerPersonRecordNeeded({ bookings: 0, managerSiteBookings: 2 }), true)
+  assert.equal(R112.formerPersonRecordNeeded({ bookings: 0, payHistoryRows: null }), true)
+  assert.equal(R112.formerPersonRecordNeeded({}), false)
+
+  const former = R112.parseFormerPersonDocument('u1', { ...write.fields, deletedAt: { seconds: 1_700_000_000, nanoseconds: 0 } })!
+  assert.equal(former.deletedAtMs, 1_700_000_000_000)
+  assert.equal(R112.parseFormerPersonDocument('x', {})!.displayName, R112.FORMER_PERSON_ANONYMOUS_NAME)
+  // Ids without case; the id first.
+  assert.equal(R112.formerPersonForId('ph-1', [former])!.id, 'u1')
+
+  const row = R112.scheduleRowPerson('PH-1', { accounts: [], operatives: [], formerPeople: [former] })
+  assert.equal(row.unresolved, true)
+  assert.equal(row.label, 'Former: Jane Smith')
+  assert.equal(row.key, 'former:u1')
+  assert.deepEqual(row.former, { id: 'u1', displayName: 'Jane Smith' })
+  // A live person always wins over a former record.
+  const live = R112.scheduleRowPerson('u1', { accounts: [{ id: 'u1' }], operatives: [], formerPeople: [former] })
+  assert.equal(live.unresolved, false)
+  assert.equal(live.former, null)
+  // Without a record: unchanged "Unknown person".
+  assert.equal(R112.scheduleRowPerson('6a9632ba-x', { accounts: [], operatives: [] }).label, 'Unknown person · 6A9632BA')
+
+  const groups = R112.unresolvedBookingPeople({
+    accounts: [],
+    operatives: [],
+    formerPeople: [former],
+    bookings: [
+      { id: 'b1', personId: 'u1', dayKey: '2026-11-02', collection: 'bookings' },
+      { id: 'b2', personId: 'ph-1', dayKey: '2026-11-03', collection: 'bookings' },
+      { id: 'b3', personId: 'zz-unknown', dayKey: '2026-11-03', collection: 'bookings' },
+    ],
+  })
+  const formerGroups = groups.filter((g) => g.former)
+  assert.equal(formerGroups.length, 2)
+  assert.equal(formerGroups[0].label, 'Former person · Jane Smith')
+  assert.equal(groups.find((g) => !g.former)!.label, 'Unknown person · ZZ-UNKNO')
+})
+
+test('1.59.0 resolveBookingPerson reads managers rows (manager site bookings filed under a managers row id)', () => {
+  const input = { accounts: [{ id: 'acc-1', email: 'm@x.test' }], operatives: [], managers: [{ id: 'MGR-ROW', email: 'M@x.test' }] }
+  const person = R112.resolveBookingPerson('mgr-row', input)
+  assert.equal(person.accountId, 'acc-1')
+  assert.equal(person.managerId, 'MGR-ROW')
+  assert.equal(R112.bookingPersonKey('mgr-row', input), 'account:acc-1')
+  // A managers row with no account: its own key, never "Unknown person".
+  const rowOnly = { accounts: [], operatives: [], managers: [{ id: 'MGR-2', email: 'nobody@x.test' }] }
+  assert.equal(R112.scheduleRowPerson('mgr-2', rowOnly).unresolved, false)
+  assert.equal(R112.scheduleRowPerson('mgr-2', rowOnly).key, 'manager:mgr-2')
+  assert.ok(R112.bookingIdsForPerson('acc-1', input).includes('MGR-ROW'))
+  // Without `managers`, as before 1.59.0.
+  assert.equal(R112.resolveBookingPerson('mgr-row', { accounts: [], operatives: [] }).accountId, null)
+})
+
+test('1.59.0 Add User offers to link a former person on the same email; the link is an arrayUnion of their ids', () => {
+  const former = R112.parseFormerPersonDocument('old-1', { displayName: 'Jane Smith', email: 'jane@x.test', personIds: ['old-1', 'PH-OLD'] })!
+  const anon = R112.parseFormerPersonDocument('old-2', { displayName: 'Deleted user', email: '', personIds: ['old-2'] })!
+  assert.deepEqual(R112.formerPeopleForEmail({ email: 'JANE@x.test', formerPeople: [former, anon] }).map((p) => p.id), ['old-1'])
+  // Already linked to someone live: not offered.
+  assert.deepEqual(R112.formerPeopleForEmail({ email: 'jane@x.test', formerPeople: [former], roster: [{ id: 'n', formerUserIds: ['old-1', 'PH-OLD'] }] }), [])
+  assert.match(R112.formerPersonLinkOfferMessage([former]), /^Jane Smith used this email before they were deleted/)
+  const write = R112.formerPersonLinkWriteFields({ person: { id: 'new-1', formerUserIds: ['ph-old'] }, formerPeople: [former], actorUserId: 'admin', platform: 'web' })!
+  assert.deepEqual(write.arrayUnion.formerUserIds, ['old-1'])
+  assert.equal(write.set.updatedBy, 'admin')
+  assert.equal(R112.formerPersonLinkWriteFields({ person: { id: 'old-1' }, formerPeople: [anon].filter(() => false), actorUserId: 'a', platform: 'web' }), null)
+})
+
+test('1.59.0 invite accept: an existing account in this organisation keeps an unlinked placeholder', () => {
+  const invitation = { organizationId: 'org', role: 'operative' }
+  const placeholder = { email: 'p@x.test', passwordSet: false, organizationId: 'org' }
+  const unlinked = R112.inviteAcceptWrites({ existingProfile: { organizationId: 'org' }, placeholder, invitation, placeholderId: 'PH-1' })
+  assert.equal(unlinked.movePlaceholder, false)
+  assert.equal(unlinked.placeholderKeptUnlinked, true)
+  const retried = R112.inviteAcceptWrites({ existingProfile: { organizationId: 'org', formerUserIds: ['ph-1'] }, placeholder, invitation, placeholderId: 'PH-1' })
+  assert.equal(retried.movePlaceholder, true)
+  assert.equal(retried.placeholderKeptUnlinked, false)
+  const fresh = R112.inviteAcceptWrites({ existingProfile: null, placeholder, invitation, placeholderId: 'PH-1' })
+  assert.equal(fresh.movePlaceholder, true)
+})
+
+test('1.59.0 task person key: one key per person across records; ghost only when every account is a ghost', () => {
+  const roster = [
+    { id: 'u-ghost', email: '', ghost: true },
+    { id: 'u-live', email: 'sam@x.test' },
+  ]
+  const keys = R112.taskPersonKeys({
+    managers: [{ id: 'M1', email: 'Sam@x.test' }],
+    operatives: [{ id: 'u-ghost', email: '' }, { id: 'op-dup', email: '', linkedUserId: 'u-ghost' }, { id: 'op-sam', email: 'sam@x.test' }],
+    roster,
+  })
+  assert.equal(keys.keys['m1'], 'account:u-live')
+  assert.equal(keys.keys['op-sam'], 'account:u-live')
+  assert.equal(keys.keys['op-dup'], 'account:u-ghost')
+  assert.deepEqual(keys.ghostKeys, ['account:u-ghost'])
+  const index = R112.taskPersonIndex({ managers: [{ id: 'M1', email: 'sam@x.test' }], operatives: [{ id: 'op-sam', email: 'sam@x.test' }], roster })
+  assert.equal(index.keyOf('manager', 'm1'), index.keyOf('operative', 'OP-SAM'))
+  assert.equal(index.keyOf('operative', 'nobody'), 'id:nobody')
+  assert.equal(R112.isTaskPersonSelected(index, 'operative', 'op-sam', ['M1'], []), true)
+  const off = R112.toggleTaskPerson(index, 'operative', 'op-sam', ['M1'], ['op-sam'])
+  assert.equal(off.managers.size + off.operatives.size, 0)
+})
+
+test('1.59.0 safe-sender notice on the first email to a wholesaler address (one contact document per address)', () => {
+  assert.equal(R112.materialContactPath('org', ' Orders@Wholesale.test '), 'organizations/org/materialContacts/orders@wholesale.test')
+  assert.equal(R112.materialContactPath('org', 'a/b@x.test'), null)
+  assert.equal(R112.materialContactKey('__x__'), null)
+  assert.deepEqual(R112.materialContactCreateFields(), { fields: {}, serverTimestampFields: ['firstSentAt'] })
+  assert.equal(R112.materialRequestSafeSenderNotice('orders@wholesale.test', true), null)
+  assert.equal(R112.materialRequestSafeSenderNotice('new@wholesale.test', false), R112.MATERIAL_REQUEST_SAFE_SENDER_NOTICE)
+  // The contact could not be read: no box, the send goes ahead.
+  assert.equal(R112.materialRequestSafeSenderNotice('new@wholesale.test', null), null)
+  assert.equal(R112.materialRequestSafeSenderNotice('', false), null)
+  // The backfill reads the stored send records.
+  assert.deepEqual(
+    R112.materialSendRecordRecipientEmails([{ recipients: [{ email: 'Orders@Wholesale.test' }, { email: '' }] }, null, { recipients: null }]),
+    ['orders@wholesale.test']
+  )
+  assert.equal(R112.MATERIAL_REQUEST_SAFE_SENDER_NOTICE, 'Please add this email address to your safe senders list, or mark it as not spam, so you receive all quote and order requests from us.')
+})
+
+test('1.59.0 userDeleteWrites puts the former-person record in the batch that deletes users/{uid}', () => {
+  const base = {
+    orgId: 'org', actorUserId: 'admin', platform: 'web' as const, nowIso: '2026-11-17T10:00:00Z',
+    user: { id: 'u1', email: 'u1@x.test', role: { isAdmin: false, isSuperAdmin: false, isManager: false, isOperativeMode: true } as never },
+  }
+  const formerPerson = R112.formerPersonRecordFields({ person: { id: 'u1', firstName: 'Jane', email: 'u1@x.test' }, deletedBy: 'admin' })!
+  // Review of #370 (M1): a record per deleted roster row, each in a batch with that row's delete.
+  const rowRecord = R112.formerPersonRecordFields({ person: { id: 'op-1', firstName: 'Jane', email: 'u1@x.test' }, deletedBy: 'admin' })!
+  const withRows = R112.userDeleteWrites({
+    ...base,
+    formerPerson,
+    operativeRows: [{ id: 'op-1', email: 'u1@x.test' }, { id: 'op-2', email: 'u1@x.test' }],
+    formerRows: { 'operatives/op-1': rowRecord, 'operatives/u1': rowRecord },
+  })
+  const rowSteps = withRows.filter((step) => step.step === 'rosterRows')
+  assert.deepEqual(rowSteps.map((step) => step.writes.map((w) => w.path)), [
+    ['organizations/org/operatives/op-2'],
+    ['organizations/org/operatives/op-1', 'organizations/org/deletedPeople/op-1'],
+  ])
+  const admin = R112.userDeleteWrites({ ...base, formerPerson })
+  const record = admin[0].writes.find((w) => w.path === 'organizations/org/deletedPeople/u1')
+  assert.ok(record && record.op === 'set' && record.optional === true)
+  assert.deepEqual(record.op === 'set' && record.serverTimestampFields, ['deletedAt'])
+  const ops = R112.userDeleteWrites({ ...base, formerPerson, actorManagesOperatives: true })
+  const withUsers = ops.find((step) => step.writes.some((w) => w.path === 'users/u1'))!
+  assert.ok(withUsers.writes.some((w) => w.path === 'organizations/org/deletedPeople/u1'))
+  // Without a record: the plan is exactly as before 1.59.0.
+  assert.ok(!R112.userDeleteWrites(base).some((step) => step.writes.some((w) => w.path.includes('deletedPeople'))))
+})
+
+test('1.59.0 taskCompletionFields: completedAt / completedBy move with the status', () => {
+  const now = new Date('2026-11-17T10:00:00Z')
+  const then = new Date('2026-11-01T10:00:00Z')
+  assert.deepEqual(R112.taskCompletionFields({}, 'Completed', { completedBy: 'Ann', now }), { completedAt: now, completedBy: 'Ann' })
+  assert.deepEqual(R112.taskCompletionFields({ completedAt: then, completedBy: 'Bob' }, 'completed', { completedBy: 'Ann', now }), { completedAt: then, completedBy: 'Bob' })
+  assert.deepEqual(R112.taskCompletionFields({ completedAt: then, completedBy: 'Bob' }, 'To Do', { completedBy: 'Ann', now }), { completedAt: null, completedBy: null })
+  assert.deepEqual(R112.taskCompletionFields(null, 'In Progress', { completedBy: 'Ann', now }), { completedAt: null, completedBy: null })
+})
+
+test('1.59.0 review M2: a booking under a managers row with no account stays in Data health, flagged', () => {
+  const groups = R112.unresolvedBookingPeople({
+    accounts: [{ id: 'acc-1', email: 'linked@x.test' }],
+    operatives: [],
+    managers: [{ id: 'MGR-NOACC', email: 'nobody@x.test', name: 'Jo Bloggs' }, { id: 'MGR-LINKED', email: 'linked@x.test', name: 'Lin' }],
+    bookings: [
+      { id: 'b1', personId: 'mgr-noacc', dayKey: '2026-11-02', collection: 'managerSiteBookings' },
+      { id: 'b2', personId: 'mgr-linked', dayKey: '2026-11-02', collection: 'managerSiteBookings' },
+    ],
+  })
+  assert.equal(groups.length, 1)
+  assert.deepEqual(groups[0].unlinkedManagerRow, { id: 'MGR-NOACC', name: 'Jo Bloggs' })
+  assert.equal(groups[0].label, `Jo Bloggs · ${R112.MANAGER_ROW_NOT_LINKED_LABEL}`)
+  // The grid still names it (not "Unknown person").
+  assert.equal(R112.scheduleRowPerson('mgr-noacc', { accounts: [], operatives: [], managers: [{ id: 'MGR-NOACC' }] }).unresolved, false)
 })

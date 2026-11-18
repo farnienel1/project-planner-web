@@ -4,6 +4,7 @@
  * never writes anyone's timesheet (`syncWriteAllowed('weeklyReport')` is false). Who is in the feed is
  * `timesheetParticipant` (M6).
  */
+import { signedTimesheetChangeForReports } from '@/lib/canonical'
 import type { Booking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { MyScheduleOptions, OrgInvoicingSettings, OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
@@ -145,7 +146,7 @@ export async function loadWeeklyReportTimesheetFeed({
         // Fourth review of #337: the check line reads the snapshot's late rows only while still approved.
         sheet: draft ? timesheetSheetFields(draftWithCurrentLateRows(draft)) : null,
         status: draft ? timesheetStatusFieldsFromDraft(draft) : null,
-        change: checkChange ? { reopened: checkChange.reopened, changed: checkChange.changed, exported: checkChange.exported, waitingFor: checkChange.waitingFor } : null,
+        change: checkChange ? { reopened: checkChange.reopened, changed: checkChange.changed, exported: checkChange.exported, waitingFor: checkChange.waitingFor, snapshotGapOnly: checkChange.snapshotGapOnly, lateExtrasWaiting: checkChange.lateExtrasWaiting } : null,
         payrollLines: payroll.lineItems,
         entryFingerprints: draft ? draftEntryFingerprints(draft) : null,
         // Rulebook 1.55.0: the latest version — the check line reads "· REV N", "Revision due" or "REV N waiting for signature".
@@ -154,7 +155,8 @@ export async function loadWeeklyReportTimesheetFeed({
       if (!draft || !isTimesheetFullyApproved(draft, user, users)) continue
       // Rulebook 1.47.0 §8: a signed, unexported sheet whose bookings changed since it was signed is not approved until
       // it is signed (and counter-signed) again — the report shows its live bookings, never the stale snapshot.
-      const change = checkChange
+      // 1.57.0 (J1, `SNAPSHOT_GAP_REPORTS`): a change that is only a snapshot gap keeps the signed figures here.
+      const change = signedTimesheetChangeForReports(checkChange)
       // 1.54.0: late extras waiting for the line manager never take a signed sheet out of the feed (its signed money
       // stands; only approved late extras are in its snapshot).
       if (change?.reopened && change.bookingsChanged !== false) continue

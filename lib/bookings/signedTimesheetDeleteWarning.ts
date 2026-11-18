@@ -21,6 +21,7 @@ import {
   type SignedTimesheetCandidate,
 } from '@/lib/canonical'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
+import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 
 /**
  * Every users id the person a booking names goes by: the account `personId` resolves to (a users id, a former invite
@@ -123,4 +124,21 @@ export async function signedTimesheetWarningForBookings(input: {
     if (warning) return warning
   }
   return null
+}
+
+/** The (person, day) pairs a move is checked against: the old booking's, then the new one's when it differs. */
+export function signedTimesheetMoveTargets(
+  before: { personId: string | null | undefined; date: Date | string | number | null | undefined } | null,
+  after: { personId: string | null | undefined; date: Date | string | number | null | undefined },
+  timeZone: string
+): Array<{ personId: string | null | undefined; date: Date | string | number | null | undefined }> {
+  const dayOf = (value: Date | string | number | null | undefined) => {
+    if (value == null) return ''
+    const date = value instanceof Date ? value : new Date(value)
+    return Number.isNaN(date.getTime()) ? '' : dayKeyInZone(date, timeZone)
+  }
+  const same = (a: string | null | undefined, b: string | null | undefined) => String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase()
+  if (!before) return [after]
+  if (dayOf(before.date) === dayOf(after.date) && same(before.personId, after.personId)) return [before]
+  return [before, after]
 }

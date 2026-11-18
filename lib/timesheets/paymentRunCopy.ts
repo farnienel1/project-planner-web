@@ -110,14 +110,52 @@ export function periodStartKey(date: Date, timeZone: string = organizationZoneOr
   return dayKey(date, timeZone)
 }
 
+/** The stored `createdAt` of an organisation document (Timestamp, `{ seconds }`, Date, ms or ISO); null when missing. */
+export function organizationCreatedAt(data: Record<string, unknown> | null | undefined): Date | null {
+  const raw = data?.createdAt as unknown
+  if (raw == null) return null
+  if (raw instanceof Date) return raw
+  if (typeof (raw as { toDate?: unknown }).toDate === 'function') return (raw as { toDate: () => Date }).toDate()
+  if (typeof raw === 'object' && typeof (raw as { seconds?: unknown }).seconds === 'number') return new Date((raw as { seconds: number }).seconds * 1000)
+  if (typeof raw === 'number' || typeof raw === 'string') {
+    const parsed = new Date(raw)
+    return Number.isFinite(parsed.getTime()) ? parsed : null
+  }
+  return null
+}
+
+/**
+ * Owner item 6 (17 Nov follow-up): the first day a payment-run picker lists — the organisation's creation day
+ * (`organizations/{orgId}.createdAt`, organisation zone); without one, the earliest stored timesheet or booking day
+ * given; else null (no bound). A run with a stored sheet is always listed whatever this says (guardrail 3).
+ */
+export function payRunListStartDayKey(input: {
+  createdAt?: Date | null
+  storedDayKeys?: ReadonlyArray<string | null | undefined>
+  timeZone: string
+}): string | null {
+  const created = input.createdAt
+  // A missing or placeholder creation time (the epoch) is no bound.
+  if (created instanceof Date && Number.isFinite(created.getTime()) && created.getTime() > Date.UTC(2000, 0, 1)) {
+    return dayKey(created, input.timeZone)
+  }
+  const stored = (input.storedDayKeys ?? []).filter((key): key is string => typeof key === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(key))
+  return stored.length > 0 ? stored.reduce((earliest, key) => (key < earliest ? key : earliest)) : null
+}
+
 export function listSelectablePayPeriods(
   invoicing: OrgInvoicingSettings,
   referenceDate: Date = new Date(),
   count = 120,
   timeZone: string = organizationZoneOr(),
-  observedPeriods: Array<{ start: Date; end: Date }> = []
+  observedPeriods: Array<{ start: Date; end: Date }> = [],
+  /**
+   * Owner item 6: leave out generated runs that end before this day (`payRunListStartDayKey`); runs observed from stored
+   * sheets (`observedPeriods`) are always kept. Missing: no bound.
+   */
+  notBeforeDayKey: string | null = null
 ): Array<{ start: Date; end: Date }> {
-  return selectableTimesheetPaymentRunPeriods({
+  const periods = selectableTimesheetPaymentRunPeriods({
     current: {
       paymentRunMode: invoicing.paymentRunMode,
       ranges: invoicing.paymentRunDateRanges,
@@ -132,7 +170,18 @@ export function listSelectablePayPeriods(
     referenceDayKey: dayKey(referenceDate, timeZone),
     lookbackCount: count,
     timeZone,
-  }).map((period) => ({
+  })
+  // A generated run that also has a stored sheet is kept too (the dedupe marks it generated, not observed).
+  const observedKeys = new Set(observedPeriods.map((period) => `${dayKey(period.start, timeZone)}|${dayKey(period.end, timeZone)}`))
+  return periods
+    .filter(
+      (period) =>
+        !notBeforeDayKey ||
+        period.source === 'observed' ||
+        observedKeys.has(`${period.startDayKey}|${period.endDayKey}`) ||
+        period.endDayKey >= notBeforeDayKey
+    )
+    .map((period) => ({
     start: dateFromDayKey(period.startDayKey, timeZone),
     end: dateFromDayKey(period.endDayKey, timeZone),
   }))

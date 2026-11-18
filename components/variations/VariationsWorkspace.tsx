@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { VariationStatusButtons } from './VariationStatusButtons'
+import { variationUploadErrorText } from '@/lib/variations/variationUploadStall'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
@@ -76,6 +78,7 @@ import {
   variationLabourText,
   variationLineTotal,
   variationListTotals,
+  compareVariationTrackerOrder,
   variationMaterialLineFields,
   variationMaterialQuantity,
   variationPreviousNumbers,
@@ -211,7 +214,7 @@ export function VariationsWorkspace({
   }
   const sorted = useMemo(() => {
     const copy = [...live]
-    if (tracker?.enabled) copy.sort((a, b) => a.sequence - b.sequence || b.createdAt.getTime() - a.createdAt.getTime())
+    if (tracker?.enabled) copy.sort(compareVariationTrackerOrder) // the tracker order (rulebook 1.63.0)
     else copy.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
     return copy
   }, [live, tracker?.enabled])
@@ -690,12 +693,7 @@ function readableVariationError(error: unknown): string {
 }
 
 function readableUploadError(error: unknown): string {
-  const code = typeof error === 'object' && error && 'code' in error ? String((error as { code?: string }).code) : ''
-  const message = error instanceof Error ? error.message : String(error || 'Upload failed.')
-  if (code === 'storage/unauthorized' || code === 'storage/unauthenticated') return `Storage refused the file (${code}). Sign in again and add it once more.`
-  if (code === 'storage/canceled') return 'The upload was cancelled.'
-  if (code === 'storage/retry-limit-exceeded') return 'The connection kept dropping. Add the file again.'
-  return code ? `${message} (${code})` : message
+  return variationUploadErrorText(error)
 }
 
 type EditorDraft = {
@@ -927,14 +925,10 @@ function VariationDrawer({
           {money ? <span className="pill" data-hue="proj">{money(t.costTotal)}</span> : null}
         </div>
         {canStatus ? (
-          <label className="stack mt-3" style={{ gap: 4 }}>
+          <div className="stack mt-3" style={{ gap: 4 }}>
             <span className="eyebrow">Status</span>
-            <select className="input" value={row.status} onChange={(event) => void onStatus(event.target.value as VariationStatus)}>
-              <option value="open">Open</option>
-              <option value="submitted">Submitted</option>
-              <option value="closed">Closed</option>
-            </select>
-          </label>
+            <VariationStatusButtons label={`Status of ${row.voNumber}`} value={row.status} onChange={(status) => void onStatus(status)} />
+          </div>
         ) : null}
         <p className="mt-2 small">{VARIATION_STATUS_COPY[row.status]}</p>
         {section(

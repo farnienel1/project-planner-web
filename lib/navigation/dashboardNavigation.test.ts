@@ -194,7 +194,8 @@ test('menu matrix covers each level and each permission toggle', () => {
       'dashboard_add_user',
       'dashboard_manage_users',
     ],
-    operatives: ['dashboard_operatives', 'dashboard_add_user', 'dashboard_manage_users'],
+    // Owner 17 Nov: one Operatives page — an Operatives manager has no separate Manage users entry.
+    operatives: ['dashboard_operatives', 'dashboard_add_user'],
     subContractors: ['dashboard_sub_contractors'],
     // 1.32.0 (owner decision 5 Nov): the Weekly report is admin-only; a manager's toggle opens nothing.
     weeklyReports: [],

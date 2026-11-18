@@ -7,9 +7,19 @@
  * the rulebook's; this file only maps each row to its `users` account and catalogue row for the booking writes.
  */
 
-import type { Booking, HolidayBooking, Operative, User } from '@/types'
+import type { Booking, HolidayBooking, Operative, Project, User } from '@/types'
 import { UserRole } from '@/types'
-import { normalizeDocumentId, unbookedLabourRowsOnDay, type PayrollTimePolicyState, type WarningScope } from '@/lib/canonical'
+import {
+  isAnonymisedDeletedProfile,
+  isWarningRowInScope,
+  leaveCoverBookingWindow,
+  normalizeDocumentId,
+  unbookedLabourRowsOnDay,
+  type PayrollTimePolicyState,
+  type WarningScope,
+} from '@/lib/canonical'
+import { leaveCoverageWarningsForDays } from '@/lib/warnings/leaveCoverageWarnings'
+import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import { dateFromDayKey } from '@/lib/ios-parity/londonTime'
 import { displayTradeType } from '@/lib/staff/staffTradeTypes'
 import { rosterDisplayName } from '@/lib/staff/userRosterUtils'
@@ -32,6 +42,19 @@ export type BookLabourCandidate = {
   roleChips: string[]
   tradeDisplay?: string
   canBookOtherLocations: boolean
+  /**
+   * Set when this person is listed because of a "Half-day leave not covered" row (`leaveCoverageRows`, rulebook
+   * §5 / §9) — the same row the Warnings card links from. `hours` is the time to prefill as custom hours
+   * (`leaveCoverBookingWindow`: the first uncovered stretch). Absent for an `unbookedLabourRowsOnDay` person (nothing booked).
+   */
+  leaveCover?: {
+    leaveLabel: 'AM' | 'PM' | 'Full day'
+    /** 'AM' or 'PM': the half that should be booked. */
+    workingLabel: 'AM' | 'PM'
+    missingHours: number
+    hours: { start: string; end: string } | null
+    message: string
+  }
 }
 
 function emailKey(value: string | undefined): string {
@@ -125,6 +148,8 @@ export function buildBookLabourCandidates(input: {
   userIdAliases?: Readonly<Record<string, string>> | null
   /** The viewer's warning scope (`orgWarningScope` / `warningScopeFor`), the same one Warnings passes. Missing → everyone. */
   scope?: WarningScope | null
+  /** Jobs, for the booking labels inside leave rows (display only). */
+  projects?: Project[]
   /** User ids (or linked operative ids) named on a warning; listed first. */
   focusedUserIds?: string[]
 }): BookLabourCandidate[] {
@@ -162,28 +187,71 @@ export function buildBookLabourCandidates(input: {
 
   const listed: { candidate: BookLabourCandidate; focused: boolean }[] = []
   const seen = new Set<string>()
-  for (const row of rows) {
-    const rowIds = [row.userId ?? '', row.personKey]
+  const add = (
+    rowIds: string[],
+    operativeId: string,
+    leaveCover?: BookLabourCandidate['leaveCover']
+  ) => {
     // A roster row with no `users` account cannot be booked from here (iOS skips it too).
     const user = bookLabourUserForRow(input.users, rowIds, input.userIdAliases)
-    if (!user || seen.has(user.id)) continue
+    if (!user || seen.has(user.id)) return
     const displayName = rosterDisplayName(user)
-    if (!displayName) continue
+    if (!displayName) return
     seen.add(user.id)
-    const linked = linkedOperativeFor(row.operativeId, input.operatives)
+    const linked = linkedOperativeFor(operativeId, input.operatives)
     listed.push({
       candidate: {
         id: user.id,
         user,
         linkedOperative: linked,
-        bookingOperativeId: linked?.id ?? (row.operativeId || user.id),
+        bookingOperativeId: linked?.id ?? (operativeId || user.id),
         usesOperativeProjectBookings: isOperativeOnly(user),
         displayName,
         roleChips: roleChipsFor(user),
         tradeDisplay: tradeFor(user, linked),
         canBookOtherLocations: canBookOtherLocations(user),
+        ...(leaveCover ? { leaveCover } : {}),
       },
-      focused: isFocused(user, linked, [...rowIds, row.operativeId]),
+      focused: isFocused(user, linked, [...rowIds, operativeId]),
+    })
+  }
+  for (const row of rows) add([row.userId ?? '', row.personKey], row.operativeId)
+
+  // Owner report (17 Nov 2026): the Warnings "Half-day leave not covered" card links here with "Book the PM / AM".
+  // `unbookedLabourRowsOnDay` leaves half-leave days out (they are `leaveCoverageRows`), so Book labour also lists
+  // that day's leave_cover rows, scoped exactly as Warnings scopes them (`isWarningRowInScope`).
+  const leaveRows = leaveCoverageWarningsForDays({
+    bookings: input.bookings,
+    managerSiteBookings: input.managerSiteBookings,
+    operatives: input.operatives,
+    users: input.users,
+    projects: input.projects ?? [],
+    holidays: input.holidays,
+    includeWeekends: input.warningDetection.includeWeekendsForUnbookedLabour,
+    excludedUserIds: input.warningDetection.excludedUserIdsFromUnbookedWarnings,
+    payrollPolicy: input.payrollPolicy,
+    payrollPolicyState: input.payrollPolicyState,
+    startDayKey: input.dayKey,
+    endDayKey: input.dayKey,
+    timeZone: input.timeZone,
+    userIdAliases: input.userIdAliases,
+  }).filter(
+    (row) =>
+      row.kind === 'leave_cover' &&
+      !isAnonymisedDeletedProfile({ name: row.personName }) &&
+      (!input.scope || isWarningRowInScope(input.scope, { jobIds: [], personIds: [row.userId, row.operativeId, row.personKey] }))
+  )
+  for (const row of leaveRows) {
+    add([row.userId ?? '', row.personKey], row.operativeId ?? '', {
+      leaveLabel: row.leaveLabel,
+      workingLabel: row.leaveSlot === 'PM' ? 'AM' : 'PM',
+      missingHours: row.missingHours,
+      // Rulebook 1.60.0 `leaveCoverBookingWindow`: the first uncovered stretch, never across an existing booking.
+      hours: (() => {
+        const window = leaveCoverBookingWindow(row, input.payrollPolicyState ?? input.payrollPolicy ?? DEFAULT_PAYROLL_POLICY)
+        return window ? { start: window.start, end: window.end } : null
+      })(),
+      message: row.message,
     })
   }
 
