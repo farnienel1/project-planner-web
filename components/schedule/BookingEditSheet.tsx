@@ -11,7 +11,6 @@ import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/setting
 import {
   bookingDayKey,
   confirmCustomHoursBreak,
-  policyForBookingDate,
   customHoursPrefillForDate,
   slotOfferedOnDate,
   hoursBreakdownForDates,

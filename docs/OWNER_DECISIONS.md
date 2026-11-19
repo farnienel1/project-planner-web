@@ -994,7 +994,7 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 | 17 Nov | **Item 5:** the repair is automatic — when a line manager or admin has the Timesheets hub or User Timesheets open, every frozen-empty snapshot of the loaded pay runs they may write is rebuilt in the background through the existing path (signatures kept, never exported), once per sheet per session, after bookings and pay settings load. The period page also loads a sheet filed under another id the person goes by. | done web |
 | 17 Nov | **Item 6:** past pay-run lists start at the organisation's creation day (`organizations/{orgId}.createdAt`; else the earliest stored sheet), and any run with a stored sheet is still listed. Web only, no rulebook change. | done web |
 
-## 17 Nov decisions (for 1.62, the simple hours breakdown)
+## 17 Nov decisions (for 1.69, the simple hours breakdown)
 
 | Date | Decision | Status |
 |---|---|---|

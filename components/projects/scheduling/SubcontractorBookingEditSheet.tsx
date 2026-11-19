@@ -8,7 +8,7 @@ import { HoursBreakdownCard } from '@/components/schedule/HoursBreakdownCard'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
 import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import type { Subcontractor } from '@/types'
-import { bookingDayKey, customHoursPrefillForDate, hoursBreakdownForDates } from '@/lib/scheduling/bookingSlotRules'
+import { customHoursPrefillForDate, hoursBreakdownForDates } from '@/lib/scheduling/bookingSlotRules'
 import { feedback } from '@/lib/feedbackSounds/feedback'
 
 export type DiarySubBooking = {

@@ -11,7 +11,6 @@ import {
   bookingDayKey,
   confirmCustomHoursBreak,
   customHoursPrefillForDate,
-  policyForBookingDate,
   hoursBreakdownForDates,
 } from '@/lib/scheduling/bookingSlotRules'
 import { CustomOtherLocationField } from '@/components/scheduling/CustomOtherLocationField'
