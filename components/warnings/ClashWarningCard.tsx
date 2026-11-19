@@ -21,6 +21,7 @@ import {
   treatsAsAllDay,
   type ClashTimelineEntry,
 } from '@/lib/warnings/clashTimeline'
+import { WarningCardActions, WarningDismissButton } from '@/components/warnings/WarningCardActions'
 
 function dateLabel(date: Date, timeZone: string): string {
   return new Intl.DateTimeFormat('en-GB', {
@@ -155,6 +156,7 @@ export function ClashWarningCard({
   onApprove,
   onRemove,
   canRemove,
+  onDismiss,
 }: {
   title: string
   personName: string
@@ -166,6 +168,8 @@ export function ClashWarningCard({
   onRemove?: (entry: ClashTimelineEntry) => Promise<void>
   /** Rulebook §2 (1.33.0): the ⌫ shows only when `bookingRemoveAction` is `delete` for that row's booking. */
   canRemove?: (entry: ClashTimelineEntry) => boolean
+  /** Owner request 17 Nov: opens the Dismiss sheet (admins and managers). Missing → no Dismiss. */
+  onDismiss?: () => void
 }) {
   const [timelineOpen, setTimelineOpen] = useState(false)
   const analysis = useMemo(() => analyse(entries, FULL_DAY_WINDOW), [entries])
@@ -181,8 +185,13 @@ export function ClashWarningCard({
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
           </svg>
         </div>
-        <p className="h2 grow" style={{ fontSize: 17 }}>{title}</p>
-        <span className="pill solid" data-hue={hue}>{severity === 'medium' ? 'MEDIUM' : 'HIGH'}</span>
+        <p className="h2 grow" style={{ fontSize: 17, minWidth: 0 }}>{title}</p>
+        <span className="wd-head-end">
+          <span className="pill solid" data-hue={hue}>{severity === 'medium' ? 'MEDIUM' : 'HIGH'}</span>
+          {onDismiss ? (
+            <WarningDismissButton onClick={onDismiss} label={`${title}, ${personName}, ${label}`} />
+          ) : null}
+        </span>
       </header>
 
       <div className="card-b stack" style={{ gap: 12 }}>
@@ -275,14 +284,6 @@ export function ClashWarningCard({
               </div>
             )
           })}
-          <div className="h-px bg-black/10" />
-          <button
-            type="button"
-            onClick={() => setTimelineOpen((value) => !value)}
-            className="btn ghost block"
-          >
-            {timelineOpen ? 'Hide full timeline' : 'Show full timeline'}
-          </button>
         </div>
 
         {timelineOpen ? (
@@ -316,26 +317,35 @@ export function ClashWarningCard({
           </div>
         ) : null}
 
-        {onApprove ? (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void onApprove()}
-            className="btn hue block"
-            data-hue="green"
-          >
-            Approve for weekly report
-          </button>
-        ) : null}
-      </div>
-
-      <div className="card-b" style={{ paddingTop: 0 }}>
-        <Link
-          href={`/dashboard/daily-overview?date=${dayKey(date)}`}
-          className="btn block"
-        >
-          Open daily overview
-        </Link>
+        <WarningCardActions
+          primary={
+            onApprove ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void onApprove()}
+                className="btn hue block"
+                data-hue="green"
+              >
+                Approve for weekly report
+              </button>
+            ) : null
+          }
+          secondary={[
+            <button
+              key="timeline"
+              type="button"
+              onClick={() => setTimelineOpen((value) => !value)}
+              className="btn sm"
+              aria-expanded={timelineOpen}
+            >
+              {timelineOpen ? 'Hide full timeline' : 'Show full timeline'}
+            </button>,
+            <Link key="day" href={`/dashboard/daily-overview?date=${dayKey(date)}`} className="btn sm">
+              Open daily overview
+            </Link>,
+          ]}
+        />
       </div>
     </article>
   )

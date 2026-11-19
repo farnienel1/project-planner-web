@@ -49,7 +49,7 @@ import {
 import { activeOrgWarnings, generateOrgWarnings, type WarningDecisionInputs } from '@/lib/warnings/generateOrgWarnings'
 import { withResolvedKey } from '@/lib/warnings/warningDismiss'
 import {
-  dismissWarningResolution,
+  dismissWarningResolutions,
   loadResolvedWarningKeys,
   watchResolvedWarningKeys,
 } from '@/lib/warnings/warningResolutionStorage'
@@ -583,21 +583,24 @@ export default function WarningsPage() {
 
   // Owner bug 17 Nov: a permanent dismissal is `warningResolutions/{resolutionKey}` with status `dismissed`
   // (`warningResolutionWriteFields`, what iOS writes), read back through `resolvedWarningKeys` / `isWarningActive`,
-  // so the count, the Home badge and iOS all drop it. The key is added here at once; the live listener confirms it.
+  // so the count, the Home badge and iOS all drop it. Owner request 17 Nov: every type iOS can dismiss — the keys of one
+  // card (a grouped unbooked day, an operative clash cluster's pairs) go in one batch. Added here at once; the live
+  // listener confirms them.
   const handleDismissWarning = useCallback(
-    async (resolutionKey: string) => {
+    async (resolutionKeys: string[]) => {
       if (!organization?.id || !user?.id) throw new Error('Sign in again to dismiss this warning.')
-      let written: string
+      let written: string[]
       try {
-        written = await dismissWarningResolution(organization.id, resolutionKey, user.id)
+        written = await dismissWarningResolutions(organization.id, resolutionKeys, user.id, latestResolvedKeys.current)
       } catch (error) {
         feedback('actionRefused')
         throw error
       }
-      setResolvedKeys((prev) => withResolvedKey(prev, written))
+      const withAll = (keys: readonly string[]) => written.reduce<string[]>((acc, key) => withResolvedKey(acc, key), [...keys])
+      setResolvedKeys((prev) => withAll(prev))
       feedback(
         resolvedFeedbackEvent(visible, {
-          resolvedKeys: withResolvedKey(latestResolvedKeys.current, written),
+          resolvedKeys: withAll(latestResolvedKeys.current),
           acceptedClashes: latestAcceptedClashes.current,
           dismissedQualificationKeys: dismissedKeys,
         })
