@@ -181,7 +181,8 @@ test('1.60.1 call path: the counter-sign writes one signed row and one peer row 
 test('1.60.1 call sites: TimesheetPeriodPage passes the signature instants to both notices', () => {
   const page = readFileSync(new URL('../../components/timesheets/TimesheetPeriodPage.tsx', import.meta.url), 'utf8')
   const call = (name: string) => {
-    const start = page.indexOf(`await ${name}({`)
+    // Called through afterPrimaryWrite (the notice never holds the save), so no `await` in front.
+    const start = page.indexOf(`${name}({`)
     assert.ok(start > 0, name)
     return page.slice(start, page.indexOf('})', start))
   }

@@ -574,6 +574,8 @@ export function peopleManagementHref(user: PermissionUser): string | null {
  * The Add button on a people page: Manage users (`all`, admins) or the Operatives page (`operatives`: anyone who may
  * invite an operative — admins and Operatives managers, "Add operative" for the latter, `getAddUserLabel`).
  */
-export function manageUsersAddButtonShown(scope: 'all' | 'operatives', user: PermissionUser): boolean {
+export function manageUsersAddButtonShown(scope: 'all' | 'operatives' | 'managers', user: PermissionUser): boolean {
+  // The Managers page keeps no Add button (it had none before the 17 Nov restyle); admins add people from Manage users.
+  if (scope === 'managers') return false
   return scope === 'operatives' ? canInviteOperatives(user) : canManageUsers(user)
 }

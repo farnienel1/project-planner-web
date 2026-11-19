@@ -11,6 +11,19 @@
   --pu-band-grid: rgba(255, 255, 255, 0.045);
   --pu-band-muted: #9AA7C0; /* 7.0:1 on #0A1530 */
   --pu-band-soft: #C7D0E1;
+  /* Projects & Small works workspace band (docs/design/projects-overview-ui/). The band is navy in both modes,
+     so these values are the same in dark mode. */
+  --pu-band-fill: rgba(255, 255, 255, 0.06);
+  --pu-band-chip: rgba(255, 255, 255, 0.12);
+  --pu-band-chip-ink: #E2E8F3;
+  --pu-band-ghost: rgba(255, 255, 255, 0.1);
+  --pu-band-ghost-line: rgba(255, 255, 255, 0.22);
+  --pu-band-track: rgba(255, 255, 255, 0.14);
+  --pu-band-active-bg: rgba(52, 195, 143, 0.2);
+  --pu-band-active-ink: #9BE7C8; /* 9.6:1 on the band */
+  --pu-band-active-dot: #34C38F;
+  --pu-kind-proj: #34C38F;
+  --pu-kind-sw: #F5A524;
   --pu-bg: var(--dash-page);
   --pu-card: var(--dash-card);
   --pu-line: var(--dash-line);

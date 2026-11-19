@@ -4,8 +4,7 @@ import { create } from 'zustand'
 import { addPayProfileWrite } from '@/lib/pay/payProfileService'
 import { payEditorRecord, startPayEditorProfileRead } from '@/lib/pay/payProfileOverlay'
 import { collection, deleteField, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc, updateDoc, Timestamp, where, writeBatch } from 'firebase/firestore'
-import { sendPasswordResetEmail } from 'firebase/auth'
-import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
+import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
 import type { Operative, User } from '@/types'
 import { auth, db } from '@/lib/firebase/config'
 import { formerPersonNeededFor, isPermissionDenied } from '@/lib/people/formerPeople'
@@ -69,15 +68,41 @@ interface UserStoreState {
       payHistoryRows?: ReadonlyArray<{ id: string; fields: Record<string, unknown> }>
     }
   ) => Promise<void>
+  /**
+   * `saveUser` in two steps (review of #371): every read runs in `prepareSaveUser`; the returned `commit` hands the
+   * one batch to Firestore (queued at once, resolves when the server confirms). A caller can bound the reads and start
+   * its confirmation timer only once the batch is queued.
+   */
+  prepareSaveUser: (
+    user: User,
+    organizationId?: string,
+    previousEmail?: string,
+    options?: {
+      baseline?: User | null
+      payHistoryRows?: ReadonlyArray<{ id: string; fields: Record<string, unknown> }>
+    }
+  ) => Promise<{ commit: () => Promise<void> }>
   transferSuperAdmin: (organizationId: string, fromUserId: string, toUserId: string, roster: User[]) => Promise<void>
   /** Rulebook 1.31.0 `userActiveWrites`: `roster` is every users document of the organisation (same-email copies). */
-  setUserActive: (userId: string, isActive: boolean, organizationId?: string, roster?: ReadonlyArray<User>) => Promise<void>
+  setUserActive: (
+    userId: string,
+    isActive: boolean,
+    organizationId?: string,
+    roster?: ReadonlyArray<User>,
+    /** `onQueued` is called just before the first write is handed to Firestore (`whenQueued`, review of #371). */
+    opts?: { onQueued?: () => void }
+  ) => Promise<void>
   /**
    * Resolves with `formerRecordSkipped` true when a former-person record (rulebook 1.59.0) was refused and the delete
    * went ahead without it — the screen tells the person (review of #370, L1).
    */
-  deleteUser: (userId: string, opts?: { organizationId?: string; email?: string; roster?: ReadonlyArray<User> }) => Promise<{ formerRecordSkipped: boolean }>
-  sendPasswordReset: (email: string) => Promise<void>
+  deleteUser: (
+    userId: string,
+    /** `onQueued` is called just before the first batch is handed to Firestore (`whenQueued`, review of #371). */
+    opts?: { organizationId?: string; email?: string; roster?: ReadonlyArray<User>; onQueued?: () => void }
+  ) => Promise<{ formerRecordSkipped: boolean }>
+  /** Manage Users / Edit User: an admin's reset for this person (`POST /api/users/send-password-reset`). */
+  sendPasswordReset: (user: Pick<User, 'id'>, organizationId?: string) => Promise<void>
   applyAccountType: (user: User, accountType: 'operative' | 'manager' | 'admin') => User
   /**
    * Rulebook 1.11.0 `accountTypeChangeWrites`: write the new user type to every document that decides it in this
@@ -90,6 +115,14 @@ interface UserStoreState {
     roster: ReadonlyArray<User>,
     permissions?: object | null
   ) => Promise<string | null>
+  /** `changeAccountType` in two steps (reads, then `commit` queues the one batch); `note` is its message. */
+  prepareChangeAccountType: (
+    user: User,
+    accountType: 'operative' | 'manager' | 'admin',
+    organizationId: string,
+    roster: ReadonlyArray<User>,
+    permissions?: object | null
+  ) => Promise<{ commit: () => Promise<void>; note: string | null }>
   syncLinkedOperative: (organizationId: string, user: User, operatives: Operative[]) => Promise<void>
   /** Rulebook 1.34.0 §11 `ghostCreateWrites`: add a ghost operative (bookable, no app login). Returns its users id. */
   createGhost: (input: { organizationId: string; actor: User; draft: GhostDraft; roster: ReadonlyArray<User> }) => Promise<string>
@@ -223,6 +256,159 @@ const roleFields = {
   'permissions.adminAccess': true,
 } as const
 
+const prepareSaveUserImpl: UserStoreState['prepareSaveUser'] = async (user, organizationId, previousEmail, options) => {
+  const names = identityFields(user)
+  const full = buildSaveUserPayload(user)
+  delete full.organizationId
+  Object.assign(full, names)
+  // Always a partial update (rulebook §1, §11, `userProfileWriteFields`): against the copy the editor
+  // loaded, else the stored document read now. Never a whole-document rewrite from a possibly stale copy.
+  let baseline = options?.baseline && options.baseline.id === user.id ? options.baseline : null
+  if (!baseline) {
+    const stored = await getDoc(doc(db, 'users', user.id))
+    if (stored.exists()) {
+      // Rulebook 1.26.1 §8 (`payEditorStartingValues`): the pay half of the baseline is the pay profile while
+      // `privatePay` is on (where the pay is saved), the users document while it is off.
+      const data = await payEditorRecord(
+        organizationId?.trim() || user.organizationId,
+        stored.id,
+        stored.data() as Record<string, unknown>
+      )
+      baseline = parseOrgUser(stored.id, {
+        ...data,
+        organizationId: (typeof data.organizationId === 'string' && data.organizationId.trim()) || user.organizationId,
+        email: (typeof data.email === 'string' && data.email.trim()) || user.email,
+      })
+    }
+  }
+  let payload = full
+  if (baseline) {
+    const before = buildSaveUserPayload(baseline)
+    delete before.organizationId
+    Object.assign(before, identityFields(baseline))
+    payload = changedUserPayload(full, before)
+  }
+  payload.updatedAt = serverTimestamp()
+  // updatedBy / updatedFrom only where firestore.rules lets them change: the person themselves
+  // or an admin. A manager editing an operative is limited to a fixed changedKeys() list
+  // (canManagerUpdateOperativeProfile) that does not include them yet.
+  const saverId = auth?.currentUser?.uid || ''
+  const saver = useAuthStore.getState().user
+  const saverIsAdmin = Boolean(saver && (saver.isSuperAdmin || saver.permissions.adminAccess))
+  const metadata = writeMetadataFields(saverId, 'web')
+  if (metadata && (saverId === user.id || saverIsAdmin)) Object.assign(payload, metadata)
+  const orgId = organizationId?.trim() || user.organizationId
+  const historyRows = options?.payHistoryRows ?? []
+  // Rulebook 1.13.0 (Q1): someone who may change this person's pay also writes the changed pay fields to their
+  // private pay profile (organizations/{orgId}/payProfiles/{uid}), in the same batch.
+  const payWriter = canChangePersonPay(
+    {
+      userId: saverId,
+      isAdmin: saverIsAdmin || Boolean(saver?.role === 'admin' && !saver?.permissions.operativeMode),
+      isManager: Boolean(saver && (saver.permissions.manager || saver.role === 'manager')),
+      hasOperativesAccess: Boolean(saver?.permissions.operatives),
+      isOperativeMode: Boolean(saver?.permissions.operativeMode),
+    },
+    { userId: user.id, isOperative: Boolean(user.permissions.operativeMode || user.role === 'operative') }
+  )
+  // Rulebook 1.31.0 §11 (audit finding 8): ONE batch — the profile, its pay history and pay profile, the email
+  // claim, the same-email copies' names, the linked operatives / managers rows' names and the operativeProfiles
+  // mirror land together or not at all. Before 1.31.0 only the first three were batched and the rest followed one by
+  // one, so a refusal half way left the documents disagreeing. Everything is read first.
+  const email = user.email.toLowerCase().trim()
+  const [sameEmail, linkedRows] = orgId
+    ? await Promise.all([sameEmailUserRefs(user, orgId, previousEmail, saverIsAdmin), linkedStaffRefs(orgId, user, previousEmail)])
+    : [[], []]
+  const batch = writeBatch(db)
+  // Rulebook 1.26.0 (`sharedDocumentPayWrite`): with `privatePay` on for this organisation, the users document takes
+  // no pay value (the rules refuse it); pay goes to the pay profile and the rate history in the same batch.
+  await securitySwitchesReady()
+  batch.update(doc(db, 'users', user.id), sharedDocumentPayWrite(payload, { privatePay: orgId ? privatePayFor(orgId) : false }))
+  if (orgId) {
+    for (const row of historyRows) batch.set(doc(db, 'organizations', orgId, 'operativeDayRateHistory', row.id), row.fields)
+    if (payWriter) addPayProfileWrite(batch, orgId, user.id, payload, saverId)
+    if (email) batch.set(doc(db, 'organizations', orgId, 'userEmails', email), { userId: user.id })
+    for (const ref of sameEmail) batch.update(ref, identityFields(user))
+    for (const ref of linkedRows) batch.update(ref, identityFields(user))
+    // The operativeProfiles mirror holds pay, so only someone who may change this person's pay writes it
+    // (`canChangePersonPay`; firestore.rules `canChangePayOf`). A person's own save never touches it.
+    if (
+      payWriter &&
+      (user.permissions.operativeMode || user.permissions.manager || user.permissions.adminAccess || user.isSuperAdmin)
+    ) {
+      const profile: Record<string, unknown> = { userId: user.id }
+      applyExclusiveRateFields(profile, user)
+      // Rulebook 1.8.0: a partial update of the mirror (`operativeProfileWriteFields`); unchanged pay writes nothing.
+      await addPartialDocumentToBatch(
+        batch,
+        doc(db, 'organizations', orgId, 'operativeProfiles', user.id),
+        profile,
+        operativeProfileWriteFields,
+        { userId: saverId }
+      )
+    }
+  }
+  return { commit: () => batch.commit() }
+}
+
+const prepareChangeAccountTypeImpl: UserStoreState['prepareChangeAccountType'] = async (user, accountType, organizationId, roster, permissions) => {
+  const stored = await getDoc(doc(db, 'users', user.id))
+  const person = { ...(stored.exists() ? (stored.data() as Record<string, unknown>) : {}), id: user.id, email: user.email }
+  // Rulebook 1.30.3: the roster screens hold one document per email (the fold), so a same-email duplicate was never
+  // in `roster` and kept the old level — after admin → manager → admin the two documents disagreed and the fold could
+  // show the stale one. Read this organisation's documents on the email so `accountTypeChangeWrites` updates them all.
+  const rows = new Map(roster.map((row) => [row.id, { id: row.id, email: row.email, organizationId: row.organizationId }]))
+  const email = user.email.trim().toLowerCase()
+  if (email.includes('@')) {
+    try {
+      const snapshot = await getDocs(
+        query(collection(db, 'users'), where('organizationId', '==', organizationId), where('email', '==', email), limit(10))
+      )
+      for (const entry of snapshot.docs) {
+        if (!rows.has(entry.id)) rows.set(entry.id, { id: entry.id, email, organizationId })
+      }
+    } catch (error) {
+      console.warn('[userStore] same-email users read skipped', error)
+    }
+  }
+  // Rulebook 1.31.0 (audit finding 3): same-email documents already listed in `members` get the new role too.
+  const orgData = useOrganizationDocumentStore.getState().data
+  const members =
+    orgData && typeof orgData.members === 'object' && orgData.members ? (orgData.members as Record<string, unknown>) : null
+  const buildPlan = (rosterRows: Array<{ id: string; email: string; organizationId?: string }>) =>
+    accountTypeChangeWrites({
+      person,
+      kind: accountType,
+      organizationId,
+      roster: rosterRows,
+      permissions: (permissions as Record<string, unknown> | null | undefined) ?? null,
+      members,
+    })
+  const plan = buildPlan([...rows.values()])
+  if (!plan.ok) throw new Error(plan.message)
+  // Rulebook 1.12.2: one atomic batch — users documents, `members.{uid}` and the membership land together or not at
+  // all. Before 1.12.2 the membership was written after the batch and a refusal there was swallowed, so a change
+  // could stop half way (the rules read `members.{uid}` and the membership, the screens read the users document).
+  // The membership is a merge-set of its role and nested `permissions` (admins may not read another person's
+  // membership on older rules, so it cannot be read first); a missing one is created, status and dates are kept.
+  const batch = writeBatch(db)
+  const metadata = writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}
+  for (const write of plan.writes) {
+    const ref = doc(db, ...(write.path.split('/') as [string, ...string[]]))
+    if (write.kind === 'membership') {
+      const permissions: Record<string, boolean> = {}
+      for (const key of ORG_MEMBERSHIP_PERMISSION_KEYS) {
+        const value = (write.permissions as Record<string, unknown>)[key]
+        if (typeof value === 'boolean') permissions[key] = value
+      }
+      batch.set(ref, { organizationId, role: write.role, permissions, updatedAt: serverTimestamp() }, { merge: true })
+      continue
+    }
+    batch.update(ref, write.kind === 'userProfile' ? { ...write.fields, ...metadata, updatedAt: serverTimestamp() } : write.fields)
+  }
+  return { commit: () => batch.commit(), note: plan.note }
+}
+
 export const useUserStore = create<UserStoreState>(() => ({
   saving: false,
   error: null,
@@ -249,100 +435,11 @@ export const useUserStore = create<UserStoreState>(() => ({
   },
 
   saveUser: async (user, organizationId, previousEmail, options) => {
-    const names = identityFields(user)
-    const full = buildSaveUserPayload(user)
-    delete full.organizationId
-    Object.assign(full, names)
-    // Always a partial update (rulebook §1, §11, `userProfileWriteFields`): against the copy the editor
-    // loaded, else the stored document read now. Never a whole-document rewrite from a possibly stale copy.
-    let baseline = options?.baseline && options.baseline.id === user.id ? options.baseline : null
-    if (!baseline) {
-      const stored = await getDoc(doc(db, 'users', user.id))
-      if (stored.exists()) {
-        // Rulebook 1.26.1 §8 (`payEditorStartingValues`): the pay half of the baseline is the pay profile while
-        // `privatePay` is on (where the pay is saved), the users document while it is off.
-        const data = await payEditorRecord(
-          organizationId?.trim() || user.organizationId,
-          stored.id,
-          stored.data() as Record<string, unknown>
-        )
-        baseline = parseOrgUser(stored.id, {
-          ...data,
-          organizationId: (typeof data.organizationId === 'string' && data.organizationId.trim()) || user.organizationId,
-          email: (typeof data.email === 'string' && data.email.trim()) || user.email,
-        })
-      }
-    }
-    let payload = full
-    if (baseline) {
-      const before = buildSaveUserPayload(baseline)
-      delete before.organizationId
-      Object.assign(before, identityFields(baseline))
-      payload = changedUserPayload(full, before)
-    }
-    payload.updatedAt = serverTimestamp()
-    // updatedBy / updatedFrom only where firestore.rules lets them change: the person themselves
-    // or an admin. A manager editing an operative is limited to a fixed changedKeys() list
-    // (canManagerUpdateOperativeProfile) that does not include them yet.
-    const saverId = auth?.currentUser?.uid || ''
-    const saver = useAuthStore.getState().user
-    const saverIsAdmin = Boolean(saver && (saver.isSuperAdmin || saver.permissions.adminAccess))
-    const metadata = writeMetadataFields(saverId, 'web')
-    if (metadata && (saverId === user.id || saverIsAdmin)) Object.assign(payload, metadata)
-    const orgId = organizationId?.trim() || user.organizationId
-    const historyRows = options?.payHistoryRows ?? []
-    // Rulebook 1.13.0 (Q1): someone who may change this person's pay also writes the changed pay fields to their
-    // private pay profile (organizations/{orgId}/payProfiles/{uid}), in the same batch.
-    const payWriter = canChangePersonPay(
-      {
-        userId: saverId,
-        isAdmin: saverIsAdmin || Boolean(saver?.role === 'admin' && !saver?.permissions.operativeMode),
-        isManager: Boolean(saver && (saver.permissions.manager || saver.role === 'manager')),
-        hasOperativesAccess: Boolean(saver?.permissions.operatives),
-        isOperativeMode: Boolean(saver?.permissions.operativeMode),
-      },
-      { userId: user.id, isOperative: Boolean(user.permissions.operativeMode || user.role === 'operative') }
-    )
-    // Rulebook 1.31.0 §11 (audit finding 8): ONE batch — the profile, its pay history and pay profile, the email
-    // claim, the same-email copies' names, the linked operatives / managers rows' names and the operativeProfiles
-    // mirror land together or not at all. Before 1.31.0 only the first three were batched and the rest followed one by
-    // one, so a refusal half way left the documents disagreeing. Everything is read first.
-    const email = user.email.toLowerCase().trim()
-    const [sameEmail, linkedRows] = orgId
-      ? await Promise.all([sameEmailUserRefs(user, orgId, previousEmail, saverIsAdmin), linkedStaffRefs(orgId, user, previousEmail)])
-      : [[], []]
-    const batch = writeBatch(db)
-    // Rulebook 1.26.0 (`sharedDocumentPayWrite`): with `privatePay` on for this organisation, the users document takes
-    // no pay value (the rules refuse it); pay goes to the pay profile and the rate history in the same batch.
-    await securitySwitchesReady()
-    batch.update(doc(db, 'users', user.id), sharedDocumentPayWrite(payload, { privatePay: orgId ? privatePayFor(orgId) : false }))
-    if (orgId) {
-      for (const row of historyRows) batch.set(doc(db, 'organizations', orgId, 'operativeDayRateHistory', row.id), row.fields)
-      if (payWriter) addPayProfileWrite(batch, orgId, user.id, payload, saverId)
-      if (email) batch.set(doc(db, 'organizations', orgId, 'userEmails', email), { userId: user.id })
-      for (const ref of sameEmail) batch.update(ref, identityFields(user))
-      for (const ref of linkedRows) batch.update(ref, identityFields(user))
-      // The operativeProfiles mirror holds pay, so only someone who may change this person's pay writes it
-      // (`canChangePersonPay`; firestore.rules `canChangePayOf`). A person's own save never touches it.
-      if (
-        payWriter &&
-        (user.permissions.operativeMode || user.permissions.manager || user.permissions.adminAccess || user.isSuperAdmin)
-      ) {
-        const profile: Record<string, unknown> = { userId: user.id }
-        applyExclusiveRateFields(profile, user)
-        // Rulebook 1.8.0: a partial update of the mirror (`operativeProfileWriteFields`); unchanged pay writes nothing.
-        await addPartialDocumentToBatch(
-          batch,
-          doc(db, 'organizations', orgId, 'operativeProfiles', user.id),
-          profile,
-          operativeProfileWriteFields,
-          { userId: saverId }
-        )
-      }
-    }
-    await batch.commit()
+    const { commit } = await prepareSaveUserImpl(user, organizationId, previousEmail, options)
+    await commit()
   },
 
+  prepareSaveUser: (...args) => prepareSaveUserImpl(...args),
   transferSuperAdmin: async (organizationId, fromUserId, toUserId, roster) => {
     if (!organizationId || !toUserId || fromUserId === toUserId) return
     const orgSnap = await getDoc(doc(db, 'organizations', organizationId))
@@ -392,7 +489,7 @@ export const useUserStore = create<UserStoreState>(() => ({
     await batch.commit()
   },
 
-  setUserActive: async (userId, isActive, organizationId, roster) => {
+  setUserActive: async (userId, isActive, organizationId, roster, opts) => {
     if (!isActive) {
       const existing = await getDoc(doc(db, 'users', userId))
       if (existing.exists() && existing.data().isSuperAdmin === true) {
@@ -401,6 +498,7 @@ export const useUserStore = create<UserStoreState>(() => ({
     }
     const orgId = organizationId?.trim()
     if (!orgId) {
+      opts?.onQueued?.()
       await updateDoc(doc(db, 'users', userId), { isActive, updatedAt: Timestamp.now() })
       return
     }
@@ -433,6 +531,7 @@ export const useUserStore = create<UserStoreState>(() => ({
     if (profileWrites === 0 && memberships.length === 0) {
       throw new Error('This account belongs to another company. Only an admin can change whether it is active here.')
     }
+    opts?.onQueued?.()
     if (profileWrites > 0) await batch.commit()
     // Admins can update a membership but cannot read it: an update, so a missing membership stays missing (it fails
     // and is skipped once the users documents are saved, as on iOS). With no users document here, it is the change.
@@ -627,6 +726,7 @@ export const useUserStore = create<UserStoreState>(() => ({
       }
       await batch.commit()
     }
+    opts?.onQueued?.()
     for (const step of steps) {
       try {
         await commitStep(step.writes)
@@ -717,71 +817,29 @@ export const useUserStore = create<UserStoreState>(() => ({
     return writes.length
   },
 
-  sendPasswordReset: async (email) => {
-    await sendPasswordResetEmail(auth, email.toLowerCase().trim(), passwordResetActionSettings(email))
+  sendPasswordReset: async (user, organizationId) => {
+    // Review of #361: an admin's reset is not the public forgot-password route (no per-email cap; the server checks
+    // the caller may edit this person and reports the real result).
+    const orgId = organizationId || useAuthStore.getState().organization?.id || ''
+    const response = await fetch('/api/users/send-password-reset', {
+      method: 'POST',
+      headers: await jsonAuthHeaders(),
+      body: JSON.stringify({ organizationId: orgId, userId: user.id }),
+    })
+    if (response.ok) return
+    const data = (await response.json().catch(() => ({}))) as { error?: string }
+    throw new Error(data.error || 'Failed to send password reset.')
   },
 
   applyAccountType: (user, accountType) => applyAccountTypeChange(user, accountType),
 
   changeAccountType: async (user, accountType, organizationId, roster, permissions) => {
-    const stored = await getDoc(doc(db, 'users', user.id))
-    const person = { ...(stored.exists() ? (stored.data() as Record<string, unknown>) : {}), id: user.id, email: user.email }
-    // Rulebook 1.30.3: the roster screens hold one document per email (the fold), so a same-email duplicate was never
-    // in `roster` and kept the old level — after admin → manager → admin the two documents disagreed and the fold could
-    // show the stale one. Read this organisation's documents on the email so `accountTypeChangeWrites` updates them all.
-    const rows = new Map(roster.map((row) => [row.id, { id: row.id, email: row.email, organizationId: row.organizationId }]))
-    const email = user.email.trim().toLowerCase()
-    if (email.includes('@')) {
-      try {
-        const snapshot = await getDocs(
-          query(collection(db, 'users'), where('organizationId', '==', organizationId), where('email', '==', email), limit(10))
-        )
-        for (const entry of snapshot.docs) {
-          if (!rows.has(entry.id)) rows.set(entry.id, { id: entry.id, email, organizationId })
-        }
-      } catch (error) {
-        console.warn('[userStore] same-email users read skipped', error)
-      }
-    }
-    // Rulebook 1.31.0 (audit finding 3): same-email documents already listed in `members` get the new role too.
-    const orgData = useOrganizationDocumentStore.getState().data
-    const members =
-      orgData && typeof orgData.members === 'object' && orgData.members ? (orgData.members as Record<string, unknown>) : null
-    const buildPlan = (rosterRows: Array<{ id: string; email: string; organizationId?: string }>) =>
-      accountTypeChangeWrites({
-        person,
-        kind: accountType,
-        organizationId,
-        roster: rosterRows,
-        permissions: (permissions as Record<string, unknown> | null | undefined) ?? null,
-        members,
-      })
-    const plan = buildPlan([...rows.values()])
-    if (!plan.ok) throw new Error(plan.message)
-    // Rulebook 1.12.2: one atomic batch — users documents, `members.{uid}` and the membership land together or not at
-    // all. Before 1.12.2 the membership was written after the batch and a refusal there was swallowed, so a change
-    // could stop half way (the rules read `members.{uid}` and the membership, the screens read the users document).
-    // The membership is a merge-set of its role and nested `permissions` (admins may not read another person's
-    // membership on older rules, so it cannot be read first); a missing one is created, status and dates are kept.
-    const batch = writeBatch(db)
-    const metadata = writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}
-    for (const write of plan.writes) {
-      const ref = doc(db, ...(write.path.split('/') as [string, ...string[]]))
-      if (write.kind === 'membership') {
-        const permissions: Record<string, boolean> = {}
-        for (const key of ORG_MEMBERSHIP_PERMISSION_KEYS) {
-          const value = (write.permissions as Record<string, unknown>)[key]
-          if (typeof value === 'boolean') permissions[key] = value
-        }
-        batch.set(ref, { organizationId, role: write.role, permissions, updatedAt: serverTimestamp() }, { merge: true })
-        continue
-      }
-      batch.update(ref, write.kind === 'userProfile' ? { ...write.fields, ...metadata, updatedAt: serverTimestamp() } : write.fields)
-    }
-    await batch.commit()
-    return plan.note
+    const { commit, note } = await prepareChangeAccountTypeImpl(user, accountType, organizationId, roster, permissions)
+    await commit()
+    return note
   },
 
+  prepareChangeAccountType: (...args) => prepareChangeAccountTypeImpl(...args),
   createGhost: async (input) => createGhostOperative(input),
 
   syncLinkedOperative: async (organizationId, user, operatives) => {

@@ -12,8 +12,10 @@ import { HoneypotField } from '@/components/security/HoneypotField'
 import { PASSKEYS_MAYBE_REMOVED_NOTICE, reportPasswordChanged } from '@/lib/auth/passkeys/passkeyClient'
 import { passkeysEnabled } from '@/lib/auth/passkeys/passkeyConfig'
 import { postPublicForm } from '@/lib/security/publicFormClient'
+import { ApplyEmailActionScreen } from '@/components/auth/ApplyEmailActionScreen'
 import {
   formatPasswordResetError,
+  isApplyEmailAction,
   isPasswordResetAction,
   loginPathForResetEmail,
   minPasswordLengthForEmail,
@@ -102,6 +104,9 @@ export function CompletePasswordResetScreen() {
       setSaving(false)
     }
   }
+
+  // Verify email, confirm a new login email and undo an email change share this action URL (17 Nov).
+  if (isApplyEmailAction(action)) return <ApplyEmailActionScreen action={action} />
 
   return (
     <div className="login" style={{ gridTemplateColumns: '1fr' }}>

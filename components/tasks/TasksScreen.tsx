@@ -31,6 +31,7 @@ import { hasAdminAccess, isOperativeMode } from '@/lib/navigation/menuPermission
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
 import type { HolidayBooking, ProjectTask, ProjectTaskStatus } from '@/types'
 import { feedback } from '@/lib/feedbackSounds/feedback'
+import { afterPrimaryWrite } from '@/lib/client/afterPrimaryWrite'
 
 const STATUS_STYLES: Record<ProjectTaskStatus, { badge: string; label: string }> = {
   'To Do': { badge: 'bg-slate-100 text-slate-700', label: 'To Do' },
@@ -253,7 +254,7 @@ export function TasksScreen() {
         // saved (before the notice).
         feedback('leaveApproved')
         // Rulebook §9 / 1.9.0: the requester hears the cancellation was accepted (`holidayDecisionRecipients`).
-        await notifyHolidayRequestDecisionToUser({
+        afterPrimaryWrite('notifyHolidayRequestDecisionToUser', notifyHolidayRequestDecisionToUser({
           organizationId: organization.id,
           booking: request,
           approved: true,
@@ -262,12 +263,12 @@ export function TasksScreen() {
           decidedByUserId: user?.id ?? null,
           users,
           operatives,
-        })
+        }))
       } else {
         await decideBooking(organization.id, request, { status: 'approved', approverUid: user.id })
         saved = true
         feedback('leaveApproved')
-        await notifyHolidayRequestDecisionToUser({
+        afterPrimaryWrite('notifyHolidayRequestDecisionToUser', notifyHolidayRequestDecisionToUser({
           organizationId: organization.id,
           booking: request,
           approved: true,
@@ -275,7 +276,7 @@ export function TasksScreen() {
           decidedByUserId: user?.id ?? null,
           users,
           operatives,
-        })
+        }))
       }
     } catch (error) {
       // Owner decision 8: the refusal sound, then the error goes where it went before. Once the decision is saved a
@@ -303,7 +304,7 @@ export function TasksScreen() {
         // The approver's decision: declining a request or a cancellation request is leaveDeclined, played once it is
         // saved (before the notice).
         feedback('leaveDeclined')
-        await notifyHolidayRequestDecisionToUser({
+        afterPrimaryWrite('notifyHolidayRequestDecisionToUser', notifyHolidayRequestDecisionToUser({
           organizationId: organization.id,
           booking: request,
           approved: false,
@@ -312,12 +313,12 @@ export function TasksScreen() {
           decidedByUserId: user?.id ?? null,
           users,
           operatives,
-        })
+        }))
       } else {
         await decideBooking(organization.id, request, { status: 'rejected', approverUid: user.id })
         saved = true
         feedback('leaveDeclined')
-        await notifyHolidayRequestDecisionToUser({
+        afterPrimaryWrite('notifyHolidayRequestDecisionToUser', notifyHolidayRequestDecisionToUser({
           organizationId: organization.id,
           booking: request,
           approved: false,
@@ -325,7 +326,7 @@ export function TasksScreen() {
           decidedByUserId: user?.id ?? null,
           users,
           operatives,
-        })
+        }))
       }
     } catch (error) {
       // Owner decision 8: the refusal sound, then the error goes where it went before. Once the decision is saved a

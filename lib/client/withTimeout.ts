@@ -41,3 +41,29 @@ export async function withTimeoutFallback<T>(
     return fallback
   }
 }
+
+/**
+ * Like `withTimeout`, but the work is given an `AbortSignal` that is aborted when the time is up, so a `fetch` is
+ * cancelled rather than left running (review of #371). A request the server has already received may still complete
+ * there, so callers word a time-out as "may still arrive", never as "not sent".
+ */
+export async function withAbortTimeout<T>(
+  run: (signal: AbortSignal) => Promise<T>,
+  ms: number,
+  message: string
+): Promise<T> {
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      // Reject first, so the race settles with the time-out, not with the work's own abort error.
+      reject(new TimeoutError(message))
+      controller.abort()
+    }, ms)
+  })
+  try {
+    return await Promise.race([run(controller.signal), timeout])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
