@@ -636,6 +636,7 @@ export {
   payrollOutsideClockHours,
   multipliedHoursText,
   payrollMultipliedHours,
+  multipliedHoursParts,
   parseMultipliedHoursText,
   payrollLineClockRanges,
   timesheetLineClockText,
@@ -1346,7 +1347,7 @@ export { payrollLineReview, payrollLineReviewKey } from './timesheetEntryReviews
 export type { PayrollLineLiveBooking } from './timesheetEntryReviews'
 export { inviteAcceptWrites } from './inviteAccept'
 export { timesheetParticipant } from './peopleDocuments'
-export { orgDayHours, payForHours, roundPennies } from './payRate'
+export { dayRateHourlyEquivalent, orgDayHours, payForHours, roundPennies } from './payRate'
 export type { TimesheetInvoiceRow, TimesheetInvoiceRowKind, TimesheetInvoiceRowsInput } from './reportPay'
 export type { PayrollLineReview } from './timesheetEntryReviews'
 export type { InviteAcceptMode, InviteAcceptPlan } from './inviteAccept'
@@ -2342,5 +2343,9 @@ export {
 } from './materialSafeSender'
 export { taskCompletionFields } from './operationsDocuments'
 export { MANAGER_ROW_NOT_LINKED_LABEL } from './unresolvedBookingPeople'
+
+// 1.67.0: a day-rate overtime line reads in hours (owner decision 17 Nov), wording only.
+export { DAY_RATE_OVERTIME_ROUNDED_NOTE, dayRateOvertimeCalcText, liveDayRateOvertimeText, signedDayRateOvertimeText } from './dayRateOvertimeText'
+export type { DayRateOvertimeCalcInput, DayRateOvertimeCalcText, LiveDayRateOvertimeLine, SignedDayRateOvertimeLine } from './dayRateOvertimeText'
 export { timesheetSheetHasActivity, userTimesheetQueue, userTimesheetQueueCounts } from './userTimesheetQueue'
 export type { UserTimesheetQueueInput, UserTimesheetQueueMember, UserTimesheetQueueRow, UserTimesheetQueueSheet } from './userTimesheetQueue'

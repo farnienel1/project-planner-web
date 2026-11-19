@@ -17848,6 +17848,47 @@ test('1.59.0 review M2: a booking under a managers row with no account stays in 
   assert.equal(R112.scheduleRowPerson('mgr-noacc', { accounts: [], operatives: [], managers: [{ id: 'MGR-NOACC' }] }).unresolved, false)
 })
 
+test('1.67.0 dayRateOvertimeCalcText: a day-rate overtime line reads in hours, amount unchanged', () => {
+  // Owner example: 6h of overtime at ×1.5, £225/day, 8.5h paid day → £238.24 (payForHours).
+  const pay = R112.payForHours({ payBasis: 'day', dayRate: 225, paidHours: 6, standardDayHours: 8.5, otMultiplier: 1.5 })
+  assert.equal(pay, 238.24)
+  const weekday = R112.dayRateOvertimeCalcText({ clockHours: 6, multiplier: 1.5, dayRate: 225, dayRateHours: 8.5, pay, currency: 'GBP' })
+  assert.ok(weekday)
+  assert.equal(weekday.hoursText, '6h × 1.5 = 9h')
+  assert.equal(weekday.payText, '9h × £26.47/h (rounded) = £238.24')
+  assert.equal(weekday.rateText, '£225.00/day ÷ 8.5h = £26.47/h (rounded)')
+  assert.equal(weekday.hourlyRateRounded, true)
+  assert.equal(weekday.text, '6h × 1.5 = 9h · 9h × £26.47/h (rounded) = £238.24 (£225.00/day ÷ 8.5h)')
+  assert.deepEqual(weekday.lines, ['6h × 1.5 = 9h · 9h × £26.47/h (rounded) = £238.24', '£225.00/day ÷ 8.5h = £26.47/h (rounded)'])
+  // Sunday 15 Nov: 14:00–16:00 at ×2 → 4h, £105.88.
+  const sundayPay = R112.payForHours({ payBasis: 'day', dayRate: 225, paidHours: 2, standardDayHours: 8.5, otMultiplier: 2 })
+  const sunday = R112.dayRateOvertimeCalcText({ clockHours: 2, multiplier: 2, dayRate: 225, dayRateHours: 8.5, pay: sundayPay, currency: 'GBP' })
+  assert.equal(sunday?.text, '2h × 2 = 4h · 4h × £26.47/h (rounded) = £105.88 (£225.00/day ÷ 8.5h)')
+  // An unpaid break in multiplied hours follows multipliedHoursText; the pay is shown as given, never re-worked out.
+  const brk = R112.dayRateOvertimeCalcText({ clockHours: 6.5, multiplier: 2, breakHours: 0.5, dayRate: 200, dayRateHours: 8, pay: 312.5, currency: 'GBP' })
+  assert.equal(brk?.text, '6.5h × 2 − 0.5h break = 12.5h · 12.5h × £25.00/h = £312.50 (£200.00/day ÷ 8h)')
+  assert.equal(brk?.hourlyRateRounded, false)
+  // Nothing to show in hours: the caller keeps its older wording.
+  assert.equal(R112.dayRateOvertimeCalcText({ clockHours: 6, multiplier: 1.5, dayRate: 0, dayRateHours: 8.5, pay: 0 }), null)
+  assert.equal(R112.dayRateOvertimeCalcText({ clockHours: 6, multiplier: 1.5, dayRate: 225, dayRateHours: 0.5, pay: 1 }), null)
+  assert.equal(R112.DAY_RATE_OVERTIME_ROUNDED_NOTE, 'Hourly rate is rounded; amounts use the exact rate.')
+})
+
+test('1.67.0: multipliedHoursParts and dayRateHourlyEquivalent are the figures the overtime text shows', () => {
+  assert.deepEqual(R112.multipliedHoursParts({ clockHours: 6.5, multiplier: 2, breakHours: 0.5 }), {
+    clockHours: 6.5, multiplier: 2, breakHours: 0.5, paidHours: 12.5, text: '6.5h × 2 − 0.5h break = 12.5h',
+  })
+  // payrollMultipliedHours returns the same parts for a booking (Sunday 07:30–14:00 every hour ×2, 30 min unpaid).
+  const policy = { ...R112.DEFAULT_PAYROLL_POLICY, sunday: { allHoursAtMultiplierMode: true, allHoursMultiplier: 2, breakPaid: false, breakMinutes: 30, breakWindowStart: '12:00', breakWindowEnd: '12:30', sameAsSaturday: false } } as unknown as Parameters<typeof R112.payrollHoursResult>[0]['policy']
+  const result = R112.payrollHoursResult({ booking: { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '14:00' }, dayKey: '2026-11-15', policy, timeZone: 'Europe/London' })
+  const parts = R112.payrollMultipliedHours(result)!
+  assert.deepEqual(parts, R112.multipliedHoursParts(parts))
+  assert.equal(parts.paidHours, result.outsideHours * result.outsideMultiplier)
+  assert.deepEqual(R112.dayRateHourlyEquivalent(225, 8.5), { exactRate: 225 / 8.5, hourlyRate: 26.47, rounded: true })
+  assert.deepEqual(R112.dayRateHourlyEquivalent(200, 8), { exactRate: 25, hourlyRate: 25, rounded: false })
+  assert.equal(R112.dayRateHourlyEquivalent(225, 0.5), null)
+})
+
 // Rulebook 1.65.0 (§25, §26; mass-assignment audit 17 Nov, owner decision B): the server-side report check.
 test('1.65.0 overtimeReportIntegrity: a report built from its reviewed bookings passes; edited figures are flagged', () => {
   const booking = { id: 'B1', collection: 'bookings', personId: 'sam', dayKey: '2026-11-05', timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '18:00', status: 'Confirmed' }
