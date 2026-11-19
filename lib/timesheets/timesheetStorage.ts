@@ -14,6 +14,7 @@ import { changedFirestoreFields } from '@/lib/firebase/changedFields'
 import { firestoreUpdateFields } from '@/lib/firebase/partialWrite'
 import { timesheetChangedFields } from '@/lib/canonical/timesheetEntryReviews'
 import { timesheetDocumentSubjectId } from '@/lib/canonical/timesheetPeriod'
+import { timesheetSheetHasActivity } from '@/lib/canonical/userTimesheetQueue'
 import { LONDON_TIME_ZONE, unixStartOfDay, dayKey } from '@/lib/ios-parity/londonTime'
 import { weekStartKey } from '@/lib/timesheets/timesheetWeekUtils'
 import { periodStartKey } from '@/lib/timesheets/paymentRunCopy'
@@ -704,17 +705,18 @@ export function samePayPeriodStart(stored: Date, periodStart: Date, timeZone: st
   return Math.abs(stored.getTime() - periodStart.getTime()) <= PAY_PERIOD_START_SKEW_MS
 }
 
+/** Rulebook 1.66.0 §8 `timesheetSheetHasActivity` (one rule with iOS) over the web draft's fields. */
 export function timesheetDraftHasActivity(draft: TimesheetDraft): boolean {
-  return Boolean(
-    draft.operativeSignedAt ||
-      draft.managerSignedAt ||
-      draft.exportedAt ||
-      draft.expenseEntries.length ||
-      draft.priceWorkEntries.length ||
-      (draft.lateExtras?.length ?? 0) ||
-      draft.managerNote.trim() ||
-      draft.weeklyReportOverride
-  )
+  return timesheetSheetHasActivity({
+    operativeSignedAt: draft.operativeSignedAt,
+    managerSignedAt: draft.managerSignedAt,
+    exportedAt: draft.exportedAt,
+    expenseEntries: draft.expenseEntries,
+    priceWorkEntries: draft.priceWorkEntries,
+    lateExtras: draft.lateExtras ?? [],
+    managerNote: draft.managerNote,
+    weeklyReportOverride: draft.weeklyReportOverride ?? null,
+  })
 }
 
 export type TimesheetPeriodCandidate = {
@@ -1151,57 +1153,109 @@ export async function loadTimesheetDraftAt(
   return latestVersionDraft(organizationId, documentId, data, { includeSignatures: true, timeZone, ownerUserIds })
 }
 
+export type TimesheetQueueStoredSheet = {
+  /** The stored document id (an original or a `…_rev{N}` revision). */
+  documentId: string
+  /** The stored `userId` (any id the person goes by). */
+  userId: string
+  weekStart: Date
+  /** `weekEndKey` / `weekEnd` in the organisation zone; null when the document has none. */
+  endDayKey: string | null
+  draft: TimesheetDraft
+}
+
+const UUID_SHAPED = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 /**
- * User Timesheets → Awaiting / Signed off over several pay runs (17 Nov follow-up): the stored sheets of `userIds` (every
- * id each listed person goes by) for each of `periods`, keyed `start|end` (organisation-zone day keys) and then by the
- * stored `userId`. One `weekStartKey` query per pay run (iOS often leaves `weekStartKey` out) and one batched `userId in`
- * history query for everyone, picked per pay run with `pickTimesheetDraftForPeriod`. A refused period query
- * (`privatePay` on for a non-admin) falls through to the history query; any other failure throws.
+ * The other letter-case spellings of a UUID-shaped id that are not already asked for (an iPhone stores
+ * `UUID.uuidString` upper case, web lower case). Firestore `in` matches exactly, so the queue asks for these too.
+ * Other ids (Firebase Auth uids are mixed case) are asked for as stored only.
  */
-export async function loadTimesheetQueueDrafts(input: {
-  organizationId: string
-  userIds: ReadonlyArray<string>
-  periods: ReadonlyArray<{ start: Date; end: Date }>
-  timeZone: string
-}): Promise<Map<string, Map<string, TimesheetDraft>>> {
-  const { organizationId, periods, timeZone } = input
-  const userIds = [...new Set(input.userIds.filter(Boolean))]
-  const out = new Map<string, Map<string, TimesheetDraft>>()
-  const keyOf = (period: { start: Date; end: Date }) => `${periodStartKey(period.start, timeZone)}|${dayKey(period.end, timeZone)}`
-  for (const period of periods) out.set(keyOf(period), new Map())
-  if (periods.length === 0) return out
-  let periodQueriesRefused = false
-  const keyed = await Promise.all(
-    periods.map((period) =>
-      loadPayPeriodTimesheetDrafts(organizationId, period.start, timeZone).catch((error) => {
-        if ((error as { code?: unknown } | null)?.code !== 'permission-denied') throw error
-        periodQueriesRefused = true
-        return new Map<string, TimesheetDraft>()
-      })
-    )
-  )
-  periods.forEach((period, index) => {
-    const target = out.get(keyOf(period))!
-    for (const [userId, draft] of keyed[index]) target.set(userId, draft)
-  })
-  if (userIds.length === 0) return out
-  let grouped: Map<string, TimesheetPeriodCandidate[]>
-  try {
-    grouped = await loadTimesheetCandidatesByUserIds(organizationId, userIds, false, timeZone, true)
-  } catch (error) {
-    if (periodQueriesRefused) throw error
-    // The pay-run rows already found stay; the history scan may not blank the lists.
-    return out
-  }
-  for (const period of periods) {
-    const target = out.get(keyOf(period))!
-    for (const userId of userIds) {
-      if (target.has(userId)) continue
-      const picked = pickTimesheetDraftForPeriod(grouped.get(userId) || [], period.start, period.end, timeZone)
-      if (picked) target.set(userId, picked.draft)
+export function timesheetQueueCaseVariants(userIds: ReadonlyArray<string>): string[] {
+  const asked = new Set(userIds)
+  const out: string[] = []
+  for (const id of userIds) {
+    if (!UUID_SHAPED.test(id)) continue
+    for (const variant of [id.toUpperCase(), id.toLowerCase()]) {
+      if (asked.has(variant)) continue
+      asked.add(variant)
+      out.push(variant)
     }
   }
   return out
+}
+
+/**
+ * Rulebook 1.66.0 §8 (owner decision 17 Nov): every stored timesheet of `userIds` (each id every listed person goes by),
+ * however old — every version, so the rulebook (`userTimesheetQueue`) decides which one is a pay run's sheet. One batched
+ * `userId in` query per 10 ids; a chunk the rules refuse is asked id by id and only the refused ids are skipped (review of
+ * #368 S1). Any other failure throws (the list shows its error, never an empty queue).
+ *
+ * Case (guardrail 3): Firestore `in` is exact. A UUID-shaped id is also asked for in upper and lower case (a second pass,
+ * its own chunks, so a variant the rules refuse never refuses a real id), and the rulebook matches the stored `userId`
+ * without case. For an admin (`recentRunStartDayKeys` given), the recent pay runs are also read by `weekStartKey` and
+ * every timesheet of a listed person — its `userId` (or, with none, the id in its document id) matched without case — is
+ * kept, so a sheet stored under a mixed-case id in another spelling, or with no `userId`, stays visible for those runs.
+ * Older runs, and everyone who is not an admin, keep the known limit (§8): such a sheet is not loaded.
+ */
+export async function loadTimesheetQueueSheets(input: {
+  organizationId: string
+  userIds: ReadonlyArray<string>
+  timeZone: string
+  /** Admins only: the start day keys of the recent pay runs to also read by `weekStartKey`. */
+  recentRunStartDayKeys?: ReadonlyArray<string>
+}): Promise<TimesheetQueueStoredSheet[]> {
+  const userIds = [...new Set(input.userIds.filter(Boolean))]
+  if (userIds.length === 0) return []
+  const variants = timesheetQueueCaseVariants(userIds)
+  const [grouped, variantGrouped, recent] = await Promise.all([
+    loadTimesheetCandidatesByUserIds(input.organizationId, userIds, false, input.timeZone, true),
+    variants.length > 0
+      ? loadTimesheetCandidatesByUserIds(input.organizationId, variants, false, input.timeZone, true)
+      : Promise.resolve(new Map<string, TimesheetPeriodCandidate[]>()),
+    loadRecentRunTimesheetsForIds(input.organizationId, userIds, input.recentRunStartDayKeys ?? [], input.timeZone),
+  ])
+  const out: TimesheetQueueStoredSheet[] = []
+  const seen = new Set<string>()
+  for (const [userId, rows] of [...grouped, ...variantGrouped, ...recent]) {
+    for (const row of rows) {
+      if (!row.documentId || seen.has(row.documentId)) continue
+      seen.add(row.documentId)
+      out.push({ documentId: row.documentId, userId, weekStart: row.weekStart, endDayKey: row.endDayKey ?? null, draft: row.draft })
+    }
+  }
+  return out
+}
+
+/**
+ * Rulebook 1.66.0 §8 (admins): the timesheets of `startDayKeys` read by `weekStartKey`, kept when their `userId` — or,
+ * with none, the id in the document id — is one of `userIds` without case. Grouped by the id the sheet is stored under.
+ */
+async function loadRecentRunTimesheetsForIds(
+  organizationId: string,
+  userIds: ReadonlyArray<string>,
+  startDayKeys: ReadonlyArray<string>,
+  timeZone: string
+): Promise<Map<string, TimesheetPeriodCandidate[]>> {
+  const grouped = new Map<string, TimesheetPeriodCandidate[]>()
+  const keys = [...new Set(startDayKeys.filter(Boolean))]
+  if (keys.length === 0) return grouped
+  const wanted = new Set(userIds.map((id) => id.toLowerCase()))
+  // One query per key; a key the rules refuse is skipped (as iOS and §8), any other failure still fails the list.
+  const { rows: docs } = await queryIdsSkippingRefused(keys, 1, async ([key]) =>
+    (await getDocs(query(collection(db, 'organizations', organizationId, 'settings'), where('weekStartKey', '==', key)))).docs
+  )
+  for (const entry of docs) {
+    const data = entry.data() as Record<string, unknown>
+    const stored = typeof data.userId === 'string' && data.userId.trim() ? data.userId : timesheetDocumentSubjectId(entry.id)
+    if (!stored || !wanted.has(stored.toLowerCase())) continue
+    const row = timesheetStateFromDoc(entry.id, data, false, timeZone)
+    if (!row) continue
+    const list = grouped.get(stored) ?? []
+    list.push(row)
+    grouped.set(stored, list)
+  }
+  return grouped
 }
 
 /**
@@ -1561,26 +1615,6 @@ export async function loadCanonicalTimesheetDrafts(
   })
   for (const hit of hits) {
     if (hit) results.set(hit[0], hit[1])
-  }
-  return results
-}
-
-export async function loadPayPeriodTimesheetDrafts(
-  organizationId: string,
-  weekStart: Date,
-  timeZone: string = LONDON_TIME_ZONE
-): Promise<Map<string, TimesheetDraft>> {
-  const results = new Map<string, TimesheetDraft>()
-  const key = dayKey(weekStart, timeZone)
-  const snap = await getDocs(
-    query(collection(db, 'organizations', organizationId, 'settings'), where('weekStartKey', '==', key))
-  )
-  for (const entry of snap.docs) {
-    if (!entry.id.startsWith('timesheet_')) continue
-    const data = entry.data() as Record<string, unknown>
-    const userId = typeof data.userId === 'string' ? data.userId : ''
-    if (!userId || !laterVersion(results.get(userId), entry.id)) continue
-    results.set(userId, rememberSource(draftFromFirestoreMap(data, { ...LIST_DRAFT_OPTIONS, sheetDocId: entry.id }), entry.id))
   }
   return results
 }

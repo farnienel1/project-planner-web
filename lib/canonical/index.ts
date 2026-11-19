@@ -2342,3 +2342,5 @@ export {
 } from './materialSafeSender'
 export { taskCompletionFields } from './operationsDocuments'
 export { MANAGER_ROW_NOT_LINKED_LABEL } from './unresolvedBookingPeople'
+export { timesheetSheetHasActivity, userTimesheetQueue, userTimesheetQueueCounts } from './userTimesheetQueue'
+export type { UserTimesheetQueueInput, UserTimesheetQueueMember, UserTimesheetQueueRow, UserTimesheetQueueSheet } from './userTimesheetQueue'

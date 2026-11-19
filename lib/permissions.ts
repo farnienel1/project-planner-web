@@ -446,7 +446,7 @@ function timesheetMemberRole(member: NonNullable<PermissionUser>): StaffAccountR
   return permissionLevelOf(member) === 'manager' ? { ...role, isManager: true } : role
 }
 
-function userTimesheetAccessInput(
+export function userTimesheetAccessInput(
   user: NonNullable<PermissionUser>,
   orgUsers: Array<NonNullable<PermissionUser>>
 ): UserTimesheetSubjectsInput {

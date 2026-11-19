@@ -14,7 +14,8 @@ import {
   loadExportedTimesheetHistory,
   loadTimesheetDraft,
   loadTimesheetDraftAt,
-  loadTimesheetQueueDrafts,
+  loadTimesheetQueueSheets,
+  type TimesheetQueueStoredSheet,
   stampTimesheetExport,
   timesheetDocId,
   timesheetSourceDocumentId,
@@ -40,11 +41,15 @@ import { loadTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
 import { useSnapshotAutoRepair } from '@/lib/timesheets/useSnapshotAutoRepair'
 import type { RepairSheet } from '@/lib/timesheets/snapshotAutoRepair'
 import {
-  draftsForMembers,
+  RECENT_PAY_RUN_COUNT,
+  TIMESHEETS_LOAD_FAILED_MESSAGE,
   payRunKey,
+  payRunsStartDayKey,
+  recentPayRuns,
   timesheetMemberIds,
-  timesheetQueueRows,
+  userTimesheetQueueRows,
   type PayRun,
+  type TimesheetQueueBucketRow,
   type TimesheetQueueRow,
 } from '@/lib/timesheets/timesheetQueue'
 import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride'
@@ -62,7 +67,7 @@ import {
 } from '@/lib/timesheets/timesheetExport'
 import { buildTimesheetInvoicePdf, timesheetPdfBlob } from '@/lib/timesheets/invoicePdf'
 import { downloadPdf } from '@/lib/pdf/downloadPdf'
-import { shouldAppearInOperativeTimesheetRoster, timesheetDayKeysForPeriod } from '@/lib/timesheets/timesheetPayrollPolicy'
+import { timesheetDayKeysForPeriod } from '@/lib/timesheets/timesheetPayrollPolicy'
 import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
 import { timesheetExportPath, uploadFile } from '@/lib/firebase/storageUtils'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
@@ -185,8 +190,9 @@ export function TimesheetsScreen({
   periodStart: Date
   periodEnd: Date
   /**
-   * 17 Nov follow-up: the pay runs Awaiting / Signed off list (newest first, the current one included) — a signed sheet
-   * of an earlier run that was never exported stays listed with its own run. Missing: the current run only.
+   * The recent pay runs (newest first, the current one included) whose frozen-empty snapshots are repaired in the
+   * background. Rulebook 1.66.0 §8 (owner decision 17 Nov): Awaiting / Signed off list every stored sheet, however old,
+   * whatever this holds. Missing: the current run only.
    */
   queuePeriods?: ReadonlyArray<PayRun>
   payrollPolicy: OrgPayrollTimePolicy
@@ -208,8 +214,8 @@ export function TimesheetsScreen({
   // full (`rosterServerOrgId`) — never the stored copy or a timed-out read.
   const { loading: rosterReading, rosterServerOrgId, error: rosterError, loadUsers: reloadRoster } = useOrgUserStore()
   const rosterLoadedHere = Boolean(organization?.id) && rosterServerOrgId === organization?.id && !rosterReading
-  // 17 Nov follow-up: per pay run (`payRunKey`), the sheets of the listed people keyed by their roster id.
-  const [queueDrafts, setQueueDrafts] = useState<Map<string, Map<string, TimesheetDraft>>>(new Map())
+  // Rulebook 1.66.0 §8: every stored sheet of the listed people (under every id they go by), however old.
+  const [queueSheets, setQueueSheets] = useState<TimesheetQueueStoredSheet[]>([])
   const [exportedRows, setExportedRows] = useState<ExportedTimesheetHistoryRow[]>([])
   const [recordsLoading, setRecordsLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -235,12 +241,11 @@ export function TimesheetsScreen({
   const paintedListKey = useRef('')
   const reloadGeneration = useRef(0)
 
-  // 17 Nov follow-up: the pay runs the queue lists, newest first (the current run when none are given).
+  // The recent pay runs the background snapshot repair covers, newest first (the current run when none are given).
   const runs = useMemo<PayRun[]>(() => {
     const list = queuePeriods && queuePeriods.length > 0 ? [...queuePeriods] : [{ start: periodStart, end: periodEnd }]
     return list.sort((a, b) => b.start.getTime() - a.start.getTime())
   }, [queuePeriods, periodStart, periodEnd])
-  const runsKey = runs.map((run) => payRunKey(run, timeZone)).join(',')
 
   const groups = useMemo(() => {
     if (!user) return [] as User[][]
@@ -248,17 +253,6 @@ export function TimesheetsScreen({
     // in scope); the other tabs stay `userTimesheetSubjects`.
     return teamTab === 'exported' ? exportedTimesheetRosterGroups(user, users) : timesheetRosterGroups(user, users)
   }, [user, users, teamTab])
-
-  /** Rulebook 1.11.0 (`showsMyTimesheets`): a person is on a pay run's queue only when they had a self-employed day in it. */
-  const groupsFor = useCallback(
-    (run: PayRun) =>
-      groups
-        .map((group) =>
-          group.filter((member) => shouldAppearInOperativeTimesheetRoster(member, run.start, run.end, invoicing, new Date(), timeZone))
-        )
-        .filter((group) => group.length > 0),
-    [groups, invoicing, timeZone]
-  )
 
   const roster = useMemo(() => groups.flat(), [groups])
 
@@ -291,17 +285,17 @@ export function TimesheetsScreen({
           })
         )
       } catch {
-        setLoadError('Timesheets did not finish loading. Check the connection and try again.')
+        setLoadError(TIMESHEETS_LOAD_FAILED_MESSAGE)
       } finally {
         setRecordsLoading(false)
       }
       return
     }
 
-    const listKey = `${organization.id}|${teamTab}|${runsKey}`
+    const listKey = `${organization.id}|${teamTab}`
     if (paintedListKey.current !== listKey) {
       paintedListKey.current = listKey
-      setQueueDrafts(new Map())
+      setQueueSheets([])
       setRecordsLoading(true)
     }
     setLoadError(null)
@@ -309,20 +303,25 @@ export function TimesheetsScreen({
       // 17 Nov follow-up (guardrail 1): every id each listed person goes by (`personIdSet`), so a sheet filed under a
       // former invite id or a second users document is found and listed under the person.
       const aliasIds = roster.flatMap((member) => timesheetMemberIds(member, users))
-      const loaded = await loadTimesheetQueueDrafts({ organizationId: organization.id, userIds: aliasIds, periods: runs, timeZone })
+      // Rulebook 1.66.0 §8 (owner decision 17 Nov): every stored sheet, however old — never a window of recent runs.
+      const loaded = await loadTimesheetQueueSheets({
+        organizationId: organization.id,
+        userIds: aliasIds,
+        timeZone,
+        // Admins: the recent runs are also read by `weekStartKey`, so a sheet stored under another spelling of an id (or
+        // with no `userId`) stays listed for them (guardrail 3).
+        recentRunStartDayKeys: hasAdminAccess(user)
+          ? recentPayRuns(invoicing, new Date(), timeZone, RECENT_PAY_RUN_COUNT).map((run) => periodStartKey(run.start, timeZone))
+          : undefined,
+      })
       if (stale()) return
-      const next = new Map<string, Map<string, TimesheetDraft>>()
-      for (const run of runs) {
-        const key = payRunKey(run, timeZone)
-        next.set(key, draftsForMembers(groups, loaded.get(key) ?? new Map(), users))
-      }
-      setQueueDrafts(next)
+      setQueueSheets(loaded)
     } catch {
-      if (!stale()) setLoadError('Timesheets did not finish loading. Check the connection and try again.')
+      if (!stale()) setLoadError(TIMESHEETS_LOAD_FAILED_MESSAGE)
     } finally {
       if (!stale()) setRecordsLoading(false)
     }
-  }, [organization?.id, roster, groups, users, runs, runsKey, timeZone, teamTab, loading, rosterLoadedHere])
+  }, [organization?.id, roster, user, users, timeZone, teamTab, invoicing, loading, rosterLoadedHere])
 
   useEffect(() => {
     void reload()
@@ -370,24 +369,41 @@ export function TimesheetsScreen({
   // Third review #325: the people Export left out because the bookings or pay inputs were still loading.
   const inputsSkippedRef = useRef<string[]>([])
   changeCatalogueRef.current = changeCatalogue
-  // 17 Nov follow-up: one row per person and pay run, over the recent pay runs (`timesheetQueueRows`; the bucket stays
-  // the rulebook's `timesheetListBucket` with that run's booking change).
-  const visible = useMemo<TimesheetQueueRow[]>(
+  // Rulebook 1.66.0 §8: the list checks booking changes over the same window as the hub tile (the last
+  // RECENT_PAY_RUN_COUNT pay runs, `recentPayRuns`), so both count the same rows. Older runs read their bookings as not
+  // changed (their waiting late extras still count). Export keeps its own full check before it stamps a sheet.
+  const queueChangeFromDayKey = useMemo(
+    () => payRunsStartDayKey(recentPayRuns(invoicing, new Date(), timeZone, RECENT_PAY_RUN_COUNT), timeZone),
+    [invoicing, timeZone]
+  )
+  // Rulebook 1.66.0 §8 (owner decision 17 Nov): one row per person and pay run over every stored sheet, however old
+  // (`userTimesheetQueue`; the bucket is `timesheetListBucket` with that sheet's booking change — a run outside the
+  // window above reads as not changed).
+  const queueRows = useMemo<TimesheetQueueBucketRow[]>(
     () =>
-      teamTab === 'exported'
+      teamTab === 'exported' || !user
         ? []
-        : timesheetQueueRows({
-            runs,
-            groupsFor,
-            draftsFor: (run) => queueDrafts.get(payRunKey(run, timeZone)),
-            bucket: teamTab,
+        : userTimesheetQueueRows({
+            viewer: user,
             users,
+            sheets: queueSheets,
+            invoicing,
             timeZone,
-            bookingChange: (member, draft, run) => periodBookingChanges(changeCatalogueRef.current, member, draft, run),
+            bookingChange: (member, draft, run) =>
+              periodBookingChanges(
+                { ...changeCatalogueRef.current, coversPeriod: (period) => periodStartKey(period.start, timeZone) >= queueChangeFromDayKey },
+                member,
+                draft,
+                run
+              ),
           }),
     // The catalogue is read through a ref; re-run when the bookings or pay inputs change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [groupsFor, queueDrafts, teamTab, users, runs, timeZone, bookings, managerSiteBookings, bookingsReady]
+    [queueSheets, teamTab, user, users, invoicing, timeZone, bookings, managerSiteBookings, bookingsReady, queueChangeFromDayKey]
+  )
+  const visible = useMemo<TimesheetQueueRow[]>(
+    () => queueRows.filter((row) => row.bucket === teamTab),
+    [queueRows, teamTab]
   )
 
   // Each listed person's own pay status (review #342 item 1). Declared before `useSnapshotAutoRepair`, which calls it
@@ -398,22 +414,14 @@ export function TimesheetsScreen({
   // Owner item 5 (17 Nov follow-up): every sheet of the loaded pay runs whose snapshot was frozen with no labour lines is
   // rebuilt in the background (`useSnapshotAutoRepair`; signatures kept, never an exported sheet), once the bookings and
   // pay inputs have loaded — never waiting for someone to open that one sheet.
-  const repairSheets = useMemo<RepairSheet[]>(
-    () =>
-      teamTab === 'exported'
-        ? []
-        : runs.flatMap((run) => {
-            const drafts = queueDrafts.get(payRunKey(run, timeZone))
-            if (!drafts) return []
-            return groupsFor(run)
-              .flat()
-              .flatMap((member) => {
-                const draft = drafts.get(member.id)
-                return draft ? [{ member, period: run, draft, documentId: timesheetSourceDocumentId(draft) }] : []
-              })
-          }),
-    [teamTab, runs, queueDrafts, groupsFor, timeZone]
-  )
+  const repairSheets = useMemo<RepairSheet[]>(() => {
+    if (teamTab === 'exported') return []
+    // The recent pay runs only (as before 1.66.0); an exported sheet is never repaired.
+    const recent = new Set(runs.map((run) => payRunKey(run, timeZone)))
+    return queueRows
+      .filter((row) => row.bucket !== 'exported' && recent.has(payRunKey(row.period, timeZone)))
+      .map((row) => ({ member: row.member, period: row.period, draft: row.draft, documentId: timesheetSourceDocumentId(row.draft) }))
+  }, [teamTab, runs, queueRows, timeZone])
   useSnapshotAutoRepair({
     organizationId: organization?.id,
     viewer: user,

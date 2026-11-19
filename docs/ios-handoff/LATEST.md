@@ -1,6 +1,6 @@
-# iOS follow-on — rulebook 1.65.5
+# iOS follow-on — rulebook 1.66.0
 
-Generated 2026-11-18 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
+Generated 2026-11-19 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
 
 ```
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.64.0 → 1.65.5
-Packed hash: 4a25d2086dafd317d268705b724490c4535a60b780a738254a7a6e6c0d67acf4
-Rulebook sha256: a1588be9587f572ddc5f15a317ebf5f930868b155bb4f576c310f5c965408156
+Rulebook version: 1.65.5 → 1.66.0
+Packed hash: e2a684116db2211e8b9b36f583800c36d0f8a3df5555b4e510b9db18b5582c9b
+Rulebook sha256: 57b593b669018fa1d9615b050d2f07cf9805b4a5de1dd6b2c6c32c884fd81354
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,43 +22,27 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 56f892a29d844eaaebe16028640ebdfb036324d3a229638968c34d10663159f3
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: REPORT_CHECKS_COLLECTION, overtimeReportIntegrity, parseReportCheckDocument, payeClaimReportIntegrity, reportCheckWriteFields
+Exports added: timesheetSheetHasActivity, userTimesheetQueue, userTimesheetQueueCounts
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/crossPlatformContract.samples.ts, lib/canonical/index.ts, lib/canonical/liveSources.ts, lib/canonical/organizationDeletion.ts, lib/canonical/organizationSettings.ts, lib/canonical/reportIntegrity.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/index.ts, lib/canonical/parity-fixture.json, lib/canonical/userTimesheetQueue.scenario.ts, lib/canonical/userTimesheetQueue.test.ts, lib/canonical/userTimesheetQueue.ts
 Done when:
-- [ ] Packed hash in iOS equals 4a25d2086dafd317d268705b724490c4535a60b780a738254a7a6e6c0d67acf4
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 a1588be9587f572ddc5f15a317ebf5f930868b155bb4f576c310f5c965408156)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.65.5)
+- [ ] Packed hash in iOS equals e2a684116db2211e8b9b36f583800c36d0f8a3df5555b4e510b9db18b5582c9b
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 57b593b669018fa1d9615b050d2f07cf9805b4a5de1dd6b2c6c32c884fd81354)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.66.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.65.5
+## What changed in 1.66.0
 
-- **Report check: the person as the apps see them** (§26, fifth review of #391; Cloud Functions only, no rule function changes). The person's ids are `overtimePersonIds` over their users document with its stored `formerUserIds` and `sameEmailUserIds`, every users document of the organisation on their email and the organisation's `operatives` rows, both matched with `emailKey` (trimmed, lower case) — the same set for `not_their_booking` and `not_their_item`. The organisation's Super Admin (`isOrganizationSuperAdmin`) counts as having no line manager (§25 `canEditOwnBookingOvertime`: they change their own overtime directly), so their self-confirmed line is a note. Real reports filed under a same-email account, an `operatives` row whose email differs in case or spaces, or by a Super Admin with a line manager were flagged before.
-
-## iOS work for 1.65.5
-
-Super Admin of an organisation has no blank fallback, and a server check of saved reports (rulebook 1.65.0, mass-assignment audit 17 Nov, owner approved). Every rule below is a packed function — call it through `CanonicalBusinessEngine`; keep no Swift copy.
-
-1. **`isOrganizationSuperAdmin`** (§20): a viewer's `isSuperAdmin` flag now counts only when their home `organizationId` names the open organisation exactly; a blank home organisation (or a blank organisation id) is never a match. The creator is unchanged. iOS callers (`CanonicalBusinessEngine.isOrganizationSuperAdmin` in `Core/Rulebook+PermissionLevels.swift` → `OrganizationSuperAdminCache`, `AppUser.organizationSuperAdmin`; `accountDeletionPath` in `Views/DeleteMyAccountView.swift`) already pass `viewerOrganizationId` / `organizationId`; nothing to change unless an `AppUser` is built with an empty `organizationId` for the signed-in user — then the Super Admin answer is now false (correct: the rules' `callerIsSuperAdminOf` never allowed it). Check `RulebookParityTests` and `Rulebook1280Tests` still pass after the sync.
-2. **Report checks** (§26): nothing for iOS to write or show — the Cloud Functions check every new `overtimeReports` / `payeClaimReports` document and admins read the results in web Data health. Do not write `reportChecks` from the app.
-3. `minimumIosBuild`: not needed.
-4. **1.65.1** (review of #391): the report check is stricter (a line with no booking fingerprint, a repeated booking or item, and clock hours or a multiplier that are not the booking's are flagged). Still server only: the iPhone already writes `fingerprint` on every overtime report line (`overtimeReportSnapshot`); nothing to change.
-5. **1.65.2** (re-review of #391): the report check also compares the printed text, day, times and job of each overtime line, each claim item's name, job number, dates and currency, and each line or item against the report's range. Still server only; the iPhone writes reports through `overtimeReportSnapshot` / `payeClaimReportSnapshot`, which already produce the expected values. Nothing to change.
-6. **1.65.3** (third review of #391): 0h lines, custom places and claim descriptions / approvers / evidence are checked too. Server only. For a manager site booking at a place that is not a job, iOS leaves the overtime line's job name blank (`OvertimeBookingInput.withJobs` finds no job) and web shows `customLocationName`; the check accepts both. Nothing to change.
-7. **1.65.4** (fourth review of #391): the server reads bookings and names through the rulebook readers and also checks the booking's person, self-confirmation with a line manager, and the printed person and company. Server only; nothing to change on iOS.
-8. **1.65.5** (fifth review of #391): server only — the check finds the person's ids and Super Admin status as the apps do. Nothing to change on iOS.
+- **Awaiting sign-off and Signed off list every timesheet waiting, however old** (§8, owner decision 17 Nov: both apps must agree exactly). New `userTimesheetQueue` / `userTimesheetQueueCounts` (`lib/canonical/userTimesheetQueue.ts`): one row per person per pay run from every stored sheet the viewer's people have (`userTimesheetSubjects`, people folded with `personIdSet`, sheets under any id they go by, without case), PAYE-only runs skipped (`showsMyTimesheets`), one sheet per run (`pickTimesheetRowForPeriod`, the latest revision), bucket `timesheetListBucket` with the sheet's booking change when its run's bookings are loaded, else its late extras alone (`timesheetChangesWithLateExtras(null, timesheetLateExtrasSummary(data))`: a late extra waiting on an old run is Awaiting). New `timesheetSheetHasActivity` (one rule for both apps: signatures, export, entries, late extras, signed snapshot, note). Shared scenario in `parity-fixture.json`.
+- Web: User Timesheets → Awaiting / Signed off and the hub tile counts read every stored sheet (`loadTimesheetQueueSheets`, with the upper / lower-case spellings of UUID-shaped ids) instead of the last six pay runs; `loadTimesheetQueueDrafts`, `draftsForMembers`, `timesheetQueueRows`, `currentPeriodTimesheetMembers`, `currentPeriodTimesheetBucketCounts`, `timesheetReviewerHubStats` and `pickTimesheetGroupDraft` are removed. Guardrail 3: older awaiting and signed-not-exported sheets newly appear. What may drop out of view: a sheet stored with no `userId`, or under a mixed-case id in another spelling, is not loaded by the `userId in` query; admins keep it for the last six pay runs (a `weekStartKey` pass, on both apps), line managers and older runs do not (known limit). A failed load is shown, never 0 / 0 / 0. The list and the hub tile check booking changes over the same last six pay runs.
+- iOS (hand-off): the Awaiting and Signed off lists and the landing counts call `userTimesheetQueue` — one row per person (a person with two records was counted twice), PAYE runs left out, Signed off every age (Email and export one email per pay run); person ids from `personIdSet`, activity from `timesheetSheetHasActivity`, booking changes over the last six pay runs only (as web); a failed sheet load is shown, never an empty list.
 
 ## New rulebook sections
 
-- 1.65.5 — 2026-11-17
-- 1.65.4 — 2026-11-17
-- 1.65.3 — 2026-11-17
-- 1.65.2 — 2026-11-17
-- 1.65.1 — 2026-11-17
-- 1.65.0 — 2026-11-17
+- 1.66.0 — 2026-11-18
 
 ## Workflow for the iOS agent
 

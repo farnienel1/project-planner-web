@@ -1839,3 +1839,5 @@ export {
 } from './materialSafeSender'
 export { taskCompletionFields } from './operationsDocuments'
 export { MANAGER_ROW_NOT_LINKED_LABEL } from './unresolvedBookingPeople'
+// 1.66.0 §8: User Timesheets → Awaiting sign-off / Signed off from every stored sheet, however old (owner decision 17 Nov).
+export { timesheetSheetHasActivity, userTimesheetQueue, userTimesheetQueueCounts } from './userTimesheetQueue'

@@ -1790,6 +1790,7 @@ var ProjectPlannerCanonical = (() => {
     timesheetRevisionToSignRecipients: () => timesheetRevisionToSignRecipients,
     timesheetRevisionWaitingLabel: () => timesheetRevisionWaitingLabel,
     timesheetSelfSigned: () => timesheetSelfSigned,
+    timesheetSheetHasActivity: () => timesheetSheetHasActivity,
     timesheetSheetIsRevision: () => timesheetSheetIsRevision,
     timesheetSignOffWriteFields: () => timesheetSignOffWriteFields,
     timesheetSignedEntryKeys: () => timesheetSignedEntryKeys,
@@ -1842,6 +1843,8 @@ var ProjectPlannerCanonical = (() => {
     userPermissionFlag: () => userPermissionFlag,
     userProfileWriteFields: () => userProfileWriteFields,
     userRosterSegment: () => userRosterSegment,
+    userTimesheetQueue: () => userTimesheetQueue,
+    userTimesheetQueueCounts: () => userTimesheetQueueCounts,
     userTimesheetSubjects: () => userTimesheetSubjects,
     usersMissingEmploymentType: () => usersMissingEmploymentType,
     usersMissingLevel: () => usersMissingLevel,
@@ -2218,8 +2221,8 @@ var ProjectPlannerCanonical = (() => {
     if (typeof value === "number") {
       return Number.isFinite(value) && value >= 0 && value <= 24 * 60 ? Math.round(value) : null;
     }
-    const text50 = String(value ?? "").trim();
-    const match = /^(\d{1,2}):(\d{2})$/.exec(text50);
+    const text51 = String(value ?? "").trim();
+    const match = /^(\d{1,2}):(\d{2})$/.exec(text51);
     if (!match) return null;
     const hours2 = Number(match[1]);
     const minutes = Number(match[2]);
@@ -5416,15 +5419,15 @@ var ProjectPlannerCanonical = (() => {
   }
   var COVERAGE_CLOCK_RE = /^\d{1,2}:\d{2}$/;
   function clockMinutesOf(value) {
-    const text50 = coverageClock(value);
-    if (!text50) return null;
-    const [h3, m] = text50.split(":").map(Number);
+    const text51 = coverageClock(value);
+    if (!text51) return null;
+    const [h3, m] = text51.split(":").map(Number);
     return h3 * 60 + m;
   }
   function coverageClock(value) {
-    const text50 = typeof value === "string" ? value.trim() : "";
-    if (!COVERAGE_CLOCK_RE.test(text50)) return null;
-    const [h3, m] = text50.split(":").map(Number);
+    const text51 = typeof value === "string" ? value.trim() : "";
+    if (!COVERAGE_CLOCK_RE.test(text51)) return null;
+    const [h3, m] = text51.split(":").map(Number);
     return h3 >= 0 && h3 < 24 && m >= 0 && m < 60 ? `${String(h3).padStart(2, "0")}:${String(m).padStart(2, "0")}` : null;
   }
   function parseWeekendCoverage(value, includeWeekends) {
@@ -5756,8 +5759,8 @@ var ProjectPlannerCanonical = (() => {
     const total = plainHoursText(Math.max(0, clock4 * n - brk));
     return roundHundredths(brk) > 0 ? `${multiplied} \u2212 ${plainHoursText(brk)} break = ${total}` : `${multiplied} = ${total}`;
   }
-  function parseMultipliedHoursText(text50) {
-    const match = /(\d+(?:\.\d+)?)h × (\d+(?:\.\d+)?)(?: − (\d+(?:\.\d+)?)h break)? = \d+(?:\.\d+)?h/.exec(String(text50 ?? ""));
+  function parseMultipliedHoursText(text51) {
+    const match = /(\d+(?:\.\d+)?)h × (\d+(?:\.\d+)?)(?: − (\d+(?:\.\d+)?)h break)? = \d+(?:\.\d+)?h/.exec(String(text51 ?? ""));
     if (!match) return null;
     const clockHours = Number(match[1]);
     const multiplier = Number(match[2]);
@@ -5797,9 +5800,9 @@ var ProjectPlannerCanonical = (() => {
     return { standard, overtime, standardText: standard.join(" + "), overtimeText: overtime.join(" + ") };
   }
   function timesheetLineClockText(details) {
-    const text50 = String(details ?? "").trim();
-    const cut = text50.indexOf(" \xB7 OT ");
-    return cut >= 0 ? text50.slice(0, cut).trim() : text50;
+    const text51 = String(details ?? "").trim();
+    const cut = text51.indexOf(" \xB7 OT ");
+    return cut >= 0 ? text51.slice(0, cut).trim() : text51;
   }
   function result(segments, outsideMultiplier) {
     let total = 0;
@@ -7009,8 +7012,8 @@ var ProjectPlannerCanonical = (() => {
   }
   function formatHours(hours2) {
     const rounded = Math.round(hours2 * 4) / 4;
-    const text50 = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, "");
-    return `${text50} hour${rounded === 1 ? "" : "s"}`;
+    const text51 = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, "");
+    return `${text51} hour${rounded === 1 ? "" : "s"}`;
   }
   function joinRanges(intervals) {
     const labels = intervals.map(rangeLabel);
@@ -11413,8 +11416,8 @@ var ProjectPlannerCanonical = (() => {
     return typeof value === "string" ? value.trim().toLowerCase() : "";
   }
   function dayKeyText(value) {
-    const text50 = typeof value === "string" ? value.trim() : "";
-    return DAY_KEY2.test(text50) ? text50 : null;
+    const text51 = typeof value === "string" ? value.trim() : "";
+    return DAY_KEY2.test(text51) ? text51 : null;
   }
   function compareText(a, b) {
     if (a === b) return 0;
@@ -11542,8 +11545,8 @@ var ProjectPlannerCanonical = (() => {
   function personDayItems(input) {
     const managerIdByKey = /* @__PURE__ */ new Map();
     for (const id2 of input?.managerIds || []) {
-      const text50 = idText2(id2);
-      if (text50) managerIdByKey.set(text50.toLowerCase(), text50);
+      const text51 = idText2(id2);
+      if (text51) managerIdByKey.set(text51.toLowerCase(), text51);
     }
     const people = input?.people || { accounts: [], operatives: [] };
     const managerIdByEmail = /* @__PURE__ */ new Map();
@@ -11644,9 +11647,9 @@ var ProjectPlannerCanonical = (() => {
     return [idText2(bookingAId), idText2(bookingBId)].sort(compareText).join("|");
   }
   function comparableKey(key7) {
-    const text50 = normalizeDocumentId(key7);
-    const parts3 = text50.split("|");
-    return parts3.length === 2 && parts3[0] && parts3[1] ? [...parts3].sort(compareText).join("|") : text50;
+    const text51 = normalizeDocumentId(key7);
+    const parts3 = text51.split("|");
+    return parts3.length === 2 && parts3[0] && parts3[1] ? [...parts3].sort(compareText).join("|") : text51;
   }
   function isClashAccepted(bookingAId, bookingBId, accepted) {
     const a = idKey7(bookingAId);
@@ -13929,8 +13932,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.65.5" : "",
-      sha256: true ? "a1588be9587f572ddc5f15a317ebf5f930868b155bb4f576c310f5c965408156" : ""
+      version: true ? "1.66.0" : "",
+      sha256: true ? "57b593b669018fa1d9615b050d2f07cf9805b4a5de1dd6b2c6c32c884fd81354" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -14663,9 +14666,9 @@ var ProjectPlannerCanonical = (() => {
     return "apply";
   }
   function offlineDeleteRefusalDecision(code) {
-    const text50 = errorCodeText(code);
-    if (text50 === "not-found" || text50 === "5") return "alreadyGone";
-    if (text50 === "permission-denied" || text50 === "7") return "refusePermission";
+    const text51 = errorCodeText(code);
+    if (text51 === "not-found" || text51 === "5") return "alreadyGone";
+    if (text51 === "permission-denied" || text51 === "7") return "refusePermission";
     return "retry";
   }
   function bookingDeleteSignedTimesheetWarning(dayKey, sheets) {
@@ -18940,10 +18943,10 @@ var ProjectPlannerCanonical = (() => {
   var WEEKEND_TIME_SLOTS = ["CUSTOM"];
   function isoWeekdayOf(day, timeZone) {
     if (typeof day === "number") return day;
-    const text50 = String(day || "").trim().toLowerCase();
-    if (text50 === "saturday") return 6;
-    if (text50 === "sunday") return 7;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(text50)) return isoWeekdayOfDayKey(text50, zoneOrLondon(timeZone));
+    const text51 = String(day || "").trim().toLowerCase();
+    if (text51 === "saturday") return 6;
+    if (text51 === "sunday") return 7;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text51)) return isoWeekdayOfDayKey(text51, zoneOrLondon(timeZone));
     return 0;
   }
   function isWeekendDayKey(dayKey, timeZone) {
@@ -19314,8 +19317,8 @@ var ProjectPlannerCanonical = (() => {
     return round4(brk) > 0 ? `${h2(clock4)} OT \xD7 ${round4(n)} \u2212 ${h2(brk)} break = ${total}` : `${h2(clock4)} OT \xD7 ${round4(n)} = ${total}`;
   }
   function overtimeIncludedText(input) {
-    const text50 = overtimeTotalText(input);
-    return text50 ? `incl. ${text50}` : "";
+    const text51 = overtimeTotalText(input);
+    return text51 ? `incl. ${text51}` : "";
   }
   function bookedWithOvertimeText(input) {
     const booked = `${h2(Math.max(0, Number(input?.bookedHours) || 0))} booked`;
@@ -21768,13 +21771,13 @@ var ProjectPlannerCanonical = (() => {
     if (startsWith(bytes, [208, 207, 17, 224, 161, 177, 26, 225])) return "application/x-ole-storage";
     if (startsWith(bytes, [66, 77])) return "image/bmp";
     if (startsWith(bytes, [73, 73, 42, 0]) || startsWith(bytes, [77, 77, 0, 42])) return "image/tiff";
-    const text50 = ascii(bytes, 0, bytes.length);
-    const lead = text50.replace(/^(\uFEFF|\xEF\xBB\xBF)/, "").trimStart().toLowerCase();
+    const text51 = ascii(bytes, 0, bytes.length);
+    const lead = text51.replace(/^(\uFEFF|\xEF\xBB\xBF)/, "").trimStart().toLowerCase();
     if (lead.startsWith("<")) {
       return lead.includes("<svg") ? "image/svg+xml" : "text/html";
     }
-    const pdfAt = text50.indexOf("%PDF-");
-    if (pdfAt >= 0 && !text50.slice(0, pdfAt).includes("<")) return "application/pdf";
+    const pdfAt = text51.indexOf("%PDF-");
+    if (pdfAt >= 0 && !text51.slice(0, pdfAt).includes("<")) return "application/pdf";
     if (!bytes.includes(0)) {
       if (lead.includes("<svg")) return "image/svg+xml";
       if (lead.includes("<html") || lead.includes("<script")) return "text/html";
@@ -26500,10 +26503,10 @@ var ProjectPlannerCanonical = (() => {
     if (!isPlainMap(perms)) return false;
     return truthy(get(perms, kind, get(m, kind, false)));
   }
-  function utf8Bytes2(text50) {
+  function utf8Bytes2(text51) {
     let bytes = 0;
-    for (let i = 0; i < text50.length; i += 1) {
-      const code = text50.charCodeAt(i);
+    for (let i = 0; i < text51.length; i += 1) {
+      const code = text51.charCodeAt(i);
       if (code < 128) bytes += 1;
       else if (code < 2048) bytes += 2;
       else if (code >= 55296 && code <= 56319) {
@@ -27639,8 +27642,8 @@ var ProjectPlannerCanonical = (() => {
     return Math.round(value * 1e4) / 1e4;
   }
   function basisOf(value) {
-    const text50 = String(value ?? "").trim().toLowerCase();
-    return text50 === "hourly" || text50 === "hour" ? "hourly" : "day";
+    const text51 = String(value ?? "").trim().toLowerCase();
+    return text51 === "hourly" || text51 === "hour" ? "hourly" : "day";
   }
   var PAYROLL_LINE_EDIT_TIMES_MESSAGE = "Enter a start and a finish time that are different.";
   function clockMinutes(value) {
@@ -28820,6 +28823,128 @@ var ProjectPlannerCanonical = (() => {
   }
   function materialRequestSafeSenderNotice(recipientEmail, contactKnown) {
     return materialRequestIsFirstContact(recipientEmail, contactKnown) ? MATERIAL_REQUEST_SAFE_SENDER_NOTICE : null;
+  }
+
+  // lib/canonical/userTimesheetQueue.ts
+  var DAY_KEY12 = /^\d{4}-\d{2}-\d{2}$/;
+  function idKey10(value) {
+    return typeof value === "string" ? value.trim().toLowerCase() : "";
+  }
+  function text50(value) {
+    return typeof value === "string" ? value.trim() : "";
+  }
+  function sheetOwnerKey(sheet) {
+    return idKey10(sheet.userId) || idKey10(timesheetDocumentSubjectId(sheet.documentId ?? ""));
+  }
+  function filled(value) {
+    if (value == null || value === false) return false;
+    if (typeof value === "string") return value.trim().length > 0;
+    if (typeof value === "number") return Number.isFinite(value) && value !== 0;
+    if (Array.isArray(value)) return value.length > 0;
+    return true;
+  }
+  function timesheetSheetHasActivity(data) {
+    const sheet = data && typeof data === "object" ? data : {};
+    return [
+      "operativeSignedAt",
+      "managerSignedAt",
+      "exportedAt",
+      "expenseEntries",
+      "priceWorkEntries",
+      "lateExtras",
+      "managerNote",
+      "weeklyReportOverride"
+    ].some((key7) => filled(sheet[key7]));
+  }
+  function sheetEnd(sheet) {
+    const end = text50(sheet.endDayKey);
+    return DAY_KEY12.test(end) ? end : text50(sheet.startDayKey);
+  }
+  function userTimesheetQueue(input) {
+    const members = (input?.members ?? []).filter((member) => member && idKey10(member.id));
+    const sheets = input?.sheets ?? [];
+    const timeZone = input?.timeZone ?? null;
+    const viewer = input?.viewer;
+    if (!viewer) return [];
+    const subjectIds = new Set(userTimesheetSubjects({ viewer, members }).map((row2) => idKey10(row2.userId)));
+    const subjects = members.filter((member) => subjectIds.has(idKey10(member.id)));
+    if (subjects.length === 0) return [];
+    const viewerKeys = new Set(
+      personIdSet(
+        { id: viewer.id, formerUserIds: [...viewer.formerIds ?? []], sameEmailUserIds: [...viewer.aliasIds ?? []] },
+        members
+      ).map(idKey10)
+    );
+    for (const id2 of [viewer.id, ...viewer.formerIds ?? [], ...viewer.aliasIds ?? []]) if (idKey10(id2)) viewerKeys.add(idKey10(id2));
+    const people = [];
+    for (const member of subjects) {
+      const keys = new Set(personIdSet(member, members).map(idKey10).filter(Boolean));
+      keys.add(idKey10(member.id));
+      for (const key7 of viewerKeys) keys.delete(key7);
+      const meeting = people.filter((person) => [...keys].some((key7) => person.keys.has(key7)));
+      const target = meeting[0] ?? { members: [], keys: /* @__PURE__ */ new Set() };
+      if (meeting.length === 0) people.push(target);
+      for (const other of meeting.slice(1)) {
+        target.members.push(...other.members);
+        for (const key7 of other.keys) target.keys.add(key7);
+        people.splice(people.indexOf(other), 1);
+      }
+      target.members.push(member);
+      for (const key7 of keys) target.keys.add(key7);
+    }
+    const rows3 = [];
+    people.forEach((person, personOrder) => {
+      const own = sheets.map((sheet, index) => ({ sheet, index })).filter(({ sheet }) => {
+        const owner = sheetOwnerKey(sheet);
+        return owner && !viewerKeys.has(owner) && person.keys.has(owner) && DAY_KEY12.test(text50(sheet.startDayKey));
+      });
+      if (own.length === 0) return;
+      const candidates = own.map(({ sheet }) => ({
+        startDayKey: text50(sheet.startDayKey),
+        endDayKey: DAY_KEY12.test(text50(sheet.endDayKey)) ? text50(sheet.endDayKey) : null,
+        hasActivity: typeof sheet.hasActivity === "boolean" ? sheet.hasActivity : timesheetSheetHasActivity(sheet.data),
+        documentId: text50(sheet.documentId) || null
+      }));
+      const runs = /* @__PURE__ */ new Map();
+      for (const { sheet } of own) {
+        const run = { startDayKey: text50(sheet.startDayKey), endDayKey: sheetEnd(sheet) };
+        runs.set(`${run.startDayKey}|${run.endDayKey}`, run);
+      }
+      const picked = /* @__PURE__ */ new Set();
+      for (const run of runs.values()) {
+        const at = pickTimesheetRowForPeriod(candidates, run);
+        if (at < 0 || picked.has(at)) continue;
+        picked.add(at);
+        const { sheet, index } = own[at];
+        const sheetKey = sheetOwnerKey(sheet);
+        const member = person.members.find((row2) => idKey10(row2.id) === sheetKey) ?? person.members[0];
+        if (!showsMyTimesheets(member, run, timeZone)) continue;
+        const status = sheet.status ?? parseTimesheetStatusFields(sheet.data ?? {});
+        const selfSigned = typeof member.timesheetSelfSigned === "boolean" ? member.timesheetSelfSigned : timesheetSelfSigned(member);
+        const change = sheet.bookingsChange ?? (sheet.data ? timesheetChangesWithLateExtras(null, timesheetLateExtrasSummary(sheet.data, { sheetDocId: text50(sheet.documentId) || null })) : null);
+        const bucket = timesheetListBucket(status, !selfSigned, change);
+        rows3.push({
+          key: `${member.id}|${run.startDayKey}|${run.endDayKey}`,
+          personId: member.id,
+          sheetUserId: text50(sheet.userId) || timesheetDocumentSubjectId(sheet.documentId ?? ""),
+          startDayKey: run.startDayKey,
+          endDayKey: run.endDayKey,
+          documentId: text50(sheet.documentId),
+          sheetIndex: index,
+          bucket,
+          order: personOrder
+        });
+      }
+    });
+    rows3.sort((a, b) => a.startDayKey === b.startDayKey ? a.order - b.order : a.startDayKey < b.startDayKey ? 1 : -1);
+    return rows3.map(({ order: _order, ...row2 }) => row2);
+  }
+  function userTimesheetQueueCounts(input) {
+    const rows3 = userTimesheetQueue(input);
+    return {
+      awaiting: rows3.filter((row2) => row2.bucket === "awaiting").length,
+      signed: rows3.filter((row2) => row2.bucket === "signed").length
+    };
   }
   return __toCommonJS(bundleEntry_exports);
 })();
