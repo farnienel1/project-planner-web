@@ -30,6 +30,16 @@ export async function loadTaxIds(
  * Write the private document, then remove any legacy copy from the users
  * document. `stripLegacy: false` for a placeholder that never had one.
  */
+/** The refusal `saveTaxIds` would give, checked before anything is queued (second review of #371); null when valid. */
+export function taxIdsValidationError(
+  values: { utrNumber?: string | null; vatNumber?: string | null },
+  updatedByUserId: string
+): string | null {
+  const result = sensitiveProfileWriteFields({ ...values, updatedByUserId })
+  if (result.ok) return null
+  return result.error === 'too_long' ? 'UTR and VAT numbers are 20 characters at most.' : 'Not signed in.'
+}
+
 export async function saveTaxIds(
   userId: string,
   values: { utrNumber?: string | null; vatNumber?: string | null },
@@ -37,7 +47,7 @@ export async function saveTaxIds(
   options: { stripLegacy?: boolean } = {}
 ): Promise<void> {
   const result = sensitiveProfileWriteFields({ ...values, updatedByUserId })
-  if (!result.ok) throw new Error(result.error === 'too_long' ? 'UTR and VAT numbers are 20 characters at most.' : 'Not signed in.')
+  if (!result.ok) throw new Error(taxIdsValidationError(values, updatedByUserId) ?? 'Not signed in.')
   // Rulebook 1.9.0 `taxIdsDocumentFields`: the document's only fields, written whole.
   const fields = taxIdsDocumentFields({ ...values, updatedByUserId }) ?? result.fields
   const db = getFirebaseDb()

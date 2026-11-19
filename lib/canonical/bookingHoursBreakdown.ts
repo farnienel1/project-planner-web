@@ -1,5 +1,5 @@
 /**
- * Rulebook 1.62.0 §4.3 (owner request 17 Nov): the simpler hours breakdown every booking screen shows, on web and iOS,
+ * Rulebook 1.69.0 §4.3 (owner request 17 Nov): the simpler hours breakdown every booking screen shows, on web and iOS,
  * in the same words. One line under the timeline and a short breakdown that reads down and adds up:
  *
  *   06:00–17:30 · 12.25 paid hours
@@ -148,7 +148,7 @@ function sumPaid(rows: PayrollHoursSegment[]): number {
 }
 
 /**
- * Rulebook 1.62.0 §4.3: the simple breakdown of one booking on one day — the summary line, the header detail and the
+ * Rulebook 1.69.0 §4.3: the simple breakdown of one booking on one day — the summary line, the header detail and the
  * Normal / Overtime / Total rows — read from `payrollHoursResult` under the policy in effect that day (`policy` may be
  * the policy state). Null with no policy, an invalid day key, or custom hours with no valid times.
  */
@@ -303,7 +303,7 @@ export type BookingHoursBreakdownDays = {
 }
 
 /**
- * Rulebook 1.62.0 §4.3: the breakdown for one pair of times booked on several days. Each day is priced under the
+ * Rulebook 1.69.0 §4.3: the breakdown for one pair of times booked on several days. Each day is priced under the
  * working hours in effect on it (`bookingHoursBreakdownRows`); days whose breakdown reads the same once the day name is
  * taken off share one group, headed "Monday/Tuesday, full day". Text grouping only. Null when no day answers.
  */

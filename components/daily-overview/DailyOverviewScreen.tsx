@@ -22,7 +22,8 @@ import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
 import { canViewDailyOverview, hasAdminAccess } from '@/lib/permissions'
 import { dateFromDayKey, dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
-import { leaveHalfDayLabel, overtimeTotalText, type JOB_SCHEDULE_LEGEND, type ScheduleCellTone } from '@/lib/canonical'
+import { formatWarningHours } from '@/lib/warnings/clashIntervals'
+import { formatClockMinutes, leaveHalfDayLabel, overtimeTotalText, type JOB_SCHEDULE_LEGEND, type ScheduleCellTone } from '@/lib/canonical'
 import { Card, Chip, DataTable, EmptyState, IconTile, Note, PageBand, PageShell, PuButton, StatRow, WarnIcon, type PuTone } from '@/components/ui/page'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { watchSubcontractorBookings } from '@/lib/weekly-report/loadSubcontractorBookings'
@@ -33,6 +34,7 @@ import {
   overviewFormatHours,
   shiftOverviewDay,
   type OverviewPersonRow,
+  type OverviewPlaceRow,
 } from '@/lib/daily-overview/buildDailyOverview'
 import { BookLabourFlowScreen } from '@/components/book-labour/BookLabourFlowScreen'
 import {
@@ -41,7 +43,6 @@ import {
   type OverviewBookingTarget,
 } from '@/components/daily-overview/DailyOverviewBookingSheet'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
-import type { User } from '@/types'
 import { overviewHolidayName as holidayName, overviewPersonName as personName } from '@/lib/daily-overview/dailyOverviewToday'
 import { useDailyOverviewModel } from '@/lib/daily-overview/useDailyOverviewModel'
 
@@ -153,8 +154,9 @@ export function DailyOverviewScreen() {
           multiplier: model.overtimeMultiplier,
           breakHours: model.overtimeBreakHours,
         }) || '0h OT'
-  const openManagerBooking = (booking: ManagerSiteBooking) =>
-    setEditingRow(managerBookingToTarget(booking, personName(booking.userId, users, userIdAliases)))
+  // `name`: the row's own name ("Unknown person" when the person has none), so the sheet says who it is about.
+  const openManagerBooking = (booking: ManagerSiteBooking, name?: string) =>
+    setEditingRow(managerBookingToTarget(booking, name || personName(booking.userId, users, userIdAliases)))
 
   return (
     <>
@@ -368,6 +370,45 @@ export function DailyOverviewScreen() {
               </Card>
             ) : null}
 
+            {mayPublish && model.leaveCoverRows.length > 0 ? (
+              <Card
+                title="Half-day leave not covered"
+                icon={
+                  <IconTile tone="amber" size="sm">
+                    <WarnIcon />
+                  </IconTile>
+                }
+                actions={<Chip tone="amber">{model.leaveCoverRows.length}</Chip>}
+              >
+                <div className="pu-list">
+                  {model.leaveCoverRows.map((row) => (
+                    <div key={row.id} className="pu-item">
+                      <IconTile tone="slate" size="sm">
+                        {initialsFrom(row.personName)}
+                      </IconTile>
+                      <span className="grow">
+                        <b>{row.personName}</b>
+                        <span className="pu-sub">
+                          {row.leaveLabel} annual leave · Not booked:{' '}
+                          {row.missing
+                            .map((interval) => `${formatClockMinutes(interval.start)}–${formatClockMinutes(interval.end)}`)
+                            .join(', ')}
+                        </span>
+                      </span>
+                      <Chip tone="amber">−{formatWarningHours(row.missingHours)}h</Chip>
+                    </div>
+                  ))}
+                </div>
+                {canBook ? (
+                  <div className="pu-card-b">
+                    <PuButton variant="primary" block onClick={() => setBookLabourOpen(true)}>
+                      Book labour
+                    </PuButton>
+                  </div>
+                ) : null}
+              </Card>
+            ) : null}
+
             {model.holidays.length > 0 ? (
               <Card title="Annual leave">
                 <div className="pu-list">
@@ -390,18 +431,21 @@ export function DailyOverviewScreen() {
 
             {model.officeBookings.length > 0 || model.wfhBookings.length > 0 || model.customGroups.length > 0 ? (
               <OtherBlock
-                office={model.officeBookings}
-                wfh={model.wfhBookings}
-                custom={model.customGroups}
-                users={users}
-                aliases={userIdAliases}
+                groups={model.otherGroups}
+                people={
+                  new Set(
+                    [...model.officeBookings, ...model.wfhBookings, ...model.customGroups.flatMap((g) => g.bookings)].map(
+                      (b) => b.userId
+                    )
+                  ).size
+                }
                 onOpen={openManagerBooking}
               />
             ) : null}
 
             {model.siteSurveyBookings.length > 0 ? (
               <Card title="Site survey">
-                <ManagerList bookings={model.siteSurveyBookings} users={users} aliases={userIdAliases} onOpen={openManagerBooking} />
+                <PlaceList rows={model.siteSurveyRows} onOpen={openManagerBooking} />
               </Card>
             ) : null}
           </div>
@@ -489,86 +533,98 @@ function PersonRow({ row, onOpen }: { row: OverviewPersonRow; onOpen?: () => voi
   )
 }
 
-function ManagerList({
-  bookings,
-  users,
-  aliases,
-  onOpen,
-}: {
-  bookings: ManagerSiteBooking[]
-  users: User[]
-  aliases?: Record<string, string>
-  onOpen?: (booking: ManagerSiteBooking) => void
-}) {
-  return (
-    <div className="pu-list">
-      {bookings.map((b) => {
-        const name = personName(b.userId, users, aliases)
-        if (!name) return null
-        const inner = (
-          <>
-            <span className="grow">
-              <b>{name}</b>
-            </span>
-            <Chip tone="slate">{b.timeSlot}</Chip>
-          </>
-        )
-        return onOpen ? (
-          <button
-            key={b.id}
-            type="button"
-            className="pu-item"
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              onOpen(b)
-            }}
-            aria-label={`Change booking for ${name}`}
-          >
-            {inner}
+/**
+ * One "Other" / "Site survey" row, read like a job's row (owner report 17 Nov): the name on its own line, the shift
+ * and its times on two lines (`bookingTimesParts`), the tile kind (`scheduleCellKind`, `JOB_SCHEDULE_LEGEND` words),
+ * the standard / overtime bar and the hours pill (`bookingHoursLabel`). The whole row opens the booking, as before.
+ */
+function PlaceRow({ row, onOpen }: { row: OverviewPlaceRow; onOpen?: (booking: ManagerSiteBooking, name?: string) => void }) {
+  const kind = CELL_LABELS[row.cell.tone]
+  const barTotal = row.cell.standardHours + row.cell.overtimeHours
+  const stdWidth = barTotal > 0 ? (100 * row.cell.standardHours) / barTotal : 0
+  const otWidth = barTotal > 0 ? (100 * row.cell.overtimeHours) / barTotal : 0
+  const inner = (
+    <>
+      <IconTile tone="blue" size="sm" round>
+        {row.initials}
+      </IconTile>
+      <span className="pu-place-main">
+        <b className="pu-place-name">{row.name}</b>
+        {row.bookingParts.map((part, index) => (
+          <span key={index} className="pu-place-when">
+            <span className="pu-place-shift">{part.shift}</span>
+            {part.times ? <span className="pu-sub">{part.times}</span> : null}
+          </span>
+        ))}
+      </span>
+      <span className="pu-place-side">
+        <span className="pu-hrs">
+          <span className="pu-hbar" aria-hidden="true">
+            {stdWidth > 0 ? <i className="std" style={{ width: `${stdWidth}%` }} /> : null}
+            {otWidth > 0 ? <i className="ot" style={{ width: `${otWidth}%` }} /> : null}
+          </span>
+          {row.pillText}
+        </span>
+        <span className="pu-place-actions">
+          <Chip tone={kind.tone}>{kind.label}</Chip>
+          {onOpen ? (
             <span className="pu-btn sm" aria-hidden="true">
               Change
             </span>
-          </button>
-        ) : (
-          <div key={b.id} className="pu-item">
-            {inner}
-          </div>
-        )
-      })}
+          ) : null}
+        </span>
+      </span>
+    </>
+  )
+  return onOpen ? (
+    <button
+      type="button"
+      className="pu-item pu-place"
+      onClick={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        onOpen(row.booking, row.name)
+      }}
+      aria-label={`Change booking for ${row.name}: ${row.bookingParts
+        .map((part) => (part.times ? `${part.shift} ${part.times}` : part.shift))
+        .join(', ')}, ${kind.label}, ${row.pillText}`}
+    >
+      {inner}
+    </button>
+  ) : (
+    <div className="pu-item pu-place">{inner}</div>
+  )
+}
+
+function PlaceList({ rows, onOpen }: { rows: OverviewPlaceRow[]; onOpen?: (booking: ManagerSiteBooking, name?: string) => void }) {
+  return (
+    <div className="pu-list">
+      {rows.map((row) => (
+        <PlaceRow key={row.id} row={row} onOpen={onOpen} />
+      ))}
     </div>
   )
 }
 
 function OtherBlock({
-  office,
-  wfh,
-  custom,
-  users,
-  aliases,
+  groups,
+  people,
   onOpen,
 }: {
-  office: ManagerSiteBooking[]
-  wfh: ManagerSiteBooking[]
-  custom: { name: string; bookings: ManagerSiteBooking[] }[]
-  users: User[]
-  aliases?: Record<string, string>
-  onOpen?: (booking: ManagerSiteBooking) => void
+  groups: { kind: string; name: string; rows: OverviewPlaceRow[] }[]
+  /** Distinct people with an Office, Working from home or custom-place booking (the card's count, unchanged). */
+  people: number
+  onOpen?: (booking: ManagerSiteBooking, name?: string) => void
 }) {
-  const people = new Set([...office, ...wfh, ...custom.flatMap((g) => g.bookings)].map((b) => b.userId))
-  const groups = [
-    ...(office.length > 0 ? [{ name: 'Office', bookings: office }] : []),
-    ...(wfh.length > 0 ? [{ name: 'Working from home', bookings: wfh }] : []),
-    ...custom,
-  ]
   return (
-    <Card title="Other" count={`${people.size} person${people.size === 1 ? '' : 's'}`}>
+    <Card title="Other" count={`${people} person${people === 1 ? '' : 's'}`}>
       {groups.map((group) => (
-        <div key={group.name}>
+        // Keyed by kind and name: a custom place may be called "Office" (review of #387).
+        <div key={`${group.kind}:${group.name}`}>
           <p className="pu-label pu-pad" style={{ paddingBottom: 0 }}>
             {group.name}
           </p>
-          <ManagerList bookings={group.bookings} users={users} aliases={aliases} onOpen={onOpen} />
+          <PlaceList rows={group.rows} onOpen={onOpen} />
         </div>
       ))}
     </Card>

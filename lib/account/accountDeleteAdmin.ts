@@ -1,4 +1,5 @@
 import { restFieldsToPlain } from '@/lib/owner/firestoreRest'
+import { DELETED_PEOPLE_COLLECTION, formerPersonRecordFields } from '@/lib/canonical/formerPeople'
 import {
   adminDeleteAuthUser,
   adminGoogleAccessToken,
@@ -6,6 +7,7 @@ import {
   firebaseAdminConfigured,
 } from '@/lib/owner/identityToolkitAdmin'
 import { firestoreValue } from '@/lib/stripe/writeOrgBilling'
+import { PASSKEY_COLLECTION } from '@/lib/auth/passkeys/passkeyStore'
 import {
   ACCOUNT_DELETE_JOB_EMAIL_FIELD,
   ACCOUNT_DELETE_JOB_TYPE,
@@ -376,13 +378,41 @@ async function deleteQueryMatches(
   await Promise.all(rows.map((row) => adminDelete(session, row.path)))
 }
 
+/**
+ * Rulebook 1.59.0 §11, §12: a person who deletes their own account keeps no name or email anywhere, but their past
+ * bookings in each organisation they leave still read "Former: Deleted user" instead of "Unknown person": an
+ * anonymised `deletedPeople` record (`formerPersonRecordFields` with `anonymised`), created once (never overwriting).
+ * Best effort: a failure never stops the account delete.
+ */
+async function writeAnonymousFormerPerson(
+  session: AdminSession,
+  orgId: string,
+  personId: string,
+  deletedBy: string,
+  formerUserIds: unknown = []
+): Promise<void> {
+  const former = Array.isArray(formerUserIds) ? formerUserIds.filter((id): id is string => typeof id === 'string') : []
+  const record = formerPersonRecordFields({ person: { id: personId, formerUserIds: former }, deletedBy, anonymised: true })
+  if (!record || !orgId) return
+  try {
+    await adminCreateNamed(session, `organizations/${orgId}/${DELETED_PEOPLE_COLLECTION}`, personId, {
+      ...record.fields,
+      deletedAt: new Date(),
+    })
+  } catch (error) {
+    console.warn('[account/delete] former-person record skipped', orgId, error)
+  }
+}
+
 async function leaveOrganisation(
   session: AdminSession,
   uid: string,
   email: string,
-  snapshot: OrgDeleteSnapshot
+  snapshot: OrgDeleteSnapshot,
+  formerUserIds: unknown = []
 ): Promise<void> {
   const { orgId } = snapshot
+  await writeAnonymousFormerPerson(session, orgId, uid, uid, formerUserIds)
   await anonymiseRosterDocs(session, orgId, uid, email)
   await anonymiseUnsignedTimesheets(session, orgId, uid)
   await anonymiseVariations(session, orgId, uid)
@@ -431,6 +461,7 @@ async function scrubInvitePlaceholder(
   orgId: string
 ): Promise<void> {
   if (orgId) {
+    await writeAnonymousFormerPerson(session, orgId, placeholderId, placeholderId)
     await anonymiseRosterDocs(session, orgId, placeholderId, email)
     await anonymiseUnsignedTimesheets(session, orgId, placeholderId)
     await anonymiseVariations(session, orgId, placeholderId)
@@ -630,6 +661,7 @@ async function finishAlreadyScrubbedAccount(
   }
   await deleteUnusedInvitesAndPlaceholders(session, input.uid, email)
   await adminDelete(session, `users/${input.uid}/private/taxIds`)
+  await deleteQueryMatches(session, '', PASSKEY_COLLECTION, 'uid', input.uid)
   await adminDelete(session, `users/${input.uid}`)
   await markAccountDeleteCompleted(session, input.uid, email)
   await writeAccountDeleteAudit(session, { uid: input.uid, orgIds, ip: input.ip })
@@ -694,6 +726,7 @@ export async function executeAccountDelete(input: {
 
   if (existing?.plain.status === 'completed' && existing.plain.type === ACCOUNT_DELETE_JOB_TYPE) {
     await deleteUnusedInvitesAndPlaceholders(session, input.uid, email)
+    await deleteQueryMatches(session, '', PASSKEY_COLLECTION, 'uid', input.uid)
     await adminRevokeRefreshTokens(input.uid).catch(() => undefined)
     await adminDeleteAuthUser(input.uid)
     return 'already'
@@ -721,13 +754,15 @@ export async function executeAccountDelete(input: {
   }
 
   for (const snapshot of input.snapshots) {
-    await leaveOrganisation(session, input.uid, email, snapshot)
+    await leaveOrganisation(session, input.uid, email, snapshot, user?.plain.formerUserIds)
   }
   await deleteUnusedInvitesAndPlaceholders(session, input.uid, email)
   await anonymiseProductFeedback(session, input.uid)
   await deleteQueryMatches(session, '', 'productSessions', 'userId', input.uid)
   await anonymiseProductEvents(session, input.uid)
   await adminDelete(session, `users/${input.uid}/private/taxIds`)
+  // Passkeys of this account (server-only collection): a deleted account keeps no way back in.
+  await deleteQueryMatches(session, '', PASSKEY_COLLECTION, 'uid', input.uid)
   await adminDelete(session, `users/${input.uid}`)
 
   await persistAccountDeleteJob(session, {

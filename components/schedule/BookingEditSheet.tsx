@@ -86,7 +86,7 @@ export function BookingEditSheet({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Rulebook 1.62.0 (`bookingHoursBreakdownDays`): the Hours breakdown box for the slot and times on screen, under the
+  // Rulebook 1.69.0 (`bookingHoursBreakdownDays`): the Hours breakdown box for the slot and times on screen, under the
   // working hours in effect on the booking day, with the booking's own overtime rate (null = the organisation's).
   const breakdown = useMemo(() => {
     const firestoreSlot = slotToFirestore({ date: new Date(booking.date), slot, workStartTime, workEndTime })

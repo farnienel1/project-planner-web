@@ -44,3 +44,83 @@ export async function watchWrite(
   onChange(final)
   return final
 }
+
+/** A write's outcome after the screen stopped waiting: confirmed, refused, or still not answered at the upper limit. */
+export type LaterWriteStatus = { status: 'saved' } | { status: 'refused'; message: string } | { status: 'unconfirmed' }
+
+/**
+ * The upper limit of "waiting for the server" (review of #371): Firestore retries a write that fails with UNKNOWN,
+ * INTERNAL, UNAVAILABLE or ABORTED for ever, so its promise may never settle. After this long the screen stops saying
+ * "waiting" and says the change is not confirmed.
+ */
+export const WRITE_UNCONFIRMED_AFTER_MS = 90_000
+
+/**
+ * Starts a write that reads before it writes, and resolves once it has been handed to Firestore (review of #371):
+ * `start` gets a `queued` callback and calls it just before its first write. The returned `write` is what
+ * `confirmWriteWithin` then waits on, so "saved on this device" never shows while the reads are still running.
+ * A failure before anything is queued (a refused read, a rule check) is thrown here.
+ */
+export async function whenQueued<T>(start: (queued: () => void) => Promise<T>): Promise<{ write: Promise<T> }> {
+  let mark: () => void = () => undefined
+  const queued = new Promise<void>((resolve) => {
+    mark = resolve
+  })
+  const write = start(mark)
+  await Promise.race([queued, write])
+  return { write }
+}
+
+/**
+ * Waits for `write` for up to `timeoutMs` (owner bug 17 Nov: Edit user stuck on "Saving…" although the change showed).
+ * Start it only once the write has been handed to Firestore (`batch.commit()` called), never while reads that come
+ * before it are still running. Confirmed in time → `'saved'`. Refused in time → throws the refusal, so the screen shows
+ * the error and re-enables Save. Not answered in time → `'pending'`: the write stays queued in Firestore (the local copy
+ * already shows it) and `onLater` is called with `saved` or `refused` when it settles. When it has still not settled
+ * `giveUpMs` after the start, `onLater` is called with `unconfirmed` (once); a later answer is still reported.
+ * Never waits longer than `timeoutMs`; never throws after it has returned.
+ */
+export async function confirmWriteWithin(
+  write: Promise<unknown>,
+  onLater: (status: LaterWriteStatus) => void,
+  timeoutMs: number = WRITE_CONFIRM_TIMEOUT_MS,
+  giveUpMs: number = WRITE_UNCONFIRMED_AFTER_MS
+): Promise<'saved' | 'pending'> {
+  return new Promise<'saved' | 'pending'>((resolve, reject) => {
+    let answered = false
+    let settled = false
+    const report = (status: LaterWriteStatus) => {
+      try {
+        onLater(status)
+      } catch (error) {
+        console.warn('[confirmWriteWithin] onLater failed', error)
+      }
+    }
+    const pendingTimer = setTimeout(() => {
+      if (settled || answered) return
+      answered = true
+      resolve('pending')
+    }, timeoutMs)
+    const giveUpTimer = setTimeout(() => {
+      if (!settled) report({ status: 'unconfirmed' })
+    }, Math.max(giveUpMs, timeoutMs))
+    // Never keeps a Node process (tests) alive for the long limit; a no-op in the browser.
+    ;(giveUpTimer as unknown as { unref?: () => void }).unref?.()
+    const finish = (status: { status: 'saved' } | { status: 'refused'; message: string }) => {
+      settled = true
+      clearTimeout(pendingTimer)
+      clearTimeout(giveUpTimer)
+      if (!answered) {
+        answered = true
+        if (status.status === 'refused') reject(new Error(status.message))
+        else resolve('saved')
+        return
+      }
+      report(status)
+    }
+    Promise.resolve(write).then(
+      () => finish({ status: 'saved' }),
+      (error: unknown) => finish({ status: 'refused', message: refusalMessage(error) })
+    )
+  })
+}

@@ -1,7 +1,19 @@
-import { collection, getDocs, onSnapshot, type QuerySnapshot, type Unsubscribe } from 'firebase/firestore'
+import {
+  collection,
+  doc,
+  getDocs,
+  onSnapshot,
+  serverTimestamp,
+  setDoc,
+  type QuerySnapshot,
+  type Unsubscribe,
+  writeBatch,
+} from 'firebase/firestore'
+import { warningDismissDocument } from '@/lib/warnings/warningDismiss'
 import { db } from '@/lib/firebase/config'
 import {
   approvedWarningKeys,
+  normalizeDocumentId,
   parseWarningResolutionDocument,
   resolvedWarningKeys,
   warningResolutionRecords,
@@ -19,6 +31,38 @@ function recordsOf(snapshot: QuerySnapshot) {
     snapshot.docs.map((entry) => ({ id: entry.id, data: entry.data() as Record<string, unknown> })),
     organizationZoneOr()
   )
+}
+
+/**
+ * Dismiss several keys of one warning together (a grouped unbooked day, an operative clash cluster's pairs): one
+ * batch of `warningResolutions/{key}` status `dismissed` (`warningDismissDocument` → `warningResolutionWriteFields`, the
+ * write iOS makes; admins and managers only by the rules), so either every row is dismissed or none (a refused write
+ * keeps the card). Returns the keys written, stored case kept. Throws when a key cannot be written or it is refused.
+ * A key already resolved (`alreadyResolvedKeys`, compared without case) is left as stored, so dismissing a clash
+ * cluster never turns an earlier approval of one of its pairs into a dismissal (`approvedWarningKeys`).
+ */
+export async function dismissWarningResolutions(
+  organizationId: string,
+  resolutionKeys: ReadonlyArray<string>,
+  dismissedByUserId: string,
+  alreadyResolvedKeys: ReadonlyArray<string> = []
+): Promise<string[]> {
+  const resolved = new Set(alreadyResolvedKeys.map((key) => normalizeDocumentId(key)))
+  const toWrite = resolutionKeys.filter((key) => !resolved.has(normalizeDocumentId(key)))
+  if (resolutionKeys.length > 0 && toWrite.length === 0) return [...resolutionKeys]
+  const writes = toWrite.map((resolutionKey) => warningDismissDocument({ resolutionKey, dismissedByUserId }))
+  if (writes.length === 0 || writes.some((write) => !write)) throw new Error('This warning cannot be dismissed.')
+  const batch = writeBatch(db)
+  for (const write of writes) {
+    if (!write) continue
+    batch.set(doc(db, 'organizations', organizationId, 'warningResolutions', write.documentId), {
+      ...write.fields,
+      resolvedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
+  }
+  await batch.commit()
+  return writes.map((write) => write!.documentId)
 }
 
 /** Keys of warnings approved or removed on any device (`resolvedWarningKeys`). */

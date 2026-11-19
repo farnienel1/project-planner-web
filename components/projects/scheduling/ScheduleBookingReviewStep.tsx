@@ -99,7 +99,7 @@ export function ScheduleBookingReviewStep({
           const hasWarning = draftPersonNeedsWarning(person)
           const expanded = expandedPersonId === person.personId
           const bookableDays = slots.filter((slot) => dayStateBooks(person.dayStates[slotKey(slot.date)]))
-          // Rulebook 1.62.0 (`bookingHoursBreakdownDays`): the Hours breakdown of each set of custom times this person is
+          // Rulebook 1.69.0 (`bookingHoursBreakdownDays`): the Hours breakdown of each set of custom times this person is
           // booked on — the days with the same times together (one box per group the rulebook returns).
           const timeGroups = new Map<string, { start: string; end: string; dates: Date[] }>()
           for (const slot of bookableDays) {

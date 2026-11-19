@@ -128,17 +128,19 @@ test('age write fields use a boolean, a timestamp slot, and years as a number', 
 
 test('age confirmation is create-time only; existing profiles load without those fields', () => {
   const rules = readFileSync(new URL('../../firestore.rules', import.meta.url), 'utf8')
-  // 1.31.3: canReadUserDocument is written out inside the users `allow get` (compile cost); the read never needs the age fields.
+  // 1.31.3: canReadUserDocument is written out inside the users read (compile cost); the read never needs the age fields.
+  // 1.64.0: the identical `get` and `list` allows are one `read`.
   const usersBlock = rules.indexOf('match /users/{userId} {')
-  const usersGet = rules.slice(usersBlock, rules.indexOf('allow list:', usersBlock))
-  assert.match(usersGet, /allow get: if \(request\.auth != null && \(/)
+  const usersGet = rules.slice(usersBlock, rules.indexOf('allow create:', usersBlock))
+  assert.match(usersGet, /allow read: if \(request\.auth != null && \(/)
   assert.match(usersGet, /request\.auth\.uid == userId/)
   assert.equal(usersGet.includes('selfCreateHasAgeConfirmation'), false)
   assert.equal(rules.includes('allow get: if selfCreateHasAgeConfirmation'), false)
   assert.equal(rules.includes('allow update: if selfCreateHasAgeConfirmation'), false)
   assert.match(
     rules,
-    /allow create: if request\.auth != null &&\s+request\.resource\.data\.members\[request\.auth\.uid\] == 'admin' &&\s+membersValuesTyped\(request\.resource\.data, \{\}\);/
+    // 1.64.0: the organisation create is the exact `organizationCreateFields` shape (never age fields).
+    /allow create: if request\.auth != null && orgCreateShape\(request\.resource\.data\);/
   )
   // 1.31.1 (S1): the bootstrap create is ternary-gated, `isOrgBootstrapAdminProfileCreate(userId) ? (selfCreateHasAgeConfirmation() && …) : false`.
   // 1.31.3: isOrgBootstrapAdminProfileCreate is written out inside the users create (compile cost); its last test is the members-map admin entry.

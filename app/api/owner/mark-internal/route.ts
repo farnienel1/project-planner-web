@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { enforceRateLimit, isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
+import { apiFlag, apiObject, apiText, readApiBody } from '@/lib/security/apiBody'
+import { enforceRateLimit, isFirebaseUser, jsonError } from '@/lib/security/apiGuard'
 import { requireOwner } from '@/lib/owner/requireOwner'
 import { isPlatformOwnerSentinelOrg } from '@/lib/platform/owner'
 import { clearOwnerDirectoryCache } from '@/lib/owner/directoryServer'
 import { OWNER_AUDIT_UNAVAILABLE_MESSAGE, beginOwnerAudit, type OwnerAuditRun } from '@/lib/owner/ownerAudit'
+import { isValidDocumentId } from '@/lib/security/validation'
 import { bearerToken, boolField, firestoreGet, firestorePatch, readBool } from '@/lib/owner/firestoreRest'
 
 export const runtime = 'nodejs'
@@ -17,12 +19,15 @@ export async function POST(request: NextRequest) {
   if (limited) return limited
   const owner = await requireOwner(request)
   if (!isFirebaseUser(owner)) return owner
-  const body = await readJsonBody<{ orgId?: string; uid?: string; isInternal?: boolean }>(request)
+  const body = await readApiBody(request, apiObject({ orgId: apiText(128), uid: apiText(128), isInternal: apiFlag() }))
   if (!body.ok) return body.response
   const isInternal = body.value.isInternal === true
   const orgId = (body.value.orgId || '').trim()
   const uid = (body.value.uid || '').trim()
   if (!orgId && !uid) return jsonError('orgId or uid is required', 400)
+  // Mass-assignment audit 17 Nov: ids go into document paths, so only plain document ids (as delete-unfinished-user).
+  if (orgId && !isValidDocumentId(orgId)) return jsonError('orgId is not valid', 400)
+  if (uid && !isValidDocumentId(uid)) return jsonError('uid is not valid', 400)
   // The owner's own profile organisation is never a customer, so it is never marked (review of #348).
   if (isPlatformOwnerSentinelOrg(orgId)) return jsonError('The owner account organisation cannot be marked.', 400)
   const token = bearerToken(request)

@@ -6,6 +6,7 @@ import { saveInboxNotification } from '@/lib/firebase/notifyInbox'
 import {
   TIMESHEET_PENDING_NOTICE_TYPE,
   dayKeyInOrganizationZone,
+  lineManagerPeerNoticeKey,
   TIMESHEET_REVISION_NOTICE_MESSAGE,
   TIMESHEET_REVISION_NOTICE_TITLE,
   TIMESHEET_REVISION_NOTICE_TYPE,
@@ -25,6 +26,9 @@ import { formatPaymentPeriodLine } from '@/lib/timesheets/paymentRunCopy'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import type { User } from '@/types'
 
+/** The inbox writer (tests pass a stub; the app always uses `saveInboxNotification`). */
+export type InboxSave = (input: Parameters<typeof saveInboxNotification>[0]) => Promise<void>
+
 function displayName(user: User): string {
   return `${user.firstName} ${user.surname}`.trim() || user.email
 }
@@ -38,6 +42,8 @@ export async function timesheetNoticeId(input: {
   recipientId?: string
   /** Rulebook 1.55.0: REV N (0 / missing = the original) — a revision's notices are never de-duped with the original's. */
   revision?: number | null
+  /** Rulebook 1.60.1: the signature instant, so a re-sign of the same pay run is its own row and push. */
+  signedAt?: Date | null
 }): Promise<string | null> {
   const key = timesheetNotificationDedupeKey({
     type: input.type,
@@ -47,6 +53,7 @@ export async function timesheetNoticeId(input: {
     timeZone: input.timeZone,
     recipientId: input.recipientId ?? null,
     revision: input.revision ?? null,
+    signedAtMs: input.signedAt ? input.signedAt.getTime() : null,
   })
   return key ? syntheticUuidFromKey(key) : null
 }
@@ -62,6 +69,8 @@ export async function notifyTimesheetPendingManagerSignoff({
   weekStart,
   timeZone,
   revision,
+  signedAt,
+  save = saveInboxNotification,
 }: {
   organizationId: string
   signedByUser: User
@@ -71,6 +80,13 @@ export async function notifyTimesheetPendingManagerSignoff({
   timeZone: string
   /** Rulebook 1.55.0: the sheet's revision number (REV N), so its notice is not swallowed by the original's. */
   revision?: number | null
+  /**
+   * Rulebook 1.60.1: the person's signature instant (`operativeSignedAt`). Each signature is its own row, so a re-sign
+   * of the same pay run reaches the line manager (before, it hit the first signature's row and nothing was written).
+   * Required, so a caller that drops it does not compile.
+   */
+  signedAt: Date | null
+  save?: InboxSave
 }): Promise<void> {
   const roster = rulebookRoster(users)
   const recipients = timesheetSubmittedRecipients(rulebookPerson(signedByUser, users), roster)
@@ -83,9 +99,10 @@ export async function notifyTimesheetPendingManagerSignoff({
       timeZone,
       recipientId: managerId,
       revision,
+      signedAt,
     })
     if (!id) continue
-    await saveInboxNotification({
+    await save({
       id,
       organizationId,
       type: TIMESHEET_PENDING_NOTICE_TYPE,
@@ -112,6 +129,8 @@ export async function notifyTimesheetSignedByManager({
   weekEnd,
   timeZone,
   revision,
+  signedAt,
+  save = saveInboxNotification,
 }: {
   organizationId: string
   subjectUser: User
@@ -124,6 +143,13 @@ export async function notifyTimesheetSignedByManager({
   timeZone: string
   /** Rulebook 1.55.0: the sheet's revision number (REV N), so its notice is not swallowed by the original's. */
   revision?: number | null
+  /**
+   * Rulebook 1.60.1: the line manager's counter-sign instant (`managerSignedAt`). Each counter-signature is its own
+   * row (and push, and peer row), so a counter-sign again after a 1.47 reopen reaches the person. Required, so a caller
+   * that drops it does not compile.
+   */
+  signedAt: Date | null
+  save?: InboxSave
 }): Promise<void> {
   const roster = rulebookRoster(users)
   const subject = rulebookPerson(subjectUser, users)
@@ -136,9 +162,10 @@ export async function notifyTimesheetSignedByManager({
       weekStart,
       timeZone,
       revision,
+      signedAt,
     })
     if (!signedId) continue
-    await saveInboxNotification({
+    await save({
       id: signedId,
       organizationId,
       type: TIMESHEET_SIGNED_NOTICE_TYPE,
@@ -153,10 +180,10 @@ export async function notifyTimesheetSignedByManager({
   const periodLine = formatPaymentPeriodLine(weekStart, weekEnd, timeZone)
   const operativeName = displayName(subjectUser)
   for (const peerId of peers) {
-    const id = await syntheticUuidFromKey(
-      `lmPeer|${signedByName}|${operativeName}'s timesheet (${periodLine})|${peerId}|signed`
-    )
-    await saveInboxNotification({
+    const peerKey = timesheetPeerNoticeKey({ signedByName, operativeName, periodLine, peerId, signedAt })
+    if (!peerKey) continue
+    const id = await syntheticUuidFromKey(peerKey)
+    await save({
       id,
       organizationId,
       type: 'line_manager_peer_update',
@@ -167,6 +194,26 @@ export async function notifyTimesheetSignedByManager({
       deepLinkWeekStart: weekStart,
     })
   }
+}
+
+/**
+ * The `line_manager_peer_update` id key for a counter-signature: the rulebook's `lineManagerPeerNoticeKey` (1.60.1,
+ * `|sig{ms}` with the counter-sign instant). Null without a peer id.
+ */
+export function timesheetPeerNoticeKey(input: {
+  signedByName: string
+  operativeName: string
+  periodLine: string
+  peerId: string
+  signedAt: Date | null
+}): string | null {
+  return lineManagerPeerNoticeKey({
+    actorName: input.signedByName,
+    actionSummary: `${input.operativeName}'s timesheet (${input.periodLine})`,
+    peerId: input.peerId,
+    actionVerb: 'signed',
+    signedAtMs: input.signedAt ? input.signedAt.getTime() : null,
+  })
 }
 
 export function timesheetNotificationHref(

@@ -176,3 +176,34 @@ test('1.32.4 auth claims: the packed script gives the same claims for documents 
   }
   assert.deepEqual(JSON.parse(JSON.stringify(packed.authClaimsForPerson(input))), JSON.parse(JSON.stringify(authClaimsForPerson(input))))
 })
+
+// Rules 1.64.0 (firestore-rules-notes "re-review of #392"): `callerOrg`, `callerHomeFlags` and the home organisation
+// claim read the token with one nested `get(['pp', 'o', org], default)`. That is the same as the chained `get`s only
+// while `pp` and `pp.o` are maps, so the claims function must always write them as maps, and the reader refuses any
+// other shape.
+test('1.64.0 auth claims shape: pp and pp.o are always maps, pp.u a list, each organisation entry a list', () => {
+  const isMap = (v: unknown) => v != null && typeof v === 'object' && !Array.isArray(v)
+  const inputs: Partial<Parameters<typeof authClaimsForPerson>[0]>[] = [
+    {},
+    { user: { organizationId: 'Org-A', role: 'admin', adminAccess: true }, organizations: { 'Org-A': { members: { [UID]: 'admin' } } } },
+    { user: { organizationId: 'organizations/Org-B', role: 'operative', operativeMode: true } },
+    { user: { organizationId: 'Org-C' }, organizations: { 'Org-C': { creatorUserId: UID }, 'Org-D': { members: { [UID]: 'member' } } } },
+    { user: { organizationId: 7 as never }, memberships: { 'Org-E': { role: 'manager' } } as never },
+  ]
+  for (const input of inputs) {
+    const result = authClaimsForPerson({ uid: UID, user: null, organizations: {}, memberships: {}, stamp: 1, ...input })
+    const pp = result.claims.pp as unknown as Record<string, unknown>
+    assert.ok(isMap(pp), 'pp is a map')
+    assert.ok(isMap(pp.o), 'pp.o is a map')
+    assert.ok(Array.isArray(pp.u), 'pp.u is a list')
+    for (const entry of Object.values(pp.o as Record<string, unknown>)) assert.ok(Array.isArray(entry), 'pp.o entries are lists')
+    assert.ok(parseAuthClaims({ pp }) !== null, 'the reader accepts what the function writes')
+  }
+  // Any other shape is not read as claims (the rules then refuse everything a role decides).
+  for (const o of [[], 'org', null, 3, true]) {
+    assert.equal(parseAuthClaims({ pp: { v: 1, s: 0, u: [], o } }), null, `pp.o ${JSON.stringify(o)} is refused`)
+  }
+  for (const pp of [[], 'pp', 3]) {
+    assert.equal(parseAuthClaims({ pp }), null, `pp ${JSON.stringify(pp)} is refused`)
+  }
+})

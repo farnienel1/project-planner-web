@@ -55,9 +55,10 @@ const SITES: Site[] = [
   { file: 'components/projects/scheduling/SubcontractorBookingEditSheet.tsx', fn: 'save', success: ['bookingEdited'], after: ['updateSubcontractorBooking'], refusal: true },
   { file: 'components/projects/scheduling/SubcontractorBookingEditSheet.tsx', fn: 'remove', success: ['bookingDeleted'], after: ['deleteBookingWithTombstone'], refusal: true },
   { file: 'components/warnings/WarningsScreen.tsx', fn: 'handleRemoveEntry', success: ['bookingDeleted'], after: ['onDeleteManagerBooking', 'onDeleteBooking'], refusal: true, rethrow: true },
-  { file: 'components/warnings/WarningsScreen.tsx', fn: 'dismiss', success: ['warningResolved'], after: ['notifyCompanyActivity'], refusal: false },
   { file: 'app/dashboard/warnings/page.tsx', fn: 'handleAcceptClash', success: [], after: ['approveBookingClashPairs', 'approveBookingClash'], refusal: true, rethrow: true },
   { file: 'app/dashboard/warnings/page.tsx', fn: 'handleDismissQualification', success: [], after: ['dismissQualificationWarning'], refusal: true, rethrow: true },
+  // Owner bug 17 Nov: the materials (and any) Dismiss writes `warningResolutions` here; the card plays nothing itself.
+  { file: 'app/dashboard/warnings/page.tsx', fn: 'handleDismissWarning', success: [], after: ['dismissWarningResolutions'], refusal: true, rethrow: true },
   { file: 'components/annual-leave/OperativeAnnualLeaveCalendar.tsx', fn: 'bookLeave', success: ['leaveBooked', 'leaveRequested'], after: ['createRequests'], notices: ['notifyLeaveChangedForPerson'], refusal: true, rethrow: true },
   { file: 'components/annual-leave/OperativeAnnualLeaveCalendar.tsx', fn: 'confirmChange', success: ['leaveEdited'], after: ['saveBooking'], refusal: true, rethrow: true },
   { file: 'components/annual-leave/OperativeAnnualLeaveCalendar.tsx', fn: 'approveRequest', success: ['leaveApproved'], after: ['decideBooking'], notices: ['notifyHolidayRequestDecisionToUser'], refusal: true, rethrow: true },
@@ -82,6 +83,7 @@ const SITES: Site[] = [
 const COMPUTED: Record<string, string> = {
   'app/dashboard/warnings/page.tsx#handleAcceptClash': 'resolvedFeedbackEvent',
   'app/dashboard/warnings/page.tsx#handleDismissQualification': 'resolvedFeedbackEvent',
+  'app/dashboard/warnings/page.tsx#handleDismissWarning': 'resolvedFeedbackEvent',
   'components/overtime/PayeClaimsScreen.tsx#approve': 'reviewed',
 }
 

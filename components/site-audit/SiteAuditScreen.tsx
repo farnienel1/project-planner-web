@@ -10,6 +10,7 @@ import { deriveWorkStatus } from '@/lib/projects/workStatus'
 import { worksInTab, worksListMembership } from '@/lib/canonical'
 import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { SiteAuditCreateFlow } from '@/components/projects/siteAudit/SiteAuditCreateFlow'
+import { UnsentSiteAudits } from '@/components/site-audit/UnsentSiteAudits'
 import { ErrorBanner, LoadingSpinner } from '@/components/dashboard/PageShell'
 import {
   buildSiteAuditPdfContextFromProject,
@@ -626,6 +627,9 @@ export function SiteAuditScreen() {
             </span>
             <span className="count soft">{personal.audits.length}</span>
           </button>
+        </div>
+        <div className="mt-4">
+          <UnsentSiteAudits />
         </div>
       </div>
     )

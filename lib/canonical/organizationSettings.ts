@@ -242,6 +242,10 @@ export const OPERATIONAL_COLLECTION_PATHS = {
   personalSiteAudits: 'organizations/{orgId}/personalSiteAudits',
   /** 1.40.0 (§4.4): manual annual-leave adjustments, written once (`annualLeaveAdjustmentCreateFields`). */
   annualLeaveAdjustments: 'organizations/{orgId}/annualLeaveAdjustments',
+  deletedPeople: 'organizations/{orgId}/deletedPeople',
+  materialContacts: 'organizations/{orgId}/materialContacts',
+  /** 1.65.0 (§25, §26): one server check per saved overtime / claims report (`reportCheckWriteFields`). */
+  reportChecks: 'organizations/{orgId}/reportChecks',
 } as const
 
 /**

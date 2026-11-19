@@ -78,7 +78,7 @@ export function HoursTimelinePicker({
    */
   otMultiplierOverride?: number | null
   /**
-   * Rulebook 1.62.0: draw the Hours breakdown box under the summary line. Screens that show the box themselves (the
+   * Rulebook 1.69.0: draw the Hours breakdown box under the summary line. Screens that show the box themselves (the
    * sheets with `HoursBreakdownCard`) pass false, so it is never drawn twice.
    */
   showBreakdown?: boolean
@@ -147,7 +147,7 @@ export function HoursTimelinePicker({
     return out
   }, [valid, start, end, breakRemoved, otMultiplierOverride, dayPolicy, dayKeyOfBooking])
 
-  // Rulebook 1.62.0 (`bookingHoursBreakdownDays`): one summary line under the timeline and the Hours breakdown box —
+  // Rulebook 1.69.0 (`bookingHoursBreakdownDays`): one summary line under the timeline and the Hours breakdown box —
   // Normal hours, Overtime, Total paid hours — for every booked day, each under the working hours in effect on it.
   const breakdown = valid
     ? hoursBreakdownForDates(

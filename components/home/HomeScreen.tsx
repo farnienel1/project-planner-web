@@ -613,7 +613,9 @@ export function HomeScreen() {
       projectsReady,
     ]
   )
-  const unbookedCount = bookLabour && bookLabour.phase === 'ready' ? bookLabour.candidates.length : 0
+  // "N people have nothing booked": the Book labour people with nothing booked (a half-day leave row is partly booked).
+  const unbookedCount =
+    bookLabour && bookLabour.phase === 'ready' ? bookLabour.candidates.filter((person) => !person.leaveCover).length : 0
 
   // ---- Tasks: the Tasks page's "To do" list (owner decision 9). ----
   const taskRows = useMemo(() => {

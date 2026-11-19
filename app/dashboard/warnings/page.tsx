@@ -47,7 +47,12 @@ import {
   type WarningDecisionFailures,
 } from '@/lib/warnings/warningDecisionsLoad'
 import { activeOrgWarnings, generateOrgWarnings, type WarningDecisionInputs } from '@/lib/warnings/generateOrgWarnings'
-import { loadResolvedWarningKeys, watchResolvedWarningKeys } from '@/lib/warnings/warningResolutionStorage'
+import { withResolvedKey } from '@/lib/warnings/warningDismiss'
+import {
+  dismissWarningResolutions,
+  loadResolvedWarningKeys,
+  watchResolvedWarningKeys,
+} from '@/lib/warnings/warningResolutionStorage'
 import {
   partitionRowsByOrganization,
   publishReadyWarningLanes,
@@ -94,6 +99,14 @@ export default function WarningsPage() {
   const [acceptedClashes, setAcceptedClashes] = useState<AcceptedBookingClash[]>([])
   const [dismissedWarnings, setDismissedWarnings] = useState<DismissedWarning[]>([])
   const [resolvedKeys, setResolvedKeys] = useState<string[]>([])
+  // The latest lists, for the feedback after an awaited write (review of #372): the copies a handler closed over at
+  // the click can miss keys the live listener delivered while the write was running.
+  const latestResolvedKeys = useRef<string[]>([])
+  const latestAcceptedClashes = useRef<AcceptedBookingClash[]>([])
+  useEffect(() => {
+    latestResolvedKeys.current = resolvedKeys
+    latestAcceptedClashes.current = acceptedClashes
+  }, [resolvedKeys, acceptedClashes])
   // Approvals and removals from any device: the list waits for them so the total never shows rows they hide.
   const [decisionsOrgId, setDecisionsOrgId] = useState<string | null>(null)
   // Which approval sources failed to load. While any has, approved and dismissed warnings are never shown as open.
@@ -568,6 +581,34 @@ export default function WarningsPage() {
     [organization?.id, user?.id, visible, resolvedKeys, acceptedClashes, dismissedKeys]
   )
 
+  // Owner bug 17 Nov: a permanent dismissal is `warningResolutions/{resolutionKey}` with status `dismissed`
+  // (`warningResolutionWriteFields`, what iOS writes), read back through `resolvedWarningKeys` / `isWarningActive`,
+  // so the count, the Home badge and iOS all drop it. Owner request 17 Nov: every type iOS can dismiss — the keys of one
+  // card (a grouped unbooked day, an operative clash cluster's pairs) go in one batch. Added here at once; the live
+  // listener confirms them.
+  const handleDismissWarning = useCallback(
+    async (resolutionKeys: string[]) => {
+      if (!organization?.id || !user?.id) throw new Error('Sign in again to dismiss this warning.')
+      let written: string[]
+      try {
+        written = await dismissWarningResolutions(organization.id, resolutionKeys, user.id, latestResolvedKeys.current)
+      } catch (error) {
+        feedback('actionRefused')
+        throw error
+      }
+      const withAll = (keys: readonly string[]) => written.reduce<string[]>((acc, key) => withResolvedKey(acc, key), [...keys])
+      setResolvedKeys((prev) => withAll(prev))
+      feedback(
+        resolvedFeedbackEvent(visible, {
+          resolvedKeys: withAll(latestResolvedKeys.current),
+          acceptedClashes: latestAcceptedClashes.current,
+          dismissedQualificationKeys: dismissedKeys,
+        })
+      )
+    },
+    [organization?.id, user?.id, visible, dismissedKeys]
+  )
+
   const handleAcceptClash = useCallback(
     async (clash: {
       bookingAId: string
@@ -605,8 +646,10 @@ export default function WarningsPage() {
       }))
       feedback(
         resolvedFeedbackEvent(visible, {
-          resolvedKeys: clash.resolutionKey ? [...resolvedKeys, clash.resolutionKey] : resolvedKeys,
-          acceptedClashes: [...acceptedClashes, ...approvedNow],
+          resolvedKeys: clash.resolutionKey
+            ? withResolvedKey(latestResolvedKeys.current, clash.resolutionKey)
+            : latestResolvedKeys.current,
+          acceptedClashes: [...latestAcceptedClashes.current, ...approvedNow],
           dismissedQualificationKeys: dismissedKeys,
         })
       )
@@ -617,7 +660,7 @@ export default function WarningsPage() {
       setAcceptedClashes(accepted)
       setResolvedKeys(resolved)
     },
-    [organization?.id, user?.id, visible, dismissedKeys, resolvedKeys, acceptedClashes]
+    [organization?.id, user?.id, visible, dismissedKeys]
   )
 
   const handleDeleteBooking = useCallback(
@@ -711,6 +754,7 @@ export default function WarningsPage() {
       smallWorkIds={smallWorkIds}
       onAcceptClash={handleAcceptClash}
       onDismissQualification={handleDismissQualification}
+      onDismissWarning={handleDismissWarning}
       onDeleteBooking={handleDeleteBooking}
       onDeleteManagerBooking={handleDeleteManagerBooking}
       canRemoveClashEntry={canRemoveClashEntry}

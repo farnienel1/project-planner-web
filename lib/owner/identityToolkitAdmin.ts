@@ -238,6 +238,21 @@ export async function adminLookupAuthUserByEmail(email: string): Promise<{ uid: 
   return uid ? { uid } : null
 }
 
+/**
+ * No reset link because the account is missing or disabled (`EMAIL_NOT_FOUND`, `USER_DISABLED`). Same message as
+ * before for the owner console; the public reset route treats it exactly like a sent email (no account enumeration).
+ */
+export class AuthAccountNotFoundError extends Error {
+  constructor() {
+    super('No Firebase login exists for that email yet.')
+    this.name = 'AuthAccountNotFoundError'
+  }
+}
+
+function resetAccountMissing(message: string): boolean {
+  return message.includes('EMAIL_NOT_FOUND') || message.includes('USER_DISABLED') || message.includes('USER_NOT_FOUND')
+}
+
 export async function adminPasswordResetLink(email: string, continueUrl: string): Promise<string> {
   const { token, projectId } = await googleAccessToken([
     'https://www.googleapis.com/auth/identitytoolkit',
@@ -274,17 +289,67 @@ export async function adminPasswordResetLink(email: string, continueUrl: string)
     data = (await retry.json().catch(() => ({}))) as { oobLink?: string; error?: { message?: string } }
     if (!retry.ok || !data.oobLink) {
       const message = data.error?.message || ''
-      if (message.includes('EMAIL_NOT_FOUND')) throw new Error('No Firebase login exists for that email yet.')
+      if (resetAccountMissing(message)) throw new AuthAccountNotFoundError()
       throw new Error(data.error?.message || 'Could not create a password reset link.')
     }
     return data.oobLink
   }
   if (!response.ok || !data.oobLink) {
     const message = data.error?.message || ''
-    if (message.includes('EMAIL_NOT_FOUND')) throw new Error('No Firebase login exists for that email yet.')
+    if (resetAccountMissing(message)) throw new AuthAccountNotFoundError()
     throw new Error(data.error?.message || 'Could not create a password reset link.')
   }
   return data.oobLink
+}
+
+/** The new address already belongs to another login (`EMAIL_EXISTS`). The change route answers as if sent. */
+export class AuthEmailTakenError extends Error {
+  constructor() {
+    super('That email is already used by another login.')
+    this.name = 'AuthEmailTakenError'
+  }
+}
+
+/**
+ * A Firebase email action link made with the service account, so Firebase sends no email of its own
+ * (`returnOobLink: true`): `VERIFY_EMAIL` for `email`, or `VERIFY_AND_CHANGE_EMAIL` from `email` to `newEmail`.
+ * `continueUrl` is optional (left out when blank, and retried without it when Firebase refuses it).
+ */
+export async function adminEmailActionLink(input: {
+  requestType: 'VERIFY_EMAIL' | 'VERIFY_AND_CHANGE_EMAIL'
+  email: string
+  newEmail?: string
+  continueUrl?: string | null
+}): Promise<string> {
+  const { token, projectId } = await googleAccessToken([
+    'https://www.googleapis.com/auth/identitytoolkit',
+    'https://www.googleapis.com/auth/firebase',
+  ])
+  if (!projectId) throw new Error('Firebase project id is missing.')
+  const send = async (withContinue: boolean) => {
+    const body: Record<string, unknown> = { requestType: input.requestType, email: input.email, returnOobLink: true }
+    if (input.newEmail) body.newEmail = input.newEmail
+    if (withContinue && input.continueUrl) body.continueUrl = input.continueUrl
+    const response = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/accounts:sendOobCode`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }
+    )
+    const data = (await response.json().catch(() => ({}))) as { oobLink?: string; error?: { message?: string } }
+    return { ok: response.ok && Boolean(data.oobLink), data }
+  }
+  let result = await send(true)
+  if (!result.ok && input.continueUrl && (result.data.error?.message || '').includes('CONTINUE_URI')) result = await send(false)
+  if (!result.ok || !result.data.oobLink) {
+    const message = result.data.error?.message || ''
+    if (message.includes('EMAIL_EXISTS')) throw new AuthEmailTakenError()
+    if (resetAccountMissing(message)) throw new AuthAccountNotFoundError()
+    throw new Error(message || 'Could not create the email link.')
+  }
+  return result.data.oobLink
 }
 
 export async function adminUpdateAuthEmail(uid: string, email: string): Promise<void> {
@@ -369,5 +434,47 @@ export async function adminDeleteAuthUser(uid: string): Promise<void> {
   const message = identityError(data)
   if (!response.ok && !message.includes('USER_NOT_FOUND')) {
     throw new Error(data.error?.message || 'Could not delete the Firebase login.')
+  }
+}
+
+/** The audience Firebase Auth requires on a custom token. */
+export const FIREBASE_CUSTOM_TOKEN_AUDIENCE =
+  'https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit'
+
+/**
+ * A Firebase custom token for one uid, signed with the configured service account (the same key the session cookie
+ * and admin reads use; no new secret). It lives `ttlSeconds` (at most an hour, Firebase's limit) and carries no extra
+ * claims, so signing in with it gives exactly the account's own ID token (its email, email_verified and the server's
+ * custom claims). Against the Auth emulator (`emulator: true`) the emulator's unsigned form is used.
+ */
+export function adminSignCustomToken(
+  uid: string,
+  options: { nowSec?: number; ttlSeconds?: number; emulator?: boolean } = {}
+): string {
+  if (!uid || uid.length > 128) throw new GoogleAccessTokenError('A custom token needs a uid of 1–128 characters.', 'setup')
+  const nowSec = options.nowSec ?? Math.floor(Date.now() / 1000)
+  const ttl = Math.max(60, Math.min(3600, options.ttlSeconds ?? 300))
+  if (options.emulator) {
+    const header = base64Url(JSON.stringify({ alg: 'none', typ: 'JWT' }))
+    const payload = base64Url(
+      JSON.stringify({ iss: 'firebase-auth-emulator@example.com', sub: 'firebase-auth-emulator@example.com', aud: FIREBASE_CUSTOM_TOKEN_AUDIENCE, iat: nowSec, exp: nowSec + ttl, uid })
+    )
+    return `${header}.${payload}.`
+  }
+  const sa = readServiceAccount()
+  if (!sa) throw new GoogleAccessTokenError('FIREBASE_SERVICE_ACCOUNT_JSON is not set on the server.', 'setup')
+  const header = base64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))
+  const payload = base64Url(
+    JSON.stringify({ iss: sa.client_email, sub: sa.client_email, aud: FIREBASE_CUSTOM_TOKEN_AUDIENCE, iat: nowSec, exp: nowSec + ttl, uid })
+  )
+  try {
+    const signer = createSign('RSA-SHA256')
+    signer.update(`${header}.${payload}`)
+    return `${header}.${payload}.${signer.sign(sa.private_key.replace(/\\n/g, '\n'), 'base64url')}`
+  } catch (signError) {
+    throw new GoogleAccessTokenError(
+      `The Firebase Admin service account private key could not be used (${privateKeyErrorName(signError)}).`,
+      'setup'
+    )
   }
 }

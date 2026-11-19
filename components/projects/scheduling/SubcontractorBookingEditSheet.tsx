@@ -50,7 +50,7 @@ export function SubcontractorBookingEditSheet({
   const [error, setError] = useState<string | null>(null)
   const firmName = subcontractor?.name?.trim() || 'Sub contractor'
 
-  // Rulebook 1.62.0 (`bookingHoursBreakdownDays`): the Hours breakdown box (no unpaid break on a subcontractor booking).
+  // Rulebook 1.69.0 (`bookingHoursBreakdownDays`): the Hours breakdown box (no unpaid break on a subcontractor booking).
   const breakdown = useMemo(
     () =>
       hoursBreakdownForDates(

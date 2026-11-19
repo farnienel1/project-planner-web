@@ -1,6 +1,18 @@
 'use client'
 
 import { FormEvent, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { arrayUnion, doc, serverTimestamp, updateDoc } from 'firebase/firestore'
+import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
+import { useFormerPeople } from '@/lib/people/formerPeople'
+import {
+  FORMER_PERSON_LINK_ACTION,
+  FORMER_PERSON_LINK_SKIP,
+  FORMER_PERSON_LINK_TITLE,
+  formerPeopleForEmail,
+  formerPersonLinkOfferMessage,
+  formerPersonLinkWriteFields,
+  type FormerPerson,
+} from '@/lib/canonical/formerPeople'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
@@ -71,6 +83,8 @@ import {
   ErrorBanner,
 } from '@/components/settings/primitives'
 import { feedback } from '@/lib/feedbackSounds/feedback'
+import { isTimeoutError, withAbortTimeout } from '@/lib/client/withTimeout'
+import { INVITE_EMAIL_TIMEOUT_MESSAGE, INVITE_EMAIL_TIMEOUT_MS, inviteEmailTimeoutNote } from '@/lib/invites/inviteEmailTimeout'
 
 function FormSection({ label, children }: { label?: string; children: ReactNode }) {
   return (
@@ -238,6 +252,10 @@ export function AddUserScreen() {
   // Rulebook 1.36.0 §11 (owner decision 10 Nov): people with the same first and last name (`usersWithSameName`).
   // A warning only — Add anyway saves as before, Cancel returns to the form.
   const [duplicateMatches, setDuplicateMatches] = useState<SameNamePerson[] | null>(null)
+  // Rulebook 1.59.0 §11 (owner decision 17 Nov): a former person who used this email — offer to link their old ids
+  // (bookings, leave, history) to the new person. Linking is an admin identity-link write (§16), so admins only.
+  const formerPeople = useFormerPeople(organization?.id ?? null, canInviteAdmins)
+  const [formerOffer, setFormerOffer] = useState<FormerPerson[] | null>(null)
 
   useEffect(() => {
     if (organization?.id) loadUsers(organization.id)
@@ -374,7 +392,7 @@ export function AddUserScreen() {
     return false
   }
 
-  const handleSubmit = async (e?: FormEvent, options?: { nameConfirmed?: boolean }) => {
+  const handleSubmit = async (e?: FormEvent, options?: { nameConfirmed?: boolean; formerLink?: 'link' | 'skip' }) => {
     e?.preventDefault()
     if (!organization?.id || !user) return
     const nameConfirmed = options?.nameConfirmed === true
@@ -482,6 +500,15 @@ export function AddUserScreen() {
       return
     }
     if (stopBeforeSave(firstName, surname, nameConfirmed)) return
+    const formerMatches = canInviteAdmins
+      ? formerPeopleForEmail({ email, formerPeople, roster: users as never })
+      : []
+    // Rulebook 1.59.0 (review of #370, L3): the offer is the app's own dialog; its choice submits again.
+    if (formerMatches.length > 0 && !options?.formerLink) {
+      setFormerOffer(formerMatches)
+      return
+    }
+    const linkFormer = formerMatches.length > 0 && options?.formerLink === 'link'
 
     setSaving(true)
     setError(null)
@@ -519,42 +546,90 @@ export function AddUserScreen() {
         hasNoLineManager: mayHaveNoLineManager && form.hasNoLineManager,
       })
 
+      let formerLinkNote = ''
+      if (linkFormer) {
+        // Rulebook 1.59.0 `formerPersonLinkWriteFields`: arrayUnion of the former people's ids onto the new person's
+        // formerUserIds (accepting the invitation copies them onto the account). Best effort: the person is added
+        // either way, and an admin can still link the ids in Data health.
+        const write = formerPersonLinkWriteFields({
+          person: { id: result.userId },
+          formerPeople: formerMatches,
+          actorUserId: user.id,
+          platform: 'web',
+        })
+        if (write) {
+          try {
+            await updateDoc(doc(getFirebaseDb(), 'users', result.userId), {
+              formerUserIds: arrayUnion(...write.arrayUnion.formerUserIds),
+              ...write.set,
+              updatedAt: serverTimestamp(),
+            })
+          } catch {
+            formerLinkNote = ' Their old records could not be linked — link them in Settings → Data health.'
+          }
+        }
+      }
       if (result.inviteType === 'existing_user_org_add') {
         try {
           const { jsonAuthHeaders } = await import('@/lib/security/clientAuthHeaders')
-          await fetch('/api/invites/send-org-addition-email', {
-            method: 'POST',
-            headers: await jsonAuthHeaders(),
-            body: JSON.stringify({
-              organizationId: organization.id,
-              organizationName: organization.name,
-              firstName,
-              to: email,
-            }),
-          })
+          // Secondary to the invite: bounded, so a slow email service never holds Save (owner bug 17 Nov).
+          // The token fetch is inside the time limit too (review of #371).
+          await withAbortTimeout(
+            async (signal) =>
+              fetch('/api/invites/send-org-addition-email', {
+                method: 'POST',
+                headers: await jsonAuthHeaders(),
+                signal,
+                body: JSON.stringify({
+                  // The route reads the organisation name from the stored organisation document.
+                  organizationId: organization.id,
+                  firstName,
+                  to: email,
+                }),
+              }),
+            INVITE_EMAIL_TIMEOUT_MS,
+            INVITE_EMAIL_TIMEOUT_MESSAGE
+          )
           setSuccess(
-            `${email} already has a Project Planner account. They will receive an email and can accept from Change organisation.`
+            `${email} already has a Project Planner account. They will receive an email and can accept from Change organisation.${formerLinkNote}`
           )
         } catch (emailError) {
           setSuccess(
-            `User linked to ${organization.name}, but notification email could not be sent (${emailError instanceof Error ? emailError.message : 'unknown error'}).`
+            isTimeoutError(emailError)
+              ? `User linked to ${organization.name}. ${inviteEmailTimeoutNote(email)}${formerLinkNote}`
+              : `User linked to ${organization.name}, but notification email could not be sent (${emailError instanceof Error ? emailError.message : 'unknown error'}).${formerLinkNote}`
           )
         }
       } else {
         try {
           const { requestInviteSetupEmail } = await import('@/lib/invites/requestSetupEmail')
-          await requestInviteSetupEmail({
-            organizationId: organization.id,
-            invitationId: result.invitationId,
-            organizationName: organization.name,
-            firstName,
-            role: operativeInviteOnly || accountType === 'operative' ? 'operative' : accountType === 'admin' ? 'admin' : 'manager',
-            to: email,
-          })
-          setSuccess(`Invitation sent to ${email}. They will receive an email to set their password.`)
+          await withAbortTimeout(
+            (signal) =>
+              requestInviteSetupEmail(
+                {
+                  organizationId: organization.id,
+                  invitationId: result.invitationId,
+                  organizationName: organization.name,
+                  firstName,
+                  role:
+                    operativeInviteOnly || accountType === 'operative'
+                      ? 'operative'
+                      : accountType === 'admin'
+                        ? 'admin'
+                        : 'manager',
+                  to: email,
+                },
+                { signal }
+              ),
+            INVITE_EMAIL_TIMEOUT_MS,
+            INVITE_EMAIL_TIMEOUT_MESSAGE
+          )
+          setSuccess(`Invitation sent to ${email}. They will receive an email to set their password.${formerLinkNote}`)
         } catch (emailError) {
           setSuccess(
-            `User invited but email could not be sent (${emailError instanceof Error ? emailError.message : 'unknown error'}).`
+            isTimeoutError(emailError)
+              ? `User invited. ${inviteEmailTimeoutNote(email)}${formerLinkNote}`
+              : `User invited but email could not be sent (${emailError instanceof Error ? emailError.message : 'unknown error'}).${formerLinkNote}`
           )
         }
       }
@@ -977,6 +1052,37 @@ export function AddUserScreen() {
             </li>
           ))}
         </ul>
+      </Modal>
+
+      <Modal
+        open={formerOffer !== null}
+        title={FORMER_PERSON_LINK_TITLE}
+        hue="user"
+        onClose={() => setFormerOffer(null)}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setFormerOffer(null)
+                void handleSubmit(undefined, { nameConfirmed: true, formerLink: 'skip' })
+              }}
+            >
+              {FORMER_PERSON_LINK_SKIP}
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                setFormerOffer(null)
+                void handleSubmit(undefined, { nameConfirmed: true, formerLink: 'link' })
+              }}
+            >
+              {FORMER_PERSON_LINK_ACTION}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-slate-700">{formerPersonLinkOfferMessage(formerOffer ?? [])}</p>
       </Modal>
 
       <div className="space-y-3 pt-2">

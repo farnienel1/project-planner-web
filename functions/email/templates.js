@@ -292,6 +292,8 @@ function renderMaterialRequest(input) {
     sendAsPlainText: Boolean(input.data.sendAsPlainText),
     // A wholesaler is greeted by their contact name; the sender's own copy uses the first wholesaler's.
     contactName: input.recipient.contactName || input.firstContactName || '',
+    // Rulebook 1.59.0 §16: the red safe-sender box on the first email to this address (decided in the handler).
+    safeSenderNotice: input.recipient.isSelf ? null : input.recipient.safeSenderNotice || null,
   })
   const subject = input.recipient.isSelf ? `Copy: ${envelope.subject}` : envelope.subject
   return { subject: sanitizeHeader(subject, 180), html: built.html }
@@ -387,6 +389,8 @@ const TEMPLATES = Object.freeze({
     callerEnvelope: true,
     // Rulebook 1.24.0: an optional `data.jobId` must be a job of the organisation (handler `checkJobInOrganization`).
     jobCheck: true,
+    // Rulebook 1.59.0 §16: the handler reads the organisation's send records to find a first contact.
+    safeSenderNotice: true,
     render: renderMaterialRequest,
   },
   leave_cancelled: {
@@ -405,6 +409,16 @@ const SERVER_TEMPLATES = Object.freeze({
     recipients: 'server',
     maxRecipients: 1,
     attachments: ['pdf', 'xlsx', 'csv'],
+    render: renderWebRendered,
+  },
+  // Password reset, verify email, confirm new email: the same as `web_rendered`, counted in the `server-auth` rate
+  // bucket (handler.js) instead of the shared server bucket (review of #361).
+  auth_rendered: {
+    minRole: null,
+    recipients: 'server',
+    maxRecipients: 1,
+    attachments: [],
+    rateBucket: 'auth',
     render: renderWebRendered,
   },
   web_rendered_batch: {

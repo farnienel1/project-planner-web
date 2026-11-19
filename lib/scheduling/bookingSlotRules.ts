@@ -163,7 +163,7 @@ export function customHoursPrefillForDate(
 }
 
 /**
- * Rulebook 1.62.0 §4.3 (`bookingHoursBreakdownDays`): the summary line and the Hours breakdown box of a booking on one
+ * Rulebook 1.69.0 §4.3 (`bookingHoursBreakdownDays`): the summary line and the Hours breakdown box of a booking on one
  * or more dates (custom hours or a named slot), each day read under the working hours in effect on it (the live policy
  * state, else the screen's `policy`). Null when the times are not valid or no day is given.
  */

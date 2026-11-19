@@ -106,7 +106,17 @@ export function canDeleteUser(
 export type UserDeleteWrite =
   | { op: 'delete'; path: string }
   | { op: 'update'; path: string; deleteFields: string[] }
-  | { op: 'set'; path: string; fields: Record<string, unknown>; serverTimestampFields: string[] }
+  | {
+      op: 'set'
+      path: string
+      fields: Record<string, unknown>
+      serverTimestampFields: string[]
+      /**
+       * 1.59.0: the former-person record. When the batch that carries it is refused, the app runs the same batch again
+       * without it (security rules older than 1.59.0 do not know the collection); the delete never fails for it.
+       */
+      optional?: boolean
+    }
 
 /** One Firestore batch. Run the steps in order; stop at the first refused step. */
 export type UserDeleteStep = {
@@ -137,6 +147,18 @@ export type UserDeleteInput = {
   actorManagesOperatives?: boolean | null
   nowIso: string
   tz?: string | null
+  /**
+   * 1.59.0 §11: the `deletedPeople` record (`formerPersonRecordFields`, only when `formerPersonRecordNeeded`). It is
+   * written in the batch that deletes `users/{uid}` — the security rules accept it only there — as an `optional` set.
+   */
+  formerPerson?: { fields: Record<string, unknown>; serverTimestampFields: string[] } | null
+  /**
+   * 1.59.0 (review of #370, M1): a `deletedPeople` record per deleted `operatives` / `managers` row, keyed
+   * `"<collection>/<rowId>"` (`formerPersonRecordFields` of the row). Each goes, as an `optional` set, in its own batch
+   * with that row's delete (the rules accept it only there). A row whose id is the person's users id has none (the
+   * person's own record covers it).
+   */
+  formerRows?: Readonly<Record<string, { fields: Record<string, unknown>; serverTimestampFields: string[] }>> | null
 }
 
 /**
@@ -169,6 +191,16 @@ export function userDeleteWrites(input: UserDeleteInput): UserDeleteStep[] {
   ]
   if (email && !email.includes('/')) account.push({ op: 'delete', path: `organizations/${org}/userEmails/${email}` })
   if (input.listedInMembers !== false) account.push({ op: 'update', path: `organizations/${org}`, deleteFields: [`members.${uid}`] })
+  // 1.59.0 §11: the former-person record goes with the users document's delete (the rules accept it only there).
+  const formerWrite: UserDeleteWrite | null = input.formerPerson
+    ? {
+        op: 'set',
+        path: `organizations/${org}/deletedPeople/${uid}`,
+        fields: { ...input.formerPerson.fields },
+        serverTimestampFields: [...input.formerPerson.serverTimestampFields],
+        optional: true,
+      }
+    : null
   // 1.31.0 (owner decision 7): a manager with the Operatives permission runs the account step one write at a time,
   // in this order — tax ids, membership, email claim (each checked against the users document still there), then the
   // users document, then the members entry (checked against it being gone). The security rules' document-lookup and
@@ -179,8 +211,11 @@ export function userDeleteWrites(input: UserDeleteInput): UserDeleteStep[] {
           ...account.filter((write) => write.path !== `users/${uid}` && write.op === 'delete'),
           ...account.filter((write) => write.path === `users/${uid}`),
           ...account.filter((write) => write.op === 'update'),
-        ].map((write) => ({ step: 'account' as const, writes: [write] }))
-      : [{ step: 'account', writes: account }]
+        ].map((write) => ({
+          step: 'account' as const,
+          writes: write.path === `users/${uid}` && formerWrite ? [write, formerWrite] : [write],
+        }))
+      : [{ step: 'account', writes: formerWrite ? [...account, formerWrite] : account }]
 
   const rowMatches = (row: UserDeleteRow) =>
     idKeys.has(key(row?.id)) || idKeys.has(key(row?.userId)) || (email !== '' && key(row?.email) === email)
@@ -228,10 +263,34 @@ export function userDeleteWrites(input: UserDeleteInput): UserDeleteStep[] {
   for (const writes of bookingWrites) steps.push({ step: 'bookings', writes })
 
   if (rosterRows.length > 0) {
-    steps.push({
-      step: 'rosterRows',
-      writes: rosterRows.map((row) => ({ op: 'delete' as const, path: `organizations/${org}/${row.collection}/${row.id}` })),
-    })
+    const rowRecord = (row: { collection: string; id: string }): UserDeleteWrite | null => {
+      const record = input.formerRows?.[`${row.collection}/${row.id}`]
+      if (!record || key(row.id) === key(uid)) return null
+      return {
+        op: 'set',
+        path: `organizations/${org}/deletedPeople/${row.id}`,
+        fields: { ...record.fields },
+        serverTimestampFields: [...record.serverTimestampFields],
+        optional: true,
+      }
+    }
+    const plain = rosterRows.filter((row) => !rowRecord(row))
+    if (plain.length > 0) {
+      steps.push({
+        step: 'rosterRows',
+        writes: plain.map((row) => ({ op: 'delete' as const, path: `organizations/${org}/${row.collection}/${row.id}` })),
+      })
+    }
+    // A row with a record: its delete and its record in one batch of their own (the rules check the record against
+    // that row being deleted in the same batch).
+    for (const row of rosterRows) {
+      const record = rowRecord(row)
+      if (!record) continue
+      steps.push({
+        step: 'rosterRows',
+        writes: [{ op: 'delete' as const, path: `organizations/${org}/${row.collection}/${row.id}` }, record],
+      })
+    }
   }
   const invitations = (input.invitations || [])
     .filter((row) => email !== '' && key(row?.email) === email && text(row.id) && !text(row.id).includes('/'))

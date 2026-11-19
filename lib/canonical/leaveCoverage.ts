@@ -338,3 +338,34 @@ export function leaveCoverageRows(input: LeaveCoverageInput): LeaveCoverageRow[]
     return a.personName.localeCompare(b.personName, undefined, { sensitivity: 'base' })
   })
 }
+
+/**
+ * Rulebook 1.60.0 §5 (owner report 17 Nov, review of #373): the custom hours Book labour prefills for a "Half-day leave
+ * not covered" row — the FIRST uncovered stretch of the working half, never a span across a booking the person
+ * already has. Two `missing` ranges are one stretch only when everything between them is the day's lunch-break window
+ * (which never needs covering, so nothing is booked there); a booking between them ends the stretch. Returned as
+ * `HH:mm` clock text. Null for a leave_clash row or a row with no `missing` range.
+ *
+ * `day` is the same working-hours input `leaveCoverageRows` took (`StandardDayInput` or the policy state), read on the
+ * row's own day (`bookingStandardDayOn`).
+ */
+export function leaveCoverBookingWindow(
+  row: Pick<LeaveCoverageRow, 'kind' | 'missing' | 'dayKey'>,
+  day?: StandardDayInput | PayrollTimePolicyState | null
+): { start: string; end: string; startMinutes: number; endMinutes: number } | null {
+  if (row.kind !== 'leave_cover') return null
+  const gaps = [...(row.missing || [])]
+    .filter((interval) => interval.end > interval.start)
+    .sort((a, b) => a.start - b.start)
+  if (gaps.length === 0) return null
+  const lunch = standardBreakWindow(bookingStandardDayOn(day, row.dayKey))
+  const start = gaps[0].start
+  let end = gaps[0].end
+  for (const gap of gaps.slice(1)) {
+    const between = { start: end, end: gap.start }
+    const onlyLunch = Boolean(lunch) && between.start >= lunch!.start && between.end <= lunch!.end
+    if (between.end > between.start && !onlyLunch) break
+    end = gap.end
+  }
+  return { start: formatClockMinutes(start), end: formatClockMinutes(end), startMinutes: start, endMinutes: end }
+}

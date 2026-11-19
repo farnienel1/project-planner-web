@@ -64,6 +64,8 @@ export type TimesheetPayrollLineItem = {
    */
   otClockHours?: number
   otBreakHours?: number
+  /** Rulebook 1.67.0 (display only, never stored): an overtime line's own day or hourly rate, before the multiplier. */
+  otBaseRate?: number
   /**
    * Rulebook 1.22.0 (`timesheetTotals`), on a booking's standard line only: the booking's weighted paid hours
    * (`payrollHoursResult.totalPaidHours`) and its overtime clock hours, so the sheet's Hours and Overtime figures are
@@ -186,6 +188,7 @@ export function timesheetHoursRateLine(line: TimesheetPayrollLineItem, currencyC
     currencyCode,
     clockHours: line.otClockHours ?? null,
     breakHours: line.otBreakHours ?? null,
+    baseRate: line.otBaseRate ?? null,
   }).equation
 }
 
@@ -427,6 +430,7 @@ export function collectTimesheetPayroll({
         hourlyRate: otRates.hourlyRate,
         standardDayHours: overtimePartDayHours,
         otMultiplier,
+        ...(resolved.basis !== 'hourly' && Number(resolved.dayRate) > 0 ? { otBaseRate: Number(resolved.dayRate) } : {}),
         amount: otAmount,
         isPayeDay: isPaye,
         isOvertimeLine: true,

@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Rulebook 1.62.0 §4.3 (owner request 17 Nov, docs/design/hours-breakdown/): the booking hours summary line and the
+ * Rulebook 1.69.0 §4.3 (owner request 17 Nov, docs/design/hours-breakdown/): the booking hours summary line and the
  * Hours breakdown box — Normal hours, Overtime, Total paid hours — on every web booking screen. Shows the rulebook's
  * text only (`bookingHoursBreakdownDays` / `bookingHoursBreakdownRows`); nothing is worked out here. iOS draws the same
  * rows ("How the hours add up").

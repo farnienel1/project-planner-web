@@ -1,5 +1,5 @@
 /*
- * The booking hours breakdown (rulebook 1.62.0 §4.3, docs/design/hours-breakdown/). Visual only; every colour is an
+ * The booking hours breakdown (rulebook 1.69.0 §4.3, docs/design/hours-breakdown/). Visual only; every colour is an
  * existing theme token (app/globals.css, app/brand-shell.css), so light and dark follow the app theme.
  * Contrast (AA): detail text --ink2 on --soft 7.3:1 light / 8.3:1 dark; overtime text --dash-tag-amber-ink on
  * --dash-tag-amber-bg 4.9:1 light / 9.2:1 dark; detail text on the overtime card 7.0:1 / 7.7:1.

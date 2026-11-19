@@ -248,18 +248,6 @@ export function DailyOverviewBookingSheet({
     return matchedUser ? findOperativeForUser(matchedUser, operatives) : undefined
   }, [row.operativeId, resolvedUserId, operatives, users])
 
-  const allWorks = useMemo(() => [...catalogues.projects, ...catalogues.smallWorks], [catalogues])
-
-  const currentLabel = useMemo(() => {
-    if (row.locationType === 'office') return 'Office'
-    if (row.locationType === 'working_from_home') return 'Working from home'
-    if (row.locationType === 'site_survey') return 'Site survey'
-    if (row.locationType === 'custom') return row.customLocationName || 'Custom'
-    const project = row.projectId ? allWorks.find((entry) => normalizeDocumentId(entry.id) === normalizeDocumentId(row.projectId)) : undefined
-    if (project) return `${project.jobNumber} · ${project.siteName}`
-    return row.kind === 'operative' ? 'Project booking' : 'Current booking'
-  }, [row, allWorks])
-
   const hoursValid = useMemo(() => {
     const start = workStartTime.split(':').map(Number)
     const end = workEndTime.split(':').map(Number)
@@ -268,7 +256,7 @@ export function DailyOverviewBookingSheet({
     return endMin > startMin
   }, [workStartTime, workEndTime])
 
-  // Rulebook 1.62.0 (`bookingHoursBreakdownDays`): the Hours breakdown box under the working hours in effect on the
+  // Rulebook 1.69.0 (`bookingHoursBreakdownDays`): the Hours breakdown box under the working hours in effect on the
   // day shown, with the booking's own overtime rate as chosen on screen (null = the organisation's).
   const breakdown = useMemo(
     () =>
@@ -459,9 +447,6 @@ export function DailyOverviewBookingSheet({
     >
       {leaveGate.dialog}
       <div className="stack" style={{ gap: 14 }}>
-        <p className="muted small">
-          Currently booked to <b>{currentLabel}</b>. Choose Other, a project, or small works, and set the start and finish.
-        </p>
         <div className="grid g3" style={{ gap: 8 }}>
           {/* Rulebook 1.32.0 §2: Other only when the viewer may book this person there (`canBookOtherLocationsFor`). */}
           <button

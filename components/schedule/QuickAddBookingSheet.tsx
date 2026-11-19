@@ -97,7 +97,7 @@ export function QuickAddBookingSheet({
     ] as { value: ScheduleSlotChoice; label: string }[]
   ).filter((opt) => slotOfferedOnDate(opt.value, date, payroll))
 
-  // Rulebook 1.62.0 (`bookingHoursBreakdownDays`): the Hours breakdown box for the slot and times on screen, under the
+  // Rulebook 1.69.0 (`bookingHoursBreakdownDays`): the Hours breakdown box for the slot and times on screen, under the
   // working hours in effect on the booking day.
   const breakdown = useMemo(() => {
     const firestoreSlot = slotToFirestore({ date, slot, workStartTime, workEndTime })

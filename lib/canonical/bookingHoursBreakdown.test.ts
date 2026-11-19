@@ -1,5 +1,5 @@
 /**
- * Rulebook 1.62.0 §4.3 (owner request 17 Nov): `bookingHoursBreakdownRows` / `bookingHoursBreakdownDays` — the simple
+ * Rulebook 1.69.0 §4.3 (owner request 17 Nov): `bookingHoursBreakdownRows` / `bookingHoursBreakdownDays` — the simple
  * hours breakdown on every booking screen, web and iOS. Wording only: every figure must be the pay rule's
  * (`payrollHoursResult`) and Normal + Overtime must equal Total, which is the Save button's figure (`saveHoursLabel`).
  */
@@ -50,7 +50,7 @@ function rows(policy: OrgPayrollTimePolicy, day: string, booking: BookingHoursBr
 
 const view = (out: ReturnType<typeof rows>) => out.rows.map((row) => [row.label, ...row.details, row.value])
 
-test('1.62.0 reference: weekday with overtime', () => {
+test('1.69.0 reference: weekday with overtime', () => {
   const out = rows(org, TUE, { workStartTime: '06:00', workEndTime: '17:30' })
   assert.equal(out.summary, '06:00–17:30 · 12.25 paid hours')
   assert.equal(out.headerDetail, 'Tuesday, full day')
@@ -62,13 +62,13 @@ test('1.62.0 reference: weekday with overtime', () => {
   assert.equal(out.rows[1].accessibilityLabel, 'Overtime, 06:00 to 07:00 and 16:00 to 17:30, 2.5 hours at 1.5 times, 3.75 hours')
 })
 
-test('1.62.0 reference: no overtime hides the Overtime row', () => {
+test('1.69.0 reference: no overtime hides the Overtime row', () => {
   const out = rows(org, TUE, { workStartTime: '07:00', workEndTime: '16:00' })
   assert.equal(out.summary, '07:00–16:00 · 8.5 paid hours')
   assert.deepEqual(view(out), [['Normal hours', '07:00–16:00, less 30 min break', '8.5h'], ['Total paid hours', '8.5h']])
 })
 
-test('1.62.0 reference: break turned off drops "less 30 min break"', () => {
+test('1.69.0 reference: break turned off drops "less 30 min break"', () => {
   const out = rows(org, TUE, { workStartTime: '06:00', workEndTime: '17:30', isBreakRemoved: true })
   assert.deepEqual(view(out), [
     ['Normal hours', '07:00–16:00', '9h'],
@@ -77,13 +77,13 @@ test('1.62.0 reference: break turned off drops "less 30 min break"', () => {
   ])
 })
 
-test('1.62.0 reference: Saturday paid every hour at a multiplier hides the Normal row', () => {
+test('1.69.0 reference: Saturday paid every hour at a multiplier hides the Normal row', () => {
   const out = rows(org, SAT, { workStartTime: '08:00', workEndTime: '13:00' })
   assert.equal(out.headerDetail, 'Saturday, every hour is overtime')
   assert.deepEqual(view(out), [['Overtime', '08:00–13:00', '5h at ×1.5', '7.5h'], ['Total paid hours', '7.5h']])
 })
 
-test("1.62.0 reference: the booking's own ×2 rate", () => {
+test("1.69.0 reference: the booking's own ×2 rate", () => {
   const out = rows(org, TUE, { workStartTime: '06:00', workEndTime: '17:30', otMultiplierOverride: 2 })
   assert.deepEqual(view(out), [
     ['Normal hours', '07:00–16:00, less 30 min break', '8.5h'],
@@ -92,7 +92,7 @@ test("1.62.0 reference: the booking's own ×2 rate", () => {
   ])
 })
 
-test('1.62.0: a set-window Saturday — full window, part of it, and hours outside it (1.49.0)', () => {
+test('1.69.0: a set-window Saturday — full window, part of it, and hours outside it (1.49.0)', () => {
   const full = rows(windowOrg, SAT, { workStartTime: '07:30', workEndTime: '14:00' })
   assert.equal(full.headerDetail, 'Saturday, full day 07:30–14:00 counts as 8h')
   assert.deepEqual(view(full), [['Normal hours', '07:30–14:00, counts as a full day, unpaid break allowed for', '8h'], ['Total paid hours', '8h']])
@@ -109,13 +109,13 @@ test('1.62.0: a set-window Saturday — full window, part of it, and hours outsi
   ])
 })
 
-test('1.62.0: a Sunday every hour at ×2 with an unpaid break in the multiplied hours', () => {
+test('1.69.0: a Sunday every hour at ×2 with an unpaid break in the multiplied hours', () => {
   const out = rows(org, SUN, { workStartTime: '07:30', workEndTime: '14:00' })
   assert.equal(out.headerDetail, 'Sunday, every hour is overtime')
   assert.deepEqual(view(out), [['Overtime', '07:30–14:00', '6.5h at ×2 − 0.5h break', '12.5h'], ['Total paid hours', '12.5h']])
 })
 
-test('1.62.0: a stored AM and a full day read by their slot', () => {
+test('1.69.0: a stored AM and a full day read by their slot', () => {
   const am = bookingHoursBreakdownRows(org, TUE, { timeSlot: 'AM' }, ZONE)
   assert.ok(am)
   assert.equal(am.headerDetail, 'Tuesday, half day (AM)')
@@ -126,17 +126,17 @@ test('1.62.0: a stored AM and a full day read by their slot', () => {
   assert.equal(full.summary, 'Full day · 8.5 paid hours')
 })
 
-test('1.62.0: an overnight booking is overtime past midnight at its start day rules', () => {
+test('1.69.0: an overnight booking is overtime past midnight at its start day rules', () => {
   const out = rows(org, TUE, { workStartTime: '22:00', workEndTime: '06:00' })
   assert.deepEqual(view(out), [['Overtime', '22:00–06:00', '8h at ×1.5', '12h'], ['Total paid hours', '12h']])
 })
 
-test('1.62.0: a booking inside the unpaid break says why it pays 0', () => {
+test('1.69.0: a booking inside the unpaid break says why it pays 0', () => {
   const out = rows(org, TUE, { workStartTime: '11:30', workEndTime: '12:00' })
   assert.deepEqual(view(out), [['Normal hours', '11:30–12:00, inside the unpaid break', '0h'], ['Total paid hours', '0h']])
 })
 
-test('1.62.0: several days share a group when they read the same; invalid input is null', () => {
+test('1.69.0: several days share a group when they read the same; invalid input is null', () => {
   const same = bookingHoursBreakdownDays(org, [WED, TUE, TUE], { workStartTime: '06:00', workEndTime: '17:30' }, ZONE)
   assert.ok(same)
   assert.equal(same.groups.length, 1)
@@ -152,7 +152,7 @@ test('1.62.0: several days share a group when they read the same; invalid input 
   assert.equal(bookingHoursBreakdownDays(org, [], { workStartTime: '08:00', workEndTime: '09:00' }, ZONE), null)
 })
 
-test('1.62.0: the breakdown never changes the booking it reads (UI only)', () => {
+test('1.69.0: the breakdown never changes the booking it reads (UI only)', () => {
   const booking = { workStartTime: '06:00', workEndTime: '17:30', isBreakRemoved: false, otMultiplierOverride: 2 }
   const before = JSON.stringify(booking)
   bookingHoursBreakdownRows(org, TUE, booking, ZONE)

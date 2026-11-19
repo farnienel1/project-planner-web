@@ -7,6 +7,7 @@
 import { historyPayRowOnDay, readStoredRates, type PayBasis } from '@/lib/canonical/payRate'
 import { formatMoney } from '@/lib/canonical/money'
 import { multipliedHoursText } from '@/lib/canonical/payrollHours'
+import { liveDayRateOvertimeText } from '@/lib/canonical/dayRateOvertimeText'
 
 export type { PayBasis, StoredPay } from '@/lib/canonical/payRate'
 
@@ -44,6 +45,7 @@ export function payLineDisplay({
   currencyCode = null,
   clockHours = null,
   breakHours = null,
+  baseRate = null,
 }: {
   payBasis?: string | null
   paidHours: number
@@ -61,6 +63,11 @@ export function payLineDisplay({
    */
   clockHours?: number | null
   breakHours?: number | null
+  /**
+   * Rulebook 1.67.0: the person's own rate (never multiplied), so the hourly rate shown is exactly `dayRate ÷ divisor`
+   * rounded to pennies. Missing: the older wording (a rate is never worked out backwards).
+   */
+  baseRate?: number | null
 }) {
   const standard = orgDayHours(standardDayHours)
   const hourly = payBasis === 'hourly'
@@ -78,6 +85,22 @@ export function payLineDisplay({
     rateType = `${kind} ${ot}`
   }
   const multiplier = Number(otMultiplier) > 0 ? Number(otMultiplier) : 1
+  // Rulebook 1.67.0 (review of #378, S1): only with the person's own rate (`baseRate`) — never a rate worked out
+  // backwards from the multiplied rate or an amount.
+  if (isOvertime && !hourly && rate != null && Number(otMultiplier) > 0 && Number(baseRate) > 0) {
+    // Rulebook 1.67.0 §8 (owner decision 17 Nov): a day-rate overtime line reads in hours —
+    // "6h × 1.5 = 9h · 9h × £26.47/h (rounded) = £238.24 (£225.00/day ÷ 8.5h)" — never a multiplied day rate.
+    // The rule is the rulebook's `liveDayRateOvertimeText`: shown only when the line's amount is exactly what
+    // `payForHours` pays for the hours, the person's own day rate and divisor shown; otherwise null and the older
+    // wording below. The amount never depends on the text.
+    const calc = liveDayRateOvertimeText(
+      { paidHours, clockHours, breakHours, multiplier, dayRate: Number(baseRate), dayRateHours: standard, amount: pay },
+      { currency: currencyCode ?? null }
+    )
+    if (calc) {
+      return { rateType, quantityText: calc.hoursText, rateText: calc.rateText, equation: calc.text, pay: roundPennies(pay) }
+    }
+  }
   if (isOvertime && Number(breakHours) > 0 && Number(clockHours) > 0) {
     // 1.20.3: clock hours × N, then the break as plain hours; the quantity is the hours that pays, at the base rate.
     const hoursText = multipliedHoursText({ clockHours: Number(clockHours), multiplier, breakHours: Number(breakHours) })

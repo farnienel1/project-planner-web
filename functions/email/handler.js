@@ -28,7 +28,7 @@ const crypto = require('crypto')
 const canonical = require('../loadCanonical')
 const { AttachmentError, parseAttachments } = require('./attachments')
 const { RecipientError, resolveRecipients } = require('./recipients')
-const { SERVER_LIMITS, USER_LIMITS } = require('./rateLimit')
+const { AUTH_LIMITS, AUTH_RATE_KEY, SERVER_LIMITS, USER_LIMITS } = require('./rateLimit')
 const {
   RequestIdError,
   parseRequestId,
@@ -344,7 +344,10 @@ function createSendEmailHandler(deps) {
     const cc = envelope.cc
     const ccFor = (email) => (cc.length && !cc.includes(normalizeEmail(email)) ? cc : [])
     const from = envelope.from || fromHeader(orgName)
-    const rateKey = caller ? caller.uid : 'server'
+    // Account emails (`rateBucket: 'auth'`) count in their own bucket, never the shared server one or a user's.
+    const authBucket = serverMode && template.rateBucket === 'auth'
+    const rateKey = authBucket ? AUTH_RATE_KEY : caller ? caller.uid : 'server'
+    const rateLimits = authBucket ? AUTH_LIMITS : caller ? USER_LIMITS : SERVER_LIMITS
 
     // Idempotency (requestDedupe.js, docs/EMAIL_FUNCTION.md "Request id"). The caller has passed the membership and
     // level checks above. A request that names itself with `requestId` claims its key now; a repeat (an iPhone
@@ -445,13 +448,32 @@ function createSendEmailHandler(deps) {
       const recipients = !serverMode && cc.length ? resolved.filter((row) => !row.isSelf) : resolved
       if (recipients.length === 0) throw new HttpError(400, 'At least one recipient other than yourself is required')
 
+      // Rulebook 1.59.0 §16 (owner decision 17 Nov; review of #370, L2) `materialRequestSafeSenderNotice`: the first
+      // email the organisation sends to an address carries the red safe-sender box — one read of the address's
+      // `materialContacts` document per recipient (`materialContactPath`), the same read the web route makes. A failed
+      // read shows no box; the send goes ahead.
+      let contactsKnown = null
+      if (template.safeSenderNotice === true && orgId && typeof deps.reader.knownMaterialContacts === 'function') {
+        try {
+          contactsKnown = await deps.reader.knownMaterialContacts(orgId, recipients.filter((row) => !row.isSelf).map((row) => row.email))
+        } catch (error) {
+          logger.warn('sendEmail: contacts not read; no safe-sender box', { error: String(error && error.message) })
+        }
+        for (const recipient of recipients) {
+          const key = canonical.materialContactKey(recipient.email)
+          recipient.safeSenderNotice = canonical.materialRequestSafeSenderNotice(
+            recipient.email,
+            contactsKnown && key ? contactsKnown.has(key) : null
+          )
+        }
+      }
       const sentAt = renderAtMs != null ? new Date(renderAtMs) : now()
       const firstContactName = (recipients.find((row) => row.contactName) || {}).contactName || ''
       const rendered = recipients.map((recipient) =>
         template.render({ data, org: org || {}, orgName, caller: caller || {}, recipient, now: sentAt, attachments, firstContactName })
       )
 
-      const limited = await deps.consumeRateLimit(rateKey, recipients.length, caller ? USER_LIMITS : SERVER_LIMITS)
+      const limited = await deps.consumeRateLimit(rateKey, recipients.length, rateLimits)
       if (!limited.allowed) {
         throw new HttpError(429, 'Too many emails. Try again later.', { retryAfterSec: limited.retryAfterSec })
       }
@@ -549,6 +571,22 @@ function createSendEmailHandler(deps) {
         attachments: attachments.length,
       })
 
+      // Review of #370 (L2): every address now sent to gets its `materialContacts` document (created once), so later
+      // sends carry no box. Best effort: a failed write only means a box next time.
+      if (contactsKnown && results.length > 0 && typeof deps.reader.recordMaterialContacts === 'function') {
+        const sentTo = new Set(results.map((row) => canonical.materialContactKey(row.to)).filter(Boolean))
+        const fresh = recipients
+          .filter((row) => !row.isSelf)
+          .map((row) => canonical.materialContactKey(row.email))
+          .filter((key) => key && sentTo.has(key) && !contactsKnown.has(key))
+        if (fresh.length > 0) {
+          try {
+            await deps.reader.recordMaterialContacts(orgId, fresh)
+          } catch (error) {
+            logger.warn('sendEmail: contacts not recorded', { error: String(error && error.message) })
+          }
+        }
+      }
       if (results.length === 0) {
         const reason = failures[0] ? `: ${failures[0].error}` : ''
         throw new HttpError(502, `The email provider did not accept the message${reason}`, { failed })

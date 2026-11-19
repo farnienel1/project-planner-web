@@ -1,5 +1,7 @@
 import { NextRequest } from 'next/server'
-import { enforceRateLimit, isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
+import { enforceRateLimit, isFirebaseUser, jsonError } from '@/lib/security/apiGuard'
+import { apiObject, apiText, readApiBody } from '@/lib/security/apiBody'
+import { isValidDocumentId } from '@/lib/security/validation'
 import { requireOwner } from '@/lib/owner/requireOwner'
 import { recordOwnerEvent } from '@/lib/owner/ownerAudit'
 import { isPlatformOwnerSentinelOrg } from '@/lib/platform/owner'
@@ -11,10 +13,11 @@ export async function POST(request: NextRequest) {
   if (limited) return limited
   const owner = await requireOwner(request)
   if (!isFirebaseUser(owner)) return owner
-  const body = await readJsonBody<{ orgId?: string }>(request)
+  const body = await readApiBody(request, apiObject({ orgId: apiText(200) }))
   if (!body.ok) return body.response
-  const orgId = (body.value.orgId || '').trim()
+  const orgId = body.value.orgId
   if (!orgId) return jsonError('orgId is required', 400)
+  if (!isValidDocumentId(orgId)) return jsonError('orgId is not valid', 400)
   if (isPlatformOwnerSentinelOrg(orgId)) return jsonError('The owner account organisation cannot be deleted.', 400)
   // Still not built (PR 4). The refusal is recorded; a failure to record it changes nothing, so it is only logged.
   await recordOwnerEvent(
