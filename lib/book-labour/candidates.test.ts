@@ -818,11 +818,9 @@ test('Book labour lists a half-day leave person not booked for the other half, w
   assert.ok(cover)
   assert.equal(cover.leaveLabel, 'AM')
   assert.equal(cover.workingLabel, 'PM')
-  assert.ok(cover.hours)
-  assert.equal(cover.hours.end, DEFAULT_PAYROLL_POLICY.standardDayEnd)
-  assert.ok(cover.hours.start > '11:00' && cover.hours.start < '13:00', cover.hours.start)
-  // The same gap the Warnings card names (`leaveCoverageRows` `missing`).
-  assert.ok(cover.missingHours > 0)
+  // Default working day 07:30–16:00, lunch 12:00–12:30: the PM half is 11:45–16:00 (`leaveCoverBookingWindow`).
+  assert.deepEqual(cover.hours, { start: '11:45', end: '16:00' })
+  assert.equal(cover.missingHours, 3.75)
 
   // Booked for the whole gap → not listed (covered), as Warnings drops the row.
   const covered = buildBookLabourCandidates({
@@ -840,6 +838,24 @@ test('Book labour lists a half-day leave person not booked for the other half, w
     holidays: [amLeave('U-TA')],
   })
   assert.deepEqual(covered.map((row) => row.id), [])
+
+  // Already booked 13:00–14:00: still listed (2.75h open) and the prefill stops at that booking.
+  const partly = buildBookLabourCandidates({
+    ...base,
+    bookings: [
+      booking({
+        id: 'B-MID',
+        operativeId: 'U-TA',
+        date: MON_AM_DATE,
+        timeSlot: 'CUSTOM_HOURS' as Booking['timeSlot'],
+        workStartTime: '13:00',
+        workEndTime: '14:00',
+      }),
+    ],
+    holidays: [amLeave('U-TA')],
+  })
+  assert.deepEqual(partly[0]?.leaveCover?.hours, { start: '11:45', end: '13:00' })
+  assert.equal(partly[0]?.leaveCover?.missingHours, 2.75)
 
   // A pending request is not leave: the person is plain unbooked labour (no leaveCover).
   const pending = buildBookLabourCandidates({ ...base, bookings: [], holidays: [amLeave('U-TA', 'pending')] })

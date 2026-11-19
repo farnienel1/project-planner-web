@@ -7,6 +7,7 @@ import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 
 import { doc, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { confirmChosenSignOut } from '@/lib/siteAudit/siteAuditSignOut'
 import { uploadFile, profilePhotoPath } from '@/lib/firebase/storageUtils'
 import { PROFILE_PHOTO_ACCEPT, validateProfilePhotoFile } from '@/lib/settings/profilePhotoUpload'
 import { ProfilePhotoCropModal } from '@/components/settings/ProfilePhotoCropModal'
@@ -48,6 +49,8 @@ import {
 import { displayOrganizationName } from '@/lib/settings/organizationSettings'
 import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
 import { useSettingsDirty, useSettingsLeave } from '@/components/settings/SettingsDirty'
+import { PasskeysSection } from '@/components/settings/PasskeysSection'
+import { PASSKEYS_REMOVED_NOTICE, reportPasswordChanged } from '@/lib/auth/passkeys/passkeyClient'
 import { OrganisationHubPanel, type OrganisationHubDestination } from '@/components/settings/panels/OrganisationHubPanel'
 import { WarningsPanel } from '@/components/settings/panels/WarningsPanel'
 import { MaterialCutOffPanel } from '@/components/settings/panels/MaterialCutOffPanel'
@@ -387,6 +390,8 @@ function PasswordPanel({ onBack }: { onBack: () => void }) {
   const [error, setError] = useState('')
   const [showCurrent, setShowCurrent] = useState(false)
   const [showNew, setShowNew] = useState(false)
+  const [passkeysRemoved, setPasskeysRemoved] = useState(false)
+  const [passkeyListVersion, setPasskeyListVersion] = useState(0)
   const dirty = Boolean(current || next || confirm)
   useSettingsDirty(dirty)
 
@@ -407,6 +412,10 @@ function PasswordPanel({ onBack }: { onBack: () => void }) {
       const credential = EmailAuthProvider.credential(firebaseUser.email, current)
       await reauthenticateWithCredential(firebaseUser as Parameters<typeof reauthenticateWithCredential>[0], credential)
       await updatePassword(firebaseUser as Parameters<typeof updatePassword>[0], next)
+      // Passkeys made before the change stop working; remove them now and say so (best effort).
+      const removedPasskeys = await reportPasswordChanged({ signedIn: true })
+      setPasskeysRemoved(Boolean(removedPasskeys && removedPasskeys > 0))
+      setPasskeyListVersion((value) => value + 1)
       setSaved(true); setCurrent(''); setNext(''); setConfirm('')
       setTimeout(() => setSaved(false), 4000)
     } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Failed to change password') }
@@ -453,6 +462,7 @@ function PasswordPanel({ onBack }: { onBack: () => void }) {
 
       {error && <ErrorBanner message={error} />}
       {saved && <SuccessBanner message="Password changed successfully." />}
+      {passkeysRemoved && <SuccessBanner message={PASSKEYS_REMOVED_NOTICE} />}
       <SaveBar dirty={dirty} hint={dirty ? 'Change your password, or leave to discard what you typed.' : 'Enter your current password and a new one.'}>
         <SaveButton
           saving={saving}
@@ -462,6 +472,7 @@ function PasswordPanel({ onBack }: { onBack: () => void }) {
           onClick={changePassword}
         />
       </SaveBar>
+      <PasskeysSection key={passkeyListVersion} />
     </div>
   )
 }
@@ -698,7 +709,7 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
 
       {/* Sign out */}
       <SettingsCard>
-        <button type="button" onClick={async () => { if (window.confirm('Are you sure you want to sign out?')) await signOut() }}
+        <button type="button" onClick={async () => { if (await confirmChosenSignOut(useAuthStore.getState().firebaseUser?.uid ?? useAuthStore.getState().user?.id)) await signOut() }}
           className="flex w-full items-center justify-center gap-2 px-4 py-4 text-[var(--red)] hover:bg-[var(--red-t)] transition-colors">
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
           <span className="text-sm font-bold">Sign out</span>

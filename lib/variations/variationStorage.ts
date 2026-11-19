@@ -44,6 +44,8 @@ import {
   variationRenumberConflict,
   variationRenumberMissingRefusal,
   variationRenumberPlan,
+  variationStaleNumberLocks,
+  variationStatusWriteFields,
   variationSubcontractorLineFields,
   VARIATION_RENUMBER_STALE_MESSAGE,
   writeMetadataFields,
@@ -212,11 +214,12 @@ export function variationCopyWarning(outcome: VariationSaveOutcome | null | unde
   return 'Saved, but the copy older iPhone builds read did not update. Open the variation and save it again.'
 }
 
+/** A job with no tracker document, read through the rulebook (1.63.0: on by default). */
 export function emptyTracker(parentId: string, parentType: VariationParentType): VariationTracker {
   return {
     parentId,
     parentType,
-    enabled: false,
+    enabled: parseVariationTrackerDocument(parentId, null).enabled,
     numberingMode: 'lockSubmitted',
     prefix: 'VO-',
     padding: 3,
@@ -226,8 +229,7 @@ export function emptyTracker(parentId: string, parentType: VariationParentType):
 
 /** `variationTrackers/{parentId}` through the rulebook reader `parseVariationTrackerDocument` (1.52.0: the order lock). */
 export function trackerFromFirestore(parentId: string, data: Record<string, unknown> | undefined): VariationTracker {
-  if (!data) return emptyTracker(parentId, 'project')
-  const row = parseVariationTrackerDocument(parentId, data)
+  const row = parseVariationTrackerDocument(parentId, data ?? null)
   const when = (ms: number | null) => (ms != null ? new Date(ms) : null)
   return {
     parentId,
@@ -709,8 +711,9 @@ export async function setVariationStatus(input: {
   const now = new Date()
   const next = withCounters({
     ...input.variation,
-    status: input.status,
-    voNumberLocked: input.status === 'submitted' || input.status === 'closed' ? true : input.variation.voNumberLocked,
+    // Rulebook 1.63.0 (`variationStatusWriteFields`): Submitted / Closed lock the number; Open clears the lock in the
+    // same write, so a reopened variation is unpinned (before 1.63.0 the lock stayed and the rules refused renumbering).
+    ...variationStatusWriteFields(input.status),
     submittedAt: input.status === 'submitted' ? now : input.variation.submittedAt,
     closedAt: input.status === 'closed' ? now : input.variation.closedAt,
     statusHistory: [
@@ -803,13 +806,13 @@ export async function enableTracker(input: {
   const ordered = orderForTrackerEnable(rows)
   const now = new Date()
   for (const [index, row] of ordered.entries()) {
-    const locked = row.status === 'submitted' || row.status === 'closed'
     await persistVariationDocument(
       input.organizationId,
       {
         ...row,
         sequence: index + 1,
-        voNumberLocked: locked || row.voNumberLocked,
+        // 1.63.0: the lock follows the status (`variationStatusWriteFields`), so a stale lock on an Open row is cleared.
+        voNumberLocked: variationStatusWriteFields(row.status).voNumberLocked,
         updatedAt: now,
         updatedByUid: input.actorUid,
       },
@@ -850,10 +853,15 @@ export async function setTrackerMode(
   else await setDoc(ref, { ...write.set, parentId }, { merge: true })
 }
 
-export async function disableTracker(organizationId: string, parentId: string): Promise<void> {
+export async function disableTracker(organizationId: string, parentId: string, parentType?: VariationParentType): Promise<void> {
   const ref = trackerRef(organizationId, parentId)
   const snap = await getDoc(ref)
-  if (!snap.exists()) return
+  // Rulebook 1.63.0: with no tracker document the tracker reads as on, so turning it off writes `enabled: false`.
+  if (!snap.exists()) {
+    const created = variationTrackerWriteFields(null, { kind: 'disable', parentId, parentType })
+    if (created) await setDoc(ref, created.set)
+    return
+  }
   const write = variationTrackerWriteFields(snap.data() as Record<string, unknown>, { kind: 'disable' })
   if (write) await updateDoc(ref, firestoreUpdateFields(write))
 }
@@ -903,13 +911,37 @@ export async function applyVariationOrder(input: {
   const trackerDoc = trackerRef(input.organizationId, input.parentId)
   const now = Timestamp.now()
   const stamp = { updatedAt: now, updatedByUid: input.actor.uid, ...(writeMetadataFields(input.actor.uid, 'web') ?? {}) }
+  // Rulebook 1.63.0 (`variationStaleNumberLocks`): an Open variation that still stores `voNumberLocked: true` (reopened
+  // before 1.63.0) is unlocked first, in its own write — the rules read the STORED lock, so a number change in the
+  // same transaction would be refused ("Missing or insufficient permissions", bug of 17 Nov). Review of #388: each
+  // clear is a small transaction that re-reads the variation and clears the lock only while it is still Open with the
+  // lock set, so a variation submitted on another device meanwhile keeps its lock.
+  for (const id of variationStaleNumberLocks(current.map(renumberRow))) {
+    const docRef = variationRef(input.organizationId, id)
+    await runTransaction(db!, async (transaction) => {
+      const snap = await transaction.get(docRef)
+      if (!snap.exists()) return
+      const fresh = renumberRow(variationFromFirestore(id, snap.data() as Record<string, unknown>))
+      if (variationStaleNumberLocks([fresh]).length === 0) return
+      transaction.update(docRef, { voNumberLocked: false, ...stamp })
+    })
+  }
+  // Only ids with a `variations/{id}` document are read in the transaction: the read rule refuses a missing document
+  // (its rule reads `resource.data`), which made the whole save fail with "Missing or insufficient permissions" on a
+  // job with a variation stored only in its settings copies (older iPhone). Such a row is then handled by
+  // `variationRenumberMissingRefusal` with its own message, and only when the new order changes it.
+  const collectionIds = new Set(current.map((row) => row.id.toLowerCase()))
   const outcome = await runTransaction(db!, async (transaction) => {
     const trackerSnap = await transaction.get(trackerDoc)
-    const snaps = await Promise.all(input.baseRows.map((row) => transaction.get(variationRef(input.organizationId, row.id))))
+    const snaps = await Promise.all(
+      input.baseRows.map((row) =>
+        collectionIds.has(row.id.toLowerCase()) ? transaction.get(variationRef(input.organizationId, row.id)) : Promise.resolve(null)
+      )
+    )
     const stored = new Map<string, Record<string, unknown>>()
     const live: Variation[] = input.baseRows.map((row, index) => {
       const snap = snaps[index]
-      if (!snap.exists()) return row
+      if (!snap || !snap.exists()) return row
       const data = snap.data() as Record<string, unknown>
       stored.set(row.id, data)
       return variationFromFirestore(row.id, data)

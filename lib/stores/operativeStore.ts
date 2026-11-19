@@ -8,6 +8,11 @@ import {
   setDoc,
   deleteDoc,
   doc,
+  limit,
+  query,
+  serverTimestamp,
+  where,
+  writeBatch,
 } from 'firebase/firestore'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { auth, db } from '@/lib/firebase/config'
@@ -28,6 +33,19 @@ import { currentOrganizationCurrency } from '@/lib/stores/organizationDocumentSt
 import { readStoredRates } from '@/lib/timesheets/payBasis'
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 import { removeFutureBookingsForPerson } from '@/lib/bookings/removeBookingsOnDelete'
+import { formerPersonNeededFor, isPermissionDenied } from '@/lib/people/formerPeople'
+import { DELETED_PEOPLE_COLLECTION, formerPersonRecordFields } from '@/lib/canonical/formerPeople'
+
+/** 1 when any labour booking (any date) is filed under the id, else 0; null when it could not be read. */
+async function countBookingsUnder(organizationId: string, id: string): Promise<number | null> {
+  try {
+    const spellings = Array.from(new Set([id, id.toUpperCase(), id.toLowerCase()]))
+    const snap = await getDocs(query(collection(db, 'organizations', organizationId, 'bookings'), where('operativeId', 'in', spellings), limit(1)))
+    return snap.empty ? 0 : 1
+  } catch {
+    return null
+  }
+}
 import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
 import {
   noteOperativeRows,
@@ -67,7 +85,8 @@ interface OperativeState {
   saveOperative: (organizationId: string, operative: Operative) => Promise<string>
   patchOperativeQualifications: (organizationId: string, operative: Operative) => Promise<string>
   saveManager: (organizationId: string, manager: Manager) => Promise<string>
-  deleteOperative: (id: string, organizationId: string) => Promise<void>
+  /** `formerRecordSkipped` true when the former-person record (rulebook 1.59.0) was refused; the row was deleted. */
+  deleteOperative: (id: string, organizationId: string) => Promise<{ formerRecordSkipped: boolean }>
   deleteManager: (id: string, organizationId: string) => Promise<void>
   cleanupLegacyPlaceholderManagers: (organizationId: string) => Promise<number>
 }
@@ -397,10 +416,50 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
     try {
       await removeFutureBookingsForPerson(db, { organizationId, operativeIds: [id] })
       const operativeRef = doc(db, 'organizations', organizationId, 'operatives', id)
-      await deleteDoc(operativeRef)
+      // Rulebook 1.59.0 §11: a catalogue operative with past bookings, leave or pay history keeps a former-person
+      // record (written in the batch that deletes the row — the only place the rules accept it), so old bookings read
+      // "Former: <name>". Older rules refuse it; the row is then deleted on its own.
+      // Review of #370 (M1): the record holds only what the row itself carries (the rules check it against the row).
+      const rowSnap = await getDoc(operativeRef).catch(() => null)
+      const rowData = (rowSnap?.exists() ? rowSnap.data() : {}) as Record<string, unknown>
+      const str = (value: unknown) => (typeof value === 'string' ? value : '')
+      const bookingsLeft = await countBookingsUnder(organizationId, id)
+      const keep = await formerPersonNeededFor(db, organizationId, [id], { bookings: bookingsLeft, managerSiteBookings: 0 })
+      const record = keep
+        ? formerPersonRecordFields({
+            person: {
+              id,
+              firstName: str(rowData.firstName),
+              lastName: str(rowData.lastName),
+              surname: str(rowData.surname),
+              displayName: str(rowData.displayName) || null,
+              name: str(rowData.name) || null,
+              email: str(rowData.email),
+              linkedIds: [rowData.linkedUserId, rowData.userId, rowData.uid],
+            },
+            deletedBy: auth?.currentUser?.uid || '',
+          })
+        : null
+      let formerRecordSkipped = false
+      if (record) {
+        const batch = writeBatch(db)
+        batch.delete(operativeRef)
+        batch.set(doc(db, 'organizations', organizationId, DELETED_PEOPLE_COLLECTION, id), { ...record.fields, deletedAt: serverTimestamp() })
+        try {
+          await batch.commit()
+        } catch (error) {
+          if (!isPermissionDenied(error)) throw error
+          console.warn('[operativeStore] former-person record skipped', error)
+          formerRecordSkipped = true
+          await deleteDoc(operativeRef)
+        }
+      } else {
+        await deleteDoc(operativeRef)
+      }
       markRowsRemoved(`operatives:${organizationId}`, [id])
       forgetOrgCollectionDoc(OPERATIVES_KEY, organizationId, id)
       set({ operatives: operatives.filter(o => o.id !== id) })
+      return { formerRecordSkipped }
     } catch (error: any) {
       set({ error: error.message })
       throw error

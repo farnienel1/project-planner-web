@@ -35,7 +35,7 @@ import {
 } from '@/lib/subcontractors/bookingPeople'
 import { holidayBookingDayKeys, holidayBookingLabourInput } from '@/lib/annualLeave/holidayDayKeys'
 import type { WeekendCoverage } from '@/lib/canonical'
-import { dailyOverviewLeaveRows, normalizeDocumentId } from '@/lib/canonical'
+import { dailyOverviewLeaveRows, isAnonymisedDeletedProfile, normalizeDocumentId, type PayrollTimePolicyState } from '@/lib/canonical'
 import { leaveCoverageWarningsForDays, type LeaveCoverageWarning } from '@/lib/warnings/leaveCoverageWarnings'
 
 export type OverviewSubcontractorBooking = {
@@ -86,6 +86,13 @@ export type OverviewPersonRow = {
   /** Display only (UI pack U2): each booking's shift and clock range (`bookingTimesParts`), in `subtitle` order. */
   bookingParts: { shift: string; times: string | null }[]
 }
+
+/**
+ * A manager site booking off a job (Office, Working from home, Site survey, a custom place) as a Daily Overview row:
+ * the same display fields as a job's row (`bookingTimesParts`, `scheduleCellKind`, `bookingHoursLabel`) plus the
+ * booking itself, which the row's Change button opens. Display only: never counted in a figure (owner report 17 Nov).
+ */
+export type OverviewPlaceRow = OverviewPersonRow & { booking: ManagerSiteBooking }
 
 /** Shown when a booking's person id matches no user or operative. The booking still appears. */
 export const UNKNOWN_BOOKED_PERSON = 'Unknown person'
@@ -176,6 +183,13 @@ export type DailyOverviewModel = {
   wfhBookings: ManagerSiteBooking[]
   siteSurveyBookings: ManagerSiteBooking[]
   customGroups: { name: string; bookings: ManagerSiteBooking[] }[]
+  /**
+   * Display only (owner report 17 Nov): the "Other" card's rows under their place — Office, Working from home, then
+   * each custom place by name — built like a job's rows. A booking whose person has no name is "Unknown person".
+   */
+  otherGroups: { kind: 'office' | 'working_from_home' | 'custom'; name: string; rows: OverviewPlaceRow[] }[]
+  /** Display only: the "Site survey" card's rows, built like `otherGroups`. */
+  siteSurveyRows: OverviewPlaceRow[]
   holidays: HolidayBooking[]
   projectCards: {
     project: Project
@@ -261,6 +275,8 @@ export function buildDailyOverview(params: {
   excludedUserIdsFromUnbookedWarnings?: readonly string[] | null
   /** Rulebook 1.19.0 §5: `warningDetection.weekendCoverage` (missing → both days on, default windows). */
   weekendCoverage?: WeekendCoverage | null
+  /** Rulebook 1.23.0: the working-hours state, so leave cover reads the day under the rules in effect on it. */
+  payrollPolicyState?: PayrollTimePolicyState | null
   /** Organisation business zone (`organizationTimeZone`). Default Europe/London. */
   timeZone?: string
   /**
@@ -637,11 +653,18 @@ export function buildDailyOverview(params: {
     includeWeekends: Boolean(params.includeWeekendsForUnbookedLabour),
     excludedUserIds: params.excludedUserIdsFromUnbookedWarnings,
     payrollPolicy: payroll,
+    payrollPolicyState: params.payrollPolicyState ?? null,
     startDayKey: overviewDayKey,
     endDayKey: overviewDayKey,
     timeZone: zone,
     userIdAliases: params.userIdAliases ?? null,
-  }).filter((row) => row.kind === 'leave_cover' && personInScope(row.userId, row.operativeId, row.personKey))
+  }).filter(
+    (row) =>
+      row.kind === 'leave_cover' &&
+      // Never a current row for an anonymised deleted profile (`isAnonymisedDeletedProfile`, as Warnings).
+      !isAnonymisedDeletedProfile({ name: row.personName }) &&
+      personInScope(row.userId, row.operativeId, row.personKey)
+  )
 
   const policy = params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY
   const labourResults = [
@@ -670,6 +693,51 @@ export function buildDailyOverview(params: {
     overtimeWorkedHours > 0 && multipliers.size <= 1
       ? multipliedHoursText({ clockHours: overtimeWorkedHours, multiplier: overtimeMultiplier, breakHours: overtimeBreakHours })
       : null
+
+  // Owner report (17 Nov 2026): the Other and Site survey rows read like a job's rows — shift and times
+  // (`bookingTimesParts`), the tile kind (`scheduleCellHours` → `scheduleCellKind`) and the pay rule's hours
+  // (`bookingHoursLabel`) — never the stored slot word ("CUSTOM_HOURS"). Display only: no figure above reads them.
+  // The person is resolved exactly as a job's manager row is (`userById`, then `findUserByAnyId` with the roster's
+  // aliases); a booking whose person has no name shows as "Unknown person" — never hidden (owner answer 17 Nov,
+  // guardrail 3: such rows used to be left off these two cards).
+  const placeRows = (list: ManagerSiteBooking[]): OverviewPlaceRow[] =>
+    list.flatMap((b) => {
+      const user = userById.get(b.userId) || findUserByAnyId(params.users, b.userId, userIdAliases)
+      const name = rosterDisplayName(user) || UNKNOWN_BOOKED_PERSON
+      const priced = bookingPayrollHours({ ...b, policy, date: params.day, timeZone: zone })
+      const shown = bookingHoursLabel(priced)
+      const ot = payrollMultipliedHours(priced)
+      return [
+        {
+          id: `mgr-${b.id}`,
+          personKey: managerIdentity(b.userId),
+          name,
+          initials: initialsFrom(name),
+          subtitle: bookingTimesText(b),
+          pillText: `${shown.hours}h`,
+          hours: shown.hours,
+          otClockHours: ot?.clockHours ?? 0,
+          otMultipliers: ot ? [ot.multiplier] : [],
+          ...cellFields(priced, b),
+          bookedOperativeNames: [],
+          kind: 'manager' as const,
+          bookingId: b.id,
+          userId: b.userId,
+          locationType: b.locationType,
+          customLocationName: b.customLocationName,
+          timeSlotRaw: b.timeSlot,
+          workStartTime: b.workStartTime,
+          workEndTime: b.workEndTime,
+          booking: b,
+        },
+      ]
+    })
+  const otherGroups = [
+    { kind: 'office' as const, name: 'Office', rows: placeRows(officeBookings) },
+    { kind: 'working_from_home' as const, name: 'Working from home', rows: placeRows(wfhBookings) },
+    ...customGroups.map((group) => ({ kind: 'custom' as const, name: group.name, rows: placeRows(group.bookings) })),
+  ].filter((group) => group.rows.length > 0)
+  const siteSurveyRows = placeRows(siteSurveyBookings)
 
   const hasOther = officeBookings.length > 0 || wfhBookings.length > 0 || customGroups.length > 0
   const empty =
@@ -708,6 +776,8 @@ export function buildDailyOverview(params: {
     wfhBookings,
     siteSurveyBookings,
     customGroups,
+    otherGroups,
+    siteSurveyRows,
     holidays,
     projectCards,
     empty,

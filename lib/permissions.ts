@@ -435,7 +435,18 @@ export function canAccessMyTimesheets(user: PermissionUser): boolean {
   return normalizeEmploymentType(user.employmentType) === 'self_employed'
 }
 
-function userTimesheetAccessInput(
+/**
+ * A roster member's role for the timesheet rules (`userTimesheetSubjects`, `exportedTimesheetHistorySubjects`). A
+ * person with no level flag at all reads as manager level (rulebook §11, 1.23.1: `permissionLevelOf`), so they are a
+ * timesheet user for an admin like any other manager; before, `staffAccountRole` gave them no role and their sheets
+ * were left off User Timesheets and the Exported list. Members only — the viewer's own access is unchanged.
+ */
+function timesheetMemberRole(member: NonNullable<PermissionUser>): StaffAccountRole {
+  const role = staffAccountRole(member)
+  return permissionLevelOf(member) === 'manager' ? { ...role, isManager: true } : role
+}
+
+export function userTimesheetAccessInput(
   user: NonNullable<PermissionUser>,
   orgUsers: Array<NonNullable<PermissionUser>>
 ): UserTimesheetSubjectsInput {
@@ -449,7 +460,7 @@ function userTimesheetAccessInput(
       id: member.id,
       email: member.email,
       isActive: member.isActive !== false,
-      role: staffAccountRole(member),
+      role: timesheetMemberRole(member),
       assignedManagerUserIds: member.assignedManagerUserIds ?? [],
       assignedManagerUserId: member.assignedManagerUserId ?? null,
       hasNoLineManager: member.hasNoLineManager === true,
@@ -563,6 +574,8 @@ export function peopleManagementHref(user: PermissionUser): string | null {
  * The Add button on a people page: Manage users (`all`, admins) or the Operatives page (`operatives`: anyone who may
  * invite an operative — admins and Operatives managers, "Add operative" for the latter, `getAddUserLabel`).
  */
-export function manageUsersAddButtonShown(scope: 'all' | 'operatives', user: PermissionUser): boolean {
+export function manageUsersAddButtonShown(scope: 'all' | 'operatives' | 'managers', user: PermissionUser): boolean {
+  // The Managers page keeps no Add button (it had none before the 17 Nov restyle); admins add people from Manage users.
+  if (scope === 'managers') return false
   return scope === 'operatives' ? canInviteOperatives(user) : canManageUsers(user)
 }

@@ -1205,6 +1205,22 @@ export const TASK_COMPLETION_WRITE_GROUP = ['completedBy', 'completedAt'] as con
 export const TASK_ITEMS_WRITE_GROUP = ['items', 'completedItemIds'] as const
 
 /**
+ * Rulebook 1.59.0 §1 (tasks): `completedAt` / `completedBy` move with the status, on every platform. Completed: the
+ * stored values are kept (re-completing never rewrites who and when), else `completedBy` = the person and
+ * `completedAt` = now. Any other status: both cleared (`null`, removed by `taskWriteFields` when stored). iOS set the
+ * status without them, so a reopened task kept an old completion and a task completed on iPhone had none.
+ */
+export function taskCompletionFields<T>(
+  task: { completedAt?: T | null; completedBy?: string | null } | null | undefined,
+  status: unknown,
+  input: { completedBy: string; now: T }
+): { completedAt: T | null; completedBy: string | null } {
+  if (normalizeProjectTaskStatus(status) !== 'Completed') return { completedAt: null, completedBy: null }
+  const by = typeof task?.completedBy === 'string' && task.completedBy.trim() ? task.completedBy : text(input.completedBy) || null
+  return { completedAt: task?.completedAt ?? input.now, completedBy: by }
+}
+
+/**
  * Partial update of `tasks/{id}` (§1): never a whole-task `setData`. Assignee id and list, completion by and at, and
  * items with completed item ids are each written together. `id`, `createdAt`, `createdBy`, `createdByUserId` and
  * `organizationId` are never rewritten.

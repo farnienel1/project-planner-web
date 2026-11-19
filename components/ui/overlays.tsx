@@ -99,9 +99,9 @@ export function ToastViewport({ message }: { message: string | null }) {
   return (
     <div
       role="status"
-      className="fixed bottom-[calc(26px+env(safe-area-inset-bottom,0px))] left-1/2 z-[80] flex -translate-x-1/2 items-center gap-2.5 rounded-2xl bg-[var(--ink)] px-[18px] py-3 font-semibold text-[var(--card)] shadow-[var(--sh-pop)]"
+      className="fixed bottom-[calc(26px+env(safe-area-inset-bottom,0px))] left-1/2 z-[80] flex w-max max-w-[min(92vw,560px)] -translate-x-1/2 items-center gap-2.5 rounded-2xl bg-[var(--ink)] px-[18px] py-3 font-semibold text-[var(--card)] shadow-[var(--sh-pop)]"
     >
-      <span className="grid h-6 w-6 place-items-center rounded-full bg-[var(--green)] text-white">✓</span>
+      <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[var(--green)] text-white">✓</span>
       {message}
     </div>
   )

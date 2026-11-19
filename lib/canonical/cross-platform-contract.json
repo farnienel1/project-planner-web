@@ -2252,17 +2252,38 @@
           "docId": "AUD-1",
           "data": {
             "id": "AUD-1",
+            "organizationId": "ORG-1",
             "projectId": "a1b2c3d4-0000-4000-8000-00000000000a",
-            "type": "Site audit",
-            "customTitle": "",
+            "projectJobNumber": "J-100",
+            "projectName": "Shop fit",
+            "type": "General",
+            "customTitle": "Plant room snags",
             "authorName": "Ada Admin",
             "date": {
               "seconds": 1793750400,
               "nanoseconds": 0
             },
-            "items": [],
             "createdByUserId": "user-web-1",
-            "organizationId": "ORG-1",
+            "visibleToOperatives": true,
+            "items": [
+              {
+                "id": "web-item-1",
+                "title": "Leak",
+                "location": "Plant room",
+                "assignee": "Bob",
+                "comments": "Drip under the valve",
+                "annotations": "Circled in red",
+                "imageURL": "https://firebasestorage.googleapis.com/v0/b/x/o/a.jpg",
+                "imageCapturedAt": {
+                  "seconds": 1790845200,
+                  "nanoseconds": 0
+                },
+                "createdAt": {
+                  "seconds": 1790845200,
+                  "nanoseconds": 0
+                }
+              }
+            ],
             "createdAt": {
               "seconds": 1790845200,
               "nanoseconds": 0
@@ -2275,17 +2296,30 @@
           "expected": {
             "id": "AUD-1",
             "projectId": "a1b2c3d4-0000-4000-8000-00000000000a",
-            "projectJobNumber": "",
-            "projectName": "",
-            "type": "Site audit",
-            "customTitle": "",
+            "projectJobNumber": "J-100",
+            "projectName": "Shop fit",
+            "type": "General",
+            "customTitle": "Plant room snags",
             "authorName": "Ada Admin",
             "dateMs": 1793750400000,
             "dayKey": "2026-11-04",
             "createdAtMs": 1790845200000,
             "createdByUserId": "user-web-1",
             "visibleToOperatives": true,
-            "items": [],
+            "items": [
+              {
+                "id": "web-item-1",
+                "idStored": true,
+                "title": "Leak",
+                "location": "Plant room",
+                "assignee": "Bob",
+                "comments": "Drip under the valve",
+                "annotations": "Circled in red",
+                "imageURL": "https://firebasestorage.googleapis.com/v0/b/x/o/a.jpg",
+                "imageCapturedAtMs": 1790845200000,
+                "createdAtMs": 1790845200000
+              }
+            ],
             "organizationId": "ORG-1",
             "updatedAtMs": 1790937000000
           }
@@ -2306,6 +2340,8 @@
               "seconds": 1793750400,
               "nanoseconds": 0
             },
+            "createdByUserId": "user-ios-1",
+            "visibleToOperatives": false,
             "items": [
               {
                 "id": "I-1",
@@ -2320,6 +2356,23 @@
                 },
                 "imageURL": null,
                 "imageCapturedAt": null
+              },
+              {
+                "id": "I-2",
+                "title": "Socket loose",
+                "location": "Kitchen",
+                "assignee": "Sam",
+                "comments": "Second fix",
+                "annotations": "Arrow on photo",
+                "createdAt": {
+                  "seconds": 1790845200,
+                  "nanoseconds": 0
+                },
+                "imageURL": "https://firebasestorage.googleapis.com/v0/b/x/o/b.jpg",
+                "imageCapturedAt": {
+                  "seconds": 1790937000,
+                  "nanoseconds": 0
+                }
               }
             ],
             "createdAt": {
@@ -2338,8 +2391,8 @@
             "dateMs": 1793750400000,
             "dayKey": "2026-11-04",
             "createdAtMs": 1790845200000,
-            "createdByUserId": "",
-            "visibleToOperatives": true,
+            "createdByUserId": "user-ios-1",
+            "visibleToOperatives": false,
             "items": [
               {
                 "id": "I-1",
@@ -2351,6 +2404,18 @@
                 "annotations": "",
                 "imageURL": null,
                 "imageCapturedAtMs": null,
+                "createdAtMs": 1790845200000
+              },
+              {
+                "id": "I-2",
+                "idStored": true,
+                "title": "Socket loose",
+                "location": "Kitchen",
+                "assignee": "Sam",
+                "comments": "Second fix",
+                "annotations": "Arrow on photo",
+                "imageURL": "https://firebasestorage.googleapis.com/v0/b/x/o/b.jpg",
+                "imageCapturedAtMs": 1790937000000,
                 "createdAtMs": 1790845200000
               }
             ],
@@ -2824,7 +2889,7 @@
           "expected": {
             "parentId": "a1b2c3d4-0000-4000-8000-00000000000a",
             "parentType": "project",
-            "enabled": false,
+            "enabled": true,
             "enabledAtMs": null,
             "enabledByUid": null,
             "numberingMode": "lockSubmitted",
@@ -2852,7 +2917,7 @@
           "expected": {
             "parentId": "A1B2C3D4-0000-4000-8000-00000000000B",
             "parentType": "project",
-            "enabled": false,
+            "enabled": true,
             "enabledAtMs": null,
             "enabledByUid": null,
             "numberingMode": "lockSubmitted",

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { NextRequest } from 'next/server'
-import { bearerToken, firestoreGet, firestoreListCollection, firestoreQueryEqual, restFieldsToPlain } from '@/lib/owner/firestoreRest'
+import { bearerToken, firestoreCreateServerTime, firestoreGet, firestoreListCollection, firestoreQueryEqual, restFieldsToPlain } from '@/lib/owner/firestoreRest'
 import { defaultMaterialRequestSendDeps, sendMaterialRequestMessages } from '@/lib/email/materialRequestSend'
 import { MATERIAL_EMAIL_UNCONFIRMED_MESSAGE } from '@/lib/email/resendClient'
 import { buildMaterialRequestEmail } from '@/lib/email/materialRequestEmail'
@@ -11,6 +11,7 @@ import {
   organizationLevelFor,
   parseWholesalerDocument,
 } from '@/lib/canonical'
+import { materialContactCreateFields, materialContactPath, materialRequestSafeSenderNotice } from '@/lib/canonical/materialSafeSender'
 import {
   MATERIAL_ORDER_SEND_REFUSED_MESSAGE,
   canSendMaterialOrders,
@@ -20,56 +21,60 @@ import {
   materialRequestJobViewer,
   MATERIAL_REQUEST_JOB_NOT_VISIBLE_MESSAGE,
 } from '@/lib/canonical/materialOrderAccess'
-import {
-  clientSafeMessage,
-  enforceRateLimit,
-  jsonError,
-  readJsonBody,
-} from '@/lib/security/apiGuard'
+import { clientSafeMessage, enforceRateLimit, jsonError } from '@/lib/security/apiGuard'
+import { apiFlag, apiNumber, apiObject, apiText, readApiBody } from '@/lib/security/apiBody'
+import { z } from 'zod'
 import { clampString, isValidEmail } from '@/lib/security/validation'
 import { requireOrgAccess } from '@/lib/security/requireOrgAccess'
+import { materialRequestSender } from '@/lib/materials/materialRequestSender'
+
+import { parseJobDocument } from '@/lib/canonical/workDocumentReaders'
+import { formatSiteAddress } from '@/lib/maps/siteAddress'
 
 export const runtime = 'nodejs'
 
-type RecipientBody = { name?: string; email?: string }
-type MaterialBody = {
-  material?: string
-  quantity?: number
-  unit?: string
-  brand?: string
-  productCode?: string
-  notes?: string
-  lengthDisplay?: string
+/**
+ * The request body (mass-assignment audit 17 Nov): only these keys reach the route; anything else is dropped.
+ * The sender's name, email, phone and company and the company logo are never taken from the request — they come from
+ * the caller's own users document and the stored organisation document (rulebook §16, `materialRequestEmailEnvelope`).
+ * Older web pages still send `senderName` / `senderEmail` / `senderCompany` / `senderPhone` / `companyLogoURL`; they
+ * are stripped, never read.
+ */
+const recipientSchema = apiObject({ name: apiText(120), email: apiText(254) })
+const materialSchema = apiObject({
+  material: apiText(200),
+  quantity: apiNumber(),
+  unit: apiText(40),
+  brand: apiText(120),
+  productCode: apiText(80),
+  notes: apiText(500),
+  lengthDisplay: apiText(80),
   /** Rulebook 1.48.0 §28: the order unit and what is in one (`materialLineText`). */
-  orderUnit?: string
-  contentAmount?: number
-  contentMeasure?: string
-}
-
-type SendBody = {
-  organizationId?: string
-  requestType?: 'quote' | 'order'
-  sendAsPlainText?: boolean
+  orderUnit: apiText(20),
+  contentAmount: apiNumber(),
+  contentMeasure: apiText(10),
+})
+const sendBodySchema = apiObject({
+  organizationId: apiText(128),
+  requestType: z.unknown().optional(),
+  sendAsPlainText: apiFlag(),
   /** Rulebook 1.27.0: the job's document id (project or small works). Optional for older clients. */
-  jobId?: string
-  jobNumber?: string
-  siteName?: string
-  siteAddress?: string
-  senderName?: string
-  senderEmail?: string
-  senderPhone?: string
-  senderCompany?: string
-  companyLogoURL?: string
-  recipients?: RecipientBody[]
-  materials?: MaterialBody[]
-  deliveryRequiredAt?: string
+  jobId: z.unknown().optional(),
+  jobNumber: apiText(80),
+  siteName: apiText(200),
+  siteAddress: apiText(400),
+  recipients: z.array(recipientSchema).max(40).optional(),
+  materials: z.array(materialSchema).max(250).optional(),
+  deliveryRequiredAt: apiText(64),
   /**
    * One id per Send press (the sheet makes it), reused if the same request reaches this route again. Passed to the
    * email function as `requestId`, which never sends the same request to the same recipient twice
    * (functions/email/requestDedupe.js). Optional: without it a new one is made here.
    */
-  requestId?: string
-}
+  requestId: apiText(128),
+})
+type RecipientBody = z.infer<typeof recipientSchema>
+type MaterialBody = z.infer<typeof materialSchema>
 
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{8,128}$/
 
@@ -80,7 +85,7 @@ function parseMaterials(rows: MaterialBody[] | undefined) {
   for (const row of rows) {
     const material = clampString(row.material, 200)
     if (!material) return null
-    const quantity = typeof row.quantity === 'number' && Number.isFinite(row.quantity) ? row.quantity : 1
+    const quantity = typeof row.quantity === 'number' ? row.quantity : 1
     materials.push({
       material,
       quantity,
@@ -128,12 +133,14 @@ async function materialJobCheck(
   user: { uid: string; email?: string | null },
   membership: { role: string; isCreator: boolean },
   jobId: string,
-  jobNumber: string
-): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
+  jobNumber: string,
+  /** The caller's users document, already read by the route (null when it could not be read). */
+  callerDoc: Record<string, unknown> | null
+): Promise<{ ok: true; job: Record<string, unknown> | null } | { ok: false; status: number; message: string }> {
   const email = (user.email || '').trim().toLowerCase()
   // The sender's own documents and managers-list rows do not depend on the job: read them while the job is read.
   const callerReads = Promise.all([
-    plainDoc(idToken, `users/${user.uid}`).catch(() => null),
+    Promise.resolve(callerDoc),
     plainDoc(idToken, `users/${user.uid}/orgMemberships/${organizationId}`).catch(() => null),
     email
       ? firestoreQueryEqual(idToken, `organizations/${organizationId}`, 'managers', 'email', email).catch(() => [] as string[])
@@ -178,14 +185,14 @@ async function materialJobCheck(
     managers: managerPaths.map((path) => ({ id: path.split('/').pop() || '', email })),
     jobNumber,
   })
-  return result.ok ? { ok: true } : { ok: false, status: result.status, message: result.message }
+  return result.ok ? { ok: true, job } : { ok: false, status: result.status, message: result.message }
 }
 
 export async function POST(request: NextRequest) {
   const limited = enforceRateLimit(request, 'material-send-email', 20, 10 * 60 * 1000)
   if (limited) return limited
 
-  const body = await readJsonBody<SendBody>(request, 400_000)
+  const body = await readApiBody(request, sendBodySchema, { maxBytes: 400_000 })
   if (!body.ok) return body.response
 
   const access = await requireOrgAccess(request, body.value.organizationId, 'member')
@@ -208,14 +215,20 @@ export async function POST(request: NextRequest) {
     return jsonError('requestType must be quote or order', 400)
   }
 
-  const jobNumber = clampString(body.value.jobNumber, 80)
-  const senderName = clampString(body.value.senderName, 120)
-  // The sender's copy goes to the signed-in account's email only (never an address the request names).
-  const senderEmail = (access.user.email || clampString(body.value.senderEmail, 254) || '').trim().toLowerCase()
-  const senderCompany = clampString(body.value.senderCompany, 200)
-  if (!jobNumber || !senderName || !senderEmail || !isValidEmail(senderEmail) || !senderCompany) {
-    return jsonError('jobNumber, senderName, senderEmail, and senderCompany are required', 400)
-  }
+  const jobNumber = body.value.jobNumber
+  // Mass-assignment audit 17 Nov (rulebook §16, `materialRequestEmailEnvelope`): the sender's name and phone come
+  // from the caller's own users document and the company and logo from the stored organisation document, never from
+  // the request. The sender's copy goes to the signed-in account's email only.
+  const [callerDoc, orgDoc] = await Promise.all([
+    plainDoc(bearerToken(request), `users/${access.user.uid}`).catch(() => null),
+    plainDoc(bearerToken(request), `organizations/${access.organizationId}`).catch(() => null),
+  ])
+  const sender = materialRequestSender({ tokenEmail: access.user.email, callerDoc, orgDoc })
+  const { name: senderName, email: senderEmail, phone: senderPhone, company: senderCompany, logoURL: companyLogoURL } =
+    sender
+  if (!jobNumber) return jsonError('jobNumber is required', 400)
+  if (!senderEmail || !isValidEmail(senderEmail)) return jsonError('Your account has no valid email address', 400)
+  if (!senderCompany) return jsonError('Could not read your organisation. Try again.', 503)
 
   // Rulebook 1.27.0 (§16, §17, owner decision 2) `materialRequestJobCheck`: when the request names its job, the sender
   // must see that job (`canSeeJob`, the same rule as the email function's `material_request`) and the job number must
@@ -226,10 +239,28 @@ export async function POST(request: NextRequest) {
   wholesalerRows.catch(() => {})
 
   const rawJobId = typeof body.value.jobId === 'string' ? body.value.jobId.trim() : ''
+  // Review of #391: with a job, the site name and delivery address are the stored job's, never the request's. Older
+  // clients that send no `jobId` keep the typed values (the job check cannot run for them either).
+  let siteName = body.value.siteName
+  let deliveryAddress = body.value.siteAddress
   if (body.value.jobId != null && body.value.jobId !== '') {
     if (!rawJobId || rawJobId.length > 128 || !/^[A-Za-z0-9_-]+$/.test(rawJobId)) return jsonError('jobId is not valid', 400)
-    const check = await materialJobCheck(bearerToken(request), access.organizationId, access.user, membership, rawJobId, jobNumber)
+    const check = await materialJobCheck(bearerToken(request), access.organizationId, access.user, membership, rawJobId, jobNumber, callerDoc)
     if (!check.ok) return jsonError(check.message, check.status)
+    const job = parseJobDocument(rawJobId, check.job)
+    siteName = job?.siteName || ''
+    deliveryAddress = job
+      ? formatSiteAddress({
+          addressLine1: job.addressLine1,
+          addressLine2: job.addressLine2 ?? undefined,
+          townCity: job.townCity,
+          postcode: job.postcode ?? undefined,
+          latitude: job.latitude ?? undefined,
+          longitude: job.longitude ?? undefined,
+          usesMapPinForLocation: job.usesMapPinForLocation,
+          siteAddress: job.siteAddress,
+        })
+      : ''
   }
 
   const recipients = parseRecipients(body.value.recipients)
@@ -255,10 +286,10 @@ export async function POST(request: NextRequest) {
   })
   if (!recipientCheck.ok) return jsonError(recipientCheck.message, 400)
 
-  const sendAsPlainText = Boolean(body.value.sendAsPlainText)
+  const sendAsPlainText = body.value.sendAsPlainText
   const isQuote = requestType === 'quote'
   const sentAt = new Date()
-  const parsedRequired = Date.parse(String(body.value.deliveryRequiredAt || ''))
+  const parsedRequired = Date.parse(body.value.deliveryRequiredAt)
   const deliveryRequiredAt = materialOrderIncludesDeliveryRequired(requestType)
     ? Number.isFinite(parsedRequired)
       ? new Date(parsedRequired)
@@ -281,24 +312,37 @@ export async function POST(request: NextRequest) {
     caller: { name: senderName, email: senderEmail },
   })
   const idToken = bearerToken(request)
-  const givenRequestId = typeof body.value.requestId === 'string' ? body.value.requestId.trim() : ''
+  const givenRequestId = body.value.requestId
   if (givenRequestId && !REQUEST_ID_PATTERN.test(givenRequestId)) return jsonError('requestId is not valid', 400)
   const requestId = givenRequestId || randomUUID()
   // Every recipient's message is rendered here (each greets its own contact), then all of them go to the email
   // function in ONE call (`sendMaterialRequestMessages`): one cold start, one rate-limit count and one Resend batch,
   // instead of one call per recipient at the same time.
+  // Rulebook 1.59.0 §16 (owner decision 17 Nov; review of #370, L2) `materialRequestSafeSenderNotice`: the first email
+  // the organisation sends to an address carries the red safe-sender box. One read per recipient of its
+  // `materialContacts` document (`materialContactPath`) — the same read the email function makes. A failed read shows
+  // no box; the send goes ahead either way.
+  const contactKnown = new Map<string, boolean | null>()
+  await Promise.all(
+    recipients.map(async (recipient) => {
+      const path = materialContactPath(access.organizationId, recipient.email)
+      const known = path ? await firestoreGet(idToken, path).then((doc) => doc !== null).catch(() => null) : null
+      contactKnown.set(recipient.email, known)
+    })
+  )
   const messages = recipients.map((recipient) => {
     const { html } = buildMaterialRequestEmail({
+      safeSenderNotice: materialRequestSafeSenderNotice(recipient.email, contactKnown.get(recipient.email) ?? null),
       context: {
         supplierName: recipient.name,
         userName: senderName,
         userEmail: senderEmail.toLowerCase(),
-        userPhone: clampString(body.value.senderPhone, 40),
+        userPhone: senderPhone,
         userCompany: senderCompany,
         jobNumber,
-        siteName: clampString(body.value.siteName, 200),
-        deliveryAddress: clampString(body.value.siteAddress, 400),
-        companyLogoURL: clampString(body.value.companyLogoURL, 500),
+        siteName,
+        deliveryAddress,
+        companyLogoURL,
         materials,
         sentAt,
         deliveryRequiredLabel,
@@ -325,6 +369,19 @@ export async function POST(request: NextRequest) {
     }
   )
   const { sent, copies, failed, failures, messageIds } = outcome
+  // Review of #370 (L2): every address that was sent to now has its `materialContacts` document (created once, never
+  // changed), so later sends carry no box. Best effort: a refused or failed write only means a box next time.
+  const failedEmails = new Set(failures.map((row) => row.email.trim().toLowerCase()))
+  await Promise.all(
+    recipients
+      .filter((recipient) => contactKnown.get(recipient.email) === false && !failedEmails.has(recipient.email.trim().toLowerCase()))
+      .map((recipient) => {
+        const path = materialContactPath(access.organizationId, recipient.email)
+        return path
+          ? firestoreCreateServerTime(idToken, path, materialContactCreateFields().serverTimestampFields).catch(() => false)
+          : false
+      })
+  )
   if (outcome.unconfirmed) {
     // It may have gone: never "Email not sent". The same request id is never sent twice by the function.
     return Response.json({ ok: false, unconfirmed: true, error: MATERIAL_EMAIL_UNCONFIRMED_MESSAGE }, { status: 502 })

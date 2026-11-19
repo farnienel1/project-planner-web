@@ -355,6 +355,7 @@ export function BookLabourFlowScreen({
         name: person.displayName,
         id: person.user.id,
         email: person.user.email,
+        extraIds: [person.bookingOperativeId],
       })),
       dayKeys: [orgDayKey(day, orgTimeZone)],
       bookings,

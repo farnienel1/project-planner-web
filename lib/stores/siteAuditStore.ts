@@ -83,6 +83,7 @@ function mapSiteAudit(docId: string, data: Record<string, unknown>): SiteAudit |
       comments: item.comments,
       annotations: item.annotations || undefined,
       imageURL: item.imageURL ?? undefined,
+      imageCapturedAt: item.imageCapturedAtMs != null ? new Date(item.imageCapturedAtMs) : undefined,
       createdAt: item.createdAtMs != null ? new Date(item.createdAtMs) : createdAt,
     })),
     createdAt,
@@ -136,6 +137,8 @@ export const useSiteAuditStore = create<SiteAuditState>((set, get) => ({
         comments: item.comments,
         annotations: item.annotations || '',
         imageURL: item.imageURL || null,
+        // The photo's taken time, the field iOS writes (`imageCapturedAt`); a null leaves a stored one alone.
+        imageCapturedAt: item.imageCapturedAt ? Timestamp.fromDate(item.imageCapturedAt) : null,
         createdAt: Timestamp.fromDate(item.createdAt || now),
       }))
     )
@@ -801,6 +804,12 @@ interface OrgUserState {
   /** Organisation whose roster load has finished. Empty users before this is still loading. */
   rosterLoadedOrgId: string | null
   /**
+   * Final review of #386: organisation whose roster the server answered in full (`fetchOrganisationRoster` complete).
+   * Never set from the stored copy, a timed-out or failed read, or a patch — so "Unknown person" timesheet rows wait for
+   * a real answer (`rosterLoadedOrgId` is set by those too, for screens that only need something to show).
+   */
+  rosterServerOrgId?: string | null
+  /**
    * Document ids from `organizations/{orgId}/userEmails` after a successful
    * collection read. Null when that read has not finished or failed — people
    * lists must then keep a pending invite rather than drop it.
@@ -903,6 +912,7 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
   loading: false,
   error: null,
   rosterLoadedOrgId: null,
+  rosterServerOrgId: null,
   claimedEmails: null,
   userIdAliases: {},
   rosterDocuments: [],
@@ -990,6 +1000,7 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
             loading: false,
             error: null,
             rosterLoadedOrgId: organizationId,
+            rosterServerOrgId: loaded.complete ? organizationId : (get().rosterServerOrgId ?? null),
           })
           startLiveRoster(organizationId, loaded.fallbackIds)
           // Rulebook 1.26.0 §8: read the pay profiles this viewer may read; when they changed, read the roster again

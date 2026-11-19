@@ -13,7 +13,7 @@ import { isActiveBookingStatus } from '@/lib/ios-parity/enums'
 import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
 import { isPlaceholderOperative } from '@/lib/operatives/operativeRosterUtils'
 import { computeWarningCoverageWindow } from '@/lib/warnings/warningLookahead'
-import { bookingJobLabel, formatClockMinutes, normalizeDocumentId } from '@/lib/canonical'
+import { bookingJobLabel, normalizeDocumentId } from '@/lib/canonical'
 import { holidayBookingLabourInput } from '@/lib/annualLeave/holidayDayKeys'
 
 export type LeaveCoverageWarning = LeaveCoverageRow & {
@@ -154,18 +154,6 @@ export function leaveCoverageWarningsForDays(input: LeaveCoverageStoresInput): L
   })
 
   return rows.map((row) => ({ ...row, date: dateFromDayKey(row.dayKey, timeZone) }))
-}
-
-/**
- * The time a "Half-day leave not covered" row asks to be booked, as one custom-hours pair: from the start of the
- * first range the rule names as not booked (`missing`) to the end of the last. Null for any other row.
- */
-export function leaveCoverBookingHours(row: Pick<LeaveCoverageRow, 'kind' | 'missing'>): { start: string; end: string } | null {
-  if (row.kind !== 'leave_cover' || row.missing.length === 0) return null
-  const start = Math.min(...row.missing.map((interval) => interval.start))
-  const end = Math.max(...row.missing.map((interval) => interval.end))
-  if (!(end > start)) return null
-  return { start: formatClockMinutes(start), end: formatClockMinutes(end) }
 }
 
 export function computeLeaveCoverageWarnings({
