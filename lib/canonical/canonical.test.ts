@@ -17848,6 +17848,224 @@ test('1.59.0 review M2: a booking under a managers row with no account stays in 
   assert.equal(R112.scheduleRowPerson('mgr-noacc', { accounts: [], operatives: [], managers: [{ id: 'MGR-NOACC' }] }).unresolved, false)
 })
 
+// MARK: - 1.68.0 site audit report (§29): one layout, nothing clipped, field limits
+
+test('1.68.0 site audit report: the shared fixture lays out exactly as expected (text lines, page breaks, file names)', () => {
+  for (const { name, input } of R112.SITE_AUDIT_REPORT_FIXTURE_INPUTS) {
+    const expected = R112.SITE_AUDIT_REPORT_FIXTURE_EXPECTED.find((row) => row.name === name)
+    assert.ok(expected, name)
+    const layout = R112.siteAuditReportLayout(input)
+    assert.equal(layout.fileName, expected!.fileName, name)
+    assert.equal(layout.pages.length, expected!.pageCount, name)
+    assert.equal(layout.pages.reduce((n, p) => n + p.ops.length, 0), expected!.opCount, name)
+    assert.deepEqual(R112.siteAuditReportTextLines(layout), expected!.pages, name)
+  }
+  const forApps = R112.siteAuditReportFixtureForApps()
+  assert.equal(forApps.inputs.length, R112.SITE_AUDIT_REPORT_FIXTURE_INPUTS.length)
+  assert.equal(forApps.expected.length, forApps.inputs.length)
+})
+
+test('1.68.0 site audit report: footers read "Page n of N" with the real total (owner bug: "Page 2 of 2" on 3 pages)', () => {
+  const layout = R112.siteAuditReportLayout(R112.SITE_AUDIT_REPORT_FIXTURE_INPUTS[0].input)
+  const total = layout.pages.length
+  assert.ok(total > 1)
+  layout.pages.forEach((page, index) => {
+    assert.ok(R112.siteAuditReportTextLines({ ...layout, pages: [page] })[0].includes(`Page ${index + 1} of ${total}`))
+  })
+})
+
+test('1.68.0 site audit report: no field text is dropped or clipped, and nothing is drawn off the page', () => {
+  const squash = (value: string) => value.replace(/\s+/g, '')
+  for (const { name, input } of R112.SITE_AUDIT_REPORT_FIXTURE_INPUTS) {
+    const layout = R112.siteAuditReportLayout(input)
+    // Field values are the 10.5-point lines and titles the 12-point lines (footers and "Continued" headers between
+    // the parts of a flowing card are other sizes).
+    const textOfSize = (size: number) =>
+      squash(layout.pages.flatMap((page) => page.ops.flatMap((op) => (op.kind === 'text' && op.size === size ? [op.text] : []))).join(''))
+    const values = textOfSize(10.5)
+    const titles = textOfSize(12)
+    for (const item of input.audit.items) {
+      for (const field of ['title', 'location', 'assignee', 'comments', 'annotations'] as const) {
+        const value = String(item[field] ?? '').trim()
+        if (value) assert.ok((field === 'title' ? titles : values).includes(squash(R112.siteAuditReportText(value))), `${name} ${item.id} ${field}`)
+      }
+    }
+    for (const page of layout.pages) {
+      for (const op of page.ops) {
+        if (op.kind === 'text') {
+          assert.ok(op.baseline <= layout.page.height, `${name} text below the page`)
+          assert.ok(op.x + R112.siteAuditReportTextWidth(op.text, op.size, op.bold) <= layout.page.width - 31, `${name} text past the right margin: ${op.text}`)
+        }
+        if (op.kind === 'rect' || op.kind === 'image') assert.ok(op.y + op.h <= layout.page.height + 0.01, `${name} ${op.kind} below the page`)
+      }
+      // Body content stays above the footer line; the footer is exactly three one-line texts.
+      const footer = layout.page.height - 60
+      for (const op of page.ops) {
+        if (op.kind === 'image') assert.ok(op.y + op.h <= footer, `${name} photo over the footer`)
+        if (op.kind === 'rect') assert.ok(op.y + op.h <= footer + 0.01 || op.y >= footer, `${name} box over the footer`)
+        if (op.kind === 'text' && op.baseline < footer) assert.ok(op.baseline <= footer - 10, `${name} text over the footer: ${op.text.slice(0, 40)}`)
+      }
+      assert.equal(page.ops.filter((op) => op.kind === 'text' && op.baseline > footer).length, 3, `${name} footer lines`)
+    }
+    // Every printed field, header and details grid included, is in the report character for character (the footer
+    // is a repeat and is left out): the characters printed above the footer include every field's characters.
+    const footer = layout.page.height - 60
+    const printed = new Map<string, number>()
+    for (const page of layout.pages) {
+      for (const op of page.ops) {
+        if (op.kind !== 'text' || op.baseline > footer) continue
+        for (const ch of Array.from(squash(op.text))) printed.set(ch, (printed.get(ch) ?? 0) + 1)
+      }
+    }
+    const needed = new Map<string, number>()
+    const fields: unknown[] = [input.organizationName, input.clientName, input.siteAddress, input.audit.projectName, input.audit.type, input.audit.customTitle, input.audit.authorName]
+    for (const item of input.audit.items) fields.push(item.title, item.location, item.assignee, item.comments, item.annotations)
+    for (const field of fields) {
+      for (const ch of Array.from(squash(R112.siteAuditReportText(field ?? '')))) needed.set(ch, (needed.get(ch) ?? 0) + 1)
+    }
+    for (const [ch, n] of needed) assert.ok((printed.get(ch) ?? 0) >= n, `${name}: "${ch}" printed ${printed.get(ch) ?? 0} of ${n}`)
+  }
+})
+
+test('1.68.0 site audit report: text normalised one character per grapheme, counters count graphemes', () => {
+  assert.equal(R112.siteAuditReportText('ﬁne ❤️ ©️ 👨‍👩‍👧 🇬🇧 Łódź\u200b\ufeff ｆｕｌｌ'), 'fine ? © ? ? Lódz full')
+  assert.equal(R112.siteAuditFieldLength('❤️👨‍👩‍👧🇬🇧é'), 4)
+  assert.equal(R112.siteAuditFieldCounter('title', '👍🏽'.repeat(120)).over, false)
+  assert.equal(R112.siteAuditReportFitLine('x'.repeat(500), 9, 100).endsWith('…'), true)
+  assert.ok(R112.siteAuditReportTextWidth(R112.siteAuditReportFitLine('x'.repeat(500), 9, 100), 9) <= 100.01)
+})
+
+test('1.68.0 site audit report input: the same audit gives the same input on both apps', () => {
+  const input = R112.siteAuditReportInput({
+    audit: {
+      id: 'A', projectJobNumber: 'C1', projectName: 'Job', type: 'General', authorName: 'Ann', dateMs: 0, createdAtMs: 0,
+      items: [
+        { id: 'loaded', imageURL: 'https://x/a.jpg' },
+        { id: 'failed', imageURL: 'https://x/b.jpg' },
+        { id: 'none' },
+      ],
+    },
+    organizationName: '  Raccord  ',
+    job: { clientName: 'RED', addressLine1: '71 Broadwick St', addressLine2: '', townCity: 'London', postcode: 'W1F 9QY' },
+    photos: { loaded: { width: 300, height: 400 }, failed: null },
+    logo: { width: 0, height: 10 },
+    timeZone: 'Europe/London',
+  })
+  assert.equal(input.siteAddress, '71 Broadwick St, London, W1F 9QY')
+  assert.equal(input.clientName, 'RED')
+  assert.equal(input.organizationName, 'Raccord')
+  assert.equal(input.logo, null)
+  assert.deepEqual(input.audit.items.map((item) => item.photo), [{ width: 300, height: 400 }, { width: 4, height: 3 }, null])
+  // Never map coordinates, never a client the job does not have.
+  assert.equal(R112.siteAuditReportSiteAddress({}), '')
+  assert.equal(R112.siteAuditReportInput({ audit: { items: [] }, job: null }).clientName, null)
+})
+
+test('1.68.0 site audit report: photos are whole (aspect kept), at most 200 wide and 240 tall', () => {
+  assert.deepEqual(R112.siteAuditReportPhotoBox({ width: 1170, height: 2532 }), { w: 110.9, h: 240 })
+  assert.deepEqual(R112.siteAuditReportPhotoBox({ width: 4032, height: 3024 }), { w: 200, h: 150 })
+  assert.deepEqual(R112.siteAuditReportPhotoBox({ width: 4000, height: 600 }), { w: 200, h: 30 })
+  assert.equal(R112.siteAuditReportPhotoBox(null), null)
+})
+
+test('1.68.0 site audit report: text the standard fonts cannot draw is replaced, never dropped; long words break', () => {
+  assert.equal(R112.siteAuditReportText('Café Zoë — £5 “ok”'), 'Café Zoë — £5 “ok”')
+  assert.equal(R112.siteAuditReportText('Łódź'), 'Lódz')
+  assert.equal(R112.siteAuditReportText('Snag 🚧!'), 'Snag ?!')
+  assert.equal(R112.siteAuditReportText('a\r\nb\tc'), 'a\nb c')
+  const lines = R112.wrapSiteAuditReportText(`https://example.com/${'x'.repeat(400)}`, 10, 100)
+  assert.ok(lines.length > 5)
+  assert.ok(lines.every((line) => R112.siteAuditReportTextWidth(line, 10) <= 100.01))
+  assert.equal(lines.join(''), `https://example.com/${'x'.repeat(400)}`)
+  assert.deepEqual(R112.wrapSiteAuditReportText('one\n\ntwo', 10, 300), ['one', '', 'two'])
+})
+
+test('1.68.0 site audit report: item rows, order, labels and empty values (owner Q2, Q3, Q5) and the taken time (Q1)', () => {
+  assert.deepEqual(
+    R112.siteAuditReportItemFields({ id: 'i', location: 'Hall', comments: '', annotations: '' }).map((row) => [row.label, row.value]),
+    [['Location', 'Hall'], ['Assignee', '—'], ['Comments', '—'], ['Annotations', 'None']]
+  )
+  assert.equal(R112.siteAuditItemTakenMs({ imageCapturedAtMs: 5, createdAtMs: 9 }), 5)
+  assert.equal(R112.siteAuditItemTakenMs({ imageCapturedAtMs: null, createdAtMs: 9 }), 9)
+  assert.equal(R112.siteAuditAuthorSignature('Zoë Anne Smith'), 'Z. Anne Smith')
+  assert.equal(R112.siteAuditReferenceCode({ projectJobNumber: 'C 646', createdAtMs: 1794943857123 }), 'SA-C646-1794943857')
+})
+
+test('1.68.0 site audit field limits: counters, new edits limited, stored longer text never refused', () => {
+  assert.deepEqual(R112.SITE_AUDIT_FIELD_LIMITS, { title: 120, location: 120, assignee: 80, comments: 2000, annotations: 2000, customTitle: 120, jobNumber: 60, jobName: 200 })
+  assert.equal(R112.siteAuditFieldCounter('title', 'abc').label, '3 / 120')
+  assert.equal(R112.siteAuditFieldLength('🚧🚧'), 2)
+  const long = 'x'.repeat(121)
+  assert.equal(R112.siteAuditFieldCounter('title', long).blocksSave, true)
+  assert.match(R112.siteAuditFieldLimitError({ title: long }) ?? '', /Title can be up to 120 characters \(121 now\)/)
+  assert.equal(R112.siteAuditFieldLimitError({ title: long }, { title: long }), null)
+  assert.equal(R112.siteAuditFieldLimitError({ comments: 'x'.repeat(2000) }), null)
+  // Review of #389: personal audits refuse a long job number / name instead of cutting it.
+  assert.equal(R112.siteAuditFieldCounter('jobNumber', 'J-1').label, '3 / 60')
+  assert.match(R112.siteAuditFieldLimitError({ jobName: 'n'.repeat(201) }) ?? '', /Job name can be up to 200 characters \(201 now\)/)
+  const draft = (jobNumber: string, jobName: string) => ({ jobNumber, jobName, date: '2026-11-18', items: [{ id: 'i', title: 'T' }] })
+  assert.match(R112.personalSiteAuditValidationError(draft('9'.repeat(61), 'Job')) ?? '', /Job number can be up to 60 characters/)
+  assert.equal(R112.personalSiteAuditValidationError(draft('9'.repeat(60), 'n'.repeat(200))), null)
+  const fields = R112.personalSiteAuditWriteFields({
+    ownerUserId: 'U1',
+    organizationId: 'org',
+    draft: { ...draft('9'.repeat(60), 'n'.repeat(200)), items: [{ id: 'i', title: 'T', imagePath: 'organizations/org/personalSiteAudits/U1/a/U1_5.jpg' }] },
+  })
+  assert.equal(fields?.jobName, 'n'.repeat(200))
+  assert.equal(R112.personalSiteAuditWriteFields({ ownerUserId: 'U1', draft: draft('1', 'n'.repeat(201)) }), null)
+})
+
+test('1.68.0 site audit photo object path: unique per item, the same on every retry', () => {
+  const base = { organizationId: 'org', userId: 'U1abc', auditId: 'A1', createdAtMs: 1_763_400_000_000, extension: 'jpg' }
+  const project = [0, 1, 2].map((index) => R112.siteAuditPhotoObjectPath({ ...base, kind: 'project', index }))
+  assert.deepEqual(project, [0, 1, 2].map((i) => `organizations/org/siteAudits/A1/images/U1abc_${1_763_400_000_000 + i}.jpg`))
+  assert.equal(R112.siteAuditPhotoObjectPath({ ...base, kind: 'project', index: 1 }), project[1])
+  assert.equal(R112.siteAuditPhotoObjectPath({ ...base, kind: 'personal', index: 0 }), 'organizations/org/personalSiteAudits/U1abc/A1/U1abc_1763400000000.jpg')
+  assert.equal(R112.siteAuditPhotoObjectPath({ ...base, kind: 'project', index: -1 }), null)
+  assert.equal(R112.siteAuditPhotoObjectPath({ ...base, kind: 'project', auditId: 'a/b', index: 0 }), null)
+})
+
+test('1.68.0 site audit report: the company logo at the top right, fitted whole; the initials badge otherwise', () => {
+  const box = R112.SITE_AUDIT_REPORT_LOGO_BOX
+  const pad = R112.SITE_AUDIT_REPORT_LOGO_PADDING
+  const right = box.x + box.w
+  const close = (a: number, b: number) => Math.abs(a - b) < 0.02
+  const cases: [string, { width: number; height: number }][] = [
+    ['landscape', { width: 400, height: 300 }],
+    ['very wide', { width: 2400, height: 200 }],
+    ['very tall', { width: 200, height: 2400 }],
+    ['tiny', { width: 10, height: 10 }],
+  ]
+  for (const [name, logo] of cases) {
+    const placed = R112.siteAuditReportLogoPlacement(logo)
+    assert.ok(placed, name)
+    // Aspect ratio kept (never stretched), fits inside the box less its padding (never cropped).
+    assert.ok(Math.abs(placed.image.w / placed.image.h - logo.width / logo.height) / (logo.width / logo.height) < 0.02, `${name}: aspect`)
+    assert.ok(placed.image.w <= box.w - pad * 2 + 0.01 && placed.image.h <= box.h - pad * 2 + 0.01, `${name}: fits`)
+    assert.ok(close(placed.image.w, box.w - pad * 2) || close(placed.image.h, box.h - pad * 2), `${name}: fills one side`)
+    // Top right: the tile's right edge on the box's right edge (the page margin), its top on the box's top.
+    assert.ok(close(placed.tile.x + placed.tile.w, right) && placed.tile.y === box.y, `${name}: top right`)
+    assert.ok(close(right, R112.SITE_AUDIT_REPORT_PAGE.width - 32), `${name}: right margin`)
+  }
+  for (const bad of [null, undefined, { width: 0, height: 10 }, { width: Number.NaN, height: 10 }]) {
+    assert.equal(R112.siteAuditReportLogoPlacement(bad), null)
+  }
+  const fixture = R112.siteAuditReportFixtureForApps()
+  const ops = (name: string) => {
+    const entry = fixture.inputs.find((row) => row.name === name)!
+    return R112.siteAuditReportLayout(entry.input).pages[0].ops
+  }
+  for (const name of ['logo-very-wide', 'logo-very-tall', 'owner-c646']) {
+    const logoOps = ops(name).filter((op) => op.kind === 'image' && op.ref === 'logo')
+    assert.equal(logoOps.length, 1, `${name}: one logo drawn`)
+    assert.ok(!ops(name).some((op) => op.kind === 'text' && op.text === 'RM'), `${name}: no initials badge`)
+  }
+  // No logo, or one the app could not load (null): the initials badge, never an empty box.
+  const missing = ops('logo-missing-or-failed')
+  assert.ok(!missing.some((op) => op.kind === 'image' && op.ref === 'logo'))
+  assert.ok(missing.some((op) => op.kind === 'text' && op.text === 'RM'))
+})
+
 test('1.67.0 dayRateOvertimeCalcText: a day-rate overtime line reads in hours, amount unchanged', () => {
   // Owner example: 6h of overtime at ×1.5, £225/day, 8.5h paid day → £238.24 (payForHours).
   const pay = R112.payForHours({ payBasis: 'day', dayRate: 225, paidHours: 6, standardDayHours: 8.5, otMultiplier: 1.5 })

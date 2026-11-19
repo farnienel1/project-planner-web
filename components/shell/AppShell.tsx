@@ -80,6 +80,7 @@ import { cn } from '@/lib/ui/cn'
 import { UserAvatar } from '@/components/users/UserAvatar'
 import { inboxOwnerIds } from '@/lib/staff/rulebookPeople'
 import { FeedbackSoundsUnlock } from '@/components/client/FeedbackSoundsUnlock'
+import { confirmChosenSignOut } from '@/lib/siteAudit/siteAuditSignOut'
 
 function NavGlyph({ path, className }: { path: string; className?: string }) {
   return (
@@ -200,7 +201,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const toast = useToast()
-  const { user, organization, signOut, recordLastSeenIfDue, syncSignInEmail } = useAuthStore()
+  const { user, firebaseUser, organization, signOut, recordLastSeenIfDue, syncSignInEmail } = useAuthStore()
   const { users, loadUsers } = useOrgUserStore()
   const notifications = useNotificationStore((s) => s.notifications)
   const loadNotifications = useNotificationStore((s) => s.loadNotifications)
@@ -468,7 +469,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
   }
 
   const confirmSignOut = async () => {
-    if (window.confirm('Are you sure you want to sign out?')) {
+    if (await confirmChosenSignOut(firebaseUser?.uid ?? user?.id)) {
       await signOut()
     }
   }

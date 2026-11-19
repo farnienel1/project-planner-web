@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.67.0
+# iOS follow-on — rulebook 1.68.0
 
 Generated 2026-11-19 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.66.0 → 1.67.0
-Packed hash: f0c3f1dc6afea5f1f30f67d6d11de3444d31c51d57dc63719639ce0c9c4045d5
-Rulebook sha256: 0f319a14f7ce0045d0eb225e77b29b3ce3347c3a6c02a6628a197d813c3a2632
+Rulebook version: 1.67.0 → 1.68.0
+Packed hash: c8ed641d323ce7bb915e839700b3360703dd63aff84f4b03d21c412db3cb8969
+Rulebook sha256: f261b01277a6e2bcd3e6df1ca2469285ac73569b66676ea926ed0a77b5399d7f
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -19,53 +19,35 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web lib/canonical/parity-fixture.json             → iOS ProjectPlannerTests/CanonicalParityFixture.json
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
   web lib/canonical/data-parity-fixture.json        → iOS ProjectPlannerTests/DataParityFixture.json
-Contract sha256: 56f892a29d844eaaebe16028640ebdfb036324d3a229638968c34d10663159f3
+Contract sha256: 926b910948b674b1fa259e8f933ddd15f14bad00b8e0b050ccbd88c723bf64aa
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: DAY_RATE_OVERTIME_ROUNDED_NOTE, dayRateHourlyEquivalent, dayRateOvertimeCalcText, liveDayRateOvertimeText, multipliedHoursParts, signedDayRateOvertimeText
+Exports added: SITE_AUDIT_FIELD_LABELS, SITE_AUDIT_FIELD_LIMITS, SITE_AUDIT_REPORT_COLORS, SITE_AUDIT_REPORT_CONTINUED, SITE_AUDIT_REPORT_FIXTURE_EXPECTED, SITE_AUDIT_REPORT_FIXTURE_INPUTS, SITE_AUDIT_REPORT_LOGO_BOX, SITE_AUDIT_REPORT_LOGO_PADDING, SITE_AUDIT_REPORT_MISSING_PHOTO, SITE_AUDIT_REPORT_PAGE, siteAuditAuthorSignature, siteAuditFieldCounter, siteAuditFieldLength, siteAuditFieldLimitError, siteAuditGraphemes, siteAuditItemTakenMs, siteAuditPhotoObjectPath, siteAuditReferenceCode, siteAuditReportFitLine, siteAuditReportFixtureForApps, siteAuditReportInput, siteAuditReportItemFields, siteAuditReportLayout, siteAuditReportLogoPlacement, siteAuditReportPageLabel, siteAuditReportPhotoBox, siteAuditReportSiteAddress, siteAuditReportText, siteAuditReportTextLines, siteAuditReportTextWidth, wrapSiteAuditReportText
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/dayRateOvertimeText.test.ts, lib/canonical/dayRateOvertimeText.ts, lib/canonical/index.ts, lib/canonical/payRate.ts, lib/canonical/payrollHours.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/cross-platform-contract.json, lib/canonical/crossPlatformContract.samples.ts, lib/canonical/index.ts, lib/canonical/personalSiteAudits.ts, lib/canonical/siteAuditReport.ts, lib/canonical/siteAuditReportFixture.ts, lib/canonical/siteAuditReportFixtureInputs.ts, lib/canonical/siteAuditReportFont.ts
 Done when:
-- [ ] Packed hash in iOS equals f0c3f1dc6afea5f1f30f67d6d11de3444d31c51d57dc63719639ce0c9c4045d5
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 0f319a14f7ce0045d0eb225e77b29b3ce3347c3a6c02a6628a197d813c3a2632)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.67.0)
+- [ ] Packed hash in iOS equals c8ed641d323ce7bb915e839700b3360703dd63aff84f4b03d21c412db3cb8969
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 f261b01277a6e2bcd3e6df1ca2469285ac73569b66676ea926ed0a77b5399d7f)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.68.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.67.0
+## What changed in 1.68.0
 
-- **A day-rate overtime line reads in hours** (§8, owner decision 17 Nov; wording only). New `dayRateOvertimeCalcText` and `DAY_RATE_OVERTIME_ROUNDED_NOTE` (`lib/canonical/dayRateOvertimeText.ts`): "6h × 1.5 = 9h · 9h × £26.47/h (rounded) = £238.24 (£225.00/day ÷ 8.5h)" instead of "0.71 days × £337.50/day = £238.24". The divisor is the part's day-rate divisor (`payrollDayRateHours`); the hours part is `multipliedHoursText`; the amount is the exact pay as priced and is never changed; the shown hourly rate is rounded to pennies and marked "(rounded)" when that changes it (owner confirmed 17 Nov). Standard lines, hourly-rate people and PAYE days are unchanged; a signed snapshot line reads in hours only when it stores the day rate and divisor at signing (`otBaseDayRate`, `otDayRateHours`) and its stored amount is exactly what `payForHours` pays for its stored hours at that rate (see the review note below). Web: `payLineDisplay` (the timesheet period and review page, the invoice HTML and PDF, the export email) calls it. `plainHoursText` is now exported from `payrollHours.ts` (module only). New `multipliedHoursParts` (`payrollMultipliedHours` uses it, same figures) and `dayRateHourlyEquivalent`; the text function now does no arithmetic of its own (a syntax-tree test) and carries `paidHours`, `pay`, `payShown`; callers fall back to the older wording when it would not show the line's own figures (owner 17 Nov: the calculation must never fail; property tests over generated bookings). Review of #378: signed lines read in hours only from the day rate and divisor stored at signing (new snapshot fields `otBaseDayRate`, `otDayRateHours`; `signedDayRateOvertimeText`) when the stored amount is exactly what they pay — never a rate worked out from the signed amount; live lines only with the person's own rate (no `rate ÷ multiplier`); iOS invoice and export rows carry the live line's multiplier, rate and divisor. Second review of #378: a live invoice row shows the hours wording only when its decided amount is exactly what `payForHours` pays for the shown hours, rate and divisor (an Edit-hours-revised amount keeps the older wording; web invoice details show the decided amount); a signed line whose details mention a break but cannot be read keeps the older wording. Final review of #378: that live-line rule is the rulebook's `liveDayRateOvertimeText` (new; type `LiveDayRateOvertimeLine`), called by web `payLineDisplay` (web's own `dayRateOvertimeTextOrNull` is removed) and by iOS instead of a Swift copy. Merged after 1.59.0 (#370), 1.60.0 (#373), 1.60.1 (#375), 1.63.0 (#388) and 1.64.0 (#392); drafted as 1.61.0 and renumbered.
-
-## iOS work for 1.67.0
-
-Wording only — no figure, total, write or permission changes.
-
-1. Sync the rulebook from this web branch with `scripts/sync-rulebook-from-web.sh` (never hand-edit the canonical files).
-2. Wherever iOS builds a day-rate timesheet or invoice **overtime** line's text ("0.71 days × £337.50/day = £238.24"), call `dayRateOvertimeCalcText` through `CanonicalBusinessEngine` with: `clockHours` (the line's clock hours at the multiplier — the collector's `otClockHours`, or `parseMultipliedHoursText` of its details when an unpaid break came off), `multiplier`, `breakHours` (only when a break is taken off the multiplied hours), `dayRate` (the person's own day rate, carried from the collector as `otBaseDayRate` — **never** worked out backwards as the multiplied rate ÷ the multiplier, or the amount ÷ days), `dayRateHours` (the line's own divisor, `standardDayHours`), `pay` (the line's amount), `currency`. Show `text` (or `lines` on two rows) only when the result shows the line's own figures: its `paidHours` equal the line's paid hours × the multiplier, **and** the line's amount (the decided amount, after any review) equals `payForHours` for those hours, that day rate and divisor — a revised (Edit hours) amount keeps the older wording. When it returns null, keep the current text.
-3. Standard lines, hourly-rate people and PAYE days keep their current text. **Signed snapshot lines:** when signing, store `otBaseDayRate` (the person's own day rate) and `otDayRateHours` (the line's divisor) on each day-rate overtime line of `weeklyReportOverride`, and keep them on every re-save. Show a signed line with `signedDayRateOvertimeText(line, { currency })`: it reads in hours only from those stored values, only when the line was not edited or declined and its stored amount is exactly what they pay (`payForHours`), and returns null (the older wording) for anything else — a line signed before 1.67.0, an amount-only revision, details that mention a break but cannot be read. Never compute a day rate from the stored amount, days or multiplier.
-4. Tests: the owner example (£225/day, 8.5h, 6h × 1.5 → "6h × 1.5 = 9h · 9h × £26.47/h (rounded) = £238.24 (£225.00/day ÷ 8.5h)") and a line with an unpaid break.
-
-## Review of #378 (also in this release)
-
-- **Signed lines (S1):** never work a rate out from the signed amount. Store `otBaseDayRate` (the person's own day rate) and `otDayRateHours` (the line's divisor, `standardDayHours`) on each day-rate overtime snapshot line when signing (`TimesheetWeeklyReportLabourLine`), keep them on every re-save, and show a signed line with `CanonicalBusinessEngine` `signedDayRateOvertimeText` (it returns null — the older wording — for a line signed before 1.67.0, an edited or declined line, or one whose stored amount is not exactly what the stored rate pays). Remove `item.baseDayRate = amount / line.days / multiplier`.
-- **Live invoice and export rows (S2):** `TimesheetInvoiceRows.rows` carries the live line's `otMultiplier`, `otBaseDayRate` and `standardDayHours`, so Generate invoice and Export read in hours like web.
-- **Live lines:** read in hours only with the collector's `otBaseDayRate`; never the multiplied rate ÷ the multiplier.
-
-## Second review of #378 (also in this release)
-
-- **Live rows, non-circular check (SF1):** `InvoiceLineItem.dayRateOvertimeText` shows the hours wording only when the row's `amount` equals `payForHours` (day rate, the row's paid hours, divisor, multiplier); comparing with the script's own `pay` is circular (it is the amount given). A row revised by Edit hours keeps the older wording. Test: a live row at £300 whose hours pay £238.24.
-- **Compile fix:** read `otBaseDayRate` / `otDayRateHours` as `((row["…"] as? NSNumber)?.doubleValue).flatMap { … }`.
-- **Signed lines:** details that mention a break but carry no readable multiplied text keep the older wording (in the script; nothing to do in Swift).
-
-## Final review of #378 (also in this release)
-
-- **Live lines call the rulebook:** `InvoiceLineItem` gets its text from `liveDayRateOvertimeText({ paidHours, clockHours, breakHours, multiplier, dayRate, dayRateHours, amount }, { currency })` through `CanonicalBusinessEngine` (clock hours and break from `parseMultipliedHoursText` of the details, or the collector's `otClockHours`; `dayRate` the collector's `otBaseDayRate`; `amount` the row's decided amount). Remove the Swift checks (`abs(calc.paidHours − paidHours × multiplier)`, the `payForHoursIfCalculated` comparison) from `computeDayRateOvertimeText`: the rulebook function does both and returns null for the older wording.
+- **Site audits** (new §29; owner bug and decisions 17 Nov). Saving keeps the audit on the device before any upload and lists it as Not sent with Retry / Discard until saved; uploads run a few at a time, a stalled one is cancelled and retried, a refusal fails at once with its reason (web outbox and watched upload; iOS stall watchdog on site audit photos). Web reads and writes `imageCapturedAt` (owner Q1).
+- **One report on both apps**: `siteAuditReportLayout` (pages of drawing ops, shared Helvetica widths `siteAuditReportFont.ts`), `wrapSiteAuditReportText`, `siteAuditReportText`, `siteAuditReportTextWidth`, `siteAuditReportPhotoBox`, `siteAuditReportItemFields`, `siteAuditItemTakenMs`, `siteAuditReportPageLabel`, `siteAuditReferenceCode`, `siteAuditAuthorSignature`, `siteAuditReportTextLines`, `SITE_AUDIT_REPORT_CONTINUED`, `SITE_AUDIT_REPORT_PAGE`, `SITE_AUDIT_REPORT_COLORS`, and the shared fixture `SITE_AUDIT_REPORT_FIXTURE_INPUTS` / `SITE_AUDIT_REPORT_FIXTURE_EXPECTED` (`siteAuditReportFixtureForApps`). Fixes the iPhone report: fixed-height cards cut off Annotations, photos were a strip in a grey box, "Page n of n". Web's HTML print is replaced by a downloaded PDF from the same layout. Owner Q2–Q5: "Location", report order Location / Assignee / Comments / Annotations, tagline removed, "—" / "None".
+- **Field limits** (owner decision 17 Nov): `SITE_AUDIT_FIELD_LIMITS`, `SITE_AUDIT_FIELD_LABELS`, `siteAuditFieldLength`, `siteAuditFieldCounter`, `siteAuditFieldLimitError` — new edits only, stored longer text never cut.
+- Cross-platform contract: a full site audit written by each app (every item field, `imageCapturedAt`).
+- **The company logo at the top right of the site audit report** (§29, owner request 17 Nov): `SITE_AUDIT_REPORT_LOGO_BOX` (110 × 64, right edge on the margin), `SITE_AUDIT_REPORT_LOGO_PADDING`, `siteAuditReportLogoPlacement` (fitted whole, aspect kept, top right, on a white tile); the initials badge when there is no logo or it could not be loaded. Shared fixture cases `logo-very-wide`, `logo-very-tall`, `logo-missing-or-failed`. Web: one logo loader (`lib/pdf/companyLogo.ts`: https only, 10 s timeout, type from the bytes, WebP / HEIC redrawn, PDF → badge), also used by `familyLogo`.
+- **Review of #389 / #262** (same release): every printed field flows (the header band at most 260 points with the rest continuing in the body; the details grid, item titles beyond three lines and the signature flow over pages; the footer is one line each, shortened with "…", `siteAuditReportFitLine`, its full text being in the body); the report input is composed by one function both apps call (`siteAuditReportInput`, `siteAuditReportSiteAddress` — address lines only, never coordinates — and `SITE_AUDIT_REPORT_MISSING_PHOTO` for a stored photo not loaded); text is normalised one character per grapheme (`siteAuditGraphemes`: ligatures written out, variation selectors and joiners dropped, an emoji is one "?") and the editors' counters count graphemes. Stress fixture `every-field-huge` (a 3,000-word item title, huge names, a 9,500-character company name). Web: the outbox rejects on a browser-store abort (full disk) and falls back per record; a saved audit is never written again or its photos discarded; the audit date is the organisation's day; uploads stop only on no progress (no total cap) and go one at a time after a stall; a chosen sign-out warns and removes the person's unsent audits, a forced one keeps them; records older than 30 days or of companies left are removed. iOS: stall-only cap on claim evidence.
+- **Final review of #389 / #262** (same release): each photo's Storage object name is the audit's created time plus the item's place in the audit (`siteAuditPhotoObjectPath`, project and personal audits; §24 `{uid}_{ms}.{ext}`), so photos uploaded at the same moment never share a name and silently replace one another (web named project photos `{uid}_{Date.now()}`), and a retry replaces its own earlier upload; a retry refused because its object is already there past the §24 overwrite window counts that photo as uploaded (`uploadSiteAuditPhoto`). A chosen sign-out stops an audit still uploading, then deletes the photos of every unsent audit it removes as Discard does (the uploader inside the §24 undo window, never for an audit already saved). Personal audit job number (60) and job name (200) are field limits with counters on both apps; before, they were cut without a word.
 
 ## New rulebook sections
 
-- 1.67.0 — 2026-11-18
+- 29. Site audits: saving and the report (1.68.0)
+- 1.68.0 — 2026-11-18
 
 ## Workflow for the iOS agent
 

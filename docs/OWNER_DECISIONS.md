@@ -687,6 +687,37 @@ UI only, web only (`docs/design/user-profile-ui/user-profile-ui-spec.md`; branch
 | 15 Nov | **Working hours history** (owner, 15 Nov): a read-only list in Settings → Working hours, admins only, one row per start date, newest first — weekday day (start–finish, break, paid day), weekday overtime, Saturday's rule, Sunday's rule (or "same as Saturday"), the row in effect today marked, a scheduled change shown "Scheduled from <date>". One rule for both apps: `payrollPolicyHistoryRows`. Display only. | done web + rulebook (1.51.0); iOS open (hand-off) |
 | 15 Nov | **Keep the Excel download.** The XLSX stays; the PDF, HTML and Excel exports and the screen show exactly the same rows (one table builder). | done web (1.51.0) |
 
+## 17 Nov decisions (site audits, 1.65)
+
+| Date | Decision | Status |
+|---|---|---|
+| 17 Nov | **A site audit is never lost** (owner bug: stuck on "Uploading photo 1 of 6", then gone after backing out). The audit is kept on the device before any upload and stays listed as "Not sent" with each photo's state, the real error, Retry and Discard until it is saved; uploads run a few at a time with a stall cancel and retry; a refusal shows its reason at once. | done web (1.68.0, w-site-audit-robust); iOS stall watchdog (ios-site-audit-robust; iOS already queued audits on disk) |
+| 17 Nov | **Q1 yes:** the time on each report item is the photo's taken time (`imageCapturedAt`), else the item's created time; web writes and reads `imageCapturedAt` like iOS. | done web + rulebook (1.68.0); iOS (ios-site-audit-robust) |
+| 17 Nov | **Q2 yes:** the label is "Location" in every editor and the report (iOS "Location tag" goes). | done web + rulebook (1.68.0, `SITE_AUDIT_FIELD_LABELS`); iOS (ios-site-audit-robust) |
+| 17 Nov | **Q3 yes:** report rows stay Location, Assignee, Comments, Annotations. | done (1.68.0, `siteAuditReportItemFields`) |
+| 17 Nov | **Q4 yes:** the fixed tagline "Mechanical & Electrical Contractors" is removed from both apps' reports. | done (1.68.0) |
+| 17 Nov | **Q5 yes:** empty values print "—" (Annotations "None"). | done (1.68.0) |
+| 17 Nov | **The iOS and web PDFs are identical** for the same audit: one shared layout (`siteAuditReportLayout`) both apps draw, with a shared fixture both apps' tests check (same text lines and page breaks). Cards grow and flow onto the next page; nothing is clipped; photos are whole; "Page n of N" is correct. | done web + rulebook (1.68.0); iOS (ios-site-audit-robust) |
+| 17 Nov | **The company logo at the top right of the site audit report** (organisation `companyLogoURL`), identical on both apps: fitted whole inside a 110 × 64 point box at the top right (aspect kept, never stretched or cropped); the initials badge only when there is no logo or it cannot be loaded (a timeout or error never blocks the PDF). Box and placement in the rulebook (`SITE_AUDIT_REPORT_LOGO_BOX`, `siteAuditReportLogoPlacement`), in the shared fixture (wide, tall, missing / failed). | done web + rulebook (1.68.0); iOS (ios-site-audit-robust) |
+| 17 Nov | **Field limits with a live counter** on both apps' editors, new edits only (stored longer text is never cut or refused, and prints whole). | done web + rulebook (1.68.0, `SITE_AUDIT_FIELD_LIMITS`); iOS (ios-site-audit-robust) |
+
+## 1.68.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 17 Nov | Limits: title 120, location 120, assignee 80, comments 2000, annotations 2000, the audit's own title 120 characters (an emoji counts as one). Personal site audits use the same limits (their custom title was 200 on web). | done, **owner confirmed 17 Nov** |
+| 17 Nov | Characters the standard PDF fonts cannot draw print as "?" on both apps (emoji, non-Latin scripts); accented letters without their own glyph print without the accent (Ł → L). Needed so both apps' PDFs are identical; nothing is dropped. | done, **owner confirmed 17 Nov** |
+| 17 Nov | Photos in the report are at most 200 points wide and 240 tall (about a third of the page), so two portrait-photo items fit a page; a phone screenshot prints about 11 cm tall. | done, **owner confirmed 17 Nov** |
+| 17 Nov | A card that does not fit the rest of a page moves whole to the next page; only a card taller than a page splits, its later parts headed "Continued from the previous page". | done, owner to confirm |
+| 17 Nov | Web's report button now downloads the PDF (it opened a print page); web has no separate preview. | done, owner to confirm |
+| 17 Nov | When no logo is shown, the badge reads the company name's initials on both apps (the iPhone used the document abbreviation from Company details). | done, **owner confirmed 17 Nov** |
+| 17 Nov | The logo is drawn on a small white tile with 6 points of padding, so a dark or transparent logo still shows on the navy header; the tile is only as big as the fitted logo. | done, owner to confirm |
+| 17 Nov | Logo files: PNG and JPEG are drawn as they are; WebP and HEIC are converted (web: redrawn as PNG when the browser can read them; iPhone: read by the system); a PDF logo is not drawn — the initials badge shows instead. The logo is fetched for at most 10 seconds (web) / 15 seconds (iPhone), then the badge. | done, owner to confirm |
+| 17 Nov | Web keeps an unsent audit in the browser it was made in, for that signed-in person only; it is not removed on sign-out (another person signing in never sees it). On a shared computer the photos stay in that browser until sent or discarded. | done, **owner confirmed 17 Nov** |
+| 17 Nov | **Refined (review of #389, owner confirmed 17 Nov):** a sign-out the person chooses warns about their unsent site audits and removes them from the browser on confirm; a forced sign-out (idle, deactivated, a refused session) keeps them, hidden from anyone else, until that person signs back in; any copy older than 30 days, and the person's copies for organisations they no longer belong to (complete membership list only), are removed. The same rule as the iPhone (14 Nov). | done web (1.68.0), **owner confirmed 17 Nov** |
+| 17 Nov | Every printed field flows (review of #389): the header band is at most 260 points with the rest continuing in the body; an item title shows three lines in the card header and continues in the card body; the footer repeats the company name and reference on one line each, shortened with "…" (the full text is in the body). | done, owner to confirm |
+| 17 Nov | Report photos are drawn at most 1,600 pixels on their long side (web), so a report with many phone photos stays a sensible size; the layout is unchanged. | done, owner to confirm |
+
 ## 1.51.0 judgement calls (owner to confirm)
 
 | Date | Choice | Status |

@@ -83,6 +83,7 @@ function mapSiteAudit(docId: string, data: Record<string, unknown>): SiteAudit |
       comments: item.comments,
       annotations: item.annotations || undefined,
       imageURL: item.imageURL ?? undefined,
+      imageCapturedAt: item.imageCapturedAtMs != null ? new Date(item.imageCapturedAtMs) : undefined,
       createdAt: item.createdAtMs != null ? new Date(item.createdAtMs) : createdAt,
     })),
     createdAt,
@@ -136,6 +137,8 @@ export const useSiteAuditStore = create<SiteAuditState>((set, get) => ({
         comments: item.comments,
         annotations: item.annotations || '',
         imageURL: item.imageURL || null,
+        // The photo's taken time, the field iOS writes (`imageCapturedAt`); a null leaves a stored one alone.
+        imageCapturedAt: item.imageCapturedAt ? Timestamp.fromDate(item.imageCapturedAt) : null,
         createdAt: Timestamp.fromDate(item.createdAt || now),
       }))
     )
