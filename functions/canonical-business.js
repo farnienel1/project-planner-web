@@ -763,6 +763,8 @@ var ProjectPlannerCanonical = (() => {
     bookingDeleteSignedTimesheetWarning: () => bookingDeleteSignedTimesheetWarning,
     bookingFingerprintSlot: () => bookingFingerprintSlot,
     bookingHealthRows: () => bookingHealthRows,
+    bookingHoursBreakdownDays: () => bookingHoursBreakdownDays,
+    bookingHoursBreakdownRows: () => bookingHoursBreakdownRows,
     bookingHoursChangedRecipients: () => bookingHoursChangedRecipients,
     bookingHoursCountText: () => bookingHoursCountText,
     bookingHoursExplanation: () => bookingHoursExplanation,
@@ -2445,10 +2447,10 @@ var ProjectPlannerCanonical = (() => {
     const n = Number(value);
     return Number.isInteger(n) && n >= 1 && n <= 31 ? n : 0;
   }
-  function normalizePaymentRunRange(row2) {
-    if (!row2) return null;
-    const startDay = paymentRunMonthDay(row2.startDate) || paymentRunMonthDay(row2.startDay);
-    const endDay = paymentRunMonthDay(row2.endDate) || paymentRunMonthDay(row2.endDay);
+  function normalizePaymentRunRange(row3) {
+    if (!row3) return null;
+    const startDay = paymentRunMonthDay(row3.startDate) || paymentRunMonthDay(row3.startDay);
+    const endDay = paymentRunMonthDay(row3.endDate) || paymentRunMonthDay(row3.endDay);
     if (startDay <= 0 || endDay <= 0) return null;
     return { startDay, endDay };
   }
@@ -2928,10 +2930,10 @@ var ProjectPlannerCanonical = (() => {
     return value && typeof value === "object" && !Array.isArray(value) ? value : {};
   }
   function storedPermissionFlag(user, key7) {
-    const row2 = record(user);
-    const top = bool(row2[key7]);
+    const row3 = record(user);
+    const top = bool(row3[key7]);
     if (top != null) return top;
-    return bool(record(row2.permissions)[key7]);
+    return bool(record(row3.permissions)[key7]);
   }
   function userPermissionFlag(user, key7) {
     return storedPermissionFlag(user, key7) === true;
@@ -3115,9 +3117,9 @@ var ProjectPlannerCanonical = (() => {
     const resolved = level === "admin" || level === "operative" ? level : "manager";
     const out = resolved === "admin" ? effectivePermissions({}, "admin") : resolved === "operative" ? effectivePermissions({}, "operative") : effectivePermissions({ manager: true }, "manager");
     const locked = new Set(lockedPermissionFields({}, resolved));
-    for (const row2 of PERMISSION_TOGGLE_CATALOGUE) {
-      if (!row2.levels.includes(resolved) || locked.has(row2.field)) continue;
-      out[row2.field] = false;
+    for (const row3 of PERMISSION_TOGGLE_CATALOGUE) {
+      if (!row3.levels.includes(resolved) || locked.has(row3.field)) continue;
+      out[row3.field] = false;
     }
     return out;
   }
@@ -3127,19 +3129,19 @@ var ProjectPlannerCanonical = (() => {
     const locked = lockedPermissionFields(input?.user ?? {}, level);
     const superAdmin = level === "admin" && storedSuperAdmin(input?.user);
     const paye = storedPaye(input?.user);
-    return PERMISSION_TOGGLE_CATALOGUE.map((row2) => {
-      const visible = row2.levels.includes(level);
-      const selfManage = level === "admin" && ADMIN_EDITABLE_PERMISSION_FIELDS.includes(row2.field);
-      const payeTimesheet = level === "admin" && row2.field === "timesheetSelfSign" && paye && !superAdmin;
+    return PERMISSION_TOGGLE_CATALOGUE.map((row3) => {
+      const visible = row3.levels.includes(level);
+      const selfManage = level === "admin" && ADMIN_EDITABLE_PERMISSION_FIELDS.includes(row3.field);
+      const payeTimesheet = level === "admin" && row3.field === "timesheetSelfSign" && paye && !superAdmin;
       const own = selfManage && input?.viewerIsSubject === true && !superAdmin;
       const note = selfManage && superAdmin ? SUPER_ADMIN_SELF_MANAGE_MESSAGE : payeTimesheet ? TIMESHEET_SELF_SIGN_PAYE_NOTE : own ? OWN_SELF_MANAGE_MESSAGE : null;
       return {
-        field: row2.field,
-        label: row2.label,
-        help: row2.help,
+        field: row3.field,
+        label: row3.label,
+        help: row3.help,
         visible,
-        editable: visible && input?.mode !== "summary" && !locked.includes(row2.field) && !payeTimesheet && !own,
-        value: values[row2.field] === true,
+        editable: visible && input?.mode !== "summary" && !locked.includes(row3.field) && !payeTimesheet && !own,
+        value: values[row3.field] === true,
         note
       };
     });
@@ -3157,11 +3159,11 @@ var ProjectPlannerCanonical = (() => {
     return permissionLevelOf(user) !== "operative";
   }
   var MANAGER_PERMISSION_TOGGLES = PERMISSION_TOGGLE_CATALOGUE.filter(
-    (row2) => row2.levels.includes("admin")
-  ).map((row2) => ({ key: row2.field, title: row2.label, description: row2.help }));
+    (row3) => row3.levels.includes("admin")
+  ).map((row3) => ({ key: row3.field, title: row3.label, description: row3.help }));
   var OPERATIVE_PERMISSION_TOGGLES = PERMISSION_TOGGLE_CATALOGUE.filter(
-    (row2) => row2.levels.includes("operative")
-  ).map((row2) => ({ key: row2.field, title: row2.label, description: row2.help }));
+    (row3) => row3.levels.includes("operative")
+  ).map((row3) => ({ key: row3.field, title: row3.label, description: row3.help }));
   function accountTypePermissions(kind, previous) {
     const out = {};
     for (const key7 of USER_PERMISSION_FIELDS) {
@@ -3179,10 +3181,10 @@ var ProjectPlannerCanonical = (() => {
     const out = accountTypePermissions(kind, person);
     if (!screen || typeof screen !== "object") return out;
     const locked = new Set(lockedPermissionFields({}, kind));
-    for (const row2 of PERMISSION_TOGGLE_CATALOGUE) {
-      if (!row2.levels.includes(kind) || locked.has(row2.field)) continue;
-      const value = bool(screen[row2.field]);
-      if (value != null) out[row2.field] = value;
+    for (const row3 of PERMISSION_TOGGLE_CATALOGUE) {
+      if (!row3.levels.includes(kind) || locked.has(row3.field)) continue;
+      const value = bool(screen[row3.field]);
+      if (value != null) out[row3.field] = value;
     }
     return out;
   }
@@ -3226,11 +3228,11 @@ var ProjectPlannerCanonical = (() => {
     const memberFields = { [`members.${uid}`]: kind };
     const email = typeof person.email === "string" ? person.email.trim().toLowerCase() : "";
     if (email) {
-      for (const row2 of input.roster || []) {
-        const id2 = typeof row2?.id === "string" ? row2.id.trim() : "";
+      for (const row3 of input.roster || []) {
+        const id2 = typeof row3?.id === "string" ? row3.id.trim() : "";
         if (!id2 || id2 === uid) continue;
-        if (String(row2.email ?? "").trim().toLowerCase() !== email) continue;
-        if (!sameOrg(row2.organizationId, org)) continue;
+        if (String(row3.email ?? "").trim().toLowerCase() !== email) continue;
+        if (!sameOrg(row3.organizationId, org)) continue;
         writes.push({ path: `users/${id2}`, kind: "userProfile", fields: { ...levelOnly } });
         const listedKey = members ? Object.keys(members).find((key7) => key7.trim().toLowerCase() === id2.toLowerCase()) : void 0;
         if (listedKey && !listedKey.includes(".")) memberFields[`members.${listedKey}`] = kind;
@@ -3456,13 +3458,13 @@ var ProjectPlannerCanonical = (() => {
     return out;
   }
   function rosterMemberIsOperativeLevel(member) {
-    const row2 = member && typeof member === "object" ? member : {};
-    const role = row2.role;
+    const row3 = member && typeof member === "object" ? member : {};
+    const role = row3.role;
     if (role && typeof role === "object") {
       const resolved = role;
       return resolved.isOperativeMode === true && resolved.isAdmin !== true && resolved.isSuperAdmin !== true;
     }
-    return permissionLevelOf(row2) === "operative";
+    return permissionLevelOf(row3) === "operative";
   }
   function hasActiveLineManager(user, roster) {
     return lineManagerIds(user, roster).length > 0;
@@ -3692,7 +3694,7 @@ var ProjectPlannerCanonical = (() => {
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`.toUpperCase();
   }
   function jobManagerIds(job) {
-    const row2 = job && typeof job === "object" ? job : {};
+    const row3 = job && typeof job === "object" ? job : {};
     const out = [];
     const seen = /* @__PURE__ */ new Set();
     const add = (id2) => {
@@ -3701,10 +3703,10 @@ var ProjectPlannerCanonical = (() => {
       seen.add(key7);
       out.push(id2);
     };
-    for (const id2 of idList(row2.managerIds)) add(id2);
-    if (typeof row2.managerId === "string") add(row2.managerId.trim());
-    for (const id2 of idList(row2.assignedManagerUserIds)) add(id2);
-    for (const id2 of idList(row2.managerUserIds)) add(id2);
+    for (const id2 of idList(row3.managerIds)) add(id2);
+    if (typeof row3.managerId === "string") add(row3.managerId.trim());
+    for (const id2 of idList(row3.assignedManagerUserIds)) add(id2);
+    for (const id2 of idList(row3.managerUserIds)) add(id2);
     return out;
   }
   function isJobManager(viewer, job, managers) {
@@ -3717,10 +3719,10 @@ var ProjectPlannerCanonical = (() => {
     const email = typeof viewer.email === "string" ? viewer.email.trim().toLowerCase() : "";
     if (!email) return false;
     const storedSet = new Set(stored);
-    return (managers || []).some((row2) => {
-      if (!row2 || typeof row2.id !== "string") return false;
-      if (String(row2.email ?? "").trim().toLowerCase() !== email) return false;
-      return storedSet.has(idKey2(row2.id)) || storedSet.has(idKey2(stableManagerId(row2.id)));
+    return (managers || []).some((row3) => {
+      if (!row3 || typeof row3.id !== "string") return false;
+      if (String(row3.email ?? "").trim().toLowerCase() !== email) return false;
+      return storedSet.has(idKey2(row3.id)) || storedSet.has(idKey2(stableManagerId(row3.id)));
     });
   }
   function canSeeJob(viewer, job, managers, kind) {
@@ -3775,15 +3777,15 @@ var ProjectPlannerCanonical = (() => {
   }
   function jobManagerUserIds(job, managers, accounts) {
     const stored = (() => {
-      const row2 = job && typeof job === "object" ? job : {};
+      const row3 = job && typeof job === "object" ? job : {};
       const ids = [];
-      for (const id2 of idList(row2.managerIds)) ids.push(id2);
-      if (typeof row2.managerId === "string" && row2.managerId.trim()) ids.push(row2.managerId.trim());
+      for (const id2 of idList(row3.managerIds)) ids.push(id2);
+      if (typeof row3.managerId === "string" && row3.managerId.trim()) ids.push(row3.managerId.trim());
       return new Set(ids.map(idKey2).filter(Boolean));
     })();
     if (stored.size === 0) return [];
     const emails = new Set(
-      (managers || []).filter((row2) => row2 && (stored.has(idKey2(row2.id)) || stored.has(idKey2(stableManagerId(row2.id))))).map((row2) => String(row2.email ?? "").trim().toLowerCase()).filter(Boolean)
+      (managers || []).filter((row3) => row3 && (stored.has(idKey2(row3.id)) || stored.has(idKey2(stableManagerId(row3.id))))).map((row3) => String(row3.email ?? "").trim().toLowerCase()).filter(Boolean)
     );
     const out = [];
     const seen = /* @__PURE__ */ new Set();
@@ -3954,14 +3956,14 @@ var ProjectPlannerCanonical = (() => {
     for (const job of input.jobs || []) {
       if (job && idKey2(job.id) && isJobManager(viewer, job, input.managers ?? null)) jobIds.add(idKey2(job.id));
     }
-    const roster = (input.roster || []).filter((row2) => row2 && idKey2(row2.id));
+    const roster = (input.roster || []).filter((row3) => row3 && idKey2(row3.id));
     const rows3 = [
-      ...roster.map((row2) => ({
-        ids: [row2.id, ...row2.formerUserIds || [], ...row2.sameEmailUserIds || []],
-        email: idKey2(row2.email)
+      ...roster.map((row3) => ({
+        ids: [row3.id, ...row3.formerUserIds || [], ...row3.sameEmailUserIds || []],
+        email: idKey2(row3.email)
       })),
-      ...(input.people || []).map((row2) => ({ ids: [row2.id, ...row2.formerIds || []], email: idKey2(row2.email) })),
-      ...(input.operatives || []).map((row2) => ({ ids: [row2.id], email: idKey2(row2.email) }))
+      ...(input.people || []).map((row3) => ({ ids: [row3.id, ...row3.formerIds || []], email: idKey2(row3.email) })),
+      ...(input.operatives || []).map((row3) => ({ ids: [row3.id], email: idKey2(row3.email) }))
     ];
     const ids = /* @__PURE__ */ new Set();
     const emails = /* @__PURE__ */ new Set();
@@ -3978,7 +3980,7 @@ var ProjectPlannerCanonical = (() => {
       if (!lineManagerIds(member, roster).some((id2) => viewerKeys.has(idKey2(id2)))) continue;
       addPerson(personIdSet(member, roster), member.email);
     }
-    for (const row2 of rows3) if (row2.email && emails.has(row2.email)) addPerson(row2.ids, row2.email);
+    for (const row3 of rows3) if (row3.email && emails.has(row3.email)) addPerson(row3.ids, row3.email);
     ids.delete("");
     return {
       kind: "jobs",
@@ -3999,16 +4001,16 @@ var ProjectPlannerCanonical = (() => {
       enforced: input?.enforced
     });
   }
-  function isDailyOverviewRowInScope(scope, row2) {
+  function isDailyOverviewRowInScope(scope, row3) {
     if (!scope || scope.kind === "all") return true;
-    if (row2?.subcontractor === true) return false;
-    return isPersonInWarningScope(scope, row2?.personIds || [], row2?.email ?? null);
+    if (row3?.subcontractor === true) return false;
+    return isPersonInWarningScope(scope, row3?.personIds || [], row3?.email ?? null);
   }
-  function isWarningRowInScope(scope, row2) {
+  function isWarningRowInScope(scope, row3) {
     if (!scope || scope.kind === "all") return true;
-    if ((row2?.jobIds || []).some((id2) => idKey2(id2) !== "" && scope.jobIds.includes(idKey2(id2)))) return true;
-    if ((row2?.personIds || []).some((id2) => idKey2(id2) !== "" && scope.personIds.includes(idKey2(id2)))) return true;
-    const email = idKey2(row2?.email);
+    if ((row3?.jobIds || []).some((id2) => idKey2(id2) !== "" && scope.jobIds.includes(idKey2(id2)))) return true;
+    if ((row3?.personIds || []).some((id2) => idKey2(id2) !== "" && scope.personIds.includes(idKey2(id2)))) return true;
+    const email = idKey2(row3?.email);
     return email !== "" && scope.personEmails.includes(email);
   }
   function managerBookingJobId(booking) {
@@ -4611,15 +4613,15 @@ var ProjectPlannerCanonical = (() => {
       return Number.isNaN(ms) ? null : ms;
     }
     if (typeof value === "object") {
-      const row2 = value;
-      if (typeof row2.toDate === "function") {
+      const row3 = value;
+      if (typeof row3.toDate === "function") {
         try {
-          const date = row2.toDate();
+          const date = row3.toDate();
           if (date instanceof Date && !Number.isNaN(date.getTime())) return date.getTime();
         } catch {
         }
       }
-      const seconds = Number(row2.seconds ?? row2._seconds);
+      const seconds = Number(row3.seconds ?? row3._seconds);
       if (Number.isFinite(seconds)) return Math.round(seconds * 1e3);
     }
     return null;
@@ -4718,17 +4720,17 @@ var ProjectPlannerCanonical = (() => {
     return "unsigned";
   }
   function parseTimesheetStatusFields(data) {
-    const row2 = data && typeof data === "object" ? data : {};
-    const managerSignedAtMs = realSignatureMs(row2.managerSignedAt) ?? realSignatureMs(row2.approvedAt);
+    const row3 = data && typeof data === "object" ? data : {};
+    const managerSignedAtMs = realSignatureMs(row3.managerSignedAt) ?? realSignatureMs(row3.approvedAt);
     return {
-      operativeSignedAtMs: realSignatureMs(row2.operativeSignedAt),
-      operativeSignedByName: trimmed2(row2.operativeSignedByName),
-      operativeSignatureImageBase64: trimmed2(row2.operativeSignatureImageBase64),
+      operativeSignedAtMs: realSignatureMs(row3.operativeSignedAt),
+      operativeSignedByName: trimmed2(row3.operativeSignedByName),
+      operativeSignatureImageBase64: trimmed2(row3.operativeSignatureImageBase64),
       managerSignedAtMs,
-      managerSignedByName: trimmed2(row2.managerSignedByName) || trimmed2(row2.approvedByName),
-      managerSignedByUserId: trimmed2(row2.managerSignedByUserId),
-      managerSignatureImageBase64: trimmed2(row2.managerSignatureImageBase64),
-      exportedAtMs: resolveTimesheetExportedAtMs(row2)
+      managerSignedByName: trimmed2(row3.managerSignedByName) || trimmed2(row3.approvedByName),
+      managerSignedByUserId: trimmed2(row3.managerSignedByUserId),
+      managerSignatureImageBase64: trimmed2(row3.managerSignatureImageBase64),
+      exportedAtMs: resolveTimesheetExportedAtMs(row3)
     };
   }
   function timesheetSignOffWriteFields(input) {
@@ -4785,9 +4787,9 @@ var ProjectPlannerCanonical = (() => {
     };
   }
   function timesheetVersionSignedOff(data) {
-    const row2 = data && typeof data === "object" ? data : {};
-    const snapshot = row2.weeklyReportOverride != null && typeof row2.weeklyReportOverride === "object";
-    return realSignatureMs(row2.managerSignedAt) != null || realSignatureMs(row2.approvedAt) != null || realSignatureMs(row2.operativeSignedAt) != null && snapshot;
+    const row3 = data && typeof data === "object" ? data : {};
+    const snapshot = row3.weeklyReportOverride != null && typeof row3.weeklyReportOverride === "object";
+    return realSignatureMs(row3.managerSignedAt) != null || realSignatureMs(row3.approvedAt) != null || realSignatureMs(row3.operativeSignedAt) != null && snapshot;
   }
   function parseTimesheetRevisionDocId(documentId2) {
     const id2 = trimmed2(documentId2);
@@ -4800,8 +4802,8 @@ var ProjectPlannerCanonical = (() => {
   function versionCandidateIndexes(rows3) {
     const keep = /* @__PURE__ */ new Set();
     const chains = /* @__PURE__ */ new Map();
-    rows3.forEach((row2, index) => {
-      const ref = parseTimesheetRevisionDocId(row2.documentId);
+    rows3.forEach((row3, index) => {
+      const ref = parseTimesheetRevisionDocId(row3.documentId);
       if (!ref) {
         keep.add(index);
         return;
@@ -4823,9 +4825,9 @@ var ProjectPlannerCanonical = (() => {
     const startOnly = [];
     for (let index = 0; index < rows3.length; index += 1) {
       if (!candidates.has(index)) continue;
-      const row2 = rows3[index];
-      if (trimmed2(row2.startDayKey) !== period.startDayKey) continue;
-      const end = trimmed2(row2.endDayKey);
+      const row3 = rows3[index];
+      if (trimmed2(row3.startDayKey) !== period.startDayKey) continue;
+      const end = trimmed2(row3.endDayKey);
       if (isDayKey(end)) {
         if (end === period.endDayKey) exact.push(index);
         continue;
@@ -4839,7 +4841,7 @@ var ProjectPlannerCanonical = (() => {
     if (String(window.paymentRunMode || "") === "recurring_timeframe") {
       return `recurring:${trimmed2(window.recurringRunStartDay).toLowerCase() || "monday"}:${trimmed2(window.recurringRunEndDay).toLowerCase() || "sunday"}`;
     }
-    const ranges = (window.ranges ?? []).map((row2) => normalizePaymentRunRange(row2)).filter((row2) => row2 != null).map((row2) => `${row2.startDay}-${row2.endDay}`);
+    const ranges = (window.ranges ?? []).map((row3) => normalizePaymentRunRange(row3)).filter((row3) => row3 != null).map((row3) => `${row3.startDay}-${row3.endDay}`);
     return `dates:${ranges.join("|")}`;
   }
   function paymentRunHistoryAfterChange(input) {
@@ -4849,13 +4851,13 @@ var ProjectPlannerCanonical = (() => {
     }
     const snapshot = {
       paymentRunMode: input.previous.paymentRunMode === "recurring_timeframe" ? "recurring_timeframe" : "date_ranges",
-      ranges: (input.previous.ranges ?? []).map((row2) => normalizePaymentRunRange(row2)).filter((row2) => row2 != null),
+      ranges: (input.previous.ranges ?? []).map((row3) => normalizePaymentRunRange(row3)).filter((row3) => row3 != null),
       recurringRunStartDay: trimmed2(input.previous.recurringRunStartDay) || "monday",
       recurringRunEndDay: trimmed2(input.previous.recurringRunEndDay) || "sunday",
       recordedAtDayKey: trimmed2(input.recordedAtDayKey)
     };
     const fingerprint = paymentRunWindowFingerprint(snapshot);
-    const rest = existing.filter((row2) => paymentRunWindowFingerprint(row2) !== fingerprint);
+    const rest = existing.filter((row3) => paymentRunWindowFingerprint(row3) !== fingerprint);
     return [snapshot, ...rest].slice(0, 24);
   }
   function timesheetPaymentRunPeriodsFromWindow(input) {
@@ -4929,7 +4931,7 @@ var ProjectPlannerCanonical = (() => {
       const data = entry;
       const mode = String(data.paymentRunMode || "") === "recurring_timeframe" ? "recurring_timeframe" : "date_ranges";
       const rangeRows = Array.isArray(data.paymentRunDateRanges) ? data.paymentRunDateRanges : Array.isArray(data.ranges) ? data.ranges : [];
-      const ranges = rangeRows.map((row2) => normalizePaymentRunRange(row2 || {})).filter((row2) => row2 != null);
+      const ranges = rangeRows.map((row3) => normalizePaymentRunRange(row3 || {})).filter((row3) => row3 != null);
       const recordedAtDayKey = trimmed2(data.recordedAtDayKey);
       rows3.push({
         paymentRunMode: mode,
@@ -5345,10 +5347,10 @@ var ProjectPlannerCanonical = (() => {
   }
   function hoursMinutesText(totalMinutes) {
     const minutes = Math.max(0, Math.round(totalMinutes));
-    const h3 = Math.floor(minutes / 60);
+    const h4 = Math.floor(minutes / 60);
     const m = minutes % 60;
-    if (h3 === 0) return `${m}m`;
-    return m === 0 ? `${h3}h` : `${h3}h${String(m).padStart(2, "0")}m`;
+    if (h4 === 0) return `${m}m`;
+    return m === 0 ? `${h4}h` : `${h4}h${String(m).padStart(2, "0")}m`;
   }
   function weekdayPaidDayPreview(policy) {
     const day = standardDayWindow(policy);
@@ -5458,14 +5460,14 @@ var ProjectPlannerCanonical = (() => {
   function clockMinutesOf(value) {
     const text51 = coverageClock(value);
     if (!text51) return null;
-    const [h3, m] = text51.split(":").map(Number);
-    return h3 * 60 + m;
+    const [h4, m] = text51.split(":").map(Number);
+    return h4 * 60 + m;
   }
   function coverageClock(value) {
     const text51 = typeof value === "string" ? value.trim() : "";
     if (!COVERAGE_CLOCK_RE.test(text51)) return null;
-    const [h3, m] = text51.split(":").map(Number);
-    return h3 >= 0 && h3 < 24 && m >= 0 && m < 60 ? `${String(h3).padStart(2, "0")}:${String(m).padStart(2, "0")}` : null;
+    const [h4, m] = text51.split(":").map(Number);
+    return h4 >= 0 && h4 < 24 && m >= 0 && m < 60 ? `${String(h4).padStart(2, "0")}:${String(m).padStart(2, "0")}` : null;
   }
   function parseWeekendCoverage(value, includeWeekends) {
     const raw = asSettingsRecord(value) ?? {};
@@ -5567,9 +5569,9 @@ var ProjectPlannerCanonical = (() => {
       paymentRunMode: settings.paymentRunMode,
       paymentDateMode: settings.paymentDateMode,
       paymentRunDateRanges: settings.paymentRunDateRanges.map((range, index) => {
-        const row2 = paymentRunRangeToFirestore(range);
+        const row3 = paymentRunRangeToFirestore(range);
         const timesheet = timesheetSubmission[index];
-        return timesheet ? { ...row2, ...timesheet } : row2;
+        return timesheet ? { ...row3, ...timesheet } : row3;
       }),
       paymentDates: settings.paymentDates.map((d) => Number(d)),
       noteToUsers: settings.noteToUsers,
@@ -5743,9 +5745,9 @@ var ProjectPlannerCanonical = (() => {
   function workedHoursSplit(result2) {
     let standard = 0;
     let outside = 0;
-    for (const row2 of result2.segments) {
-      if (row2.kind === "standardWindow") standard += row2.workedHours;
-      else outside += row2.workedHours;
+    for (const row3 of result2.segments) {
+      if (row3.kind === "standardWindow") standard += row3.workedHours;
+      else outside += row3.workedHours;
     }
     return { standardWorkedHours: standard, outsideWorkedHours: outside };
   }
@@ -5760,24 +5762,24 @@ var ProjectPlannerCanonical = (() => {
   }
   function segment(kind, baseHours, multiplier, start, end, workedHours = baseHours, unpaidBreakHours = 0) {
     const clock4 = (value) => value == null ? void 0 : typeof value === "number" ? formatClockMinutes(value > 24 * 60 ? value - 24 * 60 : Math.min(value, 24 * 60 - 1)) : value;
-    const row2 = { kind, clockStart: clock4(start), clockEnd: clock4(end), baseHours, multiplier, paidHours: baseHours * multiplier, workedHours };
-    if (unpaidBreakHours > 0) row2.unpaidBreakHours = unpaidBreakHours;
-    return row2;
+    const row3 = { kind, clockStart: clock4(start), clockEnd: clock4(end), baseHours, multiplier, paidHours: baseHours * multiplier, workedHours };
+    if (unpaidBreakHours > 0) row3.unpaidBreakHours = unpaidBreakHours;
+    return row3;
   }
   function multipliedLessBreak(kind, clockHours, breakHours, multiplier, start, end) {
     const n = Number(multiplier) > 0 ? Number(multiplier) : 1;
     const brk = Math.max(0, Math.min(clockHours * n, breakHours));
-    const row2 = segment(kind, Math.max(0, clockHours - brk / n), n, start, end, Math.max(0, clockHours - breakHours), breakHours);
-    row2.paidHours = Math.max(0, clockHours * n - brk);
-    return row2;
+    const row3 = segment(kind, Math.max(0, clockHours - brk / n), n, start, end, Math.max(0, clockHours - breakHours), breakHours);
+    row3.paidHours = Math.max(0, clockHours * n - brk);
+    return row3;
   }
   function payrollOutsideClockHours(result2) {
     let clock4 = 0;
     let brk = 0;
-    for (const row2 of result2?.segments ?? []) {
-      if (row2.kind === "standardWindow") continue;
-      const b = row2.unpaidBreakHours ?? 0;
-      clock4 += row2.baseHours + (b > 0 && row2.multiplier > 0 ? b / row2.multiplier : 0);
+    for (const row3 of result2?.segments ?? []) {
+      if (row3.kind === "standardWindow") continue;
+      const b = row3.unpaidBreakHours ?? 0;
+      clock4 += row3.baseHours + (b > 0 && row3.multiplier > 0 ? b / row3.multiplier : 0);
       brk += b;
     }
     return { outsideClockHours: clock4, outsideBreakHours: brk };
@@ -5824,20 +5826,20 @@ var ProjectPlannerCanonical = (() => {
       text: multipliedHoursText({ clockHours, multiplier, breakHours })
     };
   }
-  function clockStartMinutes(row2) {
-    const match = /^(\d{1,2}):(\d{2})$/.exec(String(row2.clockStart ?? "").trim());
+  function clockStartMinutes(row3) {
+    const match = /^(\d{1,2}):(\d{2})$/.exec(String(row3.clockStart ?? "").trim());
     return match ? Number(match[1]) * 60 + Number(match[2]) : Number.MAX_SAFE_INTEGER;
   }
   function payrollLineClockRanges(result2) {
     const standard = [];
     const overtime = [];
     const rows3 = [...result2?.segments ?? []].sort((a, b) => clockStartMinutes(a) - clockStartMinutes(b));
-    for (const row2 of rows3) {
-      const start = String(row2.clockStart ?? "").trim();
-      const end = String(row2.clockEnd ?? "").trim();
+    for (const row3 of rows3) {
+      const start = String(row3.clockStart ?? "").trim();
+      const end = String(row3.clockEnd ?? "").trim();
       if (!start || !end || start === end) continue;
       const range = `${start}\u2013${end}`;
-      const target = row2.kind === "standardWindow" ? standard : overtime;
+      const target = row3.kind === "standardWindow" ? standard : overtime;
       if (!target.includes(range)) target.push(range);
     }
     return { standard, overtime, standardText: standard.join(" + "), overtimeText: overtime.join(" + ") };
@@ -5853,12 +5855,12 @@ var ProjectPlannerCanonical = (() => {
     let outside = 0;
     let worked = 0;
     let unpaidBreak = 0;
-    for (const row2 of segments) {
-      total += row2.paidHours;
-      worked += row2.workedHours;
-      unpaidBreak += row2.unpaidBreakHours ?? 0;
-      if (row2.kind === "standardWindow") standard += row2.baseHours;
-      else outside += row2.baseHours;
+    for (const row3 of segments) {
+      total += row3.paidHours;
+      worked += row3.workedHours;
+      unpaidBreak += row3.unpaidBreakHours ?? 0;
+      if (row3.kind === "standardWindow") standard += row3.baseHours;
+      else outside += row3.baseHours;
     }
     return {
       totalPaidHours: total,
@@ -6192,9 +6194,9 @@ var ProjectPlannerCanonical = (() => {
     if (!Array.isArray(value)) return [];
     const entries = [];
     value.forEach((raw, index) => {
-      const row2 = record2(raw);
-      const policy = record2(row2?.policy);
-      const effectiveFrom = row2 ? payrollDayKeyFromValue(row2.effectiveFrom, timeZone) : null;
+      const row3 = record2(raw);
+      const policy = record2(row3?.policy);
+      const effectiveFrom = row3 ? payrollDayKeyFromValue(row3.effectiveFrom, timeZone) : null;
       if (!policy || !effectiveFrom) return;
       entries.push({ effectiveFrom, policy: parsePayrollPolicy(policy), index });
     });
@@ -6590,7 +6592,7 @@ var ProjectPlannerCanonical = (() => {
   function withoutDismissedQualificationRows(rows3, dismissedKeys) {
     const dismissed = dismissedKeys instanceof Set ? dismissedKeys : new Set(dismissedKeys);
     if (dismissed.size === 0) return [...rows3];
-    return rows3.filter((row2) => !(row2.daysUntilExpiry < 0 && dismissed.has(row2.dismissKey)));
+    return rows3.filter((row3) => !(row3.daysUntilExpiry < 0 && dismissed.has(row3.dismissKey)));
   }
   var zoneOf3 = zoneOrLondon;
   function emailKey(value) {
@@ -6986,20 +6988,20 @@ var ProjectPlannerCanonical = (() => {
     const scope = input.scope;
     if (!scope || scope.kind === "all") return rows3;
     const emails = new Map(input.operatives.map((operative) => [operative.id, operative.email ?? null]));
-    return rows3.filter((row2) => isPersonInWarningScope(scope, [row2.operativeId], emails.get(row2.operativeId) ?? null));
+    return rows3.filter((row3) => isPersonInWarningScope(scope, [row3.operativeId], emails.get(row3.operativeId) ?? null));
   }
   function unverifiedOperativeRows(input) {
     const rows3 = unverifiedOperativeRowsUnscoped(input);
     const scope = input.scope;
     if (!scope || scope.kind === "all") return rows3;
-    return rows3.filter((row2) => isPersonInWarningScope(scope, [row2.operativeId], row2.email));
+    return rows3.filter((row3) => isPersonInWarningScope(scope, [row3.operativeId], row3.email));
   }
   function unbookedLabourRows(input) {
     const scope = input.scope;
     if (scope && scope.kind === "jobs" && !scope.unbookedLabour) return [];
     const rows3 = unbookedLabourRowsUnscoped(input);
     if (!scope || scope.kind === "all") return rows3;
-    return rows3.filter((row2) => isPersonInWarningScope(scope, [row2.operativeId, row2.userId, row2.personKey], row2.personKey));
+    return rows3.filter((row3) => isPersonInWarningScope(scope, [row3.operativeId, row3.userId, row3.personKey], row3.personKey));
   }
   function unbookedLabourRowsOnDay(input) {
     return unbookedLabourRows({
@@ -7030,7 +7032,7 @@ var ProjectPlannerCanonical = (() => {
   }
   function sortWarningsByDate(rows3, direction = DEFAULT_WARNINGS_SORT_DIRECTION) {
     const dir = parseWarningsSortDirection(direction);
-    return rows3.map((row2, index) => ({ row: row2, index })).sort((left, right) => {
+    return rows3.map((row3, index) => ({ row: row3, index })).sort((left, right) => {
       const byDate = compareWarningDayKeys(left.row.dayKey ?? "", right.row.dayKey ?? "", dir);
       return byDate !== 0 ? byDate : left.index - right.index;
     }).map((entry) => entry.row);
@@ -7209,11 +7211,11 @@ var ProjectPlannerCanonical = (() => {
       return a.personName.localeCompare(b.personName, void 0, { sensitivity: "base" });
     });
   }
-  function leaveCoverBookingWindow(row2, day) {
-    if (row2.kind !== "leave_cover") return null;
-    const gaps = [...row2.missing || []].filter((interval2) => interval2.end > interval2.start).sort((a, b) => a.start - b.start);
+  function leaveCoverBookingWindow(row3, day) {
+    if (row3.kind !== "leave_cover") return null;
+    const gaps = [...row3.missing || []].filter((interval2) => interval2.end > interval2.start).sort((a, b) => a.start - b.start);
     if (gaps.length === 0) return null;
-    const lunch = standardBreakWindow(bookingStandardDayOn(day, row2.dayKey));
+    const lunch = standardBreakWindow(bookingStandardDayOn(day, row3.dayKey));
     const start = gaps[0].start;
     let end = gaps[0].end;
     for (const gap of gaps.slice(1)) {
@@ -7539,15 +7541,15 @@ var ProjectPlannerCanonical = (() => {
   function notificationCreatedAtIsServerTime(type, scheduledAt) {
     return !(isScheduledNotificationType(type) && scheduledAt != null);
   }
-  function inboxNotificationVisibleToUser(row2, userId, now) {
+  function inboxNotificationVisibleToUser(row3, userId, now) {
     const ids = ownerKeys(userId);
-    if (ids.size === 0 || !row2 || typeof row2 !== "object") return false;
-    const owner = trimmed3(row2.userId).toLowerCase();
+    if (ids.size === 0 || !row3 || typeof row3 !== "object") return false;
+    const owner = trimmed3(row3.userId).toLowerCase();
     if (owner === "" || !ids.has(owner)) return false;
-    const created = createdAtInstantMs(row2.createdAt);
+    const created = createdAtInstantMs(row3.createdAt);
     if (created == null) return true;
     const at = nowMs(now);
-    return isScheduledNotificationType(row2.type) ? created <= at : created <= at + INBOX_CREATED_AT_SKEW_MS;
+    return isScheduledNotificationType(row3.type) ? created <= at : created <= at + INBOX_CREATED_AT_SKEW_MS;
   }
   function createdAtInstantMs(value) {
     if (value == null) return null;
@@ -7558,18 +7560,18 @@ var ProjectPlannerCanonical = (() => {
       return Number.isNaN(ms) ? null : ms;
     }
     if (typeof value === "object") {
-      const row2 = value;
-      if (typeof row2.toMillis === "function") {
-        const ms = row2.toMillis();
+      const row3 = value;
+      if (typeof row3.toMillis === "function") {
+        const ms = row3.toMillis();
         return Number.isFinite(ms) ? ms : null;
       }
-      if (typeof row2.getTime === "function") {
-        const ms = row2.getTime();
+      if (typeof row3.getTime === "function") {
+        const ms = row3.getTime();
         return Number.isFinite(ms) ? ms : null;
       }
-      const seconds = Number(row2.seconds ?? row2._seconds);
+      const seconds = Number(row3.seconds ?? row3._seconds);
       if (Number.isFinite(seconds)) {
-        const nanos = Number(row2.nanoseconds ?? row2._nanoseconds ?? 0);
+        const nanos = Number(row3.nanoseconds ?? row3._nanoseconds ?? 0);
         return seconds * 1e3 + Math.floor((Number.isFinite(nanos) ? nanos : 0) / 1e6);
       }
     }
@@ -7578,16 +7580,16 @@ var ProjectPlannerCanonical = (() => {
   function compareInboxNotificationsByCreatedAt(left, right) {
     return inboxCreatedAtMs(right) - inboxCreatedAtMs(left);
   }
-  function inboxCreatedAtMs(row2) {
-    return createdAtInstantMs(row2?.createdAt) ?? 0;
+  function inboxCreatedAtMs(row3) {
+    return createdAtInstantMs(row3?.createdAt) ?? 0;
   }
   function unreadNotificationBadgeCount(notifications, userId, now) {
     if (ownerKeys(userId).size === 0) return 0;
     const rows3 = Array.isArray(notifications) ? notifications : [];
     let count = 0;
-    for (const row2 of rows3) {
-      if (!inboxNotificationVisibleToUser(row2, userId, now)) continue;
-      if (row2.isRead === true) continue;
+    for (const row3 of rows3) {
+      if (!inboxNotificationVisibleToUser(row3, userId, now)) continue;
+      if (row3.isRead === true) continue;
       count += 1;
     }
     return count;
@@ -7854,9 +7856,9 @@ var ProjectPlannerCanonical = (() => {
     const key7 = String(yearKey || "").trim();
     if (!key7) return 0;
     let total = 0;
-    for (const row2 of adjustments || []) {
-      if (!row2 || String(row2.yearKey ?? "").trim() !== key7) continue;
-      const days = Number(row2.days);
+    for (const row3 of adjustments || []) {
+      if (!row3 || String(row3.yearKey ?? "").trim() !== key7) continue;
+      const days = Number(row3.days);
       if (Number.isFinite(days)) total += days;
     }
     return snapLeaveDays(total);
@@ -8194,7 +8196,7 @@ var ProjectPlannerCanonical = (() => {
     { section: "Professional Memberships", chip: "Professional" }
   ];
   var SECTION_CHIP = new Map(
-    QUALIFICATION_LIBRARY_SECTIONS.map((row2) => [row2.section, row2.chip])
+    QUALIFICATION_LIBRARY_SECTIONS.map((row3) => [row3.section, row3.chip])
   );
   function normalizeQualificationSearchText(value) {
     return String(value || "").toLowerCase().replace(/&/g, " ").replace(/[^a-z0-9.]+/g, " ").replace(/\s+/g, " ").trim();
@@ -8294,11 +8296,11 @@ var ProjectPlannerCanonical = (() => {
     const chips = [
       { key: QUALIFICATION_FILTER_ALL, label: QUALIFICATION_FILTER_ALL, count: records.length }
     ];
-    for (const row2 of QUALIFICATION_LIBRARY_SECTIONS) {
-      const count = counts.get(row2.section) || 0;
+    for (const row3 of QUALIFICATION_LIBRARY_SECTIONS) {
+      const count = counts.get(row3.section) || 0;
       if (count === 0) continue;
-      chips.push({ key: row2.section, label: row2.chip, count });
-      counts.delete(row2.section);
+      chips.push({ key: row3.section, label: row3.chip, count });
+      counts.delete(row3.section);
     }
     for (const [section, count] of [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
       chips.push({ key: section, label: section, count });
@@ -8352,19 +8354,19 @@ var ProjectPlannerCanonical = (() => {
   function trimId(value) {
     return String(value || "").trim();
   }
-  function assignedQualificationWriteFields(row2) {
-    if (!row2) return null;
-    const id2 = trimId(row2.id);
-    const name = String(row2.name || "").trim();
+  function assignedQualificationWriteFields(row3) {
+    if (!row3) return null;
+    const id2 = trimId(row3.id);
+    const name = String(row3.name || "").trim();
     if (!id2 || !name) return null;
     const now = (/* @__PURE__ */ new Date()).toISOString();
-    const createdAtIso = isoFromUnknown(row2.createdAtIso) || isoFromUnknown(row2.createdAt) || now;
-    const updatedAtIso = isoFromUnknown(row2.updatedAtIso) || isoFromUnknown(row2.updatedAt) || createdAtIso;
-    const endDateIso = isoFromUnknown(row2.endDateIso) || isoFromUnknown(row2.endDate);
+    const createdAtIso = isoFromUnknown(row3.createdAtIso) || isoFromUnknown(row3.createdAt) || now;
+    const updatedAtIso = isoFromUnknown(row3.updatedAtIso) || isoFromUnknown(row3.updatedAt) || createdAtIso;
+    const endDateIso = isoFromUnknown(row3.endDateIso) || isoFromUnknown(row3.endDate);
     const write = {
       id: id2,
       name,
-      hasEndDate: row2.hasEndDate === true,
+      hasEndDate: row3.hasEndDate === true,
       createdAtIso,
       updatedAtIso
     };
@@ -8431,13 +8433,13 @@ var ProjectPlannerCanonical = (() => {
   }
   function mergeOperativeQualificationWrite(input) {
     const byId = /* @__PURE__ */ new Map();
-    for (const row2 of input.previous?.qualifications || []) {
-      const write = assignedQualificationWriteFields(row2);
+    for (const row3 of input.previous?.qualifications || []) {
+      const write = assignedQualificationWriteFields(row3);
       if (write) byId.set(write.id, write);
     }
     const nextAssignmentIds = [];
-    for (const row2 of input.next.qualifications || []) {
-      const write = assignedQualificationWriteFields(row2);
+    for (const row3 of input.next.qualifications || []) {
+      const write = assignedQualificationWriteFields(row3);
       if (!write) continue;
       byId.set(write.id, write);
       nextAssignmentIds.push(write.id);
@@ -8561,23 +8563,23 @@ var ProjectPlannerCanonical = (() => {
     }
     return exclusiveRates({ dayRate: day, hourlyRate: hourly, payBasis: basis });
   }
-  function historyRowBasis(row2) {
-    return row2.payBasis === "hourly" ? "hourly" : "day";
+  function historyRowBasis(row3) {
+    return row3.payBasis === "hourly" ? "hourly" : "day";
   }
   function historyPayRowOnDay(rows3, day, livePayBasis, dayOf2) {
-    const candidates = rows3.filter((row2) => dayOf2(row2.effectiveAt) <= day).slice().sort((a, b) => {
+    const candidates = rows3.filter((row3) => dayOf2(row3.effectiveAt) <= day).slice().sort((a, b) => {
       const byEffective = a.effectiveAt.getTime() - b.effectiveAt.getTime();
       if (byEffective !== 0) return byEffective;
       return a.createdAt.getTime() - b.createdAt.getTime();
     });
     if (candidates.length === 0) return null;
     if (livePayBasis === "hourly") {
-      const hourlyRows = candidates.filter((row2) => historyRowBasis(row2) === "hourly");
+      const hourlyRows = candidates.filter((row3) => historyRowBasis(row3) === "hourly");
       if (hourlyRows.length > 0) {
         const hourly = hourlyRows[hourlyRows.length - 1];
         const hourlyDay = dayOf2(hourly.effectiveAt);
         const laterDayRows = candidates.filter(
-          (row2) => historyRowBasis(row2) === "day" && dayOf2(row2.effectiveAt) > hourlyDay
+          (row3) => historyRowBasis(row3) === "day" && dayOf2(row3.effectiveAt) > hourlyDay
         );
         if (laterDayRows.length > 0) return laterDayRows[laterDayRows.length - 1];
         return hourly;
@@ -8622,23 +8624,23 @@ var ProjectPlannerCanonical = (() => {
     const operativeIds = idSet(input.operativeIds && input.operativeIds.length > 0 ? input.operativeIds : [operative?.id]);
     const seen = /* @__PURE__ */ new Set();
     const rows3 = [];
-    (input.history || []).forEach((row2, index) => {
-      if (!row2) return;
-      const amount = finiteNumber(row2.dayRate);
-      const cleared = row2.dayRate === null;
-      const effectiveAt = toDate(row2.effectiveAt);
+    (input.history || []).forEach((row3, index) => {
+      if (!row3) return;
+      const amount = finiteNumber(row3.dayRate);
+      const cleared = row3.dayRate === null;
+      const effectiveAt = toDate(row3.effectiveAt);
       if (amount == null && !cleared || !effectiveAt) return;
-      const rowUser = String(row2.userId || "").trim();
-      const rowOperative = String(row2.operativeId || "").trim();
+      const rowUser = String(row3.userId || "").trim();
+      const rowOperative = String(row3.operativeId || "").trim();
       if (!(rowUser && userIds.has(rowUser)) && !(rowOperative && operativeIds.has(rowOperative))) return;
-      const key7 = String(row2.id || "").trim() || `#${index}`;
+      const key7 = String(row3.id || "").trim() || `#${index}`;
       if (seen.has(key7)) return;
       seen.add(key7);
       rows3.push({
-        payBasis: cleared ? null : row2.payBasis ?? null,
+        payBasis: cleared ? null : row3.payBasis ?? null,
         dayRate: cleared ? null : amount,
         effectiveAt,
-        createdAt: toDate(row2.createdAt) || effectiveAt
+        createdAt: toDate(row3.createdAt) || effectiveAt
       });
     });
     const match = historyPayRowOnDay(rows3, dayKey, live.payBasis, (date) => dayKeyInZone(date, timeZone));
@@ -8721,8 +8723,8 @@ var ProjectPlannerCanonical = (() => {
       });
       if (seed) rows3.push(seed);
     }
-    const row2 = payRateHistoryWriteFields({ ...base, rate: next, payBasis: nextBasis, effective: input.effectiveDayKey });
-    if (row2) rows3.push(row2);
+    const row3 = payRateHistoryWriteFields({ ...base, rate: next, payBasis: nextBasis, effective: input.effectiveDayKey });
+    if (row3) rows3.push(row3);
     return { ok: true, rows: rows3 };
   }
   function roundPennies(amount) {
@@ -8768,13 +8770,13 @@ var ProjectPlannerCanonical = (() => {
     return ok ? null : PAY_RATE_REQUIRED_MESSAGE;
   }
   function usersMissingPayRate(roster) {
-    const rows3 = (roster || []).filter((row2) => row2 && typeof row2.id === "string" && row2.id.trim());
+    const rows3 = (roster || []).filter((row3) => row3 && typeof row3.id === "string" && row3.id.trim());
     const done = /* @__PURE__ */ new Set();
     const out = [];
-    for (const row2 of rows3) {
-      const key7 = row2.id.trim().toLowerCase();
+    for (const row3 of rows3) {
+      const key7 = row3.id.trim().toLowerCase();
       if (done.has(key7)) continue;
-      const ids = new Set(personIdSet(row2, rows3).map((id2) => id2.toLowerCase()));
+      const ids = new Set(personIdSet(row3, rows3).map((id2) => id2.toLowerCase()));
       ids.add(key7);
       const group = rows3.filter((other) => ids.has(other.id.trim().toLowerCase()));
       for (const member of group) done.add(member.id.trim().toLowerCase());
@@ -8790,13 +8792,13 @@ var ProjectPlannerCanonical = (() => {
     return value === "paye" || value === "self_employed";
   }
   function usersMissingEmploymentType(roster) {
-    const rows3 = (roster || []).filter((row2) => row2 && typeof row2.id === "string" && row2.id.trim());
+    const rows3 = (roster || []).filter((row3) => row3 && typeof row3.id === "string" && row3.id.trim());
     const done = /* @__PURE__ */ new Set();
     const out = [];
-    for (const row2 of rows3) {
-      const key7 = row2.id.trim().toLowerCase();
+    for (const row3 of rows3) {
+      const key7 = row3.id.trim().toLowerCase();
       if (done.has(key7)) continue;
-      const ids = new Set(personIdSet(row2, rows3).map((id2) => id2.toLowerCase()));
+      const ids = new Set(personIdSet(row3, rows3).map((id2) => id2.toLowerCase()));
       ids.add(key7);
       const group = rows3.filter((other) => ids.has(other.id.trim().toLowerCase()));
       for (const member of group) done.add(member.id.trim().toLowerCase());
@@ -8812,9 +8814,9 @@ var ProjectPlannerCanonical = (() => {
   function text2(value) {
     return typeof value === "string" ? value.trim() : "";
   }
-  function firstText(row2, keys) {
+  function firstText(row3, keys) {
     for (const key7 of keys) {
-      const value = text2(row2[key7]);
+      const value = text2(row3[key7]);
       if (value) return value;
     }
     return "";
@@ -8858,23 +8860,23 @@ var ProjectPlannerCanonical = (() => {
       return Number.isNaN(ms) ? null : ms;
     }
     if (typeof raw === "object") {
-      const row2 = raw;
-      const seconds = typeof row2.seconds === "number" ? row2.seconds : typeof row2._seconds === "number" ? row2._seconds : null;
+      const row3 = raw;
+      const seconds = typeof row3.seconds === "number" ? row3.seconds : typeof row3._seconds === "number" ? row3._seconds : null;
       if (seconds != null && Number.isFinite(seconds)) {
-        const nanos = typeof row2.nanoseconds === "number" ? row2.nanoseconds : typeof row2._nanoseconds === "number" ? row2._nanoseconds : 0;
+        const nanos = typeof row3.nanoseconds === "number" ? row3.nanoseconds : typeof row3._nanoseconds === "number" ? row3._nanoseconds : 0;
         return seconds * 1e3 + Math.floor((Number(nanos) || 0) / 1e6);
       }
-      if (typeof row2.toMillis === "function") {
+      if (typeof row3.toMillis === "function") {
         try {
-          const ms = row2.toMillis();
+          const ms = row3.toMillis();
           if (typeof ms === "number" && Number.isFinite(ms)) return ms;
         } catch {
           return null;
         }
       }
-      if (typeof row2.toDate === "function") {
+      if (typeof row3.toDate === "function") {
         try {
-          const date = row2.toDate();
+          const date = row3.toDate();
           if (date instanceof Date && !Number.isNaN(date.getTime())) return date.getTime();
         } catch {
           return null;
@@ -8894,13 +8896,13 @@ var ProjectPlannerCanonical = (() => {
       return segments.length === 1 ? segments[0] : segments[segments.length - 1] || null;
     }
     if (typeof raw === "object") {
-      const row2 = raw;
-      if (typeof row2.path === "string" && row2.path.trim()) return documentOrganizationId(row2.path);
-      const segments = row2._key?.path?.segments;
+      const row3 = raw;
+      if (typeof row3.path === "string" && row3.path.trim()) return documentOrganizationId(row3.path);
+      const segments = row3._key?.path?.segments;
       if (Array.isArray(segments) && segments.length > 0) {
         return documentOrganizationId(segments.map((part) => String(part)).join("/"));
       }
-      if (typeof row2.id === "string" && row2.id.trim()) return row2.id.trim();
+      if (typeof row3.id === "string" && row3.id.trim()) return row3.id.trim();
     }
     return null;
   }
@@ -8967,7 +8969,7 @@ var ProjectPlannerCanonical = (() => {
   function parseUserDocument(docId, data, options) {
     const id2 = text2(docId);
     if (!id2) return null;
-    const row2 = data && typeof data === "object" ? data : {};
+    const row3 = data && typeof data === "object" ? data : {};
     const zone3 = zoneOrLondon(options?.timeZone);
     const orgDefaults = options?.annualLeaveDefaults ? parseAnnualLeaveDefaults(options.annualLeaveDefaults) : { ...DEFAULT_ANNUAL_LEAVE };
     const leaveDefaults = {
@@ -8976,45 +8978,45 @@ var ProjectPlannerCanonical = (() => {
       endMonth: wholeMonth(orgDefaults.endMonth) ?? DEFAULT_ANNUAL_LEAVE.endMonth,
       carriesOver: orgDefaults.carriesOver === true
     };
-    const email = text2(row2.email);
-    let firstName = firstText(row2, USER_DOCUMENT_KEYS.firstName);
-    let surname = firstText(row2, USER_DOCUMENT_KEYS.surname);
-    const combined = firstText(row2, USER_DOCUMENT_KEYS.combinedName);
+    const email = text2(row3.email);
+    let firstName = firstText(row3, USER_DOCUMENT_KEYS.firstName);
+    let surname = firstText(row3, USER_DOCUMENT_KEYS.surname);
+    const combined = firstText(row3, USER_DOCUMENT_KEYS.combinedName);
     if (!firstName && !surname && combined) {
       const parts3 = splitName(combined);
       firstName = parts3.first;
       surname = parts3.last;
     }
     const displayName2 = `${firstName} ${surname}`.trim() || combined;
-    const role = normalizeUserRoleToken(row2.role);
-    const isSuperAdmin = flagIn(row2, "isSuperAdmin") === true;
-    const adminAccessStored = flagIn(row2, "adminAccess") === true;
-    const operativeModeStored = flagIn(row2, "operativeMode") === true;
+    const role = normalizeUserRoleToken(row3.role);
+    const isSuperAdmin = flagIn(row3, "isSuperAdmin") === true;
+    const adminAccessStored = flagIn(row3, "adminAccess") === true;
+    const operativeModeStored = flagIn(row3, "operativeMode") === true;
     const keepsAdmin = isSuperAdmin || adminAccessStored || role === "admin";
     const operativeMode = operativeModeStored && !keepsAdmin;
     const flag = (key7, fallback) => {
-      const value = flagIn(row2, key7);
+      const value = flagIn(row3, key7);
       return value == null ? fallback : value;
     };
-    const permissions = effectivePermissions(row2);
-    const hasNoLineManager = flagIn(row2, "hasNoLineManager") === true;
-    let managers = hasNoLineManager ? [] : idList2(row2.assignedManagerUserIds);
+    const permissions = effectivePermissions(row3);
+    const hasNoLineManager = flagIn(row3, "hasNoLineManager") === true;
+    let managers = hasNoLineManager ? [] : idList2(row3.assignedManagerUserIds);
     if (!hasNoLineManager && managers.length === 0) {
-      const legacy = text2(row2.assignedManagerUserId);
+      const legacy = text2(row3.assignedManagerUserId);
       if (legacy) managers = [legacy];
     }
-    const pay = storedPay(row2);
-    const employmentType = normalizeEmploymentType(text2(row2.employmentType) || null);
-    const transitionRaw = text2(row2.employmentTypeTransitionFrom);
-    const effectiveAtMs = documentInstantMs(row2.employmentTypeEffectiveAt);
+    const pay = storedPay(row3);
+    const employmentType = normalizeEmploymentType(text2(row3.employmentType) || null);
+    const transitionRaw = text2(row3.employmentTypeTransitionFrom);
+    const effectiveAtMs = documentInstantMs(row3.employmentTypeEffectiveAt);
     const transitionFrom = transitionRaw && effectiveAtMs != null ? normalizeEmploymentType(transitionRaw) : null;
     const leaveStored = {
-      daysPerYear: documentNumber(row2.annualLeaveDaysPerYear),
-      startMonth: wholeMonth(row2.annualLeaveYearStartMonth),
-      endMonth: wholeMonth(row2.annualLeaveYearEndMonth),
-      carriesOver: flagIn(row2, "annualLeaveCarriesOver")
+      daysPerYear: documentNumber(row3.annualLeaveDaysPerYear),
+      startMonth: wholeMonth(row3.annualLeaveYearStartMonth),
+      endMonth: wholeMonth(row3.annualLeaveYearEndMonth),
+      carriesOver: flagIn(row3, "annualLeaveCarriesOver")
     };
-    const timesheetsStored = flagIn(row2, "timesheetsEnabled");
+    const timesheetsStored = flagIn(row3, "timesheetsEnabled");
     return {
       id: id2,
       email,
@@ -9022,8 +9024,8 @@ var ProjectPlannerCanonical = (() => {
       firstName,
       surname,
       displayName: displayName2,
-      mobileNumber: firstText(row2, USER_DOCUMENT_KEYS.mobileNumber) || null,
-      organizationId: documentOrganizationId(row2.organizationId),
+      mobileNumber: firstText(row3, USER_DOCUMENT_KEYS.mobileNumber) || null,
+      organizationId: documentOrganizationId(row3.organizationId),
       role: operativeMode ? "operative" : role,
       isSuperAdmin: operativeMode ? false : isSuperAdmin,
       operativeModeStored,
@@ -9036,13 +9038,13 @@ var ProjectPlannerCanonical = (() => {
         operativeMode
       }),
       permissions,
-      isActive: documentBool(row2.isActive) ?? true,
-      passwordSet: flagIn(row2, "passwordSet") ?? true,
-      status: optionalText(row2.status),
+      isActive: documentBool(row3.isActive) ?? true,
+      passwordSet: flagIn(row3, "passwordSet") ?? true,
+      status: optionalText(row3.status),
       assignedManagerUserIds: managers,
       assignedManagerUserId: managers[0] ?? null,
       hasNoLineManager,
-      formerUserIds: parseFormerUserIds(row2),
+      formerUserIds: parseFormerUserIds(row3),
       payBasis: pay.payBasis,
       dayRate: pay.payBasis === "day" ? pay.dayRate : null,
       hourlyRate: pay.payBasis === "hourly" ? pay.hourlyRate : null,
@@ -9050,37 +9052,37 @@ var ProjectPlannerCanonical = (() => {
       employmentTypeTransitionFrom: transitionFrom,
       employmentTypeEffectiveAtMs: transitionFrom ? effectiveAtMs : null,
       employmentTypeEffectiveDayKey: transitionFrom ? dayKeyOf(effectiveAtMs, zone3) : null,
-      annualLeaveEnabled: flagIn(row2, "annualLeaveEnabled") ?? true,
+      annualLeaveEnabled: flagIn(row3, "annualLeaveEnabled") ?? true,
       annualLeaveDaysPerYear: leaveStored.daysPerYear ?? leaveDefaults.daysPerYear,
       annualLeaveYearStartMonth: leaveStored.startMonth ?? leaveDefaults.startMonth,
       annualLeaveYearEndMonth: leaveStored.endMonth ?? leaveDefaults.endMonth,
       annualLeaveCarriesOver: leaveStored.carriesOver ?? leaveDefaults.carriesOver,
-      employmentStartDayKey: /^\d{4}-\d{2}-\d{2}$/.test(text2(row2.employmentStartDate)) ? text2(row2.employmentStartDate) : dayKeyOf(documentInstantMs(row2.employmentStartDate), zone3),
+      employmentStartDayKey: /^\d{4}-\d{2}-\d{2}$/.test(text2(row3.employmentStartDate)) ? text2(row3.employmentStartDate) : dayKeyOf(documentInstantMs(row3.employmentStartDate), zone3),
       annualLeaveStored: leaveStored,
       annualLeaveDefaultsPending: !options?.annualLeaveDefaults && (leaveStored.daysPerYear == null || leaveStored.startMonth == null || leaveStored.endMonth == null || leaveStored.carriesOver == null),
-      annualLeaveYearAllowance: documentNumber(row2.annualLeaveYearAllowance),
-      annualLeaveYearAllowanceKey: optionalText(row2.annualLeaveYearAllowanceKey),
+      annualLeaveYearAllowance: documentNumber(row3.annualLeaveYearAllowance),
+      annualLeaveYearAllowanceKey: optionalText(row3.annualLeaveYearAllowanceKey),
       timesheetsEnabled: timesheetsStored ?? defaultTimesheetsEnabled({ operativeMode, employmentType }),
       timesheetsEnabledStored: timesheetsStored,
-      tradeTypePreset: optionalText(row2.tradeTypePreset),
-      tradeTypeCustom: optionalText(row2.tradeTypeCustom),
-      profilePhotoURL: firstText(row2, USER_DOCUMENT_KEYS.profilePhotoURL) || null,
-      profilePhotoUpdatedAtMs: documentInstantMs(row2.profilePhotoUpdatedAt),
-      lastSeenAtMs: documentInstantMs(row2.lastSeenAt),
-      policyAccepted: flagIn(row2, "policyAccepted") === true,
-      policyAcceptedAtMs: documentInstantMs(row2.policyAcceptedAt),
-      legalPackVersion: optionalText(row2.legalPackVersion),
-      createdAtMs: documentInstantMs(row2.createdAt),
-      updatedAtMs: documentInstantMs(row2.updatedAt),
+      tradeTypePreset: optionalText(row3.tradeTypePreset),
+      tradeTypeCustom: optionalText(row3.tradeTypeCustom),
+      profilePhotoURL: firstText(row3, USER_DOCUMENT_KEYS.profilePhotoURL) || null,
+      profilePhotoUpdatedAtMs: documentInstantMs(row3.profilePhotoUpdatedAt),
+      lastSeenAtMs: documentInstantMs(row3.lastSeenAt),
+      policyAccepted: flagIn(row3, "policyAccepted") === true,
+      policyAcceptedAtMs: documentInstantMs(row3.policyAcceptedAt),
+      legalPackVersion: optionalText(row3.legalPackVersion),
+      createdAtMs: documentInstantMs(row3.createdAt),
+      updatedAtMs: documentInstantMs(row3.updatedAt),
       isAnonymisedDeleted: isAnonymisedDeletedProfile({
         email,
         firstName,
         surname,
-        name: text2(row2.name),
-        displayName: text2(row2.displayName)
+        name: text2(row3.name),
+        displayName: text2(row3.displayName)
       }),
-      ghost: isGhostUser(row2),
-      inviteEmailHint: optionalText(row2.inviteEmailHint)?.toLowerCase() ?? null
+      ghost: isGhostUser(row3),
+      inviteEmailHint: optionalText(row3.inviteEmailHint)?.toLowerCase() ?? null
     };
   }
   var ROSTER_DOCUMENT_KEYS = {
@@ -9089,10 +9091,10 @@ var ProjectPlannerCanonical = (() => {
     mobile: ["mobileNumber", "mobile", "phone", "phoneNumber"],
     linkedUserId: ["linkedUserId", "userId", "uid"]
   };
-  function rosterNames(row2) {
-    let firstName = text2(row2.firstName);
-    let lastName = firstText(row2, ROSTER_DOCUMENT_KEYS.lastName);
-    const stored = text2(row2.name) || text2(row2.displayName);
+  function rosterNames(row3) {
+    let firstName = text2(row3.firstName);
+    let lastName = firstText(row3, ROSTER_DOCUMENT_KEYS.lastName);
+    const stored = text2(row3.name) || text2(row3.displayName);
     if (!firstName && !lastName && stored) {
       const parts3 = splitName(stored);
       firstName = parts3.first;
@@ -9111,17 +9113,17 @@ var ProjectPlannerCanonical = (() => {
     const out = [];
     for (const entry of raw) {
       if (!entry || typeof entry !== "object") continue;
-      const row2 = entry;
-      const id2 = text2(row2.id);
-      const name = text2(row2.name);
+      const row3 = entry;
+      const id2 = text2(row3.id);
+      const name = text2(row3.name);
       if (!id2 || !name) continue;
       out.push({
         id: id2,
         name,
-        hasEndDate: documentBool(row2.hasEndDate) === true,
-        endDateMs: documentInstantMs(row2.endDate),
-        createdAtMs: documentInstantMs(row2.createdAt),
-        updatedAtMs: documentInstantMs(row2.updatedAt)
+        hasEndDate: documentBool(row3.hasEndDate) === true,
+        endDateMs: documentInstantMs(row3.endDate),
+        createdAtMs: documentInstantMs(row3.createdAt),
+        updatedAtMs: documentInstantMs(row3.updatedAt)
       });
     }
     return out;
@@ -9154,8 +9156,8 @@ var ProjectPlannerCanonical = (() => {
       let token = "";
       if (typeof entry === "string") token = entry.trim();
       else if (entry && typeof entry === "object") {
-        const row2 = entry;
-        token = text2(row2.id) || text2(row2.name);
+        const row3 = entry;
+        token = text2(row3.id) || text2(row3.name);
       }
       if (!token || seen.has(token)) continue;
       seen.add(token);
@@ -9163,8 +9165,8 @@ var ProjectPlannerCanonical = (() => {
     }
     return out;
   }
-  function rosterPay(row2) {
-    const pay = storedPay(row2);
+  function rosterPay(row3) {
+    const pay = storedPay(row3);
     return {
       payBasis: pay.payBasis,
       dayRate: pay.payBasis === "day" ? pay.dayRate : null,
@@ -9174,79 +9176,79 @@ var ProjectPlannerCanonical = (() => {
   function parseOperativeDocument(docId, data, timeZone) {
     const id2 = text2(docId);
     if (!id2) return null;
-    const row2 = data && typeof data === "object" ? data : {};
+    const row3 = data && typeof data === "object" ? data : {};
     const zone3 = zoneOrLondon(timeZone);
-    const names = rosterNames(row2);
-    const email = text2(row2.email);
+    const names = rosterNames(row3);
+    const email = text2(row3.email);
     if (!names.name && !email) return null;
-    const startDateMs = documentInstantMs(row2.startDate) ?? documentInstantMs(row2.createdAt);
-    const startRaw = text2(row2.startDate);
+    const startDateMs = documentInstantMs(row3.startDate) ?? documentInstantMs(row3.createdAt);
+    const startRaw = text2(row3.startDate);
     const startDayKey = /^\d{4}-\d{2}-\d{2}$/.test(startRaw) ? startRaw : dayKeyOf(startDateMs, zone3);
     return {
       id: id2,
       ...names,
       email,
       emailKey: email.toLowerCase(),
-      phone: firstText(row2, ROSTER_DOCUMENT_KEYS.phone) || null,
-      linkedUserId: firstText(row2, ROSTER_DOCUMENT_KEYS.linkedUserId) || null,
+      phone: firstText(row3, ROSTER_DOCUMENT_KEYS.phone) || null,
+      linkedUserId: firstText(row3, ROSTER_DOCUMENT_KEYS.linkedUserId) || null,
       startDayKey,
       startDateMs,
-      skills: parseSkillTokens(row2.skills),
-      qualifications: parseQualifications(row2.qualifications),
-      qualificationExpiryDates: parseInstantMap(row2.qualificationExpiryDates),
-      qualificationCertificateURLs: parseTextMap(row2.qualificationCertificateURLs),
-      isActive: documentBool(row2.isActive) ?? true,
-      ...rosterPay(row2),
-      currencySymbol: optionalText(row2.currencySymbol),
-      notes: optionalText(row2.notes),
-      tradeTypePreset: optionalText(row2.tradeTypePreset),
-      tradeTypeCustom: optionalText(row2.tradeTypeCustom),
-      organizationId: documentOrganizationId(row2.organizationId),
-      createdAtMs: documentInstantMs(row2.createdAt),
-      updatedAtMs: documentInstantMs(row2.updatedAt),
+      skills: parseSkillTokens(row3.skills),
+      qualifications: parseQualifications(row3.qualifications),
+      qualificationExpiryDates: parseInstantMap(row3.qualificationExpiryDates),
+      qualificationCertificateURLs: parseTextMap(row3.qualificationCertificateURLs),
+      isActive: documentBool(row3.isActive) ?? true,
+      ...rosterPay(row3),
+      currencySymbol: optionalText(row3.currencySymbol),
+      notes: optionalText(row3.notes),
+      tradeTypePreset: optionalText(row3.tradeTypePreset),
+      tradeTypeCustom: optionalText(row3.tradeTypeCustom),
+      organizationId: documentOrganizationId(row3.organizationId),
+      createdAtMs: documentInstantMs(row3.createdAt),
+      updatedAtMs: documentInstantMs(row3.updatedAt),
       isPlaceholder: isPlaceholderRow(id2, names.name, email)
     };
   }
   function parseManagerDocument(docId, data) {
     const id2 = text2(docId);
     if (!id2) return null;
-    const row2 = data && typeof data === "object" ? data : {};
-    const names = rosterNames(row2);
-    const email = text2(row2.email);
+    const row3 = data && typeof data === "object" ? data : {};
+    const names = rosterNames(row3);
+    const email = text2(row3.email);
     if (!names.name && !email) return null;
     return {
       id: id2,
       ...names,
       email,
       emailKey: email.toLowerCase(),
-      mobile: firstText(row2, ROSTER_DOCUMENT_KEYS.mobile) || null,
-      phone: firstText(row2, ROSTER_DOCUMENT_KEYS.phone) || null,
-      linkedUserId: firstText(row2, ROSTER_DOCUMENT_KEYS.linkedUserId) || null,
-      department: optionalText(row2.department),
-      isActive: documentBool(row2.isActive) ?? true,
-      ...rosterPay(row2),
-      notes: optionalText(row2.notes),
-      tradeTypePreset: optionalText(row2.tradeTypePreset),
-      tradeTypeCustom: optionalText(row2.tradeTypeCustom),
-      organizationId: documentOrganizationId(row2.organizationId),
-      createdAtMs: documentInstantMs(row2.createdAt),
-      updatedAtMs: documentInstantMs(row2.updatedAt),
+      mobile: firstText(row3, ROSTER_DOCUMENT_KEYS.mobile) || null,
+      phone: firstText(row3, ROSTER_DOCUMENT_KEYS.phone) || null,
+      linkedUserId: firstText(row3, ROSTER_DOCUMENT_KEYS.linkedUserId) || null,
+      department: optionalText(row3.department),
+      isActive: documentBool(row3.isActive) ?? true,
+      ...rosterPay(row3),
+      notes: optionalText(row3.notes),
+      tradeTypePreset: optionalText(row3.tradeTypePreset),
+      tradeTypeCustom: optionalText(row3.tradeTypeCustom),
+      organizationId: documentOrganizationId(row3.organizationId),
+      createdAtMs: documentInstantMs(row3.createdAt),
+      updatedAtMs: documentInstantMs(row3.updatedAt),
       isPlaceholder: isPlaceholderRow(id2, names.name, email)
     };
   }
   function parsePayRateHistoryDocument(docId, data, timeZone) {
     const id2 = text2(docId);
     if (!id2) return null;
-    const row2 = data && typeof data === "object" ? data : {};
-    const cleared = row2.dayRate === null;
-    const amount = documentNumber(row2.dayRate);
+    const row3 = data && typeof data === "object" ? data : {};
+    const cleared = row3.dayRate === null;
+    const amount = documentNumber(row3.dayRate);
     if (!cleared && amount == null) return null;
-    const effectiveAt = documentInstantMs(row2.effectiveAt);
+    const effectiveAt = documentInstantMs(row3.effectiveAt);
     if (effectiveAt == null) return null;
-    const userId = text2(row2.userId) || null;
-    const operativeId = text2(row2.operativeId) || null;
+    const userId = text2(row3.userId) || null;
+    const operativeId = text2(row3.operativeId) || null;
     if (!userId && !operativeId) return null;
-    const basis = text2(row2.payBasis).toLowerCase();
+    const basis = text2(row3.payBasis).toLowerCase();
     return {
       id: id2,
       userId,
@@ -9255,7 +9257,7 @@ var ProjectPlannerCanonical = (() => {
       cleared,
       payBasis: cleared ? null : basis === "hourly" ? "hourly" : "day",
       effectiveAt,
-      createdAt: documentInstantMs(row2.createdAt) ?? effectiveAt,
+      createdAt: documentInstantMs(row3.createdAt) ?? effectiveAt,
       effectiveDayKey: dayKeyInZone(new Date(effectiveAt), zoneOrLondon(timeZone))
     };
   }
@@ -9270,35 +9272,35 @@ var ProjectPlannerCanonical = (() => {
   function parseClientDocument(docId, data) {
     const id2 = text2(docId);
     if (!id2) return null;
-    const row2 = data && typeof data === "object" ? data : {};
-    const name = text2(row2.name);
+    const row3 = data && typeof data === "object" ? data : {};
+    const name = text2(row3.name);
     if (!name) return null;
     return {
       id: id2,
       name,
-      contactPerson: optionalText(row2.contactPerson),
-      email: optionalText(row2.email),
-      phone: optionalText(row2.phone),
-      address: optionalText(row2.address),
-      organizationId: documentOrganizationId(row2.organizationId),
-      createdAtMs: documentInstantMs(row2.createdAt),
-      updatedAtMs: documentInstantMs(row2.updatedAt)
+      contactPerson: optionalText(row3.contactPerson),
+      email: optionalText(row3.email),
+      phone: optionalText(row3.phone),
+      address: optionalText(row3.address),
+      organizationId: documentOrganizationId(row3.organizationId),
+      createdAtMs: documentInstantMs(row3.createdAt),
+      updatedAtMs: documentInstantMs(row3.updatedAt)
     };
   }
   function subcontractorContactId(firmDocId, index, contact) {
-    const row2 = contact && typeof contact === "object" ? contact : {};
-    return derivedRowId(firmDocId, "contacts", index, [text2(row2.name), text2(row2.email).toLowerCase()]);
+    const row3 = contact && typeof contact === "object" ? contact : {};
+    return derivedRowId(firmDocId, "contacts", index, [text2(row3.name), text2(row3.email).toLowerCase()]);
   }
   function parseSubcontractorDocument(docId, data) {
     const id2 = text2(docId);
     if (!id2) return null;
-    const row2 = data && typeof data === "object" ? data : {};
-    const name = text2(row2.name);
-    const subcontractorType = text2(row2.subcontractorType);
+    const row3 = data && typeof data === "object" ? data : {};
+    const name = text2(row3.name);
+    const subcontractorType = text2(row3.subcontractorType);
     if (!name || !subcontractorType) return null;
     const contacts = [];
-    if (Array.isArray(row2.contacts)) {
-      for (const [index, entry] of row2.contacts.entries()) {
+    if (Array.isArray(row3.contacts)) {
+      for (const [index, entry] of row3.contacts.entries()) {
         if (!entry || typeof entry !== "object") continue;
         const contact = entry;
         const contactName = text2(contact.name);
@@ -9316,36 +9318,36 @@ var ProjectPlannerCanonical = (() => {
         });
       }
     }
-    const createdAtMs = documentInstantMs(row2.createdAt);
+    const createdAtMs = documentInstantMs(row3.createdAt);
     return {
       id: id2,
       name,
       subcontractorType,
-      website: optionalText(row2.website),
-      address: optionalText(row2.address),
+      website: optionalText(row3.website),
+      address: optionalText(row3.address),
       contacts,
       createdAtMs,
-      updatedAtMs: documentInstantMs(row2.updatedAt) ?? createdAtMs
+      updatedAtMs: documentInstantMs(row3.updatedAt) ?? createdAtMs
     };
   }
   function parseSkillDocument(docId, data) {
     const id2 = text2(docId);
     if (!id2) return null;
-    const row2 = data && typeof data === "object" ? data : {};
-    const name = text2(row2.name);
+    const row3 = data && typeof data === "object" ? data : {};
+    const name = text2(row3.name);
     if (!name) return null;
-    const createdAtMs = documentInstantMs(row2.createdAt);
+    const createdAtMs = documentInstantMs(row3.createdAt);
     return {
       id: id2,
       name,
-      trade: text2(row2.trade),
+      trade: text2(row3.trade),
       createdAtMs,
-      updatedAtMs: documentInstantMs(row2.updatedAt) ?? createdAtMs
+      updatedAtMs: documentInstantMs(row3.updatedAt) ?? createdAtMs
     };
   }
   function skillsCatalogueWrites(input) {
     const storedById = /* @__PURE__ */ new Map();
-    for (const row2 of input.stored || []) if (text2(row2?.id)) storedById.set(text2(row2.id), row2);
+    for (const row3 of input.stored || []) if (text2(row3?.id)) storedById.set(text2(row3.id), row3);
     const nextIds = /* @__PURE__ */ new Set();
     const write = [];
     for (const skill of input.next || []) {
@@ -9369,13 +9371,13 @@ var ProjectPlannerCanonical = (() => {
     if (value instanceof Date) return `ts:${value.getTime()}`;
     if (Array.isArray(value)) return `[${value.map(documentValueKey).join(",")}]`;
     if (typeof value === "object") {
-      const row2 = value;
-      const looksLikeInstant = typeof row2.seconds === "number" || typeof row2._seconds === "number" || typeof row2.toMillis === "function" || typeof row2.toDate === "function";
+      const row3 = value;
+      const looksLikeInstant = typeof row3.seconds === "number" || typeof row3._seconds === "number" || typeof row3.toMillis === "function" || typeof row3.toDate === "function";
       if (looksLikeInstant) {
         const ms = documentInstantMs(value);
         if (ms != null) return `ts:${ms}`;
       }
-      return `{${Object.keys(row2).sort().map((key7) => `${JSON.stringify(key7)}:${documentValueKey(row2[key7])}`).join(",")}}`;
+      return `{${Object.keys(row3).sort().map((key7) => `${JSON.stringify(key7)}:${documentValueKey(row3[key7])}`).join(",")}}`;
     }
     return JSON.stringify(value) ?? String(value);
   }
@@ -9393,8 +9395,8 @@ var ProjectPlannerCanonical = (() => {
       ([field]) => field
     );
   }
-  function hasValue(row2, key7) {
-    return Boolean(row2) && row2[key7] !== void 0 && row2[key7] !== null;
+  function hasValue(row3, key7) {
+    return Boolean(row3) && row3[key7] !== void 0 && row3[key7] !== null;
   }
   function documentWriteFields(before, next, options) {
     const set = {};
@@ -9654,23 +9656,23 @@ var ProjectPlannerCanonical = (() => {
     if (!measure) return null;
     return { amount: tidyMaterialAmount(amount), measure };
   }
-  function withoutNewFields(row2) {
-    const out = { ...row2 };
+  function withoutNewFields(row3) {
+    const out = { ...row3 };
     delete out.orderUnit;
     delete out.contentAmount;
     delete out.contentMeasure;
     return out;
   }
-  function storedLegacyMatches(row2, model) {
-    const unitField = "unit" in row2 ? "unit" : "defaultUnit" in row2 ? "defaultUnit" : null;
+  function storedLegacyMatches(row3, model) {
+    const unitField = "unit" in row3 ? "unit" : "defaultUnit" in row3 ? "defaultUnit" : null;
     const expected = materialQuantityWriteFields(model, { unitField: unitField ?? "unit" });
-    if (unitField && text3(row2[unitField])) {
-      if (text3(row2[unitField]).toLowerCase() !== String(expected[unitField]).toLowerCase()) return false;
+    if (unitField && text3(row3[unitField])) {
+      if (text3(row3[unitField]).toLowerCase() !== String(expected[unitField]).toLowerCase()) return false;
     }
-    const hasLength = "length" in row2 || "sizeOrLength" in row2 || "lengthUnit" in row2;
+    const hasLength = "length" in row3 || "sizeOrLength" in row3 || "lengthUnit" in row3;
     if (hasLength) {
-      const storedText2 = text3(row2.length) || text3(row2.sizeOrLength);
-      const storedLength = parseMaterialMeasure(storedText2, row2.lengthUnit);
+      const storedText2 = text3(row3.length) || text3(row3.sizeOrLength);
+      const storedLength = parseMaterialMeasure(storedText2, row3.lengthUnit);
       const expectedLength = parseMaterialMeasure(expected.length, expected.lengthUnit);
       if (!storedLength && !expectedLength) return true;
       if (!storedLength || !expectedLength) {
@@ -9680,18 +9682,18 @@ var ProjectPlannerCanonical = (() => {
     }
     return true;
   }
-  function legacyLength(row2) {
-    const length = text3(row2.length) || text3(row2.sizeOrLength);
+  function legacyLength(row3) {
+    const length = text3(row3.length) || text3(row3.sizeOrLength);
     if (length) return length;
-    const pack = documentNumber(row2.packSize);
+    const pack = documentNumber(row3.packSize);
     return pack == null ? null : pack;
   }
   function materialQuantityModel(data) {
-    const row2 = data && typeof data === "object" ? data : {};
-    const stored = normalizeMaterialOrderUnit(row2.orderUnit);
+    const row3 = data && typeof data === "object" ? data : {};
+    const stored = normalizeMaterialOrderUnit(row3.orderUnit);
     if (stored) {
-      const amount = documentNumber(row2.contentAmount);
-      const measure = normalizeMaterialContentMeasure(row2.contentMeasure);
+      const amount = documentNumber(row3.contentAmount);
+      const measure = normalizeMaterialContentMeasure(row3.contentMeasure);
       const valid = stored !== "Metre" && amount != null && amount > 0 && measure != null;
       const model = {
         orderUnit: stored,
@@ -9699,12 +9701,12 @@ var ProjectPlannerCanonical = (() => {
         contentMeasure: valid ? measure : null,
         fromLegacy: false
       };
-      if (!storedLegacyMatches(row2, model)) return materialQuantityModel(withoutNewFields(row2));
+      if (!storedLegacyMatches(row3, model)) return materialQuantityModel(withoutNewFields(row3));
       return model;
     }
-    const legacyToken = text3(row2.unit) || text3(row2.defaultUnit);
+    const legacyToken = text3(row3.unit) || text3(row3.defaultUnit);
     const legacy = ["number", "box", "length", "drum", "pallet"].find((u) => u === legacyToken.toLowerCase());
-    const length = parseMaterialMeasure(legacyLength(row2), row2.lengthUnit) ?? parseMaterialMeasure(row2.lengthDisplay, null);
+    const length = parseMaterialMeasure(legacyLength(row3), row3.lengthUnit) ?? parseMaterialMeasure(row3.lengthDisplay, null);
     const content = length ? { contentAmount: length.amount, contentMeasure: length.measure } : { contentAmount: null, contentMeasure: null };
     switch (legacy) {
       case "box":
@@ -9766,9 +9768,9 @@ var ProjectPlannerCanonical = (() => {
     return n != null && n >= 0 ? tidyMaterialAmount(n) : 1;
   }
   function materialLineText(line) {
-    const row2 = line ?? {};
-    const model = materialQuantityModel(row2);
-    const quantity = quantityOf(row2.quantity);
+    const row3 = line ?? {};
+    const model = materialQuantityModel(row3);
+    const quantity = quantityOf(row3.quantity);
     const q = formatMaterialAmount(quantity);
     const detail = MATERIAL_ORDER_UNIT_DETAILS[model.orderUnit];
     const noun = quantity === 1 ? detail.singular : detail.plural;
@@ -9781,8 +9783,8 @@ var ProjectPlannerCanonical = (() => {
       const content = materialContentText(model);
       out = [`${q}no`, content, noun].filter(Boolean).join(" ");
     }
-    const display = text3(row2.lengthDisplay);
-    const lengthStored = text3(row2.length) || text3(row2.sizeOrLength) || documentNumber(row2.packSize) != null;
+    const display = text3(row3.lengthDisplay);
+    const lengthStored = text3(row3.length) || text3(row3.sizeOrLength) || documentNumber(row3.packSize) != null;
     if (model.fromLegacy && display && !lengthStored && !parseMaterialMeasure(display, null)) out = `${out} (${display})`;
     return out;
   }
@@ -10093,7 +10095,7 @@ var ProjectPlannerCanonical = (() => {
     const jobIds = new Set((input.jobManagerIds ?? []).map(key).filter(Boolean));
     if (jobIds.size === 0) return [];
     const jobEmails = new Set(
-      (input.managers ?? []).filter((row2) => jobIds.has(key(row2.id))).map((row2) => key(row2.email)).filter(Boolean)
+      (input.managers ?? []).filter((row3) => jobIds.has(key(row3.id))).map((row3) => key(row3.email)).filter(Boolean)
     );
     const adder = new Set((input.adderIds ?? []).map(key).filter(Boolean));
     const seen = /* @__PURE__ */ new Set();
@@ -10176,7 +10178,7 @@ var ProjectPlannerCanonical = (() => {
       members.filter((member) => viewerKeys.has(idKey3(member.id))).map((member) => idKey3(member.email)).filter(Boolean)
     );
     const isViewer = (member) => viewerKeys.has(idKey3(member.id)) || idKey3(member.email) !== "" && viewerEmails.has(idKey3(member.email));
-    const listed = new Set(userTimesheetSubjects(input).map((row2) => idKey3(row2.userId)));
+    const listed = new Set(userTimesheetSubjects(input).map((row3) => idKey3(row3.userId)));
     const seesEvery = seesEveryUserTimesheet(viewer.role);
     const reportsToViewer = (member) => lineManagerKeys(member).some((key7) => viewerKeys.has(key7));
     const managedEmails = /* @__PURE__ */ new Set();
@@ -10561,18 +10563,18 @@ var ProjectPlannerCanonical = (() => {
       return Number.isNaN(ms) ? null : ms;
     }
     if (typeof raw === "object") {
-      const row2 = raw;
-      const seconds = finiteNumber2(row2.seconds) ?? finiteNumber2(row2._seconds);
+      const row3 = raw;
+      const seconds = finiteNumber2(row3.seconds) ?? finiteNumber2(row3._seconds);
       if (seconds == null) return null;
-      const nanos = finiteNumber2(row2.nanoseconds) ?? finiteNumber2(row2._nanoseconds) ?? 0;
+      const nanos = finiteNumber2(row3.nanoseconds) ?? finiteNumber2(row3._nanoseconds) ?? 0;
       return seconds * 1e3 + Math.floor(nanos / 1e6);
     }
     return null;
   }
   function isTimestampShape(raw) {
     if (!raw || typeof raw !== "object") return false;
-    const row2 = raw;
-    return finiteNumber2(row2.seconds) != null || finiteNumber2(row2._seconds) != null;
+    const row3 = raw;
+    return finiteNumber2(row3.seconds) != null || finiteNumber2(row3._seconds) != null;
   }
   function bookingClock(raw, timeZone) {
     if (raw != null && typeof raw !== "string") {
@@ -10599,33 +10601,33 @@ var ProjectPlannerCanonical = (() => {
   }
   function parseBookingDocument(docId, data, options) {
     if (isLegacyPlaceholderDocumentId(docId)) return { ok: false, errors: ["legacy_placeholder"] };
-    const row2 = data && typeof data === "object" ? data : {};
+    const row3 = data && typeof data === "object" ? data : {};
     const repairs = [];
     const errors = [];
-    let operativeId = text4(row2.operativeId);
-    if (!operativeId && text4(row2.operativeID)) {
-      operativeId = text4(row2.operativeID);
+    let operativeId = text4(row3.operativeId);
+    if (!operativeId && text4(row3.operativeID)) {
+      operativeId = text4(row3.operativeID);
       repairs.push("operative_id_alias");
     }
-    let projectId = text4(row2.projectId);
-    if (!projectId && text4(row2.projectID)) {
-      projectId = text4(row2.projectID);
+    let projectId = text4(row3.projectId);
+    if (!projectId && text4(row3.projectID)) {
+      projectId = text4(row3.projectID);
       repairs.push("project_id_alias");
     }
-    const dateMs = bookingDateMs(row2.date);
-    if (dateMs != null && !isTimestampShape(row2.date)) repairs.push("date_not_timestamp");
-    const rawStatus = text4(row2.status);
-    const status = normalizeBookingStatus(row2.status);
+    const dateMs = bookingDateMs(row3.date);
+    if (dateMs != null && !isTimestampShape(row3.date)) repairs.push("date_not_timestamp");
+    const rawStatus = text4(row3.status);
+    const status = normalizeBookingStatus(row3.status);
     if (status && status !== rawStatus) repairs.push("status_alias");
-    const rawSlot = text4(row2.timeSlot);
-    let timeSlot = normalizeBookingTimeSlot(row2.timeSlot);
+    const rawSlot = text4(row3.timeSlot);
+    let timeSlot = normalizeBookingTimeSlot(row3.timeSlot);
     if (!rawSlot) {
       timeSlot = "FULL DAY";
       repairs.push("slot_missing_full_day");
     } else if (timeSlot && timeSlot !== rawSlot) {
       repairs.push("slot_alias");
     }
-    const bookedBy = text4(row2.bookedBy);
+    const bookedBy = text4(row3.bookedBy);
     if (!bookedBy) repairs.push("booked_by_missing");
     if (!operativeId) errors.push("missing_operative_id");
     if (!projectId) errors.push("missing_project_id");
@@ -10641,24 +10643,24 @@ var ProjectPlannerCanonical = (() => {
       timeSlot,
       status,
       bookedBy,
-      notes: text4(row2.notes),
-      isBreakRemoved: row2.isBreakRemoved === true,
+      notes: text4(row3.notes),
+      isBreakRemoved: row3.isBreakRemoved === true,
       operativeIdIsUuid: isBookingUuid(operativeId),
       projectIdIsUuid: isBookingUuid(projectId)
     };
-    const workStartTime = bookingClock(row2.workStartTime, options?.timeZone);
-    const workEndTime = bookingClock(row2.workEndTime, options?.timeZone);
-    const otMultiplierOverride = finiteNumber2(row2.otMultiplierOverride);
-    const bookingGroupId = text4(row2.bookingGroupId);
-    const createdAtMs = bookingDateMs(row2.createdAt);
-    const updatedAtMs = bookingDateMs(row2.updatedAt);
+    const workStartTime = bookingClock(row3.workStartTime, options?.timeZone);
+    const workEndTime = bookingClock(row3.workEndTime, options?.timeZone);
+    const otMultiplierOverride = finiteNumber2(row3.otMultiplierOverride);
+    const bookingGroupId = text4(row3.bookingGroupId);
+    const createdAtMs = bookingDateMs(row3.createdAt);
+    const updatedAtMs = bookingDateMs(row3.updatedAt);
     if (workStartTime) booking.workStartTime = workStartTime;
     if (workEndTime) booking.workEndTime = workEndTime;
     if (otMultiplierOverride != null) booking.otMultiplierOverride = otMultiplierOverride;
     if (bookingGroupId) booking.bookingGroupId = bookingGroupId;
     if (createdAtMs != null) booking.createdAtMs = createdAtMs;
     if (updatedAtMs != null) booking.updatedAtMs = updatedAtMs;
-    const jobCollection = normalizeBookingJobCollection(row2.jobCollection);
+    const jobCollection = normalizeBookingJobCollection(row3.jobCollection);
     if (jobCollection) booking.jobCollection = jobCollection;
     return { ok: true, booking, repairs };
   }
@@ -10717,8 +10719,8 @@ var ProjectPlannerCanonical = (() => {
     if (ids.size === 0) return [];
     const today = todayKey(input.nowIso, input.timeZone);
     return input.bookings.filter(
-      (row2) => ids.has(text4(row2.operativeId).toUpperCase()) && onOrAfterToday(row2.dateMs, today, input.timeZone) && (input.futureOnly !== true || dayKeyInZone(new Date(row2.dateMs), zoneOrLondon(input.timeZone)) > today)
-    ).map((row2) => row2.id);
+      (row3) => ids.has(text4(row3.operativeId).toUpperCase()) && onOrAfterToday(row3.dateMs, today, input.timeZone) && (input.futureOnly !== true || dayKeyInZone(new Date(row3.dateMs), zoneOrLondon(input.timeZone)) > today)
+    ).map((row3) => row3.id);
   }
   function operativesManagerMayDeleteBooking(input) {
     if (input?.operativeHasAccount !== false) return false;
@@ -10731,28 +10733,28 @@ var ProjectPlannerCanonical = (() => {
     const projectId = text4(input.projectId).toUpperCase();
     if (!projectId) return [];
     const today = todayKey(input.nowIso, input.timeZone);
-    return input.bookings.filter((row2) => text4(row2.projectId).toUpperCase() === projectId && onOrAfterToday(row2.dateMs, today, input.timeZone)).map((row2) => row2.id);
+    return input.bookings.filter((row3) => text4(row3.projectId).toUpperCase() === projectId && onOrAfterToday(row3.dateMs, today, input.timeZone)).map((row3) => row3.id);
   }
   function jobDeleteBookingRemovals(input) {
     const job = text4(input.projectId).toLowerCase();
     const empty = { bookings: [], subcontractorBookings: [], managerSiteBookings: [] };
     if (!job) return empty;
     const today = todayKey(input.nowIso, input.timeZone);
-    const upcoming = (row2) => Number.isFinite(row2?.dateMs) && onOrAfterToday(row2.dateMs, today, input.timeZone);
-    const byProject = (rows3) => (rows3 || []).filter((row2) => row2 && text4(row2.id) && text4(row2.projectId).toLowerCase() === job && upcoming(row2)).map((row2) => text4(row2.id));
+    const upcoming = (row3) => Number.isFinite(row3?.dateMs) && onOrAfterToday(row3.dateMs, today, input.timeZone);
+    const byProject = (rows3) => (rows3 || []).filter((row3) => row3 && text4(row3.id) && text4(row3.projectId).toLowerCase() === job && upcoming(row3)).map((row3) => text4(row3.id));
     return {
       bookings: byProject(input.bookings),
       subcontractorBookings: byProject(input.subcontractorBookings),
       managerSiteBookings: (input.managerSiteBookings || []).filter(
-        (row2) => row2 && text4(row2.id) && (text4(row2.locationType) === "project" || text4(row2.locationType) === "small_work") && text4(row2.locationId).toLowerCase() === job && upcoming(row2)
-      ).map((row2) => text4(row2.id))
+        (row3) => row3 && text4(row3.id) && (text4(row3.locationType) === "project" || text4(row3.locationType) === "small_work") && text4(row3.locationId).toLowerCase() === job && upcoming(row3)
+      ).map((row3) => text4(row3.id))
     };
   }
   function bookingJobState(projectId, liveProjectIds) {
     const id2 = text4(projectId).toUpperCase();
     if (!id2) return "deleted_job";
     const ids = Array.isArray(liveProjectIds) ? liveProjectIds : Array.from(liveProjectIds);
-    return ids.some((row2) => text4(row2).toUpperCase() === id2) ? "live" : "deleted_job";
+    return ids.some((row3) => text4(row3).toUpperCase() === id2) ? "live" : "deleted_job";
   }
   function bookingJobLabel(projectName) {
     return text4(projectName) || ORPHAN_BOOKING_LABEL;
@@ -10813,19 +10815,19 @@ var ProjectPlannerCanonical = (() => {
   }
   function parseManagerSiteBookingDocument(docId, data, options) {
     if (isLegacyPlaceholderDocumentId(docId)) return { ok: false, errors: ["legacy_placeholder"] };
-    const row2 = data && typeof data === "object" ? data : {};
+    const row3 = data && typeof data === "object" ? data : {};
     const errors = [];
     const repairs = [];
-    const userId = text4(row2.userId);
-    const dateMs = bookingDateMs(row2.date);
-    if (dateMs != null && !isTimestampShape(row2.date)) repairs.push("date_not_timestamp");
-    const timeSlot = normalizeManagerBookingTimeSlot(row2.timeSlot);
-    if (timeSlot && timeSlot !== text4(row2.timeSlot)) repairs.push("slot_alias");
+    const userId = text4(row3.userId);
+    const dateMs = bookingDateMs(row3.date);
+    if (dateMs != null && !isTimestampShape(row3.date)) repairs.push("date_not_timestamp");
+    const timeSlot = normalizeManagerBookingTimeSlot(row3.timeSlot);
+    if (timeSlot && timeSlot !== text4(row3.timeSlot)) repairs.push("slot_alias");
     if (!userId) errors.push("missing_user_id");
     if (dateMs == null) errors.push("missing_date");
     if (!timeSlot) errors.push("bad_time_slot");
     if (errors.length > 0 || dateMs == null || !timeSlot) return { ok: false, errors };
-    const rawLocation = text4(row2.locationType);
+    const rawLocation = text4(row3.locationType);
     let locationType = "project";
     if (MANAGER_LOCATION_TYPES.includes(rawLocation)) {
       locationType = rawLocation;
@@ -10838,16 +10840,16 @@ var ProjectPlannerCanonical = (() => {
       dateMs,
       timeSlot,
       locationType,
-      isBreakRemoved: row2.isBreakRemoved === true
+      isBreakRemoved: row3.isBreakRemoved === true
     };
-    const locationId = text4(row2.locationId);
-    const customLocationName = text4(row2.customLocationName);
-    const workStartTime = bookingClock(row2.workStartTime, options?.timeZone);
-    const workEndTime = bookingClock(row2.workEndTime, options?.timeZone);
-    const bookingGroupId = text4(row2.bookingGroupId);
-    const createdAtMs = bookingDateMs(row2.createdAt);
-    const updatedAtMs = bookingDateMs(row2.updatedAt);
-    const otMultiplierOverride = finiteNumber2(row2.otMultiplierOverride);
+    const locationId = text4(row3.locationId);
+    const customLocationName = text4(row3.customLocationName);
+    const workStartTime = bookingClock(row3.workStartTime, options?.timeZone);
+    const workEndTime = bookingClock(row3.workEndTime, options?.timeZone);
+    const bookingGroupId = text4(row3.bookingGroupId);
+    const createdAtMs = bookingDateMs(row3.createdAt);
+    const updatedAtMs = bookingDateMs(row3.updatedAt);
+    const otMultiplierOverride = finiteNumber2(row3.otMultiplierOverride);
     if (otMultiplierOverride != null) booking.otMultiplierOverride = otMultiplierOverride;
     if (locationId) booking.locationId = locationId;
     if (customLocationName) booking.customLocationName = customLocationName;
@@ -10856,7 +10858,7 @@ var ProjectPlannerCanonical = (() => {
     if (bookingGroupId) booking.bookingGroupId = bookingGroupId;
     if (createdAtMs != null) booking.createdAtMs = createdAtMs;
     if (updatedAtMs != null) booking.updatedAtMs = updatedAtMs;
-    const kind = bookingJobCollectionFields({ collection: "managerSiteBookings", jobCollection: row2.jobCollection, locationType });
+    const kind = bookingJobCollectionFields({ collection: "managerSiteBookings", jobCollection: row3.jobCollection, locationType });
     if (kind.jobCollection) booking.jobCollection = kind.jobCollection;
     return { ok: true, booking, repairs };
   }
@@ -10936,23 +10938,23 @@ var ProjectPlannerCanonical = (() => {
   function parseFormerPersonDocument(docId, data) {
     const id2 = text5(docId);
     if (!id2) return null;
-    const row2 = data && typeof data === "object" ? data : {};
+    const row3 = data && typeof data === "object" ? data : {};
     const ids = [id2];
     const seen = /* @__PURE__ */ new Set([id2.toLowerCase()]);
-    for (const raw of Array.isArray(row2.personIds) ? row2.personIds : []) {
+    for (const raw of Array.isArray(row3.personIds) ? row3.personIds : []) {
       const value = text5(raw);
       if (!value || seen.has(value.toLowerCase())) continue;
       seen.add(value.toLowerCase());
       ids.push(value);
     }
-    const email = idKey4(row2.email) || null;
+    const email = idKey4(row3.email) || null;
     return {
       id: id2,
-      displayName: text5(row2.displayName) || email || FORMER_PERSON_ANONYMOUS_NAME,
+      displayName: text5(row3.displayName) || email || FORMER_PERSON_ANONYMOUS_NAME,
       email,
       personIds: ids,
-      deletedAtMs: documentInstantMs(row2.deletedAt),
-      deletedBy: text5(row2.deletedBy) || null
+      deletedAtMs: documentInstantMs(row3.deletedAt),
+      deletedBy: text5(row3.deletedBy) || null
     };
   }
   function formerPersonForId(personId2, formerPeople) {
@@ -10977,11 +10979,11 @@ var ProjectPlannerCanonical = (() => {
     const email = idKey4(input?.email);
     if (!email) return [];
     const taken = /* @__PURE__ */ new Set();
-    for (const row2 of input.roster || []) for (const id2 of personIdSet(row2, null)) taken.add(idKey4(id2));
+    for (const row3 of input.roster || []) for (const id2 of personIdSet(row3, null)) taken.add(idKey4(id2));
     return (input.formerPeople || []).filter((person) => person && idKey4(person.email) === email).filter((person) => [person.id, ...person.personIds || []].some((id2) => idKey4(id2) && !taken.has(idKey4(id2)))).sort((a, b) => (b.deletedAtMs ?? 0) - (a.deletedAtMs ?? 0));
   }
   function formerPersonLinkOfferMessage(people) {
-    const names = [...new Set((people || []).map((row2) => text5(row2.displayName)).filter(Boolean))];
+    const names = [...new Set((people || []).map((row3) => text5(row3.displayName)).filter(Boolean))];
     const who = names.length === 0 ? "A former person" : names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
     return `${who} used this email before they were deleted. Link their old bookings, leave and history to this person?`;
   }
@@ -11049,20 +11051,20 @@ var ProjectPlannerCanonical = (() => {
     const needle = idKey5(operativeId);
     if (!needle) return { accountId: null, operativeId: null, email: null };
     const managers = input.managers || [];
-    const operative = input.operatives.find((row2) => idKey5(row2.id) === needle) || null;
-    const managerRow = operative ? null : managers.find((row2) => idKey5(row2.id) === needle) || null;
-    let account = input.accounts.find((row2) => idKey5(row2.id) === needle) || input.accounts.find((row2) => (row2.formerIds || []).some((id2) => idKey5(id2) === needle)) || input.accounts.find((row2) => (row2.aliasIds || []).some((id2) => idKey5(id2) === needle)) || null;
+    const operative = input.operatives.find((row3) => idKey5(row3.id) === needle) || null;
+    const managerRow = operative ? null : managers.find((row3) => idKey5(row3.id) === needle) || null;
+    let account = input.accounts.find((row3) => idKey5(row3.id) === needle) || input.accounts.find((row3) => (row3.formerIds || []).some((id2) => idKey5(id2) === needle)) || input.accounts.find((row3) => (row3.aliasIds || []).some((id2) => idKey5(id2) === needle)) || null;
     const operativeEmail = emailKey2(operative?.email);
     const managerEmail = emailKey2(managerRow?.email);
     if (!account && operativeEmail) {
-      account = input.accounts.find((row2) => emailKey2(row2.email) === operativeEmail) || null;
+      account = input.accounts.find((row3) => emailKey2(row3.email) === operativeEmail) || null;
     }
     if (!account && managerEmail) {
-      account = input.accounts.find((row2) => emailKey2(row2.email) === managerEmail) || null;
+      account = input.accounts.find((row3) => emailKey2(row3.email) === managerEmail) || null;
     }
     const accountEmail = emailKey2(account?.email);
-    const linkedOperative = operative || (accountEmail ? input.operatives.find((row2) => emailKey2(row2.email) === accountEmail) || null : null);
-    const linkedManager = managerRow || (accountEmail ? managers.find((row2) => emailKey2(row2.email) === accountEmail) || null : null);
+    const linkedOperative = operative || (accountEmail ? input.operatives.find((row3) => emailKey2(row3.email) === accountEmail) || null : null);
+    const linkedManager = managerRow || (accountEmail ? managers.find((row3) => emailKey2(row3.email) === accountEmail) || null : null);
     const email = operativeEmail || managerEmail || accountEmail || emailKey2(linkedOperative?.email) || null;
     const resolved = Boolean(account || linkedOperative || linkedManager);
     const former = resolved ? null : formerPersonForId(operativeId, input.formerPeople);
@@ -11098,7 +11100,7 @@ var ProjectPlannerCanonical = (() => {
     const person = resolveBookingPerson(first, input);
     add(person.operativeId);
     add(person.managerId);
-    const account = person.accountId ? input.accounts.find((row2) => row2.id === person.accountId) : void 0;
+    const account = person.accountId ? input.accounts.find((row3) => row3.id === person.accountId) : void 0;
     if (account) for (const id2 of bookingIdsForAccount(account, input.operatives)) add(id2);
     return ids;
   }
@@ -11118,28 +11120,28 @@ var ProjectPlannerCanonical = (() => {
   function text6(value) {
     return typeof value === "string" ? value.trim() : "";
   }
-  function rosterPersonName2(row2) {
-    if (!row2) return "";
-    const full = `${text6(row2.firstName)} ${text6(row2.surname) || text6(row2.lastName)}`.trim();
-    return full || text6(row2.displayName) || text6(row2.name) || text6(row2.email);
+  function rosterPersonName2(row3) {
+    if (!row3) return "";
+    const full = `${text6(row3.firstName)} ${text6(row3.surname) || text6(row3.lastName)}`.trim();
+    return full || text6(row3.displayName) || text6(row3.name) || text6(row3.email);
   }
-  function levelOf(row2) {
-    const role = row2.role;
+  function levelOf(row3) {
+    const role = row3.role;
     if (role && typeof role === "object") {
       const resolved = role;
       if (resolved.isAdmin === true || resolved.isSuperAdmin === true) return "admin";
       if (resolved.isOperativeMode === true) return "operative";
       return "manager";
     }
-    return permissionLevelOf(row2);
+    return permissionLevelOf(row3);
   }
   function rosterPersonGroups(rows3) {
     const groups = [];
     const grouped = /* @__PURE__ */ new Set();
-    for (const row2 of rows3) {
-      const key7 = idKey(row2.id);
+    for (const row3 of rows3) {
+      const key7 = idKey(row3.id);
       if (grouped.has(key7)) continue;
-      const keys = new Set(personIdSet(row2, rows3).map(idKey));
+      const keys = new Set(personIdSet(row3, rows3).map(idKey));
       keys.add(key7);
       const members = rows3.filter((other) => keys.has(idKey(other.id)));
       for (const member of members) grouped.add(idKey(member.id));
@@ -11156,17 +11158,17 @@ var ProjectPlannerCanonical = (() => {
     return groups;
   }
   function lineManagerCandidates(person, roster) {
-    const rows3 = (roster || []).filter((row2) => row2 && text6(row2.id));
+    const rows3 = (roster || []).filter((row3) => row3 && text6(row3.id));
     const self = new Set(person ? personIdSet(person, rows3).map(idKey) : []);
     const out = [];
     for (const group of rosterPersonGroups(rows3)) {
       if ([...group.keys].some((key7) => self.has(key7))) continue;
-      const row2 = group.primary;
-      if (!rosterMemberActive(row2) || row2.passwordSet === false) continue;
-      if (isAnonymisedDeletedProfile(row2)) continue;
-      const level = levelOf(row2);
+      const row3 = group.primary;
+      if (!rosterMemberActive(row3) || row3.passwordSet === false) continue;
+      if (isAnonymisedDeletedProfile(row3)) continue;
+      const level = levelOf(row3);
       if (level === "operative") continue;
-      out.push({ id: text6(row2.id), name: rosterPersonName2(row2), level });
+      out.push({ id: text6(row3.id), name: rosterPersonName2(row3), level });
     }
     return out.sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }) || a.id.localeCompare(b.id));
   }
@@ -11175,7 +11177,7 @@ var ProjectPlannerCanonical = (() => {
     const listed = (person.assignedManagerUserIds || []).map(text6).filter(Boolean);
     const stored = listed.length > 0 ? listed : [text6(person.assignedManagerUserId)].filter(Boolean);
     if (stored.length === 0) return [];
-    const rows3 = (roster || []).filter((row2) => row2 && text6(row2.id));
+    const rows3 = (roster || []).filter((row3) => row3 && text6(row3.id));
     const candidates = lineManagerCandidates(person, rows3);
     const groups = rosterPersonGroups(rows3);
     const out = [];
@@ -11202,17 +11204,17 @@ var ProjectPlannerCanonical = (() => {
     if (person.hasNoLineManager === true) return { label: NO_LINE_MANAGER_LABEL, ids: [], moreCount: 0 };
     const listed = (person.assignedManagerUserIds || []).map(text6).filter(Boolean);
     const stored = listed.length > 0 ? listed : [text6(person.assignedManagerUserId)].filter(Boolean);
-    const rows3 = (roster || []).filter((row2) => row2 && text6(row2.id));
+    const rows3 = (roster || []).filter((row3) => row3 && text6(row3.id));
     const ids = [];
     const seen = /* @__PURE__ */ new Set();
     const groups = rosterPersonGroups(rows3);
     for (const id2 of stored) {
       const group = groups.find((entry) => entry.keys.has(idKey(id2)));
-      const row2 = group ? group.primary : rosterMemberFor(id2, rows3);
-      const key7 = group ? `g:${idKey(group.primary.id)}` : idKey(row2 ? row2.id : id2);
+      const row3 = group ? group.primary : rosterMemberFor(id2, rows3);
+      const key7 = group ? `g:${idKey(group.primary.id)}` : idKey(row3 ? row3.id : id2);
       if (seen.has(key7)) continue;
       seen.add(key7);
-      ids.push(row2 ? { id: text6(row2.id), name: rosterPersonName2(row2) || UNKNOWN_PERSON_LABEL, resolved: true } : { id: id2, name: UNKNOWN_PERSON_LABEL, resolved: false });
+      ids.push(row3 ? { id: text6(row3.id), name: rosterPersonName2(row3) || UNKNOWN_PERSON_LABEL, resolved: true } : { id: id2, name: UNKNOWN_PERSON_LABEL, resolved: false });
     }
     const moreCount = Math.max(0, ids.length - 1);
     const label = ids.length === 0 ? LINE_MANAGER_NOT_SET_LABEL : moreCount >= 1 ? `${ids[0].name} +${moreCount} more` : ids[0].name;
@@ -11227,7 +11229,7 @@ var ProjectPlannerCanonical = (() => {
       adminAccess: resolved === "admin",
       operativeMode: resolved === "operative"
     };
-    const rows3 = (roster || []).filter((row2) => row2 && text6(row2.id));
+    const rows3 = (roster || []).filter((row3) => row3 && text6(row3.id));
     const candidates = lineManagerCandidates(person || null, rows3);
     const groups = rosterPersonGroups(rows3);
     const lineManagerIds2 = [];
@@ -11309,21 +11311,21 @@ var ProjectPlannerCanonical = (() => {
     for (const booking of input.bookings || []) {
       const key7 = idKey6(booking.personId);
       if (!key7) continue;
-      let row2 = rows3.get(key7);
-      if (!row2) {
-        row2 = scheduleRowPerson(booking.personId, input);
-        rows3.set(key7, row2);
+      let row3 = rows3.get(key7);
+      if (!row3) {
+        row3 = scheduleRowPerson(booking.personId, input);
+        rows3.set(key7, row3);
       }
-      const managerRowOnly = !row2.unresolved && !row2.accountId && !row2.operativeId && Boolean(row2.managerId);
-      if (!row2.unresolved && !managerRowOnly) continue;
+      const managerRowOnly = !row3.unresolved && !row3.accountId && !row3.operativeId && Boolean(row3.managerId);
+      if (!row3.unresolved && !managerRowOnly) continue;
       let group = groups.get(key7);
       if (!group) {
-        const managerRow = managerRowOnly ? (input.managers || []).find((m) => idKey6(m?.id) === idKey6(row2.managerId)) ?? null : null;
+        const managerRow = managerRowOnly ? (input.managers || []).find((m) => idKey6(m?.id) === idKey6(row3.managerId)) ?? null : null;
         const managerName = text7(managerRow?.name);
         group = {
-          former: row2.former,
-          unlinkedManagerRow: managerRowOnly ? { id: text7(row2.managerId), name: managerName } : null,
-          label: row2.former ? formerPersonDataHealthLabel(row2.former.displayName) : managerRowOnly ? `${managerName || `Managers list row \xB7 ${row2.idHint}`} \xB7 ${MANAGER_ROW_NOT_LINKED_LABEL}` : row2.idHint ? `${UNKNOWN_BOOKING_PERSON_LABEL} \xB7 ${row2.idHint}` : UNKNOWN_BOOKING_PERSON_LABEL,
+          former: row3.former,
+          unlinkedManagerRow: managerRowOnly ? { id: text7(row3.managerId), name: managerName } : null,
+          label: row3.former ? formerPersonDataHealthLabel(row3.former.displayName) : managerRowOnly ? `${managerName || `Managers list row \xB7 ${row3.idHint}`} \xB7 ${MANAGER_ROW_NOT_LINKED_LABEL}` : row3.idHint ? `${UNKNOWN_BOOKING_PERSON_LABEL} \xB7 ${row3.idHint}` : UNKNOWN_BOOKING_PERSON_LABEL,
           personId: text7(booking.personId),
           idHint: bookingPersonIdHint(booking.personId),
           count: 0,
@@ -11343,7 +11345,7 @@ var ProjectPlannerCanonical = (() => {
       if (!group.collections.includes(booking.collection)) group.collections.push(booking.collection);
       const jobId = text7(booking.jobId);
       if (jobId) {
-        const job = group.jobs.find((row3) => idKey6(row3.jobId) === idKey6(jobId));
+        const job = group.jobs.find((row4) => idKey6(row4.jobId) === idKey6(jobId));
         if (job) {
           job.count += 1;
           if (!job.jobName && text7(booking.jobName)) job.jobName = text7(booking.jobName);
@@ -11362,7 +11364,7 @@ var ProjectPlannerCanonical = (() => {
     const org = idKey6(organizationId);
     const viewer = new Set((options?.viewerIds || []).map(idKey6).filter(Boolean));
     const out = [];
-    for (const group of rosterPersonGroups((roster || []).filter((row2) => row2 && text7(row2.id)))) {
+    for (const group of rosterPersonGroups((roster || []).filter((row3) => row3 && text7(row3.id)))) {
       if ([...group.keys].some((key7) => viewer.has(key7))) continue;
       const primary = group.primary;
       if (idKey6(primary.organizationId) !== org) continue;
@@ -11382,18 +11384,18 @@ var ProjectPlannerCanonical = (() => {
   function linkBookingPersonRefusal(input) {
     const id2 = text7(input.personId);
     if (!id2) return { reason: "blank", message: "This booking has no person ID to link." };
-    const roster = (input.roster || []).filter((row3) => row3 && text7(row3.id));
+    const roster = (input.roster || []).filter((row4) => row4 && text7(row4.id));
     const holder = roster.find(
-      (row3) => [...row3.formerUserIds || [], ...row3.sameEmailUserIds || []].some((value) => idKey6(value) === idKey6(id2))
+      (row4) => [...row4.formerUserIds || [], ...row4.sameEmailUserIds || []].some((value) => idKey6(value) === idKey6(id2))
     );
     if (holder) {
       return { reason: "already_linked", message: `This ID is already linked to ${rosterPersonName2(holder) || text7(holder.email) || text7(holder.id)}. Check again to refresh the list.` };
     }
-    const row2 = scheduleRowPerson(id2, {
+    const row3 = scheduleRowPerson(id2, {
       accounts: roster.map((r) => ({ id: r.id, email: r.email ?? null, formerIds: r.formerUserIds ?? [], aliasIds: r.sameEmailUserIds ?? [] })),
       operatives: input.operatives || []
     });
-    if (!row2.unresolved) {
+    if (!row3.unresolved) {
       return { reason: "resolves", message: "This ID now matches a person, so its bookings already show by name. Check again to refresh the list." };
     }
     const candidates = linkBookingPersonCandidates(roster, input.organizationId, { viewerIds: input.viewerIds });
@@ -11711,12 +11713,12 @@ var ProjectPlannerCanonical = (() => {
       const [first, second, ...rest] = idKey7(raw).split("|");
       return first && second && rest.length === 0 ? clashPairKey(first, second) : "";
     };
-    return (accepted || []).some((row2) => {
-      if (typeof row2 === "string") return savedKey(row2) === key7;
-      if (!row2) return false;
-      if (savedKey(row2.id) === key7) return true;
-      const rowA = idKey7(row2.bookingAId);
-      const rowB = idKey7(row2.bookingBId);
+    return (accepted || []).some((row3) => {
+      if (typeof row3 === "string") return savedKey(row3) === key7;
+      if (!row3) return false;
+      if (savedKey(row3.id) === key7) return true;
+      const rowA = idKey7(row3.bookingAId);
+      const rowB = idKey7(row3.bookingBId);
       return Boolean(rowA && rowB) && clashPairKey(rowA, rowB) === key7;
     });
   }
@@ -11768,12 +11770,12 @@ var ProjectPlannerCanonical = (() => {
     const needle = comparableKey(key7);
     return Boolean(needle) && (keys || []).some((candidate) => comparableKey(candidate) === needle);
   }
-  function isWarningActive(row2, decisions) {
-    if (!row2) return false;
-    const key7 = idText2(row2.resolutionKey);
+  function isWarningActive(row3, decisions) {
+    if (!row3) return false;
+    const key7 = idText2(row3.resolutionKey);
     if (key7 && hasKey(decisions?.resolvedKeys, key7)) return false;
-    if (idText2(row2.bookingAId) && idText2(row2.bookingBId)) {
-      return !isClashAccepted(row2.bookingAId, row2.bookingBId, decisions?.acceptedClashes);
+    if (idText2(row3.bookingAId) && idText2(row3.bookingBId)) {
+      return !isClashAccepted(row3.bookingAId, row3.bookingBId, decisions?.acceptedClashes);
     }
     return true;
   }
@@ -11821,13 +11823,13 @@ var ProjectPlannerCanonical = (() => {
       })
     };
   }
-  function isClashApproved(row2, decisions) {
-    if (!row2) return false;
+  function isClashApproved(row3, decisions) {
+    if (!row3) return false;
     const approved = decisions?.approvedKeys != null ? decisions.approvedKeys : decisions?.resolvedKeys;
-    const key7 = clashResolutionKey(row2);
+    const key7 = clashResolutionKey(row3);
     if (key7 && hasKey(approved, key7)) return true;
-    if (!idText2(row2.bookingAId) || !idText2(row2.bookingBId)) return false;
-    return isClashAccepted(row2.bookingAId, row2.bookingBId, decisions?.acceptedClashes);
+    if (!idText2(row3.bookingAId) || !idText2(row3.bookingBId)) return false;
+    return isClashAccepted(row3.bookingAId, row3.bookingBId, decisions?.acceptedClashes);
   }
   function bookingRequestClashIds(input) {
     const dayKey = dayKeyText(input?.request?.dayKey);
@@ -12126,8 +12128,8 @@ var ProjectPlannerCanonical = (() => {
     const owners = new Set([text11(owner?.userId), ...(owner?.userIds || []).map(text11)].filter(Boolean));
     const organizationId = text11(owner?.organizationId);
     for (const raw of list) {
-      const row2 = record3(raw);
-      const path = text11(row2.path);
+      const row3 = record3(raw);
+      const path = text11(row3.path);
       if (!path) continue;
       if (owner) {
         const parsed = storedFileKind(path);
@@ -12136,10 +12138,10 @@ var ProjectPlannerCanonical = (() => {
       }
       out.push({
         path,
-        name: text11(row2.name) || path.split("/").pop() || "Evidence",
-        kind: evidenceKind(row2.kind),
-        contentType: text11(row2.contentType),
-        auditId: text11(row2.auditId) || null
+        name: text11(row3.name) || path.split("/").pop() || "Evidence",
+        kind: evidenceKind(row3.kind),
+        contentType: text11(row3.contentType),
+        auditId: text11(row3.auditId) || null
       });
     }
     return out;
@@ -12233,9 +12235,9 @@ var ProjectPlannerCanonical = (() => {
   function rawText(value) {
     return typeof value === "string" ? value : "";
   }
-  function firstText2(row2, keys) {
+  function firstText2(row3, keys) {
     for (const key7 of keys) {
-      const value = text12(row2[key7]);
+      const value = text12(row3[key7]);
       if (value) return value;
     }
     return "";
@@ -12303,35 +12305,35 @@ var ProjectPlannerCanonical = (() => {
   function parseJobDocument(docId, data, options) {
     const id2 = text12(docId);
     if (!id2 || isLegacyPlaceholderDocumentId(id2)) return null;
-    const row2 = record4(data);
+    const row3 = record4(data);
     const zone3 = zoneOrLondon(options?.timeZone);
     const kind = jobKind2(options?.kind);
-    const clientRow = record4(row2.client);
-    const managerIdsStored = idList3(row2.managerIds);
-    const managerIdStored = text12(row2.managerId);
+    const clientRow = record4(row3.client);
+    const managerIdsStored = idList3(row3.managerIds);
+    const managerIdStored = text12(row3.managerId);
     const managerIds = managerIdsStored.length > 0 ? managerIdsStored : managerIdStored ? [managerIdStored] : [];
-    const startMs = documentInstantMs(row2.startDate) ?? documentInstantMs(row2.createdAt);
-    const endMs = documentInstantMs(row2.endDate) ?? startMs;
-    const addressLine1 = text12(row2.addressLine1);
-    const addressLine2 = optionalText2(row2.addressLine2);
-    const townCity = text12(row2.townCity);
-    const postcode = text12(row2.postcode);
-    const siteAddress = text12(row2.siteAddress) || [addressLine1, addressLine2, townCity, postcode].filter(Boolean).join(", ");
-    const managerName = text12(row2.manager);
+    const startMs = documentInstantMs(row3.startDate) ?? documentInstantMs(row3.createdAt);
+    const endMs = documentInstantMs(row3.endDate) ?? startMs;
+    const addressLine1 = text12(row3.addressLine1);
+    const addressLine2 = optionalText2(row3.addressLine2);
+    const townCity = text12(row3.townCity);
+    const postcode = text12(row3.postcode);
+    const siteAddress = text12(row3.siteAddress) || [addressLine1, addressLine2, townCity, postcode].filter(Boolean).join(", ");
+    const managerName = text12(row3.manager);
     return {
       id: id2,
       kind,
       collection: JOB_COLLECTIONS[kind],
-      jobNumber: textOrNumber(row2.jobNumber),
-      siteName: text12(row2.siteName),
+      jobNumber: textOrNumber(row3.jobNumber),
+      siteName: text12(row3.siteName),
       addressLine1,
       addressLine2,
       townCity,
       postcode,
       siteAddress,
       client: {
-        id: text12(clientRow.id) || text12(row2.clientId) || jobClientId(id2, clientRow.name),
-        idStored: Boolean(text12(clientRow.id) || text12(row2.clientId)),
+        id: text12(clientRow.id) || text12(row3.clientId) || jobClientId(id2, clientRow.name),
+        idStored: Boolean(text12(clientRow.id) || text12(row3.clientId)),
         name: text12(clientRow.name),
         email: optionalText2(clientRow.email),
         phone: optionalText2(clientRow.phone)
@@ -12340,25 +12342,25 @@ var ProjectPlannerCanonical = (() => {
       startDayKey: dayKeyOf2(startMs, zone3),
       endMs,
       endDayKey: dayKeyOf2(endMs, zone3),
-      jobType: text12(row2.jobType),
-      customJobType: optionalText2(row2.customJobType),
+      jobType: text12(row3.jobType),
+      customJobType: optionalText2(row3.customJobType),
       managerName: managerName && managerName.toLowerCase() !== "custom" ? managerName : null,
       managerId: managerIdStored || managerIds[0] || null,
       managerIds,
       // 1.31.0: an older job stored its account ids as `assignedManagerUserIds` only (`jobManagerIds` already reads it).
-      managerUserIds: idList3(row2.managerUserIds).length > 0 ? idList3(row2.managerUserIds) : idList3(row2.assignedManagerUserIds),
-      isLive: documentBool(row2.isLive) !== false,
-      description: optionalText2(row2.description),
-      notes: optionalText2(row2.notes),
-      latitude: documentNumber(row2.latitude),
-      longitude: documentNumber(row2.longitude),
-      usesMapPinForLocation: documentBool(row2.usesMapPinForLocation) === true,
+      managerUserIds: idList3(row3.managerUserIds).length > 0 ? idList3(row3.managerUserIds) : idList3(row3.assignedManagerUserIds),
+      isLive: documentBool(row3.isLive) !== false,
+      description: optionalText2(row3.description),
+      notes: optionalText2(row3.notes),
+      latitude: documentNumber(row3.latitude),
+      longitude: documentNumber(row3.longitude),
+      usesMapPinForLocation: documentBool(row3.usesMapPinForLocation) === true,
       // 1.33.0 (owner decision 6 Nov): the operatives' hide list stays; the managers' (`hiddenManagerUserIds`) is not read.
-      hiddenOperativeUserIds: idList3(row2.hiddenOperativeUserIds),
-      status: optionalText2(row2.status),
-      organizationId: optionalText2(row2.organizationId),
-      createdAtMs: documentInstantMs(row2.createdAt),
-      updatedAtMs: documentInstantMs(row2.updatedAt)
+      hiddenOperativeUserIds: idList3(row3.hiddenOperativeUserIds),
+      status: optionalText2(row3.status),
+      organizationId: optionalText2(row3.organizationId),
+      createdAtMs: documentInstantMs(row3.createdAt),
+      updatedAtMs: documentInstantMs(row3.updatedAt)
     };
   }
   function parseProjectDocument(docId, data, options) {
@@ -12399,27 +12401,27 @@ var ProjectPlannerCanonical = (() => {
     bookedContactIds: ["bookedContactIds", "contactIds", "bookedContacts", "operativeIds"],
     bookedOperativeNames: ["bookedOperativeNames", "operativeNames", "bookedNames", "contactNames"]
   };
-  function firstPresent2(row2, keys) {
+  function firstPresent2(row3, keys) {
     for (const key7 of keys) {
-      if (row2[key7] !== void 0 && row2[key7] !== null) return row2[key7];
+      if (row3[key7] !== void 0 && row3[key7] !== null) return row3[key7];
     }
     return void 0;
   }
   function parseSubcontractorBookingDocument(docId, data, options) {
     const id2 = text12(docId);
     if (!id2 || isLegacyPlaceholderDocumentId(id2)) return null;
-    const row2 = record4(data);
+    const row3 = record4(data);
     const zone3 = zoneOrLondon(options?.timeZone);
-    const subcontractorId = firstText2(row2, SUBCONTRACTOR_BOOKING_DOCUMENT_KEYS.subcontractorId);
-    const projectId = firstText2(row2, SUBCONTRACTOR_BOOKING_DOCUMENT_KEYS.projectId);
-    const dateMs = documentInstantMs(row2.date);
+    const subcontractorId = firstText2(row3, SUBCONTRACTOR_BOOKING_DOCUMENT_KEYS.subcontractorId);
+    const projectId = firstText2(row3, SUBCONTRACTOR_BOOKING_DOCUMENT_KEYS.projectId);
+    const dateMs = documentInstantMs(row3.date);
     if (!subcontractorId || !projectId || dateMs == null) return null;
-    const rawStatus = text12(row2.status);
+    const rawStatus = text12(row3.status);
     const status = rawStatus ? normalizeBookingStatus(rawStatus) : "Confirmed";
-    const rawSlot = text12(row2.timeSlot);
+    const rawSlot = text12(row3.timeSlot);
     const timeSlot = rawSlot ? normalizeBookingTimeSlot(rawSlot) : "FULL DAY";
     if (!status || !timeSlot) return null;
-    const bookedContactIds = idList3(firstPresent2(row2, SUBCONTRACTOR_BOOKING_DOCUMENT_KEYS.bookedContactIds));
+    const bookedContactIds = idList3(firstPresent2(row3, SUBCONTRACTOR_BOOKING_DOCUMENT_KEYS.bookedContactIds));
     return {
       id: id2,
       subcontractorId,
@@ -12427,16 +12429,16 @@ var ProjectPlannerCanonical = (() => {
       dateMs,
       dayKey: dayKeyInZone(new Date(dateMs), zone3),
       timeSlot,
-      workStartTime: bookingClock(row2.workStartTime, zone3) ?? null,
-      workEndTime: bookingClock(row2.workEndTime, zone3) ?? null,
-      isBreakRemoved: documentBool(row2.isBreakRemoved) === true,
-      bookedBy: text12(row2.bookedBy),
+      workStartTime: bookingClock(row3.workStartTime, zone3) ?? null,
+      workEndTime: bookingClock(row3.workEndTime, zone3) ?? null,
+      isBreakRemoved: documentBool(row3.isBreakRemoved) === true,
+      bookedBy: text12(row3.bookedBy),
       status,
       bookedContactIds,
-      bookedOperativeNames: nameList(firstPresent2(row2, SUBCONTRACTOR_BOOKING_DOCUMENT_KEYS.bookedOperativeNames)),
-      createdAtMs: documentInstantMs(row2.createdAt),
-      updatedAtMs: documentInstantMs(row2.updatedAt),
-      jobCollection: normalizeBookingJobCollection(row2.jobCollection),
+      bookedOperativeNames: nameList(firstPresent2(row3, SUBCONTRACTOR_BOOKING_DOCUMENT_KEYS.bookedOperativeNames)),
+      createdAtMs: documentInstantMs(row3.createdAt),
+      updatedAtMs: documentInstantMs(row3.updatedAt),
+      jobCollection: normalizeBookingJobCollection(row3.jobCollection),
       idsAreUuid: [id2, subcontractorId, projectId, ...bookedContactIds].every((value) => isBookingUuid(value))
     };
   }
@@ -12490,16 +12492,16 @@ var ProjectPlannerCanonical = (() => {
     priceWork: "priceWorkEntries"
   };
   function timesheetEntryId(sheetDocId, kind, index, entry) {
-    const row2 = record4(entry);
-    const stored = text12(row2.id);
+    const row3 = record4(entry);
+    const stored = text12(row3.id);
     if (stored) return stored;
-    const when = documentInstantMs(kind === "expense" ? row2.date : row2.startDate);
+    const when = documentInstantMs(kind === "expense" ? row3.date : row3.startDate);
     const source = [
       text12(sheetDocId).replace(/_rev[1-9]\d?$/, ""),
       ENTRY_ARRAY_FIELD[kind],
       String(Math.max(0, Math.floor(Number(index) || 0))),
-      rawText(row2.title),
-      String(documentNumber(row2.amount) ?? 0),
+      rawText(row3.title),
+      String(documentNumber(row3.amount) ?? 0),
       when == null ? "" : String(when)
     ].join("|");
     return derivedDocumentId(source);
@@ -12512,26 +12514,26 @@ var ProjectPlannerCanonical = (() => {
     }
     return out;
   }
-  function entryBase(sheetDocId, sheet, kind, index, row2, owner) {
-    const title = text12(row2.title);
+  function entryBase(sheetDocId, sheet, kind, index, row3, owner) {
+    const title = text12(row3.title);
     if (!title) return null;
-    const id2 = timesheetEntryId(sheetDocId, kind, index, row2);
-    const amount = documentNumber(row2.amount) ?? 0;
+    const id2 = timesheetEntryId(sheetDocId, kind, index, row3);
+    const amount = documentNumber(row3.amount) ?? 0;
     const fingerprintKind = kind === "priceWork" ? "priceWork" : "expense";
-    const reviewFingerprint = timesheetEntryFingerprint(row2, fingerprintKind);
-    const decision = timesheetEntryDecision(sheet, { ...row2, id: id2, amount }, fingerprintKind);
+    const reviewFingerprint = timesheetEntryFingerprint(row3, fingerprintKind);
+    const decision = timesheetEntryDecision(sheet, { ...row3, id: id2, amount }, fingerprintKind);
     return {
       id: id2,
-      idStored: Boolean(text12(row2.id)),
+      idStored: Boolean(text12(row3.id)),
       title,
-      details: rawText(row2.details),
-      jobNumber: textOrNumber(row2.jobNumber),
+      details: rawText(row3.details),
+      jobNumber: textOrNumber(row3.jobNumber),
       amount,
       managerDecision: decision.decision,
       managerRevisedAmount: decision.revisedAmount,
       decisionSource: decision.source,
       reviewFingerprint,
-      evidence: parsePayeClaimEvidence(row2.evidence, { userIds: owner.userIds, organizationId: owner.organizationId })
+      evidence: parsePayeClaimEvidence(row3.evidence, { userIds: owner.userIds, organizationId: owner.organizationId })
     };
   }
   function parseTimesheetEntries(sheetDocId, sheet, options) {
@@ -12542,27 +12544,27 @@ var ProjectPlannerCanonical = (() => {
     const priceWorkEntries = [];
     const expenses = Array.isArray(data.expenseEntries) ? data.expenseEntries : [];
     expenses.forEach((raw, index) => {
-      const row2 = record4(raw);
-      const base = entryBase(sheetDocId, data, "expense", index, row2, owner);
+      const row3 = record4(raw);
+      const base = entryBase(sheetDocId, data, "expense", index, row3, owner);
       if (!base) return;
-      const dateMs = documentInstantMs(row2.date);
+      const dateMs = documentInstantMs(row3.date);
       expenseEntries.push({
         ...base,
         dateMs,
         dayKey: dayKeyOf2(dateMs, zone3),
-        receiptName: optionalText2(row2.receiptName)
+        receiptName: optionalText2(row3.receiptName)
       });
     });
     const priceWork = Array.isArray(data.priceWorkEntries) ? data.priceWorkEntries : [];
     priceWork.forEach((raw, index) => {
-      const row2 = record4(raw);
-      const base = entryBase(sheetDocId, data, "priceWork", index, row2, owner);
+      const row3 = record4(raw);
+      const base = entryBase(sheetDocId, data, "priceWork", index, row3, owner);
       if (!base) return;
-      const startMs = documentInstantMs(row2.startDate) ?? documentInstantMs(row2.date);
-      const endMs = documentInstantMs(row2.endDate);
+      const startMs = documentInstantMs(row3.startDate) ?? documentInstantMs(row3.date);
+      const endMs = documentInstantMs(row3.endDate);
       priceWorkEntries.push({
         ...base,
-        agreedManagerName: text12(row2.agreedManagerName) || "Manager",
+        agreedManagerName: text12(row3.agreedManagerName) || "Manager",
         startMs,
         startDayKey: dayKeyOf2(startMs, zone3),
         endMs,
@@ -12595,79 +12597,79 @@ var ProjectPlannerCanonical = (() => {
     "siteAuditAttached"
   ];
   function parseDeadlineChange(raw) {
-    const row2 = record4(raw);
-    const id2 = text12(row2.id);
+    const row3 = record4(raw);
+    const id2 = text12(row3.id);
     if (!id2) return null;
-    const storedType = text12(row2.type) || "note";
+    const storedType = text12(row3.type) || "note";
     const known = DEADLINE_CHANGE_TYPES.includes(storedType);
     const type = known ? storedType : "note";
-    const progress = documentNumber(row2.progress);
+    const progress = documentNumber(row3.progress);
     return {
       id: id2,
-      atMs: documentInstantMs(row2.at),
-      author: text12(row2.author),
+      atMs: documentInstantMs(row3.at),
+      author: text12(row3.author),
       type,
-      dueMs: documentInstantMs(row2.due),
-      fromMs: documentInstantMs(row2.from),
-      toMs: documentInstantMs(row2.to),
-      reason: optionalText2(row2.reason),
+      dueMs: documentInstantMs(row3.due),
+      fromMs: documentInstantMs(row3.from),
+      toMs: documentInstantMs(row3.to),
+      reason: optionalText2(row3.reason),
       progress: progress == null ? null : Math.round(progress),
-      status: text12(row2.status) ? deadlineStatus(row2.status) : null,
-      note: known ? optionalText2(row2.note) : storedType,
-      completedOnMs: documentInstantMs(row2.completedOn),
-      assignedTo: optionalText2(row2.assignedTo),
-      name: optionalText2(row2.name)
+      status: text12(row3.status) ? deadlineStatus(row3.status) : null,
+      note: known ? optionalText2(row3.note) : storedType,
+      completedOnMs: documentInstantMs(row3.completedOn),
+      assignedTo: optionalText2(row3.assignedTo),
+      name: optionalText2(row3.name)
     };
   }
   function stringList(value) {
     return Array.isArray(value) ? value.filter((item) => typeof item === "string" && item.trim() !== "").map((item) => item.trim()) : [];
   }
   function parseDeadlineItem(raw, options) {
-    const row2 = record4(raw);
-    const id2 = text12(row2.id);
+    const row3 = record4(raw);
+    const id2 = text12(row3.id);
     if (!id2) return null;
     const zone3 = zoneOrLondon(options?.timeZone);
-    const startMs = documentInstantMs(row2.start);
-    const dueMs = documentInstantMs(row2.due);
-    const reminder = documentNumber(row2.reminderDaysBefore);
-    const history = Array.isArray(row2.history) ? row2.history.map(parseDeadlineChange).filter((change) => change !== null) : [];
+    const startMs = documentInstantMs(row3.start);
+    const dueMs = documentInstantMs(row3.due);
+    const reminder = documentNumber(row3.reminderDaysBefore);
+    const history = Array.isArray(row3.history) ? row3.history.map(parseDeadlineChange).filter((change) => change !== null) : [];
     return {
       id: id2,
-      title: text12(row2.title) || "Untitled deadline",
-      location: optionalText2(row2.location),
-      trade: optionalText2(row2.trade),
-      detail: optionalText2(row2.detail),
+      title: text12(row3.title) || "Untitled deadline",
+      location: optionalText2(row3.location),
+      trade: optionalText2(row3.trade),
+      detail: optionalText2(row3.detail),
       startMs,
       startDayKey: dayKeyOf2(startMs, zone3),
       dueMs,
       dueDayKey: dayKeyOf2(dueMs, zone3),
-      completedAtMs: documentInstantMs(row2.completedAt),
-      assignees: stringList(row2.assignees),
-      assigneeUserIds: idList3(row2.assigneeUserIds),
-      company: optionalText2(row2.company),
-      status: deadlineStatus(row2.status),
-      progress: documentNumber(row2.progress) ?? 0,
-      isCritical: documentBool(row2.isCritical) === true,
-      dependsOn: idList3(row2.dependsOn),
-      blockedReason: optionalText2(row2.blockedReason),
+      completedAtMs: documentInstantMs(row3.completedAt),
+      assignees: stringList(row3.assignees),
+      assigneeUserIds: idList3(row3.assigneeUserIds),
+      company: optionalText2(row3.company),
+      status: deadlineStatus(row3.status),
+      progress: documentNumber(row3.progress) ?? 0,
+      isCritical: documentBool(row3.isCritical) === true,
+      dependsOn: idList3(row3.dependsOn),
+      blockedReason: optionalText2(row3.blockedReason),
       reminderDaysBefore: reminder == null ? null : Math.round(reminder),
-      originalDueMs: documentInstantMs(row2.originalDue),
+      originalDueMs: documentInstantMs(row3.originalDue),
       history,
-      contextKind: text12(row2.contextKind) || "Project",
-      projectId: text12(row2.projectId) || text12(options?.projectId),
-      createdByUserId: text12(row2.createdByUserId),
-      fileURL: optionalText2(row2.fileURL),
-      fileName: optionalText2(row2.fileName),
-      siteAuditId: optionalText2(row2.siteAuditId),
-      siteAuditTitle: optionalText2(row2.siteAuditTitle)
+      contextKind: text12(row3.contextKind) || "Project",
+      projectId: text12(row3.projectId) || text12(options?.projectId),
+      createdByUserId: text12(row3.createdByUserId),
+      fileURL: optionalText2(row3.fileURL),
+      fileName: optionalText2(row3.fileName),
+      siteAuditId: optionalText2(row3.siteAuditId),
+      siteAuditTitle: optionalText2(row3.siteAuditTitle)
     };
   }
   function parseDeadlineDocument(docId, data, options) {
     const id2 = text12(docId);
-    const row2 = record4(data);
+    const row3 = record4(data);
     const match = /^deadlines_(projects|smallWorks)_(.+)$/.exec(id2);
-    const projectId = text12(row2.projectId) || text12(options?.projectId) || (match ? match[2] : "");
-    const items = (Array.isArray(row2.items) ? row2.items : []).map((item) => parseDeadlineItem(item, { projectId, timeZone: options?.timeZone })).filter((item) => item !== null).sort((a, b) => {
+    const projectId = text12(row3.projectId) || text12(options?.projectId) || (match ? match[2] : "");
+    const items = (Array.isArray(row3.items) ? row3.items : []).map((item) => parseDeadlineItem(item, { projectId, timeZone: options?.timeZone })).filter((item) => item !== null).sort((a, b) => {
       const left = a.dueMs ?? Number.MAX_SAFE_INTEGER;
       const right = b.dueMs ?? Number.MAX_SAFE_INTEGER;
       return left - right || a.id.localeCompare(b.id);
@@ -12677,18 +12679,18 @@ var ProjectPlannerCanonical = (() => {
       collection: match ? match[1] : null,
       projectId,
       items,
-      updatedAtMs: documentInstantMs(row2.updatedAt)
+      updatedAtMs: documentInstantMs(row3.updatedAt)
     };
   }
   function parseDeadlineAssignments(data) {
-    const row2 = record4(data);
+    const row3 = record4(data);
     const out = {};
-    for (const [key7, value] of Object.entries(row2)) {
+    for (const [key7, value] of Object.entries(row3)) {
       if (!key7.startsWith("projects.")) continue;
       const projectKey = key7.slice("projects.".length).trim();
       if (projectKey && Array.isArray(value)) out[projectKey] = idList3(value);
     }
-    for (const [key7, value] of Object.entries(record4(row2.projects))) {
+    for (const [key7, value] of Object.entries(record4(row3.projects))) {
       if (key7.trim() && Array.isArray(value)) out[key7.trim()] = idList3(value);
     }
     return out;
@@ -12736,16 +12738,16 @@ var ProjectPlannerCanonical = (() => {
   }
   function parseReview(raw) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
-    const row2 = raw;
-    const decision = parseTimesheetEntryDecision(row2.decision);
+    const row3 = raw;
+    const decision = parseTimesheetEntryDecision(row3.decision);
     return {
       decision,
-      revisedAmount: decision === "edited" ? finite(row2.revisedAmount) : null,
-      reviewedAmount: finite(row2.reviewedAmount),
-      reviewedByUserId: text13(row2.reviewedByUserId),
-      reviewedAtMs: finite(row2.reviewedAtMs),
-      reviewedFingerprint: text13(row2.reviewedFingerprint) || null,
-      lateExtra: row2.lateExtra === true
+      revisedAmount: decision === "edited" ? finite(row3.revisedAmount) : null,
+      reviewedAmount: finite(row3.reviewedAmount),
+      reviewedByUserId: text13(row3.reviewedByUserId),
+      reviewedAtMs: finite(row3.reviewedAtMs),
+      reviewedFingerprint: text13(row3.reviewedFingerprint) || null,
+      lateExtra: row3.lateExtra === true
     };
   }
   function fingerprintText(value) {
@@ -12753,22 +12755,22 @@ var ProjectPlannerCanonical = (() => {
     return typeof value === "string" ? value.trim() : "";
   }
   function timesheetEntryFingerprint(entry, kind) {
-    const row2 = entry || {};
+    const row3 = entry || {};
     const when = (value) => {
       const ms = documentInstantMs(value);
       return ms == null ? "" : String(ms);
     };
-    const amount = finite(row2.amount);
-    const evidence = (Array.isArray(row2.evidence) ? row2.evidence : []).map((item) => item && typeof item === "object" ? fingerprintText(item.path) : "").filter(Boolean).sort();
+    const amount = finite(row3.amount);
+    const evidence = (Array.isArray(row3.evidence) ? row3.evidence : []).map((item) => item && typeof item === "object" ? fingerprintText(item.path) : "").filter(Boolean).sort();
     return JSON.stringify([
       kind,
-      fingerprintText(row2.title),
-      fingerprintText(row2.details),
-      fingerprintText(row2.jobNumber),
-      kind === "priceWork" ? fingerprintText(row2.agreedManagerName) : "",
-      kind === "expense" ? when(row2.date) : "",
-      kind === "priceWork" ? when(row2.startDate ?? row2.date) : "",
-      kind === "priceWork" ? when(row2.endDate) : "",
+      fingerprintText(row3.title),
+      fingerprintText(row3.details),
+      fingerprintText(row3.jobNumber),
+      kind === "priceWork" ? fingerprintText(row3.agreedManagerName) : "",
+      kind === "expense" ? when(row3.date) : "",
+      kind === "priceWork" ? when(row3.startDate ?? row3.date) : "",
+      kind === "priceWork" ? when(row3.endDate) : "",
       amount == null ? "" : (Math.round(amount * 100) / 100).toFixed(2),
       evidence
     ]);
@@ -12776,13 +12778,13 @@ var ProjectPlannerCanonical = (() => {
   function entryKindInSheet(sheet, id2, fallback) {
     const key7 = normalizeDocumentId(id2);
     if (!key7 || !sheet) return fallback;
-    const has2 = (field) => Array.isArray(sheet[field]) && sheet[field].some((row2) => row2 && typeof row2 === "object" && normalizeDocumentId(row2.id) === key7);
+    const has2 = (field) => Array.isArray(sheet[field]) && sheet[field].some((row3) => row3 && typeof row3 === "object" && normalizeDocumentId(row3.id) === key7);
     if (has2("priceWorkEntries")) return "priceWork";
     if (has2("expenseEntries")) return "expense";
     return fallback;
   }
-  function rowFingerprint(row2, kind, trusted) {
-    return text13(trusted) || timesheetEntryFingerprint(row2, kind);
+  function rowFingerprint(row3, kind, trusted) {
+    return text13(trusted) || timesheetEntryFingerprint(row3, kind);
   }
   function timesheetEntryFingerprintMap(entries) {
     const out = {};
@@ -12820,9 +12822,9 @@ var ProjectPlannerCanonical = (() => {
     return value !== "" && value.length <= TIMESHEET_ENTRY_ID_MAX_LENGTH && !/^__.*__$/.test(value) && !/[.`~*/[\]]/.test(value);
   }
   var TIMESHEET_ENTRY_ID_MAX_LENGTH = 200;
-  function timesheetLateExtraRowProblem(row2) {
-    if (!timesheetEntryReviewKeyUsable(row2?.id)) return "id-unusable";
-    if (!text13(row2?.title)) return "no-title";
+  function timesheetLateExtraRowProblem(row3) {
+    if (!timesheetEntryReviewKeyUsable(row3?.id)) return "id-unusable";
+    if (!text13(row3?.title)) return "no-title";
     return null;
   }
   function timesheetSignedEntryKeys(sheet, sheetDocId) {
@@ -12832,10 +12834,10 @@ var ProjectPlannerCanonical = (() => {
       const rows3 = Array.isArray(sheet[field]) ? sheet[field] : [];
       rows3.forEach((raw, index) => {
         if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
-        const row2 = raw;
-        const stored = normalizeDocumentId(row2.id);
+        const row3 = raw;
+        const stored = normalizeDocumentId(row3.id);
         if (stored) keys.add(stored);
-        else if (text13(sheetDocId)) keys.add(normalizeDocumentId(timesheetEntryId(text13(sheetDocId), kind, index, row2)));
+        else if (text13(sheetDocId)) keys.add(normalizeDocumentId(timesheetEntryId(text13(sheetDocId), kind, index, row3)));
       });
     }
     return keys;
@@ -12854,13 +12856,13 @@ var ProjectPlannerCanonical = (() => {
     return amount;
   }
   function timesheetEntryDecision(sheet, entry, kind, trustedFingerprint) {
-    const row2 = entry || {};
-    const id2 = text13(row2.id);
-    const amount = finite(row2.amount) ?? 0;
-    const inlineDecision = parseTimesheetEntryDecision(row2.managerDecision);
+    const row3 = entry || {};
+    const id2 = text13(row3.id);
+    const amount = finite(row3.amount) ?? 0;
+    const inlineDecision = parseTimesheetEntryDecision(row3.managerDecision);
     const inline = {
       decision: inlineDecision,
-      revisedAmount: inlineDecision === "edited" ? finite(row2.managerRevisedAmount) : null,
+      revisedAmount: inlineDecision === "edited" ? finite(row3.managerRevisedAmount) : null,
       source: "legacy-inline"
     };
     const reviews = parseTimesheetEntryReviews(sheet);
@@ -12875,7 +12877,7 @@ var ProjectPlannerCanonical = (() => {
         base = { decision: "approved", revisedAmount: null, source: "unreviewed" };
       } else if (review.lateExtra) {
         base = { decision: "pending", revisedAmount: null, source: "stale-review" };
-      } else if (review.reviewedFingerprint != null && review.reviewedFingerprint !== rowFingerprint(row2, kind ?? entryKindInSheet(sheet, id2, row2.startDate != null ? "priceWork" : "expense"), trustedFingerprint)) {
+      } else if (review.reviewedFingerprint != null && review.reviewedFingerprint !== rowFingerprint(row3, kind ?? entryKindInSheet(sheet, id2, row3.startDate != null ? "priceWork" : "expense"), trustedFingerprint)) {
         base = { decision: "pending", revisedAmount: null, source: "stale-review" };
       } else if (review.reviewedAmount != null && Math.abs(review.reviewedAmount - amount) >= AMOUNT_EPSILON) {
         base = { decision: "pending", revisedAmount: null, source: "stale-review" };
@@ -13002,9 +13004,9 @@ var ProjectPlannerCanonical = (() => {
     }
     for (const key7 of TIMESHEET_ENTRY_ARRAY_FIELDS) {
       if (Array.isArray(output[key7])) {
-        output[key7] = output[key7].map((row2) => {
-          if (!row2 || typeof row2 !== "object" || !("reviewFingerprint" in row2)) return row2;
-          const { reviewFingerprint: _ignored, ...rest } = row2;
+        output[key7] = output[key7].map((row3) => {
+          if (!row3 || typeof row3 !== "object" || !("reviewFingerprint" in row3)) return row3;
+          const { reviewFingerprint: _ignored, ...rest } = row3;
           void _ignored;
           return rest;
         });
@@ -13014,9 +13016,9 @@ var ProjectPlannerCanonical = (() => {
   }
   var TIMESHEET_DIFF_IGNORED_FIELDS = ["updatedAt", "updatedBy", "updatedFrom", "createdAt"];
   function timesheetChangedFields(base, next) {
-    const strip = (row2) => {
-      if (!row2) return row2;
-      const out = { ...row2 };
+    const strip = (row3) => {
+      if (!row3) return row3;
+      const out = { ...row3 };
       for (const key7 of TIMESHEET_DIFF_IGNORED_FIELDS) delete out[key7];
       return out;
     };
@@ -13050,27 +13052,27 @@ var ProjectPlannerCanonical = (() => {
       value = key7 == null ? void 0 : reviews[key7];
     }
     if (!value || typeof value !== "object") return null;
-    const row2 = value;
-    const decision = parseTimesheetEntryDecision(row2.decision);
-    const revised = typeof row2.revisedAmount === "number" && Number.isFinite(row2.revisedAmount) ? row2.revisedAmount : null;
-    const storedFingerprint = typeof row2.reviewedBookingFingerprint === "string" ? row2.reviewedBookingFingerprint.trim() : "";
+    const row3 = value;
+    const decision = parseTimesheetEntryDecision(row3.decision);
+    const revised = typeof row3.revisedAmount === "number" && Number.isFinite(row3.revisedAmount) ? row3.revisedAmount : null;
+    const storedFingerprint = typeof row3.reviewedBookingFingerprint === "string" ? row3.reviewedBookingFingerprint.trim() : "";
     const liveFingerprint = typeof live?.bookingFingerprint === "string" ? live.bookingFingerprint.trim() : null;
     if (storedFingerprint && liveFingerprint != null && !overtimeFingerprintsMatch(storedFingerprint, liveFingerprint)) return null;
     const num2 = (value2) => typeof value2 === "number" && Number.isFinite(value2) ? value2 : null;
-    if (decision === "edited" && live?.isOvertimeLine !== true && live?.bookingHasOvertimeLine === true && ((num2(row2.revisedOvertimeAmount) ?? 0) > 0 || (num2(row2.revisedOvertimeHours) ?? 0) > 0)) {
+    if (decision === "edited" && live?.isOvertimeLine !== true && live?.bookingHasOvertimeLine === true && ((num2(row3.revisedOvertimeAmount) ?? 0) > 0 || (num2(row3.revisedOvertimeHours) ?? 0) > 0)) {
       return null;
     }
     if (decision !== "edited") return { decision, revisedAmount: null };
     const review = { decision, revisedAmount: revised };
-    const standardHours = num2(row2.revisedStandardHours);
-    const overtimeHours = num2(row2.revisedOvertimeHours);
+    const standardHours = num2(row3.revisedStandardHours);
+    const overtimeHours = num2(row3.revisedOvertimeHours);
     if (standardHours != null && overtimeHours != null) {
       review.revisedStandardHours = standardHours;
       review.revisedOvertimeHours = overtimeHours;
-      review.revisedOvertimeClockHours = num2(row2.revisedOvertimeClockHours) ?? overtimeHours;
-      review.revisedOvertimeMultiplier = num2(row2.revisedOvertimeMultiplier);
-      review.revisedStandardAmount = num2(row2.revisedStandardAmount) ?? 0;
-      review.revisedOvertimeAmount = num2(row2.revisedOvertimeAmount) ?? 0;
+      review.revisedOvertimeClockHours = num2(row3.revisedOvertimeClockHours) ?? overtimeHours;
+      review.revisedOvertimeMultiplier = num2(row3.revisedOvertimeMultiplier);
+      review.revisedStandardAmount = num2(row3.revisedStandardAmount) ?? 0;
+      review.revisedOvertimeAmount = num2(row3.revisedOvertimeAmount) ?? 0;
     }
     if (storedFingerprint) review.reviewedBookingFingerprint = storedFingerprint;
     return review;
@@ -13123,8 +13125,8 @@ var ProjectPlannerCanonical = (() => {
     if (typeof value === "number") return Number.isFinite(value);
     if (value instanceof Date) return !Number.isNaN(value.getTime());
     if (typeof value === "object") {
-      const row2 = value;
-      return typeof row2.toMillis === "function" || typeof row2.seconds === "number" || typeof row2._seconds === "number";
+      const row3 = value;
+      return typeof row3.toMillis === "function" || typeof row3.seconds === "number" || typeof row3._seconds === "number";
     }
     if (typeof value === "string") return value.trim() !== "" && !Number.isNaN(Date.parse(value));
     return false;
@@ -13165,10 +13167,10 @@ var ProjectPlannerCanonical = (() => {
     return Number.isFinite(number) ? number : null;
   }
   function rowsOf(value) {
-    return Array.isArray(value) ? value.filter((row2) => Boolean(row2) && typeof row2 === "object" && !Array.isArray(row2)) : [];
+    return Array.isArray(value) ? value.filter((row3) => Boolean(row3) && typeof row3 === "object" && !Array.isArray(row3)) : [];
   }
-  function timesheetLateExtraKind(row2) {
-    const kind = text14(row2?.kind);
+  function timesheetLateExtraKind(row3) {
+    const kind = text14(row3?.kind);
     return kind === "priceWork" || kind === "expense" ? kind : null;
   }
   function timesheetLateExtraFingerprintKey(id2) {
@@ -13184,7 +13186,7 @@ var ProjectPlannerCanonical = (() => {
     return out;
   }
   function timesheetLateExtraDecision(sheet, entry, trustedFingerprint, options = {}) {
-    const row2 = entry || {};
+    const row3 = entry || {};
     const pending = (reason) => ({
       state: "pending",
       decision: "pending",
@@ -13199,20 +13201,20 @@ var ProjectPlannerCanonical = (() => {
       paid: 0,
       reason
     });
-    const kind = timesheetLateExtraKind(row2);
+    const kind = timesheetLateExtraKind(row3);
     if (!kind) return ignored("no-kind");
-    const id2 = text14(row2.id);
+    const id2 = text14(row3.id);
     if (!id2) return ignored("no-id");
     const data = sheet && typeof sheet === "object" ? sheet : {};
-    const problem = timesheetLateExtraRowProblem(row2);
+    const problem = timesheetLateExtraRowProblem(row3);
     if (problem) return ignored(problem);
     if (timesheetSignedEntryKeys(data, options.sheetDocId).has(normalizeDocumentId(id2))) return ignored("id-taken");
     const review = timesheetEntryReviewFor(parseTimesheetEntryReviews(data), id2);
     if (!review) return pending("no-review");
     if (!review.lateExtra || !review.reviewedFingerprint) return pending("not-late-review");
-    const fingerprint = text14(trustedFingerprint) || timesheetEntryFingerprint(row2, kind);
+    const fingerprint = text14(trustedFingerprint) || timesheetEntryFingerprint(row3, kind);
     if (review.reviewedFingerprint !== fingerprint) return pending("stale-review");
-    const amount = finite2(row2.amount) ?? 0;
+    const amount = finite2(row3.amount) ?? 0;
     if (review.reviewedAmount != null && Math.abs(review.reviewedAmount - amount) >= AMOUNT_EPSILON2) return pending("stale-review");
     if (review.decision === "pending") return pending("no-review");
     if (review.decision === "declined") return { state: "declined", decision: "declined", revisedAmount: null, paid: 0, reason: "review" };
@@ -13223,15 +13225,15 @@ var ProjectPlannerCanonical = (() => {
     const data = sheet && typeof sheet === "object" ? sheet : {};
     const seen = /* @__PURE__ */ new Set();
     const out = [];
-    for (const row2 of rowsOf(data[TIMESHEET_LATE_EXTRAS_FIELD])) {
-      const kind = timesheetLateExtraKind(row2);
-      const id2 = text14(row2.id);
+    for (const row3 of rowsOf(data[TIMESHEET_LATE_EXTRAS_FIELD])) {
+      const kind = timesheetLateExtraKind(row3);
+      const id2 = text14(row3.id);
       if (!kind || !id2) continue;
       const key7 = normalizeDocumentId(id2);
       const trusted = options.entryFingerprints ? options.entryFingerprints[timesheetLateExtraFingerprintKey(id2)] ?? null : null;
-      const decision = seen.has(key7) ? { state: "ignored", decision: "pending", revisedAmount: null, paid: 0, reason: "id-taken" } : timesheetLateExtraDecision(data, row2, trusted, { sheetDocId: options.sheetDocId });
+      const decision = seen.has(key7) ? { state: "ignored", decision: "pending", revisedAmount: null, paid: 0, reason: "id-taken" } : timesheetLateExtraDecision(data, row3, trusted, { sheetDocId: options.sheetDocId });
       seen.add(key7);
-      out.push({ id: id2, kind, row: row2, decision });
+      out.push({ id: id2, kind, row: row3, decision });
     }
     return out;
   }
@@ -13239,32 +13241,32 @@ var ProjectPlannerCanonical = (() => {
     const data = sheet && typeof sheet === "object" ? sheet : {};
     const rows3 = timesheetLateExtraRows(data, { sheetDocId });
     const byId = /* @__PURE__ */ new Map();
-    for (const row2 of rows3) {
-      const key7 = normalizeDocumentId(row2.id);
-      if (!byId.has(key7)) byId.set(key7, row2);
+    for (const row3 of rows3) {
+      const key7 = normalizeDocumentId(row3.id);
+      if (!byId.has(key7)) byId.set(key7, row3);
     }
-    const raw = rowsOf(data[TIMESHEET_LATE_EXTRAS_FIELD]).filter((row2) => timesheetLateExtraKind(row2) && text14(row2.id));
+    const raw = rowsOf(data[TIMESHEET_LATE_EXTRAS_FIELD]).filter((row3) => timesheetLateExtraKind(row3) && text14(row3.id));
     const parsed = parseTimesheetEntries(
       sheetDocId,
       {
         userId: data.userId,
-        priceWorkEntries: raw.filter((row2) => row2.kind === "priceWork"),
-        expenseEntries: raw.filter((row2) => row2.kind === "expense")
+        priceWorkEntries: raw.filter((row3) => row3.kind === "priceWork"),
+        expenseEntries: raw.filter((row3) => row3.kind === "expense")
       },
       options
     );
     const decided = (id2) => byId.get(normalizeDocumentId(id2))?.decision;
     const out = [];
-    for (const row2 of raw) {
-      const key7 = normalizeDocumentId(row2.id);
-      const lateDecision = decided(text14(row2.id));
+    for (const row3 of raw) {
+      const key7 = normalizeDocumentId(row3.id);
+      const lateDecision = decided(text14(row3.id));
       if (!lateDecision) continue;
       const apply = (entry) => ({
         ...entry,
         managerDecision: lateDecision.decision,
         managerRevisedAmount: lateDecision.revisedAmount
       });
-      if (row2.kind === "priceWork") {
+      if (row3.kind === "priceWork") {
         const entry = parsed.priceWorkEntries.find((item) => normalizeDocumentId(item.id) === key7);
         if (entry && !out.some((item) => normalizeDocumentId(item.id) === key7)) out.push({ ...apply(entry), kind: "priceWork", lateDecision });
       } else {
@@ -13279,7 +13281,7 @@ var ProjectPlannerCanonical = (() => {
     const expenses = [];
     for (const late of timesheetLateExtraRows(sheet, options)) {
       if (late.decision.state !== "approved" || late.decision.paid <= 0) continue;
-      const row2 = {
+      const row3 = {
         id: late.id,
         title: text14(late.row.title),
         details: typeof late.row.details === "string" ? late.row.details : "",
@@ -13290,29 +13292,29 @@ var ProjectPlannerCanonical = (() => {
         entryFingerprint: options.entryFingerprints?.[timesheetLateExtraFingerprintKey(late.id)] || timesheetEntryFingerprint(late.row, late.kind),
         lateExtra: true
       };
-      if (late.kind === "priceWork") priceWork.push(row2);
-      else expenses.push(row2);
+      if (late.kind === "priceWork") priceWork.push(row3);
+      else expenses.push(row3);
     }
     return { priceWork, expenses };
   }
   function timesheetSnapshotMoneyRowsCurrent(sheet, rows3, options = {}) {
     const data = sheet && typeof sheet === "object" ? sheet : {};
     const exported = typeof options.exportedAtStored === "boolean" ? options.exportedAtStored : timesheetExportedFieldSet(data.exportedAt);
-    if (exported || !rows3.some((row2) => row2?.lateExtra === true)) return [...rows3];
+    if (exported || !rows3.some((row3) => row3?.lateExtra === true)) return [...rows3];
     const approved = /* @__PURE__ */ new Map();
     for (const late of timesheetLateExtraRows(data, options)) {
       if (late.decision.state === "approved" && late.decision.paid > 0) approved.set(normalizeDocumentId(late.id), late.decision.paid);
     }
-    return rows3.filter((row2) => {
-      if (row2?.lateExtra !== true) return true;
-      const paid = approved.get(normalizeDocumentId(row2.id));
-      return paid != null && Math.abs(roundPennies(finite2(row2.amount) ?? 0) - paid) < AMOUNT_EPSILON2;
+    return rows3.filter((row3) => {
+      if (row3?.lateExtra !== true) return true;
+      const paid = approved.get(normalizeDocumentId(row3.id));
+      return paid != null && Math.abs(roundPennies(finite2(row3.amount) ?? 0) - paid) < AMOUNT_EPSILON2;
     });
   }
   function timesheetLateExtrasSummary(sheet, options = {}) {
     const data = sheet && typeof sheet === "object" ? sheet : {};
     const rows3 = timesheetLateExtraRows(data, options);
-    const count = (state) => rows3.filter((row2) => row2.decision.state === state).length;
+    const count = (state) => rows3.filter((row3) => row3.decision.state === state).length;
     const exported = typeof options.exportedAtStored === "boolean" ? options.exportedAtStored : timesheetExportedFieldSet(data.exportedAt);
     let snapshotInStep = true;
     const override = data.weeklyReportOverride;
@@ -13320,13 +13322,13 @@ var ProjectPlannerCanonical = (() => {
       const snapshot = override;
       const signedLate = /* @__PURE__ */ new Map();
       for (const key7 of ["priceWork", "expenses"]) {
-        for (const row2 of rowsOf(snapshot[key7])) {
-          if (row2.lateExtra === true) signedLate.set(normalizeDocumentId(row2.id), roundPennies(finite2(row2.amount) ?? 0));
+        for (const row3 of rowsOf(snapshot[key7])) {
+          if (row3.lateExtra === true) signedLate.set(normalizeDocumentId(row3.id), roundPennies(finite2(row3.amount) ?? 0));
         }
       }
       const approved = /* @__PURE__ */ new Map();
-      for (const row2 of rows3) {
-        if (row2.decision.state === "approved" && row2.decision.paid > 0) approved.set(normalizeDocumentId(row2.id), row2.decision.paid);
+      for (const row3 of rows3) {
+        if (row3.decision.state === "approved" && row3.decision.paid > 0) approved.set(normalizeDocumentId(row3.id), row3.decision.paid);
       }
       snapshotInStep = signedLate.size === approved.size && [...approved].every(([id2, paid]) => signedLate.has(id2) && Math.abs((signedLate.get(id2) ?? 0) - paid) < AMOUNT_EPSILON2);
     }
@@ -13427,12 +13429,12 @@ var ProjectPlannerCanonical = (() => {
     }
     const out = [];
     const seen = /* @__PURE__ */ new Set();
-    for (const row2 of operatives || []) {
-      const id2 = typeof row2?.id === "string" ? row2.id.trim() : "";
+    for (const row3 of operatives || []) {
+      const id2 = typeof row3?.id === "string" ? row3.id.trim() : "";
       if (!id2 || seen.has(idKey(id2))) continue;
-      const linked = [row2.linkedUserId, row2.userId, row2.uid].some((value) => typeof value === "string" && value.trim() !== "");
+      const linked = [row3.linkedUserId, row3.userId, row3.uid].some((value) => typeof value === "string" && value.trim() !== "");
       if (linked || rosterIds.has(idKey(id2))) continue;
-      const email = typeof row2.email === "string" ? row2.email.trim() : "";
+      const email = typeof row3.email === "string" ? row3.email.trim() : "";
       if (email && rosterEmails.has(idKey(email))) continue;
       seen.add(idKey(id2));
       out.push({ id: id2, email: email || null, catalogueOperative: true });
@@ -13588,7 +13590,7 @@ var ProjectPlannerCanonical = (() => {
   }
   var INVOICE_AMOUNT_EPSILON = 1e-4;
   function rowsOf2(value) {
-    return Array.isArray(value) ? value.filter((row2) => Boolean(row2) && typeof row2 === "object") : [];
+    return Array.isArray(value) ? value.filter((row3) => Boolean(row3) && typeof row3 === "object") : [];
   }
   function jobNumberOf(...values) {
     for (const value of values) {
@@ -13615,20 +13617,20 @@ var ProjectPlannerCanonical = (() => {
     };
     if (override && typeof override === "object") {
       const snapshot = override;
-      for (const row2 of rowsOf2(snapshot.lines)) {
-        const stored = amountOf(row2.amount);
-        const amount = row2.decision === "edited" ? roundPennies(stored) : stored;
-        if (row2.decision === "declined" || amount <= INVOICE_AMOUNT_EPSILON) continue;
-        const id2 = String(row2.id ?? "").trim();
+      for (const row3 of rowsOf2(snapshot.lines)) {
+        const stored = amountOf(row3.amount);
+        const amount = row3.decision === "edited" ? roundPennies(stored) : stored;
+        if (row3.decision === "declined" || amount <= INVOICE_AMOUNT_EPSILON) continue;
+        const id2 = String(row3.id ?? "").trim();
         const live = liveById.get(normalizeDocumentId(id2)) ?? null;
-        if (!isInvoiceLine(row2)) continue;
-        rows3.push({ kind: "labour", id: id2, amount, source: "override", line: live, stored: row2, jobNumber: jobNumberOf(live && live.jobNumber, row2.jobNumber) });
+        if (!isInvoiceLine(row3)) continue;
+        rows3.push({ kind: "labour", id: id2, amount, source: "override", line: live, stored: row3, jobNumber: jobNumberOf(live && live.jobNumber, row3.jobNumber) });
       }
       for (const [kind, key7] of [["priceWork", "priceWork"], ["expense", "expenses"]]) {
-        for (const row2 of rowsOf2(snapshot[key7])) {
-          const amount = amountOf(row2.amount);
-          if (row2.decision === "declined" || amount <= INVOICE_AMOUNT_EPSILON) continue;
-          rows3.push({ kind, id: String(row2.id ?? "").trim(), amount, source: "override", line: null, stored: row2, jobNumber: jobNumberOf(row2.jobNumber) });
+        for (const row3 of rowsOf2(snapshot[key7])) {
+          const amount = amountOf(row3.amount);
+          if (row3.decision === "declined" || amount <= INVOICE_AMOUNT_EPSILON) continue;
+          rows3.push({ kind, id: String(row3.id ?? "").trim(), amount, source: "override", line: null, stored: row3, jobNumber: jobNumberOf(row3.jobNumber) });
         }
       }
       return rows3;
@@ -13686,17 +13688,17 @@ var ProjectPlannerCanonical = (() => {
     let hiddenPeople = 0;
     const out = [];
     const visibleLines = [];
-    for (const row2 of rows3 || []) {
-      const visible = row2.paySubject ? viewerIsAdmin2 || canView(row2.paySubject) : viewerIsAdmin2;
+    for (const row3 of rows3 || []) {
+      const visible = row3.paySubject ? viewerIsAdmin2 || canView(row3.paySubject) : viewerIsAdmin2;
       if (visible) {
-        out.push(row2);
-        for (const line of row2.lines) visibleLines.push({ isPaye: line.isPaye === true, pay: line.pay });
+        out.push(row3);
+        for (const line of row3.lines) visibleLines.push({ isPaye: line.isPaye === true, pay: line.pay });
         continue;
       }
       hiddenPeople += 1;
       out.push({
-        ...row2,
-        lines: row2.lines.map((line) => ({ ...line, rate: 0, pay: 0, rateText: PAY_HIDDEN_CELL_LABEL, payLabel: PAY_HIDDEN_CELL_LABEL })),
+        ...row3,
+        lines: row3.lines.map((line) => ({ ...line, rate: 0, pay: 0, rateText: PAY_HIDDEN_CELL_LABEL, payLabel: PAY_HIDDEN_CELL_LABEL })),
         personTotal: 0,
         personTotalLabel: PAY_HIDDEN_CELL_LABEL
       });
@@ -13983,8 +13985,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.68.0" : "",
-      sha256: true ? "f261b01277a6e2bcd3e6df1ca2469285ac73569b66676ea926ed0a77b5399d7f" : ""
+      version: true ? "1.69.0" : "",
+      sha256: true ? "2fce853e759b853496ba8ae78e58d2aea3727027edf7858d56f33b67cb406026" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -14008,9 +14010,9 @@ var ProjectPlannerCanonical = (() => {
   function text17(value) {
     return typeof value === "string" ? value.trim() : "";
   }
-  function firstText3(row2, keys) {
+  function firstText3(row3, keys) {
     for (const key7 of keys) {
-      const value = text17(row2[key7]);
+      const value = text17(row3[key7]);
       if (value) return value;
     }
     return "";
@@ -14044,15 +14046,15 @@ var ProjectPlannerCanonical = (() => {
       return Number.isNaN(ms) ? "" : dayKeyInZone(new Date(ms), zone3);
     }
     if (typeof raw === "object") {
-      const row2 = raw;
-      const seconds = typeof row2.seconds === "number" ? row2.seconds : typeof row2._seconds === "number" ? row2._seconds : null;
+      const row3 = raw;
+      const seconds = typeof row3.seconds === "number" ? row3.seconds : typeof row3._seconds === "number" ? row3._seconds : null;
       if (seconds != null && Number.isFinite(seconds)) {
-        const nanos = typeof row2.nanoseconds === "number" ? row2.nanoseconds : typeof row2._nanoseconds === "number" ? row2._nanoseconds : 0;
+        const nanos = typeof row3.nanoseconds === "number" ? row3.nanoseconds : typeof row3._nanoseconds === "number" ? row3._nanoseconds : 0;
         return dayKeyInZone(new Date(seconds * 1e3 + Math.floor((Number(nanos) || 0) / 1e6)), zone3);
       }
-      if (typeof row2.toDate === "function") {
+      if (typeof row3.toDate === "function") {
         try {
-          const date = row2.toDate();
+          const date = row3.toDate();
           if (date instanceof Date && !Number.isNaN(date.getTime())) return dayKeyInZone(date, zone3);
         } catch {
           return "";
@@ -14061,9 +14063,9 @@ var ProjectPlannerCanonical = (() => {
     }
     return "";
   }
-  function firstDayKey(row2, keys, zone3) {
+  function firstDayKey(row3, keys, zone3) {
     for (const key7 of keys) {
-      const dayKey = holidayDocumentDayKey(row2[key7], zone3);
+      const dayKey = holidayDocumentDayKey(row3[key7], zone3);
       if (dayKey) return dayKey;
     }
     return "";
@@ -14076,33 +14078,33 @@ var ProjectPlannerCanonical = (() => {
   function parseHolidayDocument(docId, data, timeZone) {
     const id2 = text17(docId);
     if (!id2) return null;
-    const row2 = data && typeof data === "object" ? data : {};
+    const row3 = data && typeof data === "object" ? data : {};
     const zone3 = zoneOrLondon(timeZone);
-    const start = firstDayKey(row2, HOLIDAY_DOCUMENT_KEYS.start, zone3);
+    const start = firstDayKey(row3, HOLIDAY_DOCUMENT_KEYS.start, zone3);
     if (!start || !DAY_KEY3.test(start)) return null;
-    const end = firstDayKey(row2, HOLIDAY_DOCUMENT_KEYS.end, zone3) || start;
+    const end = firstDayKey(row3, HOLIDAY_DOCUMENT_KEYS.end, zone3) || start;
     const [startDayKey, endDayKey] = end < start ? [end, start] : [start, end];
-    let userId = firstText3(row2, HOLIDAY_DOCUMENT_KEYS.userId);
-    if (!userId && row2.user && typeof row2.user === "object") {
-      userId = firstText3(row2.user, HOLIDAY_DOCUMENT_KEYS.nestedUserId);
+    let userId = firstText3(row3, HOLIDAY_DOCUMENT_KEYS.userId);
+    if (!userId && row3.user && typeof row3.user === "object") {
+      userId = firstText3(row3.user, HOLIDAY_DOCUMENT_KEYS.nestedUserId);
     }
-    const operativeId = firstText3(row2, HOLIDAY_DOCUMENT_KEYS.operativeId);
-    const status = normalizeHolidayStatus(firstText3(row2, HOLIDAY_DOCUMENT_KEYS.status));
-    const cancellationRequestedByUserId = text17(row2.cancellationRequestedByUserId);
-    const organizationId = text17(row2.organizationId);
+    const operativeId = firstText3(row3, HOLIDAY_DOCUMENT_KEYS.operativeId);
+    const status = normalizeHolidayStatus(firstText3(row3, HOLIDAY_DOCUMENT_KEYS.status));
+    const cancellationRequestedByUserId = text17(row3.cancellationRequestedByUserId);
+    const organizationId = text17(row3.organizationId);
     const parsed = {
       id: id2,
       userId: userId || null,
       operativeId: operativeId || null,
       startDayKey,
       endDayKey,
-      timeSlot: normalizeHolidayTimeSlot(firstText3(row2, HOLIDAY_DOCUMENT_KEYS.timeSlot)),
+      timeSlot: normalizeHolidayTimeSlot(firstText3(row3, HOLIDAY_DOCUMENT_KEYS.timeSlot)),
       status,
       approved: status === "approved",
-      approvedByUserId: firstText3(row2, HOLIDAY_DOCUMENT_KEYS.approvedByUserId) || null,
-      cancellationRequested: hasValue2(row2.cancellationRequestedAt),
+      approvedByUserId: firstText3(row3, HOLIDAY_DOCUMENT_KEYS.approvedByUserId) || null,
+      cancellationRequested: hasValue2(row3.cancellationRequestedAt),
       cancellationRequestedByUserId: cancellationRequestedByUserId || null,
-      decisionNote: parseHolidayDecisionNote(firstText3(row2, HOLIDAY_DOCUMENT_KEYS.decisionNote))
+      decisionNote: parseHolidayDecisionNote(firstText3(row3, HOLIDAY_DOCUMENT_KEYS.decisionNote))
     };
     if (organizationId) parsed.organizationId = organizationId;
     return parsed;
@@ -14819,10 +14821,10 @@ var ProjectPlannerCanonical = (() => {
     if (token === "quote" || token === "sentforquote") return "Quote";
     return null;
   }
-  function materialLength(row2) {
-    const length = text20(row2.length) || text20(row2.sizeOrLength);
+  function materialLength(row3) {
+    const length = text20(row3.length) || text20(row3.sizeOrLength);
     if (length) return length;
-    const pack = documentNumber(row2.packSize);
+    const pack = documentNumber(row3.packSize);
     return pack == null ? null : String(pack);
   }
   function materialQuantity(raw) {
@@ -14832,46 +14834,46 @@ var ProjectPlannerCanonical = (() => {
   function parseMaterialLineDocument(docId, data, options) {
     const id2 = text20(docId);
     if (!id2) return null;
-    const row2 = record6(data);
-    const projectId = text20(row2.projectId);
-    const material = text20(row2.material) || text20(row2.name);
+    const row3 = record6(data);
+    const projectId = text20(row3.projectId);
+    const material = text20(row3.material) || text20(row3.name);
     if (!projectId || !material) return null;
     const zone3 = zoneOrLondon(options?.timeZone);
-    const dateMs = documentInstantMs(row2.date);
-    const lengthValue = materialLength(row2);
-    const model = materialQuantityModel(row2);
+    const dateMs = documentInstantMs(row3.date);
+    const lengthValue = materialLength(row3);
+    const model = materialQuantityModel(row3);
     return {
       id: id2,
       projectId,
-      quantity: materialQuantity(row2.quantity),
-      unit: normalizeMaterialUnit(row2.unit),
+      quantity: materialQuantity(row3.quantity),
+      unit: normalizeMaterialUnit(row3.unit),
       orderUnit: model.orderUnit,
       contentAmount: model.contentAmount,
       contentMeasure: model.contentMeasure,
-      quantityText: materialLineText(row2),
+      quantityText: materialLineText(row3),
       material,
-      addedBy: text20(row2.addedBy),
-      addedByUserId: optionalText3(row2.addedByUserId),
-      addedAtMs: documentInstantMs(row2.addedAt) ?? documentInstantMs(row2.createdAt),
-      editedBy: optionalText3(row2.editedBy),
-      editedByUserId: optionalText3(row2.editedByUserId),
-      editedAtMs: documentInstantMs(row2.editedAt),
-      dayKey: DAY_KEY4.test(text20(row2.dayKey)) ? text20(row2.dayKey) : storedDayKey(row2.date, zone3),
+      addedBy: text20(row3.addedBy),
+      addedByUserId: optionalText3(row3.addedByUserId),
+      addedAtMs: documentInstantMs(row3.addedAt) ?? documentInstantMs(row3.createdAt),
+      editedBy: optionalText3(row3.editedBy),
+      editedByUserId: optionalText3(row3.editedByUserId),
+      editedAtMs: documentInstantMs(row3.editedAt),
+      dayKey: DAY_KEY4.test(text20(row3.dayKey)) ? text20(row3.dayKey) : storedDayKey(row3.date, zone3),
       dateMs,
-      status: normalizeMaterialWorkflowStatus(row2.status),
-      catalogueItemId: optionalText3(row2.catalogueItemId),
-      brand: materialBrandStored(row2.brand) || null,
-      productCode: optionalText3(row2.productCode),
-      category: optionalText3(row2.category),
-      size: optionalText3(row2.size),
+      status: normalizeMaterialWorkflowStatus(row3.status),
+      catalogueItemId: optionalText3(row3.catalogueItemId),
+      brand: materialBrandStored(row3.brand) || null,
+      productCode: optionalText3(row3.productCode),
+      category: optionalText3(row3.category),
+      size: optionalText3(row3.size),
       length: lengthValue,
-      lengthUnit: lengthValue ? normalizeMaterialLengthUnit(row2.lengthUnit) : null,
-      websiteURL: optionalText3(row2.websiteURL),
-      notes: optionalText3(row2.notes),
-      lastSentAtMs: documentInstantMs(row2.lastSentAt),
-      lastSentRequestType: normalizeMaterialRequestType(row2.lastSentRequestType),
-      createdAtMs: documentInstantMs(row2.createdAt),
-      updatedAtMs: documentInstantMs(row2.updatedAt)
+      lengthUnit: lengthValue ? normalizeMaterialLengthUnit(row3.lengthUnit) : null,
+      websiteURL: optionalText3(row3.websiteURL),
+      notes: optionalText3(row3.notes),
+      lastSentAtMs: documentInstantMs(row3.lastSentAt),
+      lastSentRequestType: normalizeMaterialRequestType(row3.lastSentRequestType),
+      createdAtMs: documentInstantMs(row3.createdAt),
+      updatedAtMs: documentInstantMs(row3.updatedAt)
     };
   }
   function parseMaterialListDocuments(docs, options) {
@@ -14885,17 +14887,17 @@ var ProjectPlannerCanonical = (() => {
     );
   }
   function quantityFields(input, unitField) {
-    const row2 = record6(input);
-    if (normalizeMaterialOrderUnit(row2.orderUnit)) {
-      return materialQuantityWriteFields(row2, { unitField });
+    const row3 = record6(input);
+    if (normalizeMaterialOrderUnit(row3.orderUnit)) {
+      return materialQuantityWriteFields(row3, { unitField });
     }
-    const legacy = { [unitField]: row2[unitField], length: row2.length, lengthUnit: row2.lengthUnit };
+    const legacy = { [unitField]: row3[unitField], length: row3.length, lengthUnit: row3.lengthUnit };
     const out = materialQuantityWriteFields(materialQuantityModel(legacy), { unitField });
-    const length = text20(row2.length);
-    if (length && !parseMaterialMeasure(length, row2.lengthUnit)) {
+    const length = text20(row3.length);
+    if (length && !parseMaterialMeasure(length, row3.lengthUnit)) {
       out.length = length;
       out.sizeOrLength = length;
-      out.lengthUnit = normalizeMaterialLengthUnit(row2.lengthUnit);
+      out.lengthUnit = normalizeMaterialLengthUnit(row3.lengthUnit);
     }
     return out;
   }
@@ -14969,28 +14971,28 @@ var ProjectPlannerCanonical = (() => {
   function parseMaterialCatalogueDocument(docId, data) {
     const id2 = text20(docId);
     if (!id2) return null;
-    const row2 = record6(data);
-    const name = text20(row2.name);
+    const row3 = record6(data);
+    const name = text20(row3.name);
     if (!name) return null;
-    const length = materialLength(row2);
-    const model = materialQuantityModel(row2);
+    const length = materialLength(row3);
+    const model = materialQuantityModel(row3);
     return {
       id: id2,
       name,
-      brand: materialBrandStored(row2.brand),
-      productCode: optionalText3(row2.productCode),
-      defaultUnit: normalizeMaterialUnit(row2.defaultUnit),
+      brand: materialBrandStored(row3.brand),
+      productCode: optionalText3(row3.productCode),
+      defaultUnit: normalizeMaterialUnit(row3.defaultUnit),
       orderUnit: model.orderUnit,
       contentAmount: model.contentAmount,
       contentMeasure: model.contentMeasure,
-      size: optionalText3(row2.size),
+      size: optionalText3(row3.size),
       length,
-      lengthUnit: length ? normalizeMaterialLengthUnit(row2.lengthUnit) : null,
-      category: text20(row2.category) || "Other",
-      createdAtMs: documentInstantMs(row2.createdAt),
-      createdByUserId: text20(row2.createdByUserId),
-      createdByName: text20(row2.createdByName),
-      updatedAtMs: documentInstantMs(row2.updatedAt)
+      lengthUnit: length ? normalizeMaterialLengthUnit(row3.lengthUnit) : null,
+      category: text20(row3.category) || "Other",
+      createdAtMs: documentInstantMs(row3.createdAt),
+      createdByUserId: text20(row3.createdByUserId),
+      createdByName: text20(row3.createdByName),
+      updatedAtMs: documentInstantMs(row3.updatedAt)
     };
   }
   function materialCatalogueItemFields(item) {
@@ -15041,21 +15043,21 @@ var ProjectPlannerCanonical = (() => {
   function parseMaterialSendRecordDocument(docId, data, options) {
     const id2 = text20(docId);
     if (!id2) return null;
-    const row2 = record6(data);
-    const projectId = text20(row2.projectId);
-    const sentAtMs = documentInstantMs(row2.sentAt);
+    const row3 = record6(data);
+    const projectId = text20(row3.projectId);
+    const sentAtMs = documentInstantMs(row3.sentAt);
     if (!projectId || sentAtMs == null) return null;
     const zone3 = zoneOrLondon(options?.timeZone);
-    const requestType = normalizeMaterialRequestType(row2.requestType) === "Order" ? "order" : "quote";
-    const materialsDateMs = documentInstantMs(row2.materialsDate);
+    const requestType = normalizeMaterialRequestType(row3.requestType) === "Order" ? "order" : "quote";
+    const materialsDateMs = documentInstantMs(row3.materialsDate);
     const recipients = [];
-    for (const entry of rows(row2.recipients)) {
+    for (const entry of rows(row3.recipients)) {
       const email = text20(entry.email);
       if (!email) continue;
       recipients.push({ name: text20(entry.name), email, wholesalerName: optionalText3(entry.wholesalerName) });
     }
     const lines = [];
-    for (const entry of rows(row2.lines)) {
+    for (const entry of rows(row3.lines)) {
       const materialId = text20(entry.materialId);
       const name = text20(entry.name);
       if (!materialId || !name) continue;
@@ -15075,10 +15077,10 @@ var ProjectPlannerCanonical = (() => {
       projectId,
       requestType,
       sentAtMs,
-      materialsDayKey: storedDayKey(row2.materialsDate, zone3),
+      materialsDayKey: storedDayKey(row3.materialsDate, zone3),
       materialsDateMs,
-      deliveryRequiredAtMs: materialOrderIncludesDeliveryRequired(requestType) ? documentInstantMs(row2.deliveryRequiredAt) : null,
-      sentBy: text20(row2.sentBy),
+      deliveryRequiredAtMs: materialOrderIncludesDeliveryRequired(requestType) ? documentInstantMs(row3.deliveryRequiredAt) : null,
+      sentBy: text20(row3.sentBy),
       recipients,
       lines
     };
@@ -15115,17 +15117,17 @@ var ProjectPlannerCanonical = (() => {
     return out;
   }
   function wholesalerContactId(firmDocId, index, contact) {
-    const row2 = record6(contact);
-    return derivedRowId(firmDocId, "contacts", index, [text20(row2.name), text20(row2.email).toLowerCase()]);
+    const row3 = record6(contact);
+    return derivedRowId(firmDocId, "contacts", index, [text20(row3.name), text20(row3.email).toLowerCase()]);
   }
   function parseWholesalerDocument(docId, data) {
     const id2 = text20(docId);
     if (!id2) return null;
-    const row2 = record6(data);
-    const name = text20(row2.name);
+    const row3 = record6(data);
+    const name = text20(row3.name);
     if (!name) return null;
     const contacts = [];
-    for (const [index, entry] of (Array.isArray(row2.contacts) ? row2.contacts : []).entries()) {
+    for (const [index, entry] of (Array.isArray(row3.contacts) ? row3.contacts : []).entries()) {
       const contact = record6(entry);
       const contactName = text20(contact.name);
       const email = text20(contact.email);
@@ -15141,20 +15143,20 @@ var ProjectPlannerCanonical = (() => {
         createdAtMs: documentInstantMs(contact.createdAt)
       });
     }
-    const storedPrimary = text20(row2.primaryContactId);
+    const storedPrimary = text20(row3.primaryContactId);
     const primary = contacts.find((contact) => storedPrimary && normalizeDocumentId(contact.id) === normalizeDocumentId(storedPrimary)) ?? contacts.find((contact) => contact.isPrimary) ?? contacts[0];
     for (const contact of contacts) contact.isPrimary = contact === primary;
-    const createdAtMs = documentInstantMs(row2.createdAt);
+    const createdAtMs = documentInstantMs(row3.createdAt);
     return {
       id: id2,
       name,
-      address: optionalText3(row2.address),
-      trade: optionalText3(row2.trade),
-      accountNumber: optionalText3(row2.accountNumber),
+      address: optionalText3(row3.address),
+      trade: optionalText3(row3.trade),
+      accountNumber: optionalText3(row3.accountNumber),
       primaryContactId: primary ? primary.id : null,
       contacts,
       createdAtMs,
-      updatedAtMs: documentInstantMs(row2.updatedAt) ?? createdAtMs
+      updatedAtMs: documentInstantMs(row3.updatedAt) ?? createdAtMs
     };
   }
   var WHOLESALER_CONTACTS_WRITE_GROUP = ["contacts", "primaryContactId"];
@@ -15164,13 +15166,13 @@ var ProjectPlannerCanonical = (() => {
   function parseSiteAuditDocument(docId, data, options) {
     const id2 = text20(docId);
     if (!id2) return null;
-    const row2 = record6(data);
-    const projectId = text20(row2.projectId);
-    const type = text20(row2.type);
+    const row3 = record6(data);
+    const projectId = text20(row3.projectId);
+    const type = text20(row3.type);
     if (!projectId || !type) return null;
     const zone3 = zoneOrLondon(options?.timeZone);
     const items = [];
-    for (const [index, entry] of (Array.isArray(row2.items) ? row2.items : []).entries()) {
+    for (const [index, entry] of (Array.isArray(row3.items) ? row3.items : []).entries()) {
       const item = record6(entry);
       const title = text20(item.title);
       if (!title) continue;
@@ -15188,23 +15190,23 @@ var ProjectPlannerCanonical = (() => {
         createdAtMs: documentInstantMs(item.createdAt)
       });
     }
-    const dateMs = documentInstantMs(row2.date);
+    const dateMs = documentInstantMs(row3.date);
     return {
       id: id2,
       projectId,
-      projectJobNumber: text20(row2.projectJobNumber),
-      projectName: text20(row2.projectName),
+      projectJobNumber: text20(row3.projectJobNumber),
+      projectName: text20(row3.projectName),
       type,
-      customTitle: text20(row2.customTitle),
-      authorName: text20(row2.authorName),
+      customTitle: text20(row3.customTitle),
+      authorName: text20(row3.authorName),
       dateMs,
-      dayKey: storedDayKey(row2.date, zone3),
-      createdAtMs: documentInstantMs(row2.createdAt) ?? dateMs,
-      createdByUserId: text20(row2.createdByUserId),
-      visibleToOperatives: documentBool(row2.visibleToOperatives) ?? true,
+      dayKey: storedDayKey(row3.date, zone3),
+      createdAtMs: documentInstantMs(row3.createdAt) ?? dateMs,
+      createdByUserId: text20(row3.createdByUserId),
+      visibleToOperatives: documentBool(row3.visibleToOperatives) ?? true,
       items,
-      organizationId: documentOrganizationId(row2.organizationId),
-      updatedAtMs: documentInstantMs(row2.updatedAt)
+      organizationId: documentOrganizationId(row3.organizationId),
+      updatedAtMs: documentInstantMs(row3.updatedAt)
     };
   }
   function siteAuditWriteFields(before, next) {
@@ -15212,14 +15214,14 @@ var ProjectPlannerCanonical = (() => {
   }
   function mergeStoredRows(stored, next) {
     const byId = /* @__PURE__ */ new Map();
-    for (const row2 of rows(stored)) {
-      const key7 = normalizeDocumentId(row2.id);
-      if (key7) byId.set(key7, row2);
+    for (const row3 of rows(stored)) {
+      const key7 = normalizeDocumentId(row3.id);
+      if (key7) byId.set(key7, row3);
     }
-    return (next || []).map((row2) => {
-      const base = byId.get(normalizeDocumentId(row2?.id)) ?? {};
+    return (next || []).map((row3) => {
+      const base = byId.get(normalizeDocumentId(row3?.id)) ?? {};
       const out = { ...base };
-      for (const [key7, value] of Object.entries(row2 || {})) {
+      for (const [key7, value] of Object.entries(row3 || {})) {
         if (value !== void 0 && value !== null) out[key7] = value;
       }
       return out;
@@ -15261,12 +15263,12 @@ var ProjectPlannerCanonical = (() => {
   function parseTaskDocument(docId, data, options) {
     const id2 = text20(docId);
     if (!id2) return null;
-    const row2 = record6(data);
-    const title = text20(row2.title);
+    const row3 = record6(data);
+    const title = text20(row3.title);
     if (!title) return null;
     const zone3 = zoneOrLondon(options?.timeZone);
     const items = [];
-    for (const [index, entry] of (Array.isArray(row2.items) ? row2.items : []).entries()) {
+    for (const [index, entry] of (Array.isArray(row3.items) ? row3.items : []).entries()) {
       const item = record6(entry);
       const itemTitle = text20(item.title);
       if (!itemTitle) continue;
@@ -15278,38 +15280,38 @@ var ProjectPlannerCanonical = (() => {
         description: optionalText3(item.description)
       });
     }
-    const dueDateMs = documentInstantMs(row2.dueDate);
-    const createdAtMs = documentInstantMs(row2.createdAt);
+    const dueDateMs = documentInstantMs(row3.dueDate);
+    const createdAtMs = documentInstantMs(row3.createdAt);
     return {
       id: id2,
-      projectId: text20(row2.projectId),
+      projectId: text20(row3.projectId),
       title,
-      details: optionalText3(row2.details),
-      createdBy: text20(row2.createdBy),
-      createdByUserId: text20(row2.createdByUserId),
-      status: normalizeProjectTaskStatus(row2.status),
-      priority: normalizeProjectTaskPriority(row2.priority),
-      assignedOperativeId: optionalText3(row2.assignedOperativeId),
-      assignedManagerId: optionalText3(row2.assignedManagerId),
-      assignedOperativeIds: idList4(row2.assignedOperativeIds),
-      assignedManagerIds: idList4(row2.assignedManagerIds),
+      details: optionalText3(row3.details),
+      createdBy: text20(row3.createdBy),
+      createdByUserId: text20(row3.createdByUserId),
+      status: normalizeProjectTaskStatus(row3.status),
+      priority: normalizeProjectTaskPriority(row3.priority),
+      assignedOperativeId: optionalText3(row3.assignedOperativeId),
+      assignedManagerId: optionalText3(row3.assignedManagerId),
+      assignedOperativeIds: idList4(row3.assignedOperativeIds),
+      assignedManagerIds: idList4(row3.assignedManagerIds),
       dueDateMs,
-      dueDayKey: storedDayKey(row2.dueDate, zone3),
-      completedBy: optionalText3(row2.completedBy),
-      completedAtMs: documentInstantMs(row2.completedAt),
-      completionNotes: optionalText3(row2.completionNotes),
-      completionImages: urlList(row2.completionImages),
-      completionFiles: urlList(row2.completionFiles),
-      attachedImageURLs: urlList(row2.attachedImageURLs),
-      attachedFileURL: optionalText3(row2.attachedFileURL),
-      attachedFileName: optionalText3(row2.attachedFileName),
-      attachedSiteAuditId: optionalText3(row2.attachedSiteAuditId),
-      attachedSiteAuditTitle: optionalText3(row2.attachedSiteAuditTitle),
+      dueDayKey: storedDayKey(row3.dueDate, zone3),
+      completedBy: optionalText3(row3.completedBy),
+      completedAtMs: documentInstantMs(row3.completedAt),
+      completionNotes: optionalText3(row3.completionNotes),
+      completionImages: urlList(row3.completionImages),
+      completionFiles: urlList(row3.completionFiles),
+      attachedImageURLs: urlList(row3.attachedImageURLs),
+      attachedFileURL: optionalText3(row3.attachedFileURL),
+      attachedFileName: optionalText3(row3.attachedFileName),
+      attachedSiteAuditId: optionalText3(row3.attachedSiteAuditId),
+      attachedSiteAuditTitle: optionalText3(row3.attachedSiteAuditTitle),
       items,
-      completedItemIds: idList4(row2.completedItemIds),
-      organizationId: documentOrganizationId(row2.organizationId),
+      completedItemIds: idList4(row3.completedItemIds),
+      organizationId: documentOrganizationId(row3.organizationId),
       createdAtMs,
-      updatedAtMs: documentInstantMs(row2.updatedAt) ?? createdAtMs
+      updatedAtMs: documentInstantMs(row3.updatedAt) ?? createdAtMs
     };
   }
   function listOrNull(value) {
@@ -15388,8 +15390,8 @@ var ProjectPlannerCanonical = (() => {
   }
   function stringFromJobTypeField(value) {
     if (typeof value === "string") return value.trim();
-    const row2 = record6(value);
-    return text20(row2.name) || text20(row2.rawValue);
+    const row3 = record6(value);
+    return text20(row3.name) || text20(row3.rawValue);
   }
   function uniqueSortedNames(names) {
     const seen = /* @__PURE__ */ new Map();
@@ -15460,24 +15462,24 @@ var ProjectPlannerCanonical = (() => {
   function parseOperativeProfileDocument(docId, data) {
     const documentId2 = text20(docId);
     if (!documentId2) return null;
-    const row2 = record6(data);
-    const managers = idList4(row2.assignedManagerUserIds);
-    const single = text20(row2.assignedManagerUserId);
+    const row3 = record6(data);
+    const managers = idList4(row3.assignedManagerUserIds);
+    const single = text20(row3.assignedManagerUserId);
     if (single && !managers.some((id2) => normalizeDocumentId(id2) === normalizeDocumentId(single))) managers.unshift(single);
     const pay = readStoredRates({
-      payBasis: text20(row2.payBasis).toLowerCase() || null,
-      dayRate: documentNumber(row2.dayRate),
-      hourlyRate: documentNumber(row2.hourlyRate)
+      payBasis: text20(row3.payBasis).toLowerCase() || null,
+      dayRate: documentNumber(row3.dayRate),
+      hourlyRate: documentNumber(row3.hourlyRate)
     });
     return {
-      userId: text20(row2.userId) || documentId2,
+      userId: text20(row3.userId) || documentId2,
       documentId: documentId2,
       assignedManagerUserId: managers[0] ?? null,
       assignedManagerUserIds: managers,
       payBasis: pay.payBasis,
       dayRate: pay.payBasis === "day" ? pay.dayRate : null,
       hourlyRate: pay.payBasis === "hourly" ? pay.hourlyRate : null,
-      updatedAtMs: documentInstantMs(row2.updatedAt)
+      updatedAtMs: documentInstantMs(row3.updatedAt)
     };
   }
   function operativeProfileWriteFields(before, next) {
@@ -15496,10 +15498,10 @@ var ProjectPlannerCanonical = (() => {
     if (value instanceof Date) return value;
     return new Date(value);
   }
-  function dayKeyOf4(row2, timeZone) {
-    const key7 = text21(row2.dayKey);
+  function dayKeyOf4(row3, timeZone) {
+    const key7 = text21(row3.dayKey);
     if (DAY_KEY5.test(key7)) return key7;
-    const iso = text21(row2.dateIso);
+    const iso = text21(row3.dateIso);
     if (!iso) return "";
     const date = new Date(iso);
     return Number.isNaN(date.getTime()) ? "" : dayKeyInZone(date, timeZone);
@@ -15526,7 +15528,7 @@ var ProjectPlannerCanonical = (() => {
   function materialCutOffWarningRows(input) {
     const rows3 = materialCutOffWarningRowsUnscoped(input);
     if (!input.scope || input.scope.kind === "all") return rows3;
-    return rows3.filter((row2) => isJobInWarningScope(input.scope, row2.projectId));
+    return rows3.filter((row3) => isJobInWarningScope(input.scope, row3.projectId));
   }
   function materialCutOffWarningRowsUnscoped(input) {
     const timeZone = zoneOrLondon(input.timeZone);
@@ -15626,9 +15628,9 @@ var ProjectPlannerCanonical = (() => {
   function resolvePerson(person, members) {
     const given = typeof person === "string" ? { id: person } : person && typeof person === "object" ? person : null;
     if (!given || !idText(given.id)) return given;
-    const row2 = members.find((member) => idKey(member.id) === idKey(given.id));
-    if (!row2) return given;
-    const merged = { ...row2 };
+    const row3 = members.find((member) => idKey(member.id) === idKey(given.id));
+    if (!row3) return given;
+    const merged = { ...row3 };
     for (const [key7, value] of Object.entries(given)) {
       if (value !== void 0) merged[key7] = value;
     }
@@ -15650,11 +15652,11 @@ var ProjectPlannerCanonical = (() => {
       );
       if (aliased) seeds.push(aliased);
       else {
-        const row2 = (catalogue || []).find((entry) => entry && idKey(entry.id) === key7);
-        if (!row2) return null;
-        const linked = idText(row2.userId) || idText(row2.linkedUserId);
+        const row3 = (catalogue || []).find((entry) => entry && idKey(entry.id) === key7);
+        if (!row3) return null;
+        const linked = idText(row3.userId) || idText(row3.linkedUserId);
         if (linked) seeds.push({ id: linked });
-        if (idText(row2.email)) seeds.push({ id: idText(row2.id), email: idText(row2.email) });
+        if (idText(row3.email)) seeds.push({ id: idText(row3.id), email: idText(row3.email) });
       }
     }
     const same = /* @__PURE__ */ new Set();
@@ -16148,10 +16150,10 @@ var ProjectPlannerCanonical = (() => {
     const needle = String(voNumber ?? "").trim().toLowerCase();
     if (!needle) return false;
     const skip = exceptId ? normalizeDocumentId(exceptId) : "";
-    return (existing || []).some((row2) => {
-      if (!row2) return false;
-      if (skip && row2.id != null && normalizeDocumentId(row2.id) === skip) return false;
-      return String(row2.voNumber ?? "").trim().toLowerCase() === needle;
+    return (existing || []).some((row3) => {
+      if (!row3) return false;
+      if (skip && row3.id != null && normalizeDocumentId(row3.id) === skip) return false;
+      return String(row3.voNumber ?? "").trim().toLowerCase() === needle;
     });
   }
 
@@ -16179,8 +16181,8 @@ var ProjectPlannerCanonical = (() => {
     const n = documentNumber(value);
     return n != null && n >= 0 ? n : null;
   }
-  function variationLabourCrew(row2) {
-    const line = record7(row2);
+  function variationLabourCrew(row3) {
+    const line = record7(row3);
     const hours2 = documentNumber(line.hours) ?? 0;
     const operatives = documentNumber(line.operatives);
     const hoursEach = documentNumber(line.hoursEach);
@@ -16221,8 +16223,8 @@ var ProjectPlannerCanonical = (() => {
     if (!Number.isFinite(value) || value <= 0) return null;
     return { value, unit: match[2]?.toLowerCase() || "no" };
   }
-  function variationMaterialQuantity(row2) {
-    const line = record7(row2);
+  function variationMaterialQuantity(row3) {
+    const line = record7(row3);
     const stored = typeof line.quantity === "number" ? String(line.quantity) : text22(line.quantity);
     const parsed = parseVariationMaterialQuantity(stored);
     const value = positive(line.quantityValue);
@@ -16246,8 +16248,8 @@ var ProjectPlannerCanonical = (() => {
   var VARIATION_COST_MAX = 1e7;
   var VARIATION_LINE_NAME_MESSAGE = "Add a name for this line.";
   var VARIATION_COST_MESSAGE = "Enter the cost as a number of 0 or more.";
-  function variationExtraLineId(variationId, kind, index, row2) {
-    const line = record7(row2);
+  function variationExtraLineId(variationId, kind, index, row3) {
+    const line = record7(row3);
     return derivedRowId(variationId, kind, index, [text22(line.name), text22(line.quoteNumber), String(documentNumber(line.quantity) ?? ""), String(documentNumber(line.cost) ?? "")]);
   }
   function parseVariationCustomLines(variationId, value) {
@@ -16356,9 +16358,9 @@ var ProjectPlannerCanonical = (() => {
   }
   function variationListTotals(variations) {
     const out = { labourHours: 0, materialsCount: 0, customCount: 0, subcontractorCount: 0, customTotal: 0, subcontractorTotal: 0, costTotal: 0, evidenceCount: 0, count: 0 };
-    for (const row2 of variations || []) {
-      if (!row2 || documentBool(row2.isDeleted) === true) continue;
-      const t = variationTotals(row2);
+    for (const row3 of variations || []) {
+      if (!row3 || documentBool(row3.isDeleted) === true) continue;
+      const t = variationTotals(row3);
       out.count += 1;
       out.labourHours += t.labourHours;
       out.materialsCount += t.materialsCount;
@@ -16389,8 +16391,8 @@ var ProjectPlannerCanonical = (() => {
     return out;
   }
   function variationEvidenceAddWriteFields(stored, entries) {
-    const row2 = record7(stored);
-    const evidence = Array.isArray(row2.evidence) ? [...row2.evidence] : [];
+    const row3 = record7(stored);
+    const evidence = Array.isArray(row3.evidence) ? [...row3.evidence] : [];
     const hasFile = (entry) => {
       const line = record7(entry);
       return Boolean(text22(line.storagePath) || text22(line.downloadURL));
@@ -16436,10 +16438,10 @@ var ProjectPlannerCanonical = (() => {
       return new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", day: "numeric", month: "short", year: "numeric" }).format(new Date(value));
     }
   }
-  function variationPreviousNumbers(row2) {
-    const current = text22(row2?.voNumber).toLowerCase();
+  function variationPreviousNumbers(row3) {
+    const current = text22(row3?.voNumber).toLowerCase();
     const out = [];
-    for (const entry of row2?.numberHistory || []) {
+    for (const entry of row3?.numberHistory || []) {
       const from = text22(entry?.from);
       if (!from || from.toLowerCase() === current || out.some((value) => value.toLowerCase() === from.toLowerCase())) continue;
       out.push(from);
@@ -16482,28 +16484,28 @@ var ProjectPlannerCanonical = (() => {
   function variationExportRows(variations, options = {}) {
     const includeCost = options.includeCost !== false;
     const cost = (n) => includeCost ? n : null;
-    const rows3 = [...variations || []].filter((row2) => row2 && documentBool(row2.isDeleted) !== true).sort(byNumber);
+    const rows3 = [...variations || []].filter((row3) => row3 && documentBool(row3.isDeleted) !== true).sort(byNumber);
     const summaryRows = [];
     const lineRows = [];
-    for (const row2 of rows3) {
-      const t = variationTotals(row2);
-      const voNumber = text22(row2.voNumber);
+    for (const row3 of rows3) {
+      const t = variationTotals(row3);
+      const voNumber = text22(row3.voNumber);
       summaryRows.push({
         voNumber,
-        heading: text22(row2.heading),
-        description: typeof row2.description === "string" ? row2.description.trim() : "",
-        status: VARIATION_STATUS_LABELS[text22(row2.status).toLowerCase()] ?? "Open",
-        raisedBy: text22(row2.createdByName),
-        raisedOn: variationDateText(row2.createdAtMs, options.timeZone),
+        heading: text22(row3.heading),
+        description: typeof row3.description === "string" ? row3.description.trim() : "",
+        status: VARIATION_STATUS_LABELS[text22(row3.status).toLowerCase()] ?? "Open",
+        raisedBy: text22(row3.createdByName),
+        raisedOn: variationDateText(row3.createdAtMs, options.timeZone),
         labourHours: t.labourHours,
         materialLines: t.materialsCount,
         customTotal: cost(t.customTotal),
         subcontractorTotal: cost(t.subcontractorTotal),
         totalCost: cost(t.costTotal),
         evidenceCount: t.evidenceCount,
-        previousNumbers: variationPreviousNumbers(row2).join(", ")
+        previousNumbers: variationPreviousNumbers(row3).join(", ")
       });
-      for (const line of row2.labour || []) {
+      for (const line of row3.labour || []) {
         const crew = variationLabourCrew(line);
         lineRows.push({
           voNumber,
@@ -16518,7 +16520,7 @@ var ProjectPlannerCanonical = (() => {
           subcontractor: ""
         });
       }
-      for (const line of row2.materials || []) {
+      for (const line of row3.materials || []) {
         const q = variationMaterialQuantity(line);
         lineRows.push({
           voNumber,
@@ -16533,13 +16535,13 @@ var ProjectPlannerCanonical = (() => {
           subcontractor: ""
         });
       }
-      for (const line of row2.customLines || []) {
+      for (const line of row3.customLines || []) {
         const quantity = positive(line?.quantity) ?? 1;
         const each = nonNegative(line?.cost) ?? 0;
         const description = [text22(line?.name), typeof line?.description === "string" ? line.description.trim() : ""].filter(Boolean).join(" \u2014 ");
         lineRows.push({ voNumber, type: "Custom", description, quantity, unit: "", hours: null, cost: cost(each), lineTotal: cost(variationLineTotal({ quantity, cost: each })), quoteNumber: "", subcontractor: "" });
       }
-      for (const line of row2.subcontractorLines || []) {
+      for (const line of row3.subcontractorLines || []) {
         const quantity = positive(line?.quantity) ?? 1;
         const each = nonNegative(line?.cost) ?? 0;
         lineRows.push({
@@ -16586,70 +16588,70 @@ var ProjectPlannerCanonical = (() => {
     if (value === "closed" || value === "complete" || value === "completed" || value === "done") return "closed";
     return "open";
   }
-  function variationIsPinned(row2) {
-    return normalizeVariationStatus(row2?.status) !== "open";
+  function variationIsPinned(row3) {
+    return normalizeVariationStatus(row3?.status) !== "open";
   }
   function variationStatusWriteFields(status) {
     const next = normalizeVariationStatus(status);
     return { status: next, voNumberLocked: next !== "open" };
   }
   function variationStaleNumberLocks(rows3) {
-    return (rows3 || []).filter((row2) => row2 && text22(row2.id) && documentBool(row2.isDeleted) !== true).filter((row2) => documentBool(row2.voNumberLocked) === true && !variationIsPinned(row2)).map((row2) => text22(row2.id));
+    return (rows3 || []).filter((row3) => row3 && text22(row3.id) && documentBool(row3.isDeleted) !== true).filter((row3) => documentBool(row3.voNumberLocked) === true && !variationIsPinned(row3)).map((row3) => text22(row3.id));
   }
   function compareVariationTrackerOrder(a, b) {
     return (documentNumber(a.sequence) ?? 0) - (documentNumber(b.sequence) ?? 0) || variationNumberValue(a.voNumber) - variationNumberValue(b.voNumber) || normalizeDocumentId(a.id).localeCompare(normalizeDocumentId(b.id));
   }
   function variationTrackerOrder(rows3) {
-    return (rows3 || []).filter((row2) => row2 && text22(row2.id) && documentBool(row2.isDeleted) !== true).slice().sort(compareVariationTrackerOrder).map((row2) => text22(row2.id));
+    return (rows3 || []).filter((row3) => row3 && text22(row3.id) && documentBool(row3.isDeleted) !== true).slice().sort(compareVariationTrackerOrder).map((row3) => text22(row3.id));
   }
   function variationRenumberPlan(input) {
     const prefix = text22(input?.prefix) || DEFAULT_VARIATION_PREFIX;
     const padding = Number.isFinite(Number(input?.padding)) && Number(input?.padding) >= 1 ? Number(input?.padding) : DEFAULT_VARIATION_PADDING;
-    const all = (input?.rows || []).filter((row2) => row2 && text22(row2.id));
-    const live = all.filter((row2) => documentBool(row2.isDeleted) !== true);
+    const all = (input?.rows || []).filter((row3) => row3 && text22(row3.id));
+    const live = all.filter((row3) => documentBool(row3.isDeleted) !== true);
     const stored = [...live].sort(compareVariationTrackerOrder);
-    const byKey = new Map(live.map((row2) => [normalizeDocumentId(row2.id), row2]));
+    const byKey = new Map(live.map((row3) => [normalizeDocumentId(row3.id), row3]));
     const givenOrder = (input?.order || []).map((id2) => normalizeDocumentId(id2)).filter((key7) => byKey.has(key7));
     let refused = null;
     const fullOrderGiven = givenOrder.length === live.length;
-    stored.forEach((row2, index) => {
-      if (!variationIsPinned(row2)) return;
-      const at = givenOrder.indexOf(normalizeDocumentId(row2.id));
+    stored.forEach((row3, index) => {
+      if (!variationIsPinned(row3)) return;
+      const at = givenOrder.indexOf(normalizeDocumentId(row3.id));
       if (at >= 0 && fullOrderGiven && at !== index) refused = VARIATION_PINNED_MESSAGE;
     });
     const openSeen = /* @__PURE__ */ new Set();
     const openOrder = [];
     for (const key7 of givenOrder) {
-      const row2 = byKey.get(key7);
-      if (variationIsPinned(row2) || openSeen.has(key7)) continue;
+      const row3 = byKey.get(key7);
+      if (variationIsPinned(row3) || openSeen.has(key7)) continue;
       openSeen.add(key7);
-      openOrder.push(row2);
+      openOrder.push(row3);
     }
-    for (const row2 of stored) {
-      const key7 = normalizeDocumentId(row2.id);
-      if (!variationIsPinned(row2) && !openSeen.has(key7)) {
+    for (const row3 of stored) {
+      const key7 = normalizeDocumentId(row3.id);
+      if (!variationIsPinned(row3) && !openSeen.has(key7)) {
         openSeen.add(key7);
-        openOrder.push(row2);
+        openOrder.push(row3);
       }
     }
     let next = 0;
-    const ordered = stored.map((row2) => variationIsPinned(row2) ? row2 : openOrder[next++]);
+    const ordered = stored.map((row3) => variationIsPinned(row3) ? row3 : openOrder[next++]);
     const reserved = /* @__PURE__ */ new Set();
-    for (const row2 of all) {
-      if (documentBool(row2.isDeleted) === true || variationIsPinned(row2)) {
-        const n = text22(row2.voNumber).toLowerCase();
+    for (const row3 of all) {
+      if (documentBool(row3.isDeleted) === true || variationIsPinned(row3)) {
+        const n = text22(row3.voNumber).toLowerCase();
         if (n) reserved.add(n);
       }
     }
     let highest = 0;
-    for (const row2 of all) {
-      highest = Math.max(highest, variationNumberValue(row2.voNumber));
-      for (const entry of row2.numberHistory || []) highest = Math.max(highest, variationNumberValue(entry?.from), variationNumberValue(entry?.to));
+    for (const row3 of all) {
+      highest = Math.max(highest, variationNumberValue(row3.voNumber));
+      for (const entry of row3.numberHistory || []) highest = Math.max(highest, variationNumberValue(entry?.from), variationNumberValue(entry?.to));
     }
     const poolSeen = /* @__PURE__ */ new Set();
     const pool = [];
-    for (const row2 of openOrder) {
-      const n = text22(row2.voNumber);
+    for (const row3 of openOrder) {
+      const n = text22(row3.voNumber);
       const key7 = n.toLowerCase();
       if (!n || reserved.has(key7) || poolSeen.has(key7)) continue;
       poolSeen.add(key7);
@@ -16661,35 +16663,35 @@ var ProjectPlannerCanonical = (() => {
       pool.push(formatVariationNumber(highest, prefix, padding));
     }
     let cursor = 0;
-    const out = ordered.map((row2, index) => {
-      const from = text22(row2.voNumber);
-      const pinned = variationIsPinned(row2);
+    const out = ordered.map((row3, index) => {
+      const from = text22(row3.voNumber);
+      const pinned = variationIsPinned(row3);
       const to = pinned ? from : pool[cursor++];
       const sequence = index + 1;
       return {
-        id: text22(row2.id),
+        id: text22(row3.id),
         from,
         to,
         changed: to !== from,
         pinned,
         sequence,
-        sequenceChanged: Math.trunc(documentNumber(row2.sequence) ?? NaN) !== sequence
+        sequenceChanged: Math.trunc(documentNumber(row3.sequence) ?? NaN) !== sequence
       };
     });
     if (documentBool(input?.orderLocked) === true) refused = VARIATION_ORDER_LOCKED_MESSAGE;
-    return { rows: out, changes: out.filter((row2) => row2.changed || row2.sequenceChanged), refused };
+    return { rows: out, changes: out.filter((row3) => row3.changed || row3.sequenceChanged), refused };
   }
   var VARIATION_ORDER_LOCKED_MESSAGE = "The order is locked. Unlock it in the tracker to move or renumber variations.";
   function variationRenumberMissingRefusal(changes, storedIds) {
     const have = new Set((storedIds || []).map((id2) => normalizeDocumentId(id2)));
-    const missing = (changes || []).filter((row2) => !have.has(normalizeDocumentId(row2.id))).map((row2) => row2.from || "a variation");
+    const missing = (changes || []).filter((row3) => !have.has(normalizeDocumentId(row3.id))).map((row3) => row3.from || "a variation");
     if (missing.length === 0) return null;
     return `${missing.join(", ")} ${missing.length === 1 ? "was" : "were"} saved by an older iPhone and ${missing.length === 1 ? "has" : "have"} no main record yet. Open ${missing.length === 1 ? "it" : "each one"} on the Variations page and press Save, then reorder again. Nothing was renumbered.`;
   }
   var VARIATION_RENUMBER_STALE_MESSAGE = "Someone else changed the variations \u2014 reload";
   var VARIATION_PINNED_MESSAGE = "Submitted and closed variations keep their numbers. They cannot be moved.";
   function renumberFingerprint(rows3) {
-    return (rows3 || []).filter((row2) => row2 && text22(row2.id)).map((row2) => [normalizeDocumentId(row2.id), text22(row2.voNumber).toLowerCase(), Math.trunc(documentNumber(row2.sequence) ?? 0), text22(row2.status).toLowerCase(), documentBool(row2.isDeleted) === true ? 1 : 0].join("|")).sort().join("\n");
+    return (rows3 || []).filter((row3) => row3 && text22(row3.id)).map((row3) => [normalizeDocumentId(row3.id), text22(row3.voNumber).toLowerCase(), Math.trunc(documentNumber(row3.sequence) ?? 0), text22(row3.status).toLowerCase(), documentBool(row3.isDeleted) === true ? 1 : 0].join("|")).sort().join("\n");
   }
   function variationRenumberConflict(base, live) {
     return renumberFingerprint(base) !== renumberFingerprint(live);
@@ -16765,58 +16767,58 @@ var ProjectPlannerCanonical = (() => {
     const user = clean(userId);
     return issue && user ? `${issue}__${user}` : "";
   }
-  function parseTalk(row2) {
-    const id2 = text23(row2.id) || text23(row2.referenceCode) || text23(row2.ref);
+  function parseTalk(row3) {
+    const id2 = text23(row3.id) || text23(row3.referenceCode) || text23(row3.ref);
     if (!id2) return null;
-    const trades = textList2(row2.trades);
+    const trades = textList2(row3.trades);
     return {
       id: id2,
-      referenceCode: optionalText4(row2.referenceCode) ?? optionalText4(row2.ref),
-      title: text23(row2.title),
-      category: text23(row2.category) || "general",
-      isGeneral: documentBool(row2.isGeneral) ?? trades.length === 0,
+      referenceCode: optionalText4(row3.referenceCode) ?? optionalText4(row3.ref),
+      title: text23(row3.title),
+      category: text23(row3.category) || "general",
+      isGeneral: documentBool(row3.isGeneral) ?? trades.length === 0,
       trades,
-      purpose: text23(row2.purpose),
-      keyPoints: textList2(row2.keyPoints),
-      source: text23(row2.source) || "library",
-      status: text23(row2.status).toLowerCase() === "draft" ? "draft" : "approved",
-      version: documentNumber(row2.version) ?? 1,
-      ownerOrganizationId: optionalText4(row2.ownerOrganizationId),
-      fileURL: optionalText4(row2.fileURL),
-      updatedAtMs: documentInstantMs(row2.updatedAt)
+      purpose: text23(row3.purpose),
+      keyPoints: textList2(row3.keyPoints),
+      source: text23(row3.source) || "library",
+      status: text23(row3.status).toLowerCase() === "draft" ? "draft" : "approved",
+      version: documentNumber(row3.version) ?? 1,
+      ownerOrganizationId: optionalText4(row3.ownerOrganizationId),
+      fileURL: optionalText4(row3.fileURL),
+      updatedAtMs: documentInstantMs(row3.updatedAt)
     };
   }
-  function parseIssue(row2, projectId, zone3) {
-    const id2 = text23(row2.id);
+  function parseIssue(row3, projectId, zone3) {
+    const id2 = text23(row3.id);
     if (!id2) return null;
-    const weekCommencingMs = documentInstantMs(row2.weekCommencing);
+    const weekCommencingMs = documentInstantMs(row3.weekCommencing);
     return {
       id: id2,
-      projectId: text23(row2.projectId) || projectId,
-      talkId: text23(row2.talkId),
+      projectId: text23(row3.projectId) || projectId,
+      talkId: text23(row3.talkId),
       weekCommencingMs,
-      weekCommencingDayKey: DAY_KEY6.test(text23(row2.weekCommencing)) ? text23(row2.weekCommencing) : dayKeyOf5(weekCommencingMs, zone3),
-      issuedByUserId: text23(row2.issuedByUserId),
-      issuedAtMs: documentInstantMs(row2.issuedAt),
-      publishAtMs: documentInstantMs(row2.publishAt),
-      recipientUserIds: idList5(row2.recipientUserIds),
-      status: normalizeHSIssueStatus(row2.status),
-      ramsDocumentId: optionalText4(row2.ramsDocumentId)
+      weekCommencingDayKey: DAY_KEY6.test(text23(row3.weekCommencing)) ? text23(row3.weekCommencing) : dayKeyOf5(weekCommencingMs, zone3),
+      issuedByUserId: text23(row3.issuedByUserId),
+      issuedAtMs: documentInstantMs(row3.issuedAt),
+      publishAtMs: documentInstantMs(row3.publishAt),
+      recipientUserIds: idList5(row3.recipientUserIds),
+      status: normalizeHSIssueStatus(row3.status),
+      ramsDocumentId: optionalText4(row3.ramsDocumentId)
     };
   }
-  function parseSignature(row2) {
-    const issueId = text23(row2.issueId);
-    const userId = text23(row2.userId);
+  function parseSignature(row3) {
+    const issueId = text23(row3.issueId);
+    const userId = text23(row3.userId);
     if (!issueId || !userId) return null;
     return {
-      id: text23(row2.id) || healthSafetySignatureKey(issueId, userId),
+      id: text23(row3.id) || healthSafetySignatureKey(issueId, userId),
       issueId,
       userId,
-      status: normalizeHSSignatureStatus(row2.status),
-      readConfirmed: documentBool(row2.readConfirmed) === true,
-      signatureImageBase64: optionalText4(row2.signatureImageBase64),
-      signedAtMs: documentInstantMs(row2.signedAt),
-      reminderSentAtMs: documentInstantMs(row2.reminderSentAt)
+      status: normalizeHSSignatureStatus(row3.status),
+      readConfirmed: documentBool(row3.readConfirmed) === true,
+      signatureImageBase64: optionalText4(row3.signatureImageBase64),
+      signedAtMs: documentInstantMs(row3.signedAt),
+      reminderSentAtMs: documentInstantMs(row3.reminderSentAt)
     };
   }
   function richerSignature(a, b) {
@@ -16849,25 +16851,25 @@ var ProjectPlannerCanonical = (() => {
     return [...byKey.values()].sort((a, b) => (b.signedAtMs ?? 0) - (a.signedAtMs ?? 0));
   }
   function parseHealthSafetyDocument(data, options) {
-    const row2 = record8(data);
+    const row3 = record8(data);
     const zone3 = zoneOrLondon(options?.timeZone);
     const projectId = text23(options?.projectId);
     const signatures = [];
-    for (const entry of rows2(row2.signatures)) {
+    for (const entry of rows2(row3.signatures)) {
       const parsed = parseSignature(entry);
       if (parsed) signatures.push(parsed);
     }
-    for (const entry of Object.values(record8(row2[HS_SIGNATURE_RECORDS_FIELD]))) {
+    for (const entry of Object.values(record8(row3[HS_SIGNATURE_RECORDS_FIELD]))) {
       const parsed = parseSignature(record8(entry));
       if (parsed) signatures.push(parsed);
     }
     const byUploaded = (list) => list.sort((a, b) => (b.uploadedAtMs ?? 0) - (a.uploadedAtMs ?? 0));
     return {
-      talks: rows2(row2.talks).map(parseTalk).filter((talk) => talk !== null),
-      issues: rows2(row2.issues).map((entry) => parseIssue(entry, projectId, zone3)).filter((issue) => issue !== null).sort((a, b) => (b.issuedAtMs ?? 0) - (a.issuedAtMs ?? 0)),
+      talks: rows2(row3.talks).map(parseTalk).filter((talk) => talk !== null),
+      issues: rows2(row3.issues).map((entry) => parseIssue(entry, projectId, zone3)).filter((issue) => issue !== null).sort((a, b) => (b.issuedAtMs ?? 0) - (a.issuedAtMs ?? 0)),
       signatures: foldHealthSafetySignatures(signatures),
       ramsDocuments: byUploaded(
-        rows2(row2.ramsDocuments).filter((entry) => text23(entry.id)).map((entry) => ({
+        rows2(row3.ramsDocuments).filter((entry) => text23(entry.id)).map((entry) => ({
           id: text23(entry.id),
           title: text23(entry.title) || "Untitled RAMS",
           trade: text23(entry.trade) || "General",
@@ -16881,7 +16883,7 @@ var ProjectPlannerCanonical = (() => {
         }))
       ),
       otherDocuments: byUploaded(
-        rows2(row2.otherDocuments).filter((entry) => text23(entry.id)).map((entry) => ({
+        rows2(row3.otherDocuments).filter((entry) => text23(entry.id)).map((entry) => ({
           id: text23(entry.id),
           title: text23(entry.title) || "Untitled H&S doc",
           trade: optionalText4(entry.trade),
@@ -16892,15 +16894,15 @@ var ProjectPlannerCanonical = (() => {
           issuableToClient: documentBool(entry.issuableToClient) === true
         }))
       ),
-      updatedAtMs: documentInstantMs(row2.updatedAt)
+      updatedAtMs: documentInstantMs(row3.updatedAt)
     };
   }
   function healthSafetyIssueStatus(issue, signatures) {
-    const own = (signatures || []).filter((row2) => normalizeDocumentId(row2.issueId) === normalizeDocumentId(issue.id));
-    const signed = new Set(own.filter((row2) => row2.status === "signed").map((row2) => normalizeDocumentId(row2.userId)));
+    const own = (signatures || []).filter((row3) => normalizeDocumentId(row3.issueId) === normalizeDocumentId(issue.id));
+    const signed = new Set(own.filter((row3) => row3.status === "signed").map((row3) => normalizeDocumentId(row3.userId)));
     const wanted = /* @__PURE__ */ new Set([
       ...(issue.recipientUserIds || []).map(normalizeDocumentId),
-      ...own.map((row2) => normalizeDocumentId(row2.userId))
+      ...own.map((row3) => normalizeDocumentId(row3.userId))
     ]);
     wanted.delete("");
     if (wanted.size > 0 && [...wanted].every((id2) => signed.has(id2))) return "complete";
@@ -16929,16 +16931,16 @@ var ProjectPlannerCanonical = (() => {
   function mergeHealthSafetyRowCopies(primary, secondary) {
     const out = [];
     const index = /* @__PURE__ */ new Map();
-    for (const row2 of [...rows2(primary), ...rows2(secondary)]) {
-      const key7 = normalizeDocumentId(row2.id);
+    for (const row3 of [...rows2(primary), ...rows2(secondary)]) {
+      const key7 = normalizeDocumentId(row3.id);
       if (!key7) continue;
       const at = index.get(key7);
       if (at === void 0) {
         index.set(key7, out.length);
-        out.push(row2);
+        out.push(row3);
         continue;
       }
-      if (!text23(out[at].fileURL) && text23(row2.fileURL)) out[at] = row2;
+      if (!text23(out[at].fileURL) && text23(row3.fileURL)) out[at] = row3;
     }
     return out;
   }
@@ -16952,19 +16954,19 @@ var ProjectPlannerCanonical = (() => {
       if (list.length === 0 && storedRows.length > 0) {
         const removed = new Set((options?.removedIds?.[field] || []).map(normalizeDocumentId));
         removed.delete("");
-        const everyRowRemoved = storedRows.every((row2) => removed.has(normalizeDocumentId(row2.id)));
+        const everyRowRemoved = storedRows.every((row3) => removed.has(normalizeDocumentId(row3.id)));
         if (!everyRowRemoved) continue;
         out[field] = [];
         continue;
       }
       const byId = /* @__PURE__ */ new Map();
-      for (const row2 of storedRows) {
-        const key7 = normalizeDocumentId(row2.id);
-        if (key7) byId.set(key7, row2);
+      for (const row3 of storedRows) {
+        const key7 = normalizeDocumentId(row3.id);
+        if (key7) byId.set(key7, row3);
       }
-      out[field] = list.map((row2) => {
-        const merged = { ...byId.get(normalizeDocumentId(row2?.id)) ?? {} };
-        for (const [key7, value] of Object.entries(row2 || {})) {
+      out[field] = list.map((row3) => {
+        const merged = { ...byId.get(normalizeDocumentId(row3?.id)) ?? {} };
+        for (const [key7, value] of Object.entries(row3 || {})) {
           if (value === void 0) continue;
           if (HEALTH_SAFETY_FILE_FIELDS.includes(key7) && !text23(value) && text23(merged[key7])) continue;
           merged[key7] = value;
@@ -16977,7 +16979,7 @@ var ProjectPlannerCanonical = (() => {
     return documentWriteFields(stored ? before : null, out);
   }
   function healthSafetySignatureRemovalWrites(stored, removals) {
-    const row2 = record8(stored);
+    const row3 = record8(stored);
     const wanted = (removals || []).map((entry) => ({ issue: normalizeDocumentId(entry?.issueId), user: normalizeDocumentId(entry?.userId) })).filter((entry) => entry.issue);
     if (wanted.length === 0) return null;
     const matches = (issueId, userId) => {
@@ -16986,7 +16988,7 @@ var ProjectPlannerCanonical = (() => {
       return wanted.some((entry) => entry.issue === issue && (!entry.user || entry.user === user));
     };
     const removeFieldPaths = [];
-    for (const [key7, value] of Object.entries(record8(row2[HS_SIGNATURE_RECORDS_FIELD]))) {
+    for (const [key7, value] of Object.entries(record8(row3[HS_SIGNATURE_RECORDS_FIELD]))) {
       const entry = record8(value);
       let issueId = entry.issueId;
       let userId = entry.userId;
@@ -16999,24 +17001,24 @@ var ProjectPlannerCanonical = (() => {
       }
       if (matches(issueId, userId)) removeFieldPaths.push([HS_SIGNATURE_RECORDS_FIELD, key7]);
     }
-    const storedSignatures = rows2(row2.signatures);
+    const storedSignatures = rows2(row3.signatures);
     const keptSignatures = storedSignatures.filter((entry) => !matches(entry.issueId, entry.userId));
     const signatures = keptSignatures.length === storedSignatures.length ? null : keptSignatures;
     if (removeFieldPaths.length === 0 && !signatures) return null;
     return { removeFieldPaths, signatures };
   }
-  function variationLineId(variationId, kind, index, row2) {
-    const line = record8(row2);
+  function variationLineId(variationId, kind, index, row3) {
+    const line = record8(row3);
     if (kind === "customLines" || kind === "subcontractorLines") return variationExtraLineId(variationId, kind, index, line);
     const content = kind === "labour" ? [text23(line.trade), String(documentNumber(line.hours) ?? 0)] : kind === "materials" ? [text23(line.name), text23(line.quantity)] : [text23(line.storagePath), text23(line.downloadURL), text23(line.fileName)];
     return derivedRowId(variationId, kind, index, content);
   }
   function parseVariationDocument(docId, data) {
-    const row2 = record8(data);
-    const id2 = text23(docId) || text23(row2.id);
+    const row3 = record8(data);
+    const id2 = text23(docId) || text23(row3.id);
     if (!id2) return null;
     const labour = [];
-    for (const [index, entry] of (Array.isArray(row2.labour) ? row2.labour : []).entries()) {
+    for (const [index, entry] of (Array.isArray(row3.labour) ? row3.labour : []).entries()) {
       const line = record8(entry);
       const trade = text23(line.trade);
       const hours2 = documentNumber(line.hours) ?? 0;
@@ -17025,7 +17027,7 @@ var ProjectPlannerCanonical = (() => {
       labour.push({ id: text23(line.id) || variationLineId(id2, "labour", index, line), idStored: Boolean(text23(line.id)), trade, hours: hours2, operatives: crew.operatives, hoursEach: crew.hoursEach });
     }
     const materials = [];
-    for (const [index, entry] of (Array.isArray(row2.materials) ? row2.materials : []).entries()) {
+    for (const [index, entry] of (Array.isArray(row3.materials) ? row3.materials : []).entries()) {
       const line = record8(entry);
       const name = text23(line.name);
       const q = variationMaterialQuantity(line);
@@ -17033,7 +17035,7 @@ var ProjectPlannerCanonical = (() => {
       materials.push({ id: text23(line.id) || variationLineId(id2, "materials", index, line), idStored: Boolean(text23(line.id)), name, quantity: q.quantity, quantityValue: q.quantityValue, unit: q.unit });
     }
     const evidence = [];
-    for (const [index, entry] of (Array.isArray(row2.evidence) ? row2.evidence : []).entries()) {
+    for (const [index, entry] of (Array.isArray(row3.evidence) ? row3.evidence : []).entries()) {
       const line = record8(entry);
       const storagePath = text23(line.storagePath);
       const downloadURL = text23(line.downloadURL);
@@ -17053,46 +17055,46 @@ var ProjectPlannerCanonical = (() => {
     const totalLabourHours = Math.round(labour.reduce((sum, line) => sum + (Number.isFinite(line.hours) ? line.hours : 0), 0) * 100) / 100;
     return {
       id: id2,
-      orgId: documentOrganizationId(row2.orgId) ?? documentOrganizationId(row2.organizationId) ?? "",
-      parentType: text23(row2.parentType) === "smallWork" ? "smallWork" : "project",
-      parentId: text23(row2.parentId),
-      parentName: text23(row2.parentName),
-      origin: text23(row2.origin) === "tracker" ? "tracker" : "app",
-      voNumber: text23(row2.voNumber),
-      sequence: Math.trunc(documentNumber(row2.sequence) ?? 0),
-      voNumberLocked: documentBool(row2.voNumberLocked) === true,
-      numberHistory: rows2(row2.numberHistory).map((entry) => ({
+      orgId: documentOrganizationId(row3.orgId) ?? documentOrganizationId(row3.organizationId) ?? "",
+      parentType: text23(row3.parentType) === "smallWork" ? "smallWork" : "project",
+      parentId: text23(row3.parentId),
+      parentName: text23(row3.parentName),
+      origin: text23(row3.origin) === "tracker" ? "tracker" : "app",
+      voNumber: text23(row3.voNumber),
+      sequence: Math.trunc(documentNumber(row3.sequence) ?? 0),
+      voNumberLocked: documentBool(row3.voNumberLocked) === true,
+      numberHistory: rows2(row3.numberHistory).map((entry) => ({
         from: text23(entry.from),
         to: text23(entry.to),
         atMs: documentInstantMs(entry.at),
         byUid: text23(entry.byUid)
       })),
-      heading: text23(row2.heading),
-      description: typeof row2.description === "string" ? row2.description : "",
-      status: normalizeVariationStatus(row2.status),
+      heading: text23(row3.heading),
+      description: typeof row3.description === "string" ? row3.description : "",
+      status: normalizeVariationStatus(row3.status),
       labour,
       materials,
-      customLines: parseVariationCustomLines(id2, row2.customLines),
-      subcontractorLines: parseVariationSubcontractorLines(id2, row2.subcontractorLines),
+      customLines: parseVariationCustomLines(id2, row3.customLines),
+      subcontractorLines: parseVariationSubcontractorLines(id2, row3.subcontractorLines),
       evidence,
       totalLabourHours,
       materialLineCount: materials.length,
       evidenceCount: evidence.length,
-      createdByUid: text23(row2.createdByUid),
-      createdByName: text23(row2.createdByName),
-      createdAtMs: documentInstantMs(row2.createdAt),
-      updatedByUid: text23(row2.updatedByUid),
-      updatedAtMs: documentInstantMs(row2.updatedAt),
-      statusHistory: rows2(row2.statusHistory).map((entry) => ({
+      createdByUid: text23(row3.createdByUid),
+      createdByName: text23(row3.createdByName),
+      createdAtMs: documentInstantMs(row3.createdAt),
+      updatedByUid: text23(row3.updatedByUid),
+      updatedAtMs: documentInstantMs(row3.updatedAt),
+      statusHistory: rows2(row3.statusHistory).map((entry) => ({
         status: text23(entry.status),
         byUid: text23(entry.byUid),
         byName: text23(entry.byName),
         atMs: documentInstantMs(entry.at)
       })),
-      submittedAtMs: documentInstantMs(row2.submittedAt),
-      closedAtMs: documentInstantMs(row2.closedAt),
-      isDeleted: documentBool(row2.isDeleted) === true,
-      removedEvidence: parseRemovedEvidence(row2.removedEvidence)
+      submittedAtMs: documentInstantMs(row3.submittedAt),
+      closedAtMs: documentInstantMs(row3.closedAt),
+      isDeleted: documentBool(row3.isDeleted) === true,
+      removedEvidence: parseRemovedEvidence(row3.removedEvidence)
     };
   }
   function parseRemovedEvidence(value) {
@@ -17105,11 +17107,11 @@ var ProjectPlannerCanonical = (() => {
     return out;
   }
   function variationEvidenceRemovalWriteFields(stored, input) {
-    const row2 = record8(stored);
+    const row3 = record8(stored);
     const evidenceId = text23(input?.evidenceId);
     if (!evidenceId) return null;
-    const variationId = text23(input?.variationId) || text23(row2.id);
-    const raw = Array.isArray(row2.evidence) ? row2.evidence : [];
+    const variationId = text23(input?.variationId) || text23(row3.id);
+    const raw = Array.isArray(row3.evidence) ? row3.evidence : [];
     let removed = null;
     const kept = [];
     for (const [index, entry] of raw.entries()) {
@@ -17123,7 +17125,7 @@ var ProjectPlannerCanonical = (() => {
       kept.push(entry);
     }
     if (!removed) return null;
-    const removedEvidence = rows2(row2.removedEvidence).map((entry) => ({ ...entry }));
+    const removedEvidence = rows2(row3.removedEvidence).map((entry) => ({ ...entry }));
     removedEvidence.push({
       path: text23(removed.storagePath) || text23(removed.downloadURL),
       name: text23(removed.fileName) || "file",
@@ -17166,57 +17168,57 @@ var ProjectPlannerCanonical = (() => {
     });
   }
   function variationRenumberWriteFields(input) {
-    const row2 = record8(input?.stored);
-    const from = text23(row2.voNumber);
+    const row3 = record8(input?.stored);
+    const from = text23(row3.voNumber);
     const to = text23(input?.to);
     const sequence = Math.trunc(documentNumber(input?.sequence) ?? NaN);
-    const locked = variationIsPinned(row2) && text23(input?.numberingMode) !== "resequenceAll";
+    const locked = variationIsPinned(row3) && text23(input?.numberingMode) !== "resequenceAll";
     const set = {};
-    if (Number.isFinite(sequence) && sequence !== Math.trunc(documentNumber(row2.sequence) ?? NaN)) set.sequence = sequence;
+    if (Number.isFinite(sequence) && sequence !== Math.trunc(documentNumber(row3.sequence) ?? NaN)) set.sequence = sequence;
     if (to && to !== from && !locked) {
       set.voNumber = to;
       set.numberHistory = [
-        ...Array.isArray(row2.numberHistory) ? row2.numberHistory : [],
+        ...Array.isArray(row3.numberHistory) ? row3.numberHistory : [],
         { from, to, at: input?.at, byUid: text23(input?.byUid) }
       ];
     }
     return Object.keys(set).length > 0 ? { set } : null;
   }
   function parseVariationTrackerDocument(parentId, data) {
-    const row2 = record8(data);
-    const padding = Math.trunc(documentNumber(row2.padding) ?? 3);
+    const row3 = record8(data);
+    const padding = Math.trunc(documentNumber(row3.padding) ?? 3);
     return {
-      parentId: text23(parentId) || text23(row2.parentId),
-      parentType: text23(row2.parentType) === "smallWork" ? "smallWork" : "project",
+      parentId: text23(parentId) || text23(row3.parentId),
+      parentType: text23(row3.parentType) === "smallWork" ? "smallWork" : "project",
       // 1.63.0 (owner decision 17 Nov, A): the tracker is on by default — a job with no tracker document, or a document
       // that never stored `enabled`, reads as on. Only a stored `enabled: false` (turned off) is off. Nothing is written.
-      enabled: documentBool(row2.enabled) !== false,
-      enabledAtMs: documentInstantMs(row2.enabledAt),
-      enabledByUid: optionalText4(row2.enabledByUid),
-      numberingMode: text23(row2.numberingMode) === "resequenceAll" ? "resequenceAll" : "lockSubmitted",
-      prefix: text23(row2.prefix) || "VO-",
+      enabled: documentBool(row3.enabled) !== false,
+      enabledAtMs: documentInstantMs(row3.enabledAt),
+      enabledByUid: optionalText4(row3.enabledByUid),
+      numberingMode: text23(row3.numberingMode) === "resequenceAll" ? "resequenceAll" : "lockSubmitted",
+      prefix: text23(row3.prefix) || "VO-",
       padding: padding >= 1 && padding <= 6 ? padding : 3,
-      version: Math.trunc(documentNumber(row2.version) ?? 0),
-      lockedByUid: optionalText4(row2.lockedByUid),
-      lockedByName: optionalText4(row2.lockedByName),
-      lockedAtMs: documentInstantMs(row2.lockedAt),
-      orderLocked: documentBool(row2.orderLocked) === true,
-      orderLockedByUid: optionalText4(row2.orderLockedByUid),
-      orderLockedByName: optionalText4(row2.orderLockedByName),
-      orderLockedAtMs: documentInstantMs(row2.orderLockedAt)
+      version: Math.trunc(documentNumber(row3.version) ?? 0),
+      lockedByUid: optionalText4(row3.lockedByUid),
+      lockedByName: optionalText4(row3.lockedByName),
+      lockedAtMs: documentInstantMs(row3.lockedAt),
+      orderLocked: documentBool(row3.orderLocked) === true,
+      orderLockedByUid: optionalText4(row3.orderLockedByUid),
+      orderLockedByName: optionalText4(row3.orderLockedByName),
+      orderLockedAtMs: documentInstantMs(row3.orderLockedAt)
     };
   }
   var VARIATION_TRACKER_LOCK_FIELDS = ["lockedByUid", "lockedByName", "lockedAt"];
   var VARIATION_TRACKER_ORDER_LOCK_FIELDS = ["orderLocked", "orderLockedByUid", "orderLockedByName", "orderLockedAt"];
   function variationTrackerWriteFields(stored, action) {
-    const row2 = stored ? record8(stored) : null;
+    const row3 = stored ? record8(stored) : null;
     const set = {};
     const remove = [];
     const removeLock = () => {
-      for (const key7 of VARIATION_TRACKER_LOCK_FIELDS) if (row2 && row2[key7] != null) remove.push(key7);
+      for (const key7 of VARIATION_TRACKER_LOCK_FIELDS) if (row3 && row3[key7] != null) remove.push(key7);
     };
     const parentFields = (parentId, parentType) => {
-      if (row2) return;
+      if (row3) return;
       set.parentId = text23(parentId);
       set.parentType = text23(parentType) === "smallWork" ? "smallWork" : "project";
     };
@@ -17226,23 +17228,23 @@ var ProjectPlannerCanonical = (() => {
         set.enabled = true;
         set.enabledAt = action.at;
         set.enabledByUid = text23(action.actorUid);
-        if (!row2) {
+        if (!row3) {
           set.numberingMode = "lockSubmitted";
           set.prefix = "VO-";
           set.padding = 3;
           set.version = 1;
-        } else if (Math.trunc(documentNumber(row2.version) ?? 0) < 1) {
+        } else if (Math.trunc(documentNumber(row3.version) ?? 0) < 1) {
           set.version = 1;
         }
         break;
       }
       case "disable":
-        if (!row2) {
+        if (!row3) {
           parentFields(action.parentId, action.parentType);
           set.enabled = false;
           break;
         }
-        if (documentBool(row2.enabled) !== false) set.enabled = false;
+        if (documentBool(row3.enabled) !== false) set.enabled = false;
         removeLock();
         break;
       case "lock":
@@ -17256,12 +17258,12 @@ var ProjectPlannerCanonical = (() => {
         break;
       case "mode": {
         const mode = text23(action.numberingMode) === "resequenceAll" ? "resequenceAll" : "lockSubmitted";
-        if (!row2 || text23(row2.numberingMode) !== mode) set.numberingMode = mode;
+        if (!row3 || text23(row3.numberingMode) !== mode) set.numberingMode = mode;
         break;
       }
       case "renumbered":
-        if (!row2) return null;
-        set.version = Math.trunc(documentNumber(row2.version) ?? 0) + 1;
+        if (!row3) return null;
+        set.version = Math.trunc(documentNumber(row3.version) ?? 0) + 1;
         removeLock();
         break;
       case "lockOrder":
@@ -17272,9 +17274,9 @@ var ProjectPlannerCanonical = (() => {
         set.orderLockedAt = action.at;
         break;
       case "unlockOrder":
-        if (!row2) return null;
-        if (documentBool(row2.orderLocked) === true) set.orderLocked = false;
-        for (const key7 of VARIATION_TRACKER_ORDER_LOCK_FIELDS) if (key7 !== "orderLocked" && row2[key7] != null) remove.push(key7);
+        if (!row3) return null;
+        if (documentBool(row3.orderLocked) === true) set.orderLocked = false;
+        for (const key7 of VARIATION_TRACKER_ORDER_LOCK_FIELDS) if (key7 !== "orderLocked" && row3[key7] != null) remove.push(key7);
         break;
       default:
         return null;
@@ -17306,8 +17308,8 @@ var ProjectPlannerCanonical = (() => {
     if (next.length === before.length && next.every((trade, index) => trade === before[index])) return null;
     return { set: { customTrades: next } };
   }
-  function variationLogItemId(parentId, index, row2) {
-    const item = record8(row2);
+  function variationLogItemId(parentId, index, row3) {
+    const item = record8(row3);
     return derivedRowId(parentId, "items", index, [
       text23(item.voNumber),
       text23(item.heading),
@@ -17321,37 +17323,37 @@ var ProjectPlannerCanonical = (() => {
     if (Array.isArray(items)) {
       items.forEach((entry, index) => {
         if (!entry || typeof entry !== "object" || Array.isArray(entry)) return;
-        const row2 = entry;
-        const stored = text23(row2.id);
-        out.push({ id: stored || variationLogItemId(parentId, index, row2), idStored: Boolean(stored), row: row2 });
+        const row3 = entry;
+        const stored = text23(row3.id);
+        out.push({ id: stored || variationLogItemId(parentId, index, row3), idStored: Boolean(stored), row: row3 });
       });
     } else if (items && typeof items === "object") {
       for (const [key7, entry] of Object.entries(items)) {
         if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
-        const row2 = entry;
-        const stored = text23(row2.id) || text23(key7);
-        out.push({ id: stored, idStored: Boolean(text23(row2.id)), row: row2 });
+        const row3 = entry;
+        const stored = text23(row3.id) || text23(key7);
+        out.push({ id: stored, idStored: Boolean(text23(row3.id)), row: row3 });
       }
     }
     return out;
   }
   function parseVariationLogDocument(parentId, data) {
-    return variationLogItems(parentId, data).map((item) => parseVariationDocument(item.id, { ...item.row, id: item.id })).filter((row2) => row2 !== null);
+    return variationLogItems(parentId, data).map((item) => parseVariationDocument(item.id, { ...item.row, id: item.id })).filter((row3) => row3 !== null);
   }
   function variationLogWriteFields(stored, entry, context) {
     const entryId = text23(entry?.id);
     if (!entryId) return null;
     const items = variationLogItems(context?.parentId, stored).map((item) => ({ ...item.row, id: item.id }));
-    const index = items.findIndex((row2) => normalizeDocumentId(row2.id) === normalizeDocumentId(entryId));
+    const index = items.findIndex((row3) => normalizeDocumentId(row3.id) === normalizeDocumentId(entryId));
     if (index >= 0) {
       const merged = { ...items[index] };
       for (const [key7, value] of Object.entries(entry)) if (value !== void 0) merged[key7] = value;
       merged.id = items[index].id;
       items[index] = merged;
     } else {
-      const row2 = {};
-      for (const [key7, value] of Object.entries(entry)) if (value !== void 0) row2[key7] = value;
-      items.push(row2);
+      const row3 = {};
+      for (const [key7, value] of Object.entries(entry)) if (value !== void 0) row3[key7] = value;
+      items.push(row3);
     }
     const set = { items };
     if (!stored) {
@@ -17365,7 +17367,7 @@ var ProjectPlannerCanonical = (() => {
   var LEGACY_NOTIFICATION_TYPES = ["material_added"];
   var KNOWN_NOTIFICATION_TYPES = Array.from(
     /* @__PURE__ */ new Set([
-      ...NOTIFICATION_CATALOG.map((row2) => row2.type),
+      ...NOTIFICATION_CATALOG.map((row3) => row3.type),
       ...DEVICE_PUSH_NOTIFICATION_TYPES,
       ...LEGACY_NOTIFICATION_TYPES
     ])
@@ -17377,31 +17379,31 @@ var ProjectPlannerCanonical = (() => {
   function parseNotificationDocument(docId, data, options) {
     const id2 = text23(docId);
     if (!id2) return null;
-    const row2 = record8(data);
-    const type = text23(row2.type);
+    const row3 = record8(data);
+    const type = text23(row3.type);
     if (!type) return null;
-    const relatedId = optionalText4(row2.relatedId) ?? (typeof row2.relatedId === "number" ? String(row2.relatedId) : null);
-    const storedDay = text23(row2.dayKey);
+    const relatedId = optionalText4(row3.relatedId) ?? (typeof row3.relatedId === "number" ? String(row3.relatedId) : null);
+    const storedDay = text23(row3.dayKey);
     const dayKey = DAY_KEY6.test(storedDay) ? storedDay : relatedId && DAY_KEY6.test(relatedId) ? relatedId : null;
-    const catalogue = text23(row2.catalogue) === "projects" || text23(row2.catalogue) === "smallWorks" ? text23(row2.catalogue) : null;
-    const deepLinkUserId = optionalText4(row2.deepLinkUserId);
+    const catalogue = text23(row3.catalogue) === "projects" || text23(row3.catalogue) === "smallWorks" ? text23(row3.catalogue) : null;
+    const deepLinkUserId = optionalText4(row3.deepLinkUserId);
     return {
       id: id2,
-      organizationId: documentOrganizationId(row2.organizationId) ?? optionalText4(options?.organizationId),
+      organizationId: documentOrganizationId(row3.organizationId) ?? optionalText4(options?.organizationId),
       type,
       known: isKnownNotificationType(type),
-      title: text23(row2.title),
-      message: text23(row2.message),
-      detail: optionalText4(row2.detail),
-      userId: optionalText4(row2.userId),
-      actorUserId: optionalText4(row2.actorUserId),
+      title: text23(row3.title),
+      message: text23(row3.message),
+      detail: optionalText4(row3.detail),
+      userId: optionalText4(row3.userId),
+      actorUserId: optionalText4(row3.actorUserId),
       relatedId,
-      isRead: documentBool(row2.isRead) === true,
-      readAtMs: documentInstantMs(row2.readAt),
-      createdAtMs: documentInstantMs(row2.createdAt),
-      requiresPermission: optionalText4(row2.requiresPermission),
+      isRead: documentBool(row3.isRead) === true,
+      readAtMs: documentInstantMs(row3.readAt),
+      createdAtMs: documentInstantMs(row3.createdAt),
+      requiresPermission: optionalText4(row3.requiresPermission),
       deepLinkUserId,
-      deepLinkWeekStartMs: documentInstantMs(row2.deepLinkWeekStart),
+      deepLinkWeekStartMs: documentInstantMs(row3.deepLinkWeekStart),
       dayKey,
       catalogue,
       destination: options?.role ? notificationDestination({ type, relatedId, dayKey, catalogue, role: options.role, deepLinkUserId }) : null
@@ -17576,18 +17578,18 @@ var ProjectPlannerCanonical = (() => {
   function parseWarningResolutionDocument(docId, data, options) {
     const id2 = text23(docId);
     if (!id2) return null;
-    const row2 = record8(data);
-    const storedKey = text23(row2.resolutionKey) || id2;
+    const row3 = record8(data);
+    const storedKey = text23(row3.resolutionKey) || id2;
     const resolutionKey = sharedWarningResolutionKey(storedKey, options?.timeZone);
-    const status = text23(row2.status).toLowerCase();
+    const status = text23(row3.status).toLowerCase();
     return {
       id: id2,
       resolutionKey,
       storedKey,
       isLegacyKey: resolutionKey !== storedKey,
       status: status === "approved" || status === "dismissed" ? status : null,
-      resolvedByUserId: optionalText4(row2.resolvedByUserId),
-      resolvedAtMs: documentInstantMs(row2.resolvedAt)
+      resolvedByUserId: optionalText4(row3.resolvedByUserId),
+      resolvedAtMs: documentInstantMs(row3.resolvedAt)
     };
   }
   function warningResolutionRecords(docs, timeZone) {
@@ -17599,12 +17601,12 @@ var ProjectPlannerCanonical = (() => {
     return out;
   }
   function warningResolutionMigrationWrites(input) {
-    const parsed = (input?.docs || []).map((entry) => parseWarningResolutionDocument(entry?.id, entry?.data, { timeZone: input?.timeZone })).filter((row2) => Boolean(row2?.status));
-    const sharedResolved = new Set(parsed.filter((row2) => !row2.isLegacyKey).map((row2) => normalizeDocumentId(row2.resolutionKey)));
+    const parsed = (input?.docs || []).map((entry) => parseWarningResolutionDocument(entry?.id, entry?.data, { timeZone: input?.timeZone })).filter((row3) => Boolean(row3?.status));
+    const sharedResolved = new Set(parsed.filter((row3) => !row3.isLegacyKey).map((row3) => normalizeDocumentId(row3.resolutionKey)));
     const storedStatus = /* @__PURE__ */ new Map();
-    for (const row2 of parsed) {
-      const key7 = normalizeDocumentId(row2.storedKey);
-      if (storedStatus.get(key7) !== "approved") storedStatus.set(key7, row2.status);
+    for (const row3 of parsed) {
+      const key7 = normalizeDocumentId(row3.storedKey);
+      if (storedStatus.get(key7) !== "approved") storedStatus.set(key7, row3.status);
     }
     const wanted = /* @__PURE__ */ new Map();
     const want = (key7, status) => {
@@ -17613,7 +17615,7 @@ var ProjectPlannerCanonical = (() => {
       const existing = wanted.get(norm);
       if (!existing || existing.status === "dismissed" && status === "approved") wanted.set(norm, { key: key7, status });
     };
-    for (const row2 of parsed) if (row2.isLegacyKey) want(row2.resolutionKey, row2.status);
+    for (const row3 of parsed) if (row3.isLegacyKey) want(row3.resolutionKey, row3.status);
     for (const [sharedKey, forms] of Object.entries(input?.legacyKeyForms || {})) {
       let status = null;
       for (const form of forms || []) {
@@ -17686,7 +17688,7 @@ var ProjectPlannerCanonical = (() => {
   function liveCollection(id2) {
     const key7 = typeof id2 === "string" ? id2.trim() : "";
     if (!key7) return null;
-    return LIVE_COLLECTIONS.find((row2) => row2.id === key7) ?? LIVE_COLLECTIONS.find((row2) => row2.id.toLowerCase() === key7.toLowerCase()) ?? null;
+    return LIVE_COLLECTIONS.find((row3) => row3.id === key7) ?? LIVE_COLLECTIONS.find((row3) => row3.id.toLowerCase() === key7.toLowerCase()) ?? null;
   }
   function screenMustListen(id2) {
     return liveCollection(id2)?.listen ?? true;
@@ -17712,7 +17714,7 @@ var ProjectPlannerCanonical = (() => {
   function recordsToSave(records, changedIds) {
     const wanted = new Set((changedIds || []).map((id2) => String(id2 ?? "").trim().toLowerCase()).filter(Boolean));
     if (wanted.size === 0) return [];
-    return (records || []).filter((row2) => wanted.has(String(row2?.id ?? "").trim().toLowerCase()));
+    return (records || []).filter((row3) => wanted.has(String(row3?.id ?? "").trim().toLowerCase()));
   }
   function codeText(code) {
     return (typeof code === "number" ? String(code) : typeof code === "string" ? code.trim() : "").toLowerCase().replace(/^firestore\//, "");
@@ -17924,37 +17926,37 @@ var ProjectPlannerCanonical = (() => {
       step: "account",
       writes: write.path === `users/${uid}` && formerWrite ? [write, formerWrite] : [write]
     })) : [{ step: "account", writes: formerWrite ? [...account, formerWrite] : account }];
-    const rowMatches2 = (row2) => idKeys.has(key2(row2?.id)) || idKeys.has(key2(row2?.userId)) || email !== "" && key2(row2?.email) === email;
+    const rowMatches2 = (row3) => idKeys.has(key2(row3?.id)) || idKeys.has(key2(row3?.userId)) || email !== "" && key2(row3?.email) === email;
     const rosterRows = [
-      ...(input.operativeRows || []).filter(rowMatches2).map((row2) => ({ collection: "operatives", id: text25(row2.id) })),
-      ...(input.managerRows || []).filter(rowMatches2).map((row2) => ({ collection: "managers", id: text25(row2.id) }))
-    ].filter((row2) => row2.id && !row2.id.includes("/"));
+      ...(input.operativeRows || []).filter(rowMatches2).map((row3) => ({ collection: "operatives", id: text25(row3.id) })),
+      ...(input.managerRows || []).filter(rowMatches2).map((row3) => ({ collection: "managers", id: text25(row3.id) }))
+    ].filter((row3) => row3.id && !row3.id.includes("/"));
     const managerActor = input.actorManagesOperatives === true;
     const labour = bookingsToRemoveOnOperativeDelete({
       bookings: input.bookings || [],
-      operativeIds: [...ids, ...rosterRows.filter((row2) => row2.collection === "operatives").map((row2) => row2.id)],
+      operativeIds: [...ids, ...rosterRows.filter((row3) => row3.collection === "operatives").map((row3) => row3.id)],
       nowIso: input.nowIso,
       timeZone: input.tz,
       futureOnly: managerActor
     }).map((id2) => ({ collection: "bookings", id: id2 }));
     const today = bookingsToRemoveOnOperativeDelete({
-      bookings: managerActor ? [] : (input.managerSiteBookings || []).map((row2) => ({ id: row2.id, operativeId: row2.userId, dateMs: row2.dateMs })),
+      bookings: managerActor ? [] : (input.managerSiteBookings || []).map((row3) => ({ id: row3.id, operativeId: row3.userId, dateMs: row3.dateMs })),
       operativeIds: ids,
       nowIso: input.nowIso,
       timeZone: input.tz
     }).map((id2) => ({ collection: "managerSiteBookings", id: id2 }));
     const bookingWrites = [];
     let current = [];
-    for (const row2 of [...labour, ...today]) {
+    for (const row3 of [...labour, ...today]) {
       const tombstone = bookingTombstoneWriteFields({
-        bookingId: row2.id,
-        collection: row2.collection,
+        bookingId: row3.id,
+        collection: row3.collection,
         deletedBy: input.actorUserId,
         deletedFrom: input.platform
       });
-      const path = bookingTombstonePath(org, row2.id);
+      const path = bookingTombstonePath(org, row3.id);
       if (!tombstone || !path) continue;
-      current.push({ op: "delete", path: `organizations/${org}/${row2.collection}/${row2.id}` });
+      current.push({ op: "delete", path: `organizations/${org}/${row3.collection}/${row3.id}` });
       current.push({ op: "set", path, fields: { ...tombstone }, serverTimestampFields: ["deletedAt"] });
       if (current.length >= BOOKING_TOMBSTONE_BATCH_DELETE_LIMIT * 2) {
         bookingWrites.push(current);
@@ -17964,34 +17966,34 @@ var ProjectPlannerCanonical = (() => {
     if (current.length > 0) bookingWrites.push(current);
     for (const writes of bookingWrites) steps.push({ step: "bookings", writes });
     if (rosterRows.length > 0) {
-      const rowRecord = (row2) => {
-        const record18 = input.formerRows?.[`${row2.collection}/${row2.id}`];
-        if (!record18 || key2(row2.id) === key2(uid)) return null;
+      const rowRecord = (row3) => {
+        const record18 = input.formerRows?.[`${row3.collection}/${row3.id}`];
+        if (!record18 || key2(row3.id) === key2(uid)) return null;
         return {
           op: "set",
-          path: `organizations/${org}/deletedPeople/${row2.id}`,
+          path: `organizations/${org}/deletedPeople/${row3.id}`,
           fields: { ...record18.fields },
           serverTimestampFields: [...record18.serverTimestampFields],
           optional: true
         };
       };
-      const plain2 = rosterRows.filter((row2) => !rowRecord(row2));
+      const plain2 = rosterRows.filter((row3) => !rowRecord(row3));
       if (plain2.length > 0) {
         steps.push({
           step: "rosterRows",
-          writes: plain2.map((row2) => ({ op: "delete", path: `organizations/${org}/${row2.collection}/${row2.id}` }))
+          writes: plain2.map((row3) => ({ op: "delete", path: `organizations/${org}/${row3.collection}/${row3.id}` }))
         });
       }
-      for (const row2 of rosterRows) {
-        const record18 = rowRecord(row2);
+      for (const row3 of rosterRows) {
+        const record18 = rowRecord(row3);
         if (!record18) continue;
         steps.push({
           step: "rosterRows",
-          writes: [{ op: "delete", path: `organizations/${org}/${row2.collection}/${row2.id}` }, record18]
+          writes: [{ op: "delete", path: `organizations/${org}/${row3.collection}/${row3.id}` }, record18]
         });
       }
     }
-    const invitations = (input.invitations || []).filter((row2) => email !== "" && key2(row2?.email) === email && text25(row2.id) && !text25(row2.id).includes("/")).map((row2) => ({ op: "delete", path: `invitations/${text25(row2.id)}` }));
+    const invitations = (input.invitations || []).filter((row3) => email !== "" && key2(row3?.email) === email && text25(row3.id) && !text25(row3.id).includes("/")).map((row3) => ({ op: "delete", path: `invitations/${text25(row3.id)}` }));
     if (invitations.length > 0) steps.push({ step: "invitations", writes: invitations });
     return steps;
   }
@@ -18040,14 +18042,14 @@ var ProjectPlannerCanonical = (() => {
       return Number.isNaN(ms) ? null : ms;
     }
     if (typeof raw === "object") {
-      const row2 = raw;
-      if (typeof row2.toMillis === "function") {
-        const ms = row2.toMillis();
+      const row3 = raw;
+      if (typeof row3.toMillis === "function") {
+        const ms = row3.toMillis();
         return Number.isFinite(ms) ? ms : null;
       }
-      const seconds = Number(row2.seconds ?? row2._seconds);
+      const seconds = Number(row3.seconds ?? row3._seconds);
       if (!Number.isFinite(seconds)) return null;
-      const nanos = Number(row2.nanoseconds ?? row2._nanoseconds ?? 0);
+      const nanos = Number(row3.nanoseconds ?? row3._nanoseconds ?? 0);
       return seconds * 1e3 + Math.floor((Number.isFinite(nanos) ? nanos : 0) / 1e6);
     }
     return null;
@@ -18055,13 +18057,13 @@ var ProjectPlannerCanonical = (() => {
   function parseOrgMembershipDocument(organizationId, data) {
     const org = text26(organizationId);
     if (!org) return null;
-    const row2 = data && typeof data === "object" ? data : {};
-    const nested = row2.permissions && typeof row2.permissions === "object" ? row2.permissions : {};
+    const row3 = data && typeof data === "object" ? data : {};
+    const nested = row3.permissions && typeof row3.permissions === "object" ? row3.permissions : {};
     let hasLegacyFlatFlags = false;
     const permissions = {};
     for (const key7 of ORG_MEMBERSHIP_PERMISSION_KEYS) {
       const fromNested = bool2(nested[key7]);
-      const fromFlat = bool2(row2[key7]);
+      const fromFlat = bool2(row3[key7]);
       if (fromNested == null && fromFlat != null) hasLegacyFlatFlags = true;
       permissions[key7] = fromNested ?? fromFlat ?? ORG_MEMBERSHIP_DEFAULT_ON.includes(key7);
     }
@@ -18069,18 +18071,18 @@ var ProjectPlannerCanonical = (() => {
       permissions.manager = false;
       permissions.operatives = false;
     }
-    const accountActive = bool2(row2.accountActive) ?? bool2(row2.isActive) ?? true;
+    const accountActive = bool2(row3.accountActive) ?? bool2(row3.isActive) ?? true;
     return {
       organizationId: org,
-      role: text26(row2.role) || "member",
-      status: text26(row2.status) === "pending" ? "pending" : "active",
-      isSuperAdmin: bool2(row2.isSuperAdmin) === true,
+      role: text26(row3.role) || "member",
+      status: text26(row3.status) === "pending" ? "pending" : "active",
+      isSuperAdmin: bool2(row3.isSuperAdmin) === true,
       accountActive,
       permissions,
-      invitedBy: text26(row2.invitedBy) || null,
-      invitedAtMs: instantMs(row2.invitedAt),
-      acceptedAtMs: instantMs(row2.acceptedAt),
-      updatedAtMs: instantMs(row2.updatedAt),
+      invitedBy: text26(row3.invitedBy) || null,
+      invitedAtMs: instantMs(row3.invitedAt),
+      acceptedAtMs: instantMs(row3.acceptedAt),
+      updatedAtMs: instantMs(row3.updatedAt),
       hasLegacyFlatFlags
     };
   }
@@ -18176,9 +18178,9 @@ var ProjectPlannerCanonical = (() => {
       return (parts3[parts3.length - 1] ?? "").trim();
     }
     if (value && typeof value === "object") {
-      const row2 = value;
-      if (typeof row2.id === "string") return row2.id.trim();
-      if (typeof row2.path === "string") return membershipOrganizationId(row2.path);
+      const row3 = value;
+      if (typeof row3.id === "string") return row3.id.trim();
+      if (typeof row3.path === "string") return membershipOrganizationId(row3.path);
     }
     return "";
   }
@@ -18213,7 +18215,7 @@ var ProjectPlannerCanonical = (() => {
   function canAdjustAnnualLeave(viewer, subject, roster) {
     const me = idKey(viewer?.id);
     if (!viewer || !me || !subject || !idText(subject.id)) return false;
-    const members = (roster || []).filter((row2) => row2 && idText(row2.id));
+    const members = (roster || []).filter((row3) => row3 && idText(row3.id));
     if (personIdSet(subject, members).some((id2) => idKey(id2) === me)) return false;
     const role = viewer.role;
     if (role && role.isOperativeMode !== true && (role.isAdmin === true || role.isSuperAdmin === true)) return true;
@@ -18223,7 +18225,7 @@ var ProjectPlannerCanonical = (() => {
   function canViewAnnualLeaveAdjustments(viewer, subject, roster) {
     const me = idKey(viewer?.id);
     if (!me || !subject) return false;
-    const members = (roster || []).filter((row2) => row2 && idText(row2.id));
+    const members = (roster || []).filter((row3) => row3 && idText(row3.id));
     if (personIdSet(subject, members).some((id2) => idKey(id2) === me)) return true;
     return canAdjustAnnualLeave(viewer, subject, roster);
   }
@@ -18245,33 +18247,33 @@ var ProjectPlannerCanonical = (() => {
   function annualLeaveAdjustmentAuthorName(adjustment, roster) {
     const by = idKey(text27(adjustment?.createdBy));
     if (!by) return "Someone";
-    const members = (roster || []).filter((row3) => row3 && idText(row3.id));
-    const row2 = members.find((member) => idKey(member.id) === by) ?? members.find((member) => personIdSet(member, members).some((id2) => idKey(id2) === by));
-    if (!row2) return "Someone";
-    const name = `${text27(row2.firstName)} ${text27(row2.surname) || text27(row2.lastName)}`.trim();
-    return name || text27(row2.email) || "Someone";
+    const members = (roster || []).filter((row4) => row4 && idText(row4.id));
+    const row3 = members.find((member) => idKey(member.id) === by) ?? members.find((member) => personIdSet(member, members).some((id2) => idKey(id2) === by));
+    if (!row3) return "Someone";
+    const name = `${text27(row3.firstName)} ${text27(row3.surname) || text27(row3.lastName)}`.trim();
+    return name || text27(row3.email) || "Someone";
   }
   function parseAnnualLeaveAdjustmentDocument(docId, data) {
     const id2 = text27(docId);
-    const row2 = data && typeof data === "object" ? data : {};
-    const userId = text27(row2.userId);
-    const yearKey = text27(row2.yearKey);
-    const days = documentNumber(row2.days);
+    const row3 = data && typeof data === "object" ? data : {};
+    const userId = text27(row3.userId);
+    const yearKey = text27(row3.yearKey);
+    const days = documentNumber(row3.days);
     if (!id2 || !userId || !isDayKey2(yearKey) || days == null) return null;
     return {
       id: id2,
       userId,
       days: Math.round(days * 2) / 2,
-      reason: text27(row2.reason),
+      reason: text27(row3.reason),
       yearKey,
-      createdBy: text27(row2.createdBy),
-      createdAtMs: documentInstantMs(row2.createdAt)
+      createdBy: text27(row3.createdBy),
+      createdAtMs: documentInstantMs(row3.createdAt)
     };
   }
   function annualLeaveAdjustmentsForPerson(adjustments, personIds) {
     const ids = new Set((personIds || []).map(idKey).filter(Boolean));
     if (ids.size === 0) return [];
-    return (adjustments || []).filter((row2) => row2 && ids.has(idKey(row2.userId))).slice().sort((a, b) => (a.createdAtMs ?? Number.MAX_SAFE_INTEGER) - (b.createdAtMs ?? Number.MAX_SAFE_INTEGER));
+    return (adjustments || []).filter((row3) => row3 && ids.has(idKey(row3.userId))).slice().sort((a, b) => (a.createdAtMs ?? Number.MAX_SAFE_INTEGER) - (b.createdAtMs ?? Number.MAX_SAFE_INTEGER));
   }
   function annualLeaveAdjustmentLabel(days) {
     const n = Math.round(Number(days) * 2) / 2;
@@ -18435,10 +18437,10 @@ var ProjectPlannerCanonical = (() => {
     return out;
   }
   function invitationRole(invitation) {
-    const row2 = record9(invitation) ?? {};
-    const stored = text28(row2.role).toLowerCase();
+    const row3 = record9(invitation) ?? {};
+    const stored = text28(row3.role).toLowerCase();
     if (stored === "admin" || stored === "manager" || stored === "operative" || stored === "member") return stored;
-    const permissions = record9(row2.permissions) ?? {};
+    const permissions = record9(row3.permissions) ?? {};
     if (Object.keys(permissions).length === 0) return "member";
     if (permissions.adminAccess === true) return "admin";
     if (permissions.operativeMode === true) return "operative";
@@ -18449,35 +18451,35 @@ var ProjectPlannerCanonical = (() => {
     return value === true || value === 1;
   }
   function invitationIsOperativeOnly(invitation) {
-    const row2 = record9(invitation) ?? {};
-    const permissions = record9(row2.permissions) ?? {};
-    if (invitationRole(row2) !== "operative") return false;
-    if (!(flagOn3(permissions.operativeMode) || text28(row2.role).toLowerCase() === "operative")) return false;
-    return OPERATIVE_INVITE_FORBIDDEN_FLAGS.every((key7) => !flagOn3(permissions[key7]) && !flagOn3(row2[key7]));
+    const row3 = record9(invitation) ?? {};
+    const permissions = record9(row3.permissions) ?? {};
+    if (invitationRole(row3) !== "operative") return false;
+    if (!(flagOn3(permissions.operativeMode) || text28(row3.role).toLowerCase() === "operative")) return false;
+    return OPERATIVE_INVITE_FORBIDDEN_FLAGS.every((key7) => !flagOn3(permissions[key7]) && !flagOn3(row3[key7]));
   }
   function invitationProfileFields(invitation) {
-    const row2 = record9(invitation) ?? {};
-    const out = { role: invitationRole(row2) };
-    const permissions = record9(row2.permissions);
+    const row3 = record9(invitation) ?? {};
+    const out = { role: invitationRole(row3) };
+    const permissions = record9(row3.permissions);
     if (permissions) {
       out.permissions = { ...permissions };
       for (const [key7, value] of Object.entries(permissions)) if (typeof value === "boolean") out[key7] = value;
     }
-    const employment = text28(row2.employmentType);
+    const employment = text28(row3.employmentType);
     if (employment) out.employmentType = normalizeEmploymentType(employment);
-    const basis = text28(row2.payBasis);
-    if (basis === "hourly" && finite4(row2.hourlyRate) != null) {
+    const basis = text28(row3.payBasis);
+    if (basis === "hourly" && finite4(row3.hourlyRate) != null) {
       out.payBasis = "hourly";
-      out.hourlyRate = finite4(row2.hourlyRate);
-    } else if (basis === "day" && finite4(row2.dayRate) != null) {
+      out.hourlyRate = finite4(row3.hourlyRate);
+    } else if (basis === "day" && finite4(row3.dayRate) != null) {
       out.payBasis = "day";
-      out.dayRate = finite4(row2.dayRate);
+      out.dayRate = finite4(row3.dayRate);
     }
-    if (row2.hasNoLineManager === true) {
+    if (row3.hasNoLineManager === true) {
       out.hasNoLineManager = true;
     } else {
-      let managers = idList7(row2.assignedManagerUserIds);
-      if (managers.length === 0 && text28(row2.assignedManagerUserId)) managers = [text28(row2.assignedManagerUserId)];
+      let managers = idList7(row3.assignedManagerUserIds);
+      if (managers.length === 0 && text28(row3.assignedManagerUserId)) managers = [text28(row3.assignedManagerUserId)];
       if (managers.length > 0) {
         out.assignedManagerUserIds = managers;
         out.assignedManagerUserId = managers[0];
@@ -18500,25 +18502,25 @@ var ProjectPlannerCanonical = (() => {
     "updatedAt"
   ];
   function inviteMembershipWrites(input) {
-    const row2 = record9(input?.invitation) ?? {};
-    const organizationId = text28(row2.organizationId);
+    const row3 = record9(input?.invitation) ?? {};
+    const organizationId = text28(row3.organizationId);
     const invitationId = text28(input?.invitationId);
     const authUid = text28(input?.authUid);
     if (!organizationId || !invitationId || !authUid) return null;
-    const role = invitationRole(row2);
+    const role = invitationRole(row3);
     const membership = {
       organizationId,
       role,
       status: "active",
       isSuperAdmin: false,
       accountActive: true,
-      permissions: { ...record9(row2.permissions) ?? {} },
+      permissions: { ...record9(row3.permissions) ?? {} },
       invitationId,
       invitedAt: input.now,
       acceptedAt: input.now,
       updatedAt: input.now
     };
-    const invitedBy = text28(row2.invitedBy);
+    const invitedBy = text28(row3.invitedBy);
     if (invitedBy) membership.invitedBy = invitedBy;
     return { organizationId, membership, membersField: `members.${authUid}`, role };
   }
@@ -18647,17 +18649,17 @@ var ProjectPlannerCanonical = (() => {
     const signedIn = text29(input?.signedInUserId);
     const anchored = [];
     const add = (id2) => {
-      if (id2 && !anchored.some((row2) => row2.toLowerCase() === id2.toLowerCase())) anchored.push(id2);
+      if (id2 && !anchored.some((row3) => row3.toLowerCase() === id2.toLowerCase())) anchored.push(id2);
     };
     for (const key7 of Object.keys(members)) add(text29(key7));
     add(creator);
     if (signedIn && Object.keys(members).some((key7) => key7.toLowerCase() === signedIn.toLowerCase())) add(signedIn);
     const anchoredKeys = new Set(anchored.map((id2) => id2.toLowerCase()));
     const missing = new Set((input?.missingIds || []).map((id2) => text29(id2).toLowerCase()));
-    const docs = (input?.users || []).filter((row2) => {
-      const id2 = text29(row2?.id).toLowerCase();
+    const docs = (input?.users || []).filter((row3) => {
+      const id2 = text29(row3?.id).toLowerCase();
       if (!id2 || missing.has(id2)) return false;
-      return orgIdOf(row2.organizationId).toLowerCase() === org.toLowerCase() || anchoredKeys.has(id2);
+      return orgIdOf(row3.organizationId).toLowerCase() === org.toLowerCase() || anchoredKeys.has(id2);
     });
     const folded = rosterPeople(docs);
     const people = folded.people.map((person) => {
@@ -18675,7 +18677,7 @@ var ProjectPlannerCanonical = (() => {
         })
       };
     });
-    const present3 = new Set(docs.map((row2) => text29(row2.id).toLowerCase()));
+    const present3 = new Set(docs.map((row3) => text29(row3.id).toLowerCase()));
     const unreadIds = anchored.filter((id2) => !present3.has(id2.toLowerCase()) && !missing.has(id2.toLowerCase()));
     return { people, userIdAliases: folded.userIdAliases, anchoredIds: anchored, unreadIds };
   }
@@ -18785,15 +18787,15 @@ var ProjectPlannerCanonical = (() => {
     const key7 = String(dayKey ?? "").trim();
     return /^\d{4}-\d{2}-\d{2}$/.test(key7) ? key7 : null;
   }
-  function clockSpanHours(row2) {
-    const start = parseClockMinutes(row2.clockStart ?? null);
-    const end = parseClockMinutes(row2.clockEnd ?? null);
+  function clockSpanHours(row3) {
+    const start = parseClockMinutes(row3.clockStart ?? null);
+    const end = parseClockMinutes(row3.clockEnd ?? null);
     if (start == null || end == null) return null;
     const minutes = end > start ? end - start : end + 24 * 60 - start;
     return minutes > 0 ? minutes / 60 : null;
   }
-  function rangeOf(row2) {
-    return row2.clockStart && row2.clockEnd ? `${row2.clockStart}\u2013${row2.clockEnd}` : null;
+  function rangeOf(row3) {
+    return row3.clockStart && row3.clockEnd ? `${row3.clockStart}\u2013${row3.clockEnd}` : null;
   }
   function breakSuffix(policy, dayKey, zone3) {
     const dayBreak = payrollBreakOnDay(policy, dayKey, zone3);
@@ -18873,7 +18875,7 @@ var ProjectPlannerCanonical = (() => {
       const sb = parseClockMinutes(b.clockStart ?? null);
       return sa == null || sb == null ? 0 : sa - sb;
     });
-    if (total <= 1e-3 && segments.every((row2) => !(row2.paidHours > 1e-3))) {
+    if (total <= 1e-3 && segments.every((row3) => !(row3.paidHours > 1e-3))) {
       const range = startMinutes != null && endMinutes != null ? `${formatClockMinutes(startMinutes)}\u2013${formatClockMinutes(endMinutes)}` : label;
       const insideBreak = unpaidBreakAppliesOnDay(dayPolicy, key7, zone3) && booking.isBreakRemoved !== true;
       steps.push(insideBreak ? `${range} is inside the unpaid break = 0h` : `${range} = 0h`);
@@ -18881,10 +18883,10 @@ var ProjectPlannerCanonical = (() => {
     }
     const dayBreak = payrollBreakOnDay(dayPolicy, key7, zone3);
     const unpaidApplies = unpaidBreakAppliesOnDay(dayPolicy, key7, zone3);
-    const breakNote = (row2, brk) => {
+    const breakNote = (row3, brk) => {
       if (brk > 0) return `less ${Math.round(brk * 60)} min unpaid break`;
-      const start = parseClockMinutes(row2.clockStart ?? null);
-      const end = parseClockMinutes(row2.clockEnd ?? null);
+      const start = parseClockMinutes(row3.clockStart ?? null);
+      const end = parseClockMinutes(row3.clockEnd ?? null);
       if (!dayBreak || !(dayBreak.minutes > 0) || start == null || end == null) return "";
       const covers = Math.min(end > start ? end : end + 24 * 60, dayBreak.end) > Math.max(start, dayBreak.start);
       if (!covers) return "";
@@ -18893,18 +18895,18 @@ var ProjectPlannerCanonical = (() => {
     };
     const summaryParts = [];
     let multipliedBreak = false;
-    for (const row2 of segments) {
-      const brk = round(row2.unpaidBreakHours ?? 0);
-      const range = rangeOf(row2);
+    for (const row3 of segments) {
+      const brk = round(row3.unpaidBreakHours ?? 0);
+      const range = rangeOf(row3);
       const prefix = parts3 > 0 ? "+ " : "";
-      if (row2.kind === "standardWindow") {
-        const clock4 = clockSpanHours(row2) ?? row2.workedHours + (row2.unpaidBreakHours ?? 0);
-        const note = breakNote(row2, brk);
+      if (row3.kind === "standardWindow") {
+        const clock4 = clockSpanHours(row3) ?? row3.workedHours + (row3.unpaidBreakHours ?? 0);
+        const note = breakNote(row3, brk);
         if (kind === "weekendWindow") {
-          const credited = row2.baseHours + (row2.unpaidBreakHours ?? 0);
+          const credited = row3.baseHours + (row3.unpaidBreakHours ?? 0);
           const full = fullDayHours != null && Math.abs(round(credited) - fullDayHours) < 1e-3;
-          const rowStart = parseClockMinutes(row2.clockStart ?? null);
-          const rowEnd = parseClockMinutes(row2.clockEnd ?? null);
+          const rowStart = parseClockMinutes(row3.clockStart ?? null);
+          const rowEnd = parseClockMinutes(row3.clockEnd ?? null);
           const weekendRule = weekendRuleForIsoWeekday(iso, dayPolicy);
           const setWindow = weekendRule ? weekendFullDayWindow(dayPolicy, weekendRule) : null;
           const lessBreak = unpaidApplies && booking.isBreakRemoved !== true && dayBreak && setWindow && rowStart != null && rowEnd != null ? {
@@ -18912,8 +18914,8 @@ var ProjectPlannerCanonical = (() => {
             covered: Math.max(0, Math.min(rowEnd, dayBreak.end) - Math.max(rowStart, dayBreak.start))
           } : null;
           if (full && lessBreak && lessBreak.window > 0) {
-            steps.push(`${prefix}${range ?? label} = ${h(row2.baseHours)} (full day, unpaid break allowed for)`);
-            summaryParts.push(`${h(row2.baseHours)} (full day, unpaid break allowed for)`);
+            steps.push(`${prefix}${range ?? label} = ${h(row3.baseHours)} (full day, unpaid break allowed for)`);
+            summaryParts.push(`${h(row3.baseHours)} (full day, unpaid break allowed for)`);
           } else if (!full && lessBreak && lessBreak.window > 0 && windowHours && fullDayHours != null && range) {
             const windowLess = round(windowHours - lessBreak.window / 60);
             const coveredLess = round(Math.max(0, clock4 - lessBreak.covered / 60));
@@ -18922,32 +18924,32 @@ var ProjectPlannerCanonical = (() => {
             summaryParts.push(`${proRata} (part of the window, unpaid break not counted)`);
           } else if (full) {
             const why = brk > 0 ? `full day ${h(credited)}, ${note}` : note ? `full day, ${note}` : "full day";
-            steps.push(`${prefix}${range ?? label} = ${h(row2.baseHours)} (${why})`);
-            summaryParts.push(`${h(row2.baseHours)} (${why})`);
+            steps.push(`${prefix}${range ?? label} = ${h(row3.baseHours)} (${why})`);
+            summaryParts.push(`${h(row3.baseHours)} (${why})`);
           } else if (windowHours && fullDayHours != null && range) {
             const proRata = `${h(fullDayHours)} \xD7 ${round(clock4)} \xF7 ${round(windowHours)} = ${h(credited)}`;
-            const tail = brk > 0 ? `, ${note} = ${h(row2.baseHours)}` : note ? ` (${note})` : "";
+            const tail = brk > 0 ? `, ${note} = ${h(row3.baseHours)}` : note ? ` (${note})` : "";
             steps.push(`${prefix}Booked ${range} = ${h(clock4)} of the ${h(windowHours)} window \u2192 ${proRata}${tail}`);
             summaryParts.push(`${proRata}${tail} (part of the ${h(windowHours)} window)`);
           } else {
-            steps.push(`${prefix}${range ?? label} = ${h(row2.baseHours)}${note ? ` (${note})` : ""}`);
-            summaryParts.push(`${h(row2.baseHours)}${note ? ` (${note})` : ""}`);
+            steps.push(`${prefix}${range ?? label} = ${h(row3.baseHours)}${note ? ` (${note})` : ""}`);
+            summaryParts.push(`${h(row3.baseHours)}${note ? ` (${note})` : ""}`);
           }
         } else {
           const why = note ? `day, ${note}` : "day";
-          steps.push(`${prefix}${range ?? label} = ${h(row2.baseHours)} (${why})`);
-          summaryParts.push(`${h(row2.baseHours)} (${why})`);
+          steps.push(`${prefix}${range ?? label} = ${h(row3.baseHours)} (${why})`);
+          summaryParts.push(`${h(row3.baseHours)} (${why})`);
         }
         parts3 += 1;
       } else {
-        const clock4 = clockSpanHours(row2) ?? row2.baseHours + (row2.multiplier > 0 ? (row2.unpaidBreakHours ?? 0) / row2.multiplier : 0);
-        const multiplied = clock4 * row2.multiplier;
-        steps.push(`${prefix}${range ?? label} = ${h(clock4)} \xD7 ${times(row2.multiplier)} = ${h(multiplied)}`);
+        const clock4 = clockSpanHours(row3) ?? row3.baseHours + (row3.multiplier > 0 ? (row3.unpaidBreakHours ?? 0) / row3.multiplier : 0);
+        const multiplied = clock4 * row3.multiplier;
+        steps.push(`${prefix}${range ?? label} = ${h(clock4)} \xD7 ${times(row3.multiplier)} = ${h(multiplied)}`);
         if (brk > 0) {
           steps.push(`\u2212 ${h(brk)} unpaid break`);
           multipliedBreak = true;
         }
-        summaryParts.push(`${h(clock4)} \xD7 ${times(row2.multiplier)} = ${h(multiplied)}${brk > 0 ? ` \u2212 ${h(brk)} unpaid break` : ""}`);
+        summaryParts.push(`${h(clock4)} \xD7 ${times(row3.multiplier)} = ${h(multiplied)}${brk > 0 ? ` \u2212 ${h(brk)} unpaid break` : ""}`);
         parts3 += 1;
       }
     }
@@ -19226,7 +19228,7 @@ var ProjectPlannerCanonical = (() => {
     const span = window ?? { start: formatClockMinutes(standard.start), end: formatClockMinutes(standard.end) };
     const rows3 = weekendBookingBreakdown(policy, [dayKey], span.start, span.end, false, zone3);
     if (rows3.length === 0) return null;
-    const row2 = rows3[0];
+    const row3 = rows3[0];
     const iso = weekday2 === "saturday" ? 6 : 7;
     const rule = weekendRuleForIsoWeekday(iso, policy);
     const dayBreak = payrollBreakOnDay(policy, dayKey, zone3);
@@ -19236,10 +19238,10 @@ var ProjectPlannerCanonical = (() => {
     if (dayBreak) {
       const window2 = `${formatClockMinutes(dayBreak.start)}\u2013${formatClockMinutes(dayBreak.end)}, ${dayBreak.minutes} min`;
       if (dayBreak.paid) parts3.push(`Paid break ${window2}`);
-      else if (!rule?.allHoursAtMultiplierMode && !(row2.unpaidBreakHours > 0)) parts3.push(`Unpaid break ${window2} \u2014 allowed for in the counts as`);
-      else parts3.push(`Unpaid break ${window2} \u2014 ${Math.round(row2.unpaidBreakHours * 60)} min taken off`);
+      else if (!rule?.allHoursAtMultiplierMode && !(row3.unpaidBreakHours > 0)) parts3.push(`Unpaid break ${window2} \u2014 allowed for in the counts as`);
+      else parts3.push(`Unpaid break ${window2} \u2014 ${Math.round(row3.unpaidBreakHours * 60)} min taken off`);
     }
-    parts3.push(`${hoursText(row2.paidHoursEquivalent)} paid`);
+    parts3.push(`${hoursText(row3.paidHoursEquivalent)} paid`);
     return { dayKey, start: span.start, end: span.end, summary: parts3.join(" \xB7 "), rows: rows3 };
   }
   function weekendCountsAsCopy(weekday2) {
@@ -19345,49 +19347,13 @@ var ProjectPlannerCanonical = (() => {
     return { hours: total, label: hoursText(total) };
   }
 
-  // lib/canonical/bookingHoursText.ts
+  // lib/canonical/bookingHoursBreakdown.ts
+  var WEEKDAY_NAMES3 = ["", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
   function round4(hours2) {
     return Math.round((Number(hours2) || 0) * 100) / 100;
   }
-  function num(hours2) {
-    return `${round4(hours2)}`;
-  }
   function h2(hours2) {
     return `${round4(hours2)}h`;
-  }
-  function multiplierOf(value) {
-    const n = Number(value);
-    return Number.isFinite(n) && n > 0 ? n : 1;
-  }
-  function overtimeTotalText(input) {
-    const clock4 = Math.max(0, Number(input?.clockHours) || 0);
-    if (!(round4(clock4) > 0)) return "";
-    const n = multiplierOf(input?.multiplier);
-    const brk = Math.max(0, Number(input?.breakHours) || 0);
-    const total = h2(Math.max(0, clock4 * n - brk));
-    return round4(brk) > 0 ? `${h2(clock4)} OT \xD7 ${round4(n)} \u2212 ${h2(brk)} break = ${total}` : `${h2(clock4)} OT \xD7 ${round4(n)} = ${total}`;
-  }
-  function overtimeIncludedText(input) {
-    const text51 = overtimeTotalText(input);
-    return text51 ? `incl. ${text51}` : "";
-  }
-  function bookedWithOvertimeText(input) {
-    const booked = `${h2(Math.max(0, Number(input?.bookedHours) || 0))} booked`;
-    const clock4 = Math.max(0, Number(input?.clockHours) || 0);
-    if (!(round4(clock4) > 0)) return booked;
-    if (input?.multiplier == null) return `${booked} (incl. ${h2(clock4)} OT)`;
-    return `${booked} (incl. ${h2(clock4)} OT \xD7 ${round4(multiplierOf(input.multiplier))})`;
-  }
-  function bookingHoursCountText(hours2) {
-    const value = round4(Math.max(0, Number(hours2) || 0));
-    return `${value} ${value === 1 ? "hour" : "hours"}`;
-  }
-  function onSiteHoursText(input) {
-    const onSite = Number(input?.onSiteHours);
-    return Number.isFinite(onSite) && onSite > 0 ? `${bookingHoursCountText(input.hours)} \xB7 ${h2(onSite)} on site` : bookingHoursCountText(input?.hours);
-  }
-  function saveHoursLabel(hours2) {
-    return `Save \xB7 ${bookingHoursCountText(hours2)}`;
   }
   function isPolicyState3(value) {
     return Boolean(value && typeof value === "object" && "current" in value && "scheduled" in value);
@@ -19395,11 +19361,224 @@ var ProjectPlannerCanonical = (() => {
   function dayPolicyOf2(policy, dayKey) {
     return isPolicyState3(policy) ? payrollTimePolicyForDayFromState(policy, dayKey) : policy;
   }
+  function validDayKey2(dayKey) {
+    const key7 = String(dayKey ?? "").trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(key7) ? key7 : null;
+  }
+  function slotName(slot) {
+    switch (namedSlotKind(slot)) {
+      case "AM":
+        return "AM";
+      case "PM":
+        return "PM";
+      case "EVENING":
+        return "Evening";
+      case "OVERTIME":
+        return "Overtime";
+      default:
+        return "Full day";
+    }
+  }
+  function spoken(text51) {
+    return text51.replace(/–/g, " to ").replace(/ − /g, " less ").replace(/×(\d+(?:\.\d+)?)/g, "$1 times").replace(/(\d+(?:\.\d+)?)h\b/g, (_, n) => `${n} ${n === "1" ? "hour" : "hours"}`);
+  }
+  function row2(kind, label, details, hours2) {
+    const value = h2(hours2);
+    return {
+      kind,
+      label,
+      details,
+      value,
+      hours: round4(hours2),
+      accessibilityLabel: [label, ...details, value].map(spoken).join(", ")
+    };
+  }
+  function sumPaid(rows3) {
+    return rows3.reduce((sum, segment2) => sum + (Number(segment2.paidHours) || 0), 0);
+  }
+  function bookingHoursBreakdownRows(policy, dayKey, booking, timeZone) {
+    const key7 = validDayKey2(dayKey);
+    if (!policy || !key7 || !booking) return null;
+    const zone3 = zoneOrLondon(timeZone);
+    const startMinutes = parseClockMinutes(booking.workStartTime ?? null);
+    const endMinutes = parseClockMinutes(booking.workEndTime ?? null);
+    const slot = String(booking.timeSlot ?? "").trim() || "CUSTOM_HOURS";
+    const slotKind = namedSlotKind(slot);
+    const custom = slotKind === "CUSTOM";
+    if (custom && (startMinutes == null || endMinutes == null || startMinutes === endMinutes)) return null;
+    const dayPolicy = dayPolicyOf2(policy, key7);
+    const removed = booking.isBreakRemoved === true;
+    const paid = payrollHoursResult({
+      booking: {
+        timeSlot: slot,
+        workStartTime: startMinutes == null ? booking.workStartTime : formatClockMinutes(startMinutes),
+        workEndTime: endMinutes == null ? booking.workEndTime : formatClockMinutes(endMinutes),
+        isBreakRemoved: removed,
+        otMultiplierOverride: booking.otMultiplierOverride ?? null
+      },
+      dayKey: key7,
+      policy: dayPolicy,
+      timeZone: zone3
+    });
+    const iso = isoWeekdayOfDayKey(key7, zone3);
+    const weekdayLabel = WEEKDAY_NAMES3[iso] || key7;
+    const weekend = weekendRuleForIsoWeekday(iso, dayPolicy);
+    const window = weekend && !weekend.allHoursAtMultiplierMode ? weekendFullDayWindow(dayPolicy, weekend) : null;
+    const dayKind = weekend ? window ? "weekendWindow" : "weekendAllHours" : "weekday";
+    const half = slotKind === "AM" || slotKind === "PM";
+    const windowText = window ? `${formatClockMinutes(window.start)}\u2013${formatClockMinutes(window.end)}` : "";
+    const dayType = half ? `half day (${slotKind})` : slotKind === "EVENING" ? "evening" : dayKind === "weekendAllHours" ? "every hour is overtime" : dayKind === "weekendWindow" && weekend ? `full day ${windowText} counts as ${h2(weekendCountsAsHours(weekend, dayPolicy))}` : "full day";
+    const standard = paid.segments.filter((segment2) => segment2.kind === "standardWindow");
+    const multiplied = paid.segments.filter((segment2) => segment2.kind !== "standardWindow");
+    const ranges = payrollLineClockRanges(paid);
+    const normalPaid = sumPaid(standard);
+    const overtimePaid = sumPaid(multiplied);
+    const total = round4(paid.totalPaidHours);
+    const showsOvertime = multiplied.length > 0;
+    const totalCents = Math.round(total * 100);
+    let overtimeCents = showsOvertime ? Math.round(overtimePaid * 100) : 0;
+    if (!(standard.length > 0 && (normalPaid > 1e-3 || !showsOvertime))) overtimeCents = totalCents;
+    const shownOvertime = showsOvertime ? overtimeCents / 100 : 0;
+    const shownNormal = (totalCents - (showsOvertime ? overtimeCents : 0)) / 100;
+    const dayBreak = payrollBreakOnDay(dayPolicy, key7, zone3);
+    const breakUnpaid = unpaidBreakAppliesOnDay(dayPolicy, key7, zone3);
+    const standardBreakHours = standard.reduce((sum, segment2) => sum + (segment2.unpaidBreakHours ?? 0), 0);
+    const coversBreak = (segment2) => {
+      const start = parseClockMinutes(segment2.clockStart ?? null);
+      const end = parseClockMinutes(segment2.clockEnd ?? null);
+      if (!dayBreak || !(dayBreak.minutes > 0) || start == null || end == null) return false;
+      return Math.min(end > start ? end : end + 24 * 60, dayBreak.end) > Math.max(start, dayBreak.start);
+    };
+    const breakInWindow = Boolean(window && dayBreak && dayBreak.minutes > 0 && Math.min(window.end, dayBreak.end) > Math.max(window.start, dayBreak.start));
+    const rows3 = [];
+    const showNormal = standard.length > 0 && (normalPaid > 1e-3 || multiplied.length === 0);
+    if (showNormal) {
+      let detail = ranges.standard.length > 0 ? ranges.standard.join(" and ") : slotName(slot);
+      if (normalPaid <= 1e-3 && total <= 1e-3 && breakUnpaid && !removed) {
+        detail += ", inside the unpaid break";
+      } else if (dayKind === "weekendWindow" && !half && window) {
+        const segment2 = standard[0];
+        const start = parseClockMinutes(segment2.clockStart ?? null);
+        const end = parseClockMinutes(segment2.clockEnd ?? null);
+        const full = standard.length === 1 && start != null && end != null && start <= window.start && end >= window.end;
+        if (full) {
+          detail += breakUnpaid && breakInWindow ? ", counts as a full day, unpaid break allowed for" : ", counts as a full day";
+        } else {
+          detail += `, part of the ${windowText} window, pro rata`;
+          if (breakUnpaid && breakInWindow) detail += " (unpaid break not counted)";
+        }
+        if (!breakUnpaid && dayBreak && standard.some(coversBreak)) detail += `, ${dayBreak.minutes} min break paid`;
+      } else if (!half) {
+        if (round4(standardBreakHours) > 0) detail += `, less ${Math.round(standardBreakHours * 60)} min break`;
+        else if (!breakUnpaid && dayBreak && standard.some(coversBreak)) detail += `, ${dayBreak.minutes} min break paid`;
+      }
+      rows3.push(row2("normal", "Normal hours", [detail], shownNormal));
+    }
+    if (multiplied.length > 0) {
+      const sum = payrollMultipliedHours(paid);
+      const details = [];
+      if (ranges.overtime.length > 0) details.push(ranges.overtime.join(" and "));
+      if (sum) {
+        const rate = `${round4(sum.clockHours)}h at \xD7${round4(sum.multiplier)}`;
+        details.push(round4(sum.breakHours) > 0 ? `${rate} \u2212 ${h2(sum.breakHours)} break` : rate);
+      }
+      rows3.push(row2("overtime", "Overtime", details, shownOvertime));
+    }
+    rows3.push(row2("total", "Total paid hours", [], total));
+    const range = custom && startMinutes != null && endMinutes != null ? `${formatClockMinutes(startMinutes)}\u2013${formatClockMinutes(endMinutes)}` : slotName(slot);
+    const summaryHours = `${round4(total)} paid hours`;
+    return {
+      dayKey: key7,
+      weekdayLabel,
+      dayKind,
+      dayType,
+      headerDetail: `${weekdayLabel}, ${dayType}`,
+      range,
+      summaryHours,
+      summary: `${range} \xB7 ${summaryHours}`,
+      rows: rows3,
+      normalPaidHours: shownNormal,
+      overtimePaidHours: shownOvertime,
+      totalPaidHours: total
+    };
+  }
+  function bookingHoursBreakdownDays(policy, dayKeys, booking, timeZone) {
+    const keys = Array.from(new Set((dayKeys ?? []).map((key7) => validDayKey2(key7)).filter((key7) => Boolean(key7)))).sort();
+    const days = keys.map((key7) => bookingHoursBreakdownRows(policy, key7, booking, timeZone)).filter((day) => Boolean(day));
+    if (days.length === 0) return null;
+    const groups = /* @__PURE__ */ new Map();
+    for (const day of days) {
+      const signature = `${day.dayKind}|${day.dayType}|${day.rows.map((entry) => `${entry.label}|${entry.details.join("|")}|${entry.value}`).join("||")}`;
+      const group = groups.get(signature);
+      if (!group) {
+        groups.set(signature, { ...day, dayKeys: [day.dayKey], weekdayLabels: [day.weekdayLabel] });
+        continue;
+      }
+      group.dayKeys.push(day.dayKey);
+      if (!group.weekdayLabels.includes(day.weekdayLabel)) group.weekdayLabels.push(day.weekdayLabel);
+      group.headerDetail = `${group.weekdayLabels.join("/")}, ${group.dayType}`;
+    }
+    const list = Array.from(groups.values());
+    const same = list.every((group) => group.totalPaidHours === list[0].totalPaidHours);
+    const summaryHours = same ? list[0].summaryHours : "paid hours vary by day";
+    return { summary: `${list[0].range} \xB7 ${summaryHours}`, range: list[0].range, summaryHours, groups: list };
+  }
+
+  // lib/canonical/bookingHoursText.ts
+  function round5(hours2) {
+    return Math.round((Number(hours2) || 0) * 100) / 100;
+  }
+  function num(hours2) {
+    return `${round5(hours2)}`;
+  }
+  function h3(hours2) {
+    return `${round5(hours2)}h`;
+  }
+  function multiplierOf(value) {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? n : 1;
+  }
+  function overtimeTotalText(input) {
+    const clock4 = Math.max(0, Number(input?.clockHours) || 0);
+    if (!(round5(clock4) > 0)) return "";
+    const n = multiplierOf(input?.multiplier);
+    const brk = Math.max(0, Number(input?.breakHours) || 0);
+    const total = h3(Math.max(0, clock4 * n - brk));
+    return round5(brk) > 0 ? `${h3(clock4)} OT \xD7 ${round5(n)} \u2212 ${h3(brk)} break = ${total}` : `${h3(clock4)} OT \xD7 ${round5(n)} = ${total}`;
+  }
+  function overtimeIncludedText(input) {
+    const text51 = overtimeTotalText(input);
+    return text51 ? `incl. ${text51}` : "";
+  }
+  function bookedWithOvertimeText(input) {
+    const booked = `${h3(Math.max(0, Number(input?.bookedHours) || 0))} booked`;
+    const clock4 = Math.max(0, Number(input?.clockHours) || 0);
+    if (!(round5(clock4) > 0)) return booked;
+    if (input?.multiplier == null) return `${booked} (incl. ${h3(clock4)} OT)`;
+    return `${booked} (incl. ${h3(clock4)} OT \xD7 ${round5(multiplierOf(input.multiplier))})`;
+  }
+  function bookingHoursCountText(hours2) {
+    const value = round5(Math.max(0, Number(hours2) || 0));
+    return `${value} ${value === 1 ? "hour" : "hours"}`;
+  }
+  function onSiteHoursText(input) {
+    const onSite = Number(input?.onSiteHours);
+    return Number.isFinite(onSite) && onSite > 0 ? `${bookingHoursCountText(input.hours)} \xB7 ${h3(onSite)} on site` : bookingHoursCountText(input?.hours);
+  }
+  function saveHoursLabel(hours2) {
+    return `Save \xB7 ${bookingHoursCountText(hours2)}`;
+  }
+  function isPolicyState4(value) {
+    return Boolean(value && typeof value === "object" && "current" in value && "scheduled" in value);
+  }
+  function dayPolicyOf3(policy, dayKey) {
+    return isPolicyState4(policy) ? payrollTimePolicyForDayFromState(policy, dayKey) : policy;
+  }
   function bookingBreakText(policy, dayKey, timeZone) {
     const key7 = String(dayKey ?? "").trim();
     if (!policy || !/^\d{4}-\d{2}-\d{2}$/.test(key7)) return null;
     const zone3 = zoneOrLondon(timeZone);
-    const dayPolicy = dayPolicyOf2(policy, key7);
+    const dayPolicy = dayPolicyOf3(policy, key7);
     const dayBreak = payrollBreakOnDay(dayPolicy, key7, zone3);
     if (!dayBreak || !(dayBreak.minutes > 0)) return null;
     const window = `${formatClockMinutes(dayBreak.start)}\u2013${formatClockMinutes(dayBreak.end)}`;
@@ -19418,7 +19597,7 @@ var ProjectPlannerCanonical = (() => {
     const key7 = String(dayKey ?? "").trim();
     if (!policy || !booking || !/^\d{4}-\d{2}-\d{2}$/.test(key7)) return null;
     const zone3 = zoneOrLondon(timeZone);
-    const dayPolicy = dayPolicyOf2(policy, key7);
+    const dayPolicy = dayPolicyOf3(policy, key7);
     const result2 = payrollHoursResult({ booking, dayKey: key7, policy: dayPolicy, timeZone: zone3 });
     const minutes = Math.round((Number(result2.unpaidBreakHours) || 0) * 60);
     if (!(minutes > 0)) return null;
@@ -19436,25 +19615,25 @@ var ProjectPlannerCanonical = (() => {
     const key7 = String(dayKey ?? "").trim();
     if (!policy || !booking || !/^\d{4}-\d{2}-\d{2}$/.test(key7)) return [];
     const zone3 = zoneOrLondon(timeZone);
-    const result2 = payrollHoursResult({ booking, dayKey: key7, policy: dayPolicyOf2(policy, key7), timeZone: zone3 });
+    const result2 = payrollHoursResult({ booking, dayKey: key7, policy: dayPolicyOf3(policy, key7), timeZone: zone3 });
     const outside = payrollOutsideClockHours(result2);
     const standardBreak = Math.max(0, result2.unpaidBreakHours - outside.outsideBreakHours);
     const tiles = [];
     const standardBefore = result2.standardHours + standardBreak;
-    if (round4(standardBefore) > 0) {
+    if (round5(standardBefore) > 0) {
       tiles.push({
         kind: "standard",
         value: num(standardBefore),
-        label: round4(standardBreak) > 0 ? `Standard (\u2212${num(standardBreak)} break)` : "Standard",
-        paidHours: round4(result2.standardHours)
+        label: round5(standardBreak) > 0 ? `Standard (\u2212${num(standardBreak)} break)` : "Standard",
+        paidHours: round5(result2.standardHours)
       });
     }
-    if (round4(outside.outsideClockHours) > 0) {
+    if (round5(outside.outsideClockHours) > 0) {
       tiles.push({
         kind: "overtime",
         value: num(outside.outsideClockHours),
-        label: round4(outside.outsideBreakHours) > 0 ? `OT (\u2212${num(outside.outsideBreakHours)} break)` : "OT",
-        paidHours: round4(result2.outsideHours * result2.outsideMultiplier)
+        label: round5(outside.outsideBreakHours) > 0 ? `OT (\u2212${num(outside.outsideBreakHours)} break)` : "OT",
+        paidHours: round5(result2.outsideHours * result2.outsideMultiplier)
       });
     }
     return tiles;
@@ -19738,17 +19917,17 @@ var ProjectPlannerCanonical = (() => {
       return Number.isFinite(parsed) ? parsed : null;
     }
     if (typeof value === "object") {
-      const row2 = value;
-      if (typeof row2.getTime === "function") {
-        const ms = row2.getTime();
+      const row3 = value;
+      if (typeof row3.getTime === "function") {
+        const ms = row3.getTime();
         return Number.isFinite(ms) ? ms : null;
       }
-      if (typeof row2.toMillis === "function") {
-        const ms = row2.toMillis();
+      if (typeof row3.toMillis === "function") {
+        const ms = row3.toMillis();
         return Number.isFinite(ms) ? ms : null;
       }
-      const seconds = typeof row2.seconds === "number" ? row2.seconds : typeof row2._seconds === "number" ? row2._seconds : null;
-      if (seconds != null) return seconds * 1e3 + (typeof row2.nanoseconds === "number" ? Math.floor(row2.nanoseconds / 1e6) : 0);
+      const seconds = typeof row3.seconds === "number" ? row3.seconds : typeof row3._seconds === "number" ? row3._seconds : null;
+      if (seconds != null) return seconds * 1e3 + (typeof row3.nanoseconds === "number" ? Math.floor(row3.nanoseconds / 1e6) : 0);
     }
     return null;
   }
@@ -19845,10 +20024,10 @@ var ProjectPlannerCanonical = (() => {
     if (!isOrganizationSuperAdmin(viewer, org)) return "delete";
     const rows3 = roster || [];
     const own = new Set(personIdSet(viewer, rows3).map((id2) => id2.toLowerCase()));
-    const others = rows3.filter((row2) => {
-      const id2 = text30(row2?.id).toLowerCase();
+    const others = rows3.filter((row3) => {
+      const id2 = text30(row3?.id).toLowerCase();
       if (!id2 || own.has(id2)) return false;
-      return rosterSegment(row2) === "active";
+      return rosterSegment(row3) === "active";
     });
     return others.length > 0 ? "handover_required" : "delete_with_company";
   }
@@ -19906,7 +20085,7 @@ var ProjectPlannerCanonical = (() => {
       return { personId: personId2, keys, index };
     }).filter((entry) => entry !== null);
     const best = /* @__PURE__ */ new Map();
-    const rank = (row2) => (row2.status === "approved" ? 2 : 0) + (row2.leaveSlot === "FULL DAY" ? 1 : 0);
+    const rank = (row3) => (row3.status === "approved" ? 2 : 0) + (row3.leaveSlot === "FULL DAY" ? 1 : 0);
     for (const holiday of holidays) {
       const status = holidayStatus(holiday);
       if (!status) continue;
@@ -19919,7 +20098,7 @@ var ProjectPlannerCanonical = (() => {
         for (const dayKey of days) {
           if (dayKey < start || dayKey > end) continue;
           if (!overlaps2(slot, dayKey)) continue;
-          const row2 = {
+          const row3 = {
             personId: person.personId,
             dayKey,
             kind: "annual_leave",
@@ -19931,11 +20110,11 @@ var ProjectPlannerCanonical = (() => {
           };
           const key7 = `${idKey(person.personId)}|${dayKey}`;
           const current = best.get(key7);
-          if (!current || rank(row2) > rank(current)) best.set(key7, row2);
+          if (!current || rank(row3) > rank(current)) best.set(key7, row3);
         }
       }
     }
-    return [...best.values()].sort((a, b) => a.dayKey !== b.dayKey ? a.dayKey < b.dayKey ? -1 : 1 : a.index - b.index).map(({ index: _index, ...row2 }) => row2);
+    return [...best.values()].sort((a, b) => a.dayKey !== b.dayKey ? a.dayKey < b.dayKey ? -1 : 1 : a.index - b.index).map(({ index: _index, ...row3 }) => row3);
   }
 
   // lib/canonical/pushTokens.ts
@@ -19983,9 +20162,9 @@ var ProjectPlannerCanonical = (() => {
       return Number.isNaN(ms) ? 0 : ms;
     }
     if (typeof value === "object") {
-      const row2 = value;
-      if (typeof row2.toMillis === "function") return Number(row2.toMillis()) || 0;
-      const seconds = Number(row2.seconds ?? row2._seconds);
+      const row3 = value;
+      if (typeof row3.toMillis === "function") return Number(row3.toMillis()) || 0;
+      const seconds = Number(row3.seconds ?? row3._seconds);
       if (Number.isFinite(seconds)) return seconds * 1e3;
     }
     return 0;
@@ -20032,8 +20211,8 @@ var ProjectPlannerCanonical = (() => {
     return pushTokenList(recipientTokens).filter((token) => !actor.has(token));
   }
   var PUSH_PAYLOAD_KEYS = ["notificationId", "type", "relatedId", "dayKey", "catalogue", "userId", "organizationId"];
-  function pushPayloadFields(row2) {
-    const source = row2 || {};
+  function pushPayloadFields(row3) {
+    const source = row3 || {};
     const values = {
       notificationId: text31(source.notificationId) || text31(source.id),
       type: text31(source.type),
@@ -20048,11 +20227,11 @@ var ProjectPlannerCanonical = (() => {
     return out;
   }
   function notificationOrganizationSwitch(input) {
-    const row2 = text31(input?.rowOrganizationId);
+    const row3 = text31(input?.rowOrganizationId);
     const open = text31(input?.openOrganizationId);
-    if (!row2 || row2.toLowerCase() === open.toLowerCase()) return null;
-    const member = (input.membershipIds || []).some((id2) => text31(id2).toLowerCase() === row2.toLowerCase());
-    return member ? row2 : null;
+    if (!row3 || row3.toLowerCase() === open.toLowerCase()) return null;
+    const member = (input.membershipIds || []).some((id2) => text31(id2).toLowerCase() === row3.toLowerCase());
+    return member ? row3 : null;
   }
 
   // lib/canonical/worksLists.ts
@@ -20081,9 +20260,9 @@ var ProjectPlannerCanonical = (() => {
   }
   function jobDayKeys(job, timeZone) {
     const zone3 = zoneOrLondon(timeZone);
-    const row2 = job ?? {};
-    const start = instantDayKey(row2.startDayKey, zone3) ?? instantDayKey(row2.startMs, zone3) ?? instantDayKey(row2.startDate, zone3);
-    const end = instantDayKey(row2.endDayKey, zone3) ?? instantDayKey(row2.endMs, zone3) ?? instantDayKey(row2.endDate, zone3);
+    const row3 = job ?? {};
+    const start = instantDayKey(row3.startDayKey, zone3) ?? instantDayKey(row3.startMs, zone3) ?? instantDayKey(row3.startDate, zone3);
+    const end = instantDayKey(row3.endDayKey, zone3) ?? instantDayKey(row3.endMs, zone3) ?? instantDayKey(row3.endDate, zone3);
     return { startDayKey: start, endDayKey: end };
   }
   function todayKey2(now, timeZone) {
@@ -20128,14 +20307,14 @@ var ProjectPlannerCanonical = (() => {
       out.push(id2);
     };
     for (const id2 of ids) add(id2);
-    const operatives = (context?.operatives || []).map((row2) => ({ id: row2.id, email: row2.email ?? "" }));
+    const operatives = (context?.operatives || []).map((row3) => ({ id: row3.id, email: row3.email ?? "" }));
     for (const id2 of bookingIdsForAccount({ id: ids[0] ?? "", email: viewer.email ?? null, formerIds: ids.slice(1) }, operatives)) add(id2);
     const email = emailKey4(viewer.email);
     if (email) {
-      for (const row2 of context?.managers || []) {
-        if (!row2 || emailKey4(row2.email) !== email) continue;
-        add(row2.id);
-        add(stableManagerId(row2.id));
+      for (const row3 of context?.managers || []) {
+        if (!row3 || emailKey4(row3.email) !== email) continue;
+        add(row3.id);
+        add(stableManagerId(row3.id));
       }
     }
     return out;
@@ -20245,8 +20424,8 @@ var ProjectPlannerCanonical = (() => {
     return out;
   }
   function parseMyWorksPicks(data) {
-    const row2 = data && typeof data === "object" ? data : {};
-    return { projects: pickList(row2.projects), smallWorks: pickList(row2.smallWorks) };
+    const row3 = data && typeof data === "object" ? data : {};
+    return { projects: pickList(row3.projects), smallWorks: pickList(row3.smallWorks) };
   }
   function hasMyWorksList(viewer) {
     const role = viewer?.role;
@@ -20290,7 +20469,7 @@ var ProjectPlannerCanonical = (() => {
     const id2 = typeof jobId === "string" ? jobId.trim() : "";
     const list = pickList([...current || []]) ?? [];
     const key7 = idKey8(id2);
-    const without = list.filter((row2) => idKey8(row2) !== key7);
+    const without = list.filter((row3) => idKey8(row3) !== key7);
     if (!key7) return list;
     return (picked ? [...without, id2] : without).slice(-MY_WORKS_PICKS_MAX);
   }
@@ -20304,7 +20483,7 @@ var ProjectPlannerCanonical = (() => {
     return typeof value === "number" && Number.isFinite(value) ? value : 0;
   }
   function rowsOf3(value) {
-    return Array.isArray(value) ? value.filter((row2) => Boolean(row2) && typeof row2 === "object") : [];
+    return Array.isArray(value) ? value.filter((row3) => Boolean(row3) && typeof row3 === "object") : [];
   }
   function isLeaveLine(line) {
     return line.isLeave === true || String(line.kind || "").trim().toLowerCase() === "leave";
@@ -20317,23 +20496,23 @@ var ProjectPlannerCanonical = (() => {
     let overtimeLabour = 0;
     let priceWork = 0;
     let expenses = 0;
-    for (const row2 of rows3) {
-      if (row2.kind === "labour") {
-        labour += row2.amount;
-        const split = row2.review && row2.review.revisedStandardAmount != null && row2.review.revisedStandardHours != null;
+    for (const row3 of rows3) {
+      if (row3.kind === "labour") {
+        labour += row3.amount;
+        const split = row3.review && row3.review.revisedStandardAmount != null && row3.review.revisedStandardHours != null;
         if (split) {
-          const standardPart = roundPennies(Math.min(row2.amount, Number(row2.review?.revisedStandardAmount) || 0));
+          const standardPart = roundPennies(Math.min(row3.amount, Number(row3.review?.revisedStandardAmount) || 0));
           standardLabour += standardPart;
-          overtimeLabour += row2.amount - standardPart;
+          overtimeLabour += row3.amount - standardPart;
           continue;
         }
-        const overtime = row2.source === "override" ? row2.stored?.isOvertime === true : row2.line?.isOvertimeLine === true;
-        if (overtime) overtimeLabour += row2.amount;
-        else standardLabour += row2.amount;
-      } else if (row2.kind === "priceWork") {
-        priceWork += row2.amount;
+        const overtime = row3.source === "override" ? row3.stored?.isOvertime === true : row3.line?.isOvertimeLine === true;
+        if (overtime) overtimeLabour += row3.amount;
+        else standardLabour += row3.amount;
+      } else if (row3.kind === "priceWork") {
+        priceWork += row3.amount;
       } else {
-        expenses += row2.amount;
+        expenses += row3.amount;
       }
     }
     const days = input.timesheetDays ? new Set(input.timesheetDays.map((day) => String(day).trim())) : null;
@@ -20350,12 +20529,12 @@ var ProjectPlannerCanonical = (() => {
     }
     const withBookingFigures = byBookingStandard.size > 0;
     const reviewedLines = /* @__PURE__ */ new Map();
-    for (const row2 of rows3) {
-      if (row2.kind === "labour" && row2.source === "live" && row2.review && row2.review.revisedStandardHours != null && row2.review.revisedOvertimeHours != null) {
-        reviewedLines.set(normalizeDocumentId(row2.id), row2.review);
+    for (const row3 of rows3) {
+      if (row3.kind === "labour" && row3.source === "live" && row3.review && row3.review.revisedStandardHours != null && row3.review.revisedOvertimeHours != null) {
+        reviewedLines.set(normalizeDocumentId(row3.id), row3.review);
       }
     }
-    const liveRowIds = new Set(rows3.filter((row2) => row2.kind === "labour" && row2.source === "live").map((row2) => normalizeDocumentId(row2.id)));
+    const liveRowIds = new Set(rows3.filter((row3) => row3.kind === "labour" && row3.source === "live").map((row3) => normalizeDocumentId(row3.id)));
     const declinedByInvoice = (line) => !liveRowIds.has(normalizeDocumentId(line.id)) && payrollLineReview(sheet, line.id, line)?.decision === "declined";
     const groupOf = (line) => payrollLineBookingKey(line);
     const bookingGroups = /* @__PURE__ */ new Map();
@@ -20430,24 +20609,24 @@ var ProjectPlannerCanonical = (() => {
         if (timesheetEntryDecision(sheet, entry, key7 === "priceWorkEntries" ? "priceWork" : "expense", trusted).decision === "pending") pendingEntries += 1;
       }
     }
-    const round6 = (value) => roundPennies(value);
+    const round7 = (value) => roundPennies(value);
     const roundHours3 = (value) => Math.round(value * 100) / 100;
     return {
       hours: roundHours3(hours2),
       standardHours: roundHours3(standardHours),
       overtimeHours: roundHours3(overtimeHours),
-      labour: round6(labour),
-      standardLabour: round6(standardLabour),
-      overtimeLabour: round6(overtimeLabour),
-      priceWork: round6(priceWork),
-      expenses: round6(expenses),
-      extras: round6(priceWork + expenses),
-      total: round6(labour + priceWork + expenses),
-      submittedPriceWork: round6(submittedPriceWork),
-      submittedExpenses: round6(submittedExpenses),
-      submittedExtras: round6(submittedPriceWork + submittedExpenses),
+      labour: round7(labour),
+      standardLabour: round7(standardLabour),
+      overtimeLabour: round7(overtimeLabour),
+      priceWork: round7(priceWork),
+      expenses: round7(expenses),
+      extras: round7(priceWork + expenses),
+      total: round7(labour + priceWork + expenses),
+      submittedPriceWork: round7(submittedPriceWork),
+      submittedExpenses: round7(submittedExpenses),
+      submittedExtras: round7(submittedPriceWork + submittedExpenses),
       pendingEntries,
-      source: rows3.some((row2) => row2.source === "override") || hasOverride(sheet) ? "override" : "live",
+      source: rows3.some((row3) => row3.source === "override") || hasOverride(sheet) ? "override" : "live",
       invoiceRowCount: rows3.length
     };
   }
@@ -20487,7 +20666,7 @@ var ProjectPlannerCanonical = (() => {
       endDayKey: year.endDayKey,
       yearKey: year.yearKey,
       rows: rows3,
-      totalDays: snapLeaveDays(rows3.reduce((sum, row2) => sum + row2.days, 0))
+      totalDays: snapLeaveDays(rows3.reduce((sum, row3) => sum + row3.days, 0))
     };
   }
   function leaveReportYears(input) {
@@ -20674,7 +20853,7 @@ var ProjectPlannerCanonical = (() => {
     if (plainFullDay || spansDay) return { ...base, paidHours: round22(paidDay) };
     let paid = 0;
     for (const block of blocks) {
-      const noBreak = intervals.some((row2) => row2.noBreak && row2.start < block.end && row2.end > block.start);
+      const noBreak = intervals.some((row3) => row3.noBreak && row3.start < block.end && row3.end > block.start);
       const result2 = payrollHoursResult({
         booking: {
           timeSlot: "CUSTOM",
@@ -20703,8 +20882,8 @@ var ProjectPlannerCanonical = (() => {
       if (interval2 && interval2.end > interval2.start) withInterval.push({ booking, interval: interval2 });
       else worked += priced(booking);
     }
-    for (const block of mergeMinuteIntervals(withInterval.map((row2) => row2.interval))) {
-      const inside = withInterval.filter((row2) => row2.interval.start < block.end && row2.interval.end > block.start);
+    for (const block of mergeMinuteIntervals(withInterval.map((row3) => row3.interval))) {
+      const inside = withInterval.filter((row3) => row3.interval.start < block.end && row3.interval.end > block.start);
       if (inside.length === 1) {
         worked += priced(inside[0].booking);
         continue;
@@ -20714,7 +20893,7 @@ var ProjectPlannerCanonical = (() => {
           timeSlot: "CUSTOM",
           workStartTime: formatClockMinutes(block.start),
           workEndTime: formatClockMinutes(block.end > 24 * 60 ? block.end - 24 * 60 : block.end),
-          isBreakRemoved: inside.some((row2) => row2.booking.isBreakRemoved === true)
+          isBreakRemoved: inside.some((row3) => row3.booking.isBreakRemoved === true)
         },
         dayKey: input.dayKey,
         policy,
@@ -20725,34 +20904,34 @@ var ProjectPlannerCanonical = (() => {
   }
 
   // lib/canonical/rosterLists.ts
-  function rosterListKind(row2) {
-    const level = permissionLevelOf(row2 ?? {});
+  function rosterListKind(row3) {
+    const level = permissionLevelOf(row3 ?? {});
     if (level === "admin") return "admins";
     if (level === "operative") return "operatives";
     return "managers";
   }
-  function displayName(row2) {
-    return `${String(row2.firstName ?? "").trim()} ${String(row2.surname ?? row2.lastName ?? "").trim()}`.trim();
+  function displayName(row3) {
+    return `${String(row3.firstName ?? "").trim()} ${String(row3.surname ?? row3.lastName ?? "").trim()}`.trim();
   }
   function rosterListFor(kind, roster, claimedEmails) {
-    const rows3 = (roster || []).filter((row2) => row2 && idText(row2.id));
+    const rows3 = (roster || []).filter((row3) => row3 && idText(row3.id));
     const byId = /* @__PURE__ */ new Map();
-    for (const row2 of rows3) if (!byId.has(idText(row2.id))) byId.set(idText(row2.id), row2);
-    const docs = rows3.map((row2) => ({
-      id: idText(row2.id),
-      email: row2.email ?? "",
-      passwordSet: row2.passwordSet ?? void 0,
-      isActive: row2.isActive ?? void 0,
-      firstName: row2.firstName ?? void 0,
-      surname: row2.surname ?? void 0,
-      admin: rosterListKind(row2) === "admins" && row2.isActive !== false && row2.passwordSet !== false,
+    for (const row3 of rows3) if (!byId.has(idText(row3.id))) byId.set(idText(row3.id), row3);
+    const docs = rows3.map((row3) => ({
+      id: idText(row3.id),
+      email: row3.email ?? "",
+      passwordSet: row3.passwordSet ?? void 0,
+      isActive: row3.isActive ?? void 0,
+      firstName: row3.firstName ?? void 0,
+      surname: row3.surname ?? void 0,
+      admin: rosterListKind(row3) === "admins" && row3.isActive !== false && row3.passwordSet !== false,
       listed: true,
-      updatedAtMs: typeof row2.updatedAtMs === "number" ? row2.updatedAtMs : null,
-      formerUserIds: [...row2.formerUserIds || []]
+      updatedAtMs: typeof row3.updatedAtMs === "number" ? row3.updatedAtMs : null,
+      formerUserIds: [...row3.formerUserIds || []]
     }));
     const kept = rosterPeople(docs).people.flatMap((person) => {
-      const row2 = byId.get(idText(person.id));
-      return row2 && rosterListKind(row2) === kind ? [row2] : [];
+      const row3 = byId.get(idText(person.id));
+      return row3 && rosterListKind(row3) === kind ? [row3] : [];
     });
     return listedRosterUsers(kept, claimedEmails).sort(
       (a, b) => displayName(a).localeCompare(displayName(b), "en", { sensitivity: "base" }) || idText(a.id).localeCompare(idText(b.id))
@@ -20761,11 +20940,11 @@ var ProjectPlannerCanonical = (() => {
   function clashManagerIds(roster) {
     const out = [];
     const seen = /* @__PURE__ */ new Set();
-    for (const row2 of roster || []) {
-      const id2 = idText(row2?.id);
-      if (!id2 || row2.isActive === false) continue;
-      const manager = storedPermissionFlag(row2, "manager") ?? (typeof row2.role === "string" && row2.role.trim().toLowerCase() === "manager");
-      if (permissionLevelOf(row2) !== "admin" && manager !== true) continue;
+    for (const row3 of roster || []) {
+      const id2 = idText(row3?.id);
+      if (!id2 || row3.isActive === false) continue;
+      const manager = storedPermissionFlag(row3, "manager") ?? (typeof row3.role === "string" && row3.role.trim().toLowerCase() === "manager");
+      if (permissionLevelOf(row3) !== "admin" && manager !== true) continue;
       if (seen.has(id2.toLowerCase())) continue;
       seen.add(id2.toLowerCase());
       out.push(id2);
@@ -20783,7 +20962,7 @@ var ProjectPlannerCanonical = (() => {
     return role !== "admin" && role !== "super_admin" && role !== "superadmin";
   }
   function usersMissingLevel(roster) {
-    return (roster || []).filter((row2) => userMissingLevel(row2));
+    return (roster || []).filter((row3) => userMissingLevel(row3));
   }
 
   // lib/canonical/dueDates.ts
@@ -20833,7 +21012,7 @@ var ProjectPlannerCanonical = (() => {
 
   // lib/canonical/homeOverview.ts
   function personFolder(roster) {
-    const rows3 = (roster || []).filter((row2) => row2 && idText(row2.id));
+    const rows3 = (roster || []).filter((row3) => row3 && idText(row3.id));
     const cache = /* @__PURE__ */ new Map();
     return (id2) => {
       const key7 = idKey(id2);
@@ -20847,10 +21026,10 @@ var ProjectPlannerCanonical = (() => {
       return folded;
     };
   }
-  function bookingDay(row2, timeZone) {
-    const given = idText(row2.dayKey);
+  function bookingDay(row3, timeZone) {
+    const given = idText(row3.dayKey);
     if (/^\d{4}-\d{2}-\d{2}$/.test(given)) return given;
-    return holidayDocumentDayKey(row2.date, timeZone);
+    return holidayDocumentDayKey(row3.date, timeZone);
   }
   var SITE_LOCATIONS = /* @__PURE__ */ new Set(["project", "smallwork", "small_work", "smallworks", "small_works"]);
   function isSiteLocationType(locationType) {
@@ -20865,25 +21044,25 @@ var ProjectPlannerCanonical = (() => {
     ].map(idText).filter(Boolean);
   }
   function homeViewerIds(input) {
-    const users = (input.roster || []).filter((row2) => row2 && idText(row2.id));
-    const operatives = (input.operatives || []).filter((row2) => row2 && idText(row2.id));
-    const managers = (input.managers || []).filter((row2) => row2 && idText(row2.id));
+    const users = (input.roster || []).filter((row3) => row3 && idText(row3.id));
+    const operatives = (input.operatives || []).filter((row3) => row3 && idText(row3.id));
+    const managers = (input.managers || []).filter((row3) => row3 && idText(row3.id));
     const foldRoster = [
-      ...users.map((row2) => ({
-        id: idText(row2.id),
-        email: row2.email ?? null,
-        formerUserIds: row2.formerUserIds ?? [],
-        sameEmailUserIds: row2.sameEmailUserIds ?? []
+      ...users.map((row3) => ({
+        id: idText(row3.id),
+        email: row3.email ?? null,
+        formerUserIds: row3.formerUserIds ?? [],
+        sameEmailUserIds: row3.sameEmailUserIds ?? []
       })),
-      ...operatives.map((row2) => ({ id: idText(row2.id), email: row2.email ?? null })),
-      ...managers.map((row2) => ({ id: idText(row2.id), email: row2.email ?? null }))
+      ...operatives.map((row3) => ({ id: idText(row3.id), email: row3.email ?? null })),
+      ...managers.map((row3) => ({ id: idText(row3.id), email: row3.email ?? null }))
     ];
     const viewerIds = new Set(
       personIdSet({ id: idText(input.viewer?.id) || void 0, email: input.viewer?.email ?? null }, foldRoster).map(idKey).filter(Boolean)
     );
     const viewerEmail = idKey(input.viewer?.email);
     if (viewerEmail) {
-      for (const row2 of foldRoster) if (idKey(row2.email) === viewerEmail) for (const id2 of personIdSet(row2, foldRoster)) viewerIds.add(idKey(id2));
+      for (const row3 of foldRoster) if (idKey(row3.email) === viewerEmail) for (const id2 of personIdSet(row3, foldRoster)) viewerIds.add(idKey(id2));
     }
     return { users, operatives, managers, foldRoster, viewerIds };
   }
@@ -20891,8 +21070,8 @@ var ProjectPlannerCanonical = (() => {
     const { viewerIds } = homeViewerIds(input);
     return (input.tasks || []).filter((task) => task && taskAssigneeIds2(task).some((id2) => viewerIds.has(idKey(id2))));
   }
-  function homeBookingDayKey(row2, timeZone) {
-    return bookingDay(row2, timeZone);
+  function homeBookingDayKey(row3, timeZone) {
+    return bookingDay(row3, timeZone);
   }
   function homeOverviewMetrics(input) {
     const timeZone = input.timeZone;
@@ -20930,12 +21109,12 @@ var ProjectPlannerCanonical = (() => {
     }
     const onSite = /* @__PURE__ */ new Set([...onSiteOperatives, ...onSiteManagers]);
     const userByKey = /* @__PURE__ */ new Map();
-    for (const row2 of users) {
-      const key7 = fold(row2.id);
-      if (!userByKey.has(key7) || userByKey.get(key7)?.isActive === false && row2.isActive !== false) userByKey.set(key7, row2);
+    for (const row3 of users) {
+      const key7 = fold(row3.id);
+      if (!userByKey.has(key7) || userByKey.get(key7)?.isActive === false && row3.isActive !== false) userByKey.set(key7, row3);
     }
     const operativeByKey = /* @__PURE__ */ new Map();
-    for (const row2 of operatives) operativeByKey.set(fold(row2.id), row2);
+    for (const row3 of operatives) operativeByKey.set(fold(row3.id), row3);
     const onLeaveOperatives = /* @__PURE__ */ new Set();
     const onLeaveManagers = /* @__PURE__ */ new Set();
     for (const holiday of input.holidays || []) {
@@ -20972,8 +21151,8 @@ var ProjectPlannerCanonical = (() => {
   }
   function qualificationExpiryCount(input) {
     const only = input.operativeIds ? new Set(input.operativeIds.map(idKey).filter(Boolean)) : null;
-    const rows3 = qualificationExpiryRows(input).filter((row2) => !only || only.has(idKey(row2.operativeId)));
-    const expired = rows3.filter((row2) => row2.daysUntilExpiry < 0).length;
+    const rows3 = qualificationExpiryRows(input).filter((row3) => !only || only.has(idKey(row3.operativeId)));
+    const expired = rows3.filter((row3) => row3.daysUntilExpiry < 0).length;
     return { expired, expiringSoon: rows3.length - expired, total: rows3.length };
   }
 
@@ -20982,15 +21161,15 @@ var ProjectPlannerCanonical = (() => {
     const total = (Math.round(minutes) % 1440 + 1440) % 1440;
     return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
   }
-  function dayOf(row2, timeZone) {
-    const given = idText(row2.dayKey);
+  function dayOf(row3, timeZone) {
+    const given = idText(row3.dayKey);
     if (/^\d{4}-\d{2}-\d{2}$/.test(given)) return given;
-    return holidayDocumentDayKey(row2.date, timeZone);
+    return holidayDocumentDayKey(row3.date, timeZone);
   }
   function homeUpNextRows(input) {
     const timeZone = input.timeZone;
     const today = holidayDocumentDayKey(input.nowMs, timeZone);
-    const roster = (input.roster || []).filter((row2) => row2 && idText(row2.id));
+    const roster = (input.roster || []).filter((row3) => row3 && idText(row3.id));
     const viewerId = idText(input.viewer?.id);
     const viewer = {
       id: viewerId || void 0,
@@ -21007,7 +21186,7 @@ var ProjectPlannerCanonical = (() => {
           formerIds: viewer.formerUserIds,
           aliasIds: [...personIdSet(viewer, roster)].filter((id2) => idKey(id2) !== idKey(viewerId))
         },
-        (input.operatives || []).filter((row2) => row2 && idText(row2.id))
+        (input.operatives || []).filter((row3) => row3 && idText(row3.id))
       ).map(idKey).filter(Boolean)
     );
     const rows3 = [];
@@ -21037,10 +21216,10 @@ var ProjectPlannerCanonical = (() => {
     rows3.sort((a, b) => a.dayKey < b.dayKey ? -1 : a.dayKey > b.dayKey ? 1 : a.startMinutes - b.startMinutes || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     const limited = rows3.slice(0, Math.max(0, Number(input.limit ?? 48) || 0));
     const byDay = /* @__PURE__ */ new Map();
-    for (const row2 of limited) {
-      const list = byDay.get(row2.dayKey) ?? [];
-      list.push(row2);
-      byDay.set(row2.dayKey, list);
+    for (const row3 of limited) {
+      const list = byDay.get(row3.dayKey) ?? [];
+      list.push(row3);
+      byDay.set(row3.dayKey, list);
     }
     const days = [...byDay.keys()].sort().slice(0, Math.max(1, Number(input.minDistinctDays ?? 2) || 2)).map((dayKey) => ({ dayKey, rows: byDay.get(dayKey) ?? [] }));
     return { rows: limited, days };
@@ -21086,9 +21265,9 @@ var ProjectPlannerCanonical = (() => {
   }
   function jobScheduleLeaveMarks(input) {
     const dayKeys = (input?.dayKeys || []).filter((d) => typeof d === "string" && d.trim() !== "").map((d) => d.trim());
-    const holidays = (input?.holidays || []).filter((h3) => {
-      if (!h3 || typeof h3 !== "object") return false;
-      const status = normalizeHolidayStatus(h3.status);
+    const holidays = (input?.holidays || []).filter((h4) => {
+      if (!h4 || typeof h4 !== "object") return false;
+      const status = normalizeHolidayStatus(h4.status);
       return status === "approved" || status === "pending";
     });
     const roster = input?.roster || [];
@@ -21104,17 +21283,17 @@ var ProjectPlannerCanonical = (() => {
         ids.add(email);
         for (const id2 of personIdSet({ id: email, email }, roster)) ids.add(key3(id2));
       }
-      for (const row2 of roster) {
-        const rowEmail = key3(row2?.email);
+      for (const row3 of roster) {
+        const rowEmail = key3(row3?.email);
         if (!rowEmail || ids.has(rowEmail)) continue;
-        const rowIds = [row2?.id, ...row2?.formerUserIds || [], ...row2?.sameEmailUserIds || [], ...row2?.formerIds || [], ...row2?.aliasIds || []];
+        const rowIds = [row3?.id, ...row3?.formerUserIds || [], ...row3?.sameEmailUserIds || [], ...row3?.formerIds || [], ...row3?.aliasIds || []];
         if (rowIds.some((id2) => ids.has(key3(id2)))) ids.add(rowEmail);
       }
       const has2 = (value) => {
         const k = key3(value);
         return k !== "" && ids.has(k);
       };
-      const mine = ids.size === 0 ? [] : holidays.filter((h3) => has2(h3.userId) || has2(h3.operativeId));
+      const mine = ids.size === 0 ? [] : holidays.filter((h4) => has2(h4.userId) || has2(h4.operativeId));
       const days = dayKeys.map((dayKey) => {
         if (mine.length === 0) return noneMark(dayKey);
         const result2 = leaveDayKind(mine, dayKey, input?.timeZone, input?.nonWorkingDayKeys);
@@ -21127,15 +21306,15 @@ var ProjectPlannerCanonical = (() => {
           const halfState = (slot2) => {
             let state2 = null;
             let id2 = null;
-            for (const h3 of mine) {
-              if (normalizeHolidayTimeSlot(h3.timeSlot) !== slot2) continue;
-              const one = leaveDayKind([h3], dayKey, input?.timeZone, input?.nonWorkingDayKeys).kind;
+            for (const h4 of mine) {
+              if (normalizeHolidayTimeSlot(h4.timeSlot) !== slot2) continue;
+              const one = leaveDayKind([h4], dayKey, input?.timeZone, input?.nonWorkingDayKeys).kind;
               if (one === "approvedHalf" && state2 !== "approved") {
                 state2 = "approved";
-                id2 = String(h3.id ?? "").trim() || null;
+                id2 = String(h4.id ?? "").trim() || null;
               } else if (one === "pendingHalf" && state2 === null) {
                 state2 = "pending";
-                id2 = String(h3.id ?? "").trim() || null;
+                id2 = String(h4.id ?? "").trim() || null;
               }
             }
             return { state: state2, id: id2 };
@@ -21157,8 +21336,8 @@ var ProjectPlannerCanonical = (() => {
         }
         const pending = kind === "pendingFull" || kind === "pendingHalf";
         const half = kind === "approvedHalf" || kind === "pendingHalf";
-        const record18 = (result2.recordId ? mine.find((h3) => String(h3.id ?? "").trim() === result2.recordId) : void 0) ?? mine.find((h3) => {
-          const slot2 = normalizeHolidayTimeSlot(h3.timeSlot);
+        const record18 = (result2.recordId ? mine.find((h4) => String(h4.id ?? "").trim() === result2.recordId) : void 0) ?? mine.find((h4) => {
+          const slot2 = normalizeHolidayTimeSlot(h4.timeSlot);
           return half ? slot2 !== "FULL DAY" : slot2 === "FULL DAY";
         });
         const slot = mixedSlot ?? (half ? normalizeHolidayTimeSlot(record18?.timeSlot) === "PM" ? "PM" : "AM" : "FULL DAY");
@@ -21226,10 +21405,10 @@ var ProjectPlannerCanonical = (() => {
       const clock4 = Math.max(0, Number(booking.overtime?.clockHours) || 0);
       if (clock4 > 0) {
         const rate = Number(booking.overtime?.multiplier) > 0 ? hundredths(Number(booking.overtime?.multiplier)) : 1;
-        const row2 = byRate.get(rate) ?? { clock: 0, brk: 0 };
-        row2.clock += clock4;
-        row2.brk += Math.max(0, Number(booking.overtime?.breakHours) || 0);
-        byRate.set(rate, row2);
+        const row3 = byRate.get(rate) ?? { clock: 0, brk: 0 };
+        row3.clock += clock4;
+        row3.brk += Math.max(0, Number(booking.overtime?.breakHours) || 0);
+        byRate.set(rate, row3);
       }
     }
     const single = bookings.length === 1;
@@ -21240,7 +21419,7 @@ var ProjectPlannerCanonical = (() => {
     const caption = kind.tone === "halfDay" ? kind.halfLabel : kind.tone === "split" || onLeave ? null : kind.tone === "otOnly" ? "OT" : "Std";
     const standardText = kind.standardHours > 0 ? onLeave ? dayHoursText(kind.standardHours) : `${dayHoursText(kind.standardHours)} Std` : null;
     const overtimeText = kind.overtimeHours > 0 ? onLeave ? dayHoursText(kind.overtimeHours) : `${dayHoursText(kind.overtimeHours)} OT` : null;
-    const overtimeLines = [...byRate.entries()].sort((a, b) => a[0] - b[0]).map(([multiplier, row2]) => multipliedHoursText({ clockHours: row2.clock, multiplier, breakHours: row2.brk }));
+    const overtimeLines = [...byRate.entries()].sort((a, b) => a[0] - b[0]).map(([multiplier, row3]) => multipliedHoursText({ clockHours: row3.clock, multiplier, breakHours: row3.brk }));
     return {
       ...kind,
       totalHours,
@@ -21263,7 +21442,7 @@ var ProjectPlannerCanonical = (() => {
       if (!interval2) return null;
       const end = interval2.end >= 24 * 60 ? interval2.end - 24 * 60 : interval2.end;
       return { start: interval2.start, text: `${formatClockMinutes(interval2.start)}\u2013${formatClockMinutes(end)}` };
-    }).filter((row2) => row2 != null).sort((a, b) => a.start - b.start);
+    }).filter((row3) => row3 != null).sort((a, b) => a.start - b.start);
     const times3 = [];
     for (const span of spans) if (!times3.includes(span.text)) times3.push(span.text);
     const timesText2 = times3.join(" + ");
@@ -21289,10 +21468,10 @@ var ProjectPlannerCanonical = (() => {
   }
 
   // lib/canonical/jobBadges.ts
-  function rowDay(row2, timeZone) {
-    const given = idText(row2.dayKey);
+  function rowDay(row3, timeZone) {
+    const given = idText(row3.dayKey);
     if (/^\d{4}-\d{2}-\d{2}$/.test(given)) return given;
-    return holidayDocumentDayKey(row2.date, timeZone);
+    return holidayDocumentDayKey(row3.date, timeZone);
   }
   function siteMapPins(input) {
     const fold = personFolder(input.people || []);
@@ -21351,17 +21530,17 @@ var ProjectPlannerCanonical = (() => {
   }
   function mergeVariationSources(collectionRows, fallbackRows, itemDocs) {
     const byId = /* @__PURE__ */ new Map();
-    const ms = (row2) => typeof row2.updatedAtMs === "number" && Number.isFinite(row2.updatedAtMs) ? row2.updatedAtMs : 0;
-    for (const row2 of [...fallbackRows || [], ...itemDocs || [], ...collectionRows || []]) {
-      const key7 = idKey(row2?.id);
+    const ms = (row3) => typeof row3.updatedAtMs === "number" && Number.isFinite(row3.updatedAtMs) ? row3.updatedAtMs : 0;
+    for (const row3 of [...fallbackRows || [], ...itemDocs || [], ...collectionRows || []]) {
+      const key7 = idKey(row3?.id);
       if (!key7) continue;
       const existing = byId.get(key7);
-      if (!existing || ms(row2) >= ms(existing)) byId.set(key7, row2);
+      if (!existing || ms(row3) >= ms(existing)) byId.set(key7, row3);
     }
     return [...byId.values()];
   }
   function openVariationCount(rows3) {
-    return (rows3 || []).filter((row2) => row2 && row2.isDeleted !== true && idKey(row2.status) === "open").length;
+    return (rows3 || []).filter((row3) => row3 && row3.isDeleted !== true && idKey(row3.status) === "open").length;
   }
 
   // lib/canonical/materialCatalogueCsv.ts
@@ -22016,11 +22195,11 @@ var ProjectPlannerCanonical = (() => {
     return value && typeof value === "object" && !Array.isArray(value) ? value : null;
   }
   function invoicingOf(source) {
-    const row2 = record11(source);
-    if (!row2) return null;
-    const nested = record11(row2.invoicing);
+    const row3 = record11(source);
+    if (!row3) return null;
+    const nested = record11(row3.invoicing);
     if (nested) return nested;
-    if ("payePayday" in row2 || "payePaydayHistory" in row2 || "paymentRunMode" in row2) return row2;
+    if ("payePayday" in row3 || "payePaydayHistory" in row3 || "paymentRunMode" in row3) return row3;
     return null;
   }
   function dayOfMonth(value) {
@@ -22063,9 +22242,9 @@ var ProjectPlannerCanonical = (() => {
     const raw = Array.isArray(inv.payePaydayHistory) ? inv.payePaydayHistory : [];
     const rows3 = [];
     raw.forEach((entry, index) => {
-      const row2 = record11(entry);
-      const day = dayOfMonth(row2?.day);
-      const from = String(row2?.effectiveFrom ?? "").trim();
+      const row3 = record11(entry);
+      const day = dayOfMonth(row3?.day);
+      const from = String(row3?.effectiveFrom ?? "").trim();
       if (day != null && DAY_KEY8.test(from)) rows3.push({ day, effectiveFrom: from, index });
     });
     rows3.sort((a, b) => a.effectiveFrom === b.effectiveFrom ? a.index - b.index : a.effectiveFrom < b.effectiveFrom ? -1 : 1);
@@ -22102,7 +22281,7 @@ var ProjectPlannerCanonical = (() => {
     const run = payrunUnder(entry.day, dayKey);
     const start = run.start < entry.effectiveFrom ? entry.effectiveFrom : run.start;
     let end = run.end;
-    const next = history.slice(index + 1).find((row2) => row2.effectiveFrom > dayKey);
+    const next = history.slice(index + 1).find((row3) => row3.effectiveFrom > dayKey);
     if (next && next.effectiveFrom <= end) end = addDays(next.effectiveFrom, -1);
     return { start, end, payDate: end, payday: entry.day };
   }
@@ -22135,13 +22314,13 @@ var ProjectPlannerCanonical = (() => {
     const history = payePaydayHistory(source);
     const current = payePayrunPeriod(source, todayKey4);
     if (current && current.payday === next) {
-      const pending = history.filter((row2) => row2.effectiveFrom > todayKey4);
+      const pending = history.filter((row3) => row3.effectiveFrom > todayKey4);
       if (pending.length === 0 || pending[pending.length - 1].day === next) return null;
     }
     const effectiveFrom = current ? addDays(current.end, 1) : payrunUnder(next, todayKey4).start;
     const stored = invoicingOf(source);
     const storedHistory = Array.isArray(stored?.payePaydayHistory) ? stored?.payePaydayHistory : [];
-    const base = storedHistory.length > 0 ? storedHistory.map((row2) => ({ ...record11(row2) ?? {} })) : history.map((row2) => ({ ...row2 }));
+    const base = storedHistory.length > 0 ? storedHistory.map((row3) => ({ ...record11(row3) ?? {} })) : history.map((row3) => ({ ...row3 }));
     return {
       "invoicing.payePayday": next,
       "invoicing.payePaydayHistory": [...base, { day: next, effectiveFrom }]
@@ -22388,14 +22567,14 @@ var ProjectPlannerCanonical = (() => {
       return Number.isNaN(ms) ? null : ms;
     }
     if (typeof raw === "object") {
-      const row2 = raw;
-      if (typeof row2.toMillis === "function") {
-        const ms = Number(row2.toMillis());
+      const row3 = raw;
+      if (typeof row3.toMillis === "function") {
+        const ms = Number(row3.toMillis());
         return Number.isFinite(ms) ? ms : null;
       }
-      const seconds = Number(row2.seconds ?? row2._seconds);
+      const seconds = Number(row3.seconds ?? row3._seconds);
       if (!Number.isFinite(seconds)) return null;
-      const nanos = Number(row2.nanoseconds ?? row2._nanoseconds ?? 0) || 0;
+      const nanos = Number(row3.nanoseconds ?? row3._nanoseconds ?? 0) || 0;
       return seconds * 1e3 + Math.floor(nanos / 1e6);
     }
     return null;
@@ -22406,44 +22585,44 @@ var ProjectPlannerCanonical = (() => {
   }
   function parseRequestLine(raw) {
     if (!raw || typeof raw !== "object") return null;
-    const row2 = raw;
-    const bookingId = text33(row2.bookingId);
+    const row3 = raw;
+    const bookingId = text33(row3.bookingId);
     if (!bookingId) return null;
-    const action = text33(row2.action);
+    const action = text33(row3.action);
     return {
       bookingId,
-      collection: collectionOf({ collection: text33(row2.collection) }),
-      dayKey: dayKeyOrEmpty(row2.dayKey),
-      jobId: text33(row2.jobId) || null,
-      fingerprint: text33(row2.fingerprint),
+      collection: collectionOf({ collection: text33(row3.collection) }),
+      dayKey: dayKeyOrEmpty(row3.dayKey),
+      jobId: text33(row3.jobId) || null,
+      fingerprint: text33(row3.fingerprint),
       action: action === "edit" || action === "strike" ? action : "keep",
-      proposedStart: clockOf(row2.proposedStart) || null,
-      proposedEnd: clockOf(row2.proposedEnd) || null,
-      proposedMultiplier: multiplierOf2(row2.proposedMultiplier),
-      cancel: row2.cancel === true,
-      overtimeHoursBefore: round23(Number(row2.overtimeHoursBefore) || 0),
-      overtimeHoursAfter: round23(Number(row2.overtimeHoursAfter) || 0)
+      proposedStart: clockOf(row3.proposedStart) || null,
+      proposedEnd: clockOf(row3.proposedEnd) || null,
+      proposedMultiplier: multiplierOf2(row3.proposedMultiplier),
+      cancel: row3.cancel === true,
+      overtimeHoursBefore: round23(Number(row3.overtimeHoursBefore) || 0),
+      overtimeHoursAfter: round23(Number(row3.overtimeHoursAfter) || 0)
     };
   }
   function parseDecision(raw) {
     if (!raw || typeof raw !== "object") return null;
-    const row2 = raw;
-    const action = text33(row2.action);
+    const row3 = raw;
+    const action = text33(row3.action);
     if (action === "approve") return { action: "approve" };
     if (action === "strike") return { action: "strike" };
     if (action === "edit") {
-      const start = clockOf(row2.start);
-      const end = clockOf(row2.end);
+      const start = clockOf(row3.start);
+      const end = clockOf(row3.end);
       if (!start || !end) return null;
-      return { action: "edit", start, end, multiplier: multiplierOf2(row2.multiplier) };
+      return { action: "edit", start, end, multiplier: multiplierOf2(row3.multiplier) };
     }
     return null;
   }
   function parseOvertimeRequestDocument(docId, data) {
-    const row2 = data && typeof data === "object" ? data : {};
-    const status = text33(row2.status).toLowerCase();
+    const row3 = data && typeof data === "object" ? data : {};
+    const status = text33(row3.status).toLowerCase();
     const decisions = {};
-    const rawDecisions = row2.decisions && typeof row2.decisions === "object" ? row2.decisions : {};
+    const rawDecisions = row3.decisions && typeof row3.decisions === "object" ? row3.decisions : {};
     for (const [bookingId, value] of Object.entries(rawDecisions)) {
       const decision = parseDecision(value);
       if (decision) decisions[bookingId] = decision;
@@ -22451,34 +22630,34 @@ var ProjectPlannerCanonical = (() => {
     const ids = (value) => Array.isArray(value) ? value.map(text33).filter(Boolean) : [];
     return {
       id: text33(docId),
-      userId: text33(row2.userId),
-      rangeStart: dayKeyOrEmpty(row2.rangeStart),
-      rangeEnd: dayKeyOrEmpty(row2.rangeEnd),
+      userId: text33(row3.userId),
+      rangeStart: dayKeyOrEmpty(row3.rangeStart),
+      rangeEnd: dayKeyOrEmpty(row3.rangeEnd),
       status: OVERTIME_REQUEST_STATUSES.includes(status) ? status : "pending",
-      lines: (Array.isArray(row2.lines) ? row2.lines : []).map(parseRequestLine).filter((line) => line != null),
+      lines: (Array.isArray(row3.lines) ? row3.lines : []).map(parseRequestLine).filter((line) => line != null),
       decisions,
-      decidedBy: text33(row2.decidedBy) || null,
-      createdAtMs: instantMs3(row2.createdAt),
-      decidedAtMs: instantMs3(row2.decidedAt),
-      appliedBookingIds: ids(row2.appliedBookingIds),
-      droppedBookingIds: ids(row2.droppedBookingIds),
-      staleBookingIds: ids(row2.staleBookingIds),
-      deletedBookingIds: ids(row2.deletedBookingIds)
+      decidedBy: text33(row3.decidedBy) || null,
+      createdAtMs: instantMs3(row3.createdAt),
+      decidedAtMs: instantMs3(row3.decidedAt),
+      appliedBookingIds: ids(row3.appliedBookingIds),
+      droppedBookingIds: ids(row3.droppedBookingIds),
+      staleBookingIds: ids(row3.staleBookingIds),
+      deletedBookingIds: ids(row3.deletedBookingIds)
     };
   }
   function parseOvertimeReviewDocument(docId, data) {
-    const row2 = data && typeof data === "object" ? data : {};
-    const decision = text33(row2.decision);
+    const row3 = data && typeof data === "object" ? data : {};
+    const decision = text33(row3.decision);
     return {
       id: text33(docId),
-      userId: text33(row2.userId),
-      bookingId: text33(row2.bookingId),
-      collection: collectionOf({ collection: text33(row2.collection) }),
+      userId: text33(row3.userId),
+      bookingId: text33(row3.bookingId),
+      collection: collectionOf({ collection: text33(row3.collection) }),
       decision: OVERTIME_REVIEW_DECISIONS.includes(decision) ? decision : "approved",
-      fingerprint: text33(row2.fingerprint),
-      reviewedBy: text33(row2.reviewedBy) || null,
-      reviewedAtMs: instantMs3(row2.reviewedAt),
-      requestId: text33(row2.requestId) || null
+      fingerprint: text33(row3.fingerprint),
+      reviewedBy: text33(row3.reviewedBy) || null,
+      reviewedAtMs: instantMs3(row3.reviewedAt),
+      requestId: text33(row3.requestId) || null
     };
   }
   function overtimeReviewDocId(userId, bookingId) {
@@ -22489,7 +22668,7 @@ var ProjectPlannerCanonical = (() => {
     for (const request of requests) {
       if (request.status !== "pending") continue;
       if ([...request.appliedBookingIds || [], ...request.droppedBookingIds || []].some((id2) => idKey(id2) === idKey(bookingId))) continue;
-      const line = request.lines.find((row2) => idKey(row2.bookingId) === idKey(bookingId));
+      const line = request.lines.find((row3) => idKey(row3.bookingId) === idKey(bookingId));
       if (!line) continue;
       if (!best || (request.createdAtMs ?? 0) >= (best.request.createdAtMs ?? 0)) best = { request, line };
     }
@@ -22499,7 +22678,7 @@ var ProjectPlannerCanonical = (() => {
     let best = null;
     for (const request of requests) {
       if (request.status !== "approved") continue;
-      const line = request.lines.find((row2) => idKey(row2.bookingId) === idKey(bookingId));
+      const line = request.lines.find((row3) => idKey(row3.bookingId) === idKey(bookingId));
       if (!line) continue;
       const at = request.decidedAtMs ?? request.createdAtMs ?? 0;
       if (!best || at >= (best.request.decidedAtMs ?? best.request.createdAtMs ?? 0)) best = { request, line };
@@ -22507,7 +22686,7 @@ var ProjectPlannerCanonical = (() => {
     return best;
   }
   function hasId(list, id2) {
-    return (list || []).some((row2) => idKey(row2) === idKey(id2));
+    return (list || []).some((row3) => idKey(row3) === idKey(id2));
   }
   function fingerprintParts(fingerprint) {
     const [day, slot, start, end] = text33(fingerprint).split("|");
@@ -22536,7 +22715,7 @@ var ProjectPlannerCanonical = (() => {
       if (seen.has(bookingKey)) continue;
       seen.add(bookingKey);
       const fingerprint = overtimeBookingFingerprint(booking);
-      const review = reviews.find((row2) => idKey(row2.bookingId) === idKey(booking.id)) ?? null;
+      const review = reviews.find((row3) => idKey(row3.bookingId) === idKey(booking.id)) ?? null;
       const pending = newestPending(requests, booking.id);
       const returned = newestReturned(requests, booking.id);
       let state;
@@ -22588,13 +22767,13 @@ var ProjectPlannerCanonical = (() => {
         sentLine: pending ? pending.line : returned ? returned.line : null
       });
     }
-    const jobs = new Map((input.jobs || []).filter((row2) => row2 && text33(row2.id)).map((row2) => [idKey(row2.id), row2]));
+    const jobs = new Map((input.jobs || []).filter((row3) => row3 && text33(row3.id)).map((row3) => [idKey(row3.id), row3]));
     for (const review of reviews) {
       if (review.decision !== "deleted" || liveIds.has(idKey(review.bookingId))) continue;
       const key7 = `${review.collection}/${idKey(review.bookingId)}`;
       if (seen.has(key7)) continue;
-      const request = review.requestId ? requests.find((row2) => idKey(row2.id) === idKey(review.requestId)) ?? null : null;
-      const line = request ? request.lines.find((row2) => idKey(row2.bookingId) === idKey(review.bookingId)) ?? null : null;
+      const request = review.requestId ? requests.find((row3) => idKey(row3.id) === idKey(review.requestId)) ?? null : null;
+      const line = request ? request.lines.find((row3) => idKey(row3.bookingId) === idKey(review.bookingId)) ?? null : null;
       const parts3 = fingerprintParts(review.fingerprint);
       const day = parts3.dayKey || (line ? line.dayKey : "");
       if (!day || day < start || day > end) continue;
@@ -22752,7 +22931,7 @@ var ProjectPlannerCanonical = (() => {
     const person = input.person;
     if (!person || !idText(person.id)) return [];
     const aliasIds = personIdSet(person, input.roster || []);
-    const operatives = (input.operatives || []).filter((row2) => row2 && idText(row2.id)).map((row2) => ({ id: idText(row2.id), email: typeof row2.email === "string" ? row2.email : "" }));
+    const operatives = (input.operatives || []).filter((row3) => row3 && idText(row3.id)).map((row3) => ({ id: idText(row3.id), email: typeof row3.email === "string" ? row3.email : "" }));
     return bookingIdsForAccount({ id: idText(person.id), email: typeof person.email === "string" ? person.email : null, aliasIds }, operatives);
   }
   function canDecideOvertimeRequest(viewer, requester, roster) {
@@ -22842,7 +23021,7 @@ var ProjectPlannerCanonical = (() => {
     const end = dayKeyOrEmpty(input.rangeEnd);
     if (!userId || !start || !end || start > end || !input.lines) return null;
     const ids = input.personIds ?? [userId];
-    const byId = input.bookings ? new Map(input.bookings.map((row2) => [`${collectionOf(row2)}/${idKey(row2.id)}`, row2])) : null;
+    const byId = input.bookings ? new Map(input.bookings.map((row3) => [`${collectionOf(row3)}/${idKey(row3.id)}`, row3])) : null;
     const lines = input.lines.filter((line) => {
       if (!byId) return true;
       const booking = byId.get(`${line.collection}/${idKey(line.bookingId)}`);
@@ -22870,7 +23049,7 @@ var ProjectPlannerCanonical = (() => {
     return overtimeBookingIsTheirs(input.booking, ids);
   }
   function overtimeRequestsToReplace(requests, userId, rangeStart, rangeEnd) {
-    return requests.filter((row2) => row2.status === "pending" && idKey(row2.userId) === idKey(userId) && row2.rangeStart === rangeStart && row2.rangeEnd === rangeEnd).map((row2) => row2.id);
+    return requests.filter((row3) => row3.status === "pending" && idKey(row3.userId) === idKey(userId) && row3.rangeStart === rangeStart && row3.rangeEnd === rangeEnd).map((row3) => row3.id);
   }
   function overtimeRequestWithdrawWriteFields(request) {
     return request.status === "pending" ? { status: "withdrawn" } : null;
@@ -23189,7 +23368,7 @@ var ProjectPlannerCanonical = (() => {
       const had = overtimeForBooking({ booking: before, organization: input.organization, timeZone: input.timeZone }) != null || (input.after ? overtimeForBooking({ booking: input.after, organization: input.organization, timeZone: input.timeZone }) != null : false);
       return { reopened: had, returned: false };
     }
-    const review = input.reviews.find((row2) => idKey(row2.bookingId) === idKey(before.id) && overtimeFingerprintsMatch(row2.fingerprint, oldPrint)) ?? null;
+    const review = input.reviews.find((row3) => idKey(row3.bookingId) === idKey(before.id) && overtimeFingerprintsMatch(row3.fingerprint, oldPrint)) ?? null;
     const pending = newestPending(input.requests, before.id);
     const sent = pending != null && overtimeFingerprintsMatch(pending.line.fingerprint, oldPrint);
     const returned = Boolean(review && review.requestId && review.decision !== "deleted");
@@ -23197,7 +23376,7 @@ var ProjectPlannerCanonical = (() => {
   }
   function overtimeReopenedRecipients(input) {
     const members = (input.roster || []).filter((member) => member && idText(member.id));
-    const catalogue = (input.operatives || []).filter((row2) => row2 && idText(row2.id)).map((row2) => ({ id: idText(row2.id), email: row2.email ?? null }));
+    const catalogue = (input.operatives || []).filter((row3) => row3 && idText(row3.id)).map((row3) => ({ id: idText(row3.id), email: row3.email ?? null }));
     const account = notificationRecipientAccountId(input.bookedId, members, catalogue);
     if (!account) return [];
     const person = members.find((member) => idKey(member.id) === idKey(account));
@@ -23296,8 +23475,8 @@ var ProjectPlannerCanonical = (() => {
     return false;
   }
   function parseOvertimeReportDocument(docId, data) {
-    const row2 = data && typeof data === "object" ? data : {};
-    const lines = (Array.isArray(row2.lines) ? row2.lines : []).map((raw) => {
+    const row3 = data && typeof data === "object" ? data : {};
+    const lines = (Array.isArray(row3.lines) ? row3.lines : []).map((raw) => {
       const r = raw && typeof raw === "object" ? raw : {};
       const dayKey = dayKeyOrEmpty(r.dayKey);
       return {
@@ -23320,14 +23499,14 @@ var ProjectPlannerCanonical = (() => {
         declinedByName: text33(r.declinedByName)
       };
     });
-    const totals = row2.totals && typeof row2.totals === "object" ? row2.totals : {};
+    const totals = row3.totals && typeof row3.totals === "object" ? row3.totals : {};
     return {
       id: text33(docId),
-      userId: text33(row2.userId),
-      userName: text33(row2.userName),
-      companyName: text33(row2.companyName),
-      rangeStart: dayKeyOrEmpty(row2.rangeStart),
-      rangeEnd: dayKeyOrEmpty(row2.rangeEnd),
+      userId: text33(row3.userId),
+      userName: text33(row3.userName),
+      companyName: text33(row3.companyName),
+      rangeStart: dayKeyOrEmpty(row3.rangeStart),
+      rangeEnd: dayKeyOrEmpty(row3.rangeEnd),
       kind: "overtime",
       lines,
       totals: {
@@ -23335,11 +23514,11 @@ var ProjectPlannerCanonical = (() => {
         clockHours: round23(Number(totals.clockHours) || lines.reduce((sum, line) => sum + line.clockHours, 0)),
         lineCount: Number(totals.lineCount) || lines.length
       },
-      generatedBy: text33(row2.generatedBy),
-      generatedAtMs: instantMs3(row2.generatedAt),
+      generatedBy: text33(row3.generatedBy),
+      generatedAtMs: instantMs3(row3.generatedAt),
       // 1.33.0: a stored out-of-date mark, if one is ever written (today the apps work it out: `overtimeReportOutOfDate`).
-      outOfDate: row2.outOfDate === true || instantMs3(row2.outOfDateAt ?? row2.outOfDateAtMs) != null,
-      outOfDateAtMs: instantMs3(row2.outOfDateAt ?? row2.outOfDateAtMs)
+      outOfDate: row3.outOfDate === true || instantMs3(row3.outOfDateAt ?? row3.outOfDateAtMs) != null,
+      outOfDateAtMs: instantMs3(row3.outOfDateAt ?? row3.outOfDateAtMs)
     };
   }
   function overtimeReportRows(snapshot, options) {
@@ -23357,7 +23536,7 @@ var ProjectPlannerCanonical = (() => {
         declined
       };
     });
-    const rows3 = table.map((row2) => [row2.day, row2.job, row2.time, row2.overtime, row2.note].filter(Boolean).join(" \xB7 "));
+    const rows3 = table.map((row3) => [row3.day, row3.job, row3.time, row3.overtime, row3.note].filter(Boolean).join(" \xB7 "));
     const totalValue = hoursText2(snapshot.totals.overtimeHours);
     const period = `${formatPaymentRunDay(snapshot.rangeStart)} \u2013 ${formatPaymentRunDay(snapshot.rangeEnd)}`;
     const generated = reportGeneratedText({
@@ -23426,7 +23605,7 @@ var ProjectPlannerCanonical = (() => {
         const figures = line.figures;
         const changed = figures.customMultiplier != null && Math.abs(figures.customMultiplier - figures.organizationMultiplier) > 1e-9;
         const key7 = `${idKey(person.id)}|${idKey(line.jobId ?? line.jobNumber)}|${figures.multiplier}|${changed ? "c" : "o"}|${figures.organizationMultiplier}`;
-        const row2 = rows3.get(key7) ?? {
+        const row3 = rows3.get(key7) ?? {
           personId: idText(person.id),
           name: text33(person.name),
           jobId: line.jobId,
@@ -23439,16 +23618,16 @@ var ProjectPlannerCanonical = (() => {
           changedFromOrganization: changed,
           overtimeHours: 0
         };
-        row2.clockHours = round23(row2.clockHours + figures.clockHours);
-        row2.breakHours = round23(row2.breakHours + figures.breakHours);
-        row2.overtimeHours = round23(row2.overtimeHours + figures.overtimeHours);
-        rows3.set(key7, row2);
+        row3.clockHours = round23(row3.clockHours + figures.clockHours);
+        row3.breakHours = round23(row3.breakHours + figures.breakHours);
+        row3.overtimeHours = round23(row3.overtimeHours + figures.overtimeHours);
+        rows3.set(key7, row3);
       }
     }
-    return [...rows3.values()].sort((a, b) => a.name.localeCompare(b.name) || a.jobNumber.localeCompare(b.jobNumber) || a.multiplier - b.multiplier).map((row2) => {
-      const multiplierText2 = overtimeMultiplierText(row2);
-      const mark = row2.changedFromOrganization ? ` \xB7 ${OVERTIME_RATE_CHANGED_MARK} (\xD7${row2.organizationMultiplier})` : "";
-      return { ...row2, multiplierText: multiplierText2, label: `${[row2.name, row2.jobNumber, multiplierText2].filter(Boolean).join(" \xB7 ")}${mark}` };
+    return [...rows3.values()].sort((a, b) => a.name.localeCompare(b.name) || a.jobNumber.localeCompare(b.jobNumber) || a.multiplier - b.multiplier).map((row3) => {
+      const multiplierText2 = overtimeMultiplierText(row3);
+      const mark = row3.changedFromOrganization ? ` \xB7 ${OVERTIME_RATE_CHANGED_MARK} (\xD7${row3.organizationMultiplier})` : "";
+      return { ...row3, multiplierText: multiplierText2, label: `${[row3.name, row3.jobNumber, multiplierText2].filter(Boolean).join(" \xB7 ")}${mark}` };
     });
   }
   function overtimeRateCreateControl(input) {
@@ -23614,11 +23793,11 @@ var ProjectPlannerCanonical = (() => {
   function overtimeSubmitLines(input) {
     const ready = overtimeSubmitReady({ lines: input.lines, choices: input.choices });
     if (!ready.ready) return { lines: [], refused: [] };
-    const byId = new Map((input.bookings || []).map((row2) => [idKey(row2.id), row2]));
+    const byId = new Map((input.bookings || []).map((row3) => [idKey(row3.id), row3]));
     const out = [];
     const refused = [];
     for (const bookingId of ready.bookingIds) {
-      const line = input.lines.find((row2) => idKey(row2.bookingId) === idKey(bookingId));
+      const line = input.lines.find((row3) => idKey(row3.bookingId) === idKey(bookingId));
       const booking = byId.get(idKey(bookingId));
       const decision = line ? overtimeChoiceDecision(overtimeLineChoice(line, input.choices)) : null;
       if (!booking || !decision) {
@@ -23716,11 +23895,11 @@ var ProjectPlannerCanonical = (() => {
   }
   function overtimeRequestsSuperseded(requests, userId, bookingIds) {
     const sending = new Set((bookingIds || []).map(idKey));
-    return (requests || []).filter((row2) => row2.status === "pending" && idKey(row2.userId) === idKey(userId)).filter((row2) => {
-      const done = new Set([...row2.appliedBookingIds || [], ...row2.droppedBookingIds || []].map(idKey));
-      const open = row2.lines.filter((line) => !done.has(idKey(line.bookingId)));
+    return (requests || []).filter((row3) => row3.status === "pending" && idKey(row3.userId) === idKey(userId)).filter((row3) => {
+      const done = new Set([...row3.appliedBookingIds || [], ...row3.droppedBookingIds || []].map(idKey));
+      const open = row3.lines.filter((line) => !done.has(idKey(line.bookingId)));
       return open.length > 0 && open.every((line) => sending.has(idKey(line.bookingId)));
-    }).map((row2) => row2.id);
+    }).map((row3) => row3.id);
   }
 
   // lib/canonical/priceWorkJobNumber.ts
@@ -23771,25 +23950,25 @@ var ProjectPlannerCanonical = (() => {
     const before = /* @__PURE__ */ new Map();
     const withoutId = [];
     for (const raw of previous || []) {
-      const row2 = record12(raw);
-      const id2 = normalizeDocumentId(row2.id);
-      if (!id2) withoutId.push(row2);
-      else if (!before.has(id2)) before.set(id2, row2);
+      const row3 = record12(raw);
+      const id2 = normalizeDocumentId(row3.id);
+      if (!id2) withoutId.push(row3);
+      else if (!before.has(id2)) before.set(id2, row3);
     }
     const out = [];
     for (const raw of next || []) {
-      const row2 = record12(raw);
-      const id2 = normalizeDocumentId(row2.id);
+      const row3 = record12(raw);
+      const id2 = normalizeDocumentId(row3.id);
       const stored = id2 ? before.get(id2) : void 0;
-      if (stored && sameOwnerFields(stored, row2, kind)) continue;
-      if (!stored && withoutId.some((old) => sameOwnerFields(old, row2, kind))) continue;
-      out.push(row2);
+      if (stored && sameOwnerFields(stored, row3, kind)) continue;
+      if (!stored && withoutId.some((old) => sameOwnerFields(old, row3, kind))) continue;
+      out.push(row3);
     }
     return out;
   }
   function timesheetPriceWorkJobNumberError(previous, next) {
-    for (const row2 of timesheetOwnerTouchedEntries(previous, next, "priceWork")) {
-      const error = priceWorkJobNumberError(row2.jobNumber);
+    for (const row3 of timesheetOwnerTouchedEntries(previous, next, "priceWork")) {
+      const error = priceWorkJobNumberError(row3.jobNumber);
       if (error) return error;
     }
     return null;
@@ -23864,10 +24043,10 @@ var ProjectPlannerCanonical = (() => {
     const rows3 = roster || [];
     const org = text36(options?.organizationId);
     return lineManagerCandidates(person, rows3).filter((candidate) => {
-      const row2 = rows3.find((member) => idText(member?.id) === candidate.id);
-      if (!row2) return false;
-      if (org && !homeOrganizationIs(record13(row2).organizationId, org)) return false;
-      return candidate.level === "admin" || storedManager(row2);
+      const row3 = rows3.find((member) => idText(member?.id) === candidate.id);
+      if (!row3) return false;
+      if (org && !homeOrganizationIs(record13(row3).organizationId, org)) return false;
+      return candidate.level === "admin" || storedManager(row3);
     });
   }
   var AGREED_MANAGER_SUGGESTIONS_MAX = 6;
@@ -23892,8 +24071,8 @@ var ProjectPlannerCanonical = (() => {
     const org = organizationId.toLowerCase();
     return v === org || v.endsWith(`organizations/${org}`);
   }
-  function storedManager(row2) {
-    const data = record13(row2);
+  function storedManager(row3) {
+    const data = record13(row3);
     const on = (value) => value === true || value === 1;
     const role = typeof data.role === "string" ? data.role.trim().toLowerCase() : record13(data.role).isManager === true ? "manager" : "";
     return on(data.manager) || on(record13(data.permissions).manager) || role === "manager";
@@ -23918,7 +24097,7 @@ var ProjectPlannerCanonical = (() => {
     const approver = text36(draft.approvedByUserId);
     if (!approver) return PRICE_WORK_APPROVER_REQUIRED_MESSAGE;
     const candidates = priceWorkApproverCandidates(context.person, context.roster, { organizationId: context.organizationId });
-    if (!candidates.some((row2) => row2.id === approver)) return PRICE_WORK_APPROVER_INVALID_MESSAGE;
+    if (!candidates.some((row3) => row3.id === approver)) return PRICE_WORK_APPROVER_INVALID_MESSAGE;
     const money2 = amountError(draft.amount);
     if (money2) return money2;
     return evidenceError(draft.evidence, { organizationId: context.organizationId ?? void 0, userId: context.organizationId != null ? context.person?.id : void 0 });
@@ -23940,12 +24119,12 @@ var ProjectPlannerCanonical = (() => {
     if (!item || text36(item.personUserId)) return null;
     const key7 = idKey(item.userId);
     if (!key7) return null;
-    const users = (input.users || []).filter((row2) => row2 && text36(row2.id));
-    const own = users.find((row2) => idKey(row2.id) === key7);
+    const users = (input.users || []).filter((row3) => row3 && text36(row3.id));
+    const own = users.find((row3) => idKey(row3.id) === key7);
     if (own) return { personUserId: text36(own.id) };
     const listed = (value) => Array.isArray(value) ? value.some((id2) => idKey(id2) === key7) : false;
-    const claims = users.filter((row2) => listed(row2.formerUserIds) || listed(row2.sameEmailUserIds));
-    const ids = Array.from(new Set(claims.map((row2) => text36(row2.id))));
+    const claims = users.filter((row3) => listed(row3.formerUserIds) || listed(row3.sameEmailUserIds));
+    const ids = Array.from(new Set(claims.map((row3) => text36(row3.id))));
     return ids.length === 1 ? { personUserId: ids[0] } : null;
   }
   function priceWorkWriteFields(input) {
@@ -23954,7 +24133,7 @@ var ProjectPlannerCanonical = (() => {
     if (priceWorkValidationError(input.draft, { person: input.person, roster: input.roster, organizationId: input.organizationId })) return null;
     const start = text36(input.draft.startDate);
     const end = text36(input.draft.endDate) || start;
-    const approver = priceWorkApproverCandidates(input.person, input.roster, { organizationId: input.organizationId }).find((row2) => row2.id === text36(input.draft.approvedByUserId));
+    const approver = priceWorkApproverCandidates(input.person, input.roster, { organizationId: input.organizationId }).find((row3) => row3.id === text36(input.draft.approvedByUserId));
     return {
       userId,
       title: text36(input.draft.title).slice(0, PAYE_CLAIM_TITLE_MAX),
@@ -24052,44 +24231,44 @@ var ProjectPlannerCanonical = (() => {
       evidence: item.evidence.map((entry) => ({ ...entry }))
     };
   }
-  function baseOf(docId, row2, organizationId) {
+  function baseOf(docId, row3, organizationId) {
     return {
       id: text36(docId),
-      userId: text36(row2.userId),
-      title: text36(row2.title),
-      details: text36(row2.details),
-      amount: amountOf2(row2.amount) ?? 0,
-      currency: normalizeCurrencyCode(row2.currency) ?? "",
-      evidence: parsePayeClaimEvidence(row2.evidence, { userId: row2.userId, organizationId }),
-      createdAtMs: documentInstantMs(row2.createdAt),
-      createdBy: text36(row2.createdBy),
-      personUserId: text36(row2.personUserId) || null
+      userId: text36(row3.userId),
+      title: text36(row3.title),
+      details: text36(row3.details),
+      amount: amountOf2(row3.amount) ?? 0,
+      currency: normalizeCurrencyCode(row3.currency) ?? "",
+      evidence: parsePayeClaimEvidence(row3.evidence, { userId: row3.userId, organizationId }),
+      createdAtMs: documentInstantMs(row3.createdAt),
+      createdBy: text36(row3.createdBy),
+      personUserId: text36(row3.personUserId) || null
     };
   }
   function parsePriceWorkDocument(docId, data, options) {
-    const row2 = record13(data);
+    const row3 = record13(data);
     const zone3 = zoneOrLondon(options?.timeZone);
-    const startDate = storedDayKey2(row2.startDate, zone3);
-    const endRaw = storedDayKey2(row2.endDate, zone3) || startDate;
+    const startDate = storedDayKey2(row3.startDate, zone3);
+    const endRaw = storedDayKey2(row3.endDate, zone3) || startDate;
     const [a, b] = startDate && endRaw && endRaw < startDate ? [endRaw, startDate] : [startDate, endRaw];
     return {
-      ...baseOf(docId, row2, options?.organizationId),
+      ...baseOf(docId, row3, options?.organizationId),
       kind: "priceWork",
-      jobNumber: jobNumberText(row2.jobNumber),
+      jobNumber: jobNumberText(row3.jobNumber),
       startDate: a,
       endDate: b,
-      approvedByUserId: text36(row2.approvedByUserId),
-      approvedByName: text36(row2.approvedByName)
+      approvedByUserId: text36(row3.approvedByUserId),
+      approvedByName: text36(row3.approvedByName)
     };
   }
   function parseExpenseDocument(docId, data, options) {
-    const row2 = record13(data);
+    const row3 = record13(data);
     const zone3 = zoneOrLondon(options?.timeZone);
     return {
-      ...baseOf(docId, row2, options?.organizationId),
+      ...baseOf(docId, row3, options?.organizationId),
       kind: "expense",
-      jobNumber: text36(row2.jobNumber),
-      date: storedDayKey2(row2.date, zone3)
+      jobNumber: text36(row3.jobNumber),
+      date: storedDayKey2(row3.date, zone3)
     };
   }
   function payeClaimDayKey(item) {
@@ -24131,7 +24310,7 @@ var ProjectPlannerCanonical = (() => {
     if (isAdminOutsideOperativeMode(viewer)) return true;
     const managers = lineManagerIds(subject, members).map(idKey);
     if (!managers.some((id2) => viewerIds.has(id2))) return false;
-    const member = members.find((row2) => sameText(row2.id, viewer.id));
+    const member = members.find((row3) => sameText(row3.id, viewer.id));
     return member ? rosterMemberActive(member) : true;
   }
   function canWritePayeClaim(viewerId, item) {
@@ -24232,10 +24411,10 @@ var ProjectPlannerCanonical = (() => {
     };
   }
   function parsePayeClaimReportDocument(docId, data) {
-    const row2 = record13(data);
-    const kind = text36(row2.kind) === "priceWork" ? "priceWork" : "expense";
-    const owner = { userId: row2.userId };
-    const items = (Array.isArray(row2.items) ? row2.items : []).map((raw) => {
+    const row3 = record13(data);
+    const kind = text36(row3.kind) === "priceWork" ? "priceWork" : "expense";
+    const owner = { userId: row3.userId };
+    const items = (Array.isArray(row3.items) ? row3.items : []).map((raw) => {
       const r = record13(raw);
       const start = isDayKey3(text36(r.startDate)) ? text36(r.startDate) : "";
       return {
@@ -24250,24 +24429,24 @@ var ProjectPlannerCanonical = (() => {
         evidence: parsePayeClaimEvidence(r.evidence, owner)
       };
     });
-    const totals = record13(row2.totals);
+    const totals = record13(row3.totals);
     return {
       id: text36(docId),
-      userId: text36(row2.userId),
-      userName: text36(row2.userName),
-      companyName: text36(row2.companyName),
+      userId: text36(row3.userId),
+      userName: text36(row3.userName),
+      companyName: text36(row3.companyName),
       kind,
-      rangeStart: isDayKey3(text36(row2.rangeStart)) ? text36(row2.rangeStart) : "",
-      rangeEnd: isDayKey3(text36(row2.rangeEnd)) ? text36(row2.rangeEnd) : "",
-      currency: normalizeCurrencyCode(row2.currency) ?? "GBP",
+      rangeStart: isDayKey3(text36(row3.rangeStart)) ? text36(row3.rangeStart) : "",
+      rangeEnd: isDayKey3(text36(row3.rangeEnd)) ? text36(row3.rangeEnd) : "",
+      currency: normalizeCurrencyCode(row3.currency) ?? "GBP",
       items,
       totals: {
         amount: amountOf2(totals.amount) ?? payeClaimsTotal(items),
         itemCount: Number(totals.itemCount) || items.length,
         evidenceCount: Number(totals.evidenceCount) || items.reduce((sum, item) => sum + item.evidence.length, 0)
       },
-      generatedBy: text36(row2.generatedBy),
-      generatedAtMs: documentInstantMs(row2.generatedAt)
+      generatedBy: text36(row3.generatedBy),
+      generatedAtMs: documentInstantMs(row3.generatedAt)
     };
   }
   function dateText(start, end) {
@@ -24360,7 +24539,7 @@ var ProjectPlannerCanonical = (() => {
     return out;
   }
   function payeClaimReportsOfKind(reports, kind) {
-    return (reports || []).filter((row2) => row2.kind === kind).sort((a, b) => (b.generatedAtMs ?? 0) - (a.generatedAtMs ?? 0) || b.rangeEnd.localeCompare(a.rangeEnd));
+    return (reports || []).filter((row3) => row3.kind === kind).sort((a, b) => (b.generatedAtMs ?? 0) - (a.generatedAtMs ?? 0) || b.rangeEnd.localeCompare(a.rangeEnd));
   }
 
   // lib/canonical/timesheetEntryEvidence.ts
@@ -24378,14 +24557,14 @@ var ProjectPlannerCanonical = (() => {
   }
   function timesheetOwnerEntriesError(input) {
     const evidenceContext = { organizationId: input.organizationId ?? void 0, ownerUserIds: input.ownerUserIds ?? null };
-    for (const row2 of timesheetOwnerTouchedEntries(input.previous?.priceWorkEntries, input.next.priceWorkEntries, "priceWork")) {
-      const job = priceWorkJobNumberError(row2.jobNumber);
+    for (const row3 of timesheetOwnerTouchedEntries(input.previous?.priceWorkEntries, input.next.priceWorkEntries, "priceWork")) {
+      const job = priceWorkJobNumberError(row3.jobNumber);
       if (job) return job;
-      const evidence = claimEvidenceListError(Array.isArray(row2.evidence) ? row2.evidence : [], evidenceContext);
+      const evidence = claimEvidenceListError(Array.isArray(row3.evidence) ? row3.evidence : [], evidenceContext);
       if (evidence) return evidence;
     }
-    for (const row2 of timesheetOwnerTouchedEntries(input.previous?.expenseEntries, input.next.expenseEntries, "expense")) {
-      const evidence = claimEvidenceListError(Array.isArray(row2.evidence) ? row2.evidence : [], {
+    for (const row3 of timesheetOwnerTouchedEntries(input.previous?.expenseEntries, input.next.expenseEntries, "expense")) {
+      const evidence = claimEvidenceListError(Array.isArray(row3.evidence) ? row3.evidence : [], {
         ...evidenceContext,
         required: true
       });
@@ -24408,10 +24587,10 @@ var ProjectPlannerCanonical = (() => {
   function timesheetEvidencePages(input) {
     const out = [];
     const find = (list, id2) => list.find((entry) => normalizeDocumentId(entry.id) === normalizeDocumentId(id2));
-    for (const row2 of input.rows) {
-      if (row2.kind !== "priceWork" && row2.kind !== "expense") continue;
-      const priceWork = row2.kind === "priceWork";
-      const entry = priceWork ? find(input.entries.priceWorkEntries, row2.id) : find(input.entries.expenseEntries, row2.id);
+    for (const row3 of input.rows) {
+      if (row3.kind !== "priceWork" && row3.kind !== "expense") continue;
+      const priceWork = row3.kind === "priceWork";
+      const entry = priceWork ? find(input.entries.priceWorkEntries, row3.id) : find(input.entries.expenseEntries, row3.id);
       if (!entry || entry.evidence.length === 0) continue;
       let date = "";
       if (priceWork) {
@@ -24423,8 +24602,8 @@ var ProjectPlannerCanonical = (() => {
         const ex = entry;
         date = ex.dayKey ? formatPaymentRunDay(ex.dayKey) : "";
       }
-      const amount = formatMoney(row2.amount, input.currency);
-      const jobNumber = priceWork ? priceWorkJobNumberText(row2.jobNumber || entry.jobNumber) : text37(row2.jobNumber || entry.jobNumber);
+      const amount = formatMoney(row3.amount, input.currency);
+      const jobNumber = priceWork ? priceWorkJobNumberText(row3.jobNumber || entry.jobNumber) : text37(row3.jobNumber || entry.jobNumber);
       const approvedBy = priceWork ? text37(entry.agreedManagerName) : "";
       entry.evidence.forEach((evidence, index) => {
         const evidenceTitle = `Evidence ${index + 1} of ${entry.evidence.length}: ${evidence.name}${evidence.kind === "personalSiteAudit" ? " (personal site audit copy)" : ""}`;
@@ -24466,12 +24645,12 @@ var ProjectPlannerCanonical = (() => {
     if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
     if (raw instanceof Date) return Number.isNaN(raw.getTime()) ? null : raw.getTime();
     if (typeof raw === "object") {
-      const row2 = raw;
-      if (typeof row2.toMillis === "function") {
-        const ms = Number(row2.toMillis());
+      const row3 = raw;
+      if (typeof row3.toMillis === "function") {
+        const ms = Number(row3.toMillis());
         return Number.isFinite(ms) ? ms : null;
       }
-      const seconds = Number(row2.seconds ?? row2._seconds);
+      const seconds = Number(row3.seconds ?? row3._seconds);
       return Number.isFinite(seconds) ? seconds * 1e3 : null;
     }
     if (typeof raw === "string") {
@@ -24500,21 +24679,21 @@ var ProjectPlannerCanonical = (() => {
     return [item.kind, text38(item.title), text38(item.jobNumber), dates, amount, text38(item.currency).toUpperCase(), String((item.evidence || []).length)].join("|");
   }
   function parsePayeClaimReviewDocument(docId, data) {
-    const row2 = data && typeof data === "object" ? data : {};
+    const row3 = data && typeof data === "object" ? data : {};
     return {
       id: text38(docId),
-      userId: text38(row2.userId),
-      itemId: text38(row2.itemId),
-      kind: text38(row2.kind) === "expense" ? "expense" : "priceWork",
-      decision: text38(row2.decision) === "approved" ? "approved" : "rejected",
-      fingerprint: text38(row2.fingerprint),
-      reviewedBy: text38(row2.reviewedBy) || null,
-      reviewedAtMs: instantMs4(row2.reviewedAt),
-      personUserId: text38(row2.personUserId) || null
+      userId: text38(row3.userId),
+      itemId: text38(row3.itemId),
+      kind: text38(row3.kind) === "expense" ? "expense" : "priceWork",
+      decision: text38(row3.decision) === "approved" ? "approved" : "rejected",
+      fingerprint: text38(row3.fingerprint),
+      reviewedBy: text38(row3.reviewedBy) || null,
+      reviewedAtMs: instantMs4(row3.reviewedAt),
+      personUserId: text38(row3.personUserId) || null
     };
   }
   function payeClaimReviewState(item, reviews) {
-    const review = (reviews || []).find((row2) => row2.kind === item.kind && idKey(row2.itemId) === idKey(item.id) && row2.fingerprint === payeClaimFingerprint(item)) ?? null;
+    const review = (reviews || []).find((row3) => row3.kind === item.kind && idKey(row3.itemId) === idKey(item.id) && row3.fingerprint === payeClaimFingerprint(item)) ?? null;
     const state = review ? review.decision : "needsReview";
     return { state, label: PAYE_CLAIM_REVIEW_STATE_LABELS[state], review };
   }
@@ -24667,7 +24846,7 @@ var ProjectPlannerCanonical = (() => {
         message: `The report says ${storedCount} lines but lists ${report.lines.length}.`
       });
     }
-    const reviews = (input.reviews || []).map((row2) => parseOvertimeReviewDocument(row2.id, row2.data));
+    const reviews = (input.reviews || []).map((row3) => parseOvertimeReviewDocument(row3.id, row3.data));
     const bookings = new Map((input.bookings || []).filter(Boolean).map((booking) => [idKey(booking.id), booking]));
     problems.push(...headerProblems(report, input));
     const personKeys = input.personIds && input.personIds.length ? new Set(input.personIds.map(idKey).filter(Boolean)) : null;
@@ -24712,7 +24891,7 @@ var ProjectPlannerCanonical = (() => {
         });
       }
       const fingerprint = text39(line.fingerprint);
-      const review = reviews.find((row2) => idKey(row2.bookingId) === key7 && idKey(row2.userId) === idKey(report.userId));
+      const review = reviews.find((row3) => idKey(row3.bookingId) === key7 && idKey(row3.userId) === idKey(report.userId));
       const selfReviewed = review != null && review.reviewedBy != null && idKey(review.reviewedBy) === idKey(report.userId);
       const live = bookings.get(key7);
       if (live && personKeys && !personKeys.has(idKey(live.personId))) {
@@ -24950,12 +25129,12 @@ var ProjectPlannerCanonical = (() => {
     const ids = new Set([report.userId, ...input.personIds || []].map(idKey).filter(Boolean));
     const options = { timeZone: input.timeZone, organizationId: input.organizationId };
     const live = /* @__PURE__ */ new Map();
-    for (const row2 of input.items || []) {
-      if (!row2 || !row2.data) continue;
-      const item = report.kind === "priceWork" ? parsePriceWorkDocument(row2.id, row2.data, options) : parseExpenseDocument(row2.id, row2.data, options);
-      live.set(idKey(row2.id), item);
+    for (const row3 of input.items || []) {
+      if (!row3 || !row3.data) continue;
+      const item = report.kind === "priceWork" ? parsePriceWorkDocument(row3.id, row3.data, options) : parseExpenseDocument(row3.id, row3.data, options);
+      live.set(idKey(row3.id), item);
     }
-    const reviews = (input.reviews || []).map((row2) => parsePayeClaimReviewDocument(row2.id, row2.data));
+    const reviews = (input.reviews || []).map((row3) => parsePayeClaimReviewDocument(row3.id, row3.data));
     let recomputed = 0;
     const seenItems = /* @__PURE__ */ new Set();
     for (const entry of report.items) {
@@ -25064,17 +25243,17 @@ var ProjectPlannerCanonical = (() => {
     };
   }
   function parseReportCheckDocument(docId, data) {
-    const row2 = record14(data);
+    const row3 = record14(data);
     return {
       id: text39(docId),
-      reportId: text39(row2.reportId) || text39(docId),
-      collection: text39(row2.collection),
-      kind: text39(row2.kind),
-      userId: text39(row2.userId),
-      ok: row2.ok === true,
-      reportedTotal: storedNumber(row2.reportedTotal) ?? 0,
-      recomputedTotal: storedNumber(row2.recomputedTotal) ?? 0,
-      problems: (Array.isArray(row2.problems) ? row2.problems : []).map((raw) => {
+      reportId: text39(row3.reportId) || text39(docId),
+      collection: text39(row3.collection),
+      kind: text39(row3.kind),
+      userId: text39(row3.userId),
+      ok: row3.ok === true,
+      reportedTotal: storedNumber(row3.reportedTotal) ?? 0,
+      recomputedTotal: storedNumber(row3.recomputedTotal) ?? 0,
+      problems: (Array.isArray(row3.problems) ? row3.problems : []).map((raw) => {
         const p = record14(raw);
         return {
           code: text39(p.code),
@@ -25477,19 +25656,19 @@ var ProjectPlannerCanonical = (() => {
   function siteAuditReportPhotoBox(photo) {
     if (!photo || !(photo.width > 0) || !(photo.height > 0)) return null;
     let w = PHOTO_COLUMN;
-    let h3 = PHOTO_COLUMN * photo.height / photo.width;
-    if (h3 > PHOTO_MAX) {
-      h3 = PHOTO_MAX;
+    let h4 = PHOTO_COLUMN * photo.height / photo.width;
+    if (h4 > PHOTO_MAX) {
+      h4 = PHOTO_MAX;
       w = PHOTO_MAX * photo.width / photo.height;
     }
-    return { w: round5(w), h: round5(h3) };
+    return { w: round6(w), h: round6(h4) };
   }
-  function round5(value) {
+  function round6(value) {
     return Math.round(value * 100) / 100;
   }
   function textOps(ops, lines, x, top, size, lineHeight, bold, color) {
     lines.forEach((line, index) => {
-      if (line.length > 0) ops.push({ kind: "text", x: round5(x), baseline: round5(top + index * lineHeight + size * ASCENT + (lineHeight - size) / 2), size, bold, color, text: line });
+      if (line.length > 0) ops.push({ kind: "text", x: round6(x), baseline: round6(top + index * lineHeight + size * ASCENT + (lineHeight - size) / 2), size, bold, color, text: line });
     });
     return top + lines.length * lineHeight;
   }
@@ -25499,7 +25678,7 @@ var ProjectPlannerCanonical = (() => {
     b.y += lineHeight;
   }
   var SITE_AUDIT_REPORT_LOGO_BOX = Object.freeze({
-    x: round5(SITE_AUDIT_REPORT_PAGE.width - MARGIN - 110),
+    x: round6(SITE_AUDIT_REPORT_PAGE.width - MARGIN - 110),
     y: 24,
     w: 110,
     h: 64
@@ -25510,14 +25689,14 @@ var ProjectPlannerCanonical = (() => {
     const box = SITE_AUDIT_REPORT_LOGO_BOX;
     const pad4 = SITE_AUDIT_REPORT_LOGO_PADDING;
     const scale = Math.min((box.w - pad4 * 2) / logo.width, (box.h - pad4 * 2) / logo.height);
-    const w = round5(logo.width * scale);
-    const h3 = round5(logo.height * scale);
-    const tileW = round5(w + pad4 * 2);
-    const tileH = round5(h3 + pad4 * 2);
-    const tileX = round5(box.x + box.w - tileW);
+    const w = round6(logo.width * scale);
+    const h4 = round6(logo.height * scale);
+    const tileW = round6(w + pad4 * 2);
+    const tileH = round6(h4 + pad4 * 2);
+    const tileX = round6(box.x + box.w - tileW);
     return {
       tile: { x: tileX, y: box.y, w: tileW, h: tileH },
-      image: { x: round5(tileX + pad4), y: round5(box.y + pad4), w, h: h3 }
+      image: { x: round6(tileX + pad4), y: round6(box.y + pad4), w, h: h4 }
     };
   }
   function siteAuditReportLayout(input) {
@@ -25552,7 +25731,7 @@ var ProjectPlannerCanonical = (() => {
     const orgLines = wrapSiteAuditReportText(orgName, 10, 110, true);
     const leftHeight = 24 + leftLines.reduce((sum, line) => sum + line.gap + line.lh, 0) + 20;
     const rightHeight = 24 + 64 + 6 + orgLines.length * 12 + 16;
-    const headerH = round5(Math.min(HEADER_MAX, Math.max(118, leftHeight, rightHeight)));
+    const headerH = round6(Math.min(HEADER_MAX, Math.max(118, leftHeight, rightHeight)));
     const bandBottom = headerH - 16;
     b.ops.push({ kind: "rect", x: 0, y: 0, w: W, h: headerH, fill: C.navy });
     const overflow = [];
@@ -25599,8 +25778,8 @@ var ProjectPlannerCanonical = (() => {
     const colW = (contentW - 18) / 2;
     let band = { index: b.ops.length, top: b.y };
     const closeBand = (bottom) => {
-      b.ops.splice(band.index, 0, { kind: "rect", x: 0, y: round5(band.top), w: W, h: round5(bottom - band.top), fill: C.soft });
-      b.ops.push({ kind: "line", x1: 0, y1: round5(bottom), x2: W, y2: round5(bottom), color: C.border, width: 1 });
+      b.ops.splice(band.index, 0, { kind: "rect", x: 0, y: round6(band.top), w: W, h: round6(bottom - band.top), fill: C.soft });
+      b.ops.push({ kind: "line", x1: 0, y1: round6(bottom), x2: W, y2: round6(bottom), color: C.border, width: 1 });
     };
     const breakBand = (bottom) => {
       closeBand(bottom);
@@ -25609,11 +25788,11 @@ var ProjectPlannerCanonical = (() => {
       b.y += 12;
     };
     b.y += 24;
-    for (let row2 = 0; row2 < 3; row2 += 1) {
-      const cells = [0, 1].map((col) => wrapSiteAuditReportText(pairs[row2 * 2 + col][1], 12, colW));
-      if (row2 > 0) b.y += 18;
+    for (let row3 = 0; row3 < 3; row3 += 1) {
+      const cells = [0, 1].map((col) => wrapSiteAuditReportText(pairs[row3 * 2 + col][1], 12, colW));
+      if (row3 > 0) b.y += 18;
       if (b.y + 14 + 15 > BODY_BOTTOM) breakBand(b.y);
-      [0, 1].forEach((col) => textOps(b.ops, [pairs[row2 * 2 + col][0].toUpperCase()], MARGIN + col * (colW + 18), b.y, 8, 11, true, C.muted));
+      [0, 1].forEach((col) => textOps(b.ops, [pairs[row3 * 2 + col][0].toUpperCase()], MARGIN + col * (colW + 18), b.y, 8, 11, true, C.muted));
       b.y += 14;
       const count2 = Math.max(cells[0].length, cells[1].length);
       for (let i = 0; i < count2; i += 1) {
@@ -25630,14 +25809,14 @@ var ProjectPlannerCanonical = (() => {
     b.y += 16;
     const count = audit.items.length;
     if (b.y + 36 + 120 > BODY_BOTTOM) b.newPage();
-    b.ops.push({ kind: "rect", x: MARGIN, y: round5(b.y), w: 24, h: 3, fill: C.accent });
+    b.ops.push({ kind: "rect", x: MARGIN, y: round6(b.y), w: 24, h: 3, fill: C.accent });
     textOps(b.ops, [`SITE OBSERVATIONS \xB7 ${count} ITEM${count === 1 ? "" : "S"}`], MARGIN, b.y + 10, 13, 16, true, C.ink);
     b.y += 36;
     audit.items.forEach((item, index) => layoutItem(b, item, index + 1, contentW, zone3));
     if (b.y + 96 > BODY_BOTTOM) b.newPage();
     const sy = b.y + 6;
     const half = (contentW - 24) / 2;
-    b.ops.push({ kind: "rect", x: MARGIN, y: round5(sy), w: contentW, h: 2, fill: C.ink });
+    b.ops.push({ kind: "rect", x: MARGIN, y: round6(sy), w: contentW, h: 2, fill: C.ink });
     textOps(b.ops, ["AUTHOR SIGNATURE"], MARGIN, sy + 12, 8, 11, true, C.muted);
     textOps(b.ops, ["CLIENT ACKNOWLEDGEMENT"], MARGIN + half + 24, sy + 12, 8, 11, true, C.muted);
     const signaturePage = b.pages.length;
@@ -25648,8 +25827,8 @@ var ProjectPlannerCanonical = (() => {
       b.newPage();
       lineY = b.y + 4;
     }
-    b.ops.push({ kind: "line", x1: MARGIN, y1: round5(lineY), x2: round5(MARGIN + half * 0.7), y2: round5(lineY), color: C.ink, width: 1 });
-    b.ops.push({ kind: "line", x1: round5(MARGIN + half + 24), y1: round5(lineY), x2: MARGIN + contentW, y2: round5(lineY), color: C.ink, width: 1 });
+    b.ops.push({ kind: "line", x1: MARGIN, y1: round6(lineY), x2: round6(MARGIN + half * 0.7), y2: round6(lineY), color: C.ink, width: 1 });
+    b.ops.push({ kind: "line", x1: round6(MARGIN + half + 24), y1: round6(lineY), x2: MARGIN + contentW, y2: round6(lineY), color: C.ink, width: 1 });
     textOps(b.ops, ["Signed & dated"], MARGIN + half + 24, lineY + 4, 9, 12, false, C.muted);
     b.y = lineY + 4;
     for (const line of wrapSiteAuditReportText(`${str(audit.authorName)} \xB7 ${dateText2(audit.dateMs, zone3)}`, 9, half)) flowLine(b, line, MARGIN, 9, 12, false, C.muted);
@@ -25721,10 +25900,10 @@ var ProjectPlannerCanonical = (() => {
       if (end === next && next < lines.length) end = next + 1;
       const bodyH = Math.max(segment2 === 0 ? photo?.h ?? 0 : 0, linesHeight(next, end));
       const cardH = segHeaderH + pad4 + bodyH + pad4;
-      b.ops.push({ kind: "rect", x, y: round5(top), w: contentW, h: round5(cardH), fill: C.white, stroke: C.border, radius: 8 });
-      b.ops.push({ kind: "rect", x, y: round5(top), w: contentW, h: round5(segHeaderH), fill: C.soft, radius: 8 });
-      b.ops.push({ kind: "line", x1: x, y1: round5(top + segHeaderH), x2: x + contentW, y2: round5(top + segHeaderH), color: C.border, width: 1 });
-      b.ops.push({ kind: "circle", cx: x + 25, cy: round5(top + Math.min(18, segHeaderH / 2)), r: 11, fill: C.accent });
+      b.ops.push({ kind: "rect", x, y: round6(top), w: contentW, h: round6(cardH), fill: C.white, stroke: C.border, radius: 8 });
+      b.ops.push({ kind: "rect", x, y: round6(top), w: contentW, h: round6(segHeaderH), fill: C.soft, radius: 8 });
+      b.ops.push({ kind: "line", x1: x, y1: round6(top + segHeaderH), x2: x + contentW, y2: round6(top + segHeaderH), color: C.border, width: 1 });
+      b.ops.push({ kind: "circle", cx: x + 25, cy: round6(top + Math.min(18, segHeaderH / 2)), r: 11, fill: C.accent });
       const num2 = String(number);
       textOps(b.ops, [num2], x + 25 - siteAuditReportTextWidth(num2, 10, true) / 2, top + Math.min(18, segHeaderH / 2) - 7, 10, 14, true, C.white);
       if (continued) {
@@ -25732,14 +25911,14 @@ var ProjectPlannerCanonical = (() => {
       } else {
         textOps(b.ops, titleLines, x + 44, top + 10, 12, 15, true, C.ink);
         textOps(b.ops, [siteAuditReportText(taken)], x + contentW - pad4 - takenW, top + 11, 9, 12, false, C.muted);
-        if (photo) b.ops.push({ kind: "image", ref: item.id, x: x + pad4, y: round5(bodyTop), w: photo.w, h: photo.h });
+        if (photo) b.ops.push({ kind: "image", ref: item.id, x: x + pad4, y: round6(bodyTop), w: photo.w, h: photo.h });
       }
       let ly = bodyTop;
       for (let i = next; i < end; i += 1) {
         const line = lines[i];
         if (line.separator && i !== next) {
           ly += line.gapBefore / 2;
-          b.ops.push({ kind: "line", x1: round5(detailX), y1: round5(ly), x2: round5(detailX + detailW), y2: round5(ly), color: C.border, width: 0.75, dash: [2, 2] });
+          b.ops.push({ kind: "line", x1: round6(detailX), y1: round6(ly), x2: round6(detailX + detailW), y2: round6(ly), color: C.border, width: 0.75, dash: [2, 2] });
           ly += line.gapBefore / 2;
         } else if (i !== next) {
           ly += line.gapBefore;
@@ -25893,11 +26072,11 @@ var ProjectPlannerCanonical = (() => {
     };
   }
   function parsePersonalSiteAuditDocument(docId, data, options) {
-    const row2 = record15(data);
+    const row3 = record15(data);
     const zone3 = zoneOrLondon(options?.timeZone);
-    const rawDate = text40(row2.date);
-    const dateMs = isDayKey4(rawDate) ? null : documentInstantMs(row2.date);
-    const items = (Array.isArray(row2.items) ? row2.items : []).map((raw, index) => {
+    const rawDate = text40(row3.date);
+    const dateMs = isDayKey4(rawDate) ? null : documentInstantMs(row3.date);
+    const items = (Array.isArray(row3.items) ? row3.items : []).map((raw, index) => {
       const r = record15(raw);
       return {
         id: text40(r.id) || `item-${index + 1}`,
@@ -25912,15 +26091,15 @@ var ProjectPlannerCanonical = (() => {
     });
     return {
       id: text40(docId),
-      ownerUserId: text40(row2.ownerUserId),
-      jobNumber: text40(row2.jobNumber),
-      jobName: text40(row2.jobName),
-      type: text40(row2.type) || "General",
-      customTitle: text40(row2.customTitle),
+      ownerUserId: text40(row3.ownerUserId),
+      jobNumber: text40(row3.jobNumber),
+      jobName: text40(row3.jobName),
+      type: text40(row3.type) || "General",
+      customTitle: text40(row3.customTitle),
       date: isDayKey4(rawDate) ? rawDate : dateMs != null ? dayKeyInZone(new Date(dateMs), zone3) : "",
-      authorName: text40(row2.authorName),
+      authorName: text40(row3.authorName),
       items,
-      createdAtMs: documentInstantMs(row2.createdAt)
+      createdAtMs: documentInstantMs(row3.createdAt)
     };
   }
   function personalSiteAuditTitle(audit) {
@@ -25988,17 +26167,17 @@ var ProjectPlannerCanonical = (() => {
     return text41(value).toLowerCase();
   }
   function groupsOf(roster) {
-    return rosterPersonGroups((roster || []).filter((row2) => row2 && text41(row2.id)));
+    return rosterPersonGroups((roster || []).filter((row3) => row3 && text41(row3.id)));
   }
-  function exclusion(row2) {
-    if (isAnonymisedDeletedProfile(row2)) return "deleted";
-    if (!rosterMemberActive(row2)) return "inactive";
-    if (row2.passwordSet === false || text41(row2.status).toLowerCase() === "pending") return "pending";
-    return levelOf(row2) === "operative" ? "not_manager" : null;
+  function exclusion(row3) {
+    if (isAnonymisedDeletedProfile(row3)) return "deleted";
+    if (!rosterMemberActive(row3)) return "inactive";
+    if (row3.passwordSet === false || text41(row3.status).toLowerCase() === "pending") return "pending";
+    return levelOf(row3) === "operative" ? "not_manager" : null;
   }
   function candidateOf(group) {
-    const row2 = group.primary;
-    if (exclusion(row2)) return null;
+    const row3 = group.primary;
+    if (exclusion(row3)) return null;
     const ids = [];
     const seen = /* @__PURE__ */ new Set();
     const add = (id2) => {
@@ -26007,17 +26186,17 @@ var ProjectPlannerCanonical = (() => {
       seen.add(idKey(value));
       ids.push(value);
     };
-    add(row2.id);
+    add(row3.id);
     for (const member of group.rows) {
       add(member.id);
       for (const alias of [...member.formerUserIds || [], ...member.sameEmailUserIds || []]) add(alias);
     }
     return {
-      id: text41(row2.id),
+      id: text41(row3.id),
       userIds: ids,
-      email: text41(row2.email),
-      name: rosterPersonName2(row2),
-      level: levelOf(row2) === "admin" ? "admin" : "manager"
+      email: text41(row3.email),
+      name: rosterPersonName2(row3),
+      level: levelOf(row3) === "admin" ? "admin" : "manager"
     };
   }
   function byName(a, b) {
@@ -26033,7 +26212,7 @@ var ProjectPlannerCanonical = (() => {
   }
   function jobManagerAssignments(job, roster, catalogue) {
     const groups = groupsOf(roster);
-    const rows3 = (catalogue || []).filter((row2) => row2 && text41(row2.id));
+    const rows3 = (catalogue || []).filter((row3) => row3 && text41(row3.id));
     const out = [];
     const seenPeople = /* @__PURE__ */ new Set();
     for (const storedId of jobManagerIds(job)) {
@@ -26042,9 +26221,9 @@ var ProjectPlannerCanonical = (() => {
       let group = groups.find((entry) => entry.keys.has(key7));
       let catalogueRow;
       if (!group) {
-        catalogueRow = rows3.find((row2) => idKey(row2.id) === key7 || idKey(stableManagerId(row2.id)) === key7);
+        catalogueRow = rows3.find((row3) => idKey(row3.id) === key7 || idKey(stableManagerId(row3.id)) === key7);
         const email = emailKey5(catalogueRow?.email);
-        if (email) group = groups.find((entry) => entry.rows.some((row2) => emailKey5(row2.email) === email));
+        if (email) group = groups.find((entry) => entry.rows.some((row3) => emailKey5(row3.email) === email));
       }
       if (group) {
         if (seenPeople.has(group)) continue;
@@ -26086,21 +26265,21 @@ var ProjectPlannerCanonical = (() => {
     const id2 = raw.includes("/") ? raw.split("/").filter(Boolean).pop() ?? "" : raw;
     return id2 !== "" && id2.toLowerCase() === organizationId.trim().toLowerCase();
   }
-  function storedLineManagerIds(row2) {
-    if (row2.hasNoLineManager === true) return [];
-    const listed = (row2.assignedManagerUserIds || []).map(text42).filter(Boolean);
-    return listed.length > 0 ? listed : [text42(row2.assignedManagerUserId)].filter(Boolean);
+  function storedLineManagerIds(row3) {
+    if (row3.hasNoLineManager === true) return [];
+    const listed = (row3.assignedManagerUserIds || []).map(text42).filter(Boolean);
+    return listed.length > 0 ? listed : [text42(row3.assignedManagerUserId)].filter(Boolean);
   }
   function lineManagerReports(person, roster) {
     if (!person || !text42(person.id)) return [];
-    const rows3 = (roster || []).filter((row2) => row2 && text42(row2.id));
+    const rows3 = (roster || []).filter((row3) => row3 && text42(row3.id));
     const keys = new Set(personIdSet(person, rows3).map(idKey));
     const out = [];
     for (const group of rosterPersonGroups(rows3)) {
       if ([...group.keys].some((key7) => keys.has(key7))) continue;
       const primary = group.primary;
       if (!rosterMemberActive(primary) || isAnonymisedDeletedProfile(primary)) continue;
-      const reports = group.rows.some((row2) => storedLineManagerIds(row2).some((id2) => keys.has(idKey(id2))));
+      const reports = group.rows.some((row3) => storedLineManagerIds(row3).some((id2) => keys.has(idKey(id2))));
       if (reports) out.push({ id: text42(primary.id), name: rosterPersonName2(primary) || text42(primary.id) });
     }
     return out.sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }) || a.id.localeCompare(b.id));
@@ -26125,18 +26304,18 @@ var ProjectPlannerCanonical = (() => {
     if (options?.isCreate === true) return true;
     const invitation = options?.invitation;
     if (!invitation || invitation.accepted === true) return false;
-    const row2 = actor;
+    const row3 = actor;
     const actorIds = new Set(
-      [row2.id, ...Array.isArray(row2.formerUserIds) ? row2.formerUserIds : []].map((id2) => idKey(id2)).filter(Boolean)
+      [row3.id, ...Array.isArray(row3.formerUserIds) ? row3.formerUserIds : []].map((id2) => idKey(id2)).filter(Boolean)
     );
     return idKey(invitation.invitedBy) !== "" && actorIds.has(idKey(invitation.invitedBy));
   }
   function lineManagerChanged(before, after) {
-    const ids = (row2) => {
-      const r = row2 && typeof row2 === "object" ? row2 : {};
+    const ids = (row3) => {
+      const r = row3 && typeof row3 === "object" ? row3 : {};
       return [...new Set(storedLineManagerIds(r).map(idKey).filter(Boolean))].sort().join("|");
     };
-    const none = (row2) => row2?.hasNoLineManager === true;
+    const none = (row3) => row3?.hasNoLineManager === true;
     return ids(before) !== ids(after) || none(before) !== none(after);
   }
   function changeRemovesJobManager(person, change) {
@@ -26161,7 +26340,7 @@ var ProjectPlannerCanonical = (() => {
     const org = text42(input?.organizationId);
     const person = input?.person;
     if (!org || !person || !text42(person.id) || !changeRemovesJobManager(person, input.change)) return [];
-    const rows3 = (input.roster || []).filter((row2) => row2 && text42(row2.id));
+    const rows3 = (input.roster || []).filter((row3) => row3 && text42(row3.id));
     const keys = /* @__PURE__ */ new Set();
     for (const id2 of personIdSet(person, rows3)) {
       keys.add(idKey(id2));
@@ -26169,11 +26348,11 @@ var ProjectPlannerCanonical = (() => {
     }
     const emails = /* @__PURE__ */ new Set();
     if (idKey(person.email)) emails.add(idKey(person.email));
-    for (const row2 of rows3) if (keys.has(idKey(row2.id)) && idKey(row2.email)) emails.add(idKey(row2.email));
-    for (const row2 of input.managers || []) {
-      if (!row2 || !text42(row2.id) || !emails.has(idKey(row2.email))) continue;
-      keys.add(idKey(row2.id));
-      keys.add(idKey(stableManagerId(row2.id)));
+    for (const row3 of rows3) if (keys.has(idKey(row3.id)) && idKey(row3.email)) emails.add(idKey(row3.email));
+    for (const row3 of input.managers || []) {
+      if (!row3 || !text42(row3.id) || !emails.has(idKey(row3.email))) continue;
+      keys.add(idKey(row3.id));
+      keys.add(idKey(stableManagerId(row3.id)));
     }
     keys.delete("");
     const out = [];
@@ -26209,8 +26388,8 @@ var ProjectPlannerCanonical = (() => {
     const from = text42(input?.fromUserId);
     const to = text42(input?.toUserId);
     if (!org || !to || idKey(to) === idKey(from) || org.includes("/") || to.includes("/")) return null;
-    const rows3 = (input.roster || []).filter((row2) => row2 && text42(row2.id));
-    const toRow = rows3.find((row2) => idKey(row2.id) === idKey(to));
+    const rows3 = (input.roster || []).filter((row3) => row3 && text42(row3.id));
+    const toRow = rows3.find((row3) => idKey(row3.id) === idKey(to));
     const toKeys = new Set(personIdSet(toRow ?? { id: to }, rows3).map(idKey));
     const writes = [
       { path: `organizations/${org}`, kind: "organization", fields: { creatorUserId: to, [`members.${to}`]: "admin" } }
@@ -26225,11 +26404,11 @@ var ProjectPlannerCanonical = (() => {
       timesheetSelfSign: true,
       "permissions.timesheetSelfSign": true
     };
-    const inOrg = (row2) => sameOrg2(row2.organizationId, org);
+    const inOrg = (row3) => sameOrg2(row3.organizationId, org);
     writes.push({ path: `users/${to}`, kind: "userProfile", fields: { ...promote } });
-    for (const row2 of rows3) {
-      if (idKey(row2.id) !== idKey(to) && toKeys.has(idKey(row2.id)) && inOrg(row2) && idKey(row2.email) === idKey(toRow?.email)) {
-        writes.push({ path: `users/${text42(row2.id)}`, kind: "userProfile", fields: { ...promote, isSuperAdmin: false } });
+    for (const row3 of rows3) {
+      if (idKey(row3.id) !== idKey(to) && toKeys.has(idKey(row3.id)) && inOrg(row3) && idKey(row3.email) === idKey(toRow?.email)) {
+        writes.push({ path: `users/${text42(row3.id)}`, kind: "userProfile", fields: { ...promote, isSuperAdmin: false } });
       }
     }
     writes.push({
@@ -26238,15 +26417,15 @@ var ProjectPlannerCanonical = (() => {
       fields: { role: "admin", isSuperAdmin: true, "permissions.adminAccess": true, "permissions.annualLeaveSelfBook": true, "permissions.timesheetSelfSign": true }
     });
     const demote = /* @__PURE__ */ new Map();
-    if (from) demote.set(idKey(from), rows3.find((row2) => idKey(row2.id) === idKey(from)) ?? null);
+    if (from) demote.set(idKey(from), rows3.find((row3) => idKey(row3.id) === idKey(from)) ?? null);
     const creator = text42(input.previousCreatorUserId);
-    if (creator) demote.set(idKey(creator), rows3.find((row2) => idKey(row2.id) === idKey(creator)) ?? null);
-    for (const row2 of rows3) if (storedPermissionFlag(row2, "isSuperAdmin") === true && inOrg(row2)) demote.set(idKey(row2.id), row2);
+    if (creator) demote.set(idKey(creator), rows3.find((row3) => idKey(row3.id) === idKey(creator)) ?? null);
+    for (const row3 of rows3) if (storedPermissionFlag(row3, "isSuperAdmin") === true && inOrg(row3)) demote.set(idKey(row3.id), row3);
     for (const key7 of toKeys) demote.delete(key7);
-    for (const [key7, row2] of demote) {
-      const id2 = text42(row2?.id) || (idKey(from) === key7 ? from : creator);
+    for (const [key7, row3] of demote) {
+      const id2 = text42(row3?.id) || (idKey(from) === key7 ? from : creator);
       if (!id2 || id2.includes("/")) continue;
-      const needsSelfApproval = !hasActiveLineManager(row2 ?? { id: id2 }, rows3);
+      const needsSelfApproval = !hasActiveLineManager(row3 ?? { id: id2 }, rows3);
       const fields = { isSuperAdmin: false, adminAccess: true, role: "admin", "permissions.adminAccess": true };
       if (needsSelfApproval) {
         Object.assign(fields, {
@@ -26269,15 +26448,15 @@ var ProjectPlannerCanonical = (() => {
     if (!org || !uid || uid.includes("/")) return [];
     const active = input.isActive === true;
     const out = [];
-    const ownRow = (input.roster || []).find((row2) => idKey(row2?.id) === idKey(uid));
+    const ownRow = (input.roster || []).find((row3) => idKey(row3?.id) === idKey(uid));
     const homeOrg = text42(input.person.organizationId) ? input.person.organizationId : ownRow?.organizationId;
     if (!text42(homeOrg) || sameOrg2(homeOrg, org)) out.push({ path: `users/${uid}`, kind: "userProfile", fields: { isActive: active } });
     const email = idKey(input.person.email);
     const seen = /* @__PURE__ */ new Set([idKey(uid)]);
     if (email) {
-      for (const row2 of input.roster || []) {
-        const id2 = text42(row2?.id);
-        if (!id2 || id2.includes("/") || seen.has(idKey(id2)) || idKey(row2.email) !== email || !sameOrg2(row2.organizationId, org)) continue;
+      for (const row3 of input.roster || []) {
+        const id2 = text42(row3?.id);
+        if (!id2 || id2.includes("/") || seen.has(idKey(id2)) || idKey(row3.email) !== email || !sameOrg2(row3.organizationId, org)) continue;
         seen.add(idKey(id2));
         out.push({ path: `users/${id2}`, kind: "userProfile", fields: { isActive: active } });
       }
@@ -26388,8 +26567,8 @@ var ProjectPlannerCanonical = (() => {
   }
   function timesheetVersionsForPeriod(documents) {
     const chains = /* @__PURE__ */ new Map();
-    for (const row2 of documents ?? []) {
-      const version = versionOf(text43(row2?.documentId), record16(row2?.data));
+    for (const row3 of documents ?? []) {
+      const version = versionOf(text43(row3?.documentId), record16(row3?.data));
       if (!version) continue;
       const chain = chains.get(version.baseDocumentId) ?? [];
       if (!chain.some((existing) => existing.revision === version.revision)) chain.push(version);
@@ -26486,9 +26665,9 @@ var ProjectPlannerCanonical = (() => {
     const snapshot = /* @__PURE__ */ new Map();
     const override = record16(data.weeklyReportOverride);
     for (const line of Array.isArray(override.lines) ? override.lines : []) {
-      const row2 = record16(line);
-      const id2 = text43(row2.id).toLowerCase();
-      if (id2 && !snapshot.has(id2)) snapshot.set(id2, row2);
+      const row3 = record16(line);
+      const id2 = text43(row3.id).toLowerCase();
+      if (id2 && !snapshot.has(id2)) snapshot.set(id2, row3);
     }
     const live = /* @__PURE__ */ new Map();
     for (const line of input?.liveLines ?? []) {
@@ -26629,9 +26808,9 @@ var ProjectPlannerCanonical = (() => {
   function recordSide(raw) {
     if (!Array.isArray(raw)) return null;
     const side = /* @__PURE__ */ new Map();
-    for (const row2 of raw) {
-      if (!row2 || typeof row2 !== "object") continue;
-      const r = row2;
+    for (const row3 of raw) {
+      if (!row3 || typeof row3 !== "object") continue;
+      const r = row3;
       const booking = lineBooking({ bookingId: r.bookingId, bookingCollection: r.collection });
       if (!booking) continue;
       const key7 = keyOf(booking.collection, booking.bookingId);
@@ -26657,39 +26836,39 @@ var ProjectPlannerCanonical = (() => {
     return text44(status) !== "" && !bookingOccupiesDay(status);
   }
   function diffSides(signed, live, documents, addedAfterMs) {
-    const fingerprinted = Array.from(signed.values()).some((row2) => row2.fingerprint !== "");
+    const fingerprinted = Array.from(signed.values()).some((row3) => row3.fingerprint !== "");
     const changed = [];
     const added = [];
     const removed = [];
-    for (const [key7, row2] of signed) {
+    for (const [key7, row3] of signed) {
       const now = live.get(key7);
       const doc = documents?.byKey.get(key7);
       const placeNow = signedTimesheetBookingPlace(doc);
-      const placeChanged = Boolean(row2.place && placeNow && row2.place !== placeNow);
+      const placeChanged = Boolean(row3.place && placeNow && row3.place !== placeNow);
       if (now) {
-        if (row2.fingerprint && now.fingerprint && !sameBooking(row2.fingerprint, now.fingerprint) || placeChanged) changed.push(row2.bookingId);
+        if (row3.fingerprint && now.fingerprint && !sameBooking(row3.fingerprint, now.fingerprint) || placeChanged) changed.push(row3.bookingId);
         continue;
       }
       if (!documents) continue;
       if (documents.tombstoned.has(key7)) {
-        removed.push(row2.bookingId);
+        removed.push(row3.bookingId);
         continue;
       }
       if (!doc || statusTakesItOff(doc.status)) {
-        removed.push(row2.bookingId);
+        removed.push(row3.bookingId);
         continue;
       }
       const docPerson = normalizeDocumentId(text44(doc.personId));
-      if (row2.personId && docPerson && normalizeDocumentId(row2.personId) !== docPerson && documents.personIds && !documents.personIds.has(docPerson)) {
-        removed.push(row2.bookingId);
+      if (row3.personId && docPerson && normalizeDocumentId(row3.personId) !== docPerson && documents.personIds && !documents.personIds.has(docPerson)) {
+        removed.push(row3.bookingId);
         continue;
       }
-      if (row2.fingerprint && !sameBooking(row2.fingerprint, documentFingerprint(doc)) || placeChanged) changed.push(row2.bookingId);
+      if (row3.fingerprint && !sameBooking(row3.fingerprint, documentFingerprint(doc)) || placeChanged) changed.push(row3.bookingId);
     }
-    for (const [key7, row2] of live) {
+    for (const [key7, row3] of live) {
       if (signed.has(key7)) continue;
-      if (addedAfterMs == null || row2.writtenMs == null || row2.writtenMs <= addedAfterMs) continue;
-      added.push(row2.bookingId);
+      if (addedAfterMs == null || row3.writtenMs == null || row3.writtenMs <= addedAfterMs) continue;
+      added.push(row3.bookingId);
     }
     return { changed, added, removed, basis: fingerprinted ? "fingerprint" : "bookingIds" };
   }
@@ -26714,7 +26893,7 @@ var ProjectPlannerCanonical = (() => {
       const doc = docs.get(key7);
       out.set(key7, { bookingId: booking.bookingId, collection: booking.collection, fingerprint, personId: text44(doc?.personId), place: signedTimesheetBookingPlace(doc) });
     }
-    return Array.from(out.entries()).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([, row2]) => row2);
+    return Array.from(out.entries()).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([, row3]) => row3);
   }
   function signedTimesheetBookingChanges(input) {
     const none = {
@@ -26744,7 +26923,7 @@ var ProjectPlannerCanonical = (() => {
       const byKey = /* @__PURE__ */ new Map();
       for (const doc of input.liveBookings) if (doc && text44(doc.bookingId)) byKey.set(keyOf(text44(doc.collection) || "bookings", text44(doc.bookingId)), doc);
       const tombstoned = /* @__PURE__ */ new Set();
-      for (const row2 of input.tombstonedBookingIds ?? []) if (row2 && text44(row2.bookingId)) tombstoned.add(keyOf(text44(row2.collection) || "bookings", text44(row2.bookingId)));
+      for (const row3 of input.tombstonedBookingIds ?? []) if (row3 && text44(row3.bookingId)) tombstoned.add(keyOf(text44(row3.collection) || "bookings", text44(row3.bookingId)));
       const personIds = Array.isArray(input.personIds) ? new Set(input.personIds.map((id2) => normalizeDocumentId(text44(id2))).filter(Boolean)) : null;
       documents = { byKey, tombstoned, personIds };
     }
@@ -26780,12 +26959,12 @@ var ProjectPlannerCanonical = (() => {
         (input.liveLines ?? []).filter((line) => line && line.scheduleOptionPlace === true).map((line) => signedTimesheetLineBookingKey(line)).filter(Boolean)
       );
       const already = new Set([...snapshotDiff.added, ...personDiff?.added ?? []].map((id2) => normalizeDocumentId(id2)));
-      for (const [key7, row2] of record18) {
+      for (const [key7, row3] of record18) {
         if (!live.has(key7) || snapshotKeys.has(key7) || optionPlace.has(key7)) continue;
-        const id2 = normalizeDocumentId(row2.bookingId);
+        const id2 = normalizeDocumentId(row3.bookingId);
         if (already.has(id2)) continue;
         already.add(id2);
-        gap.push(row2.bookingId);
+        gap.push(row3.bookingId);
       }
     }
     const personChanged = operativeSignedMs != null || override ? !isEmptyDiff(personDiff) : false;
@@ -26948,9 +27127,9 @@ var ProjectPlannerCanonical = (() => {
     return `${formatPaymentRunDay(start)} \u2013 ${formatPaymentRunDay(end)}`;
   }
   function invoicingOf2(organization) {
-    const row2 = record17(organization);
-    if (!row2) return null;
-    return record17(row2.invoicing) ?? ("paymentRunMode" in row2 || "paymentRunDateRanges" in row2 ? row2 : null);
+    const row3 = record17(organization);
+    if (!row3) return null;
+    return record17(row3.invoicing) ?? ("paymentRunMode" in row3 || "paymentRunDateRanges" in row3 ? row3 : null);
   }
   function cell(state, label, tone, link) {
     return { state, label, tone, link };
@@ -26979,14 +27158,14 @@ var ProjectPlannerCanonical = (() => {
   }
   function parsePayrunSnapshotSheet(docId, data, timeZone) {
     if (!text45(docId).startsWith("timesheet_")) return null;
-    const row2 = record17(data) ?? {};
-    const userId = text45(row2.userId);
-    const startKey = text45(row2.weekStartKey);
-    const startDayKey = DAY_KEY11.test(startKey) ? startKey : timesheetStoredStartDayKey(row2.weekStart, timeZone);
+    const row3 = record17(data) ?? {};
+    const userId = text45(row3.userId);
+    const startKey = text45(row3.weekStartKey);
+    const startDayKey = DAY_KEY11.test(startKey) ? startKey : timesheetStoredStartDayKey(row3.weekStart, timeZone);
     if (!userId || !DAY_KEY11.test(startDayKey)) return null;
-    const endKey = text45(row2.weekEndKey);
-    const endDayKey = DAY_KEY11.test(endKey) ? endKey : timesheetStoredStartDayKey(row2.weekEnd, timeZone);
-    return { userId, startDayKey, endDayKey: DAY_KEY11.test(endDayKey) ? endDayKey : "", status: parseTimesheetStatusFields(row2), documentId: text45(docId), signedOff: timesheetVersionSignedOff(row2) };
+    const endKey = text45(row3.weekEndKey);
+    const endDayKey = DAY_KEY11.test(endKey) ? endKey : timesheetStoredStartDayKey(row3.weekEnd, timeZone);
+    return { userId, startDayKey, endDayKey: DAY_KEY11.test(endDayKey) ? endDayKey : "", status: parseTimesheetStatusFields(row3), documentId: text45(docId), signedOff: timesheetVersionSignedOff(row3) };
   }
   var TIMESHEET_ORDER = { notStarted: 0, submitted: 1, signed: 2 };
   function payRunsInPeriod(organization, period, sheets, timeZone) {
@@ -27104,7 +27283,7 @@ var ProjectPlannerCanonical = (() => {
   }
   function hasRecords(ids, input, period) {
     const mine = (userId) => ids.has(idKey(userId));
-    return (input.sheets ?? []).some((sheet) => mine(sheet.userId) && overlaps(period, sheet.startDayKey, sheet.endDayKey)) || (input.overtimeRequests ?? []).some((row2) => mine(row2.userId) && text45(row2.status).toLowerCase() !== "withdrawn" && overlaps(period, row2.rangeStart, row2.rangeEnd)) || (input.overtimeReports ?? []).some((row2) => mine(row2.userId) && overlaps(period, row2.rangeStart, row2.rangeEnd)) || (input.payeClaimReports ?? []).some((row2) => mine(row2.userId) && overlaps(period, row2.rangeStart, row2.rangeEnd)) || payeClaimsInRange([...input.priceWork ?? [], ...input.expenses ?? []].filter((item) => mine(item.userId)), period).length > 0;
+    return (input.sheets ?? []).some((sheet) => mine(sheet.userId) && overlaps(period, sheet.startDayKey, sheet.endDayKey)) || (input.overtimeRequests ?? []).some((row3) => mine(row3.userId) && text45(row3.status).toLowerCase() !== "withdrawn" && overlaps(period, row3.rangeStart, row3.rangeEnd)) || (input.overtimeReports ?? []).some((row3) => mine(row3.userId) && overlaps(period, row3.rangeStart, row3.rangeEnd)) || (input.payeClaimReports ?? []).some((row3) => mine(row3.userId) && overlaps(period, row3.rangeStart, row3.rangeEnd)) || payeClaimsInRange([...input.priceWork ?? [], ...input.expenses ?? []].filter((item) => mine(item.userId)), period).length > 0;
   }
   function rosterActive(person) {
     return !isAnonymisedDeletedProfile(person) && rosterSegment(person) === "active";
@@ -27574,7 +27753,7 @@ var ProjectPlannerCanonical = (() => {
     const managers = lineManagerIdList(draft);
     if (managers.length === 0) return GHOST_LINE_MANAGER_REQUIRED_MESSAGE;
     if (options?.roster) {
-      const offered = new Set(lineManagerCandidates(null, options.roster).map((row2) => idKey(row2.id)));
+      const offered = new Set(lineManagerCandidates(null, options.roster).map((row3) => idKey(row3.id)));
       if (managers.some((id2) => !offered.has(idKey(id2)))) return GHOST_LINE_MANAGER_INVALID_MESSAGE;
     }
     return null;
@@ -27760,10 +27939,10 @@ var ProjectPlannerCanonical = (() => {
     }
     return out;
   }
-  function rowName(row2) {
-    const first = idText(row2.firstName);
-    const last = idText(row2.lastName);
-    const full = `${first} ${last}`.trim() || idText(row2.name);
+  function rowName(row3) {
+    const first = idText(row3.firstName);
+    const last = idText(row3.lastName);
+    const full = `${first} ${last}`.trim() || idText(row3.name);
     if (first || last) return { first, last, full };
     const parts3 = full.split(/\s+/).filter(Boolean);
     return { first: parts3[0] ?? "", last: parts3.slice(1).join(" "), full };
@@ -27779,20 +27958,20 @@ var ProjectPlannerCanonical = (() => {
     });
     const userIds = new Set(users.map((user) => idKey(user.id)));
     const userEmails = new Set(users.map((user) => idKey(user.email)).filter(Boolean));
-    const rows3 = (input?.operatives || []).filter((row2) => {
-      if (!row2 || !idText(row2.id) || row2.isActive === false) return false;
-      if (isAnonymisedDeletedProfile({ email: row2.email ?? "", firstName: row2.firstName ?? "", surname: row2.lastName ?? "", name: row2.name ?? "" })) return false;
-      if (userIds.has(idKey(row2.id))) return false;
-      if ([row2.linkedUserId, row2.userId, row2.uid].some((id2) => idText(id2) && userIds.has(idKey(id2)))) return false;
-      const email = idKey(row2.email);
+    const rows3 = (input?.operatives || []).filter((row3) => {
+      if (!row3 || !idText(row3.id) || row3.isActive === false) return false;
+      if (isAnonymisedDeletedProfile({ email: row3.email ?? "", firstName: row3.firstName ?? "", surname: row3.lastName ?? "", name: row3.name ?? "" })) return false;
+      if (userIds.has(idKey(row3.id))) return false;
+      if ([row3.linkedUserId, row3.userId, row3.uid].some((id2) => idText(id2) && userIds.has(idKey(id2)))) return false;
+      const email = idKey(row3.email);
       if (email && userEmails.has(email)) return false;
       return true;
     });
     const groups = /* @__PURE__ */ new Map();
-    for (const row2 of rows3) {
-      const key7 = personDedupeKey(row2);
+    for (const row3 of rows3) {
+      const key7 = personDedupeKey(row3);
       const list = groups.get(key7) || [];
-      list.push(row2);
+      list.push(row3);
       groups.set(key7, list);
     }
     const out = [];
@@ -27817,7 +27996,7 @@ var ProjectPlannerCanonical = (() => {
         trade: idText(kept.tradeTypeCustom) || idText(kept.tradeTypePreset) || idText(kept.trade),
         payBasis: rate?.payBasis ?? null,
         rate: rate?.amount ?? null,
-        duplicateOperativeIds: sorted.slice(1).map((row2) => idText(row2.id)),
+        duplicateOperativeIds: sorted.slice(1).map((row3) => idText(row3.id)),
         issues
       });
     }
@@ -27872,18 +28051,18 @@ var ProjectPlannerCanonical = (() => {
     converted: "Converted from a no-login operative: check the name, rate and line manager"
   };
   function ghostsToCheck(roster) {
-    const rows3 = (roster || []).filter((row2) => row2 && idText(row2.id));
-    const active = new Set(rows3.filter((row2) => row2.isActive !== false && !isGhostUser(row2)).map((row2) => idKey(row2.id)));
+    const rows3 = (roster || []).filter((row3) => row3 && idText(row3.id));
+    const active = new Set(rows3.filter((row3) => row3.isActive !== false && !isGhostUser(row3)).map((row3) => idKey(row3.id)));
     const out = [];
-    for (const row2 of rows3) {
-      if (!isGhostUser(row2) || row2.isActive === false) continue;
+    for (const row3 of rows3) {
+      if (!isGhostUser(row3) || row3.isActive === false) continue;
       const issues = [];
-      if (!idText(row2.firstName) || !idText(row2.surname)) issues.push("name");
-      if (!ghostRate({ payBasis: row2.payBasis ?? null, dayRate: row2.dayRate ?? null, hourlyRate: row2.hourlyRate ?? null })) issues.push("rate");
-      const managers = [...row2.assignedManagerUserIds ?? [], row2.assignedManagerUserId ?? ""].map(idKey).filter(Boolean);
+      if (!idText(row3.firstName) || !idText(row3.surname)) issues.push("name");
+      if (!ghostRate({ payBasis: row3.payBasis ?? null, dayRate: row3.dayRate ?? null, hourlyRate: row3.hourlyRate ?? null })) issues.push("rate");
+      const managers = [...row3.assignedManagerUserIds ?? [], row3.assignedManagerUserId ?? ""].map(idKey).filter(Boolean);
       if (!managers.some((id2) => active.has(id2))) issues.push("lineManager");
-      if (idText(row2.inviteEmailHint)) issues.push("converted");
-      if (issues.length > 0) out.push({ id: idText(row2.id), issues });
+      if (idText(row3.inviteEmailHint)) issues.push("converted");
+      if (issues.length > 0) out.push({ id: idText(row3.id), issues });
     }
     return out;
   }
@@ -27927,9 +28106,9 @@ var ProjectPlannerCanonical = (() => {
     const timeZone = input.timeZone;
     const dayKey = profileDayKey(input);
     const user = input.user || null;
-    const roster = (input.roster || []).filter((row2) => row2 && idText(row2.id));
-    const operatives = (input.operatives || []).filter((row2) => row2 && idText(row2.id));
-    const managers = (input.managers || []).filter((row2) => row2 && idText(row2.id));
+    const roster = (input.roster || []).filter((row3) => row3 && idText(row3.id));
+    const operatives = (input.operatives || []).filter((row3) => row3 && idText(row3.id));
+    const managers = (input.managers || []).filter((row3) => row3 && idText(row3.id));
     const accountId = idText(user?.id) || idText(input.viewer?.id);
     const email = idText(user?.email) || idText(input.viewer?.email);
     const rosterIds = personIdSet(
@@ -27942,7 +28121,7 @@ var ProjectPlannerCanonical = (() => {
       formerIds: user?.formerUserIds ?? [],
       aliasIds: rosterIds.filter((id2) => idKey(id2) !== idKey(accountId))
     };
-    const catalogue = operatives.map((row2) => ({ id: row2.id, email: row2.email ?? null }));
+    const catalogue = operatives.map((row3) => ({ id: row3.id, email: row3.email ?? null }));
     const personIds = new Set([...rosterIds, ...accountId ? bookingIdsForAccount(account, catalogue) : []].map(idKey).filter(Boolean));
     const defaults = input.leaveDefaults || {};
     const records = accountId || email ? leaveRecordsForAccount(input.holidays || [], account, catalogue) : [];
@@ -27957,11 +28136,11 @@ var ProjectPlannerCanonical = (() => {
       orgDaysPerYear: defaults.daysPerYear,
       orgStartMonth: defaults.startMonth,
       orgEndMonth: defaults.endMonth,
-      bookings: records.map((row2) => ({
-        startDayKey: row2.startDayKey,
-        endDayKey: row2.endDayKey,
-        timeSlot: row2.timeSlot ?? null,
-        status: row2.status ?? null
+      bookings: records.map((row3) => ({
+        startDayKey: row3.startDayKey,
+        endDayKey: row3.endDayKey,
+        timeSlot: row3.timeSlot ?? null,
+        status: row3.status ?? null
       })),
       onDayKey: dayKey,
       timeZone,
@@ -28001,17 +28180,17 @@ var ProjectPlannerCanonical = (() => {
     const hoursThisWeek = {
       startDayKey: week.startDayKey,
       endDayKey: week.endDayKey,
-      hours: round26(days.reduce((sum, row2) => sum + row2.hours, 0)),
+      hours: round26(days.reduce((sum, row3) => sum + row3.hours, 0)),
       days
     };
     const viewer = { id: accountId || null, email: email || null };
-    const homeRoster = roster.map((row2) => ({
-      id: idText(row2.id),
-      email: row2.email ?? null,
-      formerUserIds: row2.formerUserIds ?? [],
-      sameEmailUserIds: row2.sameEmailUserIds ?? []
+    const homeRoster = roster.map((row3) => ({
+      id: idText(row3.id),
+      email: row3.email ?? null,
+      formerUserIds: row3.formerUserIds ?? [],
+      sameEmailUserIds: row3.sameEmailUserIds ?? []
     }));
-    const homeOperatives = operatives.map((row2) => ({ id: row2.id, email: row2.email ?? null, isActive: row2.isActive ?? null }));
+    const homeOperatives = operatives.map((row3) => ({ id: row3.id, email: row3.email ?? null, isActive: row3.isActive ?? null }));
     const mine = tasksAssignedToViewer({ viewer, roster: homeRoster, operatives: homeOperatives, managers, tasks: input.tasks || [] });
     const nowMs2 = Number.isFinite(input.nowMs) ? input.nowMs : Date.now();
     const tasks = {
@@ -28019,16 +28198,16 @@ var ProjectPlannerCanonical = (() => {
       overdue: mine.filter((task) => isTaskOverdue(task, nowMs2, timeZone)).length,
       dueThisWeek: homeOverviewMetrics({ nowMs: nowMs2, timeZone, viewer, roster: homeRoster, operatives: homeOperatives, managers, tasks: mine }).tasksDueThisWeek
     };
-    const ownOperativeIds = operatives.filter((row2) => personIds.has(idKey(row2.id)) || email && idKey(row2.email) === idKey(email)).map((row2) => row2.id);
+    const ownOperativeIds = operatives.filter((row3) => personIds.has(idKey(row3.id)) || email && idKey(row3.email) === idKey(email)).map((row3) => row3.id);
     const qualifications = ownOperativeIds.length === 0 ? { expired: 0, expiringSoon: 0, total: 0 } : qualificationExpiryCount({
       referenceIso: new Date(nowMs2).toISOString(),
       timeZone,
-      operatives: operatives.filter((row2) => ownOperativeIds.includes(row2.id)).map((row2) => ({
-        id: row2.id,
-        isActive: row2.isActive !== false,
-        name: idText(row2.name),
-        email: row2.email ?? null,
-        expiries: row2.expiries || []
+      operatives: operatives.filter((row3) => ownOperativeIds.includes(row3.id)).map((row3) => ({
+        id: row3.id,
+        isActive: row3.isActive !== false,
+        name: idText(row3.name),
+        email: row3.email ?? null,
+        expiries: row3.expiries || []
       })),
       operativeIds: ownOperativeIds
     });
@@ -28045,13 +28224,13 @@ var ProjectPlannerCanonical = (() => {
   function normalizePersonNamePart(value) {
     return typeof value === "string" ? value.trim().replace(/\s+/g, " ").toLowerCase() : "";
   }
-  function rowNameParts(row2) {
-    const first = normalizePersonNamePart(row2.firstName);
-    const last = normalizePersonNamePart(row2.surname) || normalizePersonNamePart(row2.lastName);
-    return { first, last, full: normalizePersonNamePart(rosterPersonName(row2)) };
+  function rowNameParts(row3) {
+    const first = normalizePersonNamePart(row3.firstName);
+    const last = normalizePersonNamePart(row3.surname) || normalizePersonNamePart(row3.lastName);
+    return { first, last, full: normalizePersonNamePart(rosterPersonName(row3)) };
   }
-  function rowMatches(row2, first, last) {
-    const parts3 = rowNameParts(row2);
+  function rowMatches(row3, first, last) {
+    const parts3 = rowNameParts(row3);
     if (parts3.first || parts3.last) return parts3.first === first && parts3.last === last;
     return parts3.full !== "" && parts3.full === `${first} ${last}`;
   }
@@ -28062,33 +28241,33 @@ var ProjectPlannerCanonical = (() => {
     const first = normalizePersonNamePart(draft?.firstName);
     const last = normalizePersonNamePart(draft?.lastName);
     if (!first || !last) return [];
-    const rows3 = (roster || []).filter((row2) => row2 && typeof row2 === "object" && idText(row2.id));
+    const rows3 = (roster || []).filter((row3) => row3 && typeof row3 === "object" && idText(row3.id));
     const groups = [];
-    for (const row2 of rows3) {
-      if (isAnonymisedDeletedProfile(row2)) continue;
-      if (isIdentifiablePendingLeftover(row2, options.claimedEmails)) continue;
-      if (!rowMatches(row2, first, last)) continue;
-      const keys = new Set(personIdSet(row2, rows3).map(idKey));
-      const segment2 = rosterSegment(row2);
+    for (const row3 of rows3) {
+      if (isAnonymisedDeletedProfile(row3)) continue;
+      if (isIdentifiablePendingLeftover(row3, options.claimedEmails)) continue;
+      if (!rowMatches(row3, first, last)) continue;
+      const keys = new Set(personIdSet(row3, rows3).map(idKey));
+      const segment2 = rosterSegment(row3);
       const existing = groups.find((group) => [...keys].some((key7) => group.keys.has(key7)));
       if (!existing) {
-        groups.push({ keys, row: row2, segment: segment2 });
+        groups.push({ keys, row: row3, segment: segment2 });
         continue;
       }
       for (const key7 of keys) existing.keys.add(key7);
       if (segmentRank(segment2) < segmentRank(existing.segment)) {
-        existing.row = row2;
+        existing.row = row3;
         existing.segment = segment2;
       }
     }
-    return groups.map(({ row: row2, segment: segment2 }) => ({
-      id: idText(row2.id),
-      displayName: rosterPersonName(row2),
-      email: idText(row2.email),
-      level: permissionLevelOf(row2),
+    return groups.map(({ row: row3, segment: segment2 }) => ({
+      id: idText(row3.id),
+      displayName: rosterPersonName(row3),
+      email: idText(row3.email),
+      level: permissionLevelOf(row3),
       active: segment2 === "active",
       segment: segment2,
-      ghost: isGhostUser(row2)
+      ghost: isGhostUser(row3)
     }));
   }
   function sameNamePersonContactLabel(person) {
@@ -28111,7 +28290,7 @@ var ProjectPlannerCanonical = (() => {
   function annualLeaveTeamPeople(input) {
     const viewer = input.viewer;
     if (!viewer || !idText(viewer.id)) return [];
-    const roster = (input.roster || []).filter((row2) => row2 && idText(row2.id));
+    const roster = (input.roster || []).filter((row3) => row3 && idText(row3.id));
     const viewerIds = new Set(personIdSet(viewer, roster).map(idKey));
     const viewerEmail = idKey(viewer.email);
     const admin = viewerIsAdmin(viewer);
@@ -28250,12 +28429,12 @@ var ProjectPlannerCanonical = (() => {
     const skipped = [...first.skipped];
     const checked = [];
     for (const key7 of first.checked) {
-      const wasMismatch = first.mismatches.some((row2) => row2.key === key7);
+      const wasMismatch = first.mismatches.some((row3) => row3.key === key7);
       if (!wasMismatch) {
         checked.push(key7);
         continue;
       }
-      const again = confirm?.mismatches.find((row2) => row2.key === key7);
+      const again = confirm?.mismatches.find((row3) => row3.key === key7);
       if (again) {
         checked.push(key7);
         mismatches.push({ ...again });
@@ -28265,14 +28444,14 @@ var ProjectPlannerCanonical = (() => {
         checked.push(key7);
         continue;
       }
-      const reason = confirm?.skipped.find((row2) => row2.key === key7)?.reason ?? "serverCountUnavailable";
+      const reason = confirm?.skipped.find((row3) => row3.key === key7)?.reason ?? "serverCountUnavailable";
       skipped.push({ key: key7, reason });
     }
     return {
       ok: mismatches.length === 0,
       action: mismatches.length === 0 ? "none" : "reload",
       mismatches,
-      reloadKeys: mismatches.map((row2) => row2.key),
+      reloadKeys: mismatches.map((row3) => row3.key),
       checked,
       skipped
     };
@@ -28283,7 +28462,7 @@ var ProjectPlannerCanonical = (() => {
       if (!recheck) {
         return { ...mismatch, healed: null, afterServerCount: null, afterLocalCount: null };
       }
-      const after = recheck.mismatches.find((row2) => row2.key === mismatch.key);
+      const after = recheck.mismatches.find((row3) => row3.key === mismatch.key);
       if (after) {
         return { ...pickMismatch(mismatch), healed: false, afterServerCount: after.serverCount, afterLocalCount: after.localCount };
       }
@@ -28293,7 +28472,7 @@ var ProjectPlannerCanonical = (() => {
     return {
       atMs: input.atMs,
       trigger: String(input.trigger),
-      ok: mismatches.every((row2) => row2.healed === true),
+      ok: mismatches.every((row3) => row3.healed === true),
       checked: [...input.first.checked],
       skipped: [...input.first.skipped],
       mismatches
@@ -28303,7 +28482,7 @@ var ProjectPlannerCanonical = (() => {
     return { key: mismatch.key, label: mismatch.label, serverCount: mismatch.serverCount, localCount: mismatch.localCount };
   }
   function dataParityLogAppend(log, entry, limit = DATA_PARITY_LOG_LIMIT) {
-    const kept = Array.isArray(log) ? log.filter((row2) => row2 && typeof row2.atMs === "number") : [];
+    const kept = Array.isArray(log) ? log.filter((row3) => row3 && typeof row3.atMs === "number") : [];
     const next = [...kept, entry];
     const cap = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : DATA_PARITY_LOG_LIMIT;
     return next.slice(Math.max(0, next.length - cap));
@@ -28321,11 +28500,11 @@ var ProjectPlannerCanonical = (() => {
     if (entry.mismatches.length === 0) {
       return { tone: "ok", title: `Data check: all lists match (checked ${at})`, lines: [] };
     }
-    const lines = entry.mismatches.map((row2) => {
-      const base = `${row2.label}: server ${row2.serverCount}, this device ${row2.localCount}`;
-      if (row2.healed === true) return `${base} \u2014 reloaded, now matches`;
-      if (row2.healed === false) {
-        return `${base} \u2014 reloaded, still differs (server ${row2.afterServerCount ?? "?"}, this device ${row2.afterLocalCount ?? "?"})`;
+    const lines = entry.mismatches.map((row3) => {
+      const base = `${row3.label}: server ${row3.serverCount}, this device ${row3.localCount}`;
+      if (row3.healed === true) return `${base} \u2014 reloaded, now matches`;
+      if (row3.healed === false) {
+        return `${base} \u2014 reloaded, still differs (server ${row3.afterServerCount ?? "?"}, this device ${row3.afterLocalCount ?? "?"})`;
       }
       return `${base} \u2014 not re-checked`;
     });
@@ -28337,7 +28516,7 @@ var ProjectPlannerCanonical = (() => {
         lines
       };
     }
-    const open = entry.mismatches.filter((row2) => row2.healed !== true).length;
+    const open = entry.mismatches.filter((row3) => row3.healed !== true).length;
     return {
       tone: "warning",
       title: `Data check: ${open} ${open === 1 ? "list does" : "lists do"} not match the server (checked ${at})`,
@@ -28374,10 +28553,10 @@ var ProjectPlannerCanonical = (() => {
     const seen = /* @__PURE__ */ new Set();
     const rows3 = input?.clashing || [];
     if (rows3.length === 0) return { offered: false, bookings: [] };
-    for (const row2 of rows3) {
-      const bookingId = text46(row2?.bookingId);
-      const collection = text46(row2?.collection);
-      if (!row2 || !bookingId || bookingId.includes("/") || !isReplaceCollection(collection) || row2.mayDelete !== true) {
+    for (const row3 of rows3) {
+      const bookingId = text46(row3?.bookingId);
+      const collection = text46(row3?.collection);
+      if (!row3 || !bookingId || bookingId.includes("/") || !isReplaceCollection(collection) || row3.mayDelete !== true) {
         return { offered: false, bookings: [] };
       }
       const key7 = refKey(collection, bookingId);
@@ -28397,9 +28576,9 @@ var ProjectPlannerCanonical = (() => {
     if (rows3.length === 0) return null;
     const deletes = [];
     const seen = /* @__PURE__ */ new Set();
-    for (const row2 of rows3) {
-      const collection = text46(row2?.collection);
-      const id2 = text46(row2?.bookingId);
+    for (const row3 of rows3) {
+      const collection = text46(row3?.collection);
+      const id2 = text46(row3?.bookingId);
       if (!isReplaceCollection(collection) || !id2) return null;
       if (id2.toLowerCase() === bookingId.toLowerCase()) return null;
       const key7 = refKey(collection, id2);
@@ -28550,15 +28729,15 @@ var ProjectPlannerCanonical = (() => {
     push(input.hours.outsideHours, true, input.hours.outsideMultiplier);
     return slices;
   }
-  function mergeBookingPaySlice(row2, slice) {
-    const next = { ...row2 };
-    if (slice.isOvertime && (Number(slice.breakHours) > 0 || Number(row2.breakHours) > 0)) {
+  function mergeBookingPaySlice(row3, slice) {
+    const next = { ...row3 };
+    if (slice.isOvertime && (Number(slice.breakHours) > 0 || Number(row3.breakHours) > 0)) {
       const clockOf2 = (part) => Number(part.breakHours) > 0 ? Number(part.clockHours) || 0 : part.paidHours;
-      next.clockHours = clockOf2(row2) + clockOf2(slice);
-      next.breakHours = (Number(row2.breakHours) || 0) + (Number(slice.breakHours) || 0);
+      next.clockHours = clockOf2(row3) + clockOf2(slice);
+      next.breakHours = (Number(row3.breakHours) || 0) + (Number(slice.breakHours) || 0);
     }
-    next.paidHours = roundPennies(row2.paidHours + slice.paidHours);
-    next.pay = roundPennies(row2.pay + slice.pay);
+    next.paidHours = roundPennies(row3.paidHours + slice.paidHours);
+    next.pay = roundPennies(row3.pay + slice.pay);
     return next;
   }
 
@@ -28581,7 +28760,7 @@ var ProjectPlannerCanonical = (() => {
   }
   function weeklyReportPaySummaryNote(rows3) {
     if (WEEKLY_REPORT_DAYS_DISPLAY !== "note") return "";
-    return rows3.some((row2) => row2 && row2.source !== "claim") ? WEEKLY_REPORT_DAYS_ROUNDED_NOTE : "";
+    return rows3.some((row3) => row3 && row3.source !== "claim") ? WEEKLY_REPORT_DAYS_ROUNDED_NOTE : "";
   }
   var MONTHS4 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   var WEEKDAYS3 = ["", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -28668,21 +28847,21 @@ var ProjectPlannerCanonical = (() => {
     if (rate == null) return WEEKLY_REPORT_RATE_NOT_SET;
     return `${formatMoney(rate, currency)}/${basis === "hourly" ? "h" : "day"}`;
   }
-  function labelFor(row2) {
-    const hourly = row2.payBasis === "hourly";
-    const multiplied = row2.multiplier != null ? ` (${multipliedHoursText({ clockHours: row2.clockHours, multiplier: row2.multiplier, breakHours: row2.breakHours })})` : "";
-    const signed = row2.source === "signed" ? " \xB7 signed timesheet" : "";
-    if (row2.kind === "weekdayStandard") return `${hourly ? "Hourly" : "Weekday standard"}${signed}`;
-    if (row2.kind === "weekdayOvertime") return `${hourly ? "Hourly overtime" : "Weekday overtime"} \xD7${round27(row2.multiplier ?? 1)}${multiplied}${signed}`;
-    const day = row2.weekendDayKey ? `${WEEKDAYS3[row2.weekendIso ?? 0]} ${weeklyReportDayText(row2.weekendDayKey)}` : "Weekend";
+  function labelFor(row3) {
+    const hourly = row3.payBasis === "hourly";
+    const multiplied = row3.multiplier != null ? ` (${multipliedHoursText({ clockHours: row3.clockHours, multiplier: row3.multiplier, breakHours: row3.breakHours })})` : "";
+    const signed = row3.source === "signed" ? " \xB7 signed timesheet" : "";
+    if (row3.kind === "weekdayStandard") return `${hourly ? "Hourly" : "Weekday standard"}${signed}`;
+    if (row3.kind === "weekdayOvertime") return `${hourly ? "Hourly overtime" : "Weekday overtime"} \xD7${round27(row3.multiplier ?? 1)}${multiplied}${signed}`;
+    const day = row3.weekendDayKey ? `${WEEKDAYS3[row3.weekendIso ?? 0]} ${weeklyReportDayText(row3.weekendDayKey)}` : "Weekend";
     const prefix = hourly ? "Hourly \xB7 " : "";
-    if (row2.kind === "weekendWindow") {
-      const credit = row2.divisor ?? 0;
-      const full = credit > 0 && Math.abs(row2.hours - credit) < 5e-3;
-      return `${prefix}${day} window (${full ? "counts as a full day" : `${hoursText3(row2.hours)} of ${hoursText3(credit)}`})${signed}`;
+    if (row3.kind === "weekendWindow") {
+      const credit = row3.divisor ?? 0;
+      const full = credit > 0 && Math.abs(row3.hours - credit) < 5e-3;
+      return `${prefix}${day} window (${full ? "counts as a full day" : `${hoursText3(row3.hours)} of ${hoursText3(credit)}`})${signed}`;
     }
-    if (row2.kind === "weekendOutside") return `${prefix}${day} outside the window \xD7${round27(row2.multiplier ?? 1)}${multiplied}${signed}`;
-    return `${prefix}${day} every hour \xD7${round27(row2.multiplier ?? 1)}${multiplied}${signed}`;
+    if (row3.kind === "weekendOutside") return `${prefix}${day} outside the window \xD7${round27(row3.multiplier ?? 1)}${multiplied}${signed}`;
+    return `${prefix}${day} every hour \xD7${round27(row3.multiplier ?? 1)}${multiplied}${signed}`;
   }
   function weeklyReportPayRows(input) {
     const zone3 = zoneOrLondon(input.timeZone);
@@ -28733,16 +28912,16 @@ var ProjectPlannerCanonical = (() => {
         list = /* @__PURE__ */ new Map();
         rows3.set(person.id, list);
       }
-      const row2 = list.get(key7) ?? seed();
+      const row3 = list.get(key7) ?? seed();
       const clock4 = Number(slice.breakHours) > 0 ? Number(slice.clockHours) || 0 : slice.paidHours;
-      row2.clockHours += row2.overtime ? clock4 : 0;
-      row2.breakHours += row2.overtime ? Number(slice.breakHours) || 0 : 0;
-      const merged = mergeBookingPaySlice({ isOvertime: row2.overtime, paidHours: 0, pay: row2.pay }, slice);
-      row2.pay = merged.pay;
-      row2.hours += hours2;
-      row2.days += daysValue;
+      row3.clockHours += row3.overtime ? clock4 : 0;
+      row3.breakHours += row3.overtime ? Number(slice.breakHours) || 0 : 0;
+      const merged = mergeBookingPaySlice({ isOvertime: row3.overtime, paidHours: 0, pay: row3.pay }, slice);
+      row3.pay = merged.pay;
+      row3.hours += hours2;
+      row3.days += daysValue;
       addByDay(labourByDay, person.id, dayKey, slice.pay);
-      list.set(key7, row2);
+      list.set(key7, row3);
     };
     const kindOf = (iso, overtime, everyHour) => {
       if (iso !== 6 && iso !== 7) return overtime ? "weekdayOvertime" : "weekdayStandard";
@@ -28893,7 +29072,7 @@ var ProjectPlannerCanonical = (() => {
           list = /* @__PURE__ */ new Map();
           rows3.set(person.id, list);
         }
-        const row2 = list.get(kind) ?? {
+        const row3 = list.get(kind) ?? {
           kind,
           payBasis: null,
           dates: "",
@@ -28916,12 +29095,12 @@ var ProjectPlannerCanonical = (() => {
           creditHours: 0
         };
         const amount = roundPennies(Number(line.amount) || 0);
-        row2.pay = roundPennies(row2.pay + amount);
+        row3.pay = roundPennies(row3.pay + amount);
         addByDay(claimsByDay, person.id, dayKey, amount);
-        if (dayKey && dayKey < row2.startDayKey) row2.startDayKey = dayKey;
-        if (dayKey && dayKey > row2.endDayKey) row2.endDayKey = dayKey;
-        row2.dates = weeklyReportDatesText(row2.startDayKey, row2.endDayKey);
-        list.set(kind, row2);
+        if (dayKey && dayKey < row3.startDayKey) row3.startDayKey = dayKey;
+        if (dayKey && dayKey > row3.endDayKey) row3.endDayKey = dayKey;
+        row3.dates = weeklyReportDatesText(row3.startDayKey, row3.endDayKey);
+        list.set(kind, row3);
       }
     }
     const kindOrder = { weekdayStandard: 0, weekdayOvertime: 1, weekendWindow: 2, weekendOutside: 3, weekendEveryHour: 4, priceWork: 8, expenses: 9 };
@@ -28929,32 +29108,32 @@ var ProjectPlannerCanonical = (() => {
     for (const person of people) {
       const list = rows3.get(person.id);
       if (!list || list.size === 0) continue;
-      const ordered = [...list.values()].filter((row2) => row2.pay > 1e-4 || row2.hours > 1e-4).sort(
+      const ordered = [...list.values()].filter((row3) => row3.pay > 1e-4 || row3.hours > 1e-4).sort(
         (a, b) => (a.source === "claim" ? 1 : 0) - (b.source === "claim" ? 1 : 0) || a.startDayKey.localeCompare(b.startDayKey) || (a.weekendDayKey ?? "").localeCompare(b.weekendDayKey ?? "") || kindOrder[a.kind] - kindOrder[b.kind] || (a.multiplier ?? 0) - (b.multiplier ?? 0)
       );
       if (ordered.length === 0) continue;
-      const lines = ordered.map((row2) => {
+      const lines = ordered.map((row3) => {
         const out = {
-          kind: row2.kind,
-          payBasis: row2.payBasis,
-          dates: row2.dates,
-          startDayKey: row2.startDayKey,
-          endDayKey: row2.endDayKey,
-          line: row2.source === "claim" ? row2.line : labelFor(row2),
-          hours: round27(row2.hours),
-          days: round27(row2.days),
-          daysExact: row2.days,
-          rate: row2.rate,
-          rateText: row2.rateText,
-          pay: roundPennies(row2.pay),
+          kind: row3.kind,
+          payBasis: row3.payBasis,
+          dates: row3.dates,
+          startDayKey: row3.startDayKey,
+          endDayKey: row3.endDayKey,
+          line: row3.source === "claim" ? row3.line : labelFor(row3),
+          hours: round27(row3.hours),
+          days: round27(row3.days),
+          daysExact: row3.days,
+          rate: row3.rate,
+          rateText: row3.rateText,
+          pay: roundPennies(row3.pay),
           isPaye: false,
-          source: row2.source,
-          divisor: row2.divisor,
-          multiplier: row2.multiplier
+          source: row3.source,
+          divisor: row3.divisor,
+          multiplier: row3.multiplier
         };
         return out;
       });
-      const personTotal = roundPennies(lines.reduce((sum, row2) => sum + row2.pay, 0));
+      const personTotal = roundPennies(lines.reduce((sum, row3) => sum + row3.pay, 0));
       built.push({
         personId: person.id,
         person: person.name,
@@ -28976,11 +29155,11 @@ var ProjectPlannerCanonical = (() => {
     }
     built.sort((a, b) => a.person.localeCompare(b.person) || a.personId.localeCompare(b.personId));
     if (input.showAllPay === true) {
-      return { people: built, grandTotal: roundPennies(built.reduce((sum, row2) => sum + row2.personTotal, 0)), hiddenPeople: 0, paidDays, unmatchedBookingIds: unmatched };
+      return { people: built, grandTotal: roundPennies(built.reduce((sum, row3) => sum + row3.personTotal, 0)), hiddenPeople: 0, paidDays, unmatchedBookingIds: unmatched };
     }
     const shown = reportPayForViewer(built, { viewer: input.viewer ?? null, roster: input.roster ?? [] });
     return {
-      people: shown.rows.map((row2) => row2.personTotalLabel === PAY_HIDDEN_CELL_LABEL && row2.check ? { ...row2, check: hideCheckAmounts(row2.check) } : row2),
+      people: shown.rows.map((row3) => row3.personTotalLabel === PAY_HIDDEN_CELL_LABEL && row3.check ? { ...row3, check: hideCheckAmounts(row3.check) } : row3),
       grandTotal: shown.grandTotal,
       hiddenPeople: shown.hiddenPeople,
       paidDays,
@@ -29004,13 +29183,13 @@ var ProjectPlannerCanonical = (() => {
     const ownId = idKey9(person.id);
     const ids = new Set([person.id, ...person.ids ?? []].map(idKey9).filter(Boolean));
     const runs = /* @__PURE__ */ new Map();
-    const stored = (row2) => Boolean(row2.sheet || row2.status);
-    const rank = (row2) => (stored(row2) ? 0 : 2) + (idKey9(row2.personId) === ownId ? 0 : 1);
-    for (const row2 of input.sheets || []) {
-      if (!row2 || !ids.has(idKey9(row2.personId)) || row2.endDayKey < start || row2.startDayKey > end) continue;
-      const key7 = `${row2.startDayKey}|${row2.endDayKey}`;
+    const stored = (row3) => Boolean(row3.sheet || row3.status);
+    const rank = (row3) => (stored(row3) ? 0 : 2) + (idKey9(row3.personId) === ownId ? 0 : 1);
+    for (const row3 of input.sheets || []) {
+      if (!row3 || !ids.has(idKey9(row3.personId)) || row3.endDayKey < start || row3.startDayKey > end) continue;
+      const key7 = `${row3.startDayKey}|${row3.endDayKey}`;
       const held = runs.get(key7);
-      if (!held || rank(row2) < rank(held)) runs.set(key7, row2);
+      if (!held || rank(row3) < rank(held)) runs.set(key7, row3);
     }
     const money2 = (value) => formatMoney(value, currency);
     const sum = (byDay, days) => days.reduce((total, day) => total + (byDay.get(day) ?? 0), 0);
@@ -29024,20 +29203,20 @@ var ProjectPlannerCanonical = (() => {
     const states = [];
     let revision = 0;
     let revisionStateLabel = "";
-    for (const row2 of [...runs.values()].sort((a, b) => a.startDayKey.localeCompare(b.startDayKey))) {
-      if (!stored(row2)) {
+    for (const row3 of [...runs.values()].sort((a, b) => a.startDayKey.localeCompare(b.startDayKey))) {
+      if (!stored(row3)) {
         states.push("notStarted");
         continue;
       }
-      if (row2.startDayKey < start || row2.endDayKey > end) partialRun = true;
-      if (typeof row2.revision === "number" && Number.isInteger(row2.revision) && row2.revision > revision) revision = row2.revision;
-      const fields = row2.status ?? parseTimesheetStatusFields(row2.sheet ?? null);
-      const reportChange = signedTimesheetChangeForReports(row2.change);
+      if (row3.startDayKey < start || row3.endDayKey > end) partialRun = true;
+      if (typeof row3.revision === "number" && Number.isInteger(row3.revision) && row3.revision > revision) revision = row3.revision;
+      const fields = row3.status ?? parseTimesheetStatusFields(row3.sheet ?? null);
+      const reportChange = signedTimesheetChangeForReports(row3.change);
       const bucket = timesheetListBucket(fields, person.hasLineManager === true, reportChange);
       const revisionState = timesheetRevisionReportState({
-        revision: row2.revision,
+        revision: row3.revision,
         exported: fields.exportedAtMs != null,
-        signedOff: fields.managerSignedAtMs != null || fields.operativeSignedAtMs != null && Boolean(row2.sheet?.weeklyReportOverride),
+        signedOff: fields.managerSignedAtMs != null || fields.operativeSignedAtMs != null && Boolean(row3.sheet?.weeklyReportOverride),
         change: reportChange
       });
       if (revisionState.state !== "none") {
@@ -29046,9 +29225,9 @@ var ProjectPlannerCanonical = (() => {
         changedSinceSigned = changedSinceSigned || revisionState.state === "due";
       } else states.push(bucket === "exported" ? "exported" : bucket === "signed" ? "signed" : bucket === "awaiting" ? "submitted" : "notStarted");
       if (reportChange?.reopened === true || reportChange?.changed === true && fields.operativeSignedAtMs != null && bucket !== "exported") changedSinceSigned = true;
-      const days = eachDayKey(row2.startDayKey, row2.endDayKey, zone3).filter((day) => counted.has(day));
-      const approved = ctx.approvedRun(row2);
-      const invoiceRows = timesheetInvoiceRows({ sheet: row2.sheet ?? null, payrollLines: row2.payrollLines ?? [], extrasMode: "decided", timesheetDays: days, timeZone: zone3, entryFingerprints: row2.entryFingerprints ?? null });
+      const days = eachDayKey(row3.startDayKey, row3.endDayKey, zone3).filter((day) => counted.has(day));
+      const approved = ctx.approvedRun(row3);
+      const invoiceRows = timesheetInvoiceRows({ sheet: row3.sheet ?? null, payrollLines: row3.payrollLines ?? [], extrasMode: "decided", timesheetDays: days, timeZone: zone3, entryFingerprints: row3.entryFingerprints ?? null });
       for (const invoiceRow of invoiceRows) {
         if (invoiceRow.source === "override") {
           const storedRow = invoiceRow.stored ?? {};
@@ -29126,17 +29305,17 @@ var ProjectPlannerCanonical = (() => {
         const stored = String(record18.userName ?? "").trim();
         const name = stored || `${WEEKLY_REPORT_PERSON_NOT_FOUND} (id ${missingId})`;
         const key7 = `missing:${idKey9(missingId)}`;
-        const row3 = rows3.get(key7) ?? { personId: null, person: name, role: "\u2014", days: 0, type: "Approved", found: false };
-        row3.days = round27(row3.days + days);
-        rows3.set(key7, row3);
+        const row4 = rows3.get(key7) ?? { personId: null, person: name, role: "\u2014", days: 0, type: "Approved", found: false };
+        row4.days = round27(row4.days + days);
+        rows3.set(key7, row4);
         continue;
       }
-      const row2 = rows3.get(person.id) ?? { personId: person.id, person: person.name, role: person.role, days: 0, type: "Approved", found: true };
-      row2.days = round27(row2.days + days);
-      rows3.set(person.id, row2);
+      const row3 = rows3.get(person.id) ?? { personId: person.id, person: person.name, role: person.role, days: 0, type: "Approved", found: true };
+      row3.days = round27(row3.days + days);
+      rows3.set(person.id, row3);
     }
     const list = [...rows3.values()].sort((a, b) => Number(b.found) - Number(a.found) || a.person.localeCompare(b.person));
-    return { rows: list, total: round27(list.reduce((sum, row2) => sum + row2.days, 0)), unmatched };
+    return { rows: list, total: round27(list.reduce((sum, row3) => sum + row3.days, 0)), unmatched };
   }
   function leavePersonMatcher(people) {
     const byId = /* @__PURE__ */ new Map();
@@ -29359,7 +29538,7 @@ var ProjectPlannerCanonical = (() => {
   var key5 = (value) => typeof value === "string" ? value.trim().toLowerCase() : "";
   function leaveLegacyKeyFindings(input) {
     const organizationId = typeof input.organizationId === "string" ? input.organizationId : "";
-    const operatives = (input.operatives || []).map((row2) => ({ id: row2.id, email: row2.email ?? "" }));
+    const operatives = (input.operatives || []).map((row3) => ({ id: row3.id, email: row3.email ?? "" }));
     const people = (input.users || []).filter((user) => {
       if (!user || typeof user.id !== "string" || user.id === "") return false;
       if (isGhostUser(user) || isAnonymisedDeletedProfile(user)) return false;
@@ -29373,7 +29552,7 @@ var ProjectPlannerCanonical = (() => {
       }).level : permissionLevelOf(user);
       return level === "operative";
     });
-    const parsed = (input.leaveDocs || []).map((entry) => ({ entry, record: parseHolidayDocument(entry.id, entry.data, input.timeZone) })).filter((row2) => row2.record !== null);
+    const parsed = (input.leaveDocs || []).map((entry) => ({ entry, record: parseHolidayDocument(entry.id, entry.data, input.timeZone) })).filter((row3) => row3.record !== null);
     const plans = people.map((person) => {
       const email = typeof person.email === "string" ? person.email : "";
       const planIds = bookingIdsForAccount({ id: person.id, email, formerIds: person.formerUserIds ?? [] }, operatives);
@@ -29477,8 +29656,8 @@ var ProjectPlannerCanonical = (() => {
     return text49(value).toLowerCase();
   }
   function taskPersonKeys(input) {
-    const roster = (input?.roster || []).filter((row2) => row2 && text49(row2.id));
-    const rosterById = new Map(roster.map((row2) => [key6(row2.id), row2]));
+    const roster = (input?.roster || []).filter((row3) => row3 && text49(row3.id));
+    const rosterById = new Map(roster.map((row3) => [key6(row3.id), row3]));
     const parent = /* @__PURE__ */ new Map();
     const find = (node) => {
       let root = node;
@@ -29504,11 +29683,11 @@ var ProjectPlannerCanonical = (() => {
       for (const node of present3) find(node);
       for (let i = 1; i < present3.length; i += 1) union(present3[0], present3[i]);
     };
-    for (const row2 of roster) join([idNode(row2.id), emailNode(row2.email), ...personIdSet(row2, roster).map(idNode)]);
-    const managers = (input?.managers || []).filter((row2) => row2 && text49(row2.id));
-    const operatives = (input?.operatives || []).filter((row2) => row2 && text49(row2.id));
-    for (const row2 of [...managers, ...operatives]) {
-      join([idNode(row2.id), emailNode(row2.email), idNode(row2.linkedUserId), idNode(row2.userId), idNode(row2.uid)]);
+    for (const row3 of roster) join([idNode(row3.id), emailNode(row3.email), ...personIdSet(row3, roster).map(idNode)]);
+    const managers = (input?.managers || []).filter((row3) => row3 && text49(row3.id));
+    const operatives = (input?.operatives || []).filter((row3) => row3 && text49(row3.id));
+    for (const row3 of [...managers, ...operatives]) {
+      join([idNode(row3.id), emailNode(row3.email), idNode(row3.linkedUserId), idNode(row3.userId), idNode(row3.uid)]);
     }
     const groups = /* @__PURE__ */ new Map();
     for (const node of [...parent.keys()]) {
@@ -29725,7 +29904,7 @@ var ProjectPlannerCanonical = (() => {
     const timeZone = input?.timeZone ?? null;
     const viewer = input?.viewer;
     if (!viewer) return [];
-    const subjectIds = new Set(userTimesheetSubjects({ viewer, members }).map((row2) => idKey10(row2.userId)));
+    const subjectIds = new Set(userTimesheetSubjects({ viewer, members }).map((row3) => idKey10(row3.userId)));
     const subjects = members.filter((member) => subjectIds.has(idKey10(member.id)));
     if (subjects.length === 0) return [];
     const viewerKeys = new Set(
@@ -29776,7 +29955,7 @@ var ProjectPlannerCanonical = (() => {
         picked.add(at);
         const { sheet, index } = own[at];
         const sheetKey = sheetOwnerKey(sheet);
-        const member = person.members.find((row2) => idKey10(row2.id) === sheetKey) ?? person.members[0];
+        const member = person.members.find((row3) => idKey10(row3.id) === sheetKey) ?? person.members[0];
         if (!showsMyTimesheets(member, run, timeZone)) continue;
         const status = sheet.status ?? parseTimesheetStatusFields(sheet.data ?? {});
         const selfSigned = typeof member.timesheetSelfSigned === "boolean" ? member.timesheetSelfSigned : timesheetSelfSigned(member);
@@ -29796,13 +29975,13 @@ var ProjectPlannerCanonical = (() => {
       }
     });
     rows3.sort((a, b) => a.startDayKey === b.startDayKey ? a.order - b.order : a.startDayKey < b.startDayKey ? 1 : -1);
-    return rows3.map(({ order: _order, ...row2 }) => row2);
+    return rows3.map(({ order: _order, ...row3 }) => row3);
   }
   function userTimesheetQueueCounts(input) {
     const rows3 = userTimesheetQueue(input);
     return {
-      awaiting: rows3.filter((row2) => row2.bucket === "awaiting").length,
-      signed: rows3.filter((row2) => row2.bucket === "signed").length
+      awaiting: rows3.filter((row3) => row3.bucket === "awaiting").length,
+      signed: rows3.filter((row3) => row3.bucket === "signed").length
     };
   }
   return __toCommonJS(bundleEntry_exports);

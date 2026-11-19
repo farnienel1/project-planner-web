@@ -6,10 +6,9 @@ import { auth, db } from '@/lib/firebase/config'
 import { updateSubcontractorBooking } from '@/lib/subcontractors/subcontractorBookingWrite'
 import { HoursBreakdownCard } from '@/components/schedule/HoursBreakdownCard'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
-import { hoursBreakdown } from '@/lib/scheduling/paidHours'
 import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import type { Subcontractor } from '@/types'
-import { bookingDayKey, customHoursPrefillForDate, policyForBookingDate } from '@/lib/scheduling/bookingSlotRules'
+import { customHoursPrefillForDate, hoursBreakdownForDates } from '@/lib/scheduling/bookingSlotRules'
 import { feedback } from '@/lib/feedbackSounds/feedback'
 
 export type DiarySubBooking = {
@@ -51,16 +50,14 @@ export function SubcontractorBookingEditSheet({
   const [error, setError] = useState<string | null>(null)
   const firmName = subcontractor?.name?.trim() || 'Sub contractor'
 
+  // Rulebook 1.69.0 (`bookingHoursBreakdownDays`): the Hours breakdown box (no unpaid break on a subcontractor booking).
   const breakdown = useMemo(
     () =>
-      hoursBreakdown({
-        timeSlot: 'CUSTOM_HOURS',
-        workStartTime,
-        workEndTime,
-        isBreakRemoved: true,
-        policy: policyForBookingDate(booking.date, payroll) ?? payroll,
-        dayKey: bookingDayKey(booking.date),
-      }),
+      hoursBreakdownForDates(
+        [booking.date],
+        { timeSlot: 'CUSTOM_HOURS', workStartTime, workEndTime, isBreakRemoved: true },
+        payroll
+      ),
     [workStartTime, workEndTime, payroll, booking.date]
   )
 
@@ -186,6 +183,7 @@ export function SubcontractorBookingEditSheet({
               policy={payroll}
               date={booking.date}
               showBreak={false}
+              showBreakdown={false}
               onStart={setWorkStartTime}
               onEnd={setWorkEndTime}
               onBreak={() => {}}

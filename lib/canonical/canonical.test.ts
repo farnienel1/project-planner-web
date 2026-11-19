@@ -17582,6 +17582,73 @@ test('1.57.0 J1 review: a gap-only change never hides late extras waiting for th
   assert.equal(R112.signedTimesheetChangeForReports(R112.timesheetChangesWithLateExtras(gap, { waitingForLineManager: false })), null)
 })
 
+// ── 1.69.0 §4.3: the simple hours breakdown always adds up (owner, 17 Nov: the text only displays the calculation) ──
+test('1.69.0 property: breakdown rows add up exactly to the Total, which is the Save label, for random bookings', () => {
+  let seed = 162
+  const rand = () => {
+    seed = (seed * 1103515245 + 12345) % 2147483648
+    return seed / 2147483648
+  }
+  const pick = <T,>(list: readonly T[]): T => list[Math.floor(rand() * list.length)]
+  const clock = (minutes: number) => `${String(Math.floor(minutes / 60) % 24).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
+  const rates = [1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3]
+  const days = ['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20', '2026-11-21', '2026-11-22']
+  const cents = (value: string) => Math.round(Number(value.replace(/h$/, '')) * 100)
+  let multiRow = 0
+  for (let i = 0; i < 3000; i += 1) {
+    const dayStart = 360 + 30 * Math.floor(rand() * 6)
+    const dayEnd = dayStart + 300 + 30 * Math.floor(rand() * 10)
+    const breakStart = dayStart + 60 + 15 * Math.floor(rand() * 8)
+    const breakMinutes = pick([0, 15, 30, 45, 60])
+    const winStart = 390 + 30 * Math.floor(rand() * 4)
+    const weekend = () => ({
+      allHoursAtMultiplierMode: rand() < 0.4,
+      allHoursMultiplier: pick(rates),
+      definedWindowStart: clock(winStart),
+      definedWindowEnd: clock(winStart + 240 + 30 * Math.floor(rand() * 6)),
+      countsAsStandardHours: pick([4, 5.5, 6, 7.5, 8]),
+      outsideWindowMultiplier: pick(rates),
+      sameAsSaturday: false,
+      breakPaid: rand() < 0.5,
+      breakMinutes: pick([0, 15, 30, 45]),
+      breakWindowStart: clock(winStart + 150),
+      breakWindowEnd: clock(winStart + 195),
+    })
+    const policy = {
+      standardDayStart: clock(dayStart),
+      standardDayEnd: clock(dayEnd),
+      unpaidBreakMinutes: breakMinutes,
+      breakPaid: rand() < 0.2,
+      breakWindowStart: clock(breakStart),
+      breakWindowEnd: clock(breakStart + Math.max(breakMinutes, 15)),
+      weekdayOutsideStandardMultiplier: pick(rates),
+      saturday: weekend(),
+      sunday: weekend(),
+    } as never
+    const start = 15 * Math.floor(rand() * 88)
+    const length = 15 * (1 + Math.floor(rand() * 64))
+    const booking = {
+      timeSlot: rand() < 0.1 ? pick(['FULL DAY', 'AM', 'PM']) : 'CUSTOM_HOURS',
+      workStartTime: clock(start),
+      workEndTime: clock(start + length),
+      isBreakRemoved: rand() < 0.25,
+      otMultiplierOverride: rand() < 0.3 ? pick(rates) : null,
+    }
+    const out = R112.bookingHoursBreakdownRows(policy, pick(days), booking, 'Europe/London')
+    if (!out) continue
+    const paid = R112.payrollHoursResult({ booking, dayKey: out.dayKey, policy, timeZone: 'Europe/London' })
+    const totalRow = out.rows[out.rows.length - 1]
+    const parts = out.rows.filter((row) => row.kind !== 'total')
+    if (parts.length > 1) multiRow += 1
+    const where = JSON.stringify({ policy, booking, day: out.dayKey, rows: out.rows.map((row) => row.value) })
+    assert.equal(cents(totalRow.value), Math.round(paid.totalPaidHours * 100), where)
+    assert.equal(parts.reduce((sum, row) => sum + cents(row.value), 0), cents(totalRow.value), where)
+    assert.equal(Math.round((out.normalPaidHours + out.overtimePaidHours) * 100), cents(totalRow.value), where)
+    assert.equal(R112.saveHoursLabel(out.totalPaidHours), `Save · ${totalRow.value.replace(/h$/, '')} hours`, where)
+  }
+  assert.ok(multiRow > 300, `only ${multiRow} cases had both rows`)
+})
+
 test('1.60.0 multiPersonBookingBlocks: more than one person, anyone already booked that day is named', () => {
   const { multiPersonBookingBlocks, MULTI_PERSON_ALREADY_BOOKED_MESSAGE } = R112
   const people = [
