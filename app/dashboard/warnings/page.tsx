@@ -591,7 +591,7 @@ export default function WarningsPage() {
       if (!organization?.id || !user?.id) throw new Error('Sign in again to dismiss this warning.')
       let written: string[]
       try {
-        written = await dismissWarningResolutions(organization.id, resolutionKeys, user.id)
+        written = await dismissWarningResolutions(organization.id, resolutionKeys, user.id, latestResolvedKeys.current)
       } catch (error) {
         feedback('actionRefused')
         throw error

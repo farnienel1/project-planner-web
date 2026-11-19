@@ -13,6 +13,7 @@ import { warningDismissDocument } from '@/lib/warnings/warningDismiss'
 import { db } from '@/lib/firebase/config'
 import {
   approvedWarningKeys,
+  normalizeDocumentId,
   parseWarningResolutionDocument,
   resolvedWarningKeys,
   warningResolutionRecords,
@@ -37,13 +38,19 @@ function recordsOf(snapshot: QuerySnapshot) {
  * batch of `warningResolutions/{key}` status `dismissed` (`warningDismissDocument` → `warningResolutionWriteFields`, the
  * write iOS makes; admins and managers only by the rules), so either every row is dismissed or none (a refused write
  * keeps the card). Returns the keys written, stored case kept. Throws when a key cannot be written or it is refused.
+ * A key already resolved (`alreadyResolvedKeys`, compared without case) is left as stored, so dismissing a clash
+ * cluster never turns an earlier approval of one of its pairs into a dismissal (`approvedWarningKeys`).
  */
 export async function dismissWarningResolutions(
   organizationId: string,
   resolutionKeys: ReadonlyArray<string>,
-  dismissedByUserId: string
+  dismissedByUserId: string,
+  alreadyResolvedKeys: ReadonlyArray<string> = []
 ): Promise<string[]> {
-  const writes = resolutionKeys.map((resolutionKey) => warningDismissDocument({ resolutionKey, dismissedByUserId }))
+  const resolved = new Set(alreadyResolvedKeys.map((key) => normalizeDocumentId(key)))
+  const toWrite = resolutionKeys.filter((key) => !resolved.has(normalizeDocumentId(key)))
+  if (resolutionKeys.length > 0 && toWrite.length === 0) return [...resolutionKeys]
+  const writes = toWrite.map((resolutionKey) => warningDismissDocument({ resolutionKey, dismissedByUserId }))
   if (writes.length === 0 || writes.some((write) => !write)) throw new Error('This warning cannot be dismissed.')
   const batch = writeBatch(db)
   for (const write of writes) {
