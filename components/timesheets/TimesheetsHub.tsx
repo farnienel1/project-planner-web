@@ -19,6 +19,7 @@ import {
   canAccessOperativeTimesheets,
   canAccessTimesheetsSurface,
   hasAdminAccess,
+  isOperativeMode,
   shouldShowTimesheetsDisabledMessage,
   userTimesheetSubjectIds,
   exportedTimesheetSubjectIds,
@@ -51,10 +52,14 @@ import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
 import {
   loadExportedTimesheetHistory,
   loadTimesheetDraftsForStarts,
-  loadTimesheetQueueDrafts,
-  listTimesheetStates,
+  loadTimesheetQueueSheets,
+  type TimesheetQueueStoredSheet,
+  listPersonTimesheetStates,
+  timesheetLookupPrivatePay,
   timesheetSourceDocumentId,
 } from '@/lib/timesheets/timesheetStorage'
+import { timesheetLookupPlan } from '@/lib/timesheets/personTimesheetDocs'
+import { onPlatformConfigChange } from '@/lib/access/securitySwitches'
 import { emptyTimesheetDraft, type TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import {
   awaitingManagerSignOff,
@@ -65,7 +70,7 @@ import { withOwnPay } from '@/lib/pay/ownPayRecord'
 import { retryPayProfiles, usePayProfilesStatus, usePayStatusOf } from '@/lib/pay/usePayProfilesStatus'
 import type { PayProfilesStatus } from '@/lib/pay/payProfileOverlay'
 import { OWN_PAY_FAILED_MESSAGE, OWN_PAY_LOADING_MESSAGE, PayStatusNotice } from '@/components/pay/PayStatusNotice'
-import { canAccessMyTimesheetsWithPolicy, shouldAppearInOperativeTimesheetRoster, timesheetDayKeysForPeriod } from '@/lib/timesheets/timesheetPayrollPolicy'
+import { canAccessMyTimesheetsWithPolicy, timesheetDayKeysForPeriod } from '@/lib/timesheets/timesheetPayrollPolicy'
 import { exportedTimesheetRosterGroups, timesheetRosterGroups } from '@/lib/timesheets/timesheetWeekUtils'
 import {
   TIMESHEETS_HUB_PATH,
@@ -98,12 +103,12 @@ import type { RepairSheet } from '@/lib/timesheets/snapshotAutoRepair'
 import { revisionDueOf as revisionDueFor } from '@/lib/timesheets/mineChanged'
 import {
   RECENT_PAY_RUN_COUNT,
-  draftsForMembers,
+  TIMESHEETS_LOAD_FAILED_MESSAGE,
   payRunKey,
   payRunsStartDayKey,
   recentPayRuns,
   timesheetMemberIds,
-  timesheetQueueRows,
+  userTimesheetQueueRows,
   type PayRun,
 } from '@/lib/timesheets/timesheetQueue'
 import { bookingCoverageCoversDay, periodBookingChanges, type BookingChangeCatalogue } from '@/lib/timesheets/timesheetBookingChanges'
@@ -170,7 +175,7 @@ export function TimesheetsHub() {
     error: managerBookingsError,
   } = useManagerScheduleStore()
   const { operatives, loadOperatives } = useOperativeStore()
-  const { users, loadUsers, loading: usersLoading } = useOrgUserStore()
+  const { users, loadUsers, loading: usersLoading, rosterServerOrgId } = useOrgUserStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const [invoicing, setInvoicing] = useState<OrgInvoicingSettings>(DEFAULT_INVOICING)
   const [payrollPolicy, setPayrollPolicy] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
@@ -638,6 +643,9 @@ export function TimesheetsHub() {
               invoicing={invoicing}
               timeZone={timeZone}
               changeCatalogue={changeCatalogue}
+              rosterLoaded={
+                !usersLoading && users.length > 0 && Boolean(organization?.id) && rosterServerOrgId === organization?.id
+              }
               onStats={setHubStats}
               onClick={() => router.push(timesheetsTeamHref({ tab: 'awaiting' }))}
             />
@@ -691,12 +699,35 @@ function MineTimesheetsList({
 
   const periodKey = (period: { start: Date; end: Date }) =>
     `${periodStartKey(period.start, timeZone)}|${dayKey(period.end, timeZone)}`
+  // Guardrail 1: the person's past sheets under every id they go by (`personIdSet`: a former invite id, a second users
+  // document on their email) and sheets stored without `userId` whose document id names them; the own id first.
+  // Final review of #386: only the queries this viewer's rules allow (`timesheetLookupPlan`): an operative asks their own
+  // id only; while `privatePay` is on so does everyone but an admin (as iOS).
+  const subjectIsOperative = isOperativeMode(subject)
+  const subjectIsAdmin = hasAdminAccess(subject)
+  const subjectIds = useMemo(() => timesheetMemberIds(subject, users), [subject, users])
+  const subjectIdsKey = subjectIds.join('|')
+  // Re-check of #386: the switch as the lookups read it, followed live — when `platformConfig/app` arrives after the
+  // first read (privatePay off), the list is planned again and widens.
+  const [lookupPrivatePay, setLookupPrivatePay] = useState(() => timesheetLookupPrivatePay(organizationId ?? ''))
+  useEffect(() => {
+    const update = () => setLookupPrivatePay(timesheetLookupPrivatePay(organizationId ?? ''))
+    update()
+    return onPlatformConfigChange(update)
+  }, [organizationId])
 
   useEffect(() => {
     if (!organizationId) return
     let cancelled = false
     const currentKey = periodKey(currentPeriod)
-    listTimesheetStates(organizationId, subject.id, 400).then(async (rows) => {
+    const plan = timesheetLookupPlan({
+      ids: subjectIds,
+      viewerIsOperative: subjectIsOperative,
+      viewerIsAdmin: subjectIsAdmin,
+      privatePay: lookupPrivatePay,
+    })
+    listPersonTimesheetStates(organizationId, plan.ids, 400, 'latest', plan.includeDocumentPrefix)
+      .then(async (rows) => {
       if (cancelled) return
       const byKey = new Map<string, { start: Date; end: Date }>()
       for (const period of pastPeriods) byKey.set(periodKey(period), period)
@@ -757,7 +788,9 @@ function MineTimesheetsList({
     return () => {
       cancelled = true
     }
-  }, [organizationId, subject.id, currentPeriod, pastPeriods, invoicing, timeZone])
+    // `subjectIds` is read through `subjectIdsKey` (a new roster array with the same ids does not reload).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [organizationId, subject.id, subjectIdsKey, subjectIsOperative, subjectIsAdmin, lookupPrivatePay, currentPeriod, pastPeriods, invoicing, timeZone])
 
   // Rulebook 1.47.0 §8: a signed, unexported sheet whose bookings changed is back with the person.
   const changeOf = (period: { start: Date; end: Date }) =>
@@ -941,11 +974,14 @@ function ManagerTimesheetsTile({
   invoicing,
   timeZone,
   changeCatalogue,
+  rosterLoaded,
   onStats,
   onClick,
 }: {
   /** Rulebook 1.47.0 §8: the live bookings, so a reopened sheet is counted where it now is. */
   changeCatalogue: BookingChangeCatalogue
+  /** Review of #386 (S5): the organisation roster has loaded (admins' "Unknown person" rows wait for it). */
+  rosterLoaded: boolean
   user: User
   users: User[]
   organizationId?: string
@@ -961,18 +997,12 @@ function ManagerTimesheetsTile({
   onStats?: (stats: { awaiting: number; signed: number; exported: number } | null) => void
   onClick: () => void
 }) {
-  const [loaded, setLoaded] = useState<{ byRun: Map<string, Map<string, TimesheetDraft>>; exportedCount: number } | 'empty' | null>(null)
+  const [loaded, setLoaded] = useState<{ sheets: TimesheetQueueStoredSheet[]; exportedCount: number } | 'empty' | 'failed' | null>(null)
   const [repairs, setRepairs] = useState(0)
+  // Final review of #381: a failed load is tried again when the browser comes back online or the window regains focus
+  // (the tile is itself a button, so it cannot hold a Retry button).
+  const [retries, setRetries] = useState(0)
   const reviewGroups = useMemo(() => timesheetRosterGroups(user, users), [user, users])
-  const groupsFor = useMemo(
-    () => (run: PayRun) =>
-      reviewGroups
-        .map((group) =>
-          group.filter((member) => shouldAppearInOperativeTimesheetRoster(member, run.start, run.end, invoicing, new Date(), timeZone))
-        )
-        .filter((group) => group.length > 0),
-    [reviewGroups, invoicing, timeZone]
-  )
   const reviewIds = useMemo(() => reviewGroups.flat().flatMap((member) => timesheetMemberIds(member, users)), [reviewGroups, users])
   const runsKey = runs.map((run) => payRunKey(run, timeZone)).join(',')
   // Rulebook 1.31.0: the Exported count is `exportedTimesheetHistorySubjects` (own sheets and inactive people in scope).
@@ -980,7 +1010,7 @@ function ManagerTimesheetsTile({
 
   // Review of #368: the queries reload only when the people they ask about change (their ids), never on every roster
   // snapshot; the rows are mapped onto the people from the current roster below.
-  const queryKey = `${reviewIds.join(',')}#${exportedRoster.map((member) => member.id).join(',')}#${hasAdminAccess(user) ? 'admin' : ''}`
+  const queryKey = `${reviewIds.join(',')}#${exportedRoster.map((member) => member.id).join(',')}#${hasAdminAccess(user) ? 'admin' : ''}#${rosterLoaded ? 'roster' : ''}`
   const usersRef = useRef(users)
   usersRef.current = users
   const exportedRosterRef = useRef(exportedRoster)
@@ -997,80 +1027,96 @@ function ManagerTimesheetsTile({
       return
     }
     let cancelled = false
+    // A new attempt clears a previous failure (shown as '–' while it loads); every other state stays until it answers.
+    setLoaded((previous) => (previous === 'failed' ? null : previous))
     Promise.all([
       reviewIds.length > 0
-        ? loadTimesheetQueueDrafts({ organizationId, userIds: reviewIds, periods: runs, timeZone })
-        : Promise.resolve(new Map<string, Map<string, TimesheetDraft>>()),
+        ? // Rulebook 1.66.0 §8 (owner decision 17 Nov): every stored sheet, however old — never only the recent runs.
+          loadTimesheetQueueSheets({
+            organizationId,
+            userIds: reviewIds,
+            timeZone,
+            // Admins: the recent runs are also read by `weekStartKey`, so a sheet stored under another spelling of an id
+            // (or with no `userId`) stays listed for them (guardrail 3).
+            recentRunStartDayKeys: hasAdminAccess(user) ? runs.map((run) => periodStartKey(run.start, timeZone)) : undefined,
+          })
+        : Promise.resolve([] as TimesheetQueueStoredSheet[]),
       // 17 Nov follow-up: the same Exported list as User Timesheets → Exported (former ids matched; admins also count
       // a sheet whose person is nobody in the organisation).
-      loadExportedTimesheetHistory({ organizationId, users: exportedRoster, roster: users, includeUnresolved: hasAdminAccess(user) }),
+      loadExportedTimesheetHistory({
+        organizationId,
+        users: exportedRoster,
+        roster: users,
+        includeUnresolved: hasAdminAccess(user),
+        // Review of #386 (S5): "Unknown person" rows only once the roster has loaded.
+        rosterLoaded,
+        viewerIsOperative: isOperativeMode(user),
+        viewerIsAdmin: hasAdminAccess(user),
+      }),
     ])
-      .then(([byRun, exportedRows]) => {
+      .then(([sheets, exportedRows]) => {
         if (cancelled) return
-        setLoaded({ byRun, exportedCount: exportedRows.length })
+        setLoaded({ sheets, exportedCount: exportedRows.length })
       })
       .catch(() => {
-        if (!cancelled) setLoaded('empty')
+        // Rulebook 1.66.0 §8: a failed load is shown (the message User Timesheets uses), never 0 / 0 / 0.
+        if (!cancelled) setLoaded('failed')
       })
     return () => {
       cancelled = true
     }
     // `runs` is read through `runsKey`, the people through `queryKey` (ids), the roster through a ref.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [organizationId, users.length === 0, queryKey, runsKey, timeZone, repairs])
+  }, [organizationId, users.length === 0, queryKey, runsKey, timeZone, repairs, retries])
 
-  // The loaded sheets on the people of the current roster (`draftsForMembers`), per pay run.
-  const draftsByRun = useMemo(() => {
-    if (loaded == null || loaded === 'empty') return null
-    const drafts = new Map<string, Map<string, TimesheetDraft>>()
-    for (const run of runs) {
-      const key = payRunKey(run, timeZone)
-      drafts.set(key, draftsForMembers(reviewGroups, loaded.byRun.get(key) ?? new Map(), users))
+  useEffect(() => {
+    if (loaded !== 'failed' || typeof window === 'undefined') return
+    const retry = () => setRetries((value) => value + 1)
+    window.addEventListener('online', retry)
+    window.addEventListener('focus', retry)
+    return () => {
+      window.removeEventListener('online', retry)
+      window.removeEventListener('focus', retry)
     }
-    return drafts
-    // `runs` is read through `runsKey`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, reviewGroups, users, runsKey, timeZone])
+  }, [loaded])
 
   const catalogueRef = useRef(changeCatalogue)
   catalogueRef.current = changeCatalogue
-  const stats = useMemo(() => {
-    if (loaded == null) return null
-    if (loaded === 'empty') return { awaiting: 0, signed: 0, exported: 0 }
-    // 17 Nov follow-up: the same rows User Timesheets lists (every recent pay run, `timesheetQueueRows`).
-    const count = (bucket: 'awaiting' | 'signed') =>
-      timesheetQueueRows({
-        runs,
-        groupsFor,
-        draftsFor: (run) => draftsByRun?.get(payRunKey(run, timeZone)),
-        bucket,
-        users,
-        timeZone,
-        // Rulebook 1.47.0 §8: a reopened sheet counts where `timesheetListBucket` now puts it.
-        bookingChange: (member, draft, run) => periodBookingChanges(catalogueRef.current, member, draft, run),
-      }).length
-    return { awaiting: count('awaiting'), signed: count('signed'), exported: loaded.exportedCount }
+  // Rulebook 1.66.0 §8: the same rows User Timesheets lists — every stored sheet however old (`userTimesheetQueue`), a
+  // reopened sheet where `timesheetListBucket` now puts it (an old run whose bookings are not loaded: not changed).
+  const queueRows = useMemo(() => {
+    if (loaded == null || loaded === 'empty' || loaded === 'failed') return []
+    return userTimesheetQueueRows({
+      viewer: user,
+      users,
+      sheets: loaded.sheets,
+      invoicing,
+      timeZone,
+      bookingChange: (member, draft, run) => periodBookingChanges(catalogueRef.current, member, draft, run),
+    })
     // The catalogue is read through a ref; re-run when its bookings or load state change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, draftsByRun, groupsFor, users, runsKey, timeZone, changeCatalogue.bookings, changeCatalogue.managerSiteBookings, changeCatalogue.liveLoaded])
+  }, [loaded, user, users, invoicing, timeZone, changeCatalogue.bookings, changeCatalogue.managerSiteBookings, changeCatalogue.liveLoaded])
+  const stats = useMemo(() => {
+    if (loaded == null || loaded === 'failed') return null
+    if (loaded === 'empty') return { awaiting: 0, signed: 0, exported: 0 }
+    return {
+      awaiting: queueRows.filter((row) => row.bucket === 'awaiting').length,
+      signed: queueRows.filter((row) => row.bucket === 'signed').length,
+      exported: loaded.exportedCount,
+    }
+  }, [loaded, queueRows])
 
-  // Owner item 5 (17 Nov follow-up): the hub repairs frozen-empty snapshots of the loaded pay runs in the background
+  // Owner item 5 (17 Nov follow-up): the hub repairs frozen-empty snapshots of the recent pay runs in the background
   // too (`useSnapshotAutoRepair`), once the bookings of the window and the pay inputs have loaded.
   const repairSheets = useMemo<RepairSheet[]>(() => {
-    if (loaded == null || loaded === 'empty') return []
-    return runs.flatMap((run) => {
-      const drafts = draftsByRun?.get(payRunKey(run, timeZone))
-      if (!drafts) return []
-      return groupsFor(run)
-        .flat()
-        .flatMap((member) => {
-          const draft = drafts.get(member.id)
-          return draft ? [{ member, period: run, draft, documentId: timesheetSourceDocumentId(draft) }] : []
-        })
-    })
+    const recent = new Set(runs.map((run) => payRunKey(run, timeZone)))
+    return queueRows
+      .filter((row) => row.bucket !== 'exported' && recent.has(payRunKey(row.period, timeZone)))
+      .map((row) => ({ member: row.member, period: row.period, draft: row.draft, documentId: timesheetSourceDocumentId(row.draft) }))
     // `runs` is read through `runsKey`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, draftsByRun, runsKey, groupsFor, timeZone])
+  }, [queueRows, runsKey, timeZone])
   useSnapshotAutoRepair({
     organizationId,
     viewer: user,
@@ -1110,6 +1156,11 @@ function ManagerTimesheetsTile({
           <span>Exported</span>
         </span>
       </span>
+      {loaded === 'failed' ? (
+        <p className="pu-err" role="alert" style={{ marginTop: 6 }}>
+          {TIMESHEETS_LOAD_FAILED_MESSAGE}
+        </p>
+      ) : null}
     </ActionCard>
   )
 }

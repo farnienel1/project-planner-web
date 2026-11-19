@@ -411,6 +411,16 @@ const SERVER_TEMPLATES = Object.freeze({
     attachments: ['pdf', 'xlsx', 'csv'],
     render: renderWebRendered,
   },
+  // Password reset, verify email, confirm new email: the same as `web_rendered`, counted in the `server-auth` rate
+  // bucket (handler.js) instead of the shared server bucket (review of #361).
+  auth_rendered: {
+    minRole: null,
+    recipients: 'server',
+    maxRecipients: 1,
+    attachments: [],
+    rateBucket: 'auth',
+    render: renderWebRendered,
+  },
   web_rendered_batch: {
     minRole: null,
     recipients: 'server',

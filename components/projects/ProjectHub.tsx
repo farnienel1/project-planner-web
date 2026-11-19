@@ -33,88 +33,76 @@ export function ProjectHub({
 
   return (
     <ProjectWorkspaceChrome project={project} basePath={basePath} taskCount={taskCount}>
-      <div className="gmain grid">
-        <div className="stack">
-          {showScheduling ? (
-            <section className="card">
-              <div className="card-h" data-hue="sched">
-                <span className="ico-chip sm">
-                  <CalendarDaysIcon className="h-4 w-4" />
-                </span>
-                <h2 className="h2">This week on site</h2>
-                <div className="acts">
-                  <Link href={`${basePath}/schedule`} className="btn sm tint" data-hue="sched">
-                    Open scheduling
-                  </Link>
-                </div>
-              </div>
-              <div className="card-b">
-                <ProjectScheduleSection project={project} scheduleBasePath={`${basePath}/schedule`} variant="hub" />
-              </div>
-            </section>
-          ) : null}
-          <div className="g2 grid">
-            <section className="card">
-              <div className="card-h" data-hue="task">
-                <span className="ico-chip sm">
-                  <ClipboardDocumentCheckIcon className="h-4 w-4" />
-                </span>
-                <h2 className="h2">Tasks</h2>
-                <div className="acts">
-                  <Link href={`${basePath}/tasks`} className="btn sm ghost">
-                    All
-                  </Link>
-                </div>
-              </div>
-              <div className="card-b">
-                <p className="muted small">
-                  {taskCount ? `${taskCount} open task${taskCount === 1 ? '' : 's'} on this job.` : 'No open tasks. Create snags, variations and to-dos for this job.'}
-                </p>
-                <Link href={`${basePath}/tasks`} className="btn sm primary mt-3">
-                  Tasks
-                </Link>
-              </div>
-            </section>
-            <section className="card">
-              <div className="card-h" data-hue="sw">
-                <span className="ico-chip sm">
-                  <CubeIcon className="h-4 w-4" />
-                </span>
-                <h2 className="h2">Materials</h2>
-                <div className="acts">
-                  <Link href={`${basePath}/materials`} className="btn sm ghost">
-                    All
-                  </Link>
-                </div>
-              </div>
-              <div className="card-b">
-                <p className="muted small">Order materials for delivery to site.</p>
-                <Link href={`${basePath}/materials`} className="btn sm hue mt-3" data-hue="sw">
-                  Order materials
-                </Link>
-              </div>
-            </section>
-          </div>
-        </div>
-        <div className="stack">
-          <ProjectDetailsCard project={project} basePath={basePath} canEdit={canEdit} />
-          <section className="card" data-hue="hs">
-            <div className="card-h">
-              <span className="ico-chip sm">
+      <div className="pj-overview">
+        {showScheduling ? (
+          <section className="pj-card">
+            <div className="pj-card-h">
+              <span className="pj-ico" aria-hidden="true">
+                <CalendarDaysIcon className="h-4 w-4" />
+              </span>
+              <h2 className="pj-card-title">This week on site</h2>
+              <Link href={`${basePath}/schedule`} className="pj-btn">
+                Open scheduling
+              </Link>
+            </div>
+            <div className="pj-card-b pj-card-b-schedule">
+              <ProjectScheduleSection project={project} scheduleBasePath={`${basePath}/schedule`} variant="hub" />
+            </div>
+          </section>
+        ) : null}
+        <div className="pj-row3">
+          <section className="pj-card">
+            <div className="pj-card-h">
+              <span className="pj-ico" aria-hidden="true">
+                <ClipboardDocumentCheckIcon className="h-4 w-4" />
+              </span>
+              <h2 className="pj-card-title">Tasks</h2>
+              <Link href={`${basePath}/tasks`} className="pj-link">
+                All
+              </Link>
+            </div>
+            <div className="pj-card-b">
+              <p className="pj-muted">
+                {taskCount ? `${taskCount} open task${taskCount === 1 ? '' : 's'} on this job.` : 'No open tasks. Create snags, variations and to-dos for this job.'}
+              </p>
+              <Link href={`${basePath}/tasks`} className="pj-btn">
+                Tasks
+              </Link>
+            </div>
+          </section>
+          <section className="pj-card">
+            <div className="pj-card-h">
+              <span className="pj-ico" aria-hidden="true">
+                <CubeIcon className="h-4 w-4" />
+              </span>
+              <h2 className="pj-card-title">Materials</h2>
+              <Link href={`${basePath}/materials`} className="pj-link">
+                All
+              </Link>
+            </div>
+            <div className="pj-card-b">
+              <p className="pj-muted">Order materials for delivery to site.</p>
+              <Link href={`${basePath}/materials`} className="pj-btn">
+                Order materials
+              </Link>
+            </div>
+          </section>
+          <section className="pj-card">
+            <div className="pj-card-h">
+              <span className="pj-ico" aria-hidden="true">
                 <ShieldCheckIcon className="h-4 w-4" />
               </span>
-              <h2 className="h2">Health & safety</h2>
-              <div className="acts">
-                <Link href={`${basePath}/health-safety`} className="btn sm ghost">
-                  Open
-                </Link>
-              </div>
+              <h2 className="pj-card-title">Health & safety</h2>
+              <Link href={`${basePath}/health-safety`} className="pj-link">
+                Open
+              </Link>
             </div>
-            <div className="card-b">
-              <p className="muted small">Toolbox talks, RAMS and site documents for this job.</p>
+            <div className="pj-card-b">
+              <p className="pj-muted">Toolbox talks, RAMS and site documents for this job.</p>
             </div>
           </section>
         </div>
+        <ProjectDetailsCard project={project} basePath={basePath} canEdit={canEdit} />
       </div>
     </ProjectWorkspaceChrome>
   )

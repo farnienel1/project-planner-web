@@ -11,7 +11,7 @@ import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
 import { showsMyTimesheets, timesheetDaysForPerson, type TimesheetPerson } from '@/lib/canonical/peopleDocuments'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
-function timesheetPerson(
+export function timesheetPerson(
   user: Pick<User, 'employmentType' | 'employmentTypeTransitionFrom' | 'employmentTypeEffectiveAt'> &
     Partial<Pick<User, 'isActive' | 'email' | 'firstName' | 'surname' | 'ghost'>>
 ): TimesheetPerson {
@@ -78,14 +78,3 @@ export function payPeriodsOverlapping(
   return periods
 }
 
-/** A row on User Timesheets for this period (canonical `showsMyTimesheets`; PAYE for the whole period: no row). */
-export function shouldAppearInOperativeTimesheetRoster(
-  user: User,
-  periodStart: Date,
-  periodEnd: Date,
-  _invoicing: OrgInvoicingSettings,
-  _referenceDate: Date = new Date(),
-  timeZone: string = organizationZoneOr()
-): boolean {
-  return showsMyTimesheets(timesheetPerson(user), periodDays(periodStart, periodEnd, timeZone), timeZone)
-}

@@ -387,6 +387,7 @@ export {
   payrollOutsideClockHours,
   multipliedHoursText,
   payrollMultipliedHours,
+  multipliedHoursParts,
   parseMultipliedHoursText,
   payrollLineClockRanges,
   timesheetLineClockText,
@@ -918,7 +919,7 @@ export { payrollLineReview, payrollLineReviewKey } from './timesheetEntryReviews
 export type { PayrollLineLiveBooking } from './timesheetEntryReviews'
 export { inviteAcceptWrites } from './inviteAccept'
 export { timesheetParticipant } from './peopleDocuments'
-export { orgDayHours, payForHours, roundPennies } from './payRate'
+export { dayRateHourlyEquivalent, orgDayHours, payForHours, roundPennies } from './payRate'
 
 // Rulebook 1.11.0 (owner decisions round 3): permission levels, PAYE timesheets, invites, job kind on bookings.
 export {
@@ -1341,6 +1342,8 @@ export * from './payeClaims'
 export * from './claimEvidence'
 export * from './timesheetEntryEvidence'
 export * from './payeClaimReviews'
+// Rulebook 1.65.0 (§25, §26): server-side check that a saved overtime or claims report agrees with its records.
+export * from './reportIntegrity'
 export * from './priceWorkJobNumber'
 export * from './personalSiteAudits'
 export * from './siteAuditReport'
@@ -1840,3 +1843,8 @@ export {
 } from './materialSafeSender'
 export { taskCompletionFields } from './operationsDocuments'
 export { MANAGER_ROW_NOT_LINKED_LABEL } from './unresolvedBookingPeople'
+
+// 1.67.0: a day-rate overtime line reads in hours (owner decision 17 Nov), wording only.
+export { DAY_RATE_OVERTIME_ROUNDED_NOTE, dayRateOvertimeCalcText, liveDayRateOvertimeText, signedDayRateOvertimeText } from './dayRateOvertimeText'
+// 1.66.0 §8: User Timesheets → Awaiting sign-off / Signed off from every stored sheet, however old (owner decision 17 Nov).
+export { timesheetSheetHasActivity, userTimesheetQueue, userTimesheetQueueCounts } from './userTimesheetQueue'

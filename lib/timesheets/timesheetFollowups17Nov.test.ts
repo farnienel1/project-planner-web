@@ -7,14 +7,14 @@ import { applyWeeklyReportOverride } from './weeklyReportOverride.ts'
 import { collectTimesheetPayroll } from './timesheetPayrollCollector.ts'
 import { draftForFiguresWithRebuild, draftSignedBookingRecord } from './timesheetBookingChanges.ts'
 import {
-  draftsForMembers,
   payRunKey,
   payRunsStartDayKey,
   recentPayRuns,
   timesheetMemberIds,
   timesheetOwnerResolver,
-  timesheetQueueRows,
+  userTimesheetQueueRows,
 } from './timesheetQueue.ts'
+import type { TimesheetQueueStoredSheet } from './timesheetStorage.ts'
 import { mineChangedPeriodStarts, mineSheetRows } from './mineChanged.ts'
 import { snapshotRepairCandidates } from './snapshotAutoRepair.ts'
 import { listSelectablePayPeriods, organizationCreatedAt, payRunListStartDayKey } from './paymentRunCopy.ts'
@@ -108,36 +108,56 @@ test('item 1: recent pay runs are the current one and the five before it, newest
   assert.equal(payRunsStartDayKey(runs, tz), '2026-09-01')
 })
 
+const storedSheet = (userId: string, period: { start: Date; end: Date }, draft: TimesheetDraft, endDayKey: string): TimesheetQueueStoredSheet => ({
+  documentId: `timesheet_${userId}_${Math.floor(period.start.getTime() / 1000)}`,
+  userId,
+  weekStart: period.start,
+  endDayKey,
+  draft,
+})
+const queueRows = (sheets: TimesheetQueueStoredSheet[], bucket: string) =>
+  userTimesheetQueueRows({ viewer: manager, users, sheets, invoicing: DEFAULT_INVOICING, timeZone: tz }).filter((row) => row.bucket === bucket)
+
 test('item 1: a signed, unexported sheet of an earlier pay run stays on Signed off, with its own run; exported ones leave', () => {
-  const groups = [[person], [other]]
-  const runs = [run2, run1]
   const signed = signedOff([booking()])
-  const draftsByRun = new Map([
-    [payRunKey(run1, tz), new Map([['u1', signed]])],
-    [payRunKey(run2, tz), new Map([['u2', signedOff([booking({ id: 'b2', operativeId: 'u2', date: new Date('2026-11-18T00:00:00Z') })], run2)]])],
-  ])
-  const rows = timesheetQueueRows({ runs, groupsFor: () => groups, draftsFor: (run) => draftsByRun.get(payRunKey(run, tz)), bucket: 'signed', users, timeZone: tz })
+  const sheets = [
+    storedSheet('u1', run1, signed, '2026-11-15'),
+    storedSheet('u2', run2, signedOff([booking({ id: 'b2', operativeId: 'u2', date: new Date('2026-11-18T00:00:00Z') })], run2), '2026-11-30'),
+  ]
+  const rows = queueRows(sheets, 'signed')
   assert.deepEqual(rows.map((row) => [row.member.id, payRunKey(row.period, tz)]), [
     ['u2', '2026-11-16|2026-11-30'],
     ['u1', '2026-11-01|2026-11-15'],
   ])
   assert.notEqual(rows[0].key, rows[1].key)
   // Exported: gone from Signed off.
-  draftsByRun.get(payRunKey(run1, tz))!.set('u1', { ...signed, exportedAt: new Date('2026-11-16T09:00:00Z') })
-  const after = timesheetQueueRows({ runs, groupsFor: () => groups, draftsFor: (run) => draftsByRun.get(payRunKey(run, tz)), bucket: 'signed', users, timeZone: tz })
-  assert.deepEqual(after.map((row) => row.member.id), ['u2'])
+  sheets[0] = { ...sheets[0], draft: { ...signed, exportedAt: new Date('2026-11-16T09:00:00Z') } }
+  assert.deepEqual(queueRows(sheets, 'signed').map((row) => row.member.id), ['u2'])
+})
+
+test('1.66.0: a sheet waiting for sign-off is listed however old (no six-run window), once per person', () => {
+  const april = { start: new Date('2026-04-01T00:00:00+01:00'), end: new Date('2026-04-15T00:00:00+01:00') }
+  const waiting = { ...emptyTimesheetDraft(), operativeSignedAt: new Date('2026-04-16T09:00:00Z'), operativeSignedByName: 'Farnie Nel' }
+  const sheets = [
+    storedSheet('u1', april, waiting, '2026-04-15'),
+    // The same run under the person's second users document: one row, not two.
+    storedSheet('u1-copy', april, emptyTimesheetDraft(), '2026-04-15'),
+  ]
+  const rows = queueRows(sheets, 'awaiting')
+  assert.deepEqual(rows.map((row) => [row.member.id, payRunKey(row.period, tz)]), [['u1', '2026-04-01|2026-04-15']])
+  assert.equal(rows[0].draft, waiting)
 })
 
 test('item 1 (guardrail 1): a sheet filed under a former invite id or a same-email document is the person’s', () => {
   const ids = timesheetMemberIds(person, users).map((id) => id.toLowerCase())
   assert.ok(ids.includes('old-invite') && ids.includes('u1-copy'))
   const sheet = signedOff([booking()])
-  const mapped = draftsForMembers([[person]], new Map([['OLD-INVITE', sheet]]), users)
-  assert.equal(mapped.get('u1'), sheet)
-  // Another listed member's own sheet is never borrowed.
-  const both = draftsForMembers([[person, copy]], new Map([['u1-copy', sheet]]), users)
-  assert.equal(both.get('u1-copy'), sheet)
-  assert.equal(both.has('u1'), false)
+  const mapped = queueRows([storedSheet('OLD-INVITE', run1, sheet, '2026-11-15')], 'signed')
+  assert.deepEqual(mapped.map((row) => row.member.id), ['u1'])
+  assert.equal(mapped[0].draft, sheet)
+  // A sheet filed under the person's other users document is listed under that document (the one it is filed under).
+  const own = queueRows([storedSheet('u1-copy', run1, sheet, '2026-11-15')], 'signed')
+  assert.deepEqual(own.map((row) => row.member.id), ['u1-copy'])
   const owner = timesheetOwnerResolver([person, other], users)
   assert.equal(owner('Old-Invite')?.id, 'u1')
   assert.equal(owner('u2')?.id, 'u2')
@@ -341,4 +361,21 @@ test('item 3 (review): earlier version cards match bookings by collection and li
     { documentId: 'timesheet_u1_1793491200_rev1', data: site },
   ])[0]
   assert.match(earlierVersionCards({ chain: chain2, latestTotal: null, currency: 'GBP' })[0].changeText, /\+1 booking · −1 booking/)
+})
+
+test('1.66.0 (final review): the admin weekStartKey pass skips a refused key and keeps the others', async () => {
+  const { queryIdsSkippingRefused } = await import('./timesheetQueue.ts')
+  const denied = Object.assign(new Error('denied'), { code: 'permission-denied' })
+  const asked: string[] = []
+  const run = async ([key]: string[]) => {
+    asked.push(key)
+    if (key === '2026-10-01') throw denied
+    return [`sheet-${key}`]
+  }
+  const result = await queryIdsSkippingRefused(['2026-11-01', '2026-10-16', '2026-10-01'], 1, run)
+  assert.deepEqual(result.rows.sort(), ['sheet-2026-10-16', 'sheet-2026-11-01'])
+  assert.deepEqual(result.refusedIds, ['2026-10-01'])
+  // One query per key: a refused key is never retried as part of a chunk.
+  assert.deepEqual(asked.sort(), ['2026-10-01', '2026-10-16', '2026-11-01'])
+  await assert.rejects(() => queryIdsSkippingRefused(['2026-11-01'], 1, async () => { throw new Error('offline') }), /offline/)
 })

@@ -5,18 +5,21 @@
  * Doc id: timesheet_{userId}_{unixStartOfDay} using the organisation origin-country zone.
  * Legacy yyyy-MM-dd / ISO-week keys are still read so older web drafts are not lost.
  */
-import { collection, doc, getDoc, getDocs, query, runTransaction, serverTimestamp, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore'
+import { collection, doc, documentId, getDoc, getDocs, query, runTransaction, serverTimestamp, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase/config'
+import { privatePayFor, securitySwitchesLoaded, securitySwitchesReady } from '@/lib/access/securitySwitches'
 import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
 import { parseFirestoreDate as parseSharedFirestoreDate, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
 import { changedFirestoreFields } from '@/lib/firebase/changedFields'
 import { firestoreUpdateFields } from '@/lib/firebase/partialWrite'
 import { timesheetChangedFields } from '@/lib/canonical/timesheetEntryReviews'
 import { timesheetDocumentSubjectId } from '@/lib/canonical/timesheetPeriod'
+import { timesheetSheetHasActivity } from '@/lib/canonical/userTimesheetQueue'
 import { LONDON_TIME_ZONE, unixStartOfDay, dayKey } from '@/lib/ios-parity/londonTime'
 import { weekStartKey } from '@/lib/timesheets/timesheetWeekUtils'
 import { periodStartKey } from '@/lib/timesheets/paymentRunCopy'
-import { queryIdsSkippingRefused, timesheetOwnerResolver } from '@/lib/timesheets/timesheetQueue'
+import { queryIdsSkippingRefused, timesheetMemberIds, timesheetOwnerResolver } from '@/lib/timesheets/timesheetQueue'
+import { newestFirstOwnIdLast, personTimesheetDocs, timesheetLookupPlan, timesheetDocumentOwnerId } from '@/lib/timesheets/personTimesheetDocs'
 import { UNKNOWN_BOOKING_PERSON_LABEL, bookingPersonIdHint } from '@/lib/canonical'
 import {
   parseTimesheetEntries,
@@ -416,6 +419,8 @@ function mapLabourLine(row: Record<string, unknown>): WeeklyReportLabourLine | n
     isLeave: row.isLeave === true,
     isOvertime: row.isOvertime === true,
     otMultiplier: typeof row.otMultiplier === 'number' ? row.otMultiplier : null,
+    ...(typeof row.otBaseDayRate === 'number' && row.otBaseDayRate > 0 ? { otBaseDayRate: row.otBaseDayRate } : {}),
+    ...(typeof row.otDayRateHours === 'number' && row.otDayRateHours > 0 ? { otDayRateHours: row.otDayRateHours } : {}),
     decision: asDecision(row.decision),
     bookingId,
     // 1.46.0: the booking as signed, so a later Edit hours review of another version never re-prices the line.
@@ -484,6 +489,8 @@ export function weeklyReportOverrideToFirestore(override: WeeklyReportOverride):
       isLeave: line.isLeave === true,
       isOvertime: line.isOvertime,
       ...(line.isOvertime && line.otMultiplier != null ? { otMultiplier: line.otMultiplier } : {}),
+      ...(line.isOvertime && line.otBaseDayRate != null ? { otBaseDayRate: line.otBaseDayRate } : {}),
+      ...(line.isOvertime && line.otDayRateHours != null ? { otDayRateHours: line.otDayRateHours } : {}),
       decision: line.decision,
       bookingId: line.bookingId || '',
       ...(line.bookingFingerprint ? { bookingFingerprint: line.bookingFingerprint } : {}),
@@ -702,17 +709,18 @@ export function samePayPeriodStart(stored: Date, periodStart: Date, timeZone: st
   return Math.abs(stored.getTime() - periodStart.getTime()) <= PAY_PERIOD_START_SKEW_MS
 }
 
+/** Rulebook 1.66.0 §8 `timesheetSheetHasActivity` (one rule with iOS) over the web draft's fields. */
 export function timesheetDraftHasActivity(draft: TimesheetDraft): boolean {
-  return Boolean(
-    draft.operativeSignedAt ||
-      draft.managerSignedAt ||
-      draft.exportedAt ||
-      draft.expenseEntries.length ||
-      draft.priceWorkEntries.length ||
-      (draft.lateExtras?.length ?? 0) ||
-      draft.managerNote.trim() ||
-      draft.weeklyReportOverride
-  )
+  return timesheetSheetHasActivity({
+    operativeSignedAt: draft.operativeSignedAt,
+    managerSignedAt: draft.managerSignedAt,
+    exportedAt: draft.exportedAt,
+    expenseEntries: draft.expenseEntries,
+    priceWorkEntries: draft.priceWorkEntries,
+    lateExtras: draft.lateExtras ?? [],
+    managerNote: draft.managerNote,
+    weeklyReportOverride: draft.weeklyReportOverride ?? null,
+  })
 }
 
 export type TimesheetPeriodCandidate = {
@@ -1149,57 +1157,109 @@ export async function loadTimesheetDraftAt(
   return latestVersionDraft(organizationId, documentId, data, { includeSignatures: true, timeZone, ownerUserIds })
 }
 
+export type TimesheetQueueStoredSheet = {
+  /** The stored document id (an original or a `…_rev{N}` revision). */
+  documentId: string
+  /** The stored `userId` (any id the person goes by). */
+  userId: string
+  weekStart: Date
+  /** `weekEndKey` / `weekEnd` in the organisation zone; null when the document has none. */
+  endDayKey: string | null
+  draft: TimesheetDraft
+}
+
+const UUID_SHAPED = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 /**
- * User Timesheets → Awaiting / Signed off over several pay runs (17 Nov follow-up): the stored sheets of `userIds` (every
- * id each listed person goes by) for each of `periods`, keyed `start|end` (organisation-zone day keys) and then by the
- * stored `userId`. One `weekStartKey` query per pay run (iOS often leaves `weekStartKey` out) and one batched `userId in`
- * history query for everyone, picked per pay run with `pickTimesheetDraftForPeriod`. A refused period query
- * (`privatePay` on for a non-admin) falls through to the history query; any other failure throws.
+ * The other letter-case spellings of a UUID-shaped id that are not already asked for (an iPhone stores
+ * `UUID.uuidString` upper case, web lower case). Firestore `in` matches exactly, so the queue asks for these too.
+ * Other ids (Firebase Auth uids are mixed case) are asked for as stored only.
  */
-export async function loadTimesheetQueueDrafts(input: {
-  organizationId: string
-  userIds: ReadonlyArray<string>
-  periods: ReadonlyArray<{ start: Date; end: Date }>
-  timeZone: string
-}): Promise<Map<string, Map<string, TimesheetDraft>>> {
-  const { organizationId, periods, timeZone } = input
-  const userIds = [...new Set(input.userIds.filter(Boolean))]
-  const out = new Map<string, Map<string, TimesheetDraft>>()
-  const keyOf = (period: { start: Date; end: Date }) => `${periodStartKey(period.start, timeZone)}|${dayKey(period.end, timeZone)}`
-  for (const period of periods) out.set(keyOf(period), new Map())
-  if (periods.length === 0) return out
-  let periodQueriesRefused = false
-  const keyed = await Promise.all(
-    periods.map((period) =>
-      loadPayPeriodTimesheetDrafts(organizationId, period.start, timeZone).catch((error) => {
-        if ((error as { code?: unknown } | null)?.code !== 'permission-denied') throw error
-        periodQueriesRefused = true
-        return new Map<string, TimesheetDraft>()
-      })
-    )
-  )
-  periods.forEach((period, index) => {
-    const target = out.get(keyOf(period))!
-    for (const [userId, draft] of keyed[index]) target.set(userId, draft)
-  })
-  if (userIds.length === 0) return out
-  let grouped: Map<string, TimesheetPeriodCandidate[]>
-  try {
-    grouped = await loadTimesheetCandidatesByUserIds(organizationId, userIds, false, timeZone, true)
-  } catch (error) {
-    if (periodQueriesRefused) throw error
-    // The pay-run rows already found stay; the history scan may not blank the lists.
-    return out
-  }
-  for (const period of periods) {
-    const target = out.get(keyOf(period))!
-    for (const userId of userIds) {
-      if (target.has(userId)) continue
-      const picked = pickTimesheetDraftForPeriod(grouped.get(userId) || [], period.start, period.end, timeZone)
-      if (picked) target.set(userId, picked.draft)
+export function timesheetQueueCaseVariants(userIds: ReadonlyArray<string>): string[] {
+  const asked = new Set(userIds)
+  const out: string[] = []
+  for (const id of userIds) {
+    if (!UUID_SHAPED.test(id)) continue
+    for (const variant of [id.toUpperCase(), id.toLowerCase()]) {
+      if (asked.has(variant)) continue
+      asked.add(variant)
+      out.push(variant)
     }
   }
   return out
+}
+
+/**
+ * Rulebook 1.66.0 §8 (owner decision 17 Nov): every stored timesheet of `userIds` (each id every listed person goes by),
+ * however old — every version, so the rulebook (`userTimesheetQueue`) decides which one is a pay run's sheet. One batched
+ * `userId in` query per 10 ids; a chunk the rules refuse is asked id by id and only the refused ids are skipped (review of
+ * #368 S1). Any other failure throws (the list shows its error, never an empty queue).
+ *
+ * Case (guardrail 3): Firestore `in` is exact. A UUID-shaped id is also asked for in upper and lower case (a second pass,
+ * its own chunks, so a variant the rules refuse never refuses a real id), and the rulebook matches the stored `userId`
+ * without case. For an admin (`recentRunStartDayKeys` given), the recent pay runs are also read by `weekStartKey` and
+ * every timesheet of a listed person — its `userId` (or, with none, the id in its document id) matched without case — is
+ * kept, so a sheet stored under a mixed-case id in another spelling, or with no `userId`, stays visible for those runs.
+ * Older runs, and everyone who is not an admin, keep the known limit (§8): such a sheet is not loaded.
+ */
+export async function loadTimesheetQueueSheets(input: {
+  organizationId: string
+  userIds: ReadonlyArray<string>
+  timeZone: string
+  /** Admins only: the start day keys of the recent pay runs to also read by `weekStartKey`. */
+  recentRunStartDayKeys?: ReadonlyArray<string>
+}): Promise<TimesheetQueueStoredSheet[]> {
+  const userIds = [...new Set(input.userIds.filter(Boolean))]
+  if (userIds.length === 0) return []
+  const variants = timesheetQueueCaseVariants(userIds)
+  const [grouped, variantGrouped, recent] = await Promise.all([
+    loadTimesheetCandidatesByUserIds(input.organizationId, userIds, false, input.timeZone, true),
+    variants.length > 0
+      ? loadTimesheetCandidatesByUserIds(input.organizationId, variants, false, input.timeZone, true)
+      : Promise.resolve(new Map<string, TimesheetPeriodCandidate[]>()),
+    loadRecentRunTimesheetsForIds(input.organizationId, userIds, input.recentRunStartDayKeys ?? [], input.timeZone),
+  ])
+  const out: TimesheetQueueStoredSheet[] = []
+  const seen = new Set<string>()
+  for (const [userId, rows] of [...grouped, ...variantGrouped, ...recent]) {
+    for (const row of rows) {
+      if (!row.documentId || seen.has(row.documentId)) continue
+      seen.add(row.documentId)
+      out.push({ documentId: row.documentId, userId, weekStart: row.weekStart, endDayKey: row.endDayKey ?? null, draft: row.draft })
+    }
+  }
+  return out
+}
+
+/**
+ * Rulebook 1.66.0 §8 (admins): the timesheets of `startDayKeys` read by `weekStartKey`, kept when their `userId` — or,
+ * with none, the id in the document id — is one of `userIds` without case. Grouped by the id the sheet is stored under.
+ */
+async function loadRecentRunTimesheetsForIds(
+  organizationId: string,
+  userIds: ReadonlyArray<string>,
+  startDayKeys: ReadonlyArray<string>,
+  timeZone: string
+): Promise<Map<string, TimesheetPeriodCandidate[]>> {
+  const grouped = new Map<string, TimesheetPeriodCandidate[]>()
+  const keys = [...new Set(startDayKeys.filter(Boolean))]
+  if (keys.length === 0) return grouped
+  const wanted = new Set(userIds.map((id) => id.toLowerCase()))
+  // One query per key; a key the rules refuse is skipped (as iOS and §8), any other failure still fails the list.
+  const { rows: docs } = await queryIdsSkippingRefused(keys, 1, async ([key]) =>
+    (await getDocs(query(collection(db, 'organizations', organizationId, 'settings'), where('weekStartKey', '==', key)))).docs
+  )
+  for (const entry of docs) {
+    const data = entry.data() as Record<string, unknown>
+    const stored = typeof data.userId === 'string' && data.userId.trim() ? data.userId : timesheetDocumentSubjectId(entry.id)
+    if (!stored || !wanted.has(stored.toLowerCase())) continue
+    const row = timesheetStateFromDoc(entry.id, data, false, timeZone)
+    if (!row) continue
+    const list = grouped.get(stored) ?? []
+    list.push(row)
+    grouped.set(stored, list)
+  }
+  return grouped
 }
 
 /**
@@ -1563,26 +1623,6 @@ export async function loadCanonicalTimesheetDrafts(
   return results
 }
 
-export async function loadPayPeriodTimesheetDrafts(
-  organizationId: string,
-  weekStart: Date,
-  timeZone: string = LONDON_TIME_ZONE
-): Promise<Map<string, TimesheetDraft>> {
-  const results = new Map<string, TimesheetDraft>()
-  const key = dayKey(weekStart, timeZone)
-  const snap = await getDocs(
-    query(collection(db, 'organizations', organizationId, 'settings'), where('weekStartKey', '==', key))
-  )
-  for (const entry of snap.docs) {
-    if (!entry.id.startsWith('timesheet_')) continue
-    const data = entry.data() as Record<string, unknown>
-    const userId = typeof data.userId === 'string' ? data.userId : ''
-    if (!userId || !laterVersion(results.get(userId), entry.id)) continue
-    results.set(userId, rememberSource(draftFromFirestoreMap(data, { ...LIST_DRAFT_OPTIONS, sheetDocId: entry.id }), entry.id))
-  }
-  return results
-}
-
 /** Add later rows without dropping timesheets the list already showed. */
 export function mergeListedTimesheetDrafts(
   current: ReadonlyMap<string, TimesheetDraft>,
@@ -1650,6 +1690,65 @@ export async function listTimesheetStates(
     console.warn('[timesheets] listTimesheetStates query failed', error)
     return []
   }
+}
+
+/**
+ * Final review of #386: the `privatePay` switch as the timesheet lookups read it (`timesheetLookupPlan`) — on until
+ * `platformConfig/app` has been read, so no query the rules might refuse is sent before the switch is known. Screens
+ * re-plan when the config arrives (`onPlatformConfigChange`), so a non-admin's list widens when it turns out off.
+ */
+export function timesheetLookupPrivatePay(organizationId: string): boolean {
+  return !securitySwitchesLoaded() || privatePayFor(organizationId)
+}
+
+/** The end of a Firestore document-id prefix range: U+F8FF, the highest code point used in ids. */
+const DOCUMENT_ID_PREFIX_END = '\uf8ff'
+
+/**
+ * Guardrail 1 (`w-timesheet-lookups`): a person's timesheet rows under every id they go by (`personIdSet` →
+ * `timesheetMemberIds`), plus sheets stored without `userId` whose document id names one of those ids
+ * (`timesheetDocumentSubjectId`). `ids[0]` is the person's own id; each row's `userId` is the id it is filed under.
+ * Sorted newest pay run first; within one pay run the row filed under the own id comes last, so a screen keying one
+ * row per pay run keeps that one (`newestFirstOwnIdLast`). A refused query is skipped, never an error. An operative's
+ * screen passes only their own id (the rules refuse an operative's alias and document-id queries).
+ */
+export async function listPersonTimesheetStates(
+  organizationId: string,
+  ids: ReadonlyArray<string>,
+  limit = 400,
+  versions: 'latest' | 'all' = 'latest',
+  /**
+   * Review of #386 (N1): ask the document-id prefix (sheets stored without `userId`) only when the viewer may run it —
+   * the rules refuse it to an operative (`tests/timesheetLookups.rules.test.ts`), so for them it only logged warnings.
+   */
+  includeDocumentPrefix = true
+): Promise<TimesheetStateRow[]> {
+  const settings = collection(db, 'organizations', organizationId, 'settings')
+  const toDocs = (snap: Awaited<ReturnType<typeof getDocs>>) =>
+    snap.docs.map((entry) => ({ id: entry.id, data: entry.data() as Record<string, unknown> }))
+  const docs = await personTimesheetDocs(ids, {
+    byUserIds: async (chunk) =>
+      toDocs(
+        await getDocs(
+          chunk.length === 1 ? query(settings, where('userId', '==', chunk[0])) : query(settings, where('userId', 'in', chunk))
+        )
+      ),
+    byDocumentPrefix: includeDocumentPrefix
+      ? async (id) => {
+          const prefix = `timesheet_${id}_`
+          return toDocs(
+            await getDocs(query(settings, where(documentId(), '>=', prefix), where(documentId(), '<', prefix + DOCUMENT_ID_PREFIX_END)))
+          )
+        }
+      : null,
+    warn: (message, detail) => console.warn(`[timesheets] ${message}`, detail),
+  })
+  const ownerOf = new Map(docs.map((entry) => [entry.id, timesheetDocumentOwnerId(entry)]))
+  const rows = timesheetStateRowsFromDocs(ids[0] ?? '', docs, versions).map((row) => ({
+    ...row,
+    userId: ownerOf.get(row.documentId) || row.userId,
+  }))
+  return newestFirstOwnIdLast(rows, ids[0] ?? '').slice(0, Math.max(1, limit))
 }
 
 export type ExportedTimesheetHistoryRow = {
@@ -1730,11 +1829,67 @@ export function unresolvedTimesheetPerson(storedUserId: string, organizationId: 
   return person
 }
 
+/**
+ * Review of #386 (owner data, Raccord MEP): who an exported sheet is listed under. `users` are the people on the viewer's
+ * Exported list, `roster` every users document of the organisation.
+ *   - The sheet's stored person id (its `userId`, else the id its document id names) is matched to a listed person under
+ *     every id they go by (`timesheetOwnerResolver` over `personIdSet`).
+ *   - Several users documents of ONE person (a second record on the same email, a former invite id) are one person
+ *     (`personIdSet`): every sheet is listed under one record of that person — the active, signed-up one, else the
+ *     first listed — so the Exported list shows them once, not once per record.
+ *   - An id nobody in the organisation goes by (a deleted person) is "Unknown person · <hint>" when `includeUnresolved`
+ *     (admins, once the roster has loaded), one stand-in per stored id; otherwise null.
+ */
+export function exportedSheetOwnerResolver({
+  users,
+  roster,
+  includeUnresolved,
+  organizationId,
+}: {
+  users: ReadonlyArray<import('@/types').User>
+  roster: ReadonlyArray<import('@/types').User>
+  includeUnresolved: boolean
+  organizationId: string
+}): (storedUserId: string | null | undefined) => import('@/types').User | null {
+  const fullRoster = roster.length > 0 ? roster : users
+  const ownerOf = timesheetOwnerResolver(users, fullRoster)
+  const rosterOwnerOf = timesheetOwnerResolver(fullRoster, fullRoster)
+  const rank = (member: import('@/types').User) => (member.isActive === false ? 2 : 0) + (member.passwordSet === false ? 1 : 0)
+  const primaryById = new Map<string, import('@/types').User>()
+  for (const member of users) {
+    const key = normalizeDocumentId(member.id)
+    if (primaryById.has(key)) continue
+    const ids = new Set(timesheetMemberIds(member, fullRoster).map((id) => normalizeDocumentId(id)))
+    const records = users.filter((other) => ids.has(normalizeDocumentId(other.id)))
+    const primary = records.reduce((best, other) => (rank(other) < rank(best) ? other : best), records[0] ?? member)
+    for (const other of records) primaryById.set(normalizeDocumentId(other.id), primary)
+    primaryById.set(key, primaryById.get(key) ?? primary)
+  }
+  const unknown = new Map<string, import('@/types').User>()
+  return (storedUserId) => {
+    const stored = (storedUserId ?? '').trim()
+    if (!stored) return null
+    const member = ownerOf(stored)
+    if (member) return primaryById.get(normalizeDocumentId(member.id)) ?? member
+    if (!includeUnresolved || rosterOwnerOf(stored)) return null
+    const key = normalizeDocumentId(stored)
+    let stand = unknown.get(key)
+    if (!stand) {
+      stand = unresolvedTimesheetPerson(stored, organizationId)
+      unknown.set(key, stand)
+    }
+    return stand
+  }
+}
+
 export async function loadExportedTimesheetHistory({
   organizationId,
   users,
   roster,
-  includeUnresolved = false,
+  includeUnresolved: includeUnresolvedAsked = false,
+  rosterLoaded = false,
+  viewerIsOperative = false,
+  viewerIsAdmin = false,
 }: {
   organizationId: string
   users: import('@/types').User[]
@@ -1744,20 +1899,31 @@ export async function loadExportedTimesheetHistory({
    * Missing: `users`.
    */
   roster?: ReadonlyArray<import('@/types').User>
-  /** List an exported sheet whose stored person is nobody in the organisation as "Unknown person · …" (admins). */
+  /**
+   * List an exported sheet whose stored person is nobody in the organisation as "Unknown person · …" (admins). Review
+   * of #386 (S5): only once the whole roster has loaded (`rosterLoaded` and a non-empty `roster`), so a person still
+   * loading is never shown as unknown.
+   */
   includeUnresolved?: boolean
+  rosterLoaded?: boolean
+  /** Review of #386 (N1): the viewer is at the operative level (the rules refuse them the document-id prefix query). */
+  viewerIsOperative?: boolean
+  /**
+   * Final review of #386: the viewer is an admin of this organisation. While `privatePay` is on only admins may ask a
+   * person's other ids and the document-id prefix (`timesheetLookupPlan`).
+   */
+  viewerIsAdmin?: boolean
 }): Promise<ExportedTimesheetHistoryRow[]> {
+  const includeUnresolved = includeUnresolvedAsked && rosterLoaded && (roster?.length ?? 0) > 0
   if (users.length === 0 && !includeUnresolved) return []
-  const cacheKey = `${exportedHistoryCacheKey(organizationId, users)}|${includeUnresolved ? 'u' : ''}|${(roster ?? []).length}`
+  const cacheKey = `${exportedHistoryCacheKey(organizationId, users)}|${includeUnresolved ? 'u' : ''}|${(roster ?? []).length}|${viewerIsOperative ? 'o' : ''}|${viewerIsAdmin ? 'a' : ''}`
   const now = Date.now()
   if (exportedHistoryMemo && exportedHistoryMemo.key === cacheKey && now - exportedHistoryMemo.at < EXPORTED_HISTORY_TTL_MS) {
     return exportedHistoryMemo.rows
   }
   const byId = new Map<string, ExportedTimesheetHistoryRow>()
-  const byUserId = new Map(users.map((user) => [user.id, user]))
   const fullRoster = roster && roster.length > 0 ? roster : users
-  const ownerOf = timesheetOwnerResolver(users, fullRoster)
-  const rosterOwnerOf = timesheetOwnerResolver(fullRoster, fullRoster)
+  const sheetOwner = exportedSheetOwnerResolver({ users, roster: fullRoster, includeUnresolved, organizationId })
 
   const ingestData = (member: import('@/types').User, weekStart: Date, data: Record<string, unknown>, documentId: string) => {
     ingestExportedRow(
@@ -1770,10 +1936,18 @@ export async function loadExportedTimesheetHistory({
     )
   }
 
+  // Review of #386 (S3): the per-person reads below run only when this company-wide read is REFUSED (or fails) — a
+  // read that answers with no exported sheets is the answer, never a reason to ask person by person.
+  let companyWide: Awaited<ReturnType<typeof getDocs>> | null = null
   try {
-    const snap = await getDocs(
+    companyWide = await getDocs(
       query(collection(db, 'organizations', organizationId, 'settings'), where('exportedAt', '!=', null))
     )
+  } catch {
+    // Missing index or rules — fall back to the per-person reads.
+  }
+  if (companyWide) {
+    const snap = companyWide
     for (const entry of snap.docs) {
       if (!entry.id.startsWith('timesheet_')) continue
       const data = entry.data() as Record<string, unknown>
@@ -1784,35 +1958,41 @@ export async function loadExportedTimesheetHistory({
       const weekStart = parseFirestoreDate(data.weekStart)
       if (!weekStart) continue
       // 17 Nov follow-up (guardrail 1): the person under every id they go by, never one exact id.
-      const member =
-        byUserId.get(userId) ??
-        ownerOf(userId) ??
-        (includeUnresolved && userId && !rosterOwnerOf(userId) ? unresolvedTimesheetPerson(userId, organizationId) : null)
+      // Review of #386: one person under every id and every record (`exportedSheetOwnerResolver`).
+      const member = sheetOwner(userId)
       if (!member) continue
       ingestData(member, weekStart, data, entry.id)
     }
-    if (byId.size > 0) {
-      const rows = Array.from(byId.values()).sort((a, b) => {
-        const left = a.draft.exportedAt?.getTime() || 0
-        const right = b.draft.exportedAt?.getTime() || 0
-        if (left !== right) return right - left
-        const an = `${a.user.firstName} ${a.user.surname}`.trim()
-        const bn = `${b.user.firstName} ${b.user.surname}`.trim()
-        return an.localeCompare(bn)
-      })
-      exportedHistoryMemo = { key: cacheKey, rows, at: now }
-      return rows
-    }
-  } catch {
-    // Missing index or rules — fall back to per-user list.
+    const rows = Array.from(byId.values()).sort((a, b) => {
+      const left = a.draft.exportedAt?.getTime() || 0
+      const right = b.draft.exportedAt?.getTime() || 0
+      if (left !== right) return right - left
+      const an = `${a.user.firstName} ${a.user.surname}`.trim()
+      const bn = `${b.user.firstName} ${b.user.surname}`.trim()
+      return an.localeCompare(bn)
+    })
+    exportedHistoryMemo = { key: cacheKey, rows, at: now }
+    return rows
   }
 
-  const batches = await mapInBatches(users, 8, async (member) => {
-    const rows = await listTimesheetStates(organizationId, member.id, 400, 'all')
+  // One read per person (their records fold into one, `exportedSheetOwnerResolver`).
+  const people = [...new Set(users.map((member) => sheetOwner(member.id) ?? member))]
+  await securitySwitchesReady()
+  const privatePay = timesheetLookupPrivatePay(organizationId)
+  const batches = await mapInBatches(people, 8, async (member) => {
+    // Guardrail 1: every id the person goes by (a former invite id, a second users document on their email), and
+    // sheets stored without `userId` whose document id names them — when this viewer's rules allow those queries
+    // (`timesheetLookupPlan`: not for an operative; while `privatePay` is on, admins only).
+    const plan = timesheetLookupPlan({ ids: timesheetMemberIds(member, fullRoster), viewerIsOperative, viewerIsAdmin, privatePay })
+    const rows = await listPersonTimesheetStates(organizationId, plan.ids, 400, 'all', plan.includeDocumentPrefix)
     return { member, rows }
   })
   for (const { member, rows } of batches) {
-    for (const row of rows) ingestExportedRow(byId, member, row.weekStart, row.draft, row.endDayKey, row.documentId)
+    for (const row of rows) {
+      // A sheet filed under an id two listed documents share goes to the one it names exactly (`timesheetOwnerResolver`).
+      if (sheetOwner(row.userId) !== member) continue
+      ingestExportedRow(byId, member, row.weekStart, row.draft, row.endDayKey, row.documentId)
+    }
   }
 
   const rows = Array.from(byId.values()).sort((a, b) => {

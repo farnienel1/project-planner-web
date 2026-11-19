@@ -487,6 +487,7 @@ export const CONTRACT_READER_FOR: Readonly<Record<string, { reader: string; read
 /** Live collections without a shared reader yet, with the reason (the test checks this list is complete). */
 export const CONTRACT_NO_READER: Readonly<Record<string, string>> = {
   materialContacts: '1.59.0: written by servers only (safe-sender box); no reader.',
+  reportChecks: '1.65.0: parseReportCheckDocument; written by the server only (report checks), never by an app.',
   deletedPeople: '1.59.0: parseFormerPersonDocument; web writes it on delete, samples follow once iOS writes it.',
   acceptedBookingClashes: 'Pair keys only (clashPairKey / isClashAccepted read the id); no document reader.',
   dismissedWarnings: 'Dismiss key is the document id; no document reader.',

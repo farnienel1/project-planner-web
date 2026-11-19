@@ -6,7 +6,6 @@ import {
   onAuthStateChanged,
   User as FirebaseUser,
   createUserWithEmailAndPassword,
-  sendPasswordResetEmail,
   EmailAuthProvider,
   reauthenticateWithCredential,
   updatePassword,
@@ -61,7 +60,7 @@ import {
 } from '@/lib/auth/webIdleSession'
 import { isPlatformOwnerEmail, PLATFORM_OWNER_EMAIL } from '@/lib/platform/owner'
 import { platformOwnerProfilePayload, platformOwnerUser } from '@/lib/platform/ownerProfile'
-import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
+import { requestPasswordReset } from '@/lib/auth/requestPasswordReset'
 import {
   clearMfaCookiesOnly,
   clearMfaSession,
@@ -1150,7 +1149,7 @@ export const useAuthStore = create<AuthState>((set) => {
     resetPassword: async (email: string) => {
       try {
         set({ loading: true, error: null })
-        await sendPasswordResetEmail(getFirebaseAuth(), email, passwordResetActionSettings(email))
+        await requestPasswordReset(getFirebaseAuth(), email)
         set({ loading: false })
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : 'Reset failed'
