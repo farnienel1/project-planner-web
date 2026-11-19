@@ -23,4 +23,9 @@ if (typeof canonical.timesheetBookingChangeNotice !== 'function' || typeof canon
   throw new Error('packed rulebook missing timesheet booking notice helpers (run npm run build:canonical)')
 }
 
+// Rulebook 1.65.0: the report check triggers (reportIntegrity.js) need the check rules.
+if (typeof canonical.overtimeReportIntegrity !== 'function' || typeof canonical.payeClaimReportIntegrity !== 'function') {
+  throw new Error('packed rulebook missing report check helpers (run npm run build:canonical)')
+}
+
 module.exports = canonical

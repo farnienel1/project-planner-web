@@ -3,8 +3,8 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { sendEmailVerification } from 'firebase/auth'
 import { getFirebaseAuth } from '@/lib/firebase/ensureFirebase'
+import { requestEmailVerification } from '@/lib/auth/requestAccountEmails'
 
 export default function VerifyEmailClient() {
   const router = useRouter()
@@ -26,7 +26,7 @@ export default function VerifyEmailClient() {
     setError(null)
     setResent(false)
     try {
-      await sendEmailVerification(user)
+      await requestEmailVerification(user)
       setResent(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not resend verification email')
@@ -74,7 +74,7 @@ export default function VerifyEmailClient() {
         </p>
 
         <div className="mt-6 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-          Check your inbox and spam folder. The email comes from Firebase / your project&apos;s auth sender.
+          Check your inbox and spam folder. The email comes from Project Planner.
         </div>
 
         {error && (

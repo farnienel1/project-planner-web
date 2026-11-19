@@ -1799,6 +1799,8 @@ export * from './payeClaims'
 export * from './claimEvidence'
 export * from './timesheetEntryEvidence'
 export * from './payeClaimReviews'
+// Rulebook 1.65.0 (§25, §26): server-side check that a saved overtime or claims report agrees with its records.
+export * from './reportIntegrity'
 export * from './priceWorkJobNumber'
 export * from './personalSiteAudits'
 
@@ -2345,3 +2347,5 @@ export { MANAGER_ROW_NOT_LINKED_LABEL } from './unresolvedBookingPeople'
 // 1.67.0: a day-rate overtime line reads in hours (owner decision 17 Nov), wording only.
 export { DAY_RATE_OVERTIME_ROUNDED_NOTE, dayRateOvertimeCalcText, liveDayRateOvertimeText, signedDayRateOvertimeText } from './dayRateOvertimeText'
 export type { DayRateOvertimeCalcInput, DayRateOvertimeCalcText, LiveDayRateOvertimeLine, SignedDayRateOvertimeLine } from './dayRateOvertimeText'
+export { timesheetSheetHasActivity, userTimesheetQueue, userTimesheetQueueCounts } from './userTimesheetQueue'
+export type { UserTimesheetQueueInput, UserTimesheetQueueMember, UserTimesheetQueueRow, UserTimesheetQueueSheet } from './userTimesheetQueue'

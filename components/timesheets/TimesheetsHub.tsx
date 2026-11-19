@@ -52,7 +52,8 @@ import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
 import {
   loadExportedTimesheetHistory,
   loadTimesheetDraftsForStarts,
-  loadTimesheetQueueDrafts,
+  loadTimesheetQueueSheets,
+  type TimesheetQueueStoredSheet,
   listPersonTimesheetStates,
   timesheetLookupPrivatePay,
   timesheetSourceDocumentId,
@@ -69,7 +70,7 @@ import { withOwnPay } from '@/lib/pay/ownPayRecord'
 import { retryPayProfiles, usePayProfilesStatus, usePayStatusOf } from '@/lib/pay/usePayProfilesStatus'
 import type { PayProfilesStatus } from '@/lib/pay/payProfileOverlay'
 import { OWN_PAY_FAILED_MESSAGE, OWN_PAY_LOADING_MESSAGE, PayStatusNotice } from '@/components/pay/PayStatusNotice'
-import { canAccessMyTimesheetsWithPolicy, shouldAppearInOperativeTimesheetRoster, timesheetDayKeysForPeriod } from '@/lib/timesheets/timesheetPayrollPolicy'
+import { canAccessMyTimesheetsWithPolicy, timesheetDayKeysForPeriod } from '@/lib/timesheets/timesheetPayrollPolicy'
 import { exportedTimesheetRosterGroups, timesheetRosterGroups } from '@/lib/timesheets/timesheetWeekUtils'
 import {
   TIMESHEETS_HUB_PATH,
@@ -102,12 +103,12 @@ import type { RepairSheet } from '@/lib/timesheets/snapshotAutoRepair'
 import { revisionDueOf as revisionDueFor } from '@/lib/timesheets/mineChanged'
 import {
   RECENT_PAY_RUN_COUNT,
-  draftsForMembers,
+  TIMESHEETS_LOAD_FAILED_MESSAGE,
   payRunKey,
   payRunsStartDayKey,
   recentPayRuns,
   timesheetMemberIds,
-  timesheetQueueRows,
+  userTimesheetQueueRows,
   type PayRun,
 } from '@/lib/timesheets/timesheetQueue'
 import { bookingCoverageCoversDay, periodBookingChanges, type BookingChangeCatalogue } from '@/lib/timesheets/timesheetBookingChanges'
@@ -996,18 +997,12 @@ function ManagerTimesheetsTile({
   onStats?: (stats: { awaiting: number; signed: number; exported: number } | null) => void
   onClick: () => void
 }) {
-  const [loaded, setLoaded] = useState<{ byRun: Map<string, Map<string, TimesheetDraft>>; exportedCount: number } | 'empty' | null>(null)
+  const [loaded, setLoaded] = useState<{ sheets: TimesheetQueueStoredSheet[]; exportedCount: number } | 'empty' | 'failed' | null>(null)
   const [repairs, setRepairs] = useState(0)
+  // Final review of #381: a failed load is tried again when the browser comes back online or the window regains focus
+  // (the tile is itself a button, so it cannot hold a Retry button).
+  const [retries, setRetries] = useState(0)
   const reviewGroups = useMemo(() => timesheetRosterGroups(user, users), [user, users])
-  const groupsFor = useMemo(
-    () => (run: PayRun) =>
-      reviewGroups
-        .map((group) =>
-          group.filter((member) => shouldAppearInOperativeTimesheetRoster(member, run.start, run.end, invoicing, new Date(), timeZone))
-        )
-        .filter((group) => group.length > 0),
-    [reviewGroups, invoicing, timeZone]
-  )
   const reviewIds = useMemo(() => reviewGroups.flat().flatMap((member) => timesheetMemberIds(member, users)), [reviewGroups, users])
   const runsKey = runs.map((run) => payRunKey(run, timeZone)).join(',')
   // Rulebook 1.31.0: the Exported count is `exportedTimesheetHistorySubjects` (own sheets and inactive people in scope).
@@ -1032,10 +1027,20 @@ function ManagerTimesheetsTile({
       return
     }
     let cancelled = false
+    // A new attempt clears a previous failure (shown as '–' while it loads); every other state stays until it answers.
+    setLoaded((previous) => (previous === 'failed' ? null : previous))
     Promise.all([
       reviewIds.length > 0
-        ? loadTimesheetQueueDrafts({ organizationId, userIds: reviewIds, periods: runs, timeZone })
-        : Promise.resolve(new Map<string, Map<string, TimesheetDraft>>()),
+        ? // Rulebook 1.66.0 §8 (owner decision 17 Nov): every stored sheet, however old — never only the recent runs.
+          loadTimesheetQueueSheets({
+            organizationId,
+            userIds: reviewIds,
+            timeZone,
+            // Admins: the recent runs are also read by `weekStartKey`, so a sheet stored under another spelling of an id
+            // (or with no `userId`) stays listed for them (guardrail 3).
+            recentRunStartDayKeys: hasAdminAccess(user) ? runs.map((run) => periodStartKey(run.start, timeZone)) : undefined,
+          })
+        : Promise.resolve([] as TimesheetQueueStoredSheet[]),
       // 17 Nov follow-up: the same Exported list as User Timesheets → Exported (former ids matched; admins also count
       // a sheet whose person is nobody in the organisation).
       loadExportedTimesheetHistory({
@@ -1049,72 +1054,69 @@ function ManagerTimesheetsTile({
         viewerIsAdmin: hasAdminAccess(user),
       }),
     ])
-      .then(([byRun, exportedRows]) => {
+      .then(([sheets, exportedRows]) => {
         if (cancelled) return
-        setLoaded({ byRun, exportedCount: exportedRows.length })
+        setLoaded({ sheets, exportedCount: exportedRows.length })
       })
       .catch(() => {
-        if (!cancelled) setLoaded('empty')
+        // Rulebook 1.66.0 §8: a failed load is shown (the message User Timesheets uses), never 0 / 0 / 0.
+        if (!cancelled) setLoaded('failed')
       })
     return () => {
       cancelled = true
     }
     // `runs` is read through `runsKey`, the people through `queryKey` (ids), the roster through a ref.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [organizationId, users.length === 0, queryKey, runsKey, timeZone, repairs])
+  }, [organizationId, users.length === 0, queryKey, runsKey, timeZone, repairs, retries])
 
-  // The loaded sheets on the people of the current roster (`draftsForMembers`), per pay run.
-  const draftsByRun = useMemo(() => {
-    if (loaded == null || loaded === 'empty') return null
-    const drafts = new Map<string, Map<string, TimesheetDraft>>()
-    for (const run of runs) {
-      const key = payRunKey(run, timeZone)
-      drafts.set(key, draftsForMembers(reviewGroups, loaded.byRun.get(key) ?? new Map(), users))
+  useEffect(() => {
+    if (loaded !== 'failed' || typeof window === 'undefined') return
+    const retry = () => setRetries((value) => value + 1)
+    window.addEventListener('online', retry)
+    window.addEventListener('focus', retry)
+    return () => {
+      window.removeEventListener('online', retry)
+      window.removeEventListener('focus', retry)
     }
-    return drafts
-    // `runs` is read through `runsKey`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, reviewGroups, users, runsKey, timeZone])
+  }, [loaded])
 
   const catalogueRef = useRef(changeCatalogue)
   catalogueRef.current = changeCatalogue
-  const stats = useMemo(() => {
-    if (loaded == null) return null
-    if (loaded === 'empty') return { awaiting: 0, signed: 0, exported: 0 }
-    // 17 Nov follow-up: the same rows User Timesheets lists (every recent pay run, `timesheetQueueRows`).
-    const count = (bucket: 'awaiting' | 'signed') =>
-      timesheetQueueRows({
-        runs,
-        groupsFor,
-        draftsFor: (run) => draftsByRun?.get(payRunKey(run, timeZone)),
-        bucket,
-        users,
-        timeZone,
-        // Rulebook 1.47.0 §8: a reopened sheet counts where `timesheetListBucket` now puts it.
-        bookingChange: (member, draft, run) => periodBookingChanges(catalogueRef.current, member, draft, run),
-      }).length
-    return { awaiting: count('awaiting'), signed: count('signed'), exported: loaded.exportedCount }
+  // Rulebook 1.66.0 §8: the same rows User Timesheets lists — every stored sheet however old (`userTimesheetQueue`), a
+  // reopened sheet where `timesheetListBucket` now puts it (an old run whose bookings are not loaded: not changed).
+  const queueRows = useMemo(() => {
+    if (loaded == null || loaded === 'empty' || loaded === 'failed') return []
+    return userTimesheetQueueRows({
+      viewer: user,
+      users,
+      sheets: loaded.sheets,
+      invoicing,
+      timeZone,
+      bookingChange: (member, draft, run) => periodBookingChanges(catalogueRef.current, member, draft, run),
+    })
     // The catalogue is read through a ref; re-run when its bookings or load state change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, draftsByRun, groupsFor, users, runsKey, timeZone, changeCatalogue.bookings, changeCatalogue.managerSiteBookings, changeCatalogue.liveLoaded])
+  }, [loaded, user, users, invoicing, timeZone, changeCatalogue.bookings, changeCatalogue.managerSiteBookings, changeCatalogue.liveLoaded])
+  const stats = useMemo(() => {
+    if (loaded == null || loaded === 'failed') return null
+    if (loaded === 'empty') return { awaiting: 0, signed: 0, exported: 0 }
+    return {
+      awaiting: queueRows.filter((row) => row.bucket === 'awaiting').length,
+      signed: queueRows.filter((row) => row.bucket === 'signed').length,
+      exported: loaded.exportedCount,
+    }
+  }, [loaded, queueRows])
 
-  // Owner item 5 (17 Nov follow-up): the hub repairs frozen-empty snapshots of the loaded pay runs in the background
+  // Owner item 5 (17 Nov follow-up): the hub repairs frozen-empty snapshots of the recent pay runs in the background
   // too (`useSnapshotAutoRepair`), once the bookings of the window and the pay inputs have loaded.
   const repairSheets = useMemo<RepairSheet[]>(() => {
-    if (loaded == null || loaded === 'empty') return []
-    return runs.flatMap((run) => {
-      const drafts = draftsByRun?.get(payRunKey(run, timeZone))
-      if (!drafts) return []
-      return groupsFor(run)
-        .flat()
-        .flatMap((member) => {
-          const draft = drafts.get(member.id)
-          return draft ? [{ member, period: run, draft, documentId: timesheetSourceDocumentId(draft) }] : []
-        })
-    })
+    const recent = new Set(runs.map((run) => payRunKey(run, timeZone)))
+    return queueRows
+      .filter((row) => row.bucket !== 'exported' && recent.has(payRunKey(row.period, timeZone)))
+      .map((row) => ({ member: row.member, period: row.period, draft: row.draft, documentId: timesheetSourceDocumentId(row.draft) }))
     // `runs` is read through `runsKey`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, draftsByRun, runsKey, groupsFor, timeZone])
+  }, [queueRows, runsKey, timeZone])
   useSnapshotAutoRepair({
     organizationId,
     viewer: user,
@@ -1154,6 +1156,11 @@ function ManagerTimesheetsTile({
           <span>Exported</span>
         </span>
       </span>
+      {loaded === 'failed' ? (
+        <p className="pu-err" role="alert" style={{ marginTop: 6 }}>
+          {TIMESHEETS_LOAD_FAILED_MESSAGE}
+        </p>
+      ) : null}
     </ActionCard>
   )
 }

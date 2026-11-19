@@ -224,6 +224,7 @@ import {
   type TimesheetInputsState,
 } from '@/lib/timesheets/timesheetInputs'
 import type { PayrollTimePolicyState } from '@/lib/canonical'
+import { afterPrimaryWrite } from '@/lib/client/afterPrimaryWrite'
 
 function money(value: number, currency: string): string {
   return formatMoney(value, currency)
@@ -1078,20 +1079,17 @@ export function TimesheetPeriodPage({
       // (the hub's own answer, `useMineChangedStore`; the hub replaces it the next time it works it out).
       useMineChangedStore.getState().resolvePeriod(mineChangedKey(organization?.id, subjectUser.id), periodStartKey(periodStart, timeZone))
       if (organization?.id && requiresLineManagerCounterSign(subjectUser, users)) {
-        try {
-          await notifyTimesheetPendingManagerSignoff({
-            organizationId: organization.id,
-            signedByUser: subjectUser,
-            users,
-            weekStart: periodStart,
-            timeZone,
-            revision: draft.revision ?? null,
-            // Rulebook 1.60.1: one notice (and push) per signature, so a re-sign reaches the line manager.
-            signedAt,
-          })
-        } catch {
-          // Signature is already saved; inbox delivery is best-effort like iOS Task {}.
-        }
+        // Signature is already saved; inbox delivery is best-effort like iOS Task {}.
+        afterPrimaryWrite('notifyTimesheetPendingManagerSignoff', notifyTimesheetPendingManagerSignoff({
+          organizationId: organization.id,
+          signedByUser: subjectUser,
+          users,
+          weekStart: periodStart,
+          timeZone,
+          revision: draft.revision ?? null,
+          // Rulebook 1.60.1: one notice (and push) per signature, so a re-sign reaches the line manager.
+          signedAt,
+        }))
       }
       setSignOpen(false)
       setSignature(null)
@@ -1133,22 +1131,19 @@ export function TimesheetPeriodPage({
         { rebuildSnapshot: bookingsReopened }
       )
       if (organization?.id) {
-        try {
-          await notifyTimesheetSignedByManager({
-            organizationId: organization.id,
-            subjectUser,
-            signedByName: name,
-            signedByUserId: viewer.id,
-            users,
-            weekStart: periodStart,
-            weekEnd: periodEnd,
-            timeZone,
-            revision: draft.revision ?? null,
-            signedAt: managerSignedAt,
-          })
-        } catch {
-          // Counter-sign is already saved; inbox delivery is best-effort.
-        }
+        // Counter-sign is already saved; inbox delivery is best-effort.
+        afterPrimaryWrite('notifyTimesheetSignedByManager', notifyTimesheetSignedByManager({
+          organizationId: organization.id,
+          subjectUser,
+          signedByName: name,
+          signedByUserId: viewer.id,
+          users,
+          weekStart: periodStart,
+          weekEnd: periodEnd,
+          timeZone,
+          revision: draft.revision ?? null,
+          signedAt: managerSignedAt,
+        }))
       }
       setManagerSignOpen(false)
       setSignature(null)
@@ -1177,7 +1172,7 @@ export function TimesheetPeriodPage({
         liveLines: payroll.lineItems.map((line) => ({ id: line.id, bookingFingerprint: line.bookingFingerprint ?? null, amount: line.amount, paidHours: line.paidHours })),
       })
       if (result.status === 'created' && viewer && viewer.id !== subjectUser.id) {
-        await notifyTimesheetRevisionToSign({
+        afterPrimaryWrite('notifyTimesheetRevisionToSign', notifyTimesheetRevisionToSign({
           organizationId: organization.id,
           subjectUser,
           actorUserId: viewer.id,
@@ -1185,7 +1180,7 @@ export function TimesheetPeriodPage({
           revisionDocumentId: result.documentId,
           weekStart: periodStart,
           timeZone,
-        }).catch(() => undefined)
+        }))
       }
       if (result.status === 'not-exported' || result.status === 'missing') setError(revisionCheck.message || 'This timesheet could not be revised.')
       setLoadAttempt((attempt) => attempt + 1)

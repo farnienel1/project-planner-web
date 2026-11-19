@@ -66,7 +66,28 @@ export async function sendProjectPlannerEmail(params: {
    * recipient once and answers a repeat with the first send's result. Reuse it when retrying the same request.
    */
   requestId?: string
+  /**
+   * `'auth'`: an account email (password reset, verify email, confirm new email). Sent as template `auth_rendered`,
+   * which the function counts in its own `server-auth` rate bucket; a function deployed before that template answers
+   * "Unknown template", and the message is then sent as `web_rendered` (the shared bucket, as before).
+   */
+  rateBucket?: 'auth'
 }): Promise<ProjectPlannerEmailResult> {
+  if (params.rateBucket === 'auth') {
+    try {
+      return await sendRendered(params, 'auth_rendered')
+    } catch (error) {
+      if (error instanceof Error && /unknown template auth_rendered/i.test(error.message)) return sendRendered(params, 'web_rendered')
+      throw error
+    }
+  }
+  return sendRendered(params, 'web_rendered')
+}
+
+async function sendRendered(
+  params: Parameters<typeof sendProjectPlannerEmail>[0],
+  template: 'web_rendered' | 'auth_rendered'
+): Promise<ProjectPlannerEmailResult> {
   const key = serverKey()
   if (!key) {
     throw new Error('Email is not configured on this server (EMAIL_SERVER_KEY is not set).')
@@ -82,7 +103,7 @@ export async function sendProjectPlannerEmail(params: {
   if (params.ccCaller) data.ccCaller = true
 
   const payload: Record<string, unknown> = {
-    template: 'web_rendered',
+    template,
     to: [params.to],
     data,
   }

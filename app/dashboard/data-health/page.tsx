@@ -22,6 +22,7 @@ import { UsersMissingLevel } from '@/components/dataHealth/UsersMissingLevel'
 import { UsersMissingEmploymentType } from '@/components/dataHealth/UsersMissingEmploymentType'
 import { UsersMissingLineManager } from '@/components/dataHealth/UsersMissingLineManager'
 import { TimesheetsHalfSigned } from '@/components/dataHealth/TimesheetsHalfSigned'
+import { ReportChecks } from '@/components/dataHealth/ReportChecks'
 import {
   parseAppUserDocument,
   parseBooking,
@@ -144,6 +145,7 @@ export default function DataHealthPage() {
         <LeaveNotLinkedToPerson organizationId={organization.id} />
         {/* Rulebook 1.54.0 §8: sheets the line manager signed whose person signature is missing (`timesheetsHalfSigned`). */}
         <TimesheetsHalfSigned organizationId={organization.id} />
+        <ReportChecks organizationId={organization.id} />
         <BookingHealthScan organizationId={organization.id} />
       </div>
     ) : null

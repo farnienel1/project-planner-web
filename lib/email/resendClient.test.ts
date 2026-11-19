@@ -165,3 +165,30 @@ test('sendProjectPlannerEmail forwards requestId (the email function sends one r
   )
   assert.equal('requestId' in without[0].body, false)
 })
+
+test('account emails use auth_rendered, and fall back to web_rendered on a function that predates it', async () => {
+  const originalFetch = globalThis.fetch
+  const originalKey = process.env.EMAIL_SERVER_KEY
+  process.env.EMAIL_SERVER_KEY = 'test-server-key'
+  const templates: string[] = []
+  let knowsAuth = true
+  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body || '{}')) as { template: string }
+    templates.push(body.template)
+    if (body.template === 'auth_rendered' && !knowsAuth) {
+      return new Response(JSON.stringify({ error: 'Unknown template auth_rendered' }), { status: 400 })
+    }
+    return new Response('{"results":[{"id":"m"}]}', { status: 200 })
+  }) as typeof fetch
+  try {
+    await sendProjectPlannerEmail({ to: 'a@b.com', subject: 'S', html: '<p>x</p>', rateBucket: 'auth' })
+    knowsAuth = false
+    await sendProjectPlannerEmail({ to: 'a@b.com', subject: 'S', html: '<p>x</p>', rateBucket: 'auth' })
+    await sendProjectPlannerEmail({ to: 'a@b.com', subject: 'S', html: '<p>x</p>' })
+  } finally {
+    globalThis.fetch = originalFetch
+    if (originalKey === undefined) delete process.env.EMAIL_SERVER_KEY
+    else process.env.EMAIL_SERVER_KEY = originalKey
+  }
+  assert.deepEqual(templates, ['auth_rendered', 'auth_rendered', 'web_rendered', 'web_rendered'])
+})

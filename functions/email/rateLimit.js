@@ -10,6 +10,12 @@
 const RATE_LIMIT_COLLECTION = 'emailRateLimits'
 const USER_LIMITS = Object.freeze({ perHour: 60, perDay: 300 })
 const SERVER_LIMITS = Object.freeze({ perHour: 600, perDay: 3000 })
+/**
+ * Account emails (password reset, verify email, confirm new email; template `auth_rendered`) have their own bucket,
+ * `server-auth`, so a burst of reset requests never spends the budget of other server mail (review of #361).
+ */
+const AUTH_LIMITS = Object.freeze({ perHour: 300, perDay: 1500 })
+const AUTH_RATE_KEY = 'server-auth'
 
 const HOUR_MS = 60 * 60 * 1000
 const DAY_MS = 24 * HOUR_MS
@@ -51,4 +57,4 @@ async function consumeRateLimit(db, key, count, limits, nowMs = Date.now()) {
   })
 }
 
-module.exports = { RATE_LIMIT_COLLECTION, SERVER_LIMITS, USER_LIMITS, consumeRateLimit, nextRateLimitState }
+module.exports = { AUTH_LIMITS, AUTH_RATE_KEY, RATE_LIMIT_COLLECTION, SERVER_LIMITS, USER_LIMITS, consumeRateLimit, nextRateLimitState }
