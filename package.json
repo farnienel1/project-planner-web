@@ -32,7 +32,7 @@
     "@simplewebauthn/browser": "14.0.0",
     "@simplewebauthn/server": "14.0.3",
     "clsx": "^2.1.0",
-    "date-fns": "^3.0.6",
+    "date-fns": "^4.4.0",
     "fflate": "0.8.3",
     "firebase": "^10.7.1",
     "leaflet": "^1.9.4",
