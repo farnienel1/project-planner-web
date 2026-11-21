@@ -35,14 +35,14 @@ export function LineManagerMultiSelect({
           <label
             key={manager.id}
             className={`flex cursor-pointer items-start gap-3 rounded-lg px-3 py-2.5 transition ${
-              checked ? 'bg-white shadow-sm ring-1 ring-blue-100' : 'hover:bg-white/80'
+              checked ? 'bg-white shadow-xs ring-1 ring-blue-100' : 'hover:bg-white/80'
             }`}
           >
             <input
               type="checkbox"
               checked={checked}
               onChange={() => toggle(manager.id)}
-              className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              className="mt-0.5 h-4 w-4 shrink-0 rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500"
             />
             <span className="min-w-0 text-sm leading-snug">
               <span className="font-semibold text-slate-900">

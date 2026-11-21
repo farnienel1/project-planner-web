@@ -118,8 +118,8 @@ const ACCOUNT_TYPES: {
     title: 'Manager',
     description: 'Run day-to-day operations — schedules, projects, operatives and approvals.',
     badge: 'Manager',
-    badgeCls: 'bg-[var(--blue-t)] text-[var(--blue)]',
-    ringCls: 'ring-[#185FA5]/30 border-[var(--blue)]/40',
+    badgeCls: 'bg-(--blue-t) text-(--blue)',
+    ringCls: 'ring-[#185FA5]/30 border-(--blue)/40',
   },
   {
     id: 'operative',
@@ -134,17 +134,17 @@ const ACCOUNT_TYPES: {
 const PERM_CHIP: Partial<Record<string, { bg: string; fg: string }>> = {
   adminAccess: { bg: 'bg-[#FDECF1]', fg: 'text-[#993556]' },
   operatives: { bg: 'bg-[#EEEDFE]', fg: 'text-[#534AB7]' },
-  annualLeaveSelfBook: { bg: 'bg-[var(--blue-t)]', fg: 'text-[var(--blue)]' },
+  annualLeaveSelfBook: { bg: 'bg-(--blue-t)', fg: 'text-(--blue)' },
   weeklyReports: { bg: 'bg-[#E1F5EE]', fg: 'text-[#0F6E56]' },
   dailyOverview: { bg: 'bg-[#E1F5EE]', fg: 'text-[#0F6E56]' },
   subContractors: { bg: 'bg-[#E1F5EE]', fg: 'text-[#0F6E56]' },
   skills: { bg: 'bg-[#FBEAF0]', fg: 'text-[#993556]' },
   qualifications: { bg: 'bg-[#FBEAF0]', fg: 'text-[#993556]' },
-  projects: { bg: 'bg-[var(--blue-t)]', fg: 'text-[var(--blue)]' },
-  smallWorks: { bg: 'bg-[var(--blue-t)]', fg: 'text-[var(--blue)]' },
+  projects: { bg: 'bg-(--blue-t)', fg: 'text-(--blue)' },
+  smallWorks: { bg: 'bg-(--blue-t)', fg: 'text-(--blue)' },
   materials: { bg: 'bg-[#FAEEDA]', fg: 'text-[#854F0B]' },
   siteAudit: { bg: 'bg-[#E1F5EE]', fg: 'text-[#0F6E56]' },
-  wholesalersOrderHistory: { bg: 'bg-[var(--blue-t)]', fg: 'text-[var(--blue)]' },
+  wholesalersOrderHistory: { bg: 'bg-(--blue-t)', fg: 'text-(--blue)' },
 }
 
 const ICON_PERSON =
@@ -1037,7 +1037,7 @@ export function AddUserScreen() {
         <p className="text-sm text-slate-700">{DUPLICATE_NAME_WARNING_MESSAGE}</p>
         <ul className="mt-3 space-y-2 pb-2">
           {(duplicateMatches ?? []).map((person) => (
-            <li key={person.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--line)] px-3 py-2 text-sm">
+            <li key={person.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-(--line) px-3 py-2 text-sm">
               <span className="font-semibold text-slate-900">{person.displayName}</span>
               {person.email ? (
                 <span className="text-slate-500">{person.email}</span>

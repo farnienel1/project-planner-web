@@ -204,7 +204,7 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-[var(--blue)]" />
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-(--blue)" />
       </div>
     )
   }
@@ -244,7 +244,7 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
         <div className="xl:grid xl:grid-cols-[400px_1fr] xl:gap-8">
           <div>
             {templates.length === 0 ? (
-              <div className="rounded-[18px] bg-[var(--card)] p-6 shadow-[var(--sh)]">
+              <div className="rounded-[18px] bg-(--card) p-6 shadow-pp">
                 <EmptyState
                   hue="rep"
                   icon={<IconChip hue="rep" size="lg"><AcademicCapIcon className="h-7 w-7" /></IconChip>}
@@ -270,13 +270,13 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
             )}
           </div>
           {editing ? (
-            <form onSubmit={handleEdit} className="rounded-[18px] bg-[var(--card)] p-6 shadow-[var(--sh)]">
+            <form onSubmit={handleEdit} className="rounded-[18px] bg-(--card) p-6 shadow-pp">
               <h2 className="text-[22px] font-bold">Edit Qualification</h2>
               <Field label="Name" className="mt-4">
                 <Input value={name} onChange={(e) => setName(e.target.value)} />
               </Field>
               {editing.section || editing.awardingBody || editing.code ? (
-                <p className="mt-3 text-[13px] text-[var(--ink3)]">
+                <p className="mt-3 text-[13px] text-(--ink3)">
                   {[editing.section, editing.awardingBody, editing.code].filter(Boolean).join(' · ')}
                 </p>
               ) : null}
@@ -288,7 +288,7 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
                   Delete Qualification
                 </Button>
               </div>
-              <p className="mt-3 text-[13px] text-[var(--ink3)]">
+              <p className="mt-3 text-[13px] text-(--ink3)">
                 Deleting removes this template from the organisation list. Existing assignments on staff profiles are
                 not automatically removed.
               </p>
@@ -325,17 +325,17 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
 
       {addOpen ? (
         <IosFormModal title="Add Qualification" onCancel={() => setAddOpen(false)} footer={
-          <button type="submit" form="add-qual" disabled={saving || !name.trim()} className="w-full rounded-xl bg-[var(--blue)] py-3 text-[16px] font-semibold text-white disabled:opacity-50">
+          <button type="submit" form="add-qual" disabled={saving || !name.trim()} className="w-full rounded-xl bg-(--blue) py-3 text-[16px] font-semibold text-white disabled:opacity-50">
             Save
           </button>
         }>
           <form id="add-qual" onSubmit={handleCreate} className="space-y-3">
-            <p className="text-[13px] font-semibold uppercase tracking-wide text-[var(--ink3)]">Qualification Details</p>
+            <p className="text-[13px] font-semibold uppercase tracking-wide text-(--ink3)">Qualification Details</p>
             <label className="block text-[15px] font-medium">
               Qualification Name
-              <input value={name} onChange={(e) => setName(e.target.value)} className="mt-1.5 w-full rounded-lg border border-[var(--line2)] px-3 py-2.5" />
+              <input value={name} onChange={(e) => setName(e.target.value)} className="mt-1.5 w-full rounded-lg border border-(--line2) px-3 py-2.5" />
             </label>
-            <p className="text-[13px] text-[var(--ink3)]">
+            <p className="text-[13px] text-(--ink3)">
               Expiration dates and certificates are set when someone assigns this qualification on My Qualifications.
             </p>
           </form>

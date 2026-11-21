@@ -73,7 +73,7 @@ function HeroMetricCard({
               e.stopPropagation()
               onRemove()
             }}
-            className="absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full border border-white/40 bg-blue-800 text-white opacity-0 shadow transition hover:bg-red-600 group-hover:opacity-100"
+            className="absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full border border-white/40 bg-blue-800 text-white opacity-0 shadow-sm transition hover:bg-red-600 group-hover:opacity-100"
             aria-label={`Remove ${metric.label}`}
           >
             <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -169,7 +169,7 @@ export function DashboardHero({
 
   return (
     <div
-      className={`relative rounded-2xl bg-gradient-to-br from-blue-600 to-blue-700 p-6 text-white shadow-[0_10px_30px_rgba(37,99,235,0.28)] ${
+      className={`relative rounded-2xl bg-linear-to-br from-blue-600 to-blue-700 p-6 text-white shadow-[0_10px_30px_rgba(37,99,235,0.28)] ${
         editable && heroDragOver ? 'ring-2 ring-white/40 ring-offset-2 ring-offset-blue-600' : ''
       }`}
       onDragOver={editable ? (e) => e.preventDefault() : undefined}
@@ -205,7 +205,7 @@ export function DashboardHero({
 
       <Link
         href="/dashboard/warnings"
-        className={`absolute top-4 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:opacity-90 ${
+        className={`absolute top-4 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold text-white shadow-xs transition hover:opacity-90 ${
           showCustomizeLink ? 'right-14' : 'right-4'
         } ${warningCount > 0 ? 'bg-red-600 hover:bg-red-700' : 'bg-red-500/80 hover:bg-red-600'}`}
         aria-label={`${warningCount} warning${warningCount !== 1 ? 's' : ''} — open warnings`}

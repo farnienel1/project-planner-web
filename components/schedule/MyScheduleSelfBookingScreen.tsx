@@ -663,7 +663,7 @@ export function MyScheduleSelfBookingScreen({
   }) {
     if (expandedLoc !== locKey) return null
     return (
-      <div className="mt-3 rounded-[14px] bg-[var(--soft)] px-4 py-3">
+      <div className="mt-3 rounded-[14px] bg-(--soft) px-4 py-3">
         <div className="flex flex-wrap gap-2">
           {SLOTS.filter(({ slot }) => targetDays().some((day) => slotOfferedOnDate(slot, day, payrollPolicy))).map(({ slot, label }) => (
             <button

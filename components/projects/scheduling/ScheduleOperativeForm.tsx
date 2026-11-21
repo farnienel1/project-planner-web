@@ -440,10 +440,10 @@ export function ScheduleOperativeForm({
   return (
     <div className="space-y-5 pb-32">
       <div className="card pad">
-        <p className="text-xs font-semibold text-[var(--blue)]">{project.jobNumber}</p>
-        <p className="text-lg font-semibold text-[var(--ink)]">{project.siteName}</p>
-        <p className="mt-1 text-sm text-[var(--ink2)]">{scheduleBookingClientLine(project)}</p>
-        <p className="text-xs text-[var(--ink3)]">{scheduleWorkKindLabel(project)}</p>
+        <p className="text-xs font-semibold text-(--blue)">{project.jobNumber}</p>
+        <p className="text-lg font-semibold text-(--ink)">{project.siteName}</p>
+        <p className="mt-1 text-sm text-(--ink2)">{scheduleBookingClientLine(project)}</p>
+        <p className="text-xs text-(--ink3)">{scheduleWorkKindLabel(project)}</p>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -546,7 +546,7 @@ export function ScheduleOperativeForm({
         <ErrorBanner message="This job can't be booked: it is inactive, or you don't manage it." />
       ) : null}
 
-      <div className="fixed bottom-0 left-0 right-0 border-t border-[var(--line)] bg-[var(--card)]/95 p-4 backdrop-blur md:pl-64">
+      <div className="fixed bottom-0 left-0 right-0 border-t border-(--line) bg-(--card)/95 p-4 backdrop-blur-sm md:pl-64">
         <div className="mx-auto flex max-w-3xl gap-2">
           {showBack && (
             <button
@@ -570,7 +570,7 @@ export function ScheduleOperativeForm({
           </button>
         </div>
         {step === 'pick-person' || step === 'review' ? (
-          <p className="mx-auto mt-2 max-w-3xl text-center text-xs text-[var(--ink3)]">
+          <p className="mx-auto mt-2 max-w-3xl text-center text-xs text-(--ink3)">
             {draftPeople.length} person{draftPeople.length !== 1 ? 's' : ''} · {slotsList.length} date
             {slotsList.length !== 1 ? 's' : ''}
             {!allDraftPeopleResolved(draftPeople) && draftPeople.length > 0 && ' · Resolve clashes with ✓ or ✕'}

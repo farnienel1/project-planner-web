@@ -18,7 +18,7 @@ export function SaveButton({
       onClick={onClick}
       disabled={disabled}
       className={`btn primary block ${
-        saved && !dirty ? 'bg-[var(--green)]' : dirty && !saving ? '' : 'opacity-45'
+        saved && !dirty ? 'bg-(--green)' : dirty && !saving ? '' : 'opacity-45'
       } disabled:cursor-not-allowed`}
     >
       {saving ? 'Saving…' : saved && !dirty ? '✓ Saved' : label}

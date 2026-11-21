@@ -296,7 +296,7 @@ export function OperativeAnnualLeaveManagement({
               onClick={() => setActiveTab(tab.key)}
               className={`flex-1 rounded-xl px-2 py-2 text-[11px] font-semibold leading-tight transition-all sm:text-xs ${
                 activeTab === tab.key
-                  ? 'bg-white text-slate-900 shadow-sm'
+                  ? 'bg-white text-slate-900 shadow-xs'
                   : 'text-slate-500 hover:text-slate-700'
               }`}
             >
@@ -398,7 +398,7 @@ export function OperativeAnnualLeaveManagement({
                   key={person.id}
                   type="button"
                   onClick={() => setSelectedPerson(person)}
-                  className="flex w-full items-center justify-between card px-4 py-3.5 text-left shadow-sm transition-colors hover:bg-slate-50"
+                  className="flex w-full items-center justify-between card px-4 py-3.5 text-left shadow-xs transition-colors hover:bg-slate-50"
                 >
                   <div>
                     <p className="text-sm font-bold text-slate-900">{person.displayName}</p>
@@ -494,7 +494,7 @@ export function OperativeAnnualLeaveManagement({
               </button>
               <button
                 type="button"
-                className="rounded-xl bg-[var(--red)] py-2.5 text-sm font-bold text-white"
+                className="rounded-xl bg-(--red) py-2.5 text-sm font-bold text-white"
                 onClick={() => {
                   const target = declineTarget
                   const note = declineNote

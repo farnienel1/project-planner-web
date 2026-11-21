@@ -88,7 +88,7 @@ export function DeveloperUsersScreen() {
         </div>
       }
     >
-      <p className="text-sm text-[var(--ink2)]">
+      <p className="text-sm text-(--ink2)">
         Every live account across every organisation. Emails are masked until you reveal them. Each reveal is written to
         the audit log.
       </p>
@@ -122,7 +122,7 @@ export function DeveloperUsersScreen() {
         // The row menu is a portal (fixed), so the table can scroll sideways on a phone instead of the whole page.
         <div className="card overflow-x-auto">
           <table className="w-full whitespace-nowrap text-left text-sm">
-            <thead className="bg-[var(--soft)] text-xs uppercase text-[var(--ink3)]">
+            <thead className="bg-(--soft) text-xs uppercase text-(--ink3)">
               <tr>
                 <th className="px-4 py-2">Name</th>
                 <th className="px-4 py-2">Login email</th>
@@ -137,7 +137,7 @@ export function DeveloperUsersScreen() {
               {visible.map((user) => {
                 const typo = emailTypoHint(user.email)
                 return (
-                  <tr key={user.id} className="border-t border-[var(--line)]">
+                  <tr key={user.id} className="border-t border-(--line)">
                     <td className="px-4 py-3 font-semibold">{ownerPersonName(user)}</td>
                     <td className="px-4 py-3">
                       <MaskedEmail
@@ -145,17 +145,17 @@ export function DeveloperUsersScreen() {
                         reveal={showFullEmails}
                         onReveal={() => void auditOwnerAction('reveal_email', { targetUserId: user.id })}
                       />
-                      {typo ? <p className="text-[11px] font-bold text-[var(--warn,#b45309)]">⚠ check · {typo}</p> : null}
+                      {typo ? <p className="text-[11px] font-bold text-(--warn,#b45309)">⚠ check · {typo}</p> : null}
                     </td>
                     <td className="px-4 py-3">
                       <Link href={`/developer/organisations/${encodeURIComponent(user.organizationId)}`} className="font-semibold">
                         {orgName(user.organizationId, user.email)}
                       </Link>
-                      <p className="max-w-[200px] truncate text-[11px] text-[var(--ink3)]" title={user.organizationId}>{user.organizationId}</p>
+                      <p className="max-w-[200px] truncate text-[11px] text-(--ink3)" title={user.organizationId}>{user.organizationId}</p>
                     </td>
                     <td className="px-4 py-3">{ownerRoleLabel(user.role)}</td>
                     <td className="px-4 py-3">{rosterStatusLabel(user)}</td>
-                    <td className="px-4 py-3 text-[var(--ink2)]">{formatOwnerWhen(user.lastSeenAt, 'Never')}</td>
+                    <td className="px-4 py-3 text-(--ink2)">{formatOwnerWhen(user.lastSeenAt, 'Never')}</td>
                     <OwnerUserAccountMenu
                       user={user}
                       onDone={(message) => {
@@ -165,7 +165,7 @@ export function DeveloperUsersScreen() {
                       extra={
                         <Link
                           href={`/developer/organisations/${encodeURIComponent(user.organizationId)}`}
-                          className="block rounded-lg px-3 py-2 text-left text-sm hover:bg-[var(--soft)]"
+                          className="block rounded-lg px-3 py-2 text-left text-sm hover:bg-(--soft)"
                         >
                           View organisation
                         </Link>

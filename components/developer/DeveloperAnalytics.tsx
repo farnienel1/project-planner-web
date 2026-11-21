@@ -81,7 +81,7 @@ export function DeveloperAnalyticsScreen() {
         </button>
       }
     >
-      <p className="text-sm text-[var(--ink2)]">
+      <p className="text-sm text-(--ink2)">
         These numbers are the live user directory across every organisation. Feature taps are extra and only appear when
         they have actually been stored.
       </p>
@@ -109,10 +109,10 @@ export function DeveloperAnalyticsScreen() {
       </div>
       <section className="card pad">
         <h2 className="h2">Last seen</h2>
-        <p className="mt-1 text-xs text-[var(--ink3)]">From user records across every organisation.</p>
+        <p className="mt-1 text-xs text-(--ink3)">From user records across every organisation.</p>
         <ul className="mt-3 grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
           {lanes.map((row) => (
-            <li key={row.id} className="rounded-xl bg-[var(--soft)] px-3 py-2">
+            <li key={row.id} className="rounded-xl bg-(--soft) px-3 py-2">
               <p className="eyebrow">{row.label}</p>
               <p className="text-2xl font-extrabold">{row.count}</p>
             </li>
@@ -123,7 +123,7 @@ export function DeveloperAnalyticsScreen() {
         <h2 className="h2">Organisation size</h2>
         <ul className="mt-3 grid gap-2 sm:grid-cols-4">
           {sizes.map((row) => (
-            <li key={row.id} className="rounded-xl bg-[var(--soft)] px-3 py-2">
+            <li key={row.id} className="rounded-xl bg-(--soft) px-3 py-2">
               <p className="eyebrow">{row.label}</p>
               <p className="text-2xl font-extrabold">{row.count}</p>
             </li>
@@ -143,11 +143,11 @@ export function DeveloperAnalyticsScreen() {
       <section className="card pad">
         <h2 className="h2">Roles</h2>
         {roles.length === 0 ? (
-          <p className="mt-2 text-sm text-[var(--ink3)]">Role mix appears once users are loaded.</p>
+          <p className="mt-2 text-sm text-(--ink3)">Role mix appears once users are loaded.</p>
         ) : (
           <ul className="mt-3 grid gap-2 sm:grid-cols-3">
             {roles.map((row) => (
-              <li key={row.id} className="rounded-xl bg-[var(--soft)] px-3 py-2">
+              <li key={row.id} className="rounded-xl bg-(--soft) px-3 py-2">
                 <p className="eyebrow">{row.label}</p>
                 <p className="text-2xl font-extrabold">{row.count}</p>
               </li>
@@ -157,16 +157,16 @@ export function DeveloperAnalyticsScreen() {
       </section>
       <section className="card pad">
         <h2 className="h2">Retention</h2>
-        <p className="mt-1 text-xs text-[var(--ink3)]">
+        <p className="mt-1 text-xs text-(--ink3)">
           Share of people whose last-seen is at least 1 / 7 / 30 days after they were created. Needs 5+ accounts in each
           cohort.
         </p>
         <div className="mt-3 grid gap-3 sm:grid-cols-3">
           {retention.map((row) => (
-            <div key={row.label} className="rounded-xl bg-[var(--soft)] p-3">
+            <div key={row.label} className="rounded-xl bg-(--soft) p-3">
               <p className="eyebrow">{row.label}</p>
               <p className="text-2xl font-extrabold">{row.rate == null ? '—' : `${row.rate}%`}</p>
-              <p className="text-xs text-[var(--ink3)]">
+              <p className="text-xs text-(--ink3)">
                 {row.rate == null ? 'Insufficient data (need 5+ users)' : `${row.retained} of ${row.size} returned`}
               </p>
             </div>
@@ -176,11 +176,11 @@ export function DeveloperAnalyticsScreen() {
       <section className="card pad">
         <h2 className="h2">Account status</h2>
         {roster.length === 0 ? (
-          <p className="mt-2 text-sm text-[var(--ink3)]">Status mix appears once users are loaded.</p>
+          <p className="mt-2 text-sm text-(--ink3)">Status mix appears once users are loaded.</p>
         ) : (
           <ul className="mt-3 grid gap-2 sm:grid-cols-3">
             {roster.map((row) => (
-              <li key={row.id} className="rounded-xl bg-[var(--soft)] px-3 py-2">
+              <li key={row.id} className="rounded-xl bg-(--soft) px-3 py-2">
                 <p className="eyebrow">{row.label}</p>
                 <p className="text-2xl font-extrabold">{row.count}</p>
               </li>
@@ -192,7 +192,7 @@ export function DeveloperAnalyticsScreen() {
         <h2 className="h2">Feedback pipeline</h2>
         <ul className="mt-3 grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
           {pipeline.map((row) => (
-            <li key={row.id} className="rounded-xl bg-[var(--soft)] px-3 py-2">
+            <li key={row.id} className="rounded-xl bg-(--soft) px-3 py-2">
               <p className="eyebrow">{row.label}</p>
               <p className="text-2xl font-extrabold">{row.count}</p>
             </li>
@@ -202,13 +202,13 @@ export function DeveloperAnalyticsScreen() {
       <section className="card pad">
         <h2 className="h2">Busiest organisations</h2>
         {orgRows.length === 0 ? (
-          <p className="mt-2 text-sm text-[var(--ink3)]">Organisations appear as companies complete setup.</p>
+          <p className="mt-2 text-sm text-(--ink3)">Organisations appear as companies complete setup.</p>
         ) : (
           <ul className="mt-3 space-y-2">
             {orgRows.map((org) => (
-              <li key={org.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[var(--soft)] px-3 py-2 text-sm">
+              <li key={org.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-(--soft) px-3 py-2 text-sm">
                 <span className="font-semibold">{org.name}</span>
-                <span className="text-[var(--ink3)]">
+                <span className="text-(--ink3)">
                   {org.userCount} users · {org.activeUsers} active · {formatOwnerWhen(org.lastActivityAt, 'No last seen')}
                 </span>
               </li>
@@ -245,7 +245,7 @@ export function DeveloperUsageScreen() {
         </button>
       }
     >
-      <p className="text-sm text-[var(--ink2)]">
+      <p className="text-sm text-(--ink2)">
         {users.length} registered users across {organisations.length} organisations. Feature taps are listed only when they
         have been stored for the web app.
       </p>
@@ -259,7 +259,7 @@ export function DeveloperUsageScreen() {
       ) : (
         <div className="card overflow-x-auto">
           <table className="w-full whitespace-nowrap text-left text-sm">
-            <thead className="bg-[var(--soft)] text-xs uppercase text-[var(--ink3)]">
+            <thead className="bg-(--soft) text-xs uppercase text-(--ink3)">
               <tr>
                 <th className="px-4 py-2">Feature</th>
                 <th className="px-4 py-2">Users</th>
@@ -271,7 +271,7 @@ export function DeveloperUsageScreen() {
               {rows.map((row) => {
                 const change = percentChange(row.uses, row.previousUses)
                 return (
-                  <tr key={row.id} className="border-t border-[var(--line)]">
+                  <tr key={row.id} className="border-t border-(--line)">
                     <td className="px-4 py-3 font-semibold">{row.label}</td>
                     <td className="px-4 py-3">{row.users}</td>
                     <td className="px-4 py-3">{row.uses}</td>

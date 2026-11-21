@@ -541,7 +541,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
           </div>
         ) : null}
         <div className="sb-user">
-          <UserAvatar user={user} size={30} gradient="from-[var(--dash-blue-solid)] to-[var(--dash-blue-solid)]" />
+          <UserAvatar user={user} size={30} gradient="from-(--dash-blue-solid) to-(--dash-blue-solid)" />
           <div className="min-w-0">
             <p className="sb-user-name truncate">{`${user.firstName} ${user.surname}`.trim() || user.email}</p>
             <p className="sb-org truncate">{organization?.name || 'Organisation'}</p>
@@ -556,7 +556,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
   )
 
   return (
-    <div className="app-frame min-h-screen text-[var(--ink)]">
+    <div className="app-frame min-h-screen text-(--ink)">
       <TeamOnboardingPrompt />
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} items={paletteItems} />
       {customiseOpen ? (
@@ -572,7 +572,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
       {menuOpen ? (
         <button
           type="button"
-          className="fixed inset-0 z-[60] bg-[rgba(10,20,40,.4)] lg:hidden"
+          className="fixed inset-0 z-60 bg-[rgba(10,20,40,.4)] lg:hidden"
           aria-label="Close menu"
           onClick={() => setMenuOpen(false)}
         />
@@ -582,7 +582,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
         <aside
           className={cn(
             'sb flex min-h-0 flex-col',
-            'max-[1023px]:fixed max-[1023px]:inset-y-0 max-[1023px]:left-0 max-[1023px]:z-[70] max-[1023px]:w-[290px] max-[1023px]:transition-transform',
+            'max-[1023px]:fixed max-[1023px]:inset-y-0 max-[1023px]:left-0 max-[1023px]:z-70 max-[1023px]:w-[290px] max-[1023px]:transition-transform',
             menuOpen ? 'max-[1023px]:translate-x-0' : 'max-[1023px]:-translate-x-full',
             'lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-[244px] lg:shrink-0'
           )}
@@ -592,7 +592,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
 
         <div className="app-panel flex min-w-0 flex-1 flex-col">
           {!online ? (
-            <div className="bg-[var(--warn)] px-4 py-2 text-center text-sm font-medium text-white">
+            <div className="bg-(--warn) px-4 py-2 text-center text-sm font-medium text-white">
               You&apos;re offline. Changes will not sync until you reconnect.
             </div>
           ) : null}
@@ -660,14 +660,14 @@ function AppShellInner({ children }: { children: ReactNode }) {
                           aria-label="Close new menu"
                           onClick={() => setNewOpen(false)}
                         />
-                        <div className="absolute right-0 z-30 mt-2 w-[260px] rounded-[18px] bg-[var(--card)] p-2 shadow-[var(--sh-pop)]">
-                          <p className="px-2.5 py-1 text-xs font-semibold text-[var(--ink3)]">Create new</p>
+                        <div className="absolute right-0 z-30 mt-2 w-[260px] rounded-[18px] bg-(--card) p-2 shadow-(--sh-pop)">
+                          <p className="px-2.5 py-1 text-xs font-semibold text-(--ink3)">Create new</p>
                           {createItems.map((item) => (
                             <Link
                               key={item.id}
                               href={item.href}
                               data-hue={hueForCreateId(item.id)}
-                              className="flex items-center gap-3 rounded-xl px-2.5 py-2 text-[14.5px] hover:bg-[var(--soft)]"
+                              className="flex items-center gap-3 rounded-xl px-2.5 py-2 text-[14.5px] hover:bg-(--soft)"
                               onClick={() => setNewOpen(false)}
                             >
                               <IconChip hue={hueForCreateId(item.id)} size="sm">

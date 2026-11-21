@@ -26,14 +26,14 @@ export function HsSheet({
   wide?: boolean
 }) {
   return (
-    <div className="fixed inset-0 z-[90] flex items-end justify-center bg-[var(--bg)] sm:items-center sm:p-4">
+    <div className="fixed inset-0 z-90 flex items-end justify-center bg-(--bg) sm:items-center sm:p-4">
       <div
-        className={`flex max-h-[92vh] w-full flex-col overflow-hidden bg-[var(--bg)] shadow-xl sm:rounded-2xl ${
+        className={`flex max-h-[92vh] w-full flex-col overflow-hidden bg-(--bg) shadow-xl sm:rounded-2xl ${
           wide ? 'max-w-2xl' : 'max-w-lg'
         }`}
       >
-        <header className="flex items-center justify-between border-b border-[#EEF0F3] bg-[var(--bg)] px-4 py-3">
-          <button type="button" onClick={onClose} className="text-[13px] font-medium text-[var(--blue)]">
+        <header className="flex items-center justify-between border-b border-[#EEF0F3] bg-(--bg) px-4 py-3">
+          <button type="button" onClick={onClose} className="text-[13px] font-medium text-(--blue)">
             Cancel
           </button>
           <p className="text-sm font-semibold text-slate-900">{title}</p>
@@ -62,7 +62,7 @@ export function HsHero({
         ? 'from-[#f0b429] to-[#d97706]'
         : 'from-[#19c4b3] to-[#0fae9e]'
   return (
-    <div className={`flex items-center gap-3.5 rounded-[18px] bg-gradient-to-br ${bg} px-4 py-4 text-white`}>
+    <div className={`flex items-center gap-3.5 rounded-[18px] bg-linear-to-br ${bg} px-4 py-4 text-white`}>
       <div className="flex h-11 w-11 items-center justify-center rounded-[13px] bg-white/20">
         <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
@@ -107,7 +107,7 @@ export function HsSearchField({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="w-full bg-transparent text-sm text-slate-900 outline-none"
+        className="w-full bg-transparent text-sm text-slate-900 outline-hidden"
       />
     </div>
   )
@@ -186,14 +186,14 @@ export function HsRecipientPicker({
             const allOn = group.users.every((user) => selected.has(user.id))
             return (
               <div key={group.trade} className="border-t border-[#EEF1F5] first:border-t-0">
-                <div className="flex items-center justify-between bg-[var(--bg)] px-3 py-2">
+                <div className="flex items-center justify-between bg-(--bg) px-3 py-2">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.4px] text-[#6B7280]">
                     {group.trade} · {group.users.length}
                   </p>
                   <button
                     type="button"
                     onClick={() => toggleGroup(group.users)}
-                    className="text-[11px] font-semibold text-[var(--blue)]"
+                    className="text-[11px] font-semibold text-(--blue)"
                   >
                     {allOn ? 'Clear' : 'Select all'}
                   </button>
@@ -286,7 +286,7 @@ export function HsTalkPicker({
                         : [...current, group.category]
                     )
                   }
-                  className="flex w-full items-center justify-between bg-[var(--bg)] px-3 py-2 text-left"
+                  className="flex w-full items-center justify-between bg-(--bg) px-3 py-2 text-left"
                 >
                   <span className="text-[11px] font-semibold uppercase tracking-[0.4px] text-[#6B7280]">
                     {group.category}
@@ -351,7 +351,7 @@ export function HsFileButton({
 }) {
   return (
     <label className="flex cursor-pointer flex-col items-center gap-1 rounded-2xl border border-dashed border-[#C5C9D2] bg-white px-4 py-5 text-center">
-      <span className="text-sm font-semibold text-[var(--blue)]">{file ? 'Replace file' : label}</span>
+      <span className="text-sm font-semibold text-(--blue)">{file ? 'Replace file' : label}</span>
       <span className="text-[11px] text-slate-500">{file ? file.name : hint}</span>
       <input
         type="file"

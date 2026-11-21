@@ -41,7 +41,7 @@ export function UsersMissingLevel({ organizationId }: { organizationId: string }
     <section className="card p-4" aria-label="People with no user level">
       <h2 className="text-[15px] font-bold">People with no user level</h2>
       {missing.length === 0 ? (
-        <p className="mt-1 text-sm text-[var(--ink3)]">Everyone has a user level.</p>
+        <p className="mt-1 text-sm text-(--ink3)">Everyone has a user level.</p>
       ) : (
         <ul className="mt-2 space-y-1.5">
           {missing.map((row) => (
@@ -49,7 +49,7 @@ export function UsersMissingLevel({ organizationId }: { organizationId: string }
               <Link className="font-semibold underline" href={`/dashboard/users/${row.id}?from=users`}>
                 {rosterDisplayName(row) || row.id}
               </Link>
-              <span className="text-[var(--ink3)]"> — {USER_MISSING_LEVEL_MESSAGE}</span>
+              <span className="text-(--ink3)"> — {USER_MISSING_LEVEL_MESSAGE}</span>
             </li>
           ))}
         </ul>

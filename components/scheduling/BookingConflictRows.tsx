@@ -89,12 +89,12 @@ export function droppedPersonDays(
 
 export function BookingConflictLegend() {
   return (
-    <p className="flex flex-wrap items-center gap-3 text-[11px] text-[var(--ink3)]">
+    <p className="flex flex-wrap items-center gap-3 text-[11px] text-(--ink3)">
       <span className="inline-flex items-center gap-1">
-        <span className="h-2.5 w-2.5 rounded-full bg-[var(--warn)]" aria-hidden /> Already booked
+        <span className="h-2.5 w-2.5 rounded-full bg-(--warn)" aria-hidden /> Already booked
       </span>
       <span className="inline-flex items-center gap-1">
-        <span className="h-2.5 w-2.5 rounded-full bg-[var(--purple)]" aria-hidden /> Annual leave
+        <span className="h-2.5 w-2.5 rounded-full bg-(--purple)" aria-hidden /> Annual leave
       </span>
     </p>
   )
@@ -116,7 +116,7 @@ export function BookingConflictRows({
     <div className="space-y-2">
       {showHeading ? (
         <div className="space-y-1">
-          <p className="text-xs font-medium text-[var(--ink)]">{BOOKING_CONFLICTS_HEADING}</p>
+          <p className="text-xs font-medium text-(--ink)">{BOOKING_CONFLICTS_HEADING}</p>
           <BookingConflictLegend />
         </div>
       ) : null}
@@ -137,7 +137,7 @@ export function BookingConflictRows({
           >
             <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: tone }} aria-hidden />
             <div className="min-w-0 flex-1">
-              <p className={`text-sm font-semibold ${decision === 'drop' ? 'text-[var(--ink3)] line-through' : 'text-[var(--ink)]'}`}>
+              <p className={`text-sm font-semibold ${decision === 'drop' ? 'text-(--ink3) line-through' : 'text-(--ink)'}`}>
                 {row.personName} · {row.dayLabel}
               </p>
               <p className="text-xs font-medium" style={{ color: decision === 'drop' ? 'var(--ink3)' : tone }}>
@@ -228,16 +228,16 @@ export function BookingConflictsDialog({
   const ready = conflictsResolved(rows, decisions)
   // Portalled above every sheet and modal (the Modal overlay is z-100), so it is never clipped by a transformed parent.
   const node = (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/30 p-4" role="dialog" aria-modal="true">
-      <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl bg-[var(--card)] p-5 shadow-xl">
-        <p className="text-[15px] font-semibold text-[var(--ink)]">Check these days</p>
+    <div className="fixed inset-0 z-200 flex items-center justify-center bg-black/30 p-4" role="dialog" aria-modal="true">
+      <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl bg-(--card) p-5 shadow-xl">
+        <p className="text-[15px] font-semibold text-(--ink)">Check these days</p>
         <div className="mt-3">
           <BookingConflictRows rows={rows} decisions={decisions} onDecide={onDecide} />
         </div>
         <div className="mt-5 flex justify-end gap-2">
           <button
             type="button"
-            className="rounded-xl border border-[var(--line)] px-4 py-2 text-[13px] font-medium text-[var(--ink)]"
+            className="rounded-xl border border-(--line) px-4 py-2 text-[13px] font-medium text-(--ink)"
             onClick={onCancel}
           >
             Cancel
@@ -245,7 +245,7 @@ export function BookingConflictsDialog({
           <button
             type="button"
             disabled={!ready}
-            className="rounded-xl bg-[var(--blue)] px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50"
+            className="rounded-xl bg-(--blue) px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50"
             onClick={() => onConfirm(droppedPersonDays(rows, decisions), replacedPersonDays(rows, decisions))}
           >
             {confirmLabel}

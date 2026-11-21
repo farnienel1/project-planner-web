@@ -79,7 +79,7 @@ export default function NotificationsPage() {
           <div className="sub">Clashes, sign-offs, orders and reminders</div>
         </div>
         <div className="acts">
-          <label className="text-sm font-medium text-[var(--ink2)]">
+          <label className="text-sm font-medium text-(--ink2)">
             Filter
             <select
               className="pp-in ml-2"
@@ -116,12 +116,12 @@ export default function NotificationsPage() {
             return (
               <article key={row.id} className="ritem">
                 <Link href={href} className="block">
-                  <h2 className="text-[17px] font-semibold text-[var(--blue)]">{row.title}</h2>
-                  <p className="mt-1 whitespace-pre-wrap text-[15px] text-[var(--ink3)]">{row.message}</p>
-                  {row.detail ? <p className="mt-1 whitespace-pre-wrap text-[14px] text-[var(--ink3)]">{row.detail}</p> : null}
-                  <p className="mt-2 text-[12px] font-semibold text-[var(--blue)]">Open</p>
+                  <h2 className="text-[17px] font-semibold text-(--blue)">{row.title}</h2>
+                  <p className="mt-1 whitespace-pre-wrap text-[15px] text-(--ink3)">{row.message}</p>
+                  {row.detail ? <p className="mt-1 whitespace-pre-wrap text-[14px] text-(--ink3)">{row.detail}</p> : null}
+                  <p className="mt-2 text-[12px] font-semibold text-(--blue)">Open</p>
                 </Link>
-                <p className="mt-2 text-[12px] text-[var(--ink3)]">
+                <p className="mt-2 text-[12px] text-(--ink3)">
                   {row.createdAt.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}
                 </p>
               </article>

@@ -53,13 +53,13 @@ export function QualificationLibraryBrowser({
       ) : null}
       {hint}
       {visible.length === 0 ? (
-        <p className="py-6 text-center text-[15px] text-[var(--ink3)]">
+        <p className="py-6 text-center text-[15px] text-(--ink3)">
           {emptyLabel || (query.trim() || section !== 'All'
             ? 'No qualifications match that search.'
             : 'No qualifications in this list.')}
         </p>
       ) : (
-        <div className="divide-y divide-[var(--line)] overflow-hidden rounded-[18px] bg-[var(--card)] shadow-[var(--sh)]">
+        <div className="divide-y divide-(--line) overflow-hidden rounded-[18px] bg-(--card) shadow-pp">
           {visible.map((row) => {
             const selected = selectedIds?.includes(row.id) === true
             const active = activeId === row.id
@@ -72,8 +72,8 @@ export function QualificationLibraryBrowser({
                   if (onToggle) onToggle(row.id)
                   else onSelect?.(row)
                 }}
-                className={`flex w-full items-center gap-3 px-4 py-3.5 text-left hover:bg-[var(--soft)] ${
-                  selected || active ? 'bg-[var(--rep-t)]' : ''
+                className={`flex w-full items-center gap-3 px-4 py-3.5 text-left hover:bg-(--soft) ${
+                  selected || active ? 'bg-(--rep-t)' : ''
                 }`}
               >
                 <IconChip hue="rep" size="sm">
@@ -81,13 +81,13 @@ export function QualificationLibraryBrowser({
                 </IconChip>
                 <span className="min-w-0 flex-1">
                   <span className="block text-[16px] font-medium">{row.name}</span>
-                  {subtitle ? <span className="block text-[13px] text-[var(--ink3)]">{subtitle}</span> : null}
+                  {subtitle ? <span className="block text-[13px] text-(--ink3)">{subtitle}</span> : null}
                 </span>
                 {onToggle ? (
                   selected ? (
-                    <CheckIcon className="h-5 w-5 shrink-0 text-[var(--blue)]" />
+                    <CheckIcon className="h-5 w-5 shrink-0 text-(--blue)" />
                   ) : (
-                    <PlusIcon className="h-5 w-5 shrink-0 text-[var(--blue)]" />
+                    <PlusIcon className="h-5 w-5 shrink-0 text-(--blue)" />
                   )
                 ) : null}
               </button>

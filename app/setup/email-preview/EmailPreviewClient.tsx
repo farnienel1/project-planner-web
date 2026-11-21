@@ -34,7 +34,7 @@ export function EmailPreviewClient() {
   }, [kind])
 
   return (
-    <div className="dark pp-site-dark min-h-screen bg-[var(--bg)] px-5 py-10">
+    <div className="dark pp-site-dark min-h-screen bg-(--bg) px-5 py-10">
       <div className="mx-auto max-w-3xl space-y-6">
         <header>
           <p className="text-xs font-bold uppercase tracking-widest text-blue-600">Project Planner</p>

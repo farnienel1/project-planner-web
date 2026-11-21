@@ -94,7 +94,7 @@ export function LegalPackGate() {
               type="checkbox"
               checked={authorisedToBind}
               onChange={(e) => setAuthorisedToBind(e.target.checked)}
-              className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+              className="mt-1 h-4 w-4 rounded-sm border-slate-300 text-emerald-600 focus:ring-emerald-500"
             />
             <span>
               I confirm that I am authorised to accept these terms on behalf of the organisation named in

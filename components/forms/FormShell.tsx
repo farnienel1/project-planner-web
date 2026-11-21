@@ -4,7 +4,7 @@ import Link from 'next/link'
 
 export function FormLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
   return (
-    <label className="mb-1 block text-[13.5px] font-semibold text-[var(--ink2)]">
+    <label className="mb-1 block text-[13.5px] font-semibold text-(--ink2)">
       {children}
       {required && <span className="text-red-500"> *</span>}
     </label>

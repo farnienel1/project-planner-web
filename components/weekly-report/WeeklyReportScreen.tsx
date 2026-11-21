@@ -508,7 +508,7 @@ export function WeeklyReportScreen({
       ) : null}
 
       <section className="hero" data-hue="rep">
-        <div className="relative z-[1]">
+        <div className="relative z-1">
           <p className="eb">{organizationName}</p>
           <div className="big">{period ? formatReportPeriodLabel(period.start, period.end, timeZone) : 'Choose a period'}</div>
           <p className="mt-1.5 opacity-85">Weekly report</p>
@@ -517,11 +517,11 @@ export function WeeklyReportScreen({
 
       <div className="space-y-5">
           {loading ? (
-            <p className="text-[12px] text-[var(--ink3)]">Refreshing bookings from Firebase… the picker is ready.</p>
+            <p className="text-[12px] text-(--ink3)">Refreshing bookings from Firebase… the picker is ready.</p>
           ) : null}
 
           <section className="card overflow-hidden">
-            <p className="bg-[var(--bg)] px-4 py-2 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">
+            <p className="bg-(--bg) px-4 py-2 text-[11px] font-medium uppercase tracking-[0.4px] text-(--ink3)">
               Quick Select
             </p>
             <QuickRow
@@ -572,7 +572,7 @@ export function WeeklyReportScreen({
 
           {periodMode === 'invoicing' && invoicing ? (
             <section>
-              <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">Invoicing Period</p>
+              <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.4px] text-(--ink3)">Invoicing Period</p>
               <select
                 value={effectiveInvoicingPeriodId}
                 onChange={(e) =>
@@ -581,7 +581,7 @@ export function WeeklyReportScreen({
                     setPeriodMode('invoicing')
                   })
                 }
-                className="w-full rounded-lg border border-[var(--line2)] bg-white px-3 py-2 text-sm text-[var(--ink)]"
+                className="w-full rounded-lg border border-(--line2) bg-white px-3 py-2 text-sm text-(--ink)"
               >
                 {invoicingOptions.map((option) => (
                   <option key={option.id} value={option.id}>
@@ -590,7 +590,7 @@ export function WeeklyReportScreen({
                   </option>
                 ))}
               </select>
-              <p className="mt-1 text-[11px] text-[var(--ink3)]">
+              <p className="mt-1 text-[11px] text-(--ink3)">
                 {formatInvoicingSubtitle(invoicing)} · {formatInvoicingPeriodDescription(invoicing)} · last two years
               </p>
             </section>
@@ -598,7 +598,7 @@ export function WeeklyReportScreen({
 
           {periodMode === 'week' ? (
             <div className="flex flex-wrap items-center gap-3">
-              <button type="button" onClick={() => shiftWeek(-1)} className="rounded-lg border border-[var(--line2)] bg-white px-3 py-2 text-sm font-semibold">
+              <button type="button" onClick={() => shiftWeek(-1)} className="rounded-lg border border-(--line2) bg-white px-3 py-2 text-sm font-semibold">
                 Previous week
               </button>
               <input
@@ -610,9 +610,9 @@ export function WeeklyReportScreen({
                     setPeriodMode('week')
                   })
                 }
-                className="rounded-lg border border-[var(--line2)] px-3 py-2 text-sm"
+                className="rounded-lg border border-(--line2) px-3 py-2 text-sm"
               />
-              <button type="button" onClick={() => shiftWeek(1)} className="rounded-lg border border-[var(--line2)] bg-white px-3 py-2 text-sm font-semibold">
+              <button type="button" onClick={() => shiftWeek(1)} className="rounded-lg border border-(--line2) bg-white px-3 py-2 text-sm font-semibold">
                 Next week
               </button>
             </div>
@@ -620,7 +620,7 @@ export function WeeklyReportScreen({
 
           {periodMode === 'custom' ? (
             <section>
-              <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">Custom range</p>
+              <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.4px] text-(--ink3)">Custom range</p>
               <div className="flex flex-wrap items-end gap-3">
                 <label className="text-[13px] font-medium">
                   Start
@@ -633,7 +633,7 @@ export function WeeklyReportScreen({
                         setPeriodMode('custom')
                       })
                     }
-                    className="mt-1 block rounded-lg border border-[var(--line2)] px-3 py-2 text-sm"
+                    className="mt-1 block rounded-lg border border-(--line2) px-3 py-2 text-sm"
                   />
                 </label>
                 <label className="text-[13px] font-medium">
@@ -648,14 +648,14 @@ export function WeeklyReportScreen({
                         setPeriodMode('custom')
                       })
                     }
-                    className="mt-1 block rounded-lg border border-[var(--line2)] px-3 py-2 text-sm"
+                    className="mt-1 block rounded-lg border border-(--line2) px-3 py-2 text-sm"
                   />
                 </label>
               </div>
             </section>
           ) : null}
 
-          <p className="text-center text-[12px] leading-5 text-[var(--ink3)]">
+          <p className="text-center text-[12px] leading-5 text-(--ink3)">
             Choose a period, then generate to preview and download. This is separate from Home Warnings (live ops from
             today forward).
           </p>
@@ -702,20 +702,20 @@ export function WeeklyReportScreen({
 
       {downloadOpen && report && period ? (
         <div
-          className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 p-4 sm:items-center"
+          className="fixed inset-0 z-80 flex items-end justify-center bg-black/40 p-4 sm:items-center"
           onClick={() => setDownloadOpen(false)}
         >
           <div
-            className="w-full max-w-sm rounded-2xl bg-[var(--card)] p-5 shadow-xl"
+            className="w-full max-w-sm rounded-2xl bg-(--card) p-5 shadow-xl"
             role="dialog"
             aria-modal="true"
             aria-labelledby="report-download-title"
             onClick={(event) => event.stopPropagation()}
           >
-            <h2 id="report-download-title" className="text-lg font-bold text-[var(--ink)]">
+            <h2 id="report-download-title" className="text-lg font-bold text-(--ink)">
               Download report
             </h2>
-            <p className="mt-1 text-sm text-[var(--ink3)]">
+            <p className="mt-1 text-sm text-(--ink3)">
               {formatOrgDay(period.start, timeZone, true)} → {formatOrgDay(period.end, timeZone, true)}. The preview stays on this page.
             </p>
             <div className="mt-4 grid gap-2">
@@ -843,18 +843,18 @@ function QuickRow({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="flex w-full items-center gap-3 border-t border-[var(--line)] px-4 py-3 text-left disabled:opacity-50"
+      className="flex w-full items-center gap-3 border-t border-(--line) px-4 py-3 text-left disabled:opacity-50"
     >
-      <span className="grid h-9 w-9 place-items-center rounded-lg bg-[#E8F1FB] text-[var(--blue)]">
+      <span className="grid h-9 w-9 place-items-center rounded-lg bg-[#E8F1FB] text-(--blue)">
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M4.5 6.75h15A1.5 1.5 0 0 1 21 8.25v10.5A1.5 1.5 0 0 1 19.5 20.25h-15A1.5 1.5 0 0 1 3 18.75V8.25A1.5 1.5 0 0 1 4.5 6.75Z" />
         </svg>
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-[15px] font-semibold">{label}</span>
-        <span className="block text-[12px] text-[var(--ink3)]">{subLabel}</span>
+        <span className="block text-[12px] text-(--ink3)">{subLabel}</span>
       </span>
-      <span className={`grid h-[22px] w-[22px] place-items-center rounded-full ${selected ? 'bg-[var(--blue)]' : 'bg-[#D6E3F0]'}`}>
+      <span className={`grid h-[22px] w-[22px] place-items-center rounded-full ${selected ? 'bg-(--blue)' : 'bg-[#D6E3F0]'}`}>
         {selected ? (
           <svg className="h-3 w-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}>
             <path strokeLinecap="round" strokeLinejoin="round" d="m5 13 4 4L19 7" />

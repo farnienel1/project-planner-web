@@ -72,7 +72,7 @@ export function BillingPanel({ onBack }: { onBack: () => void }) {
             {busy ? 'Opening…' : 'Manage billing'}
           </button>
           <p className="text-xs text-slate-400">Cards, invoices and cancellation are handled in the Stripe customer portal.</p>
-          <button type="button" className="text-xs text-[var(--ink3)]" onClick={() => setNotice('Portal opens in Stripe. Invoices stay there.')}>
+          <button type="button" className="text-xs text-(--ink3)" onClick={() => setNotice('Portal opens in Stripe. Invoices stay there.')}>
             Need a receipt? Use Manage billing → Invoice history.
           </button>
         </div>

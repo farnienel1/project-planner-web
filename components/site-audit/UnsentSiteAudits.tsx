@@ -23,11 +23,11 @@ export function UnsentSiteAudits({ kind, projectId }: { kind?: SiteAuditOutboxRe
   if (records.length === 0) return null
   return (
     <section className="space-y-2" aria-label="Site audits not sent">
-      <p className="text-xs font-bold tracking-wide text-[var(--red)]">NOT SENT · {records.length}</p>
+      <p className="text-xs font-bold tracking-wide text-(--red)">NOT SENT · {records.length}</p>
       {!siteAuditOutboxPersistent() ? (
-        <p className="text-xs text-[var(--ink2)]">This browser cannot keep a copy, so keep this tab open until these are sent.</p>
+        <p className="text-xs text-(--ink2)">This browser cannot keep a copy, so keep this tab open until these are sent.</p>
       ) : null}
-      {message ? <p className="text-xs text-[var(--red)]">{message}</p> : null}
+      {message ? <p className="text-xs text-(--red)">{message}</p> : null}
       {records.map((record) => {
         const summary = outboxSummary(record)
         const sending = isSiteAuditSending(record.id)
@@ -37,14 +37,14 @@ export function UnsentSiteAudits({ kind, projectId }: { kind?: SiteAuditOutboxRe
           record.meta.type
         return (
           <div key={record.id} className="card px-4 py-3 space-y-1" style={{ borderColor: 'var(--red)' }}>
-            <p className="text-sm font-bold text-[var(--ink)]">
+            <p className="text-sm font-bold text-(--ink)">
               {record.kind === 'project' && record.project ? `${record.project.jobNumber} · ` : ''}
               {title} · {record.meta.date}
             </p>
-            <p className="text-xs text-[var(--ink2)]">
+            <p className="text-xs text-(--ink2)">
               {record.items.length} item{record.items.length === 1 ? '' : 's'} · {sending ? summary.label : `${summary.done} of ${summary.total} photos uploaded`}
             </p>
-            {!sending && record.lastError ? <p className="text-xs text-[var(--red)]">{record.lastError}</p> : null}
+            {!sending && record.lastError ? <p className="text-xs text-(--red)">{record.lastError}</p> : null}
             <div className="flex gap-2 pt-1">
               <button
                 type="button"

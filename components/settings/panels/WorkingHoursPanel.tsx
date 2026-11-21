@@ -141,11 +141,11 @@ function TimeInput({
 function HoursSection({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
   return (
     <section className="card mt-6 overflow-hidden first:mt-0" aria-label={title}>
-      <div className="bg-[var(--navy)] px-5 py-3">
+      <div className="bg-(--navy) px-5 py-3">
         <h2 className="text-[15.5px] font-bold leading-snug text-white">{title}</h2>
         {description ? <p className="mt-0.5 text-[12.5px] leading-relaxed text-white/80">{description}</p> : null}
       </div>
-      <div className="[&>*+*]:border-t [&>*+*]:border-[var(--line)]">{children}</div>
+      <div className="[&>*+*]:border-t [&>*+*]:border-(--line)">{children}</div>
     </section>
   )
 }
@@ -159,7 +159,7 @@ function DayTimeline({ policy }: { policy: OrgPayrollTimePolicy }) {
     isValidHM(policy.breakWindowEnd) &&
     minutesOf(policy.standardDayEnd) > minutesOf(policy.standardDayStart)
   if (!valid) {
-    return <p className="text-[13px] text-[var(--ink3)]">Enter valid 24h times to see the day.</p>
+    return <p className="text-[13px] text-(--ink3)">Enter valid 24h times to see the day.</p>
   }
   const from = 5 * 60
   const to = 21 * 60
@@ -172,29 +172,29 @@ function DayTimeline({ policy }: { policy: OrgPayrollTimePolicy }) {
   const width = (a: number, b: number) => `calc(${pct(b)} - ${pct(a)})`
   return (
     <div>
-      <div className="relative h-9 overflow-hidden rounded-lg bg-[var(--warn-t)]" aria-hidden>
-        <div className="absolute inset-y-0 rounded-md bg-[var(--blue)]" style={{ left: pct(dayStart), width: width(dayStart, dayEnd) }} />
+      <div className="relative h-9 overflow-hidden rounded-lg bg-(--warn-t)" aria-hidden>
+        <div className="absolute inset-y-0 rounded-md bg-(--blue)" style={{ left: pct(dayStart), width: width(dayStart, dayEnd) }} />
         <div
-          className="absolute inset-y-0 bg-[var(--card)] opacity-80"
+          className="absolute inset-y-0 bg-(--card) opacity-80"
           style={{ left: pct(breakStart), width: width(breakStart, breakEnd) }}
         />
       </div>
-      <div className="mt-1.5 flex justify-between text-[11.5px] font-semibold tabular-nums text-[var(--ink3)]" aria-hidden>
+      <div className="mt-1.5 flex justify-between text-[11.5px] font-semibold tabular-nums text-(--ink3)" aria-hidden>
         <span>05:00</span>
         <span>09:00</span>
         <span>13:00</span>
         <span>17:00</span>
         <span>21:00</span>
       </div>
-      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[12.5px] text-[var(--ink2)]">
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[12.5px] text-(--ink2)">
         <span className="inline-flex items-center gap-1.5">
-          <i className="h-2.5 w-2.5 rounded-sm bg-[var(--blue)]" /> Standard day {policy.standardDayStart}–{policy.standardDayEnd}
+          <i className="h-2.5 w-2.5 rounded-xs bg-(--blue)" /> Standard day {policy.standardDayStart}–{policy.standardDayEnd}
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <i className="h-2.5 w-2.5 rounded-sm bg-[var(--line2)]" /> {policy.breakPaid ? 'Paid' : 'Unpaid'} break {policy.unpaidBreakMinutes} min ({policy.breakWindowStart}–{policy.breakWindowEnd})
+          <i className="h-2.5 w-2.5 rounded-xs bg-(--line2)" /> {policy.breakPaid ? 'Paid' : 'Unpaid'} break {policy.unpaidBreakMinutes} min ({policy.breakWindowStart}–{policy.breakWindowEnd})
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <i className="h-2.5 w-2.5 rounded-sm bg-[var(--warn)]" /> Overtime ×{policy.weekdayOutsideStandardMultiplier}
+          <i className="h-2.5 w-2.5 rounded-xs bg-(--warn)" /> Overtime ×{policy.weekdayOutsideStandardMultiplier}
         </span>
       </div>
     </div>
@@ -209,16 +209,16 @@ function WeekdayPaidDayLine({ policy }: { policy: OrgPayrollTimePolicy }) {
   const valid = isValidHM(policy.standardDayStart) && isValidHM(policy.standardDayEnd) && minutesOf(policy.standardDayEnd) > minutesOf(policy.standardDayStart)
   return (
     <div className="p-5">
-      <p className="text-[14px] font-medium text-[var(--ink)]">Paid hours for a full day</p>
+      <p className="text-[14px] font-medium text-(--ink)">Paid hours for a full day</p>
       <p
-        className="mt-2 rounded-xl border border-[var(--line)] bg-[var(--soft)] px-4 py-3 text-[17px] font-bold tabular-nums text-[var(--ink)]"
+        className="mt-2 rounded-xl border border-(--line) bg-(--soft) px-4 py-3 text-[17px] font-bold tabular-nums text-(--ink)"
         data-testid="weekday-paid-day"
       >
         {valid ? weekdayPaidDayPreview(policy).line : 'Enter valid 24h times to see the paid day.'}
       </p>
-      <p className="mt-1 text-[12px] text-[var(--ink3)]">Worked out from the start, finish and lunch break below.</p>
+      <p className="mt-1 text-[12px] text-(--ink3)">Worked out from the start, finish and lunch break below.</p>
       {/* Rulebook 1.49.0 §4.3: the approved day-rate note (`weekdayDayRateNote`), identical on iOS. */}
-      <p className="mt-2 text-[12.5px] text-[var(--ink2)]" data-testid="weekday-day-rate-note">
+      <p className="mt-2 text-[12.5px] text-(--ink2)" data-testid="weekday-day-rate-note">
         {weekdayDayRateNote(policy)}
       </p>
     </div>
@@ -239,13 +239,13 @@ function WeekendDayPreview({ policy, day }: { policy: OrgPayrollTimePolicy; day:
   const name = day === 'saturday' ? 'Saturday' : 'Sunday'
   return (
     <div className="space-y-2">
-      <p className="text-[12.5px] text-[var(--ink2)]" data-testid={`${day}-preview-summary`}>
+      <p className="text-[12.5px] text-(--ink2)" data-testid={`${day}-preview-summary`}>
         {preview.summary}
       </p>
       <BookingDayBreakdownRows rows={preview.rows} title={`${name} example · ${preview.start}–${preview.end}`} />
       {/* Rulebook 1.49.0 §4.3: the approved day-rate note (`weekendDayRateNote`), identical on iOS. */}
       {weekendDayRateNote(policy, day) ? (
-        <p className="text-[12.5px] text-[var(--ink2)]" data-testid={`${day}-day-rate-note`}>
+        <p className="text-[12.5px] text-(--ink2)" data-testid={`${day}-day-rate-note`}>
           {weekendDayRateNote(policy, day)}
         </p>
       ) : null}
@@ -440,7 +440,7 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
           />
         ) : (
           <>
-            <div className="[display:grid] grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <FormField label="Window start">
                 <TimeInput
                   label={`${name} window start`}
@@ -517,7 +517,7 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
               { value: 'unpaid', label: 'Unpaid' },
             ]}
           />
-          <p className="mt-1.5 text-[12.5px] text-[var(--ink3)]">{lunch.detail}</p>
+          <p className="mt-1.5 text-[12.5px] text-(--ink3)">{lunch.detail}</p>
         </FormField>
         <Stepper
           label={`${name} break length`}
@@ -528,7 +528,7 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
           step={PAYROLL_BREAK_TIME_STEP_MINUTES}
           format={(value) => `${value} min`}
         />
-        <div className="[display:grid] grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <FormField label="Break start">
             <TimeInput
               kind="break"
@@ -579,7 +579,7 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
         <div className="p-5">
           <DayTimeline policy={draft} />
         </div>
-        <div className="[display:grid] grid-cols-2 gap-4 p-5">
+        <div className="grid grid-cols-2 gap-4 p-5">
           <FormField label="Start time">
             <TimeInput label="Start time" value={draft.standardDayStart} placeholder="07:30" onChange={(value) => patch({ standardDayStart: value })} />
           </FormField>
@@ -590,8 +590,8 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
         {/* Rulebook 1.20.0 §4.3: no manual paid hours Monday–Friday — the day is start, finish and the lunch break. */}
         <WeekdayPaidDayLine policy={draft} />
         <div className="px-5 pt-4">
-          <p className="text-[14px] font-semibold text-[var(--ink)]">Lunch break</p>
-          <p className="text-[12.5px] text-[var(--ink3)]">
+          <p className="text-[14px] font-semibold text-(--ink)">Lunch break</p>
+          <p className="text-[12.5px] text-(--ink3)">
             {draft.breakPaid ? 'Paid — counts toward hours worked.' : 'Unpaid — taken off paid time on every booking unless removed.'}
           </p>
         </div>
@@ -617,7 +617,7 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
             format={(value) => `${value} min`}
           />
         </div>
-        <div className="[display:grid] grid-cols-2 gap-4 p-5">
+        <div className="grid grid-cols-2 gap-4 p-5">
           <FormField label="Break window start">
             <TimeInput kind="break" label="Break window start" value={draft.breakWindowStart} placeholder="12:00" onChange={(value) => patch({ breakWindowStart: value })} />
           </FormField>
@@ -670,8 +670,8 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
         {scheduled ? (
           <div className="flex flex-wrap items-center justify-between gap-3 p-5">
             <div>
-              <p className="text-[14px] font-semibold text-[var(--ink)]">Scheduled change</p>
-              <p className="text-[13px] text-[var(--ink2)]">
+              <p className="text-[14px] font-semibold text-(--ink)">Scheduled change</p>
+              <p className="text-[13px] text-(--ink2)">
                 New working hours take effect on {formatPaymentRunDay(scheduled.effectiveFrom)}:{' '}
                 {scheduled.policy.standardDayStart}–{scheduled.policy.standardDayEnd}, {weekdayPaidHours(scheduled.policy)}h paid.
               </p>
@@ -680,13 +680,13 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
               type="button"
               disabled={saving}
               onClick={cancelScheduled}
-              className="rounded-xl px-3 py-2 text-[13px] font-semibold text-[var(--red)] hover:bg-[var(--soft)] disabled:opacity-50"
+              className="rounded-xl px-3 py-2 text-[13px] font-semibold text-(--red) hover:bg-(--soft) disabled:opacity-50"
             >
               Cancel scheduled change
             </button>
           </div>
         ) : (
-          <p className="p-5 text-[13px] text-[var(--ink3)]">
+          <p className="p-5 text-[13px] text-(--ink3)">
             No change scheduled. Press Save and choose a date to schedule one.
           </p>
         )}
@@ -700,14 +700,14 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
         >
           {payrollPolicyHistoryRows({ state: live.details.payrollTimePolicyState, todayKey }).map((row) => (
             <div key={`${row.effectiveFrom}|${row.scheduled}`} className="space-y-1 p-5" data-testid="working-hours-history-row">
-              <p className="text-[14px] font-semibold text-[var(--ink)]">
+              <p className="text-[14px] font-semibold text-(--ink)">
                 {row.dates}
-                {row.inEffectToday ? <span className="ml-2 rounded-full bg-[var(--soft)] px-2 py-0.5 text-[12px] font-semibold text-[var(--green)]">In effect today</span> : null}
-                {row.scheduled ? <span className="ml-2 rounded-full bg-[var(--soft)] px-2 py-0.5 text-[12px] font-semibold text-[var(--ink2)]">Scheduled</span> : null}
+                {row.inEffectToday ? <span className="ml-2 rounded-full bg-(--soft) px-2 py-0.5 text-[12px] font-semibold text-(--green)">In effect today</span> : null}
+                {row.scheduled ? <span className="ml-2 rounded-full bg-(--soft) px-2 py-0.5 text-[12px] font-semibold text-(--ink2)">Scheduled</span> : null}
               </p>
-              <p className="text-[13px] text-[var(--ink2)]">Monday–Friday: {row.weekday} · {row.overtime}</p>
-              <p className="text-[13px] text-[var(--ink2)]">Saturday: {row.saturday}</p>
-              <p className="text-[13px] text-[var(--ink2)]">Sunday: {row.sunday}</p>
+              <p className="text-[13px] text-(--ink2)">Monday–Friday: {row.weekday} · {row.overtime}</p>
+              <p className="text-[13px] text-(--ink2)">Saturday: {row.saturday}</p>
+              <p className="text-[13px] text-(--ink2)">Sunday: {row.sunday}</p>
             </div>
           ))}
         </HoursSection>
@@ -724,13 +724,13 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
             role="dialog"
             aria-modal="true"
             aria-labelledby="working-hours-save-title"
-            className="w-full max-w-md rounded-2xl bg-[var(--card)] p-5 shadow-xl"
+            className="w-full max-w-md rounded-2xl bg-(--card) p-5 shadow-xl"
           >
-            <h2 id="working-hours-save-title" className="text-[17px] font-bold text-[var(--ink)]">
+            <h2 id="working-hours-save-title" className="text-[17px] font-bold text-(--ink)">
               {saveChoice === 'schedule' ? 'Schedule change' : 'When should this start?'}
             </h2>
             {saveChoice === 'choose' ? (
-              <p className="mt-2 text-[14px] leading-relaxed text-[var(--ink2)]">
+              <p className="mt-2 text-[14px] leading-relaxed text-(--ink2)">
                 Apply from today and today&apos;s bookings use the new working hours — the weekly report, timesheets and
                 invoices follow. Or schedule the change to start on a later date.
                 {scheduled ? ` A change is already scheduled for ${formatPaymentRunDay(scheduled.effectiveFrom)}; applying today keeps it, scheduling replaces it.` : ''}
@@ -750,7 +750,7 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
             <div className="mt-5 flex flex-wrap justify-end gap-2">
               <button
                 type="button"
-                className="rounded-xl px-4 py-2 text-[14px] font-semibold text-[var(--ink2)] hover:bg-[var(--soft)]"
+                className="rounded-xl px-4 py-2 text-[14px] font-semibold text-(--ink2) hover:bg-(--soft)"
                 onClick={() => setSaveChoice(saveChoice === 'schedule' ? 'choose' : 'closed')}
                 disabled={saving}
               >
@@ -760,7 +760,7 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
                 <>
                   <button
                     type="button"
-                    className="rounded-xl border border-[var(--line2)] px-4 py-2 text-[14px] font-semibold text-[var(--ink)] hover:bg-[var(--soft)]"
+                    className="rounded-xl border border-(--line2) px-4 py-2 text-[14px] font-semibold text-(--ink) hover:bg-(--soft)"
                     onClick={() => setSaveChoice('schedule')}
                     disabled={saving}
                   >
@@ -768,7 +768,7 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
                   </button>
                   <button
                     type="button"
-                    className="rounded-xl bg-[var(--blue)] px-4 py-2 text-[14px] font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                    className="rounded-xl bg-(--blue) px-4 py-2 text-[14px] font-semibold text-white hover:opacity-90 disabled:opacity-50"
                     onClick={applyNow}
                     disabled={saving}
                   >
@@ -778,7 +778,7 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
               ) : (
                 <button
                   type="button"
-                  className="rounded-xl bg-[var(--blue)] px-4 py-2 text-[14px] font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                  className="rounded-xl bg-(--blue) px-4 py-2 text-[14px] font-semibold text-white hover:opacity-90 disabled:opacity-50"
                   onClick={scheduleChange}
                   disabled={saving || !scheduleDate}
                 >

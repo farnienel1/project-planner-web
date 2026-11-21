@@ -82,7 +82,7 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
 
   return (
     <DeveloperShell title={name} back={{ href: '/developer/organisations', label: 'Organisations' }} eventsFrom={rangeEventsSince(range)}>
-      <p className="break-all text-xs text-[var(--ink3)]">{organisationId}</p>
+      <p className="break-all text-xs text-(--ink3)">{organisationId}</p>
       <DateRangePicker preset={preset} onChange={setPreset} />
       <DeveloperStatus error={error} loading={loading} />
       {notice ? (
@@ -113,7 +113,7 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
         ) : (
           <div className="card overflow-x-auto">
             <table className="w-full whitespace-nowrap text-left text-sm">
-              <thead className="bg-[var(--soft)] text-xs uppercase text-[var(--ink3)]">
+              <thead className="bg-(--soft) text-xs uppercase text-(--ink3)">
                 <tr>
                   <th className="px-4 py-2">Name</th>
                   <th className="px-4 py-2">Email</th>
@@ -125,7 +125,7 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
               </thead>
               <tbody>
                 {visibleUsers.map((user) => (
-                  <tr key={user.id} className="border-t border-[var(--line)]">
+                  <tr key={user.id} className="border-t border-(--line)">
                     <td className="px-4 py-3 font-semibold">{ownerPersonName(user)}</td>
                     <td className="px-4 py-3">
                       <MaskedEmail
@@ -136,7 +136,7 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
                     </td>
                     <td className="px-4 py-3">{ownerRoleLabel(user.role)}</td>
                     <td className="px-4 py-3">{rosterStatusLabel(user)}</td>
-                    <td className="px-4 py-3 text-[var(--ink2)]">{formatOwnerWhen(user.lastSeenAt, 'Never')}</td>
+                    <td className="px-4 py-3 text-(--ink2)">{formatOwnerWhen(user.lastSeenAt, 'Never')}</td>
                     <OwnerUserAccountMenu
                       user={user}
                       onDone={(message) => {
@@ -150,7 +150,7 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
             </table>
           </div>
         )}
-        <p className="text-xs text-[var(--ink3)]">
+        <p className="text-xs text-(--ink3)">
           Invite placeholders (UUID ids, last seen Never) are hidden when the same email later signed in as a Firebase Auth account. Future sign-ins delete the leftover row.{' '}
           <Link href="/developer/users">All users</Link>
         </p>
@@ -158,7 +158,7 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
       <OwnerRestoreOrganisation organisationId={organisationId} onRestored={setNotice} />
       <section className="card pad space-y-3">
         <h2 className="h2">Danger zone</h2>
-        <p className="text-sm text-[var(--ink2)]">
+        <p className="text-sm text-(--ink2)">
           Delete this organisation and its users, projects, bookings, timesheets and plan. This cannot be undone.
         </p>
         <button type="button" className="btn sm" style={{ color: 'var(--red)', borderColor: 'var(--red)' }} onClick={() => setConfirmDelete(true)}>
@@ -167,14 +167,14 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
       </section>
       {confirmDelete ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="alertdialog" aria-modal="true" aria-labelledby="delete-org-title">
-          <div className="w-full max-w-md rounded-2xl bg-[var(--card)] p-5 shadow-xl">
+          <div className="w-full max-w-md rounded-2xl bg-(--card) p-5 shadow-xl">
             <h2 id="delete-org-title" className="text-lg font-extrabold">
               Delete {name}?
             </h2>
-            <p className="mt-2 text-sm text-[var(--ink2)]">
+            <p className="mt-2 text-sm text-(--ink2)">
               Are you sure you want to delete this organisation? <strong>This can&apos;t be undone.</strong>
             </p>
-            <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-[var(--ink2)]">
+            <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-(--ink2)">
               <li>{orgUsers.length} users</li>
               <li>Projects, bookings, timesheets and timesheet value</li>
               <li>Plan / subscription (cancel in Stripe first if a refund is needed)</li>

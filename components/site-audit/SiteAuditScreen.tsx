@@ -88,7 +88,7 @@ function TypeIcon({ type, size = 'md' }: { type: string; size?: 'sm' | 'md' }) {
   const sz = size === 'sm' ? 'h-8 w-8' : 'h-10 w-10'
   return (
     <div
-      className={`flex ${sz} flex-shrink-0 items-center justify-center rounded-xl ${cfg.bg} border ${cfg.border}`}
+      className={`flex ${sz} shrink-0 items-center justify-center rounded-xl ${cfg.bg} border ${cfg.border}`}
     >
       <svg className={`h-5 w-5 ${cfg.text}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={cfg.icon} />
@@ -112,13 +112,13 @@ function AuditDetail({ audit, onClose }: { audit: SiteAudit; onClose: () => void
   const handlePdf = () => openSiteAuditPdf(audit, pdfContext)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm sm:items-center">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-xs sm:items-center">
       <div className="flex max-h-[92vh] w-full max-w-2xl flex-col rounded-t-3xl bg-slate-50 sm:rounded-3xl sm:shadow-2xl">
-        <div className="flex flex-shrink-0 items-center justify-between rounded-t-3xl border-b border-slate-200 bg-white px-5 py-4">
+        <div className="flex shrink-0 items-center justify-between rounded-t-3xl border-b border-slate-200 bg-white px-5 py-4">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl border border-slate-200 bg-white px-4 py-1.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+            className="rounded-xl border border-slate-200 bg-white px-4 py-1.5 text-sm font-semibold text-slate-700 shadow-xs hover:bg-slate-50"
           >
             Done
           </button>
@@ -150,14 +150,14 @@ function AuditDetail({ audit, onClose }: { audit: SiteAudit; onClose: () => void
             <button
               type="button"
               onClick={handlePdf}
-              className="flex items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3 text-sm font-bold text-white shadow-sm transition-all hover:bg-blue-700 active:scale-95"
+              className="flex items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3 text-sm font-bold text-white shadow-xs transition-all hover:bg-blue-700 active:scale-95"
             >
               Share / Download
             </button>
             <button
               type="button"
               onClick={handlePdf}
-              className="flex items-center justify-center gap-2 card py-3 text-sm font-bold text-slate-700 shadow-sm transition-all hover:bg-slate-50 active:scale-95"
+              className="flex items-center justify-center gap-2 card py-3 text-sm font-bold text-slate-700 shadow-xs transition-all hover:bg-slate-50 active:scale-95"
             >
               Preview PDF
             </button>
@@ -165,7 +165,7 @@ function AuditDetail({ audit, onClose }: { audit: SiteAudit; onClose: () => void
 
           <div>
             <p className="mb-2 text-[11px] font-bold uppercase tracking-widest text-slate-400">Summary</p>
-            <div className="divide-y divide-slate-100 overflow-hidden card shadow-sm">
+            <div className="divide-y divide-slate-100 overflow-hidden card shadow-xs">
               {[
                 { label: 'Author', value: audit.authorName },
                 { label: 'Date', value: format(audit.date, 'd MMM yyyy') },
@@ -188,7 +188,7 @@ function AuditDetail({ audit, onClose }: { audit: SiteAudit; onClose: () => void
               {audit.items.map((item, idx) => (
                 <div
                   key={item.id}
-                  className="overflow-hidden card shadow-sm"
+                  className="overflow-hidden card shadow-xs"
                 >
                   <div className="px-4 pb-2 pt-3">
                     <p className="text-sm font-bold text-slate-900">
@@ -230,7 +230,7 @@ function AuditDetail({ audit, onClose }: { audit: SiteAudit; onClose: () => void
 
       {imgExpanded && (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4"
+          className="fixed inset-0 z-60 flex items-center justify-center bg-black/90 p-4"
           onClick={() => setImgExpanded(null)}
           role="presentation"
         >
@@ -301,7 +301,7 @@ function ProjectAuditsView({
         <button
           type="button"
           onClick={onBack}
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm hover:bg-slate-50"
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-xs hover:bg-slate-50"
           aria-label="Back"
         >
           <svg className="h-4 w-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -314,7 +314,7 @@ function ProjectAuditsView({
         </div>
       </div>
 
-      <div className="rounded-2xl bg-gradient-to-br from-blue-600 to-blue-800 px-5 py-5 text-white shadow-lg">
+      <div className="rounded-2xl bg-linear-to-br from-blue-600 to-blue-800 px-5 py-5 text-white shadow-lg">
         <p className="text-[11px] font-bold uppercase tracking-widest text-blue-200">This project</p>
         <p className="mt-1 text-2xl font-bold">
           {projectAudits.length} audit{projectAudits.length !== 1 ? 's' : ''}
@@ -339,7 +339,7 @@ function ProjectAuditsView({
               key={type}
               type="button"
               onClick={() => setTypeFilter(type)}
-              className={`flex-shrink-0 rounded-full border px-3 py-1.5 text-xs font-bold transition-all ${
+              className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-bold transition-all ${
                 active
                   ? 'border-blue-600 bg-blue-600 text-white'
                   : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
@@ -363,7 +363,7 @@ function ProjectAuditsView({
               key={audit.id}
               type="button"
               onClick={() => setSelectedAudit(audit)}
-              className="w-full card px-4 py-3.5 text-left shadow-sm transition-shadow hover:shadow-md"
+              className="w-full card px-4 py-3.5 text-left shadow-xs transition-shadow hover:shadow-md"
             >
               <div className="flex items-center gap-3">
                 <TypeIcon type={audit.type} size="sm" />
@@ -385,7 +385,7 @@ function ProjectAuditsView({
                   </div>
                 </div>
                 <svg
-                  className="h-4 w-4 flex-shrink-0 text-slate-300"
+                  className="h-4 w-4 shrink-0 text-slate-300"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -437,7 +437,7 @@ function ProjectListView({
         <button
           type="button"
           onClick={onBack}
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm hover:bg-slate-50"
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-xs hover:bg-slate-50"
           aria-label="Back"
         >
           <svg className="h-4 w-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -454,7 +454,7 @@ function ProjectListView({
             type="button"
             onClick={() => setFilter(f)}
             className={`flex-1 rounded-xl py-2 text-xs font-bold transition-all ${
-              filter === f ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
+              filter === f ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500'
             }`}
           >
             {f}
@@ -476,12 +476,12 @@ function ProjectListView({
                 key={project.id}
                 type="button"
                 onClick={() => onSelectProject(project)}
-                className="w-full card px-4 py-3.5 text-left shadow-sm transition-all hover:border-slate-300 hover:shadow-md"
+                className="w-full card px-4 py-3.5 text-left shadow-xs transition-all hover:border-slate-300 hover:shadow-md"
               >
                 <div className="flex items-center gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
+                      <span className="rounded-sm bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
                         {project.jobNumber}
                       </span>
                       <span
@@ -499,7 +499,7 @@ function ProjectListView({
                       <p className="truncate text-xs text-slate-500">{project.client.name}</p>
                     )}
                   </div>
-                  <div className="flex flex-shrink-0 items-center gap-2">
+                  <div className="flex shrink-0 items-center gap-2">
                     {auditCount > 0 && (
                       <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-700">
                         {auditCount} audit{auditCount !== 1 ? 's' : ''}
@@ -715,7 +715,7 @@ export function SiteAuditNewScreen() {
       <div className="flex items-center gap-3">
         <Link
           href="/dashboard/site-audit"
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm hover:bg-slate-50"
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-xs hover:bg-slate-50"
           aria-label="Back"
         >
           <svg className="h-4 w-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -735,7 +735,7 @@ export function SiteAuditNewScreen() {
             type="button"
             onClick={() => setSource(key)}
             className={`flex-1 rounded-xl py-2 text-xs font-bold capitalize transition-all ${
-              source === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
+              source === key ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500'
             }`}
           >
             {key === 'small-works' ? 'Small works' : 'Projects'}
@@ -752,9 +752,9 @@ export function SiteAuditNewScreen() {
               key={project.id}
               type="button"
               onClick={() => setCreateProject(project)}
-              className="w-full card px-4 py-3.5 text-left shadow-sm hover:border-slate-300 hover:shadow-md"
+              className="w-full card px-4 py-3.5 text-left shadow-xs hover:border-slate-300 hover:shadow-md"
             >
-              <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
+              <span className="rounded-sm bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
                 {project.jobNumber}
               </span>
               <p className="mt-1 text-sm font-bold text-slate-900">{project.siteName}</p>

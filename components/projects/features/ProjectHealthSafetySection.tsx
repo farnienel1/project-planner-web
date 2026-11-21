@@ -96,7 +96,7 @@ function HubActionRow({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-xl border border-slate-100 bg-white px-4 py-3 text-left shadow-sm transition hover:border-slate-200"
+      className="flex w-full items-center gap-3 rounded-xl border border-slate-100 bg-white px-4 py-3 text-left shadow-xs transition hover:border-slate-200"
     >
       <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e8f0ff] text-[#2f73f0]">
         <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -178,8 +178,8 @@ export function ProjectHealthSafetySection({
   const [libraryLoading, setLibraryLoading] = useState(false)
 
   const bannerGradient = isOperativeMode(user)
-    ? 'bg-gradient-to-br from-[#19c4b3] to-[#0fae9e]'
-    : 'bg-gradient-to-br from-[#3f86ff] to-[#2563eb]'
+    ? 'bg-linear-to-br from-[#19c4b3] to-[#0fae9e]'
+    : 'bg-linear-to-br from-[#3f86ff] to-[#2563eb]'
 
   // Rulebook 1.9.0 §1: the job's health & safety documents are live while this section is open.
   useEffect(() => {
@@ -570,7 +570,7 @@ export function ProjectHealthSafetySection({
               setTab(item.id)
             }}
             className={`min-w-[72px] flex-1 rounded-[10px] py-2 text-xs font-bold transition-colors ${
-              tab === item.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'
+              tab === item.id ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
             }`}
           >
             {item.label}
@@ -582,9 +582,9 @@ export function ProjectHealthSafetySection({
       {tab === 'hub' && (
         <div className="space-y-4">
           {isManager && (
-            <div className="rounded-2xl bg-[var(--blue-t)] px-4 py-3">
-              <p className="text-sm font-semibold text-[var(--blue)]">Manager access</p>
-              <p className="text-xs text-[var(--blue)]/80">Add, edit, issue &amp; track all H&amp;S records</p>
+            <div className="rounded-2xl bg-(--blue-t) px-4 py-3">
+              <p className="text-sm font-semibold text-(--blue)">Manager access</p>
+              <p className="text-xs text-(--blue)/80">Add, edit, issue &amp; track all H&amp;S records</p>
             </div>
           )}
           {myAssigned.length > 0 && (
@@ -1045,7 +1045,7 @@ export function ProjectHealthSafetySection({
 
       {blankTemplateOpen ? (
         <div
-          className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 p-4 sm:items-center"
+          className="fixed inset-0 z-80 flex items-end justify-center bg-black/40 p-4 sm:items-center"
           onClick={() => setBlankTemplateOpen(false)}
         >
           <div
@@ -1125,7 +1125,7 @@ export function ProjectHealthSafetySection({
                 onChange={(e) => setUploadPurpose(e.target.value)}
                 placeholder="Purpose (optional)"
                 rows={3}
-                className="w-full resize-none bg-transparent text-sm text-slate-900 outline-none"
+                className="w-full resize-none bg-transparent text-sm text-slate-900 outline-hidden"
               />
             </HsFieldCard>
             <HsSectionLabel>Category</HsSectionLabel>
@@ -1176,13 +1176,13 @@ export function ProjectHealthSafetySection({
                     setUploadKeyPoints((prev) => prev.map((row, i) => (i === index ? e.target.value : row)))
                   }
                   placeholder={`Point ${index + 1}`}
-                  className="w-full border-b border-[#EEF0F3] bg-transparent py-1.5 text-sm outline-none last:border-0"
+                  className="w-full border-b border-[#EEF0F3] bg-transparent py-1.5 text-sm outline-hidden last:border-0"
                 />
               ))}
               <button
                 type="button"
                 onClick={() => setUploadKeyPoints((prev) => [...prev, ''])}
-                className="text-xs font-semibold text-[var(--blue)]"
+                className="text-xs font-semibold text-(--blue)"
               >
                 + Add point
               </button>
@@ -1257,7 +1257,7 @@ export function ProjectHealthSafetySection({
                 type="date"
                 value={scheduleDate}
                 onChange={(e) => setScheduleDate(e.target.value)}
-                className="w-full bg-transparent text-sm font-medium text-slate-900 outline-none"
+                className="w-full bg-transparent text-sm font-medium text-slate-900 outline-hidden"
               />
             </HsFieldCard>
             <HsFieldCard>
@@ -1266,7 +1266,7 @@ export function ProjectHealthSafetySection({
                 type="time"
                 value={scheduleTime}
                 onChange={(e) => setScheduleTime(e.target.value)}
-                className="w-full bg-transparent text-sm font-medium text-slate-900 outline-none"
+                className="w-full bg-transparent text-sm font-medium text-slate-900 outline-hidden"
               />
             </HsFieldCard>
           </div>

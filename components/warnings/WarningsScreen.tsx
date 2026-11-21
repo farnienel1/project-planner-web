@@ -625,7 +625,7 @@ export function WarningsScreen({
 
       {allCount > 0 ? (
         <section className="hero" data-hue="red" style={{ padding: '22px 26px' }}>
-          <div className="relative z-[1]">
+          <div className="relative z-1">
             <div className="row" style={{ alignItems: 'flex-start' }}>
               <div className="grow">
                 <p className="eb">Active issues</p>
@@ -682,7 +682,7 @@ export function WarningsScreen({
           {loading ? (
             <>
               <p className="text-[18px] font-semibold">Scanning for warnings…</p>
-              <p className="mx-auto mt-2 max-w-md text-[14px] text-[var(--ink3)]">
+              <p className="mx-auto mt-2 max-w-md text-[14px] text-(--ink3)">
                 Keep this screen open until results appear.
               </p>
             </>
@@ -690,7 +690,7 @@ export function WarningsScreen({
             <>
               <p className="text-[40px] text-[#0F6E56]">✓</p>
               <p className="mt-2 text-[18px] font-semibold">No active warnings</p>
-              <p className="mx-auto mt-2 max-w-md text-[14px] text-[var(--ink3)]">
+              <p className="mx-auto mt-2 max-w-md text-[14px] text-(--ink3)">
                 High: operative booking clashes, unbooked labour and bookings during annual leave. Medium:
                 manager/admin overlaps and half-day leave not covered. Low: materials and qualifications.
               </p>

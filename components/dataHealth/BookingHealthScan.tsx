@@ -180,7 +180,7 @@ export function BookingHealthScan({ organizationId }: { organizationId: string }
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold">Bookings — full scan</h2>
-          <p className="text-sm text-[var(--ink3)]">
+          <p className="text-sm text-(--ink3)">
             Admins only. Reads every booking in this company. The scan never writes; the fix buttons below change only
             what they say.
           </p>
@@ -191,7 +191,7 @@ export function BookingHealthScan({ organizationId }: { organizationId: string }
       </div>
       {error ? <p className="banner" data-hue="red">{error}</p> : null}
       {scanned != null ? (
-        <p className="text-sm text-[var(--ink2)]">
+        <p className="text-sm text-(--ink2)">
           {scanned} bookings read · {rows.length === 0 && !running ? 'no problems found' : `${rows.length} problems`}
           {Object.entries(counts).map(([kind, count]) => ` · ${KIND_COPY[kind as BookingHealthKind]}: ${count}`)}
         </p>
@@ -201,7 +201,7 @@ export function BookingHealthScan({ organizationId }: { organizationId: string }
         <ul className="space-y-1.5 text-sm">
           {(Object.keys(counts) as BookingHealthKind[]).map((kind) => (
             <li key={kind}>
-              <b>{KIND_COPY[kind]}</b> <span className="text-[var(--ink3)]">— {KIND_HELP[kind]}</span>
+              <b>{KIND_COPY[kind]}</b> <span className="text-(--ink3)">— {KIND_HELP[kind]}</span>
             </li>
           ))}
         </ul>
@@ -211,13 +211,13 @@ export function BookingHealthScan({ organizationId }: { organizationId: string }
           <button type="button" className="btn sm" disabled={fixing || running} onClick={() => void fixStatuses()}>
             {fixing ? 'Fixing…' : `Fix all (${statusRepairs.length})`}
           </button>
-          <span className="text-sm text-[var(--ink3)]">Re-saves only the status in the current spelling.</span>
+          <span className="text-sm text-(--ink3)">Re-saves only the status in the current spelling.</span>
         </div>
       ) : null}
       {rows.length > 0 ? (
         <div className="card overflow-hidden">
           <table className="w-full text-left text-sm">
-            <thead className="bg-black/[0.03] text-[12px] uppercase tracking-wide text-[var(--ink3)]">
+            <thead className="bg-black/3 text-[12px] uppercase tracking-wide text-(--ink3)">
               <tr>
                 <th className="px-4 py-2">Booking</th>
                 <th className="px-4 py-2">Problem</th>
@@ -226,10 +226,10 @@ export function BookingHealthScan({ organizationId }: { organizationId: string }
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={`${row.id}-${row.kind}`} className="border-t border-[var(--line)] align-top">
+                <tr key={`${row.id}-${row.kind}`} className="border-t border-(--line) align-top">
                   <td className="px-4 py-2 font-mono text-xs">{row.id}</td>
                   <td className="px-4 py-2">{KIND_COPY[row.kind]}</td>
-                  <td className="px-4 py-2 text-xs text-[var(--ink3)]">
+                  <td className="px-4 py-2 text-xs text-(--ink3)">
                     {row.detail}
                     {placeholderRows.includes(row) ? (
                       <button

@@ -27,7 +27,7 @@ export function ClickableRosterRow({
       tabIndex={0}
       onClick={navigate}
       onKeyDown={onKeyDown}
-      className="cursor-pointer transition-colors hover:bg-blue-50/60 focus:bg-blue-50/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+      className="cursor-pointer transition-colors hover:bg-blue-50/60 focus:bg-blue-50/60 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
     >
       {children}
     </tr>

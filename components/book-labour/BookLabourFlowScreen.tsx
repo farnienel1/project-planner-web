@@ -987,7 +987,7 @@ function PersonSummary({ people, dayLine }: { people: BookLabourCandidate[]; day
       <Avatar name={first?.displayName || 'P'} operative={first?.user.permissions.operativeMode} />
       <div className="min-w-0">
         <p className="truncate text-[13px] font-medium">{title}</p>
-        <p className="text-[11px] text-[var(--ink3)]">{subtitle}</p>
+        <p className="text-[11px] text-(--ink3)">{subtitle}</p>
       </div>
     </div>
   )
@@ -998,8 +998,8 @@ function Avatar({ name, operative }: { name: string; operative?: boolean }) {
     <span
       className={`grid h-[38px] w-[38px] shrink-0 place-items-center rounded-full text-[12px] font-medium text-white ${
         operative
-          ? 'bg-gradient-to-br from-[#185FA5] to-[#378ADD]'
-          : 'bg-gradient-to-br from-[#534AB7] to-[#7F77DD]'
+          ? 'bg-linear-to-br from-[#185FA5] to-[#378ADD]'
+          : 'bg-linear-to-br from-[#534AB7] to-[#7F77DD]'
       }`}
     >
       {initialsFrom(name)}
@@ -1011,7 +1011,7 @@ function RoleChips({ person }: { person: BookLabourCandidate }) {
   return (
     <div className="mt-0.5 flex flex-wrap gap-1">
       {person.user.permissions.operativeMode ? (
-        <Chip label="Operative" className="bg-[var(--blue-t)] text-[var(--blue)]" />
+        <Chip label="Operative" className="bg-(--blue-t) text-(--blue)" />
       ) : (
         person.roleChips
           .filter((chip) => chip !== 'Operative')
@@ -1055,7 +1055,7 @@ function PickPerson({
     return (
       <div className="card py-16 text-center">
         <p className="text-[17px] font-semibold">Unbooked labour did not load</p>
-        <p className="mt-2 text-[13px] text-[var(--ink3)]">
+        <p className="mt-2 text-[13px] text-(--ink3)">
           Check your connection and open Book labour again.
         </p>
       </div>
@@ -1065,7 +1065,7 @@ function PickPerson({
     return (
       <div className="card py-16 text-center">
         <p className="text-[17px] font-semibold">You can&apos;t see unbooked labour for the whole company</p>
-        <p className="mt-2 text-[13px] text-[var(--ink3)]">
+        <p className="mt-2 text-[13px] text-(--ink3)">
           Unbooked labour is listed for people who can see every booking. Ask an admin to book this day.
         </p>
       </div>
@@ -1074,8 +1074,8 @@ function PickPerson({
   if (phase === 'loading') {
     return (
       <div className="card py-16 text-center">
-        <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-[var(--blue)] border-t-transparent" />
-        <p className="mt-3 text-[13px] text-[var(--ink3)]">Loading unbooked labour…</p>
+        <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-(--blue) border-t-transparent" />
+        <p className="mt-3 text-[13px] text-(--ink3)">Loading unbooked labour…</p>
       </div>
     )
   }
@@ -1083,7 +1083,7 @@ function PickPerson({
     return (
       <div className="card py-16 text-center">
         <p className="text-[17px] font-semibold">Everyone is booked</p>
-        <p className="mt-2 text-[13px] text-[var(--ink3)]">
+        <p className="mt-2 text-[13px] text-(--ink3)">
           No unbooked team members for this day.
         </p>
       </div>
@@ -1099,28 +1099,28 @@ function PickPerson({
           type="button"
           onClick={onToggleMulti}
           className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-            multiSelect ? 'bg-[var(--blue)] text-white' : 'bg-white/70 text-[#A32D2D]'
+            multiSelect ? 'bg-(--blue) text-white' : 'bg-white/70 text-[#A32D2D]'
           }`}
         >
           {multiSelect ? 'Multi-select on' : 'Multi-select'}
         </button>
       </div>
-      <p className="px-1 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">
+      <p className="px-1 text-[11px] font-medium uppercase tracking-[0.4px] text-(--ink3)">
         {multiSelect ? 'Select people' : 'Select a person'}
       </p>
-      <div className="divide-y divide-[var(--line)] overflow-hidden card">
+      <div className="divide-y divide-(--line) overflow-hidden card">
         {candidates.map((person) => (
           <button
             key={person.id}
             type="button"
             onClick={() => (multiSelect ? onToggleId(person.id) : onPick(person))}
             aria-pressed={multiSelect ? selectedIds.has(person.id) : undefined}
-            className="flex w-full items-center gap-3 px-3.5 py-3 text-left hover:bg-[var(--bg)]"
+            className="flex w-full items-center gap-3 px-3.5 py-3 text-left hover:bg-(--bg)"
           >
             {multiSelect ? (
               <span
                 className={`grid h-5 w-5 place-items-center rounded-full border ${
-                  selectedIds.has(person.id) ? 'border-[var(--blue)] bg-[var(--blue)] text-white' : 'border-[var(--ink3)]'
+                  selectedIds.has(person.id) ? 'border-(--blue) bg-(--blue) text-white' : 'border-(--ink3)'
                 }`}
               >
                 {selectedIds.has(person.id) ? '✓' : ''}
@@ -1137,7 +1137,7 @@ function PickPerson({
                 </p>
               ) : null}
             </div>
-            {!multiSelect ? <span className="text-[var(--ink3)]">›</span> : null}
+            {!multiSelect ? <span className="text-(--ink3)">›</span> : null}
           </button>
         ))}
       </div>
@@ -1147,7 +1147,7 @@ function PickPerson({
           type="button"
           disabled={selectedIds.size === 0 || continueBlocked}
           onClick={onContinue}
-          className="btn primary block disabled:bg-[var(--ink3)]"
+          className="btn primary block disabled:bg-(--ink3)"
         >
           {selectedIds.size === 0 ? 'Continue' : `Continue · ${selectedIds.size}`}
         </button>
@@ -1171,7 +1171,7 @@ function BookToSelector({
 }) {
   return (
     <div>
-      <p className="mb-2 px-1 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">Book to</p>
+      <p className="mb-2 px-1 text-[11px] font-medium uppercase tracking-[0.4px] text-(--ink3)">Book to</p>
       <div className="grid grid-cols-3 gap-2">
         <BookToCell
           label="Other"
@@ -1244,20 +1244,20 @@ function LocationList({
 }) {
   return (
     <div className="stack" style={{ gap: 12 }}>
-      <p className="mb-2 px-1 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">Select location</p>
+      <p className="mb-2 px-1 text-[11px] font-medium uppercase tracking-[0.4px] text-(--ink3)">Select location</p>
       {picks.length === 0 ? (
         <p className="muted small">No saved Other locations. Add a custom one for this booking.</p>
       ) : (
-        <div className="divide-y divide-[var(--line)] overflow-hidden card">
+        <div className="divide-y divide-(--line) overflow-hidden card">
           {picks.map((pick) => (
             <button
               key={pick.id}
               type="button"
               onClick={() => onPick(pick)}
-              className="flex w-full items-center justify-between px-3.5 py-3 text-left text-[13px] font-medium hover:bg-[var(--bg)]"
+              className="flex w-full items-center justify-between px-3.5 py-3 text-left text-[13px] font-medium hover:bg-(--bg)"
             >
               {pick.title}
-              <span className="text-[var(--ink3)]">›</span>
+              <span className="text-(--ink3)">›</span>
             </button>
           ))}
         </div>
@@ -1298,7 +1298,7 @@ function ProjectList({
     return (
       <div className="card py-16 text-center">
         <p className="text-[17px] font-semibold">No live {smallWorks ? 'small works' : 'projects'}</p>
-        <p className="mt-2 text-[13px] text-[var(--ink3)]">Create or activate work to book here.</p>
+        <p className="mt-2 text-[13px] text-(--ink3)">Create or activate work to book here.</p>
       </div>
     )
   }
@@ -1308,30 +1308,30 @@ function ProjectList({
         value={search}
         onChange={(e) => onSearch(e.target.value)}
         placeholder={smallWorks ? 'Search small works…' : 'Search projects…'}
-        className="w-full rounded-xl border border-[var(--line2)] bg-[var(--card)] px-3 py-2 text-[14px] outline-none"
+        className="w-full rounded-xl border border-(--line2) bg-(--card) px-3 py-2 text-[14px] outline-hidden"
       />
-      <p className="px-1 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">
+      <p className="px-1 text-[11px] font-medium uppercase tracking-[0.4px] text-(--ink3)">
         {smallWorks ? 'Active small works' : 'Active projects'} · {filtered.length}
       </p>
-      <div className="divide-y divide-[var(--line)] overflow-hidden card">
+      <div className="divide-y divide-(--line) overflow-hidden card">
         {filtered.length === 0 ? (
-          <p className="py-8 text-center text-[13px] text-[var(--ink3)]">No matches</p>
+          <p className="py-8 text-center text-[13px] text-(--ink3)">No matches</p>
         ) : (
           filtered.map((project) => (
             <button
               key={project.id}
               type="button"
               onClick={() => onPick(project)}
-              className="flex w-full items-center justify-between gap-3 px-3.5 py-3 text-left hover:bg-[var(--bg)]"
+              className="flex w-full items-center justify-between gap-3 px-3.5 py-3 text-left hover:bg-(--bg)"
             >
               <div className="min-w-0">
                 <p className="truncate text-[13px] font-medium">
-                  <span className={smallWorks ? 'text-[#854F0B]' : 'text-[var(--blue)]'}>{project.jobNumber}</span>{' '}
+                  <span className={smallWorks ? 'text-[#854F0B]' : 'text-(--blue)'}>{project.jobNumber}</span>{' '}
                   {project.siteName}
                 </p>
-                <p className="truncate text-[10px] text-[var(--ink3)]">{projectLocality(project)}</p>
+                <p className="truncate text-[10px] text-(--ink3)">{projectLocality(project)}</p>
               </div>
-              <span className="text-[var(--ink3)]">›</span>
+              <span className="text-(--ink3)">›</span>
             </button>
           ))
         )}
@@ -1360,8 +1360,8 @@ function SlotPicker({
   return (
     <div className="space-y-3">
       <p className="text-[15px] font-semibold">{label}</p>
-      <p className="text-[11px] text-[var(--ink3)]">{dayLine}</p>
-      <p className="px-1 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">Select slot</p>
+      <p className="text-[11px] text-(--ink3)">{dayLine}</p>
+      <p className="px-1 text-[11px] font-medium uppercase tracking-[0.4px] text-(--ink3)">Select slot</p>
       <div className="grid grid-cols-3 gap-2.5">
         {(
           [
@@ -1378,7 +1378,7 @@ function SlotPicker({
             type="button"
             disabled={disabled}
             onClick={() => onSlot(slot)}
-            className="rounded-xl border border-[var(--blue)]/35 bg-[var(--blue-t)] py-3 text-[13px] font-medium text-[var(--blue)] disabled:opacity-50"
+            className="rounded-xl border border-(--blue)/35 bg-(--blue-t) py-3 text-[13px] font-medium text-(--blue) disabled:opacity-50"
           >
             {title}
           </button>
@@ -1386,7 +1386,7 @@ function SlotPicker({
       </div>
       {/* Rulebook 1.17.0 (`weekendBookingNotes`). */}
       {weekendNotesForDates([day], policy).map((note) => (
-        <p key={note} className="px-1 text-[11px] text-[var(--ink3)]">
+        <p key={note} className="px-1 text-[11px] text-(--ink3)">
           {note}
         </p>
       ))}
@@ -1394,7 +1394,7 @@ function SlotPicker({
         type="button"
         disabled={disabled}
         onClick={onCustom}
-        className="w-full rounded-xl border border-[var(--blue)]/35 bg-[var(--blue-t)] py-3 text-[13px] font-medium text-[var(--blue)] disabled:opacity-50"
+        className="w-full rounded-xl border border-(--blue)/35 bg-(--blue-t) py-3 text-[13px] font-medium text-(--blue) disabled:opacity-50"
       >
         Custom
       </button>
@@ -1449,7 +1449,7 @@ function CustomHoursForm({
         type="button"
         disabled={saving}
         onClick={onSave}
-        className="w-full rounded-[14px] bg-[var(--blue)] py-3 text-[15px] font-semibold text-white disabled:opacity-50"
+        className="w-full rounded-[14px] bg-(--blue) py-3 text-[15px] font-semibold text-white disabled:opacity-50"
       >
         {saving ? 'Saving…' : 'Save'}
       </button>

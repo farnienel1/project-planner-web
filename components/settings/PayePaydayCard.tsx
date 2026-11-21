@@ -50,17 +50,17 @@ export function PayePaydayCard({
       <SettingsCard>
         <div className="space-y-3 p-5">
           {banner ? <p className="rounded-lg bg-[#FFF4E5] px-3 py-2 text-[13px] text-[#8A4B00]">{banner}</p> : null}
-          <p className="text-[14px] text-[var(--ink)]">{!loaded ? 'Loading…' : summary.notConfigured ? 'No PAYE payday set.' : summary.label}</p>
+          <p className="text-[14px] text-(--ink)">{!loaded ? 'Loading…' : summary.notConfigured ? 'No PAYE payday set.' : summary.label}</p>
           {pending ? (
-            <p className="text-[13px] text-[var(--ink3)]">
+            <p className="text-[13px] text-(--ink3)">
               Changes to the {pending.day}
               {ordinal(pending.day)} from {formatPayePayrunDay(pending.effectiveFrom)}.
             </p>
           ) : null}
           {canEdit ? (
             <div className="space-y-3">
-              <p className="text-[13px] font-semibold text-[var(--ink2)]">{PAYE_PAYDAY_CONTROL_LABEL}</p>
-              <div className="[display:grid] grid-cols-7 gap-1" role="listbox" aria-label="Day of the month">
+              <p className="text-[13px] font-semibold text-(--ink2)">{PAYE_PAYDAY_CONTROL_LABEL}</p>
+              <div className="grid grid-cols-7 gap-1" role="listbox" aria-label="Day of the month">
                 {days.map((day) => (
                   <button
                     key={day}
@@ -70,7 +70,7 @@ export function PayePaydayCard({
                     disabled={!loaded}
                     onClick={() => onPick(day === saved ? null : day)}
                     className={`h-9 rounded-md text-[13px] font-semibold tabular-nums ${
-                      shown === day ? 'bg-[var(--blue)] text-white' : 'bg-[var(--soft2)] text-[var(--ink)]'
+                      shown === day ? 'bg-(--blue) text-white' : 'bg-(--soft2) text-(--ink)'
                     }`}
                   >
                     {day}
@@ -78,9 +78,9 @@ export function PayePaydayCard({
                 ))}
               </div>
               {shown != null && shown >= 29 ? (
-                <p className="text-[13px] text-[var(--ink3)]">In shorter months the payday is the last day of the month.</p>
+                <p className="text-[13px] text-(--ink3)">In shorter months the payday is the last day of the month.</p>
               ) : null}
-              {picked != null ? <p className="text-[13px] text-[var(--ink2)]">Press Save to apply it from the next PAYE payrun.</p> : null}
+              {picked != null ? <p className="text-[13px] text-(--ink2)">Press Save to apply it from the next PAYE payrun.</p> : null}
             </div>
           ) : null}
         </div>

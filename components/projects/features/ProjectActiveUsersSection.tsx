@@ -182,7 +182,7 @@ export function ProjectActiveUsersSection({ project, basePath }: { project: Proj
   if (!rosterReady || (allowed && data.loading && data.summaries.length === 0)) {
     return (
       <div className="flex h-40 items-center justify-center">
-        <p className="text-sm text-[var(--ink3)]">Loading active users...</p>
+        <p className="text-sm text-(--ink3)">Loading active users...</p>
       </div>
     )
   }
@@ -217,7 +217,7 @@ export function ProjectActiveUsersSection({ project, basePath }: { project: Proj
   return (
     <div className="stack">
       <section className="card pad">
-        <p className="text-[13px] font-bold text-[var(--blue)]">{project.jobNumber}</p>
+        <p className="text-[13px] font-bold text-(--blue)">{project.jobNumber}</p>
         <h2 className="h2" style={{ marginTop: 4 }}>
           {project.siteName}
         </h2>

@@ -207,11 +207,11 @@ export function PayrunSnapshot({
           <div className="flex flex-wrap items-end gap-3">
             <label className="text-[13px] font-medium">
               Start
-              <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="mt-1 block rounded-lg border border-[var(--line2)] px-3 py-2 text-sm" />
+              <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="mt-1 block rounded-lg border border-(--line2) px-3 py-2 text-sm" />
             </label>
             <label className="text-[13px] font-medium">
               End
-              <input type="date" min={customStart} value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="mt-1 block rounded-lg border border-[var(--line2)] px-3 py-2 text-sm" />
+              <input type="date" min={customStart} value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="mt-1 block rounded-lg border border-(--line2) px-3 py-2 text-sm" />
             </label>
           </div>
         ) : null}

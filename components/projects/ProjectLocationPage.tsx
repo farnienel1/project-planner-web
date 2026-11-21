@@ -74,7 +74,7 @@ export function ProjectLocationPage({
     <div className="grid gap-4 xl:grid-cols-12">
       <FeatureCard className="p-5 xl:col-span-8">
         <div className="flex items-center gap-2">
-          <svg className="h-5 w-5 text-[var(--blue)]" fill="currentColor" viewBox="0 0 20 20">
+          <svg className="h-5 w-5 text-(--blue)" fill="currentColor" viewBox="0 0 20 20">
             <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14A1 1 0 003 18h14a1 1 0 00.894-1.447l-7-14z" />
           </svg>
           <h2 className="text-lg font-semibold text-slate-900">Site Location</h2>
@@ -89,7 +89,7 @@ export function ProjectLocationPage({
                   href={appleUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center rounded-lg bg-[var(--blue)] px-3.5 py-2 text-sm font-semibold text-white"
+                  className="inline-flex items-center rounded-lg bg-(--blue) px-3.5 py-2 text-sm font-semibold text-white"
                 >
                   Apple Maps
                 </a>
@@ -99,7 +99,7 @@ export function ProjectLocationPage({
                   href={googleUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center rounded-lg bg-slate-100 px-3.5 py-2 text-sm font-semibold text-[var(--blue)]"
+                  className="inline-flex items-center rounded-lg bg-slate-100 px-3.5 py-2 text-sm font-semibold text-(--blue)"
                 >
                   Google Maps
                 </a>

@@ -63,14 +63,14 @@ export function DeactivatedAccountScreen() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--bg)] px-6">
-      <div className="w-full max-w-md rounded-[22px] bg-[var(--card)] p-6 shadow-[var(--sh-pop)]" role="dialog" aria-modal="true">
-        <h1 className="font-[family-name:var(--head)] text-xl font-extrabold text-[var(--ink)]">Account deactivated</h1>
-        <p className="mt-3 text-sm leading-relaxed text-[var(--ink2)]">{DEACTIVATED_ACCOUNT_MESSAGE}</p>
+    <div className="flex min-h-screen items-center justify-center bg-(--bg) px-6">
+      <div className="w-full max-w-md rounded-[22px] bg-(--card) p-6 shadow-(--sh-pop)" role="dialog" aria-modal="true">
+        <h1 className="font-(family-name:--head) text-xl font-extrabold text-(--ink)">Account deactivated</h1>
+        <p className="mt-3 text-sm leading-relaxed text-(--ink2)">{DEACTIVATED_ACCOUNT_MESSAGE}</p>
         {organization?.name ? (
-          <p className="mt-2 text-xs text-[var(--ink3)]">{organization.name}</p>
+          <p className="mt-2 text-xs text-(--ink3)">{organization.name}</p>
         ) : null}
-        {error ? <p className="mt-3 text-sm font-semibold text-[var(--red)]">{error}</p> : null}
+        {error ? <p className="mt-3 text-sm font-semibold text-(--red)">{error}</p> : null}
         {others.length > 0 ? (
           <div className="mt-5">
             <button type="button" className="btn primary w-full" onClick={() => setShowSwitch(true)}>

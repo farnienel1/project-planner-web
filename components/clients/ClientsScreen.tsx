@@ -116,19 +116,19 @@ function ClientInfo({ client }: { client: Client }) {
       <div className="stack" style={{ gap: 10, marginTop: 16 }}>
         {client.email ? (
           <p className="row">
-            <EnvelopeIcon className="h-4 w-4 text-[var(--blue)]" />
+            <EnvelopeIcon className="h-4 w-4 text-(--blue)" />
             {client.email}
           </p>
         ) : null}
         {client.phone ? (
           <p className="row">
-            <PhoneIcon className="h-4 w-4 text-[var(--ops)]" />
+            <PhoneIcon className="h-4 w-4 text-(--ops)" />
             {client.phone}
           </p>
         ) : null}
         {client.address ? (
           <p className="row" style={{ alignItems: 'flex-start' }}>
-            <MapPinIcon className="mt-0.5 h-4 w-4 shrink-0 text-[var(--sw)]" />
+            <MapPinIcon className="mt-0.5 h-4 w-4 shrink-0 text-(--sw)" />
             {client.address}
           </p>
         ) : null}
@@ -311,7 +311,7 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
   if (loading && clients.length === 0) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-[var(--blue)]" />
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-(--blue)" />
       </div>
     )
   }

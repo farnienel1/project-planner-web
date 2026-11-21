@@ -19,10 +19,10 @@ export function PageHeader({
 }) {
   return (
     <div className="mb-[22px] mt-2.5 flex flex-wrap items-center gap-4" data-hue={hue}>
-      {icon ? <div className="grid h-[52px] w-[52px] place-items-center rounded-[16px] bg-[var(--ht)] text-[var(--h)]">{icon}</div> : null}
+      {icon ? <div className="grid h-[52px] w-[52px] place-items-center rounded-[16px] bg-(--ht) text-(--h)">{icon}</div> : null}
       <div className="min-w-0">
         <h1 className="text-[28px] font-extrabold leading-[1.15] max-[760px]:text-2xl">{title}</h1>
-        {subtitle ? <p className="mt-[3px] text-[14.5px] text-[var(--ink3)]">{subtitle}</p> : null}
+        {subtitle ? <p className="mt-[3px] text-[14.5px] text-(--ink3)">{subtitle}</p> : null}
       </div>
       {actions ? <div className="ml-auto flex flex-wrap items-center gap-2.5">{actions}</div> : null}
     </div>
@@ -51,7 +51,7 @@ export function Hero({
       data-hue={hue}
       className={cn('hero', className)}
     >
-      <div className="relative z-[1]">
+      <div className="relative z-1">
         {eyebrow ? <p className="eb">{eyebrow}</p> : null}
         <div className="big" style={{ marginTop: 6 }}>
           {title}
@@ -102,17 +102,17 @@ export function StatCard({
   hint?: string
 }) {
   const className = cn(
-    'flex w-full items-center gap-3.5 rounded-[18px] bg-[var(--card)] px-5 py-[18px] text-left shadow-[var(--sh)]',
-    onClick && 'cursor-pointer transition hover:-translate-y-0.5 hover:shadow-[var(--sh-hover)]',
+    'flex w-full items-center gap-3.5 rounded-[18px] bg-(--card) px-5 py-[18px] text-left shadow-pp',
+    onClick && 'cursor-pointer transition hover:-translate-y-0.5 hover:shadow-pp-hover',
     selected && 'shadow-[0_0_0_2px_var(--h),var(--sh)]'
   )
   const body = (
     <>
       {icon ? <IconChip hue={hue}>{icon}</IconChip> : null}
       <div className="min-w-0">
-        <b className="block font-[family-name:var(--head)] text-[26px] font-extrabold leading-tight tabular-nums">{value}</b>
-        <span className="text-[13.5px] font-medium text-[var(--ink3)]">{label}</span>
-        {hint ? <span className="mt-0.5 block text-xs text-[var(--ink3)]">{hint}</span> : null}
+        <b className="block font-(family-name:--head) text-[26px] font-extrabold leading-tight tabular-nums">{value}</b>
+        <span className="text-[13.5px] font-medium text-(--ink3)">{label}</span>
+        {hint ? <span className="mt-0.5 block text-xs text-(--ink3)">{hint}</span> : null}
       </div>
     </>
   )
@@ -148,14 +148,14 @@ export function Tile({
       type="button"
       data-hue={hue}
       onClick={onClick}
-      className="relative flex flex-col items-center gap-3 rounded-[18px] bg-[var(--card)] px-3.5 pb-4 pt-[18px] text-[14.5px] font-semibold text-[var(--ink)] shadow-[var(--sh)] transition hover:-translate-y-[3px] hover:shadow-[var(--sh-hover)]"
+      className="relative flex flex-col items-center gap-3 rounded-[18px] bg-(--card) px-3.5 pb-4 pt-[18px] text-[14.5px] font-semibold text-(--ink) shadow-pp transition hover:translate-y-[-3px] hover:shadow-pp-hover"
     >
       <IconChip hue={hue} className="h-[52px] w-[52px] rounded-2xl">
         {icon}
       </IconChip>
       {label}
       {typeof count === 'number' ? (
-        <span className="absolute right-2.5 top-2.5 grid min-w-[24px] place-items-center rounded-full bg-[var(--h)] px-1.5 text-xs font-bold text-white">
+        <span className="absolute right-2.5 top-2.5 grid min-w-[24px] place-items-center rounded-full bg-(--h) px-1.5 text-xs font-bold text-white">
           {count}
         </span>
       ) : null}
@@ -183,8 +183,8 @@ export function ListRow({
   onClick?: () => void
 }) {
   const className = cn(
-    'flex w-full items-center gap-3.5 rounded-[14px] bg-[var(--card)] px-4 py-3.5 text-left shadow-[var(--sh)]',
-    onClick && 'cursor-pointer transition hover:-translate-y-px hover:shadow-[var(--sh-hover)]',
+    'flex w-full items-center gap-3.5 rounded-[14px] bg-(--card) px-4 py-3.5 text-left shadow-pp',
+    onClick && 'cursor-pointer transition hover:-translate-y-px hover:shadow-pp-hover',
     accent && 'shadow-[inset_4px_0_0_var(--h),var(--sh)]',
     selected && 'shadow-[0_0_0_2px_var(--blue),var(--sh)]'
   )
@@ -193,7 +193,7 @@ export function ListRow({
       {icon}
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[15px] font-semibold leading-snug">{title}</span>
-        {subtitle ? <span className="block truncate text-[13px] text-[var(--ink3)]">{subtitle}</span> : null}
+        {subtitle ? <span className="block truncate text-[13px] text-(--ink3)">{subtitle}</span> : null}
       </span>
       {right}
     </>
@@ -226,13 +226,13 @@ export function Banner({
   action?: ReactNode
 }) {
   return (
-    <div data-hue={hue} className="flex items-center gap-3.5 rounded-[14px] bg-[var(--ht)] px-[18px] py-3.5 text-[var(--ink)]">
+    <div data-hue={hue} className="flex items-center gap-3.5 rounded-[14px] bg-(--ht) px-[18px] py-3.5 text-(--ink)">
       {icon ? <IconChip hue={hue} solid className="h-[38px] w-[38px]">
         {icon}
       </IconChip> : null}
       <div className="min-w-0 flex-1">
         <b className="font-bold">{title}</b>
-        {children ? <div className="text-sm text-[var(--ink2)]">{children}</div> : null}
+        {children ? <div className="text-sm text-(--ink2)">{children}</div> : null}
       </div>
       {action}
     </div>
@@ -256,7 +256,7 @@ export function EmptyState({
     <div data-hue={hue} className="px-5 py-10 text-center">
       {icon ? <div className="mx-auto mb-3.5">{icon}</div> : null}
       <h3 className="mb-1.5 text-lg font-bold">{title}</h3>
-      {subtitle ? <p className="mx-auto mb-[18px] max-w-[420px] text-[var(--ink3)]">{subtitle}</p> : null}
+      {subtitle ? <p className="mx-auto mb-[18px] max-w-[420px] text-(--ink3)">{subtitle}</p> : null}
       {action}
     </div>
   )
@@ -266,7 +266,7 @@ export function Skeleton({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        'h-3.5 animate-pulse rounded-[10px] bg-[linear-gradient(90deg,var(--soft2)_25%,var(--soft)_50%,var(--soft2)_75%)] bg-[length:200%_100%]',
+        'h-3.5 animate-pulse rounded-[10px] bg-[linear-gradient(90deg,var(--soft2)_25%,var(--soft)_50%,var(--soft2)_75%)] bg-size-[200%_100%]',
         className
       )}
     />
@@ -274,7 +274,7 @@ export function Skeleton({ className }: { className?: string }) {
 }
 
 export function Card({ children, className, padded }: { children: ReactNode; className?: string; padded?: boolean }) {
-  return <div className={cn('rounded-[18px] bg-[var(--card)] shadow-[var(--sh)]', padded && 'p-[22px]', className)}>{children}</div>
+  return <div className={cn('rounded-[18px] bg-(--card) shadow-pp', padded && 'p-[22px]', className)}>{children}</div>
 }
 
 export function HeroButton({ solid, children, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { solid?: boolean }) {
@@ -282,7 +282,7 @@ export function HeroButton({ solid, children, ...props }: ButtonHTMLAttributes<H
     <Button
       {...props}
       className={cn(
-        solid ? 'bg-white text-[var(--navy)] shadow-none' : 'border border-white/20 bg-white/16 text-white shadow-none hover:bg-white/26',
+        solid ? 'bg-white text-(--navy) shadow-none' : 'border border-white/20 bg-white/16 text-white shadow-none hover:bg-white/26',
         props.className
       )}
     >

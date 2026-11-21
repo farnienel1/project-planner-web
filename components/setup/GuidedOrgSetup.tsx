@@ -826,7 +826,7 @@ function RecapStep({
 }) {
   return (
     <div>
-      <div className="mb-7 rounded-2xl bg-gradient-to-br from-blue-600 to-sky-500 p-7 text-white">
+      <div className="mb-7 rounded-2xl bg-linear-to-br from-blue-600 to-sky-500 p-7 text-white">
         <p className="text-xs font-bold uppercase tracking-widest text-blue-100">Team &amp; data setup complete</p>
         <h2 className="mt-2 text-2xl font-extrabold">
           {organizationName ? `${organizationName} is ready to go` : 'Your organisation is ready to go'}

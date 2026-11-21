@@ -134,7 +134,7 @@ export function AnnualLeaveReportDialog({
         className="flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl bg-white shadow-xl sm:rounded-2xl"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="bg-[var(--navy,#0f1f3d)] px-4 pb-4 pt-3 text-white">
+        <div className="bg-(--navy,#0f1f3d) px-4 pb-4 pt-3 text-white">
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs font-semibold uppercase tracking-widest text-white/70">{ANNUAL_LEAVE_REPORT_TITLE}</p>
             <button type="button" onClick={onClose} className="rounded-lg px-2 py-1 text-sm font-semibold text-white hover:bg-white/10">

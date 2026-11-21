@@ -39,14 +39,14 @@ export function Modal({
   }, [open, onClose])
   if (!open || typeof document === 'undefined') return null
   return createPortal(
-    <div className="fixed inset-0 z-[100]">
+    <div className="fixed inset-0 z-100">
       <button type="button" className="absolute inset-0 bg-[rgba(10,20,40,.4)] backdrop-blur-[3px]" aria-label="Close" onClick={onClose} />
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby={labelledBy}
         className={cn(
-          'absolute left-1/2 top-1/2 flex max-h-[88vh] w-[min(620px,94vw)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-3xl bg-[var(--card)] shadow-[var(--sh-pop)]',
+          'absolute left-1/2 top-1/2 flex max-h-[88vh] w-[min(620px,94vw)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-3xl bg-(--card) shadow-(--sh-pop)',
           wide && 'w-[min(860px,94vw)]'
         )}
       >
@@ -56,7 +56,7 @@ export function Modal({
             <h2 id={labelledBy} className="text-xl font-extrabold">
               {title}
             </h2>
-            {subtitle ? <p className="text-sm text-[var(--ink3)]">{subtitle}</p> : null}
+            {subtitle ? <p className="text-sm text-(--ink3)">{subtitle}</p> : null}
           </div>
           <Button variant="ghost" size="sm" round onClick={onClose} aria-label="Close">
             ×
@@ -64,7 +64,7 @@ export function Modal({
         </div>
         <div className="overflow-y-auto px-6 py-2">{children}</div>
         {footer !== false ? (
-          <div className="flex justify-end gap-2.5 border-t border-[var(--line)] px-6 py-4">{footer}</div>
+          <div className="flex justify-end gap-2.5 border-t border-(--line) px-6 py-4">{footer}</div>
         ) : null}
       </div>
     </div>,
@@ -87,7 +87,7 @@ export function Popover({
   return (
     <>
       <button type="button" className="fixed inset-0 z-30 cursor-default bg-transparent" aria-label="Close menu" onClick={onClose} />
-      <div className={cn('absolute z-40 max-h-[80vh] overflow-auto rounded-[18px] bg-[var(--card)] p-2 shadow-[var(--sh-pop)]', className)}>
+      <div className={cn('absolute z-40 max-h-[80vh] overflow-auto rounded-[18px] bg-(--card) p-2 shadow-(--sh-pop)', className)}>
         {children}
       </div>
     </>
@@ -99,9 +99,9 @@ export function ToastViewport({ message }: { message: string | null }) {
   return (
     <div
       role="status"
-      className="fixed bottom-[calc(26px+env(safe-area-inset-bottom,0px))] left-1/2 z-[80] flex w-max max-w-[min(92vw,560px)] -translate-x-1/2 items-center gap-2.5 rounded-2xl bg-[var(--ink)] px-[18px] py-3 font-semibold text-[var(--card)] shadow-[var(--sh-pop)]"
+      className="fixed bottom-[calc(26px+env(safe-area-inset-bottom,0px))] left-1/2 z-80 flex w-max max-w-[min(92vw,560px)] -translate-x-1/2 items-center gap-2.5 rounded-2xl bg-(--ink) px-[18px] py-3 font-semibold text-(--card) shadow-(--sh-pop)"
     >
-      <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[var(--green)] text-white">✓</span>
+      <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-(--green) text-white">✓</span>
       {message}
     </div>
   )

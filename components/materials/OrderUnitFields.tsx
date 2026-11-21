@@ -66,7 +66,7 @@ export function OrderUnitFields({
   const detail = MATERIAL_ORDER_UNIT_DETAILS[draft.orderUnit]
   return (
     <div className="space-y-2">
-      <p className="text-[11px] font-semibold uppercase text-[var(--ink3)]">{label}</p>
+      <p className="text-[11px] font-semibold uppercase text-(--ink3)">{label}</p>
       <div className="flex flex-wrap gap-2">
         {MATERIAL_ORDER_UNITS.map((unit) => (
           <button
@@ -75,14 +75,14 @@ export function OrderUnitFields({
             aria-pressed={draft.orderUnit === unit}
             onClick={() => onChange(orderUnitDraftAfterUnitChange(draft, unit))}
             className={`rounded-full px-3 py-1.5 text-[13px] font-medium ${
-              draft.orderUnit === unit ? 'bg-[var(--blue-t)] text-[var(--blue)]' : 'bg-[var(--soft)] text-[var(--ink)]'
+              draft.orderUnit === unit ? 'bg-(--blue-t) text-(--blue)' : 'bg-(--soft) text-(--ink)'
             }`}
           >
             {MATERIAL_ORDER_UNIT_DETAILS[unit].label}
           </button>
         ))}
       </div>
-      <p className="text-[12px] text-[var(--ink3)]">{detail.hint}</p>
+      <p className="text-[12px] text-(--ink3)">{detail.hint}</p>
       {detail.measures.length > 0 ? (
         <div className="grid grid-cols-2 gap-3">
           <label className="block text-sm font-medium">

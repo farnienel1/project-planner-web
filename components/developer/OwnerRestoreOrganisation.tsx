@@ -45,7 +45,7 @@ export function OwnerRestoreOrganisation({ organisationId, onRestored }: { organ
   return (
     <section className="card pad space-y-3">
       <h2 className="h2">Scheduled for deletion</h2>
-      <p className="text-sm text-[var(--ink2)]">{organizationDeletedMessage(eraseAfterMs, zone)}</p>
+      <p className="text-sm text-(--ink2)">{organizationDeletedMessage(eraseAfterMs, zone)}</p>
       {error ? (
         <p className="banner" data-hue="red">
           {error}

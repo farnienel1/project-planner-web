@@ -30,12 +30,12 @@ export function WebUpdateGate() {
     return null
   }
   return (
-    <div className="fixed inset-0 z-[100] grid place-items-center bg-[var(--bg,#fff)] p-6" role="alertdialog" aria-modal="true" aria-labelledby="web-update-title">
+    <div className="fixed inset-0 z-100 grid place-items-center bg-(--bg,#fff) p-6" role="alertdialog" aria-modal="true" aria-labelledby="web-update-title">
       <div className="max-w-sm text-center">
         <h1 id="web-update-title" className="text-xl font-extrabold">
           {WEB_UPDATE_REQUIRED_TITLE}
         </h1>
-        <p className="mt-2 text-sm text-[var(--ink2)]">{WEB_UPDATE_REQUIRED_MESSAGE}</p>
+        <p className="mt-2 text-sm text-(--ink2)">{WEB_UPDATE_REQUIRED_MESSAGE}</p>
         <button type="button" className="btn primary mt-4" onClick={() => window.location.reload()}>
           Reload
         </button>

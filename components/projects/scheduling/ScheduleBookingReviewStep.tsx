@@ -120,7 +120,7 @@ export function ScheduleBookingReviewStep({
           }))
 
           return (
-            <div key={person.personId} className="overflow-hidden card shadow-sm">
+            <div key={person.personId} className="overflow-hidden card shadow-xs">
               <div className="flex items-start gap-3 px-4 py-3">
                 <button
                   type="button"
