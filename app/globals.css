@@ -148,10 +148,11 @@
     line-height: revert;
   }
   /* Tailwind 4 also resets the file picker's button (Tailwind 3 left the browser's own button). */
+  /* Tailwind 3 gave the file button the page font (font: inherit); everything else is the browser's. */
   ::file-selector-button {
-    font: revert;
-    font-feature-settings: revert;
-    font-variation-settings: revert;
+    font: inherit;
+    font-feature-settings: inherit;
+    font-variation-settings: inherit;
     letter-spacing: revert;
     color: revert;
     border: revert;
