@@ -27,3 +27,9 @@ Loaded automatically through `CLAUDE.md`. These were given by the owner over sev
 - Keep web worktrees and clones out of any folder that also holds `project-planner-ios` (use `/home/user/wt/<name>` or the scratchpad, never `/home/user/<name>`): `npm test`, `npm run build:canonical` and the pre-commit hook copy the packed rulebook into `../project-planner-ios`, and on 16 Nov this overwrote the iOS checkout twice. If it happens, restore the four mirror files with `git restore` in the iOS repo (`Project Planner/Canonical/canonical-business.js`, its `.sha256`, `canonical-manifest.json` and `docs/RULEBOOK.md`).
 - Never use a bare `git stash`. Keep secrets out of chat and code. Never revoke push key BSA6D294ZA.
 - Every change, web and iOS, has its own branch and PR, merged to `main` after the independent review (owner decision 13 Nov, item 10; the old rule that iOS pushed only to `main-vr2rt0-uoqzwv` is dropped).
+
+## Owner rules (19 Nov)
+1. **Merge procedure.** Mark the PR ready for review, squash-merge it, and pass the expected head commit (the merge fails if the branch moved). Commit messages end with the `Co-Authored-By` line and the chat's `Claude-Session:` line, no model name.
+2. **Rulebook version order.** Web PRs that change the rulebook merge in version order (1.66 → 1.67 → 1.68 …); never merge one out of order. A PR behind main is renumbered to the next free version before it merges.
+3. **Lean mode.** No background agents waiting on CI; no PR activity subscriptions; one independent review per change plus one quick re-check; small fixes done directly; finish the queue before new work; short messages.
+4. **Security review.** Change no code until the owner approves; fix only items marked Vulnerable, with the smallest change; add an attack test per fix; never rewrite git history or touch outside dashboards; tell the owner which keys to rotate; keep `docs/security-audit-log.md` (no secrets or customer data in it).

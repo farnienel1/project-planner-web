@@ -1,3 +1,14 @@
+# Handover — 21 Nov 2026
+
+> Read this first; the 19 Nov section below is older.
+
+- **Web main:** rulebook **1.69.0**. Merged 19–21 Nov: #381 (1.66), #378 (1.67), #389 (1.68), #380 (Warnings Dismiss, no rulebook change), #379 (1.69, was 1.62), #338 (owner console docs), #394 and #395 (minor dependency updates).
+- **iOS main:** merged #252 (1.60.1) and #263 (mass assignment). Open, each with main merged in and the rulebook mirror synced to 1.69.0: #253 (overtime wording, now through `liveDayRateOvertimeText`), #254, #256, #257, #260, #261, #262. Merge each once its Mac checks are green.
+- **Held for the owner:** web #396 (Tailwind 4), #397 (TypeScript 7), #398 (React DOM 19): major upgrades that fail the build and need code changes. Web #399 (date-fns 4): branch updated, CI re-running. Web #365: owner preview check.
+- **Still to do:** iOS #265 / #266 / #255 (dependency updates), checklist artifact rows, owner key revocations (`docs/security-audit-log.md`).
+
+---
+
 # Handover — 19 Nov 2026
 
 > **Read this section first; everything below "Handover — 17 Nov" is older history.** A new chat starts with no memory: read this, then `docs/OWNER_DECISIONS.md`, then the rule files (`owner-working-style.md` especially).
