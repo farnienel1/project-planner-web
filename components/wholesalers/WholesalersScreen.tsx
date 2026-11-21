@@ -100,7 +100,7 @@ export function WholesalersScreen({ selectedId }: { selectedId?: string }) {
       <button
         type="button"
         onClick={() => setEditor(emptyWholesaler())}
-        className="flex w-full items-center gap-3 rounded-xl border border-dashed border-(--blue)/40 bg-white px-4 py-3 text-left text-(--blue) shadow-xs"
+        className="flex w-full items-center gap-3 rounded-xl border border-dashed bg-white px-4 py-3 text-left text-(--blue) shadow-xs"
       >
         <PlusIcon className="h-5 w-5" />
         <span className="font-semibold">Add wholesaler</span>

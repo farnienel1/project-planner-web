@@ -363,7 +363,7 @@ function ProjectAuditsView({
               key={audit.id}
               type="button"
               onClick={() => setSelectedAudit(audit)}
-              className="w-full card px-4 py-3.5 text-left shadow-xs transition-shadow hover:shadow-md"
+              className="w-full card px-4 py-3.5 text-left shadow-xs transition-shadow hover:shadow-md!"
             >
               <div className="flex items-center gap-3">
                 <TypeIcon type={audit.type} size="sm" />
@@ -476,7 +476,7 @@ function ProjectListView({
                 key={project.id}
                 type="button"
                 onClick={() => onSelectProject(project)}
-                className="w-full card px-4 py-3.5 text-left shadow-xs transition-all hover:border-slate-300 hover:shadow-md"
+                className="w-full card px-4 py-3.5 text-left shadow-xs transition-all hover:border-slate-300 hover:shadow-md!"
               >
                 <div className="flex items-center gap-3">
                   <div className="min-w-0 flex-1">
@@ -752,7 +752,7 @@ export function SiteAuditNewScreen() {
               key={project.id}
               type="button"
               onClick={() => setCreateProject(project)}
-              className="w-full card px-4 py-3.5 text-left shadow-xs hover:border-slate-300 hover:shadow-md"
+              className="w-full card px-4 py-3.5 text-left shadow-xs hover:border-slate-300 hover:shadow-md!"
             >
               <span className="rounded-sm bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
                 {project.jobNumber}

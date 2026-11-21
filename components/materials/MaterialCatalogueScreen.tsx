@@ -695,7 +695,7 @@ function CsvSheet({
           <div
             role="dialog"
             aria-labelledby="category-suggestions-title"
-            className="flex max-h-[85vh] w-full max-w-[620px] flex-col overflow-hidden rounded-[24px] bg-(--card) shadow-(--sh-pop)"
+            className="flex max-h-[85vh] w-full max-w-[620px] flex-col overflow-hidden rounded-[24px] bg-(--card) shadow-(color:--sh-pop)"
             onClick={(event) => event.stopPropagation()}
           >
             <header className="px-6 pb-3 pt-[22px]">

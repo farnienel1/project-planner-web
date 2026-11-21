@@ -29,7 +29,7 @@ export function Button({
   const variants: Record<ButtonVariant, string> = {
     primary:
       'bg-[linear-gradient(180deg,var(--blue2),var(--blue))] text-white shadow-[0_1px_0_rgba(255,255,255,.25)_inset,0_6px_16px_rgba(30,90,168,.32)]',
-    secondary: 'bg-(--card) text-(--ink) shadow-pp',
+    secondary: 'bg-(--card) text-(--ink) shadow-(color:--sh)',
     tint: 'bg-(--ht) text-(--h) shadow-none',
     hue: 'bg-(--h) text-white shadow-[0_6px_16px_color-mix(in_srgb,var(--h)_35%,transparent)]',
     ghost: 'bg-transparent text-(--ink2) shadow-none hover:bg-(--soft2) hover:text-(--ink)',

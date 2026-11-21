@@ -660,7 +660,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
                           aria-label="Close new menu"
                           onClick={() => setNewOpen(false)}
                         />
-                        <div className="absolute right-0 z-30 mt-2 w-[260px] rounded-[18px] bg-(--card) p-2 shadow-(--sh-pop)">
+                        <div className="absolute right-0 z-30 mt-2 w-[260px] rounded-[18px] bg-(--card) p-2 shadow-(color:--sh-pop)">
                           <p className="px-2.5 py-1 text-xs font-semibold text-(--ink3)">Create new</p>
                           {createItems.map((item) => (
                             <Link

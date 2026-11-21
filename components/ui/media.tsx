@@ -97,7 +97,7 @@ export function ProjectCard({
       type="button"
       data-hue={hue}
       onClick={onClick}
-      className="flex flex-col overflow-hidden rounded-[22px] bg-(--card) text-left shadow-pp transition hover:translate-y-[-3px] hover:shadow-pp-hover"
+      className="flex flex-col overflow-hidden rounded-[22px] bg-(--card) text-left shadow-(color:--sh) transition hover:translate-y-[-3px] hover:shadow-(color:--sh-hover)"
     >
       <div className="flex items-center gap-3.5 bg-[linear-gradient(135deg,var(--ht),color-mix(in_srgb,var(--ht)_40%,var(--card)))] px-5 py-4">
         <div className="min-w-0 flex-1">

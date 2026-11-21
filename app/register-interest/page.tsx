@@ -57,7 +57,7 @@ const FAQ = [
 export default function RegisterInterestPage() {
   return (
     <div className="dark pp-site-dark min-h-screen bg-(--bg) text-(--ink)">
-      <header className="sticky top-0 z-20 border-b border-(--line) bg-(--bg)/95 backdrop-blur-md">
+      <header className="sticky top-0 z-20 border-b border-(--line) backdrop-blur-md">
         <div className="mx-auto flex max-w-[1180px] items-center gap-3 px-4 py-3 sm:px-6">
           <AppLogoMark size={36} radius={10} />
           <b className="font-(family-name:--head) text-[17px]">Project Planner</b>
@@ -68,7 +68,7 @@ export default function RegisterInterestPage() {
         </div>
       </header>
       <main className="mx-auto max-w-[1180px] px-4 sm:px-6">
-        <section className="grid items-start gap-8 py-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,520px)] lg:gap-12 lg:py-14">
+        <section className="grid items-start gap-8 py-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,520px)] lg:gap-12! lg:py-14">
           <div>
             <span className="inline-flex items-center gap-2 rounded-full bg-(--proj-t) px-3.5 py-1.5 text-[13px] font-bold text-(--proj)">
               <span className="h-1.5 w-1.5 rounded-full bg-current" />
@@ -90,7 +90,7 @@ export default function RegisterInterestPage() {
             </div>
             <div className="mt-6 flex flex-wrap gap-2">
               {['iOS, Android & web', 'UK-built, UK support', 'Free trial when we launch', 'No card to register'].map((item) => (
-                <span key={item} className="rounded-full border border-(--line) bg-(--card) px-3.5 py-2 text-[13.5px] font-semibold text-(--ink2) shadow-pp">
+                <span key={item} className="rounded-full border border-(--line) bg-(--card) px-3.5 py-2 text-[13.5px] font-semibold text-(--ink2) shadow-(color:--sh)">
                   {item}
                 </span>
               ))}
@@ -104,7 +104,7 @@ export default function RegisterInterestPage() {
         <Section title="Why we built it" lede="Project Planner started inside a working MEP contractor, because nothing on the market fitted how we actually run jobs.">
           <div className="grid gap-3 md:grid-cols-2">
             {STORY.map(([num, title, copy]) => (
-              <article key={num} className="flex gap-3 rounded-[22px] border border-(--line) bg-(--card) p-5 shadow-pp">
+              <article key={num} className="flex gap-3 rounded-[22px] border border-(--line) bg-(--card) p-5 shadow-(color:--sh)">
                 <span className="h-fit rounded-[10px] bg-(--blue-t) px-2.5 py-1.5 font-(family-name:--head) text-[13px] font-extrabold text-(--blue)">{num}</span>
                 <div>
                   <b className="block font-(family-name:--head) text-[16.5px]">{title}</b>
@@ -118,7 +118,7 @@ export default function RegisterInterestPage() {
         <Section title="How it works" lede="Three places, one set of information. Book it once and it flows through everything else.">
           <div className="grid gap-3 md:grid-cols-3">
             {FLOW.map(([num, title, copy]) => (
-              <article key={num} className="rounded-[22px] border border-(--line) border-t-4 border-t-(--blue) bg-(--card) p-5 shadow-pp">
+              <article key={num} className="rounded-[22px] border border-(--line) border-t-4 border-t-(--blue) bg-(--card) p-5 shadow-(color:--sh)">
                 <span className="mb-3 grid h-9 w-9 place-items-center rounded-[13px] bg-(--blue-t) font-(family-name:--head) text-[17px] font-extrabold text-(--blue)">{num}</span>
                 <b className="block font-(family-name:--head) text-[17px]">{title}</b>
                 <p className="mt-1.5 text-[14.5px] text-(--ink2)">{copy}</p>
@@ -130,13 +130,13 @@ export default function RegisterInterestPage() {
         <Section title="What's in it" lede="One app, not six subscriptions stitched together.">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {MODULES.map(([title, copy]) => (
-              <article key={title} className="rounded-[22px] border border-(--line) bg-(--card) p-5 shadow-pp">
+              <article key={title} className="rounded-[22px] border border-(--line) bg-(--card) p-5 shadow-(color:--sh)">
                 <b className="block font-(family-name:--head) text-[16.5px]">{title}</b>
                 <p className="mt-1.5 text-[14.5px] text-(--ink2)">{copy}</p>
               </article>
             ))}
           </div>
-          <div className="mt-5 flex flex-wrap items-center gap-4 rounded-3xl border border-(--line) bg-(--card) p-5 shadow-pp">
+          <div className="mt-5 flex flex-wrap items-center gap-4 rounded-3xl border border-(--line) bg-(--card) p-5 shadow-(color:--sh)">
             <div className="min-w-[240px] flex-1">
               <b className="block font-(family-name:--head) text-[17px]">What it will cost</b>
               <p className="mt-1.5 max-w-[60ch] text-[15px] text-(--ink2)">

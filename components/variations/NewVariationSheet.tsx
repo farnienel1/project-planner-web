@@ -537,7 +537,7 @@ export function NewVariationSheet({
       on ? 'bg-(--proj-t) text-(--proj)' : 'bg-(--soft) text-(--ink2)'
     }`;
   const cogBtn = 'grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-(--line) bg-(--card) text-(--ink2)';
-  const delBtn = 'grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-(--red)/25 bg-(--red-t) text-(--red)';
+  const delBtn = 'grid h-9 w-9 shrink-0 place-items-center rounded-xl border bg-(--red-t) text-(--red)';
   const fieldBox = 'rounded-2xl bg-(--card) p-2.5 shadow-xs';
   const microLabel = 'mb-1 block text-[11px] font-extrabold uppercase tracking-wide text-(--ink3)';
   const stepBtn = 'h-9 w-9 rounded-xl bg-(--soft) text-lg font-bold text-(--blue) disabled:opacity-30';
@@ -621,7 +621,7 @@ export function NewVariationSheet({
             ))}
 
             {lc.open ? (
-              <div className={`mt-1 rounded-2xl border p-3 ${lc.editId ? 'border-(--blue)/30 bg-(--blue-t)' : 'border-(--line) bg-(--soft)'}`}>
+              <div className={`mt-1 rounded-2xl border p-3 ${lc.editId ? 'bg-(--blue-t)' : 'border-(--line) bg-(--soft)'}`}>
                 <span className={microLabel}>{lc.editId ? 'Editing line item' : 'New labour item'}</span>
 
                 <button
@@ -744,7 +744,7 @@ export function NewVariationSheet({
               </div>
             ))}
 
-            <div className={`mt-2.5 rounded-2xl border p-3 ${mEditId ? 'border-(--blue)/30 bg-(--blue-t)' : 'border-(--line) bg-(--soft)'}`}>
+            <div className={`mt-2.5 rounded-2xl border p-3 ${mEditId ? 'bg-(--blue-t)' : 'border-(--line) bg-(--soft)'}`}>
               <span className={microLabel}>{mEditId ? 'Editing line item' : 'New material'}</span>
               <div className="flex items-center gap-2">
                 <input ref={nameRef} value={mName} onChange={(e) => setMName(e.target.value)} onKeyDown={onComposerKey} placeholder="Material name" aria-label="Material name" className="min-w-0 flex-1 rounded-2xl bg-(--card) p-3 text-base shadow-xs outline-hidden" />
@@ -953,7 +953,7 @@ export function NewVariationSheet({
       </div>
 
       {/* footer */}
-      <footer className="border-t border-(--line) bg-(--bg)/90 px-3 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2.5 backdrop-blur-sm">
+      <footer className="border-t border-(--line) px-3 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2.5 backdrop-blur-sm">
         <div className="mb-2 flex flex-wrap justify-center gap-1.5 text-xs font-bold">
           <span className={`rounded-full border border-(--line) px-3 py-1 ${totalHours ? 'bg-(--proj-t) text-(--proj)' : 'bg-(--card) text-(--ink2)'}`}>{fmt(totalHours)} hrs</span>
           <span className={`rounded-full border border-(--line) px-3 py-1 ${materials.length ? 'bg-(--proj-t) text-(--proj)' : 'bg-(--card) text-(--ink2)'}`}>{materials.length} material{materials.length === 1 ? '' : 's'}</span>

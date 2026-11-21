@@ -21,7 +21,7 @@ export function PageHeader({
     <div className="mb-[22px] mt-2.5 flex flex-wrap items-center gap-4" data-hue={hue}>
       {icon ? <div className="grid h-[52px] w-[52px] place-items-center rounded-[16px] bg-(--ht) text-(--h)">{icon}</div> : null}
       <div className="min-w-0">
-        <h1 className="text-[28px] font-extrabold leading-[1.15] max-[760px]:text-2xl">{title}</h1>
+        <h1 className="text-[28px] font-extrabold leading-[1.15] max-[760px]:text-2xl max-[760px]:leading-8">{title}</h1>
         {subtitle ? <p className="mt-[3px] text-[14.5px] text-(--ink3)">{subtitle}</p> : null}
       </div>
       {actions ? <div className="ml-auto flex flex-wrap items-center gap-2.5">{actions}</div> : null}
@@ -102,8 +102,8 @@ export function StatCard({
   hint?: string
 }) {
   const className = cn(
-    'flex w-full items-center gap-3.5 rounded-[18px] bg-(--card) px-5 py-[18px] text-left shadow-pp',
-    onClick && 'cursor-pointer transition hover:-translate-y-0.5 hover:shadow-pp-hover',
+    'flex w-full items-center gap-3.5 rounded-[18px] bg-(--card) px-5 py-[18px] text-left shadow-(color:--sh)',
+    onClick && 'cursor-pointer transition hover:-translate-y-0.5 hover:shadow-(color:--sh-hover)',
     selected && 'shadow-[0_0_0_2px_var(--h),var(--sh)]'
   )
   const body = (
@@ -148,7 +148,7 @@ export function Tile({
       type="button"
       data-hue={hue}
       onClick={onClick}
-      className="relative flex flex-col items-center gap-3 rounded-[18px] bg-(--card) px-3.5 pb-4 pt-[18px] text-[14.5px] font-semibold text-(--ink) shadow-pp transition hover:translate-y-[-3px] hover:shadow-pp-hover"
+      className="relative flex flex-col items-center gap-3 rounded-[18px] bg-(--card) px-3.5 pb-4 pt-[18px] text-[14.5px] font-semibold text-(--ink) shadow-(color:--sh) transition hover:translate-y-[-3px] hover:shadow-(color:--sh-hover)"
     >
       <IconChip hue={hue} className="h-[52px] w-[52px] rounded-2xl">
         {icon}
@@ -183,8 +183,8 @@ export function ListRow({
   onClick?: () => void
 }) {
   const className = cn(
-    'flex w-full items-center gap-3.5 rounded-[14px] bg-(--card) px-4 py-3.5 text-left shadow-pp',
-    onClick && 'cursor-pointer transition hover:-translate-y-px hover:shadow-pp-hover',
+    'flex w-full items-center gap-3.5 rounded-[14px] bg-(--card) px-4 py-3.5 text-left shadow-(color:--sh)',
+    onClick && 'cursor-pointer transition hover:-translate-y-px hover:shadow-(color:--sh-hover)',
     accent && 'shadow-[inset_4px_0_0_var(--h),var(--sh)]',
     selected && 'shadow-[0_0_0_2px_var(--blue),var(--sh)]'
   )
@@ -274,7 +274,7 @@ export function Skeleton({ className }: { className?: string }) {
 }
 
 export function Card({ children, className, padded }: { children: ReactNode; className?: string; padded?: boolean }) {
-  return <div className={cn('rounded-[18px] bg-(--card) shadow-pp', padded && 'p-[22px]', className)}>{children}</div>
+  return <div className={cn('rounded-[18px] bg-(--card) shadow-(color:--sh)', padded && 'p-[22px]', className)}>{children}</div>
 }
 
 export function HeroButton({ solid, children, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { solid?: boolean }) {

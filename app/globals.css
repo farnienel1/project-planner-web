@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import './tailwind-v3-palette.css';
 
 @custom-variant dark (&:where(:is(.dark, [data-theme="dark"]), :is(.dark, [data-theme="dark"]) *));
 
@@ -61,10 +62,21 @@
   --font-ios:
     var(--font-body), Inter, -apple-system, BlinkMacSystemFont, Segoe UI,
     Roboto, system-ui, sans-serif;
-  --font-head: var(--font-head), Plus Jakarta Sans, Inter, sans-serif;
-  --font-body: var(--font-body), Inter, sans-serif;
+  /* No `--font-head` / `--font-body` here: those names belong to next/font (lib/fonts.ts), and a theme variable of
+     the same name pointed at itself. Nothing uses the `font-head` / `font-body` classes. */
 
   --container-shell: 1440px;
+
+  /* Tailwind 3 line heights for the text sizes (fixed rem values; Tailwind 4 uses ratios, so smaller text nested
+     inside a `text-sm` block inherited a shorter line). */
+  --text-xs--line-height: 1rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl--line-height: 2.25rem;
+  --text-4xl--line-height: 2.5rem;
 
   --shadow-ios-bar: var(--sh-pop);
   --shadow-ios-toast: var(--sh-pop);
@@ -88,6 +100,49 @@
   ::backdrop,
   ::file-selector-button {
     border-color: var(--color-gray-200, currentcolor);
+  }
+
+  /* Tailwind 3 left text fields, dropdowns and text areas with the browser's own background and corners, gave
+     placeholders gray-400 and buttons a pointer; Tailwind 4's reset makes them see-through, square and grey at half
+     the text colour. Restore the Tailwind 3 look (buttons stay see-through, as in Tailwind 3). */
+  input:where(:not([type='button'], [type='reset'], [type='submit'])),
+  select,
+  textarea {
+    background-color: revert;
+    border-radius: revert;
+  }
+  input::placeholder,
+  textarea::placeholder {
+    color: #9ca3af;
+  }
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+  /* Tailwind 4 also trims the inside of date and time fields (Tailwind 3 left the browser's own). */
+  ::-webkit-date-and-time-value {
+    min-height: revert;
+    text-align: revert;
+  }
+  ::-webkit-datetime-edit {
+    display: revert;
+  }
+  ::-webkit-datetime-edit-fields-wrapper {
+    padding: revert;
+  }
+  ::-webkit-datetime-edit,
+  ::-webkit-datetime-edit-year-field,
+  ::-webkit-datetime-edit-month-field,
+  ::-webkit-datetime-edit-day-field,
+  ::-webkit-datetime-edit-hour-field,
+  ::-webkit-datetime-edit-minute-field,
+  ::-webkit-datetime-edit-second-field,
+  ::-webkit-datetime-edit-millisecond-field,
+  ::-webkit-datetime-edit-meridiem-field {
+    padding-block: revert;
+  }
+  ::-webkit-calendar-picker-indicator {
+    line-height: revert;
   }
 }
 
@@ -1336,8 +1391,9 @@
     color: var(--ink2);
   }
 
+  /* Tailwind 4: `display: grid` comes from Tailwind's own `grid` utility, so responsive utilities such as
+     `lg:hidden` still win (our copy sorted after them in the utilities layer). The gap stays ours. */
   .grid {
-    display: grid;
     gap: 20px;
   }
   .grid > * {
@@ -2185,6 +2241,33 @@
   .mkt .divide-slate-200 {
     border-color: var(--line) !important;
   }
+
+  /* Tailwind 4 moved `space-y-*` from a top margin on every child but the first (0,3,0 specificity) to a bottom
+     margin on every child but the last inside :where() (no specificity), so a child's own bottom margin (.phead,
+     .card …) now replaces the gap instead of collapsing with it. These rules restore the Tailwind 3 behaviour for
+     the values the app uses (no space-x or responsive space-y is used). */
+  :where(.space-y-0\.5 > *) { margin-block-end: 0; }
+  .space-y-0\.5 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.125rem; margin-bottom: 0; }
+  :where(.space-y-1 > *) { margin-block-end: 0; }
+  .space-y-1 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.25rem; margin-bottom: 0; }
+  :where(.space-y-1\.5 > *) { margin-block-end: 0; }
+  .space-y-1\.5 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.375rem; margin-bottom: 0; }
+  :where(.space-y-2 > *) { margin-block-end: 0; }
+  .space-y-2 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.5rem; margin-bottom: 0; }
+  :where(.space-y-2\.5 > *) { margin-block-end: 0; }
+  .space-y-2\.5 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.625rem; margin-bottom: 0; }
+  :where(.space-y-3 > *) { margin-block-end: 0; }
+  .space-y-3 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.75rem; margin-bottom: 0; }
+  :where(.space-y-4 > *) { margin-block-end: 0; }
+  .space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: 1rem; margin-bottom: 0; }
+  :where(.space-y-5 > *) { margin-block-end: 0; }
+  .space-y-5 > :not([hidden]) ~ :not([hidden]) { margin-top: 1.25rem; margin-bottom: 0; }
+  :where(.space-y-6 > *) { margin-block-end: 0; }
+  .space-y-6 > :not([hidden]) ~ :not([hidden]) { margin-top: 1.5rem; margin-bottom: 0; }
+  :where(.space-y-8 > *) { margin-block-end: 0; }
+  .space-y-8 > :not([hidden]) ~ :not([hidden]) { margin-top: 2rem; margin-bottom: 0; }
+  :where(.space-y-\[3px\] > *) { margin-block-end: 0; }
+  .space-y-\[3px\] > :not([hidden]) ~ :not([hidden]) { margin-top: 3px; margin-bottom: 0; }
 }
 
 /* ---------- Warning card actions and the Dismiss sheet (owner request 17 Nov) ----------

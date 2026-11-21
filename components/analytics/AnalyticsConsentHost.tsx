@@ -15,7 +15,7 @@ import {
 import { useAuthStore } from '@/lib/stores/authStore'
 
 const equalChoiceClass =
-  'h-11 min-w-30 rounded-[13px] border border-(--line) bg-(--card) px-[18px] text-[14.5px] font-semibold text-(--ink) shadow-pp'
+  'h-11 min-w-30 rounded-[13px] border border-(--line) bg-(--card) px-[18px] text-[14.5px] font-semibold text-(--ink) shadow-(color:--sh)'
 
 function ConsentActions({
   onAccept,
@@ -87,7 +87,7 @@ export function AnalyticsConsentHost({ autoPrompt = false }: { autoPrompt?: bool
         <div
           role="dialog"
           aria-label="Usage analytics"
-          className="fixed inset-x-0 bottom-0 z-90 border-t border-(--line) bg-(--card) px-4 py-4 shadow-(--sh-pop)"
+          className="fixed inset-x-0 bottom-0 z-90 border-t border-(--line) bg-(--card) px-4 py-4 shadow-(color:--sh-pop)"
         >
           <div className="mx-auto flex max-w-4xl flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div className="max-w-2xl">

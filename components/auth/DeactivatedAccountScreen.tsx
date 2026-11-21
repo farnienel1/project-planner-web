@@ -64,7 +64,7 @@ export function DeactivatedAccountScreen() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-(--bg) px-6">
-      <div className="w-full max-w-md rounded-[22px] bg-(--card) p-6 shadow-(--sh-pop)" role="dialog" aria-modal="true">
+      <div className="w-full max-w-md rounded-[22px] bg-(--card) p-6 shadow-(color:--sh-pop)" role="dialog" aria-modal="true">
         <h1 className="font-(family-name:--head) text-xl font-extrabold text-(--ink)">Account deactivated</h1>
         <p className="mt-3 text-sm leading-relaxed text-(--ink2)">{DEACTIVATED_ACCOUNT_MESSAGE}</p>
         {organization?.name ? (

@@ -66,7 +66,7 @@ export function FormActions({
       <button
         type="submit"
         disabled={saving || disabled}
-        className="btn primary disabled:opacity-50"
+        className="btn primary disabled:opacity-50!"
       >
         {saving ? 'Saving…' : submitLabel}
       </button>

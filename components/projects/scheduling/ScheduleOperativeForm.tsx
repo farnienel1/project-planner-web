@@ -546,14 +546,14 @@ export function ScheduleOperativeForm({
         <ErrorBanner message="This job can't be booked: it is inactive, or you don't manage it." />
       ) : null}
 
-      <div className="fixed bottom-0 left-0 right-0 border-t border-(--line) bg-(--card)/95 p-4 backdrop-blur-sm md:pl-64">
+      <div className="fixed bottom-0 left-0 right-0 border-t border-(--line) p-4 backdrop-blur-sm md:pl-64">
         <div className="mx-auto flex max-w-3xl gap-2">
           {showBack && (
             <button
               type="button"
               onClick={backAction}
               disabled={saving}
-              className="btn ghost disabled:opacity-60"
+              className="btn ghost disabled:opacity-60!"
             >
               Back
             </button>
@@ -562,7 +562,7 @@ export function ScheduleOperativeForm({
             type="button"
             disabled={!primaryEnabled()}
             onClick={primaryAction}
-            className={`btn primary flex-1 disabled:cursor-not-allowed disabled:opacity-60 ${
+            className={`btn primary flex-1 disabled:cursor-not-allowed disabled:opacity-60! ${
               step === 'review' && canConfirm ? '' : ''
             }`}
           >

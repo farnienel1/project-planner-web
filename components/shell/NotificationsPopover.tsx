@@ -27,7 +27,7 @@ export function NotificationsPopover({
   return (
     <>
       <button type="button" className="fixed inset-0 z-30 cursor-default bg-transparent" aria-label="Close notifications" onClick={onClose} />
-      <div className="absolute right-0 z-40 mt-2 w-[320px] overflow-hidden rounded-[18px] bg-(--card) p-1.5 shadow-(--sh-pop)">
+      <div className="absolute right-0 z-40 mt-2 w-[320px] overflow-hidden rounded-[18px] bg-(--card) p-1.5 shadow-(color:--sh-pop)">
         <div className="flex items-center justify-between px-2.5 py-2">
           <p className="text-[14px] font-semibold">Notifications</p>
           {unread ? (
