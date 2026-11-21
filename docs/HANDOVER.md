@@ -5,7 +5,7 @@
 - **Web main:** rulebook **1.69.0**. Merged 19–21 Nov: #381 (1.66), #378 (1.67), #389 (1.68), #380 (Warnings Dismiss, no rulebook change), #379 (1.69, was 1.62), #338 (owner console docs), #394 and #395 (minor dependency updates).
 - **iOS main:** merged #252 (1.60.1) and #263 (mass assignment). Open, each with main merged in and the rulebook mirror synced to 1.69.0: #253 (overtime wording, now through `liveDayRateOvertimeText`), #254, #256, #257, #260, #261, #262. Merge each once its Mac checks are green.
 - **Held for the owner:** web #396 (Tailwind 4), #397 (TypeScript 7), #398 (React DOM 19): major upgrades that fail the build and need code changes. Web #399 (date-fns 4): branch updated, CI re-running. Web #365: owner preview check.
-- **Still to do:** iOS #265 / #266 / #255 (dependency updates), checklist artifact rows, owner key revocations (`docs/security-audit-log.md`).
+- **Still to do:** iOS #262 and #266 (see the iOS queue), checklist artifact rows, owner key revocations (`docs/security-audit-log.md`).
 
 ---
 
@@ -44,13 +44,17 @@ Tip: after each merge the next PR conflicts in `docs/RULEBOOK.md`, the packed fi
 
 | PR | What | State |
 |---|---|---|
-| #252 | Rulebook 1.60.1 (timesheet notice per signature) | Main merged (`5689592d`); check CI, then merge. |
-| #263 | Mass-assignment fixes (pair of web #391) | Reviewed clean (6 rounds); last push `cc257cd0` updated two pinned hashes in `AddUserSavedDataGuardTests`; CI finished with no failure reported. Needs main merged, then merge. |
-| #253 | Overtime wording (pair of #378) | On the old 1.61 pack; re-sync after web #378 merges and switch `InvoiceLineItem` to `liveDayRateOvertimeText`. |
-| #261 | Variations 1.63 | Needs main. |
-| #257 | Timesheet queue (pair of #381) | Fixes pushed (`0f2bd74c`); needs main; merge after web #381. |
-| #262 | Site audit (pair of #389) | Reviewed clean (`bdd3d981`), CI green; needs main; merge after web #389. |
-| #254 | (open, not looked at this chat) | Check what it is. |
+| #252 | Rulebook 1.60.1 (timesheet notice per signature) | Merged. |
+| #263 | Mass-assignment fixes (pair of web #391) | Merged. |
+| #253 | Overtime wording (pair of #378) | Merged 21 Nov. |
+| #261 | Variations 1.63 | Merged 21 Nov. |
+| #257 | Timesheet queue (pair of #381) | Merged 21 Nov. |
+| #262 | Site audit (pair of #389) | Main merged (`7c0b1aea`); merge when parity-tests and screen-checks are green. |
+| #254 | Hours breakdown 1.62 | Merged 21 Nov. |
+| #256 | Clash cluster dismiss (every overlapping pair) | Merged 21 Nov (stale `variationIsPinned` and dismiss-sound anchor tests fixed). |
+| #260 | Daily Overview Other / Site survey rows (UI only) | Merged 21 Nov. |
+| #255 | Rules-test tooling: firebase 13.3.0, firebase-tools 15.36.0 (replaces #206, #229) | Merged 21 Nov. |
+| #266 | Dependabot: firebase 13.3.0 → 13.4.0 (rules-test tooling) | Code checks pass; only the PR-description check fails (Dependabot body). Fill the body, then merge. #265 closed. |
 
 Known trap (bit #251): since iOS #249 `Booking.storedOperativeId(for:)` returns `String?` and is write-only; reads and matching use `Booking.operativeMatchKey(for:)`.
 
