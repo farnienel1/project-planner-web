@@ -37,7 +37,7 @@ function SiteAuditHero({
 }) {
   return (
     <FeatureCard className="overflow-hidden">
-      <div className="bg-linear-to-br from-slate-800 to-slate-900 px-4 py-4 text-white">
+      <div className="bg-linear-to-br/srgb from-slate-800 to-slate-900 px-4 py-4 text-white">
         <p className="text-[11px] font-semibold uppercase tracking-[0.4px] text-slate-300">This project</p>
         <p className="mt-2 text-sm font-medium text-white">
           {auditCount} audits · {photoCount} photos

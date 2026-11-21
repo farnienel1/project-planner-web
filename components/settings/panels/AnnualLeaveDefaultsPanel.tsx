@@ -201,7 +201,7 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
       />
       <SettingsCard>
         <div className="space-y-4 p-5">
-          <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-3">
+          <div className="[display:grid] grid-cols-[1fr_auto_1fr] items-end gap-3">
             <FormField label="Starts">
               <Select
                 value={String(startMonth)}

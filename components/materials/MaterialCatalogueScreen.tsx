@@ -138,7 +138,7 @@ export function MaterialCatalogueScreen() {
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       {alert ? <p className="text-sm text-red-600">{alert}</p> : null}
 
-      <div className="rounded-2xl bg-linear-to-br from-[#185FA5] to-[#0F4C81] p-5 text-white shadow-xs">
+      <div className="rounded-2xl bg-linear-to-br/srgb from-[#185FA5] to-[#0F4C81] p-5 text-white shadow-xs">
         <div className="flex items-start justify-between">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.4px] text-white/80">Catalogue</p>

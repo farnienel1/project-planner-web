@@ -73,7 +73,7 @@ function MonthCoverage({ ranges }: { ranges: Array<{ startDay: number; endDay: n
   }
   return (
     <div>
-      <div className="grid grid-cols-16 gap-1 sm:grid-cols-31" aria-hidden>
+      <div className="[display:grid] grid-cols-16 gap-1 sm:grid-cols-31" aria-hidden>
         {days.map(({ day, state }) => (
           <span key={day} className={`grid h-7 place-items-center rounded-[5px] text-[10.5px] font-bold tabular-nums ${cell[state]}`}>
             {day}
@@ -284,7 +284,7 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
       </div>
 
       <SectionLabel step={1} label="How you run pay" description="Pick how your pay periods are set up." />
-      <div role="radiogroup" aria-label="Payment runs" className="grid gap-2.5 sm:grid-cols-2">
+      <div role="radiogroup" aria-label="Payment runs" className="[display:grid] gap-2.5 sm:grid-cols-2">
         <ChoiceCard
           selected={runMode === 'date_ranges'}
           title="Set payment run date ranges"
@@ -314,7 +314,7 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
         {runMode === 'date_ranges' ? (
           <>
             {ranges.map((range, index) => (
-              <div key={index} className="grid grid-cols-[auto_1fr_1fr] items-end gap-3 p-5">
+              <div key={index} className="[display:grid] grid-cols-[auto_1fr_1fr] items-end gap-3 p-5">
                 <span
                   className={`mb-1.5 grid h-7 min-w-[52px] place-items-center rounded-md px-2 text-[12px] font-bold text-(--card) ${
                     index === 0 ? 'bg-(--blue)' : 'bg-(--ops)'
@@ -348,7 +348,7 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
           </>
         ) : (
           <div className="space-y-3 p-5">
-            <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-3">
+            <div className="[display:grid] grid-cols-[1fr_auto_1fr] items-end gap-3">
               <FormField label="Start day">
                 <WeekdaySelect label="Start day" value={draft.recurringRunStartDay} onChange={(value) => patch({ recurringRunStartDay: value })} />
               </FormField>
@@ -379,7 +379,7 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
             ]}
           />
           {dateMode === 'specific_dates' ? (
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="[display:grid] gap-3 sm:grid-cols-2">
               {ranges.map((_, index) => (
                 <FormField key={index} label={`Payment date ${index + 1}`}>
                   <DaySelect

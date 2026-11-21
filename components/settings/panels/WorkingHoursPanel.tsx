@@ -440,7 +440,7 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
           />
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="[display:grid] grid-cols-2 gap-3">
               <FormField label="Window start">
                 <TimeInput
                   label={`${name} window start`}
@@ -528,7 +528,7 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
           step={PAYROLL_BREAK_TIME_STEP_MINUTES}
           format={(value) => `${value} min`}
         />
-        <div className="grid grid-cols-2 gap-3">
+        <div className="[display:grid] grid-cols-2 gap-3">
           <FormField label="Break start">
             <TimeInput
               kind="break"
@@ -579,7 +579,7 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
         <div className="p-5">
           <DayTimeline policy={draft} />
         </div>
-        <div className="grid grid-cols-2 gap-4 p-5">
+        <div className="[display:grid] grid-cols-2 gap-4 p-5">
           <FormField label="Start time">
             <TimeInput label="Start time" value={draft.standardDayStart} placeholder="07:30" onChange={(value) => patch({ standardDayStart: value })} />
           </FormField>
@@ -617,7 +617,7 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
             format={(value) => `${value} min`}
           />
         </div>
-        <div className="grid grid-cols-2 gap-4 p-5">
+        <div className="[display:grid] grid-cols-2 gap-4 p-5">
           <FormField label="Break window start">
             <TimeInput kind="break" label="Break window start" value={draft.breakWindowStart} placeholder="12:00" onChange={(value) => patch({ breakWindowStart: value })} />
           </FormField>

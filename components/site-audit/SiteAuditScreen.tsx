@@ -314,7 +314,7 @@ function ProjectAuditsView({
         </div>
       </div>
 
-      <div className="rounded-2xl bg-linear-to-br from-blue-600 to-blue-800 px-5 py-5 text-white shadow-lg">
+      <div className="rounded-2xl bg-linear-to-br/srgb from-blue-600 to-blue-800 px-5 py-5 text-white shadow-lg">
         <p className="text-[11px] font-bold uppercase tracking-widest text-blue-200">This project</p>
         <p className="mt-1 text-2xl font-bold">
           {projectAudits.length} audit{projectAudits.length !== 1 ? 's' : ''}

@@ -481,8 +481,14 @@ html:has(.pp-site-dark) body { background: transparent; }
 /* Fields with no background class would get the browser's grey dark field (and its placeholder
    grey, 3.3:1); they get the card and --ink3 placeholders (5.1:1) like the rest. Zero specificity, so
    any background class still wins. */
-:where(.mkt, .pp-site-dark) :where(input:not([type=checkbox], [type=radio], [type=range], [type=file]), select, textarea) { background-color: var(--card); }
-:where(.mkt, .pp-site-dark) :where(input, textarea)::placeholder { color: var(--ink3); }
+/* In the components layer so any Tailwind class still wins (Tailwind 3: zero specificity, unlayered, lost to utilities). */
+@layer components {
+  :where(.mkt, .pp-site-dark) :where(input:not([type=checkbox], [type=radio], [type=range], [type=file]), select, textarea) { background-color: var(--card); }
+}
+/* Base layer: on Tailwind 3 the reset's `input::placeholder` (gray-400, higher specificity) beat this rule. */
+@layer base {
+  :where(.mkt, .pp-site-dark) :where(input, textarea)::placeholder { color: var(--ink3); }
+}
 /* The help-page search field has no border (inline border: 0): a 1.5px --ink3 ring marks it. */
 .mkt input.in[aria-label="Search questions"]:not(:focus) { box-shadow: var(--sh), inset 0 0 0 1.5px var(--ink3) !important; }
 .mkt input.in[aria-label="Search questions"]:focus { box-shadow: var(--sh), inset 0 0 0 2px var(--blue) !important; }
@@ -518,7 +524,7 @@ html:has(.pp-site-dark) body { background: transparent; }
 :is(.mkt, .pp-site-dark) .border-violet-200 { border-color: color-mix(in srgb, var(--daily) 40%, var(--line)) !important; }
 :is(.mkt, .pp-site-dark) :is(.ring-slate-200, .ring-blue-100, .ring-sky-100, .ring-violet-100, .ring-teal-100, .ring-indigo-100, .ring-emerald-100, .ring-amber-100) { --tw-ring-color: var(--line2) !important; }
 :is(.mkt, .pp-site-dark) .focus\:ring-blue-100:focus { --tw-ring-color: color-mix(in srgb, var(--blue) 45%, transparent) !important; }
-:is(.mkt, .pp-site-dark) .from-violet-50 { --tw-gradient-from: var(--daily-t) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important; }
+:is(.mkt, .pp-site-dark) .from-violet-50 { --tw-gradient-from: var(--daily-t) !important; --tw-gradient-stops: var(--tw-gradient-position), var(--tw-gradient-from), var(--tw-gradient-to) !important; } /* Tailwind 4 keeps the direction inside the stops */
 :is(.mkt, .pp-site-dark) .to-purple-50 { --tw-gradient-to: var(--user-t) !important; }
 
 /* Legal pages (privacy, terms, processors): on a phone the single column was as wide as the longest

@@ -169,7 +169,7 @@ export function DashboardHero({
 
   return (
     <div
-      className={`relative rounded-2xl bg-linear-to-br from-blue-600 to-blue-700 p-6 text-white shadow-[0_10px_30px_rgba(37,99,235,0.28)] ${
+      className={`relative rounded-2xl bg-linear-to-br/srgb from-blue-600 to-blue-700 p-6 text-white shadow-[0_10px_30px_rgba(37,99,235,0.28)] ${
         editable && heroDragOver ? 'ring-2 ring-white/40 ring-offset-2 ring-offset-blue-600' : ''
       }`}
       onDragOver={editable ? (e) => e.preventDefault() : undefined}

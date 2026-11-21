@@ -190,7 +190,7 @@ export function UserAvatar({
 
   return (
     <span
-      className={`relative inline-flex shrink-0 overflow-hidden rounded-full bg-linear-to-br ${gradient} ${className}`}
+      className={`relative inline-flex shrink-0 overflow-hidden rounded-full bg-linear-to-br/srgb ${gradient} ${className}`}
       style={{ width: size, height: size }}
     >
       {showPhoto ? (

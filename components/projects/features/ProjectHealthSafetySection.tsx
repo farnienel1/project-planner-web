@@ -178,8 +178,8 @@ export function ProjectHealthSafetySection({
   const [libraryLoading, setLibraryLoading] = useState(false)
 
   const bannerGradient = isOperativeMode(user)
-    ? 'bg-linear-to-br from-[#19c4b3] to-[#0fae9e]'
-    : 'bg-linear-to-br from-[#3f86ff] to-[#2563eb]'
+    ? 'bg-linear-to-br/srgb from-[#19c4b3] to-[#0fae9e]'
+    : 'bg-linear-to-br/srgb from-[#3f86ff] to-[#2563eb]'
 
   // Rulebook 1.9.0 §1: the job's health & safety documents are live while this section is open.
   useEffect(() => {

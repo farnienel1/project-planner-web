@@ -2,6 +2,9 @@
 @import './tailwind-v3-palette.css';
 
 @custom-variant dark (&:where(:is(.dark, [data-theme="dark"]), :is(.dark, [data-theme="dark"]) *));
+/* Tailwind 3's hover: applied on every device (a tap shows hover-revealed controls on phones); Tailwind 4 limits it
+   to devices with a mouse. Keep the Tailwind 3 behaviour. */
+@custom-variant hover (&:hover);
 
 @theme {
   --color-primary-50: #e6f1fb;
@@ -143,6 +146,22 @@
   }
   ::-webkit-calendar-picker-indicator {
     line-height: revert;
+  }
+  /* Tailwind 4 also resets the file picker's button (Tailwind 3 left the browser's own button). */
+  ::file-selector-button {
+    font: revert;
+    font-feature-settings: revert;
+    font-variation-settings: revert;
+    letter-spacing: revert;
+    color: revert;
+    border: revert;
+    border-radius: revert;
+    background-color: revert;
+    opacity: revert;
+    margin: revert;
+    margin-inline-end: revert;
+    padding: revert;
+    appearance: revert;
   }
 }
 
@@ -499,12 +518,6 @@
     border-radius: 10px;
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    * {
-      transition: none !important;
-      animation: none !important;
-    }
-  }
 
   @keyframes pagein {
     from {
@@ -2180,67 +2193,6 @@
     }
   }
 
-  /* Leftover Tailwind slate/white from pre-v2 screens — keep copy readable in dark mode. */
-  :root[data-theme='dark'] .text-slate-900,
-  .dark .text-slate-900,
-  .mkt .text-slate-900,
-  :root[data-theme='dark'] .text-slate-800,
-  .dark .text-slate-800,
-  .mkt .text-slate-800,
-  :root[data-theme='dark'] .text-gray-900,
-  .dark .text-gray-900,
-  .mkt .text-gray-900 {
-    color: var(--ink) !important;
-  }
-  :root[data-theme='dark'] .text-slate-700,
-  .dark .text-slate-700,
-  .mkt .text-slate-700,
-  :root[data-theme='dark'] .text-slate-600,
-  .dark .text-slate-600,
-  .mkt .text-slate-600 {
-    color: var(--ink2) !important;
-  }
-  :root[data-theme='dark'] .text-slate-500,
-  .dark .text-slate-500,
-  .mkt .text-slate-500,
-  :root[data-theme='dark'] .text-slate-400,
-  .dark .text-slate-400,
-  .mkt .text-slate-400 {
-    color: var(--ink3) !important;
-  }
-  :root[data-theme='dark'] .bg-white,
-  .dark .bg-white,
-  .mkt .bg-white,
-  :root[data-theme='dark'] .bg-white\/95,
-  .dark .bg-white\/95,
-  .mkt .bg-white\/95 {
-    background-color: var(--card) !important;
-  }
-  :root[data-theme='dark'] .bg-slate-50,
-  .dark .bg-slate-50,
-  .mkt .bg-slate-50,
-  :root[data-theme='dark'] .bg-slate-100,
-  .dark .bg-slate-100,
-  .mkt .bg-slate-100 {
-    background-color: var(--soft) !important;
-  }
-  :root[data-theme='dark'] .border-slate-100,
-  .dark .border-slate-100,
-  .mkt .border-slate-100,
-  :root[data-theme='dark'] .border-slate-200,
-  .dark .border-slate-200,
-  .mkt .border-slate-200,
-  :root[data-theme='dark'] .border-slate-300,
-  .dark .border-slate-300,
-  .mkt .border-slate-300,
-  :root[data-theme='dark'] .divide-slate-100,
-  .dark .divide-slate-100,
-  .mkt .divide-slate-100,
-  :root[data-theme='dark'] .divide-slate-200,
-  .dark .divide-slate-200,
-  .mkt .divide-slate-200 {
-    border-color: var(--line) !important;
-  }
 
   /* Tailwind 4 moved `space-y-*` from a top margin on every child but the first (0,3,0 specificity) to a bottom
      margin on every child but the last inside :where() (no specificity), so a child's own bottom margin (.phead,
@@ -2268,6 +2220,77 @@
   .space-y-8 > :not([hidden]) ~ :not([hidden]) { margin-top: 2rem; margin-bottom: 0; }
   :where(.space-y-\[3px\] > *) { margin-block-end: 0; }
   .space-y-\[3px\] > :not([hidden]) ~ :not([hidden]) { margin-top: 3px; margin-bottom: 0; }
+}
+
+/* Outside the cascade layers on purpose: an !important rule inside a layer beats every unlayered !important rule
+   (marketing.css), the reverse of Tailwind 3, where all of these were unlayered. */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* Leftover Tailwind slate/white from pre-v2 screens — keep copy readable in dark mode. */
+:root[data-theme='dark'] .text-slate-900,
+.dark .text-slate-900,
+.mkt .text-slate-900,
+:root[data-theme='dark'] .text-slate-800,
+.dark .text-slate-800,
+.mkt .text-slate-800,
+:root[data-theme='dark'] .text-gray-900,
+.dark .text-gray-900,
+.mkt .text-gray-900 {
+  color: var(--ink) !important;
+}
+:root[data-theme='dark'] .text-slate-700,
+.dark .text-slate-700,
+.mkt .text-slate-700,
+:root[data-theme='dark'] .text-slate-600,
+.dark .text-slate-600,
+.mkt .text-slate-600 {
+  color: var(--ink2) !important;
+}
+:root[data-theme='dark'] .text-slate-500,
+.dark .text-slate-500,
+.mkt .text-slate-500,
+:root[data-theme='dark'] .text-slate-400,
+.dark .text-slate-400,
+.mkt .text-slate-400 {
+  color: var(--ink3) !important;
+}
+:root[data-theme='dark'] .bg-white,
+.dark .bg-white,
+.mkt .bg-white,
+:root[data-theme='dark'] .bg-white\/95,
+.dark .bg-white\/95,
+.mkt .bg-white\/95 {
+  background-color: var(--card) !important;
+}
+:root[data-theme='dark'] .bg-slate-50,
+.dark .bg-slate-50,
+.mkt .bg-slate-50,
+:root[data-theme='dark'] .bg-slate-100,
+.dark .bg-slate-100,
+.mkt .bg-slate-100 {
+  background-color: var(--soft) !important;
+}
+:root[data-theme='dark'] .border-slate-100,
+.dark .border-slate-100,
+.mkt .border-slate-100,
+:root[data-theme='dark'] .border-slate-200,
+.dark .border-slate-200,
+.mkt .border-slate-200,
+:root[data-theme='dark'] .border-slate-300,
+.dark .border-slate-300,
+.mkt .border-slate-300,
+:root[data-theme='dark'] .divide-slate-100,
+.dark .divide-slate-100,
+.mkt .divide-slate-100,
+:root[data-theme='dark'] .divide-slate-200,
+.dark .divide-slate-200,
+.mkt .divide-slate-200 {
+  border-color: var(--line) !important;
 }
 
 /* ---------- Warning card actions and the Dismiss sheet (owner request 17 Nov) ----------

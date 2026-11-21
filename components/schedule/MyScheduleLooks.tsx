@@ -196,7 +196,7 @@ export function MyScheduleTotalHoursCard({
       </div>
       <div className="relative mt-3 h-7 overflow-hidden rounded-[10px] bg-[#F2F3F5]">
         {annualLeaveLabel ? (
-          <div className="absolute inset-0 bg-linear-to-r from-[#993556] to-[#C96B4A]" />
+          <div className="absolute inset-0 bg-linear-to-r/srgb from-[#993556] to-[#C96B4A]" />
         ) : (
           bookings.map((b, index) => {
             const range = slotClockRange(b.timeSlot, b.workStartTime, b.workEndTime, policy, date)
@@ -205,7 +205,7 @@ export function MyScheduleTotalHoursCard({
             return (
               <div
                 key={index}
-                className="absolute inset-y-0 rounded-[10px] bg-linear-to-r from-[#185FA5] to-[#378ADD]"
+                className="absolute inset-y-0 rounded-[10px] bg-linear-to-r/srgb from-[#185FA5] to-[#378ADD]"
                 style={{ left: `${left}%`, width: `${width}%` }}
               />
             )

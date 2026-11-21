@@ -62,7 +62,7 @@ export function HsHero({
         ? 'from-[#f0b429] to-[#d97706]'
         : 'from-[#19c4b3] to-[#0fae9e]'
   return (
-    <div className={`flex items-center gap-3.5 rounded-[18px] bg-linear-to-br ${bg} px-4 py-4 text-white`}>
+    <div className={`flex items-center gap-3.5 rounded-[18px] bg-linear-to-br/srgb ${bg} px-4 py-4 text-white`}>
       <div className="flex h-11 w-11 items-center justify-center rounded-[13px] bg-white/20">
         <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />

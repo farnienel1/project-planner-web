@@ -288,7 +288,7 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
         <p className="eyebrow" style={{ marginBottom: 12 }}>Profile image</p>
         <div className="flex items-center gap-4">
           {user ? <UserAvatar user={{ ...user, firstName, surname }} size={56} /> : (
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-linear-to-br from-blue-500 to-indigo-600 text-xl font-bold text-white shrink-0">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-linear-to-br/srgb from-blue-500 to-indigo-600 text-xl font-bold text-white shrink-0">
               {(firstName[0] || '') + (surname[0] || '')}
             </div>
           )}

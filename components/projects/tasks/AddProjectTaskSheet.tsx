@@ -284,7 +284,7 @@ export function AddProjectTaskSheet({
         <div className="flex-1 space-y-4 overflow-y-auto px-[18px] py-3 pb-6">
           {error && <ErrorBanner message={error} />}
           <div className="flex items-center gap-3.5 rounded-[18px] border border-[#EEF0F3] bg-white px-[18px] py-4">
-            <div className="relative flex h-[52px] w-[52px] items-center justify-center rounded-2xl bg-linear-to-br from-[#185FA5] to-[#378ADD] text-white">
+            <div className="relative flex h-[52px] w-[52px] items-center justify-center rounded-2xl bg-linear-to-br/srgb from-[#185FA5] to-[#378ADD] text-white">
               <ClipboardDocumentCheckIcon className="h-6 w-6" />
               <span className="absolute -bottom-1 -right-1 flex h-[22px] w-[22px] items-center justify-center rounded-full border-2 border-[#F7F8FA] bg-white text-(--blue)">
                 <PlusIcon className="h-3 w-3" />

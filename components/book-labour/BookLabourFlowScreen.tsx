@@ -998,8 +998,8 @@ function Avatar({ name, operative }: { name: string; operative?: boolean }) {
     <span
       className={`grid h-[38px] w-[38px] shrink-0 place-items-center rounded-full text-[12px] font-medium text-white ${
         operative
-          ? 'bg-linear-to-br from-[#185FA5] to-[#378ADD]'
-          : 'bg-linear-to-br from-[#534AB7] to-[#7F77DD]'
+          ? 'bg-linear-to-br/srgb from-[#185FA5] to-[#378ADD]'
+          : 'bg-linear-to-br/srgb from-[#534AB7] to-[#7F77DD]'
       }`}
     >
       {initialsFrom(name)}

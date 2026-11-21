@@ -152,7 +152,7 @@ export function OrganisationHubPanel({
       {feedback?.kind === 'success' && <SuccessBanner message={feedback.msg} />}
       {feedback?.kind === 'error' && <ErrorBanner message={feedback.msg} />}
 
-      <div className="rounded-2xl bg-linear-to-br from-[#185FA5] to-[#378ADD] p-5 text-white shadow-lg">
+      <div className="rounded-2xl bg-linear-to-br/srgb from-[#185FA5] to-[#378ADD] p-5 text-white shadow-lg">
         <div className="flex items-center gap-3">
           <div className="flex h-12 w-12 items-center justify-center rounded-[13px] bg-white/18 text-sm font-semibold">
             {orgInitials(orgName)}
@@ -166,7 +166,7 @@ export function OrganisationHubPanel({
         <div className="my-3.5 h-px bg-white/20" />
 
         <div className="flex items-center gap-2.5">
-          <div className="flex h-[26px] w-[26px] items-center justify-center rounded-full bg-linear-to-br from-[#993556] to-[#C2547A] text-[9px] font-semibold ring-[1.5px] ring-white/40">
+          <div className="flex h-[26px] w-[26px] items-center justify-center rounded-full bg-linear-to-br/srgb from-[#993556] to-[#C2547A] text-[9px] font-semibold ring-[1.5px] ring-white/40">
             {owner.initials}
           </div>
           <div className="min-w-0">

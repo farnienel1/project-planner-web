@@ -7,7 +7,6 @@
 //   node textdiff.mjs <beforeOut> <afterOut>      (visible text and every control per variant)
 //   node overflow.mjs <outDir> <shotsDir>         (no overflow at 1440/1280/1024/820/390, light and dark; screenshots)
 // Env: HARNESS_NODE_MODULES, HARNESS_PLAYWRIGHT, HARNESS_CHROME.
-import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -64,8 +63,14 @@ await build({
 
 if (!fs.existsSync(path.join(out, 'entry.css'))) fs.writeFileSync(path.join(out, 'entry.css'), '')
 // Tailwind + globals + shell tokens, compiled against the same tree.
-const tw = path.join(nm, '.bin/tailwindcss')
-execFileSync(tw, ['-c', path.join(root, 'tailwind.config.js'), '-i', path.join(root, 'app/globals.css'), '-o', path.join(out, 'tw.css')], { cwd: root, stdio: 'inherit' })
+// Tailwind 4: compile through its PostCSS plugin (there is no tailwind.config.js or tailwindcss CLI any more).
+const { createRequire } = await import('node:module')
+const requireNm = createRequire(path.join(nm, 'noop.js'))
+const postcss = requireNm('postcss')
+const tailwindPostcss = requireNm('@tailwindcss/postcss')
+const globalsPath = path.join(root, 'app/globals.css')
+const compiled = await postcss([tailwindPostcss({ base: root })]).process(fs.readFileSync(globalsPath, 'utf8'), { from: globalsPath })
+fs.writeFileSync(path.join(out, 'tw.css'), compiled.css)
 fs.copyFileSync(path.join(root, 'app/brand-shell.css'), path.join(out, 'brand-shell.css'))
 fs.writeFileSync(
   path.join(out, 'index.html'),

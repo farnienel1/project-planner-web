@@ -60,7 +60,7 @@ export function PayePaydayCard({
           {canEdit ? (
             <div className="space-y-3">
               <p className="text-[13px] font-semibold text-(--ink2)">{PAYE_PAYDAY_CONTROL_LABEL}</p>
-              <div className="grid grid-cols-7 gap-1" role="listbox" aria-label="Day of the month">
+              <div className="[display:grid] grid-cols-7 gap-1" role="listbox" aria-label="Day of the month">
                 {days.map((day) => (
                   <button
                     key={day}

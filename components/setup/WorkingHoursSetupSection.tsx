@@ -146,7 +146,7 @@ function MonFriPaidDayInfographic({ policy }: { policy: OrgPayrollTimePolicy }) 
   const breakHours = policy.breakPaid === true ? 0 : Math.round((policy.unpaidBreakMinutes / 60) * 100) / 100
 
   return (
-    <div className="rounded-xl border border-violet-200 bg-linear-to-br from-violet-50 to-purple-50 p-4">
+    <div className="rounded-xl border border-violet-200 bg-linear-to-br/srgb from-violet-50 to-purple-50 p-4">
       <p className="text-[11px] font-bold uppercase tracking-widest text-violet-500">Mon–Fri paid day</p>
       <div className="mt-3 space-y-2 text-sm">
         <div className="flex items-center justify-between text-violet-900">

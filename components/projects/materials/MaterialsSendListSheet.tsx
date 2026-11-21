@@ -659,7 +659,7 @@ export function MaterialsSendListSheet({
                         }
                         className="flex w-full items-center gap-2.5 px-3 py-3 text-left"
                       >
-                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-linear-to-br from-[#185FA5] to-[#378ADD] text-[10px] font-medium text-white">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-linear-to-br/srgb from-[#185FA5] to-[#378ADD] text-[10px] font-medium text-white">
                           {wholesaler.name.slice(0, 2).toUpperCase()}
                         </span>
                         <span className="min-w-0 flex-1">

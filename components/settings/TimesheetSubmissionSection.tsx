@@ -252,10 +252,10 @@ function TimesheetRowFields({
         ) : null}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="[display:grid] gap-3 sm:grid-cols-2">
         <div className="rounded-xl bg-(--soft) p-3.5 shadow-[inset_0_0_0_1px_var(--line)]">
           <div className="mb-2.5 text-[13px] font-semibold text-(--ink)">Timesheets to be submitted by</div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="[display:grid] grid-cols-2 gap-2">
             <FormField label="Day">
               <DaySelect label="Timesheets to be submitted by" value={deadlineDay} disabled={disabled} options={dayOptions} onChange={onDeadlineDay} />
             </FormField>
@@ -266,7 +266,7 @@ function TimesheetRowFields({
         </div>
         <div className="rounded-xl bg-(--soft) p-3.5 shadow-[inset_0_0_0_1px_var(--line)]">
           <div className="mb-2.5 text-[13px] font-semibold text-(--ink)">When to send the notification</div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="[display:grid] grid-cols-2 gap-2">
             <FormField label="Day">
               <DaySelect label="When to send the notification" value={notifyDay} disabled={disabled} options={dayOptions} onChange={onNotifyDay} />
             </FormField>
