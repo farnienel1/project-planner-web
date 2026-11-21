@@ -19,7 +19,7 @@ export const OFFLINE_RECHECK_MS = 10_000
 export const STUCK_FLAG_BACKOFF_MS = [10_000, 30_000, 60_000] as const
 /** A reachability request that has not answered by then counts as failed. */
 export const REACHABILITY_TIMEOUT_MS = 5_000
-/** Skipped by `middleware.ts`'s matcher, so the request never runs the MFA check; any HTTP answer (404 too) counts. */
+/** Skipped by `proxy.ts`'s matcher, so the request never runs the MFA check; any HTTP answer (404 too) counts. */
 export const REACHABILITY_PATH = '/favicon.ico'
 
 export type ReachabilityProbe = 'ok' | 'failed'

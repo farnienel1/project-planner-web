@@ -59,7 +59,7 @@ export async function apiHeaders(request: APIRequestContext, role: SeedRole, wit
  * Signs the owner in through the real login page, then completes the second step with the signed cookie the verify
  * route would write (the emailed code itself is covered by the MFA unit tests; the emulator sends no email). Opening
  * /auth/mfa then calls the status route, which mints the Firebase session cookie from the Auth emulator for the same
- * uid, so the middleware lets /developer through.
+ * uid, so the proxy (proxy.ts) lets /developer through.
  */
 export async function signInOwner(page: Page, baseURL: string) {
   await page.goto('/developer-login')

@@ -20,8 +20,8 @@ function unavailable() {
 }
 
 /**
- * The server cannot issue a session cookie the middleware accepts (no or unusable service account, a project
- * mismatch, Google 401 / 403, or a freshly minted cookie that fails the middleware's own check). Retrying will not
+ * The server cannot issue a session cookie the proxy accepts (no or unusable service account, a project
+ * mismatch, Google 401 / 403, or a freshly minted cookie that fails the proxy's own check). Retrying will not
  * help, so the browser shows its own message rather than the "trying again" one; the cause is in the server log.
  * Never "not verified", so nobody is sent to the code screen in a loop.
  */
@@ -40,7 +40,7 @@ function setupError() {
  * of sending the person to the code screen.
  *
  * Owner decision 17 Nov (server-side session cookie): when verified, this route also makes sure the browser holds
- * a Firebase session cookie for that same uid — the cookie the middleware checks for /dashboard and /developer
+ * a Firebase session cookie for that same uid — the cookie the proxy checks for /dashboard and /developer
  * (lib/auth/mfa/mfaSessionCookie.ts). A valid one with more than an hour left is kept; otherwise a new one is
  * minted from this ID token. If it cannot be minted right now, 503 (retry), never "not verified". When the token
  * names someone else, or the MFA pass is gone, the session cookie is expired.
@@ -71,12 +71,12 @@ export async function GET(request: NextRequest) {
             verified = false
             clearSession = Boolean(sessionRaw)
           } else {
-            // Check the new cookie exactly as the middleware will, so a cookie it would refuse (wrong project,
+            // Check the new cookie exactly as the proxy will, so a cookie it would refuse (wrong project,
             // emulator switch out of step) never answers "verified" and starts a redirect loop (review of #359).
             const check = await verifyAppSessionCookie(minted.cookie)
             if (check.status === 'unavailable') return unavailable()
             if (check.status !== 'ok' || check.claims.uid !== lookup.user.uid) {
-              console.error('[auth/mfa/session] SETUP ERROR: a freshly minted session cookie fails the middleware check', {
+              console.error('[auth/mfa/session] SETUP ERROR: a freshly minted session cookie fails the proxy check', {
                 reason: check.status === 'invalid' ? check.reason : check.status === 'ok' ? 'uid-mismatch' : check.status,
               })
               return setupError()

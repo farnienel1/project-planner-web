@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { NextRequest } from 'next/server'
 import { encodeMfaOk, encodeSigned } from './mfaCookies.ts'
 import { mfaCookieName, shouldSecureMfaCookies } from './mfaCookiePolicy.ts'
-import { middleware } from '../../../middleware.ts'
+import { proxy } from '../../../proxy.ts'
 import { GET as status } from '../../../app/api/auth/mfa/status/route.ts'
 import { POST as start } from '../../../app/api/auth/mfa/start/route.ts'
 
@@ -44,17 +44,17 @@ function withOkCookie(url: string, value: string, init?: ConstructorParameters<t
 }
 
 for (const path of ['/developer', '/developer/organisations', '/dashboard', '/dashboard/projects']) {
-  test(`middleware: a challenge cookie in the ok slot does not open ${path}`, async () => {
-    const response = await middleware(withOkCookie(`http://localhost${path}`, challengeCookie()))
+  test(`proxy: a challenge cookie in the ok slot does not open ${path}`, async () => {
+    const response = await proxy(withOkCookie(`http://localhost${path}`, challengeCookie()))
     assert.equal(response.status, 307)
     assert.match(response.headers.get('location') || '', /mfa/i)
   })
 }
 
-test('middleware: an ok cookie with kind ok but no session cookie still goes to the code screen', async () => {
+test('proxy: an ok cookie with kind ok but no session cookie still goes to the code screen', async () => {
   // Owner decision 17 Nov: the page gate also needs the Firebase session cookie for the same uid
   // (lib/auth/mfa/mfaSessionGate.test.ts covers the cookie pair).
-  const response = await middleware(withOkCookie('http://localhost/developer', encodeMfaOk('u1', Date.now() + 60_000)))
+  const response = await proxy(withOkCookie('http://localhost/developer', encodeMfaOk('u1', Date.now() + 60_000)))
   assert.equal(response.status, 307)
   assert.match(response.headers.get('location') || '', /mfa/i)
 })
