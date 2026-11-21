@@ -1040,6 +1040,17 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 | 17 Nov | A signed overtime line whose multiplier is not stored and not in its stored text (older sheets) keeps the old "days × day rate" wording rather than guessing ×1. | done, owner confirmed 17 Nov |
 | 17 Nov | Second review of #378 (SF1): an overtime line whose amount was revised (Edit hours) keeps the older wording — the hours wording shows only when the amount is exactly what `payForHours` pays for the hours, day rate and divisor shown. Web invoice / export rows now show the revised (decided) amount in their details too (before, the details showed the live line's own amount beside the revised amount column). | done (1.67.0), owner to confirm |
 
+## 18–21 Nov decisions and merge record
+
+| Date | Decision | Status |
+|---|---|---|
+| 18 Nov | **`minimumIosBuild` = 10** (`platformConfig/app`). | set by the owner 18 Nov; owner to confirm it does not lock out the newest TestFlight build |
+| 18 Nov | **Site audit report "all yes"**: the PDF is identical on web and iPhone, never drops text from any field (every field flows onto further pages), and the company logo sits top right. | done web (1.68.0, #389); iOS (#262) |
+| 19 Nov | **Day-rate overtime wording**: the new hours wording is clearer than the old one. | done web (1.67.0, #378); iOS (#253) |
+| 19 Nov | **Owner working rules 1–4** (merge procedure, rulebook version order, lean mode, security review rules) recorded in `docs/agent-rules/owner-working-style.md`. | done (this PR) |
+| 21 Nov | Web #380 (Warnings Dismiss on every type) carried no rulebook change once main had 1.60, so it took no version number; web #379 (hours breakdown) took **1.69.0** (drafted 1.62.0). Review of #380: a cluster Dismiss leaves an already-approved pair as stored (no approval turned into a dismissal). | done (#380, #379 merged 19 Nov) |
+| 21 Nov | **Major dependency upgrades held for the owner** (Tailwind 4 #396, TypeScript 7 #397, React DOM 19 #398): each fails the build and needs code changes, four days before launch. Minor and patch updates merged (#394, #395). | question |
+
 ## Open questions for the owner
 
 | Date | Question |
