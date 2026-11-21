@@ -206,7 +206,7 @@ export function ProjectVisibilityPage({
                         aria-label="Hidden"
                       />
                     ) : (
-                      <CheckCircleIcon className="h-6 w-6 text-[var(--blue)]" aria-label="Visible" />
+                      <CheckCircleIcon className="h-6 w-6 text-(--blue)" aria-label="Visible" />
                     )}
                   </button>
                 )

@@ -38,9 +38,9 @@ async function saveInterestRegistration(draft: InterestDraft, website: string): 
 }
 
 const field =
-  'w-full rounded-2xl border border-[var(--line)] bg-[var(--soft)] px-3.5 py-3.5 text-base text-[var(--ink)] outline-none focus:border-[var(--blue)] focus:bg-[var(--card)]'
-const invalid = 'border-[var(--red)] bg-[var(--red-t)]'
-const label = 'mb-1.5 block text-[12.5px] font-bold text-[var(--ink3)]'
+  'w-full rounded-2xl border border-(--line) bg-(--soft) px-3.5 py-3.5 text-base text-(--ink) outline-hidden focus:border-(--blue) focus:bg-(--card)'
+const invalid = 'border-(--red) bg-(--red-t)'
+const label = 'mb-1.5 block text-[12.5px] font-bold text-(--ink3)'
 
 export function RegisterInterestForm() {
   const user = useAuthStore((state) => state.user)
@@ -157,28 +157,28 @@ export function RegisterInterestForm() {
 
   if (done) {
     return (
-      <div className="rounded-[28px] border border-[var(--line)] bg-[var(--card)] p-7 shadow-[var(--sh)]" aria-live="polite">
+      <div className="rounded-[28px] border border-(--line) bg-(--card) p-7 shadow-(color:--sh)" aria-live="polite">
         <div className="py-2 text-center">
-          <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-[22px] bg-[var(--proj-t)] text-[var(--proj)]">
+          <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-[22px] bg-(--proj-t) text-(--proj)">
             <svg viewBox="0 0 24 24" className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
               <path d="m5 13 4 4L19 7" />
             </svg>
           </div>
-          <h2 className="font-[family-name:var(--head)] text-2xl font-extrabold text-[var(--ink)]">You&rsquo;re on the list, {done.firstName}</h2>
-          <p className="mx-auto mt-3 max-w-[40ch] text-[15px] text-[var(--ink2)]">
+          <h2 className="font-(family-name:--head) text-2xl font-extrabold text-(--ink)">You&rsquo;re on the list, {done.firstName}</h2>
+          <p className="mx-auto mt-3 max-w-[40ch] text-[15px] text-(--ink2)">
             We&rsquo;ll email you the moment Project Planner opens, and you&rsquo;ll be in the first group through the door.
           </p>
-          <div className="mt-5 rounded-[18px] bg-[var(--soft)] p-4 text-left">
-            <b className="font-[family-name:var(--head)] text-[14.5px] text-[var(--ink)]">What happens next</b>
-            <ol className="mt-2 list-decimal pl-5 text-sm text-[var(--ink2)]">
+          <div className="mt-5 rounded-[18px] bg-(--soft) p-4 text-left">
+            <b className="font-(family-name:--head) text-[14.5px] text-(--ink)">What happens next</b>
+            <ol className="mt-2 list-decimal pl-5 text-sm text-(--ink2)">
               <li className="mb-1.5">The odd short update as we finish building — no spam, no newsletter.</li>
               <li className="mb-1.5">An invite before it goes public, with a free trial.</li>
               <li>A setup call so {done.company} starts with its own jobs and people in it.</li>
             </ol>
           </div>
-          <p className="mt-4 text-sm text-[var(--ink2)]">
+          <p className="mt-4 text-sm text-(--ink2)">
             Can&rsquo;t wait? Email{' '}
-            <a href={`mailto:${INTEREST_INBOX}`} className="font-semibold text-[var(--blue)]">
+            <a href={`mailto:${INTEREST_INBOX}`} className="font-semibold text-(--blue)">
               {INTEREST_INBOX}
             </a>
             .
@@ -189,9 +189,9 @@ export function RegisterInterestForm() {
   }
 
   return (
-    <div id="form" className="rounded-[28px] border border-[var(--line)] bg-[var(--card)] p-6 shadow-[var(--sh)] sm:p-7">
-      <h2 className="font-[family-name:var(--head)] text-[22px] font-extrabold text-[var(--ink)]">Register your interest</h2>
-      <p className="mt-1.5 text-[14.5px] text-[var(--ink2)]">
+    <div id="form" className="rounded-[28px] border border-(--line) bg-(--card) p-6 shadow-(color:--sh) sm:p-7">
+      <h2 className="font-(family-name:--head) text-[22px] font-extrabold text-(--ink)">Register your interest</h2>
+      <p className="mt-1.5 text-[14.5px] text-(--ink2)">
         Two minutes. We&rsquo;ll let you know the moment it opens, and early registrations get first access and a free trial.
       </p>
       <form ref={formRef} onSubmit={onSubmit} noValidate className="mt-5" onFocus={markStarted}>
@@ -231,7 +231,7 @@ export function RegisterInterestForm() {
                     aria-pressed={on}
                     onClick={() => setSectors((current) => (current.includes(sector) ? current.filter((item) => item !== sector) : [...current, sector]))}
                     className={`rounded-full border px-3.5 py-2.5 text-sm font-semibold ${
-                      on ? 'border-[var(--blue)] bg-[var(--blue)] text-white' : 'border-[var(--line)] bg-[var(--soft)] text-[var(--ink)]'
+                      on ? 'border-(--blue) bg-(--blue) text-white' : 'border-(--line) bg-(--soft) text-(--ink)'
                     }`}
                   >
                     {sector}
@@ -261,40 +261,40 @@ export function RegisterInterestForm() {
             />
           </div>
         </div>
-        <div className="absolute -left-[9999px] h-px w-px overflow-hidden" aria-hidden="true">
+        <div className="absolute left-[-9999px] h-px w-px overflow-hidden" aria-hidden="true">
           <label htmlFor="website">Leave this empty</label>
           <input id="website" name="website" tabIndex={-1} autoComplete="off" />
         </div>
-        <div className="mt-4 flex items-start gap-3 rounded-2xl bg-[var(--soft)] p-3.5">
+        <div className="mt-4 flex items-start gap-3 rounded-2xl bg-(--soft) p-3.5">
           <input
             type="checkbox"
             id="consent"
             name="consent"
             aria-invalid={errors.consent ? true : undefined}
             aria-describedby={errors.consent ? 'err-consent' : undefined}
-            className="mt-0.5 h-[22px] w-[22px] shrink-0 accent-[var(--blue)]"
+            className="mt-0.5 h-[22px] w-[22px] shrink-0 accent-(--blue)"
           />
-          <label htmlFor="consent" className="text-[13px] font-normal leading-relaxed text-[var(--ink2)]">
+          <label htmlFor="consent" className="text-[13px] font-normal leading-relaxed text-(--ink2)">
             I&rsquo;m happy for Projectplanner Systems Ltd to contact me about Project Planner. We&rsquo;ll never sell your details, and you can ask us to delete them at any time.{' '}
-            <a href="/privacy" className="font-semibold text-[var(--blue)]">
+            <a href="/privacy" className="font-semibold text-(--blue)">
               Privacy policy
             </a>
             {' · '}
-            <a href="/terms" className="font-semibold text-[var(--blue)]">
+            <a href="/terms" className="font-semibold text-(--blue)">
               Terms of service
             </a>
             .
           </label>
         </div>
         {errors.consent ? (
-          <p id="err-consent" className="mt-1.5 text-[12.5px] font-semibold text-[var(--red)]">
+          <p id="err-consent" className="mt-1.5 text-[12.5px] font-semibold text-(--red)">
             {errors.consent}
           </p>
         ) : null}
         {failed ? (
-          <p role="alert" className="mt-3 rounded-2xl bg-[var(--red-t)] px-3.5 py-3 text-[13.5px] text-[var(--ink2)]">
-            <b className="text-[var(--red)]">That didn&rsquo;t send.</b> Please try again, or email{' '}
-            <a href={`mailto:${INTEREST_INBOX}`} className="font-semibold text-[var(--blue)]">
+          <p role="alert" className="mt-3 rounded-2xl bg-(--red-t) px-3.5 py-3 text-[13.5px] text-(--ink2)">
+            <b className="text-(--red)">That didn&rsquo;t send.</b> Please try again, or email{' '}
+            <a href={`mailto:${INTEREST_INBOX}`} className="font-semibold text-(--blue)">
               {INTEREST_INBOX}
             </a>{' '}
             and we&rsquo;ll pick it up from there.
@@ -303,11 +303,11 @@ export function RegisterInterestForm() {
         <button
           type="submit"
           disabled={sending}
-          className="mt-4 w-full rounded-[17px] bg-[var(--blue)] py-4 text-[17px] font-bold text-white shadow-lg disabled:opacity-55 disabled:shadow-none"
+          className="mt-4 w-full rounded-[17px] bg-(--blue) py-4 text-[17px] font-bold text-white shadow-lg disabled:opacity-55 disabled:shadow-none"
         >
           {sending ? 'Sending…' : 'Register my interest'}
         </button>
-        <p className="mt-3 text-center text-[12.5px] leading-relaxed text-[var(--ink3)]">
+        <p className="mt-3 text-center text-[12.5px] leading-relaxed text-(--ink3)">
           No card, no commitment. We&rsquo;ll only email you about Project Planner.
         </p>
       </form>
@@ -335,7 +335,7 @@ function Field({
   return (
     <div className={className}>
       <label className={label} htmlFor={id}>
-        {text} {required ? <span className="text-[var(--red)]">*</span> : null}
+        {text} {required ? <span className="text-(--red)">*</span> : null}
       </label>
       <input
         id={id}
@@ -347,7 +347,7 @@ function Field({
         className={`${field} ${error ? invalid : ''}`}
       />
       {error ? (
-        <p id={`err-${id}`} className="mt-1.5 text-[12.5px] font-semibold text-[var(--red)]">
+        <p id={`err-${id}`} className="mt-1.5 text-[12.5px] font-semibold text-(--red)">
           {error}
         </p>
       ) : null}

@@ -72,7 +72,7 @@ export function MyWorksPicker({
         </>
       }
     >
-      <p className="mb-3 text-sm text-[var(--ink3)]">Tick the {noun} you want on your list. Your list is the same on the web and on iPhone.</p>
+      <p className="mb-3 text-sm text-(--ink3)">Tick the {noun} you want on your list. Your list is the same on the web and on iPhone.</p>
       <div className="mb-3 flex flex-wrap gap-2" role="group" aria-label={`Filter ${noun}`}>
         {MY_WORKS_PICKER_TABS.map((option) => (
           <FilterChip
@@ -84,7 +84,7 @@ export function MyWorksPicker({
         ))}
       </div>
       <SearchField value={search} onChange={setSearch} placeholder={`Search ${noun}…`} />
-      <ul className="mt-3 divide-y divide-[var(--line)]">
+      <ul className="mt-3 divide-y divide-(--line)">
         {shown.map((job) => {
           const on = picked.has(job.id.toLowerCase())
           return (
@@ -96,19 +96,19 @@ export function MyWorksPicker({
                 onClick={() => setIds((current) => myWorksPicksAfterToggle(current, job.id, !on))}
               >
                 {on ? (
-                  <CheckCircleIcon className="h-6 w-6 shrink-0 text-[var(--blue)]" />
+                  <CheckCircleIcon className="h-6 w-6 shrink-0 text-(--blue)" />
                 ) : (
-                  <span className="h-6 w-6 shrink-0 rounded-full border-2 border-[var(--line)]" aria-hidden />
+                  <span className="h-6 w-6 shrink-0 rounded-full border-2 border-(--line)" aria-hidden />
                 )}
                 <span className="min-w-0">
                   <span className="block truncate font-semibold">{job.siteName || job.jobNumber}</span>
-                  <span className="block truncate text-xs text-[var(--ink3)]">{job.jobNumber}</span>
+                  <span className="block truncate text-xs text-(--ink3)">{job.jobNumber}</span>
                 </span>
               </button>
             </li>
           )
         })}
-        {shown.length === 0 ? <li className="py-6 text-center text-sm text-[var(--ink3)]">No {noun} found.</li> : null}
+        {shown.length === 0 ? <li className="py-6 text-center text-sm text-(--ink3)">No {noun} found.</li> : null}
       </ul>
     </IosFormModal>
   )

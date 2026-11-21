@@ -290,9 +290,9 @@ export default function ChangeOrganisationPage() {
                 ) : isActive ? (
                   <span className="pill" data-hue="green">Current</span>
                 ) : locked ? (
-                  <LockClosedIcon className="h-4 w-4 text-[var(--ink3)]" />
+                  <LockClosedIcon className="h-4 w-4 text-(--ink3)" />
                 ) : (
-                  <ChevronRightIcon className="h-4 w-4 text-[var(--ink3)]" />
+                  <ChevronRightIcon className="h-4 w-4 text-(--ink3)" />
                 )}
               </button>
             )

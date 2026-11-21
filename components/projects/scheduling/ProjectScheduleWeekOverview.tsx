@@ -98,7 +98,7 @@ function avatarColor(name: string) {
 function Avatar({ name, size = 'sm' }: { name: string; size?: 'sm' | 'md' }) {
   const sz = size === 'sm' ? 'h-7 w-7 text-[10px]' : 'h-9 w-9 text-xs'
   return (
-    <span className={`inline-flex items-center justify-center rounded-full font-bold text-white flex-shrink-0 ${sz} ${avatarColor(name)}`}>
+    <span className={`inline-flex items-center justify-center rounded-full font-bold text-white shrink-0 ${sz} ${avatarColor(name)}`}>
       {initials(name)}
     </span>
   )
@@ -752,7 +752,7 @@ export function ProjectScheduleWeekOverview({
         <button
           type="button"
           onClick={() => setWeekStart(addDays(weekStart, -7))}
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50 transition-colors"
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-xs hover:bg-slate-50 transition-colors"
         >
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -769,7 +769,7 @@ export function ProjectScheduleWeekOverview({
         <button
           type="button"
           onClick={() => setWeekStart(addDays(weekStart, 7))}
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50 transition-colors"
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-xs hover:bg-slate-50 transition-colors"
         >
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -781,7 +781,7 @@ export function ProjectScheduleWeekOverview({
       <div className="grid grid-cols-2 gap-2">
         <Link
           href={`${scheduleBasePath}/operatives`}
-          className="flex items-center justify-center gap-2 rounded-2xl bg-[var(--blue)] px-4 py-3 text-sm font-bold text-white shadow-sm hover:opacity-95 transition-colors"
+          className="flex items-center justify-center gap-2 rounded-2xl bg-(--blue) px-4 py-3 text-sm font-bold text-white shadow-xs hover:opacity-95 transition-colors"
         >
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -790,7 +790,7 @@ export function ProjectScheduleWeekOverview({
         </Link>
         <Link
           href={`${scheduleBasePath}/subcontractors`}
-          className="flex items-center justify-center gap-2 rounded-2xl bg-violet-600 px-4 py-3 text-sm font-bold text-white shadow-sm hover:bg-violet-700 transition-colors"
+          className="flex items-center justify-center gap-2 rounded-2xl bg-violet-600 px-4 py-3 text-sm font-bold text-white shadow-xs hover:bg-violet-700 transition-colors"
         >
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
@@ -838,7 +838,7 @@ export function ProjectScheduleWeekOverview({
             </Link>
           </div>
         ) : (
-          <div className="overflow-x-auto card shadow-sm">
+          <div className="overflow-x-auto card shadow-xs">
             <div
               className="min-w-[720px]"
               style={{
@@ -1040,7 +1040,7 @@ function PersonRow({
                   type="button"
                   onClick={() => onQuickAdd!(person, day)}
                   aria-label={`Quick add booking for ${person.name} on ${format(day, 'EEE d MMM')}`}
-                  className={`group flex w-full items-center justify-center rounded-lg border border-dashed border-slate-200 text-[11px] font-semibold text-slate-400 transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:border-slate-300 focus-visible:bg-slate-50 focus-visible:outline-none ${minHeight}`}
+                  className={`group flex w-full items-center justify-center rounded-lg border border-dashed border-slate-200 text-[11px] font-semibold text-slate-400 transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:border-slate-300 focus-visible:bg-slate-50 focus-visible:outline-hidden ${minHeight}`}
                 >
                   <span className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
                     + Quick add
@@ -1241,7 +1241,7 @@ function DayBookingChooser({
   onClose: () => void
 }) {
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/30 p-4" role="dialog" aria-modal="true" aria-label={title}>
+    <div className="fixed inset-0 z-150 flex items-center justify-center bg-black/30 p-4" role="dialog" aria-modal="true" aria-label={title}>
       <div className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl">
         <p className="text-[15px] font-semibold text-slate-900">{title}</p>
         <p className="mt-0.5 text-xs text-slate-500">{rows.length} bookings — pick one to edit.</p>
@@ -1292,11 +1292,11 @@ function ScheduleLegend() {
     <div className="mt-3 flex flex-wrap gap-3 px-1 text-[11px] text-slate-500" data-testid="schedule-legend">
       {JOB_SCHEDULE_LEGEND.map((label) => (
         <span key={label} className="inline-flex items-center gap-1">
-          <span className="h-2.5 w-2.5 rounded-sm" style={swatch(label)} /> {label}
+          <span className="h-2.5 w-2.5 rounded-xs" style={swatch(label)} /> {label}
         </span>
       ))}
       <span className="inline-flex items-center gap-1">
-        <span className="h-2.5 w-2.5 rounded-sm" style={{ background: LEAVE_PENDING }} /> AL? = leave requested
+        <span className="h-2.5 w-2.5 rounded-xs" style={{ background: LEAVE_PENDING }} /> AL? = leave requested
       </span>
     </div>
   )

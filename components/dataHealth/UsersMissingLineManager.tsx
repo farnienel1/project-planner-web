@@ -35,7 +35,7 @@ export function UsersMissingLineManager({ organizationId }: { organizationId: st
     <section className="card p-4" aria-label="People who need a line manager">
       <h2 className="text-[15px] font-bold">People who need a line manager</h2>
       {missing.length === 0 ? (
-        <p className="mt-1 text-sm text-[var(--ink3)]">Everyone who needs a line manager has one.</p>
+        <p className="mt-1 text-sm text-(--ink3)">Everyone who needs a line manager has one.</p>
       ) : (
         <ul className="mt-2 space-y-1.5">
           {missing.map(({ user, message }) => (
@@ -43,7 +43,7 @@ export function UsersMissingLineManager({ organizationId }: { organizationId: st
               <Link className="font-semibold underline" href={`/dashboard/users/${user.id}?from=users`}>
                 {rosterDisplayName(user) || user.id}
               </Link>
-              {message ? <span className="text-[var(--ink3)]"> — {message}</span> : null}
+              {message ? <span className="text-(--ink3)"> — {message}</span> : null}
             </li>
           ))}
         </ul>

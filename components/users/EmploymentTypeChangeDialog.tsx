@@ -51,11 +51,11 @@ export function useEmploymentTypeSaveGate() {
         </>
       }
     >
-      <p className="text-sm leading-relaxed text-[var(--ink2)]">
+      <p className="text-sm leading-relaxed text-(--ink2)">
         When should {employmentTypeLabel(nextType)} start? Timesheets and the weekly report use the type that
         applies on each working day.
       </p>
-      <label className="mt-4 block text-xs font-semibold text-[var(--ink3)]">
+      <label className="mt-4 block text-xs font-semibold text-(--ink3)">
         Or pick a working day
         <input
           type="date"

@@ -59,25 +59,25 @@ export function SettingsDirtyProvider({ children }: { children: ReactNode }) {
             role="dialog"
             aria-modal="true"
             aria-labelledby="settings-unsaved-title"
-            className="w-full max-w-md rounded-2xl bg-[var(--card)] p-5 shadow-xl"
+            className="w-full max-w-md rounded-2xl bg-(--card) p-5 shadow-xl"
           >
-            <h2 id="settings-unsaved-title" className="text-[17px] font-bold text-[var(--ink)]">
+            <h2 id="settings-unsaved-title" className="text-[17px] font-bold text-(--ink)">
               Unsaved changes
             </h2>
-            <p className="mt-2 text-[14px] leading-relaxed text-[var(--ink2)]">
+            <p className="mt-2 text-[14px] leading-relaxed text-(--ink2)">
               You have changes that have not been saved. Leave this page and discard them?
             </p>
             <div className="mt-5 flex justify-end gap-2">
               <button
                 type="button"
-                className="rounded-xl px-4 py-2 text-[14px] font-semibold text-[var(--ink2)] hover:bg-[var(--soft)]"
+                className="rounded-xl px-4 py-2 text-[14px] font-semibold text-(--ink2) hover:bg-(--soft)"
                 onClick={() => setPending(null)}
               >
                 Cancel
               </button>
               <button
                 type="button"
-                className="rounded-xl bg-[var(--blue)] px-4 py-2 text-[14px] font-semibold text-white hover:opacity-90"
+                className="rounded-xl bg-(--blue) px-4 py-2 text-[14px] font-semibold text-white hover:opacity-90"
                 onClick={() => {
                   const proceed = pending
                   setPending(null)

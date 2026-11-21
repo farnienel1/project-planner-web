@@ -62,23 +62,23 @@ export function ReportChecks({ organizationId }: { organizationId: string }) {
     <section className="card p-4" aria-label={HEADING}>
       <h2 className="text-[15px] font-bold">{HEADING}</h2>
       {error ? (
-        <p className="mt-1 text-sm text-[var(--ink3)]">Could not check reports: {error}</p>
+        <p className="mt-1 text-sm text-(--ink3)">Could not check reports: {error}</p>
       ) : rows == null ? (
-        <p className="mt-1 text-sm text-[var(--ink3)]">Checking reports…</p>
+        <p className="mt-1 text-sm text-(--ink3)">Checking reports…</p>
       ) : rows.length === 0 ? (
-        <p className="mt-1 text-sm text-[var(--ink3)]">Every checked report matches its records.</p>
+        <p className="mt-1 text-sm text-(--ink3)">Every checked report matches its records.</p>
       ) : (
         <>
-          <p className="mt-1 text-sm text-[var(--ink3)]">{HELP}</p>
+          <p className="mt-1 text-sm text-(--ink3)">{HELP}</p>
           <ul className="mt-2 space-y-2">
             {rows.map((row) => (
               <li key={row.id} className="text-sm">
                 <span className="font-semibold">{nameOf(row.userId)}</span>
-                <span className="text-[var(--ink3)]">
+                <span className="text-(--ink3)">
                   {' '}
                   — {KIND_LABEL[row.kind] ?? 'Report'} · report {row.reportedTotal} · records {row.recomputedTotal}
                 </span>
-                <ul className="ml-4 list-disc text-[var(--ink3)]">
+                <ul className="ml-4 list-disc text-(--ink3)">
                   {row.problems.map((problem, index) => (
                     <li key={`${row.id}-${index}`}>{problem.message}</li>
                   ))}

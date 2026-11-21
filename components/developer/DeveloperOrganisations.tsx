@@ -69,7 +69,7 @@ export function DeveloperOrganisationsScreen() {
         </button>
       }
     >
-      <p className="text-sm text-[var(--ink2)]">
+      <p className="text-sm text-(--ink2)">
         Every company that has completed organisation setup. User counts come from live account records.
       </p>
       <DateRangePicker preset={preset} onChange={setPreset} />
@@ -97,7 +97,7 @@ export function DeveloperOrganisationsScreen() {
       ) : (
         <div className="card overflow-x-auto">
           <table className="w-full whitespace-nowrap text-left text-sm">
-            <thead className="bg-[var(--soft)] text-xs uppercase text-[var(--ink3)]">
+            <thead className="bg-(--soft) text-xs uppercase text-(--ink3)">
               <tr>
                 <th className="px-4 py-2">Organisation</th>
                 <th className="px-4 py-2">Billing</th>
@@ -111,12 +111,12 @@ export function DeveloperOrganisationsScreen() {
             </thead>
             <tbody>
               {visible.map((row) => (
-                <tr key={row.id} className="border-t border-[var(--line)]">
+                <tr key={row.id} className="border-t border-(--line)">
                   <td className="px-4 py-3">
                     <Link href={`/developer/organisations/${encodeURIComponent(row.id)}`} className="font-semibold">
                       {row.name}
                     </Link>
-                    <p className="max-w-[220px] truncate text-[11px] text-[var(--ink3)]" title={row.id}>{row.id}</p>
+                    <p className="max-w-[220px] truncate text-[11px] text-(--ink3)" title={row.id}>{row.id}</p>
                   </td>
                   <td className="px-4 py-3">{billingLabel(orgById.get(row.id)?.billing)}</td>
                   <td className="px-4 py-3">{billingStatusLabel(orgById.get(row.id)?.billing)}</td>
@@ -124,7 +124,7 @@ export function DeveloperOrganisationsScreen() {
                   <td className="px-4 py-3">{row.activeUsers}</td>
                   {events.length > 0 ? <td className="px-4 py-3">{row.events}</td> : null}
                   <td className="px-4 py-3">{row.ideaCount}</td>
-                  <td className="px-4 py-3 text-[var(--ink2)]">{formatOwnerWhen(row.lastActivityAt)}</td>
+                  <td className="px-4 py-3 text-(--ink2)">{formatOwnerWhen(row.lastActivityAt)}</td>
                 </tr>
               ))}
             </tbody>

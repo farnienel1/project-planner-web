@@ -136,7 +136,7 @@ export function JobTypesScreen() {
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-[var(--blue)]" />
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-(--blue)" />
       </div>
     )
   }
@@ -172,7 +172,7 @@ export function JobTypesScreen() {
             title="No Job Types Added Yet"
             subtitle="Add job types that you can assign to your projects. These will appear as options when creating or editing projects."
           />
-          <p className="-mt-8 pb-6 text-center text-[13px] text-[var(--ink3)]">
+          <p className="-mt-8 pb-6 text-center text-[13px] text-(--ink3)">
             Recommended: Create job types like &apos;CAT A&apos;, &apos;CAT B&apos;, &apos;Small Works&apos;, &apos;Maintenance&apos;, or any custom types you
             use.
           </p>
@@ -180,7 +180,7 @@ export function JobTypesScreen() {
             <button
               type="button"
               onClick={() => setAddOpen(true)}
-              className="rounded-xl bg-[var(--blue)] px-5 py-2.5 text-[15px] font-semibold text-white"
+              className="rounded-xl bg-(--blue) px-5 py-2.5 text-[15px] font-semibold text-white"
             >
               Add Your First Job Type
             </button>
@@ -191,7 +191,7 @@ export function JobTypesScreen() {
           {jobTypes.map((jobType) => (
             <div key={jobType} className="flex items-center gap-3 px-5 py-3.5">
               <FolderIcon className="h-5 w-5 text-purple-600" />
-              <p className="flex-1 text-[16px] text-[var(--ink)]">{jobType}</p>
+              <p className="flex-1 text-[16px] text-(--ink)">{jobType}</p>
               <button
                 type="button"
                 onClick={() => handleRemove(jobType)}
@@ -215,23 +215,23 @@ export function JobTypesScreen() {
               type="submit"
               form="add-job-type"
               disabled={saving || !name.trim()}
-              className="w-full rounded-xl bg-[var(--blue)] py-3 text-[16px] font-semibold text-white disabled:opacity-50"
+              className="w-full rounded-xl bg-(--blue) py-3 text-[16px] font-semibold text-white disabled:opacity-50"
             >
               Create New Job Type
             </button>
           }
         >
           <form id="add-job-type" onSubmit={handleAdd} className="space-y-4">
-            <p className="text-[15px] text-[var(--ink3)]">
+            <p className="text-[15px] text-(--ink3)">
               Enter the name of the job type you want to add for your projects.
             </p>
-            <label className="block text-[15px] font-semibold text-[var(--ink)]">
+            <label className="block text-[15px] font-semibold text-(--ink)">
               Job Type Name
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g., Renovation, New Build, Repair"
-                className="mt-1.5 w-full rounded-lg border border-[var(--line2)] bg-white px-3 py-2.5 text-[15px] outline-none focus:border-[var(--blue)] focus:ring-2 focus:ring-[var(--blue-t)]"
+                className="mt-1.5 w-full rounded-lg border border-(--line2) bg-white px-3 py-2.5 text-[15px] outline-hidden focus:border-(--blue) focus:ring-2 focus:ring-(--blue-t)"
               />
             </label>
           </form>

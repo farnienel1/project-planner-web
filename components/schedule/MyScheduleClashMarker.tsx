@@ -58,7 +58,7 @@ export function MyScheduleClashMarkerButton({ marker }: { marker: MyScheduleClas
           </div>
         }
       >
-        <p className="text-[14px] leading-relaxed text-[var(--ink2)]" data-testid="my-schedule-clash-message">
+        <p className="text-[14px] leading-relaxed text-(--ink2)" data-testid="my-schedule-clash-message">
           {marker.message}
         </p>
       </Modal>

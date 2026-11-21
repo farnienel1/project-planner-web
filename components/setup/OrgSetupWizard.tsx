@@ -975,7 +975,7 @@ export function OrgSetupWizard() {
                         id="age-confirmation"
                         checked={ageConfirmed}
                         onChange={(event) => setAgeConfirmed(event.target.checked)}
-                        className="mt-0.5 h-[22px] w-[22px] shrink-0 accent-[var(--blue)]"
+                        className="mt-0.5 h-[22px] w-[22px] shrink-0 accent-(--blue)"
                       />
                       <label htmlFor="age-confirmation" className="small ink2" style={{ fontWeight: 600 }}>
                         {AGE_CONFIRMATION_LABEL}
@@ -1187,7 +1187,7 @@ export function OrgSetupWizard() {
                       checked={renewConsent}
                       onChange={(event) => setRenewConsent(event.target.checked)}
                       disabled={submitting}
-                      className="mt-0.5 h-[22px] w-[22px] shrink-0 accent-[var(--blue)]"
+                      className="mt-0.5 h-[22px] w-[22px] shrink-0 accent-(--blue)"
                     />
                     <label htmlFor="renew-consent" className="small ink2" style={{ fontWeight: 600 }}>
                       {SUBSCRIPTION_RENEWAL_CONSENT}

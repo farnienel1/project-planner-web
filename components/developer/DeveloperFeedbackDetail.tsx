@@ -105,27 +105,27 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
         </div>
       ) : null}
       <h1 className="text-xl font-extrabold">{suggestion.title}</h1>
-      <p className="text-sm text-[var(--ink3)]">
+      <p className="text-sm text-(--ink3)">
         {suggestion.organizationName?.trim() || 'Unfinished setup'} · {suggestion.authorName} · {suggestion.category}
       </p>
-      <p className="whitespace-pre-wrap text-sm text-[var(--ink2)]">{suggestion.details}</p>
+      <p className="whitespace-pre-wrap text-sm text-(--ink2)">{suggestion.details}</p>
 
       <ConsoleEventsNotice from={range.start} />
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="card pad">
           <p className="eyebrow">Customer demand</p>
           <p className="text-2xl font-extrabold">{suggestion.voteCount} votes</p>
-          <p className="text-xs text-[var(--ink3)]">{suggestion.commentCount} comments · {voters.length} voters</p>
+          <p className="text-xs text-(--ink3)">{suggestion.commentCount} comments · {voters.length} voters</p>
         </div>
         <div className="card pad">
           <p className="eyebrow">Recent momentum</p>
           <p className="text-2xl font-extrabold">+{recentVotes}</p>
-          <p className="text-xs text-[var(--ink3)]">votes in the last 14 days</p>
+          <p className="text-xs text-(--ink3)">votes in the last 14 days</p>
         </div>
         <div className="card pad">
           <p className="eyebrow">Usage context</p>
           <p className="text-2xl font-extrabold">{usage.users}</p>
-          <p className="text-xs text-[var(--ink3)]">
+          <p className="text-xs text-(--ink3)">
             users used {suggestion.relatedFeature.replace('_', ' ')} this month · {usage.uses} events
           </p>
         </div>
@@ -138,7 +138,7 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
 
       <section className="card pad">
         <h2 className="h2">Traffic-light decision</h2>
-        <p className="mt-1 text-xs text-[var(--ink3)]">These numbers inform the decision. They do not choose it for you.</p>
+        <p className="mt-1 text-xs text-(--ink3)">These numbers inform the decision. They do not choose it for you.</p>
         <div className="mt-3 flex flex-wrap gap-2">
           {PRODUCT_DECISIONS.map((decision) => (
             <button
@@ -206,7 +206,7 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
             </option>
           ))}
         </select>
-        <p className="mt-2 text-sm text-[var(--ink2)]">{CUSTOMER_STATUS_COPY[unifiedStatus(suggestion)]}</p>
+        <p className="mt-2 text-sm text-(--ink2)">{CUSTOMER_STATUS_COPY[unifiedStatus(suggestion)]}</p>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <label>
             <span className="eyebrow">Category</span>
@@ -322,7 +322,7 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
 
       <section className="card pad" data-hue="warn">
         <h2 className="h2">Internal notes</h2>
-        <p className="mt-1 text-xs text-[var(--ink3)]">Never shown to customers.</p>
+        <p className="mt-1 text-xs text-(--ink3)">Never shown to customers.</p>
         <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="pp-in mt-2 min-h-[90px]" />
         <button
           type="button"
@@ -374,12 +374,12 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
 
       <section className="card pad">
         <h2 className="h2">Comments</h2>
-        {comments.filter((comment) => comment.suggestionId === suggestion.id).length === 0 ? <p className="mt-2 text-sm text-[var(--ink3)]">No comments.</p> : null}
+        {comments.filter((comment) => comment.suggestionId === suggestion.id).length === 0 ? <p className="mt-2 text-sm text-(--ink3)">No comments.</p> : null}
         <div className="mt-2 space-y-2">
           {comments
             .filter((comment) => comment.suggestionId === suggestion.id)
             .map((comment) => (
-            <div key={comment.id} className="rounded-xl bg-[var(--soft)] p-3 text-sm">
+            <div key={comment.id} className="rounded-xl bg-(--soft) p-3 text-sm">
               <p className="text-xs font-semibold">{comment.authorName}</p>
               {comment.body}
             </div>
@@ -389,7 +389,7 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
 
       <section className="card pad">
         <h2 className="h2">Related requests</h2>
-        {related.length === 0 ? <p className="mt-2 text-sm text-[var(--ink3)]">None in this feature area.</p> : null}
+        {related.length === 0 ? <p className="mt-2 text-sm text-(--ink3)">None in this feature area.</p> : null}
         <div className="mt-2 space-y-2">
           {related.slice(0, 6).map((row) => (
             <Link key={row.id} href={`/developer/feedback/${row.id}`} className="block text-sm font-semibold">
@@ -401,7 +401,7 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
 
       <section className="card pad">
         <h2 className="h2">Audit trail</h2>
-        {history.filter((entry) => entry.suggestionId === suggestion.id).length === 0 ? <p className="mt-2 text-sm text-[var(--ink3)]">No admin changes yet.</p> : null}
+        {history.filter((entry) => entry.suggestionId === suggestion.id).length === 0 ? <p className="mt-2 text-sm text-(--ink3)">No admin changes yet.</p> : null}
         <ul className="mt-2 space-y-2 text-sm">
           {history
             .filter((entry) => entry.suggestionId === suggestion.id)
@@ -435,7 +435,7 @@ function MergePreview({
     votes.filter((vote) => vote.suggestionId === source.id)
   )
   return (
-    <p className="mt-2 rounded-xl bg-[var(--soft)] p-3 text-sm text-[var(--ink2)]">
+    <p className="mt-2 rounded-xl bg-(--soft) p-3 text-sm text-(--ink2)">
       {source.title} has {preview.source} voters, {destination.title} has {preview.destination},{' '}
       <strong>{preview.overlap} overlap</strong> → merged total <strong>{preview.mergedTotal}</strong>.
     </p>

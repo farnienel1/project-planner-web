@@ -29,11 +29,11 @@ export function Button({
   const variants: Record<ButtonVariant, string> = {
     primary:
       'bg-[linear-gradient(180deg,var(--blue2),var(--blue))] text-white shadow-[0_1px_0_rgba(255,255,255,.25)_inset,0_6px_16px_rgba(30,90,168,.32)]',
-    secondary: 'bg-[var(--card)] text-[var(--ink)] shadow-[var(--sh)]',
-    tint: 'bg-[var(--ht)] text-[var(--h)] shadow-none',
-    hue: 'bg-[var(--h)] text-white shadow-[0_6px_16px_color-mix(in_srgb,var(--h)_35%,transparent)]',
-    ghost: 'bg-transparent text-[var(--ink2)] shadow-none hover:bg-[var(--soft2)] hover:text-[var(--ink)]',
-    danger: 'bg-[var(--red-t)] text-[var(--red)] shadow-none',
+    secondary: 'bg-(--card) text-(--ink) shadow-(color:--sh)',
+    tint: 'bg-(--ht) text-(--h) shadow-none',
+    hue: 'bg-(--h) text-white shadow-[0_6px_16px_color-mix(in_srgb,var(--h)_35%,transparent)]',
+    ghost: 'bg-transparent text-(--ink2) shadow-none hover:bg-(--soft2) hover:text-(--ink)',
+    danger: 'bg-(--red-t) text-(--red) shadow-none',
   }
   return (
     <button

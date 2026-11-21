@@ -39,11 +39,11 @@ export function DataParityCheck({ organizationId }: { organizationId: string }) 
           {running ? 'Checking…' : 'Check now'}
         </button>
       </div>
-      <p className="mt-1 text-sm text-[var(--ink3)]">
+      <p className="mt-1 text-sm text-(--ink3)">
         Compares the number of projects, small works, people, clients, bookings, annual leave and tasks this browser
         holds with the database, and reloads a list that differs. Read-only.
       </p>
-      <p className={`mt-2 text-sm font-semibold${summary.tone === 'warning' ? ' text-[var(--red)]' : ''}`}>
+      <p className={`mt-2 text-sm font-semibold${summary.tone === 'warning' ? ' text-(--red)' : ''}`}>
         {summary.title}
       </p>
       {summary.lines.length > 0 ? (
@@ -54,7 +54,7 @@ export function DataParityCheck({ organizationId }: { organizationId: string }) 
         </ul>
       ) : null}
       {history.length > 0 ? (
-        <details className="mt-2 text-sm text-[var(--ink3)]">
+        <details className="mt-2 text-sm text-(--ink3)">
           <summary>Earlier checks on this device</summary>
           <ul className="mt-1 space-y-0.5">
             {history.map(({ entry, text }) => (

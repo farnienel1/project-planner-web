@@ -215,23 +215,23 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
-      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-[var(--card)] p-4 shadow-xl">
+      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-(--card) p-4 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <p className="text-base font-bold text-[var(--ink)]">New site audit</p>
-            <p className="text-xs text-[var(--ink3)]">Step {step} of 2 · {project.siteName}</p>
+            <p className="text-base font-bold text-(--ink)">New site audit</p>
+            <p className="text-xs text-(--ink3)">Step {step} of 2 · {project.siteName}</p>
           </div>
-          <button type="button" onClick={onClose} className="text-[var(--ink3)]" aria-label="Close">
+          <button type="button" onClick={onClose} className="text-(--ink3)" aria-label="Close">
             ✕
           </button>
         </div>
 
         {saving ? (
-          <p className="mb-3 rounded-lg bg-[var(--blue-t)] px-3 py-2 text-xs font-medium text-[var(--blue)]">
+          <p className="mb-3 rounded-lg bg-(--blue-t) px-3 py-2 text-xs font-medium text-(--blue)">
             {liveSummary.label}. You can close this — the audit keeps uploading and stays listed until it is saved.
           </p>
         ) : null}
-        {error ? <p className="mb-3 rounded-lg bg-[var(--red-t)] px-3 py-2 text-xs font-medium text-[var(--red)]">{error}</p> : null}
+        {error ? <p className="mb-3 rounded-lg bg-(--red-t) px-3 py-2 text-xs font-medium text-(--red)">{error}</p> : null}
 
         {step === 1 ? (
           <div className="space-y-4">
@@ -245,8 +245,8 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
                     onClick={() => setAuditType(type)}
                     className={`rounded-xl border px-3 py-2.5 text-xs font-semibold ${
                       auditType === type
-                        ? 'border-[var(--blue)] bg-[var(--blue-t)] text-[var(--blue)]'
-                        : 'border-[var(--line)] bg-[var(--card)] text-[var(--ink2)]'
+                        ? 'border-(--blue) bg-(--blue-t) text-(--blue)'
+                        : 'border-(--line) bg-(--card) text-(--ink2)'
                     }`}
                   >
                     {type}
@@ -258,13 +258,13 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
             <SiteAuditFieldCounter field="customTitle" value={customTitle} />
             <div>
               <FormLabel>Author</FormLabel>
-              <p className="rounded-xl border border-[var(--line)] bg-[var(--soft)] px-3 py-2 text-sm text-[var(--ink)]">{authorName}</p>
+              <p className="rounded-xl border border-(--line) bg-(--soft) px-3 py-2 text-sm text-(--ink)">{authorName}</p>
             </div>
             <div>
               <FormLabel>Date</FormLabel>
               <FormInput type="date" value={auditDate} onChange={(e) => setAuditDate(e.target.value)} />
             </div>
-            <label className="flex items-center gap-2 text-sm text-[var(--ink2)]">
+            <label className="flex items-center gap-2 text-sm text-(--ink2)">
               <input
                 type="checkbox"
                 checked={visibleToOperatives}
@@ -272,25 +272,25 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
               />
               Visible to operatives
             </label>
-            <p className="text-xs text-[var(--ink3)]">Ops working on this job can view it.</p>
-            <button type="button" onClick={() => setStep(2)} className="w-full rounded-xl bg-[var(--blue)] py-2.5 text-sm font-bold text-white">
+            <p className="text-xs text-(--ink3)">Ops working on this job can view it.</p>
+            <button type="button" onClick={() => setStep(2)} className="w-full rounded-xl bg-(--blue) py-2.5 text-sm font-bold text-white">
               Next: add items and photos
             </button>
           </div>
         ) : (
           <div className="space-y-4">
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-bold text-[var(--ink)]">Items · {items.length}</h3>
+              <h3 className="text-sm font-bold text-(--ink)">Items · {items.length}</h3>
             </div>
-            <p className="text-xs text-[var(--ink3)]">
+            <p className="text-xs text-(--ink3)">
               Photos get auto-timestamped so the report shows when each was taken.
             </p>
-            {preparing ? <p className="text-sm font-semibold text-[var(--ink2)]">Preparing photos — this may take a moment for large batches.</p> : null}
+            {preparing ? <p className="text-sm font-semibold text-(--ink2)">Preparing photos — this may take a moment for large batches.</p> : null}
 
             {items.length === 0 && !preparing ? (
-              <div className="rounded-2xl border border-dashed border-[var(--line2)] px-4 py-8 text-center">
-                <p className="font-semibold text-[var(--ink)]">No items yet</p>
-                <p className="mt-1 text-sm text-[var(--ink3)]">
+              <div className="rounded-2xl border border-dashed border-(--line2) px-4 py-8 text-center">
+                <p className="font-semibold text-(--ink)">No items yet</p>
+                <p className="mt-1 text-sm text-(--ink3)">
                   Tap Add item for one photo, then its details. Multi-add stacks several photos so you can scroll down through each one.
                 </p>
               </div>
@@ -303,12 +303,12 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
                       cardRefs.current[item.id] = node
                     }}
                     className={`scroll-mt-4 space-y-2 rounded-2xl border p-3 ${
-                      item.detailsAdded ? 'border-[var(--proj)] bg-[var(--card)]' : 'border-[var(--line)] bg-[var(--soft)]'
+                      item.detailsAdded ? 'border-(--proj) bg-(--card)' : 'border-(--line) bg-(--soft)'
                     }`}
                   >
-                    <p className="text-xs font-bold tracking-wide text-[var(--ink3)]">PHOTO {index + 1}</p>
+                    <p className="text-xs font-bold tracking-wide text-(--ink3)">PHOTO {index + 1}</p>
                     <img src={item.previewUrl} alt="" className="max-h-72 w-full rounded-xl object-cover" />
-                    <p className="text-xs font-semibold text-[var(--ink2)]">Taken {format(item.takenAt, 'd MMM yyyy, HH:mm')}</p>
+                    <p className="text-xs font-semibold text-(--ink2)">Taken {format(item.takenAt, 'd MMM yyyy, HH:mm')}</p>
                     <PhotoUploadLine upload={photoState(item.id)} />
                     <FormLabel>{SITE_AUDIT_FIELD_LABELS.title}</FormLabel>
                     <FormInput value={item.title} onChange={(e) => patch(item.id, { title: e.target.value, detailsAdded: false })} placeholder="e.g. Front courtyard" />
@@ -326,13 +326,13 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
                     <FormTextarea value={item.annotations} onChange={(e) => patch(item.id, { annotations: e.target.value })} rows={2} />
                     <SiteAuditFieldCounter field="annotations" value={item.annotations} />
                     <div className="flex items-center justify-between gap-2">
-                      <button type="button" className="text-sm font-semibold text-[var(--red)]" onClick={() => removeItem(item.id)}>
+                      <button type="button" className="text-sm font-semibold text-(--red)" onClick={() => removeItem(item.id)}>
                         Remove
                       </button>
                       <button
                         type="button"
                         onClick={() => confirmDetails(item.id)}
-                        className="rounded-xl bg-[var(--blue)] px-3 py-2 text-sm font-bold text-white"
+                        className="rounded-xl bg-(--blue) px-3 py-2 text-sm font-bold text-white"
                       >
                         {item.detailsAdded ? 'Details added' : 'Add these details'}
                       </button>
@@ -343,7 +343,7 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
             )}
 
             <div className="grid grid-cols-2 gap-2">
-              <label className="cursor-pointer rounded-xl border border-[var(--blue)] py-2.5 text-center text-sm font-bold text-[var(--blue)]">
+              <label className="cursor-pointer rounded-xl border border-(--blue) py-2.5 text-center text-sm font-bold text-(--blue)">
                 + Add item
                 <input
                   type="file"
@@ -355,7 +355,7 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
                   }}
                 />
               </label>
-              <label className="cursor-pointer rounded-xl border border-[var(--blue)] py-2.5 text-center text-sm font-bold text-[var(--blue)]">
+              <label className="cursor-pointer rounded-xl border border-(--blue) py-2.5 text-center text-sm font-bold text-(--blue)">
                 Multi-add
                 <input
                   type="file"
@@ -371,14 +371,14 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
             </div>
 
             <div className="flex gap-2" id="audit-submit">
-              <button type="button" onClick={() => setStep(1)} className="rounded-xl border border-[var(--line)] px-4 py-2.5 text-sm text-[var(--ink2)]">
+              <button type="button" onClick={() => setStep(1)} className="rounded-xl border border-(--line) px-4 py-2.5 text-sm text-(--ink2)">
                 Back
               </button>
               <button
                 type="button"
                 disabled={saving || preparing}
                 onClick={() => void submit()}
-                className="flex-1 rounded-xl bg-[var(--blue)] py-2.5 text-sm font-bold text-white disabled:opacity-50"
+                className="flex-1 rounded-xl bg-(--blue) py-2.5 text-sm font-bold text-white disabled:opacity-50"
               >
                 {saving ? liveSummary.label : Object.keys(uploads).length ? 'Retry' : 'Submit audit'}
               </button>
@@ -392,14 +392,14 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
 
 function PhotoUploadLine({ upload }: { upload: PhotoUpload | undefined }) {
   if (!upload) return null
-  if (upload.status === 'done') return <p className="text-xs font-semibold text-[var(--proj)]">Uploaded</p>
-  if (upload.status === 'failed') return <p className="text-xs font-semibold text-[var(--red)]">Not uploaded — {upload.error}</p>
+  if (upload.status === 'done') return <p className="text-xs font-semibold text-(--proj)">Uploaded</p>
+  if (upload.status === 'failed') return <p className="text-xs font-semibold text-(--red)">Not uploaded — {upload.error}</p>
   if (upload.status === 'uploading') {
     return (
-      <p className="text-xs font-semibold text-[var(--ink2)]">
+      <p className="text-xs font-semibold text-(--ink2)">
         Uploading {Math.round(upload.progress * 100)}%{upload.attempts > 1 ? ` (try ${upload.attempts})` : ''}
       </p>
     )
   }
-  return <p className="text-xs text-[var(--ink3)]">Waiting to upload</p>
+  return <p className="text-xs text-(--ink3)">Waiting to upload</p>
 }

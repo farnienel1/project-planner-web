@@ -22,7 +22,7 @@ export function IconChip({
       className={cn(
         'inline-grid shrink-0 place-items-center',
         box,
-        solid ? 'bg-[var(--h)] text-white' : 'bg-[var(--ht)] text-[var(--h)]',
+        solid ? 'bg-(--h) text-white' : 'bg-(--ht) text-(--h)',
         className
       )}
     >

@@ -40,7 +40,7 @@ export function StoredFileLink({
       >
         {children}
       </a>
-      {error ? <span className="block text-xs text-[var(--red)]">{error}</span> : null}
+      {error ? <span className="block text-xs text-(--red)">{error}</span> : null}
     </>
   )
 }

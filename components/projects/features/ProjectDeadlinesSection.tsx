@@ -259,8 +259,8 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
         </div>
       </header>
 
-      {loading && !loaded ? <p className="text-sm text-[var(--ink3)]">Loading deadlines…</p> : null}
-      {banner || error ? <p className="text-sm font-semibold text-[var(--red)]">{banner || error}</p> : null}
+      {loading && !loaded ? <p className="text-sm text-(--ink3)">Loading deadlines…</p> : null}
+      {banner || error ? <p className="text-sm font-semibold text-(--red)">{banner || error}</p> : null}
       {error && !loaded && organization?.id ? (
         <button type="button" className="btn sm" onClick={() => void load(organization.id, project.id, isSmallWorks)}>
           Try again
@@ -286,10 +286,10 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
               setMode('list')
             }}
           >
-            <p className="font-[family-name:var(--head)] text-2xl font-extrabold" style={{ color: 'var(--h)' }}>
+            <p className="font-(family-name:--head) text-2xl font-extrabold" style={{ color: 'var(--h)' }}>
               {value}
             </p>
-            <p className="text-sm text-[var(--ink2)]">{label}</p>
+            <p className="text-sm text-(--ink2)">{label}</p>
           </button>
         ))}
       </div>
@@ -309,16 +309,16 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
           </span>
           <span>
             <span className="block text-sm font-bold">{risk}</span>
-            <span className="text-xs text-[var(--ink3)]">Review</span>
+            <span className="text-xs text-(--ink3)">Review</span>
           </span>
         </button>
       ) : null}
 
       <section>
         <div className="mb-2 flex items-center gap-2">
-          <h2 className="text-[11px] font-bold tracking-[0.08em] text-[var(--ink3)]">NEXT THREE WEEKS</h2>
+          <h2 className="text-[11px] font-bold tracking-[0.08em] text-(--ink3)">NEXT THREE WEEKS</h2>
           {selectedDay ? (
-            <button type="button" className="ml-auto text-xs font-bold text-[var(--blue)]" onClick={() => setSelectedDay(null)}>
+            <button type="button" className="ml-auto text-xs font-bold text-(--blue)" onClick={() => setSelectedDay(null)}>
               Clear
             </button>
           ) : null}
@@ -400,8 +400,8 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
         <Timeline rows={timeline} now={now} onOpen={setOpenId} />
       ) : groups.length === 0 ? (
         <div className="card pad">
-          <h2 className="font-[family-name:var(--head)] text-lg font-extrabold">{empty.title}</h2>
-          <p className="mt-1 text-sm text-[var(--ink3)]">{empty.message}</p>
+          <h2 className="font-(family-name:--head) text-lg font-extrabold">{empty.title}</h2>
+          <p className="mt-1 text-sm text-(--ink3)">{empty.message}</p>
           {canManage && filter === 'all' ? (
             <button type="button" className="btn primary mt-4" onClick={() => setEditing('new')}>
               Add a deadline
@@ -414,7 +414,7 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
             <h2 className="mb-2 flex items-center gap-2 text-[11px] font-bold tracking-[0.08em]" data-hue={group.tone || 'lib'} style={{ color: 'var(--h)' }}>
               <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: 'var(--h)' }} />
               {group.title.toUpperCase()}
-              <span className="text-[var(--ink3)]">{group.items.length}</span>
+              <span className="text-(--ink3)">{group.items.length}</span>
             </h2>
             <div className="space-y-2">
               {group.items.map((item) => (
@@ -504,7 +504,7 @@ function DeadlineCard({
         </div>
       ) : null}
       <div className="flex items-start gap-3">
-        <h3 className="min-w-0 grow font-[family-name:var(--head)] text-base font-extrabold">{item.title}</h3>
+        <h3 className="min-w-0 grow font-(family-name:--head) text-base font-extrabold">{item.title}</h3>
         <Countdown value={value} />
       </div>
       <div className="mt-2 flex flex-wrap gap-1.5">
@@ -512,19 +512,19 @@ function DeadlineCard({
         {item.trade ? <span className="pill">{item.trade}</span> : null}
       </div>
       {item.status === 'blocked' && item.blockedReason ? (
-        <p className="mt-2 rounded-xl bg-[var(--leave-t)] px-3 py-2 text-[12.5px] text-[var(--ink2)]">{item.blockedReason}</p>
+        <p className="mt-2 rounded-xl bg-(--leave-t) px-3 py-2 text-[12.5px] text-(--ink2)">{item.blockedReason}</p>
       ) : item.status !== 'complete' ? (
         <div className="mt-2">
           <Pacing item={item} now={now} />
         </div>
       ) : null}
-      <div className="mt-3 flex items-center gap-2 border-t border-[var(--line)] pt-3 text-xs text-[var(--ink3)]">
+      <div className="mt-3 flex items-center gap-2 border-t border-(--line) pt-3 text-xs text-(--ink3)">
         <span>{item.status === 'complete' ? `Done ${formatDay(item.completedAt || item.due)}` : formatFullDay(item.due)}</span>
         <span className="ml-auto flex">
           {initials.slice(0, 3).map((letters, index) => (
             <span
               key={`${letters}-${index}`}
-              className="grid h-6 w-6 place-items-center rounded-full bg-[var(--blue-t)] text-[10px] font-bold text-[var(--blue)]"
+              className="grid h-6 w-6 place-items-center rounded-full bg-(--blue-t) text-[10px] font-bold text-(--blue)"
               style={{ marginLeft: index === 0 ? 0 : -6 }}
             >
               {letters}
@@ -554,24 +554,24 @@ function Timeline({ rows, now, onOpen }: { rows: Deadline[]; now: Date; onOpen: 
   if (rows.length === 0) {
     return (
       <div className="card pad">
-        <h2 className="font-[family-name:var(--head)] text-lg font-extrabold">Nothing to plot</h2>
-        <p className="mt-1 text-sm text-[var(--ink3)]">Open deadlines with a start and due date appear here as bars.</p>
+        <h2 className="font-(family-name:--head) text-lg font-extrabold">Nothing to plot</h2>
+        <p className="mt-1 text-sm text-(--ink3)">Open deadlines with a start and due date appear here as bars.</p>
       </div>
     )
   }
   return (
     <section>
-      <h2 className="mb-2 text-[11px] font-bold tracking-[0.08em] text-[var(--ink3)]">SIX WEEK VIEW</h2>
+      <h2 className="mb-2 text-[11px] font-bold tracking-[0.08em] text-(--ink3)">SIX WEEK VIEW</h2>
       <div className="card relative overflow-hidden">
         <div className="relative px-3 pt-3">
-          <div className="mb-1 flex text-[10px] font-bold text-[var(--ink3)]">
+          <div className="mb-1 flex text-[10px] font-bold text-(--ink3)">
             {Array.from({ length: 6 }, (_, week) => (
               <span key={week} style={{ width: `${(7 / windowDays) * 100}%` }}>
                 {formatDay(new Date(start.getTime() + week * 7 * 86_400_000))}
               </span>
             ))}
           </div>
-          <span className="absolute bottom-0 top-6 w-px bg-[var(--hs)]" style={{ left: `calc(12px + (100% - 24px) * ${7 / windowDays})` }} />
+          <span className="absolute bottom-0 top-6 w-px bg-(--hs)" style={{ left: `calc(12px + (100% - 24px) * ${7 / windowDays})` }} />
         </div>
         {rows.map((item) => {
           const s = Math.max(offsetDays(start, item.start || item.due), 0)
@@ -587,7 +587,7 @@ function Timeline({ rows, now, onOpen }: { rows: Deadline[]; now: Date; onOpen: 
                   {formatDay(item.due)}
                 </span>
               </span>
-              <span className="relative block h-[18px] rounded-md bg-[var(--soft2)]">
+              <span className="relative block h-[18px] rounded-md bg-(--soft2)">
                 <span
                   className="absolute top-0 h-[18px] overflow-hidden rounded-md"
                   data-hue={tone}
@@ -600,7 +600,7 @@ function Timeline({ rows, now, onOpen }: { rows: Deadline[]; now: Date; onOpen: 
           )
         })}
       </div>
-      <p className="mt-2 text-[11.5px] text-[var(--ink3)]">
+      <p className="mt-2 text-[11.5px] text-(--ink3)">
         Bars run start to due. The pale end of a bar is work still outstanding; the teal line is today.
       </p>
     </section>

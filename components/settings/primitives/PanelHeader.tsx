@@ -30,7 +30,7 @@ export function PanelHeader({
         onClick={onBack}
         disabled={backPending}
         aria-busy={backPending || undefined}
-        className="mb-3 inline-flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-[13px] font-semibold text-[var(--ink3)] transition hover:text-[var(--ink)] disabled:opacity-60"
+        className="mb-3 inline-flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-[13px] font-semibold text-(--ink3) transition hover:text-(--ink) disabled:opacity-60"
         aria-label="Back"
       >
         {backPending ? (
@@ -51,8 +51,8 @@ export function PanelHeader({
           </span>
         ) : null}
         <div className="min-w-0 flex-1">
-          <h1 className="text-[26px] font-bold leading-tight tracking-[-0.02em] text-[var(--ink)]">{title}</h1>
-          {description ? <p className="mt-1 text-[14.5px] text-[var(--ink2)]">{description}</p> : null}
+          <h1 className="text-[26px] font-bold leading-tight tracking-[-0.02em] text-(--ink)">{title}</h1>
+          {description ? <p className="mt-1 text-[14.5px] text-(--ink2)">{description}</p> : null}
         </div>
         {rightAction ? <div className="flex shrink-0 items-center gap-2">{rightAction}</div> : null}
       </div>

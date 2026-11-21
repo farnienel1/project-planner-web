@@ -9,7 +9,7 @@ import { StoredFileLink } from '@/components/projects/features/StoredFileLink'
 import { hasOpenableStoredFile } from '@/lib/healthSafety/storedFile'
 
 /** Shared tokens aligned with iOS / HTML prototypes */
-export const featurePageBg = 'bg-[var(--bg)]'
+export const featurePageBg = 'bg-(--bg)'
 
 export function FeatureScreen({ children }: { children: ReactNode }) {
   return <div className="space-y-4">{children}</div>
@@ -103,7 +103,7 @@ export function MaterialsWeekNavigator({
         <button
           type="button"
           onClick={onPrev}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-[#E5E7EB] bg-white text-[var(--blue)] hover:bg-slate-50"
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-[#E5E7EB] bg-white text-(--blue) hover:bg-slate-50"
         >
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -116,7 +116,7 @@ export function MaterialsWeekNavigator({
         <button
           type="button"
           onClick={onNext}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-[#E5E7EB] bg-white text-[var(--blue)] hover:bg-slate-50"
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-[#E5E7EB] bg-white text-(--blue) hover:bg-slate-50"
         >
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -151,19 +151,19 @@ export function MaterialsDayStrip({
             type="button"
             onClick={() => onSelectDate(day)}
             className={`flex flex-col items-center rounded-xl py-2 transition-colors ${
-              selected ? 'bg-[var(--blue)] text-white shadow-sm' : 'bg-white border border-[#EEF0F3] text-slate-700 hover:bg-slate-50'
+              selected ? 'bg-(--blue) text-white shadow-xs' : 'bg-white border border-[#EEF0F3] text-slate-700 hover:bg-slate-50'
             }`}
           >
             <span className={`text-[10px] font-medium ${selected ? 'text-blue-100' : 'text-slate-400'}`}>
               {format(day, 'EEE')}
             </span>
-            <span className={`text-sm font-bold ${isToday && !selected ? 'text-[var(--blue)]' : ''}`}>
+            <span className={`text-sm font-bold ${isToday && !selected ? 'text-(--blue)' : ''}`}>
               {format(day, 'd')}
             </span>
             {count > 0 && (
               <span
                 className={`mt-0.5 h-1.5 w-1.5 rounded-full ${
-                  selected ? 'bg-white' : 'bg-[var(--blue)]'
+                  selected ? 'bg-white' : 'bg-(--blue)'
                 }`}
               />
             )}
@@ -178,13 +178,13 @@ export function StatusPill({ label, tone }: { label: string; tone: 'amber' | 'gr
   const styles = {
     amber: 'bg-[#FAEEDA] text-[#854F0B]',
     green: 'bg-[#E1F5EE] text-[#0F6E56]',
-    blue: 'bg-[var(--blue-t)] text-[var(--blue)]',
+    blue: 'bg-(--blue-t) text-(--blue)',
     grey: 'bg-[#F2F3F5] text-[#6B7280]',
     red: 'bg-[#FCEBEB] text-[#A32D2D]',
     purple: 'bg-[#EEEDFE] text-[#534AB7]',
   }
   return (
-    <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold ${styles[tone]}`}>
+    <span className={`inline-flex items-center rounded-sm px-1.5 py-0.5 text-[10px] font-semibold ${styles[tone]}`}>
       {label}
     </span>
   )

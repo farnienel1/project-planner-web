@@ -196,10 +196,10 @@ function BookingCard({
         />
 
         <div className="min-w-0 flex-1 px-4 py-3">
-          <p className={`truncate text-[15px] font-semibold ${past ? 'text-[var(--ink3)]' : ''}`}>
+          <p className={`truncate text-[15px] font-semibold ${past ? 'text-(--ink3)' : ''}`}>
             {projectName}
           </p>
-          <p className="mt-0.5 text-[12px] font-medium text-[var(--ink3)]">
+          <p className="mt-0.5 text-[12px] font-medium text-(--ink3)">
             {myScheduleClockSubtitle(booking)}
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
@@ -368,7 +368,7 @@ function DaySection({
       <div className={`mb-3 flex items-center gap-3 px-1 ${past ? 'opacity-50' : ''}`}>
         <div
           className={`flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-xl text-center ${
-            today ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-700'
+            today ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-100 text-slate-700'
           }`}
         >
           <span className={`text-[9px] font-bold uppercase tracking-wider ${today ? 'text-blue-200' : 'text-slate-400'}`}>
@@ -767,7 +767,7 @@ export function ScheduleScreen({
             placeholder="Search operative, project or notes…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-3 pr-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none"
+            className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-3 pr-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-400 focus:outline-hidden"
             aria-label="Search schedule"
           />
         </div>
@@ -785,7 +785,7 @@ export function ScheduleScreen({
               type="button"
               onClick={() => setFilterStatus(f.value)}
               className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                filterStatus === f.value ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                filterStatus === f.value ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-700'
               }`}
             >
               {f.label}

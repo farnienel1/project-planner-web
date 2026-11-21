@@ -8,7 +8,7 @@ export function ProfileSection({
   children: React.ReactNode
 }) {
   return (
-    <section className="overflow-hidden card shadow-sm">
+    <section className="overflow-hidden card shadow-xs">
       <div className="border-b border-slate-100 bg-slate-50/60 px-5 py-3.5">
         <h2 className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">{title}</h2>
       </div>
@@ -45,10 +45,10 @@ export function ProfileToggleRow({
         disabled={disabled}
         onClick={() => !disabled && onChange(!checked)}
         className={`
-          relative inline-flex h-[28px] w-[50px] flex-shrink-0 cursor-pointer items-center
+          relative inline-flex h-[28px] w-[50px] shrink-0 cursor-pointer items-center
           rounded-full border-2 border-transparent
           transition-colors duration-200 ease-in-out
-          focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2
+          focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2
           disabled:cursor-not-allowed
           ${checked ? 'bg-blue-500' : 'bg-slate-200'}
         `}
@@ -58,7 +58,7 @@ export function ProfileToggleRow({
             pointer-events-none inline-block h-[22px] w-[22px] transform rounded-full
             bg-white shadow-[0_2px_4px_rgba(0,0,0,0.25)]
             ring-0 transition-transform duration-200 ease-in-out
-            ${checked ? 'translate-x-[22px]' : 'translate-x-[1px]'}
+            ${checked ? 'translate-x-[22px]' : 'translate-x-px'}
           `}
         />
       </button>
@@ -118,7 +118,7 @@ export function ProfileActionButton({
           </span>
         )}
       </span>
-      <svg className="ml-3 h-4 w-4 flex-shrink-0 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg className="ml-3 h-4 w-4 shrink-0 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
       </svg>
     </button>

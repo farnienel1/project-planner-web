@@ -176,7 +176,7 @@ export function HoursTimelinePicker({
   return (
     <div className="space-y-4">
       <div>
-        <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">Hours · 00:00 to 24:00</p>
+        <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.4px] text-(--ink3)">Hours · 00:00 to 24:00</p>
         <div className="rounded-xl bg-[#F2F3F5] px-3 pb-2 pt-3">
           <div
             data-hours-track
@@ -213,7 +213,7 @@ export function HoursTimelinePicker({
               {AXIS.map((label) => (
                 <div
                   key={`tick-${label}`}
-                  className="absolute inset-y-0 w-px bg-black/[0.08]"
+                  className="absolute inset-y-0 w-px bg-black/8"
                   style={{ left: `${(label / 24) * 100}%` }}
                 />
               ))}
@@ -253,7 +253,7 @@ export function HoursTimelinePicker({
               breakStart < endMin &&
               breakEnd > startMin ? (
                 <div
-                  className="absolute inset-y-1 rounded-sm bg-white/50"
+                  className="absolute inset-y-1 rounded-xs bg-white/50"
                   style={{
                     left: `${fraction(Math.max(startMin, breakStart)) * 100}%`,
                     width: `${Math.max(0.4, fraction(Math.min(endMin, breakEnd)) - fraction(Math.max(startMin, breakStart))) * 100}%`,
@@ -288,7 +288,7 @@ export function HoursTimelinePicker({
             </>
           ) : null
         ) : (
-          <p className="mt-2 text-[12px] tabular-nums text-[var(--ink3)]">Finish must be after start</p>
+          <p className="mt-2 text-[12px] tabular-nums text-(--ink3)">Finish must be after start</p>
         )}
       </div>
 
@@ -309,7 +309,7 @@ export function HoursTimelinePicker({
         />
       </div>
       {showBreak && breakApplies ? (
-      <label className="flex items-center justify-between rounded-xl border border-[var(--line)] bg-white px-3.5 py-3 text-[13px] font-medium">
+      <label className="flex items-center justify-between rounded-xl border border-(--line) bg-white px-3.5 py-3 text-[13px] font-medium">
         {breakToggleLabel}
         <input
           type="checkbox"
@@ -337,12 +337,12 @@ function Handle({
       className="pointer-events-none absolute top-0 z-10 -translate-x-1/2"
       style={{ left: `${left}%` }}
     >
-      <span className="mb-0.5 block text-center text-[9px] font-semibold tabular-nums text-[var(--blue)]">
+      <span className="mb-0.5 block text-center text-[9px] font-semibold tabular-nums text-(--blue)">
         {label}
       </span>
       <span
         className={`mx-auto block h-3.5 w-3.5 rounded-full border-2 border-white shadow ${
-          side === 'start' ? 'bg-[var(--blue)]' : 'bg-[#0F6E56]'
+          side === 'start' ? 'bg-(--blue)' : 'bg-[#0F6E56]'
         }`}
       />
     </div>
@@ -363,13 +363,13 @@ function TimeColumn({
   onMinute: (value: number) => void
 }) {
   return (
-    <div className="rounded-[10px] bg-[var(--bg)] p-2.5">
-      <p className="mb-1 text-[9px] uppercase tracking-[0.4px] text-[var(--ink3)]">{title}</p>
+    <div className="rounded-[10px] bg-(--bg) p-2.5">
+      <p className="mb-1 text-[9px] uppercase tracking-[0.4px] text-(--ink3)">{title}</p>
       <div className="flex items-center gap-1">
         <select
           value={hour}
           onChange={(e) => onHour(Number(e.target.value))}
-          className="h-[100px] flex-1 appearance-none rounded-lg bg-white px-2 text-center text-[16px] font-medium tabular-nums outline-none"
+          className="h-[100px] flex-1 appearance-none rounded-lg bg-white px-2 text-center text-[16px] font-medium tabular-nums outline-hidden"
           size={5}
         >
           {HOURS.map((h) => (
@@ -382,7 +382,7 @@ function TimeColumn({
         <select
           value={minute}
           onChange={(e) => onMinute(Number(e.target.value))}
-          className="h-[100px] w-16 appearance-none rounded-lg bg-white px-1 text-center text-[16px] font-medium tabular-nums outline-none"
+          className="h-[100px] w-16 appearance-none rounded-lg bg-white px-1 text-center text-[16px] font-medium tabular-nums outline-hidden"
           size={4}
         >
           {MINUTES.map((m) => (

@@ -128,7 +128,7 @@ function WeekAtAGlance({ policy }: { policy: OrgPayrollTimePolicy }) {
         <SetupSectionLabel>Week at a glance</SetupSectionLabel>
         {rows.map((row) => (
           <div key={row.label} className="flex items-start gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-            <span className={`mt-1.5 h-2.5 w-2.5 flex-shrink-0 rounded-full ${row.dot}`} />
+            <span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${row.dot}`} />
             <div className="min-w-0">
               <p className="text-sm font-semibold text-slate-900">{row.label}</p>
               <p className="text-xs text-slate-500">{row.value}</p>
@@ -146,7 +146,7 @@ function MonFriPaidDayInfographic({ policy }: { policy: OrgPayrollTimePolicy }) 
   const breakHours = policy.breakPaid === true ? 0 : Math.round((policy.unpaidBreakMinutes / 60) * 100) / 100
 
   return (
-    <div className="rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50 to-purple-50 p-4">
+    <div className="rounded-xl border border-violet-200 bg-linear-to-br/srgb from-violet-50 to-purple-50 p-4">
       <p className="text-[11px] font-bold uppercase tracking-widest text-violet-500">Mon–Fri paid day</p>
       <div className="mt-3 space-y-2 text-sm">
         <div className="flex items-center justify-between text-violet-900">
@@ -300,7 +300,7 @@ function WeekendSection({
                           if (countsAsText != null) patchWeekend({ countsAsStandardHours: weekendCountsAsSnap(countsAsText, policy) })
                           setCountsAsText(null)
                         }}
-                        className="w-16 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-center text-sm font-bold text-blue-600 outline-none"
+                        className="w-16 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-center text-sm font-bold text-blue-600 outline-hidden"
                       />
                     </div>
                   ) : null}
@@ -325,7 +325,7 @@ function WeekendSection({
                           outsideWindowMultiplier: parseFloat(e.target.value) || 1,
                         })
                       }
-                      className="w-16 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-center text-sm font-bold text-blue-600 outline-none"
+                      className="w-16 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-center text-sm font-bold text-blue-600 outline-hidden"
                     />
                   </div>
                 </div>
@@ -342,7 +342,7 @@ function WeekendSection({
                   onChange={(e) =>
                     patchWeekend({ allHoursMultiplier: parseFloat(e.target.value) || 1 })
                   }
-                  className="w-16 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-center text-sm font-bold text-blue-600 outline-none"
+                  className="w-16 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-center text-sm font-bold text-blue-600 outline-hidden"
                 />
               </div>
             )}
@@ -513,7 +513,7 @@ export function WorkingHoursSetupSection({ value, onChange }: WorkingHoursSetupS
               onChange={(e) =>
                 patch({ weekdayOutsideStandardMultiplier: parseFloat(e.target.value) || 1 })
               }
-              className="w-16 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-center text-sm font-bold text-blue-600 outline-none"
+              className="w-16 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-center text-sm font-bold text-blue-600 outline-hidden"
             />
           </div>
 

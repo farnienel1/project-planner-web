@@ -133,15 +133,15 @@ export function CompanyDataExportPanel({ onBack }: { onBack: () => void }) {
         <SettingsCard>
           <div className="space-y-2.5 px-4 py-4" role="status" aria-live="polite">
             <div className="flex items-center justify-between gap-3 text-[13.5px]">
-              <span className="font-semibold text-[var(--ink)]">
+              <span className="font-semibold text-(--ink)">
                 {progress ? `Reading ${progress.label.toLowerCase()}…` : 'Starting…'}
               </span>
-              <span className="text-[var(--ink3)]">
+              <span className="text-(--ink3)">
                 {progress ? `${progress.documentsRead.toLocaleString('en-GB')} records` : ''}
               </span>
             </div>
-            <div className="h-2 overflow-hidden rounded-full bg-[var(--soft2)]">
-              <div className="h-full rounded-full bg-[var(--blue)] transition-[width]" style={{ width: `${percent}%` }} />
+            <div className="h-2 overflow-hidden rounded-full bg-(--soft2)">
+              <div className="h-full rounded-full bg-(--blue) transition-[width]" style={{ width: `${percent}%` }} />
             </div>
           </div>
         </SettingsCard>
