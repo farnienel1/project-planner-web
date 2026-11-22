@@ -70,7 +70,7 @@ export function ConsoleSearch() {
           }}
           onFocus={() => setOpen(true)}
           placeholder="Organisation, person, email or id"
-          className="w-full min-w-0 bg-transparent text-[var(--dash-ink)] outline-none placeholder:text-[var(--dash-muted)]"
+          className="w-full min-w-0 bg-transparent text-(--dash-ink) outline-hidden placeholder:text-(--dash-muted)"
           aria-controls="owner-search-results"
           aria-expanded={showPanel}
           role="combobox"
@@ -82,32 +82,32 @@ export function ConsoleSearch() {
       {showPanel ? (
         <div
           id="owner-search-results"
-          className="absolute left-0 right-0 top-[42px] z-40 max-h-[60vh] overflow-auto rounded-[10px] border border-[var(--dash-line)] bg-[var(--dash-card)] p-2 text-sm shadow-lg"
+          className="absolute left-0 right-0 top-[42px] z-40 max-h-[60vh] overflow-auto rounded-[10px] border border-(--dash-line) bg-(--dash-card) p-2 text-sm shadow-lg"
         >
-          {error ? <p className="px-2 py-1 text-[var(--dash-warn-ink)]">{error}</p> : null}
-          {!error && !current ? <p className="px-2 py-1 text-[var(--dash-muted)]">Searching…</p> : null}
+          {error ? <p className="px-2 py-1 text-(--dash-warn-ink)">{error}</p> : null}
+          {!error && !current ? <p className="px-2 py-1 text-(--dash-muted)">Searching…</p> : null}
           {current && current.organisations.length + current.people.length === 0 ? (
-            <p className="px-2 py-1 text-[var(--dash-muted)]">Nothing matches “{current.query}”.</p>
+            <p className="px-2 py-1 text-(--dash-muted)">Nothing matches “{current.query}”.</p>
           ) : null}
           {current?.organisations.length ? (
             <div>
-              <p className="px-2 pb-1 pt-1 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-[var(--dash-muted)]">Organisations</p>
+              <p className="px-2 pb-1 pt-1 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-(--dash-muted)">Organisations</p>
               {current.organisations.map((org) => (
                 <Link
                   key={org.id}
                   href={`/developer/organisations/${encodeURIComponent(org.id)}`}
                   onClick={close}
-                  className="block rounded-[7px] px-2 py-1.5 text-[var(--dash-ink)] hover:bg-[var(--dash-hover-bg)]"
+                  className="block rounded-[7px] px-2 py-1.5 text-(--dash-ink) hover:bg-(--dash-hover-bg)"
                 >
                   <span className="font-medium">{org.name}</span>
-                  <span className="ml-2 text-xs text-[var(--dash-muted)]">{org.id}</span>
+                  <span className="ml-2 text-xs text-(--dash-muted)">{org.id}</span>
                 </Link>
               ))}
             </div>
           ) : null}
           {current?.people.length ? (
             <div>
-              <p className="px-2 pb-1 pt-2 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-[var(--dash-muted)]">People</p>
+              <p className="px-2 pb-1 pt-2 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-(--dash-muted)">People</p>
               {current.people.map((person) => (
                 <Link
                   key={person.id}
@@ -116,10 +116,10 @@ export function ConsoleSearch() {
                     setJumpQuery(person.name)
                     close()
                   }}
-                  className="block rounded-[7px] px-2 py-1.5 text-[var(--dash-ink)] hover:bg-[var(--dash-hover-bg)]"
+                  className="block rounded-[7px] px-2 py-1.5 text-(--dash-ink) hover:bg-(--dash-hover-bg)"
                 >
                   <span className="font-medium">{person.name}</span>
-                  <span className="ml-2 text-xs text-[var(--dash-muted)]">
+                  <span className="ml-2 text-xs text-(--dash-muted)">
                     {[person.emailMasked, person.organizationNames.join(', ')].filter(Boolean).join(' · ')}
                   </span>
                 </Link>

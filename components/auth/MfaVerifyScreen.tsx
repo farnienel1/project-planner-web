@@ -199,13 +199,13 @@ export function MfaVerifyScreen() {
   return (
     <div className="login">
       <div className="hero art" style={{ borderRadius: 0 }}>
-        <Link href="/" className="relative z-[1] flex items-center gap-3.5 text-white no-underline" aria-label="Project Planner home">
+        <Link href="/" className="relative z-1 flex items-center gap-3.5 text-white no-underline" aria-label="Project Planner home">
           <div className="overflow-hidden rounded-[14px]" style={{ background: 'rgba(255,255,255,.15)' }}>
             <AppLogoMark size={52} radius={14} />
           </div>
-          <b className="font-[family-name:var(--head)] text-[22px] font-extrabold tracking-tight">Project Planner</b>
+          <b className="font-(family-name:--head) text-[22px] font-extrabold tracking-tight">Project Planner</b>
         </Link>
-        <div className="relative z-[1]">
+        <div className="relative z-1">
           <div className="big" style={{ fontSize: 44, maxWidth: 520 }}>
             Check your email
           </div>

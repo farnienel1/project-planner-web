@@ -28,10 +28,10 @@ export function AnnualLeaveLegend() {
     ['bg-slate-300', 'Weekend'],
   ] as const
   return (
-    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-[var(--ink3)]">
+    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-(--ink3)">
       {items.map(([swatch, label]) => (
         <span key={label} className="flex items-center gap-1.5">
-          <span className={`h-2.5 w-2.5 rounded-sm ${swatch}`} />
+          <span className={`h-2.5 w-2.5 rounded-xs ${swatch}`} />
           {label}
         </span>
       ))}
@@ -58,7 +58,7 @@ function dayStyles(
   if (todayDay) cls += 'ring-2 ring-slate-900 ring-offset-1 '
 
   if (isSelected || isMultiSelected) {
-    return cls + 'bg-blue-600 font-bold text-white shadow-sm'
+    return cls + 'bg-blue-600 font-bold text-white shadow-xs'
   }
 
   if (bankHoliday) return cls + 'bg-violet-100 font-semibold text-violet-800'

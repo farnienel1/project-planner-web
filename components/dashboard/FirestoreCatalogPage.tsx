@@ -78,7 +78,7 @@ export function FirestoreCatalogPage({
       {canManage && (
         <form
           onSubmit={handleAdd}
-          className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-end"
+          className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-xs sm:flex-row sm:items-end"
         >
           <div className="flex-1">
             <label className="mb-1 block text-sm font-medium text-slate-700">{nameFieldLabel}</label>
@@ -100,12 +100,12 @@ export function FirestoreCatalogPage({
       )}
 
       {records.length === 0 ? (
-        <div className="card p-12 text-center shadow-sm">
+        <div className="card p-12 text-center shadow-xs">
           <h3 className="text-lg font-medium text-slate-900">No records yet</h3>
           <p className="mt-2 text-slate-500">{emptyHint}</p>
         </div>
       ) : (
-        <div className="overflow-hidden card shadow-sm">
+        <div className="overflow-hidden card shadow-xs">
           <table className="min-w-full divide-y divide-slate-200">
             <thead className="bg-slate-50">
               <tr>

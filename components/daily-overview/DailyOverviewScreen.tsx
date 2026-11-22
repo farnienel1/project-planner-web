@@ -453,7 +453,7 @@ export function DailyOverviewScreen() {
       )}
     </PageShell>
     {bookLabourOpen ? (
-      <div className="fixed inset-0 z-[80] overflow-y-auto bg-[var(--bg)]">
+      <div className="fixed inset-0 z-80 overflow-y-auto bg-(--bg)">
         <div className="mx-auto max-w-2xl px-4 py-6 lg:px-10 lg:py-8">
           <BookLabourFlowScreen date={dateParam} from="daily-overview" onClose={() => setBookLabourOpen(false)} />
         </div>

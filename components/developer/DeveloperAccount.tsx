@@ -76,11 +76,11 @@ function AccountForm() {
       <section className="card pad">
         <p className="eyebrow">Signed in as</p>
         <p className="mt-1 text-lg font-extrabold">{user?.email || PLATFORM_OWNER_EMAIL}</p>
-        <p className="mt-2 text-sm text-[var(--ink2)]">
+        <p className="mt-2 text-sm text-(--ink2)">
           This console is only for you. Organisation users never see it, and they cannot be granted access from User
           settings. Like everyone else, this login is signed out after 30 minutes idle.
         </p>
-        <p className="mt-3 text-sm text-[var(--ink2)]">
+        <p className="mt-3 text-sm text-(--ink2)">
           Email verification (2FA) runs on every later sign-in after the owner password has been created. The first
           Create owner password visit is not blocked, so you cannot lock yourself out on day one.
         </p>
@@ -133,7 +133,7 @@ function AccountForm() {
       </form>
       <section className="card pad space-y-2">
         <h2 className="h2">Two-step verification</h2>
-        <p className="text-sm text-[var(--ink2)]">
+        <p className="text-sm text-(--ink2)">
           After email and password, a 6-digit code is emailed to {PLATFORM_OWNER_EMAIL}. Codes expire in 10 minutes.
           Five wrong attempts starts sign-in again. If the email cannot be sent, sign-in is refused rather than skipped.
         </p>
@@ -144,7 +144,7 @@ function AccountForm() {
 
 export function DeveloperAccountScreen() {
   return (
-    <Suspense fallback={<p className="text-sm text-[var(--ink3)]">Loading…</p>}>
+    <Suspense fallback={<p className="text-sm text-(--ink3)">Loading…</p>}>
       <AccountForm />
     </Suspense>
   )

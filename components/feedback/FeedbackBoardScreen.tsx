@@ -154,8 +154,8 @@ export function FeedbackBoardScreen() {
     <div className="space-y-4" data-hue="task">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-[30px] font-extrabold tracking-tight text-[var(--ink)]">Feedback</h1>
-          <p className="mt-1 max-w-[60ch] text-sm text-[var(--ink3)]">
+          <h1 className="text-[30px] font-extrabold tracking-tight text-(--ink)">Feedback</h1>
+          <p className="mt-1 max-w-[60ch] text-sm text-(--ink3)">
             Share ideas to improve Project Planner, vote on what matters to you, and see what we&apos;re building next.
           </p>
         </div>
@@ -164,7 +164,7 @@ export function FeedbackBoardScreen() {
         </button>
       </div>
 
-      <div className="flex gap-1 border-b border-[var(--line)]">
+      <div className="flex gap-1 border-b border-(--line)">
         {(
           [
             ['ideas', 'Ideas', openIdeas.length],
@@ -177,12 +177,12 @@ export function FeedbackBoardScreen() {
             type="button"
             aria-pressed={tab === id}
             className={`flex items-center gap-2 border-b-2 px-3.5 py-2.5 text-sm font-semibold ${
-              tab === id ? 'border-[var(--blue)] text-[var(--ink)]' : 'border-transparent text-[var(--ink3)]'
+              tab === id ? 'border-(--blue) text-(--ink)' : 'border-transparent text-(--ink3)'
             }`}
             onClick={() => setTab(id)}
           >
             {label}
-            <span className="rounded-full bg-[var(--blue-t,rgba(37,99,235,.12))] px-2 text-[11px] font-bold text-[var(--blue)]">
+            <span className="rounded-full bg-(--blue-t,rgba(37,99,235,.12)) px-2 text-[11px] font-bold text-(--blue)">
               {count}
             </span>
           </button>
@@ -203,8 +203,8 @@ export function FeedbackBoardScreen() {
       {tab === 'ideas' ? (
         <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
           <div>
-            <div className="sticky top-16 z-10 flex flex-wrap items-center gap-2 bg-[var(--bg)] py-2">
-              <label className="flex min-w-[280px] flex-1 items-center gap-2 rounded-2xl border border-[var(--line)] bg-white px-3 py-2 shadow-sm">
+            <div className="sticky top-16 z-10 flex flex-wrap items-center gap-2 bg-(--bg) py-2">
+              <label className="flex min-w-[280px] flex-1 items-center gap-2 rounded-2xl border border-(--line) bg-white px-3 py-2 shadow-xs">
                 <span className="sr-only">Search ideas</span>
                 <input
                   value={query}
@@ -214,17 +214,17 @@ export function FeedbackBoardScreen() {
                     if (user?.id) void trackEvent('feedback_search', { userId: user.id })
                   }}
                   placeholder="Search ideas…"
-                  className="w-full bg-transparent text-sm outline-none"
+                  className="w-full bg-transparent text-sm outline-hidden"
                 />
               </label>
-              <div className="flex rounded-2xl border border-[var(--line)] bg-white p-1 shadow-sm">
+              <div className="flex rounded-2xl border border-(--line) bg-white p-1 shadow-xs">
                 {(['trending', 'top', 'new'] as const).map((item) => (
                   <button
                     key={item}
                     type="button"
                     aria-pressed={sort === item}
                     className={`rounded-xl px-3 py-1.5 text-sm font-semibold capitalize ${
-                      sort === item ? 'bg-[var(--blue)] text-white' : 'text-[var(--ink3)]'
+                      sort === item ? 'bg-(--blue) text-white' : 'text-(--ink3)'
                     }`}
                     onClick={() => setSort(item)}
                   >
@@ -233,7 +233,7 @@ export function FeedbackBoardScreen() {
                 ))}
               </div>
               <select
-                className="rounded-2xl border border-[var(--line)] bg-white px-3 py-2 text-sm font-medium shadow-sm"
+                className="rounded-2xl border border-(--line) bg-white px-3 py-2 text-sm font-medium shadow-xs"
                 value={status}
                 onChange={(e) => setStatus(e.target.value as StatusFilter)}
               >
@@ -246,7 +246,7 @@ export function FeedbackBoardScreen() {
                 <option value="not_planned">Not planned</option>
               </select>
               <select
-                className="rounded-2xl border border-[var(--line)] bg-white px-3 py-2 text-sm font-medium shadow-sm"
+                className="rounded-2xl border border-(--line) bg-white px-3 py-2 text-sm font-medium shadow-xs"
                 value={mine}
                 onChange={(e) => setMine(e.target.value as MineFilter)}
               >
@@ -265,8 +265,8 @@ export function FeedbackBoardScreen() {
                   aria-pressed={category === item}
                   className={`rounded-full border px-3 py-1.5 text-sm font-medium ${
                     category === item
-                      ? 'border-[var(--ink)] bg-[var(--ink)] text-white'
-                      : 'border-[var(--line)] bg-white text-[var(--ink2)]'
+                      ? 'border-(--ink) bg-(--ink) text-white'
+                      : 'border-(--line) bg-white text-(--ink2)'
                   }`}
                   onClick={() => {
                     setCategory(item)
@@ -298,8 +298,8 @@ export function FeedbackBoardScreen() {
                   return (
                     <article
                       key={row.id}
-                      className={`relative rounded-[22px] border bg-white p-4 shadow-sm transition hover:border-[color-mix(in_srgb,var(--blue)_45%,var(--line))] ${
-                        row.pinned ? 'border-[color-mix(in_srgb,var(--blue)_50%,var(--line))]' : 'border-[var(--line)]'
+                      className={`relative rounded-[22px] border bg-white p-4 shadow-xs transition hover:border-[color-mix(in_srgb,var(--blue)_45%,var(--line))] ${
+                        row.pinned ? 'border-[color-mix(in_srgb,var(--blue)_50%,var(--line))]' : 'border-(--line)'
                       }`}
                     >
                       <Link href={`/dashboard/ideas/${row.id}`} className="absolute inset-0 rounded-[22px]" aria-label={row.title} />
@@ -313,10 +313,10 @@ export function FeedbackBoardScreen() {
                           }}
                           aria-pressed={voted}
                           aria-label={`Vote for ${row.title}, ${row.voteCount} votes`}
-                          className={`relative z-[1] flex min-h-[72px] w-16 flex-col items-center justify-center rounded-2xl border text-lg font-extrabold ${
+                          className={`relative z-1 flex min-h-[72px] w-16 flex-col items-center justify-center rounded-2xl border text-lg font-extrabold ${
                             voted
-                              ? 'border-[var(--blue)] bg-[var(--blue)] text-white'
-                              : 'border-[var(--line)] bg-[var(--soft)] text-[var(--ink)]'
+                              ? 'border-(--blue) bg-(--blue) text-white'
+                              : 'border-(--line) bg-(--soft) text-(--ink)'
                           }`}
                         >
                           <ChevronUpIcon className="h-4 w-4" />
@@ -325,10 +325,10 @@ export function FeedbackBoardScreen() {
                         </button>
                         <div className="min-w-0 flex-1">
                           {row.pinned ? (
-                            <p className="mb-1 text-xs font-semibold text-[var(--blue)]">📌 Pinned by the product team</p>
+                            <p className="mb-1 text-xs font-semibold text-(--blue)">📌 Pinned by the product team</p>
                           ) : null}
                           <div className="flex flex-wrap items-center gap-2">
-                            <h2 className="line-clamp-2 text-[17px] font-bold tracking-tight text-[var(--ink)]">{row.title}</h2>
+                            <h2 className="line-clamp-2 text-[17px] font-bold tracking-tight text-(--ink)">{row.title}</h2>
                             {isHot(row, rankedTrending) ? (
                               <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-orange-700">🔥 Trending</span>
                             ) : null}
@@ -338,15 +338,15 @@ export function FeedbackBoardScreen() {
                               </span>
                             ) : null}
                             {isNewIdea(row) ? (
-                              <span className="rounded-full bg-[var(--soft)] px-2 py-0.5 text-[11px] font-bold text-[var(--ink2)]">New</span>
+                              <span className="rounded-full bg-(--soft) px-2 py-0.5 text-[11px] font-bold text-(--ink2)">New</span>
                             ) : null}
                             {row.organizationId && row.organizationId === organization?.id ? (
                               <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-800">Your team</span>
                             ) : null}
                           </div>
-                          <p className="mt-1 line-clamp-2 text-sm text-[var(--ink2)]">{row.details || 'No extra detail yet.'}</p>
-                          <p className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--ink3)]">
-                            <span className="rounded-full border border-[var(--line)] bg-[var(--soft)] px-2 py-0.5 font-semibold text-[var(--ink2)]">
+                          <p className="mt-1 line-clamp-2 text-sm text-(--ink2)">{row.details || 'No extra detail yet.'}</p>
+                          <p className="mt-2 flex flex-wrap items-center gap-2 text-xs text-(--ink3)">
+                            <span className="rounded-full border border-(--line) bg-(--soft) px-2 py-0.5 font-semibold text-(--ink2)">
                               {row.category}
                             </span>
                             <span className="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-800">
@@ -374,22 +374,22 @@ export function FeedbackBoardScreen() {
           </div>
 
           <aside className="hidden space-y-3 xl:block">
-            <section className="rounded-[22px] border border-[var(--line)] bg-white p-4 shadow-sm">
+            <section className="rounded-[22px] border border-(--line) bg-white p-4 shadow-xs">
               <h3 className="text-sm font-bold">Your impact</h3>
-              <p className="mt-2 text-sm text-[var(--ink2)]">
+              <p className="mt-2 text-sm text-(--ink2)">
                 {impact.posted} idea{impact.posted === 1 ? '' : 's'} posted · {impact.voted} vote{impact.voted === 1 ? '' : 's'}{' '}
                 cast · {impact.backedShipped} you backed {impact.backedShipped === 1 ? 'has' : 'have'} shipped
               </p>
             </section>
-            <section className="rounded-[22px] border border-[var(--line)] bg-white p-4 shadow-sm">
+            <section className="rounded-[22px] border border-(--line) bg-white p-4 shadow-xs">
               <h3 className="text-sm font-bold">Recently shipped</h3>
               {shipped.length === 0 ? (
-                <p className="mt-2 text-sm text-[var(--ink3)]">Nothing shipped yet — vote to help us choose.</p>
+                <p className="mt-2 text-sm text-(--ink3)">Nothing shipped yet — vote to help us choose.</p>
               ) : (
                 <ul className="mt-2 space-y-2">
                   {shipped.slice(0, 3).map((row) => (
                     <li key={row.id}>
-                      <Link href={`/dashboard/ideas/${row.id}`} className="text-sm font-semibold text-[var(--blue)]">
+                      <Link href={`/dashboard/ideas/${row.id}`} className="text-sm font-semibold text-(--blue)">
                         {row.title}
                       </Link>
                     </li>
@@ -397,9 +397,9 @@ export function FeedbackBoardScreen() {
                 </ul>
               )}
             </section>
-            <section className="rounded-[22px] border border-[var(--line)] bg-white p-4 shadow-sm">
+            <section className="rounded-[22px] border border-(--line) bg-white p-4 shadow-xs">
               <h3 className="text-sm font-bold">How this works</h3>
-              <p className="mt-2 text-sm text-[var(--ink3)]">
+              <p className="mt-2 text-sm text-(--ink3)">
                 One vote per person per idea. The product team replies on the board. Names from other companies stay private.
               </p>
             </section>
@@ -418,16 +418,16 @@ export function FeedbackBoardScreen() {
           ).map(([id, label]) => {
             const cards = openIdeas.filter((row) => unifiedStatus(row) === id).slice(0, 12)
             return (
-              <section key={id} className="rounded-[22px] border border-[var(--line)] bg-[var(--soft)] p-3">
+              <section key={id} className="rounded-[22px] border border-(--line) bg-(--soft) p-3">
                 <h2 className="mb-3 flex items-center justify-between text-sm font-bold">
                   {label}
-                  <span className="text-xs text-[var(--ink3)]">{cards.length}</span>
+                  <span className="text-xs text-(--ink3)">{cards.length}</span>
                 </h2>
-                {cards.length === 0 ? <p className="text-sm text-[var(--ink3)]">Nothing here yet.</p> : null}
+                {cards.length === 0 ? <p className="text-sm text-(--ink3)">Nothing here yet.</p> : null}
                 {cards.map((row) => (
-                  <Link key={row.id} href={`/dashboard/ideas/${row.id}`} className="mb-2 block rounded-2xl border border-[var(--line)] bg-white p-3">
+                  <Link key={row.id} href={`/dashboard/ideas/${row.id}`} className="mb-2 block rounded-2xl border border-(--line) bg-white p-3">
                     <p className="text-sm font-bold">{row.title}</p>
-                    <p className="mt-1 text-xs text-[var(--ink3)]">{row.voteCount} votes · {row.category}</p>
+                    <p className="mt-1 text-xs text-(--ink3)">{row.voteCount} votes · {row.category}</p>
                   </Link>
                 ))}
               </section>
@@ -442,14 +442,14 @@ export function FeedbackBoardScreen() {
             <EmptyState title="No shipped ideas yet" description="When we release something you asked for, it will land here." />
           ) : (
             shipped.map((row) => (
-              <article key={row.id} className="rounded-[22px] border border-[var(--line)] bg-white p-4 shadow-sm">
-                <p className="text-xs font-semibold text-[var(--ink3)]">
+              <article key={row.id} className="rounded-[22px] border border-(--line) bg-white p-4 shadow-xs">
+                <p className="text-xs font-semibold text-(--ink3)">
                   {(row.shippedAt || row.updatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                 </p>
                 <Link href={`/dashboard/ideas/${row.id}`} className="mt-1 block text-lg font-bold">
                   {row.title}
                 </Link>
-                <p className="mt-1 text-sm text-[var(--ink2)]">{row.releaseNote || row.officialResponse || row.details}</p>
+                <p className="mt-1 text-sm text-(--ink2)">{row.releaseNote || row.officialResponse || row.details}</p>
                 {hasVoted(votes, row.id, user?.id) ? (
                   <p className="mt-2 text-xs font-bold text-green-700">You asked for this</p>
                 ) : null}
@@ -534,9 +534,9 @@ function ComposeModal({ onClose, onSaved }: { onClose: () => void; onSaved: (id:
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4">
-      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-[var(--bg)] p-4 sm:rounded-2xl" role="dialog" aria-modal="true">
+      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-(--bg) p-4 sm:rounded-2xl" role="dialog" aria-modal="true">
         <div className="mb-3 flex items-center justify-between">
-          <button type="button" className="text-sm font-semibold text-[var(--blue)]" onClick={onClose}>
+          <button type="button" className="text-sm font-semibold text-(--blue)" onClick={onClose}>
             Cancel
           </button>
           <p className="text-sm font-bold">Suggest an idea</p>
@@ -554,16 +554,16 @@ function ComposeModal({ onClose, onSaved }: { onClose: () => void; onSaved: (id:
           maxLength={90}
           placeholder="A specific change that would help on site"
         />
-        <p className="mt-1 text-xs text-[var(--ink3)]">{title.trim().length}/90 {titleError ? `· ${titleError}` : ''}</p>
+        <p className="mt-1 text-xs text-(--ink3)">{title.trim().length}/90 {titleError ? `· ${titleError}` : ''}</p>
         {similar.length > 0 && !continueAnyway ? (
-          <div className="mt-3 rounded-2xl border border-[var(--line)] bg-white p-3">
+          <div className="mt-3 rounded-2xl border border-(--line) bg-white p-3">
             <p className="eyebrow">Similar ideas already on the board</p>
             <div className="mt-2 space-y-2">
               {similar.map((row) => (
-                <div key={row.id} className="flex items-center justify-between gap-2 rounded-xl bg-[var(--soft)] p-3">
+                <div key={row.id} className="flex items-center justify-between gap-2 rounded-xl bg-(--soft) p-3">
                   <Link href={`/dashboard/ideas/${row.id}`} className="min-w-0 text-sm font-semibold">
                     {row.title}
-                    <span className="mt-1 block text-xs font-normal text-[var(--ink3)]">
+                    <span className="mt-1 block text-xs font-normal text-(--ink3)">
                       {row.voteCount} votes · {CUSTOMER_STATUS_LABEL[unifiedStatus(row)]}
                     </span>
                   </Link>
@@ -582,7 +582,7 @@ function ComposeModal({ onClose, onSaved }: { onClose: () => void; onSaved: (id:
                 </div>
               ))}
             </div>
-            <button type="button" className="mt-2 text-sm font-semibold text-[var(--blue)]" onClick={() => setContinueAnyway(true)}>
+            <button type="button" className="mt-2 text-sm font-semibold text-(--blue)" onClick={() => setContinueAnyway(true)}>
               None of these, it&apos;s different
             </button>
           </div>
@@ -597,7 +597,7 @@ function ComposeModal({ onClose, onSaved }: { onClose: () => void; onSaved: (id:
               maxLength={2000}
               placeholder="e.g. On Monday mornings I can't see which operatives are on which job without scrolling…"
             />
-            <p className="mt-1 text-xs text-[var(--ink3)]">{details.trim().length}/2000 {detailsError ? `· ${detailsError}` : ''}</p>
+            <p className="mt-1 text-xs text-(--ink3)">{details.trim().length}/2000 {detailsError ? `· ${detailsError}` : ''}</p>
             <label className="eyebrow mt-3 block">Category</label>
             <div className="mt-2 flex flex-wrap gap-2">
               {FEEDBACK_CATEGORIES.map((item) => (

@@ -102,7 +102,7 @@ export function MaterialCatalogueScreen() {
   if (loading && items.length === 0) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-[var(--blue)]" />
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-(--blue)" />
       </div>
     )
   }
@@ -138,7 +138,7 @@ export function MaterialCatalogueScreen() {
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       {alert ? <p className="text-sm text-red-600">{alert}</p> : null}
 
-      <div className="rounded-2xl bg-gradient-to-br from-[#185FA5] to-[#0F4C81] p-5 text-white shadow-sm">
+      <div className="rounded-2xl bg-linear-to-br/srgb from-[#185FA5] to-[#0F4C81] p-5 text-white shadow-xs">
         <div className="flex items-start justify-between">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.4px] text-white/80">Catalogue</p>
@@ -157,12 +157,12 @@ export function MaterialCatalogueScreen() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Try 2.5mm LS — name, brand, code or size"
-          className="mt-4 w-full rounded-xl border-0 px-4 py-2.5 text-[15px] text-[var(--ink)]"
+          className="mt-4 w-full rounded-xl border-0 px-4 py-2.5 text-[15px] text-(--ink)"
         />
       </div>
 
       {filtered.length === 0 ? (
-        <div className="rounded-2xl bg-white p-6 shadow-sm">
+        <div className="rounded-2xl bg-white p-6 shadow-xs">
           <EmptyState
             icon={<CubeIcon className="h-[60px] w-[60px] text-gray-400" />}
             title={searching ? 'No items match' : 'No catalogue items yet'}
@@ -175,7 +175,7 @@ export function MaterialCatalogueScreen() {
         </div>
       ) : searching ? (
         <div className="overflow-hidden rounded-2xl bg-white shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
-          <div className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.4px] text-[var(--ink3)]">
+          <div className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.4px] text-(--ink3)">
             {filtered.length} match{filtered.length === 1 ? '' : 'es'}
           </div>
           <div className="space-y-2 border-t border-[#E5E5EA] px-3 py-3">
@@ -191,28 +191,28 @@ export function MaterialCatalogueScreen() {
                     setEditor({ ...item })
                   }}
                 >
-                  <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-[var(--blue-t)] text-[var(--blue)]">
+                  <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-(--blue-t) text-(--blue)">
                     <CubeIcon className="h-4 w-4" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-[15px] font-medium">{item.name}</p>
-                    <p className="text-[13px] text-[var(--ink3)]">{materialBrandText(item.brand)}</p>
+                    <p className="text-[13px] text-(--ink3)">{materialBrandText(item.brand)}</p>
                     <div className="mt-1 flex flex-wrap gap-1.5">
                       {item.productCode ? (
-                        <span className="rounded bg-[var(--blue-t)] px-1.5 py-0.5 font-mono text-[11px] font-medium text-[var(--blue)]">
+                        <span className="rounded-sm bg-(--blue-t) px-1.5 py-0.5 font-mono text-[11px] font-medium text-(--blue)">
                           {item.productCode}
                         </span>
                       ) : null}
-                      <span className="rounded bg-[var(--soft)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--ink3)]">
+                      <span className="rounded-sm bg-(--soft) px-1.5 py-0.5 text-[11px] font-medium text-(--ink3)">
                         {MATERIAL_ORDER_UNIT_DETAILS[item.orderUnit].label}
                       </span>
                       {sizeLabel ? (
-                        <span className="rounded bg-[var(--soft)] px-1.5 py-0.5 text-[11px] text-[var(--ink3)]">
+                        <span className="rounded-sm bg-(--soft) px-1.5 py-0.5 text-[11px] text-(--ink3)">
                           Size: {sizeLabel}
                         </span>
                       ) : null}
                       {lengthLabel ? (
-                        <span className="rounded bg-[var(--soft)] px-1.5 py-0.5 text-[11px] text-[var(--ink3)]">
+                        <span className="rounded-sm bg-(--soft) px-1.5 py-0.5 text-[11px] text-(--ink3)">
                           In one: {lengthLabel}
                         </span>
                       ) : null}
@@ -238,8 +238,8 @@ export function MaterialCatalogueScreen() {
                   }
                   className="flex w-full items-center justify-between px-4 py-3 text-left"
                 >
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.4px] text-[var(--ink3)]">{category}</span>
-                  <span className="text-[12px] text-[var(--ink3)]">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.4px] text-(--ink3)">{category}</span>
+                  <span className="text-[12px] text-(--ink3)">
                     {rows.length} item{rows.length === 1 ? '' : 's'}
                   </span>
                 </button>
@@ -257,28 +257,28 @@ export function MaterialCatalogueScreen() {
                           setEditor({ ...item })
                         }}
                       >
-                        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-[var(--blue-t)] text-[var(--blue)]">
+                        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-(--blue-t) text-(--blue)">
                           <CubeIcon className="h-4 w-4" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-[15px] font-medium">{item.name}</p>
-                          <p className="text-[13px] text-[var(--ink3)]">{materialBrandText(item.brand)}</p>
+                          <p className="text-[13px] text-(--ink3)">{materialBrandText(item.brand)}</p>
                           <div className="mt-1 flex flex-wrap gap-1.5">
                             {item.productCode ? (
-                              <span className="rounded bg-[var(--blue-t)] px-1.5 py-0.5 font-mono text-[11px] font-medium text-[var(--blue)]">
+                              <span className="rounded-sm bg-(--blue-t) px-1.5 py-0.5 font-mono text-[11px] font-medium text-(--blue)">
                                 {item.productCode}
                               </span>
                             ) : null}
-                            <span className="rounded bg-[var(--soft)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--ink3)]">
+                            <span className="rounded-sm bg-(--soft) px-1.5 py-0.5 text-[11px] font-medium text-(--ink3)">
                               {MATERIAL_ORDER_UNIT_DETAILS[item.orderUnit].label}
                             </span>
                             {sizeLabel ? (
-                              <span className="rounded bg-[var(--soft)] px-1.5 py-0.5 text-[11px] text-[var(--ink3)]">
+                              <span className="rounded-sm bg-(--soft) px-1.5 py-0.5 text-[11px] text-(--ink3)">
                                 Size: {sizeLabel}
                               </span>
                             ) : null}
                             {lengthLabel ? (
-                              <span className="rounded bg-[var(--soft)] px-1.5 py-0.5 text-[11px] text-[var(--ink3)]">
+                              <span className="rounded-sm bg-(--soft) px-1.5 py-0.5 text-[11px] text-(--ink3)">
                                 In one: {lengthLabel}
                               </span>
                             ) : null}
@@ -485,7 +485,7 @@ function MaterialEditor({
       title={isNew ? 'New material' : 'Edit material'}
       onCancel={onCancel}
       footer={
-        <button type="submit" form="material-editor" disabled={!form.name.trim() || saving} className="w-full rounded-xl bg-[var(--blue)] py-3 font-semibold text-white disabled:opacity-50">
+        <button type="submit" form="material-editor" disabled={!form.name.trim() || saving} className="w-full rounded-xl bg-(--blue) py-3 font-semibold text-white disabled:opacity-50">
           Save
         </button>
       }
@@ -561,22 +561,22 @@ function CsvSheet({
       <div className="space-y-6 text-sm">
         {replacePrompt ? (
           <section className="space-y-4">
-            <p className="text-[16px] font-semibold text-[var(--ink)]">Replace entire catalogue?</p>
-            <p className="text-[15px] leading-6 text-[var(--ink2)]">
+            <p className="text-[16px] font-semibold text-(--ink)">Replace entire catalogue?</p>
+            <p className="text-[15px] leading-6 text-(--ink2)">
               Are you sure you want to replace your entire catalogue? This step can&apos;t be undone, so please download
               your current material catalogue and save it so you can revert back if required.
             </p>
             <div className="flex flex-wrap gap-3">
               <button
                 type="button"
-                className="h-11 rounded-xl bg-[var(--soft)] px-4 font-semibold text-[var(--ink)]"
+                className="h-11 rounded-xl bg-(--soft) px-4 font-semibold text-(--ink)"
                 onClick={() => setReplacePrompt(false)}
               >
                 Cancel
               </button>
               <button
                 type="button"
-                className="h-11 rounded-xl bg-[var(--blue)] px-5 font-semibold text-white"
+                className="h-11 rounded-xl bg-(--blue) px-5 font-semibold text-white"
                 onClick={() => {
                   setReplacePrompt(false)
                   replaceInputRef.current?.click()
@@ -591,24 +591,24 @@ function CsvSheet({
             <section>
               <button
                 type="button"
-                className={`${downloadBtn} mt-0 border-[1.5px] border-[var(--blue)] bg-white text-[var(--blue)]`}
+                className={`${downloadBtn} mt-0 border-[1.5px] border-(--blue) bg-white text-(--blue)`}
                 onClick={() => setSuggestionsOpen(true)}
               >
                 Material Category Suggestions
               </button>
-              <p className="mt-2 text-[var(--ink3)]">
+              <p className="mt-2 text-(--ink3)">
                 Optional names you can type in the Category column. You can also use your own.
               </p>
             </section>
             <section>
-              <p className="text-[11px] font-semibold uppercase text-[var(--ink3)]">Step 1 · Download</p>
-              <p className="mt-1 text-[var(--ink3)]">
+              <p className="text-[11px] font-semibold uppercase text-(--ink3)">Step 1 · Download</p>
+              <p className="mt-1 text-(--ink3)">
                 Download your current catalogue, the Project Planner starter list, or a blank template. Edit in a
                 spreadsheet, then save as .csv (not Excel or Numbers).
               </p>
               <button
                 type="button"
-                className={`${downloadBtn} bg-[var(--blue)] text-white`}
+                className={`${downloadBtn} bg-(--blue) text-white`}
                 onClick={() => downloadTextFile(CATALOGUE_CSV_FILENAME, exportCatalogueCsv(items))}
               >
                 Download Material Catalogue
@@ -616,26 +616,26 @@ function CsvSheet({
               <p className="mt-2 text-amber-800">⚠️ CSV Warning — save the file as csv and not .xls (excel) or .numbers.</p>
               <button
                 type="button"
-                className={`${downloadBtn} border-[1.5px] border-[var(--blue)] bg-white text-[var(--blue)]`}
+                className={`${downloadBtn} border-[1.5px] border-(--blue) bg-white text-(--blue)`}
                 onClick={() => downloadTextFile(STARTER_CATALOGUE_FILENAME, starterCatalogueCsv())}
               >
                 Download starter catalogue
               </button>
-              <p className="mt-2 text-[var(--ink3)]">
+              <p className="mt-2 text-(--ink3)">
                 The standard list seeded on new organisations. Update it and upload, or use it to restore the defaults.
               </p>
               <button
                 type="button"
-                className={`${downloadBtn} border-[1.5px] border-[var(--blue)] bg-white text-[var(--blue)]`}
+                className={`${downloadBtn} border-[1.5px] border-(--blue) bg-white text-(--blue)`}
                 onClick={() => downloadTextFile(CATALOGUE_TEMPLATE_FILENAME, exportCatalogueTemplateCsv())}
               >
                 Download blank template
               </button>
-              <p className="mt-2 text-[var(--ink3)]">Headers only — use this to start a brand new list.</p>
+              <p className="mt-2 text-(--ink3)">Headers only — use this to start a brand new list.</p>
             </section>
             <section>
-              <p className="text-[11px] font-semibold uppercase text-[var(--ink3)]">Step 2 · Upload updated catalogue</p>
-              <p className="mt-1 text-[var(--ink3)]">
+              <p className="text-[11px] font-semibold uppercase text-(--ink3)">Step 2 · Upload updated catalogue</p>
+              <p className="mt-1 text-(--ink3)">
                 Choose the CSV you edited. Matching items keep their IDs. Rows in the file are saved; items missing from
                 the file are removed.
               </p>
@@ -648,19 +648,19 @@ function CsvSheet({
                 onChange={(e) => void pickFile('update', e.target.files?.[0], updateInputRef.current)}
               />
               <div className="my-5 flex items-center gap-3">
-                <div className="h-px flex-1 bg-[var(--line)]" />
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ink3)]">or</span>
-                <div className="h-px flex-1 bg-[var(--line)]" />
+                <div className="h-px flex-1 bg-(--line)" />
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-(--ink3)">or</span>
+                <div className="h-px flex-1 bg-(--line)" />
               </div>
-              <p className="text-[11px] font-semibold uppercase text-[var(--ink3)]">Step 2 · Replace entire catalogue</p>
-              <p className="mt-1 text-[var(--ink3)]">
+              <p className="text-[11px] font-semibold uppercase text-(--ink3)">Step 2 · Replace entire catalogue</p>
+              <p className="mt-1 text-(--ink3)">
                 Use this only when you want to throw away the current list and load a brand new file. You will be asked
                 to confirm before your computer&apos;s file picker opens.
               </p>
               <button
                 type="button"
                 disabled={busy}
-                className={`${downloadBtn} border-[1.5px] border-[var(--line2)] bg-[var(--card)] text-[var(--ink)]`}
+                className={`${downloadBtn} border-[1.5px] border-(--line2) bg-(--card) text-(--ink)`}
                 onClick={() => setReplacePrompt(true)}
               >
                 Choose file
@@ -674,11 +674,11 @@ function CsvSheet({
                 onChange={(e) => void pickFile('replace', e.target.files?.[0], replaceInputRef.current)}
               />
             </section>
-            <p className="text-[var(--ink3)]">
+            <p className="text-(--ink3)">
               Edit on a laptop if you can, then save as .csv and upload here. Leave Catalogue ID blank for brand new
               rows.
             </p>
-            <p className="text-[var(--ink3)]">
+            <p className="text-(--ink3)">
               .csv files only (UTF-8) · max 2 MB · 10,000 items. The file is read on this device and never uploaded.
               Columns: Order unit is Each, Box, Pack, Drum, Reel, Coil, Pallet, Length or Metre; Contents amount and
               Contents measure (m, mm or pcs) say what is in one. Older files with Default Type and Length still work.
@@ -689,13 +689,13 @@ function CsvSheet({
       </div>
       {suggestionsOpen ? (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-[rgba(10,20,40,.45)] p-4"
+          className="fixed inset-0 z-60 flex items-center justify-center bg-[rgba(10,20,40,.45)] p-4"
           onClick={() => setSuggestionsOpen(false)}
         >
           <div
             role="dialog"
             aria-labelledby="category-suggestions-title"
-            className="flex max-h-[85vh] w-full max-w-[620px] flex-col overflow-hidden rounded-[24px] bg-[var(--card)] shadow-[var(--sh-pop)]"
+            className="flex max-h-[85vh] w-full max-w-[620px] flex-col overflow-hidden rounded-[24px] bg-(--card) shadow-(color:--sh-pop)"
             onClick={(event) => event.stopPropagation()}
           >
             <header className="px-6 pb-3 pt-[22px]">
@@ -710,7 +710,7 @@ function CsvSheet({
                     <p className="text-[15px] font-bold">{group.section}:</p>
                     <ul className="mt-1.5 space-y-0.5">
                       {group.items.map((name) => (
-                        <li key={`${group.section}-${name}`} className="text-[14px] leading-5 text-[var(--ink2)]">
+                        <li key={`${group.section}-${name}`} className="text-[14px] leading-5 text-(--ink2)">
                           {name}
                         </li>
                       ))}
@@ -719,10 +719,10 @@ function CsvSheet({
                 ))}
               </div>
             </div>
-            <div className="border-t border-[var(--line)] px-6 py-4">
+            <div className="border-t border-(--line) px-6 py-4">
               <button
                 type="button"
-                className="w-full rounded-xl bg-[var(--blue)] py-3 text-[16px] font-semibold text-white"
+                className="w-full rounded-xl bg-(--blue) py-3 text-[16px] font-semibold text-white"
                 onClick={() => setSuggestionsOpen(false)}
               >
                 Close

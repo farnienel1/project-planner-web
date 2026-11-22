@@ -93,7 +93,7 @@ export function ReportFileLink({
           event.stopPropagation()
           setOpen(true)
         }}
-        className={className ?? 'text-[11.5px] font-medium text-[var(--ink3)] underline-offset-2 hover:text-[var(--ink2)] hover:underline'}
+        className={className ?? 'text-[11.5px] font-medium text-(--ink3) underline-offset-2 hover:text-(--ink2) hover:underline'}
       >
         {FILE_REPORT_LINK_LABEL}
       </button>
@@ -115,9 +115,9 @@ export function ReportFileLink({
       >
         <div className="flex flex-col gap-4 pb-2">
           <fieldset className="flex flex-col gap-2">
-            <legend className="mb-1 text-[13.5px] font-semibold text-[var(--ink2)]">Reason</legend>
+            <legend className="mb-1 text-[13.5px] font-semibold text-(--ink2)">Reason</legend>
             {FILE_REPORT_REASONS.map((value) => (
-              <label key={value} className="flex items-center gap-2.5 text-[14px] text-[var(--ink)]">
+              <label key={value} className="flex items-center gap-2.5 text-[14px] text-(--ink)">
                 <input
                   type="radio"
                   name="file-report-reason"
@@ -137,7 +137,7 @@ export function ReportFileLink({
               onChange={(event) => setDetails(event.target.value)}
             />
           </Field>
-          {error ? <p className="text-sm text-[var(--red)]">{error}</p> : null}
+          {error ? <p className="text-sm text-(--red)">{error}</p> : null}
         </div>
       </Modal>
     </>

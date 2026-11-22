@@ -107,7 +107,7 @@ export function usePaySaveGate() {
           </Button>
         }
       >
-        <p className="text-sm leading-relaxed text-[var(--ink2)]">{PAYE_MESSAGE}</p>
+        <p className="text-sm leading-relaxed text-(--ink2)">{PAYE_MESSAGE}</p>
       </Modal>
       <Modal
         open={gate?.kind === 'when'}
@@ -127,7 +127,7 @@ export function usePaySaveGate() {
           </>
         }
       >
-        <p className="text-sm leading-relaxed text-[var(--ink2)]">{RATE_MESSAGE}</p>
+        <p className="text-sm leading-relaxed text-(--ink2)">{RATE_MESSAGE}</p>
       </Modal>
     </>
   )
@@ -146,7 +146,7 @@ export function PreviousRatesList({ entries }: { entries: OperativeDayRateHistor
   })
   return (
     <div className="sm:col-span-2 space-y-1.5">
-      <p className="text-[13.5px] font-semibold text-[var(--ink2)]">Previous rates</p>
+      <p className="text-[13.5px] font-semibold text-(--ink2)">Previous rates</p>
       <ul className="space-y-1">
         {newestFirst.map((entry) => {
           const date = entry.effectiveAt.toLocaleDateString('en-GB', {
@@ -157,7 +157,7 @@ export function PreviousRatesList({ entries }: { entries: OperativeDayRateHistor
           })
           const suffix = entry.payBasis === 'hourly' ? '/hr' : '/day'
           return (
-            <li key={entry.id} className="text-sm text-[var(--ink)]">
+            <li key={entry.id} className="text-sm text-(--ink)">
               {date} · {entry.dayRate == null ? 'Rate not set' : `${formatMoney(entry.dayRate, currencyCode)}${suffix}`}
             </li>
           )

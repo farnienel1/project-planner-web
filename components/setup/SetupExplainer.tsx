@@ -80,7 +80,7 @@ export function SetupExplainer({ organizationName, firstName, onBack, onContinue
 
   return (
     <div>
-      <div className="overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 via-blue-600 to-sky-500 p-7 text-white sm:p-9">
+      <div className="overflow-hidden rounded-2xl bg-linear-to-br/srgb from-blue-600 via-blue-600 to-sky-500 p-7 text-white sm:p-9">
         <div className="flex items-start gap-4">
           <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/30">
             <Icon name="rocket" className="h-7 w-7 text-white" />

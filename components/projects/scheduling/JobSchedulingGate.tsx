@@ -23,7 +23,7 @@ export function JobSchedulingGate({ jobHref, children }: { jobHref: string; chil
     return (
       <div className="card pad text-center">
         <h2 className="h2">{JOB_SCHEDULING_NO_ACCESS_TITLE}</h2>
-        <p className="mt-2 text-[var(--ink3)]">{JOB_SCHEDULING_NO_ACCESS_MESSAGE}</p>
+        <p className="mt-2 text-(--ink3)">{JOB_SCHEDULING_NO_ACCESS_MESSAGE}</p>
         <div className="mt-4 flex flex-wrap justify-center gap-2">
           <Link href={jobHref} className="btn sm ghost">
             Back to job

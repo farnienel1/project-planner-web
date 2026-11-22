@@ -77,7 +77,7 @@ export function ProfileExpandablePermissionToggle({
           className="flex min-w-0 flex-1 items-start gap-2 text-left"
         >
           <svg
-            className={`mt-0.5 h-4 w-4 flex-shrink-0 text-slate-400 transition-transform ${expanded ? 'rotate-90' : ''}`}
+            className={`mt-0.5 h-4 w-4 shrink-0 text-slate-400 transition-transform ${expanded ? 'rotate-90' : ''}`}
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -85,9 +85,9 @@ export function ProfileExpandablePermissionToggle({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
           <span>
-            <span className="block text-sm font-medium text-[var(--ink)]">{def.title}</span>
+            <span className="block text-sm font-medium text-(--ink)">{def.title}</span>
             {expanded ? (
-              <span className="mt-1 block text-xs leading-relaxed text-[var(--ink2)]">{def.description}</span>
+              <span className="mt-1 block text-xs leading-relaxed text-(--ink2)">{def.description}</span>
             ) : null}
           </span>
         </button>
@@ -98,9 +98,9 @@ export function ProfileExpandablePermissionToggle({
           disabled={disabled && !lockedMessage}
           onClick={onSwitch}
           className={`
-            relative inline-flex h-[28px] w-[50px] flex-shrink-0 cursor-pointer items-center
+            relative inline-flex h-[28px] w-[50px] shrink-0 cursor-pointer items-center
             rounded-full border-2 border-transparent transition-colors duration-200
-            focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2
+            focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2
             disabled:cursor-not-allowed
             ${checked ? 'bg-blue-500' : 'bg-slate-200'}
           `}
@@ -109,7 +109,7 @@ export function ProfileExpandablePermissionToggle({
             className={`
               pointer-events-none inline-block h-[22px] w-[22px] transform rounded-full bg-white shadow
               transition-transform duration-200
-              ${checked ? 'translate-x-[22px]' : 'translate-x-[1px]'}
+              ${checked ? 'translate-x-[22px]' : 'translate-x-px'}
             `}
           />
         </button>

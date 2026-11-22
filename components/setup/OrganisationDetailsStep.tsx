@@ -173,7 +173,7 @@ export function OrganisationDetailsStep({
           />
           <SetupCard>
             <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
-              <div className="flex h-24 w-24 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+              <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
                 {logoPreview ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={logoPreview} alt="Logo preview" className="h-full w-full object-cover" />

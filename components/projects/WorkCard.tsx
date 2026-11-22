@@ -74,7 +74,7 @@ export function WorkCard({
         <div className="min-w-0 flex-1">
           <p className="job">{project.jobNumber}</p>
           <h3>{project.siteName}</h3>
-          {type ? <p className="text-[13px] text-[var(--ink2)]">{type}</p> : null}
+          {type ? <p className="text-[13px] text-(--ink2)">{type}</p> : null}
         </div>
         <ProgressRing value={pct} hue={hue} />
       </div>

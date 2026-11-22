@@ -127,7 +127,7 @@ export function RegisterInterestList() {
         </div>
       }
     >
-      {error ? <p className="text-sm font-semibold text-[var(--red)]">{error}</p> : null}
+      {error ? <p className="text-sm font-semibold text-(--red)">{error}</p> : null}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Counter label="Showing" value={visible.length} />
         <Counter label="This week" value={thisWeek} />
@@ -157,7 +157,7 @@ export function RegisterInterestList() {
         <input className="pp-in" type="date" value={from} onChange={(event) => setFrom(event.target.value)} aria-label="From" />
         <input className="pp-in" type="date" value={to} onChange={(event) => setTo(event.target.value)} aria-label="To" />
       </div>
-      <label className="flex items-center gap-2 text-sm text-[var(--ink2)]">
+      <label className="flex items-center gap-2 text-sm text-(--ink2)">
         Sort
         <select className="pp-in" value={sort} onChange={(event) => setSort(event.target.value as SortKey)}>
           <option value="date">Date</option>
@@ -165,11 +165,11 @@ export function RegisterInterestList() {
           <option value="status">Status</option>
         </select>
       </label>
-      {loading ? <p className="text-sm text-[var(--ink3)]">Loading registrations…</p> : null}
-      {!loading && visible.length === 0 ? <p className="text-sm text-[var(--ink3)]">No registrations match.</p> : null}
-      <div className="overflow-x-auto rounded-2xl border border-[var(--line)] bg-[var(--card)]">
+      {loading ? <p className="text-sm text-(--ink3)">Loading registrations…</p> : null}
+      {!loading && visible.length === 0 ? <p className="text-sm text-(--ink3)">No registrations match.</p> : null}
+      <div className="overflow-x-auto rounded-2xl border border-(--line) bg-(--card)">
         <table className="min-w-[960px] w-full text-left text-sm">
-          <thead className="border-b border-[var(--line)] text-xs font-bold uppercase tracking-wide text-[var(--ink3)]">
+          <thead className="border-b border-(--line) text-xs font-bold uppercase tracking-wide text-(--ink3)">
             <tr>
               <th className="p-3" />
               <th className="p-3">Name</th>
@@ -185,7 +185,7 @@ export function RegisterInterestList() {
           </thead>
           <tbody>
             {visible.map((row) => (
-              <tr key={row.id} className="border-b border-[var(--line)] last:border-0">
+              <tr key={row.id} className="border-b border-(--line) last:border-0">
                 <td className="p-3">
                   <input
                     type="checkbox"
@@ -197,7 +197,7 @@ export function RegisterInterestList() {
                   />
                 </td>
                 <td className="p-3">
-                  <Link href={`/developer/register-interest/${row.id}`} className="font-semibold text-[var(--blue)]">
+                  <Link href={`/developer/register-interest/${row.id}`} className="font-semibold text-(--blue)">
                     {row.firstName} {row.lastName}
                   </Link>
                 </td>
@@ -205,13 +205,13 @@ export function RegisterInterestList() {
                 <td className="p-3">{row.role}</td>
                 <td className="p-3">{row.teamSize}</td>
                 <td className="p-3">
-                  <button type="button" className="text-[var(--blue)]" onClick={() => void navigator.clipboard.writeText(row.email)}>
+                  <button type="button" className="text-(--blue)" onClick={() => void navigator.clipboard.writeText(row.email)}>
                     {row.email}
                   </button>
                 </td>
                 <td className="p-3">
                   {row.phone ? (
-                    <a href={`tel:${row.phone}`} className="text-[var(--blue)]">{row.phone}</a>
+                    <a href={`tel:${row.phone}`} className="text-(--blue)">{row.phone}</a>
                   ) : null}
                 </td>
                 <td className="p-3">{row.source || 'direct'}</td>
@@ -243,9 +243,9 @@ export function RegisterInterestList() {
 
 function Counter({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-2xl border border-[var(--line)] bg-[var(--card)] p-4">
-      <p className="text-xs font-bold uppercase tracking-wide text-[var(--ink3)]">{label}</p>
-      <p className="mt-1 text-lg font-extrabold text-[var(--ink)]">{value}</p>
+    <div className="rounded-2xl border border-(--line) bg-(--card) p-4">
+      <p className="text-xs font-bold uppercase tracking-wide text-(--ink3)">{label}</p>
+      <p className="mt-1 text-lg font-extrabold text-(--ink)">{value}</p>
     </div>
   )
 }
@@ -298,14 +298,14 @@ export function RegisterInterestPerson({ id }: { id: string }) {
   if (loading) {
     return (
       <DeveloperShell title="Registration" back={{ href: '/developer/register-interest', label: 'Registrations' }}>
-        <p className="text-sm text-[var(--ink3)]">Loading…</p>
+        <p className="text-sm text-(--ink3)">Loading…</p>
       </DeveloperShell>
     )
   }
   if (!row) {
     return (
       <DeveloperShell title="Registration" back={{ href: '/developer/register-interest', label: 'Registrations' }}>
-        <p className="text-sm text-[var(--ink3)]">{error || 'That registration is not on the list.'}</p>
+        <p className="text-sm text-(--ink3)">{error || 'That registration is not on the list.'}</p>
       </DeveloperShell>
     )
   }
@@ -327,53 +327,53 @@ export function RegisterInterestPerson({ id }: { id: string }) {
     >
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-4">
-          <section className="rounded-2xl border border-[var(--line)] bg-[var(--card)] p-4">
+          <section className="rounded-2xl border border-(--line) bg-(--card) p-4">
             <p className="text-lg font-extrabold">{row.company}</p>
-            <p className="text-sm text-[var(--ink2)]">{[row.role, row.teamSize].filter(Boolean).join(' · ')}</p>
-            <span className="mt-2 inline-block rounded-full bg-[var(--blue-t)] px-2.5 py-1 text-xs font-bold text-[var(--blue)]">
+            <p className="text-sm text-(--ink2)">{[row.role, row.teamSize].filter(Boolean).join(' · ')}</p>
+            <span className="mt-2 inline-block rounded-full bg-(--blue-t) px-2.5 py-1 text-xs font-bold text-(--blue)">
               {INTEREST_STATUS_LABEL[row.status]}
             </span>
           </section>
-          <section className="rounded-2xl border border-[var(--line)] bg-[var(--card)] p-4">
+          <section className="rounded-2xl border border-(--line) bg-(--card) p-4">
             <h2 className="text-sm font-bold">Contact</h2>
             <p className="mt-2">
-              <a href={`mailto:${row.email}`} className="font-semibold text-[var(--blue)]">{row.email}</a>
-              <button type="button" className="ml-2 text-xs font-semibold text-[var(--ink3)]" onClick={() => void navigator.clipboard.writeText(row.email)}>Copy</button>
+              <a href={`mailto:${row.email}`} className="font-semibold text-(--blue)">{row.email}</a>
+              <button type="button" className="ml-2 text-xs font-semibold text-(--ink3)" onClick={() => void navigator.clipboard.writeText(row.email)}>Copy</button>
             </p>
             {row.phone ? (
               <p className="mt-1">
-                <a href={`tel:${row.phone}`} className="font-semibold text-[var(--blue)]">{row.phone}</a>
-                <button type="button" className="ml-2 text-xs font-semibold text-[var(--ink3)]" onClick={() => void navigator.clipboard.writeText(row.phone)}>Copy</button>
+                <a href={`tel:${row.phone}`} className="font-semibold text-(--blue)">{row.phone}</a>
+                <button type="button" className="ml-2 text-xs font-semibold text-(--ink3)" onClick={() => void navigator.clipboard.writeText(row.phone)}>Copy</button>
               </p>
             ) : null}
           </section>
-          <section className="rounded-2xl border border-[var(--line)] bg-[var(--card)] p-4">
+          <section className="rounded-2xl border border-(--line) bg-(--card) p-4">
             <h2 className="text-sm font-bold">What they told us</h2>
             <div className="mt-2 flex flex-wrap gap-2">
               {row.sectors.map((sector) => (
-                <span key={sector} className="rounded-full bg-[var(--soft)] px-3 py-1 text-xs font-semibold">{sector}</span>
+                <span key={sector} className="rounded-full bg-(--soft) px-3 py-1 text-xs font-semibold">{sector}</span>
               ))}
             </div>
-            {row.currentTools ? <p className="mt-3 text-sm text-[var(--ink2)]">Currently using {row.currentTools}</p> : null}
-            {row.message ? <p className="mt-3 whitespace-pre-wrap text-sm text-[var(--ink)]">{row.message}</p> : null}
+            {row.currentTools ? <p className="mt-3 text-sm text-(--ink2)">Currently using {row.currentTools}</p> : null}
+            {row.message ? <p className="mt-3 whitespace-pre-wrap text-sm text-(--ink)">{row.message}</p> : null}
           </section>
-          <section className="rounded-2xl border border-[var(--line)] bg-[var(--card)] p-4">
+          <section className="rounded-2xl border border-(--line) bg-(--card) p-4">
             <h2 className="text-sm font-bold">Where they came from</h2>
-            <p className="mt-2 text-sm text-[var(--ink2)]">
+            <p className="mt-2 text-sm text-(--ink2)">
               {row.source || 'direct'}
               {row.campaign ? ` · ${row.campaign}` : ''}
               {row.createdAt ? ` · ${format(row.createdAt, 'd MMM yyyy, HH:mm')}` : ''}
             </p>
-            {row.referrer ? <p className="mt-1 break-all text-sm text-[var(--ink3)]">{row.referrer}</p> : null}
-            {row.pagePath ? <p className="mt-1 text-sm text-[var(--ink3)]">{row.pagePath}</p> : null}
+            {row.referrer ? <p className="mt-1 break-all text-sm text-(--ink3)">{row.referrer}</p> : null}
+            {row.pagePath ? <p className="mt-1 text-sm text-(--ink3)">{row.pagePath}</p> : null}
             <details className="mt-3">
-              <summary className="cursor-pointer text-sm font-semibold text-[var(--ink2)]">Technical details</summary>
-              <p className="mt-2 break-all text-xs text-[var(--ink3)]">{row.userAgent || 'No user agent stored.'}</p>
+              <summary className="cursor-pointer text-sm font-semibold text-(--ink2)">Technical details</summary>
+              <p className="mt-2 break-all text-xs text-(--ink3)">{row.userAgent || 'No user agent stored.'}</p>
             </details>
           </section>
         </div>
         <div className="space-y-4">
-          <section className="rounded-2xl border border-[var(--line)] bg-[var(--card)] p-4">
+          <section className="rounded-2xl border border-(--line) bg-(--card) p-4">
             <label className="text-sm font-bold" htmlFor="interest-status">Status</label>
             <select
               id="interest-status"
@@ -390,13 +390,13 @@ export function RegisterInterestPerson({ id }: { id: string }) {
               ))}
             </select>
           </section>
-          <section className="rounded-2xl border border-[var(--line)] bg-[var(--card)] p-4">
+          <section className="rounded-2xl border border-(--line) bg-(--card) p-4">
             <h2 className="text-sm font-bold">Notes</h2>
             <ul className="mt-2 space-y-2">
               {row.notes.map((entry) => (
-                <li key={entry.id} className="rounded-xl bg-[var(--soft)] p-3 text-sm">
+                <li key={entry.id} className="rounded-xl bg-(--soft) p-3 text-sm">
                   <p className="whitespace-pre-wrap">{entry.body}</p>
-                  <p className="mt-1 text-xs text-[var(--ink3)]">
+                  <p className="mt-1 text-xs text-(--ink3)">
                     {entry.authorName}
                     {entry.createdAt.getTime() ? ` · ${format(entry.createdAt, 'd MMM yyyy, HH:mm')}` : ''}
                   </p>
@@ -418,7 +418,7 @@ export function RegisterInterestPerson({ id }: { id: string }) {
               Save note
             </button>
           </section>
-          <section className="rounded-2xl border border-[var(--line)] bg-[var(--card)] p-4">
+          <section className="rounded-2xl border border-(--line) bg-(--card) p-4">
             <a className="btn sm block" href={`mailto:${row.email}?subject=${encodeURIComponent(`Project Planner — ${row.company}`)}`}>
               Email them
             </a>
@@ -426,8 +426,8 @@ export function RegisterInterestPerson({ id }: { id: string }) {
               Copy all details
             </button>
             {confirmDelete ? (
-              <div className="mt-3 rounded-xl bg-[var(--red-t)] p-3">
-                <p className="text-sm font-semibold text-[var(--red)]">Remove this registration? This deletes their personal details.</p>
+              <div className="mt-3 rounded-xl bg-(--red-t) p-3">
+                <p className="text-sm font-semibold text-(--red)">Remove this registration? This deletes their personal details.</p>
                 <div className="mt-2 flex gap-2">
                   <button type="button" className="btn sm" onClick={() => setConfirmDelete(false)}>Keep it</button>
                   <button

@@ -68,7 +68,7 @@ export function OwnerUserAccountMenu({
 
   const menu = open ? (
     <div
-      className="fixed z-[80] w-56 rounded-xl border border-[var(--line)] bg-[var(--card)] p-1 shadow-lg"
+      className="fixed z-80 w-56 rounded-xl border border-(--line) bg-(--card) p-1 shadow-lg"
       style={{
         top: menuPos.dropUp ? undefined : menuPos.top,
         bottom: menuPos.dropUp ? Math.max(12, window.innerHeight - menuPos.top) : undefined,
@@ -77,12 +77,12 @@ export function OwnerUserAccountMenu({
     >
       {extra}
       {lockedOwner ? (
-        <p className="px-3 py-2 text-xs text-[var(--ink3)]">Owner login email is locked.</p>
+        <p className="px-3 py-2 text-xs text-(--ink3)">Owner login email is locked.</p>
       ) : (
         <>
           <button
             type="button"
-            className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-[var(--soft)]"
+            className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-(--soft)"
             disabled={Boolean(busy)}
             onClick={async () => {
               setBusy('reset')
@@ -102,7 +102,7 @@ export function OwnerUserAccountMenu({
           </button>
           <button
             type="button"
-            className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-[var(--soft)]"
+            className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-(--soft)"
             onClick={() => {
               setEmail(user.email || '')
               setEmailOpen(true)
@@ -115,7 +115,7 @@ export function OwnerUserAccountMenu({
       )}
       <button
         type="button"
-        className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-[var(--soft)]"
+        className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-(--soft)"
         onClick={() => {
           void navigator.clipboard.writeText(user.id)
           onDone('User id copied.')
@@ -124,7 +124,7 @@ export function OwnerUserAccountMenu({
       >
         Copy user ID
       </button>
-      {error ? <p className="px-3 py-2 text-xs text-[var(--red)]">{error}</p> : null}
+      {error ? <p className="px-3 py-2 text-xs text-(--red)">{error}</p> : null}
     </div>
   ) : null
 
@@ -136,9 +136,9 @@ export function OwnerUserAccountMenu({
       {typeof document !== 'undefined' && menu ? createPortal(menu, document.body) : menu}
       {emailOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="true">
-          <div className="w-full max-w-md rounded-2xl bg-[var(--card)] p-5 shadow-xl">
+          <div className="w-full max-w-md rounded-2xl bg-(--card) p-5 shadow-xl">
             <h2 className="text-lg font-extrabold">Change login email</h2>
-            <p className="mt-2 text-sm text-[var(--ink2)]">
+            <p className="mt-2 text-sm text-(--ink2)">
               Updates Firebase Auth for {ownerPersonName(user)} using their account id, then the user record. They sign in
               with the new email after that.
             </p>

@@ -87,18 +87,18 @@ export function ReportedFilesPanel({ onBack }: { onBack: () => void }) {
   }
 
   const renderRow = (row: FileReportRow) => (
-    <div key={row.id} className="flex flex-col gap-2 border-t border-[var(--line)] px-4 py-3.5 first:border-t-0">
+    <div key={row.id} className="flex flex-col gap-2 border-t border-(--line) px-4 py-3.5 first:border-t-0">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <p className="text-[14.5px] font-semibold text-[var(--ink)]">{row.fileName || 'Unnamed file'}</p>
+        <p className="text-[14.5px] font-semibold text-(--ink)">{row.fileName || 'Unnamed file'}</p>
         <span className="pill" data-hue={row.status === 'open' ? 'warn' : 'green'}>
           {fileReportStatusCopy(row.status)}
         </span>
       </div>
-      <p className="text-[13px] text-[var(--ink2)]">
+      <p className="text-[13px] text-(--ink2)">
         {fileReportReasonCopy(row.reason)} · {SURFACE_COPY[row.surface] || 'File'}
       </p>
-      {row.details ? <p className="whitespace-pre-wrap text-[13px] text-[var(--ink2)]">“{row.details}”</p> : null}
-      <p className="text-[12px] text-[var(--ink3)]">
+      {row.details ? <p className="whitespace-pre-wrap text-[13px] text-(--ink2)">“{row.details}”</p> : null}
+      <p className="text-[12px] text-(--ink3)">
         Reported by {nameFor(row.reportedByUserId)}
         {row.createdAtMs ? ` · ${format(new Date(row.createdAtMs), 'd MMM yyyy, HH:mm')}` : ''}
         {row.reviewedByUserId ? ` · Closed by ${nameFor(row.reviewedByUserId)}` : ''}
@@ -133,9 +133,9 @@ export function ReportedFilesPanel({ onBack }: { onBack: () => void }) {
         <SectionLabel label={`Open (${open.length})`} />
         <SettingsCard>
           {rows === null ? (
-            <p className="px-4 py-3.5 text-sm text-[var(--ink3)]">Loading…</p>
+            <p className="px-4 py-3.5 text-sm text-(--ink3)">Loading…</p>
           ) : open.length === 0 ? (
-            <p className="px-4 py-3.5 text-sm text-[var(--ink3)]">No open reports.</p>
+            <p className="px-4 py-3.5 text-sm text-(--ink3)">No open reports.</p>
           ) : (
             open.map(renderRow)
           )}

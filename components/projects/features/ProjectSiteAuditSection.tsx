@@ -37,7 +37,7 @@ function SiteAuditHero({
 }) {
   return (
     <FeatureCard className="overflow-hidden">
-      <div className="bg-gradient-to-br from-slate-800 to-slate-900 px-4 py-4 text-white">
+      <div className="bg-linear-to-br/srgb from-slate-800 to-slate-900 px-4 py-4 text-white">
         <p className="text-[11px] font-semibold uppercase tracking-[0.4px] text-slate-300">This project</p>
         <p className="mt-2 text-sm font-medium text-white">
           {auditCount} audits · {photoCount} photos
@@ -152,7 +152,7 @@ export function ProjectSiteAuditSection({ project }: { project: Project }) {
           <button
             type="button"
             onClick={() => setShowCreate(true)}
-            className="ml-auto inline-flex h-9 w-9 items-center justify-center rounded-full bg-[var(--blue)] text-white shadow-md hover:bg-[#134d88]"
+            className="ml-auto inline-flex h-9 w-9 items-center justify-center rounded-full bg-(--blue) text-white shadow-md hover:bg-[#134d88]"
             aria-label="New site audit"
           >
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -189,7 +189,7 @@ export function ProjectSiteAuditSection({ project }: { project: Project }) {
             <p className="mt-3 text-sm font-medium text-slate-700">No site audits</p>
             <p className="mt-1 text-xs text-slate-500">Create your first audit for this project.</p>
             {canCreate && (
-              <button type="button" onClick={() => setShowCreate(true)} className="mt-4 text-sm font-semibold text-[var(--blue)]">
+              <button type="button" onClick={() => setShowCreate(true)} className="mt-4 text-sm font-semibold text-(--blue)">
                 + New audit
               </button>
             )}

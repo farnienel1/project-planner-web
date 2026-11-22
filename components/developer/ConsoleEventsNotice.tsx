@@ -29,8 +29,8 @@ export function ConsoleEventsNotice({ from }: { from: Date | null }) {
       data-state={state}
       className={
         tone === 'warn'
-          ? 'rounded-[10px] border border-[var(--dash-amber)] bg-[var(--dash-tag-amber-bg)] px-3 py-2 text-[12.5px] text-[var(--dash-tag-amber-ink)]'
-          : 'text-xs text-[var(--dash-muted)]'
+          ? 'rounded-[10px] border border-(--dash-amber) bg-(--dash-tag-amber-bg) px-3 py-2 text-[12.5px] text-(--dash-tag-amber-ink)'
+          : 'text-xs text-(--dash-muted)'
       }
     >
       {text}

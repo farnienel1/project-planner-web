@@ -32,15 +32,15 @@ function FigureRow({
 }) {
   const body = (
     <div className="flex items-start justify-between gap-3 py-2" data-testid={testId}>
-      <span className="text-sm text-[var(--ink3)]">{label}</span>
+      <span className="text-sm text-(--ink3)">{label}</span>
       <span className="text-right">
-        <span className="block text-sm font-semibold text-[var(--ink)]">{value}</span>
-        {detail ? <span className="block text-xs text-[var(--ink3)]">{detail}</span> : null}
+        <span className="block text-sm font-semibold text-(--ink)">{value}</span>
+        {detail ? <span className="block text-xs text-(--ink3)">{detail}</span> : null}
       </span>
     </div>
   )
   return href ? (
-    <Link href={href} className="block rounded-lg px-1 hover:bg-[var(--surface2,rgba(0,0,0,0.03))]">
+    <Link href={href} className="block rounded-lg px-1 hover:bg-(--surface2,rgba(0,0,0,0.03))">
       {body}
     </Link>
   ) : (

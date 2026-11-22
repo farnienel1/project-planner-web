@@ -56,13 +56,13 @@ export function TeamOnboardingPrompt() {
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-100 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs">
       <div
         role="dialog"
         aria-modal="true"
         className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-slate-200 bg-white shadow-2xl"
       >
-        <div className="border-b border-slate-100 bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-5 text-white">
+        <div className="border-b border-slate-100 bg-linear-to-r/srgb from-blue-600 to-indigo-600 px-6 py-5 text-white">
           <p className="text-xs font-bold uppercase tracking-widest text-blue-100">Next step</p>
           <h2 className="mt-1 text-2xl font-extrabold">Set up your team</h2>
           <p className="mt-2 text-sm text-blue-100">

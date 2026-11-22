@@ -21,7 +21,7 @@ export function AppTopNotice({
   if (!message || typeof document === 'undefined') return null
 
   return createPortal(
-    <div className="pointer-events-none fixed inset-x-0 top-0 z-[200] flex justify-center px-4 pt-4">
+    <div className="pointer-events-none fixed inset-x-0 top-0 z-200 flex justify-center px-4 pt-4">
       <div
         role="alert"
         className="pointer-events-auto flex max-w-lg items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-lg"

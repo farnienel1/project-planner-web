@@ -595,7 +595,7 @@ export function OperativeAnnualLeaveCalendar({
       )}
 
       {selectedDay && pendingBooking && (
-        <div className="rounded-2xl border border-red-200 bg-red-50/40 p-4 shadow-sm">
+        <div className="rounded-2xl border border-red-200 bg-red-50/40 p-4 shadow-xs">
           <p className="text-sm font-bold text-slate-900">Pending request</p>
           <p className="mt-0.5 text-xs text-slate-600">
             {fmtDate(selectedDay)} · {pendingBooking.timeSlot}
@@ -704,7 +704,7 @@ export function OperativeAnnualLeaveCalendar({
               </button>
               <button
                 type="button"
-                className="rounded-xl bg-[var(--red)] py-2.5 text-sm font-bold text-white"
+                className="rounded-xl bg-(--red) py-2.5 text-sm font-bold text-white"
                 onClick={() => void deleteAnnualLeave(pendingDelete)}
               >
                 Remove

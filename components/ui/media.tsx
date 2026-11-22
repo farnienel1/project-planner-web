@@ -33,7 +33,7 @@ export function Avatar({
 export function ProgressBar({ value, hue = 'blue' }: { value: number; hue?: SectionHue }) {
   const pct = Math.max(0, Math.min(100, value))
   return (
-    <div data-hue={hue} className="h-2 overflow-hidden rounded-full bg-[var(--soft2)]">
+    <div data-hue={hue} className="h-2 overflow-hidden rounded-full bg-(--soft2)">
       <i
         className="block h-full rounded-full bg-[linear-gradient(90deg,var(--h),color-mix(in_srgb,var(--h)_70%,#fff))]"
         style={{ width: `${pct}%` }}
@@ -62,7 +62,7 @@ export function ProgressRing({ value, hue = 'blue', size = 56 }: { value: number
           strokeDashoffset={c * (1 - pct / 100)}
         />
       </svg>
-      <b className="absolute font-[family-name:var(--head)] text-[13px] font-extrabold">{Math.round(pct)}%</b>
+      <b className="absolute font-(family-name:--head) text-[13px] font-extrabold">{Math.round(pct)}%</b>
     </div>
   )
 }
@@ -97,36 +97,36 @@ export function ProjectCard({
       type="button"
       data-hue={hue}
       onClick={onClick}
-      className="flex flex-col overflow-hidden rounded-[22px] bg-[var(--card)] text-left shadow-[var(--sh)] transition hover:-translate-y-[3px] hover:shadow-[var(--sh-hover)]"
+      className="flex flex-col overflow-hidden rounded-[22px] bg-(--card) text-left shadow-(color:--sh) transition hover:translate-y-[-3px] hover:shadow-(color:--sh-hover)"
     >
       <div className="flex items-center gap-3.5 bg-[linear-gradient(135deg,var(--ht),color-mix(in_srgb,var(--ht)_40%,var(--card)))] px-5 py-4">
         <div className="min-w-0 flex-1">
-          <p className="font-[family-name:var(--head)] text-[13px] font-extrabold text-[var(--h)]">{jobNumber}</p>
+          <p className="font-(family-name:--head) text-[13px] font-extrabold text-(--h)">{jobNumber}</p>
           <h3 className="mt-0.5 text-lg font-bold">{name}</h3>
-          {type ? <p className="text-[13px] text-[var(--ink2)]">{type}</p> : null}
+          {type ? <p className="text-[13px] text-(--ink2)">{type}</p> : null}
         </div>
         <ProgressRing value={progress} hue={hue} />
       </div>
       <div className="flex flex-col gap-3 px-5 pb-[18px] pt-4">
         <div className="grid grid-cols-2 gap-x-3.5 gap-y-2.5 text-[13.5px]">
           <div>
-            <span className="block text-xs font-semibold text-[var(--ink3)]">Client</span>
+            <span className="block text-xs font-semibold text-(--ink3)">Client</span>
             {client || '—'}
           </div>
           <div>
-            <span className="block text-xs font-semibold text-[var(--ink3)]">Programme</span>
+            <span className="block text-xs font-semibold text-(--ink3)">Programme</span>
             {programme || '—'}
           </div>
           <div>
-            <span className="block text-xs font-semibold text-[var(--ink3)]">Site</span>
+            <span className="block text-xs font-semibold text-(--ink3)">Site</span>
             {site || '—'}
           </div>
           <div>
-            <span className="block text-xs font-semibold text-[var(--ink3)]">Status</span>
+            <span className="block text-xs font-semibold text-(--ink3)">Status</span>
             {status ? <StatusPill status={status} /> : '—'}
           </div>
         </div>
-        {footer ? <div className="flex items-center gap-2.5 border-t border-[var(--line)] pt-3">{footer}</div> : null}
+        {footer ? <div className="flex items-center gap-2.5 border-t border-(--line) pt-3">{footer}</div> : null}
       </div>
     </button>
   )

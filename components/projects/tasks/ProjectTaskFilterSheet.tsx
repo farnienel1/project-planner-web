@@ -60,10 +60,10 @@ export function ProjectTaskFilterSheet({
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 p-4 sm:items-center">
+    <div className="fixed inset-0 z-70 flex items-end justify-center bg-black/40 p-4 sm:items-center">
       <div className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
         <header className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-          <button type="button" onClick={onClose} className="text-sm font-medium text-[var(--blue)]">
+          <button type="button" onClick={onClose} className="text-sm font-medium text-(--blue)">
             Cancel
           </button>
           <p className="text-sm font-semibold text-slate-900">Task Filters</p>
@@ -73,7 +73,7 @@ export function ProjectTaskFilterSheet({
               onApply(local)
               onClose()
             }}
-            className="text-sm font-semibold text-[var(--blue)]"
+            className="text-sm font-semibold text-(--blue)"
           >
             Apply
           </button>
@@ -89,7 +89,7 @@ export function ProjectTaskFilterSheet({
                     name="task-filter-type"
                     checked={local.type === item.id}
                     onChange={() => setType(item.id)}
-                    className="accent-[#185FA5]"
+                    className="accent-primary-600"
                   />
                   <span className="text-sm text-slate-800">{item.label}</span>
                 </label>
@@ -153,7 +153,7 @@ export function ProjectTaskFilterSheet({
           <button
             type="button"
             onClick={() => setLocal({ type: 'all' })}
-            className="text-sm font-semibold text-[var(--blue)]"
+            className="text-sm font-semibold text-(--blue)"
           >
             Reset Filters
           </button>

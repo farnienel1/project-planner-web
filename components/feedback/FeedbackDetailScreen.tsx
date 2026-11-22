@@ -140,7 +140,7 @@ export function FeedbackDetailScreen({ ideaId }: { ideaId: string }) {
             aria-pressed={voted}
             aria-label={`Vote for ${suggestion.title}, ${suggestion.voteCount} votes`}
             className={`flex min-h-[88px] min-w-[78px] flex-col items-center justify-center rounded-2xl px-2 py-3 text-xl font-extrabold ${
-              voted ? 'bg-[var(--blue)] text-white' : 'bg-[var(--soft)] text-[var(--ink2)]'
+              voted ? 'bg-(--blue) text-white' : 'bg-(--soft) text-(--ink2)'
             }`}
           >
             <ChevronUpIcon className="h-5 w-5" />
@@ -149,7 +149,7 @@ export function FeedbackDetailScreen({ ideaId }: { ideaId: string }) {
           </button>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-start justify-between gap-2">
-              <h1 className="text-2xl font-extrabold tracking-tight text-[var(--ink)]">{suggestion.title}</h1>
+              <h1 className="text-2xl font-extrabold tracking-tight text-(--ink)">{suggestion.title}</h1>
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -163,12 +163,12 @@ export function FeedbackDetailScreen({ ideaId }: { ideaId: string }) {
                 </button>
               </div>
             </div>
-            <p className="mt-2 whitespace-pre-wrap text-sm text-[var(--ink2)]">{suggestion.details}</p>
-            <p className="mt-3 text-xs text-[var(--ink3)]">
+            <p className="mt-2 whitespace-pre-wrap text-sm text-(--ink2)">{suggestion.details}</p>
+            <p className="mt-3 text-xs text-(--ink3)">
               {authorLine(suggestion, user?.id, organization?.id)} · {suggestion.category} ·{' '}
               {CUSTOMER_STATUS_LABEL[current]}
             </p>
-            <div className="mt-4 rounded-2xl border border-[var(--line)] bg-[var(--soft)] p-3">
+            <div className="mt-4 rounded-2xl border border-(--line) bg-(--soft) p-3">
               <p className="text-sm font-semibold">{wanted}</p>
             </div>
           </div>
@@ -179,7 +179,7 @@ export function FeedbackDetailScreen({ ideaId }: { ideaId: string }) {
         <p className="eyebrow">{CUSTOMER_STATUS_LABEL[current]}</p>
         <p className="mt-1 font-semibold">{CUSTOMER_STATUS_COPY[current]}</p>
         {statusHistory.length > 0 ? (
-          <ol className="mt-3 space-y-1 text-xs text-[var(--ink3)]">
+          <ol className="mt-3 space-y-1 text-xs text-(--ink3)">
             <li>Submitted {suggestion.createdAt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</li>
             {statusHistory.map((entry) => (
               <li key={entry.id}>
@@ -190,7 +190,7 @@ export function FeedbackDetailScreen({ ideaId }: { ideaId: string }) {
         ) : null}
         {suggestion.officialResponse ? (
           <div className="official mt-3 rounded-[18px] border border-[color-mix(in_srgb,var(--blue)_40%,var(--line))] bg-[color-mix(in_srgb,var(--blue)_10%,white)] p-4">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--blue)]">Product team</p>
+            <p className="text-[11px] font-bold uppercase tracking-wide text-(--blue)">Product team</p>
             <p className="mt-2 text-sm">{suggestion.officialResponse}</p>
           </div>
         ) : null}
@@ -199,23 +199,23 @@ export function FeedbackDetailScreen({ ideaId }: { ideaId: string }) {
       <section className="card pad">
         <div className="flex items-center justify-between gap-2">
           <h2 className="h2 inline-flex items-center gap-2">
-            <ChatBubbleLeftIcon className="h-5 w-5 text-[var(--task)]" />
+            <ChatBubbleLeftIcon className="h-5 w-5 text-(--task)" />
             Discussion
           </h2>
-          <button type="button" className="text-xs font-semibold text-[var(--blue)]" onClick={() => setSortNewest((value) => !value)}>
+          <button type="button" className="text-xs font-semibold text-(--blue)" onClick={() => setSortNewest((value) => !value)}>
             {sortNewest ? 'Oldest first' : 'Newest first'}
           </button>
         </div>
         <div className="mt-3 space-y-3">
           {ideaComments.length === 0 ? (
-            <p className="text-sm text-[var(--ink3)]">No comments yet. Add context that would help other people vote.</p>
+            <p className="text-sm text-(--ink3)">No comments yet. Add context that would help other people vote.</p>
           ) : null}
           {ideaComments.map((comment) => {
             const mine = comment.authorUserId === user?.id
             const canEdit = mine && Date.now() - comment.createdAt.getTime() <= 15 * 60_000
             return (
-              <div key={comment.id} className="rounded-xl bg-[var(--soft)] p-3">
-                <p className="text-xs font-semibold text-[var(--ink3)]">
+              <div key={comment.id} className="rounded-xl bg-(--soft) p-3">
+                <p className="text-xs font-semibold text-(--ink3)">
                   {comment.isOfficial ? 'Product team' : mine ? 'You' : 'A Project Planner user'}
                   {comment.editedAt ? ' · edited' : ''}
                 </p>
@@ -246,7 +246,7 @@ export function FeedbackDetailScreen({ ideaId }: { ideaId: string }) {
                     {canEdit ? (
                       <button
                         type="button"
-                        className="text-[var(--blue)]"
+                        className="text-(--blue)"
                         onClick={() => {
                           setEditingId(comment.id)
                           setEditBody(comment.body)
@@ -257,7 +257,7 @@ export function FeedbackDetailScreen({ ideaId }: { ideaId: string }) {
                     ) : null}
                     <button
                       type="button"
-                      className="text-[var(--red)]"
+                      className="text-(--red)"
                       onClick={() => user && void deleteComment(comment, user.id)}
                     >
                       Delete
@@ -301,7 +301,7 @@ export function FeedbackDetailScreen({ ideaId }: { ideaId: string }) {
           <h2 className="h2">Related ideas</h2>
           <div className="mt-2 space-y-2">
             {related.map((row) => (
-              <Link key={row.id} href={`/dashboard/ideas/${row.id}`} className="block text-sm font-semibold text-[var(--blue)]">
+              <Link key={row.id} href={`/dashboard/ideas/${row.id}`} className="block text-sm font-semibold text-(--blue)">
                 {row.title} · {row.voteCount} votes
               </Link>
             ))}

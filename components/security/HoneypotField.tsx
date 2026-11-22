@@ -6,7 +6,7 @@ type HoneypotFieldProps = {
 
 export function HoneypotField({ id = 'website', value, onChange }: HoneypotFieldProps) {
   return (
-    <div className="absolute -left-[9999px] h-px w-px overflow-hidden" aria-hidden="true">
+    <div className="absolute left-[-9999px] h-px w-px overflow-hidden" aria-hidden="true">
       <label htmlFor={id}>Website</label>
       <input
         id={id}

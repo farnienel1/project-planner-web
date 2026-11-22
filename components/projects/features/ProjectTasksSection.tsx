@@ -264,7 +264,7 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
             setEditing(null)
             setShowForm(true)
           }}
-          className="inline-flex items-center gap-1.5 rounded-full bg-[var(--blue)] px-3.5 py-2 text-[13px] font-medium text-white shadow-md"
+          className="inline-flex items-center gap-1.5 rounded-full bg-(--blue) px-3.5 py-2 text-[13px] font-medium text-white shadow-md"
         >
           <PlusIcon className="h-4 w-4" />
           Tasks
@@ -292,13 +292,13 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search tasks…"
-          className="flex-1 bg-transparent text-xs outline-none"
+          className="flex-1 bg-transparent text-xs outline-hidden"
         />
         <button
           type="button"
           disabled={isOperative}
           onClick={() => setShowFilter(true)}
-          className={`text-[var(--blue)] ${isOperative ? 'opacity-35' : ''}`}
+          className={`text-(--blue) ${isOperative ? 'opacity-35' : ''}`}
           aria-label="Task filters"
         >
           <FunnelIcon className="h-[15px] w-[15px]" />
@@ -316,10 +316,10 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
       <div className="mt-4 space-y-2.5">
         {scoped.length === 0 && !showForm ? (
           <FeatureCard className="py-8 text-center">
-            <div className="mx-auto mb-3.5 flex h-14 w-14 items-center justify-center rounded-[18px] bg-[var(--blue-t)]">
-              <ClipboardDocumentListIcon className="h-7 w-7 text-[var(--blue)]" />
+            <div className="mx-auto mb-3.5 flex h-14 w-14 items-center justify-center rounded-[18px] bg-(--blue-t)">
+              <ClipboardDocumentListIcon className="h-7 w-7 text-(--blue)" />
             </div>
-            <p className="text-[15px] font-medium text-[#0B1020]">{empty.title}</p>
+            <p className="text-[15px] font-medium text-primary-900">{empty.title}</p>
             <p className="mt-1 px-6 text-xs text-[#6B7280]">{empty.subtitle}</p>
             {scope === 'active' && (
               <button
@@ -328,7 +328,7 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
                   setEditing(null)
                   setShowForm(true)
                 }}
-                className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[var(--blue)] px-[18px] py-2.5 text-[13px] font-medium text-white"
+                className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-(--blue) px-[18px] py-2.5 text-[13px] font-medium text-white"
               >
                 <PlusIcon className="h-3.5 w-3.5" />
                 Tasks

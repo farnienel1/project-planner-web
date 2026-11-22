@@ -98,7 +98,7 @@ export function DeveloperDataQualityScreen() {
         </button>
       }
     >
-      <p className="text-sm text-[var(--ink2)]">
+      <p className="text-sm text-(--ink2)">
         Unfinished sign-ups whose organisation document is missing are labelled Unfinished setup, never Unknown
         organisation. Personal data from abandoned sign-ups should not be kept indefinitely — delete after 12 months.
       </p>
@@ -132,7 +132,7 @@ export function DeveloperDataQualityScreen() {
           </div>
         ) : (
           <table className="w-full whitespace-nowrap text-left text-sm">
-            <thead className="bg-[var(--soft)] text-xs uppercase text-[var(--ink3)]">
+            <thead className="bg-(--soft) text-xs uppercase text-(--ink3)">
               <tr>
                 <th className="px-4 py-2">Name</th>
                 <th className="px-4 py-2">Email</th>
@@ -143,7 +143,7 @@ export function DeveloperDataQualityScreen() {
             </thead>
             <tbody>
               {rows.unfinishedUsers.map((user) => (
-                <tr key={user.id} className="border-t border-[var(--line)]">
+                <tr key={user.id} className="border-t border-(--line)">
                   <td className="px-4 py-3 font-semibold">{ownerPersonName(user)}</td>
                   <td className="px-4 py-3">
                     <MaskedEmail
@@ -156,7 +156,7 @@ export function DeveloperDataQualityScreen() {
                   <td className="px-4 py-3">
                     {formatOwnerWhen(user.createdAt)}
                     {isAbandonedUnfinishedSignup(user.createdAt) ? (
-                      <span className="ml-2 rounded-full bg-[var(--warn-t)] px-2 py-0.5 text-[11px] font-bold">12-month cleanup</span>
+                      <span className="ml-2 rounded-full bg-(--warn-t) px-2 py-0.5 text-[11px] font-bold">12-month cleanup</span>
                     ) : null}
                   </td>
                   <td className="px-4 py-3">
@@ -221,15 +221,15 @@ export function DeveloperDataQualityScreen() {
       </section>
       <section className="card pad space-y-3">
         <h2 className="h2">Test organisations</h2>
-        <p className="text-sm text-[var(--ink2)]">
+        <p className="text-sm text-(--ink2)">
           Organisations marked internal are your own test or demo companies. They are left out of customer counts.
         </p>
         {rows.testOrgs.length === 0 ? (
-          <p className="text-sm text-[var(--ink3)]">No organisation is marked internal yet.</p>
+          <p className="text-sm text-(--ink3)">No organisation is marked internal yet.</p>
         ) : (
           <ul className="space-y-2 text-sm" aria-label="Organisations marked internal">
             {rows.testOrgs.map((org) => (
-              <li key={org.id} className="rounded-xl bg-[var(--soft)] px-3 py-2">
+              <li key={org.id} className="rounded-xl bg-(--soft) px-3 py-2">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <Link href={`/developer/organisations/${encodeURIComponent(org.id)}`} className="font-semibold">
                     {org.name}
@@ -252,7 +252,7 @@ export function DeveloperDataQualityScreen() {
             ))}
           </ul>
         )}
-        <div className="space-y-2 border-t border-[var(--line)] pt-3">
+        <div className="space-y-2 border-t border-(--line) pt-3">
           <h3 className="text-sm font-bold">Mark another organisation as internal</h3>
           <input
             type="search"
@@ -263,13 +263,13 @@ export function DeveloperDataQualityScreen() {
             onChange={(event) => setOrgQuery(event.target.value)}
           />
           {rows.markableOrgs.length === 0 ? (
-            <p className="text-sm text-[var(--ink3)]">Every organisation is already marked internal.</p>
+            <p className="text-sm text-(--ink3)">Every organisation is already marked internal.</p>
           ) : shownMarkable.length === 0 ? (
-            <p className="text-sm text-[var(--ink3)]">No organisation matches that search.</p>
+            <p className="text-sm text-(--ink3)">No organisation matches that search.</p>
           ) : (
             <ul className="max-h-96 space-y-2 overflow-y-auto text-sm" aria-label="Organisations not marked internal">
               {shownMarkable.map((org) => (
-                <li key={org.id} className="rounded-xl bg-[var(--soft)] px-3 py-2">
+                <li key={org.id} className="rounded-xl bg-(--soft) px-3 py-2">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <Link href={`/developer/organisations/${encodeURIComponent(org.id)}`} className="font-semibold">
                       {org.name}
@@ -302,7 +302,7 @@ function RowStatus({ notice }: { notice?: RowNotice }) {
   if (!notice) return null
   return (
     <p
-      className="banner mt-2 !px-3 !py-2 text-xs font-semibold"
+      className="banner mt-2 px-3! py-2! text-xs font-semibold"
       data-hue={notice.tone === 'info' ? 'blue' : notice.tone}
       role={notice.tone === 'red' ? 'alert' : 'status'}
     >

@@ -71,14 +71,14 @@ export function LeaveSummary({
 
   if (error) {
     return (
-      <div role="alert" className="rounded-2xl border border-[var(--red)] bg-[var(--card)] p-4 text-sm text-[var(--red)] shadow-sm">
+      <div role="alert" className="rounded-2xl border border-(--red) bg-(--card) p-4 text-sm text-(--red) shadow-xs">
         {error}
       </div>
     )
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-[var(--card)] p-4 shadow-sm">
+    <div className="rounded-2xl border border-slate-200 bg-(--card) p-4 shadow-xs">
       <p className="text-sm font-semibold text-slate-700">
         {format(leaveYearStart, 'MMM yyyy')} – {format(leaveYearEnd, 'MMM yyyy')}
       </p>
@@ -103,7 +103,7 @@ export function LeaveSummary({
           <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
             {hasAllowance ? 'Days remaining' : 'Days taken this leave year'}
           </p>
-          <p className={`text-3xl font-bold leading-none ${over ? 'text-[var(--red)]' : 'text-slate-900'}`}>
+          <p className={`text-3xl font-bold leading-none ${over ? 'text-(--red)' : 'text-slate-900'}`}>
             {loading
               ? '…'
               : over
@@ -403,7 +403,7 @@ export function PersonalLeave({
             <div className="mb-2 flex items-center justify-between text-sm">
               <span className="font-semibold text-slate-800">{daysLabel(selectedUnits)} selected</span>
               {hasAllowance ? (
-                <span className={remainingAfter < 0 ? 'font-semibold text-[var(--red)]' : 'text-slate-600'}>
+                <span className={remainingAfter < 0 ? 'font-semibold text-(--red)' : 'text-slate-600'}>
                   Remaining after {formatLeaveCount(remainingAfter)}
                 </span>
               ) : (
@@ -411,7 +411,7 @@ export function PersonalLeave({
               )}
             </div>
             {hasAllowance && remainingAfter < 0 ? (
-              <p className="mb-2 text-xs text-[var(--red)]">
+              <p className="mb-2 text-xs text-(--red)">
                 This request is over the allowance. You can still send it, and a manager can allow it.
               </p>
             ) : null}
@@ -607,7 +607,7 @@ export function PersonalLeave({
               </button>
               <button
                 type="button"
-                className="rounded-xl bg-[var(--red)] py-2.5 text-sm font-bold text-white"
+                className="rounded-xl bg-(--red) py-2.5 text-sm font-bold text-white"
                 onClick={() => {
                   const job = confirm.run
                   setConfirm(null)
@@ -647,7 +647,7 @@ function BookingCard({
               cancelling || booking.status === 'pending'
                 ? 'text-amber-700'
                 : booking.status === 'rejected'
-                  ? 'text-[var(--red)]'
+                  ? 'text-(--red)'
                   : 'text-emerald-700'
             }`}
           >
@@ -663,7 +663,7 @@ function BookingCard({
           </button>
         ) : null}
         {onDelete ? (
-          <button type="button" onClick={onDelete} className="text-xs font-semibold text-[var(--red)]">
+          <button type="button" onClick={onDelete} className="text-xs font-semibold text-(--red)">
             Remove
           </button>
         ) : null}

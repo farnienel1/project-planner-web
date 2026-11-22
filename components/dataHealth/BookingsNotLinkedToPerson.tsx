@@ -341,13 +341,13 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
           {running ? 'Checking…' : 'Check again'}
         </button>
       </div>
-      <p className="mt-1 text-sm text-[var(--ink3)]">{UNRESOLVED_BOOKINGS_HELP}</p>
+      <p className="mt-1 text-sm text-(--ink3)">{UNRESOLVED_BOOKINGS_HELP}</p>
       {error ? <p className="banner mt-2" data-hue="red">{error}</p> : null}
       {notice ? <p className="banner mt-2" data-hue="green">{notice}</p> : null}
       {!loaded ? (
-        <p className="mt-2 text-sm text-[var(--ink3)]">Checking bookings…</p>
+        <p className="mt-2 text-sm text-(--ink3)">Checking bookings…</p>
       ) : rows.length === 0 ? (
-        <p className="mt-2 text-sm text-[var(--ink3)]">{UNRESOLVED_BOOKINGS_EMPTY}</p>
+        <p className="mt-2 text-sm text-(--ink3)">{UNRESOLVED_BOOKINGS_EMPTY}</p>
       ) : (
         sections.map((section) => (
         <div key={section.title ?? 'unknown'}>
@@ -357,20 +357,20 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
             <li key={row.personId} className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 text-sm">
               <p className="font-semibold">
                 {row.former || row.unlinkedManagerRow ? row.label : `Unknown person · ID ${row.idHint}`}
-                <span className="ml-2 font-normal text-[var(--ink3)]">
+                <span className="ml-2 font-normal text-(--ink3)">
                   {row.count} booking{row.count === 1 ? '' : 's'} ·{' '}
                   {row.firstDayKey === row.lastDayKey
                     ? formatLongDayKey(row.firstDayKey, organizationZoneOr())
                     : `${formatLongDayKey(row.firstDayKey, organizationZoneOr())} – ${formatLongDayKey(row.lastDayKey, organizationZoneOr())}`}
                 </span>
               </p>
-              <p className="mt-0.5 break-all text-[11px] text-[var(--ink3)]">Full ID: {row.personId}</p>
+              <p className="mt-0.5 break-all text-[11px] text-(--ink3)">Full ID: {row.personId}</p>
               {row.jobs.length > 0 ? (
                 <p className="mt-1">
                   Jobs: {row.jobs.map((job) => `${job.jobName || job.jobId} (${job.count})`).join(', ')}
                 </p>
               ) : null}
-              {row.bookedBy.length > 0 ? <p className="mt-0.5 text-[var(--ink3)]">Booked by: {row.bookedBy.join(', ')}</p> : null}
+              {row.bookedBy.length > 0 ? <p className="mt-0.5 text-(--ink3)">Booked by: {row.bookedBy.join(', ')}</p> : null}
               {picking === row.personId ? (
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <label className="sr-only" htmlFor={`link-${row.personId}`}>Who is this?</label>
@@ -387,9 +387,9 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
                       </option>
                     ))}
                   </select>
-                  <span className="w-full text-[12px] text-[var(--ink3)]">{LINK_BOOKING_PERSON_SELF_NOTE}</span>
+                  <span className="w-full text-[12px] text-(--ink3)">{LINK_BOOKING_PERSON_SELF_NOTE}</span>
                   {!impact ? (
-                    <span className="w-full text-[12px] text-[var(--ink3)]">Checking what else is filed under this ID…</span>
+                    <span className="w-full text-[12px] text-(--ink3)">Checking what else is filed under this ID…</span>
                   ) : impact.alsoText ? (
                     <span className="w-full text-[12px] font-medium text-amber-800">{impact.alsoText}</span>
                   ) : null}

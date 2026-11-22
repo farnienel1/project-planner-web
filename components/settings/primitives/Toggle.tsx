@@ -19,8 +19,8 @@ export function Toggle({
       disabled={disabled}
       onClick={() => !disabled && onChange(!checked)}
       data-hue="blue"
-      className={`relative inline-flex h-7 w-12 flex-shrink-0 cursor-pointer rounded-full transition-colors focus-visible:outline-none disabled:cursor-not-allowed ${
-        checked ? 'bg-[var(--h,var(--blue))]' : 'bg-[var(--line2)]'
+      className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full transition-colors focus-visible:outline-hidden disabled:cursor-not-allowed ${
+        checked ? 'bg-(--h,var(--blue))' : 'bg-(--line2)'
       }`}
     >
       <span

@@ -66,31 +66,31 @@ function MonthCoverage({ ranges }: { ranges: Array<{ startDay: number; endDay: n
   const gaps = days.filter((d) => d.state === 'gap').length
   const overlaps = days.filter((d) => d.state === 'overlap').length
   const cell: Record<string, string> = {
-    one: 'bg-[var(--blue)] text-white',
-    two: 'bg-[var(--ops)] text-white',
-    overlap: 'bg-[var(--red)] text-white',
-    gap: 'bg-[var(--card)] text-[var(--ink3)] shadow-[inset_0_0_0_1.5px_var(--line2)] [background-image:repeating-linear-gradient(135deg,var(--soft2)_0_3px,transparent_3px_6px)]',
+    one: 'bg-(--blue) text-white',
+    two: 'bg-(--ops) text-white',
+    overlap: 'bg-(--red) text-white',
+    gap: 'bg-(--card) text-(--ink3) shadow-[inset_0_0_0_1.5px_var(--line2)] bg-[repeating-linear-gradient(135deg,var(--soft2)_0_3px,transparent_3px_6px)]',
   }
   return (
     <div>
-      <div className="[display:grid] grid-cols-[repeat(16,minmax(0,1fr))] gap-1 sm:grid-cols-[repeat(31,minmax(0,1fr))]" aria-hidden>
+      <div className="[display:grid] grid-cols-16 gap-1 sm:grid-cols-31" aria-hidden>
         {days.map(({ day, state }) => (
           <span key={day} className={`grid h-7 place-items-center rounded-[5px] text-[10.5px] font-bold tabular-nums ${cell[state]}`}>
             {day}
           </span>
         ))}
       </div>
-      <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12.5px] text-[var(--ink2)]">
+      <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12.5px] text-(--ink2)">
         <span className="inline-flex items-center gap-1.5">
-          <i className="h-2.5 w-2.5 rounded-sm bg-[var(--blue)]" /> Run 1
+          <i className="h-2.5 w-2.5 rounded-xs bg-(--blue)" /> Run 1
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <i className="h-2.5 w-2.5 rounded-sm bg-[var(--ops)]" /> Run 2
+          <i className="h-2.5 w-2.5 rounded-xs bg-(--ops)" /> Run 2
         </span>
         {gaps === 0 && overlaps === 0 ? (
-          <span className="font-semibold text-[var(--green)]">✓ Every day covered once</span>
+          <span className="font-semibold text-(--green)">✓ Every day covered once</span>
         ) : (
-          <span className="font-semibold text-[var(--red)]">
+          <span className="font-semibold text-(--red)">
             {[gaps ? `${gaps} day${gaps === 1 ? '' : 's'} not covered` : '', overlaps ? `${overlaps} day${overlaps === 1 ? '' : 's'} in both runs` : '']
               .filter(Boolean)
               .join(' · ')}
@@ -263,22 +263,22 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
 
       <SettingsFormBody state={loadState}>
       <div className="card p-4">
-        <div className="text-[12px] font-semibold text-[var(--ink3)]">At a glance</div>
+        <div className="text-[12px] font-semibold text-(--ink3)">At a glance</div>
         <ul className="mt-1.5 space-y-1">
           {summary.map((line) => (
-            <li key={line} className="flex gap-2 text-[14px] text-[var(--ink)]">
-              <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--blue)]" aria-hidden />
+            <li key={line} className="flex gap-2 text-[14px] text-(--ink)">
+              <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-(--blue)" aria-hidden />
               {line}
             </li>
           ))}
         </ul>
         {!activeRun.notConfigured ? (
-          <p className="mt-2 text-[13px] font-semibold text-[var(--ink)]">
+          <p className="mt-2 text-[13px] font-semibold text-(--ink)">
             Current run: {formatPaymentRunDay(activeRun.start)} – {formatPaymentRunDay(activeRun.end)} ·{' '}
             {activeRun.payDate ? `Paid on ${formatPaymentRunDay(activeRun.payDate)}` : 'pay date not set'}
           </p>
         ) : null}
-        <p className="mt-2 text-[12.5px] text-[var(--ink3)]">
+        <p className="mt-2 text-[12.5px] text-(--ink3)">
           Set your pay periods first, then the pay day. Warnings can use the end of the pay period for detection.
         </p>
       </div>
@@ -316,8 +316,8 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
             {ranges.map((range, index) => (
               <div key={index} className="[display:grid] grid-cols-[auto_1fr_1fr] items-end gap-3 p-5">
                 <span
-                  className={`mb-1.5 grid h-7 min-w-[52px] place-items-center rounded-md px-2 text-[12px] font-bold text-[var(--card)] ${
-                    index === 0 ? 'bg-[var(--blue)]' : 'bg-[var(--ops)]'
+                  className={`mb-1.5 grid h-7 min-w-[52px] place-items-center rounded-md px-2 text-[12px] font-bold text-(--card) ${
+                    index === 0 ? 'bg-(--blue)' : 'bg-(--ops)'
                   }`}
                 >
                   Run {index + 1}
@@ -341,7 +341,7 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
               </div>
             ))}
             {showMonthCoverage ? (
-              <div className="bg-[var(--soft)] p-5">
+              <div className="bg-(--soft) p-5">
                 <MonthCoverage ranges={ranges} />
               </div>
             ) : null}
@@ -352,14 +352,14 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
               <FormField label="Start day">
                 <WeekdaySelect label="Start day" value={draft.recurringRunStartDay} onChange={(value) => patch({ recurringRunStartDay: value })} />
               </FormField>
-              <span className="pb-2.5 text-[var(--ink3)]" aria-hidden>
+              <span className="pb-2.5 text-(--ink3)" aria-hidden>
                 →
               </span>
               <FormField label="End day">
                 <WeekdaySelect label="End day" value={draft.recurringRunEndDay} onChange={(value) => patch({ recurringRunEndDay: value })} />
               </FormField>
             </div>
-            <p className="inline-flex rounded-lg bg-[var(--soft2)] px-2.5 py-1 text-[12.5px] font-semibold text-[var(--ink2)]">
+            <p className="inline-flex rounded-lg bg-(--soft2) px-2.5 py-1 text-[12.5px] font-semibold text-(--ink2)">
               In arrears: work {capitalizeDay(draft.recurringRunStartDay)} to {capitalizeDay(draft.recurringRunEndDay)}, paid after the week ends
             </p>
           </div>

@@ -216,8 +216,8 @@ export function SitePinPickerSheet({
   const googleVerifyUrl = draft ? googleMapsCoordinateUrl(draft.latitude, draft.longitude) : null
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-end justify-center bg-slate-900/50 p-4 sm:items-center">
-      <div className="relative z-[10000] flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+    <div className="fixed inset-0 z-9999 flex items-end justify-center bg-slate-900/50 p-4 sm:items-center">
+      <div className="relative z-10000 flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
         <div className="border-b border-slate-200 px-5 py-4">
           <h2 className="text-lg font-bold text-slate-900">Set pin on map</h2>
           <p className="mt-1 text-sm text-slate-500">

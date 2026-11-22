@@ -105,7 +105,7 @@ export function ApplyEmailActionScreen({ action }: { action: ParsedEmailAction }
         <div style={{ width: 'min(420px, 100%)' }}>
           <div className="mb-6 flex items-center gap-3">
             <AppLogoMark size={40} radius={12} />
-            <b className="font-[family-name:var(--head)] text-lg">Project Planner</b>
+            <b className="font-(family-name:--head) text-lg">Project Planner</b>
           </div>
           {state.step === 'checking' ? (
             <p className="muted">Checking this link…</p>

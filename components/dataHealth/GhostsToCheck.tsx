@@ -28,7 +28,7 @@ export function GhostsToCheck({ organizationId }: { organizationId: string }) {
     <section className="card p-4" aria-label="Ghosts to check">
       <h2 className="text-[15px] font-bold">Ghosts to check</h2>
       {rows.length === 0 ? (
-        <p className="mt-1 text-sm text-[var(--ink3)]">No ghost operatives need checking.</p>
+        <p className="mt-1 text-sm text-(--ink3)">No ghost operatives need checking.</p>
       ) : (
         <ul className="mt-2 space-y-1.5">
           {rows.map((row) => {
@@ -38,7 +38,7 @@ export function GhostsToCheck({ organizationId }: { organizationId: string }) {
                 <Link className="font-semibold underline" href={`/dashboard/users/${row.id}/edit?from=users`}>
                   {(user && rosterDisplayName(user)) || row.id}
                 </Link>
-                <span className="text-[var(--ink3)]"> — {row.issues.map((issue) => GHOST_CHECK_ISSUE_LABELS[issue]).join('; ')}</span>
+                <span className="text-(--ink3)"> — {row.issues.map((issue) => GHOST_CHECK_ISSUE_LABELS[issue]).join('; ')}</span>
               </li>
             )
           })}

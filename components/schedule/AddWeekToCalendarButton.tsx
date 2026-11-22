@@ -99,7 +99,7 @@ export function AddWeekToCalendarButton({
   return (
     <div className="space-y-2">
       <div className="relative" ref={menuRef}>
-        <div className="flex overflow-hidden rounded-xl border border-blue-200 bg-blue-600 shadow-sm">
+        <div className="flex overflow-hidden rounded-xl border border-blue-200 bg-blue-600 shadow-xs">
           <button
             type="button"
             onClick={exportIcs}

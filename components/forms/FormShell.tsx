@@ -4,7 +4,7 @@ import Link from 'next/link'
 
 export function FormLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
   return (
-    <label className="mb-1 block text-[13.5px] font-semibold text-[var(--ink2)]">
+    <label className="mb-1 block text-[13.5px] font-semibold text-(--ink2)">
       {children}
       {required && <span className="text-red-500"> *</span>}
     </label>
@@ -66,7 +66,7 @@ export function FormActions({
       <button
         type="submit"
         disabled={saving || disabled}
-        className="btn primary disabled:opacity-50"
+        className="btn primary disabled:opacity-50!"
       >
         {saving ? 'Saving…' : submitLabel}
       </button>

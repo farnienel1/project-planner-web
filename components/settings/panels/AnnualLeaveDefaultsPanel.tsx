@@ -178,19 +178,19 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
       <SettingsCard>
         <div className="flex items-center justify-between gap-4 p-5">
           <div className="min-w-0">
-            <div className="text-[14.5px] font-semibold text-[var(--ink)]">Days per year</div>
-            <div className="mt-0.5 text-[13px] text-[var(--ink3)]">Half days are allowed, e.g. 25.5</div>
+            <div className="text-[14.5px] font-semibold text-(--ink)">Days per year</div>
+            <div className="mt-0.5 text-[13px] text-(--ink3)">Half days are allowed, e.g. 25.5</div>
           </div>
-          <label className="flex shrink-0 items-center rounded-xl bg-[var(--card)] pr-3 shadow-[inset_0_0_0_1.5px_var(--line2)] focus-within:shadow-[inset_0_0_0_1.5px_var(--blue),0_0_0_3px_var(--blue-t)]">
+          <label className="flex shrink-0 items-center rounded-xl bg-(--card) pr-3 shadow-[inset_0_0_0_1.5px_var(--line2)] focus-within:shadow-[inset_0_0_0_1.5px_var(--blue),0_0_0_3px_var(--blue-t)]">
             <input
               value={daysText}
               inputMode="decimal"
               placeholder="e.g. 25"
               aria-label="Days per year"
               onChange={(e) => setDaysText(e.target.value)}
-              className="w-[72px] bg-transparent py-2 pl-3 text-right text-[15px] font-bold tabular-nums text-[var(--ink)] outline-none"
+              className="w-[72px] bg-transparent py-2 pl-3 text-right text-[15px] font-bold tabular-nums text-(--ink) outline-hidden"
             />
-            <span className="pl-1.5 text-[13.5px] font-semibold text-[var(--ink3)]">days</span>
+            <span className="pl-1.5 text-[13.5px] font-semibold text-(--ink3)">days</span>
           </label>
         </div>
       </SettingsCard>
@@ -219,7 +219,7 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
                 ))}
               </Select>
             </FormField>
-            <span className="pb-2.5 text-[var(--ink3)]" aria-hidden>
+            <span className="pb-2.5 text-(--ink3)" aria-hidden>
               →
             </span>
             <FormField label="Ends">
@@ -240,7 +240,7 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
               </Select>
             </FormField>
           </div>
-          <p className="inline-flex rounded-lg bg-[var(--soft2)] px-2.5 py-1 text-[12.5px] font-semibold text-[var(--ink2)]">
+          <p className="inline-flex rounded-lg bg-(--soft2) px-2.5 py-1 text-[12.5px] font-semibold text-(--ink2)">
             Leave year: {leaveYearSummary(startMonth, endMonth)}
           </p>
         </div>
@@ -288,8 +288,8 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
               ))}
             </Select>
           </FormField>
-          <p className="inline-flex rounded-lg bg-[var(--soft2)] px-2.5 py-1 text-[12.5px] text-[var(--ink2)]">
-            Currently set to&nbsp;<strong className="font-semibold text-[var(--ink)]">{bankHolidayRegionLabel(bankHolidayRegion)}</strong>
+          <p className="inline-flex rounded-lg bg-(--soft2) px-2.5 py-1 text-[12.5px] text-(--ink2)">
+            Currently set to&nbsp;<strong className="font-semibold text-(--ink)">{bankHolidayRegionLabel(bankHolidayRegion)}</strong>
           </p>
         </div>
       </SettingsCard>

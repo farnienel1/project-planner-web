@@ -164,13 +164,13 @@ export function DeveloperLoginScreen() {
   return (
     <div className="login">
       <div className="hero art" style={{ borderRadius: 0 }}>
-        <Link href="/" className="relative z-[1] flex items-center gap-3.5 text-white no-underline" aria-label="Project Planner home">
+        <Link href="/" className="relative z-1 flex items-center gap-3.5 text-white no-underline" aria-label="Project Planner home">
           <div className="overflow-hidden rounded-[14px]" style={{ background: 'rgba(255,255,255,.15)' }}>
             <AppLogoMark size={52} radius={14} />
           </div>
-          <b className="font-[family-name:var(--head)] text-[22px] font-extrabold tracking-tight">Project Planner</b>
+          <b className="font-(family-name:--head) text-[22px] font-extrabold tracking-tight">Project Planner</b>
         </Link>
-        <div className="relative z-[1]">
+        <div className="relative z-1">
           <div className="big" style={{ fontSize: 44, maxWidth: 520 }}>
             Owner console
           </div>
@@ -178,7 +178,7 @@ export function DeveloperLoginScreen() {
             Private login for the app owner. This is not an organisation dashboard — it shows every tenant using Project Planner.
           </p>
         </div>
-        <div className="relative z-[1] xs" style={{ opacity: 0.7 }}>
+        <div className="relative z-1 xs" style={{ opacity: 0.7 }}>
           © Projectplanner Systems Ltd
         </div>
       </div>
@@ -208,7 +208,7 @@ export function DeveloperLoginScreen() {
             <HoneypotField id="developer-website" value={website} onChange={setWebsite} />
             <label className="f">
               Email
-              <input type="email" value={PLATFORM_OWNER_EMAIL} readOnly className="pp-in bg-[var(--soft)]" autoComplete="username" />
+              <input type="email" value={PLATFORM_OWNER_EMAIL} readOnly className="pp-in bg-(--soft)" autoComplete="username" />
             </label>
             {mode !== 'reset' ? (
               <label className="f">
@@ -229,7 +229,7 @@ export function DeveloperLoginScreen() {
                     type="button"
                     aria-label={showPassword ? 'Hide password' : 'Show password'}
                     onClick={() => setShowPassword((v) => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ink3)]"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-(--ink3)"
                   >
                     {showPassword ? <EyeIcon className="h-5 w-5" /> : <EyeSlashIcon className="h-5 w-5" />}
                   </button>

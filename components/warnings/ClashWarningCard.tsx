@@ -49,7 +49,7 @@ function HourGrid() {
       {FULL_DAY_TICKS.map((tick) => (
         <div
           key={`grid-${tick}`}
-          className="pointer-events-none absolute inset-y-0 w-px bg-black/[0.08]"
+          className="pointer-events-none absolute inset-y-0 w-px bg-black/8"
           style={{ left: `${(tick / (24 * 60)) * 100}%` }}
         />
       ))}
@@ -86,7 +86,7 @@ function ClashLane({
         return (
           <div
             key={`${region.startMinutes}-${region.endMinutes}`}
-            className="absolute inset-y-0 bg-[#B3261E]/[0.12]"
+            className="absolute inset-y-0 bg-[#B3261E]/12"
             style={{ left: `${rLeft * 100}%`, width: `${Math.max(0.2, (rRight - rLeft) * 100)}%` }}
           />
         )
@@ -206,7 +206,7 @@ export function ClashWarningCard({
         </div>
 
         <div className="ritem" style={{ cursor: 'default', boxShadow: 'none', background: 'var(--soft)' }}>
-          <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-[var(--blue)] text-[11px] font-semibold text-white">
+          <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-(--blue) text-[11px] font-semibold text-white">
             {initialsFrom(personName)}
           </span>
           <span className="grow">
@@ -241,7 +241,7 @@ export function ClashWarningCard({
           <AxisRow />
         </div>
 
-        <div className="overflow-hidden rounded-xl border border-black/[0.08]">
+        <div className="overflow-hidden rounded-xl border border-black/8">
           {entries.map((entry, index) => {
             const palette = CLASH_BAR_PALETTES[index % CLASH_BAR_PALETTES.length]
             const mine = clashMinutesFor(entry, FULL_DAY_WINDOW, analysis)
@@ -266,7 +266,7 @@ export function ClashWarningCard({
                     </p>
                     <p className="muted small num">
                       {timeText(entry)} ·{' '}
-                      <span className="font-semibold text-[var(--red)]">{formatDuration(mine)} clashing</span>
+                      <span className="font-semibold text-(--red)">{formatDuration(mine)} clashing</span>
                     </p>
                   </div>
                   {onRemove && canRemove?.(entry) ? (

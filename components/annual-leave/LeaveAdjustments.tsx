@@ -43,7 +43,7 @@ export function LeaveAdjustmentsList({
   const rows = adjustments.filter((row) => row.yearKey === yearKey)
   if (rows.length === 0) return null
   return (
-    <section className="rounded-2xl border border-slate-200 bg-[var(--card)] p-4 shadow-sm">
+    <section className="rounded-2xl border border-slate-200 bg-(--card) p-4 shadow-xs">
       <p className="text-sm font-bold text-slate-900">Adjustments this leave year</p>
       {!hasAllowance ? (
         <p className="mt-0.5 text-xs text-slate-500">Kept, but not counted while there is no paid allowance.</p>
@@ -58,7 +58,7 @@ export function LeaveAdjustmentsList({
                 {showAuthor ? ` · by ${annualLeaveAdjustmentAuthorName(row, roster as never)}` : ''}
               </p>
             </div>
-            <span className={`shrink-0 text-sm font-bold ${row.days < 0 ? 'text-[var(--red)]' : 'text-emerald-700'}`}>
+            <span className={`shrink-0 text-sm font-bold ${row.days < 0 ? 'text-(--red)' : 'text-emerald-700'}`}>
               {annualLeaveAdjustmentLabel(row.days)}
             </span>
           </li>
@@ -121,7 +121,7 @@ export function LeaveAdjustmentForm({
   }
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-[var(--card)] p-4 shadow-sm">
+    <section className="rounded-2xl border border-slate-200 bg-(--card) p-4 shadow-xs">
       <p className="text-sm font-bold text-slate-900">Adjust {personName}&apos;s leave</p>
       <p className="mt-0.5 text-xs text-slate-500">{ANNUAL_LEAVE_ADJUSTMENT_NOTE}</p>
       <div className="mt-3 grid grid-cols-2 gap-2" role="radiogroup" aria-label="Add or take off">
@@ -172,7 +172,7 @@ export function LeaveAdjustmentForm({
         className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
       />
       {after != null ? (
-        <p className={`mt-2 text-xs ${after < 0 ? 'font-semibold text-[var(--red)]' : 'text-slate-500'}`}>
+        <p className={`mt-2 text-xs ${after < 0 ? 'font-semibold text-(--red)' : 'text-slate-500'}`}>
           Remaining becomes {after} {Math.abs(after) === 1 ? 'day' : 'days'}
           {after < 0 ? ' — below zero' : ''}.
         </p>

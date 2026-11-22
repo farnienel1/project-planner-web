@@ -81,14 +81,14 @@ export function TimesheetsHalfSigned({ organizationId }: { organizationId: strin
     <section className="card p-4" aria-label={TIMESHEETS_HALF_SIGNED_HEADING}>
       <h2 className="text-[15px] font-bold">{TIMESHEETS_HALF_SIGNED_HEADING}</h2>
       {error ? (
-        <p className="mt-1 text-sm text-[var(--ink3)]">Could not check timesheets: {error}</p>
+        <p className="mt-1 text-sm text-(--ink3)">Could not check timesheets: {error}</p>
       ) : sheets == null ? (
-        <p className="mt-1 text-sm text-[var(--ink3)]">Checking timesheets…</p>
+        <p className="mt-1 text-sm text-(--ink3)">Checking timesheets…</p>
       ) : rows.length === 0 ? (
-        <p className="mt-1 text-sm text-[var(--ink3)]">{TIMESHEETS_HALF_SIGNED_NONE}</p>
+        <p className="mt-1 text-sm text-(--ink3)">{TIMESHEETS_HALF_SIGNED_NONE}</p>
       ) : (
         <>
-          <p className="mt-1 text-sm text-[var(--ink3)]">{TIMESHEETS_HALF_SIGNED_HELP} (Checks the last six pay runs.)</p>
+          <p className="mt-1 text-sm text-(--ink3)">{TIMESHEETS_HALF_SIGNED_HELP} (Checks the last six pay runs.)</p>
           <ul className="mt-2 space-y-1.5">
             {rows.map((row) => (
               <li key={row.sheetId} className="text-sm">
@@ -102,7 +102,7 @@ export function TimesheetsHalfSigned({ organizationId }: { organizationId: strin
                 >
                   {nameOf(row.userId)}
                 </Link>
-                <span className="text-[var(--ink3)]">
+                <span className="text-(--ink3)">
                   {' '}
                   — {row.startDayKey || 'pay run'}
                   {row.endDayKey && row.endDayKey !== row.startDayKey ? ` to ${row.endDayKey}` : ''}

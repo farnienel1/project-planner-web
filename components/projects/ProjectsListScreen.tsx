@@ -128,7 +128,7 @@ export function ProjectsListScreen() {
   if (loading && projects.length === 0) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <p className="text-sm text-[var(--ink3)]">Loading projects...</p>
+        <p className="text-sm text-(--ink3)">Loading projects...</p>
       </div>
     )
   }
@@ -213,7 +213,7 @@ export function ProjectsListScreen() {
           {mine.saveNotice ? (
             <p
               role="status"
-              className={`text-sm ${mine.saveNotice.status === 'refused' ? 'text-[var(--red)]' : 'text-[var(--ink3)]'}`}
+              className={`text-sm ${mine.saveNotice.status === 'refused' ? 'text-(--red)' : 'text-(--ink3)'}`}
             >
               {mine.saveNotice.message}
             </p>
@@ -222,9 +222,9 @@ export function ProjectsListScreen() {
           <SearchField value={search} onChange={setSearch} placeholder="Search projects, addresses…" />
 
           {emptySearch ? (
-            <p className="py-8 text-center text-[15px] text-[var(--ink3)]">No projects match your search.</p>
+            <p className="py-8 text-center text-[15px] text-(--ink3)">No projects match your search.</p>
           ) : filter === 'mine' && !mine.loaded ? (
-            <p className="py-8 text-center text-[15px] text-[var(--ink3)]">Loading your list…</p>
+            <p className="py-8 text-center text-[15px] text-(--ink3)">Loading your list…</p>
           ) : emptyMine ? (
             <EmptyState
               title={myWorksEmptyTitle('projects')}

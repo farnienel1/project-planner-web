@@ -218,10 +218,10 @@ export function VariationTrackerScreen({
   }
 
   return (
-    <div className="fixed inset-0 z-30 overflow-auto bg-[var(--bg)]" role="region" aria-label="VO tracker">
+    <div className="fixed inset-0 z-30 overflow-auto bg-(--bg)" role="region" aria-label="VO tracker">
       <div className="stack" style={{ gap: 16, padding: '16px clamp(12px, 3vw, 32px) 40px', maxWidth: 1600, margin: '0 auto' }}>
         <section className="hero" data-hue="lib" style={{ padding: '20px 24px' }}>
-          <div className="relative z-[1]">
+          <div className="relative z-1">
             <div className="row" style={{ gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
               <Link href={base} className="btn sm hbtn">← Back to variations</Link>
               <span className="grow" />
@@ -561,7 +561,7 @@ function InlineText({
     resize: 'vertical' as const,
   }
   return multiline ? (
-    <textarea aria-label={label} value={draft} rows={2} placeholder="Add a description" onChange={(event) => setDraft(event.target.value)} onBlur={commit} style={style} className="focus:border-[var(--line2)]" />
+    <textarea aria-label={label} value={draft} rows={2} placeholder="Add a description" onChange={(event) => setDraft(event.target.value)} onBlur={commit} style={style} className="focus:border-(--line2)" />
   ) : (
     <input
       aria-label={label}
@@ -573,7 +573,7 @@ function InlineText({
         if (event.key === 'Escape') setDraft(value)
       }}
       style={style}
-      className="focus:border-[var(--line2)]"
+      className="focus:border-(--line2)"
     />
   )
 }
