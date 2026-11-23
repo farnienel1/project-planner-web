@@ -9,6 +9,8 @@ import type {
 } from '@/lib/timesheets/timesheetDraft'
 import type { TimesheetPayrollLineItem } from '@/lib/timesheets/timesheetPayrollCollector'
 import { formatMoney } from '@/lib/canonical/money'
+import { timesheetLineDisplay } from '@/lib/canonical/timesheetLineDisplay'
+import { formatAbbreviatedDayInZone } from '@/lib/orgTime/zoneTime'
 import {
   payrollLineReview,
   timesheetEntryEffectiveAmount,
@@ -203,7 +205,28 @@ export function showsTimesheetAdjustment(input: {
   )
 }
 
-export function managerAdjustmentRows(draft: TimesheetDraft, currencyCode?: string): ManagerAdjustmentRow[] {
+type AdjustmentLine = { id: string; date: Date; jobNumber?: string | null; projectName?: string | null }
+
+/**
+ * 1.72.0 (issue 21): an adjusted or removed day names its day and job ("Mon 23 Nov · J-1042 · Station Road"), from the
+ * live line or the signed snapshot's line with that id (without case); the line id itself is never shown.
+ */
+function adjustedDayLabel(lineId: string, lines: AdjustmentLine[], timeZone: string | null): string | null {
+  const key = lineId.toLowerCase()
+  const line = lines.find((row) => row.id.toLowerCase() === key)
+  if (!line) return null
+  const title = timesheetLineDisplay({ jobNumber: line.jobNumber, projectName: line.projectName }).title
+  return [timeZone ? formatAbbreviatedDayInZone(line.date, timeZone) : '', title].filter(Boolean).join(' · ')
+}
+
+export function managerAdjustmentRows(
+  draft: TimesheetDraft,
+  currencyCode?: string,
+  /** The sheet's live payroll lines, so each adjusted day names its day and job (1.72.0). */
+  lines: AdjustmentLine[] = [],
+  /** The organisation's zone (rulebook §1); without it the day is left out. */
+  timeZone: string | null = null
+): ManagerAdjustmentRow[] {
   const money = (amount: number) => formatMoney(amount, currencyCode)
   const rows: ManagerAdjustmentRow[] = []
   for (const entry of draft.expenseEntries) {
@@ -230,8 +253,10 @@ export function managerAdjustmentRows(draft: TimesheetDraft, currencyCode?: stri
   }
   for (const [lineId, review] of Object.entries(draft.payrollLineReviews)) {
     if (review.decision !== 'declined' && review.decision !== 'edited') continue
+    const known = [...lines, ...(draft.weeklyReportOverride?.lines ?? [])]
+    const label = adjustedDayLabel(lineId, known, timeZone)
     rows.push({
-      title: `${review.decision === 'declined' ? 'Day removed' : 'Day adjusted'} (${lineId.slice(0, 8)}…)`,
+      title: `${review.decision === 'declined' ? 'Day removed' : 'Day adjusted'} · ${label ?? 'a booking no longer on this timesheet'}`,
       decision: review.decision,
       detail:
         review.decision === 'edited' ? `New amount ${money(review.revisedAmount ?? 0)}` : null,

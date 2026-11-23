@@ -46,15 +46,18 @@ export function timesheetLineDisplay(
   const details = text(line?.details)
   const clock = timesheetLineClockText(details)
   if (/\d{1,2}:\d{2}/.test(clock)) return { title, times: clock }
-  const slot = normalizeBookingTimeSlot(details)
+  // 1.72.0: the slot is the part before " · " ("FULL DAY · no break"); the rest is kept after the window.
+  const [head, ...rest] = details.split(' · ')
+  const suffix = rest.length > 0 ? ` · ${rest.join(' · ')}` : ''
+  const slot = normalizeBookingTimeSlot(head.trim())
   const label = slot ? SLOT_LABELS[slot] : undefined
   if (label) {
     const dayKey = text(line?.dayKey)
     const interval = day ? slotInterval({ timeSlot: slot }, bookingStandardDayOn(day, dayKey || null)) : null
     if (interval && interval.end > interval.start) {
-      return { title, times: `${label} ${formatClockMinutes(interval.start)}–${formatClockMinutes(interval.end)}` }
+      return { title, times: `${label} ${formatClockMinutes(interval.start)}–${formatClockMinutes(interval.end)}${suffix}` }
     }
-    return { title, times: label }
+    return { title, times: `${label}${suffix}` }
   }
   return { title, times: details }
 }

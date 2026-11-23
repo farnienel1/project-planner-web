@@ -231,8 +231,9 @@ test('uploaded files are found by URL, gs:// address or *Path field', () => {
       collectionPath: 'organizations/o1/settings',
       documentId: 'healthSafety_projects_J1',
       field: 'ramsDocuments[0].fileURL',
+      name: 'profile.jpg',
+      kind: 'profile_photo',
       storagePath: 'organizations/o1/userProfiles/u1/profile.jpg',
-      url,
     },
   ])
 })
@@ -255,10 +256,34 @@ test('1.71.0: only the organisation\'s Super Admin may export', () => {
   assert.equal(canExportCompanyData(null, org), false)
 })
 
+test('1.72.0 review of #416: a download URL inside any text is replaced by its storage path in every file', () => {
+  const note =
+    'see https://firebasestorage.googleapis.com/v0/b/pp.appspot.com/o/organizations%2Fo1%2Ftasks%2FT1%2Fa.pdf?alt=media&token=T and ' +
+    'https://storage.googleapis.com/pp.appspot.com/organizations/o1/tasks/T1/b.pdf?X-Goog-Signature=S for details'
+  const entries = companyExportEntries({
+    organizationId: 'o1',
+    organization: { name: 'Acme Ltd', countryCode: 'GB' },
+    documents: [
+      { collectionPath: 'organizations/o1/tasks', collection: 'tasks', id: 'T1', data: { note, items: [{ comment: note }], meta: { inner: note } } },
+    ],
+    problems: [],
+    includeNotifications: false,
+    exportedAt: new Date('2026-07-01T13:00:00Z'),
+    rulebookVersion: '1.72.0',
+  })
+  const all = Object.values(entries).join('\n')
+  for (const leak of ['firebasestorage', 'token=', 'storage.googleapis.com', 'X-Goog-Signature']) assert.ok(!all.includes(leak), leak)
+  const json = JSON.parse(entries['export.json'])
+  assert.equal(
+    json.collections['organizations/o1/tasks'].T1.note,
+    'see organizations/o1/tasks/T1/a.pdf and organizations/o1/tasks/T1/b.pdf for details'
+  )
+})
+
 // ─── The whole zip ───────────────────────────────────────────────────────────
 
 test('the zip holds one CSV per area, files.csv, export.json and README.txt', () => {
-  const photo = 'https://firebasestorage.googleapis.com/v0/b/b/o/organizations%2Fo1%2Fbranding%2Flogo.png?alt=media&token=t'
+  const photo = 'https://firebasestorage.googleapis.com/v0/b/b/o/organizations%2Fo1%2Fbranding%2Fcompany_logo%2Flogo.png?alt=media&token=t'
   const entries = companyExportEntries({
     organizationId: 'o1',
     organization: {
@@ -301,7 +326,11 @@ test('the zip holds one CSV per area, files.csv, export.json and README.txt', ()
   assert.ok(!all.includes('cus_secret'), 'Stripe id left out')
 
   const files = parseCsv(entries['files.csv'].slice(1))
-  assert.deepEqual(files[1], ['organizations', 'o1', 'companyLogoURL', 'organizations/o1/branding/logo.png', photo])
+  // 1.72.0 (owner decision 23 Nov, C): name, kind and storage path only; no download URL anywhere in the zip.
+  assert.deepEqual(files[0], ['collectionPath', 'documentId', 'field', 'name', 'kind', 'storagePath'])
+  assert.deepEqual(files[1], ['organizations', 'o1', 'companyLogoURL', 'logo.png', 'company_logo', 'organizations/o1/branding/company_logo/logo.png'])
+  assert.ok(!all.includes('firebasestorage.googleapis.com'), 'no download URL in any file')
+  assert.ok(!all.includes('token=t'), 'no download token in any file')
 
   const json = JSON.parse(entries['export.json'])
   assert.equal(json.exportedAt, '2026-07-01T14:00:00+01:00')

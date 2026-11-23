@@ -57,7 +57,9 @@ async function seed() {
     await user(ADMIN, { role: 'admin', adminAccess: true, isSuperAdmin: true })
     await user(MGR, { role: 'manager', manager: true, assignedManagerUserIds: [ADMIN] })
     await user(OTHER, { role: 'manager', manager: true, assignedManagerUserIds: [ADMIN] })
-    await user(OP, { role: 'operative', operativeMode: true, assignedManagerUserIds: [MGR] })
+    // 1.72.0: a person's line manager may delete their bookings (timesheet review ✕), so OP's line manager is the admin
+    // here and these tests keep testing the job-manager rule.
+    await user(OP, { role: 'operative', operativeMode: true, assignedManagerUserIds: [ADMIN] })
     await setDoc(doc(d, 'organizations', ORG, 'projects', 'job1'), { name: 'Riverside', managerUserIds: [MGR], managerIds: [MGR] })
     await setDoc(doc(d, 'organizations', ORG, 'projects', 'job2'), { name: 'Hilltop', managerUserIds: [OTHER], managerIds: [OTHER] })
     await setDoc(doc(d, 'organizations', ORG, 'bookings', 'OLD1'), labour('OLD1', 'job1'))
