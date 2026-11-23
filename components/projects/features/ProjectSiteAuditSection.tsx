@@ -6,11 +6,11 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { format } from 'date-fns'
+import { usePathname, useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useSiteAuditStore } from '@/lib/stores/siteAuditStore'
 import { isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { EmptyState, LoadingSpinner } from '@/components/dashboard/PageShell'
-import { SiteAuditCreateFlow } from '@/components/projects/siteAudit/SiteAuditCreateFlow'
 import { UnsentSiteAudits } from '@/components/site-audit/UnsentSiteAudits'
 import { buildSiteAuditPdfContextFromProject, openSiteAuditPdf } from '@/lib/siteAudit/siteAuditPdf'
 import type { Project, SiteAudit } from '@/types'
@@ -106,9 +106,12 @@ export function ProjectSiteAuditSection({ project }: { project: Project }) {
   const { organization, user } = useAuthStore()
   const { audits, loading, loadAudits } = useSiteAuditStore()
   const [typeFilter, setTypeFilter] = useState<SiteAuditTypeFilter>('All')
-  const [showCreate, setShowCreate] = useState(false)
   const [selectedAudit, setSelectedAudit] = useState<SiteAudit | null>(null)
   const canCreate = !isOperativeMode(user) || user?.permissions.siteAudit === true
+  // New site audit is its own page (owner request 23 Nov), under this job's Site audits.
+  const router = useRouter()
+  const pathname = usePathname() || ''
+  const openNewAudit = () => router.push(`${pathname.replace(/\/+$/, '')}/new`)
 
   useEffect(() => {
     if (organization?.id) loadAudits(organization.id)
@@ -151,7 +154,7 @@ export function ProjectSiteAuditSection({ project }: { project: Project }) {
         {canCreate && (
           <button
             type="button"
-            onClick={() => setShowCreate(true)}
+            onClick={openNewAudit}
             className="ml-auto inline-flex h-9 w-9 items-center justify-center rounded-full bg-(--blue) text-white shadow-md hover:bg-[#134d88]"
             aria-label="New site audit"
           >
@@ -168,14 +171,6 @@ export function ProjectSiteAuditSection({ project }: { project: Project }) {
         <FilterChipsRow chips={chips} selected={typeFilter} onSelect={setTypeFilter} />
       </div>
 
-      {showCreate && organization?.id && (
-        <SiteAuditCreateFlow
-          project={project}
-          onClose={() => setShowCreate(false)}
-          onCreated={() => loadAudits(organization.id)}
-        />
-      )}
-
       <div className="mt-4">
         <UnsentSiteAudits kind="project" projectId={project.id} />
       </div>
@@ -189,7 +184,7 @@ export function ProjectSiteAuditSection({ project }: { project: Project }) {
             <p className="mt-3 text-sm font-medium text-slate-700">No site audits</p>
             <p className="mt-1 text-xs text-slate-500">Create your first audit for this project.</p>
             {canCreate && (
-              <button type="button" onClick={() => setShowCreate(true)} className="mt-4 text-sm font-semibold text-(--blue)">
+              <button type="button" onClick={openNewAudit} className="mt-4 text-sm font-semibold text-(--blue)">
                 + New audit
               </button>
             )}

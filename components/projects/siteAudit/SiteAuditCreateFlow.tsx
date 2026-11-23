@@ -8,37 +8,34 @@ import { SITE_AUDIT_TYPES } from '@/components/projects/features/featureUi'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { prepareAuditPhoto } from '@/lib/siteAudit/prepareAuditPhoto'
 import type { Project } from '@/types'
-import { isPlausibleDayKey } from '@/lib/security/boundedValue'
 import { uploadLimitError, uploadPickError } from '@/lib/security/uploadLimits'
 import { sendSiteAudit, useSiteAuditOutbox } from '@/lib/siteAudit/siteAuditSender'
-import { SITE_AUDIT_FIELD_LABELS, siteAuditFieldLimitError } from '@/lib/canonical'
+import { SITE_AUDIT_FIELD_LABELS } from '@/lib/canonical'
 import { SiteAuditFieldCounter } from '@/components/site-audit/SiteAuditFieldCounter'
-import type { SiteAuditOutboxRecord } from '@/lib/siteAudit/siteAuditOutbox'
 import { uploadSummary, type PhotoUpload } from '@/lib/siteAudit/auditPhotoUploads'
+import { siteAuditDraftProblem, siteAuditOutboxRecord, type SiteAuditDraftItem } from '@/lib/siteAudit/siteAuditCreateDraft'
+import { SiteAuditSteps } from '@/components/site-audit/SiteAuditSteps'
 
-type DraftItem = {
-  id: string
-  title: string
-  location: string
-  comments: string
-  assignee: string
-  annotations: string
-  photo: File
-  previewUrl: string
-  takenAt: Date
-  detailsAdded: boolean
-}
+type DraftItem = SiteAuditDraftItem
 
 type Props = {
   project: Project
+  /** Leave the page (Cancel, or after the audit is saved). */
   onClose: () => void
   onCreated: () => void
+  /** The page let the person pick the job (step 1): Back from Details returns to it. */
+  onChangeJob?: () => void
 }
 
-export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
+/**
+ * New site audit, steps 2–4 of the page (owner request 23 Nov): Details, Photos, Review & save. Step 1 (the job) is
+ * the page's. Fields, checks, the record and the save are exactly the former dialog's (`siteAuditDraftProblem`,
+ * `siteAuditOutboxRecord`, `sendSiteAudit`).
+ */
+export function SiteAuditCreateFlow({ project, onClose, onCreated, onChangeJob }: Props) {
   const { organization, user } = useAuthStore()
 
-  const [step, setStep] = useState<1 | 2>(1)
+  const [step, setStep] = useState<2 | 3 | 4>(2)
   const [auditType, setAuditType] = useState('General')
   const [customTitle, setCustomTitle] = useState('')
   const [auditDate, setAuditDate] = useState(() => format(new Date(), 'yyyy-MM-dd'))
@@ -151,57 +148,47 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
     })
   }
 
+  /** The save's own checks; a photo without a title takes the person back to it. */
+  const blockingProblem = () => {
+    const problem = siteAuditDraftProblem({ items, customTitle, auditDate })
+    if (!problem) return false
+    if (problem.itemId) {
+      const itemId = problem.itemId
+      setStep(3)
+      window.setTimeout(() => cardRefs.current[itemId]?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 40)
+    }
+    setError(problem.message)
+    return true
+  }
+
+  const goToReview = () => {
+    if (blockingProblem()) return
+    setError(null)
+    setStep(4)
+  }
+
   const submit = async () => {
     if (!organization?.id || !user) return
-    if (items.length === 0) {
-      setError('Add at least one photo.')
-      return
-    }
-    const missing = items.find((item) => !item.title.trim())
-    if (missing) {
-      cardRefs.current[missing.id]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      setError('Each photo needs a title before the audit can be saved.')
-      return
-    }
-    const limitError =
-      siteAuditFieldLimitError({ customTitle }) ??
-      items.map((item) => siteAuditFieldLimitError(item)).find((message) => message) ??
-      null
-    if (limitError) {
-      setError(limitError)
-      return
-    }
-    if (!isPlausibleDayKey(auditDate)) {
-      setError('Enter a valid audit date.')
-      return
-    }
+    if (blockingProblem()) return
 
     setSaving(true)
     setError(null)
     // Owner bug 17 Nov: the audit (text, items, photos) is kept in this browser BEFORE any upload, so a stuck or
     // failed photo never loses it. It stays listed as "Not sent" with Retry until the save succeeds.
-    const record: SiteAuditOutboxRecord = {
-      id: auditId,
-      kind: 'project',
+    const record = siteAuditOutboxRecord({
+      auditId,
       organizationId: organization.id,
       userId: user.id,
-      createdAtMs: Date.now(),
-      updatedAtMs: Date.now(),
-      project: { id: project.id, jobNumber: project.jobNumber, siteName: project.siteName },
-      meta: { type: auditType, customTitle: customTitle.trim(), date: auditDate, authorName, visibleToOperatives },
-      items: items.map((item) => ({
-        id: item.id,
-        title: item.title.trim(),
-        location: item.location.trim(),
-        comments: item.comments.trim(),
-        assignee: item.assignee.trim(),
-        annotations: item.annotations.trim(),
-        takenAtMs: item.takenAt.getTime(),
-        photo: item.photo,
-        fileName: item.photo.name,
-        upload: uploads[item.id] ?? { itemId: item.id, status: 'pending', progress: 0, attempts: 0 },
-      })),
-    }
+      nowMs: Date.now(),
+      project,
+      auditType,
+      customTitle,
+      auditDate,
+      authorName,
+      visibleToOperatives,
+      items,
+      uploads,
+    })
     const result = await sendSiteAudit(record)
     setSaving(false)
     if (result.saved) {
@@ -214,16 +201,22 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
-      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-(--card) p-4 shadow-xl">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <p className="text-base font-bold text-(--ink)">New site audit</p>
-            <p className="text-xs text-(--ink3)">Step {step} of 2 · {project.siteName}</p>
+    <div className="space-y-4">
+      <SiteAuditSteps current={step} />
+      <div className="pu-card sa-new-card">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-(--ink3)">Job</p>
+            <p className="truncate text-sm font-bold text-(--ink)">
+              {project.jobNumber ? `${project.jobNumber} · ` : ''}
+              {project.siteName}
+            </p>
           </div>
-          <button type="button" onClick={onClose} className="text-(--ink3)" aria-label="Close">
-            ✕
-          </button>
+          {onChangeJob && step === 2 ? (
+            <button type="button" onClick={onChangeJob} className="pu-btn sm">
+              Change job
+            </button>
+          ) : null}
         </div>
 
         {saving ? (
@@ -233,7 +226,7 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
         ) : null}
         {error ? <p className="mb-3 rounded-lg bg-(--red-t) px-3 py-2 text-xs font-medium text-(--red)">{error}</p> : null}
 
-        {step === 1 ? (
+        {step === 2 ? (
           <div className="space-y-4">
             <div>
               <FormLabel>Audit type</FormLabel>
@@ -273,11 +266,16 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
               Visible to operatives
             </label>
             <p className="text-xs text-(--ink3)">Ops working on this job can view it.</p>
-            <button type="button" onClick={() => setStep(2)} className="w-full rounded-xl bg-(--blue) py-2.5 text-sm font-bold text-white">
-              Next: add items and photos
-            </button>
+            <div className="flex gap-2">
+              <button type="button" onClick={onClose} className="rounded-xl border border-(--line) px-4 py-2.5 text-sm text-(--ink2)">
+                Cancel
+              </button>
+              <button type="button" onClick={() => setStep(3)} className="flex-1 rounded-xl bg-(--blue) py-2.5 text-sm font-bold text-white">
+                Next: add items and photos
+              </button>
+            </div>
           </div>
-        ) : (
+        ) : step === 3 ? (
           <div className="space-y-4">
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-bold text-(--ink)">Items · {items.length}</h3>
@@ -371,7 +369,67 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
             </div>
 
             <div className="flex gap-2" id="audit-submit">
-              <button type="button" onClick={() => setStep(1)} className="rounded-xl border border-(--line) px-4 py-2.5 text-sm text-(--ink2)">
+              <button type="button" onClick={() => setStep(2)} className="rounded-xl border border-(--line) px-4 py-2.5 text-sm text-(--ink2)">
+                Back
+              </button>
+              <button
+                type="button"
+                disabled={saving || preparing}
+                onClick={goToReview}
+                className="flex-1 rounded-xl bg-(--blue) py-2.5 text-sm font-bold text-white disabled:opacity-50"
+              >
+                Next: review
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <h3 className="text-sm font-bold text-(--ink)">Review</h3>
+            <dl className="sa-review-list">
+              <div>
+                <dt>Audit type</dt>
+                <dd>{auditType}</dd>
+              </div>
+              {customTitle.trim() ? (
+                <div>
+                  <dt>Title</dt>
+                  <dd>{customTitle.trim()}</dd>
+                </div>
+              ) : null}
+              <div>
+                <dt>Author</dt>
+                <dd>{authorName}</dd>
+              </div>
+              <div>
+                <dt>Date</dt>
+                <dd>{auditDate}</dd>
+              </div>
+              <div>
+                <dt>Visible to operatives</dt>
+                <dd>{visibleToOperatives ? 'Yes' : 'No'}</dd>
+              </div>
+            </dl>
+            <h3 className="text-sm font-bold text-(--ink)">Items · {items.length}</h3>
+            <ul className="space-y-2">
+              {items.map((item, index) => (
+                <li key={item.id} className="flex items-center gap-3 rounded-xl border border-(--line) p-2">
+                  <img src={item.previewUrl} alt="" className="h-14 w-14 shrink-0 rounded-lg object-cover" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-bold tracking-wide text-(--ink3)">PHOTO {index + 1}</p>
+                    <p className="truncate text-sm font-semibold text-(--ink)">{item.title.trim()}</p>
+                    {item.location.trim() ? <p className="truncate text-xs text-(--ink3)">{item.location.trim()}</p> : null}
+                    <PhotoUploadLine upload={photoState(item.id)} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => setStep(3)}
+                className="rounded-xl border border-(--line) px-4 py-2.5 text-sm text-(--ink2) disabled:opacity-50"
+              >
                 Back
               </button>
               <button

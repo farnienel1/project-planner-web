@@ -3,14 +3,23 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { format, formatDistanceToNow } from 'date-fns'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useSiteAuditStore } from '@/lib/stores/siteAuditStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { deriveWorkStatus } from '@/lib/projects/workStatus'
-import { worksInTab, worksListMembership } from '@/lib/canonical'
+import { jobWorkStatus, worksInTab, worksListMembership, worksTab, type WorksTab } from '@/lib/canonical'
 import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { SiteAuditCreateFlow } from '@/components/projects/siteAudit/SiteAuditCreateFlow'
 import { UnsentSiteAudits } from '@/components/site-audit/UnsentSiteAudits'
+import { SiteAuditSteps } from '@/components/site-audit/SiteAuditSteps'
+import { Chip, PageBand, PageShell, SegmentedTabs } from '@/components/ui/page'
+import {
+  SITE_AUDIT_JOB_DEFAULT_TAB,
+  SITE_AUDIT_JOB_TABS,
+  siteAuditJobTabCounts,
+  siteAuditJobsInTab,
+} from '@/lib/siteAudit/siteAuditCreateDraft'
 import { ErrorBanner, LoadingSpinner } from '@/components/dashboard/PageShell'
 import {
   buildSiteAuditPdfContextFromProject,
@@ -694,12 +703,23 @@ export function SiteAuditScreen() {
   return null
 }
 
+const SITE_AUDIT_JOB_TAB_LABELS = { active: 'Active', upcoming: 'Upcoming', completed: 'Completed' } as const
+
+/**
+ * New site audit as its own page (owner request 23 Nov), step by step: 1 Job (projects or small works under All /
+ * Active / Upcoming / Completed, default Active — `worksInTab` / `worksTabCounts` on the organisation day), then the
+ * create flow's Details, Photos and Review & save. Cancel and a saved audit return to Site audit.
+ */
 export function SiteAuditNewScreen() {
+  const router = useRouter()
   const { organization } = useAuthStore()
   const { loadProjects, loadSmallWorks, projects, smallWorks } = useProjectStore()
   const { loadAudits } = useSiteAuditStore()
+  const timeZone = useOrganizationTimeZone()
   const [source, setSource] = useState<'projects' | 'small-works'>('projects')
+  const [tab, setTab] = useState<WorksTab>(SITE_AUDIT_JOB_DEFAULT_TAB)
   const [createProject, setCreateProject] = useState<Project | null>(null)
+  const [nowMs] = useState(() => Date.now())
 
   useEffect(() => {
     if (!organization?.id) return
@@ -709,70 +729,72 @@ export function SiteAuditNewScreen() {
 
   // Rulebook 1.21.0 (`worksListMembership`): every document of the catalogue, live or not.
   const list = source === 'projects' ? worksListMembership(projects, 'projects') : worksListMembership(smallWorks, 'smallWorks')
+  const counts = useMemo(() => siteAuditJobTabCounts(list, nowMs, timeZone), [list, nowMs, timeZone])
+  const shown = useMemo(() => siteAuditJobsInTab(list, tab, nowMs, timeZone), [list, tab, nowMs, timeZone])
+  const leave = () => router.push('/dashboard/site-audit')
 
   return (
-    <div className="mx-auto max-w-xl space-y-4 pb-10">
-      <div className="flex items-center gap-3">
-        <Link
-          href="/dashboard/site-audit"
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-xs hover:bg-slate-50"
-          aria-label="Back"
-        >
-          <svg className="h-4 w-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </Link>
-        <div>
-          <h1 className="text-xl font-bold text-slate-900">New site audit</h1>
-          <p className="text-sm text-slate-500">Choose a project to attach this audit to</p>
-        </div>
-      </div>
-
-      <div className="flex gap-1 rounded-2xl border border-slate-200 bg-slate-100 p-1">
-        {(['projects', 'small-works'] as const).map((key) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setSource(key)}
-            className={`flex-1 rounded-xl py-2 text-xs font-bold capitalize transition-all ${
-              source === key ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500'
-            }`}
-          >
-            {key === 'small-works' ? 'Small works' : 'Projects'}
-          </button>
-        ))}
-      </div>
-
-      <div className="space-y-2">
-        {list.length === 0 ? (
-          <p className="py-8 text-center text-sm text-slate-400">No jobs available</p>
-        ) : (
-          list.map((project) => (
-            <button
-              key={project.id}
-              type="button"
-              onClick={() => setCreateProject(project)}
-              className="w-full card px-4 py-3.5 text-left shadow-xs hover:border-slate-300 hover:shadow-md!"
-            >
-              <span className="rounded-sm bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
-                {project.jobNumber}
-              </span>
-              <p className="mt-1 text-sm font-bold text-slate-900">{project.siteName}</p>
-            </button>
-          ))
-        )}
-      </div>
-
-      {createProject && organization?.id && (
+    <PageShell>
+      <PageBand
+        eyebrow="Site audit"
+        title="New site audit"
+        subtitle={createProject ? undefined : 'Choose a project to attach this audit to'}
+        back={{ label: 'Site audit', onClick: leave }}
+      />
+      {createProject && organization?.id ? (
         <SiteAuditCreateFlow
           project={createProject}
-          onClose={() => setCreateProject(null)}
+          onClose={leave}
+          onChangeJob={() => setCreateProject(null)}
           onCreated={() => {
             loadAudits(organization.id)
-            setCreateProject(null)
           }}
         />
+      ) : (
+        <div className="space-y-4">
+          <SiteAuditSteps current={1} />
+          <div className="flex flex-wrap gap-2">
+            <SegmentedTabs
+              ariaLabel="Job type"
+              value={source}
+              onChange={setSource}
+              items={[
+                { id: 'projects', label: 'Projects' },
+                { id: 'small-works', label: 'Small works' },
+              ]}
+            />
+            <SegmentedTabs
+              ariaLabel="Filter jobs"
+              value={tab}
+              onChange={setTab}
+              items={SITE_AUDIT_JOB_TABS.map((option) => ({ id: option.tab, label: option.label, count: counts[option.tab] }))}
+            />
+          </div>
+          <div className="space-y-2">
+            {shown.length === 0 ? (
+              <p className="py-8 text-center text-sm text-(--ink3)">No jobs available</p>
+            ) : (
+              shown.map((project) => {
+                const jobTab = worksTab(jobWorkStatus(project, nowMs, timeZone))
+                return (
+                  <button key={project.id} type="button" onClick={() => setCreateProject(project)} className="sa-job-row">
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-2">
+                        {project.jobNumber ? <Chip tone="blue">{project.jobNumber}</Chip> : null}
+                        <Chip tone={jobTab === 'active' ? 'green' : 'slate'}>{SITE_AUDIT_JOB_TAB_LABELS[jobTab]}</Chip>
+                      </span>
+                      <span className="mt-1 block truncate text-sm font-bold">{project.siteName}</span>
+                    </span>
+                    <span aria-hidden="true" className="text-(--ink3)">
+                      ›
+                    </span>
+                  </button>
+                )
+              })
+            )}
+          </div>
+        </div>
       )}
-    </div>
+    </PageShell>
   )
 }
