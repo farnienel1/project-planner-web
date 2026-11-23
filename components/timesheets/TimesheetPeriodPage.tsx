@@ -374,7 +374,9 @@ export function TimesheetPeriodPage({
   const [hoursOtOpened, setHoursOtOpened] = useState('')
   const [reviewNotice, setReviewNotice] = useState<string | null>(null)
   // Rulebook 1.76.0 (A1): the reviewer pressed Make changes on a signed-off sheet (nothing is written until they edit).
-  const [makingChanges, setMakingChanges] = useState(false)
+  // Review of #427 (finding 2): held as the counter-signature it was pressed on, so it ends by itself once that sheet
+  // reopens (first change), is signed off again, is exported or another sheet opens.
+  const [makingChangesFor, setMakingChangesFor] = useState<number | null>(null)
   const [editingExtra, setEditingExtra] = useState<{
     type: 'expense' | 'priceWork'
     /** Rulebook 1.54.0: a late extra (decided in the review map with `lateExtra`). */
@@ -561,14 +563,23 @@ export function TimesheetPeriodPage({
     managerSignedByName: draft.managerSignedByName ?? '',
     exportedAt: draft.exportedAt ?? null,
     revision: draft.revision ?? null,
+    // Review of #427 (finding 9): a revision is also known by the original it corrects.
+    revisionOf: latestVersion && latestVersion.revision > 0 ? latestVersion.baseDocumentId : null,
+    // Review of #427 (finding 1): the signed copy's lines — one signed before 1.46.0 cannot tell a changed booking.
+    weeklyReportOverride: draft.weeklyReportOverride ?? null,
   }
-  const makeChangesAction = timesheetMakeChangesAction(makeChangesSheet, {
+  const makeChangesInput = {
     viewerIsReviewer: mode === 'review' && Boolean(viewer) && viewerIsReviewer,
     viewerIsSubject: mode === 'mine',
     selfSigned: sheetSelfSigned,
     change: bookingChange,
     revisionAllowed: mode === 'review' && revisionCheck.allowed,
-  })
+  }
+  const makeChangesAction = timesheetMakeChangesAction(makeChangesSheet, makeChangesInput)
+  const makeChangesHelp = timesheetMakeChangesHelp(makeChangesAction, makeChangesSheet, makeChangesInput)
+  const signedOffMs = draft.managerSignedAt ? new Date(draft.managerSignedAt).getTime() : null
+  const makingChanges = makeChangesAction === 'reopenReview' && makingChangesFor != null && makingChangesFor === signedOffMs
+  const setMakingChanges = (on: boolean) => setMakingChangesFor(on ? signedOffMs : null)
   // A1: after Make changes, ⚙ / ✕ edit the bookings until the first change reopens the review (then the normal review
   // applies). B1: on an open revision the person has not signed yet, the reviewer may change its bookings.
   const reviewerBookingEditsOpen =
@@ -1359,6 +1370,8 @@ export function TimesheetPeriodPage({
       }
       setManagerSignOpen(false)
       setSignature(null)
+      // Review of #427 (finding 2): signed off again — Make changes starts closed.
+      setMakingChanges(false)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to counter-sign')
     } finally {
@@ -1690,6 +1703,10 @@ export function TimesheetPeriodPage({
       ) : null}
       {error ? <Note tone="red" role="alert">{error}</Note> : null}
       {reviewNotice ? <Note tone="green" role="status">{reviewNotice}</Note> : null}
+      {/* Review of #427 (finding 7): while only ⚙ / ✕ are open on a signed-off sheet, say what they do above the lines. */}
+      {makingChanges && makeChangesAction === 'reopenReview' ? (
+        <Note tone="amber" role="status">{TIMESHEET_MAKE_CHANGES_ACTIVE_NOTE}</Note>
+      ) : null}
       {/* Rulebook 1.76.0 (B1): the reviewer may change an open revision's bookings before the person signs it. */}
       {reviewerBookingEditsOpen && !canManagerReview && makeChangesAction !== 'reopenReview' ? (
         <Note tone="info">{TIMESHEET_REVISION_REVIEWER_EDIT_NOTE}</Note>
@@ -2090,12 +2107,21 @@ export function TimesheetPeriodPage({
                       </>
                     ) : (
                       <div className="pu-col" style={{ gap: 6 }}>
-                        <PuButton variant="primary" block disabled={busy || !payInputs.ready} onClick={() => setMakingChanges(true)}>
+                        {/* Review of #427 (finding 3): only once the bookings and the person's ids have loaded (as iOS). */}
+                        <PuButton
+                          variant="primary"
+                          block
+                          disabled={busy || !payInputs.ready || !bookingsLoaded || bookingsFailed || !operativesLoaded}
+                          onClick={() => setMakingChanges(true)}
+                        >
                           {TIMESHEET_MAKE_CHANGES_LABEL}
                         </PuButton>
-                        <p className="pu-sub">{timesheetMakeChangesHelp(makeChangesAction)}</p>
+                        <p className="pu-sub">{makeChangesHelp}</p>
                       </div>
                     )
+                  ) : makeChangesHelp ? (
+                    // Review of #427 (finding 1): a sheet signed before 1.46.0 — corrected after export, in a revision.
+                    <p className="pu-sub">{makeChangesHelp}</p>
                   ) : (
                     <p className="pu-sub">{SIGNED_OFF_EDIT_NOTE}</p>
                   )}

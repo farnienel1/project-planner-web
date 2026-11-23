@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.74.0 → 1.76.0
-Packed hash: 7a4a78effd04ccd19f8ec7e2a0999e65ad0a9fa1ceab5d53ffccec10e48e09bf
-Rulebook sha256: 6e1549f82a933c7560dd7e4690852a49d65a93caa49543b7ccfec34fec8fa7c4
+Rulebook version: 1.76.0 → 1.76.0
+Packed hash: 02b4e5e7393275e1c93cd4e5082257f61050ff35586652ff46e154858a85626e
+Rulebook sha256: 4fa3ee8cb08b626eda5bc902bfaae6a31ea5dce269210c53a31c9450741302be
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,12 +22,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 926b910948b674b1fa259e8f933ddd15f14bad00b8e0b050ccbd88c723bf64aa
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: TIMESHEET_MAKE_CHANGES_ACTIVE_NOTE, TIMESHEET_MAKE_CHANGES_CANCEL_LABEL, TIMESHEET_MAKE_CHANGES_LABEL, TIMESHEET_MAKE_CHANGES_REOPEN_HELP, TIMESHEET_MAKE_CHANGES_REVISION_HELP, TIMESHEET_REVISION_REVIEWER_EDIT_NOTE, timesheetMakeChangesAction, timesheetMakeChangesHelp, timesheetRevisionReviewerMayEditBookings
+Exports added: TIMESHEET_MAKE_CHANGES_OLD_SHEET_HELP, timesheetSignedCopyTracksBookings
 Exports removed: none
 Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/timesheetMakeChanges.ts
 Done when:
-- [ ] Packed hash in iOS equals 7a4a78effd04ccd19f8ec7e2a0999e65ad0a9fa1ceab5d53ffccec10e48e09bf
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 6e1549f82a933c7560dd7e4690852a49d65a93caa49543b7ccfec34fec8fa7c4)
+- [ ] Packed hash in iOS equals 02b4e5e7393275e1c93cd4e5082257f61050ff35586652ff46e154858a85626e
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 4fa3ee8cb08b626eda5bc902bfaae6a31ea5dce269210c53a31c9450741302be)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.76.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -36,7 +36,7 @@ Done when:
 
 ## What changed in 1.76.0
 
-- **"Make changes" on a timesheet** (§8, owner decisions 23 Nov, A1 and B1): new `timesheetMakeChangesAction`, `timesheetMakeChangesHelp`, `timesheetRevisionReviewerMayEditBookings`, types `TimesheetMakeChangesAction`, `TimesheetMakeChangesInput`, copy `TIMESHEET_MAKE_CHANGES_LABEL`, `TIMESHEET_MAKE_CHANGES_REOPEN_HELP`, `TIMESHEET_MAKE_CHANGES_REVISION_HELP`, `TIMESHEET_MAKE_CHANGES_ACTIVE_NOTE`, `TIMESHEET_MAKE_CHANGES_CANCEL_LABEL`, `TIMESHEET_REVISION_REVIEWER_EDIT_NOTE` (`lib/canonical/timesheetMakeChanges.ts`). A1: on a signed-off, unexported sheet the reviewer reopens the review on the page (nothing written), changes bookings with ⚙ / ✕ (recorded in `reviewerBookingEdits`, 1.74.0), and signs it off again; the person never signs again and is told "changed and signed off". B1: on an exported sheet the button is the former "Create revision" (1.55.0, unchanged), and the reviewer may change an open revision's bookings before the person signs it. Web: the review page's Signed off panel and revision panel. No rule, data or figure changes otherwise; `TIMESHEET_CREATE_REVISION_LABEL` / `_HELP` kept for older builds.
+- **"Make changes" on a timesheet** (§8, owner decisions 23 Nov, A1 and B1): new `timesheetMakeChangesAction`, `timesheetMakeChangesHelp`, `timesheetRevisionReviewerMayEditBookings`, types `TimesheetMakeChangesAction`, `TimesheetMakeChangesInput`, copy `TIMESHEET_MAKE_CHANGES_LABEL`, `TIMESHEET_MAKE_CHANGES_REOPEN_HELP`, `TIMESHEET_MAKE_CHANGES_REVISION_HELP`, `TIMESHEET_MAKE_CHANGES_ACTIVE_NOTE`, `TIMESHEET_MAKE_CHANGES_CANCEL_LABEL`, `TIMESHEET_REVISION_REVIEWER_EDIT_NOTE`, `timesheetSignedCopyTracksBookings`, `TIMESHEET_MAKE_CHANGES_OLD_SHEET_HELP` (`lib/canonical/timesheetMakeChanges.ts`). A1: on a signed-off, unexported sheet the reviewer reopens the review on the page (nothing written), changes bookings with ⚙ / ✕ (recorded in `reviewerBookingEdits`, 1.74.0), and signs it off again; the person never signs again and is told "changed and signed off". B1: on an exported sheet the button is the former "Create revision" (1.55.0, unchanged), and the reviewer may change an open revision's bookings before the person signs it. Web: the review page's Signed off panel and revision panel. No rule, data or figure changes otherwise; `TIMESHEET_CREATE_REVISION_LABEL` / `_HELP` kept for older builds. Review of #427: no button on a signed-off sheet whose signed copy has labour lines without `bookingFingerprint` (signed before 1.46.0) or no signed copy — a help line says to export and revise instead; the making-changes state ends with its counter-signature; the button waits for the bookings to load.
 
 ## iOS work for 1.76.0
 
@@ -50,9 +50,11 @@ No new `minimumIosBuild` raise beyond 1.74.0's (an iPhone before 1.74 does not r
 
 **B1. Exported sheet.** The reviewer's "Create revision" button reads `TIMESHEET_MAKE_CHANGES_LABEL` with `timesheetMakeChangesHelp(.createRevision)`; on the open revision, before the person signs, ⚙ / ✕ are offered (`timesheetRevisionReviewerMayEditBookings`) with `TIMESHEET_REVISION_REVIEWER_EDIT_NOTE`.
 
-## New rulebook sections
+**Review of #427 (built on iOS #278 too):**
+- Pass the signed copy to `timesheetMakeChangesAction` (`weeklyReportOverride.lines` with `bookingFingerprint`, `isLeave`, `isPayeDay`, `reviewPartOf`): a sheet signed before 1.46.0 (or with no signed copy) gets no button; show `timesheetMakeChangesHelp(nil, sheet, input)` (`TIMESHEET_MAKE_CHANGES_OLD_SHEET_HELP`) instead.
+- Clear "making changes" when the action is no longer `reopenReview` and after counter-signing; hide the old "Signed off. Once exported…" caption while the action is `reopenReview` or the old-sheet help shows.
+- Pass `revisionOf` (the original's id) as well as `revision` to `timesheetRevisionReviewerMayEditBookings`.
 
-- 1.76.0 — 2026-11-23
 
 ## Workflow for the iOS agent
 

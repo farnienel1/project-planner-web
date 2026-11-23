@@ -30,6 +30,13 @@ export const TIMESHEET_MAKE_CHANGES_REVISION_HELP =
 export const TIMESHEET_MAKE_CHANGES_ACTIVE_NOTE =
   'Making changes: use ⚙ to change a booking or ✕ to remove it. The timesheet stays signed off until you change something; then sign it off again.'
 export const TIMESHEET_MAKE_CHANGES_CANCEL_LABEL = 'Stop making changes'
+/**
+ * Review of #427 (finding 1): a signed-off sheet whose signed copy cannot tell a changed booking (signed before 1.46.0 —
+ * its labour lines carry no `bookingFingerprint` — or no signed copy at all) gets no Make changes: a ⚙ time change would
+ * not reopen it, so it could be exported at the old hours with no way to sign it off again.
+ */
+export const TIMESHEET_MAKE_CHANGES_OLD_SHEET_HELP =
+  'This timesheet was signed before 14 Nov. Export it, then use Make changes to correct it in a revision.'
 /** On a revision the person has not signed yet, for the reviewer. */
 export const TIMESHEET_REVISION_REVIEWER_EDIT_NOTE =
   'You can change or remove this revision’s bookings with ⚙ and ✕ before the person signs it.'
@@ -52,24 +59,64 @@ export type TimesheetMakeChangesInput = {
   revisionAllowed?: boolean | null
 }
 
-/** What the reviewer's "Make changes" button does on this sheet, or null when it is not shown. */
+/**
+ * The signed copy (`weeklyReportOverride.lines`) can tell a changed booking: it exists and every labour line (not leave,
+ * not a PAYE day, not an Edit hours part of another line) carries a `bookingFingerprint` (written from 1.46.0). With no
+ * labour line there is nothing to change.
+ */
+export function timesheetSignedCopyTracksBookings(sheet: Record<string, unknown> | null | undefined): boolean {
+  const override = sheet?.weeklyReportOverride
+  if (!override || typeof override !== 'object') return false
+  const lines = (override as { lines?: unknown }).lines
+  if (!Array.isArray(lines)) return false
+  const labour = lines.filter((line) => {
+    if (!line || typeof line !== 'object') return false
+    const row = line as Record<string, unknown>
+    if (row.isLeave === true || row.isPayeDay === true) return false
+    return !(typeof row.reviewPartOf === 'string' && row.reviewPartOf.trim() !== '')
+  }) as Array<Record<string, unknown>>
+  if (labour.length === 0) return false
+  return labour.every((row) => typeof row.bookingFingerprint === 'string' && row.bookingFingerprint.trim() !== '')
+}
+
+/** Signed off, not exported, not self-signed, not reopened, viewed by a reviewer who is not the person. */
+function signedOffForReview(sheet: Record<string, unknown>, input: TimesheetMakeChangesInput): boolean {
+  if (input.viewerIsReviewer !== true || input.viewerIsSubject === true || input.selfSigned === true) return false
+  if (resolveTimesheetExportedAtMs(sheet) != null) return false
+  const fields = parseTimesheetStatusFields(sheet)
+  if (!isTimesheetOperativeSigned(fields) || !isTimesheetManagerSigned(fields)) return false
+  return input.change?.reopened !== true
+}
+
+/**
+ * What the reviewer's "Make changes" button does on this sheet, or null when it is not shown. `sheet` carries the
+ * signatures, `exportedAt` / `invoiceGeneratedAt` and the signed copy (`weeklyReportOverride`, its lines'
+ * `bookingFingerprint`, `isLeave`, `isPayeDay`, `reviewPartOf`).
+ */
 export function timesheetMakeChangesAction(
   sheet: Record<string, unknown> | null | undefined,
   input: TimesheetMakeChangesInput
 ): TimesheetMakeChangesAction | null {
   if (!sheet || input.viewerIsReviewer !== true || input.viewerIsSubject === true) return null
   if (resolveTimesheetExportedAtMs(sheet) != null) return input.revisionAllowed === true ? 'createRevision' : null
-  if (input.selfSigned === true) return null
-  const fields = parseTimesheetStatusFields(sheet)
-  if (!isTimesheetOperativeSigned(fields) || !isTimesheetManagerSigned(fields)) return null
-  if (input.change?.reopened === true) return null
-  return 'reopenReview'
+  if (!signedOffForReview(sheet, input)) return null
+  return timesheetSignedCopyTracksBookings(sheet) ? 'reopenReview' : null
 }
 
-/** The help text under the button for an action. */
-export function timesheetMakeChangesHelp(action: TimesheetMakeChangesAction | null | undefined): string | null {
+/**
+ * The help text under the button for an action. With no action, pass the sheet and the same input: a signed-off sheet
+ * whose signed copy cannot tell a changed booking (finding 1) reads `TIMESHEET_MAKE_CHANGES_OLD_SHEET_HELP`; otherwise null.
+ */
+export function timesheetMakeChangesHelp(
+  action: TimesheetMakeChangesAction | null | undefined,
+  sheet?: Record<string, unknown> | null,
+  input?: TimesheetMakeChangesInput | null
+): string | null {
   if (action === 'reopenReview') return TIMESHEET_MAKE_CHANGES_REOPEN_HELP
   if (action === 'createRevision') return TIMESHEET_MAKE_CHANGES_REVISION_HELP
+  if (sheet && input && signedOffForReview(sheet, input) && !timesheetSignedCopyTracksBookings(sheet)) {
+    return TIMESHEET_MAKE_CHANGES_OLD_SHEET_HELP
+  }
   return null
 }
 

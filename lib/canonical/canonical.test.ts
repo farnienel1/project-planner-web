@@ -19256,6 +19256,7 @@ const R176_COUNTERSIGNED = {
   operativeSignedByName: 'Jo Bloggs',
   managerSignedAt: '2026-11-20T09:00:00Z',
   managerSignedByName: 'Line Manager',
+  weeklyReportOverride: { approvedAt: '2026-11-20T09:00:00Z', lines: [{ id: 'op-b1', bookingId: 'b1', bookingFingerprint: 'fp-b1' }] },
 }
 
 test('1.76.0: Make changes on a signed-off (not exported) sheet reopens the review, for reviewers only', () => {
@@ -19272,7 +19273,10 @@ test('1.76.0: Make changes on a signed-off (not exported) sheet reopens the revi
   assert.equal(R112.timesheetMakeChangesAction({ managerSignedAt: R176_COUNTERSIGNED.managerSignedAt, managerSignedByName: 'LM' }, reviewer), null)
   // A legacy counter-signature stored as approvedAt counts.
   assert.equal(
-    R112.timesheetMakeChangesAction({ operativeSignedAt: R176_COUNTERSIGNED.operativeSignedAt, operativeSignedByName: 'Jo', approvedAt: R176_COUNTERSIGNED.managerSignedAt }, reviewer),
+    R112.timesheetMakeChangesAction(
+      { operativeSignedAt: R176_COUNTERSIGNED.operativeSignedAt, operativeSignedByName: 'Jo', approvedAt: R176_COUNTERSIGNED.managerSignedAt, weeklyReportOverride: R176_COUNTERSIGNED.weeklyReportOverride },
+      reviewer
+    ),
     'reopenReview'
   )
   // Self-signed: nobody counter-signs it.
@@ -19340,4 +19344,38 @@ test('1.76.0 (B1): a reviewer may change an open revision\'s bookings until the 
   // Exported, or an original sheet: never.
   assert.equal(R112.timesheetRevisionReviewerMayEditBookings({ ...rev, exportedAt: '2026-11-23T08:00:00Z' }, r), false)
   assert.equal(R112.timesheetRevisionReviewerMayEditBookings({}, r), false)
+})
+
+test('1.76.0 review of #427 (finding 1): a signed copy that cannot tell a changed booking gets no Make changes, only a help line', () => {
+  const reviewer = { viewerIsReviewer: true }
+  const old = { ...R176_COUNTERSIGNED, weeklyReportOverride: { approvedAt: R176_COUNTERSIGNED.managerSignedAt, lines: [{ id: 'op-b1', bookingId: 'b1' }] } }
+  assert.equal(R112.timesheetSignedCopyTracksBookings(old), false)
+  assert.equal(R112.timesheetMakeChangesAction(old, reviewer), null)
+  assert.equal(R112.timesheetMakeChangesHelp(null, old, reviewer), R112.TIMESHEET_MAKE_CHANGES_OLD_SHEET_HELP)
+  // One labour line without a fingerprint is enough; leave, PAYE-day and Edit-hours part lines do not count.
+  const mixed = {
+    ...R176_COUNTERSIGNED,
+    weeklyReportOverride: {
+      lines: [
+        { id: 'op-b1', bookingId: 'b1', bookingFingerprint: 'fp' },
+        { id: 'leave', isLeave: true },
+        { id: 'paye', isPayeDay: true },
+        { id: 'op-b1-ot', reviewPartOf: 'op-b1' },
+      ],
+    },
+  }
+  assert.equal(R112.timesheetMakeChangesAction(mixed, reviewer), 'reopenReview')
+  const oneOld = { ...R176_COUNTERSIGNED, weeklyReportOverride: { lines: [{ id: 'a', bookingFingerprint: 'fp' }, { id: 'b', bookingId: 'b2' }] } }
+  assert.equal(R112.timesheetMakeChangesAction(oneOld, reviewer), null)
+  // No signed copy at all, or no labour line: no button either.
+  const { weeklyReportOverride: _omit, ...noCopy } = R176_COUNTERSIGNED
+  void _omit
+  assert.equal(R112.timesheetMakeChangesAction(noCopy, reviewer), null)
+  assert.equal(R112.timesheetMakeChangesAction({ ...R176_COUNTERSIGNED, weeklyReportOverride: { lines: [] } }, reviewer), null)
+  // Exported old sheets keep createRevision; the help line is only for a signed-off, unexported sheet a reviewer sees.
+  const exportedOld = { ...old, exportedAt: '2026-11-21T08:00:00Z' }
+  assert.equal(R112.timesheetMakeChangesAction(exportedOld, { viewerIsReviewer: true, revisionAllowed: true }), 'createRevision')
+  assert.equal(R112.timesheetMakeChangesHelp(null, exportedOld, reviewer), null)
+  assert.equal(R112.timesheetMakeChangesHelp(null, old, { viewerIsReviewer: false }), null)
+  assert.equal(R112.timesheetMakeChangesHelp(null, old, { ...reviewer, change: { reopened: true } }), null)
 })

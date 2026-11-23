@@ -501,9 +501,11 @@ export {
   TIMESHEET_MAKE_CHANGES_REVISION_HELP,
   TIMESHEET_MAKE_CHANGES_ACTIVE_NOTE,
   TIMESHEET_MAKE_CHANGES_CANCEL_LABEL,
+  TIMESHEET_MAKE_CHANGES_OLD_SHEET_HELP,
   TIMESHEET_REVISION_REVIEWER_EDIT_NOTE,
   timesheetMakeChangesAction,
   timesheetMakeChangesHelp,
+  timesheetSignedCopyTracksBookings,
   timesheetRevisionReviewerMayEditBookings,
 } from './timesheetMakeChanges'
 export {

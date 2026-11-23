@@ -1,7 +1,7 @@
 {
   "rulebookVersion": "1.76.0",
-  "rulebookSha256": "6e1549f82a933c7560dd7e4690852a49d65a93caa49543b7ccfec34fec8fa7c4",
-  "bundleSha256": "7a4a78effd04ccd19f8ec7e2a0999e65ad0a9fa1ceab5d53ffccec10e48e09bf",
+  "rulebookSha256": "4fa3ee8cb08b626eda5bc902bfaae6a31ea5dce269210c53a31c9450741302be",
+  "bundleSha256": "02b4e5e7393275e1c93cd4e5082257f61050ff35586652ff46e154858a85626e",
   "crossPlatformContractSha256": "926b910948b674b1fa259e8f933ddd15f14bad00b8e0b050ccbd88c723bf64aa",
   "dataParityFixtureSha256": "c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f",
   "exports": [
@@ -579,6 +579,7 @@
     "TIMESHEET_MAKE_CHANGES_ACTIVE_NOTE",
     "TIMESHEET_MAKE_CHANGES_CANCEL_LABEL",
     "TIMESHEET_MAKE_CHANGES_LABEL",
+    "TIMESHEET_MAKE_CHANGES_OLD_SHEET_HELP",
     "TIMESHEET_MAKE_CHANGES_REOPEN_HELP",
     "TIMESHEET_MAKE_CHANGES_REVISION_HELP",
     "TIMESHEET_MANAGER_SIGN_OFF_FIELDS",
@@ -1876,6 +1877,7 @@
     "timesheetSheetHasActivity",
     "timesheetSheetIsRevision",
     "timesheetSignOffWriteFields",
+    "timesheetSignedCopyTracksBookings",
     "timesheetSignedEntryKeys",
     "timesheetSignedNoticeText",
     "timesheetSignedRecipients",
