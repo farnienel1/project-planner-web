@@ -211,3 +211,18 @@ export function retainScopedRows<T extends { id: string }>(
   return retainLoadedRows(withoutRemoved(previous), withoutRemoved(next), options)
 }
 
+
+/** Rows left once a person this session deleted is taken off the roster (by id, never by name or email). */
+export function rosterWithoutUser<T extends { id: string }>(rows: readonly T[], userId: string): T[] {
+  return rows.filter((row) => row.id !== userId)
+}
+
+/**
+ * Whether a users document read that failed (for example permission-denied) still counts as "gone".
+ * Only when this session itself deleted that person: once a users document is deleted the rules can no
+ * longer show it to us, so a refusal there is expected. Any other refused read keeps the person on the
+ * roster (never hide old data because of a denied read, rulebook §1).
+ */
+export function failedReadConfirmsMissing(userId: string, deletedThisSession: ReadonlySet<string>): boolean {
+  return deletedThisSession.has(userId)
+}
