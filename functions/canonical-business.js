@@ -90,6 +90,8 @@ var ProjectPlannerCanonical = (() => {
     CROSS_PLATFORM_CONTRACT_READERS: () => CROSS_PLATFORM_CONTRACT_READERS,
     CURRENCY_OPTIONS: () => CURRENCY_OPTIONS,
     CUSTOM_HOURS_BREAK_WARNING: () => CUSTOM_HOURS_BREAK_WARNING,
+    DAILY_OVERVIEW_STANDARD_HOURS_LABEL: () => DAILY_OVERVIEW_STANDARD_HOURS_LABEL,
+    DAILY_OVERVIEW_WEEKEND_WINDOW_HOURS_LABEL: () => DAILY_OVERVIEW_WEEKEND_WINDOW_HOURS_LABEL,
     DATA_CHECK_PANEL_ORGANIZATION_IDS_FIELD: () => DATA_CHECK_PANEL_ORGANIZATION_IDS_FIELD,
     DATA_CHECK_PANEL_SWITCH_FIELD: () => DATA_CHECK_PANEL_SWITCH_FIELD,
     DATA_PARITY_CHECKS: () => DATA_PARITY_CHECKS,
@@ -222,6 +224,8 @@ var ProjectPlannerCanonical = (() => {
     JOB_TYPES_DOCUMENT_ID: () => JOB_TYPES_DOCUMENT_ID,
     KNOWN_NOTIFICATION_TYPES: () => KNOWN_NOTIFICATION_TYPES,
     LAUNCH_COUNTRY_CODES: () => LAUNCH_COUNTRY_CODES,
+    LEAVE_CLASH_WARNING_TITLE: () => LEAVE_CLASH_WARNING_TITLE,
+    LEAVE_COVER_WARNING_TITLE: () => LEAVE_COVER_WARNING_TITLE,
     LEAVE_SUBMIT_LABEL: () => LEAVE_SUBMIT_LABEL,
     LEAVE_SUBMIT_REQUEST_LABEL: () => LEAVE_SUBMIT_REQUEST_LABEL,
     LEAVE_YEAR_MONTHS_MESSAGE: () => LEAVE_YEAR_MONTHS_MESSAGE,
@@ -747,6 +751,7 @@ var ProjectPlannerCanonical = (() => {
     applyEmploymentTypeChange: () => applyEmploymentTypeChange,
     applyRemainingOverride: () => applyRemainingOverride,
     approvedWarningKeys: () => approvedWarningKeys,
+    assignedQualificationExpiries: () => assignedQualificationExpiries,
     assignedQualificationWriteFields: () => assignedQualificationWriteFields,
     authClaimsCoverOrganization: () => authClaimsCoverOrganization,
     authClaimsEqual: () => authClaimsEqual,
@@ -899,6 +904,7 @@ var ProjectPlannerCanonical = (() => {
     customHoursPrefillForDays: () => customHoursPrefillForDays,
     dailyOverviewLeaveRows: () => dailyOverviewLeaveRows,
     dailyOverviewScopeFor: () => dailyOverviewScopeFor,
+    dailyOverviewStandardHoursLabel: () => dailyOverviewStandardHoursLabel,
     dataCheckPanelEnabled: () => dataCheckPanelEnabled,
     dataCheckPanelVisible: () => dataCheckPanelVisible,
     dataParityCheck: () => dataParityCheck,
@@ -1598,6 +1604,7 @@ var ProjectPlannerCanonical = (() => {
     personDayItems: () => personDayItems,
     personDedupeKey: () => personDedupeKey,
     personIdSet: () => personIdSet,
+    personQualifications: () => personQualifications,
     personalSiteAuditEvidence: () => personalSiteAuditEvidence,
     personalSiteAuditImagePath: () => personalSiteAuditImagePath,
     personalSiteAuditPdfRows: () => personalSiteAuditPdfRows,
@@ -1625,6 +1632,7 @@ var ProjectPlannerCanonical = (() => {
     qualificationCertificateUrl: () => qualificationCertificateUrl,
     qualificationDismissKey: () => qualificationDismissKey,
     qualificationExpiryCount: () => qualificationExpiryCount,
+    qualificationExpiryDate: () => qualificationExpiryDate,
     qualificationExpiryRows: () => qualificationExpiryRows,
     qualificationLibraryFilterChips: () => qualificationLibraryFilterChips,
     qualificationMatchesSection: () => qualificationMatchesSection,
@@ -2005,6 +2013,7 @@ var ProjectPlannerCanonical = (() => {
     wholesalerWriteFields: () => wholesalerWriteFields,
     windowCoverage: () => windowCoverage,
     withDerivedWeekdayPaidHours: () => withDerivedWeekdayPaidHours,
+    withQualificationExpiry: () => withQualificationExpiry,
     withoutDismissedQualificationRows: () => withoutDismissedQualificationRows,
     withoutLockedPermissionWrites: () => withoutLockedPermissionWrites,
     workDocuments: () => workDocuments,
@@ -7071,6 +7080,8 @@ var ProjectPlannerCanonical = (() => {
   }
 
   // lib/canonical/leaveCoverage.ts
+  var LEAVE_CLASH_WARNING_TITLE = "Booked during annual leave";
+  var LEAVE_COVER_WARNING_TITLE = "Half-day unbooked";
   function leaveSlotKind(timeSlot) {
     const kind = namedSlotKind(timeSlot);
     if (kind === "AM") return "AM";
@@ -7192,7 +7203,7 @@ var ProjectPlannerCanonical = (() => {
             missingHours: 0,
             bookedHours: hoursOf(mergeMinuteIntervals(intervals.map((entry) => entry.interval))),
             severity: "high",
-            title: "Booked during annual leave",
+            title: LEAVE_CLASH_WARNING_TITLE,
             message: `${personName} is booked ${bookedText} on ${longDay} while on ${leaveText}.`
           });
         }
@@ -7232,7 +7243,7 @@ var ProjectPlannerCanonical = (() => {
           missingHours,
           bookedHours,
           severity: "medium",
-          title: "Half-day leave not covered",
+          title: LEAVE_COVER_WARNING_TITLE,
           message
         });
       }
@@ -8497,6 +8508,87 @@ var ProjectPlannerCanonical = (() => {
     const fileName = trimId(input.fileName);
     if (!organizationId || !operativeId || !qualificationId || !fileName) return null;
     return `organizations/${organizationId}/operatives/${operativeId}/qualifications/${qualificationId}/certificates/${fileName}`;
+  }
+  function expiryDateFromUnknown(value) {
+    if (value instanceof Date) return Number.isNaN(value.getTime()) ? void 0 : value;
+    if (typeof value === "number" && Number.isFinite(value)) return new Date(value);
+    if (typeof value === "string" && value.trim()) {
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? void 0 : parsed;
+    }
+    return void 0;
+  }
+  function qualificationExpiryDate(dates, qualificationId) {
+    if (!dates) return void 0;
+    const id2 = trimId(qualificationId);
+    if (!id2) return void 0;
+    const direct = expiryDateFromUnknown(dates[id2]);
+    if (direct) return direct;
+    const target = id2.toLowerCase();
+    for (const [key7, value] of Object.entries(dates)) {
+      if (key7.toLowerCase() === target) {
+        const date = expiryDateFromUnknown(value);
+        if (date) return date;
+      }
+    }
+    return void 0;
+  }
+  function withQualificationExpiry(dates, qualificationId, date) {
+    const id2 = trimId(qualificationId);
+    const target = id2.toLowerCase();
+    const next = {};
+    for (const [key7, value] of Object.entries(dates || {})) {
+      if (key7.toLowerCase() !== target) next[key7] = value;
+    }
+    if (date && target) next[id2] = date;
+    return next;
+  }
+  function assignedQualificationExpiries(row3) {
+    if (!row3) return [];
+    const seen = /* @__PURE__ */ new Set();
+    return (row3.qualifications || []).flatMap((qualification) => {
+      const qualificationId = trimId(qualification?.id);
+      const name = String(qualification?.name || "");
+      if (!qualificationId || !name || seen.has(qualificationId.toLowerCase())) return [];
+      seen.add(qualificationId.toLowerCase());
+      const expiry = qualificationExpiryDate(row3.qualificationExpiryDates, qualificationId);
+      if (!expiry) return [];
+      return [{ qualificationId, name, expiryIso: expiry.toISOString() }];
+    });
+  }
+  function rowWeight(row3) {
+    return (row3.qualifications?.length ?? 0) + Object.keys(row3.qualificationExpiryDates || {}).length + Object.keys(row3.qualificationCertificateURLs || {}).length;
+  }
+  function personQualifications(input) {
+    const preferred = trimId(input.preferredRowId).toLowerCase();
+    const rows3 = [...input.rows || []].filter((row3) => row3 && trimId(row3.id)).sort((a, b) => {
+      if (a.isActive !== false !== (b.isActive !== false)) return a.isActive !== false ? -1 : 1;
+      const ap = trimId(a.id).toLowerCase() === preferred ? 1 : 0;
+      const bp = trimId(b.id).toLowerCase() === preferred ? 1 : 0;
+      if (ap !== bp) return bp - ap;
+      return rowWeight(b) - rowWeight(a);
+    });
+    const out = /* @__PURE__ */ new Map();
+    for (const row3 of rows3) {
+      for (const qual of row3.qualifications || []) {
+        const id2 = trimId(qual?.id);
+        const key7 = id2.toLowerCase();
+        if (!key7) continue;
+        const expiry = qualificationExpiryDate(row3.qualificationExpiryDates, id2);
+        const certificateUrl = qualificationCertificateUrl(row3.qualificationCertificateURLs || void 0, id2);
+        const current = out.get(key7);
+        if (!current) {
+          out.set(key7, { id: id2, name: String(qual?.name ?? ""), expiry, certificateUrl, operativeId: row3.id });
+          continue;
+        }
+        if (!current.expiry && expiry) current.expiry = expiry;
+        if (!current.certificateUrl && certificateUrl) {
+          current.certificateUrl = certificateUrl;
+          current.operativeId = row3.id;
+        }
+      }
+    }
+    return [...out.values()];
   }
 
   // lib/canonical/materialDelivery.ts
@@ -14017,8 +14109,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.72.0" : "",
-      sha256: true ? "4eba9b741022d9303794dc8dfb3089fa69d47e12b8ccb27433b8dc6f7c7bda29" : ""
+      version: true ? "1.73.0" : "",
+      sha256: true ? "834aa9fc370e44ba5d9e0a52c228cce52f2ceafb14b5c54a37080429227df6a5" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -21226,6 +21318,18 @@ var ProjectPlannerCanonical = (() => {
       return { hours: total, label: `${hoursText2(total)} (${parts3})` };
     }
     return { hours: total, label: hoursText2(total) };
+  }
+  var DAILY_OVERVIEW_STANDARD_HOURS_LABEL = "Standard hrs";
+  var DAILY_OVERVIEW_WEEKEND_WINDOW_HOURS_LABEL = "Weekend window hrs";
+  function dailyOverviewStandardHoursLabel(input) {
+    const standard = { label: DAILY_OVERVIEW_STANDARD_HOURS_LABEL, hint: null };
+    if (input.loaded === false || !input.policyOrState) return standard;
+    const key7 = String(input.dayKey || "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(key7)) return standard;
+    const policy = isPolicyState2(input.policyOrState) ? payrollTimePolicyForDayFromState(input.policyOrState, key7) : input.policyOrState;
+    const window = weekendCustomHoursDefault(policy, key7, input.timeZone);
+    if (!window) return standard;
+    return { label: DAILY_OVERVIEW_WEEKEND_WINDOW_HOURS_LABEL, hint: `${window.start}\u2013${window.end} counts as a full day` };
   }
 
   // lib/canonical/bookingHoursBreakdown.ts

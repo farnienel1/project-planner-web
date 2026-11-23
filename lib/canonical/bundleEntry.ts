@@ -64,7 +64,13 @@ export {
   warningDayKeyIsDated,
 } from './warningSort'
 
-export { leaveCoverageRows, leaveCoverBookingWindow, leaveSlotKind } from './leaveCoverage'
+export {
+  LEAVE_CLASH_WARNING_TITLE,
+  LEAVE_COVER_WARNING_TITLE,
+  leaveCoverageRows,
+  leaveCoverBookingWindow,
+  leaveSlotKind,
+} from './leaveCoverage'
 
 export {
   canEditWorkCatalogue,
@@ -188,8 +194,12 @@ export {
   mergeOperativeQualificationWrite,
   mergeQualificationCertificateUrls,
   qualificationCertificateStoragePath,
+  assignedQualificationExpiries,
+  personQualifications,
   qualificationCertificateUrl,
+  qualificationExpiryDate,
   removedQualificationCertificateIds,
+  withQualificationExpiry,
 } from './operativeQualifications'
 
 export {
@@ -1065,6 +1075,9 @@ export {
   customHoursPrefillForDays,
   weekendBookingBreakdown,
   weekendCustomHoursDefault,
+  DAILY_OVERVIEW_STANDARD_HOURS_LABEL,
+  DAILY_OVERVIEW_WEEKEND_WINDOW_HOURS_LABEL,
+  dailyOverviewStandardHoursLabel,
   bookingRequestIdentity,
   isSameBookingRequest,
   bookingHoursLabel,

@@ -23,7 +23,7 @@ import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
 import { Chip } from '@/components/ui/page'
 import { ProfileIcon } from '@/components/users/profile-ui'
 import { safeExternalUrl } from '@/lib/canonical/uploadPolicy'
-import { qualificationExpiryDate, withQualificationExpiry } from '@/lib/qualifications/personQualifications'
+import { qualificationExpiryDate, withQualificationExpiry } from '@/lib/canonical/operativeQualifications'
 
 type LinkedOperative = Operative
 

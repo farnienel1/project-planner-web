@@ -23,7 +23,15 @@ import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
 import { canViewDailyOverview, hasAdminAccess } from '@/lib/permissions'
 import { dateFromDayKey, dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
 import { formatWarningHours } from '@/lib/warnings/clashIntervals'
-import { formatClockMinutes, leaveHalfDayLabel, overtimeTotalText, type JOB_SCHEDULE_LEGEND, type ScheduleCellTone } from '@/lib/canonical'
+import {
+  dailyOverviewStandardHoursLabel,
+  formatClockMinutes,
+  LEAVE_COVER_WARNING_TITLE,
+  leaveHalfDayLabel,
+  overtimeTotalText,
+  type JOB_SCHEDULE_LEGEND,
+  type ScheduleCellTone,
+} from '@/lib/canonical'
 import { Card, Chip, DataTable, EmptyState, IconTile, Note, PageBand, PageShell, PuButton, StatRow, WarnIcon, type PuTone } from '@/components/ui/page'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { watchSubcontractorBookings } from '@/lib/weekly-report/loadSubcontractorBookings'
@@ -45,7 +53,6 @@ import {
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { overviewHolidayName as holidayName, overviewPersonName as personName } from '@/lib/daily-overview/dailyOverviewToday'
 import { useDailyOverviewModel } from '@/lib/daily-overview/useDailyOverviewModel'
-import { dailyOverviewStandardHoursLabel } from '@/lib/daily-overview/standardHoursLabel'
 
 export function DailyOverviewScreen() {
   const router = useRouter()
@@ -129,7 +136,12 @@ export function DailyOverviewScreen() {
   const canBook = Boolean(user && (hasAdminAccess(user) || user.permissions?.manager))
   const dateParam = dayKey(day)
   // Owner decision 23 Nov (item 31): on a set-window weekend day the figure is the window's hours (wording only).
-  const standardHoursLabel = dailyOverviewStandardHoursLabel(payrollPolicy, dayKey(day, orgTimeZone), orgTimeZone, settingsLoaded)
+  const standardHoursLabel = dailyOverviewStandardHoursLabel({
+    policyOrState: payrollPolicy,
+    dayKey: dayKey(day, orgTimeZone),
+    timeZone: orgTimeZone,
+    loaded: settingsLoaded,
+  })
   const mayPublish = dailyOverviewMayPublish({
     bookingsLoading,
     bookingCount: bookings.length,
@@ -381,7 +393,7 @@ export function DailyOverviewScreen() {
 
             {mayPublish && model.leaveCoverRows.length > 0 ? (
               <Card
-                title="Half-day leave not covered"
+                title={LEAVE_COVER_WARNING_TITLE}
                 icon={
                   <IconTile tone="amber" size="sm">
                     <WarnIcon />

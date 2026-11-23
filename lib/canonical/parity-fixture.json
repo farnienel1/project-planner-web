@@ -13619,7 +13619,7 @@
           "missingHours": 0.25,
           "bookedHours": 3.5,
           "severity": "medium",
-          "title": "Half-day leave not covered",
+          "title": "Half-day unbooked",
           "message": "Op One has AM annual leave on Wednesday 4 November. The PM (10:30–14:30) is only booked 11:00–14:30; 10:45–11:00 (0.25 hours) is not booked."
         }
       ]
