@@ -36,6 +36,7 @@ import { normalizeDocumentId } from './scheduleSources'
 import { bookingOccupiesDay } from './warningRows'
 import { leaveDaysInRange } from './leaveRequests'
 import { parseClockMinutes } from './engine'
+import { formerPersonForId, formerPersonLabel, type FormerPersonInput } from './formerPeople'
 
 // MARK: - Inputs
 
@@ -951,11 +952,17 @@ export function weeklyReportLeaveRows(input: {
   range: { start: string; end: string }
   timeZone?: string | null
   nonWorkingDayKeys?: ReadonlyArray<string> | null
-}): { rows: WeeklyReportLeaveRow[]; total: number; unmatched: Array<{ recordId: string; userId: string | null; operativeId: string | null }> } {
+  /** 1.70.0: the organisation's former-person records (`deletedPeople`); a match reads "Former: Jane Smith". */
+  formerPeople?: ReadonlyArray<FormerPersonInput> | null
+}): {
+  rows: WeeklyReportLeaveRow[]
+  total: number
+  unmatched: Array<{ recordId: string; userId: string | null; operativeId: string | null; formerPersonId?: string }>
+} {
   const zone = zoneOrLondon(input.timeZone)
   const personFor = leavePersonMatcher(input.people)
   const rows = new Map<string, WeeklyReportLeaveRow>()
-  const unmatched: Array<{ recordId: string; userId: string | null; operativeId: string | null }> = []
+  const unmatched: Array<{ recordId: string; userId: string | null; operativeId: string | null; formerPersonId?: string }> = []
   for (const record of input.records || []) {
     if (!record || String(record.status ?? 'approved').toLowerCase() !== 'approved') continue
     const days = leaveDaysInRange(
@@ -968,10 +975,17 @@ export function weeklyReportLeaveRows(input: {
     const person = personFor(record)
     if (!person) {
       const missingId = String(record.userId || record.operativeId || record.id || '').trim()
-      unmatched.push({ recordId: record.id, userId: record.userId ?? null, operativeId: record.operativeId ?? null })
+      // 1.70.0: a deleted person kept as a former-person record (§11, 1.59.0) reads "Former: Jane Smith".
+      const former = leaveRecordFormerPerson(record, input.formerPeople)
+      unmatched.push({
+        recordId: record.id,
+        userId: record.userId ?? null,
+        operativeId: record.operativeId ?? null,
+        ...(former ? { formerPersonId: former.id } : {}),
+      })
       const stored = String(record.userName ?? '').trim()
-      const name = stored || `${WEEKLY_REPORT_PERSON_NOT_FOUND} (id ${missingId})`
-      const key = `missing:${idKey(missingId)}`
+      const name = former ? formerPersonLabel(former.displayName) : stored || `${WEEKLY_REPORT_PERSON_NOT_FOUND} (id ${missingId})`
+      const key = former ? `former:${idKey(former.id)}` : `missing:${idKey(missingId)}`
       const row = rows.get(key) ?? { personId: null, person: name, role: '—', days: 0, type: 'Approved', found: false }
       row.days = round2(row.days + days)
       rows.set(key, row)
@@ -995,6 +1009,30 @@ function leavePersonMatcher(people: ReadonlyArray<WeeklyReportLeavePerson> | nul
     }
   }
   return (record: Pick<WeeklyReportLeaveRecord, 'userId' | 'operativeId'>) => byId.get(idKey(record.userId)) ?? byId.get(idKey(record.operativeId)) ?? null
+}
+
+/**
+ * Rulebook 1.70.0 §7, §11: the former person (`deletedPeople`, `formerPersonForId`) a leave record that matches no
+ * current person belongs to — by its `userId`, else its `operativeId`, else a `userId` that is the record's email
+ * (without case; older iOS builds stored the email) — or null. Never used when a current person
+ * matches (a live person always wins).
+ */
+export function leaveRecordFormerPerson<T extends FormerPersonInput>(
+  record: Pick<WeeklyReportLeaveRecord, 'userId' | 'operativeId'> | null | undefined,
+  formerPeople: ReadonlyArray<T> | null | undefined
+): T | null {
+  if (!record || !formerPeople?.length) return null
+  const byId = formerPersonForId(record.userId, formerPeople) ?? formerPersonForId(record.operativeId, formerPeople)
+  if (byId) return byId
+  // Older iOS builds stored the account's email as the leave `userId` (§10): match the record's email without case.
+  const email = String(record.userId ?? '').trim().toLowerCase()
+  if (!email.includes('@')) return null
+  let found: T | null = null
+  for (const person of formerPeople) {
+    if (!person || String(person.email ?? '').trim().toLowerCase() !== email) continue
+    if (!found || (person.deletedAtMs ?? 0) > (found.deletedAtMs ?? 0)) found = person
+  }
+  return found
 }
 
 /**

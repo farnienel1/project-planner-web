@@ -13,6 +13,7 @@
  */
 
 import { isBookingUuid } from './bookings'
+import { documentInstantMs } from './peopleDocuments'
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
@@ -158,19 +159,37 @@ export type PushPayloadRow = {
   catalogue?: unknown
   userId?: unknown
   organizationId?: unknown
+  /** 1.70.0: the person the notice is about (a timesheet's subject, an overtime requester), not the recipient. */
+  deepLinkUserId?: unknown
+  /** 1.70.0: the timesheet period's start instant (any stored instant shape; sent as epoch ms). */
+  deepLinkWeekStart?: unknown
 }
 
-/** The keys of the push data payload, in order. */
-export const PUSH_PAYLOAD_KEYS = ['notificationId', 'type', 'relatedId', 'dayKey', 'catalogue', 'userId', 'organizationId'] as const
+/**
+ * The keys of the push data payload, in order. 1.70.0 adds `deepLinkUserId` and `deepLinkWeekStartMs` (the row's
+ * deep-link fields), so a tapped push opens the same sheet as tapping the row: `userId` stays the recipient.
+ */
+export const PUSH_PAYLOAD_KEYS = [
+  'notificationId',
+  'type',
+  'relatedId',
+  'dayKey',
+  'catalogue',
+  'userId',
+  'organizationId',
+  'deepLinkUserId',
+  'deepLinkWeekStartMs',
+] as const
 
 /**
  * The device push data payload for an inbox row: `notificationId`, `type`, `relatedId`, `dayKey`, `catalogue`,
- * `userId`, `organizationId` — string values only (FCM data), a missing value left out. A tapped push routes with the
+ * `userId` (the recipient), `organizationId`, and (1.70.0) `deepLinkUserId` / `deepLinkWeekStartMs` — string values only (FCM data), a missing value left out. A tapped push routes with the
  * same fields as tapping the row in the notification centre, and `organizationId` names the row's company
  * (`notificationOrganizationSwitch`).
  */
 export function pushPayloadFields(row: PushPayloadRow | null | undefined): Record<string, string> {
   const source = row || {}
+  const weekStartMs = documentInstantMs(source.deepLinkWeekStart)
   const values: Record<string, string> = {
     notificationId: text(source.notificationId) || text(source.id),
     type: text(source.type),
@@ -179,6 +198,8 @@ export function pushPayloadFields(row: PushPayloadRow | null | undefined): Recor
     catalogue: text(source.catalogue) === 'projects' || text(source.catalogue) === 'smallWorks' ? text(source.catalogue) : '',
     userId: text(source.userId),
     organizationId: text(source.organizationId),
+    deepLinkUserId: text(source.deepLinkUserId),
+    deepLinkWeekStartMs: weekStartMs == null ? '' : String(weekStartMs),
   }
   const out: Record<string, string> = {}
   for (const key of PUSH_PAYLOAD_KEYS) if (values[key]) out[key] = values[key]

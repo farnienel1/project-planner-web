@@ -1,3 +1,4 @@
+import type { FormerPersonInput } from '@/lib/canonical/formerPeople'
 import { personRateHistoryIds } from '@/lib/pay/personRateHistoryIds'
 import {
   bookingOccupiesDay,
@@ -263,6 +264,7 @@ export function buildWeeklyReportData({
   viewer = null,
   showAllPay = false,
   bankHolidayDayKeys = [],
+  formerPeople = [],
 }: {
   organizationName: string
   companyLogoURL?: string
@@ -294,6 +296,8 @@ export function buildWeeklyReportData({
   showAllPay?: boolean
   /** Rulebook 1.53.0 (B7): the region's bank holidays (day keys); a bank holiday inside a leave record is not leave. */
   bankHolidayDayKeys?: readonly string[]
+  /** Rulebook 1.70.0 §7, §11: former-person records (`deletedPeople`); their leave reads "Former: Jane Smith". */
+  formerPeople?: ReadonlyArray<FormerPersonInput>
 }): WeeklyReportData {
   const payroll = orgDetails?.payrollTimePolicy
   const timeZone = organizationTimeZone(orgDetails?.countryCode)
@@ -677,6 +681,7 @@ export function buildWeeklyReportData({
     range,
     timeZone,
     nonWorkingDayKeys: bankHolidayDayKeys,
+    formerPeople,
   })
   const annualLeaveRows: WeeklyReportLeaveRow[] = leave.rows.map((row) => ({ person: row.person, role: row.role, days: row.days, type: row.type }))
   const annualLeaveTotal = leave.total

@@ -25,6 +25,7 @@ import { buildWeeklyReportData } from '@/lib/weekly-report/weeklyReportData'
 import { PAY_PROFILES_FAILED_MESSAGE, retryPayProfiles, usePayProfilesStatus, usePayStatusOf } from '@/lib/pay/usePayProfilesStatus'
 import { reportGatePeople, reportPayGate } from '@/lib/pay/reportPayGate'
 import { useOrgBankHolidays } from '@/components/annual-leave/useOrgBankHolidays'
+import { useFormerPeople } from '@/lib/people/formerPeople'
 import type {
   SubcontractorBookingRow,
   WeeklyReportApprovedClashRow,
@@ -250,10 +251,13 @@ export function WeeklyReportScreen({
   // prices (`pricedUserIds`: its bookings, approved weeks and timesheets in the range) are waited for. Someone with no
   // bookings in the range (offline, added since the last read) never blocks it.
   const orgPayReady = payStatusOrg === 'ready'
+  // Rulebook 1.70.0 §7, §11: leave of a deleted person reads "Former: Jane Smith" (`weeklyReportLeaveRows`).
+  const formerPeople = useFormerPeople(organizationId)
   const candidateReport = useMemo(() => {
     if (!period || !bank.loaded || !orgPayReady) return null
     return buildWeeklyReportData({
       bankHolidayDayKeys,
+      formerPeople,
       organizationName,
       companyLogoURL,
       period,
@@ -280,6 +284,7 @@ export function WeeklyReportScreen({
     orgPayReady,
     bank.loaded,
     bankHolidayDayKeys,
+    formerPeople,
     timesheetSheets,
     viewer,
     period,

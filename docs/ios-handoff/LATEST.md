@@ -1,6 +1,6 @@
-# iOS follow-on — rulebook 1.69.0
+# iOS follow-on — rulebook 1.70.0
 
-Generated 2026-11-19 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
+Generated 2026-11-23 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
 
 ```
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.68.0 → 1.69.0
-Packed hash: 107d8df52b9357ae55ce7ccdf8e47d935d9efd7a7392af369c26033f102b9cf9
-Rulebook sha256: 2fce853e759b853496ba8ae78e58d2aea3727027edf7858d56f33b67cb406026
+Rulebook version: 1.69.0 → 1.70.0
+Packed hash: efee84b78eb80578f56a2375cf8e45a8b2959cbc1402102392200a19ada72155
+Rulebook sha256: b26fd60f67100b1cb3c3ef4fc4d5f17c5a5251edef1e444a6c95c27dbd1d3409
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,26 +22,37 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 926b910948b674b1fa259e8f933ddd15f14bad00b8e0b050ccbd88c723bf64aa
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: bookingHoursBreakdownDays, bookingHoursBreakdownRows
+Exports added: OVERLAPPING_BOOKING_REVIEWER_NOTE, leaveRecordFormerPerson, overlappingBookingNote, timesheetLineDisplay
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bookingHoursBreakdown.test.ts, lib/canonical/bookingHoursBreakdown.ts, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/pushTokens.ts, lib/canonical/timesheetLineDisplay.ts, lib/canonical/timesheetLines.ts, lib/canonical/weeklyReportPay.ts
 Done when:
-- [ ] Packed hash in iOS equals 107d8df52b9357ae55ce7ccdf8e47d935d9efd7a7392af369c26033f102b9cf9
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 2fce853e759b853496ba8ae78e58d2aea3727027edf7858d56f33b67cb406026)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.69.0)
+- [ ] Packed hash in iOS equals efee84b78eb80578f56a2375cf8e45a8b2959cbc1402102392200a19ada72155
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 b26fd60f67100b1cb3c3ef4fc4d5f17c5a5251edef1e444a6c95c27dbd1d3409)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.70.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.69.0
+## What changed in 1.70.0
 
-- **The simple hours breakdown** (§4.3, owner request 17 Nov): new `bookingHoursBreakdownRows` / `bookingHoursBreakdownDays` — one summary line ("06:00–17:30 · 12.25 paid hours") and Normal hours / Overtime / Total paid hours rows with a header "{Day}, {day type}", read only from `payrollHoursResult` (`payrollMultipliedHours`, `payrollLineClockRanges`), so Normal + Overtime = Total = the Save button. The shown rows always add up exactly (Normal = shown Total − shown Overtime, in hundredths). Replaces the long `bookingHoursExplanation` text and the 1.18.0 per-day weekend rows on every booking screen on web (the "Change this booking" sheet, Edit booking, Quick Add, Book labour, My Schedule, the Schedule wizard and its review, the subcontractor booking sheet, Edit hours on a timesheet) and iOS; `bookingHoursExplanation` and `weekendBookingBreakdown` stay for older builds and the Working hours preview. Wording only: no figure, rule or write changes. Renumbered at merge after 1.59.0–1.61.0.
-- **The breakdown rows always add up exactly** (§4.3, owner 17 Nov: the calculation never fails, the text only displays it): `bookingHoursBreakdownRows` shows Total as `totalPaidHours` rounded to the hundredth, Overtime as its paid hours rounded, and Normal as the shown Total less the shown Overtime (a lone row is the Total); `normalPaidHours` / `overtimePaidHours` are the shown figures. Before, Normal and Overtime were each rounded and could differ from Total by 0.01. Display only — no pay-rule value changes. Property test in `canonical.test.ts` (3,000 random working hours, breaks, set-window weekends and rates).
+- **A tapped push opens the right person** (§13): `pushPayloadFields` / `PUSH_PAYLOAD_KEYS` add `deepLinkUserId` and `deepLinkWeekStartMs`; `userId` is still the recipient. iOS routes a push by `deepLinkUserId` first (`timesheet_pending_manager_signoff`, `timesheet_signed_by_manager`, `timesheet_revision_to_sign`, `timesheet_bookings_changed`, `overtime_request_submitted`). The push Cloud Function sends them once redeployed.
+- **Overlap note for reviewers** (§8): `OVERLAPPING_BOOKING_REVIEWER_NOTE`, `overlappingBookingNote({ reviewing })`. The person keeps the old wording.
+- **How a timesheet booking line reads** (§8, owner approved 23 Nov): `timesheetLineDisplay` — job number and name (or the place), and times on every line, a Full day / AM / PM line its window that day. Display only.
+- **Former people's leave** (§7, §11): `leaveRecordFormerPerson` (by id, `operativeId`, or a `userId` that is the record's email without case); `weeklyReportLeaveRows` takes `formerPeople` ("Former: Jane Smith", `unmatched[].formerPersonId`); Data health lists it apart. Web's person delete counts leave under the email and `operativeId` too.
+
+## iOS work for 1.70.0
+
+## iOS work for 1.70.0
+
+1. **Push opens the subject's sheet.** `Navigation/NotificationDeepLink.swift` `payloadFields(from:)` adds `"deepLinkUserId": value("deepLinkUserId")` and `"deepLinkWeekStartMs": value("deepLinkWeekStartMs")` to the row it passes to `pushPayloadFields`; `route(userInfo:user:)` passes `deepLinkUserId: fields?["deepLinkUserId"] ?? <the current targetUserId>` to `notificationDestination` (payload `userId` is the recipient — never the subject). `weekStart(from:)` also reads `deepLinkWeekStartMs` (a string of epoch ms in FCM data) as `Date(timeIntervalSince1970: ms / 1000)`. Covers `timesheet_pending_manager_signoff`, `timesheet_signed_by_manager`, `timesheet_revision_to_sign`, `timesheet_bookings_changed` and `overtime_request_submitted`. The in-app row path (`deepLinkUserId ?? userId`) is already right. Works once the push Cloud Function is redeployed.
+2. **Overlap note.** The timesheet overlap note calls `overlappingBookingNote(reviewing:)` — true when the viewer reviews someone else's sheet (line manager or admin), false on the person's own sheet.
+3. **Timesheet line rows.** Each booking line's title and times come from `timesheetLineDisplay(line, dayPolicy)` (the line's `jobNumber`, `projectName`, `details`, `dayKey`; the working hours in effect that day). Display only — do not change stored line fields, amounts, hours, fingerprints or signed snapshots.
+4. **Weekly report leave.** Pass the organisation's `deletedPeople` records (`parseFormerPersonDocument`) as `formerPeople` to `weeklyReportLeaveRows` so a deleted person's leave reads "Former: Jane Smith".
 
 ## New rulebook sections
 
-- 1.69.0 — 2026-11-19
+- 1.70.0 — 2026-11-23
 
 ## Workflow for the iOS agent
 

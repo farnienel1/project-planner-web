@@ -27,6 +27,17 @@ import { leaveRecordDayKeys, normalizeHolidayStatus, normalizeHolidayTimeSlot, t
 
 export const OVERLAPPING_BOOKING_NOTE = 'Overlaps another booking — check with your manager'
 
+/** 1.70.0 §8: the same flag as the line manager or an admin reviewing someone else's sheet reads it. */
+export const OVERLAPPING_BOOKING_REVIEWER_NOTE = 'Overlaps another booking — check the schedule for this project.'
+
+/**
+ * 1.70.0 §8: the overlap note for the viewer — the person on their own sheet reads `OVERLAPPING_BOOKING_NOTE`; a
+ * reviewer (line manager or admin on someone else's sheet) reads `OVERLAPPING_BOOKING_REVIEWER_NOTE`. Wording only.
+ */
+export function overlappingBookingNote(input: { reviewing?: boolean | null } | null | undefined): string {
+  return input?.reviewing === true ? OVERLAPPING_BOOKING_REVIEWER_NOTE : OVERLAPPING_BOOKING_NOTE
+}
+
 export type OverlapBookingInput = {
   id: string
   /** Bookings are compared within the same day key. Missing → all are one day. */
