@@ -74,6 +74,7 @@ import { bookingRequestIdentity } from '@/lib/canonical/bookingSlots'
 import { managerBookingIdentity, uniqueBookingsById } from '@/lib/scheduling/bookingRequestIdentity'
 import { bookingRowText } from '@/lib/scheduling/bookingRowHours'
 import { feedback } from '@/lib/feedbackSounds/feedback'
+import { myScheduleWeekHeading } from '@/lib/schedule/weekHeading'
 
 /** Labour booked onto this person from Book labour. Shown on the week, not removed from here. */
 export type AssignedScheduleBooking = {
@@ -622,6 +623,7 @@ export function MyScheduleSelfBookingScreen({
   }
 
   const weekRangeText = `${format(weekDates[0], 'd MMM')} – ${format(weekDates[6], 'd MMM')}`
+  const weekHeading = myScheduleWeekHeading(weekDates[0], weekDates[6])
 
   // Canonical `enabledScheduleLocations`: built-ins behind their toggles, custom items honouring customItemEnabled.
   const selfLocations: { key: string; type: ManagerLocationType; name: string; custom?: string }[] =
@@ -762,6 +764,10 @@ export function MyScheduleSelfBookingScreen({
           </div>
         </div>
         <div className="acts">
+          <p className="whitespace-nowrap text-base font-bold text-(--ink)" aria-live="polite">
+            <span className="sr-only">Week shown: </span>
+            {weekHeading}
+          </p>
           <div className="seg">
             <button type="button" aria-label="Previous week" onClick={() => setWeekStart((w) => addDays(w, -7))}>
               ‹

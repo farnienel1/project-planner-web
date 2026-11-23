@@ -14,7 +14,7 @@ import {
   isPast,
   startOfDay,
   differenceInCalendarDays,
-  getWeek,
+  getISOWeek,
 } from 'date-fns'
 import { organizationCalendarWeekEnd, organizationCalendarWeekStart, organizationCurrentWeekStart, organizationTodayCalendarDate } from '@/lib/orgTime/organizationWeek'
 import { isRoleOnlyPersonName } from '@/lib/staff/userRosterUtils'
@@ -31,6 +31,7 @@ import {
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { myScheduleLeaveRecords } from '@/lib/schedule/myScheduleLeave'
+import { myScheduleWeekHeading } from '@/lib/schedule/weekHeading'
 import { policyForBookingDate } from '@/lib/scheduling/bookingSlotRules'
 import { bookingTimesText } from '@/lib/scheduling/bookingRowHours'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
@@ -680,8 +681,7 @@ export function ScheduleScreen({
       <div className="card pad">
         <div className="mb-2 flex items-center justify-between px-1">
           <p className="text-xs font-semibold text-slate-700">
-            Week {getWeek(weekStart)} · {format(weekStart, 'MMM d')} –{' '}
-            {format(organizationCalendarWeekEnd(weekStart), 'MMM d, yyyy')}
+            Week {getISOWeek(weekStart)} · {myScheduleWeekHeading(weekStart, organizationCalendarWeekEnd(weekStart))}
           </p>
           <div className="flex items-center gap-1">
             <button

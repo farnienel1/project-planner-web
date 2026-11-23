@@ -35,6 +35,19 @@ export function getDayKindForBookings(
   return leaveDayKind(calendarRecords(bookings, zone), dueDayKey(day, zone), zone, nonWorkingDayKeys).kind
 }
 
+/**
+ * The same as `getDayKindForBookings` for a day already given as an organisation day key (a calendar cell's
+ * `calendarDayKey`), so a browser in another zone never shifts the day.
+ */
+export function getDayKindForBookingsOnDayKey(
+  dayKey: string,
+  bookings: HolidayBooking[],
+  nonWorkingDayKeys: ReadonlyArray<string> = []
+): AnnualLeaveDayKind {
+  const zone = organizationZoneOr()
+  return leaveDayKind(calendarRecords(bookings, zone), dayKey, zone, nonWorkingDayKeys).kind
+}
+
 export function getDayKindForPerson(
   day: Date,
   allBookings: HolidayBooking[],

@@ -3,7 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
+import { useOrgUserStore, useRosterDocuments } from '@/lib/stores/siteAuditStore'
+import {
+  excludedCurrentPeopleCount,
+  excludedIdsAfterToggle,
+  excludedUsersPickerRows,
+  filterExcludedUsersPickerRows,
+  type ExcludedUsersPickerRow,
+} from '@/lib/settings/excludedUsersPicker'
 import { useOrganizationDocument, useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import {
   DEFAULT_WARNING_DETECTION,
@@ -164,7 +171,8 @@ function InvoicingSchedulePanel({
 
 export function WarningsPanel({ onBack }: { onBack: () => void }) {
   const { organization, user } = useAuthStore()
-  const { users, loadUsers } = useOrgUserStore()
+  const { users, claimedEmails, loadUsers } = useOrgUserStore()
+  const rosterDocuments = useRosterDocuments(organization?.id)
   const requestLeave = useSettingsLeave()
   // The live organisation document is the only source. A draft is kept only while it has unsaved edits.
   const { data: orgData, loaded: orgLoaded } = useOrganizationDocument()
@@ -237,22 +245,17 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
   const coverage: WeekendCoverage = draft.weekendCoverage ?? parseWeekendCoverage(undefined, draft.includeWeekendsForUnbookedLabour)
   const payrollToday = orgData ? effectivePayrollTimePolicy(orgData, todayKey, timeZone) : null
   const excluded = draft.excludedUserIdsFromUnbookedWarnings ?? []
-  const activeUsers = users.filter((u) => u.isActive)
-  const filtered = (() => {
-    const q = search.trim().toLowerCase()
-    const sorted = [...activeUsers].sort((a, b) => personDisplayName(a).localeCompare(personDisplayName(b)))
-    if (!q) return sorted
-    return sorted.filter(
-      (u) => personDisplayName(u).toLowerCase().includes(q) || (u.email ?? '').toLowerCase().includes(q)
-    )
-  })()
+  // Current people only (rulebook roster: no pending invites, inactive or deleted profiles); a saved exclusion that
+  // names nobody current gets its own row so it can be unticked. Nothing is written until Save.
+  const pickerRows = useMemo(
+    () => excludedUsersPickerRows({ users, rosterDocuments, claimedEmails, excludedIds: excluded }),
+    [users, rosterDocuments, claimedEmails, excluded]
+  )
+  const excludedCount = excludedCurrentPeopleCount(pickerRows)
+  const filtered = filterExcludedUsersPickerRows(pickerRows, search)
 
-  function toggleExcluded(id: string) {
-    patch({
-      excludedUserIdsFromUnbookedWarnings: excluded.includes(id)
-        ? excluded.filter((entry) => entry !== id)
-        : [...excluded, id],
-    })
+  function toggleExcluded(row: ExcludedUsersPickerRow) {
+    patch({ excludedUserIdsFromUnbookedWarnings: excludedIdsAfterToggle(excluded, row) })
   }
 
   async function persistDraft() {
@@ -426,9 +429,9 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
           >
             <span>Manage excluded users</span>
             <span className="flex items-center gap-2">
-              {excluded.length > 0 && (
+              {excludedCount > 0 && (
                 <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-700">
-                  {excluded.length}
+                  {excludedCount}
                 </span>
               )}
               <svg
@@ -457,28 +460,29 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
                 <p className="p-4 text-sm text-slate-500">No active users to exclude.</p>
               ) : (
                 <ul className="max-h-72 overflow-y-auto">
-                  {filtered.map((u) => {
-                    const isOn = excluded.includes(u.id)
-                    return (
-                      <li key={u.id}>
-                        <button
-                          type="button"
-                          onClick={() => toggleExcluded(u.id)}
-                          className="flex w-full items-center justify-between px-3.5 py-2.5 text-left hover:bg-slate-50"
-                        >
-                          <span className="min-w-0">
-                            <span className="block truncate text-sm text-slate-900">{personDisplayName(u)}</span>
-                            <span className="block truncate text-xs text-slate-500">{u.email}</span>
+                  {filtered.map((row) => (
+                    <li key={row.key}>
+                      <button
+                        type="button"
+                        onClick={() => toggleExcluded(row)}
+                        className="flex w-full items-center justify-between px-3.5 py-2.5 text-left hover:bg-slate-50"
+                      >
+                        <span className="min-w-0">
+                          <span
+                            className={`block truncate text-sm ${row.kind === 'stored' ? 'italic text-slate-500' : 'text-slate-900'}`}
+                          >
+                            {row.title}
                           </span>
-                          {isOn ? (
-                            <span className="text-xs font-semibold text-emerald-600">Excluded</span>
-                          ) : (
-                            <span className="h-5 w-5 shrink-0 rounded-full border-2 border-slate-300" />
-                          )}
-                        </button>
-                      </li>
-                    )
-                  })}
+                          <span className="block truncate text-xs text-slate-500">{row.subtitle}</span>
+                        </span>
+                        {row.excluded ? (
+                          <span className="text-xs font-semibold text-emerald-600">Excluded</span>
+                        ) : (
+                          <span className="h-5 w-5 shrink-0 rounded-full border-2 border-slate-300" />
+                        )}
+                      </button>
+                    </li>
+                  ))}
                 </ul>
               )}
             </div>

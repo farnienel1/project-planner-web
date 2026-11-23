@@ -16,17 +16,22 @@ import {
   organizationTodayCalendarDate,
 } from '@/lib/orgTime/organizationWeek'
 import type { AnnualLeaveDayKind } from '@/lib/annualLeave/dayStatus'
+import { teamAwayTone, type TeamAwayTone } from '@/lib/annualLeave/teamAway'
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
-export function AnnualLeaveLegend() {
-  const items = [
+/** Team "Who is off" calendar: two or more people away (iOS `AnnualLeavePalette.blue` at ~20%). */
+const TEAM_MANY_AWAY_FILL = 'bg-(--blue)/20'
+
+export function AnnualLeaveLegend({ showTwoOrMoreAway = false }: { showTwoOrMoreAway?: boolean } = {}) {
+  const items: ReadonlyArray<readonly [string, string]> = [
     ['bg-emerald-500', 'Approved'],
     ['bg-emerald-300', 'Half day'],
     ['bg-amber-400', 'Pending'],
     ['bg-violet-400', 'Bank holiday'],
     ['bg-slate-300', 'Weekend'],
-  ] as const
+    ...(showTwoOrMoreAway ? ([[TEAM_MANY_AWAY_FILL, 'Two or more away']] as const) : []),
+  ]
   return (
     <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-(--ink3)">
       {items.map(([swatch, label]) => (
@@ -48,9 +53,10 @@ function dayStyles(
     todayDay: boolean
     weekend: boolean
     bankHoliday: boolean
+    teamTone?: TeamAwayTone
   }
 ): string {
-  const { inMonth, isSelected, isMultiSelected, todayDay, weekend, bankHoliday } = opts
+  const { inMonth, isSelected, isMultiSelected, todayDay, weekend, bankHoliday, teamTone } = opts
   let cls =
     'relative flex h-12 w-full flex-col items-center justify-center rounded-lg text-base font-medium transition-all '
 
@@ -60,6 +66,11 @@ function dayStyles(
   if (isSelected || isMultiSelected) {
     return cls + 'bg-blue-600 font-bold text-white shadow-xs'
   }
+
+  // Team calendar (iOS `teamDayCell`): someone away beats bank holiday / weekend styling. One person: the Approved
+  // green (dark text — fixed colours, AA in both themes); two or more: the blue tint.
+  if (teamTone === 'one') return cls + 'bg-emerald-500 font-semibold text-emerald-950'
+  if (teamTone === 'many') return cls + `${TEAM_MANY_AWAY_FILL} font-semibold text-slate-900`
 
   if (bankHoliday) return cls + 'bg-violet-100 font-semibold text-violet-800'
 
@@ -104,6 +115,7 @@ export function LeaveDayCalendar({
   bankHolidayName,
   onBankHoliday,
   dayCaption,
+  teamAway,
 }: {
   month: Date
   onMonthChange: (d: Date) => void
@@ -115,6 +127,8 @@ export function LeaveDayCalendar({
   bankHolidayName?: (day: Date) => string | null
   onBankHoliday?: (name: string, day: Date) => void
   dayCaption?: (day: Date) => string | null
+  /** Team "Who is off" calendar: the names of the people away on the day (approved leave only, `teamAwayOnDay`). */
+  teamAway?: (day: Date) => ReadonlyArray<string>
 }) {
   // Rulebook §1 (1.36.0, FU-4): the Monday–Sunday organisation week and the organisation's today, not the browser's.
   const start = organizationCalendarWeekStart(startOfMonth(month))
@@ -170,6 +184,7 @@ export function LeaveDayCalendar({
           const holiday = inMonth ? bankHolidayName?.(day) || null : null
           const locked = disableLocked && (kind === 'approvedFull' || kind === 'pendingFull')
           const caption = inMonth ? dayCaption?.(day) : null
+          const awayNames = inMonth && teamAway ? teamAway(day) : []
           const btnClass = dayStyles(kind, {
             inMonth,
             isSelected,
@@ -177,14 +192,20 @@ export function LeaveDayCalendar({
             todayDay,
             weekend,
             bankHoliday: Boolean(holiday),
+            teamTone: teamAway ? teamAwayTone(awayNames.length) : undefined,
           })
+          const label = !inMonth
+            ? undefined
+            : awayNames.length > 0
+              ? `${format(day, 'd MMMM')}, ${awayNames.join(', ')} away${holiday ? `, ${holiday}, bank holiday` : ''}`
+              : spokenLabel(day, kind, holiday, isSelected || isMultiSelected)
 
           return (
             <button
               key={day.toISOString()}
               type="button"
               disabled={!inMonth || locked}
-              aria-label={inMonth ? spokenLabel(day, kind, holiday, isSelected || isMultiSelected) : undefined}
+              aria-label={label}
               onClick={() => {
                 if (!inMonth) return
                 if (holiday) {
