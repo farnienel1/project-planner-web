@@ -6,7 +6,7 @@
  */
 'use client'
 
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { SignedTimesheetChangeDetails, TimesheetChangeRow, TimesheetCorrectionOption, TimesheetNextStep } from '@/lib/canonical'
 import { TIMESHEET_GENERATE_INVOICE_PROMPT } from '@/lib/canonical'
 import { Chip, PuButton } from '@/components/ui/page'
@@ -26,8 +26,20 @@ export function TimesheetNextStepLine({
   /** Point 5: the page's existing Generate invoice button (same handler and disabled state). */
   invoiceButton?: ReactNode
 }) {
+  // Review of 1.77.0 (nit d): screen readers hear the line only when its text changes (never on every re-render or on
+  // first load — the line is read with the page). The visible box is not a live region.
+  const previous = useRef(step.text)
+  const [announced, setAnnounced] = useState('')
+  useEffect(() => {
+    if (previous.current === step.text) return
+    previous.current = step.text
+    setAnnounced(step.text)
+  }, [step.text])
   return (
-    <div className={`pu-nextstep ${step.tone}`} role="status" aria-live="polite">
+    <div className={`pu-nextstep ${step.tone}`}>
+      <span className="sr-only" role="status" aria-live="polite">
+        {announced}
+      </span>
       <span className="pu-nextstep-dot" aria-hidden="true" />
       <div className="pu-nextstep-body">
         <span className="pu-nextstep-k">{step.generateInvoice ? TIMESHEET_GENERATE_INVOICE_PROMPT : STEP_LABEL[step.tone]}</span>

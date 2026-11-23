@@ -2462,8 +2462,14 @@ export {
   TIMESHEET_GENERATE_INVOICE_PROMPT,
   timesheetCorrectionOption,
   TIMESHEET_CORRECTION_LABEL,
+  TIMESHEET_CORRECTION_REVISION_BOOKINGS_HELP,
+  TIMESHEET_CHANGE_NOT_IN_SIGNED_COPY_LABEL,
+  TIMESHEET_NEXT_STEP_ADMIN_SIGNER,
   timesheetReportKeepsSignedFigures,
   TIMESHEET_REPORT_AWAITING_RESIGN_LABEL,
+  TIMESHEET_REPORT_AWAITING_APPROVAL_LABEL,
+  TIMESHEET_SNAPSHOT_AWAITING_APPROVAL_LABEL,
+  timesheetReportWaiting,
 } from './timesheetClarity'
 export { timesheetSignedEntryChanges } from './timesheetLateExtras'
 export { TIMESHEET_SIGNED_NOTICE_INVOICE_NEXT } from './timesheetBookingChanges'
@@ -2480,5 +2486,6 @@ export type {
   TimesheetNextStepTone,
   TimesheetCorrectionAction,
   TimesheetCorrectionOption,
+  TimesheetReportWaiting,
 } from './timesheetClarity'
 export type { TimesheetSignedEntryChange } from './timesheetLateExtras'

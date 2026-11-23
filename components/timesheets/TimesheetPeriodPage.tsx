@@ -33,6 +33,7 @@ import {
   requiresLineManagerCounterSign,
   SIGNED_OFF_EDIT_NOTE,
   lineManagerUserIds,
+  userHasLineManager,
   userTimesheetSelfSigned,
 } from '@/lib/timesheets/timesheetApprovalPolicy'
 import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride'
@@ -670,6 +671,8 @@ export function TimesheetPeriodPage({
     changedDayLabel: changeDetails.firstDayLabel,
     changedBookingCount: changeDetails.bookingRows,
     hasInvoiceDays: sheetDays ? sheetDays.length > 0 : true,
+    // Review of 1.77.0 (fix 4): with no active line manager the other admins sign off ("Waiting for an admin to sign off").
+    hasLineManager: userHasLineManager(subjectUser, users),
   })
   // Point 3: the person sees it while they must sign again (or an update is due); the reviewer while it waits for them.
   const showChangeDetails =
@@ -687,6 +690,7 @@ export function TimesheetPeriodPage({
     lateExtrasAllowed: lateAllowed.allowed,
     personName: subjectName,
     lineManagerName,
+    hasLineManager: userHasLineManager(subjectUser, users),
   })
   const addExtrasRef = useRef<HTMLDivElement | null>(null)
 

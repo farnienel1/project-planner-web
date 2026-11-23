@@ -17196,12 +17196,13 @@ test('1.53.0 review: a new night shift clashes with the next morning\'s early bo
       (R.payrunSnapshotRows({ roster, organization: {}, period: { start: '2026-11-01', end: '2026-11-15' }, sheets, overtimeRequests: [], overtimeReports: [], payeClaimReports: [], priceWork: [], expenses: [], timeZone: 'Europe/London' } as never) as Array<{ personId: string; cells: { timesheet: { label: string } } }>)
         .find((row) => row.personId === SUBJECT)?.cells.timesheet.label
     const exportedSheet = R.parsePayrunSnapshotSheet(ORIGINAL, original)!
-    assert.equal(run([{ ...exportedSheet, bookingsChange: { reopened: false, waitingFor: null, changed: true, exported: true } }]), 'Revision due')
+    // 1.77.0 point 6 (owner chose (a)): a revision due waits for the person — "Awaiting re-sign".
+    assert.equal(run([{ ...exportedSheet, bookingsChange: { reopened: false, waitingFor: null, changed: true, exported: true } }]), 'Revision due · Awaiting re-sign')
     // 1.57.0 J1: a change that is only a snapshot gap keeps the sheet's signed state in the Payrun Snapshot.
     assert.equal(run([{ ...exportedSheet, bookingsChange: { reopened: false, waitingFor: null, changed: true, exported: true, snapshotGapOnly: true } }]), run([exportedSheet]))
     assert.notEqual(run([exportedSheet]), 'Revision due')
     const openRev = R.parsePayrunSnapshotSheet(`${ORIGINAL}_rev1`, { userId: SUBJECT, weekStartKey: '2026-11-01', weekEndKey: '2026-11-15' })!
-    assert.equal(run([exportedSheet, openRev]), 'REV 1 waiting for signature')
+    assert.equal(run([exportedSheet, openRev]), 'REV 1 waiting for signature · Awaiting re-sign')
     const signedRev = R.parsePayrunSnapshotSheet(`${ORIGINAL}_rev1`, { userId: SUBJECT, weekStartKey: '2026-11-01', weekEndKey: '2026-11-15', operativeSignedAt: signedAt, operativeSignedByName: 'S P', operativeSignatureImageBase64: 'x', managerSignedAt: signedAt, managerSignedByName: 'L M', managerSignatureImageBase64: 'y', weeklyReportOverride: { lines: [] } })!
     assert.equal(run([exportedSheet, signedRev]), R.PAYRUN_SNAPSHOT_STATE_LABELS.signed)
   })
@@ -17225,8 +17226,8 @@ test('1.55.0 weekly report check line names the revision used ("· REV 1")', () 
   const gapOnly = wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...base, sheet: exportedSheet, change: { exported: true, changed: true, snapshotGapOnly: true } }] }).people[0].check?.label
   assert.doesNotMatch(String(gapOnly), /Revision due|changed since signed/)
   const unexportedGap = wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...base, change: { reopened: true, changed: true, waitingFor: 'lineManager', snapshotGapOnly: true } }] }).people[0].check?.label
-  // 1.77.0 (point 6): the signed figures stand, and the line says so.
-  assert.equal(unexportedGap, 'Timesheet: Signed · Awaiting re-sign — showing last signed figures · Invoice £250.00 ✓')
+  // 1.77.0 (point 6, owner chose (a)): the signed figures stand, and the line says the line manager must approve.
+  assert.equal(unexportedGap, 'Timesheet: Signed · Awaiting line manager approval — showing last signed figures · Invoice £250.00 ✓')
   // A real booking change still follows J4.
   const real = wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...base, change: { reopened: true, changed: true, waitingFor: 'lineManager', snapshotGapOnly: false } }] }).people[0].check?.label
   assert.notEqual(real, 'Timesheet: Signed · Invoice £250.00 ✓')
@@ -19646,6 +19647,75 @@ test('1.77.0: changed since you signed — an unchanged sheet has no rows; the 1
   assert.deepEqual(edited.rows.map((row) => row.bookingId), [])
 })
 
+test('1.77.0 (review fix 3): the reviewer\'s own Make changes edit on a signed-off sheet — waits for the line manager, one Changed row, before from the signed copy', () => {
+  const signedOff = r174Sheet({
+    operativeSignedByName: 'Jo Bloggs',
+    managerSignedAt: '2026-11-20T09:00:00Z',
+    managerSignedByName: 'Line Manager',
+    weeklyReportOverride: {
+      approvedAt: '2026-11-20T09:00:00Z',
+      lines: [reopen147SnapshotLine(reopen147Fp(), 'b1', { jobNumber: 'J-1', projectName: 'Carnaby St', details: '07:00–16:00', date: '2026-11-18' })],
+    },
+  })
+  const afterDoc = reopen147Doc('b1', { projectId: 'j1', workEndTime: '19:00' })
+  const rec = r174Record(afterDoc, signedOff)
+  const sheet = { ...signedOff, reviewerBookingEdits: { [rec.key]: rec.value } }
+  const live = [reopen147Live(reopen147Fp({ workEndTime: '19:00' }), 'b1', { bookingUpdatedAt: R147_AFTER })]
+  const change = r174Changes(sheet, live, [afterDoc])
+  assert.equal(change.reopened, true)
+  assert.equal(change.waitingFor, 'lineManager')
+  assert.deepEqual(change.changedBookingIds, ['b1'])
+  const details = r177Details(sheet, live, [afterDoc], { viewerIsReviewer: true })
+  assert.equal(details.rows.length, 1)
+  const row = details.rows[0]
+  assert.equal(row.kind, 'changed')
+  assert.equal(row.chipLabel, 'Changed')
+  assert.deepEqual(row.changedParts, ['times'])
+  // Waiting for the line manager: "before" is the copy they signed (`weeklyReportOverride.lines`).
+  assert.equal(row.beforeText, '07:00–16:00')
+  assert.equal(row.afterText, '07:00–19:00')
+  assert.equal(row.before?.timesText, R112.parseTimesheetBookingFingerprint(reopen147Fp()) ? '07:00–16:00' : '')
+  assert.equal(details.heading, R112.TIMESHEET_CHANGE_DETAILS_REVIEWER_HEADING)
+  // With only the signed copy holding the booking (no person record row), "before" still comes from it.
+  const snapshotOnly = { ...sheet, operativeSignedBookings: [] }
+  const viaSnapshot = r177Details(snapshotOnly, live, [afterDoc], { viewerIsReviewer: true })
+  for (const r of viaSnapshot.rows.filter((r) => r.bookingId === 'b1' && r.kind === 'changed')) assert.equal(r.beforeText, '07:00–16:00')
+})
+
+test('1.77.0 (review nits b, c): a job move against an older copy with no place key reads as a job change; a self-signed gap reads "Not in your signed copy"', () => {
+  // Before: an older signed copy — fingerprint and stored job words, no place key. After: moved to J-2 and an hour longer.
+  const sheet = reopen147Signed([reopen147SnapshotLine(reopen147Fp(), 'b1', { jobNumber: 'J-1', projectName: 'Carnaby St', date: '2026-11-18' })], { operativeSignedByName: 'Jo' })
+  const moved = reopen147Doc('b1', { projectId: 'j2', workEndTime: '17:00' })
+  const details = r177Details(sheet, [reopen147Live(reopen147Fp({ workEndTime: '17:00' }), 'b1', { bookingUpdatedAt: R147_AFTER })], [moved])
+  assert.equal(details.rows.length, 1)
+  assert.deepEqual(details.rows[0].changedParts, ['job', 'times'])
+  assert.equal(details.rows[0].beforeText, 'J-1 · Carnaby St · 07:00–16:00')
+  assert.equal(details.rows[0].afterText, 'J-2 · Oxford Rd · 07:00–17:00')
+  assert.match(details.rows[0].accessibilityLabel, /job and times changed/)
+
+  // Self-signed snapshot gap: the person's own signed copy lacks a booking they signed.
+  const gapSheet = r174Sheet({
+    operativeSignedByName: 'Jo',
+    operativeSignedBookings: [
+      { bookingId: 'b1', collection: 'bookings', fingerprint: reopen147Fp(), personId: 'op1', place: 'job|j1' },
+      { bookingId: 'b2', collection: 'bookings', fingerprint: reopen147Fp({ dayKey: '2026-11-17' }), personId: 'op1', place: 'job|j1' },
+    ],
+    weeklyReportOverride: { approvedAt: R174_SIGNED, lines: [reopen147SnapshotLine(reopen147Fp(), 'b1')] },
+  })
+  const gapLive = [reopen147Live(reopen147Fp()), reopen147Live(reopen147Fp({ dayKey: '2026-11-17' }), 'b2')]
+  const gapDocs = [reopen147Doc('b1', { projectId: 'j1' }), reopen147Doc('b2', { projectId: 'j1', dayKey: '2026-11-17' })]
+  const selfGap = r177Details(gapSheet, gapLive, gapDocs, { selfSigned: true })
+  const gapRow = selfGap.rows.find((r) => r.bookingId === 'b2')
+  assert.ok(gapRow, 'the gap row is listed')
+  {
+    assert.equal(gapRow.chipLabel, R112.TIMESHEET_CHANGE_NOT_IN_SIGNED_COPY_LABEL)
+    assert.equal(gapRow.tone, 'amber')
+  }
+  const otherGap = r177Details(gapSheet, gapLive, gapDocs).rows.find((r) => r.bookingId === 'b2')
+  assert.equal(otherGap?.chipLabel, 'Added')
+  assert.equal(R112.TIMESHEET_CHANGE_NOT_IN_SIGNED_COPY_LABEL, 'Not in your signed copy')
+})
+
 test('1.77.0: changed since you signed — signed price work / expenses changed by the line manager (1.76.0) are rows too', () => {
   const removed = r176bSheet({
     ex1: { decision: 'declined', revisedAmount: null, reviewedAmount: 40, reviewedByUserId: 'lm', reviewedAtMs: R176B_SIGNED_MS + 60_000 },
@@ -19721,6 +19791,26 @@ test('1.77.0: whose turn — every stage, for the person and the reviewer', () =
   assert.equal(step({ ...signed, approvedAt: '2026-11-20T09:00:00Z' }, { viewerRole: 'person' }).text, step(offSigned, { viewerRole: 'person' }).text)
 })
 
+test('1.77.0 (review fix 4): no active line manager — the line names an admin, consistent with timesheetListBucket', () => {
+  const personSigned = { operativeSignedAt: '2026-11-20T08:00:00Z', operativeSignedByName: 'Sam' }
+  const step = (extra: Record<string, unknown>, sheet: Record<string, unknown> = personSigned) =>
+    R112.timesheetNextStep({ sheet, personName: 'Sam', lineManagerName: 'Pat Lee', ...extra } as Parameters<typeof R112.timesheetNextStep>[0])
+  // The bucket: awaiting sign-off (a counter-signature is still needed — the admins give it).
+  assert.equal(R112.timesheetListBucket(R112.parseTimesheetStatusFields(personSigned), true), 'awaiting')
+  assert.equal(step({ viewerRole: 'person', hasLineManager: false }).text, 'Waiting for an admin to sign off')
+  assert.equal(step({ viewerRole: 'person', hasLineManager: false }).whoseTurn, 'lineManager')
+  assert.equal(step({ viewerRole: 'person' }).text, 'Waiting for Pat Lee to sign off')
+  assert.equal(step({ viewerRole: 'admin', hasLineManager: false }).text, 'Your turn: sign off')
+  assert.equal(
+    step({ viewerRole: 'person', hasLineManager: false, change: { reopened: true, waitingFor: 'lineManager', bookingsChanged: false, lateExtrasWaiting: true } }).text,
+    'Waiting for an admin to review what you added after sign-off'
+  )
+  assert.equal(R112.TIMESHEET_NEXT_STEP_ADMIN_SIGNER, 'an admin')
+  const signedOff = { ...personSigned, managerSignedAt: '2026-11-20T09:00:00Z' }
+  const correction = R112.timesheetCorrectionOption({ sheet: signedOff, viewerIsSubject: true, viewerIsReviewer: false, personName: 'Sam', lineManagerName: 'Pat Lee', hasLineManager: false })
+  assert.equal(correction.help, 'To change this timesheet, ask an admin.')
+})
+
 test('1.77.0: Correct this timesheet — one entry over the existing paths only', () => {
   const offSigned = r176bSheet()
   const option = (extra: Record<string, unknown>, sheet: Record<string, unknown> = offSigned) =>
@@ -19732,7 +19822,7 @@ test('1.77.0: Correct this timesheet — one entry over the existing paths only'
   const exported = { ...offSigned, exportedAt: '2026-11-25T09:00:00Z' }
   const revision = option({ viewerIsReviewer: true, viewerIsSubject: false, revisionAllowed: true, nextRevisionLabel: 'REV 1' }, exported)
   assert.equal(revision.action, 'createRevision')
-  assert.equal(revision.help, 'This creates REV 1 — Sam signs it, then you sign it off.')
+  assert.equal(revision.help, 'This creates REV 1 — Sam signs it, then you sign it off. You can change its bookings before they sign it.')
   assert.equal(option({ viewerIsReviewer: true, viewerIsSubject: false, revisionAllowed: false }, exported).action, null)
   const late = option({ viewerIsReviewer: false, viewerIsSubject: true, lateExtrasAllowed: true })
   assert.equal(late.action, 'addLateExtras')
@@ -19755,9 +19845,81 @@ test('1.77.0: reports say when they show a waiting sheet\'s last signed figures 
   assert.equal(R112.timesheetReportKeepsSignedFigures({ reopened: true, snapshotGapOnly: true, bookingsChanged: true }), R112.SNAPSHOT_GAP_REPORTS === 'signed')
   assert.equal(R112.timesheetReportKeepsSignedFigures({ reopened: true, bookingsChanged: false, exported: true }), false)
   assert.equal(R112.timesheetReportKeepsSignedFigures(null), false)
-  assert.equal(R112.TIMESHEET_REPORT_AWAITING_RESIGN_LABEL, 'Awaiting re-sign — showing last signed figures')
+  assert.equal(R112.TIMESHEET_REPORT_AWAITING_RESIGN_LABEL, 'Awaiting re-sign')
+  assert.equal(R112.TIMESHEET_REPORT_AWAITING_APPROVAL_LABEL, 'Awaiting line manager approval — showing last signed figures')
+  assert.equal(R112.TIMESHEET_SNAPSHOT_AWAITING_APPROVAL_LABEL, 'Awaiting line manager approval')
   const removed = r176bSheet({
     ex1: { decision: 'declined', revisedAmount: null, reviewedAmount: 40, reviewedByUserId: 'lm', reviewedAtMs: R176B_SIGNED_MS + 60_000 },
   })
   assert.equal(R112.timesheetReportKeepsSignedFigures(r176bChange(removed)), true)
+})
+
+test('1.77.0 point 6 (owner chose (a), 23 Nov): who a report says the sheet waits for — labels per state, figures unchanged', () => {
+  const waiting = R112.timesheetReportWaiting
+  // Back with the person: a booking change reopened it, or a revision is due / open and not signed by the person.
+  assert.equal(waiting({ reopened: true, changed: true, waitingFor: 'person', bookingsChanged: true }), 'person')
+  assert.equal(waiting({ exported: true, changed: true }, { state: 'due' }), 'person')
+  assert.equal(waiting(null, { state: 'open', personSigned: false }), 'person')
+  assert.equal(waiting(null, { state: 'open', personSigned: true }), null)
+  // The line manager must approve: late extras, changed signed price work / expenses, a J1 snapshot gap.
+  assert.equal(waiting({ reopened: true, changed: true, waitingFor: 'lineManager', bookingsChanged: false, lateExtrasWaiting: true }), 'lineManager')
+  assert.equal(waiting({ reopened: true, changed: true, waitingFor: 'lineManager', snapshotGapOnly: true }), R112.SNAPSHOT_GAP_REPORTS === 'signed' ? 'lineManager' : null)
+  // A booking change the person already signed again (live figures, line manager counter-signs): no label, as before.
+  assert.equal(waiting({ reopened: true, changed: true, waitingFor: 'lineManager', bookingsChanged: true }), null)
+  assert.equal(waiting({ exported: true, changed: true, reopened: true, waitingFor: 'person' }), null)
+  assert.equal(waiting(null), null)
+
+  // Weekly report check line: the label per state, and every money figure identical to the same run with no change.
+  const sheet = {
+    operativeSignedAt: new Date('2026-11-16T10:00:00Z'),
+    operativeSignedByName: 'Test Admin',
+    operativeSignatureImageBase64: 'x',
+    weeklyReportOverride: { lines: [{ id: 'op-b02-normal', date: '2026-11-02', amount: 250, paidHours: 8.5, days: 1, isOvertime: false }], priceWork: [], expenses: [] },
+  }
+  const base = { personId: 'u-admin', startDayKey: '2026-11-01', endDayKey: '2026-11-15', sheet, payrollLines: [] }
+  const report = (change: Record<string, unknown> | null) => wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...base, change }] as never })
+  const figures = (out: ReturnType<typeof report>) =>
+    JSON.stringify({
+      grandTotal: out.grandTotal,
+      people: out.people.map((p) => ({ lines: p.lines, personTotal: p.personTotal, invoiceTotal: p.check?.invoiceTotal, reportTotal: p.check?.reportTotal, awaitingClaims: p.check?.awaitingClaims })),
+    })
+  const none = report(null)
+  const resign = report({ reopened: true, changed: true, waitingFor: 'person', bookingsChanged: true })
+  const approval = report({ reopened: true, changed: true, waitingFor: 'lineManager', bookingsChanged: false, lateExtrasWaiting: true })
+  assert.match(String(resign.people[0].check?.label), / · Awaiting re-sign · /)
+  assert.doesNotMatch(String(resign.people[0].check?.label), /showing last signed figures/)
+  assert.equal(resign.people[0].check?.awaitingResign, true)
+  assert.equal(resign.people[0].check?.showingSignedFigures, false)
+  assert.match(String(approval.people[0].check?.label), / · Awaiting line manager approval — showing last signed figures · /)
+  assert.equal(approval.people[0].check?.showingSignedFigures, true)
+  assert.doesNotMatch(String(none.people[0].check?.label), /Awaiting/)
+  // The re-sign case reports live figures exactly as before 1.77.0 (the label is the only difference from the state
+  // alone); the approval case keeps the signed figures, the same as with no change at all.
+  assert.equal(figures(approval), figures(none))
+  const resignWithoutLabel = { ...resign, people: resign.people.map((p) => ({ ...p, check: p.check ? { ...p.check, label: '', stateLabel: '', awaitingResign: false } : p.check })) }
+  assert.equal(figures(resignWithoutLabel as typeof resign), figures(resign))
+
+  // Payrun Snapshot timesheet cell: the same states, no figures.
+  const SUBJECT = 'p6-subject'
+  const LM = 'p6-lm'
+  const roster = [
+    { id: SUBJECT, firstName: 'S', surname: 'P', email: 's6@x.com', isActive: true, passwordSet: true, employmentType: 'self_employed', assignedManagerUserIds: [LM] },
+    { id: LM, firstName: 'L', surname: 'M', email: 'l6@x.com', isActive: true, passwordSet: true, manager: true, role: 'manager' },
+  ]
+  const cell = (sheets: unknown[]) =>
+    (R112.payrunSnapshotRows({ roster, organization: {}, period: { start: '2026-11-01', end: '2026-11-15' }, sheets, overtimeRequests: [], overtimeReports: [], payeClaimReports: [], priceWork: [], expenses: [], timeZone: 'Europe/London' } as never) as Array<{ personId: string; cells: { timesheet: { label: string } } }>)
+      .find((row) => row.personId === SUBJECT)?.cells.timesheet.label
+  const signedAt = '2026-11-16T10:00:00Z'
+  const parsed = R112.parsePayrunSnapshotSheet(`timesheet_${SUBJECT}_2026-11-01`, {
+    userId: SUBJECT, weekStartKey: '2026-11-01', weekEndKey: '2026-11-15',
+    operativeSignedAt: signedAt, operativeSignedByName: 'S P', operativeSignatureImageBase64: 'x',
+    managerSignedAt: signedAt, managerSignedByName: 'L M', managerSignatureImageBase64: 'y', weeklyReportOverride: { lines: [] },
+  })!
+  const plain = String(cell([parsed]))
+  assert.doesNotMatch(plain, /Awaiting/)
+  assert.match(String(cell([{ ...parsed, bookingsChange: { reopened: true, changed: true, waitingFor: 'person', bookingsChanged: true } }])), / · Awaiting re-sign$/)
+  assert.equal(
+    cell([{ ...parsed, bookingsChange: { reopened: true, changed: true, waitingFor: 'lineManager', bookingsChanged: false, lateExtrasWaiting: true } }]),
+    `${R112.PAYRUN_SNAPSHOT_STATE_LABELS.submitted} · Awaiting line manager approval`
+  )
 })

@@ -20,7 +20,7 @@
 
 import { timesheetRevisionReportState } from './timesheetRevisions'
 import { signedTimesheetChangeForReports } from './timesheetBookingChanges'
-import { timesheetReportKeepsSignedFigures, TIMESHEET_REPORT_AWAITING_RESIGN_LABEL } from './timesheetClarity'
+import { timesheetReportWaiting, TIMESHEET_REPORT_AWAITING_APPROVAL_LABEL, TIMESHEET_REPORT_AWAITING_RESIGN_LABEL } from './timesheetClarity'
 import { dayKeyInZone } from '../orgTime/zoneTime'
 import { eachDayKey, isoWeekdayOfDayKey, zoneOrLondon } from './dayKeys'
 import { documentInstantMs } from './peopleDocuments'
@@ -218,8 +218,10 @@ export type WeeklyReportCheckLine = {
   changedSinceSigned: boolean
   /** True when a payment run is only partly inside the range (only its rows dated in the range count). */
   partialRun: boolean
-  /** 1.77.0 (point 6): a run's sheet waits to be signed or approved again; the report shows its last signed figures. */
+  /** 1.77.0 (point 6, owner chose (a)): a run's sheet waits for the line manager's approval; the report shows its last signed figures. */
   showingSignedFigures: boolean
+  /** 1.77.0 (point 6, owner chose (a)): a run's sheet is back with the person to sign again (live figures, as before). */
+  awaitingResign: boolean
 }
 
 export type WeeklyReportPayPersonRow = {
@@ -832,8 +834,10 @@ function checkLine(
   let awaitingExpenses = 0
   let partialRun = false
   let changedSinceSigned = false
-  // 1.77.0 (point 6): a run whose sheet waits to be signed (or approved) again while the report keeps its signed figures.
-  let showingSignedFigures = false
+  // 1.77.0 (point 6, owner chose (a)): a run whose sheet is back with the person to sign again, or waits for the line
+  // manager's approval while the report keeps its signed figures. Wording only.
+  let awaitingResign = false
+  let awaitingApproval = false
   let compared = false
   const states: WeeklyReportTimesheetState[] = []
   let revision = 0
@@ -862,7 +866,9 @@ function checkLine(
       changedSinceSigned = changedSinceSigned || revisionState.state === 'due'
     } else states.push(bucket === 'exported' ? 'exported' : bucket === 'signed' ? 'signed' : bucket === 'awaiting' ? 'submitted' : 'notStarted')
     if (reportChange?.reopened === true || (reportChange?.changed === true && fields.operativeSignedAtMs != null && bucket !== 'exported')) changedSinceSigned = true
-    if (timesheetReportKeepsSignedFigures(row.change)) showingSignedFigures = true
+    const waiting = timesheetReportWaiting(row.change, { state: revisionState.state, personSigned: fields.operativeSignedAtMs != null })
+    if (waiting === 'person') awaitingResign = true
+    else if (waiting === 'lineManager') awaitingApproval = true
     const days = eachDayKey(row.startDayKey, row.endDayKey, zone).filter((day) => counted.has(day))
     const approved = ctx.approvedRun(row)
     const invoiceRows = timesheetInvoiceRows({ sheet: row.sheet ?? null, payrollLines: row.payrollLines ?? [], extrasMode: 'decided', timesheetDays: days, timeZone: zone, entryFingerprints: row.entryFingerprints ?? null })
@@ -885,8 +891,10 @@ function checkLine(
   const stateLabelBase = revisionStateLabel
     ? `Timesheet: ${revisionStateLabel}${states.length > 1 ? ` · ${signedCount} of ${states.length} signed` : ''}`
     : `Timesheet: ${WEEKLY_REPORT_TIMESHEET_STATE_LABELS[least]}${states.length > 1 ? ` · ${signedCount} of ${states.length} signed` : ''}${revision > 0 ? ` · REV ${revision}` : ''}`
-  // 1.77.0 (point 6): shown with the state, so a viewer who may not see pay is told too.
-  const stateLabel = showingSignedFigures ? `${stateLabelBase} · ${TIMESHEET_REPORT_AWAITING_RESIGN_LABEL}` : stateLabelBase
+  // 1.77.0 (point 6, owner chose (a)): shown with the state, so a viewer who may not see pay is told too. The person
+  // signing again comes first (the least advanced).
+  const waitingLabel = awaitingResign ? TIMESHEET_REPORT_AWAITING_RESIGN_LABEL : awaitingApproval ? TIMESHEET_REPORT_AWAITING_APPROVAL_LABEL : ''
+  const stateLabel = waitingLabel ? `${stateLabelBase} · ${waitingLabel}` : stateLabelBase
   const awaiting = [
     awaitingPriceWork > 0.0001 ? `+ ${money(roundPennies(awaitingPriceWork))} price work awaiting sign-off` : '',
     awaitingExpenses > 0.0001 ? `+ ${money(roundPennies(awaitingExpenses))} expenses awaiting sign-off` : '',
@@ -903,7 +911,8 @@ function checkLine(
       matches: false,
       changedSinceSigned: false,
       partialRun: false,
-      showingSignedFigures,
+      showingSignedFigures: awaitingApproval,
+      awaitingResign,
     }
   }
   const invoiceTotal = roundPennies(invoice)
@@ -926,7 +935,8 @@ function checkLine(
     matches,
     changedSinceSigned,
     partialRun,
-    showingSignedFigures,
+    showingSignedFigures: awaitingApproval,
+    awaitingResign,
   }
 }
 

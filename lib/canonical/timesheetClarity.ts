@@ -11,8 +11,9 @@
  *   booking (before → after) and per signed price work / expense whose pay changed (point 3).
  * - `timesheetCorrectionOption` — the one "Correct this timesheet" entry point over the existing correction paths
  *   (point 1).
- * - `timesheetReportKeepsSignedFigures` / `TIMESHEET_REPORT_AWAITING_RESIGN_LABEL` — the weekly report check line and
- *   the Payrun Snapshot say when they show a waiting sheet's last signed figures (point 6).
+ * - `timesheetReportWaiting` / `TIMESHEET_REPORT_AWAITING_RESIGN_LABEL` / `TIMESHEET_REPORT_AWAITING_APPROVAL_LABEL` /
+ *   `TIMESHEET_SNAPSHOT_AWAITING_APPROVAL_LABEL` — the weekly report check line and the Payrun Snapshot say whom a
+ *   waiting sheet waits for, and the check line when it shows the last signed figures (point 6, owner chose (a)).
  */
 
 import { overtimeBookingFingerprint } from './payeOvertime'
@@ -207,6 +208,8 @@ export const TIMESHEET_CHANGE_DETAILS_HEADING = 'Changed since you signed'
 /** The heading the reviewer sees (the line manager signed the copy being compared). */
 export const TIMESHEET_CHANGE_DETAILS_REVIEWER_HEADING = 'Changed since it was signed'
 export const TIMESHEET_CHANGE_DETAILS_COLLAPSED_ROWS = 3
+/** Review of 1.77.0 (nit c): the chip of a self-signed sheet's snapshot-gap booking (on the sheet, not in its signed copy). */
+export const TIMESHEET_CHANGE_NOT_IN_SIGNED_COPY_LABEL = 'Not in your signed copy'
 const CHIP: Record<TimesheetChangeKind, { label: string; tone: 'green' | 'red' | 'amber' }> = {
   added: { label: 'Added', tone: 'green' },
   removed: { label: 'Removed', tone: 'red' },
@@ -264,10 +267,24 @@ function sideText(side: TimesheetChangeSide, parts: ReadonlyArray<TimesheetChang
   return out.join(' · ')
 }
 
+/** A place label good enough to compare ("A job" names no job, so it is never compared). */
+function comparablePlaceLabel(side: TimesheetChangeSide): string {
+  const label = text(side.placeLabel)
+  return label && label !== 'A job' ? label.toLowerCase() : ''
+}
+
 function changedPartsOf(before: TimesheetChangeSide, after: TimesheetChangeSide): TimesheetChangePart[] {
   const parts: TimesheetChangePart[] = []
   if (before.dayKey && after.dayKey && before.dayKey !== after.dayKey) parts.push('day')
-  if (before.place && after.place && before.place !== after.place) parts.push('job')
+  if (before.place && after.place) {
+    if (before.place !== after.place) parts.push('job')
+  } else {
+    // Review of 1.77.0 (nit b): one side's place key is unknown (an older signed copy holds only its stored job words) —
+    // compare the job words when both sides name a job, never present a job move as a times change.
+    const left = comparablePlaceLabel(before)
+    const right = comparablePlaceLabel(after)
+    if (left && right && left !== right) parts.push('job')
+  }
   if (before.timesText && after.timesText && before.timesText !== after.timesText) parts.push('times')
   if (before.timesText && after.timesText && before.rateText !== after.rateText) parts.push('rate')
   if (before.timesText && after.timesText && before.breakRemoved !== after.breakRemoved) parts.push('break')
@@ -402,7 +419,7 @@ export function signedTimesheetChangeDetails(input: {
 
   const rows: TimesheetChangeRow[] = []
   const seen = new Set<string>()
-  const add = (bookingId: string, kind: TimesheetChangeKind) => {
+  const add = (bookingId: string, kind: TimesheetChangeKind, chipOverride?: string) => {
     const id = normalizeDocumentId(bookingId)
     if (!id || seen.has(id)) return
     seen.add(id)
@@ -417,9 +434,9 @@ export function signedTimesheetChangeDetails(input: {
     let afterText: string | null = null
     if (kind === 'changed' && before && after) {
       changedParts = changedPartsOf(before, after)
-      const parts = changedParts.length ? changedParts : (['times'] as TimesheetChangePart[])
-      // Times are always shown so the row reads on its own; day and job only when they changed.
-      const shown = Array.from(new Set<TimesheetChangePart>(['times', ...parts]))
+      // Times are always shown so the row reads on its own; day and job only when they changed. When nothing could be
+      // compared (an older signed copy: no fingerprint or place on one side), the job is shown too so a move reads.
+      const shown = Array.from(new Set<TimesheetChangePart>(['times', ...(changedParts.length ? changedParts : (['job'] as TimesheetChangePart[]))]))
       beforeText = sideText(before, shown) || null
       afterText = sideText(after, shown) || null
     } else {
@@ -432,15 +449,15 @@ export function signedTimesheetChangeDetails(input: {
         ? `${where}: added${afterText ? `, ${afterText}` : ''}`
         : kind === 'removed'
         ? `${where}: removed${beforeText ? `, was ${beforeText}` : ''}`
-        : `${where}: ${(changedParts.length ? changedParts : ['times' as TimesheetChangePart]).map((part) => PART_WORDS[part]).join(' and ')} changed${
+        : `${where}: ${changedParts.length ? `${changedParts.map((part) => PART_WORDS[part]).join(' and ')} changed` : 'booking changed'}${
             beforeText && afterText ? ` from ${beforeText} to ${afterText}` : ''
           }`
     rows.push({
       key: `booking:${id}`,
       type: 'booking',
       kind,
-      chipLabel: CHIP[kind].label,
-      tone: CHIP[kind].tone,
+      chipLabel: chipOverride ?? CHIP[kind].label,
+      tone: chipOverride ? 'amber' : CHIP[kind].tone,
       dayKey,
       dayLabel,
       title,
@@ -456,8 +473,9 @@ export function signedTimesheetChangeDetails(input: {
   for (const id of change.changedBookingIds) add(id, 'changed')
   for (const id of change.addedBookingIds) add(id, 'added')
   for (const id of change.removedBookingIds) add(id, 'removed')
-  // 1.57.0: a booking the person signed that the signed copy lacks — added to what the line manager signs.
-  for (const id of change.snapshotGapBookingIds) add(id, 'added')
+  // 1.57.0: a booking the person signed that the signed copy lacks — added to what the line manager signs. On a
+  // self-signed sheet nobody else signs: the person's own signed copy lacks it (review of 1.77.0, nit c).
+  for (const id of change.snapshotGapBookingIds) add(id, 'added', input.selfSigned === true ? TIMESHEET_CHANGE_NOT_IN_SIGNED_COPY_LABEL : undefined)
   rows.sort((a, b) => (a.dayKey < b.dayKey ? -1 : a.dayKey > b.dayKey ? 1 : 0))
 
   const currency = text(input.currency) || 'GBP'
@@ -520,6 +538,11 @@ export type TimesheetNextStep = {
 
 export const TIMESHEET_NEXT_STEP_INVOICE_TEXT = 'Signed off — next: generate your invoice'
 export const TIMESHEET_NEXT_STEP_EXPORTED_TEXT = 'Exported — no further changes (corrections go into a revision)'
+/**
+ * Review of 1.77.0 (fix 4): who signs off when the person has no active line manager (and is not self-signed) — the
+ * other admins (rulebook §8, `timesheetSubmittedRecipients`): "Waiting for an admin to sign off".
+ */
+export const TIMESHEET_NEXT_STEP_ADMIN_SIGNER = 'an admin'
 /** Point 5: the line on the person's signed-off sheet above Generate invoice. */
 export const TIMESHEET_GENERATE_INVOICE_PROMPT = 'Next: generate your invoice'
 
@@ -557,12 +580,17 @@ export function timesheetNextStep(input: {
   changedBookingCount?: number | null
   /** The person has self-employed days on this sheet (`showsMyTimesheets`); default true. */
   hasInvoiceDays?: boolean | null
+  /**
+   * The person has an active line manager (`hasActiveLineManager`). False: the other admins sign off (rulebook §8), so
+   * the line names "an admin" (`TIMESHEET_NEXT_STEP_ADMIN_SIGNER`). Missing = true (as before).
+   */
+  hasLineManager?: boolean | null
 }): TimesheetNextStep {
   const sheet = input.sheet ?? {}
   const role = input.viewerRole
   const isPerson = role === 'person'
   const person = text(input.personName) || (isPerson ? 'you' : 'the person')
-  const lineManager = text(input.lineManagerName) || 'your line manager'
+  const lineManager = input.hasLineManager === false ? TIMESHEET_NEXT_STEP_ADMIN_SIGNER : text(input.lineManagerName) || 'your line manager'
   const rev = text(input.revisionLabel)
   const change = input.change ?? null
   const exported = resolveTimesheetExportedAtMs(sheet) != null
@@ -627,6 +655,11 @@ export function timesheetNextStep(input: {
 // MARK: - One correction entry point (point 1)
 
 export const TIMESHEET_CORRECTION_LABEL = 'Correct this timesheet'
+/**
+ * Review of 1.77.0 (nit e): the 1.76.0 B1 sentence the reviewer's revision help kept (`TIMESHEET_MAKE_CHANGES_REVISION_HELP`)
+ * — on a revision the person has not signed yet, the reviewer may change its bookings first.
+ */
+export const TIMESHEET_CORRECTION_REVISION_BOOKINGS_HELP = 'You can change its bookings before they sign it.'
 export type TimesheetCorrectionAction = 'makeChanges' | 'createRevision' | 'addLateExtras' | 'reviewAndSignAgain' | 'askLineManager'
 export type TimesheetCorrectionOption = {
   action: TimesheetCorrectionAction | null
@@ -665,6 +698,8 @@ export function timesheetCorrectionOption(input: {
   lateExtrasAllowed?: boolean | null
   personName?: string | null
   lineManagerName?: string | null
+  /** As `timesheetNextStep`: false names "an admin" in place of the line manager. */
+  hasLineManager?: boolean | null
 }): TimesheetCorrectionOption {
   const none: TimesheetCorrectionOption = { action: null, label: TIMESHEET_CORRECTION_LABEL, help: null, hasButton: false }
   const sheet = input.sheet ?? null
@@ -672,7 +707,7 @@ export function timesheetCorrectionOption(input: {
   const exported = resolveTimesheetExportedAtMs(sheet) != null
   const next = text(input.nextRevisionLabel) || 'a new revision'
   const person = text(input.personName) || 'the person'
-  const lineManager = text(input.lineManagerName) || 'your line manager'
+  const lineManager = input.hasLineManager === false ? TIMESHEET_NEXT_STEP_ADMIN_SIGNER : text(input.lineManagerName) || 'your line manager'
   const option = (action: TimesheetCorrectionAction, help: string): TimesheetCorrectionOption => ({
     action,
     label: TIMESHEET_CORRECTION_LABEL,
@@ -688,7 +723,9 @@ export function timesheetCorrectionOption(input: {
       revisionAllowed: input.revisionAllowed,
     })
     if (action === 'reopenReview') return option('makeChanges', TIMESHEET_MAKE_CHANGES_REOPEN_HELP)
-    if (action === 'createRevision') return option('createRevision', `This creates ${next} — ${person} signs it, then you sign it off.`)
+    if (action === 'createRevision') {
+      return option('createRevision', `This creates ${next} — ${person} signs it, then you sign it off. ${TIMESHEET_CORRECTION_REVISION_BOOKINGS_HELP}`)
+    }
     return none
   }
   if (!input.viewerIsSubject) return none
@@ -717,7 +754,20 @@ export function timesheetCorrectionOption(input: {
 
 // MARK: - Reports (point 6)
 
-export const TIMESHEET_REPORT_AWAITING_RESIGN_LABEL = 'Awaiting re-sign — showing last signed figures'
+/**
+ * Rulebook 1.77.0 §7 (point 6, owner chose (a), 23 Nov): the sheet is back with the person to sign again — a booking
+ * change reopened it (`waitingFor: 'person'`), or a revision is due or open and waits for the person. Reports show the
+ * live figures, as before; this label only says why.
+ */
+export const TIMESHEET_REPORT_AWAITING_RESIGN_LABEL = 'Awaiting re-sign'
+/**
+ * Rulebook 1.77.0 §7 (point 6, owner chose (a)): the person need not sign again but the line manager must approve (late
+ * extras waiting, signed price work / expenses changed in Make changes, a J1 snapshot gap) — the weekly report check line
+ * keeps the last signed figures and says so.
+ */
+export const TIMESHEET_REPORT_AWAITING_APPROVAL_LABEL = 'Awaiting line manager approval — showing last signed figures'
+/** The same state on the Payrun Snapshot timesheet cell, which shows no figures. */
+export const TIMESHEET_SNAPSHOT_AWAITING_APPROVAL_LABEL = 'Awaiting line manager approval'
 
 /**
  * Rulebook 1.77.0 §7 (point 6): the report (weekly report check line, Payrun Snapshot) is showing a waiting sheet's last
@@ -746,4 +796,27 @@ export function timesheetReportKeepsSignedFigures(
     return forReports == null || forReports.bookingsChanged === false
   }
   return change.bookingsChanged === false
+}
+
+export type TimesheetReportWaiting = 'person' | 'lineManager' | null
+
+/**
+ * Rulebook 1.77.0 §7 (point 6, owner chose (a), 23 Nov): who a run's sheet waits for, for the report labels only —
+ * `'person'` (`TIMESHEET_REPORT_AWAITING_RESIGN_LABEL`) when a booking change sent it back to the person, or its revision
+ * is due, or open and not yet signed by the person (`revision`); `'lineManager'` (`TIMESHEET_REPORT_AWAITING_APPROVAL_LABEL`,
+ * `TIMESHEET_SNAPSHOT_AWAITING_APPROVAL_LABEL`) when the report keeps its last signed figures
+ * (`timesheetReportKeepsSignedFigures`); else null. Wording only: no figure depends on it.
+ */
+export function timesheetReportWaiting(
+  change:
+    | (Parameters<typeof timesheetReportKeepsSignedFigures>[0] & { waitingFor?: 'person' | 'lineManager' | null })
+    | null
+    | undefined,
+  revision: { state?: 'none' | 'due' | 'open' | null; personSigned?: boolean | null } | null = null
+): TimesheetReportWaiting {
+  if (revision?.state === 'due') return 'person'
+  if (revision?.state === 'open' && revision.personSigned !== true) return 'person'
+  if (timesheetReportKeepsSignedFigures(change)) return 'lineManager'
+  if (change && change.exported !== true && change.reopened === true && change.waitingFor === 'person') return 'person'
+  return null
 }

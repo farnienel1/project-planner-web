@@ -60,7 +60,7 @@ import {
 } from './timesheetPeriod'
 import { timesheetRevisionReportState } from './timesheetRevisions'
 import { signedTimesheetChangeForReports } from './timesheetBookingChanges'
-import { timesheetReportKeepsSignedFigures, TIMESHEET_REPORT_AWAITING_RESIGN_LABEL } from './timesheetClarity'
+import { timesheetReportWaiting, TIMESHEET_REPORT_AWAITING_RESIGN_LABEL, TIMESHEET_SNAPSHOT_AWAITING_APPROVAL_LABEL } from './timesheetClarity'
 import { isAnonymisedDeletedProfile, isGhostUser, rosterPersonName, rosterSegment } from './userRosterSegment'
 
 // MARK: - Copy
@@ -397,9 +397,11 @@ function timesheetCell(
         })
       : null
     if (revision && revision.state !== 'none') state = revision.state === 'due' ? 'notStarted' : bucket === 'awaiting' ? 'submitted' : 'notStarted'
-    // 1.77.0 (point 6): the sheet waits to be signed or approved again, but its last signed figures stand.
-    const keepsSigned = sheet ? timesheetReportKeepsSignedFigures(sheet.bookingsChange) : false
-    return { run, state, revisionLabel: revision?.label ?? '', keepsSigned }
+    // 1.77.0 (point 6, owner chose (a)): back with the person to sign again, or waiting for the line manager's approval.
+    const waiting = sheet
+      ? timesheetReportWaiting(sheet.bookingsChange, { state: revision?.state ?? 'none', personSigned: sheet.status.operativeSignedAtMs != null })
+      : null
+    return { run, state, revisionLabel: revision?.label ?? '', waiting }
   })
   const link = (run?: { startDayKey: string; endDayKey: string }): PayrunSnapshotLink => ({
     kind: 'timesheet',
@@ -413,7 +415,12 @@ function timesheetCell(
   const base = least.revisionLabel || PAYRUN_SNAPSHOT_STATE_LABELS[least.state]
   const signed = states.filter((entry) => entry.state === 'signed').length
   const counted = states.length > 1 ? `${base} · ${signed} of ${states.length} signed` : base
-  const label = states.some((entry) => entry.keepsSigned) ? `${counted} · ${TIMESHEET_REPORT_AWAITING_RESIGN_LABEL}` : counted
+  const waitingLabel = states.some((entry) => entry.waiting === 'person')
+    ? TIMESHEET_REPORT_AWAITING_RESIGN_LABEL
+    : states.some((entry) => entry.waiting === 'lineManager')
+      ? TIMESHEET_SNAPSHOT_AWAITING_APPROVAL_LABEL
+      : ''
+  const label = waitingLabel ? `${counted} · ${waitingLabel}` : counted
   return cell(least.state, label, tone, link(least.run))
 }
 
