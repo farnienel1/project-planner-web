@@ -3,6 +3,7 @@ import test from 'node:test'
 import { parseAppUserDocument } from '../ios-parity/converters.ts'
 import { classifyManageUsersTab } from './manageUsersUtils.ts'
 import {
+  failedReadConfirmsMissing,
   markRowsRemoved,
   mergeRetainedRoster,
   missingOrganizationIdPatch,
@@ -10,6 +11,7 @@ import {
   retainParsedRows,
   retainScopedRows,
   rosterParseRecord,
+  rosterWithoutUser,
   userFromRosterRecord,
 } from './rosterRetain.ts'
 import { UserRole, type User, type UserPermissions } from '../../types/index.ts'
@@ -236,4 +238,30 @@ test('1.38.0 §27: a cache snapshot shorter than the list only adds and updates;
   )
   assert.deepEqual(retainLoadedRows([{ id: 'a' }, { id: 'b' }], [{ id: 'b' }]), [{ id: 'b' }])
   assert.deepEqual(retainLoadedRows([{ id: 'a' }, { id: 'b' }], [{ id: 'b' }], { authoritative: true }), [{ id: 'b' }])
+})
+
+test('a person this session deleted leaves the roster at once', () => {
+  const rows = [
+    user({ id: 'u1', email: 'a@site.com', firstName: 'A' }),
+    user({ id: 'u2', email: 'b@site.com', firstName: 'B' }),
+  ]
+  assert.deepEqual(
+    rosterWithoutUser(rows, 'u2').map((row) => row.id),
+    ['u1']
+  )
+})
+
+test('a refused read counts as gone only for a person this session deleted', () => {
+  const deleted = new Set(['u2'])
+  assert.equal(failedReadConfirmsMissing('u2', deleted), true)
+  assert.equal(failedReadConfirmsMissing('u1', deleted), false)
+  const previous = [
+    user({ id: 'u1', email: 'a@site.com', firstName: 'A' }),
+    user({ id: 'u2', email: 'b@site.com', firstName: 'B' }),
+  ]
+  const confirmed = new Set(previous.filter((row) => failedReadConfirmsMissing(row.id, deleted)).map((row) => row.id))
+  assert.deepEqual(
+    mergeRetainedRoster(previous, [previous[0]], confirmed).map((row) => row.id),
+    ['u1']
+  )
 })

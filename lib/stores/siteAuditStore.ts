@@ -23,7 +23,14 @@ import { readOrganizationDocument } from '@/lib/firebase/orgDocumentCache'
 import { UserRole, type SiteAudit, type SiteAuditItem, type User } from '@/types'
 import { parseOrgUser } from '@/lib/firebase/parseUser'
 import { aliasIdsForRoster, dedupeUsersByEmail } from '@/lib/staff/userRosterUtils'
-import { mergeRetainedRoster, missingOrganizationIdPatch, retainScopedRows, rosterParseRecord } from '@/lib/staff/rosterRetain'
+import {
+  failedReadConfirmsMissing,
+  mergeRetainedRoster,
+  missingOrganizationIdPatch,
+  retainScopedRows,
+  rosterParseRecord,
+  rosterWithoutUser,
+} from '@/lib/staff/rosterRetain'
 import { rosterDocumentsAfter } from '@/lib/staff/rosterDocuments'
 import { isMetadataOnlySnapshot } from '@/lib/firebase/orgCollectionMerge'
 import {
@@ -550,6 +557,9 @@ async function fetchOrganisationRoster(
   }
 }
 
+/** Users documents this browser session deleted (Manage Users → Delete), so a refused read of them counts as gone. */
+const deletedUserIdsThisSession = new Set<string>()
+
 async function confirmMissingUserDocuments(
   previous: User[],
   presentIds: Set<string>,
@@ -568,7 +578,8 @@ async function confirmMissingUserDocuments(
         const snap = await getDoc(doc(db, 'users', user.id))
         if (!snap.exists()) confirmed.add(user.id)
       } catch {
-        /* Not confirmed gone — keep them on the roster. */
+        // Not confirmed gone — keep them on the roster, unless this session deleted them itself.
+        if (failedReadConfirmsMissing(user.id, deletedUserIdsThisSession)) confirmed.add(user.id)
       }
     })
   )
@@ -823,6 +834,8 @@ interface OrgUserState {
   loadUsers: (organizationId: string, options?: { force?: boolean }) => Promise<void>
   patchListedUser: (user: User) => void
   setListedUserActive: (userId: string, isActive: boolean) => void
+  /** Takes a person this session has just deleted off the roster (and the stored copy) straight away. */
+  removeListedUser: (userId: string) => void
 }
 
 let listedUserRevision = 0
@@ -1119,6 +1132,22 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
         user.id === userId ? { ...user, isActive, updatedAt: new Date() } : user
       ),
     })
+  },
+
+  removeListedUser: (userId) => {
+    if (!userId) return
+    deletedUserIdsThisSession.add(userId)
+    listedUserRevision += 1
+    invalidateOrgLoad(ORG_USER_LOAD_KEY)
+    const users = rosterWithoutUser(get().users, userId)
+    const { [userId]: _removedAlias, ...userIdAliases } = get().userIdAliases
+    void _removedAlias
+    set({
+      users,
+      userIdAliases,
+      rosterDocuments: rosterWithoutUser(get().rosterDocuments, userId),
+    })
+    if (listedRosterOrgId && users.length > 0) writeStoredRoster(listedRosterOrgId, users)
   },
 }))
 
