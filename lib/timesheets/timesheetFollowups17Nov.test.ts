@@ -14,7 +14,7 @@ import {
   timesheetOwnerResolver,
   userTimesheetQueueRows,
 } from './timesheetQueue.ts'
-import type { TimesheetQueueStoredSheet } from './timesheetStorage.ts'
+import { draftToFirestoreMap, type TimesheetQueueStoredSheet } from './timesheetStorage.ts'
 import { mineChangedPeriodStarts, mineSheetRows } from './mineChanged.ts'
 import { snapshotRepairCandidates } from './snapshotAutoRepair.ts'
 import { listSelectablePayPeriods, organizationCreatedAt, payRunListStartDayKey } from './paymentRunCopy.ts'
@@ -304,6 +304,7 @@ test('item 23 (23 Nov): every exported version listed oldest first with its invo
       // Guardrail 3: a version without a known document id (older loader) is still listed.
       { documentId: '', revision: 2, data: stored(revised, { weeklyReportOverride: null }) },
     ],
+    shownDocumentId: '',
     currency: 'GBP',
   })
   assert.deepEqual(rows.map((row) => row.label), ['Original', 'REV 1', 'REV 2'])
@@ -317,6 +318,24 @@ test('item 23 (23 Nov): every exported version listed oldest first with its invo
   assert.equal(rows[2].totalText, 'Total not available (older export)')
   assert.equal(rows[2].differenceText, 'Difference not available (older export)')
   assert.deepEqual(rows.map((row) => row.latest), [false, false, true])
+  // Review of #421: built through draftToFirestoreMap (the screen's real input, no userId), two originals under alias
+  // ids in one pay run — each version reads its own chain, and only the shown version is Latest.
+  const asMap = (draft: TimesheetDraft) => ({ ...draftToFirestoreMap(draft), exportedAt: new Date('2026-11-16T09:00:00Z') })
+  const aliasRows = exportedVersionRows({
+    versions: [
+      { documentId: 'timesheet_old-invite_1793491200', revision: 0, data: asMap(original) },
+      { documentId: 'timesheet_u1_1793491200', revision: 0, data: asMap(original) },
+      { documentId: 'timesheet_u1_1793491200_rev1', revision: 1, data: asMap(revised) },
+    ],
+    shownDocumentId: 'timesheet_u1_1793491200_rev1',
+    currency: 'GBP',
+  })
+  assert.deepEqual(aliasRows.map((row) => row.latest), [false, false, true])
+  assert.match(aliasRows[0].invoiceNumber, /^TS-1793491200-OLDINV/)
+  assert.match(aliasRows[1].invoiceNumber, /^TS-1793491200-U1$/)
+  assert.match(aliasRows[2].invoiceNumber, /^TS-1793491200-U1-REV1$/)
+  assert.match(aliasRows[2].differenceText ?? '', /^\+£/)
+  assert.match(aliasRows[0].totalText, /^£/)
 })
 
 // ---- Review of #368 ----

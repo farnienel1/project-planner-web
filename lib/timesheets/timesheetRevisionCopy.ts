@@ -183,12 +183,11 @@ export type ExportedVersionRow = {
   invoiceNumber: string
   /** When it was signed off (the line manager's signature, else the person's), epoch ms; null when unknown. */
   signedAtMs: number | null
-  exportedAtMs: number | null
   /** "£1,250.00", or "Total not available (older export)" for a version exported without a signed copy. */
   totalText: string
   /** "+£44.12" from the previous version, the rulebook's "not available" wording, or null for the original. */
   differenceText: string | null
-  /** The newest version listed (the one the row above shows). */
+  /** The version the main row shows (`shownDocumentId`). */
   latest: boolean
 }
 
@@ -197,22 +196,23 @@ export type ExportedVersionRow = {
  * each with its invoice number, when it was signed, its total and the difference from the version before it. Every
  * figure and word is the rulebook's (`timesheetExportedTotal`, `timesheetRevisionCopy` over `timesheetRevisionDifference`
  * and the invoice numbers, `timesheetRevisionLabel`, `TIMESHEET_ORIGINAL_VERSION_LABEL`); each total is read from that
- * version's own stored signed copy, never re-priced. A version whose document id is not known is still listed (guardrail
- * 3), by its stored revision number, without an invoice number.
+ * version's own stored signed copy, never re-priced. A pay run can hold two originals under alias ids, so each version
+ * is read against its OWN chain (`timesheetVersionsForPeriod` groups by original). A version whose document id is not
+ * known is still listed (guardrail 3), by its stored revision number, without an invoice number.
  */
 export function exportedVersionRows(input: {
   versions: ReadonlyArray<{ documentId: string; revision: number; data: Record<string, unknown> }>
+  /** The stored document id of the version the main row shows (marked `latest`). */
+  shownDocumentId: string | null | undefined
   currency: string
 }): ExportedVersionRow[] {
-  const chain = timesheetVersionsForPeriod(input.versions.map((version) => ({ documentId: version.documentId, data: version.data })))[0] ?? []
+  const chains = timesheetVersionsForPeriod(input.versions.map((version) => ({ documentId: version.documentId, data: version.data })))
   const sorted = [...input.versions].sort((a, b) => a.revision - b.revision)
-  const newest = sorted.length > 0 ? sorted[sorted.length - 1].revision : 0
+  const shown = input.shownDocumentId ?? ''
   return sorted.map((version) => {
     const total = timesheetExportedTotal(version.data)
-    const inChain = chain.some((entry) => entry.documentId === version.documentId)
-    const copy = inChain
-      ? timesheetRevisionCopy({ documentId: version.documentId, chain, total, currency: input.currency })
-      : null
+    const chain = version.documentId ? chains.find((entry) => entry.some((v) => v.documentId === version.documentId)) : undefined
+    const copy = chain ? timesheetRevisionCopy({ documentId: version.documentId, chain, total, currency: input.currency }) : null
     const data = version.data
     return {
       documentId: version.documentId,
@@ -220,10 +220,10 @@ export function exportedVersionRows(input: {
       label: timesheetRevisionLabel(version.revision) || TIMESHEET_ORIGINAL_VERSION_LABEL,
       invoiceNumber: copy?.invoiceNumber ?? '',
       signedAtMs: documentInstantMs(data.managerSignedAt) ?? documentInstantMs(data.operativeSignedAt) ?? null,
-      exportedAtMs: documentInstantMs(data.exportedAt) ?? null,
+      // Follow-up: "Total not available" should become its own rulebook constant.
       totalText: total == null ? TIMESHEET_REVISION_DIFFERENCE_UNKNOWN.replace('Difference', 'Total') : formatMoney(total, input.currency),
       differenceText: version.revision === 0 ? null : copy?.differenceText ?? TIMESHEET_REVISION_DIFFERENCE_UNKNOWN,
-      latest: version.revision === newest,
+      latest: version.documentId === shown,
     }
   })
 }

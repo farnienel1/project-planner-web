@@ -1392,11 +1392,15 @@ function ExportedTimesheetsList({
                 })),
                 { documentId: row.documentId ?? '', revision: row.draft.revision ?? 0, data: draftToFirestoreMap(row.draft) },
               ],
+              shownDocumentId: row.documentId ?? '',
               currency,
             })
+            // Re-review #342 item 1: a person whose pay is not known shows no figures (as the main row's "—").
+            const payKnown = (payStatusOf ? payStatusOf(row.user) : 'ready') === 'ready'
+            const listId = `exported-versions-${row.id}`
             const downloadVersion = (documentId: string, revision: number) => {
               if (!onDownload) return
-              if (revision === (row.draft.revision ?? 0) && documentId === (row.documentId ?? '')) return onDownload(row, period)
+              if (documentId === (row.documentId ?? '') && revision === (row.draft.revision ?? 0)) return onDownload(row, period)
               const version = earlier.find((entry) => entry.documentId === documentId && entry.revision === revision)
               if (version) onDownload({ ...row, draft: version.draft, documentId: version.documentId, earlierVersions: [] }, period)
             }
@@ -1405,10 +1409,10 @@ function ExportedTimesheetsList({
                 {main}
                 <tr>
                   <td colSpan={12} className="pu-sub">
-                    <p style={{ margin: '0 0 6px', fontWeight: 600 }}>
+                    <h3 id={listId} style={{ margin: '0 0 6px', fontWeight: 600, fontSize: 'inherit' }}>
                       Versions of this pay run · {versions.length}
-                    </p>
-                    <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 4 }}>
+                    </h3>
+                    <ul aria-labelledby={listId} style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 4 }}>
                       {versions.map((version) => (
                         <li
                           key={`${version.documentId}|${version.revision}`}
@@ -1420,8 +1424,8 @@ function ExportedTimesheetsList({
                           {version.signedAtMs != null ? (
                             <span>Signed {formatStampInZone(new Date(version.signedAtMs), timeZone)}</span>
                           ) : null}
-                          <b>{version.totalText}</b>
-                          {version.differenceText ? <span>{version.differenceText}</span> : null}
+                          <b>{payKnown ? version.totalText : '—'}</b>
+                          {payKnown && version.differenceText ? <span>{version.differenceText}</span> : null}
                           {onDownload ? (
                             <button
                               type="button"
