@@ -8,6 +8,7 @@ const OWNER_ROUTES = [
   '/api/owner/directory/orgs',
   '/api/owner/directory/people',
   '/api/owner/search?q=large',
+  '/api/owner/overview?period=month',
 ]
 
 test.describe('owner routes refuse everyone but the owner', () => {

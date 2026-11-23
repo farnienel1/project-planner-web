@@ -63,5 +63,70 @@
         "demo-3"
       ]
     }
+  },
+  "commandCentre": {
+    "_note": "Owner console PR 2 (Overview), worked out by hand at SEED_NOW (16 Nov 2026 12:00 UTC). month = from 1 Nov; year = from 1 Jan 2026, previous year = 1 Jan 2025 to 16 Nov 2025.",
+    "month": {
+      "activePeople": 66,
+      "activePeopleWithTest": 69,
+      "activeOrganisations": 4,
+      "activeOrganisationsWithTest": 5
+    },
+    "week": {
+      "activePeople": 4,
+      "activeOrganisations": 1
+    },
+    "mrr": {
+      "pence": 14800,
+      "payingOrganisations": 2,
+      "missing": 0,
+      "trials": 1
+    },
+    "year": {
+      "newPeople": 2,
+      "newPeoplePrevious": 123,
+      "newPeoplePreviousWithTest": 126,
+      "newOrganisations": 5,
+      "newOrganisationsWithTest": 6,
+      "newOrganisationsPrevious": 1
+    },
+    "attention": [
+      {
+        "orgId": "org-scheduled",
+        "kinds": [
+          "scheduled"
+        ],
+        "label": "Scheduled for deletion · erased in 24 days"
+      },
+      {
+        "orgId": "org-lapsed",
+        "kinds": [
+          "paymentFailed"
+        ],
+        "label": "Payment failed · apps blocked"
+      },
+      {
+        "orgId": "org-small",
+        "kinds": [
+          "trialEnding"
+        ],
+        "label": "Trial ends in 5 days"
+      },
+      {
+        "orgId": "org-unfinished",
+        "kinds": [
+          "unfinished"
+        ],
+        "label": "Setup unfinished"
+      }
+    ],
+    "feedFirst": [
+      "org:org-unfinished",
+      "person:contract-USER-IOS-1",
+      "person:contract-user-web-1",
+      "org:org-small",
+      "audit:seed-req-1",
+      "org:org-eur"
+    ]
   }
 }

@@ -4,9 +4,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { getClientAuthHeaders } from '@/lib/security/clientAuthHeaders'
 import type { OwnerCounts } from '@/lib/owner/ownerCounts'
 import type { OwnerSearchResult } from '@/lib/owner/directory'
+import type { CommandCentre } from '@/lib/owner/commandCentre'
 
 /**
- * The server keeps directory rows for 60 s per instance and clears them on owner changes, but another instance may
+ * The server keeps directory rows for 200 s per instance (OWNER_DIRECTORY_CACHE_MS) and clears them on owner changes, but another instance may
  * still hold old rows. After an owner change each directory route and search asks once for fresh rows (`refresh=1`),
  * per path: the first request to one path never clears the flag for another (re-review of #348, final check).
  */
@@ -33,9 +34,9 @@ export function resetOwnerDirectoryStaleForTests(): void {
   refreshedGeneration.clear()
 }
 
-/** True for the routes that read the cached directory. */
+/** True for the routes that read the cached directory (the Overview builds its figures from it too, PR 2). */
 export function readsOwnerDirectory(path: string): boolean {
-  return path.startsWith('/api/owner/directory/') || path === '/api/owner/search'
+  return path.startsWith('/api/owner/directory/') || path === '/api/owner/search' || path === '/api/owner/overview'
 }
 
 /** The query for a request: `refresh` is added once per path after an owner change, for the directory routes only. */
@@ -153,4 +154,59 @@ export function useOwnerActivity(period: string, includeTestData: boolean, enabl
     }
   }, [period, includeTestData, enabled, tick])
   return { activity, error, loading, refresh }
+}
+
+export type OwnerOverviewResponse = CommandCentre & {
+  period: string
+  range: { start: string; end: string; label: string }
+  /** Set when the owner actions could not be read (the rest of the page still shows). */
+  auditError: string | null
+  /** The directory reached its read cap: figures may be short, and the page says so. */
+  truncated: boolean
+  countedAt: string
+}
+
+/** How often an open, visible Overview reads again (review of #433, S1). */
+export const OVERVIEW_POLL_MS = 180_000
+
+export type OwnerOverviewState = { overview: OwnerOverviewResponse | null; error: string | null; loading: boolean; refresh: () => void }
+
+/**
+ * The Overview (spec §4.1, §2 "live"): read when the page opens or the period / test-data choice changes, every
+ * OVERVIEW_POLL_MS while the tab is visible (review of #433, S1: the server keeps the directory a little longer, 200 s,
+ * so a poll rarely reads the collections again), and on Refresh (which reads again).
+ * The last good answer stays on screen while a new one loads; after a failure the error is shown with it.
+ */
+export function useOwnerOverview(period: string, includeTestData: boolean, enabled = true): OwnerOverviewState {
+  const [overview, setOverview] = useState<OwnerOverviewResponse | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [tick, setTick] = useState<{ n: number; forced: boolean }>({ n: 0, forced: false })
+  const refresh = useCallback(() => setTick((value) => ({ n: value.n + 1, forced: true })), [])
+  useEffect(() => {
+    if (!enabled) return
+    const controller = new AbortController()
+    setLoading(true)
+    ownerGet<OwnerOverviewResponse>('/api/owner/overview', { period, includeTestData, refresh: tick.forced }, controller.signal)
+      .then((value) => {
+        setOverview(value)
+        setError(null)
+      })
+      .catch((err: unknown) => {
+        if (controller.signal.aborted) return
+        setError(err instanceof Error ? err.message : 'Could not load the overview.')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false)
+      })
+    const timer = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      setTick((value) => ({ n: value.n + 1, forced: false }))
+    }, OVERVIEW_POLL_MS)
+    return () => {
+      controller.abort()
+      window.clearInterval(timer)
+    }
+  }, [period, includeTestData, enabled, tick])
+  return { overview, error, loading, refresh }
 }

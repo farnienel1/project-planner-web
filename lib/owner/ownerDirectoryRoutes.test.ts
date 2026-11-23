@@ -17,10 +17,11 @@ import { GET as orgsGET } from '../../app/api/owner/directory/orgs/route.ts'
 import { GET as peopleGET } from '../../app/api/owner/directory/people/route.ts'
 import { GET as searchGET } from '../../app/api/owner/search/route.ts'
 import { GET as countsGET } from '../../app/api/owner/counts/route.ts'
+import { GET as overviewGET } from '../../app/api/owner/overview/route.ts'
 
 const expected = JSON.parse(readFileSync(new URL('../../scripts/owner-console-seed/expected.json', import.meta.url), 'utf8'))
 const seed = buildOwnerConsoleSeed()
-const collections = { organizations: seed.orgs, users: seed.users, invitations: seed.invitations }
+const collections = { organizations: seed.orgs, users: seed.users, invitations: seed.invitations, adminAuditLog: seed.adminAuditLog }
 
 const ENV = ['NEXT_PUBLIC_FIREBASE_API_KEY', 'NEXT_PUBLIC_FIREBASE_PROJECT_ID'] as const
 const realEnv = Object.fromEntries(ENV.map((name) => [name, process.env[name]]))
@@ -56,6 +57,7 @@ const routes = [
   ['people', peopleGET, '/api/owner/directory/people'],
   ['search', searchGET, '/api/owner/search?q=large'],
   ['counts', countsGET, '/api/owner/counts'],
+  ['overview', overviewGET, '/api/owner/overview?period=month'],
 ] as const
 
 for (const [name, handler, path] of routes) {
@@ -199,5 +201,52 @@ test('re-review of #348: on Netlify the edge address (x-nf-client-connection-ip)
     last = (await countsGET(request)).status
   }
   // Refused by the guard (403) until the per-address limit is reached, whatever x-forwarded-for said.
+  assert.equal(last, 429)
+})
+
+// MARK: - Overview (owner console PR 2). The figures themselves are tested at a fixed time in commandCentre.test.ts;
+// here the route runs at the real time, so only the figures that do not depend on the date are compared.
+
+test('overview: an unknown period is 400 and reads nothing', async () => {
+  const backend = installFakeFirestore(collections, owner)
+  assert.equal((await overviewGET(get('/api/owner/overview?period=forever'))).status, 400)
+  assert.equal(backend.calls.filter((call) => call.url.includes('/documents')).length, 0)
+})
+
+test('overview: MRR, attention and the owner action equal the fixtures; no full email or search key leaves the server', async () => {
+  installFakeFirestore(collections, owner)
+  const response = await overviewGET(get('/api/owner/overview?period=month'))
+  assert.equal(response.status, 200)
+  const raw = await response.text()
+  const body = JSON.parse(raw) as {
+    headline: { mrr: { pence: number; payingOrganisations: number; trials: number } }
+    attention: { orgId: string }[]
+    feed: { kind: string; orgId?: string }[]
+    auditError: string | null
+  }
+  const e = expected.commandCentre
+  assert.equal(body.headline.mrr.pence, e.mrr.pence)
+  assert.equal(body.headline.mrr.payingOrganisations, e.mrr.payingOrganisations)
+  assert.equal(body.headline.mrr.trials, e.mrr.trials)
+  assert.ok(body.attention.some((row) => row.orgId === 'org-unfinished'))
+  assert.equal(body.attention.some((row) => row.orgId === 'org-test'), false)
+  assert.ok(body.feed.some((item) => item.kind === 'ownerAction' && item.orgId === 'org-test'))
+  assert.equal(body.auditError, null)
+  assert.equal(/[a-z0-9.]{2,}@/i.test(raw), false)
+  assert.equal(raw.includes('_search') || raw.includes('_emails'), false)
+})
+
+test('overview: test data toggles the test company into the feed', async () => {
+  installFakeFirestore(collections, owner)
+  const feedIds = async (query: string) =>
+    ((await (await overviewGET(get(`/api/owner/overview?period=to_date${query}`))).json()) as { feed: { id: string }[] }).feed.map((item) => item.id)
+  assert.ok((await feedIds('&includeTestData=1')).includes('org:org-test'))
+  assert.equal((await feedIds('')).includes('org:org-test'), false)
+})
+
+test('overview: 61 reads in a minute from one owner is 429', async () => {
+  installFakeFirestore(collections, owner)
+  let last = 0
+  for (let i = 0; i < 61; i += 1) last = (await overviewGET(get('/api/owner/overview?period=month'))).status
   assert.equal(last, 429)
 })

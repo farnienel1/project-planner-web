@@ -31,7 +31,7 @@ export const CONSOLE_NAV: ConsoleNavGroup[] = [
     id: 'today',
     label: 'Today',
     items: [
-      { label: 'Overview', href: '/developer', shown: true, usesPeriod: true, note: 'Users, organisations, billing and signed timesheet value; to be rebuilt in PR 2.', plannedIn: 'PR 2' },
+      { label: 'Overview', href: '/developer', shown: true, usesPeriod: true, note: 'Active organisations and people, MRR, new people and organisations, organisations needing attention and the live feed (PR 2).' },
       { label: 'Needs you', href: null, shown: false, note: 'Not built yet (PR 3).', plannedIn: 'PR 3' },
     ],
   },
@@ -56,7 +56,7 @@ export const CONSOLE_NAV: ConsoleNavGroup[] = [
     id: 'product',
     label: 'Product',
     items: [
-      { label: 'Growth & engagement', href: '/developer/growth', shown: true, note: 'Directory and product events; rebuilt from records in PR 8.', plannedIn: 'PR 8' },
+      { label: 'Growth & engagement', href: '/developer/growth', shown: true, usesPeriod: true, note: 'Directory and product events, and the platform scoreboard moved from the Overview (PR 2); rebuilt from records in PR 8.', plannedIn: 'PR 8' },
       { label: 'Feature usage', href: '/developer/usage', shown: true, note: 'productEvents (web, people who accepted analytics cookies).' },
       { label: 'Analytics', href: '/developer/analytics', shown: true, note: 'Old page, kept until Growth replaces it (PR 8).', plannedIn: 'PR 8' },
       { label: 'Feedback', href: '/developer/feedback', shown: true, badge: 'feedbackTriage', note: 'productFeedback board.' },

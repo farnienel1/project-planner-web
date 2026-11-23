@@ -69,6 +69,12 @@ export type OwnerOrgRow = {
   deletion: 'active' | 'scheduled' | 'erased'
   eraseAfterMs: number | null
   isTest: boolean
+  /** `billing.trialEnd` (owner console PR 2, the "trial ending" reason). */
+  trialEndMs: number | null
+  /** `billing.mrrPence` as stored; null when missing or not a number (never filled in from a list price). */
+  mrrPence: number | null
+  cancelAtPeriodEnd: boolean
+  lastPaymentFailedAtMs: number | null
 }
 
 export function ownerOrgRow(doc: PlainDoc, nowMs = Date.now()): OwnerOrgRow | null {
@@ -90,6 +96,10 @@ export function ownerOrgRow(doc: PlainDoc, nowMs = Date.now()): OwnerOrgRow | nu
     deletion: deletion.state,
     eraseAfterMs: deletion.state === 'scheduled' ? deletion.eraseAfterMs : null,
     isTest: isTestOrganisation(data),
+    trialEndMs: billing ? timeMs(billing.trialEnd) : null,
+    mrrPence: billing && typeof billing.mrrPence === 'number' && Number.isFinite(billing.mrrPence) ? billing.mrrPence : null,
+    cancelAtPeriodEnd: billing?.cancelAtPeriodEnd === true,
+    lastPaymentFailedAtMs: billing ? timeMs(billing.lastPaymentFailedAt) : null,
   }
 }
 
