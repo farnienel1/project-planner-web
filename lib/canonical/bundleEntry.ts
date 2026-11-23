@@ -283,6 +283,7 @@ export {
   paymentRunHistoryToFirestore,
   pickTimesheetRowForPeriod,
   resolveTimesheetExportedAtMs,
+  timesheetLineReviewActionsAllowed,
   resolveTimesheetPeriod,
   selectableTimesheetPaymentRunPeriods,
   timesheetBelongsToOrganization,
@@ -1157,6 +1158,7 @@ export {
   organizationEraseDue,
   parseOrganizationDeletion,
 } from './organizationDeletion'
+export { canExportCompanyData, COMPANY_EXPORT_REFUSED_MESSAGE } from './companyDataExport'
 
 export {
   ANNUAL_LEAVE_BOOKED_LABEL,

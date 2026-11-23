@@ -86,6 +86,7 @@ var ProjectPlannerCanonical = (() => {
     CLAIM_EVIDENCE_SITE_AUDIT_NOTE: () => CLAIM_EVIDENCE_SITE_AUDIT_NOTE,
     CLAIM_EVIDENCE_TAKE_PHOTO_LABEL: () => CLAIM_EVIDENCE_TAKE_PHOTO_LABEL,
     COMPANY_ACTIVITY_NOTICE_TYPES: () => COMPANY_ACTIVITY_NOTICE_TYPES,
+    COMPANY_EXPORT_REFUSED_MESSAGE: () => COMPANY_EXPORT_REFUSED_MESSAGE,
     CROSS_PLATFORM_CONTRACT_READERS: () => CROSS_PLATFORM_CONTRACT_READERS,
     CURRENCY_OPTIONS: () => CURRENCY_OPTIONS,
     CUSTOM_HOURS_BREAK_WARNING: () => CUSTOM_HOURS_BREAK_WARNING,
@@ -818,6 +819,7 @@ var ProjectPlannerCanonical = (() => {
     canEditPayeClaim: () => canEditPayeClaim,
     canEditTimesheetEntry: () => canEditTimesheetEntry,
     canEditWorkCatalogue: () => canEditWorkCatalogue,
+    canExportCompanyData: () => canExportCompanyData,
     canGenerateOvertimeReport: () => canGenerateOvertimeReport,
     canManageMaterialCatalogue: () => canManageMaterialCatalogue,
     canManageOperatives: () => canManageOperatives,
@@ -1804,6 +1806,7 @@ var ProjectPlannerCanonical = (() => {
     timesheetLeaveLines: () => timesheetLeaveLines,
     timesheetLineClockText: () => timesheetLineClockText,
     timesheetLineDisplay: () => timesheetLineDisplay,
+    timesheetLineReviewActionsAllowed: () => timesheetLineReviewActionsAllowed,
     timesheetListBucket: () => timesheetListBucket,
     timesheetNotificationDedupeKey: () => timesheetNotificationDedupeKey,
     timesheetOwnerCanAddExtras: () => timesheetOwnerCanAddExtras,
@@ -4710,6 +4713,10 @@ var ProjectPlannerCanonical = (() => {
       return null;
     }
     return exportedAt;
+  }
+  function timesheetLineReviewActionsAllowed(sheet) {
+    if (!sheet) return true;
+    return resolveTimesheetExportedAtMs(sheet) == null;
   }
   function isTimesheetExported(fields) {
     return fields.exportedAtMs != null && fields.exportedAtMs > TIMESHEET_SIGNED_AFTER_MS;
@@ -13989,8 +13996,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.70.0" : "",
-      sha256: true ? "b26fd60f67100b1cb3c3ef4fc4d5f17c5a5251edef1e444a6c95c27dbd1d3409" : ""
+      version: true ? "1.71.0" : "",
+      sha256: true ? "2f9661384d84aee67faa7798508c73f08e6b08cc51d3b5623d12ba81c045ad86" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -20070,6 +20077,19 @@ var ProjectPlannerCanonical = (() => {
     return { erasedAt: new Date(Number.isFinite(erasedAtMs) ? erasedAtMs : Date.now()), name };
   }
   var ERASED_ORGANIZATIONS_COLLECTION = "erasedOrganizations";
+
+  // lib/canonical/companyDataExport.ts
+  var COMPANY_EXPORT_REFUSED_MESSAGE = "Only the Super Admin can export company data.";
+  function canExportCompanyData(viewer, organization) {
+    if (!viewer || viewer.isActive === false) return false;
+    const organizationId = String(organization?.id ?? "").trim();
+    if (!organizationId) return false;
+    const home = String(viewer.homeOrganizationId ?? "").trim() || String(viewer.organizationId ?? "").trim();
+    return isOrganizationSuperAdmin(
+      { id: viewer.id ?? null, isSuperAdmin: viewer.isSuperAdmin === true, organizationId: home || null },
+      { id: organizationId, creatorUserId: organization?.creatorUserId }
+    );
+  }
 
   // lib/canonical/bookingLeaveConflicts.ts
   var ANNUAL_LEAVE_BOOKED_LABEL = "Annual leave booked";
@@ -26540,8 +26560,8 @@ var ProjectPlannerCanonical = (() => {
   var TIMESHEET_REVISION_DUE_STATUS = "Update to sign";
   var TIMESHEET_REVISION_DUE_REVIEWER_MESSAGE = "Bookings have changed since this timesheet was exported. The exported timesheet stays as it was; the person signs an update (a revision), then you counter-sign it.";
   var TIMESHEET_REVIEW_AND_SIGN_REVISION_LABEL = "Review and sign again";
-  var TIMESHEET_CREATE_REVISION_LABEL = "Create revision";
-  var TIMESHEET_CREATE_REVISION_HELP = "This timesheet is exported and cannot be changed. A revision is a new version built from the live bookings, price work and expenses for this pay run. The person signs it, then their line manager counter-signs it.";
+  var TIMESHEET_CREATE_REVISION_LABEL = "Create revision to adjust this timesheet";
+  var TIMESHEET_CREATE_REVISION_HELP = "This timesheet has already been exported. Please make changes to the user\u2019s schedule via projects or small works, which reflect the actual hours they have worked, then return here and click the create revision button. This will allow the user to sign their timesheet again with the changes made, for you as their line manager to approve.";
   var TIMESHEET_REVISION_OPEN_MESSAGE = "A revision of this timesheet is already open. Finish and export it first.";
   var TIMESHEET_REVISION_NOT_EXPORTED_MESSAGE = "Only an exported timesheet can have a revision.";
   var TIMESHEET_REVISION_NOT_REVIEWER_MESSAGE = "Only the person, an admin or the person\u2019s line manager can create a revision of this timesheet.";

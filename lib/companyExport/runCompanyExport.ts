@@ -88,13 +88,15 @@ export async function runCompanyExport(options: {
   db: Firestore
   organizationId: string
   viewer: Viewer
+  /** The open organisation's creator (`canExportCompanyData`: the Super Admin only, rulebook 1.71.0). */
+  creatorUserId?: string | null
   includeNotifications: boolean
   signal?: AbortSignal
   onProgress?: (progress: CompanyExportProgress) => void
   now?: () => Date
 }): Promise<CompanyExportResult> {
   const { db, organizationId, signal } = options
-  if (!canExportCompanyData(options.viewer, organizationId)) throw new Error(COMPANY_EXPORT_REFUSED_MESSAGE)
+  if (!canExportCompanyData(options.viewer, { id: organizationId, creatorUserId: options.creatorUserId ?? null })) throw new Error(COMPANY_EXPORT_REFUSED_MESSAGE)
   const captured = captureOrganizationContext()
   const documents: CollectedDocument[] = []
   const problems: CollectionProblem[] = []
@@ -149,6 +151,10 @@ export async function runCompanyExport(options: {
   checkpoint()
   if (!orgSnap.exists()) throw new Error('The organisation could not be read.')
   const organization = orgSnap.data() as Record<string, unknown>
+  // Rulebook 1.71.0: checked again against the organisation as just read, so a stale creator id never opens it.
+  if (!canExportCompanyData(options.viewer, { id: organizationId, creatorUserId: organization.creatorUserId })) {
+    throw new Error(COMPANY_EXPORT_REFUSED_MESSAGE)
+  }
   step += 1
 
   // 2. The roster: users where organizationId is this organisation, then anchored members by id.

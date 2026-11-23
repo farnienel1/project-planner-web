@@ -281,6 +281,19 @@ export function resolveTimesheetExportedAtMs(data: Record<string, unknown>): num
   return exportedAt
 }
 
+/**
+ * Rulebook 1.71.0 (owner decision 23 Nov, issue 22A): whether a reviewer is offered the line actions (✓ approve,
+ * ✕ decline, ⚙ edit hours) on a timesheet — on its labour lines, price work, expenses and late extras. Never once
+ * the sheet is exported (`resolveTimesheetExportedAtMs`, the test the security rules' lock-all uses, 1.54.1): an
+ * exported sheet is frozen, so an action there could only be refused ("Missing or insufficient permissions").
+ * Corrections go through a revision (1.55.0). The other conditions (the viewer reviews this person, the person's
+ * signature) stay the app's.
+ */
+export function timesheetLineReviewActionsAllowed(sheet: Record<string, unknown> | null | undefined): boolean {
+  if (!sheet) return true
+  return resolveTimesheetExportedAtMs(sheet) == null
+}
+
 export function isTimesheetExported(fields: Pick<TimesheetStatusFields, 'exportedAtMs'>): boolean {
   return fields.exportedAtMs != null && fields.exportedAtMs > TIMESHEET_SIGNED_AFTER_MS
 }

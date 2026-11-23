@@ -51,9 +51,12 @@ export const TIMESHEET_REVISION_DUE_STATUS = 'Update to sign'
 export const TIMESHEET_REVISION_DUE_REVIEWER_MESSAGE =
   'Bookings have changed since this timesheet was exported. The exported timesheet stays as it was; the person signs an update (a revision), then you counter-sign it.'
 export const TIMESHEET_REVIEW_AND_SIGN_REVISION_LABEL = 'Review and sign again'
-export const TIMESHEET_CREATE_REVISION_LABEL = 'Create revision'
+/** Rulebook 1.71.0 (owner decision 23 Nov, issue 22B): the reviewer's button on an exported timesheet, exactly. */
+export const TIMESHEET_CREATE_REVISION_LABEL = 'Create revision to adjust this timesheet'
+/** Rulebook 1.71.0 (issue 22B): the text under it, exactly. A revision is built from the bookings, so the booking
+ * is changed in scheduling first. */
 export const TIMESHEET_CREATE_REVISION_HELP =
-  'This timesheet is exported and cannot be changed. A revision is a new version built from the live bookings, price work and expenses for this pay run. The person signs it, then their line manager counter-signs it.'
+  'This timesheet has already been exported. Please make changes to the user’s schedule via projects or small works, which reflect the actual hours they have worked, then return here and click the create revision button. This will allow the user to sign their timesheet again with the changes made, for you as their line manager to approve.'
 export const TIMESHEET_REVISION_OPEN_MESSAGE = 'A revision of this timesheet is already open. Finish and export it first.'
 export const TIMESHEET_REVISION_NOT_EXPORTED_MESSAGE = 'Only an exported timesheet can have a revision.'
 export const TIMESHEET_REVISION_NOT_REVIEWER_MESSAGE =

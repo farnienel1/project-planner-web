@@ -439,6 +439,8 @@ test('a signed hourly line stays in hours at the stored amount', () => {
     timeZone: 'Europe/London',
     extrasMode: 'raw',
     standardDayHours: 8,
+    // Review of #414: the day's working hours are passed, but a signed line keeps its stored wording exactly.
+    dayPolicyOn: () => DEFAULT_PAYROLL_POLICY,
     draft: {
       ...emptyTimesheetDraft(),
       weeklyReportOverride: {

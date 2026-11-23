@@ -255,22 +255,10 @@ export function DailyOverviewBookingSheet({
   const hoursValid = slot !== 'CUSTOM' || timesValid
   const slotOptions = sheetSlotOptions(day, payroll, storedSlot)
 
-  // Rulebook 1.69.0 (`bookingHoursBreakdownDays`): the Hours breakdown box under the working hours in effect on the
-  // day shown, with the booking's own overtime rate as chosen on screen (null = the organisation's).
-  const breakdown = useMemo(
-    () =>
-      hoursBreakdownForDates(
-        [day],
-        { ...hoursFields(), otMultiplierOverride: overtimeRate },
-        payroll
-      ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [slot, workStartTime, workEndTime, breakRemoved, overtimeRate, payroll, day, hoursEdited, row.timeSlotRaw]
-  )
-
   // The slot fields for the collection the booking is written to (labour `FULL DAY`, manager site `FULL_DAY`).
   // An unchanged booking whose stored slot word the sheet does not offer (`Evening`, `Overtime`) is written back as
-  // stored (`sheetSlotWriteFields` `stored`).
+  // stored (`sheetSlotWriteFields` `stored`). Declared before the Hours breakdown below, which calls it while
+  // rendering: `sourceCollection` must be initialised first (a `const` read before its line throws).
   const sourceCollection: SheetBookingCollection = row.kind === 'operative' ? 'bookings' : 'managerSiteBookings'
   function hoursFields(collection: SheetBookingCollection = sourceCollection) {
     const storedBooking =
@@ -286,6 +274,19 @@ export function DailyOverviewBookingSheet({
       hoursTouched: hoursEdited,
     })
   }
+
+  // Rulebook 1.69.0 (`bookingHoursBreakdownDays`): the Hours breakdown box under the working hours in effect on the
+  // day shown, with the booking's own overtime rate as chosen on screen (null = the organisation's).
+  const breakdown = useMemo(
+    () =>
+      hoursBreakdownForDates(
+        [day],
+        { ...hoursFields(), otMultiplierOverride: overtimeRate },
+        payroll
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [slot, workStartTime, workEndTime, breakRemoved, overtimeRate, payroll, day, hoursEdited, row.timeSlotRaw]
+  )
 
   // 1.13.0 lunch warning (`customHoursBreakWarning`): the confirm step before custom hours are saved.
   const breakConfirmed = () => confirmCustomHoursBreak(payroll, day, hoursFields())
