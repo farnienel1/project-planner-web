@@ -5,6 +5,7 @@
  * Clash timelines stay in this app. Days use the organisation zone (`organizationTimeZone`).
  */
 
+import { qualificationExpiryDate } from '@/lib/qualifications/personQualifications'
 import type { Booking, HolidayBooking, Operative, Project, ProjectMaterialLine, MaterialSendRecord, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type {
@@ -94,10 +95,16 @@ export type OrgWarningsResult = {
  */
 export function qualificationExpiryOperatives(operatives: Operative[]) {
   return operatives.map((operative) => {
-    const names = new Map((operative.qualifications || []).map((qualification) => [qualification.id, qualification.name]))
-    const expiries = Object.entries(operative.qualificationExpiryDates || []).flatMap(([qualificationId, expiry]) => {
-      const name = names.get(qualificationId)
-      if (!name || !(expiry instanceof Date) || Number.isNaN(expiry.getTime())) return []
+    // Review of #415: the expiry is read as the profile page and the editor read it (`qualificationExpiryDate`: the
+    // exact key first, else the same id in another letter case), one per assigned qualification.
+    const seen = new Set<string>()
+    const expiries = (operative.qualifications || []).flatMap((qualification) => {
+      const qualificationId = String(qualification?.id || '').trim()
+      const name = String(qualification?.name || '')
+      if (!qualificationId || !name || seen.has(qualificationId.toLowerCase())) return []
+      seen.add(qualificationId.toLowerCase())
+      const expiry = qualificationExpiryDate(operative.qualificationExpiryDates, qualificationId)
+      if (!expiry) return []
       return [{ qualificationId, name, expiryIso: expiry.toISOString() }]
     })
     return {

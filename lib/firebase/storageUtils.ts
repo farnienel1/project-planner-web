@@ -2,12 +2,22 @@ import { ref, uploadBytesResumable, getDownloadURL, getMetadata } from 'firebase
 import { qualificationCertificateStoragePath } from '@/lib/canonical/operativeQualifications'
 import { timesheetExportStoragePath } from '@/lib/canonical/timesheetPeriod'
 import { storage, auth } from '@/lib/firebase/config'
-import { withTimeout } from '@/lib/client/withTimeout'
+import { TimeoutError, isTimeoutError, withTimeout } from '@/lib/client/withTimeout'
 import { generatedStorageFileName } from '@/lib/security/uploadLimits'
 import { assertUploadAllowed } from '@/lib/security/uploadGuard'
 import { variationUploadStallReason } from '@/lib/variations/variationUploadStall'
 
 const UPLOAD_TIMEOUT_MS = 180_000
+/**
+ * An upload that sends nothing for this long is cancelled (owner issue 16, 23 Nov: a certificate renewal sat on
+ * "Saving…"). The Firebase SDK silently retries a request that gets no reply for up to 10 minutes; before this, only
+ * the 3-minute cap stopped it, and `uploadFile` then started the whole upload again for another 3 minutes.
+ */
+export const UPLOAD_STALL_MS = 60_000
+
+export const UPLOAD_STALLED_MESSAGE =
+  'The file stopped uploading for a minute, so it was cancelled and nothing was saved. Check your connection and try again.'
+export const UPLOAD_TOO_SLOW_MESSAGE = 'The file upload did not finish. Check your connection and try again.'
 
 export function requireStorageUid(): string {
   const uid = auth?.currentUser?.uid
@@ -30,25 +40,37 @@ function uploadOnce(storagePath: string, file: Blob, contentType: string): Promi
   return new Promise((resolve, reject) => {
     let settled = false
     const task = uploadBytesResumable(storageRef, file, { contentType })
+    let stall: ReturnType<typeof setTimeout> | null = null
     const finish = (outcome: () => void) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
+      if (stall) clearTimeout(stall)
       outcome()
     }
-    const timer = setTimeout(() => {
+    // A time-out is a TimeoutError, so `uploadFile` never starts the same upload again after it.
+    const cancel = (message: string) => {
       try {
         task.cancel()
       } catch {
         /* already finished */
       }
-      finish(() => reject(new Error('The file upload did not finish. Check your connection and try again.')))
-    }, UPLOAD_TIMEOUT_MS)
+      finish(() => reject(new TimeoutError(message)))
+    }
+    const armStall = () => {
+      if (stall) clearTimeout(stall)
+      stall = setTimeout(() => cancel(UPLOAD_STALLED_MESSAGE), UPLOAD_STALL_MS)
+    }
+    const timer = setTimeout(() => cancel(UPLOAD_TOO_SLOW_MESSAGE), UPLOAD_TIMEOUT_MS)
+    armStall()
     task.on(
       'state_changed',
-      () => {},
+      () => armStall(),
       (error) => finish(() => reject(error)),
       () => {
+        // Uploaded: the stall timer must not cancel it while the link is fetched (the overall cap still applies).
+        if (stall) clearTimeout(stall)
+        stall = null
         getDownloadURL(storageRef)
           .then((url) => finish(() => resolve(url)))
           .catch((error) => finish(() => reject(error)))
@@ -91,7 +113,7 @@ export async function uploadFile(
   try {
     return await uploadOnce(storagePath, file, contentType)
   } catch (first) {
-    if (isStoragePermissionError(first)) throw first
+    if (isStoragePermissionError(first) || isTimeoutError(first)) throw first
     await ensureStorageAuth()
     try {
       return await uploadOnce(storagePath, file, contentType)

@@ -1791,16 +1791,17 @@ export function EditUserProfile({
                 organizationId={organization?.id || ''}
                 canManageOrg={canManageOrgQuals}
                 showReportLink={Boolean(target && currentUser && target.id !== currentUser.id)}
-                onSave={async (next) => {
+                onSave={async (next, baseline) => {
                   if (!organization?.id) return
                   setQualSaving(true)
                   setQualError(null)
                   try {
                     const urls = canonicalCertificateUrls(next.qualifications, next.qualificationCertificateURLs)
-                    await patchOperativeQualifications(organization.id, {
-                      ...next,
-                      qualificationCertificateURLs: urls,
-                    })
+                    await patchOperativeQualifications(
+                      organization.id,
+                      { ...next, qualificationCertificateURLs: urls },
+                      baseline
+                    )
                   } catch (err: unknown) {
                     const message = formatCertificateSaveError(err)
                     setQualError(message)
