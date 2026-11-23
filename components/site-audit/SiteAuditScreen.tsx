@@ -20,7 +20,11 @@ import {
   SITE_AUDIT_JOB_TABS,
   SITE_AUDIT_JOBS_FAILED_MESSAGE,
   SITE_AUDIT_LEAVE_CONFIRM_MESSAGE,
+  siteAuditAuthoredJobIds,
+  siteAuditBrowseJobs,
   siteAuditJobChoice,
+  siteAuditsVisibleToViewer,
+  type SiteAuditJobChoice,
   siteAuditJobTabCounts,
   siteAuditJobsInTab,
 } from '@/lib/siteAudit/siteAuditCreateDraft'
@@ -423,17 +427,21 @@ type ProjectFilter = 'All' | 'Active' | 'Upcoming' | 'Completed'
 
 function ProjectListView({
   title,
-  projects,
+  choice,
+  onRetry,
   audits,
   onBack,
   onSelectProject,
 }: {
   title: string
-  projects: Project[]
+  /** The jobs this person may browse (`siteAuditBrowseJobs`), with loading / failed (owner decision 23 Nov). */
+  choice: SiteAuditJobChoice<Project>
+  onRetry: () => void
   audits: SiteAudit[]
   onBack: () => void
   onSelectProject: (p: Project) => void
 }) {
+  const projects = choice.jobs
   const [filter, setFilter] = useState<ProjectFilter>('Active')
 
   // Rulebook 1.21.0 (`worksInTab`): the shared tabs on the organisation's day; inactive jobs are under Completed.
@@ -476,7 +484,18 @@ function ProjectListView({
         ))}
       </div>
 
-      {filtered.length === 0 ? (
+      {choice.state === 'loading' ? (
+        <div className="empty py-12 text-center">
+          <p className="text-sm text-slate-400">Loading jobs…</p>
+        </div>
+      ) : choice.state === 'failed' ? (
+        <div className="empty py-12 text-center">
+          <p className="text-sm text-(--red)">{SITE_AUDIT_JOBS_FAILED_MESSAGE}</p>
+          <button type="button" onClick={onRetry} className="pu-btn sm mt-3">
+            Retry
+          </button>
+        </div>
+      ) : filtered.length === 0 ? (
         <div className="empty py-12 text-center">
           <p className="text-sm text-slate-400">No projects found</p>
         </div>
@@ -541,9 +560,36 @@ type View =
   | { type: 'project-audits'; projectId: string; projectJobNumber: string; projectName: string; from: 'projects' | 'small-works' }
 
 export function SiteAuditScreen() {
-  const { organization } = useAuthStore()
-  const { audits, loading, error, loadAudits } = useSiteAuditStore()
+  const { organization, user } = useAuthStore()
+  const { audits: storedAudits, loading, error, loadAudits } = useSiteAuditStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
+  const projectsLoadedOrgId = useProjectStore((state) => state.projectsLoadedOrgId)
+  const smallWorksLoadedOrgId = useProjectStore((state) => state.smallWorksLoadedOrgId)
+  // Owner decision 23 Nov: the browse lists show only the jobs the person sees (rulebook §21 `visibleJobs`; every job
+  // for admins and managers) plus, for an operative, the jobs holding an audit they wrote; an operative sees the audits
+  // marked visible to operatives and their own (as the job's Site audits page and iOS).
+  const jobContext = useSiteAuditJobContext()
+  const operativeMode = isOperativeMode(user)
+  const audits = useMemo(
+    () => siteAuditsVisibleToViewer(storedAudits, { operativeMode, userId: user?.id }),
+    [storedAudits, operativeMode, user?.id]
+  )
+  const authoredJobIds = useMemo(() => siteAuditAuthoredJobIds(storedAudits, user?.id), [storedAudits, user?.id])
+  const browseChoice = (jobs: Project[], loadedOrgId: string | null | undefined): SiteAuditJobChoice<Project> => {
+    const choice = siteAuditBrowseJobs({
+      jobs,
+      viewer: jobContext.viewer,
+      context: jobContext.context,
+      contextLoaded: jobContext.contextLoaded,
+      contextFailed: jobContext.contextFailed,
+      authoredJobIds,
+    })
+    const catalogueLoaded = Boolean(organization?.id && loadedOrgId === organization.id)
+    return !catalogueLoaded && choice.state === 'ready' && jobs.length === 0 ? { state: 'loading', jobs: [] } : choice
+  }
+  const projectChoice = browseChoice(worksListMembership(projects, 'projects'), projectsLoadedOrgId)
+  const smallWorksChoice = browseChoice(worksListMembership(smallWorks, 'smallWorks'), smallWorksLoadedOrgId)
+  const choiceCount = (choice: SiteAuditJobChoice<Project>) => (choice.state === 'ready' ? choice.jobs.length : '…')
   const [view, setView] = useState<View>({ type: 'hub' })
   // Rulebook 1.30.0 §26: the signed-in person's own personal audits (owner only).
   const personal = usePersonalSiteAudits()
@@ -613,7 +659,7 @@ export function SiteAuditScreen() {
               <span className="t">Projects</span>
               <span className="s">Browse audits by project</span>
             </span>
-            <span className="count soft">{projects.length}</span>
+            <span className="count soft">{choiceCount(projectChoice)}</span>
           </button>
 
           <button type="button" onClick={() => setView({ type: 'small-works' })} className="ritem" data-hue="sw">
@@ -626,7 +672,7 @@ export function SiteAuditScreen() {
               <span className="t">Small works</span>
               <span className="s">Browse audits by small works job</span>
             </span>
-            <span className="count soft">{smallWorks.length}</span>
+            <span className="count soft">{choiceCount(smallWorksChoice)}</span>
           </button>
 
           <button type="button" onClick={() => setView({ type: 'personal' })} className="ritem" data-hue="hs">
@@ -653,7 +699,8 @@ export function SiteAuditScreen() {
     return shell(
       <ProjectListView
         title="Projects"
-        projects={worksListMembership(projects, 'projects')}
+        choice={projectChoice}
+        onRetry={jobContext.retry}
         audits={audits}
         onBack={() => setView({ type: 'hub' })}
         onSelectProject={(p) =>
@@ -673,7 +720,8 @@ export function SiteAuditScreen() {
     return shell(
       <ProjectListView
         title="Small works"
-        projects={worksListMembership(smallWorks, 'smallWorks')}
+        choice={smallWorksChoice}
+        onRetry={jobContext.retry}
         audits={audits}
         onBack={() => setView({ type: 'hub' })}
         onSelectProject={(p) =>

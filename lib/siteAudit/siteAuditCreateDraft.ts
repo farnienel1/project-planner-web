@@ -1,5 +1,6 @@
 import {
   dayKeyInOrganizationZone,
+  normalizeDocumentId,
   seesEveryJob,
   siteAuditFieldLimitError,
   visibleJobs,
@@ -14,7 +15,7 @@ import { dateFromDayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { isPlausibleDayKey } from '@/lib/security/boundedValue'
 import type { SiteAuditOutboxRecord } from '@/lib/siteAudit/siteAuditOutbox'
 import type { PhotoUpload } from '@/lib/siteAudit/auditPhotoUploads'
-import type { Project } from '@/types'
+import type { Project, SiteAudit } from '@/types'
 
 /**
  * The New site audit page (owner request 23 Nov): its job step lists projects or small works under All / Active /
@@ -225,3 +226,56 @@ export function siteAuditJobPageGrant(input: {
 
 /** How long the job list waits for an operative's bookings and tasks before saying it did not load (review of #419). */
 export const SITE_AUDIT_JOBS_LOAD_TIMEOUT_MS = 15_000
+
+/**
+ * The audits a person sees in the Site audit hub and on a job's Site audits page (the rule the job page already used,
+ * and iOS `siteAuditsForCurrentUser`): an operative sees audits marked visible to operatives and the audits they wrote;
+ * everyone else sees every audit.
+ */
+export function siteAuditsVisibleToViewer<T extends Pick<SiteAudit, 'visibleToOperatives' | 'createdByUserId'>>(
+  audits: ReadonlyArray<T>,
+  viewer: { operativeMode: boolean; userId: string | null | undefined }
+): T[] {
+  if (!viewer.operativeMode) return [...audits]
+  const uid = viewer.userId ?? ''
+  return audits.filter((audit) => audit.visibleToOperatives || (uid !== '' && audit.createdByUserId === uid))
+}
+
+/**
+ * The jobs in the Site audit hub's Projects / Small works browse lists (owner decision 23 Nov, before launch; iOS
+ * `SiteAuditProjectsBrowserView`): the jobs `siteAuditJobChoice` gives the person (rulebook §21 `visibleJobs` — every
+ * job for admins and managers), plus, for anyone else, every job that holds an audit they wrote (`authoredJobIds`,
+ * ids without case), so an operative's own past audits stay reachable after their booking, task or deadline on that
+ * job has gone. Loading / failed as `siteAuditJobChoice`; catalogue order kept.
+ */
+export function siteAuditBrowseJobs<T extends Project>(input: {
+  jobs: ReadonlyArray<T>
+  viewer: JobAccessViewer | null
+  context: WorksListContext | null
+  contextLoaded: boolean
+  contextFailed?: boolean
+  authoredJobIds: Iterable<string>
+}): SiteAuditJobChoice<T> {
+  const choice = siteAuditJobChoice(input)
+  if (choice.state !== 'ready' || !input.viewer?.role || seesEveryJob(input.viewer.role)) return choice
+  const authored = new Set<string>()
+  for (const id of input.authoredJobIds) {
+    const key = normalizeDocumentId(id)
+    if (key) authored.add(key)
+  }
+  if (authored.size === 0) return choice
+  const shown = new Set(choice.jobs.map((job) => job.id))
+  return {
+    state: 'ready',
+    jobs: input.jobs.filter((job) => shown.has(job.id) || authored.has(normalizeDocumentId(job.id))),
+  }
+}
+
+/** The job ids of the audits `userId` wrote (`createdByUserId`, as stored). */
+export function siteAuditAuthoredJobIds(
+  audits: ReadonlyArray<Pick<SiteAudit, 'projectId' | 'createdByUserId'>>,
+  userId: string | null | undefined
+): string[] {
+  if (!userId) return []
+  return audits.filter((audit) => audit.createdByUserId === userId && audit.projectId).map((audit) => audit.projectId)
+}
