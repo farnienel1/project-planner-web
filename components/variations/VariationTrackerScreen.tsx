@@ -45,6 +45,7 @@ import {
   variationTotals,
 } from '@/lib/canonical'
 import type { Project } from '@/types'
+import { trackerOrderAfterMove, trackerRowMovable, variationPinnedMoveText } from '@/lib/variations/variationTrackerDrag'
 
 const NOTES = [
   'Every variation on the job is here, in its current order. Turning the tracker on renumbered nothing.',
@@ -87,10 +88,12 @@ export function VariationTrackerScreen({
   const [dragId, setDragId] = useState<string | null>(null)
   const [filter, setFilter] = useState<VariationListFilter>('all')
   const [heading, setHeading] = useState('')
-  const [message, setMessage] = useState<{ text: string; tone: 'ok' | 'warn' } | null>(null)
+  const [message, setMessage] = useState<{ text: string; tone: 'ok' | 'warn' | 'locked' } | null>(null)
   const [busy, setBusy] = useState(false)
   const baseRows = useRef<Variation[] | null>(null)
   const dragging = useRef<string | null>(null)
+  // Touch and pen drag (the browser's own drag and drop is mouse only): the open row being moved by a pointer.
+  const pointerDrag = useRef<{ id: string; pointerId: number } | null>(null)
   const allowed = canUseVariationTracker(user, project, managers)
   const showCost = canSeeVariationCostsFor(user)
   const base = parentType === 'smallWork' ? `/dashboard/small-works/${project.id}/variations` : `/dashboard/projects/${project.id}/variations`
@@ -144,14 +147,18 @@ export function VariationTrackerScreen({
 
   // Moves an open variation to the place of another open one; a pinned row is never a target and never moves.
   const move = (fromId: string, toId: string) => {
-    if (fromId === toId) return
-    const current = [...openIds]
-    const from = current.indexOf(fromId)
-    const to = current.indexOf(toId)
-    if (from < 0 || to < 0) return
-    const [item] = current.splice(from, 1)
-    current.splice(to, 0, item)
-    setOrder(current)
+    const next = trackerOrderAfterMove(openIds, fromId, toId)
+    if (next) setOrder(next)
+  }
+
+  // Owner 23 Nov: trying to move a Submitted or Closed variation says why it cannot move.
+  const showLocked = (row: Variation) => setMessage({ text: variationPinnedMoveText(row), tone: 'locked' })
+
+  // Touch / pen: the row under the finger (`data-vo-id`), or null.
+  const rowIdAt = (x: number, y: number): string | null => {
+    const element = typeof document === 'undefined' ? null : document.elementFromPoint(x, y)
+    const tr = element instanceof Element ? element.closest('tr[data-vo-id]') : null
+    return tr?.getAttribute('data-vo-id') ?? null
   }
 
   const save = async (nextOrder: string[]) => {
@@ -179,6 +186,11 @@ export function VariationTrackerScreen({
       )
     } catch (error) {
       console.error('[variations] tracker save failed', error)
+      // `variationRenumberPlan` refused an order that would move a pinned variation (`VARIATION_PINNED_MESSAGE`).
+      if (error instanceof Error && error.message === VARIATION_PINNED_MESSAGE) {
+        setMessage({ text: VARIATION_PINNED_MESSAGE, tone: 'locked' })
+        return
+      }
       setMessage({
         text: error instanceof VariationsChangedError ? error.message : error instanceof Error ? `Nothing was renumbered: ${error.message}` : 'Nothing was renumbered.',
         tone: 'warn',
@@ -317,7 +329,13 @@ export function VariationTrackerScreen({
           </span>
         </div>
 
-        {message ? (
+        {message?.tone === 'locked' ? (
+          // The same banner as the order lock: readable in light and dark (amber text on white fails AA).
+          <div className="banner" data-hue="warn" role="status">
+            <div className="grow small">📌 {message.text}</div>
+            <button type="button" className="btn sm ghost" onClick={() => setMessage(null)}>OK</button>
+          </div>
+        ) : message ? (
           <p role="status" className="small" style={{ margin: 0, color: message.tone === 'warn' ? 'var(--red)' : 'var(--green)', fontWeight: 600 }}>
             {message.text}
             {message.tone === 'warn' ? (
@@ -348,13 +366,27 @@ export function VariationTrackerScreen({
                 const pinned = variationIsPinned(row)
                 const t = variationTotals(row)
                 const previous = variationPreviousNumbers(row)
-                const draggable = canDrag && !pinned
+                const draggable = trackerRowMovable(row, canDrag)
                 return (
                   <tr
                     key={row.id}
-                    draggable={draggable}
+                    data-vo-id={row.id}
+                    // A pinned row is still "draggable" while the tracker allows dragging, so the browser reports the
+                    // attempt and the locked message can say why it does not move; the drag itself is cancelled.
+                    draggable={canDrag}
                     onDragStart={(event) => {
-                      if (!draggable) return
+                      // A touch drag by the handle is already moving this row; never start a second, native drag.
+                      if (pointerDrag.current) {
+                        event.preventDefault()
+                        return
+                      }
+                      if (!draggable) {
+                        event.preventDefault()
+                        // Selecting text in a heading or description field is not a move attempt.
+                        const field = event.target instanceof Element && event.target.closest('input, textarea, [contenteditable="true"]')
+                        if (pinned && !field) showLocked(row)
+                        return
+                      }
                       baseRows.current = rows
                       dragging.current = row.id
                       setDragId(row.id)
@@ -387,10 +419,53 @@ export function VariationTrackerScreen({
                   >
                     <td style={{ padding: '10px 8px', verticalAlign: 'top' }}>
                       {pinned ? (
-                        <span title={VARIATION_PINNED_MESSAGE} aria-label="Pinned" className="muted">📌</span>
+                        <button
+                          type="button"
+                          className="btn sm ghost"
+                          style={{ padding: '0 6px' }}
+                          title={VARIATION_PINNED_MESSAGE}
+                          aria-label={`${row.voNumber} is locked`}
+                          onClick={() => showLocked(row)}
+                        >
+                          📌
+                        </button>
                       ) : (
                         <span className="row" style={{ gap: 2 }}>
-                          <span aria-hidden style={{ cursor: draggable ? 'grab' : 'default', color: 'var(--ink3)', fontSize: 18 }}>⋮⋮</span>
+                          <span
+                            aria-hidden
+                            style={{ cursor: draggable ? 'grab' : 'default', color: 'var(--ink3)', fontSize: 18, touchAction: draggable ? 'none' : undefined, padding: '0 4px' }}
+                            onPointerDown={(event) => {
+                              // Mouse uses the browser's drag and drop on the row; touch and pen drag by this handle.
+                              if (event.pointerType === 'mouse' || !draggable) return
+                              event.preventDefault()
+                              event.currentTarget.setPointerCapture(event.pointerId)
+                              baseRows.current = rows
+                              pointerDrag.current = { id: row.id, pointerId: event.pointerId }
+                              setDragId(row.id)
+                            }}
+                            onPointerMove={(event) => {
+                              const active = pointerDrag.current
+                              if (!active || active.pointerId !== event.pointerId) return
+                              const targetId = rowIdAt(event.clientX, event.clientY)
+                              if (targetId) move(active.id, targetId)
+                            }}
+                            onPointerUp={(event) => {
+                              const active = pointerDrag.current
+                              if (!active || active.pointerId !== event.pointerId) return
+                              pointerDrag.current = null
+                              setDragId(null)
+                              if (order) void save(order)
+                            }}
+                            onPointerCancel={() => {
+                              if (!pointerDrag.current) return
+                              pointerDrag.current = null
+                              setDragId(null)
+                              setOrder(null)
+                              baseRows.current = null
+                            }}
+                          >
+                            ⋮⋮
+                          </span>
                           <button type="button" className="btn sm ghost" style={{ padding: '0 6px' }} disabled={!canDrag || openIds.indexOf(row.id) <= 0} aria-label={`Move ${row.voNumber} up`} onClick={() => moveBy(row.id, -1)}>↑</button>
                           <button type="button" className="btn sm ghost" style={{ padding: '0 6px' }} disabled={!canDrag || openIds.indexOf(row.id) === openIds.length - 1} aria-label={`Move ${row.voNumber} down`} onClick={() => moveBy(row.id, 1)}>↓</button>
                         </span>
