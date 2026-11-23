@@ -32,3 +32,34 @@ export function trackerOrderAfterMove(openIds: readonly string[], fromId: string
 export function trackerRowMovable(row: { status?: string | null }, canDrag: boolean): boolean {
   return canDrag && !variationIsPinned(row)
 }
+
+/**
+ * Touch / pen drag by the handle, as plain state so it does not depend on React's render closures or on the handle
+ * keeping pointer capture while its row moves in the page (review of #420). `order` is the open order on screen.
+ */
+export type TrackerTouchDrag = { id: string; pointerId: number; order: string[]; moved: boolean }
+
+export function trackerTouchDragStart(openIds: readonly string[], id: string, pointerId: number): TrackerTouchDrag | null {
+  if (!openIds.includes(id)) return null
+  return { id, pointerId, order: [...openIds], moved: false }
+}
+
+/** The finger is over row `targetId` (or no row): the new state, or the same object when nothing changes. */
+export function trackerTouchDragMove(state: TrackerTouchDrag, targetId: string | null): TrackerTouchDrag {
+  if (!targetId) return state
+  const next = trackerOrderAfterMove(state.order, state.id, targetId)
+  return next ? { ...state, order: next, moved: true } : state
+}
+
+/** Finger lifted: the order to save, or null when the row never moved (nothing is written). */
+export function trackerTouchDragEnd(state: TrackerTouchDrag | null): string[] | null {
+  return state && state.moved ? state.order : null
+}
+
+/** Auto-scroll while a finger is near the top or bottom edge: pixels to scroll this frame (negative = up), else 0. */
+export function trackerEdgeScrollDelta(y: number, top: number, bottom: number, edge = 64, max = 16): number {
+  if (!(bottom > top) || !Number.isFinite(y)) return 0
+  if (y < top + edge) return -Math.ceil(max * Math.min(1, (top + edge - y) / edge))
+  if (y > bottom - edge) return Math.ceil(max * Math.min(1, (y - (bottom - edge)) / edge))
+  return 0
+}
