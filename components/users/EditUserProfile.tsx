@@ -310,7 +310,7 @@ export function EditUserProfile({
   const { navigate: navigateBack, pending: backPending } = usePendingNavigation()
   const { user: currentUser, organization, reloadSignedInProfile } = useAuthStore()
   const organizationTimeZone = useOrganizationTimeZone()
-  const { users, userIdAliases, loadUsers, setListedUserActive, patchListedUser } = useOrgUserStore()
+  const { users, userIdAliases, loadUsers, setListedUserActive, patchListedUser, removeListedUser } = useOrgUserStore()
   const { operatives, loadOperatives, patchOperativeQualifications } = useOperativeStore()
   const {
     getUser,
@@ -1322,6 +1322,12 @@ export function EditUserProfile({
       // Review of #371: the wait starts only once the first batch is queued, never during the reads before it.
       const { write } = await whenQueued((onQueued) =>
         deleteUser(deleted.id, { organizationId: organization?.id, email: deleted.email, roster: rosterDocs, onQueued })
+      )
+      // Off the roster on this device as soon as the server confirms the delete (a late confirmation too), so lists
+      // such as Settings → Warnings → Excluded users never keep showing them.
+      void write.then(
+        () => removeListedUser(deleted.id),
+        () => undefined
       )
       // Rulebook 1.59.0 (review of #370, L1): say so when the former-person record was refused (the delete went ahead).
       void write.then(
