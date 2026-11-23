@@ -3,13 +3,13 @@ import assert from 'node:assert/strict'
 import { NextRequest } from 'next/server'
 import { encodeMfaOk } from './mfaCookies.ts'
 import { MFA_SESSION_COOKIE_LEGACY, mfaCookieName, shouldSecureMfaCookies } from './mfaCookiePolicy.ts'
-import { middleware } from '../../../middleware.ts'
+import { proxy } from '../../../proxy.ts'
 import { GET as status } from '../../../app/api/auth/mfa/status/route.ts'
 import { POST as logout } from '../../../app/api/auth/mfa/logout/route.ts'
 
 /**
  * Owner decision 17 Nov ("server-side session cookie before launch"): /dashboard and /developer open only with the
- * MFA ok cookie AND a Firebase session cookie, both naming the same uid. These tests run the real middleware and
+ * MFA ok cookie AND a Firebase session cookie, both naming the same uid. These tests run the real proxy and
  * routes. Session cookies here are the Auth emulator's unsigned (`alg: none`) cookies, accepted only while the
  * emulator switch is on; the signed path is covered in mfaSessionCookie.test.ts.
  */
@@ -70,47 +70,47 @@ function sessionCleared(response: Response): boolean {
 }
 
 for (const path of ['/dashboard', '/dashboard/projects', '/developer']) {
-  test(`middleware: ok and session cookies of the same uid open ${path}`, async () => {
-    const response = await middleware(pageRequest(path, { ok: ok('userA'), session: emulatorSession('userA') }))
+  test(`proxy: ok and session cookies of the same uid open ${path}`, async () => {
+    const response = await proxy(pageRequest(path, { ok: ok('userA'), session: emulatorSession('userA') }))
     assert.equal(response.headers.get('location'), null)
     assert.notEqual(response.status, 503)
   })
 }
 
-test('middleware: an ok cookie for user A with user B\'s session goes to the code screen and clears the session', async () => {
-  const response = await middleware(pageRequest('/dashboard', { ok: ok('userA'), session: emulatorSession('userB') }))
+test('proxy: an ok cookie for user A with user B\'s session goes to the code screen and clears the session', async () => {
+  const response = await proxy(pageRequest('/dashboard', { ok: ok('userA'), session: emulatorSession('userB') }))
   assert.equal(response.status, 307)
   assert.match(response.headers.get('location') || '', /\/auth\/mfa/)
   assert.equal(sessionCleared(response), true)
 })
 
-test('middleware: a missing, expired or tampered session cookie goes to the code screen', async () => {
+test('proxy: a missing, expired or tampered session cookie goes to the code screen', async () => {
   for (const session of [undefined, emulatorSession('userA', { exp: nowS() - 5 }), emulatorSession('userA', { aud: 'other' }), 'garbage']) {
-    const response = await middleware(pageRequest('/dashboard', { ok: ok('userA'), session }))
+    const response = await proxy(pageRequest('/dashboard', { ok: ok('userA'), session }))
     assert.equal(response.status, 307, String(session))
     assert.match(response.headers.get('location') || '', /\/auth\/mfa/)
   }
 })
 
-test('middleware: an unsigned session cookie is refused when the emulator switch is off', async () => {
+test('proxy: an unsigned session cookie is refused when the emulator switch is off', async () => {
   delete process.env.NEXT_PUBLIC_USE_EMULATORS
-  const response = await middleware(pageRequest('/dashboard', { ok: ok('userA'), session: emulatorSession('userA') }))
+  const response = await proxy(pageRequest('/dashboard', { ok: ok('userA'), session: emulatorSession('userA') }))
   assert.equal(response.status, 307)
 })
 
-test('middleware: Google keys unreachable is a 503 "try again", never a redirect to sign in', async () => {
+test('proxy: Google keys unreachable is a 503 "try again", never a redirect to sign in', async () => {
   delete process.env.NEXT_PUBLIC_USE_EMULATORS
   globalThis.fetch = (async () => {
     throw new TypeError('fetch failed')
   }) as typeof fetch
-  const response = await middleware(pageRequest('/dashboard', { ok: ok('userA'), session: signedLooking('userA') }))
+  const response = await proxy(pageRequest('/dashboard', { ok: ok('userA'), session: signedLooking('userA') }))
   assert.equal(response.status, 503)
   assert.equal(response.headers.get('location'), null)
   assert.equal(response.headers.get('cache-control'), 'no-store')
 })
 
-test('middleware: pages outside /dashboard and /developer are unaffected', async () => {
-  const response = await middleware(pageRequest('/login', {}))
+test('proxy: pages outside /dashboard and /developer are unaffected', async () => {
+  const response = await proxy(pageRequest('/login', {}))
   assert.equal(response.headers.get('location'), null)
 })
 
@@ -160,7 +160,7 @@ test('status: verified mints an httpOnly session cookie for that uid, which then
   assert.match(line, /SameSite=lax/i)
   const minted = setSessionValue(response)
   assert.ok(minted)
-  const page = await middleware(pageRequest('/dashboard', { ok: ok('userA'), session: decodeURIComponent(minted!) }))
+  const page = await proxy(pageRequest('/dashboard', { ok: ok('userA'), session: decodeURIComponent(minted!) }))
   assert.equal(page.headers.get('location'), null)
 })
 
@@ -217,8 +217,8 @@ test('logout (sign-out, idle sign-out, user switch) expires the session cookie',
   assert.equal(sessionCleared(response), true)
 })
 
-/** Review of #359, item 1: a minted cookie the middleware would refuse must never answer "verified". */
-test('status: a freshly minted cookie that fails the middleware check is a setup error, not "verified" (no loop)', async () => {
+/** Review of #359, item 1: a minted cookie the proxy would refuse must never answer "verified". */
+test('status: a freshly minted cookie that fails the proxy check is a setup error, not "verified" (no loop)', async () => {
   stubAuth(200, { mintedAudience: 'another-project' })
   const errors: unknown[][] = []
   const realError = console.error
@@ -241,7 +241,7 @@ test('status: with the emulator switch off, nothing is minted against the emulat
   const realError = console.error
   console.error = () => {}
   try {
-    // No service account in tests: the server cannot mint → a setup error, never a cookie the middleware refuses.
+    // No service account in tests: the server cannot mint → a setup error, never a cookie the proxy refuses.
     const saved = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
     delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON
     const response = await status(statusRequest({ ok: ok('userA') }, 'token-userA'))

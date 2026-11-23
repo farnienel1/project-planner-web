@@ -40,7 +40,7 @@ function stubAccountsLookup(failure?: 'network' | 500 | 503 | 429) {
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     if (String(input).includes(':createSessionCookie')) {
       const { idToken } = JSON.parse(String(init?.body || '{}')) as { idToken?: string }
-      // An Auth-emulator style (unsigned) session cookie for that uid, which the middleware's check accepts here.
+      // An Auth-emulator style (unsigned) session cookie for that uid, which the proxy's check accepts here.
       const uid = idToken?.startsWith('token-') ? idToken.slice(6) : ''
       const now = Math.floor(Date.now() / 1000)
       const part = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url')

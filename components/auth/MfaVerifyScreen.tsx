@@ -69,7 +69,7 @@ export function MfaVerifyScreen() {
     markMfaVerified()
     const destination = safePostMfaPath(nextPath || requestedNext, fallback)
     // The verification and session cookies have to be visible before the dashboard request,
-    // otherwise middleware sends the first navigation back here until a refresh.
+    // otherwise the proxy sends the first navigation back here until a refresh.
     // A 503 / network failure here is "try again", never a reason to stay; the loop is bounded either way.
     for (let attempt = 0; attempt < 6; attempt += 1) {
       try {

@@ -162,7 +162,7 @@ test('key fetcher: keys are cached, and stale keys still verify when a refresh f
   assert.equal((await verifyFirebaseSessionCookie(raw, { projectId: PROJECT, keys: fetcher, nowMs: NOW })).status, 'ok')
 })
 
-test('middleware gate: both cookies for the same uid open the page; anything else goes to the code screen', () => {
+test('proxy gate: both cookies for the same uid open the page; anything else goes to the code screen', () => {
   const ok = { uid: 'user-a' }
   const session = (uid: string): SessionCookieCheck => ({ status: 'ok', claims: { uid, exp: NOW + 3600_000, iat: NOW, authTime: NOW } })
   assert.deepEqual(mfaPageGateDecision(ok, session('user-a')), { action: 'allow' })
@@ -305,7 +305,7 @@ test('mint: a missing or unusable service account is a setup error; Google OAuth
   }
 })
 
-test('mint: a service account from another project than the app is a setup error (never a cookie the middleware refuses)', async () => {
+test('mint: a service account from another project than the app is a setup error (never a cookie the proxy refuses)', async () => {
   const quiet = quietConsole()
   let called = false
   try {

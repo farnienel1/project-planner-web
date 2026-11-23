@@ -7,9 +7,9 @@ import { MFA_SESSION_TTL_MS, sessionCookieAllowsUnsigned, sessionProjectId } fro
  * the ID token and that the MFA "ok" cookie belongs to that same uid. Uses the existing
  * `FIREBASE_SERVICE_ACCOUNT_JSON` (no new key); against the local Auth emulator it uses the emulator's `owner` token.
  *
- * It mints for exactly the project the middleware checks (`sessionProjectId()`, i.e. NEXT_PUBLIC_FIREBASE_PROJECT_ID)
+ * It mints for exactly the project the proxy checks (`sessionProjectId()`, i.e. NEXT_PUBLIC_FIREBASE_PROJECT_ID)
  * and uses the same emulator switch as the verifier (`sessionCookieAllowsUnsigned()`), so a cookie it mints is one the
- * middleware accepts. The status route still verifies every minted cookie before answering "verified".
+ * proxy accepts. The status route still verifies every minted cookie before answering "verified".
  *
  * - `ok`: the cookie and how long it lives.
  * - `invalid`: Firebase refused the ID token (400 with an ID-token error): treat as not signed in.
@@ -46,7 +46,7 @@ export async function mintFirebaseSessionCookie(
     validDurationMs?: number
     fetchImpl?: typeof fetch
     accessToken?: () => Promise<{ token: string; projectId: string }>
-    /** The project the middleware checks; defaults to `sessionProjectId()`. */
+    /** The project the proxy checks; defaults to `sessionProjectId()`. */
     projectId?: string
     /** The service account's own project_id; defaults to the configured account's. */
     serviceAccountProject?: string | null
