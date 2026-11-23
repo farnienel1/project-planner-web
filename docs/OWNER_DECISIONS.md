@@ -1189,3 +1189,21 @@ UI only, web only (`docs/design/projects-overview-ui/projects-overview-ui-spec.m
 | 18 Nov | An operative completing a task created before 1.8.0 may also send the app's tidied priority, details, title, job id, document id and items (items only when the stored items have no ids and their number is unchanged); nothing else beyond the completion keys. | done, owner to confirm |
 | 18 Nov | Not narrowed (follow-up): scheduled notices (`timesheet_submission_reminder`, `deadline_reminder`, `deadline_due`) with no actor can still be written by any member for another member — web delivers timesheet reminders for the whole roster and the iPhone writes deadline rows for every assignee; narrowing needs a server writer. The own feedback copies `ppIdeas.<id>` on the users document are not shape-checked (the rules cannot walk a map of ideas; D16 stops writing them). | follow-up |
 | 17 Nov | Not done in 1.64.0 (follow-ups): clients, subcontractors, site audits and job health & safety writes stay open to members (operatives sign toolbox talks and create site audits); variation `status` / `removedEvidence` append-only; `supportRequests` create allowlist (written by a server route). | follow-up |
+
+## 23 Nov decisions (for 1.70, shared fixes)
+
+| Date | Decision | Status |
+|---|---|---|
+| 23 Nov | **A tapped push opens the right timesheet** (bug, iPhone): the push carried only the recipient (`userId`), so "Timesheet needs sign-off" opened the line manager's own sheet. The push now also carries `deepLinkUserId` and `deepLinkWeekStartMs` (`pushPayloadFields`); the same fix covers overtime and revision pushes. | done rulebook (1.70.0, w170-shared-fixes); push function redeploy pending; iOS open (hand-off v1.70.0: read `deepLinkUserId` first) |
+| 23 Nov | **Overlap note for the line manager**: a reviewer reads "Overlaps another booking — check the schedule for this project."; the person keeps "… check with your manager" (`overlappingBookingNote`). | done web + rulebook (1.70.0); iOS open (hand-off) |
+| 23 Nov | **Clearer booking lines on timesheets** (owner approved): every line shows the job number and name (or the place, e.g. "Office"), and its times on every line, a Full day line its standard day that day ("Full day 07:00–16:00"). Display only (`timesheetLineDisplay`); signed sheets read as before or better, never re-priced. | done web (period page) + rulebook (1.70.0); iOS open (hand-off); invoice / PDF wording not changed (follow-up) |
+| 23 Nov | **"Person not found" leave of a deleted person**: leave that matches a former-person record reads "Former: Jane Smith" on the weekly report and is listed apart in Data health ("Former person · Jane Smith"); nothing is hidden. A delete counts leave under the email and `operativeId` too, so a person with only leave keeps their former-person record. | done web + rulebook (1.70.0); iOS n/a (no Data health; weekly report hand-off) |
+
+## 1.70.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 23 Nov | The push keeps `userId` as the recipient (older iPhones read it as before) and adds the deep-link fields; until iOS reads `deepLinkUserId`, an older iPhone still opens the wrong sheet from a push (the inbox row is right). | done, owner to confirm |
+| 23 Nov | Job "name" is the job's `siteName` (jobs store no other name). The overtime line keeps " (Overtime)" after the name. | done, owner to confirm |
+| 23 Nov | The Data health leave list names the former person but has no "Link to a person…" action of its own: the link flow lives in "Bookings not linked to a person" (it adds the id to the person's `formerUserIds`, which also links the leave). | follow-up |
+| 23 Nov | The clearer line wording is on the web timesheet page (including the sign dialog); the invoice and the timesheet PDF keep their current wording. | follow-up |

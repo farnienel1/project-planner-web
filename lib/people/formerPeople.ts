@@ -51,22 +51,30 @@ async function anyUnder(db: Firestore, path: string[], field: string, ids: reado
 
 /**
  * Whether a delete should keep a former-person record (`formerPersonRecordNeeded`): `bookings` and
- * `managerSiteBookings` are what the delete already loaded (every date); leave, pay history and timesheets are one
- * `limit(1)` query each under the person's ids.
+ * `managerSiteBookings` are what the delete already loaded (every date); leave (by `userId` — ids and emails — and by
+ * `operativeId`), pay history and timesheets are `limit(1)` queries under the person's ids.
  */
 export async function formerPersonNeededFor(
   db: Firestore,
   organizationId: string,
   ids: readonly string[],
-  loaded: { bookings: number | null; managerSiteBookings: number | null }
+  loaded: { bookings: number | null; managerSiteBookings: number | null },
+  /** Rulebook 1.70.0: the person's email(s) — older iOS builds stored the account's email as a leave `userId` (§10). */
+  emails: readonly string[] = []
 ): Promise<boolean> {
   if (loaded.bookings !== 0 || loaded.managerSiteBookings !== 0) return true
   const org = ['organizations', organizationId]
-  const [leaveRecords, payHistoryRows, timesheets] = await Promise.all([
-    anyUnder(db, [...org, 'holidayBookings'], 'userId', ids),
+  const leaveUserIds = Array.from(new Set([...ids, ...emails.map((email) => email.trim()).filter(Boolean)]))
+  // Rulebook 1.70.0 §11: leave counts under every key a record names a person by (`userId` — an id or the email — and
+  // `operativeId`), so a person with only leave keeps their former-person record and their leave is not unlinked.
+  const [leaveByUser, leaveByOperative, payHistoryRows, timesheets] = await Promise.all([
+    anyUnder(db, [...org, 'holidayBookings'], 'userId', leaveUserIds),
+    anyUnder(db, [...org, 'holidayBookings'], 'operativeId', ids),
     anyUnder(db, [...org, 'operativeDayRateHistory'], 'userId', ids),
     anyUnder(db, [...org, 'settings'], 'userId', ids),
   ])
+  const leaveRecords =
+    (leaveByUser ?? 0) > 0 || (leaveByOperative ?? 0) > 0 ? 1 : leaveByUser == null || leaveByOperative == null ? null : 0
   return formerPersonRecordNeeded({ bookings: 0, managerSiteBookings: 0, leaveRecords, payHistoryRows, timesheets })
 }
 

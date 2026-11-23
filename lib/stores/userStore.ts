@@ -641,7 +641,7 @@ export const useUserStore = create<UserStoreState>(() => ({
     const keepFormer = await formerPersonNeededFor(db, orgId, allPersonIds, {
       bookings: bookings.length,
       managerSiteBookings: managerSiteBookings.length,
-    })
+    }, [String(stored.email || ''), ...operativeRows.map((row) => String(row.data.email || ''))].filter((email) => email.trim()))
     // Review of #370 (M1): each record holds only what its deleted document carries (the rules check it against that
     // document) — the person's own record from their users document, and one per deleted operatives / managers row.
     const deletedBy = auth?.currentUser?.uid || actor?.id || ''

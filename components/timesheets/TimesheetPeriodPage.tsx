@@ -169,12 +169,12 @@ import {
   personIdSet,
   timesheetEntryEvidenceToDelete,
   type PayeClaimEvidence,
-  OVERLAPPING_BOOKING_NOTE,
+  overlappingBookingNote,
+  timesheetLineDisplay,
   agreedManagerSuggestions,
   currencySymbol,
   formatMoney,
   timesheetLeaveLines,
-  timesheetLineClockText,
   timesheetOwnerCanAddExtras,
   timesheetOwnerCanAddLateExtras,
   timesheetEntryEffectiveAmount,
@@ -1410,6 +1410,8 @@ export function TimesheetPeriodPage({
               draft={draft}
               managerHasSigned={managerHasSigned}
               canReview={false}
+              reviewing={mode === 'review'}
+              dayPolicy={policyOnDay(row.line.date)}
               timeZone={timeZone}
               onApprove={() => undefined}
               onDecline={() => undefined}
@@ -1537,6 +1539,8 @@ export function TimesheetPeriodPage({
                       draft={draft}
                       managerHasSigned={managerHasSigned}
                       canReview={canManagerReview}
+                      reviewing={mode === 'review'}
+                      dayPolicy={policyOnDay(row.line.date)}
                       timeZone={timeZone}
                       onApprove={() => setLineDecision(row.line.id, 'approved')}
                       onDecline={() => setLineDecision(row.line.id, 'declined')}
@@ -2182,6 +2186,8 @@ function PayrollLine({
   draft,
   managerHasSigned,
   canReview,
+  reviewing,
+  dayPolicy,
   timeZone,
   onApprove,
   onDecline,
@@ -2191,6 +2197,10 @@ function PayrollLine({
   draft: TimesheetDraft
   managerHasSigned: boolean
   canReview: boolean
+  /** The viewer is reviewing someone else's sheet (line manager or admin), not their own. */
+  reviewing: boolean
+  /** The working hours in effect on the line's day, for a Full day / AM / PM line's times. */
+  dayPolicy: OrgPayrollTimePolicy
   timeZone: string
   onApprove: () => void
   onDecline: () => void
@@ -2204,21 +2214,22 @@ function PayrollLine({
   // `overlappingBookingIds`: still paid, shown amber for the person and their line manager.
   const overlapping = line.isOverlapping === true
   const strike = removed ? { textDecoration: 'line-through' as const } : undefined
+  // Rulebook 1.70.0 §8 (`timesheetLineDisplay`): the job number and name (or the place), and times on every line.
+  const display = timesheetLineDisplay({ ...line, dayKey: line.dayKey || dayKey(line.date, timeZone) }, dayPolicy)
   return (
     <tr className={[overlapping ? 'overlap' : '', removed ? 'removed' : ''].join(' ').trim() || undefined}>
       <td style={{ whiteSpace: 'nowrap' }}>
         <b style={strike}>{abbreviatedDate(line.date, timeZone)}</b>
       </td>
       <td>
-        <div style={strike}>
-          {line.jobNumber} · {line.projectName}
-        </div>
-        {/\d{1,2}:\d{2}/.test(timesheetLineClockText(line.details)) ? (
-          <div className="pu-sub" style={strike}>{timesheetLineClockText(line.details)}</div>
+        <div style={strike}>{display.title}</div>
+        {display.times ? (
+          <div className="pu-sub" style={strike}>{display.times}</div>
         ) : null}
         {overlapping ? (
           <div style={{ marginTop: 6 }}>
-            <Note tone="amber">{OVERLAPPING_BOOKING_NOTE}</Note>
+            {/* Rulebook 1.70.0 §8 (`overlappingBookingNote`): a reviewer reads the schedule wording. */}
+            <Note tone="amber">{overlappingBookingNote({ reviewing })}</Note>
           </div>
         ) : null}
       </td>

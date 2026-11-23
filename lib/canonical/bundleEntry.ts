@@ -475,10 +475,13 @@ export {
 } from './holidayDocument'
 export {
   OVERLAPPING_BOOKING_NOTE,
+  OVERLAPPING_BOOKING_REVIEWER_NOTE,
+  overlappingBookingNote,
   overlappingBookingIds,
   timesheetLeaveLabel,
   timesheetLeaveLines,
 } from './timesheetLines'
+export { timesheetLineDisplay } from './timesheetLineDisplay'
 export {
   DEFAULT_BANK_HOLIDAY_REGION_ID,
   companyDetailsValidationError,
@@ -1651,6 +1654,7 @@ export * from './variations'
 // Rulebook 1.51.0 §7: the Weekly Report Pay Summary, check lines, paid days, leave rows and warning detail.
 export {
   bookingPaidDays,
+  leaveRecordFormerPerson,
   leaveRecordsWithoutPerson,
   weeklyReportClashDetail,
   weeklyReportDatesText,

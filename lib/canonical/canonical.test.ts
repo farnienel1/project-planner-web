@@ -18438,3 +18438,95 @@ test('1.65.0 payeClaimReportIntegrity: totals and items are checked against the 
   assert.equal(back.problems.length, 2)
   assert.equal(r129.REPORT_CHECKS_COLLECTION, 'reportChecks')
 })
+
+test('1.70.0 pushPayloadFields: carries the deep-link person and period; userId stays the recipient', () => {
+  const fields = R112.pushPayloadFields({
+    notificationId: 'N',
+    type: 'timesheet_pending_manager_signoff',
+    userId: 'MANAGER',
+    organizationId: 'O',
+    deepLinkUserId: 'WORKER',
+    deepLinkWeekStart: { seconds: 1761955200, nanoseconds: 0 },
+  })
+  assert.equal(fields.userId, 'MANAGER')
+  assert.equal(fields.deepLinkUserId, 'WORKER')
+  assert.equal(fields.deepLinkWeekStartMs, String(1761955200 * 1000))
+  assert.deepEqual(R112.PUSH_PAYLOAD_KEYS.slice(-2), ['deepLinkUserId', 'deepLinkWeekStartMs'])
+  // A row without them keeps the 1.16.0 shape exactly.
+  assert.deepEqual(R112.pushPayloadFields({ notificationId: 'N', type: 'push_test', userId: 'U' }), { notificationId: 'N', type: 'push_test', userId: 'U' })
+  // The deep link the inbox row gives is the one the push gives.
+  const destination = R112.notificationDestination({ type: 'timesheet_pending_manager_signoff', role: 'manager', deepLinkUserId: fields.deepLinkUserId })
+  assert.equal(destination.userId, 'WORKER')
+})
+
+test('1.70.0 overlappingBookingNote: the person keeps their wording; a reviewer reads the schedule wording', () => {
+  assert.equal(R112.overlappingBookingNote({ reviewing: false }), 'Overlaps another booking — check with your manager')
+  assert.equal(R112.overlappingBookingNote(null), R112.OVERLAPPING_BOOKING_NOTE)
+  assert.equal(R112.overlappingBookingNote({ reviewing: true }), 'Overlaps another booking — check the schedule for this project.')
+  assert.equal(R112.OVERLAPPING_BOOKING_REVIEWER_NOTE, 'Overlaps another booking — check the schedule for this project.')
+})
+
+test('1.70.0 timesheetLineDisplay: job number and name or the place, and times on every line', () => {
+  const policy = parsePolicy112({
+    standardDayStart: '07:00',
+    standardDayEnd: '16:00',
+    breakWindowStart: '12:00',
+    breakWindowEnd: '12:30',
+    unpaidBreakMinutes: 30,
+  })
+  assert.deepEqual(
+    R112.timesheetLineDisplay({ jobNumber: 'J-1042', projectName: 'Station Road', details: '07:00–16:00 · no break', dayKey: '2026-11-23' }, policy),
+    { title: 'J-1042 · Station Road', times: '07:00–16:00 · no break' }
+  )
+  // An overtime line shows only its clock part (the multiplied text is in the rate line).
+  assert.equal(
+    R112.timesheetLineDisplay({ jobNumber: 'J-1042', projectName: 'Station Road (Overtime)', details: '16:00–19:00 · OT 3h × 2 − 0.5h break = 5.5h' }).times,
+    '16:00–19:00'
+  )
+  // A Full day line reads its window on that day.
+  assert.deepEqual(
+    R112.timesheetLineDisplay({ jobNumber: 'J-1042', projectName: 'Station Road', details: 'FULL DAY', dayKey: '2026-11-23' }, policy),
+    { title: 'J-1042 · Station Road', times: 'Full day 07:00–16:00' }
+  )
+  const am = R112.timesheetLineDisplay({ jobNumber: '—', projectName: 'Office', details: 'AM', dayKey: '2026-11-23' }, policy)
+  assert.equal(am.title, 'Office')
+  assert.match(am.times, /^AM 07:00–\d{2}:\d{2}$/)
+  // No policy: the slot's name only. A place line with no job number shows the place alone.
+  assert.deepEqual(R112.timesheetLineDisplay({ jobNumber: '—', projectName: 'Working from home', details: 'FULL DAY' }), {
+    title: 'Working from home',
+    times: 'Full day',
+  })
+  assert.equal(R112.timesheetLineDisplay({ jobNumber: '', projectName: '', details: '' }).title, 'Booking')
+})
+
+test('1.70.0 weekly report leave: a deleted person kept as a former-person record reads "Former: …"; nothing is hidden', () => {
+  const formerPeople = [{ id: 'GONE', displayName: 'Jane Smith', personIds: ['GONE', 'OLD-INVITE'], deletedAtMs: 1 }]
+  const records = [
+    { id: 'L1', userId: 'old-invite', operativeId: null, startDayKey: '2026-11-02', endDayKey: '2026-11-02', status: 'approved' },
+    { id: 'L2', userId: 'NOBODY', operativeId: null, startDayKey: '2026-11-03', endDayKey: '2026-11-03', status: 'approved' },
+    { id: 'L3', userId: 'LIVE', operativeId: null, startDayKey: '2026-11-04', endDayKey: '2026-11-04', status: 'approved' },
+  ]
+  const people = [{ id: 'LIVE', name: 'Live Person', role: 'Operative' }]
+  const out = R112.weeklyReportLeaveRows({ records, people, range: { start: '2026-11-01', end: '2026-11-15' }, timeZone: 'Europe/London', formerPeople })
+  const names = out.rows.map((row) => row.person)
+  assert.ok(names.includes('Former: Jane Smith'))
+  assert.ok(names.includes('Live Person'))
+  assert.ok(names.some((name) => name.startsWith('Person not found')))
+  assert.equal(out.total, 3)
+  assert.equal(out.unmatched.find((row) => row.recordId === 'L1')?.formerPersonId, 'GONE')
+  // Data health: still listed as not linked; the former person is named.
+  const missing = R112.leaveRecordsWithoutPerson({ records, people })
+  assert.deepEqual(missing.map((row) => row.id), ['L1', 'L2'])
+  assert.equal(R112.leaveRecordFormerPerson(missing[0], formerPeople)?.displayName, 'Jane Smith')
+  assert.equal(R112.leaveRecordFormerPerson({ userId: null, operativeId: 'gone' }, formerPeople)?.id, 'GONE')
+  assert.equal(R112.leaveRecordFormerPerson(missing[1], formerPeople), null)
+  // A live person always wins over a former record naming the same id.
+  const liveWins = R112.weeklyReportLeaveRows({
+    records: [records[2]],
+    people,
+    range: { start: '2026-11-01', end: '2026-11-15' },
+    formerPeople: [{ id: 'X', displayName: 'Old', personIds: ['LIVE'] }],
+  })
+  assert.equal(liveWins.rows[0].person, 'Live Person')
+  assert.equal(R112.formerPersonRecordNeeded({ bookings: 0, managerSiteBookings: 0, leaveRecords: 1 }), true)
+})
