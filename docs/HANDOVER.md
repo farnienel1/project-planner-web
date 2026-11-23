@@ -18,7 +18,7 @@
 |---|---|---|
 | web #425 / iOS #276 | 1.74 timesheet review flow (LM changes freely before sign-off, line order, no £0 line, single push) | Reviewed + re-checked. iOS head `e6714bed` (fixed a source-scan test: `signature: counterSignature,`). Waiting Mac CI. |
 | web #426 | 1.75 (currently numbered 1.76.0!) Data health: qualifications with no own expiry | Approved. Renumber to 1.75.0 after #425. |
-| iOS #277 | Qualification reminders in org time zone | Approved, waiting Mac CI. |
+| iOS #277 | Qualification reminders in org time zone | Approved. Head `53b2438d` (removed the now-zero `NotificationService` deviceCalendar baseline entry). Waiting Mac CI. |
 | iOS #274 | Warnings first scan doesn't wait 30 s | Re-checked ok. Head `3adbb0fb` (added `Core/WarningsRosterFingerprint.swift: 1` to RulebookBypassGuardTests baseline). Waiting Mac CI. |
 | iOS #275 | PAYE payday revert + More→Settings nav + "Discard unsaved changes?" on tab re-tap | Re-checked ok. Head `ad685c1c`. Waiting Mac CI. Owner retests Save on TestFlight (root cause unproven). |
 | web #427 / iOS #278 | 1.76 "Make changes" (A1/B1 + signed price work & expenses, any amount) | Reviewed twice, all findings fixed. Heads web `1f416e80`, iOS `9f69ff9e` (merged #276 fix). Waiting on #425/#426. Owner runs `scripts/report-signed-money-mismatch.mjs` (read-only) before switch-on. Commits used `--no-verify` (same-version hook); CI check with `--base` passes. |
