@@ -9,6 +9,7 @@ import { fileReferencesInDocument, storagePathFromValue } from './files'
 import {
   EXCLUDED_COLLECTIONS,
   EXPORT_FILES,
+  fileForDocument,
   fileForSettingsDocument,
   isExcludedFieldName,
   operationalCollectionNames,
@@ -238,18 +239,20 @@ test('uploaded files are found by URL, gs:// address or *Path field', () => {
 
 // ─── Admin gate ──────────────────────────────────────────────────────────────
 
-test('only admins and super admins outside operative mode may export', () => {
-  assert.equal(canExportCompanyData({ adminAccess: true }, 'o1'), true)
-  assert.equal(canExportCompanyData({ permissions: { adminAccess: true } }, 'o1'), true)
-  assert.equal(canExportCompanyData({ isSuperAdmin: true }, 'o1'), true)
-  assert.equal(canExportCompanyData({ role: 'admin' }, 'o1'), true)
-  // 1.11.0: an admin has no operative mode; a stray flag is ignored.
-  assert.equal(canExportCompanyData({ adminAccess: true, operativeMode: true }, 'o1'), true)
-  assert.equal(canExportCompanyData({ role: 'manager' }, 'o1'), false)
-  assert.equal(canExportCompanyData({ role: 'operative', operativeMode: true }, 'o1'), false)
-  assert.equal(canExportCompanyData({ adminAccess: true, isActive: false }, 'o1'), false)
-  assert.equal(canExportCompanyData({ adminAccess: true }, ''), false)
-  assert.equal(canExportCompanyData(null, 'o1'), false)
+test('1.71.0: only the organisation\'s Super Admin may export', () => {
+  const org = { id: 'o1', creatorUserId: 'founder' }
+  // The creator, and a users document of this organisation flagged isSuperAdmin.
+  assert.equal(canExportCompanyData({ id: 'founder', organizationId: 'o1' }, org), true)
+  assert.equal(canExportCompanyData({ id: 'sa', isSuperAdmin: true, organizationId: 'o1' }, org), true)
+  assert.equal(canExportCompanyData({ id: 'sa', isSuperAdmin: true, homeOrganizationId: 'o1', organizationId: 'o2' }, org), true)
+  // Every other admin loses it (guardrail 3: before 1.71.0 any admin outside operative mode).
+  assert.equal(canExportCompanyData({ id: 'a1', organizationId: 'o1', adminAccess: true } as never, org), false)
+  assert.equal(canExportCompanyData({ id: 'a1', organizationId: 'o1', role: 'admin' } as never, org), false)
+  // A Super Admin of another company working here is not this company's Super Admin.
+  assert.equal(canExportCompanyData({ id: 'other', isSuperAdmin: true, organizationId: 'o2' }, org), false)
+  assert.equal(canExportCompanyData({ id: 'founder', organizationId: 'o1', isActive: false }, org), false)
+  assert.equal(canExportCompanyData({ id: 'founder' }, { id: '', creatorUserId: 'founder' }), false)
+  assert.equal(canExportCompanyData(null, org), false)
 })
 
 // ─── The whole zip ───────────────────────────────────────────────────────────
@@ -321,4 +324,33 @@ test('the zip file name uses the organisation slug and the organisation-zone day
   assert.equal(organizationSlug('Zoë & Sons Ltd.'), 'zoe-sons-ltd')
   assert.equal(organizationSlug('***'), 'company')
   assert.equal(companyExportFileName('Acme', new Date('2026-07-01T23:30:00Z'), LONDON), 'company-data-acme-2026-07-02.zip')
+})
+
+// ─── 1.71.0: data minimisation and own files ─────────────────────────────────
+
+test('1.71.0: an anchored member from another company is exported with name and contact only', () => {
+  const entries = companyExportEntries({
+    organizationId: 'o1',
+    organization: { name: 'Acme', countryCode: 'GB', members: { u1: 'admin', u2: 'manager' } },
+    documents: [
+      { collectionPath: 'users', collection: 'users', id: 'u1', data: { firstName: 'Ann', organizationId: 'o1', dayRate: 200 } },
+      { collectionPath: 'users', collection: 'users', id: 'u2', data: { firstName: 'Bob', email: 'b@x.com', organizationId: 'organizations/o2', dayRate: 300, adminAccess: true } },
+    ],
+    problems: [],
+    includeNotifications: false,
+    exportedAt: new Date('2026-11-23T10:00:00Z'),
+    rulebookVersion: '1.71.0',
+  })
+  const json = JSON.parse(entries['export.json'])
+  assert.equal(json.collections.users.u1.dayRate, 200)
+  assert.deepEqual(json.collections.users.u2, { firstName: 'Bob', email: 'b@x.com', homeOrganisationElsewhere: true })
+  assert.ok(!entries['people.csv'].includes('300'))
+})
+
+test('1.71.0: former people, report checks and material contacts have their own files', () => {
+  assert.equal(fileForDocument('deletedPeople', 'x'), 'formerPeople')
+  assert.equal(fileForDocument('reportChecks', 'x'), 'reportChecks')
+  assert.equal(fileForDocument('materialContacts', 'x'), 'materialContacts')
+  assert.ok(EXCLUDED_COLLECTIONS.worksListPicks)
+  assert.equal(escapeCsvCell('\n=cmd'), `"'\n=cmd"`)
 })

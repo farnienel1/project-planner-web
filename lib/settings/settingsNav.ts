@@ -182,7 +182,7 @@ export const COMPANY_SETTINGS = SETTINGS_NAV.filter((item) => item.group === 'co
 
 /**
  * The company rows a viewer sees: Reported files only for file-report reviewers, Export company data only for
- * admins outside operative mode (`canExportCompanyData`).
+ * the organisation's Super Admin (`canExportCompanyData`, rulebook 1.71.0).
  */
 export function visibleCompanySettings(options: { canReviewReports?: boolean; canExportData?: boolean }): SettingsNavItem[] {
   return COMPANY_SETTINGS.filter(
