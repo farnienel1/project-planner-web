@@ -17300,15 +17300,30 @@ test('1.56.0 leaveQueryPlan: no viewer, role or uid → no query (never the whol
   assert.deepEqual(l156Plan({ role: l156Operative, ids: [] } as never, { operativeOwnLeave: true }), { readsEveryLeave: false, queries: [] })
 })
 
-test('1.56.0 leaveQueryPlan: up to 14 ids and the two email spellings fit one query (≤ 30 disjuncts); more ids chunk', () => {
-  assert.equal(l156PerQuery, 14)
+test('1.73.2 leaveQueryPlan: 6 ids per query (the Phase B rules lookup budget); the emails only on the first query', () => {
+  assert.equal(l156PerQuery, 6)
   const viewer = { role: l156Operative, ids: ['uid'], uid: 'uid' } as never
-  const one = l156Plan(viewer, { ownIds: Array.from({ length: 13 }, (_, i) => `id-${i}`), email: 'A@x.com', operativeOwnLeave: true })
-  assert.equal(one.queries.length, 1)
-  const disjuncts = l156Own(one.queries[0]).anyOf.reduce((sum, part) => sum + part.values.length, 0)
-  assert.ok(disjuncts <= 30, `${disjuncts} disjuncts`)
-  const two = l156Plan(viewer, { ownIds: Array.from({ length: 20 }, (_, i) => `id-${i}`), email: 'a@x.com', operativeOwnLeave: true })
-  assert.deepEqual(two.queries.map((q) => l156Own(q).anyOf.map((p) => p.values.length)), [[15, 14], [7, 7]])
+  const shape = (n: number, email: string | null) =>
+    l156Plan(viewer, { ownIds: Array.from({ length: n }, (_, i) => `id-${i}`), email, operativeOwnLeave: true })
+  // 1 query: uid + 5 ids, then the two email spellings on userId only.
+  const one = shape(5, 'A@x.com')
+  assert.deepEqual(one.queries.map((q) => l156Own(q).anyOf.map((p) => p.values.length)), [[8, 6]])
+  assert.deepEqual(l156Own(one.queries[0]).anyOf[0].values.slice(-2), ['A@x.com', 'a@x.com'])
+  assert.ok(!l156Own(one.queries[0]).anyOf[1].values.some((v) => v.includes('@')))
+  // 2 queries: uid + 6 ids = 7.
+  const two = shape(6, 'a@x.com')
+  assert.deepEqual(two.queries.map((q) => l156Own(q).anyOf.map((p) => p.values.length)), [[7, 6], [1, 1]])
+  assert.deepEqual(l156Own(two.queries[1]).anyOf[0].values, ['id-5'])
+  // 3 queries: uid + 14 ids = 15 (6, 6, 3); emails never after the first.
+  const three = shape(14, 'a@x.com')
+  assert.deepEqual(three.queries.map((q) => l156Own(q).anyOf.map((p) => p.values.length)), [[7, 6], [6, 6], [3, 3]])
+  for (const q of three.queries.slice(1)) assert.ok(!l156Own(q).anyOf.some((p) => p.values.some((v) => v.includes('@'))))
+  // Every id is queried exactly once on each field; no query holds more than 6 ids.
+  const all = three.queries.flatMap((q) => l156Own(q).anyOf[1].values)
+  assert.deepEqual(all, ['uid', ...Array.from({ length: 14 }, (_, i) => `id-${i}`)])
+  for (const q of three.queries) assert.ok(l156Own(q).anyOf[1].values.length <= 6)
+  // No email: the first query has the ids only.
+  assert.deepEqual(shape(2, null).queries.map((q) => l156Own(q).anyOf.map((p) => p.values.length)), [[3, 3]])
 })
 
 test('1.56.0 leaveQueryValues: stored case kept, exact de-dupe, emails apart, blanks dropped', () => {

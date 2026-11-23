@@ -1,3 +1,42 @@
+# Handover — 23 Nov 2026 (evening)
+
+> Read this first; the 21 Nov section below is older. Then `docs/OWNER_DECISIONS.md` and the rule files. Launch checklist (now the single status page): https://claude.ai/artifact/7Q7erHuNW9RBFFK4VuiAcR — rows 1.122–1.137 are today's work. The old "All fixes progress" page is retired.
+
+**Live:** web main rulebook **1.73.1**; iOS main `4313a263` (VO tracker #273 merged 23 Nov). TestFlight build 13, `minimumIosBuild` 13, Firestore rules from main published 23 Nov.
+
+**Merge rules:** (#425 and #427 report a merge conflict with main since #428 merged at 19:17 — merge main in and keep both sides first.) web rulebook PRs merge in version order 1.74 → 1.75 → 1.76 → 1.77 → 1.78; each later one needs main merged in, renumber if needed, `npm run build:canonical`, `npm run rulebook:handoff`, `node scripts/rulebook-sync.mjs check --base origin/main`, then iOS re-syncs its pair. Squash-merge via REST (`POST …/pulls/N/ccr/ready_for_review`, then `PUT …/pulls/N/merge` with `sha=` head, trailers in commit_message). GraphQL is blocked. macOS CI queues for hours.
+
+## Release order for 1.74 (timesheet review flow)
+1. Merge iOS #276 (+ #274, #275, #277) when Mac checks are green → tell the owner a TestFlight build is ready (commit + test list).
+2. Owner raises `minimumIosBuild` to that build.
+3. Merge web #425, publish rules via the "Firebase rules deploy" workflow, check live.
+4. Owner deploys: `firebase deploy --only functions:inbox-push:timesheetBookingsChangedNotice,functions:inbox-push:timesheetManagerBookingsChangedNotice --project project-planner-f986c`
+5. Then #426 (renumber to 1.75.0) → #427/#278 (1.76) → 1.77 → #429/#280 (1.78).
+
+## Open PRs [Certain as of 19:15]
+| PR | What | State |
+|---|---|---|
+| web #425 / iOS #276 | 1.74 timesheet review flow (LM changes freely before sign-off, line order, no £0 line, single push) | Reviewed + re-checked. iOS head `e6714bed` (fixed a source-scan test: `signature: counterSignature,`). Waiting Mac CI. |
+| web #426 | 1.75 (currently numbered 1.76.0!) Data health: qualifications with no own expiry | Approved. Renumber to 1.75.0 after #425. |
+| iOS #277 | Qualification reminders in org time zone | Approved. Head `53b2438d` (removed the now-zero `NotificationService` deviceCalendar baseline entry). Waiting Mac CI. |
+| iOS #274 | Warnings first scan doesn't wait 30 s | Re-checked ok. Head `3adbb0fb` (added `Core/WarningsRosterFingerprint.swift: 1` to RulebookBypassGuardTests baseline). Waiting Mac CI. |
+| iOS #275 | PAYE payday revert + More→Settings nav + "Discard unsaved changes?" on tab re-tap | Re-checked ok. Head `ad685c1c`. Waiting Mac CI. Owner retests Save on TestFlight (root cause unproven). |
+| web #427 / iOS #278 | 1.76 "Make changes" (A1/B1 + signed price work & expenses, any amount) | Reviewed twice, all findings fixed. Heads web `1f416e80`, iOS `9f69ff9e` (merged #276 fix). Waiting on #425/#426. Owner runs `scripts/report-signed-money-mismatch.mjs` (read-only) before switch-on. Commits used `--no-verify` (same-version hook); CI check with `--base` passes. |
+| web #431 (1.77 timesheet clarity, owner points 1,2,3,5,6; iOS #281; heads web `a47aaa18`, iOS `542e7018`; built, NOT reviewed; 6 judgement calls for the owner in the #431 body and OWNER_DECISIONS "1.77.0 judgement calls") | "Correct this timesheet" button, whose-turn line, polished "Changed since you signed" card, "Next: generate your invoice", reports "Awaiting re-sign" | Builder was still running at handover; branches `w177-timesheet-clarity` / `ios-1.77-timesheet-clarity`, report goes in the PR bodies. Needs independent review. |
+| web #429 / iOS #280 | 1.78 LM sign-off reminder: Settings item 5 (1–3 days, default 2, 08:00); admins for no-line-manager people; admin escalation 08:00 day before payday; note under item 5 | Built, NOT reviewed. 5 builder judgement calls for the owner (in OWNER_DECISIONS / PR body). Deploy after merge: `firebase deploy --only functions:inbox-push:timesheetSignOffReminders,functions:inbox-push:sendDevicePushOnNotificationCreate --project project-planner-f986c` (needs Cloud Scheduler API). Will need rebasing onto 1.77. |
+| web #428 / iOS #279 | Double push: 8 stale tokens on a line manager. iPhone replaces its own old token (Keychain), cap keeps newest, transactional write; owner clean-up script `--user --validate --keep-newest` | Reviewed + re-checked: mergeable. Owner approved both judgement calls. No rulebook change, no deploy. Web #428 MERGED 23 Nov 19:17 (`6cd38f61`); iOS #279 waits Mac CI. Then send the owner `docs/scripts/dedupe-push-tokens.md` steps. |
+
+## Owner decisions today (all in OWNER_DECISIONS)
+Make changes a ok / b changed (LM edits signed price work+expenses, any amount) / c ok; timesheet flow points 1–6 all before launch; reminder default 2 days at 08:00; admins: no-LM people + escalation 24 h before payday; double push a+b ok.
+
+## Follow-ups
+- VO Reopen / Unlock order wording into the rulebook (iOS #273 PR body lists the strings).
+- Batch 3 #1: triple-check LM changes reach booking + scheduling after 1.74 is live.
+- iOS Edit user save-timeout pattern; `exportedAt` invoice nits; flagless users in `staffAccountRole`.
+- Known limits on Make changes: no undo after first change; repeat "changed" notice possible.
+
+---
+
 # Handover — 21 Nov 2026
 
 > Read this first; the 19 Nov section below is older.

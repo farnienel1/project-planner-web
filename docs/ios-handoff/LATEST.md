@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.73.1 → 1.74.0
-Packed hash: 82406a8f8da0f6f940d8c9bb29dc1b30cb831b7c3e0c8621b3697f747121ed0e
-Rulebook sha256: 59f72ebcd83c046d5035b8687072d7ba933171aa38712c67e2c20592e77d5bbb
+Rulebook version: 1.74.0 → 1.74.0
+Packed hash: 215ae616e2abf0c72ff43154997e9915ad0b16729629b7deb2a7e1c6b12026f6
+Rulebook sha256: cbd428e07f35284a63ea14aceb24e9e2f6833f0eff4b61400a009dc2e62f8609
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,12 +22,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 926b910948b674b1fa259e8f933ddd15f14bad00b8e0b050ccbd88c723bf64aa
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: TIMESHEET_REVIEWER_BOOKING_EDITS_FIELD, TIMESHEET_REVIEW_BOOKING_NOT_RECORDED_MESSAGE, TIMESHEET_REVIEW_BOOKING_UPDATED_MESSAGE, TIMESHEET_SIGNED_NOTICE_TITLE, TIMESHEET_SIGNED_UPDATED_NOTICE_MESSAGE, TIMESHEET_SIGNED_UPDATED_NOTICE_TITLE, timesheetLineDisplayOrder, timesheetLineIsEmptyStandardPart, timesheetLineShownDeclined, timesheetReviewBookingAfterEdit, timesheetReviewBookingDocument, timesheetReviewerBookingEditKey, timesheetReviewerBookingEditRecord, timesheetSheetChangedByReviewer, timesheetSignedNoticeText
+Exports added: none
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/reportPay.ts, lib/canonical/timesheetBookingChanges.ts, lib/canonical/timesheetEntryReviews.ts, lib/canonical/timesheetLineDisplay.ts, lib/canonical/timesheetReviewBookingWrites.ts
+Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/canonical.test.ts, lib/canonical/staffAccess.ts
 Done when:
-- [ ] Packed hash in iOS equals 82406a8f8da0f6f940d8c9bb29dc1b30cb831b7c3e0c8621b3697f747121ed0e
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 59f72ebcd83c046d5035b8687072d7ba933171aa38712c67e2c20592e77d5bbb)
+- [ ] Packed hash in iOS equals 215ae616e2abf0c72ff43154997e9915ad0b16729629b7deb2a7e1c6b12026f6
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 cbd428e07f35284a63ea14aceb24e9e2f6833f0eff4b61400a009dc2e62f8609)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.74.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -85,7 +85,7 @@ Raise `minimumIosBuild` to the iOS 1.74 build before web 1.74 deploys: an older 
 
 ## New rulebook sections
 
-- 1.74.0 — 2026-11-23
+- 1.73.2 — 2026-11-23
 
 ## Workflow for the iOS agent
 

@@ -8,6 +8,9 @@ const OWNER_ROUTES = [
   '/api/owner/directory/orgs',
   '/api/owner/directory/people',
   '/api/owner/search?q=large',
+  '/api/owner/overview?period=month',
+  '/api/owner/directory/people?seen=month',
+  '/api/owner/people/op-large-001',
 ]
 
 test.describe('owner routes refuse everyone but the owner', () => {
@@ -31,7 +34,18 @@ test.describe('owner routes refuse everyone but the owner', () => {
 
   test('the old action routes refuse an org Super Admin too', async ({ request }) => {
     const headers = { ...(await apiHeaders(request, 'superAdmin')), 'Content-Type': 'application/json' }
-    for (const path of ['/api/owner/mark-internal', '/api/owner/audit', '/api/owner/send-password-reset', '/api/owner/restore-organisation']) {
+    for (const path of [
+      '/api/owner/mark-internal',
+      '/api/owner/audit',
+      '/api/owner/send-password-reset',
+      '/api/owner/restore-organisation',
+      // Owner console PR 5
+      '/api/owner/actions/change-name',
+      '/api/owner/actions/revoke-sessions',
+      '/api/owner/change-email',
+      '/api/owner/reverify',
+      '/api/owner/people/op-large-001/reveal-email',
+    ]) {
       const response = await request.post(path, { headers, data: { orgId: 'org-small', uid: seedUser('operative').uid, action: 'x' } })
       expect(response.status(), path).toBe(403)
     }

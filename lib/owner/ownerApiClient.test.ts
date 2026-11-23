@@ -5,6 +5,7 @@ test('re-review of #348: after an owner change, only the directory routes ask fo
   const { ownerQueryParams, readsOwnerDirectory } = await import('./client/ownerApi.ts')
   assert.equal(readsOwnerDirectory('/api/owner/search'), true)
   assert.equal(readsOwnerDirectory('/api/owner/directory/people'), true)
+  assert.equal(readsOwnerDirectory('/api/owner/overview'), true)
   assert.equal(readsOwnerDirectory('/api/owner/counts'), false)
   assert.deepEqual(ownerQueryParams('/api/owner/search', { q: 'x' }, true), { q: 'x', refresh: true })
   assert.deepEqual(ownerQueryParams('/api/owner/search', { q: 'x' }, false), { q: 'x' })
