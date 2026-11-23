@@ -14242,8 +14242,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.73.1" : "",
-      sha256: true ? "b4d98b0ad58da768d469aa6da4961d55800e5f04d16225c6ef70cd753e8d5356" : ""
+      version: true ? "1.73.2" : "",
+      sha256: true ? "86e183b61c952e77c9039496b7d312cc6a188ec3ecc0932d839ee19a11a4e203" : ""
     };
   }
   function rulebookVersionLabel(version) {

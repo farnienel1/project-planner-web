@@ -225,6 +225,13 @@ service cloud.firestore {
       data.get('enforcedReadsOrganizationIds', []) is list && organizationId in data.get('enforcedReadsOrganizationIds', []);
   }
 
+  function operativeOwnLeaveOn(organizationId) {
+    let config = /databases/(default)/documents/platformConfig/app;
+    let data = exists(config) ? get(config).data : {};
+    return data.get('operativeOwnLeave', false) == true ||
+      data.get('operativeOwnLeaveOrganizationIds', []) is list && organizationId in data.get('operativeOwnLeaveOrganizationIds', []);
+  }
+
   function privatePayOn(organizationId) {
     let config = /databases/(default)/documents/platformConfig/app;
     let data = exists(config) ? get(config).data : {};
@@ -2093,7 +2100,12 @@ service cloud.firestore {
           );
         }
 
-        allow read: if canAccessOrganization(organizationId);
+        allow read: if canAccessOrganization(organizationId) && (
+          callerOrgRoleAnyBilling(organizationId) != 'operative' || !operativeOwnLeaveOn(organizationId) ||
+          resource.data.get('userId', null) is string && request.auth.token.get('email', null) is string &&
+            resource.data.get('userId', null).lower() == request.auth.token.email.lower() ||
+          callerOwnsBookingId(resource.data.get('userId', null)) ||
+          callerOwnsBookingId(resource.data.get('operativeId', null)));
         allow create, update, delete: if canAccessOrganization(organizationId) && (
           (request.method == 'create') ? ((
           ((request.resource.data.get('userId', '') == request.auth.uid || request.resource.data.get('userId', '') in [null, ''] &&
@@ -2464,7 +2476,7 @@ service cloud.firestore {
             'payProfiles', 'operativeDayRateHistory', 'operativeProfiles', 'settings',
             'overtimeRequests', 'overtimeReviews', 'overtimeReports', 'priceWorkItems', 'expenseItems',
             'payeClaimReports', 'payeClaimReviews', 'personalSiteAudits', 'worksListPicks', 'annualLeaveAdjustments', 'deletedPeople', 'materialContacts',
-            'reportChecks']);
+            'reportChecks', 'holidayBookings']);
       }
     }
 
