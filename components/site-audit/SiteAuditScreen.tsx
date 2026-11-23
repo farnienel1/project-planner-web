@@ -18,10 +18,13 @@ import { Chip, PageBand, PageShell, SegmentedTabs } from '@/components/ui/page'
 import {
   SITE_AUDIT_JOB_DEFAULT_TAB,
   SITE_AUDIT_JOB_TABS,
+  SITE_AUDIT_JOBS_FAILED_MESSAGE,
   SITE_AUDIT_LEAVE_CONFIRM_MESSAGE,
+  siteAuditJobChoice,
   siteAuditJobTabCounts,
   siteAuditJobsInTab,
 } from '@/lib/siteAudit/siteAuditCreateDraft'
+import { useSiteAuditJobContext } from '@/components/site-audit/useSiteAuditJobContext'
 import { ErrorBanner, LoadingSpinner } from '@/components/dashboard/PageShell'
 import {
   buildSiteAuditPdfContextFromProject,
@@ -716,7 +719,11 @@ export function SiteAuditNewScreen() {
   const router = useRouter()
   const { organization, user } = useAuthStore()
   const { loadProjects, loadSmallWorks, projects, smallWorks } = useProjectStore()
+  const projectsLoadedOrgId = useProjectStore((state) => state.projectsLoadedOrgId)
+  const smallWorksLoadedOrgId = useProjectStore((state) => state.smallWorksLoadedOrgId)
   const { loadAudits } = useSiteAuditStore()
+  // Owner decision 23 Nov: only the jobs the person sees (rulebook §21 `visibleJobs`) — an operative's own jobs.
+  const jobContext = useSiteAuditJobContext()
   const timeZone = useOrganizationTimeZone()
   const [source, setSource] = useState<'projects' | 'small-works'>('projects')
   const [tab, setTab] = useState<WorksTab>(SITE_AUDIT_JOB_DEFAULT_TAB)
@@ -733,7 +740,23 @@ export function SiteAuditNewScreen() {
   }, [organization, loadProjects, loadSmallWorks])
 
   // Rulebook 1.21.0 (`worksListMembership`): every document of the catalogue, live or not.
-  const list = source === 'projects' ? worksListMembership(projects, 'projects') : worksListMembership(smallWorks, 'smallWorks')
+  const catalogue = source === 'projects' ? worksListMembership(projects, 'projects') : worksListMembership(smallWorks, 'smallWorks')
+  const catalogueLoaded = Boolean(
+    organization?.id && (source === 'projects' ? projectsLoadedOrgId : smallWorksLoadedOrgId) === organization.id
+  )
+  const choice = useMemo(
+    () =>
+      siteAuditJobChoice({
+        jobs: catalogue,
+        viewer: jobContext.viewer,
+        context: jobContext.context,
+        contextLoaded: jobContext.contextLoaded,
+        contextFailed: jobContext.contextFailed,
+      }),
+    [catalogue, jobContext.viewer, jobContext.context, jobContext.contextLoaded, jobContext.contextFailed]
+  )
+  const list = choice.jobs
+  const jobsState = !catalogueLoaded && choice.state === 'ready' && catalogue.length === 0 ? 'loading' : choice.state
   const counts = useMemo(() => siteAuditJobTabCounts(list, nowMs, timeZone), [list, nowMs, timeZone])
   const shown = useMemo(() => siteAuditJobsInTab(list, tab, nowMs, timeZone), [list, tab, nowMs, timeZone])
   const leave = () => router.push('/dashboard/site-audit')
@@ -783,7 +806,16 @@ export function SiteAuditNewScreen() {
             />
           </div>
           <div className="space-y-2">
-            {shown.length === 0 ? (
+            {jobsState === 'loading' ? (
+              <p className="py-8 text-center text-sm text-(--ink3)">Loading jobs…</p>
+            ) : jobsState === 'failed' ? (
+              <div className="py-8 text-center">
+                <p className="text-sm text-(--red)">{SITE_AUDIT_JOBS_FAILED_MESSAGE}</p>
+                <button type="button" onClick={jobContext.retry} className="pu-btn sm mt-3">
+                  Retry
+                </button>
+              </div>
+            ) : shown.length === 0 ? (
               <p className="py-8 text-center text-sm text-(--ink3)">No jobs available</p>
             ) : (
               shown.map((project) => {

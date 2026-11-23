@@ -1,4 +1,15 @@
-import { dayKeyInOrganizationZone, siteAuditFieldLimitError, worksInTab, worksTabCounts, type WorksTab, type WorksTabCounts } from '@/lib/canonical'
+import {
+  dayKeyInOrganizationZone,
+  seesEveryJob,
+  siteAuditFieldLimitError,
+  visibleJobs,
+  worksInTab,
+  worksTabCounts,
+  type JobAccessViewer,
+  type WorksListContext,
+  type WorksTab,
+  type WorksTabCounts,
+} from '@/lib/canonical'
 import { dateFromDayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { isPlausibleDayKey } from '@/lib/security/boundedValue'
 import type { SiteAuditOutboxRecord } from '@/lib/siteAudit/siteAuditOutbox'
@@ -153,3 +164,64 @@ export function siteAuditOutboxRecord(input: {
     })),
   }
 }
+
+/** Where the job list for a new site audit stands (owner decision 23 Nov). */
+export type SiteAuditJobChoice<T> = { state: 'loading' | 'failed' | 'ready'; jobs: T[] }
+
+/**
+ * The jobs a person may start a site audit on (owner decision 23 Nov, before launch): exactly the jobs they see —
+ * rulebook §21 `visibleJobs`. Admins, super admins and managers (`seesEveryJob`) see every job, so nothing changes for
+ * them and nothing has to load first. Anyone else (operatives: the jobs of their own bookings, tasks and deadlines, less
+ * the jobs hidden from them) gets no list until the bookings, tasks, deadlines and roster rows the rule reads have
+ * loaded (`contextLoaded`), so an empty "No jobs" is never shown before the data is there; a failed load is `failed`,
+ * never an empty list. With no signed-in viewer the list is still loading.
+ */
+export function siteAuditJobChoice<T extends Project>(input: {
+  jobs: ReadonlyArray<T>
+  viewer: JobAccessViewer | null
+  context: WorksListContext | null
+  contextLoaded: boolean
+  contextFailed?: boolean
+}): SiteAuditJobChoice<T> {
+  const { viewer } = input
+  if (!viewer || !viewer.role) return { state: 'loading', jobs: [] }
+  if (seesEveryJob(viewer.role)) return { state: 'ready', jobs: visibleJobs(input.jobs, viewer, input.context) }
+  if (input.contextFailed) return { state: 'failed', jobs: [] }
+  if (!input.contextLoaded) return { state: 'loading', jobs: [] }
+  return { state: 'ready', jobs: visibleJobs(input.jobs, viewer, input.context) }
+}
+
+/** Whether the job a per-job New site audit page opened on is one the person may start an audit on (`siteAuditJobChoice`). */
+export function siteAuditJobAllowed(input: {
+  job: Project
+  viewer: JobAccessViewer | null
+  context: WorksListContext | null
+  contextLoaded: boolean
+  contextFailed?: boolean
+}): 'loading' | 'failed' | 'allowed' | 'refused' {
+  const choice = siteAuditJobChoice({ ...input, jobs: [input.job] })
+  if (choice.state !== 'ready') return choice.state
+  return choice.jobs.length > 0 ? 'allowed' : 'refused'
+}
+
+export const SITE_AUDIT_JOB_REFUSED_MESSAGE = 'You can\'t create site audits for this job.'
+export const SITE_AUDIT_JOBS_FAILED_MESSAGE = 'Your jobs did not finish loading. Check the connection and try again.'
+
+/**
+ * The per-job New site audit page, once it has said "allowed" for a job, keeps showing the form for that job whatever
+ * the access check says later (review of #419): a booking or task change, or a listener restarting mid-audit, must never
+ * unmount the form and lose the photos. Loading / failed / refused only apply before the first grant. Returns the job id
+ * granted so far (the page keeps it in state) and what to show.
+ */
+export function siteAuditJobPageGrant(input: {
+  grantedJobId: string | null
+  jobId: string
+  allowed: 'loading' | 'failed' | 'allowed' | 'refused'
+}): { grantedJobId: string | null; show: 'flow' | 'loading' | 'failed' | 'refused' } {
+  if (input.grantedJobId && input.grantedJobId === input.jobId) return { grantedJobId: input.grantedJobId, show: 'flow' }
+  if (input.allowed === 'allowed') return { grantedJobId: input.jobId, show: 'flow' }
+  return { grantedJobId: input.grantedJobId, show: input.allowed }
+}
+
+/** How long the job list waits for an operative's bookings and tasks before saying it did not load (review of #419). */
+export const SITE_AUDIT_JOBS_LOAD_TIMEOUT_MS = 15_000

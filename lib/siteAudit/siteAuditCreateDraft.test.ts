@@ -1,12 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { worksInTab, worksTabCounts } from '@/lib/canonical'
+import { visibleJobs, worksInTab, worksTabCounts, type JobAccessViewer } from '@/lib/canonical'
 import type { Project } from '@/types'
 import {
   siteAuditAfterSend,
   siteAuditDateText,
   siteAuditDefaultDate,
   siteAuditHasUnsavedWork,
+  siteAuditJobAllowed,
+  siteAuditJobChoice,
+  siteAuditJobPageGrant,
   SITE_AUDIT_JOB_DEFAULT_TAB,
   SITE_AUDIT_JOB_TABS,
   siteAuditDraftProblem,
@@ -130,4 +133,89 @@ test('audit date: today in the organisation zone, shown as "23 Nov 2026"', () =>
   assert.equal(siteAuditDateText('2026-11-23', 'Europe/London'), '23 Nov 2026')
   assert.equal(siteAuditDateText('2026-11-23', 'Pacific/Auckland'), '23 Nov 2026')
   assert.equal(siteAuditDateText('nope', 'Europe/London'), 'nope')
+})
+
+const role = (over: Partial<JobAccessViewer['role']> = {}): JobAccessViewer['role'] => ({
+  isSuperAdmin: false,
+  isAdmin: false,
+  isManager: false,
+  isOperativeMode: false,
+  ...over,
+})
+const jobsForChoice = [
+  { id: 'J-BOOKED' },
+  { id: 'j-task' },
+  { id: 'j-deadline' },
+  { id: 'j-hidden', hiddenOperativeUserIds: ['OP-USER'] },
+  { id: 'j-other' },
+] as unknown as Project[]
+const opContext = {
+  operatives: [{ id: 'op-row', email: 'op@x.test' }],
+  managers: [],
+  bookings: [
+    { projectId: 'j-booked', operativeId: 'op-row', status: 'Confirmed' },
+    { projectId: 'j-hidden', operativeId: 'op-user', status: 'Confirmed' },
+    { projectId: 'j-other', operativeId: 'someone-else', status: 'Confirmed' },
+    { projectId: 'j-other', operativeId: 'op-user', status: 'Cancelled' },
+  ],
+  managerSiteBookings: [],
+  tasks: [{ projectId: 'j-task', assignedOperativeIds: ['op-row'] }],
+  deadlineJobIds: ['j-deadline'],
+}
+const operative: JobAccessViewer = { role: role({ isOperativeMode: true }), ids: ['op-user'], email: 'OP@x.test', uid: 'op-user' }
+
+test('new site audit jobs (owner 23 Nov): an operative sees only visibleJobs — bookings, tasks, deadlines, less hidden', () => {
+  const choice = siteAuditJobChoice({ jobs: jobsForChoice, viewer: operative, context: opContext, contextLoaded: true })
+  assert.equal(choice.state, 'ready')
+  assert.deepEqual(choice.jobs.map((j) => j.id), ['J-BOOKED', 'j-task', 'j-deadline'])
+  // Exactly the rulebook's answer, never a second filter.
+  assert.deepEqual(choice.jobs, visibleJobs(jobsForChoice, operative, opContext))
+})
+
+test('new site audit jobs: admins, super admins and managers see every job and need nothing loaded', () => {
+  for (const r of [role({ isAdmin: true }), role({ isSuperAdmin: true }), role({ isManager: true })]) {
+    const viewer: JobAccessViewer = { role: r, ids: ['m1'] }
+    const choice = siteAuditJobChoice({ jobs: jobsForChoice, viewer, context: null, contextLoaded: false })
+    assert.equal(choice.state, 'ready')
+    assert.equal(choice.jobs.length, jobsForChoice.length)
+  }
+})
+
+test('new site audit jobs: never an empty list before the operative\'s data has loaded; a failed load says so', () => {
+  assert.deepEqual(siteAuditJobChoice({ jobs: jobsForChoice, viewer: operative, context: null, contextLoaded: false }), {
+    state: 'loading',
+    jobs: [],
+  })
+  assert.equal(
+    siteAuditJobChoice({ jobs: jobsForChoice, viewer: operative, context: opContext, contextLoaded: false, contextFailed: true }).state,
+    'failed'
+  )
+  assert.equal(siteAuditJobChoice({ jobs: jobsForChoice, viewer: null, context: null, contextLoaded: true }).state, 'loading')
+})
+
+test('per-job new site audit: an operative is refused a job they cannot see, allowed their own', () => {
+  const ask = (id: string) =>
+    siteAuditJobAllowed({ job: jobsForChoice.find((j) => j.id === id)!, viewer: operative, context: opContext, contextLoaded: true })
+  assert.equal(ask('J-BOOKED'), 'allowed')
+  assert.equal(ask('j-other'), 'refused')
+  assert.equal(ask('j-hidden'), 'refused')
+  assert.equal(
+    siteAuditJobAllowed({ job: jobsForChoice[4], viewer: { role: role({ isManager: true }), ids: ['m'] }, context: null, contextLoaded: false }),
+    'allowed'
+  )
+  assert.equal(siteAuditJobAllowed({ job: jobsForChoice[0], viewer: operative, context: null, contextLoaded: false }), 'loading')
+})
+
+test('per-job new site audit: once allowed, the form stays for that job (review of #419)', () => {
+  let grant = siteAuditJobPageGrant({ grantedJobId: null, jobId: 'J1', allowed: 'loading' })
+  assert.deepEqual(grant, { grantedJobId: null, show: 'loading' })
+  grant = siteAuditJobPageGrant({ grantedJobId: grant.grantedJobId, jobId: 'J1', allowed: 'allowed' })
+  assert.deepEqual(grant, { grantedJobId: 'J1', show: 'flow' })
+  // A booking or task change, or a listener restart, mid-audit: the form is never unmounted.
+  for (const later of ['loading', 'failed', 'refused'] as const) {
+    assert.equal(siteAuditJobPageGrant({ grantedJobId: 'J1', jobId: 'J1', allowed: later }).show, 'flow')
+  }
+  // Another job (a new URL) starts again.
+  assert.deepEqual(siteAuditJobPageGrant({ grantedJobId: 'J1', jobId: 'J2', allowed: 'refused' }), { grantedJobId: 'J1', show: 'refused' })
+  assert.equal(siteAuditJobPageGrant({ grantedJobId: null, jobId: 'J1', allowed: 'failed' }).show, 'failed')
 })
