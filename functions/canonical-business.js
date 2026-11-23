@@ -3941,7 +3941,7 @@ var ProjectPlannerCanonical = (() => {
     }
     return { readsEveryBooking: false, queries };
   }
-  var OWN_LEAVE_IDS_PER_QUERY = 14;
+  var OWN_LEAVE_IDS_PER_QUERY = 6;
   function leaveQueryValues(uid, ownIds2, email) {
     const ids = [];
     const emails = [];
@@ -14242,8 +14242,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.73.1" : "",
-      sha256: true ? "b4d98b0ad58da768d469aa6da4961d55800e5f04d16225c6ef70cd753e8d5356" : ""
+      version: true ? "1.73.2" : "",
+      sha256: true ? "e2d27ef95037f40585056d39651ae89a406c423c82e7ba9cf53a4fd6907fb41e" : ""
     };
   }
   function rulebookVersionLabel(version) {
