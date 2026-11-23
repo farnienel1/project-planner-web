@@ -383,6 +383,19 @@ test('1.78.0 sign-off reminder roster: a member through the members map takes th
   assert.equal(visitor.role?.isAdmin, false)
   assert.equal(visitor.role?.isManager, true)
   assert.equal(visitor.timesheetSelfSign, false, 'never the home company\'s toggles')
+  // Deactivated in their own company but active here (§14: only a membership here deactivates them here).
+  const awayInactive = R.timesheetSignOffReminderRosterMember(
+    'VIS2',
+    { organizationId: 'other-org', firstName: 'Vi', surname: 'Two', email: 'vi2@x.test', isActive: false, passwordSet: true },
+    { organizationId: ORG, membersRole: 'manager' }
+  )!
+  assert.equal(awayInactive.isActive, true, 'home isActive never counts here')
+  const membershipOff = R.timesheetSignOffReminderRosterMember(
+    'VIS3',
+    { organizationId: 'other-org', firstName: 'Vi', surname: 'Three', email: 'vi3@x.test', passwordSet: true },
+    { organizationId: ORG, membersRole: 'manager', membership: { role: 'manager', accountActive: false } }
+  )!
+  assert.equal(membershipOff.isActive, false, 'deactivated by the membership here')
   const op = R.timesheetSignOffReminderRosterMember(
     'OPV',
     { organizationId: ORG, firstName: 'Op', surname: 'Visited', role: 'operative', operativeMode: true, passwordSet: true, assignedManagerUserIds: ['VIS'] },

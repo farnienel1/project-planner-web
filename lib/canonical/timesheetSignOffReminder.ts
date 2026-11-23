@@ -292,11 +292,12 @@ function anchoredMember(
   })
   const superAdmin = here.isSuperAdmin === true || flags.superAdmin === true
   const level = here.level
+  // §14: deactivated here only by their membership here; their home company's `isActive` never counts.
   const membershipActive = flags.source === 'membership' ? flags.active : true
   const shared = sharedMemberFields(docId, data)
   return {
     ...shared,
-    isActive: shared.isActive && membershipActive,
+    isActive: membershipActive,
     role: { isSuperAdmin: superAdmin, isAdmin: level === 'admin', isManager: level === 'manager', isOperativeMode: level === 'operative' },
     organizationSuperAdmin: superAdmin,
     annualLeaveSelfBook: flags.annualLeaveSelfBook,
