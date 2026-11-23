@@ -485,7 +485,8 @@ export function buildDailyOverview(params: {
         operativeId: b.operativeId,
         userId: linkedUserId,
         projectId: b.projectId,
-        timeSlotRaw: String(b.timeSlot || 'FULL DAY'),
+        // As stored (no Full day default): the booking sheet reads a missing slot word with times as Custom.
+        timeSlotRaw: b.timeSlot ? String(b.timeSlot) : undefined,
         workStartTime: b.workStartTime,
         workEndTime: b.workEndTime,
       })

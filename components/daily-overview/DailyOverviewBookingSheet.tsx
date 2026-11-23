@@ -50,6 +50,13 @@ import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
 import { webJobAccessViewer } from '@/lib/access/readPlan'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { feedback } from '@/lib/feedbackSounds/feedback'
+import {
+  sheetSlotChoiceFromRaw,
+  sheetSlotOptions,
+  sheetSlotWriteFields,
+  type SheetBookingCollection,
+} from '@/lib/daily-overview/bookingSheetSlot'
+import type { ScheduleSlotChoice } from '@/lib/scheduling/scheduleUtils'
 
 type DestTab = 'other' | 'projects' | 'smallWorks'
 type StatusFilter = 'active' | 'upcoming' | 'completed'
@@ -67,24 +74,6 @@ export type OverviewBookingTarget = OverviewPersonRow | {
   locationType?: ManagerLocationType
   customLocationName?: string
   projectId?: string
-}
-
-function slotKindFromRaw(raw?: string): 'AM' | 'PM' | 'CUSTOM_HOURS' | 'FULL' {
-  const compact = (raw || '').toUpperCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim()
-  if (compact === 'AM') return 'AM'
-  if (compact === 'PM') return 'PM'
-  if (compact.includes('CUSTOM')) return 'CUSTOM_HOURS'
-  return 'FULL'
-}
-
-function operativeSlotFromRaw(raw?: string): string {
-  const kind = slotKindFromRaw(raw)
-  return kind === 'FULL' ? 'FULL DAY' : kind
-}
-
-function managerSlotFromRaw(raw?: string): string {
-  const kind = slotKindFromRaw(raw)
-  return kind === 'FULL' ? 'FULL_DAY' : kind
 }
 
 /** Other books the person on the manager schedule, which needs their users account (never a guessed one). */
@@ -131,6 +120,10 @@ export function DailyOverviewBookingSheet({
   const [workStartTime, setWorkStartTime] = useState(row.workStartTime || DEFAULT_PAYROLL_POLICY.standardDayStart)
   const [workEndTime, setWorkEndTime] = useState(row.workEndTime || DEFAULT_PAYROLL_POLICY.standardDayEnd)
   const [breakRemoved, setBreakRemoved] = useState(false)
+  // Full day / Custom (rulebook §4.3 `allowedTimeSlotsOnDay`; a stored AM / PM keeps its own slot). Opens on the
+  // booking's stored slot, so saving a Full day booking without changes keeps it a Full day.
+  const storedSlot = sheetSlotChoiceFromRaw(row.timeSlotRaw, row)
+  const [slot, setSlot] = useState<ScheduleSlotChoice>(storedSlot)
   // Rulebook 1.29.0 §25: the labour booking's own overtime rate (`otMultiplierOverride`; null = the organisation's).
   const storedRate = (() => {
     const stored =
@@ -150,6 +143,8 @@ export function DailyOverviewBookingSheet({
       newDocument,
     })
   const hoursTouched = useRef(false)
+  // The same flag for render (the ref is read only in effects): whether the person changed the hours on screen.
+  const [hoursEdited, setHoursEdited] = useState(false)
   const leaveCheck = useLeaveConflictCheck(payroll)
   const leaveGate = useBookingConflictGate('Save')
   // Rulebook 1.19.0 (`customHoursPrefillForDays`): a booking with no clock times opens with that day's own prefill —
@@ -170,9 +165,11 @@ export function DailyOverviewBookingSheet({
 
   useEffect(() => {
     hoursTouched.current = false
+    setHoursEdited(false)
     const operative = bookings.find((entry) => entry.id === row.bookingId)
     const manager = managerSiteBookings.find((entry) => entry.id === row.bookingId)
     setBreakRemoved(operative?.isBreakRemoved === true || manager?.isBreakRemoved === true)
+    setSlot(sheetSlotChoiceFromRaw(row.timeSlotRaw, row))
     setWorkStartTime(row.workStartTime || prefill.start)
     setWorkEndTime(row.workEndTime || prefill.end)
     // Seed once per booking. Later store updates must not wipe slider changes.
@@ -247,13 +244,16 @@ export function DailyOverviewBookingSheet({
     return matchedUser ? findOperativeForUser(matchedUser, operatives) : undefined
   }, [row.operativeId, resolvedUserId, operatives, users])
 
-  const hoursValid = useMemo(() => {
+  const timesValid = useMemo(() => {
     const start = workStartTime.split(':').map(Number)
     const end = workEndTime.split(':').map(Number)
     const startMin = (start[0] || 0) * 60 + (start[1] || 0)
     const endMin = (end[0] || 0) * 60 + (end[1] || 0)
     return endMin > startMin
   }, [workStartTime, workEndTime])
+  // Only custom hours need a start before the finish; a named slot carries no clock times.
+  const hoursValid = slot !== 'CUSTOM' || timesValid
+  const slotOptions = sheetSlotOptions(day, payroll, storedSlot)
 
   // Rulebook 1.69.0 (`bookingHoursBreakdownDays`): the Hours breakdown box under the working hours in effect on the
   // day shown, with the booking's own overtime rate as chosen on screen (null = the organisation's).
@@ -261,18 +261,31 @@ export function DailyOverviewBookingSheet({
     () =>
       hoursBreakdownForDates(
         [day],
-        { timeSlot: 'CUSTOM_HOURS', workStartTime, workEndTime, isBreakRemoved: breakRemoved, otMultiplierOverride: overtimeRate },
+        { ...hoursFields(), otMultiplierOverride: overtimeRate },
         payroll
       ),
-    [workStartTime, workEndTime, breakRemoved, overtimeRate, payroll, day]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [slot, workStartTime, workEndTime, breakRemoved, overtimeRate, payroll, day, hoursEdited, row.timeSlotRaw]
   )
 
-  const hoursFields = () => ({
-    timeSlot: 'CUSTOM_HOURS',
-    workStartTime,
-    workEndTime,
-    isBreakRemoved: breakRemoved,
-  })
+  // The slot fields for the collection the booking is written to (labour `FULL DAY`, manager site `FULL_DAY`).
+  // An unchanged booking whose stored slot word the sheet does not offer (`Evening`, `Overtime`) is written back as
+  // stored (`sheetSlotWriteFields` `stored`).
+  const sourceCollection: SheetBookingCollection = row.kind === 'operative' ? 'bookings' : 'managerSiteBookings'
+  function hoursFields(collection: SheetBookingCollection = sourceCollection) {
+    const storedBooking =
+      sourceCollection === 'bookings'
+        ? bookings.find((entry) => entry.id === row.bookingId)
+        : managerSiteBookings.find((entry) => entry.id === row.bookingId)
+    return sheetSlotWriteFields(slot, collection, { workStartTime, workEndTime, isBreakRemoved: breakRemoved }, {
+      collection: sourceCollection,
+      timeSlot: row.timeSlotRaw,
+      workStartTime: row.workStartTime,
+      workEndTime: row.workEndTime,
+      isBreakRemoved: storedBooking?.isBreakRemoved === true,
+      hoursTouched: hoursEdited,
+    })
+  }
 
   // 1.13.0 lunch warning (`customHoursBreakWarning`): the confirm step before custom hours are saved.
   const breakConfirmed = () => confirmCustomHoursBreak(payroll, day, hoursFields())
@@ -313,10 +326,10 @@ export function DailyOverviewBookingSheet({
     setSaving(true)
     setError(null)
     try {
-      const hours = hoursFields()
       if (row.kind === 'operative') {
-        await updateBooking(row.bookingId, { projectId: project.id, ...hours, ...rateFields(false) }, replace)
+        await updateBooking(row.bookingId, { projectId: project.id, ...hoursFields('bookings'), ...rateFields(false) }, replace)
       } else if (linkedOperative) {
+        const hours = hoursFields('bookings')
         if (replace.replaces?.length) throw new Error(REPLACE_ON_MOVE_MESSAGE)
         // Owner answer 11 Nov (item 4): the new labour booking and the manager site booking's delete with its
         // tombstone are one batch, so a refused write leaves both bookings as they were.
@@ -324,7 +337,7 @@ export function DailyOverviewBookingSheet({
           operativeId: linkedOperative.id,
           projectId: project.id,
           date: day,
-          timeSlot: operativeSlotFromRaw('CUSTOM_HOURS'),
+          timeSlot: hours.timeSlot,
           bookedBy: user.id,
           status: 'Confirmed',
           notes: '',
@@ -339,7 +352,7 @@ export function DailyOverviewBookingSheet({
           locationType: asSmallWork ? 'small_work' : 'project',
           locationId: project.id,
           customLocationName: undefined,
-          ...hours,
+          ...hoursFields('managerSiteBookings'),
           ...rateFields(false),
         }, replace)
       }
@@ -367,7 +380,7 @@ export function DailyOverviewBookingSheet({
     setSaving(true)
     setError(null)
     try {
-      const hours = hoursFields()
+      const hours = hoursFields('managerSiteBookings')
       if (row.kind === 'operative' && row.bookingId) {
         if (replace.replaces?.length) throw new Error(REPLACE_ON_MOVE_MESSAGE)
         // The labour booking moves to the manager schedule: the new manager site booking and the labour booking's
@@ -376,7 +389,7 @@ export function DailyOverviewBookingSheet({
         await moveBookingIntoManagerSchedule(organization.id, {
           userId: resolvedUserId,
           date: day,
-          timeSlot: managerSlotFromRaw('CUSTOM_HOURS'),
+          timeSlot: hours.timeSlot,
           locationType: pick.locationType,
           customLocationName: pick.customLocationName,
           workStartTime: hours.workStartTime,
@@ -541,6 +554,14 @@ export function DailyOverviewBookingSheet({
           </>
         ) : null}
         <div className="stack" style={{ gap: 10 }}>
+          <p className="eyebrow">Time slot</p>
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }} role="group" aria-label="Time slot">
+            {slotOptions.map((opt) => (
+              <FilterChip key={opt.value} title={opt.label} selected={slot === opt.value} onClick={() => setSlot(opt.value)} />
+            ))}
+          </div>
+          {slot === 'CUSTOM' ? (
+          <>
           <p className="eyebrow">Start and finish</p>
           <HoursTimelinePicker
             start={workStartTime}
@@ -553,14 +574,17 @@ export function DailyOverviewBookingSheet({
             showBreakdown={false}
             onStart={(value) => {
               hoursTouched.current = true
+              setHoursEdited(true)
               setWorkStartTime(value)
             }}
             onEnd={(value) => {
               hoursTouched.current = true
+              setHoursEdited(true)
               setWorkEndTime(value)
             }}
             onBreak={(value) => {
               hoursTouched.current = true
+              setHoursEdited(true)
               setBreakRemoved(value)
             }}
           />
@@ -575,6 +599,8 @@ export function DailyOverviewBookingSheet({
               value={overtimeRate}
               onChange={setOvertimeRate}
             />
+          ) : null}
+          </>
           ) : null}
           <HoursBreakdownCard breakdown={breakdown} />
           <button type="button" className="btn primary" disabled={saving || !hoursValid} onClick={() => void saveHoursOnly()}>
