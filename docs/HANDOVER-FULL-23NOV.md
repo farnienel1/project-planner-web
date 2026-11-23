@@ -8,7 +8,7 @@ One file: where things stand, what to do next, and the whole launch checklist. A
 
 **Live:** web main rulebook **1.73.1**; iOS main `4313a263` (VO tracker #273 merged 23 Nov). TestFlight build 13, `minimumIosBuild` 13, Firestore rules from main published 23 Nov.
 
-**Merge rules:** web rulebook PRs merge in version order 1.74 → 1.75 → 1.76 → 1.77 → 1.78; each later one needs main merged in, renumber if needed, `npm run build:canonical`, `npm run rulebook:handoff`, `node scripts/rulebook-sync.mjs check --base origin/main`, then iOS re-syncs its pair. Squash-merge via REST (`POST …/pulls/N/ccr/ready_for_review`, then `PUT …/pulls/N/merge` with `sha=` head, trailers in commit_message). GraphQL is blocked. macOS CI queues for hours.
+**Merge rules:** (#425 and #427 report a merge conflict with main since #428 merged at 19:17 — merge main in and keep both sides first.) web rulebook PRs merge in version order 1.74 → 1.75 → 1.76 → 1.77 → 1.78; each later one needs main merged in, renumber if needed, `npm run build:canonical`, `npm run rulebook:handoff`, `node scripts/rulebook-sync.mjs check --base origin/main`, then iOS re-syncs its pair. Squash-merge via REST (`POST …/pulls/N/ccr/ready_for_review`, then `PUT …/pulls/N/merge` with `sha=` head, trailers in commit_message). GraphQL is blocked. macOS CI queues for hours.
 
 ## Release order for 1.74 (timesheet review flow)
 1. Merge iOS #276 (+ #274, #275, #277) when Mac checks are green → tell the owner a TestFlight build is ready (commit + test list).
