@@ -20,7 +20,7 @@ import { weekStartKey } from '@/lib/timesheets/timesheetWeekUtils'
 import { periodStartKey } from '@/lib/timesheets/paymentRunCopy'
 import { queryIdsSkippingRefused, timesheetMemberIds, timesheetOwnerResolver } from '@/lib/timesheets/timesheetQueue'
 import { newestFirstOwnIdLast, personTimesheetDocs, timesheetLookupPlan, timesheetDocumentOwnerId } from '@/lib/timesheets/personTimesheetDocs'
-import { UNKNOWN_BOOKING_PERSON_LABEL, bookingPersonIdHint } from '@/lib/canonical'
+import { UNKNOWN_BOOKING_PERSON_LABEL, bookingPersonIdHint, formerPersonForId, formerPersonLabel, type FormerPerson } from '@/lib/canonical'
 import {
   parseTimesheetEntries,
   parseTimesheetEntryReviews,
@@ -1809,13 +1809,29 @@ export function isUnresolvedTimesheetPerson(user: object | null | undefined): bo
   return Boolean(user && unresolvedPeople.has(user))
 }
 
-export function unresolvedTimesheetPerson(storedUserId: string, organizationId: string): import('@/types').User {
+/**
+ * 23 Nov (owner, issue 20 web part): a stand-in whose stored id a former-person record names (`deletedPeople`,
+ * `formerPersonForId`) reads "Former: Jane Smith" (`formerPersonLabel`) instead of "Unknown person · …". Display only.
+ */
+const formerStandIns = new WeakSet<object>()
+
+/** Whether `user` is a stand-in named from a former-person record. */
+export function isFormerTimesheetPerson(user: object | null | undefined): boolean {
+  return Boolean(user && formerStandIns.has(user))
+}
+
+export function unresolvedTimesheetPerson(
+  storedUserId: string,
+  organizationId: string,
+  formerPeople: ReadonlyArray<FormerPerson> = []
+): import('@/types').User {
   const hint = bookingPersonIdHint(storedUserId)
+  const former = formerPersonForId(storedUserId, formerPeople)
   const person = {
     id: storedUserId,
     email: '',
-    firstName: UNKNOWN_BOOKING_PERSON_LABEL,
-    surname: hint ? `· ${hint}` : '',
+    firstName: former ? formerPersonLabel(former.displayName) : UNKNOWN_BOOKING_PERSON_LABEL,
+    surname: former ? '' : hint ? `· ${hint}` : '',
     organizationId,
     role: 'operative',
     passwordSet: false,
@@ -1826,6 +1842,7 @@ export function unresolvedTimesheetPerson(storedUserId: string, organizationId: 
     updatedAt: new Date(0),
   } as unknown as import('@/types').User
   unresolvedPeople.add(person)
+  if (former) formerStandIns.add(person)
   return person
 }
 
@@ -1845,11 +1862,14 @@ export function exportedSheetOwnerResolver({
   roster,
   includeUnresolved,
   organizationId,
+  formerPeople = [],
 }: {
   users: ReadonlyArray<import('@/types').User>
   roster: ReadonlyArray<import('@/types').User>
   includeUnresolved: boolean
   organizationId: string
+  /** 23 Nov: the organisation's former-person records; a matching id reads "Former: <name>". Missing: none. */
+  formerPeople?: ReadonlyArray<FormerPerson>
 }): (storedUserId: string | null | undefined) => import('@/types').User | null {
   const fullRoster = roster.length > 0 ? roster : users
   const ownerOf = timesheetOwnerResolver(users, fullRoster)
@@ -1875,7 +1895,7 @@ export function exportedSheetOwnerResolver({
     const key = normalizeDocumentId(stored)
     let stand = unknown.get(key)
     if (!stand) {
-      stand = unresolvedTimesheetPerson(stored, organizationId)
+      stand = unresolvedTimesheetPerson(stored, organizationId, formerPeople)
       unknown.set(key, stand)
     }
     return stand
@@ -1890,6 +1910,7 @@ export async function loadExportedTimesheetHistory({
   rosterLoaded = false,
   viewerIsOperative = false,
   viewerIsAdmin = false,
+  formerPeople = [],
 }: {
   organizationId: string
   users: import('@/types').User[]
@@ -1913,17 +1934,23 @@ export async function loadExportedTimesheetHistory({
    * person's other ids and the document-id prefix (`timesheetLookupPlan`).
    */
   viewerIsAdmin?: boolean
+  /**
+   * 23 Nov (owner, issue 20 web part): the organisation's `deletedPeople` records (`parseFormerPersonDocument`), so an
+   * unresolved row of a deleted person reads "Former: <name>". Display only; the rows listed never change. A failed
+   * read passes none and the row keeps "Unknown person · …".
+   */
+  formerPeople?: ReadonlyArray<FormerPerson>
 }): Promise<ExportedTimesheetHistoryRow[]> {
   const includeUnresolved = includeUnresolvedAsked && rosterLoaded && (roster?.length ?? 0) > 0
   if (users.length === 0 && !includeUnresolved) return []
-  const cacheKey = `${exportedHistoryCacheKey(organizationId, users)}|${includeUnresolved ? 'u' : ''}|${(roster ?? []).length}|${viewerIsOperative ? 'o' : ''}|${viewerIsAdmin ? 'a' : ''}`
+  const cacheKey = `${exportedHistoryCacheKey(organizationId, users)}|${includeUnresolved ? 'u' : ''}|${(roster ?? []).length}|${viewerIsOperative ? 'o' : ''}|${viewerIsAdmin ? 'a' : ''}|${formerPeople.length > 0 ? 'f' : ''}`
   const now = Date.now()
   if (exportedHistoryMemo && exportedHistoryMemo.key === cacheKey && now - exportedHistoryMemo.at < EXPORTED_HISTORY_TTL_MS) {
     return exportedHistoryMemo.rows
   }
   const byId = new Map<string, ExportedTimesheetHistoryRow>()
   const fullRoster = roster && roster.length > 0 ? roster : users
-  const sheetOwner = exportedSheetOwnerResolver({ users, roster: fullRoster, includeUnresolved, organizationId })
+  const sheetOwner = exportedSheetOwnerResolver({ users, roster: fullRoster, includeUnresolved, organizationId, formerPeople })
 
   const ingestData = (member: import('@/types').User, weekStart: Date, data: Record<string, unknown>, documentId: string) => {
     ingestExportedRow(

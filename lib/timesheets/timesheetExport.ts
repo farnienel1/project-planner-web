@@ -17,6 +17,8 @@ import { parseMultipliedHoursText, timesheetLineClockText } from '@/lib/canonica
 import { signedDayRateOvertimeText } from '@/lib/canonical/dayRateOvertimeText'
 import { timesheetInvoiceRows } from '@/lib/canonical/reportPay'
 import { priceWorkJobNumberText } from '@/lib/canonical/priceWorkJobNumber'
+import { timesheetLineDisplay } from '@/lib/canonical/timesheetLineDisplay'
+import type { OrgPayrollTimePolicy } from '@/lib/canonical/organizationSettings'
 import { emailDocument, emailHeading, emailLink, emailList, emailStrong, emailText } from '@/lib/email/emailTheme'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
@@ -173,6 +175,7 @@ export function invoiceLinesForTimesheet({
   extrasMode,
   standardDayHours,
   standardDayHoursOn,
+  dayPolicyOn,
   currencyCode,
   timesheetDays,
 }: {
@@ -187,6 +190,11 @@ export function invoiceLinesForTimesheet({
    * units shown on a signed line. Display only — a signed line's amount is never re-priced. Missing → `standardDayHours`.
    */
   standardDayHoursOn?: (date: Date) => number
+  /**
+   * Rulebook 1.70.0 §8 (`timesheetLineDisplay`): the working hours in effect on a line's own day, so a Full day / AM /
+   * PM line reads its window ("Full day 07:00–16:00") as on the timesheet screen. Display only. Missing → the slot name.
+   */
+  dayPolicyOn?: (date: Date) => OrgPayrollTimePolicy
   /** Organisation currency (`formatMoney`). Leave rows are never on the invoice. */
   currencyCode?: string
   /** Rulebook 1.11.0 `timesheetDaysForPerson`: rows on another (PAYE) day are left out. */
@@ -222,12 +230,27 @@ export function invoiceLinesForTimesheet({
         ? (live?.jobNumber || signed?.jobNumber || '—').trim() || '—'
         : live?.jobNumber || '—'
       const projectName = live?.projectName || signed?.projectName || ''
+      // Rulebook 1.70.0 §8 (`timesheetLineDisplay`, owner 23 Nov): a live Full day / AM / PM line reads its window on
+      // that day ("Full day 07:30–16:00 · …"), as on the timesheet screen. The title stays the stored job name or place
+      // (the job number is already in the invoice's date column). Display only; a signed snapshot line keeps its stored
+      // wording exactly (review of #414), and the amount and hours never change.
+      let shownDetails = details
+      if (live && row.source !== 'override') {
+        const storedDetails = String(live.details ?? '')
+        const display = timesheetLineDisplay(
+          { jobNumber: '', projectName, details: storedDetails, dayKey: dayKey(new Date(live.date), timeZone) },
+          dayPolicyOn ? dayPolicyOn(new Date(live.date)) : null
+        )
+        const readSlot =
+          display.times !== '' && display.times !== storedDetails.trim() && !isClockSpanLabel(timesheetLineClockText(storedDetails))
+        if (readSlot) shownDetails = `${display.times} · ${details}`
+      }
       rows.push({
         date: formatAbbreviatedDayInZone((live?.date || (signed?.date as Date)), timeZone),
         jobNumber,
         projectName,
-        details,
-        description: `${row.source === 'override' ? jobNumber : live?.jobNumber} ${projectName} · ${details}`,
+        details: shownDetails,
+        description: `${row.source === 'override' ? jobNumber : live?.jobNumber} ${projectName} · ${shownDetails}`,
         amount: row.amount,
         kind: 'labour',
         entryId: row.id,

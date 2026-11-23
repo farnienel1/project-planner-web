@@ -11,6 +11,7 @@ import { hasAdminAccess } from '@/lib/navigation/menuPermissions'
 import {
   forgetExportedTimesheetHistory,
   isUnresolvedTimesheetPerson,
+  isFormerTimesheetPerson,
   loadExportedTimesheetHistory,
   loadTimesheetDraft,
   loadTimesheetDraftAt,
@@ -117,7 +118,10 @@ import { EXPORT_DELIVERY_TAB_ID, exportDeliveryLiveElsewhere, exportDeliveryNoti
 /** Review of #363: PDFs built and backed up at once during an export's delivery. */
 const EXPORT_DELIVERY_CONCURRENCY = 3
 import type { PayrollTimePolicyState } from '@/lib/canonical'
-import { UNRESOLVED_BOOKING_PERSON_CHIP } from '@/lib/canonical'
+import { FORMER_PERSON_CHIP, UNRESOLVED_BOOKING_PERSON_CHIP } from '@/lib/canonical'
+import { loadFormerPeople } from '@/lib/people/formerPeople'
+import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
+import type { FormerPerson } from '@/lib/canonical'
 import { SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE, TIMESHEET_LATE_EXTRAS_EXPORT_SKIPPED_MESSAGE, signedTimesheetActions } from '@/lib/canonical'
 
 /** Third review #325: Export left a sheet out because the bookings or pay inputs were still loading. */
@@ -227,6 +231,31 @@ export function TimesheetsScreen({
   useEffect(() => {
     if (organization?.id) loadDelivery(organization.id)
   }, [organization?.id, loadDelivery])
+  // 23 Nov (owner, issue 20 web part): admins' "Unknown person" Exported rows of a deleted person read "Former: <name>"
+  // (`formerPersonForId` over `deletedPeople`); a refused or failed read gives none and the rows keep their label.
+  // Review of #414: read once per organisation, before the first Exported load (a failed read gives []), so the list
+  // loads once. `formerPeopleFor` is the organisation it was read for; the records are read through a ref.
+  const wantsFormerPeople = hasAdminAccess(user) && teamTab === 'exported'
+  const formerPeopleRef = useRef<FormerPerson[]>([])
+  const [formerPeopleFor, setFormerPeopleFor] = useState<string | null>(null)
+  useEffect(() => {
+    const org = organization?.id
+    if (!org || !wantsFormerPeople || formerPeopleFor === org) return
+    let live = true
+    // Review of #414: never wait more than 5 s for the names; without them rows keep "Unknown person".
+    void Promise.race([
+      loadFormerPeople(getFirebaseDb(), org),
+      new Promise<Awaited<ReturnType<typeof loadFormerPeople>>>((resolve) => setTimeout(() => resolve([]), 5000)),
+    ]).then((rows) => {
+      if (!live) return
+      formerPeopleRef.current = rows
+      setFormerPeopleFor(org)
+    })
+    return () => {
+      live = false
+    }
+  }, [organization?.id, wantsFormerPeople, formerPeopleFor])
+  const formerPeopleReady = !wantsFormerPeople || (organization?.id != null && formerPeopleFor === organization.id)
   const deliveryHere = useExportDeliveryStore((state) => Boolean(organization?.id && state.live[organization.id]))
   const deliveryNowMs = useExportDeliveryStore((state) => state.nowMs)
   const deliveryElsewhere = exportDeliveryLiveElsewhere(deliveryEntry, EXPORT_DELIVERY_TAB_ID, deliveryNowMs)
@@ -269,6 +298,8 @@ export function TimesheetsScreen({
       }
       setRecordsLoading(true)
       setLoadError(null)
+      // Wait for the former-person records (admins) so the rows load once with their names.
+      if (!formerPeopleReady) return
       try {
         // 17 Nov follow-up (guardrail 3): sheets under any id a listed person goes by; admins also see a sheet whose
         // person is nobody in the organisation, as "Unknown person · …", never dropped.
@@ -282,6 +313,7 @@ export function TimesheetsScreen({
             rosterLoaded: rosterLoadedHere && users.length > 0,
             viewerIsOperative: isOperativeMode(user),
             viewerIsAdmin: hasAdminAccess(user),
+            formerPeople: hasAdminAccess(user) ? formerPeopleRef.current : [],
           })
         )
       } catch {
@@ -321,7 +353,7 @@ export function TimesheetsScreen({
     } finally {
       if (!stale()) setRecordsLoading(false)
     }
-  }, [organization?.id, roster, user, users, timeZone, teamTab, invoicing, loading, rosterLoadedHere])
+  }, [organization?.id, roster, user, users, timeZone, teamTab, invoicing, loading, rosterLoadedHere, formerPeopleReady])
 
   useEffect(() => {
     void reload()
@@ -595,6 +627,9 @@ export function TimesheetsScreen({
         weekdayPaidHours(
           orgPayrollPolicyForDay(date, payrollPolicy, payrollPolicyPrior, payrollPolicyEffectiveFrom, timeZone, null, payrollPolicyState)
         ),
+      // Rulebook 1.70.0 §8 (`timesheetLineDisplay`): a Full day / AM / PM line reads its window, as on the screen.
+      dayPolicyOn: (date: Date) =>
+        orgPayrollPolicyForDay(date, payrollPolicy, payrollPolicyPrior, payrollPolicyEffectiveFrom, timeZone, null, payrollPolicyState),
       currencyCode: currency,
       // Rulebook 1.11.0: only the self-employed days of the period reach the invoice.
       timesheetDays: timesheetDayKeysForPeriod(member, start, end, timeZone),
@@ -1108,7 +1143,7 @@ function MemberRow({
           <span>
             {unresolved ? (
               <>
-                <b>{name}</b> <Chip tone="amber">{UNKNOWN_TIMESHEET_PERSON_CHIP}</Chip>
+                <b>{name}</b> <Chip tone="amber">{isFormerTimesheetPerson(member) ? FORMER_PERSON_CHIP : UNKNOWN_TIMESHEET_PERSON_CHIP}</Chip>
               </>
             ) : (
               <button

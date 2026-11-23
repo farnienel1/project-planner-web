@@ -19,7 +19,7 @@ import { mineChangedPeriodStarts, mineSheetRows } from './mineChanged.ts'
 import { snapshotRepairCandidates } from './snapshotAutoRepair.ts'
 import { listSelectablePayPeriods, organizationCreatedAt, payRunListStartDayKey } from './paymentRunCopy.ts'
 import { earlierVersionCards } from './timesheetRevisionCopy.ts'
-import { isUnresolvedTimesheetPerson, unresolvedTimesheetPerson } from './timesheetStorage.ts'
+import { exportedSheetOwnerResolver, isFormerTimesheetPerson, isUnresolvedTimesheetPerson, unresolvedTimesheetPerson } from './timesheetStorage.ts'
 import { timesheetVersionsForPeriod } from '../canonical/index.ts'
 
 const tz = 'Europe/London'
@@ -169,6 +169,25 @@ test('item 1 (guardrail 3): an exported sheet of nobody in the organisation is l
   assert.equal(`${unknown.firstName} ${unknown.surname}`, 'Unknown person · 6A9632BA')
   assert.equal(isUnresolvedTimesheetPerson(unknown), true)
   assert.equal(isUnresolvedTimesheetPerson(person), false)
+})
+
+test('23 Nov (issue 20): an Exported row of a deleted person reads "Former: <name>"; others keep "Unknown person · …"', () => {
+  const former = [
+    { id: 'gone-1', displayName: 'Jane Smith', email: null, personIds: ['gone-1', 'OLD-INVITE-9'], deletedAtMs: 1, deletedBy: 'adm' },
+  ]
+  const named = unresolvedTimesheetPerson('old-invite-9', 'org', former)
+  assert.equal(`${named.firstName} ${named.surname}`.trim(), 'Former: Jane Smith')
+  assert.equal(isUnresolvedTimesheetPerson(named), true)
+  assert.equal(isFormerTimesheetPerson(named), true)
+  const nobody = unresolvedTimesheetPerson('6a9632ba-0000-4000-8000-000000000000', 'org', former)
+  assert.equal(`${nobody.firstName} ${nobody.surname}`, 'Unknown person · 6A9632BA')
+  assert.equal(isFormerTimesheetPerson(nobody), false)
+  // Same rows either way: the resolver only changes the label (a failed read passes no records).
+  const withRecords = exportedSheetOwnerResolver({ users: [person], roster: users, includeUnresolved: true, organizationId: 'org', formerPeople: former })
+  const without = exportedSheetOwnerResolver({ users: [person], roster: users, includeUnresolved: true, organizationId: 'org' })
+  for (const id of ['gone-1', 'nobody-at-all', 'u1']) assert.equal(Boolean(withRecords(id)), Boolean(without(id)))
+  assert.equal(withRecords('gone-1')?.firstName, 'Former: Jane Smith')
+  assert.equal(without('gone-1')?.firstName, 'Unknown person')
 })
 
 test('item 2: the person’s own triangle — a booking change on a signed, unexported sheet; nothing while unchanged', () => {
