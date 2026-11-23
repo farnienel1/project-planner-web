@@ -19248,3 +19248,96 @@ test('1.74.0 (choice 6): timesheetInvoiceRows omitEmptyStandardParts leaves off 
     R112.roundPennies(R112.timesheetInvoiceRows({ payrollLines, extrasMode: 'decided', ...input } as never).reduce((sum, row) => sum + row.amount, 0))
   assert.equal(total({ sheet: declined }), total({ sheet: declined, omitEmptyStandardParts: true }))
 })
+
+// MARK: - 1.76.0 "Make changes" on a signed-off or exported timesheet (owner decisions 23 Nov, A1 and B1)
+
+const R176_COUNTERSIGNED = {
+  operativeSignedAt: '2026-11-20T08:00:00Z',
+  operativeSignedByName: 'Jo Bloggs',
+  managerSignedAt: '2026-11-20T09:00:00Z',
+  managerSignedByName: 'Line Manager',
+}
+
+test('1.76.0: Make changes on a signed-off (not exported) sheet reopens the review, for reviewers only', () => {
+  const reviewer = { viewerIsReviewer: true }
+  assert.equal(R112.timesheetMakeChangesAction(R176_COUNTERSIGNED, reviewer), 'reopenReview')
+  assert.equal(R112.TIMESHEET_MAKE_CHANGES_LABEL, 'Make changes')
+  assert.equal(R112.timesheetMakeChangesHelp('reopenReview'), R112.TIMESHEET_MAKE_CHANGES_REOPEN_HELP)
+  // Not the person, not a non-reviewer.
+  assert.equal(R112.timesheetMakeChangesAction(R176_COUNTERSIGNED, { viewerIsReviewer: false }), null)
+  assert.equal(R112.timesheetMakeChangesAction(R176_COUNTERSIGNED, { viewerIsReviewer: true, viewerIsSubject: true }), null)
+  // Not counter-signed yet (they are already reviewing it), not signed by the person, half signed.
+  assert.equal(R112.timesheetMakeChangesAction({ operativeSignedAt: R176_COUNTERSIGNED.operativeSignedAt, operativeSignedByName: 'Jo' }, reviewer), null)
+  assert.equal(R112.timesheetMakeChangesAction({}, reviewer), null)
+  assert.equal(R112.timesheetMakeChangesAction({ managerSignedAt: R176_COUNTERSIGNED.managerSignedAt, managerSignedByName: 'LM' }, reviewer), null)
+  // A legacy counter-signature stored as approvedAt counts.
+  assert.equal(
+    R112.timesheetMakeChangesAction({ operativeSignedAt: R176_COUNTERSIGNED.operativeSignedAt, operativeSignedByName: 'Jo', approvedAt: R176_COUNTERSIGNED.managerSignedAt }, reviewer),
+    'reopenReview'
+  )
+  // Self-signed: nobody counter-signs it.
+  assert.equal(R112.timesheetMakeChangesAction(R176_COUNTERSIGNED, { ...reviewer, selfSigned: true }), null)
+  // Already reopened (a booking changed, or late extras wait): already in review or with the person.
+  assert.equal(R112.timesheetMakeChangesAction(R176_COUNTERSIGNED, { ...reviewer, change: { reopened: true } }), null)
+  assert.equal(R112.timesheetMakeChangesAction(R176_COUNTERSIGNED, { ...reviewer, change: { reopened: false } }), 'reopenReview')
+})
+
+test('1.76.0: Make changes on an exported sheet creates the next revision only when one may be created', () => {
+  const exported = { ...R176_COUNTERSIGNED, exportedAt: '2026-11-21T08:00:00Z' }
+  assert.equal(R112.timesheetMakeChangesAction(exported, { viewerIsReviewer: true, revisionAllowed: true }), 'createRevision')
+  assert.equal(R112.timesheetMakeChangesAction(exported, { viewerIsReviewer: true, revisionAllowed: false }), null)
+  assert.equal(R112.timesheetMakeChangesAction(exported, { viewerIsReviewer: false, revisionAllowed: true }), null)
+  // An exportedAt left by an old Generate invoice (within a minute of invoiceGeneratedAt) is not an export.
+  const leftover = { ...R176_COUNTERSIGNED, exportedAt: '2026-11-21T08:00:00Z', invoiceGeneratedAt: '2026-11-21T08:00:20Z' }
+  assert.equal(R112.timesheetMakeChangesAction(leftover, { viewerIsReviewer: true, revisionAllowed: true }), 'reopenReview')
+  assert.equal(R112.timesheetMakeChangesHelp('createRevision'), R112.TIMESHEET_MAKE_CHANGES_REVISION_HELP)
+  assert.equal(R112.timesheetMakeChangesHelp(null), null)
+})
+
+test('1.76.0 (A1): the first reviewer edit on a signed-off sheet waits for the line manager, never the person; leaving without a change keeps it signed off', () => {
+  const sheet = r174Sheet({
+    ...R176_COUNTERSIGNED,
+    weeklyReportOverride: { approvedAt: R176_COUNTERSIGNED.managerSignedAt, lines: [reopen147SnapshotLine(reopen147Fp())] },
+  })
+  const storedDoc = reopen147Doc('b1', { projectId: 'j1' })
+  // No change yet: signed off, Make changes offered.
+  const untouched = r174Changes(sheet, [reopen147Live(reopen147Fp(), 'b1')], [storedDoc])
+  assert.equal(untouched.reopened, false)
+  assert.equal(R112.timesheetListBucket(R112.parseTimesheetStatusFields(sheet), true, untouched), 'signed')
+  assert.equal(R112.timesheetMakeChangesAction(sheet, { viewerIsReviewer: true, change: untouched }), 'reopenReview')
+  // The reviewer's ⚙ (recorded on the sheet): back to the line manager to sign off again, no export, snapshot rebuilt.
+  const afterDoc = reopen147Doc('b1', { projectId: 'j1', workEndTime: '19:00' })
+  const rec = r174Record(afterDoc, sheet)
+  const edited = { ...sheet, reviewerBookingEdits: { [rec.key]: rec.value } }
+  const change = r174Changes(edited, [reopen147Live(reopen147Fp({ workEndTime: '19:00' }), 'b1', { bookingUpdatedAt: R147_AFTER })], [afterDoc])
+  assert.equal(change.reopened, true)
+  assert.equal(change.waitingFor, 'lineManager')
+  assert.equal(change.message, null)
+  assert.equal(R112.timesheetListBucket(R112.parseTimesheetStatusFields(edited), true, change), 'awaiting')
+  const actions = R112.signedTimesheetActions(change)
+  assert.equal(actions.personMaySignAgain, false)
+  assert.equal(actions.lineManagerMayCounterSign, true)
+  assert.equal(actions.mayExport, false)
+  assert.equal(actions.rebuildSnapshot, true)
+  // Now in review: the button is gone (the normal counter-sign again applies).
+  assert.equal(R112.timesheetMakeChangesAction(edited, { viewerIsReviewer: true, change }), null)
+  // The person is told "changed and signed off" at the new sign-off, once per signature.
+  assert.equal(R112.timesheetSheetChangedByReviewer(edited), true)
+  assert.equal(R112.timesheetSignedNoticeText({ signedByName: 'Line Manager', changedByReviewer: true }).title, R112.TIMESHEET_SIGNED_UPDATED_NOTICE_TITLE)
+  // The notice function never tells the person about the reviewer's own edit.
+  const base = { booking: { collection: 'bookings', bookingId: 'b1' }, after: afterDoc, afterOnSheet: true, personIds: ['op1'], nowMs: Date.parse(R147_AFTER) }
+  assert.equal(R112.signedTimesheetBookingWriteReopens({ ...base, sheet: edited } as never).reopens, false)
+})
+
+test('1.76.0 (B1): a reviewer may change an open revision\'s bookings until the person signs it', () => {
+  const rev = { revision: 1, revisionOf: 'timesheet_op1_2026-11-16' }
+  const r = { viewerIsReviewer: true }
+  assert.equal(R112.timesheetRevisionReviewerMayEditBookings(rev, r), true)
+  assert.equal(R112.timesheetRevisionReviewerMayEditBookings(rev, { viewerIsReviewer: false }), false)
+  assert.equal(R112.timesheetRevisionReviewerMayEditBookings(rev, { viewerIsReviewer: true, viewerIsSubject: true }), false)
+  // Signed by the person: the normal review takes over.
+  assert.equal(R112.timesheetRevisionReviewerMayEditBookings({ ...rev, operativeSignedAt: '2026-11-22T08:00:00Z', operativeSignedByName: 'Jo' }, r), false)
+  // Exported, or an original sheet: never.
+  assert.equal(R112.timesheetRevisionReviewerMayEditBookings({ ...rev, exportedAt: '2026-11-23T08:00:00Z' }, r), false)
+  assert.equal(R112.timesheetRevisionReviewerMayEditBookings({}, r), false)
+})

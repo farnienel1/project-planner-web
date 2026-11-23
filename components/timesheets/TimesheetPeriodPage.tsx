@@ -98,7 +98,14 @@ import {
 } from '@/lib/timesheets/timesheetStorage'
 import { earlierVersionCards, timesheetRevisionCopy } from '@/lib/timesheets/timesheetRevisionCopy'
 import {
-  TIMESHEET_CREATE_REVISION_HELP,
+  TIMESHEET_MAKE_CHANGES_ACTIVE_NOTE,
+  TIMESHEET_MAKE_CHANGES_CANCEL_LABEL,
+  TIMESHEET_MAKE_CHANGES_LABEL,
+  TIMESHEET_MAKE_CHANGES_REVISION_HELP,
+  TIMESHEET_REVISION_REVIEWER_EDIT_NOTE,
+  timesheetMakeChangesAction,
+  timesheetMakeChangesHelp,
+  timesheetRevisionReviewerMayEditBookings,
   timesheetLineReviewActionsAllowed,
   timesheetLabourLineReviewActions,
   timesheetReviewDeleteBookingWarning,
@@ -106,7 +113,6 @@ import {
   TIMESHEET_REVIEW_BOOKING_NOT_RECORDED_MESSAGE,
   TIMESHEET_REVIEW_BOOKING_UPDATED_MESSAGE,
   TIMESHEET_REVIEW_EDIT_BOOKING_NOTE,
-  TIMESHEET_CREATE_REVISION_LABEL,
   TIMESHEET_EARLIER_VERSIONS_LABEL,
   TIMESHEET_ORIGINAL_VERSION_LABEL,
   TIMESHEET_REVIEW_AND_SIGN_REVISION_LABEL,
@@ -367,6 +373,8 @@ export function TimesheetPeriodPage({
   // What the overtime rate box showed when Edit hours opened (review of #416: never write a rate nobody changed).
   const [hoursOtOpened, setHoursOtOpened] = useState('')
   const [reviewNotice, setReviewNotice] = useState<string | null>(null)
+  // Rulebook 1.76.0 (A1): the reviewer pressed Make changes on a signed-off sheet (nothing is written until they edit).
+  const [makingChanges, setMakingChanges] = useState(false)
   const [editingExtra, setEditingExtra] = useState<{
     type: 'expense' | 'priceWork'
     /** Rulebook 1.54.0: a late extra (decided in the review map with `lateExtra`). */
@@ -544,6 +552,31 @@ export function TimesheetPeriodPage({
     return needsCounterSign && (!draft.managerSignedAt || canCounterSignAgain) && Boolean(draft.operativeSignedAt)
   })()
   const managerHasSigned = Boolean(draft.managerSignedAt)
+  // Rulebook 1.76.0 (owner decisions 23 Nov, A1 / B1): what "Make changes" does on this sheet for this viewer.
+  const makeChangesSheet = {
+    operativeSignedAt: draft.operativeSignedAt ?? null,
+    operativeSignedByName: draft.operativeSignedByName ?? '',
+    operativeSignatureImageBase64: draft.operativeSignatureImageBase64 ?? '',
+    managerSignedAt: draft.managerSignedAt ?? null,
+    managerSignedByName: draft.managerSignedByName ?? '',
+    exportedAt: draft.exportedAt ?? null,
+    revision: draft.revision ?? null,
+  }
+  const makeChangesAction = timesheetMakeChangesAction(makeChangesSheet, {
+    viewerIsReviewer: mode === 'review' && Boolean(viewer) && viewerIsReviewer,
+    viewerIsSubject: mode === 'mine',
+    selfSigned: sheetSelfSigned,
+    change: bookingChange,
+    revisionAllowed: mode === 'review' && revisionCheck.allowed,
+  })
+  // A1: after Make changes, ⚙ / ✕ edit the bookings until the first change reopens the review (then the normal review
+  // applies). B1: on an open revision the person has not signed yet, the reviewer may change its bookings.
+  const reviewerBookingEditsOpen =
+    (makingChanges && makeChangesAction === 'reopenReview') ||
+    timesheetRevisionReviewerMayEditBookings(makeChangesSheet, {
+      viewerIsReviewer: mode === 'review' && Boolean(viewer) && viewerIsReviewer,
+      viewerIsSubject: mode === 'mine',
+    })
   // 1.47.0: a reopened sheet is not signed off until it is signed (and counter-signed) again.
   const fullyApproved = isTimesheetFullyApproved(draft, subjectUser, users) && !bookingChange.reopened
   // 1.47.0: a reopened sheet's figures are the live bookings — its stale signed snapshot is never shown or invoiced.
@@ -1657,6 +1690,10 @@ export function TimesheetPeriodPage({
       ) : null}
       {error ? <Note tone="red" role="alert">{error}</Note> : null}
       {reviewNotice ? <Note tone="green" role="status">{reviewNotice}</Note> : null}
+      {/* Rulebook 1.76.0 (B1): the reviewer may change an open revision's bookings before the person signs it. */}
+      {reviewerBookingEditsOpen && !canManagerReview && makeChangesAction !== 'reopenReview' ? (
+        <Note tone="info">{TIMESHEET_REVISION_REVIEWER_EDIT_NOTE}</Note>
+      ) : null}
       {updatedElsewhere ? (
         <Note tone="amber" role="status">
           This timesheet was updated on another device. It will refresh when you finish this change.
@@ -1723,6 +1760,7 @@ export function TimesheetPeriodPage({
                       draft={draft}
                       managerHasSigned={managerHasSigned}
                       canReview={canManagerReview}
+                      bookingEditsOnly={!canManagerReview && reviewerBookingEditsOpen}
                       reviewing={mode === 'review'}
                       dayPolicy={policyOnDay(row.line.date)}
                       timeZone={timeZone}
@@ -2041,7 +2079,26 @@ export function TimesheetPeriodPage({
                   <Note tone="green" icon={<CheckCircleIcon />}>
                     <b>Signed off</b>
                   </Note>
-                  <p className="pu-sub">{SIGNED_OFF_EDIT_NOTE}</p>
+                  {makeChangesAction === 'reopenReview' ? (
+                    // Rulebook 1.76.0 (A1): reopen the review here; nothing is written until a booking is changed.
+                    makingChanges ? (
+                      <>
+                        <Note tone="amber">{TIMESHEET_MAKE_CHANGES_ACTIVE_NOTE}</Note>
+                        <PuButton block onClick={() => setMakingChanges(false)}>
+                          {TIMESHEET_MAKE_CHANGES_CANCEL_LABEL}
+                        </PuButton>
+                      </>
+                    ) : (
+                      <div className="pu-col" style={{ gap: 6 }}>
+                        <PuButton variant="primary" block disabled={busy || !payInputs.ready} onClick={() => setMakingChanges(true)}>
+                          {TIMESHEET_MAKE_CHANGES_LABEL}
+                        </PuButton>
+                        <p className="pu-sub">{timesheetMakeChangesHelp(makeChangesAction)}</p>
+                      </div>
+                    )
+                  ) : (
+                    <p className="pu-sub">{SIGNED_OFF_EDIT_NOTE}</p>
+                  )}
                 </>
               ) : needsCounterSign && (!draft.managerSignedAt || canCounterSignAgain) && !waitingForPerson ? (
                 <>
@@ -2426,6 +2483,7 @@ function PayrollLine({
   draft,
   managerHasSigned,
   canReview,
+  bookingEditsOnly = false,
   reviewing,
   dayPolicy,
   timeZone,
@@ -2440,6 +2498,11 @@ function PayrollLine({
   allLines?: ReadonlyArray<TimesheetPayrollLineItem>
   managerHasSigned: boolean
   canReview: boolean
+  /**
+   * Rulebook 1.76.0: ⚙ and ✕ only (no ✓) — Make changes on a signed-off sheet before its first change, or an open
+   * revision the person has not signed yet. The figures stay as without review.
+   */
+  bookingEditsOnly?: boolean
   /** Rulebook 1.72.0 `timesheetLabourLineReviewActions`: ✕ and ⚙ only on a line that names a booking. */
   actions: { approve: boolean; removeBooking: boolean; editBooking: boolean }
   /** The viewer is reviewing someone else's sheet (line manager or admin), not their own. */
@@ -2501,10 +2564,10 @@ function PayrollLine({
           managerHasSigned={managerHasSigned}
           applyLiveReview={canReview}
         />
-        {canReview && actions.approve ? (
+        {(canReview || bookingEditsOnly) && actions.approve ? (
           <TickCross
             decision={decision}
-            onApprove={onApprove}
+            onApprove={bookingEditsOnly && !canReview ? undefined : onApprove}
             onDecline={actions.removeBooking ? onDecline : undefined}
             onEdit={actions.editBooking ? onEdit : undefined}
             declineLabel="Remove booking"
@@ -2549,7 +2612,8 @@ function TickCross({
   decision: TimesheetManagerDecision
   /** Rulebook 1.54.0: a late extra not decided yet shows neither ✓ nor ✕ selected (it is not approved by default). */
   undecided?: boolean
-  onApprove: () => void
+  /** Rulebook 1.76.0: hidden while only booking edits are open (Make changes before its first change). */
+  onApprove?: () => void
   /** Rulebook 1.72.0: hidden when the line names no booking (a labour line's ✕ removes the booking). */
   onDecline?: () => void
   onEdit?: () => void
@@ -2562,6 +2626,7 @@ function TickCross({
   const base = { width: 34, height: 34, borderRadius: 9, border: 0, fontWeight: 700, fontSize: 13, cursor: 'pointer' }
   return (
     <span style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 8 }}>
+      {onApprove ? (
       <button
         type="button"
         onClick={onApprove}
@@ -2575,6 +2640,7 @@ function TickCross({
       >
         ✓
       </button>
+      ) : null}
       {onDecline ? (
       <button
         type="button"
@@ -3558,9 +3624,10 @@ function TimesheetRevisionPanel({
       {canCreate ? (
         <div className="pu-col" style={{ gap: 6 }}>
           <PuButton variant="primary" block disabled={busy} onClick={onCreate}>
-            {mode === 'mine' ? TIMESHEET_REVIEW_AND_SIGN_REVISION_LABEL : TIMESHEET_CREATE_REVISION_LABEL}
+            {/* Rulebook 1.76.0 (B1): the reviewer's "Create revision" is "Make changes". */}
+            {mode === 'mine' ? TIMESHEET_REVIEW_AND_SIGN_REVISION_LABEL : TIMESHEET_MAKE_CHANGES_LABEL}
           </PuButton>
-          {mode === 'review' ? <p className="pu-sub">{TIMESHEET_CREATE_REVISION_HELP}</p> : null}
+          {mode === 'review' ? <p className="pu-sub">{TIMESHEET_MAKE_CHANGES_REVISION_HELP}</p> : null}
         </div>
       ) : null}
       {earlier.length > 0 ? (

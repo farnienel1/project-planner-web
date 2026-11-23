@@ -766,6 +766,18 @@ export {
 } from './timesheetLines'
 export { timesheetLineDisplay, timesheetLineDisplayOrder, timesheetLineIsEmptyStandardPart, timesheetLineShownDeclined } from './timesheetLineDisplay'
 export {
+  TIMESHEET_MAKE_CHANGES_LABEL,
+  TIMESHEET_MAKE_CHANGES_REOPEN_HELP,
+  TIMESHEET_MAKE_CHANGES_REVISION_HELP,
+  TIMESHEET_MAKE_CHANGES_ACTIVE_NOTE,
+  TIMESHEET_MAKE_CHANGES_CANCEL_LABEL,
+  TIMESHEET_REVISION_REVIEWER_EDIT_NOTE,
+  timesheetMakeChangesAction,
+  timesheetMakeChangesHelp,
+  timesheetRevisionReviewerMayEditBookings,
+} from './timesheetMakeChanges'
+export type { TimesheetMakeChangesAction, TimesheetMakeChangesInput } from './timesheetMakeChanges'
+export {
   TIMESHEET_REVIEW_BOOKING_FIELDS,
   TIMESHEET_REVIEW_EDIT_BOOKING_NOTE,
   TIMESHEET_REVIEW_DELETE_BOOKING_TITLE,
