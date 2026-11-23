@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.69.0 → 1.70.0
-Packed hash: 716aeb1477f584efc0542b8010931f4dcd4e7051f1fe355d2db5bd0b36292cf6
-Rulebook sha256: eca16306df4a87b940d7b79d85e6edb2cd2eb74ef0a41f54d878f33cb579e1fa
+Packed hash: efee84b78eb80578f56a2375cf8e45a8b2959cbc1402102392200a19ada72155
+Rulebook sha256: b26fd60f67100b1cb3c3ef4fc4d5f17c5a5251edef1e444a6c95c27dbd1d3409
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -24,10 +24,10 @@ Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e
 Call: CanonicalBusinessEngine — no second calculator in Swift.
 Exports added: OVERLAPPING_BOOKING_REVIEWER_NOTE, leaveRecordFormerPerson, overlappingBookingNote, timesheetLineDisplay
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/pushTokens.ts, lib/canonical/timesheetLines.ts, lib/canonical/weeklyReportPay.ts, lib/canonical/timesheetLineDisplay.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/pushTokens.ts, lib/canonical/timesheetLineDisplay.ts, lib/canonical/timesheetLines.ts, lib/canonical/weeklyReportPay.ts
 Done when:
-- [ ] Packed hash in iOS equals 716aeb1477f584efc0542b8010931f4dcd4e7051f1fe355d2db5bd0b36292cf6
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 eca16306df4a87b940d7b79d85e6edb2cd2eb74ef0a41f54d878f33cb579e1fa)
+- [ ] Packed hash in iOS equals efee84b78eb80578f56a2375cf8e45a8b2959cbc1402102392200a19ada72155
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 b26fd60f67100b1cb3c3ef4fc4d5f17c5a5251edef1e444a6c95c27dbd1d3409)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.70.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -39,7 +39,7 @@ Done when:
 - **A tapped push opens the right person** (§13): `pushPayloadFields` / `PUSH_PAYLOAD_KEYS` add `deepLinkUserId` and `deepLinkWeekStartMs`; `userId` is still the recipient. iOS routes a push by `deepLinkUserId` first (`timesheet_pending_manager_signoff`, `timesheet_signed_by_manager`, `timesheet_revision_to_sign`, `timesheet_bookings_changed`, `overtime_request_submitted`). The push Cloud Function sends them once redeployed.
 - **Overlap note for reviewers** (§8): `OVERLAPPING_BOOKING_REVIEWER_NOTE`, `overlappingBookingNote({ reviewing })`. The person keeps the old wording.
 - **How a timesheet booking line reads** (§8, owner approved 23 Nov): `timesheetLineDisplay` — job number and name (or the place), and times on every line, a Full day / AM / PM line its window that day. Display only.
-- **Former people's leave** (§7, §11): `leaveRecordFormerPerson`; `weeklyReportLeaveRows` takes `formerPeople` ("Former: Jane Smith", `unmatched[].formerPersonId`); Data health lists it apart. Web's person delete counts leave under the email and `operativeId` too.
+- **Former people's leave** (§7, §11): `leaveRecordFormerPerson` (by id, `operativeId`, or a `userId` that is the record's email without case); `weeklyReportLeaveRows` takes `formerPeople` ("Former: Jane Smith", `unmatched[].formerPersonId`); Data health lists it apart. Web's person delete counts leave under the email and `operativeId` too.
 
 ## iOS work for 1.70.0
 

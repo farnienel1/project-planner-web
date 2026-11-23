@@ -18520,6 +18520,17 @@ test('1.70.0 weekly report leave: a deleted person kept as a former-person recor
   assert.equal(R112.leaveRecordFormerPerson(missing[0], formerPeople)?.displayName, 'Jane Smith')
   assert.equal(R112.leaveRecordFormerPerson({ userId: null, operativeId: 'gone' }, formerPeople)?.id, 'GONE')
   assert.equal(R112.leaveRecordFormerPerson(missing[1], formerPeople), null)
+  // Older iOS builds stored the account's email as the leave userId.
+  const withEmail = [{ id: 'GONE2', displayName: 'Ann Lee', email: 'ann@example.com', personIds: ['GONE2'], deletedAtMs: 2 }]
+  assert.equal(R112.leaveRecordFormerPerson({ userId: ' Ann@Example.COM ', operativeId: null }, withEmail)?.id, 'GONE2')
+  assert.equal(R112.leaveRecordFormerPerson({ userId: 'other@example.com', operativeId: null }, withEmail), null)
+  const byEmail = R112.weeklyReportLeaveRows({
+    records: [{ id: 'L9', userId: 'ANN@example.com', startDayKey: '2026-11-05', endDayKey: '2026-11-05', status: 'approved' }],
+    people,
+    range: { start: '2026-11-01', end: '2026-11-15' },
+    formerPeople: withEmail,
+  })
+  assert.equal(byEmail.rows[0].person, 'Former: Ann Lee')
   // A live person always wins over a former record naming the same id.
   const liveWins = R112.weeklyReportLeaveRows({
     records: [records[2]],

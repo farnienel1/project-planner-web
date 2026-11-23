@@ -1013,7 +1013,8 @@ function leavePersonMatcher(people: ReadonlyArray<WeeklyReportLeavePerson> | nul
 
 /**
  * Rulebook 1.70.0 §7, §11: the former person (`deletedPeople`, `formerPersonForId`) a leave record that matches no
- * current person belongs to — by its `userId`, else its `operativeId` — or null. Never used when a current person
+ * current person belongs to — by its `userId`, else its `operativeId`, else a `userId` that is the record's email
+ * (without case; older iOS builds stored the email) — or null. Never used when a current person
  * matches (a live person always wins).
  */
 export function leaveRecordFormerPerson<T extends FormerPersonInput>(
@@ -1021,7 +1022,17 @@ export function leaveRecordFormerPerson<T extends FormerPersonInput>(
   formerPeople: ReadonlyArray<T> | null | undefined
 ): T | null {
   if (!record || !formerPeople?.length) return null
-  return formerPersonForId(record.userId, formerPeople) ?? formerPersonForId(record.operativeId, formerPeople)
+  const byId = formerPersonForId(record.userId, formerPeople) ?? formerPersonForId(record.operativeId, formerPeople)
+  if (byId) return byId
+  // Older iOS builds stored the account's email as the leave `userId` (§10): match the record's email without case.
+  const email = String(record.userId ?? '').trim().toLowerCase()
+  if (!email.includes('@')) return null
+  let found: T | null = null
+  for (const person of formerPeople) {
+    if (!person || String(person.email ?? '').trim().toLowerCase() !== email) continue
+    if (!found || (person.deletedAtMs ?? 0) > (found.deletedAtMs ?? 0)) found = person
+  }
+  return found
 }
 
 /**

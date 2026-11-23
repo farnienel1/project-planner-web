@@ -13990,7 +13990,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.70.0" : "",
-      sha256: true ? "eca16306df4a87b940d7b79d85e6edb2cd2eb74ef0a41f54d878f33cb579e1fa" : ""
+      sha256: true ? "b26fd60f67100b1cb3c3ef4fc4d5f17c5a5251edef1e444a6c95c27dbd1d3409" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -29383,7 +29383,16 @@ var ProjectPlannerCanonical = (() => {
   }
   function leaveRecordFormerPerson(record18, formerPeople) {
     if (!record18 || !formerPeople?.length) return null;
-    return formerPersonForId(record18.userId, formerPeople) ?? formerPersonForId(record18.operativeId, formerPeople);
+    const byId = formerPersonForId(record18.userId, formerPeople) ?? formerPersonForId(record18.operativeId, formerPeople);
+    if (byId) return byId;
+    const email = String(record18.userId ?? "").trim().toLowerCase();
+    if (!email.includes("@")) return null;
+    let found = null;
+    for (const person of formerPeople) {
+      if (!person || String(person.email ?? "").trim().toLowerCase() !== email) continue;
+      if (!found || (person.deletedAtMs ?? 0) > (found.deletedAtMs ?? 0)) found = person;
+    }
+    return found;
   }
   function leaveRecordsWithoutPerson(input) {
     const personFor = leavePersonMatcher(input.people);
