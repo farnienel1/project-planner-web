@@ -199,6 +199,7 @@ import {
   timesheetLateExtraReviewable,
   TIMESHEET_LATE_EXTRA_ADD_CONFIRM_MESSAGE,
   TIMESHEET_LATE_EXTRA_WAITING_LABEL,
+  TIMESHEET_SIGNED_ENTRIES_CHANGED_PERSON_MESSAGE,
   TIMESHEET_LATE_EXTRAS_REVIEWER_MESSAGE,
   timesheetSnapshotNeedsRebuild,
   timesheetSnapshotReady,
@@ -2056,7 +2057,7 @@ export function TimesheetPeriodPage({
                   </PuButton>
                   <p className="pu-sub" style={{ textAlign: 'center' }}>
                     {lateOnlyWaiting && bookingChange.signedEntriesChanged === true
-                      ? 'Your line manager changed your price work or expenses — Generate Invoice unlocks after they sign it off again.'
+                      ? TIMESHEET_SIGNED_ENTRIES_CHANGED_PERSON_MESSAGE
                       : lateOnlyWaiting
                       ? TIMESHEET_LATE_EXTRA_WAITING_LABEL
                       : bookingChange.reopened

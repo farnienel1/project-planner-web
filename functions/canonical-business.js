@@ -647,13 +647,13 @@ var ProjectPlannerCanonical = (() => {
     TIMESHEET_SELF_SIGNED_OWNER_FIELDS: () => TIMESHEET_SELF_SIGNED_OWNER_FIELDS,
     TIMESHEET_SELF_SIGN_PAYE_NOTE: () => TIMESHEET_SELF_SIGN_PAYE_NOTE,
     TIMESHEET_SIGNED_AFTER_MS: () => TIMESHEET_SIGNED_AFTER_MS,
+    TIMESHEET_SIGNED_ENTRIES_CHANGED_PERSON_MESSAGE: () => TIMESHEET_SIGNED_ENTRIES_CHANGED_PERSON_MESSAGE,
     TIMESHEET_SIGNED_ENTRIES_CHANGED_REVIEWER_MESSAGE: () => TIMESHEET_SIGNED_ENTRIES_CHANGED_REVIEWER_MESSAGE,
     TIMESHEET_SIGNED_NOTICE_TITLE: () => TIMESHEET_SIGNED_NOTICE_TITLE,
     TIMESHEET_SIGNED_NOTICE_TYPE: () => TIMESHEET_SIGNED_NOTICE_TYPE,
     TIMESHEET_SIGNED_OFF_EXTRAS_MESSAGE: () => TIMESHEET_SIGNED_OFF_EXTRAS_MESSAGE,
     TIMESHEET_SIGNED_UPDATED_NOTICE_MESSAGE: () => TIMESHEET_SIGNED_UPDATED_NOTICE_MESSAGE,
     TIMESHEET_SIGNED_UPDATED_NOTICE_TITLE: () => TIMESHEET_SIGNED_UPDATED_NOTICE_TITLE,
-    TIMESHEET_SIGN_OFF_REVIEW_TOLERANCE_MS: () => TIMESHEET_SIGN_OFF_REVIEW_TOLERANCE_MS,
     TIMESHEET_SNAPSHOT_FAILED_MESSAGE: () => TIMESHEET_SNAPSHOT_FAILED_MESSAGE,
     TIMESHEET_SNAPSHOT_LOADING_MESSAGE: () => TIMESHEET_SNAPSHOT_LOADING_MESSAGE,
     TIMESHEET_SUBMISSION_NOTICE_TITLE: () => TIMESHEET_SUBMISSION_NOTICE_TITLE,
@@ -13443,7 +13443,7 @@ var ProjectPlannerCanonical = (() => {
   var TIMESHEET_LATE_EXTRA_ID_UNUSABLE_LABEL = "Can't be reviewed \u2014 delete it and add it again";
   var TIMESHEET_LATE_EXTRAS_REVIEWER_MESSAGE = "Price work or expenses were added after this timesheet was signed. Approve or decline each one \u2014 only what you approve is paid.";
   var TIMESHEET_SIGNED_ENTRIES_CHANGED_REVIEWER_MESSAGE = "You changed price work or expenses after signing this timesheet off. Sign it off again to update it \u2014 the person does not sign again.";
-  var TIMESHEET_SIGN_OFF_REVIEW_TOLERANCE_MS = 5e3;
+  var TIMESHEET_SIGNED_ENTRIES_CHANGED_PERSON_MESSAGE = "Your line manager changed your price work or expenses \u2014 Generate Invoice unlocks after they sign it off again.";
   var TIMESHEET_LATE_EXTRAS_EXPORT_SKIPPED_MESSAGE = "Not exported \u2014 price work or expenses added after sign-off are waiting for the line manager.";
   var TIMESHEET_LATE_EXTRA_ADD_CONFIRM_MESSAGE = "Your timesheet is already signed off. This will be sent to your line manager to approve; it is paid only once they approve it.";
   var AMOUNT_EPSILON2 = 5e-3;
@@ -13605,8 +13605,6 @@ var ProjectPlannerCanonical = (() => {
     if (exported) return false;
     const signedMs = timesheetTimestampMs(data.managerSignedAt) ?? timesheetTimestampMs(data.approvedAt);
     if (signedMs == null) return false;
-    const reviews = parseTimesheetEntryReviews(data);
-    if (!reviews) return false;
     const override = data.weeklyReportOverride;
     if (!override || typeof override !== "object") return false;
     const snapshot = override;
@@ -13628,9 +13626,6 @@ var ProjectPlannerCanonical = (() => {
         const storedId = typeof row3.id === "string" ? row3.id.trim() : "";
         const id2 = storedId || (docId ? timesheetEntryId(docId, kind, index, row3) : "");
         if (!id2) continue;
-        const review = timesheetEntryReviewFor(reviews, id2);
-        if (!review || review.lateExtra || review.reviewedAtMs == null) continue;
-        if (review.reviewedAtMs <= signedMs + TIMESHEET_SIGN_OFF_REVIEW_TOLERANCE_MS) continue;
         const signed = signedPaid.get(normalizeDocumentId(id2));
         if (signed == null) continue;
         const entry = { ...row3, id: id2 };
@@ -17009,7 +17004,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.76.0" : "",
-      sha256: true ? "4d3e89d36d1d99b624dcde9bba11ed7cd6ead148143a3bd0b2b6cfc6663a9ae8" : ""
+      sha256: true ? "5ab7acd5d7140d5aedba8b98b0ff2613074e8150fe47b81b78d3a1fcaf92b423" : ""
     };
   }
   function rulebookVersionLabel(version) {

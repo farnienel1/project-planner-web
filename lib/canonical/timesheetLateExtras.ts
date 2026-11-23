@@ -67,8 +67,9 @@ export const TIMESHEET_LATE_EXTRAS_REVIEWER_MESSAGE =
  */
 export const TIMESHEET_SIGNED_ENTRIES_CHANGED_REVIEWER_MESSAGE =
   'You changed price work or expenses after signing this timesheet off. Sign it off again to update it — the person does not sign again.'
-/** A review written this close to the counter-signature belongs to it (decided on screen, then signed off). */
-export const TIMESHEET_SIGN_OFF_REVIEW_TOLERANCE_MS = 5_000
+/** 1.76.0 (owner answer 23 Nov, b): the person's note while their line manager's change waits for a new sign-off. */
+export const TIMESHEET_SIGNED_ENTRIES_CHANGED_PERSON_MESSAGE =
+  'Your line manager changed your price work or expenses — Generate Invoice unlocks after they sign it off again.'
 /** Export names a sheet it skipped for this reason. */
 export const TIMESHEET_LATE_EXTRAS_EXPORT_SKIPPED_MESSAGE =
   'Not exported — price work or expenses added after sign-off are waiting for the line manager.'
@@ -345,11 +346,12 @@ export function timesheetSnapshotMoneyRowsCurrent<R extends { id?: unknown; amou
  * expense entry after counter-signing — with Make changes, through the same review map (`extraEntryReviews`: ✕ = declined,
  * ⚙ = edited with `revisedAmount`) — so what is paid for it now differs from the signed snapshot's money row. True when
  * the sheet is counter-signed (`managerSignedAt`, else `approvedAt`), not exported, has a signed snapshot, and some signed
- * entry has a review that is not a late extra's, written after the counter-signature
- * (`reviewedAtMs` > the counter-signature + `TIMESHEET_SIGN_OFF_REVIEW_TOLERANCE_MS`), whose paid amount
- * (`timesheetEntryDecision`, `timesheetEntryEffectiveAmount`) differs by a penny or more from that entry's snapshot row
- * (rows marked `lateExtra` are never compared). An entry the snapshot does not hold is never compared (older data,
- * guardrail 3). The counter-signature again (a later `managerSignedAt`) ends it.
+ * entry pays now (`timesheetEntryDecision`, `timesheetEntryEffectiveAmount`) a penny or more different from that entry's
+ * snapshot row (rows marked `lateExtra` are never compared). No time test (review of #427 / #278: the review time and the
+ * counter-signature are both device clocks): what the entry pays against what was signed decides. An entry the snapshot
+ * does not hold is never compared (older data, guardrail 3). The counter-signature again (which takes the rows afresh)
+ * ends it. Signed copies from before 1.76.0 already match their decisions (every save re-priced them); the read-only
+ * `scripts/report-signed-money-mismatch.mjs` counts any that do not.
  */
 export function timesheetSignedEntriesChangedSinceSignOff(
   sheet: Record<string, unknown> | null | undefined,
@@ -360,8 +362,6 @@ export function timesheetSignedEntriesChangedSinceSignOff(
   if (exported) return false
   const signedMs = timesheetTimestampMs(data.managerSignedAt) ?? timesheetTimestampMs(data.approvedAt)
   if (signedMs == null) return false
-  const reviews = parseTimesheetEntryReviews(data)
-  if (!reviews) return false
   const override = data.weeklyReportOverride
   if (!override || typeof override !== 'object') return false
   const snapshot = override as Record<string, unknown>
@@ -383,9 +383,6 @@ export function timesheetSignedEntriesChangedSinceSignOff(
       const storedId = typeof row.id === 'string' ? row.id.trim() : ''
       const id = storedId || (docId ? timesheetEntryId(docId, kind, index, row) : '')
       if (!id) continue
-      const review = timesheetEntryReviewFor(reviews, id)
-      if (!review || review.lateExtra || review.reviewedAtMs == null) continue
-      if (review.reviewedAtMs <= signedMs + TIMESHEET_SIGN_OFF_REVIEW_TOLERANCE_MS) continue
       const signed = signedPaid.get(normalizeDocumentId(id))
       if (signed == null) continue
       const entry = { ...row, id }

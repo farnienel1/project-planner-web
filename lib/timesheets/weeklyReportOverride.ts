@@ -483,6 +483,10 @@ export function applyWeeklyReportOverride(input: WeeklyReportOverrideInput): Tim
             approvedByUserId: existing.approvedByUserId,
             approvedByName: existing.approvedByName,
             selfSigned: existing.selfSigned,
+            // Rulebook 1.76.0 (review of #427): the repair rebuilds the labour only — the signed price work and expense
+            // rows stay as signed (late extra rows fresh), so it never lands a Make changes review without a sign-off.
+            priceWork: signedMoneyRows(existing.priceWork, fresh.priceWork, input.refreshSignedMoney === true),
+            expenses: signedMoneyRows(existing.expenses, fresh.expenses, input.refreshSignedMoney === true),
           },
         }
       }

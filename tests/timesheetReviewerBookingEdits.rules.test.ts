@@ -188,3 +188,19 @@ test('1.76.0 (b): never on an exported sheet, and never by the person', async ()
   await seed(SIGNED_COPY)
   await assertFails(entryReviewUpdate(await db(OP), OP))
 })
+
+test('1.76.0 (b): only the review map entry (signed copy untouched) — the line manager may, the person may not', async () => {
+  await env.clearFirestore()
+  await seed(SIGNED_COPY)
+  const reviewOnly = (d: Firestore, uid: string) =>
+    updateDoc(
+      doc(d, 'organizations', ORG, 'settings', SHEET),
+      new FieldPath('extraEntryReviews', 'ex1'),
+      { decision: 'declined', revisedAmount: null, reviewedAmount: 40, reviewedByUserId: uid, reviewedAtMs: Date.now() },
+      'updatedAt', serverTimestamp(), 'updatedBy', uid, 'updatedFrom', 'web'
+    )
+  await assertSucceeds(reviewOnly(await db(LM), LM))
+  await env.clearFirestore()
+  await seed(SIGNED_COPY)
+  await assertFails(reviewOnly(await db(OP), OP))
+})

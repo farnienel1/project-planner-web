@@ -19496,18 +19496,23 @@ test('1.76.0 (b): editing a signed price work amount after sign-off waits the sa
   assert.equal(r176bChange(raised)?.waitingFor, 'lineManager')
 })
 
-test('1.76.0 (b) guardrail 3: reviews written before or at the sign-off, an exported sheet and a review that matches the copy never reopen', () => {
-  // A review written with the counter-signature (the same save) or before it.
-  const atSignOff = r176bSheet({
-    ex1: { decision: 'declined', revisedAmount: null, reviewedAmount: 40, reviewedByUserId: 'lm', reviewedAtMs: R176B_SIGNED_MS + 1_000 },
+test('1.76.0 (b) review of #427: no clock test — what the entry pays against its signed row decides; exported never reopens', () => {
+  // A review whose device clock reads before the counter-signature still counts when it changes what is paid.
+  const skewed = r176bSheet({
+    ex1: { decision: 'declined', revisedAmount: null, reviewedAmount: 40, reviewedByUserId: 'lm', reviewedAtMs: R176B_SIGNED_MS - 3_600_000 },
   })
-  assert.equal(R112.timesheetSignedEntriesChangedSinceSignOff(atSignOff), false)
-  // A review after sign-off that matches the signed copy (as every pre-1.76.0 save re-priced it).
-  const inStep = {
-    ...r176bSheet({ ex1: { decision: 'declined', revisedAmount: null, reviewedAmount: 40, reviewedByUserId: 'lm', reviewedAtMs: R176B_SIGNED_MS + 60_000 } }),
-  }
+  assert.equal(R112.timesheetSignedEntriesChangedSinceSignOff(skewed), true)
+  assert.equal(r176bChange(skewed)?.waitingFor, 'lineManager')
+  // A review that matches the signed copy (as every pre-1.76.0 save re-priced it) never reopens.
+  const inStep = r176bSheet({ ex1: { decision: 'declined', revisedAmount: null, reviewedAmount: 40, reviewedByUserId: 'lm', reviewedAtMs: R176B_SIGNED_MS + 60_000 } })
   ;(inStep.weeklyReportOverride as Record<string, unknown>).expenses = [{ id: 'ex1', amount: 0, decision: 'declined' }]
   assert.equal(R112.timesheetSignedEntriesChangedSinceSignOff(inStep), false)
+  // No reviews, the copy matches the entries' own amounts.
+  assert.equal(R112.timesheetSignedEntriesChangedSinceSignOff(r176bSheet()), false)
+  // An entry the signed copy does not hold is never compared.
+  const missing = r176bSheet({ ex1: { decision: 'declined', revisedAmount: null, reviewedAmount: 40, reviewedByUserId: 'lm', reviewedAtMs: R176B_SIGNED_MS + 60_000 } })
+  ;(missing.weeklyReportOverride as Record<string, unknown>).expenses = []
+  assert.equal(R112.timesheetSignedEntriesChangedSinceSignOff(missing), false)
   // Exported: frozen.
   const exported = {
     ...r176bSheet({ ex1: { decision: 'declined', revisedAmount: null, reviewedAmount: 40, reviewedByUserId: 'lm', reviewedAtMs: R176B_SIGNED_MS + 60_000 } }),
@@ -19515,4 +19520,5 @@ test('1.76.0 (b) guardrail 3: reviews written before or at the sign-off, an expo
   }
   assert.equal(R112.timesheetSignedEntriesChangedSinceSignOff(exported), false)
   assert.equal(r176bChange(exported), null)
+  assert.equal(R112.TIMESHEET_SIGNED_ENTRIES_CHANGED_PERSON_MESSAGE, 'Your line manager changed your price work or expenses — Generate Invoice unlocks after they sign it off again.')
 })

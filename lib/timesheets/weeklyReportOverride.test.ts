@@ -542,6 +542,29 @@ test('1.43.0: an empty frozen snapshot is rebuilt from the live bookings; signat
   assert.deepEqual(later.weeklyReportOverride?.lines.map((line) => line.bookingId), ['b1'])
 })
 
+// Rulebook 1.76.0 (review of #427): the empty-snapshot repair rebuilds the labour only — a signed expense removed after
+// sign-off (Make changes) stays on the signed copy until the line manager signs it off again.
+test('1.76.0: the empty-snapshot repair keeps the signed price work and expense rows', () => {
+  const signed = {
+    ...emptyTimesheetDraft(),
+    operativeSignedAt: day,
+    operativeSignedByName: 'Ada Booked',
+    managerSignedAt: new Date('2026-09-18T09:00:00Z'),
+    managerSignedByUserId: 'mgr',
+    managerSignedByName: 'Morgan Manager',
+    expenseEntries: [{ id: 'ex1', title: 'Parking', details: '', jobNumber: 'J-1', date: day, amount: 12, managerDecision: 'approved' as const }],
+  }
+  const frozen = applyWeeklyReportOverride({ ...base, bookings: [], draft: signed })
+  assert.equal(frozen.weeklyReportOverride?.expenses[0].amount, 12)
+  const existed = booking({ createdAt: new Date('2026-09-10T09:00:00Z'), updatedAt: new Date('2026-09-11T09:00:00Z') })
+  const declined = { ...frozen, expenseEntries: frozen.expenseEntries.map((entry) => ({ ...entry, managerDecision: 'declined' as const })) }
+  const repaired = applyWeeklyReportOverride({ ...base, bookings: [existed], draft: declined })
+  assert.equal(repaired.weeklyReportOverride?.lines.length, 1)
+  assert.equal(repaired.weeklyReportOverride?.expenses[0].amount, 12)
+  const resigned = applyWeeklyReportOverride({ ...base, bookings: [existed], draft: declined, refreshSignedMoney: true })
+  assert.equal(resigned.weeklyReportOverride?.expenses[0].amount, 0)
+})
+
 // Review r318 (2nd): Export builds the snapshot BEFORE it stamps `exportedAt` (TimesheetsScreen `persistExportedFlag`),
 // because an exported snapshot is never rebuilt: built with `exportedAt` already set, a frozen-empty sheet stayed empty.
 test('1.43.0: export rebuilds a frozen-empty snapshot before stamping exportedAt', () => {
