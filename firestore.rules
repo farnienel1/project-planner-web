@@ -706,17 +706,15 @@ service cloud.firestore {
       function invitationOpsManagerWrite() {
         let next = request.resource.data;
         return request.method == 'list' ? invitationSentByCaller(resource.data) : (
-          request.method == 'delete' ? (invitationSentByCaller(resource.data) && invitationIsOperativeOnly(resource.data)) : (
-            (request.method == 'update' && !next.diff(resource.data).affectedKeys().hasAny(['role', 'permissions',
-                'adminAccess', 'isSuperAdmin', 'manager', 'operatives', 'operativeMode']))
-              ? (invitationSentByCaller(resource.data) && invitationSentByCaller(next) && invitationIsOperativeOnly(resource.data) &&
-                (resource.data.get('isUsed', false) != true ||
+          request.method == 'delete' || request.method == 'update' && !next.diff(resource.data).affectedKeys().hasAny(['role', 'permissions',
+                'adminAccess', 'isSuperAdmin', 'manager', 'operatives', 'operativeMode'])
+            ? invitationSentByCaller(resource.data) && invitationIsOperativeOnly(resource.data) && (request.method == 'delete' ||
+                invitationSentByCaller(next) && (resource.data.get('isUsed', false) != true ||
                  !next.diff(resource.data).affectedKeys().hasAny(['assignedManagerUserId', 'assignedManagerUserIds', 'hasNoLineManager'])))
-              : ((invitationIsOperativeOnly(next) && invitationSentByCaller(next)) ? (
+            : invitationIsOperativeOnly(next) && invitationSentByCaller(next) && (
                 request.method == 'create'
                   ? opsManagerEmailFree(invitationOrgId(), next.get('email', null))
-                  : (invitationSentByCaller(resource.data) && invitationIsOperativeOnly(resource.data))
-              ) : false)));
+                  : invitationSentByCaller(resource.data) && invitationIsOperativeOnly(resource.data)));
       }
 
       allow get: if true;
@@ -1449,10 +1447,12 @@ service cloud.firestore {
             'workStartTime', 'workEndTime', 'timeSlot', 'isBreakRemoved', 'otMultiplierOverride', 'status', 'overtimeReturnRequestId', 'updatedAt', 'updatedBy', 'updatedFrom'
           ]) ? (('overtimeReturnRequestId' in affected
             ? overtimeReturnFor(bookingId, request.resource.data.overtimeReturnRequestId, 'appliedBookingIds', person, false)
-            : (collection == 'bookings' ? ((person is string && person.size() > 0 && !person.matches('.*/.*')) ? (
-              exists(/databases/(default)/documents/users/$(person)) ? (callerLineManagesUser(person) &&
-                get(/databases/(default)/documents/users/$(person)).data.get('ghost', false) != true) : callerLineManagesRowPerson(person)
-            ) : false) : callerLineManagesUser(person))) ? (
+            : collection != 'bookings' || person is string && person.size() > 0 && !person.matches('.*/.*') &&
+              exists(/databases/(default)/documents/users/$(person))
+              ? callerLineManagesUser(person) && (collection != 'bookings' ||
+                get(/databases/(default)/documents/users/$(person)).data.get('ghost', false) != true)
+              : collection == 'bookings' && person is string && person.size() > 0 && !person.matches('.*/.*') &&
+                callerLineManagesRowPerson(person)) ? (
           (!('workStartTime' in affected) || request.resource.data['workStartTime'] is string && request.resource.data['workStartTime'].size() <= 8) &&
           (!('workEndTime' in affected) || request.resource.data['workEndTime'] is string && request.resource.data['workEndTime'].size() <= 8) &&
           (!('timeSlot' in affected) || request.resource.data.timeSlot in ['CUSTOM_HOURS', 'CUSTOM', 'FULL DAY', 'FULL_DAY', 'AM', 'PM']) &&
@@ -1782,8 +1782,9 @@ service cloud.firestore {
           return p.size() > q.size() + 1 && p[0] == 'timesheet' && p[1:q.size() + 1] == q;
         }
         function tsReviewer() {
-          let hp0 = /databases/(default)/documents/users/$(tsUid());
-          return orgAdminEither(organizationId) || !callerHomeIsOperative() && tsUid() is string && exists(hp0) &&
+          let u = tsUid();
+          let hp0 = /databases/(default)/documents/users/$(u);
+          return orgAdminEither(organizationId) || !callerHomeIsOperative() && u is string && exists(hp0) &&
             lineManagerIdList(get(hp0).data).hasAny([request.auth.uid].concat(
               callerHomeData().get('formerUserIds', []) is list && homeOrgIs(callerHomeData(), organizationId) ? callerHomeData().get('formerUserIds', []) : []));
         }
