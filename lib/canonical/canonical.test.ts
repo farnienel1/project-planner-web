@@ -19379,3 +19379,16 @@ test('1.76.0 review of #427 (finding 1): a signed copy that cannot tell a change
   assert.equal(R112.timesheetMakeChangesHelp(null, old, { viewerIsReviewer: false }), null)
   assert.equal(R112.timesheetMakeChangesHelp(null, old, { ...reviewer, change: { reopened: true } }), null)
 })
+
+test('1.76.0 re-check of #427: a signed copy with no labour line (price work / expenses only) gets no button and no old-sheet help', () => {
+  const reviewer = { viewerIsReviewer: true }
+  const extrasOnly = { ...R176_COUNTERSIGNED, weeklyReportOverride: { lines: [{ id: 'leave', isLeave: true }], priceWork: [{ id: 'pw1', amount: 100 }] } }
+  assert.equal(R112.timesheetMakeChangesAction(extrasOnly, reviewer), null)
+  assert.equal(R112.timesheetMakeChangesHelp(null, extrasOnly, reviewer), null)
+  const empty = { ...R176_COUNTERSIGNED, weeklyReportOverride: { lines: [] } }
+  assert.equal(R112.timesheetMakeChangesHelp(null, empty, reviewer), null)
+  // No signed copy at all still reads as an old sheet.
+  const { weeklyReportOverride: _omit, ...noCopy } = R176_COUNTERSIGNED
+  void _omit
+  assert.equal(R112.timesheetMakeChangesHelp(null, noCopy, reviewer), R112.TIMESHEET_MAKE_CHANGES_OLD_SHEET_HELP)
+})

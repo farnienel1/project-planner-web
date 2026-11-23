@@ -16955,7 +16955,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.76.0" : "",
-      sha256: true ? "4fa3ee8cb08b626eda5bc902bfaae6a31ea5dce269210c53a31c9450741302be" : ""
+      sha256: true ? "ed81ffb00bb0ba08d908941deb89bd78a08475a0f3be21f1b0af662bcc41cd25" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -17194,19 +17194,30 @@ var ProjectPlannerCanonical = (() => {
   var TIMESHEET_MAKE_CHANGES_CANCEL_LABEL = "Stop making changes";
   var TIMESHEET_MAKE_CHANGES_OLD_SHEET_HELP = "This timesheet was signed before 14 Nov. Export it, then use Make changes to correct it in a revision.";
   var TIMESHEET_REVISION_REVIEWER_EDIT_NOTE = "You can change or remove this revision\u2019s bookings with \u2699 and \u2715 before the person signs it.";
-  function timesheetSignedCopyTracksBookings(sheet) {
+  function signedCopyLabourLines(sheet) {
     const override = sheet?.weeklyReportOverride;
-    if (!override || typeof override !== "object") return false;
+    if (!override || typeof override !== "object") return null;
     const lines = override.lines;
-    if (!Array.isArray(lines)) return false;
-    const labour = lines.filter((line) => {
+    if (!Array.isArray(lines)) return null;
+    return lines.filter((line) => {
       if (!line || typeof line !== "object") return false;
       const row3 = line;
       if (row3.isLeave === true || row3.isPayeDay === true) return false;
       return !(typeof row3.reviewPartOf === "string" && row3.reviewPartOf.trim() !== "");
     });
-    if (labour.length === 0) return false;
-    return labour.every((row3) => typeof row3.bookingFingerprint === "string" && row3.bookingFingerprint.trim() !== "");
+  }
+  function hasFingerprint(row3) {
+    return typeof row3.bookingFingerprint === "string" && row3.bookingFingerprint.trim() !== "";
+  }
+  function timesheetSignedCopyTracksBookings(sheet) {
+    const labour = signedCopyLabourLines(sheet);
+    if (!labour || labour.length === 0) return false;
+    return labour.every(hasFingerprint);
+  }
+  function signedCopyIsOld(sheet) {
+    const labour = signedCopyLabourLines(sheet);
+    if (labour == null) return true;
+    return labour.some((row3) => !hasFingerprint(row3));
   }
   function signedOffForReview(sheet, input) {
     if (input.viewerIsReviewer !== true || input.viewerIsSubject === true || input.selfSigned === true) return false;
@@ -17224,7 +17235,7 @@ var ProjectPlannerCanonical = (() => {
   function timesheetMakeChangesHelp(action, sheet, input) {
     if (action === "reopenReview") return TIMESHEET_MAKE_CHANGES_REOPEN_HELP;
     if (action === "createRevision") return TIMESHEET_MAKE_CHANGES_REVISION_HELP;
-    if (sheet && input && signedOffForReview(sheet, input) && !timesheetSignedCopyTracksBookings(sheet)) {
+    if (sheet && input && signedOffForReview(sheet, input) && signedCopyIsOld(sheet)) {
       return TIMESHEET_MAKE_CHANGES_OLD_SHEET_HELP;
     }
     return null;

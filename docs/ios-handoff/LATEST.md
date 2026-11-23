@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.76.0 → 1.76.0
-Packed hash: 02b4e5e7393275e1c93cd4e5082257f61050ff35586652ff46e154858a85626e
-Rulebook sha256: 4fa3ee8cb08b626eda5bc902bfaae6a31ea5dce269210c53a31c9450741302be
+Packed hash: 74e83605ccdcef68e7562b50759e912bbf798b96942c3bab4a61a4455dc94da4
+Rulebook sha256: ed81ffb00bb0ba08d908941deb89bd78a08475a0f3be21f1b0af662bcc41cd25
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,12 +22,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 926b910948b674b1fa259e8f933ddd15f14bad00b8e0b050ccbd88c723bf64aa
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: TIMESHEET_MAKE_CHANGES_OLD_SHEET_HELP, timesheetSignedCopyTracksBookings
+Exports added: none
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/timesheetMakeChanges.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/canonical.test.ts, lib/canonical/timesheetMakeChanges.ts
 Done when:
-- [ ] Packed hash in iOS equals 02b4e5e7393275e1c93cd4e5082257f61050ff35586652ff46e154858a85626e
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 4fa3ee8cb08b626eda5bc902bfaae6a31ea5dce269210c53a31c9450741302be)
+- [ ] Packed hash in iOS equals 74e83605ccdcef68e7562b50759e912bbf798b96942c3bab4a61a4455dc94da4
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 ed81ffb00bb0ba08d908941deb89bd78a08475a0f3be21f1b0af662bcc41cd25)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.76.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -52,8 +52,9 @@ No new `minimumIosBuild` raise beyond 1.74.0's (an iPhone before 1.74 does not r
 
 **Review of #427 (built on iOS #278 too):**
 - Pass the signed copy to `timesheetMakeChangesAction` (`weeklyReportOverride.lines` with `bookingFingerprint`, `isLeave`, `isPayeDay`, `reviewPartOf`): a sheet signed before 1.46.0 (or with no signed copy) gets no button; show `timesheetMakeChangesHelp(nil, sheet, input)` (`TIMESHEET_MAKE_CHANGES_OLD_SHEET_HELP`) instead.
-- Clear "making changes" when the action is no longer `reopenReview` and after counter-signing; hide the old "Signed off. Once exported…" caption while the action is `reopenReview` or the old-sheet help shows.
+- Clear "making changes" when the action is no longer `reopenReview` (keyed to the counter-signature it was opened on); hide the old "Signed off. Once exported…" caption while the action is `reopenReview` or the old-sheet help shows.
 - Pass `revisionOf` (the original's id) as well as `revision` to `timesheetRevisionReviewerMayEditBookings`.
+- A signed copy with no labour line (price work / expenses only) gets neither the button nor the old-sheet line.
 
 
 ## Workflow for the iOS agent

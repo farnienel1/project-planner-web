@@ -2099,12 +2099,10 @@ export function TimesheetPeriodPage({
                   {makeChangesAction === 'reopenReview' ? (
                     // Rulebook 1.76.0 (A1): reopen the review here; nothing is written until a booking is changed.
                     makingChanges ? (
-                      <>
-                        <Note tone="amber">{TIMESHEET_MAKE_CHANGES_ACTIVE_NOTE}</Note>
-                        <PuButton block onClick={() => setMakingChanges(false)}>
-                          {TIMESHEET_MAKE_CHANGES_CANCEL_LABEL}
-                        </PuButton>
-                      </>
+                      // Re-check of #427: the instruction shows once, above the lines.
+                      <PuButton block onClick={() => setMakingChanges(false)}>
+                        {TIMESHEET_MAKE_CHANGES_CANCEL_LABEL}
+                      </PuButton>
                     ) : (
                       <div className="pu-col" style={{ gap: 6 }}>
                         {/* Review of #427 (finding 3): only once the bookings and the person's ids have loaded (as iOS). */}
