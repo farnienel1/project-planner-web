@@ -1378,7 +1378,7 @@ function SlotPicker({
             type="button"
             disabled={disabled}
             onClick={() => onSlot(slot)}
-            className="rounded-xl border bg-(--blue-t) py-3 text-[13px] font-medium text-(--blue) disabled:opacity-50"
+            className="rounded-xl border border-(--blue)/35 bg-(--blue-t) py-3 text-[13px] font-medium text-(--blue) disabled:opacity-50"
           >
             {title}
           </button>
@@ -1394,7 +1394,7 @@ function SlotPicker({
         type="button"
         disabled={disabled}
         onClick={onCustom}
-        className="w-full rounded-xl border bg-(--blue-t) py-3 text-[13px] font-medium text-(--blue) disabled:opacity-50"
+        className="w-full rounded-xl border border-(--blue)/35 bg-(--blue-t) py-3 text-[13px] font-medium text-(--blue) disabled:opacity-50"
       >
         Custom
       </button>

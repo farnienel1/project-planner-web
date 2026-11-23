@@ -138,7 +138,7 @@ export function MaterialCutOffPanel({ onBack }: { onBack: () => void }) {
         <SectionLabel label="Daily cut-off" />
         <SettingsCard>
           <div className="flex items-start gap-3 px-4 py-4">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-(--blue)/10">
               <svg className="h-5 w-5 text-(--blue)" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={ICON.clock} />
               </svg>

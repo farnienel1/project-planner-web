@@ -94,7 +94,7 @@ export function MyScheduleStripeRow({
   onDelete?: () => void
 }) {
   return (
-    <div className="overflow-hidden rounded-[14px] bg-(--card) shadow-(color:--sh)">
+    <div className="overflow-hidden rounded-[14px] bg-(--card) shadow-(--sh)">
       <div className="flex items-stretch">
         <div className={`w-1 shrink-0 ${stripeClass}`} />
         <div className="min-w-0 flex-1 p-3">

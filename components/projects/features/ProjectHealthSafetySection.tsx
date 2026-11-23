@@ -584,7 +584,7 @@ export function ProjectHealthSafetySection({
           {isManager && (
             <div className="rounded-2xl bg-(--blue-t) px-4 py-3">
               <p className="text-sm font-semibold text-(--blue)">Manager access</p>
-              <p className="text-xs">Add, edit, issue &amp; track all H&amp;S records</p>
+              <p className="text-xs text-(--blue)">Add, edit, issue &amp; track all H&amp;S records</p>
             </div>
           )}
           {myAssigned.length > 0 && (

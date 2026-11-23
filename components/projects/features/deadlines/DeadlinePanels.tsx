@@ -73,7 +73,7 @@ export function Sheet({
       }}
     >
       <div
-        className="relative z-10 flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[22px] bg-(--bg) shadow-(color:--sh-pop) sm:rounded-[22px]"
+        className="relative z-10 flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[22px] bg-(--bg) shadow-(--sh-pop) sm:rounded-[22px]"
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
       >

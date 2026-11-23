@@ -180,7 +180,7 @@ export function OperativeQualificationsEditor({
 
   if (!linked || !draft) {
     return (
-      <div className={pv ? 'up-qempty' : 'rounded-[18px] bg-(--card) p-6 shadow-(color:--sh)'}>
+      <div className={pv ? 'up-qempty' : 'rounded-[18px] bg-(--card) p-6 shadow-(--sh)'}>
         <p className={pv ? undefined : 'text-[18px] font-semibold'}>{pv ? <b>Profile not linked</b> : 'Profile not linked'}</p>
         <p className={pv ? undefined : 'mt-2 text-[15px] text-(--ink3)'}>
           No operative record matches this email. Ask an admin to check the account email matches the
@@ -193,7 +193,7 @@ export function OperativeQualificationsEditor({
   if (draft.qualifications.length === 0) {
     return (
       <>
-        <div className={pv ? 'up-qempty' : 'rounded-[18px] bg-(--card) p-6 shadow-(color:--sh)'}>
+        <div className={pv ? 'up-qempty' : 'rounded-[18px] bg-(--card) p-6 shadow-(--sh)'}>
           <p className={pv ? undefined : 'text-[15px] text-(--ink3)'}>
             {templates.length === 0
               ? 'No qualifications have been set up for your organisation yet. Ask a manager or admin to add qualification templates.'
@@ -251,7 +251,7 @@ export function OperativeQualificationsEditor({
         className={
           pv
             ? 'up-qbar'
-            : 'sticky bottom-20 z-10 flex flex-wrap items-center justify-end gap-3 rounded-[18px] bg-[color-mix(in_srgb,var(--card)_95%,transparent)] p-3 shadow-(color:--sh) backdrop-blur-sm lg:bottom-4'
+            : 'sticky bottom-20 z-10 flex flex-wrap items-center justify-end gap-3 rounded-[18px] bg-[color-mix(in_srgb,var(--card)_95%,transparent)] p-3 shadow-(--sh) backdrop-blur-sm lg:bottom-4'
         }
       >
         <Button variant="ghost" onClick={openPicker}>
@@ -274,7 +274,7 @@ export function OperativeQualificationsEditor({
           const pending = pendingFiles[qual.id]
           const preview = previewUrls[qual.id]
           return (
-            <div key={qual.id} className={pv ? 'up-qcard' : 'rounded-[18px] bg-(--card) p-5 shadow-(color:--sh)'}>
+            <div key={qual.id} className={pv ? 'up-qcard' : 'rounded-[18px] bg-(--card) p-5 shadow-(--sh)'}>
               {pv ? <b>{qual.name}</b> : <p className="text-[17px] font-semibold">{qual.name}</p>}
               <label className={pv ? 'up-f up-f-label' : 'mt-3 block text-[13px] font-medium text-(--ink3)'}>
                 Expiry date

@@ -148,7 +148,7 @@ export function LoginBrandScreen() {
             className="login-form-home mb-7 flex items-center gap-3 text-(--ink) no-underline"
             aria-label="Project Planner home"
           >
-            <div className="overflow-hidden rounded-[14px] shadow-(color:--sh)">
+            <div className="overflow-hidden rounded-[14px] shadow-(--sh)">
               <AppLogoMark size={48} radius={14} />
             </div>
             <b className="font-(family-name:--head) text-[22px] font-extrabold tracking-tight">Project Planner</b>

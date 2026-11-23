@@ -244,7 +244,7 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
         <div className="xl:grid xl:grid-cols-[400px_1fr] xl:gap-8">
           <div>
             {templates.length === 0 ? (
-              <div className="rounded-[18px] bg-(--card) p-6 shadow-(color:--sh)">
+              <div className="rounded-[18px] bg-(--card) p-6 shadow-(--sh)">
                 <EmptyState
                   hue="rep"
                   icon={<IconChip hue="rep" size="lg"><AcademicCapIcon className="h-7 w-7" /></IconChip>}
@@ -270,7 +270,7 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
             )}
           </div>
           {editing ? (
-            <form onSubmit={handleEdit} className="rounded-[18px] bg-(--card) p-6 shadow-(color:--sh)">
+            <form onSubmit={handleEdit} className="rounded-[18px] bg-(--card) p-6 shadow-(--sh)">
               <h2 className="text-[22px] font-bold">Edit Qualification</h2>
               <Field label="Name" className="mt-4">
                 <Input value={name} onChange={(e) => setName(e.target.value)} />

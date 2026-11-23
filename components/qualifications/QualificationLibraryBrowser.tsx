@@ -59,7 +59,7 @@ export function QualificationLibraryBrowser({
             : 'No qualifications in this list.')}
         </p>
       ) : (
-        <div className="divide-y divide-(--line) overflow-hidden rounded-[18px] bg-(--card) shadow-(color:--sh)">
+        <div className="divide-y divide-(--line) overflow-hidden rounded-[18px] bg-(--card) shadow-(--sh)">
           {visible.map((row) => {
             const selected = selectedIds?.includes(row.id) === true
             const active = activeId === row.id
