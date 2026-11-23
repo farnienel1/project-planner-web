@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowRightOnRectangleIcon, Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { AppLogoMark } from '@/components/ui/AppLogoMark'
@@ -30,7 +30,15 @@ export function DeveloperAppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname() || ''
   const { user, organization, signOut } = useAuthStore()
   const orgApp = hasCustomerOrganisation(user?.organizationId)
-  const { includeTestData, setIncludeTestData, period, setPeriod } = useConsolePrefs()
+  const { includeTestData, setIncludeTestData, period, setPeriod, setJumpQuery } = useConsolePrefs()
+  // Review of #433: a person opened from the search or the Overview feed sets the jump search for the People list. It
+  // is cleared when the owner moves to any other page, so it never quietly filters the Organisations list later.
+  const lastPath = useRef(pathname)
+  useEffect(() => {
+    if (lastPath.current === pathname) return
+    lastPath.current = pathname
+    if (pathname !== '/developer/users') setJumpQuery('')
+  }, [pathname, setJumpQuery])
   const newInterestCount = useNewInterestCount()
   const triageCount = useFeedbackStore(
     (state) => state.suggestions.filter((row) => !row.hidden && !row.mergedIntoId && row.productDecision === 'none').length

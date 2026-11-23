@@ -21,7 +21,7 @@ async function readNewestAuditEntries(token: string): Promise<PlainDoc[]> {
 /**
  * GET /api/owner/overview?period=&includeTestData=&refresh= — the Overview page (spec §4.1): headline figures,
  * organisations needing attention and the live feed. Read-only. Organisations and people come from the cached
- * directory (60 s, the same rows as the Organisations and People routes); the audit entries are read each time.
+ * directory (200 s, the same rows as the Organisations and People routes); the audit entries are read each time.
  */
 export async function GET(request: NextRequest) {
   const owner = await ownerReadGuard(request, 'owner-overview', 60)

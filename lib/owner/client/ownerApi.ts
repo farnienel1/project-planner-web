@@ -7,7 +7,7 @@ import type { OwnerSearchResult } from '@/lib/owner/directory'
 import type { CommandCentre } from '@/lib/owner/commandCentre'
 
 /**
- * The server keeps directory rows for 60 s per instance and clears them on owner changes, but another instance may
+ * The server keeps directory rows for 200 s per instance (OWNER_DIRECTORY_CACHE_MS) and clears them on owner changes, but another instance may
  * still hold old rows. After an owner change each directory route and search asks once for fresh rows (`refresh=1`),
  * per path: the first request to one path never clears the flag for another (re-review of #348, final check).
  */
@@ -166,11 +166,15 @@ export type OwnerOverviewResponse = CommandCentre & {
   countedAt: string
 }
 
+/** How often an open, visible Overview reads again (review of #433, S1). */
+export const OVERVIEW_POLL_MS = 180_000
+
 export type OwnerOverviewState = { overview: OwnerOverviewResponse | null; error: string | null; loading: boolean; refresh: () => void }
 
 /**
- * The Overview (spec §4.1, §2 "live"): read when the page opens or the period / test-data choice changes, every 60
- * seconds while the tab is visible (the server keeps the directory for 60 s), and on Refresh (which reads again).
+ * The Overview (spec §4.1, §2 "live"): read when the page opens or the period / test-data choice changes, every
+ * OVERVIEW_POLL_MS while the tab is visible (review of #433, S1: the server keeps the directory a little longer, 200 s,
+ * so a poll rarely reads the collections again), and on Refresh (which reads again).
  * The last good answer stays on screen while a new one loads; after a failure the error is shown with it.
  */
 export function useOwnerOverview(period: string, includeTestData: boolean, enabled = true): OwnerOverviewState {
@@ -198,7 +202,7 @@ export function useOwnerOverview(period: string, includeTestData: boolean, enabl
     const timer = window.setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
       setTick((value) => ({ n: value.n + 1, forced: false }))
-    }, 60_000)
+    }, OVERVIEW_POLL_MS)
     return () => {
       controller.abort()
       window.clearInterval(timer)

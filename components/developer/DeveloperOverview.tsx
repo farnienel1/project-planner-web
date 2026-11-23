@@ -70,7 +70,9 @@ function formatWhen(iso: string | number): string {
 function Definition({ text, label }: { text: string; label: string }) {
   return (
     <details className="text-[12px] text-(--dash-muted)">
-      <summary className="inline cursor-pointer list-none font-bold" aria-label={`What ${label} counts`}>
+      <summary
+        className="inline cursor-pointer list-none rounded-[4px] font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--dash-focus)"
+        aria-label={`What ${label} counts`}>
         ⓘ
       </summary>
       <p className="mt-1 max-w-prose leading-snug">{text}</p>
@@ -172,6 +174,8 @@ function FeedRow({ item, onOpenPerson }: { item: LiveFeedItem; onOpenPerson: (qu
 
 function comparisonLine(current: number, previous: number, period: ConsolePeriodId): string {
   if (period === 'to_date') return 'Since records began'
+  // "Today" is compared with the same day last week up to the same time (resolveConsolePeriod).
+  if (period === 'today') return deltaCopy(current, previous).text.replace('vs comparison', 'vs the same day last week')
   return deltaCopy(current, previous).text.replace('vs comparison', 'vs the same stretch of the previous period')
 }
 
