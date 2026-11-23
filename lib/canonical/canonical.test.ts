@@ -17225,7 +17225,8 @@ test('1.55.0 weekly report check line names the revision used ("· REV 1")', () 
   const gapOnly = wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...base, sheet: exportedSheet, change: { exported: true, changed: true, snapshotGapOnly: true } }] }).people[0].check?.label
   assert.doesNotMatch(String(gapOnly), /Revision due|changed since signed/)
   const unexportedGap = wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...base, change: { reopened: true, changed: true, waitingFor: 'lineManager', snapshotGapOnly: true } }] }).people[0].check?.label
-  assert.equal(unexportedGap, 'Timesheet: Signed · Invoice £250.00 ✓')
+  // 1.77.0 (point 6): the signed figures stand, and the line says so.
+  assert.equal(unexportedGap, 'Timesheet: Signed · Awaiting re-sign — showing last signed figures · Invoice £250.00 ✓')
   // A real booking change still follows J4.
   const real = wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...base, change: { reopened: true, changed: true, waitingFor: 'lineManager', snapshotGapOnly: false } }] }).people[0].check?.label
   assert.notEqual(real, 'Timesheet: Signed · Invoice £250.00 ✓')
@@ -19197,15 +19198,15 @@ test('1.74.0 (review of #425): an all-overtime booking with no standard row sort
 // MARK: - 1.74.0 owner answer 23 Nov: the person is told when the line manager changed their sheet and signed it off
 
 test('1.74.0: the counter-signature notice says the timesheet was updated when the line manager changed it', () => {
-  assert.deepEqual(R112.timesheetSignedNoticeText({ signedByName: 'Pat Lee' }), { title: 'Timesheet signed', message: 'Pat Lee signed your timesheet.' })
+  assert.deepEqual(R112.timesheetSignedNoticeText({ signedByName: 'Pat Lee' }), { title: 'Timesheet signed', message: 'Pat Lee signed your timesheet. Next: generate your invoice.' })
   assert.deepEqual(R112.timesheetSignedNoticeText({ signedByName: 'Pat Lee', changedByReviewer: true }), {
     title: 'Your timesheet was updated and signed off',
-    message: 'Pat Lee changed your timesheet and signed it off. Open it to check the changes.',
+    message: 'Pat Lee changed your timesheet and signed it off. Open it to check the changes. Next: generate your invoice.',
   })
   // The signer may be an admin, so the wording never assumes "line manager"; without a name it names nobody.
   assert.deepEqual(R112.timesheetSignedNoticeText({ changedByReviewer: true }), {
     title: 'Your timesheet was updated and signed off',
-    message: 'Your timesheet was changed and signed off. Open it to check the changes.',
+    message: 'Your timesheet was changed and signed off. Open it to check the changes. Next: generate your invoice.',
   })
   const rec = r174Record(reopen147Doc('b1', { projectId: 'j1', workEndTime: '19:00' }))
   assert.equal(R112.timesheetSheetChangedByReviewer(r174Sheet({ reviewerBookingEdits: { [rec.key]: rec.value } })), true)
@@ -19521,4 +19522,242 @@ test('1.76.0 (b) review of #427: no clock test — what the entry pays against i
   assert.equal(R112.timesheetSignedEntriesChangedSinceSignOff(exported), false)
   assert.equal(r176bChange(exported), null)
   assert.equal(R112.TIMESHEET_SIGNED_ENTRIES_CHANGED_PERSON_MESSAGE, 'Your line manager changed your price work or expenses — Generate Invoice unlocks after they sign it off again.')
+})
+
+// MARK: - 1.77.0 timesheet clarity (owner 23 Nov: points 1, 2, 3, 5, 6)
+
+const R177_JOBS = [
+  { id: 'j1', jobNumber: 'J-1', name: 'Carnaby St' },
+  { id: 'j2', jobNumber: 'J-2', name: 'Oxford Rd' },
+]
+function r177Details(sheet: Record<string, unknown>, liveLines: Array<Record<string, unknown>>, docs: Array<Record<string, unknown>>, extra: Record<string, unknown> = {}) {
+  return R112.signedTimesheetChangeDetails({
+    sheet,
+    liveLines,
+    liveLoaded: true,
+    liveBookings: docs,
+    jobs: R177_JOBS,
+    timeZone: 'Europe/London',
+    ...extra,
+  } as Parameters<typeof R112.signedTimesheetChangeDetails>[0])
+}
+
+test('1.77.0: a booking fingerprint reads back into its parts (blank parts stay blank, never guessed)', () => {
+  assert.deepEqual(R112.parseTimesheetBookingFingerprint('2026-11-18|CUSTOM|07:00|16:00|2|nb|confirmed'), {
+    dayKey: '2026-11-18', slot: 'CUSTOM_HOURS', start: '07:00', finish: '16:00', rate: 2, breakRemoved: true,
+  })
+  assert.deepEqual(R112.parseTimesheetBookingFingerprint('2026-11-18|FULL DAY||||'), {
+    dayKey: '2026-11-18', slot: 'FULL DAY', start: '', finish: '', rate: null, breakRemoved: false,
+  })
+  assert.equal(R112.parseTimesheetBookingFingerprint(''), null)
+  assert.equal(R112.parseTimesheetBookingFingerprint('fp-b1'), null)
+  assert.equal(R112.timesheetChangeDayLabel('2026-11-18'), 'Wed 18 Nov')
+  assert.equal(R112.timesheetChangeDayLabel('not a day'), '')
+})
+
+test('1.77.0: changed since you signed — a times change is one row, old struck → new, with a screen-reader sentence', () => {
+  const sheet = r174Sheet()
+  const liveFp = reopen147Fp({ workEndTime: '17:00' })
+  const details = r177Details(sheet, [reopen147Live(liveFp, 'b1', { bookingUpdatedAt: R147_AFTER })], [reopen147Doc('b1', { projectId: 'j1', workEndTime: '17:00' })])
+  assert.equal(details.rows.length, 1)
+  const row = details.rows[0]
+  assert.equal(row.kind, 'changed')
+  assert.equal(row.chipLabel, 'Changed')
+  assert.equal(row.tone, 'amber')
+  assert.equal(row.dayLabel, 'Wed 18 Nov')
+  assert.equal(row.title, 'J-1 · Carnaby St')
+  assert.deepEqual(row.changedParts, ['times'])
+  assert.equal(row.beforeText, '07:00–16:00')
+  assert.equal(row.afterText, '07:00–17:00')
+  assert.equal(row.accessibilityLabel, 'Wednesday 18 Nov, J-1 · Carnaby St: times changed from 07:00–16:00 to 07:00–17:00')
+  assert.equal(details.heading, 'Changed since you signed')
+  assert.equal(details.firstDayLabel, 'Wed 18 Nov')
+  assert.equal(details.summary, '1 booking changed')
+  assert.equal(details.showAllLabel, null)
+  // It lists exactly what the 1.47.0 rule lists.
+  const change = r174Changes(sheet, [reopen147Live(liveFp, 'b1', { bookingUpdatedAt: R147_AFTER })], [reopen147Doc('b1', { projectId: 'j1', workEndTime: '17:00' })])
+  assert.deepEqual(change.changedBookingIds, ['b1'])
+})
+
+test('1.77.0: changed since you signed — a job move, a rate change and ids in another letter case', () => {
+  const sheet = r174Sheet({
+    operativeSignedBookings: [{ bookingId: 'B1', collection: 'bookings', fingerprint: reopen147Fp(), personId: 'op1', place: 'job|J1' }],
+  })
+  const liveFp = reopen147Fp({ otMultiplierOverride: 2 })
+  const details = r177Details(sheet, [reopen147Live(liveFp, 'b1', { bookingUpdatedAt: R147_AFTER })], [reopen147Doc('b1', { projectId: 'j2', otMultiplierOverride: 2 })])
+  assert.equal(details.rows.length, 1)
+  const row = details.rows[0]
+  assert.deepEqual(row.changedParts, ['job', 'rate'])
+  assert.equal(row.title, 'J-2 · Oxford Rd')
+  assert.equal(row.beforeText, 'J-1 · Carnaby St · 07:00–16:00 · organisation OT rate')
+  assert.equal(row.afterText, 'J-2 · Oxford Rd · 07:00–16:00 · OT ×2')
+})
+
+test('1.77.0: changed since you signed — an added and a removed booking, sorted by day, chips green and red', () => {
+  const sheet = r174Sheet({
+    operativeSignedBookings: [
+      { bookingId: 'b1', collection: 'bookings', fingerprint: reopen147Fp(), personId: 'op1', place: 'job|j1' },
+    ],
+  })
+  const b2Fp = reopen147Fp({ dayKey: '2026-11-17', workStartTime: '08:00', workEndTime: '12:00' })
+  const details = r177Details(
+    sheet,
+    [reopen147Live(b2Fp, 'b2', { bookingCreatedAt: R147_AFTER, bookingUpdatedAt: R147_AFTER })],
+    [reopen147Doc('b2', { dayKey: '2026-11-17', projectId: 'j2', workStartTime: '08:00', workEndTime: '12:00' })],
+    { tombstonedBookingIds: [{ collection: 'bookings', bookingId: 'b1' }] }
+  )
+  assert.deepEqual(details.rows.map((row) => [row.kind, row.dayLabel, row.chipLabel, row.tone]), [
+    ['added', 'Tue 17 Nov', 'Added', 'green'],
+    ['removed', 'Wed 18 Nov', 'Removed', 'red'],
+  ])
+  assert.equal(details.rows[0].beforeText, null)
+  assert.equal(details.rows[0].afterText, '08:00–12:00')
+  assert.equal(details.rows[1].beforeText, '07:00–16:00')
+  assert.equal(details.rows[1].afterText, null)
+  assert.equal(details.rows[1].accessibilityLabel, 'Wednesday 18 Nov, J-1 · Carnaby St: removed, was 07:00–16:00')
+  assert.equal(details.summary, '2 bookings changed')
+})
+
+test('1.77.0: changed since you signed — an older signed copy (no fingerprint) shows its stored words, never a guess', () => {
+  const sheet = reopen147Signed([reopen147SnapshotLine(null, 'b1', { details: 'Full day', jobNumber: 'J-1', projectName: 'Carnaby St', date: '2026-11-18' })])
+  const details = r177Details(sheet, [], [], { tombstonedBookingIds: [{ collection: 'bookings', bookingId: 'b1' }] })
+  assert.equal(details.rows.length, 1)
+  assert.equal(details.rows[0].kind, 'removed')
+  assert.equal(details.rows[0].beforeText, 'Full day')
+  assert.equal(details.rows[0].title, 'J-1 · Carnaby St')
+  assert.equal(details.rows[0].dayLabel, 'Wed 18 Nov')
+  // Missing fields: nothing listed, nothing thrown.
+  assert.deepEqual(r177Details({}, [], []).rows, [])
+  assert.deepEqual(R112.signedTimesheetChangeDetails({ sheet: null, liveLines: null, liveLoaded: true, timeZone: 'Europe/London' }).rows, [])
+})
+
+test('1.77.0: changed since you signed — an unchanged sheet has no rows; the 1.74.0 reviewer edit is not listed for the person', () => {
+  const sheet = r174Sheet()
+  const details = r177Details(sheet, [reopen147Live(reopen147Fp())], [reopen147Doc('b1', { projectId: 'j1' })])
+  assert.deepEqual(details.rows, [])
+  assert.equal(details.summary, '')
+  const afterDoc = reopen147Doc('b1', { projectId: 'j1', workEndTime: '19:00' })
+  const rec = r174Record(afterDoc)
+  const edited = r177Details(
+    r174Sheet({ reviewerBookingEdits: { [rec.key]: rec.value } }),
+    [reopen147Live(reopen147Fp({ workEndTime: '19:00' }), 'b1', { bookingUpdatedAt: R147_AFTER })],
+    [afterDoc]
+  )
+  assert.deepEqual(edited.rows.map((row) => row.bookingId), [])
+})
+
+test('1.77.0: changed since you signed — signed price work / expenses changed by the line manager (1.76.0) are rows too', () => {
+  const removed = r176bSheet({
+    ex1: { decision: 'declined', revisedAmount: null, reviewedAmount: 40, reviewedByUserId: 'lm', reviewedAtMs: R176B_SIGNED_MS + 60_000 },
+    pw1: { decision: 'edited', revisedAmount: 250, reviewedAmount: 300, reviewedByUserId: 'lm', reviewedAtMs: R176B_SIGNED_MS + 60_000 },
+  })
+  const entries = R112.timesheetSignedEntryChanges(removed)
+  assert.equal(entries.length, 2)
+  assert.equal(R112.timesheetSignedEntriesChangedSinceSignOff(removed), true)
+  // The booking documents are not loaded here (null), so no booking reads as removed.
+  const details = r177Details(removed, [], [], { currency: 'GBP', liveBookings: null })
+  assert.deepEqual(details.rows.map((row) => [row.type, row.kind, row.title, row.beforeText, row.afterText]), [
+    ['entry', 'changed', 'Price work · Fit doors', '£300.00', '£250.00'],
+    ['entry', 'removed', 'Expense · Parking', '£40.00', null],
+  ])
+  assert.equal(details.summary, '2 price work or expense items changed')
+  assert.deepEqual(R112.timesheetSignedEntryChanges(r176bSheet()), [])
+})
+
+test('1.77.0: changed since you signed — four rows collapse to three with "Show all (4)"', () => {
+  const ids = ['b1', 'b2', 'b3', 'b4']
+  const sheet = r174Sheet({
+    operativeSignedBookings: ids.map((id) => ({ bookingId: id, collection: 'bookings', fingerprint: reopen147Fp({ id }), personId: 'op1', place: 'job|j1' })),
+  })
+  const details = r177Details(sheet, [], [], { tombstonedBookingIds: ids.map((bookingId) => ({ collection: 'bookings', bookingId })) })
+  assert.equal(details.rows.length, 4)
+  assert.equal(details.collapsedCount, 3)
+  assert.equal(details.showAllLabel, 'Show all (4)')
+})
+
+test('1.77.0: whose turn — every stage, for the person and the reviewer', () => {
+  const step = (sheet: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+    R112.timesheetNextStep({ sheet, personName: 'Sam Jones', lineManagerName: 'Pat Lee', ...extra } as Parameters<typeof R112.timesheetNextStep>[0])
+  assert.equal(step({}, { viewerRole: 'person' }).text, 'Your turn: sign your timesheet')
+  assert.equal(step({}, { viewerRole: 'person' }).viewerActs, true)
+  assert.equal(step({}, { viewerRole: 'reviewer' }).text, 'Waiting for Sam Jones to sign')
+  assert.equal(step({}, { viewerRole: 'reviewer' }).tone, 'waiting')
+  const signed = { operativeSignedAt: '2026-11-20T08:00:00Z', operativeSignedByName: 'Sam Jones', operativeSignatureImageBase64: 'x' }
+  assert.equal(step(signed, { viewerRole: 'reviewer' }).text, 'Your turn: sign off')
+  assert.equal(step(signed, { viewerRole: 'person' }).text, 'Waiting for Pat Lee to sign off')
+  assert.equal(step(signed, { viewerRole: 'person', lineManagerName: '' }).text, 'Waiting for your line manager to sign off')
+  const reopened = { reopened: true, waitingFor: 'person', bookingsChanged: true }
+  assert.equal(
+    step(signed, { viewerRole: 'reviewer', change: reopened, changedBookingCount: 1, changedDayLabel: 'Tue 11 Nov' }).text,
+    'Waiting for Sam Jones to sign again — a booking changed on Tue 11 Nov'
+  )
+  assert.equal(step(signed, { viewerRole: 'person', change: reopened, changedBookingCount: 3 }).text, 'Your turn: sign again — 3 bookings changed')
+  const offSigned = { ...signed, managerSignedAt: '2026-11-20T09:00:00Z', managerSignedByName: 'Pat Lee', managerSignatureImageBase64: 'y' }
+  const invoice = step(offSigned, { viewerRole: 'person' })
+  assert.equal(invoice.text, 'Signed off — next: generate your invoice')
+  assert.equal(invoice.generateInvoice, true)
+  assert.equal(step(offSigned, { viewerRole: 'reviewer' }).text, 'Signed off — waiting for an admin to export')
+  assert.equal(step(offSigned, { viewerRole: 'admin' }).text, 'Signed off — ready to export')
+  assert.equal(step(offSigned, { viewerRole: 'admin' }).viewerActs, true)
+  // Self-signed: the person's signature completes the sheet.
+  assert.equal(step(signed, { viewerRole: 'person', selfSigned: true }).text, 'Signed off — next: generate your invoice')
+  // Late extras (1.54.0) and changed signed price work (1.76.0) wait for the line manager.
+  const late = { reopened: true, waitingFor: 'lineManager', bookingsChanged: false, lateExtrasWaiting: true }
+  assert.equal(step(offSigned, { viewerRole: 'person', change: late }).text, 'Waiting for Pat Lee to review what you added after sign-off')
+  assert.equal(step(offSigned, { viewerRole: 'reviewer', change: late }).text, 'Your turn: review what Sam Jones added after sign-off')
+  const entries = { ...late, signedEntriesChanged: true }
+  assert.equal(step(offSigned, { viewerRole: 'reviewer', change: entries }).text, 'Your turn: sign off again — price work or expenses changed')
+  // Exported: frozen; a revision due names the person.
+  const exported = { ...offSigned, exportedAt: '2026-11-25T09:00:00Z' }
+  assert.equal(step(exported, { viewerRole: 'reviewer' }).text, 'Exported — no further changes (corrections go into a revision)')
+  assert.equal(step(exported, { viewerRole: 'reviewer' }).whoseTurn, 'nobody')
+  assert.equal(
+    step(exported, { viewerRole: 'person', revision: { due: true, label: 'REV 1' } }).text,
+    'Your turn: review and sign the update to your exported timesheet (REV 1)'
+  )
+  // An open revision the person has not signed.
+  assert.equal(step({}, { viewerRole: 'reviewer', revisionLabel: 'REV 1', personName: 'Sam' }).text, 'REV 1 waiting for Sam to sign')
+  // Older sheets with only the older approvedAt still read as signed off.
+  assert.equal(step({ ...signed, approvedAt: '2026-11-20T09:00:00Z' }, { viewerRole: 'person' }).text, step(offSigned, { viewerRole: 'person' }).text)
+})
+
+test('1.77.0: Correct this timesheet — one entry over the existing paths only', () => {
+  const offSigned = r176bSheet()
+  const option = (extra: Record<string, unknown>, sheet: Record<string, unknown> = offSigned) =>
+    R112.timesheetCorrectionOption({ sheet, personName: 'Sam', lineManagerName: 'Pat Lee', ...extra } as Parameters<typeof R112.timesheetCorrectionOption>[0])
+  const reviewer = option({ viewerIsReviewer: true, viewerIsSubject: false })
+  assert.equal(reviewer.action, 'makeChanges')
+  assert.equal(reviewer.label, 'Correct this timesheet')
+  assert.equal(reviewer.hasButton, true)
+  const exported = { ...offSigned, exportedAt: '2026-11-25T09:00:00Z' }
+  const revision = option({ viewerIsReviewer: true, viewerIsSubject: false, revisionAllowed: true, nextRevisionLabel: 'REV 1' }, exported)
+  assert.equal(revision.action, 'createRevision')
+  assert.equal(revision.help, 'This creates REV 1 — Sam signs it, then you sign it off.')
+  assert.equal(option({ viewerIsReviewer: true, viewerIsSubject: false, revisionAllowed: false }, exported).action, null)
+  const late = option({ viewerIsReviewer: false, viewerIsSubject: true, lateExtrasAllowed: true })
+  assert.equal(late.action, 'addLateExtras')
+  assert.match(late.help ?? '', /To change bookings, ask Pat Lee/)
+  const due = option({ viewerIsReviewer: false, viewerIsSubject: true, revisionDue: true, revisionAllowed: true, nextRevisionLabel: 'REV 2' }, exported)
+  assert.equal(due.action, 'reviewAndSignAgain')
+  assert.equal(due.help, 'This creates REV 2 — you sign it, then Pat Lee signs it off.')
+  const ask = option({ viewerIsReviewer: false, viewerIsSubject: true }, exported)
+  assert.equal(ask.action, 'askLineManager')
+  assert.equal(ask.hasButton, false)
+  // Still being signed, or reopened with its own Sign again: no entry.
+  assert.equal(option({ viewerIsReviewer: false, viewerIsSubject: true }, { operativeSignedAt: '2026-11-20T08:00:00Z' }).action, null)
+  assert.equal(option({ viewerIsReviewer: false, viewerIsSubject: true, change: { reopened: true } }).action, null)
+  assert.equal(option({ viewerIsReviewer: false, viewerIsSubject: true, selfSigned: true }).action, null)
+})
+
+test('1.77.0: reports say when they show a waiting sheet\'s last signed figures (never a booking change, never exported)', () => {
+  assert.equal(R112.timesheetReportKeepsSignedFigures({ reopened: true, bookingsChanged: false, lateExtrasWaiting: true }), true)
+  assert.equal(R112.timesheetReportKeepsSignedFigures({ reopened: true, bookingsChanged: true }), false)
+  assert.equal(R112.timesheetReportKeepsSignedFigures({ reopened: true, snapshotGapOnly: true, bookingsChanged: true }), R112.SNAPSHOT_GAP_REPORTS === 'signed')
+  assert.equal(R112.timesheetReportKeepsSignedFigures({ reopened: true, bookingsChanged: false, exported: true }), false)
+  assert.equal(R112.timesheetReportKeepsSignedFigures(null), false)
+  assert.equal(R112.TIMESHEET_REPORT_AWAITING_RESIGN_LABEL, 'Awaiting re-sign — showing last signed figures')
+  const removed = r176bSheet({
+    ex1: { decision: 'declined', revisedAmount: null, reviewedAmount: 40, reviewedByUserId: 'lm', reviewedAtMs: R176B_SIGNED_MS + 60_000 },
+  })
+  assert.equal(R112.timesheetReportKeepsSignedFigures(r176bChange(removed)), true)
 })

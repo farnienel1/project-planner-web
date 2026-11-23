@@ -1361,3 +1361,25 @@ UI only, web only (`docs/design/projects-overview-ui/projects-overview-ui-spec.m
 | 23 Nov | Back when the browser will not let the page cancel it (Chrome lets a page cancel one Back per click or key press, so a second Back straight after a Cancel): the question is still asked; on Cancel the address bar moves for a moment and the page puts it straight back, keeping the photos. Relies on the browser running the page's capture listener before Next.js's own — current Chrome, Edge, Safari and Firefox do. | done, owner to confirm |
 | 23 Nov | `router.back()` from in-app buttons and Forward are guarded too while the audit has unsaved work. | done, owner to confirm |
 
+
+## 23 Nov decisions (for 1.77, timesheet clarity)
+
+| Date | Decision | Status |
+|---|---|---|
+| 23 Nov | **Point 2: one "whose turn / what next" line on every timesheet**, for the person and the reviewer, the same on web and iOS (lists keep their short status word). Rule: `timesheetNextStep`. | done web + rulebook (1.77.0, w177-timesheet-clarity, draft); iOS (ios-1.77-timesheet-clarity, draft) |
+| 23 Nov | **Point 3: "Changed since you signed"** — owner: "make this really clear and not a clunky looking list". One card, one compact row per change (day and job; old struck through → new in bold; Added / Removed / Changed chip), three rows then "Show all (N)", for the person on a reopened sheet and the reviewer when it waits for them. Includes signed price work / expenses changed after sign-off (1.76.0). Rule: `signedTimesheetChangeDetails` (the same comparison as `signedTimesheetBookingChanges`). | done web + rulebook (1.77.0, draft); iOS (draft) |
+| 23 Nov | **Point 1: one "Correct this timesheet" entry** — owner: "ok if best and not too hard". Wraps the existing paths only (Make changes, revision, late extras, review and sign again), one help line saying what will happen. Rule: `timesheetCorrectionOption`. | done web + rulebook (1.77.0, draft); iOS (draft) |
+| 23 Nov | **Point 5: "Next: generate your invoice"** on the person's signed-off sheet with the Generate invoice button there, and the "signed your timesheet" notice ends "Next: generate your invoice." (`timesheetNextStep` `generateInvoice`, `timesheetSignedNoticeText`). | done web + rulebook (1.77.0, draft); iOS (draft) |
+| 23 Nov | **Point 6: reports mark waiting sheets** — the weekly report check line and the Payrun Snapshot Timesheet cell say "Awaiting re-sign — showing last signed figures" when a sheet waits but reports keep its signed figures (late extras, changed signed price work / expenses, J1 snapshot gap). No figure changes. Rule: `timesheetReportKeepsSignedFigures`. | done web + rulebook (1.77.0, draft); iOS weekly report / Payrun Snapshot read the rulebook labels (draft) |
+| 23 Nov | Point 4 (line manager reminder) is built separately as 1.78. | open (separate) |
+
+## 1.77.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 23 Nov | The person's signed-off sheet reads "Signed off — next: generate your invoice" until it is exported: generating an invoice is not recorded on the sheet (web) and can be done again, so the line does not change after the first invoice. | done, owner to confirm |
+| 23 Nov | Generate Invoice now shows twice on a signed-off sheet: in the whose-turn line at the top (point 5) and where it always was (same handler, same disabled state). | done, owner to confirm |
+| 23 Nov | A line manager is named only when the person has exactly one; with several (or none known) the line says "your line manager". | done, owner to confirm |
+| 23 Nov | "Correct this timesheet" sits at the top under the whose-turn line (not inside the Signed off box). For the person after sign-off it scrolls to "Add to this timesheet" (price work / expenses); on an exported sheet with nothing due it is a help line only, no button. A self-signed person's unexported sheet gets no entry (they still add and sign again as before). | done, owner to confirm |
+| 23 Nov | The changes card shows to the reviewer while the sheet waits for them — that includes the reviewer's own Make changes edits ("Changed since it was signed"), so they see what they changed before signing off again. A booking the person signed but the signed copy lacks (1.57.0 gap) is listed as "Added". | done, owner to confirm |
+| 23 Nov | The report wording is added to the check line's state, so a viewer who may not see pay sees it too; when the figures still match, the ✓ stays. | done, owner to confirm |

@@ -357,13 +357,35 @@ export function timesheetSignedEntriesChangedSinceSignOff(
   sheet: Record<string, unknown> | null | undefined,
   options: { entryFingerprints?: Record<string, string> | null; exportedAtStored?: boolean | null; sheetDocId?: string | null } = {}
 ): boolean {
+  return timesheetSignedEntryChanges(sheet, options).length > 0
+}
+
+/**
+ * Rulebook 1.77.0 §8: the signed price work and expense entries whose pay now differs from the signed snapshot — the
+ * same comparison `timesheetSignedEntriesChangedSinceSignOff` makes (it is this list being non-empty), one row each:
+ * `{ id, kind, title, signedAmount, paidAmount, removed }` (`removed` when it now pays nothing: declined). In stored order
+ * (price work, then expenses). Empty when exported, not counter-signed or with no signed snapshot.
+ */
+export type TimesheetSignedEntryChange = {
+  id: string
+  kind: 'priceWork' | 'expense'
+  title: string
+  signedAmount: number
+  paidAmount: number
+  removed: boolean
+}
+
+export function timesheetSignedEntryChanges(
+  sheet: Record<string, unknown> | null | undefined,
+  options: { entryFingerprints?: Record<string, string> | null; exportedAtStored?: boolean | null; sheetDocId?: string | null } = {}
+): TimesheetSignedEntryChange[] {
   const data = sheet && typeof sheet === 'object' ? sheet : {}
   const exported = typeof options.exportedAtStored === 'boolean' ? options.exportedAtStored : timesheetExportedFieldSet(data.exportedAt)
-  if (exported) return false
+  if (exported) return []
   const signedMs = timesheetTimestampMs(data.managerSignedAt) ?? timesheetTimestampMs(data.approvedAt)
-  if (signedMs == null) return false
+  if (signedMs == null) return []
   const override = data.weeklyReportOverride
-  if (!override || typeof override !== 'object') return false
+  if (!override || typeof override !== 'object') return []
   const snapshot = override as Record<string, unknown>
   const signedPaid = new Map<string, number>()
   for (const key of ['priceWork', 'expenses']) {
@@ -373,6 +395,7 @@ export function timesheetSignedEntriesChangedSinceSignOff(
       if (id) signedPaid.set(id, roundPennies(finite(row.amount) ?? 0))
     }
   }
+  const out: TimesheetSignedEntryChange[] = []
   const docId = typeof options.sheetDocId === 'string' ? options.sheetDocId.trim() : ''
   for (const [field, kind] of [['priceWorkEntries', 'priceWork'], ['expenseEntries', 'expense']] as const) {
     const rows = Array.isArray(data[field]) ? (data[field] as unknown[]) : []
@@ -388,10 +411,12 @@ export function timesheetSignedEntriesChangedSinceSignOff(
       const entry = { ...row, id }
       const decided = timesheetEntryDecision(data, entry, kind, timesheetTrustedFingerprint(options.entryFingerprints ?? null, id))
       const paid = roundPennies(timesheetEntryEffectiveAmount(decided.decision, decided.revisedAmount, finite(row.amount) ?? 0))
-      if (Math.abs(paid - signed) >= AMOUNT_EPSILON) return true
+      if (Math.abs(paid - signed) >= AMOUNT_EPSILON) {
+        out.push({ id, kind, title: text(row.title), signedAmount: signed, paidAmount: paid, removed: paid < AMOUNT_EPSILON })
+      }
     }
   }
-  return false
+  return out
 }
 
 export type TimesheetLateExtrasSummary = {

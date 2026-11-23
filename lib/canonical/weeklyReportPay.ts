@@ -20,6 +20,7 @@
 
 import { timesheetRevisionReportState } from './timesheetRevisions'
 import { signedTimesheetChangeForReports } from './timesheetBookingChanges'
+import { timesheetReportKeepsSignedFigures, TIMESHEET_REPORT_AWAITING_RESIGN_LABEL } from './timesheetClarity'
 import { dayKeyInZone } from '../orgTime/zoneTime'
 import { eachDayKey, isoWeekdayOfDayKey, zoneOrLondon } from './dayKeys'
 import { documentInstantMs } from './peopleDocuments'
@@ -118,7 +119,7 @@ export type WeeklyReportPaySheet = {
   sheet?: Record<string, unknown> | null
   payrollLines?: ReadonlyArray<InvoiceLineInput & { id: string; amount: number }> | null
   /** 1.57.0: `snapshotGapOnly` — under J1 (`SNAPSHOT_GAP_REPORTS`) a gap-only change keeps the signed figures. */
-  change?: { reopened?: boolean | null; changed?: boolean | null; exported?: boolean | null; waitingFor?: 'person' | 'lineManager' | null; snapshotGapOnly?: boolean | null; lateExtrasWaiting?: boolean | null } | null
+  change?: { reopened?: boolean | null; changed?: boolean | null; exported?: boolean | null; waitingFor?: 'person' | 'lineManager' | null; snapshotGapOnly?: boolean | null; lateExtrasWaiting?: boolean | null; bookingsChanged?: boolean | null } | null
   /** The sheet's sign-off fields when the app holds a loaded copy (`parseTimesheetStatusFields` of the stored sheet). */
   status?: TimesheetStatusFields | null
   /** 1.45.0: the reader's entry fingerprints for a loaded copy (`timesheetInvoiceRows` `entryFingerprints`). */
@@ -217,6 +218,8 @@ export type WeeklyReportCheckLine = {
   changedSinceSigned: boolean
   /** True when a payment run is only partly inside the range (only its rows dated in the range count). */
   partialRun: boolean
+  /** 1.77.0 (point 6): a run's sheet waits to be signed or approved again; the report shows its last signed figures. */
+  showingSignedFigures: boolean
 }
 
 export type WeeklyReportPayPersonRow = {
@@ -829,6 +832,8 @@ function checkLine(
   let awaitingExpenses = 0
   let partialRun = false
   let changedSinceSigned = false
+  // 1.77.0 (point 6): a run whose sheet waits to be signed (or approved) again while the report keeps its signed figures.
+  let showingSignedFigures = false
   let compared = false
   const states: WeeklyReportTimesheetState[] = []
   let revision = 0
@@ -857,6 +862,7 @@ function checkLine(
       changedSinceSigned = changedSinceSigned || revisionState.state === 'due'
     } else states.push(bucket === 'exported' ? 'exported' : bucket === 'signed' ? 'signed' : bucket === 'awaiting' ? 'submitted' : 'notStarted')
     if (reportChange?.reopened === true || (reportChange?.changed === true && fields.operativeSignedAtMs != null && bucket !== 'exported')) changedSinceSigned = true
+    if (timesheetReportKeepsSignedFigures(row.change)) showingSignedFigures = true
     const days = eachDayKey(row.startDayKey, row.endDayKey, zone).filter((day) => counted.has(day))
     const approved = ctx.approvedRun(row)
     const invoiceRows = timesheetInvoiceRows({ sheet: row.sheet ?? null, payrollLines: row.payrollLines ?? [], extrasMode: 'decided', timesheetDays: days, timeZone: zone, entryFingerprints: row.entryFingerprints ?? null })
@@ -876,9 +882,11 @@ function checkLine(
   if (states.length === 0) states.push('notStarted')
   const least = states.reduce((a, b) => (STATE_ORDER[b] < STATE_ORDER[a] ? b : a))
   const signedCount = states.filter((state) => state === 'signed' || state === 'exported').length
-  const stateLabel = revisionStateLabel
+  const stateLabelBase = revisionStateLabel
     ? `Timesheet: ${revisionStateLabel}${states.length > 1 ? ` · ${signedCount} of ${states.length} signed` : ''}`
     : `Timesheet: ${WEEKLY_REPORT_TIMESHEET_STATE_LABELS[least]}${states.length > 1 ? ` · ${signedCount} of ${states.length} signed` : ''}${revision > 0 ? ` · REV ${revision}` : ''}`
+  // 1.77.0 (point 6): shown with the state, so a viewer who may not see pay is told too.
+  const stateLabel = showingSignedFigures ? `${stateLabelBase} · ${TIMESHEET_REPORT_AWAITING_RESIGN_LABEL}` : stateLabelBase
   const awaiting = [
     awaitingPriceWork > 0.0001 ? `+ ${money(roundPennies(awaitingPriceWork))} price work awaiting sign-off` : '',
     awaitingExpenses > 0.0001 ? `+ ${money(roundPennies(awaitingExpenses))} expenses awaiting sign-off` : '',
@@ -895,6 +903,7 @@ function checkLine(
       matches: false,
       changedSinceSigned: false,
       partialRun: false,
+      showingSignedFigures,
     }
   }
   const invoiceTotal = roundPennies(invoice)
@@ -917,6 +926,7 @@ function checkLine(
     matches,
     changedSinceSigned,
     partialRun,
+    showingSignedFigures,
   }
 }
 
