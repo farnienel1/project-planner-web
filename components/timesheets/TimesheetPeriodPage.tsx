@@ -526,7 +526,9 @@ export function TimesheetPeriodPage({
     lines: payroll.lineItems,
     draft: figuresDraft,
     // Review of #344: a revision is priced in `decided` mode for everyone (its copied entries carry their decisions).
-    decided: managerHasSigned || canManagerReview || isRevision,
+    // Review of #413: a reviewer viewing an exported sheet keeps the decided totals they saw before 1.71.0 hid the
+    // line actions (an older self-signed export with review decisions and no snapshot).
+    decided: managerHasSigned || canManagerReview || isRevision || (mode === 'review' && viewerIsReviewer && Boolean(draft.exportedAt)),
     reviewing: canManagerReview,
     timesheetDays: sheetDays,
     timeZone,

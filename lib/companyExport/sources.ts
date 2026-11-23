@@ -306,7 +306,7 @@ export const EXCLUSION_NOTES: readonly string[] = [
  * own users document names ANOTHER organisation is exported with these fields only — their home profile's pay,
  * permissions, leave settings and the like belong to that other company.
  */
-export const FOREIGN_USER_KEPT_FIELDS = ['firstName', 'surname', 'lastName', 'name', 'displayName', 'email', 'phone'] as const
+export const FOREIGN_USER_KEPT_FIELDS = ['firstName', 'surname', 'lastName', 'name', 'displayName', 'email', 'phone', 'mobileNumber', 'mobile', 'phoneNumber'] as const
 
 /** A users document as exported: whole when it belongs to this organisation (or names none), else minimised. */
 export function exportUserDocument(
