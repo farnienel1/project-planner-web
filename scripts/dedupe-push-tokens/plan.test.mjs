@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import test from 'node:test'
-import { keepNewestPlan, mergeRemovals, storedTokenList, tokenSuffix, validationMessage, validationResult } from './plan.mjs'
+import { keepNewestPlan, mergeRemovals, storedTokenList, storedValuesMatching, tokenSuffix, validationMessage, validationResult } from './plan.mjs'
 
 const require = createRequire(import.meta.url)
 const { isTerminalPushTokenFailure, isCredentialPushFailure } = require('../../functions/prunePushTokens.js')
 const rules = { isTerminal: isTerminalPushTokenFailure, isCredential: isCredentialPushFailure }
 
-test('push token clean-up: stored order kept, duplicates and blanks dropped', () => {
-  assert.deepEqual(storedTokenList(['  a ', 'b', 'a', '', null, 'c']), ['a', 'b', 'c'])
+test('push token clean-up: stored order kept, duplicates and blanks dropped, values exactly as stored', () => {
+  assert.deepEqual(storedTokenList(['  a ', 'b', 'a', '', null, 'c']), ['  a ', 'b', 'c'])
   assert.deepEqual(storedTokenList('single'), ['single'])
   assert.deepEqual(storedTokenList(undefined), [])
   assert.equal(tokenSuffix('x'.repeat(30) + '0123456789'), '0123456789')
@@ -66,4 +66,13 @@ test('push token clean-up: removals for one document are merged without repeats'
   planned = mergeRemovals(planned, 'u1', ['b', 'c'])
   planned = mergeRemovals(planned, 'u2', [])
   assert.deepEqual([...planned.entries()], [['u1', ['a', 'b', 'c']]])
+})
+
+test('push token clean-up: removals name the exact stored strings (arrayRemove matches exactly)', () => {
+  const stored = [' tok ', 'tok', 'other', 7]
+  assert.deepEqual(storedValuesMatching(stored, ['tok']), [' tok ', 'tok'])
+  assert.deepEqual(storedValuesMatching(stored, [' other']), ['other'])
+  assert.deepEqual(storedValuesMatching(stored, []), [])
+  const planned = mergeRemovals(new Map(), 'u1', storedValuesMatching(stored, ['tok']))
+  assert.deepEqual(planned.get('u1'), [' tok ', 'tok'])
 })

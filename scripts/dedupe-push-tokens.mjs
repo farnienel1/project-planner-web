@@ -35,7 +35,7 @@ import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import vm from 'node:vm'
-import { keepNewestPlan, mergeRemovals, storedTokenList, tokenSuffix, validationMessage, validationResult } from './dedupe-push-tokens/plan.mjs'
+import { keepNewestPlan, mergeRemovals, storedTokenList, storedValuesMatching, tokenSuffix, validationMessage, validationResult } from './dedupe-push-tokens/plan.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(here, '..')
@@ -117,9 +117,11 @@ console.log(`${documents.length} users documents hold tokens; ${plan.length} in 
 for (const row of plan) {
   const detail = row.remove.map((token) => `…${tokenSuffix(token)} → ${row.keptOn[token] ? `kept on ${row.keptOn[token]}` : 'removed everywhere (placeholders only)'}`).join(', ')
   console.log(`- users/${row.userId}: ${detail}`)
-  removals = mergeRemovals(removals, row.userId, row.remove)
+  const stored = documents.find((doc) => doc.id === row.userId)
+  removals = mergeRemovals(removals, row.userId, storedValuesMatching(stored ? stored.pushTokens : [], row.remove))
 }
 
+// Exact stored values, so what is removed is exactly what is stored.
 const remainingFor = (row) => storedTokenList(row.pushTokens).filter((token) => !(removals.get(row.id) || []).includes(token))
 
 // 2. --keep-newest: one named person keeps only their first stored token.
@@ -127,7 +129,7 @@ if (keepNewest) {
   const row = documents.find((doc) => doc.id === onlyUser)
   const { keep, remove } = keepNewestPlan(remainingFor(row))
   console.log(`--keep-newest users/${onlyUser}: keeps …${tokenSuffix(keep[0] || '')}; removes ${remove.length}: ${remove.map((t) => `…${tokenSuffix(t)}`).join(', ') || 'none'}`)
-  removals = mergeRemovals(removals, onlyUser, remove)
+  removals = mergeRemovals(removals, onlyUser, storedValuesMatching(row.pushTokens, remove))
 }
 
 // 3. --validate: dry-run send to every remaining token; remove only the ones FCM reports as dead.
@@ -137,14 +139,15 @@ if (validate) {
   for (const row of documents.filter((doc) => inScope(doc.id))) {
     const tokens = remainingFor(row)
     if (tokens.length === 0) continue
-    const result = await fcm.sendEach(tokens.map(validationMessage), true)
+    // FCM gets the trimmed token; the stored value (exact) is what is removed.
+    const result = await fcm.sendEach(tokens.map((token) => validationMessage(token.trim())), true)
     const { dead, otherFailures, credentialProblem } = validationResult(tokens, result.responses, rules)
     if (credentialProblem) {
       console.error('FCM refused the project credentials (APNs key / sender). Nothing is removed. Check Firebase console → Project settings → Cloud Messaging.')
       process.exit(1)
     }
     console.log(`validate users/${row.id}: ${tokens.length} token(s), ${dead.length} dead${otherFailures.length ? `, ${otherFailures.length} other failure(s) kept` : ''}${dead.length ? `: ${dead.map((t) => `…${tokenSuffix(t)}`).join(', ')}` : ''}`)
-    removals = mergeRemovals(removals, row.id, dead)
+    removals = mergeRemovals(removals, row.id, storedValuesMatching(row.pushTokens, dead))
   }
 }
 

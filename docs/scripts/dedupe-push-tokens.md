@@ -36,12 +36,16 @@ token.
 
 ## Step 2b: if pushes still come twice — keep only the phone's current token
 
-1. On the person's iPhone, open Project Planner and sign in (this puts that phone's current token first on the list).
-2. `node scripts/dedupe-push-tokens.mjs --project project-planner-f986c --user <UID> --keep-newest`
-   Dry run: shows which token is kept and which are removed.
-3. `node scripts/dedupe-push-tokens.mjs --project project-planner-f986c --user <UID> --keep-newest --apply`
+Do these one straight after the other: the app puts that phone's current token first when it opens.
+
+1. `node scripts/dedupe-push-tokens.mjs --project project-planner-f986c --user <UID> --keep-newest`
+   Dry run: shows which token would be kept and which removed.
+2. On the iPhone that should keep receiving pushes, open Project Planner (signed in as that person) and wait until
+   the home screen has loaded.
+3. Straight after, on the computer:
+   `node scripts/dedupe-push-tokens.mjs --project project-planner-f986c --user <UID> --keep-newest --apply`
    Keeps one token. If the person has another phone or iPad, it gets pushes again the next time they open the app
-   there.
+   there — so don't open the app on another device between steps 2 and 3.
 
 ## Every account at once
 

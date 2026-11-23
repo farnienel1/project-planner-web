@@ -9,13 +9,36 @@ function text(value) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-/** A stored `pushTokens` value as a de-duplicated list, stored order kept (iOS writes the newest token first). */
+/**
+ * A stored `pushTokens` value as a de-duplicated list, stored order kept (iOS writes the newest token first). Each token
+ * is returned exactly as stored (review of #428: `arrayRemove` matches the stored string exactly, so a token is never
+ * trimmed before it is removed); blanks are left out and duplicates are compared trimmed.
+ */
 export function storedTokenList(raw) {
   const list = Array.isArray(raw) ? raw : [raw]
   const out = []
+  const seen = new Set()
   for (const value of list) {
-    const token = text(value)
-    if (token && !out.includes(token)) out.push(token)
+    if (typeof value !== 'string') continue
+    const key = value.trim()
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    out.push(value)
+  }
+  return out
+}
+
+/**
+ * Every stored value (exact, as `arrayRemove` needs it) whose trimmed form is one of `tokens` — the rulebook's
+ * ownership plan returns trimmed tokens, and a token may be stored more than once with stray spaces.
+ */
+export function storedValuesMatching(raw, tokens) {
+  const wanted = new Set((Array.isArray(tokens) ? tokens : []).map((token) => text(token)).filter(Boolean))
+  const list = Array.isArray(raw) ? raw : [raw]
+  const out = []
+  for (const value of list) {
+    if (typeof value !== 'string' || !wanted.has(value.trim()) || out.includes(value)) continue
+    out.push(value)
   }
   return out
 }
@@ -63,17 +86,15 @@ export function keepNewestPlan(raw) {
   return { keep: tokens.slice(0, 1), remove: tokens.slice(1) }
 }
 
-/** One map of users id → tokens to remove, adding `remove` to whatever is already planned for that document. */
+/** One map of users id → stored values to remove, adding `remove` (exact stored strings) to what is already planned. */
 export function mergeRemovals(planned, userId, remove) {
   const id = text(userId)
   if (!id || !Array.isArray(remove) || remove.length === 0) return planned
   const next = new Map(planned)
-  const current = next.get(id) || []
-  const merged = [...current]
-  for (const token of remove) {
-    const value = text(token)
-    if (value && !merged.includes(value)) merged.push(value)
+  const merged = [...(next.get(id) || [])]
+  for (const value of remove) {
+    if (typeof value === 'string' && value.trim() && !merged.includes(value)) merged.push(value)
   }
-  next.set(id, merged)
+  if (merged.length > 0) next.set(id, merged)
   return next
 }
