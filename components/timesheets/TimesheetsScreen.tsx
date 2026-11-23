@@ -23,9 +23,10 @@ import {
   type ExportedTimesheetHistoryRow,
   timesheetVersionChain,
   timesheetVersionChainFor,
+  draftToFirestoreMap,
 } from '@/lib/timesheets/timesheetStorage'
-import { timesheetRevisionCopy } from '@/lib/timesheets/timesheetRevisionCopy'
-import { TIMESHEET_EARLIER_VERSIONS_LABEL, TIMESHEET_ORIGINAL_VERSION_LABEL, timesheetRevisionLabel } from '@/lib/canonical'
+import { exportedVersionRows, timesheetRevisionCopy } from '@/lib/timesheets/timesheetRevisionCopy'
+import { timesheetRevisionLabel } from '@/lib/canonical'
 import { emptyTimesheetDraft, type TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import { draftTimesheetTotals } from '@/lib/timesheets/timesheetAdjustments'
 import { SIGNED_OFF_EDIT_NOTE, userTimesheetSelfSigned } from '@/lib/timesheets/timesheetApprovalPolicy'
@@ -1266,6 +1267,7 @@ function ExportedTimesheetsList({
   /** Re-review #342 item 1: a person whose pay is not known shows no figures (Download PDF refuses too). */
   payStatusOf?: (member: User) => PayProfilesStatus
 }) {
+  const currency = useOrganizationCurrency()
   const observed = rows.map((row) => exportedRowPeriod(row, invoicing, timeZone))
   // Owner item 6 (17 Nov follow-up): the picker starts at the organisation's creation day (else the earliest exported
   // sheet); every run with an exported sheet is still listed.
@@ -1378,29 +1380,62 @@ function ExportedTimesheetsList({
             )
             const earlier = row.earlierVersions ?? []
             if (earlier.length === 0) return main
-            // Rulebook 1.55.0 §8: the earlier exported versions of this pay run, read only, under the latest.
+            // Rulebook 1.55.0 §8, owner item 23 (23 Nov): every exported version of this pay run, oldest first — Original,
+            // REV 1, REV 2 — each with its invoice number, signed date, total and the difference from the version before,
+            // and its own Download PDF (drawn from that version's stored signed copy, never re-priced).
+            const versions = exportedVersionRows({
+              versions: [
+                ...earlier.map((version) => ({
+                  documentId: version.documentId,
+                  revision: version.revision,
+                  data: draftToFirestoreMap(version.draft),
+                })),
+                { documentId: row.documentId ?? '', revision: row.draft.revision ?? 0, data: draftToFirestoreMap(row.draft) },
+              ],
+              currency,
+            })
+            const downloadVersion = (documentId: string, revision: number) => {
+              if (!onDownload) return
+              if (revision === (row.draft.revision ?? 0) && documentId === (row.documentId ?? '')) return onDownload(row, period)
+              const version = earlier.find((entry) => entry.documentId === documentId && entry.revision === revision)
+              if (version) onDownload({ ...row, draft: version.draft, documentId: version.documentId, earlierVersions: [] }, period)
+            }
             return (
               <Fragment key={row.id}>
                 {main}
                 <tr>
                   <td colSpan={12} className="pu-sub">
-                    {TIMESHEET_EARLIER_VERSIONS_LABEL}:{' '}
-                    {earlier.map((version, index) => (
-                      <span key={version.documentId}>
-                        {index > 0 ? ' · ' : ''}
-                        {timesheetRevisionLabel(version.revision) || TIMESHEET_ORIGINAL_VERSION_LABEL}
-                        {onDownload ? (
-                          <button
-                            type="button"
-                            className="pu-rowbtn"
-                            style={{ marginLeft: 6, textDecoration: 'underline' }}
-                            onClick={() => onDownload({ ...row, draft: version.draft, documentId: version.documentId, earlierVersions: [] }, period)}
-                          >
-                            Download PDF
-                          </button>
-                        ) : null}
-                      </span>
-                    ))}
+                    <p style={{ margin: '0 0 6px', fontWeight: 600 }}>
+                      Versions of this pay run · {versions.length}
+                    </p>
+                    <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 4 }}>
+                      {versions.map((version) => (
+                        <li
+                          key={`${version.documentId}|${version.revision}`}
+                          style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}
+                        >
+                          <Chip tone={version.latest ? 'green' : 'slate'}>{version.label}</Chip>
+                          {version.latest ? <span>Latest</span> : null}
+                          {version.invoiceNumber ? <span>{version.invoiceNumber}</span> : null}
+                          {version.signedAtMs != null ? (
+                            <span>Signed {formatStampInZone(new Date(version.signedAtMs), timeZone)}</span>
+                          ) : null}
+                          <b>{version.totalText}</b>
+                          {version.differenceText ? <span>{version.differenceText}</span> : null}
+                          {onDownload ? (
+                            <button
+                              type="button"
+                              className="pu-rowbtn"
+                              style={{ fontWeight: 600, textDecoration: 'underline' }}
+                              aria-label={`Download PDF of ${version.label}`}
+                              onClick={() => downloadVersion(version.documentId, version.revision)}
+                            >
+                              Download PDF
+                            </button>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
                   </td>
                 </tr>
               </Fragment>
