@@ -156,6 +156,14 @@ How to use it:
 | 4 Nov | Price work: approver is a required pick from admins and managers only. Expenses need at least one piece of evidence. Personal site audits are visible to their creator only. | done (1.30) |
 | 4 Nov | 1.32: the price work and expenses review screen matches the overtime review (✓ ✕ per line, one Approve button), plus the same all-records-per-person check. | done web + rulebook (1.32.0 / PR #274); iOS open (hand-off) |
 
+
+## Settings bugs (23 Nov)
+
+| Date | Decision | Status |
+|---|---|---|
+| 23 Nov | **Bug: PAYE payday reverted to "Not set" on Payment runs & timesheets** (owner report). **Root cause not proven** (no device run; the save cannot be run in the UI tests, which use seeded data with no Firebase). Ruled out: the security rules, which accept the Save with the payday in both apps' write shapes and read it back (emulator, `tests/payePayday.rules.test.ts`); web, where the card keeps the pick until Save and reads it live. Real defects fixed on iPhone, each able to lose or hide the payday: (a) the banner link to Payment runs exists only while no payday is set, so saving removed the link while its screen was open, popping it — the owner's starting state; Warning settings' "Set up payment runs" link had the same pattern; both now open the screen from their stable page; (b) the recovery path that sets the organisation (`setCurrentOrganizationFromRecovery`) skipped `applyPayrollPolicyFields`, so the payday read "Not set" until the next live update; (c) the menu-style Picker over a hand-made Binding is now a Menu of Buttons; after Save the pick stays, with "The PAYE payday was not saved…", unless the payday reads back; the pick clears when the live payday equals it; the menu offers "Not set" / "Keep Day N" to drop an unsaved pick. New UI tests A04b–d: the pick sticks from the banner and from the hub, and can be dropped. | done iOS (#275); web: rules test only (#423); owner to retest Save on TestFlight |
+| 23 Nov | **Bug: More → Settings while on Payment runs & timesheets stayed on that page** (owner report). On iPhone, choosing the already-open Settings tab only posted `resetNavigationForTab`, which Settings does not handle. Choosing Settings, Help, Wholesalers, Annual leave or Subcontractors again now rebuilds that tab at its root (the main page). UI only. Web has no More menu; its Settings link always opens the Settings page. | done iOS (branch `ios-paye-payday-settings-nav`); web n/a |
+
 ## Files, data and privacy
 
 | Date | Decision | Status |
