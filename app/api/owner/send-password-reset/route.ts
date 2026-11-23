@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
   if (limited) return limited
   const owner = await requireOwner(request)
   if (!isFirebaseUser(owner)) return owner
-  const body = await readApiBody(request, apiObject({ uid: apiText(128), email: apiText(254) }))
+  const body = await readApiBody(request, apiObject({ uid: apiText(128), email: apiText(254), reason: apiText(1000) }))
   if (!body.ok) return body.response
   const uid = (body.value.uid || '').trim()
   let email = (body.value.email || '').trim().toLowerCase()
@@ -50,6 +50,7 @@ export async function POST(request: NextRequest) {
     audit = await beginOwnerAudit(request, owner.uid, {
       action: 'ownerSendPasswordReset',
       targetUserId: uid || undefined,
+      reason: (body.value.reason || '').trim() || undefined,
       after: { email },
     })
   } catch {

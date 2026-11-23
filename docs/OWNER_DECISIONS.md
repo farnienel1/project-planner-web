@@ -922,6 +922,24 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 | 16 Nov | The 2FA cookie check also covers the register-interest owner routes (`/api/interest/registrations`), which use the same owner check. | done, owner OK 16 Nov |
 | 16 Nov | "Delete unfinished sign-up" also refuses a ghost operative, and anyone whose unfinished organisation has other members (half-set-up organisations with other people in them). | done, owner OK 16 Nov |
 
+## Owner console decisions (23 Nov)
+
+| Date | Decision | Status |
+|---|---|---|
+| 23 Nov | **Build owner console PR 5 (People 360 + person actions) next**, ahead of PR 3 (Needs you) and PR 4 (Organisations 360): resetting logins and changing people's names and emails is what is needed most before launch. | in progress (draft PR, branch `w-console-pr5`) |
+| 23 Nov | **Overview choices (PR 2, #433), owner answers:** (1) "Trial ending" means within **7 days** — yes; (2) "Quiet" stays **14 days** — keep; (3) MRR counts only the stored `billing.mrrPence` (never filled in from the list price) — ok; (4) email reveals are left out of the live feed — ok; (5) the extra attention reasons (payment failed, cancelling, unfinished) — ok. | done (PR 2, #433, merged 23 Nov) |
+
+## PR 5 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 23 Nov | "Enter a new code" for destructive person actions (change name, change login email, sign out everywhere, delete unfinished sign-up): when the last emailed code is older than 10 minutes the console emails a new one (`/api/owner/reverify`) and asks for it in a small dialog, then carries on. Asking never signs the owner out. A dry run (preview) needs no new code. | done (draft PR), owner to confirm |
+| 23 Nov | Change name is treated as an identity change: reason and a fresh code, like change email. It changes every users document of the person (one email, every organisation) and the Operatives / Managers list rows on their email in their organisations, in one all-or-nothing write. A list the owner cannot read refuses the change rather than leaving one company's copy behind. | done (draft PR), owner to confirm |
+| 23 Nov | Send password reset keeps working without a reason on the old Organisation page menu (which now only opens the person page); the person page asks for one. | done (draft PR), owner to confirm |
+| 23 Nov | Delete unfinished sign-up on the person page asks to type DELETE (the person's full email is masked until revealed), plus a reason; the server still refuses anyone live. Data quality's Delete button now also asks for a new code when the last one is old. | done (draft PR), owner to confirm |
+| 23 Nov | Revealing an email on the person page is one click, written to the audit log by the server before the email is shown; if the entry cannot be written, nothing is shown. | done (draft PR), owner to confirm |
+| 23 Nov | The People list no longer has "Show full emails" or the old per-user row menu; emails are revealed one person at a time on the person page. | done (draft PR), owner to confirm |
+
 ## 1.54.1 platform scan fixes (16 Nov) — choices for the owner to confirm
 
 | Date | Choice | Status |

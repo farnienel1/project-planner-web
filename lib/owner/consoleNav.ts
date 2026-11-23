@@ -40,7 +40,7 @@ export const CONSOLE_NAV: ConsoleNavGroup[] = [
     label: 'Customers',
     items: [
       { label: 'Organisations', href: '/developer/organisations', shown: true, note: 'Organisation documents and their people.', plannedIn: 'PR 4' },
-      { label: 'People', href: '/developer/users', shown: true, note: 'Users documents across every organisation.', plannedIn: 'PR 5' },
+      { label: 'People', href: '/developer/users', shown: true, note: 'One row per person across every organisation (server directory); each opens the person page and its actions.' },
       { label: 'Register interest', href: '/developer/register-interest', shown: true, badge: 'interestNew', note: 'interestRegistrations, live.' },
     ],
   },

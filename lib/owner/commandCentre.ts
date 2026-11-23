@@ -223,6 +223,9 @@ const OWNER_ACTION_LABELS: Record<string, string> = {
   ownerChangeUserEmail: 'Changed a login email',
   ownerSendPasswordReset: 'Sent a password reset',
   ownerDeleteUnfinishedUser: 'Deleted an unfinished sign-up',
+  ownerChangeUserName: 'Changed a name',
+  ownerRevokeSessions: 'Signed someone out everywhere',
+  ownerRevealEmail: 'Revealed an email',
   accountDelete: 'Account deleted by its owner',
 }
 

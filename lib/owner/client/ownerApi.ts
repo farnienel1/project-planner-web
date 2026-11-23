@@ -36,7 +36,7 @@ export function resetOwnerDirectoryStaleForTests(): void {
 
 /** True for the routes that read the cached directory (the Overview builds its figures from it too, PR 2). */
 export function readsOwnerDirectory(path: string): boolean {
-  return path.startsWith('/api/owner/directory/') || path === '/api/owner/search' || path === '/api/owner/overview'
+  return path.startsWith('/api/owner/directory/') || path.startsWith('/api/owner/people/') || path === '/api/owner/search' || path === '/api/owner/overview'
 }
 
 /** The query for a request: `refresh` is added once per path after an owner change, for the directory routes only. */

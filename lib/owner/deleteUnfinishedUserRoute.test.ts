@@ -97,7 +97,7 @@ function request(): NextRequest {
     headers: { authorization: 'Bearer token', 'content-type': 'application/json' },
     body: JSON.stringify({ uid: 'victim' }),
   })
-  req.cookies.set(mfaCookieName('ok', shouldSecureMfaCookies(req)), encodeMfaOk('owner-uid', Date.now() + 60_000))
+  req.cookies.set(mfaCookieName('ok', shouldSecureMfaCookies(req)), encodeMfaOk('owner-uid', Date.now() + 60_000, Date.now()))
   return req
 }
 

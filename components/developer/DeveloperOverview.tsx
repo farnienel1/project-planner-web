@@ -201,7 +201,7 @@ function OverviewBody({ overview, period, onOpenPerson }: { overview: OwnerOverv
           metric="activePeople"
           value={formatCount(headline.activePeople.value)}
           lines={[`Seen ${label}`, COMMAND_CENTRE_METRICS.activePeople.comparison.split(':')[0]]}
-          href="/developer/users"
+          href={`/developer/users?seen=${period}`}
           linkLabel="Open people"
         />
         <Headline
@@ -218,7 +218,7 @@ function OverviewBody({ overview, period, onOpenPerson }: { overview: OwnerOverv
           metric="newPeople"
           value={formatCount(headline.newPeople.value)}
           lines={[`Created ${label}`, comparisonLine(headline.newPeople.value, headline.newPeople.previous, period)]}
-          href="/developer/users"
+          href={`/developer/users?joined=${period}`}
           linkLabel="Open people"
         />
         <Headline

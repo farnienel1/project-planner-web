@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { apiObject, apiText, readApiBody } from '@/lib/security/apiBody'
+import { apiFlag, apiObject, apiText, readApiBody } from '@/lib/security/apiBody'
 import { z } from 'zod'
 import { isPlatformOwnerEmail } from '@/lib/platform/owner'
 import { enforceRateLimit, isFirebaseUser, jsonError } from '@/lib/security/apiGuard'
-import { requireOwner } from '@/lib/owner/requireOwner'
+import { ownerFreshnessRefusal, requireOwnerSession } from '@/lib/owner/requireOwner'
+import { ownerReasonError } from '@/lib/owner/personActions'
 import { clearOwnerDirectoryCache } from '@/lib/owner/directoryServer'
 import { OWNER_AUDIT_UNAVAILABLE_MESSAGE, beginOwnerAudit, type OwnerAuditRun } from '@/lib/owner/ownerAudit'
 import { isValidDocumentId, isValidEmail } from '@/lib/security/validation'
@@ -70,15 +71,34 @@ async function claimUserId(token: string, organizationId: string, email: string)
 export async function POST(request: NextRequest) {
   const limited = enforceRateLimit(request, 'owner-change-email', 20, 10 * 60 * 1000)
   if (limited) return limited
-  const owner = await requireOwner(request)
+  const owner = await requireOwnerSession(request)
   if (!isFirebaseUser(owner)) return owner
-  const body = await readApiBody(request, apiObject({ uid: apiText(128), newEmail: apiText(254), reason: apiText(1000), sendReset: z.unknown().optional() }))
+  const body = await readApiBody(
+    request,
+    apiObject({
+      uid: apiText(128),
+      newEmail: apiText(254),
+      confirmEmail: apiText(254),
+      reason: apiText(1000),
+      sendReset: z.unknown().optional(),
+      preview: apiFlag(),
+    })
+  )
   if (!body.ok) return body.response
+  const preview = body.value.preview === true
   const uid = (body.value.uid || '').trim()
   const newEmail = (body.value.newEmail || '').trim().toLowerCase()
   const reason = (body.value.reason || '').trim()
   const sendReset = body.value.sendReset !== false
   if (!uid || !isValidEmail(newEmail)) return jsonError('Choose a user and enter a valid new login email.', 400)
+  // Owner console PR 5 (PLAN §4): the new email typed twice, a reason, and a code entered within 10 minutes.
+  if (!preview) {
+    if ((body.value.confirmEmail || '').trim().toLowerCase() !== newEmail) return jsonError('The two new emails do not match.', 400)
+    const reasonError = ownerReasonError(reason)
+    if (reasonError) return jsonError(reasonError, 400)
+  }
+  const notFresh = ownerFreshnessRefusal(owner, preview)
+  if (notFresh) return notFresh
   if (!isValidDocumentId(uid)) return jsonError('uid is not valid', 400)
   if (isPlatformOwnerEmail(newEmail)) return jsonError('That email is reserved for the platform owner.', 400)
   if (uid === owner.uid) return jsonError('The owner login email cannot be changed from this console.', 400)
@@ -135,6 +155,20 @@ export async function POST(request: NextRequest) {
     return jsonError('Could not check who holds this email. Nothing was changed.', 503)
   }
   if (moves.refuse) return jsonError(CHANGE_EMAIL_CLAIM_TAKEN_MESSAGE, 409)
+  // The dry run (spec §6.5): what the change would touch. Nothing is written and no audit entry is made.
+  if (preview) {
+    return NextResponse.json(
+      {
+        preview: true,
+        organizations: organizationIds.length,
+        claimWrites: moves.writes.length,
+        claimDeletes: oldEmail ? moves.deletes.length : 0,
+        membershipsRead: membershipRead.complete,
+        sendReset,
+      },
+      { headers: { 'Cache-Control': 'no-store' } }
+    )
+  }
 
   // Owner console PLAN A4: `requested` is stored before Auth or Firestore is touched, or nothing changes.
   let audit: OwnerAuditRun

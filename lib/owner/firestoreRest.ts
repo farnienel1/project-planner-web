@@ -277,3 +277,63 @@ export async function firestoreCount(idToken: string, query: Record<string, unkn
   if (!Number.isFinite(value)) throw new Error('Count reply was not a number')
   return value
 }
+
+// MARK: - Atomic partial updates (owner console PR 5)
+
+export type RestUpdateWrite = {
+  /** Document path under `documents/`, e.g. `users/abc`. */
+  path: string
+  /** Fields to set (strings, booleans or finite numbers only). */
+  set: Record<string, string | boolean | number>
+  /** Fields to delete (only ones the stored document has). */
+  remove?: readonly string[]
+}
+
+function restScalar(value: string | boolean | number): RestValue {
+  if (typeof value === 'boolean') return { booleanValue: value }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error('A number to write is not finite.')
+    return Number.isInteger(value) ? { integerValue: String(value) } : ({ doubleValue: value } as unknown as RestValue)
+  }
+  return { stringValue: value }
+}
+
+/**
+ * The `:commit` body for partial updates (rulebook §1): each write is an update of the listed fields only
+ * (`updateMask`), refused when the document no longer exists (`currentDocument.exists`, never a re-create), with the
+ * write metadata `updatedBy` (the signed-in owner), `updatedFrom: 'web'` and `updatedAt` (server time). Pure.
+ */
+export function restCommitBody(documentsBase: string, writes: readonly RestUpdateWrite[], actorUid: string) {
+  const prefix = documentsBase.replace(/^https?:\/\/[^/]+\/v1\//, '')
+  return {
+    writes: writes.map((write) => {
+      const fields: Record<string, RestValue> = {}
+      for (const [key, value] of Object.entries(write.set)) fields[key] = restScalar(value)
+      fields.updatedBy = { stringValue: actorUid }
+      fields.updatedFrom = { stringValue: 'web' }
+      const fieldPaths = [...new Set([...Object.keys(write.set), ...(write.remove || []), 'updatedBy', 'updatedFrom'])]
+      return {
+        update: { name: `${prefix}/${write.path}`, fields },
+        updateMask: { fieldPaths },
+        currentDocument: { exists: true },
+        updateTransforms: [{ fieldPath: 'updatedAt', setToServerValue: 'REQUEST_TIME' }],
+      }
+    }),
+  }
+}
+
+/** Commits every write in one atomic request (all or nothing, at most 500). Throws the server's refusal. */
+export async function firestoreCommitUpdates(idToken: string, writes: readonly RestUpdateWrite[], actorUid: string): Promise<void> {
+  if (!writes.length) return
+  if (writes.length > 500) throw new Error('Too many documents to change in one step.')
+  const base = firestoreDocumentsBase()
+  const response = await fetch(`${base}:commit`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(restCommitBody(base, writes, actorUid)),
+  })
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    throw new Error(response.status === 404 || /NOT_FOUND/.test(text) ? 'A record was deleted while you were changing it. Nothing was changed.' : `The change was refused (${response.status}). Nothing was changed.`)
+  }
+}
