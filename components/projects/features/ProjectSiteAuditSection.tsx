@@ -5,6 +5,8 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useSiteAuditJobContext } from '@/components/site-audit/useSiteAuditJobContext'
+import { SITE_AUDIT_JOBS_FAILED_MESSAGE, siteAuditJobAllowed, siteAuditsVisibleToViewer } from '@/lib/siteAudit/siteAuditCreateDraft'
 import { format } from 'date-fns'
 import { usePathname, useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -107,7 +109,19 @@ export function ProjectSiteAuditSection({ project }: { project: Project }) {
   const { audits, loading, loadAudits } = useSiteAuditStore()
   const [typeFilter, setTypeFilter] = useState<SiteAuditTypeFilter>('All')
   const [selectedAudit, setSelectedAudit] = useState<SiteAudit | null>(null)
-  const canCreate = !isOperativeMode(user) || user?.permissions.siteAudit === true
+  // Owner decision 23 Nov: "+ New audit" only on a job the person may start an audit on (rulebook §21 `visibleJobs`,
+  // `siteAuditJobAllowed`); while an operative's jobs are loading, or the load failed, the button is not offered.
+  const mayCreateAudits = !isOperativeMode(user) || user?.permissions.siteAudit === true
+  const jobContext = useSiteAuditJobContext(mayCreateAudits)
+  const jobAllowed = siteAuditJobAllowed({
+    job: project,
+    viewer: jobContext.viewer,
+    context: jobContext.context,
+    contextLoaded: jobContext.contextLoaded,
+    contextFailed: jobContext.contextFailed,
+  })
+  const canCreate = mayCreateAudits && jobAllowed === 'allowed'
+  const jobsFailed = mayCreateAudits && jobAllowed === 'failed'
   // New site audit is its own page (owner request 23 Nov), under this job's Site audits.
   const router = useRouter()
   const pathname = usePathname() || ''
@@ -118,13 +132,11 @@ export function ProjectSiteAuditSection({ project }: { project: Project }) {
   }, [organization, loadAudits])
 
   const projectAudits = useMemo(() => {
-    const mine = isOperativeMode(user)
-      ? audits.filter((a) => a.visibleToOperatives || a.createdByUserId === user?.id)
-      : audits
+    const mine = siteAuditsVisibleToViewer(audits, { operativeMode: isOperativeMode(user), viewerIds: jobContext.viewer?.ids ?? [] })
     return mine
       .filter((a) => a.projectId.toLowerCase() === project.id.toLowerCase())
       .sort((a, b) => b.date.getTime() - a.date.getTime())
-  }, [audits, project.id, user])
+  }, [audits, project.id, user, jobContext.viewer])
 
   const filteredAudits = useMemo(() => {
     if (typeFilter === 'All') return projectAudits
@@ -165,6 +177,15 @@ export function ProjectSiteAuditSection({ project }: { project: Project }) {
         )}
       </div>
 
+      {jobsFailed && (
+        <div className="mb-4 text-center">
+          <p className="text-sm text-(--red)">{SITE_AUDIT_JOBS_FAILED_MESSAGE}</p>
+          <button type="button" onClick={jobContext.retry} className="pu-btn sm mt-2">
+            Retry
+          </button>
+        </div>
+      )}
+
       <SiteAuditHero auditCount={projectAudits.length} photoCount={photoCount} lastLine={lastSubmitted} />
 
       <div className="mt-4">
@@ -182,7 +203,7 @@ export function ProjectSiteAuditSection({ project }: { project: Project }) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
             <p className="mt-3 text-sm font-medium text-slate-700">No site audits</p>
-            <p className="mt-1 text-xs text-slate-500">Create your first audit for this project.</p>
+            {canCreate && <p className="mt-1 text-xs text-slate-500">Create your first audit for this project.</p>}
             {canCreate && (
               <button type="button" onClick={openNewAudit} className="mt-4 text-sm font-semibold text-(--blue)">
                 + New audit

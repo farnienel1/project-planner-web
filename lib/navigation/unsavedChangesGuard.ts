@@ -5,7 +5,7 @@
  *     caught by `useUnsavedChangesGuard` before Next.js sees it;
  *   - a programmatic navigation that calls `confirmLeaveIfUnsaved()` first (the command palette);
  *   - closing the tab or a full reload stays the page's own `beforeunload` (the browser's own wording).
- * The browser's Back button is not guarded (follow-up).
+ *   - the browser's Back / Forward inside the app, through the Navigation API (`backNavigationGuard.ts`).
  * UI only: nothing is written and no business rule is involved.
  */
 
