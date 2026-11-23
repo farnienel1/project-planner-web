@@ -27,7 +27,7 @@ export type ExportFile = {
 /** The CSV files, in README order. */
 export const EXPORT_FILES = {
   organisation: { file: 'organisation.csv', title: 'Organisation', description: 'The organisation document: company details, working hours, leave defaults, payment runs, warning settings and other settings. Billing is reduced to the plan status.' },
-  people: { file: 'people.csv', title: 'People', description: 'User accounts of this organisation (users where organizationId is this organisation, plus members listed on the organisation). Push tokens, confirmation tokens and tax ids are left out.' },
+  people: { file: 'people.csv', title: 'People', description: 'User accounts of this organisation (users where organizationId is this organisation, plus members listed on the organisation; a member whose own account belongs to another company with name and contact details only). Push tokens, confirmation tokens and tax ids are left out.' },
   operatives: { file: 'operatives.csv', title: 'Operatives', description: 'Operative roster rows (organizations/{orgId}/operatives), including assigned qualifications.' },
   managers: { file: 'managers.csv', title: 'Managers', description: 'Manager roster rows (organizations/{orgId}/managers).' },
   subcontractors: { file: 'subcontractors.csv', title: 'Subcontractors', description: 'Subcontractor firms and their contacts.' },
@@ -67,6 +67,9 @@ export const EXPORT_FILES = {
   expenseItems: { file: 'expenses.csv', title: 'PAYE expenses', description: 'PAYE expenses with their evidence paths (expenseItems, rulebook 1.30.0).' },
   payeClaimReports: { file: 'price-work-and-expense-reports.csv', title: 'Price work and expense reports', description: 'Saved PAYE price work and expenses report copies (payeClaimReports), as sent.' },
   payeClaimReviews: { file: 'price-work-and-expense-reviews.csv', title: 'Price work and expense reviews', description: 'Line manager and admin approve / reject decisions on PAYE price work and expenses (payeClaimReviews, rulebook 1.32.0 §26).' },
+  formerPeople: { file: 'former-people.csv', title: 'Former people', description: 'People deleted from the company whose old bookings, leave or timesheets keep their name (deletedPeople, rulebook 1.59.0 §11).' },
+  reportChecks: { file: 'report-checks.csv', title: 'Report checks', description: 'The server\'s check of each saved overtime, price work and expenses report against its records (reportChecks, rulebook 1.65.0 §26).' },
+  materialContacts: { file: 'material-contacts.csv', title: 'Material contacts', description: 'Wholesaler email addresses the company has sent a quote or order to, and when first (materialContacts, rulebook 1.59.0).' },
   annualLeaveAdjustments: { file: 'annual-leave-adjustments.csv', title: 'Annual leave adjustments', description: 'Manual annual leave adjustments: days added or taken off, the reason, the leave year and who made them (annualLeaveAdjustments, rulebook 1.40.0 §4.4).' },
 } as const satisfies Record<string, ExportFile>
 
@@ -135,6 +138,10 @@ const FILE_FOR_COLLECTION: Record<string, ExportFileKey> = {
   payeClaimReports: 'payeClaimReports',
   payeClaimReviews: 'payeClaimReviews',
   annualLeaveAdjustments: 'annualLeaveAdjustments',
+  // 1.71.0: their own files (they went to settings.csv before).
+  deletedPeople: 'formerPeople',
+  reportChecks: 'reportChecks',
+  materialContacts: 'materialContacts',
 }
 
 const ADDITIONAL_COLLECTIONS = [
@@ -165,6 +172,7 @@ export const EXCLUDED_COLLECTIONS: Record<string, string> = {
   dashboardLayouts: 'each person\'s Home layout, a per-user display preference',
   fileReports: 'moderation reports about uploaded files, reviewed in Settings → Reported files',
   personalSiteAudits: 'personal site audits are private to the person who created them (rulebook 1.30.0); copies attached to expenses or price work are listed with those',
+  worksListPicks: 'each person\'s own My Projects / My Small works list, a per-user display preference only they can read',
 }
 
 /** Every collection read under `organizations/{orgId}`, in reading order. */
@@ -289,5 +297,26 @@ export const EXCLUSION_NOTES: readonly string[] = [
   'Sign-in data held by Firebase Authentication (passwords, sign-in methods). The export never reads it.',
   'Uploaded files themselves (photos, certificates, RAMS, logos): files.csv lists each one with its storage path and download URL, but the binaries are not in the zip.',
   ...Object.entries(EXCLUDED_COLLECTIONS).map(([name, why]) => `${name}: ${why}.`),
-  'Other companies\' data, and each person\'s memberships of other companies.',
+  'Other companies\' data, and each person\'s memberships of other companies. A member whose own account belongs to another company is listed with their name and contact details only (their account\'s other settings and pay belong to that company).',
+  'Invitations (they hold the secret link that accepts them) and account confirmation links.',
 ]
+
+/**
+ * Rulebook 1.71.0 (data minimisation): a member anchored on this organisation (its `members` keys or creator) whose
+ * own users document names ANOTHER organisation is exported with these fields only — their home profile's pay,
+ * permissions, leave settings and the like belong to that other company.
+ */
+export const FOREIGN_USER_KEPT_FIELDS = ['firstName', 'surname', 'lastName', 'name', 'displayName', 'email', 'phone', 'mobileNumber', 'mobile', 'phoneNumber'] as const
+
+/** A users document as exported: whole when it belongs to this organisation (or names none), else minimised. */
+export function exportUserDocument(
+  data: Record<string, ExportValue>,
+  homeOrganizationId: string | null,
+  organizationId: string
+): Record<string, ExportValue> {
+  if (!homeOrganizationId || homeOrganizationId.toLowerCase() === organizationId.toLowerCase()) return data
+  const out: Record<string, ExportValue> = {}
+  for (const key of FOREIGN_USER_KEPT_FIELDS) if (key in data) out[key] = data[key]
+  out.homeOrganisationElsewhere = true
+  return out
+}

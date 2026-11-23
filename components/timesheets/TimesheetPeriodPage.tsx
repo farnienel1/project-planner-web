@@ -48,7 +48,7 @@ import {
 } from '@/lib/timesheets/timesheetBookingChanges'
 import { BookingsChangedWarning } from '@/components/timesheets/BookingsChangedWarning'
 import { signedTimesheetActions, SIGNED_TIMESHEET_CHANGED_MESSAGE } from '@/lib/canonical'
-import { staffAccountRole, userTimesheetSubjectIds } from '@/lib/permissions'
+import { staffAccountRole } from '@/lib/permissions'
 import {
   SENSITIVE_EXPORT_OPTION_LABEL,
   canViewSensitiveProfile,
@@ -98,6 +98,7 @@ import {
 import { earlierVersionCards, timesheetRevisionCopy } from '@/lib/timesheets/timesheetRevisionCopy'
 import {
   TIMESHEET_CREATE_REVISION_HELP,
+  timesheetLineReviewActionsAllowed,
   TIMESHEET_CREATE_REVISION_LABEL,
   TIMESHEET_EARLIER_VERSIONS_LABEL,
   TIMESHEET_ORIGINAL_VERSION_LABEL,
@@ -495,11 +496,9 @@ export function TimesheetPeriodPage({
   const canManagerReview = (() => {
     if (mode !== 'review' || !viewer || !viewerIsReviewer) return false
     if (waitingForPerson) return false
-    if (draft.exportedAt) {
-      // `userTimesheetSubjects`: admins see everyone, a manager the people they line-manage under any of their ids.
-      const inScope = userTimesheetSubjectIds(viewer, users).includes(subjectUser.id)
-      return inScope && isTimesheetFullyApproved(draft, subjectUser, users)
-    }
+    // Rulebook 1.71.0 (issue 22A): an exported sheet is frozen (1.54.1 lock-all) — no ✓ ✕ ⚙ on any line; a
+    // correction is a revision (Create revision to adjust this timesheet).
+    if (!timesheetLineReviewActionsAllowed({ exportedAt: draft.exportedAt ?? null })) return false
     return needsCounterSign && (!draft.managerSignedAt || canCounterSignAgain) && Boolean(draft.operativeSignedAt)
   })()
   const managerHasSigned = Boolean(draft.managerSignedAt)
@@ -527,7 +526,9 @@ export function TimesheetPeriodPage({
     lines: payroll.lineItems,
     draft: figuresDraft,
     // Review of #344: a revision is priced in `decided` mode for everyone (its copied entries carry their decisions).
-    decided: managerHasSigned || canManagerReview || isRevision,
+    // Review of #413: a reviewer viewing an exported sheet keeps the decided totals they saw before 1.71.0 hid the
+    // line actions (an older self-signed export with review decisions and no snapshot).
+    decided: managerHasSigned || canManagerReview || isRevision || (mode === 'review' && viewerIsReviewer && Boolean(draft.exportedAt)),
     reviewing: canManagerReview,
     timesheetDays: sheetDays,
     timeZone,
@@ -3279,7 +3280,7 @@ function TimesheetRevisionPanel({
       {canCreate ? (
         <div className="pu-col" style={{ gap: 6 }}>
           <PuButton variant="primary" block disabled={busy} onClick={onCreate}>
-            {mode === 'mine' ? TIMESHEET_REVIEW_AND_SIGN_REVISION_LABEL : `${TIMESHEET_CREATE_REVISION_LABEL}${due.label ? ` (${due.label})` : ''}`}
+            {mode === 'mine' ? TIMESHEET_REVIEW_AND_SIGN_REVISION_LABEL : TIMESHEET_CREATE_REVISION_LABEL}
           </PuButton>
           {mode === 'review' ? <p className="pu-sub">{TIMESHEET_CREATE_REVISION_HELP}</p> : null}
         </div>

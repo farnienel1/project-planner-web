@@ -15,11 +15,13 @@ import { fileReferencesInDocument, type FileReference } from './files'
 import {
   EXCLUSION_NOTES,
   EXPORT_FILES,
+  exportUserDocument,
   fileForDocument,
   sanitizeDocument,
   type ExportFileKey,
 } from './sources'
 import { exportDocument, isoInZone, type ExportValue } from './values'
+import { documentOrganizationId } from '../canonical/peopleDocuments'
 
 /** One document as read. `collection` is the organisation subcollection name, 'users', 'organization' or, for a
  * job's nested health & safety documents, 'healthSafety'. */
@@ -116,10 +118,13 @@ export function companyExportEntries(input: CompanyExportInput): Record<string, 
   for (const document of all) {
     const key = fileKeyFor(document)
     if (key === 'notifications' && !input.includeNotifications) continue
-    const data = sanitizeDocument(
+    let data = sanitizeDocument(
       exportDocument(document.data, timeZone),
       document.collection === 'organization' ? 'organization' : 'other'
     )
+    if (document.collection === 'users') {
+      data = exportUserDocument(data, documentOrganizationId(document.data.organizationId), input.organizationId)
+    }
     ;(json[document.collectionPath] ??= {})[document.id] = data
     fileRefs.push(...fileReferencesInDocument(document.collectionPath, document.id, data))
     const row: Record<string, ExportValue> = {

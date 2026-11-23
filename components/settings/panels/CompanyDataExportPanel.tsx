@@ -1,8 +1,8 @@
 'use client'
 
 /**
- * Settings → Company → Export company data (launch checklist 2.1). Admins outside operative mode only
- * (`canExportCompanyData`); the reading, the CSV / JSON / README files and the zip are lib/companyExport.
+ * Settings → Company → Export company data (launch checklist 2.1). The organisation's Super Admin only
+ * (`canExportCompanyData`, rulebook 1.71.0); the reading, the CSV / JSON / README files and the zip are lib/companyExport.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -32,7 +32,7 @@ type Status =
 export function CompanyDataExportPanel({ onBack }: { onBack: () => void }) {
   const { user, organization } = useAuthStore()
   const organizationId = organization?.id || ''
-  const allowed = canExportCompanyData(user, organizationId)
+  const allowed = canExportCompanyData(user, organization)
   const [includeNotifications, setIncludeNotifications] = useState(false)
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
   const controller = useRef<AbortController | null>(null)
@@ -59,6 +59,7 @@ export function CompanyDataExportPanel({ onBack }: { onBack: () => void }) {
           db,
           organizationId,
           viewer: user,
+          creatorUserId: organization?.creatorUserId ?? null,
           includeNotifications,
           signal: abort.signal,
           onProgress: (progress) => {

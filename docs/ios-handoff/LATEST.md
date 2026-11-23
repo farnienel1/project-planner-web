@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.70.0
+# iOS follow-on — rulebook 1.71.0
 
 Generated 2026-11-23 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.69.0 → 1.70.0
-Packed hash: efee84b78eb80578f56a2375cf8e45a8b2959cbc1402102392200a19ada72155
-Rulebook sha256: b26fd60f67100b1cb3c3ef4fc4d5f17c5a5251edef1e444a6c95c27dbd1d3409
+Rulebook version: 1.70.0 → 1.71.0
+Packed hash: 924b7ef2fb89d62146b7e5f4c9149d2650733a1cc5910e624994311bfd6280e7
+Rulebook sha256: 2f9661384d84aee67faa7798508c73f08e6b08cc51d3b5623d12ba81c045ad86
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,37 +22,33 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 926b910948b674b1fa259e8f933ddd15f14bad00b8e0b050ccbd88c723bf64aa
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: OVERLAPPING_BOOKING_REVIEWER_NOTE, leaveRecordFormerPerson, overlappingBookingNote, timesheetLineDisplay
+Exports added: COMPANY_EXPORT_REFUSED_MESSAGE, canExportCompanyData, timesheetLineReviewActionsAllowed
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/pushTokens.ts, lib/canonical/timesheetLineDisplay.ts, lib/canonical/timesheetLines.ts, lib/canonical/weeklyReportPay.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/timesheetPeriod.ts, lib/canonical/timesheetRevisions.ts, lib/canonical/companyDataExport.ts
 Done when:
-- [ ] Packed hash in iOS equals efee84b78eb80578f56a2375cf8e45a8b2959cbc1402102392200a19ada72155
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 b26fd60f67100b1cb3c3ef4fc4d5f17c5a5251edef1e444a6c95c27dbd1d3409)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.70.0)
+- [ ] Packed hash in iOS equals 924b7ef2fb89d62146b7e5f4c9149d2650733a1cc5910e624994311bfd6280e7
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 2f9661384d84aee67faa7798508c73f08e6b08cc51d3b5623d12ba81c045ad86)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.71.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.70.0
+## What changed in 1.71.0
 
-- **A tapped push opens the right person** (§13): `pushPayloadFields` / `PUSH_PAYLOAD_KEYS` add `deepLinkUserId` and `deepLinkWeekStartMs`; `userId` is still the recipient. iOS routes a push by `deepLinkUserId` first (`timesheet_pending_manager_signoff`, `timesheet_signed_by_manager`, `timesheet_revision_to_sign`, `timesheet_bookings_changed`, `overtime_request_submitted`). The push Cloud Function sends them once redeployed.
-- **Overlap note for reviewers** (§8): `OVERLAPPING_BOOKING_REVIEWER_NOTE`, `overlappingBookingNote({ reviewing })`. The person keeps the old wording.
-- **How a timesheet booking line reads** (§8, owner approved 23 Nov): `timesheetLineDisplay` — job number and name (or the place), and times on every line, a Full day / AM / PM line its window that day. Display only.
-- **Former people's leave** (§7, §11): `leaveRecordFormerPerson` (by id, `operativeId`, or a `userId` that is the record's email without case); `weeklyReportLeaveRows` takes `formerPeople` ("Former: Jane Smith", `unmatched[].formerPersonId`); Data health lists it apart. Web's person delete counts leave under the email and `operativeId` too.
+- **Company data export is the Super Admin's** (§12, owner decision 23 Nov, issue 11): new `canExportCompanyData(viewer, organization)` / `COMPANY_EXPORT_REFUSED_MESSAGE` (`lib/canonical/companyDataExport.ts`, on `isOrganizationSuperAdmin`), used by every web way in and the runner (checked again on the organisation document read). Guardrail 3: admins who are not the Super Admin lose the Export company data row and page. Export content (web `lib/companyExport`, not packed): an anchored member whose own account belongs to another company is exported with name and contact only; former people, report checks and material contacts get their own files; worksListPicks, invitations and account confirmations are listed as excluded; a cell starting with a line feed is formula-guarded too.
+- **No ✓ ✕ ⚙ on an exported timesheet** (§8, issue 22A): new `timesheetLineReviewActionsAllowed(sheet)` (false once `resolveTimesheetExportedAtMs` says exported). Web's review page no longer offers line actions on an exported sheet.
+- **Create revision wording** (§8, issue 22B): `TIMESHEET_CREATE_REVISION_LABEL` is "Create revision to adjust this timesheet" and `TIMESHEET_CREATE_REVISION_HELP` the owner's text; web drops the "(REV n)" suffix on the button.
 
-## iOS work for 1.70.0
+## iOS work for 1.71.0
 
-## iOS work for 1.70.0
-
-1. **Push opens the subject's sheet.** `Navigation/NotificationDeepLink.swift` `payloadFields(from:)` adds `"deepLinkUserId": value("deepLinkUserId")` and `"deepLinkWeekStartMs": value("deepLinkWeekStartMs")` to the row it passes to `pushPayloadFields`; `route(userInfo:user:)` passes `deepLinkUserId: fields?["deepLinkUserId"] ?? <the current targetUserId>` to `notificationDestination` (payload `userId` is the recipient — never the subject). `weekStart(from:)` also reads `deepLinkWeekStartMs` (a string of epoch ms in FCM data) as `Date(timeIntervalSince1970: ms / 1000)`. Covers `timesheet_pending_manager_signoff`, `timesheet_signed_by_manager`, `timesheet_revision_to_sign`, `timesheet_bookings_changed` and `overtime_request_submitted`. The in-app row path (`deepLinkUserId ?? userId`) is already right. Works once the push Cloud Function is redeployed.
-2. **Overlap note.** The timesheet overlap note calls `overlappingBookingNote(reviewing:)` — true when the viewer reviews someone else's sheet (line manager or admin), false on the person's own sheet.
-3. **Timesheet line rows.** Each booking line's title and times come from `timesheetLineDisplay(line, dayPolicy)` (the line's `jobNumber`, `projectName`, `details`, `dayKey`; the working hours in effect that day). Display only — do not change stored line fields, amounts, hours, fingerprints or signed snapshots.
-4. **Weekly report leave.** Pass the organisation's `deletedPeople` records (`parseFormerPersonDocument`) as `formerPeople` to `weeklyReportLeaveRows` so a deleted person's leave reads "Former: Jane Smith".
+1. **No ✓ ✕ ⚙ on an exported timesheet (issue 22A).** In `Views/InvoicingView.swift` (`OperativeTimesheetReviewView` / the manager review rows) and `Views/TimesheetManagerReviewSupport.swift`, offer approve / decline / Edit hours on labour lines, price work, expenses and late extras only while `timesheetLineReviewActionsAllowed(sheet)` is true (pass the stored sheet fields, at least `exportedAt` and `invoiceGeneratedAt`). An exported sheet is read-only; the live 1.54.1 rules already refuse any change to it.
+2. **Create revision wording (issue 22B).** The reviewer's revision button shows `TIMESHEET_CREATE_REVISION_LABEL` exactly ("Create revision to adjust this timesheet", no "(REV n)" suffix) and `TIMESHEET_CREATE_REVISION_HELP` under it (`Core/Rulebook+TimesheetRevisions.swift`, `Views/InvoicingView.swift`). Read both from `CanonicalBusinessEngine`; keep no copy in Swift.
+3. **Company data export (issue 11).** iOS has no export screen; nothing to build. `canExportCompanyData` is packed so a future iPhone export asks the same Super Admin rule.
 
 ## New rulebook sections
 
-- 1.70.0 — 2026-11-23
+- 1.71.0 — 2026-11-23
 
 ## Workflow for the iOS agent
 

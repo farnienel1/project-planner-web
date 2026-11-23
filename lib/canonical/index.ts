@@ -421,6 +421,7 @@ export {
   paymentRunHistoryToFirestore,
   pickTimesheetRowForPeriod,
   resolveTimesheetExportedAtMs,
+  timesheetLineReviewActionsAllowed,
   resolveTimesheetPeriod,
   selectableTimesheetPaymentRunPeriods,
   timesheetBelongsToOrganization,
@@ -1621,6 +1622,8 @@ export {
   organizationEraseDue,
   parseOrganizationDeletion,
 } from './organizationDeletion'
+export { canExportCompanyData, COMPANY_EXPORT_REFUSED_MESSAGE } from './companyDataExport'
+export type { CompanyDataExportOrganization, CompanyDataExportViewer } from './companyDataExport'
 export type { AccountDeletionPath, AccountDeletionRosterRow, OrganizationDeletion, OrganizationDeletionRestoreBy, OrganizationDeletionState } from './organizationDeletion'
 
 export {

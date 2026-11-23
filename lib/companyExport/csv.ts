@@ -62,7 +62,7 @@ export function flattenRow(row: Row, asJson: ReadonlySet<string> = new Set()): R
 /** RFC 4180 quoting plus the formula guard. */
 export function escapeCsvCell(text: string): string {
   let safe = text
-  if (/^[=@\t\r]/.test(safe) || (/^[+-]/.test(safe) && /[A-Za-z(=!|]/.test(safe))) safe = `'${safe}`
+  if (/^[=@\t\r\n]/.test(safe) || (/^[+-]/.test(safe) && /[A-Za-z(=!|]/.test(safe))) safe = `'${safe}`
   if (/[",\r\n]/.test(safe)) return `"${safe.replace(/"/g, '""')}"`
   return safe
 }
