@@ -188,7 +188,7 @@ export function OrganisationHubPanel({
       <SettingsCard>
         <SettingsRow
           icon={ICON.building}
-          iconBg=""
+          iconBg="bg-(--blue)/10"
           iconColor="text-(--blue)"
           label="Company details"
           description="Name, logo, office address, currency and region"
@@ -261,7 +261,7 @@ export function OrganisationHubPanel({
       <SettingsCard>
         <SettingsRow
           icon={ICON.document}
-          iconBg=""
+          iconBg="bg-(--blue)/10"
           iconColor="text-(--blue)"
           label="Payment runs & timesheets"
           description={paymentSubtitle}
@@ -274,7 +274,7 @@ export function OrganisationHubPanel({
       <SettingsCard>
         <SettingsRow
           icon={ICON.document}
-          iconBg=""
+          iconBg="bg-(--blue)/10"
           iconColor="text-(--blue)"
           label="Billing"
           description="Plan, trial, invoices and payment method"
@@ -284,7 +284,7 @@ export function OrganisationHubPanel({
         {canReviewFileReports(staffAccountRole(user)) ? (
           <SettingsRow
             icon={ICON.warning}
-            iconBg=""
+            iconBg="bg-(--blue)/10"
             iconColor="text-(--blue)"
             label="Reported files"
             description="Files people reported for review"
@@ -313,7 +313,7 @@ export function OrganisationHubPanel({
           <SettingsCard>
             <SettingsRow
               icon={ICON.download}
-              iconBg=""
+              iconBg="bg-(--blue)/10"
               iconColor="text-(--blue)"
               label="Export company data"
               description="Download every company record as one .zip"

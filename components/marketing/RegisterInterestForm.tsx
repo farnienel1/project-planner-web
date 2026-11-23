@@ -157,7 +157,7 @@ export function RegisterInterestForm() {
 
   if (done) {
     return (
-      <div className="rounded-[28px] border border-(--line) bg-(--card) p-7 shadow-(color:--sh)" aria-live="polite">
+      <div className="rounded-[28px] border border-(--line) bg-(--card) p-7 shadow-(--sh)" aria-live="polite">
         <div className="py-2 text-center">
           <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-[22px] bg-(--proj-t) text-(--proj)">
             <svg viewBox="0 0 24 24" className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
@@ -189,7 +189,7 @@ export function RegisterInterestForm() {
   }
 
   return (
-    <div id="form" className="rounded-[28px] border border-(--line) bg-(--card) p-6 shadow-(color:--sh) sm:p-7">
+    <div id="form" className="rounded-[28px] border border-(--line) bg-(--card) p-6 shadow-(--sh) sm:p-7">
       <h2 className="font-(family-name:--head) text-[22px] font-extrabold text-(--ink)">Register your interest</h2>
       <p className="mt-1.5 text-[14.5px] text-(--ink2)">
         Two minutes. We&rsquo;ll let you know the moment it opens, and early registrations get first access and a free trial.

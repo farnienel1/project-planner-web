@@ -119,7 +119,7 @@ const ACCOUNT_TYPES: {
     description: 'Run day-to-day operations — schedules, projects, operatives and approvals.',
     badge: 'Manager',
     badgeCls: 'bg-(--blue-t) text-(--blue)',
-    ringCls: 'ring-[#185FA5]/30',
+    ringCls: 'ring-[#185FA5]/30 border-(--blue)/40',
   },
   {
     id: 'operative',

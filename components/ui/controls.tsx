@@ -23,7 +23,7 @@ export function Chip({
       data-hue={hue}
       onClick={onClick}
       className={cn(
-        'inline-flex h-[38px] items-center gap-1.5 rounded-full px-[15px] text-sm font-semibold shadow-(color:--sh)',
+        'inline-flex h-[38px] items-center gap-1.5 rounded-full px-[15px] text-sm font-semibold shadow-(--sh)',
         selected ? 'bg-(--h) text-white' : 'bg-(--card) text-(--ink2) hover:text-(--ink)'
       )}
     >
@@ -60,7 +60,7 @@ export function SegmentedControl({
           onClick={() => onChange(option.value)}
           className={cn(
             'inline-flex h-9 items-center gap-1.5 rounded-[10px] px-4 text-sm font-semibold',
-            option.value === value ? 'bg-(--card) text-(--ink) shadow-(color:--sh)' : 'text-(--ink2)',
+            option.value === value ? 'bg-(--card) text-(--ink) shadow-(--sh)' : 'text-(--ink2)',
             disabled && 'opacity-60'
           )}
         >

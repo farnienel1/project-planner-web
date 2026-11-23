@@ -46,7 +46,7 @@ export function Modal({
         aria-modal="true"
         aria-labelledby={labelledBy}
         className={cn(
-          'absolute left-1/2 top-1/2 flex max-h-[88vh] w-[min(620px,94vw)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-3xl bg-(--card) shadow-(color:--sh-pop)',
+          'absolute left-1/2 top-1/2 flex max-h-[88vh] w-[min(620px,94vw)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-3xl bg-(--card) shadow-(--sh-pop)',
           wide && 'w-[min(860px,94vw)]'
         )}
       >
@@ -87,7 +87,7 @@ export function Popover({
   return (
     <>
       <button type="button" className="fixed inset-0 z-30 cursor-default bg-transparent" aria-label="Close menu" onClick={onClose} />
-      <div className={cn('absolute z-40 max-h-[80vh] overflow-auto rounded-[18px] bg-(--card) p-2 shadow-(color:--sh-pop)', className)}>
+      <div className={cn('absolute z-40 max-h-[80vh] overflow-auto rounded-[18px] bg-(--card) p-2 shadow-(--sh-pop)', className)}>
         {children}
       </div>
     </>
@@ -99,7 +99,7 @@ export function ToastViewport({ message }: { message: string | null }) {
   return (
     <div
       role="status"
-      className="fixed bottom-[calc(26px+env(safe-area-inset-bottom,0px))] left-1/2 z-80 flex w-max max-w-[min(92vw,560px)] -translate-x-1/2 items-center gap-2.5 rounded-2xl bg-(--ink) px-[18px] py-3 font-semibold text-(--card) shadow-(color:--sh-pop)"
+      className="fixed bottom-[calc(26px+env(safe-area-inset-bottom,0px))] left-1/2 z-80 flex w-max max-w-[min(92vw,560px)] -translate-x-1/2 items-center gap-2.5 rounded-2xl bg-(--ink) px-[18px] py-3 font-semibold text-(--card) shadow-(--sh-pop)"
     >
       <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-(--green) text-white">✓</span>
       {message}
