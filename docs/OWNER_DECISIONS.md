@@ -1290,4 +1290,5 @@ UI only, web only (`docs/design/projects-overview-ui/projects-overview-ui-spec.m
 | Date | Choice | Status |
 |---|---|---|
 | 23 Nov | The shared expiry reader also accepts ISO text and epoch milliseconds (web only ever passed Dates; iOS passes stored values through the packed script). A value that is not a date is still no expiry. | done, owner to confirm |
-| 23 Nov | Which `operatives` rows are a person's stays the rulebook's person fold (`taskPersonIndex`); the web helper that leaves out placeholder rows (`isPlaceholderOperative`) stays in web — iOS passes its own rows of the person to `personQualifications`. | done, owner to confirm |
+| 23 Nov | Which `operatives` rows are a person's, placeholder rows left out, is one rulebook rule (`operativeRowsForPerson` over `taskPersonIndex`, `isPlaceholderOperativeRow`), so iOS calls the same rule (review of #418, guardrail 1). | done |
+| 23 Nov | An expiry stored as a number is read as epoch milliseconds; zero, below zero, or a number no date can hold is no expiry (review of #418). | done, owner to confirm |

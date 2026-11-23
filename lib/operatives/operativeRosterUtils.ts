@@ -1,5 +1,6 @@
 import type { Operative, User } from '@/types'
 import { isAnonymisedDeletedProfile } from '@/lib/canonical/userRosterSegment'
+import { isPlaceholderOperativeRow } from '@/lib/canonical/operativeQualifications'
 import { getOperativeModeUsers, isCurrentLabourNamedPerson } from '@/lib/staff/userRosterUtils'
 
 export { getOperativeModeUsers }
@@ -9,10 +10,9 @@ function normalizeEmail(email: string): string {
 }
 
 /** Legacy roster rows created during org setup — same rules as iOS OperativeStore.allOperatives. */
+/** A placeholder `operatives` row: the rulebook's `isPlaceholderOperativeRow` (rulebook 1.73.0). */
 export function isPlaceholderOperative(operative: Operative): boolean {
-  const name = `${operative.firstName} ${operative.lastName}`.trim().toLowerCase()
-  const email = (operative.email || '').toLowerCase()
-  return name.includes('placeholder') || email.includes('placeholder') || name.includes('initial')
+  return isPlaceholderOperativeRow(operative)
 }
 
 export function filterRealOperatives(operatives: Operative[]): Operative[] {

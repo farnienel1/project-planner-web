@@ -43,7 +43,7 @@ export type BookLabourCandidate = {
   tradeDisplay?: string
   canBookOtherLocations: boolean
   /**
-   * Set when this person is listed because of a "Half-day leave not covered" row (`leaveCoverageRows`, rulebook
+   * Set when this person is listed because of a "Half-day unbooked" row (`leaveCoverageRows`, rulebook
    * §5 / §9) — the same row the Warnings card links from. `hours` is the time to prefill as custom hours
    * (`leaveCoverBookingWindow`: the first uncovered stretch). Absent for an `unbookedLabourRowsOnDay` person (nothing booked).
    */
@@ -217,7 +217,7 @@ export function buildBookLabourCandidates(input: {
   }
   for (const row of rows) add([row.userId ?? '', row.personKey], row.operativeId)
 
-  // Owner report (17 Nov 2026): the Warnings "Half-day leave not covered" card links here with "Book the PM / AM".
+  // Owner report (17 Nov 2026): the Warnings "Half-day unbooked" card links here with "Book the PM / AM".
   // `unbookedLabourRowsOnDay` leaves half-leave days out (they are `leaveCoverageRows`), so Book labour also lists
   // that day's leave_cover rows, scoped exactly as Warnings scopes them (`isWarningRowInScope`).
   const leaveRows = leaveCoverageWarningsForDays({

@@ -4,7 +4,7 @@
  * 3, 5 Nov 2026) so Home's "N people have nothing booked today → Book labour" banner counts exactly the people Book
  * labour lists for the same viewer: admins everyone; a manager their reports and themselves (`warningScopeFor`).
  *
- * Rulebook §5 / §6: the people are `unbookedLabourRowsOnDay` plus the day's "Half-day leave not covered" rows
+ * Rulebook §5 / §6: the people are `unbookedLabourRowsOnDay` plus the day's "Half-day unbooked" rows
  * (`leaveCoverageRows`, flagged `leaveCover`) (`buildBookLabourCandidates`), built with the Warnings
  * input and the viewer's Warnings scope (`orgWarningScope`). Rows saved for another company never count
  * (`partitionRowsByOrganization`, `warningScanUsers`). Nothing is listed until every source has loaded for this

@@ -1,5 +1,5 @@
 /**
- * Owner report (17 Nov 2026): Daily Overview lists the day's "Half-day leave not covered" rows (`leaveCoverageRows`),
+ * Owner report (17 Nov 2026): Daily Overview lists the day's "Half-day unbooked" rows (`leaveCoverageRows`),
  * the same rows Warnings shows, in the viewer's Daily Overview scope.
  */
 import { test } from 'node:test'
@@ -51,7 +51,7 @@ function model(bookings: unknown[]) {
   })
 }
 
-test('Daily Overview lists half-day leave not covered for the day', () => {
+test('Daily Overview lists half-day unbooked rows for the day', () => {
   const rows = model([]).leaveCoverRows
   assert.deepEqual(rows.map((row) => [row.personName, row.leaveLabel, row.kind]), [['Test Admin', 'AM', 'leave_cover']])
   assert.ok(rows[0].missingHours > 0)

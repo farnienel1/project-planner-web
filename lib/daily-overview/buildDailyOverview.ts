@@ -172,7 +172,7 @@ export type DailyOverviewModel = {
   unbookedCount: number
   unbookedNames: string[]
   /**
-   * The day's "Half-day leave not covered" rows (`leaveCoverageRows` kind `leave_cover`, rulebook §5 / §9), the same
+   * The day's "Half-day unbooked" rows (`leaveCoverageRows` kind `leave_cover`, rulebook §5 / §9), the same
    * rows Warnings lists for this day, in the viewer's Daily Overview scope (`dailyOverviewScopeFor`).
    */
   leaveCoverRows: LeaveCoverageWarning[]
@@ -642,7 +642,7 @@ export function buildDailyOverview(params: {
   const unbookedNames = unbookedRows.map(
     (row) => `${row.operativeName} (missing ${overviewFormatHours(row.missingHours)}h)`
   )
-  // Owner report (17 Nov 2026): Daily Overview also lists the day's "Half-day leave not covered" rows — the Warnings
+  // Owner report (17 Nov 2026): Daily Overview also lists the day's "Half-day unbooked" rows — the Warnings
   // rule (`leaveCoverageRows`) for this one day, under the working hours in effect on it, in this viewer's scope.
   const leaveCoverRows = leaveCoverageWarningsForDays({
     bookings: uniqueById(params.bookings),

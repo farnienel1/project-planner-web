@@ -210,6 +210,8 @@ export function qualificationCertificateStoragePath(input: {
   return `organizations/${organizationId}/operatives/${operativeId}/qualifications/${qualificationId}/certificates/${fileName}`
 }
 
+import { taskPersonIndex, type TaskPersonRosterRow } from './taskPeople'
+
 /**
  * Rulebook 1.73.0 (owner 23 Nov, gap 1): one qualification expiry rule for both apps (moved from web
  * `lib/qualifications/personQualifications.ts`, web #415). A qualification's expiry is
@@ -220,7 +222,12 @@ export function qualificationCertificateStoragePath(input: {
  */
 function expiryDateFromUnknown(value: unknown): Date | undefined {
   if (value instanceof Date) return Number.isNaN(value.getTime()) ? undefined : value
-  if (typeof value === 'number' && Number.isFinite(value)) return new Date(value)
+  if (typeof value === 'number') {
+    // Epoch milliseconds. Zero or below (a cleared or default field) and anything a Date cannot hold are no date.
+    if (!Number.isFinite(value) || value <= 0) return undefined
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? undefined : date
+  }
   if (typeof value === 'string' && value.trim()) {
     const parsed = new Date(value)
     return Number.isNaN(parsed.getTime()) ? undefined : parsed
@@ -299,6 +306,8 @@ export type PersonQualification = {
   id: string
   name: string
   expiry?: Date
+  /** The same expiry as ISO text (what iOS reads through the packed script). */
+  expiryIso?: string
   certificateUrl?: string
   /** The `operatives` row the qualification (or its certificate) was read from. */
   operativeId: string
@@ -342,10 +351,20 @@ export function personQualifications(input: {
       const certificateUrl = qualificationCertificateUrl(row.qualificationCertificateURLs || undefined, id)
       const current = out.get(key)
       if (!current) {
-        out.set(key, { id, name: String(qual?.name ?? ''), expiry, certificateUrl, operativeId: row.id })
+        out.set(key, {
+          id,
+          name: String(qual?.name ?? ''),
+          expiry,
+          expiryIso: expiry?.toISOString(),
+          certificateUrl,
+          operativeId: row.id,
+        })
         continue
       }
-      if (!current.expiry && expiry) current.expiry = expiry
+      if (!current.expiry && expiry) {
+        current.expiry = expiry
+        current.expiryIso = expiry.toISOString()
+      }
       if (!current.certificateUrl && certificateUrl) {
         current.certificateUrl = certificateUrl
         current.operativeId = row.id
@@ -353,4 +372,44 @@ export function personQualifications(input: {
     }
   }
   return [...out.values()]
+}
+
+/**
+ * Rulebook 1.73.0 (review of #418, guardrail 1): a placeholder `operatives` row — a name or email containing
+ * "placeholder", or a name containing "initial" (the starter rows older builds wrote) — is never a person.
+ */
+export function isPlaceholderOperativeRow(
+  row: { firstName?: unknown; lastName?: unknown; email?: unknown } | null | undefined
+): boolean {
+  if (!row) return false
+  const name = `${String(row.firstName ?? '')} ${String(row.lastName ?? '')}`.trim().toLowerCase()
+  const email = String(row.email ?? '').toLowerCase()
+  return name.includes('placeholder') || email.includes('placeholder') || name.includes('initial')
+}
+
+/**
+ * Rulebook 1.73.0 (review of #418, guardrail 1): every `operatives` row that is this person, by the rulebook's person
+ * fold (`taskPersonIndex`: every users document of the person by `personIdSet`, their emails, and the rows on those
+ * emails or ids or linked to those accounts through `linkedUserId` / `userId` / `uid`). Placeholder rows
+ * (`isPlaceholderOperativeRow`) are left out. Never one row picked by email. Rows keep their stored shape.
+ */
+export function operativeRowsForPerson<T extends { id: string; email?: string | null; linkedUserId?: string | null }>(
+  input: {
+    person: { id: string; email?: string | null }
+    operatives: ReadonlyArray<T>
+    roster?: ReadonlyArray<TaskPersonRosterRow> | null
+  }
+): T[] {
+  const personId = trimId(input.person?.id)
+  if (!personId) return []
+  const roster: TaskPersonRosterRow[] = [...(input.roster || [])]
+  if (!roster.some((row) => trimId(row?.id).toLowerCase() === personId.toLowerCase())) {
+    roster.push({ id: personId, email: input.person.email ?? '' })
+  }
+  const rows = (input.operatives || []).filter(
+    (row) => row && trimId(row.id) && !isPlaceholderOperativeRow(row as Record<string, unknown>)
+  )
+  const index = taskPersonIndex({ managers: [], operatives: rows, roster })
+  const personKey = index.keyOf('operative', personId)
+  return rows.filter((row) => index.keyOf('operative', row.id) === personKey)
 }

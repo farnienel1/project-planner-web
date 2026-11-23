@@ -195,6 +195,8 @@ export {
   mergeQualificationCertificateUrls,
   qualificationCertificateStoragePath,
   assignedQualificationExpiries,
+  isPlaceholderOperativeRow,
+  operativeRowsForPerson,
   personQualifications,
   qualificationCertificateUrl,
   qualificationExpiryDate,

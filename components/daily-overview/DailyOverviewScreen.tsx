@@ -137,7 +137,9 @@ export function DailyOverviewScreen() {
   const dateParam = dayKey(day)
   // Owner decision 23 Nov (item 31): on a set-window weekend day the figure is the window's hours (wording only).
   const standardHoursLabel = dailyOverviewStandardHoursLabel({
-    policyOrState: payrollPolicy,
+    // Review of #418: the working-hours state, so the label of a past or future weekend uses the rule in effect that
+    // day (the policy alone is the fallback while the state is not read yet).
+    policyOrState: settings.payrollPolicyState ?? payrollPolicy,
     dayKey: dayKey(day, orgTimeZone),
     timeZone: orgTimeZone,
     loaded: settingsLoaded,

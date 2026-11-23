@@ -201,7 +201,7 @@ export function BookLabourFlowScreen({
   // Rulebook 1.18.0 (`customHoursPrefillForDays`): custom hours open with the day's default — a set-window weekend
   // day's window, else the standard day in effect on it — and reset when the day changes kind or the hours load.
   const bookingDays = useMemo(() => [day], [day])
-  // Owner report (17 Nov 2026): a person listed for "Half-day leave not covered" is booked for the uncovered time the
+  // Owner report (17 Nov 2026): a person listed for "Half-day unbooked" is booked for the uncovered time the
   // rule names (`leaveCoverBookingHours`); the whole party must share it, else the usual custom-hours prefill applies.
   const leaveCoverHours = useMemo(() => {
     if (party.length === 0) return null
