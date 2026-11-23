@@ -38,3 +38,17 @@ test('Daily overview label: weekdays and a missing policy keep "Standard hrs"', 
   assert.deepEqual(dailyOverviewStandardHoursLabel(policy, MON, ZONE), { label: 'Standard hrs', hint: null })
   assert.deepEqual(dailyOverviewStandardHoursLabel(null, SAT, ZONE), { label: 'Standard hrs', hint: null })
 })
+
+test('Daily overview label: Sunday "same as Saturday" reads Saturday\'s window', () => {
+  const same = { ...policy, sunday: { ...windowDay, sameAsSaturday: true } } as unknown as OrgPayrollTimePolicy
+  assert.deepEqual(dailyOverviewStandardHoursLabel(same, SUN, ZONE), {
+    label: 'Weekend window hrs',
+    hint: '07:30–14:00 counts as a full day',
+  })
+})
+
+test('Daily overview label: while the settings load (factory default policy) it stays "Standard hrs"', () => {
+  assert.deepEqual(dailyOverviewStandardHoursLabel(DEFAULT_PAYROLL_POLICY, SAT, ZONE, false), { label: 'Standard hrs', hint: null })
+  // Once loaded the same policy names its window (the default Saturday is a set window).
+  assert.equal(dailyOverviewStandardHoursLabel(DEFAULT_PAYROLL_POLICY, SAT, ZONE, true).label, 'Weekend window hrs')
+})

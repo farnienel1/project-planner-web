@@ -116,7 +116,7 @@ export function DailyOverviewScreen() {
 
   // Owner decision 5 (5 Nov 2026): one Daily Overview set-up shared with Home (`useDailyOverviewModel`): the live
   // organisation settings for the day shown and `buildDailyOverview`, unchanged.
-  const { model: builtModel, settings } = useDailyOverviewModel({
+  const { model: builtModel, settings, settingsLoaded } = useDailyOverviewModel({
     day,
     today,
     timeZone: orgTimeZone,
@@ -129,7 +129,7 @@ export function DailyOverviewScreen() {
   const canBook = Boolean(user && (hasAdminAccess(user) || user.permissions?.manager))
   const dateParam = dayKey(day)
   // Owner decision 23 Nov (item 31): on a set-window weekend day the figure is the window's hours (wording only).
-  const standardHoursLabel = dailyOverviewStandardHoursLabel(payrollPolicy, dayKey(day, orgTimeZone), orgTimeZone)
+  const standardHoursLabel = dailyOverviewStandardHoursLabel(payrollPolicy, dayKey(day, orgTimeZone), orgTimeZone, settingsLoaded)
   const mayPublish = dailyOverviewMayPublish({
     bookingsLoading,
     bookingCount: bookings.length,

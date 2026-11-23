@@ -13,7 +13,17 @@ import { sendSiteAudit, useSiteAuditOutbox } from '@/lib/siteAudit/siteAuditSend
 import { SITE_AUDIT_FIELD_LABELS } from '@/lib/canonical'
 import { SiteAuditFieldCounter } from '@/components/site-audit/SiteAuditFieldCounter'
 import { uploadSummary, type PhotoUpload } from '@/lib/siteAudit/auditPhotoUploads'
-import { siteAuditDraftProblem, siteAuditOutboxRecord, type SiteAuditDraftItem } from '@/lib/siteAudit/siteAuditCreateDraft'
+import {
+  SITE_AUDIT_LEAVE_CONFIRM_MESSAGE,
+  siteAuditAfterSend,
+  siteAuditDateText,
+  siteAuditDefaultDate,
+  siteAuditDraftProblem,
+  siteAuditHasUnsavedWork,
+  siteAuditOutboxRecord,
+  type SiteAuditDraftItem,
+} from '@/lib/siteAudit/siteAuditCreateDraft'
+import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { SiteAuditSteps } from '@/components/site-audit/SiteAuditSteps'
 
 type DraftItem = SiteAuditDraftItem
@@ -25,6 +35,8 @@ type Props = {
   onCreated: () => void
   /** The page let the person pick the job (step 1): Back from Details returns to it. */
   onChangeJob?: () => void
+  /** Told whenever leaving would lose photos or details (so the page's own back link can ask first). */
+  onUnsavedChange?: (unsaved: boolean) => void
 }
 
 /**
@@ -32,13 +44,15 @@ type Props = {
  * the page's. Fields, checks, the record and the save are exactly the former dialog's (`siteAuditDraftProblem`,
  * `siteAuditOutboxRecord`, `sendSiteAudit`).
  */
-export function SiteAuditCreateFlow({ project, onClose, onCreated, onChangeJob }: Props) {
+export function SiteAuditCreateFlow({ project, onClose, onCreated, onChangeJob, onUnsavedChange }: Props) {
   const { organization, user } = useAuthStore()
 
   const [step, setStep] = useState<2 | 3 | 4>(2)
   const [auditType, setAuditType] = useState('General')
   const [customTitle, setCustomTitle] = useState('')
-  const [auditDate, setAuditDate] = useState(() => format(new Date(), 'yyyy-MM-dd'))
+  const timeZone = useOrganizationTimeZone()
+  // Today in the organisation zone (guardrail 2), stored as yyyy-MM-dd as before.
+  const [auditDate, setAuditDate] = useState(() => siteAuditDefaultDate(Date.now(), timeZone))
   const [visibleToOperatives, setVisibleToOperatives] = useState(true)
   const [items, setItems] = useState<DraftItem[]>([])
   const [preparing, setPreparing] = useState(false)
@@ -52,6 +66,37 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated, onChangeJob }
   const liveSummary = uploadSummary(livePhotos)
   const photoState = (id: string): PhotoUpload | undefined => sending?.items.find((item) => item.id === id)?.upload ?? uploads[id]
   const [error, setError] = useState<string | null>(null)
+
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+  // Photos or a typed title not yet saving or kept on this device would be lost by leaving: ask first.
+  const unsaved = siteAuditHasUnsavedWork({
+    itemCount: items.length,
+    customTitle,
+    saving,
+    keptOnDevice: Boolean(sending) || Object.keys(uploads).length > 0,
+  })
+  useEffect(() => {
+    onUnsavedChange?.(unsaved)
+    if (!unsaved) return
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [unsaved, onUnsavedChange])
+  useEffect(() => () => onUnsavedChange?.(false), [onUnsavedChange])
+  const leaveIfConfirmed = (go: () => void) => {
+    if (unsaved && !window.confirm(SITE_AUDIT_LEAVE_CONFIRM_MESSAGE)) return
+    go()
+  }
+  const cancel = () => leaveIfConfirmed(onClose)
 
   const authorName = user ? `${user.firstName} ${user.surname}`.trim() || user.email : 'Unknown'
   const itemsRef = useRef(items)
@@ -152,9 +197,10 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated, onChangeJob }
   const blockingProblem = () => {
     const problem = siteAuditDraftProblem({ items, customTitle, auditDate })
     if (!problem) return false
+    // Back to the step holding the field: Details for the audit title and date, Photos for the photos.
+    setStep(problem.step)
     if (problem.itemId) {
       const itemId = problem.itemId
-      setStep(3)
       window.setTimeout(() => cardRefs.current[itemId]?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 40)
     }
     setError(problem.message)
@@ -192,8 +238,10 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated, onChangeJob }
     const result = await sendSiteAudit(record)
     setSaving(false)
     if (result.saved) {
-      onCreated()
-      onClose()
+      // The person may have left the page while it uploaded: reload the list, but never pull them back.
+      const after = siteAuditAfterSend({ saved: true, stillOnPage: mountedRef.current })
+      if (after.reload) onCreated()
+      if (after.leave) onClose()
       return
     }
     setUploads(Object.fromEntries(result.record.items.map((item) => [item.id, item.upload])))
@@ -213,7 +261,7 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated, onChangeJob }
             </p>
           </div>
           {onChangeJob && step === 2 ? (
-            <button type="button" onClick={onChangeJob} className="pu-btn sm">
+            <button type="button" onClick={() => leaveIfConfirmed(() => onChangeJob())} className="pu-btn sm">
               Change job
             </button>
           ) : null}
@@ -221,7 +269,7 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated, onChangeJob }
 
         {saving ? (
           <p className="mb-3 rounded-lg bg-(--blue-t) px-3 py-2 text-xs font-medium text-(--blue)">
-            {liveSummary.label}. You can close this — the audit keeps uploading and stays listed until it is saved.
+            {liveSummary.label}. You can leave this page — the audit keeps uploading and stays listed until it is saved.
           </p>
         ) : null}
         {error ? <p className="mb-3 rounded-lg bg-(--red-t) px-3 py-2 text-xs font-medium text-(--red)">{error}</p> : null}
@@ -267,7 +315,7 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated, onChangeJob }
             </label>
             <p className="text-xs text-(--ink3)">Ops working on this job can view it.</p>
             <div className="flex gap-2">
-              <button type="button" onClick={onClose} className="rounded-xl border border-(--line) px-4 py-2.5 text-sm text-(--ink2)">
+              <button type="button" onClick={cancel} className="rounded-xl border border-(--line) px-4 py-2.5 text-sm text-(--ink2)">
                 Cancel
               </button>
               <button type="button" onClick={() => setStep(3)} className="flex-1 rounded-xl bg-(--blue) py-2.5 text-sm font-bold text-white">
@@ -369,6 +417,9 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated, onChangeJob }
             </div>
 
             <div className="flex gap-2" id="audit-submit">
+              <button type="button" onClick={cancel} className="rounded-xl border border-(--line) px-4 py-2.5 text-sm text-(--ink2)">
+                Cancel
+              </button>
               <button type="button" onClick={() => setStep(2)} className="rounded-xl border border-(--line) px-4 py-2.5 text-sm text-(--ink2)">
                 Back
               </button>
@@ -402,7 +453,7 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated, onChangeJob }
               </div>
               <div>
                 <dt>Date</dt>
-                <dd>{auditDate}</dd>
+                <dd>{siteAuditDateText(auditDate, timeZone)}</dd>
               </div>
               <div>
                 <dt>Visible to operatives</dt>
@@ -424,6 +475,9 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated, onChangeJob }
               ))}
             </ul>
             <div className="flex gap-2">
+              <button type="button" onClick={cancel} className="rounded-xl border border-(--line) px-4 py-2.5 text-sm text-(--ink2)">
+                Cancel
+              </button>
               <button
                 type="button"
                 disabled={saving}

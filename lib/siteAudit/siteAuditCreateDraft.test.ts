@@ -3,6 +3,10 @@ import assert from 'node:assert/strict'
 import { worksInTab, worksTabCounts } from '@/lib/canonical'
 import type { Project } from '@/types'
 import {
+  siteAuditAfterSend,
+  siteAuditDateText,
+  siteAuditDefaultDate,
+  siteAuditHasUnsavedWork,
   SITE_AUDIT_JOB_DEFAULT_TAB,
   SITE_AUDIT_JOB_TABS,
   siteAuditDraftProblem,
@@ -45,14 +49,18 @@ test('job step tabs: All / Active / Upcoming / Completed, default Active, from t
 })
 
 test('save checks: same order and messages as the dialog had', () => {
-  assert.deepEqual(siteAuditDraftProblem({ items: [], customTitle: '', auditDate: '2026-11-23' }), { message: 'Add at least one photo.' })
+  assert.deepEqual(siteAuditDraftProblem({ items: [], customTitle: '', auditDate: '2026-11-23' }), { message: 'Add at least one photo.', step: 3 })
   assert.deepEqual(siteAuditDraftProblem({ items: [item(), item({ id: 'i2', title: ' ' })], customTitle: '', auditDate: '2026-11-23' }), {
     message: 'Each photo needs a title before the audit can be saved.',
     itemId: 'i2',
+    step: 3,
   })
-  assert.deepEqual(siteAuditDraftProblem({ items: [item()], customTitle: '', auditDate: 'nope' }), { message: 'Enter a valid audit date.' })
+  assert.deepEqual(siteAuditDraftProblem({ items: [item()], customTitle: '', auditDate: 'nope' }), { message: 'Enter a valid audit date.', step: 2 })
   assert.equal(siteAuditDraftProblem({ items: [item()], customTitle: 'Snags', auditDate: '2026-11-23' }), null)
-  assert.ok(siteAuditDraftProblem({ items: [item()], customTitle: 'x'.repeat(5000), auditDate: '2026-11-23' })?.message)
+  const longTitle = siteAuditDraftProblem({ items: [item()], customTitle: 'x'.repeat(5000), auditDate: '2026-11-23' })
+  assert.ok(longTitle?.message)
+  assert.equal(longTitle?.step, 2)
+  assert.equal(siteAuditDraftProblem({ items: [item({ comments: 'x'.repeat(50_000) })], customTitle: '', auditDate: '2026-11-23' })?.step, 3)
 })
 
 test('guardrail 7: the record sent is exactly the one the dialog built', () => {
@@ -98,4 +106,28 @@ test('guardrail 7: the record sent is exactly the one the dialog built', () => {
     })),
   }
   assert.deepEqual(built, before)
+})
+
+test('after the send: reload when saved, leave the page only while still on it', () => {
+  assert.deepEqual(siteAuditAfterSend({ saved: true, stillOnPage: true }), { reload: true, leave: true })
+  assert.deepEqual(siteAuditAfterSend({ saved: true, stillOnPage: false }), { reload: true, leave: false })
+  assert.deepEqual(siteAuditAfterSend({ saved: false, stillOnPage: true }), { reload: false, leave: false })
+})
+
+test('unsaved work: photos or a title, not while saving or kept on the device', () => {
+  assert.equal(siteAuditHasUnsavedWork({ itemCount: 0, customTitle: ' ', saving: false, keptOnDevice: false }), false)
+  assert.equal(siteAuditHasUnsavedWork({ itemCount: 1, customTitle: '', saving: false, keptOnDevice: false }), true)
+  assert.equal(siteAuditHasUnsavedWork({ itemCount: 0, customTitle: 'Snags', saving: false, keptOnDevice: false }), true)
+  assert.equal(siteAuditHasUnsavedWork({ itemCount: 2, customTitle: '', saving: true, keptOnDevice: false }), false)
+  assert.equal(siteAuditHasUnsavedWork({ itemCount: 2, customTitle: '', saving: false, keptOnDevice: true }), false)
+})
+
+test('audit date: today in the organisation zone, shown as "23 Nov 2026"', () => {
+  // 23:30 UTC on 22 Nov is already 23 Nov in Auckland and still 22 Nov in London.
+  const late = Date.UTC(2026, 10, 22, 23, 30)
+  assert.equal(siteAuditDefaultDate(late, 'Europe/London'), '2026-11-22')
+  assert.equal(siteAuditDefaultDate(late, 'Pacific/Auckland'), '2026-11-23')
+  assert.equal(siteAuditDateText('2026-11-23', 'Europe/London'), '23 Nov 2026')
+  assert.equal(siteAuditDateText('2026-11-23', 'Pacific/Auckland'), '23 Nov 2026')
+  assert.equal(siteAuditDateText('nope', 'Europe/London'), 'nope')
 })

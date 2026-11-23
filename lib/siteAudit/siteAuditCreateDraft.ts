@@ -1,5 +1,5 @@
-import { worksInTab, worksTabCounts, type WorksTab, type WorksTabCounts } from '@/lib/canonical'
-import { siteAuditFieldLimitError } from '@/lib/canonical'
+import { dayKeyInOrganizationZone, siteAuditFieldLimitError, worksInTab, worksTabCounts, type WorksTab, type WorksTabCounts } from '@/lib/canonical'
+import { dateFromDayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { isPlausibleDayKey } from '@/lib/security/boundedValue'
 import type { SiteAuditOutboxRecord } from '@/lib/siteAudit/siteAuditOutbox'
 import type { PhotoUpload } from '@/lib/siteAudit/auditPhotoUploads'
@@ -50,18 +50,58 @@ export function siteAuditDraftProblem(input: {
   items: ReadonlyArray<SiteAuditDraftItem>
   customTitle: string
   auditDate: string
-}): { message: string; itemId?: string } | null {
+}): { message: string; itemId?: string; step: 2 | 3 } | null {
   const { items, customTitle, auditDate } = input
-  if (items.length === 0) return { message: 'Add at least one photo.' }
+  if (items.length === 0) return { message: 'Add at least one photo.', step: 3 }
   const missing = items.find((item) => !item.title.trim())
-  if (missing) return { message: 'Each photo needs a title before the audit can be saved.', itemId: missing.id }
-  const limitError =
-    siteAuditFieldLimitError({ customTitle }) ??
-    items.map((item) => siteAuditFieldLimitError(item)).find((message) => message) ??
-    null
-  if (limitError) return { message: limitError }
-  if (!isPlausibleDayKey(auditDate)) return { message: 'Enter a valid audit date.' }
+  if (missing) return { message: 'Each photo needs a title before the audit can be saved.', itemId: missing.id, step: 3 }
+  const titleError = siteAuditFieldLimitError({ customTitle })
+  if (titleError) return { message: titleError, step: 2 }
+  const itemError = items.map((item) => siteAuditFieldLimitError(item)).find((message) => message) ?? null
+  if (itemError) return { message: itemError, step: 3 }
+  if (!isPlausibleDayKey(auditDate)) return { message: 'Enter a valid audit date.', step: 2 }
   return null
+}
+
+/** The audit date the page opens with: today in the organisation zone, stored as `yyyy-MM-dd` (as before). */
+export function siteAuditDefaultDate(nowMs: number, timeZone: string): string {
+  return dayKeyInOrganizationZone(new Date(nowMs).toISOString(), timeZone)
+}
+
+/** The audit date shown on Review, e.g. "23 Nov 2026" (organisation zone; display only). */
+export function siteAuditDateText(dayKey: string, timeZone: string): string {
+  if (!isPlausibleDayKey(dayKey)) return dayKey
+  try {
+    return new Intl.DateTimeFormat('en-GB', { timeZone, day: 'numeric', month: 'short', year: 'numeric' }).format(
+      dateFromDayKeyInZone(dayKey, timeZone)
+    )
+  } catch {
+    return dayKey
+  }
+}
+
+export const SITE_AUDIT_LEAVE_CONFIRM_MESSAGE = 'Leave this audit? Your photos and details will be lost.'
+
+/**
+ * Whether leaving the page would lose the audit: photos or a typed title are on it and it is not saving and not kept
+ * on this device yet (once the send starts it stays in the outbox as "Not sent" until it is saved).
+ */
+export function siteAuditHasUnsavedWork(input: {
+  itemCount: number
+  customTitle: string
+  saving: boolean
+  keptOnDevice: boolean
+}): boolean {
+  if (input.saving || input.keptOnDevice) return false
+  return input.itemCount > 0 || input.customTitle.trim() !== ''
+}
+
+/**
+ * After the send: the audit list is reloaded when it was saved, and the page goes back only while the person is
+ * still on it (they may have left while it uploaded — never pull them back).
+ */
+export function siteAuditAfterSend(input: { saved: boolean; stillOnPage: boolean }): { reload: boolean; leave: boolean } {
+  return { reload: input.saved, leave: input.saved && input.stillOnPage }
 }
 
 /**

@@ -5,6 +5,7 @@ import { format, formatDistanceToNow } from 'date-fns'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { useSiteAuditStore } from '@/lib/stores/siteAuditStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { deriveWorkStatus } from '@/lib/projects/workStatus'
@@ -17,6 +18,7 @@ import { Chip, PageBand, PageShell, SegmentedTabs } from '@/components/ui/page'
 import {
   SITE_AUDIT_JOB_DEFAULT_TAB,
   SITE_AUDIT_JOB_TABS,
+  SITE_AUDIT_LEAVE_CONFIRM_MESSAGE,
   siteAuditJobTabCounts,
   siteAuditJobsInTab,
 } from '@/lib/siteAudit/siteAuditCreateDraft'
@@ -712,7 +714,7 @@ const SITE_AUDIT_JOB_TAB_LABELS = { active: 'Active', upcoming: 'Upcoming', comp
  */
 export function SiteAuditNewScreen() {
   const router = useRouter()
-  const { organization } = useAuthStore()
+  const { organization, user } = useAuthStore()
   const { loadProjects, loadSmallWorks, projects, smallWorks } = useProjectStore()
   const { loadAudits } = useSiteAuditStore()
   const timeZone = useOrganizationTimeZone()
@@ -720,6 +722,9 @@ export function SiteAuditNewScreen() {
   const [tab, setTab] = useState<WorksTab>(SITE_AUDIT_JOB_DEFAULT_TAB)
   const [createProject, setCreateProject] = useState<Project | null>(null)
   const [nowMs] = useState(() => Date.now())
+  // Same test as a job's New audit buttons (`ProjectSiteAuditSection`); the route is inside `SiteAuditAccess`.
+  const canCreate = !isOperativeMode(user) || user?.permissions.siteAudit === true
+  const [unsaved, setUnsaved] = useState(false)
 
   useEffect(() => {
     if (!organization?.id) return
@@ -732,6 +737,10 @@ export function SiteAuditNewScreen() {
   const counts = useMemo(() => siteAuditJobTabCounts(list, nowMs, timeZone), [list, nowMs, timeZone])
   const shown = useMemo(() => siteAuditJobsInTab(list, tab, nowMs, timeZone), [list, tab, nowMs, timeZone])
   const leave = () => router.push('/dashboard/site-audit')
+  const backToHub = () => {
+    if (unsaved && !window.confirm(SITE_AUDIT_LEAVE_CONFIRM_MESSAGE)) return
+    leave()
+  }
 
   return (
     <PageShell>
@@ -739,13 +748,16 @@ export function SiteAuditNewScreen() {
         eyebrow="Site audit"
         title="New site audit"
         subtitle={createProject ? undefined : 'Choose a project to attach this audit to'}
-        back={{ label: 'Site audit', onClick: leave }}
+        back={{ label: 'Site audit', onClick: backToHub }}
       />
-      {createProject && organization?.id ? (
+      {!canCreate ? (
+        <p className="py-8 text-center text-sm text-(--ink3)">You can&apos;t create site audits.</p>
+      ) : createProject && organization?.id ? (
         <SiteAuditCreateFlow
           project={createProject}
           onClose={leave}
           onChangeJob={() => setCreateProject(null)}
+          onUnsavedChange={setUnsaved}
           onCreated={() => {
             loadAudits(organization.id)
           }}
