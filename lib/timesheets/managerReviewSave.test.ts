@@ -1,27 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { extraReviewAfterSave, payrollReviewAfterSave } from './managerReviewSave.ts'
-
-test('payroll review save: decline then edit becomes approved', () => {
-  assert.deepEqual(payrollReviewAfterSave('declined', 200, 180), {
-    decision: 'approved',
-    revisedAmount: 180,
-  })
-})
-
-test('payroll review save: unchanged amount clears the edit', () => {
-  assert.deepEqual(payrollReviewAfterSave('edited', 200, 200), {
-    decision: 'approved',
-    revisedAmount: null,
-  })
-})
-
-test('payroll review save: a new amount is marked edited', () => {
-  assert.deepEqual(payrollReviewAfterSave('approved', 200, 150), {
-    decision: 'edited',
-    revisedAmount: 150,
-  })
-})
+import { extraReviewAfterSave } from './managerReviewSave.ts'
 
 test('extra review save: decline or original amount becomes approved', () => {
   assert.deepEqual(extraReviewAfterSave('declined', 40, 40), {

@@ -99,6 +99,11 @@ import { earlierVersionCards, timesheetRevisionCopy } from '@/lib/timesheets/tim
 import {
   TIMESHEET_CREATE_REVISION_HELP,
   timesheetLineReviewActionsAllowed,
+  timesheetLabourLineReviewActions,
+  timesheetReviewDeleteBookingWarning,
+  TIMESHEET_REVIEW_BOOKING_REFUSED_MESSAGE,
+  TIMESHEET_REVIEW_BOOKING_SENT_BACK_MESSAGE,
+  TIMESHEET_REVIEW_EDIT_BOOKING_NOTE,
   TIMESHEET_CREATE_REVISION_LABEL,
   TIMESHEET_EARLIER_VERSIONS_LABEL,
   TIMESHEET_ORIGINAL_VERSION_LABEL,
@@ -150,7 +155,7 @@ import {
   initialHoursChoice,
   payrollLineEdit,
 } from '@/lib/timesheets/payrollLineBookingLookup'
-import { amountsUnchanged, extraReviewAfterSave, payrollReviewAfterSave } from '@/lib/timesheets/managerReviewSave'
+import { extraReviewAfterSave } from '@/lib/timesheets/managerReviewSave'
 import {
   CLAIM_EVIDENCE_LEGACY_RECEIPT_NOTE,
   EXPENSE_AMOUNT_LABEL,
@@ -226,6 +231,12 @@ import {
 } from '@/lib/timesheets/timesheetInputs'
 import type { PayrollTimePolicyState } from '@/lib/canonical'
 import { afterPrimaryWrite } from '@/lib/client/afterPrimaryWrite'
+import { db as firestoreDb } from '@/lib/firebase/config'
+import {
+  deleteTimesheetReviewBooking,
+  saveTimesheetReviewBookingEdit,
+  timesheetLineBooking,
+} from '@/lib/timesheets/timesheetReviewBookingWrite'
 
 function money(value: number, currency: string): string {
   return formatMoney(value, currency)
@@ -339,6 +350,10 @@ export function TimesheetPeriodPage({
   const [hoursEnd, setHoursEnd] = useState('16:00')
   const [hoursBreakRemoved, setHoursBreakRemoved] = useState(false)
   const [hoursOt, setHoursOt] = useState('')
+  // Rulebook 1.72.0: the times Edit hours opened with (a Full day with no clock times keeps its slot when unchanged).
+  const [hoursInitial, setHoursInitial] = useState<{ start: string; end: string } | null>(null)
+  const [removingLine, setRemovingLine] = useState<TimesheetPayrollLineItem | null>(null)
+  const [reviewNotice, setReviewNotice] = useState<string | null>(null)
   const [editingExtra, setEditingExtra] = useState<{
     type: 'expense' | 'priceWork'
     /** Rulebook 1.54.0: a late extra (decided in the review map with `lateExtra`). */
@@ -957,6 +972,7 @@ export function TimesheetPeriodPage({
       }
     setHoursStart(choice.startTime)
     setHoursEnd(choice.endTime)
+    setHoursInitial({ start: choice.startTime, end: choice.endTime })
     setHoursBreakRemoved(choice.breakRemoved)
     // 1.46.0: the line's own multiplier (the booking's overtime rate, else the organisation's for that day).
     setHoursOt(
@@ -981,9 +997,8 @@ export function TimesheetPeriodPage({
     ) {
       return
     }
-    // Rulebook 1.46.0 (`revisedPayrollLineAmounts`): the booking is priced again at the edited times; each line of the
-    // booking stores its own revised amount (the standard line carries the overtime when the booking has no overtime
-    // line). Only the edited line and a line whose amount the edit changes are written.
+    // Rulebook 1.46.0 (`revisedPayrollLineAmounts`): the booking priced at the edited times, only to refuse times that
+    // cannot be priced (blank, or start equal to finish) — the sheet's Save is off and says why.
     const edit = payrollLineEdit({
       row,
       lines: payroll.lineItems,
@@ -995,23 +1010,50 @@ export function TimesheetPeriodPage({
       timeZone,
       employment: subjectUser,
     })
-    // 1.46.0: blank times or start equal to finish are never priced (the sheet's Save is off and says why).
     if (edit.error || !edit.amounts) return
-    const reviews = { ...draft.payrollLineReviews }
-    for (const line of [edit.standardLine, edit.overtimeLine]) {
-      if (!line) continue
-      const fields = edit.reviewFieldsByLineId[line.id]
-      if (!fields) continue
-      const existing = draftPayrollLineReview(draft, line.id, line)
-      if (line.id !== row.id && amountsUnchanged(fields.revisedAmount, line.amount) && existing?.decision !== 'edited') continue
-      const review = payrollReviewAfterSave(existing?.decision, line.amount, fields.revisedAmount)
-      // 1.46.0: an edited review keeps the hours and parts it pays and the booking it was made against
-      // (`PayrollLineEditReviewFields`), so the totals, the signed snapshot and the weekly report read the same hours,
-      // and a later change to the booking makes it stale instead of paying twice.
-      reviews[line.id] = review.decision === 'edited' ? { ...review, ...fields } : review
-    }
-    void persistOrReport({ ...draft, payrollLineReviews: reviews })
-    setEditingLineId(null)
+    // Rulebook 1.72.0 (owner decision 23 Nov, A): the line manager's edit changes the BOOKING
+    // (`timesheetReviewBookingEditWrites`), never a `payrollLineReviews` entry. The 1.47.0 rule then sends the signed
+    // sheet back to the person to sign again; scheduling, Daily Overview and the weekly report follow the booking.
+    const booking = timesheetLineBooking(row)
+    if (!organization?.id || !viewer?.id || !booking) return
+    const rate = typedOvertimeRate(row, hoursOt)
+    setBusy(true)
+    setError(null)
+    void saveTimesheetReviewBookingEdit(firestoreDb, {
+      organizationId: organization.id,
+      userId: viewer.id,
+      booking,
+      startTime: hoursStart,
+      endTime: hoursEnd,
+      isBreakRemoved: hoursBreakRemoved,
+      otMultiplierOverride: rate == null ? undefined : rate,
+      slotWindow: hoursInitial,
+    })
+      .then((changed) => {
+        setEditingLineId(null)
+        if (changed) setReviewNotice(TIMESHEET_REVIEW_BOOKING_SENT_BACK_MESSAGE)
+      })
+      .catch((err: unknown) => setError(reviewBookingErrorMessage(err)))
+      .finally(() => setBusy(false))
+  }
+
+  // Rulebook 1.72.0 (owner decision 23 Nov, B): ✕ deletes the booking with its tombstone (after the confirm).
+  const confirmRemoveBooking = () => {
+    const row = removingLine
+    const booking = row ? timesheetLineBooking(row) : null
+    if (!row || !booking || !organization?.id || !viewer?.id) return
+    setBusy(true)
+    setError(null)
+    void deleteTimesheetReviewBooking(firestoreDb, { organizationId: organization.id, userId: viewer.id, booking })
+      .then(() => {
+        setRemovingLine(null)
+        setReviewNotice(TIMESHEET_REVIEW_BOOKING_SENT_BACK_MESSAGE)
+      })
+      .catch((err: unknown) => {
+        setRemovingLine(null)
+        setError(reviewBookingErrorMessage(err))
+      })
+      .finally(() => setBusy(false))
   }
 
   const saveExtraAmount = () => {
@@ -1414,6 +1456,7 @@ export function TimesheetPeriodPage({
               reviewing={mode === 'review'}
               dayPolicy={policyOnDay(row.line.date)}
               timeZone={timeZone}
+              actions={{ approve: false, removeBooking: false, editBooking: false }}
               onApprove={() => undefined}
               onDecline={() => undefined}
               onEdit={() => undefined}
@@ -1475,6 +1518,7 @@ export function TimesheetPeriodPage({
         </Note>
       ) : null}
       {error ? <Note tone="red" role="alert">{error}</Note> : null}
+      {reviewNotice ? <Note tone="green" role="status">{reviewNotice}</Note> : null}
       {updatedElsewhere ? (
         <Note tone="amber" role="status">
           This timesheet was updated on another device. It will refresh when you finish this change.
@@ -1484,7 +1528,7 @@ export function TimesheetPeriodPage({
       {managerHasSigned && managerAdjustmentCount(draft) > 0 ? (
         <AdjustmentSummaryCard
           managerName={draft.managerSignedByName || 'Line manager'}
-          rows={managerAdjustmentRows(draft)}
+          rows={managerAdjustmentRows(draft, currency, payroll.lineItems, timeZone)}
         />
       ) : null}
 
@@ -1509,7 +1553,7 @@ export function TimesheetPeriodPage({
             title={mode === 'review' ? 'Breakdown' : 'This period'}
             subtitle={
               canManagerReview
-                ? 'Review each day, expense and price-work line. Use ✓ approve, ✕ decline, or edit. Changes are shown to the operative when you sign off.'
+                ? 'Review each day, expense and price-work line. On a day, ✓ approves it, ✕ removes the booking and ⚙ changes the booking — the timesheet then goes back to the person to sign again. On price work and expenses, ✓ approve, ✕ decline, or edit.'
                 : undefined
             }
           >
@@ -1543,8 +1587,12 @@ export function TimesheetPeriodPage({
                       reviewing={mode === 'review'}
                       dayPolicy={policyOnDay(row.line.date)}
                       timeZone={timeZone}
+                      actions={timesheetLabourLineReviewActions({
+                        sheet: { exportedAt: draft.exportedAt ?? null },
+                        line: { ...row.line, isLeave: false },
+                      })}
                       onApprove={() => setLineDecision(row.line.id, 'approved')}
-                      onDecline={() => setLineDecision(row.line.id, 'declined')}
+                      onDecline={() => setRemovingLine(row.line)}
                       onEdit={() => openPayrollHoursEditor(row.line)}
                     />
                   )
@@ -1953,6 +2001,37 @@ export function TimesheetPeriodPage({
         />
       ) : null}
 
+      {removingLine ? (() => {
+        // Rulebook 1.72.0 (owner decision 23 Nov, B): ✕ deletes the booking itself, after this warning.
+        const warning = timesheetReviewDeleteBookingWarning({
+          summary: [abbreviatedDate(removingLine.date, timeZone), timesheetLineDisplay(removingLine).title, timesheetLineDisplay(removingLine).times]
+            .filter(Boolean)
+            .join(' · '),
+          overtimeLine: removingLine.isOvertimeLine,
+        })
+        return (
+          <Modal
+            size="sm"
+            labelledBy="ts-remove-booking-title"
+            title={warning.title}
+            tile={<IconTile tone="amber" size="sm"><WarnIcon /></IconTile>}
+            footer={
+              <>
+                <PuButton onClick={() => setRemovingLine(null)} disabled={busy}>{warning.cancelLabel}</PuButton>
+                <PuButton variant="primary" onClick={confirmRemoveBooking} disabled={busy}>
+                  {warning.confirmLabel}
+                </PuButton>
+              </>
+            }
+          >
+            {warning.summary ? <p style={{ fontWeight: 600 }}>{warning.summary}</p> : null}
+            <p className="pu-sub" style={{ fontSize: 14 }}>{warning.message}</p>
+            {warning.overtimeNote ? <Note tone="amber">{warning.overtimeNote}</Note> : null}
+            <p className="pu-sub" style={{ fontSize: 14 }}>{warning.undoNote}</p>
+          </Modal>
+        )
+      })() : null}
+
       {pendingExtraMode ? (
         <Modal
           size="sm"
@@ -2190,6 +2269,7 @@ function PayrollLine({
   reviewing,
   dayPolicy,
   timeZone,
+  actions,
   onApprove,
   onDecline,
   onEdit,
@@ -2198,6 +2278,8 @@ function PayrollLine({
   draft: TimesheetDraft
   managerHasSigned: boolean
   canReview: boolean
+  /** Rulebook 1.72.0 `timesheetLabourLineReviewActions`: ✕ and ⚙ only on a line that names a booking. */
+  actions: { approve: boolean; removeBooking: boolean; editBooking: boolean }
   /** The viewer is reviewing someone else's sheet (line manager or admin), not their own. */
   reviewing: boolean
   /** The working hours in effect on the line's day, for a Full day / AM / PM line's times. */
@@ -2250,7 +2332,16 @@ function PayrollLine({
           managerHasSigned={managerHasSigned}
           applyLiveReview={canReview}
         />
-        {canReview ? <TickCross decision={decision} onApprove={onApprove} onDecline={onDecline} onEdit={onEdit} /> : null}
+        {canReview && actions.approve ? (
+          <TickCross
+            decision={decision}
+            onApprove={onApprove}
+            onDecline={actions.removeBooking ? onDecline : undefined}
+            onEdit={actions.editBooking ? onEdit : undefined}
+            declineLabel="Remove booking"
+            editLabel="Edit booking"
+          />
+        ) : null}
       </td>
     </tr>
   )
@@ -2283,13 +2374,18 @@ function TickCross({
   onApprove,
   onDecline,
   onEdit,
+  declineLabel = 'Decline',
+  editLabel = 'Edit',
 }: {
   decision: TimesheetManagerDecision
   /** Rulebook 1.54.0: a late extra not decided yet shows neither ✓ nor ✕ selected (it is not approved by default). */
   undecided?: boolean
   onApprove: () => void
-  onDecline: () => void
-  onEdit: () => void
+  /** Rulebook 1.72.0: hidden when the line names no booking (a labour line's ✕ removes the booking). */
+  onDecline?: () => void
+  onEdit?: () => void
+  declineLabel?: string
+  editLabel?: string
 }) {
   const selected = undecided ? 'pending' : reviewSelection(decision)
   const approved = selected === 'approved' || selected === 'edited'
@@ -2310,6 +2406,7 @@ function TickCross({
       >
         ✓
       </button>
+      {onDecline ? (
       <button
         type="button"
         onClick={onDecline}
@@ -2318,19 +2415,22 @@ function TickCross({
           background: declined ? '#C4242C' : approved ? 'var(--pu-line-2)' : 'var(--pu-c-red-bg)',
           color: declined ? '#fff' : approved ? 'var(--pu-muted)' : 'var(--pu-c-red-ink)',
         }}
-        aria-label="Decline"
+        aria-label={declineLabel}
         aria-pressed={declined}
       >
         ✕
       </button>
+      ) : null}
+      {onEdit ? (
       <button
         type="button"
         onClick={onEdit}
         style={{ ...base, background: 'var(--pu-c-blue-bg)', color: 'var(--pu-c-blue-ink)' }}
-        aria-label="Edit"
+        aria-label={editLabel}
       >
         ⚙
       </button>
+      ) : null}
     </span>
   )
 }
@@ -2812,6 +2912,13 @@ function SignSheet({
   )
 }
 
+/** Rulebook 1.72.0: a refused or failed booking write from the review, in the rulebook's words. */
+function reviewBookingErrorMessage(err: unknown): string {
+  const code = (err as { code?: unknown } | null)?.code
+  if (code === 'permission-denied') return TIMESHEET_REVIEW_BOOKING_REFUSED_MESSAGE
+  return err instanceof Error ? err.message : 'Could not change the booking'
+}
+
 /** The overtime rate typed on an overtime line's Edit hours (1–3), else null (the booking's own rate). */
 function typedOvertimeRate(line: TimesheetPayrollLineItem, text: string): number | null {
   if (!line.isOvertimeLine) return null
@@ -2882,7 +2989,7 @@ function EditHoursSheet({
       }
       footer={
         <PuButton variant="primary" onClick={onSave} disabled={edit.error != null}>
-          Save
+          Save to booking
         </PuButton>
       }
     >
@@ -2890,6 +2997,8 @@ function EditHoursSheet({
         {abbreviatedDate(line.date, timeZone)} · {line.jobNumber} {line.projectName}
       </p>
       {edit.error ? <Note tone="red">{edit.error}</Note> : null}
+      {/* Rulebook 1.72.0 (owner decision 23 Nov, A): the edit changes the booking itself. */}
+      <Note tone="amber">{TIMESHEET_REVIEW_EDIT_BOOKING_NOTE}</Note>
       <div>
         <HoursTimelinePicker
           start={start}

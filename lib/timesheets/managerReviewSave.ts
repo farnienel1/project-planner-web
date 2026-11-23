@@ -1,27 +1,14 @@
 /**
- * iOS parity: Views/InvoicingView.swift applyPayrollReviewSave / applyExtraReviewSave
+ * iOS parity: Views/InvoicingView.swift applyExtraReviewSave. Rulebook 1.72.0: a labour line's Edit hours changes the
+ * booking (`timesheetReviewBookingEditWrites`), so the payroll review save is gone.
  */
-import type { TimesheetManagerDecision, TimesheetPayrollLineReview } from '@/lib/timesheets/timesheetDraft'
+import type { TimesheetManagerDecision } from '@/lib/timesheets/timesheetDraft'
 import { roundPennies } from '@/lib/canonical/payRate'
 
 const AMOUNT_EPS = 0.01
 
 export function amountsUnchanged(revised: number, original: number): boolean {
   return Math.abs(revised - original) < AMOUNT_EPS
-}
-
-export function payrollReviewAfterSave(
-  prior: TimesheetManagerDecision | undefined,
-  originalAmount: number,
-  revisedAmount: number
-): TimesheetPayrollLineReview {
-  const unchanged = amountsUnchanged(revisedAmount, originalAmount)
-  let decision: TimesheetManagerDecision
-  if (prior === 'declined') decision = 'approved'
-  else if (unchanged) decision = 'approved'
-  else decision = 'edited'
-  // 1.46.0: a revised amount is stored in pennies (`roundPennies`).
-  return { decision, revisedAmount: unchanged ? null : roundPennies(revisedAmount) }
 }
 
 export function extraReviewAfterSave(

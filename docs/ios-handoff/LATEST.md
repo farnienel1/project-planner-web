@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.71.0
+# iOS follow-on — rulebook 1.72.0
 
 Generated 2026-11-23 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.70.0 → 1.71.0
-Packed hash: 924b7ef2fb89d62146b7e5f4c9149d2650733a1cc5910e624994311bfd6280e7
-Rulebook sha256: 2f9661384d84aee67faa7798508c73f08e6b08cc51d3b5623d12ba81c045ad86
+Rulebook version: 1.71.0 → 1.72.0
+Packed hash: 0b04ac6ce10032c1f0feebf3e711514dbb1b5db1e41e93074f0bf23e29e8f3f9
+Rulebook sha256: bf1869cb8c0059fce35d22ba3e4504c5c30e648601f32559cfd47ab982a04ec5
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,33 +22,40 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 926b910948b674b1fa259e8f933ddd15f14bad00b8e0b050ccbd88c723bf64aa
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: COMPANY_EXPORT_REFUSED_MESSAGE, canExportCompanyData, timesheetLineReviewActionsAllowed
+Exports added: TIMESHEET_REVIEW_BOOKING_FIELDS, TIMESHEET_REVIEW_BOOKING_MISSING_MESSAGE, TIMESHEET_REVIEW_BOOKING_REFUSED_MESSAGE, TIMESHEET_REVIEW_BOOKING_SENT_BACK_MESSAGE, TIMESHEET_REVIEW_DELETE_BOOKING_CANCEL_LABEL, TIMESHEET_REVIEW_DELETE_BOOKING_CONFIRM_LABEL, TIMESHEET_REVIEW_DELETE_BOOKING_MESSAGE, TIMESHEET_REVIEW_DELETE_BOOKING_TITLE, TIMESHEET_REVIEW_DELETE_BOOKING_UNDO_NOTE, TIMESHEET_REVIEW_DELETE_OVERTIME_NOTE, TIMESHEET_REVIEW_EDIT_BOOKING_NOTE, isTimesheetReviewBookingCollection, timesheetLabourLineReviewActions, timesheetReviewBookingDelete, timesheetReviewBookingEditWrites, timesheetReviewDeleteBookingWarning
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/timesheetPeriod.ts, lib/canonical/timesheetRevisions.ts, lib/canonical/companyDataExport.ts
+Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/timesheetLineDisplay.ts, lib/canonical/timesheetReviewBookingWrites.ts
 Done when:
-- [ ] Packed hash in iOS equals 924b7ef2fb89d62146b7e5f4c9149d2650733a1cc5910e624994311bfd6280e7
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 2f9661384d84aee67faa7798508c73f08e6b08cc51d3b5623d12ba81c045ad86)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.71.0)
+- [ ] Packed hash in iOS equals 0b04ac6ce10032c1f0feebf3e711514dbb1b5db1e41e93074f0bf23e29e8f3f9
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 bf1869cb8c0059fce35d22ba3e4504c5c30e648601f32559cfd47ab982a04ec5)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.72.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.71.0
+## What changed in 1.72.0
 
-- **Company data export is the Super Admin's** (§12, owner decision 23 Nov, issue 11): new `canExportCompanyData(viewer, organization)` / `COMPANY_EXPORT_REFUSED_MESSAGE` (`lib/canonical/companyDataExport.ts`, on `isOrganizationSuperAdmin`), used by every web way in and the runner (checked again on the organisation document read). Guardrail 3: admins who are not the Super Admin lose the Export company data row and page. Export content (web `lib/companyExport`, not packed): an anchored member whose own account belongs to another company is exported with name and contact only; former people, report checks and material contacts get their own files; worksListPicks, invitations and account confirmations are listed as excluded; a cell starting with a line feed is formula-guarded too.
-- **No ✓ ✕ ⚙ on an exported timesheet** (§8, issue 22A): new `timesheetLineReviewActionsAllowed(sheet)` (false once `resolveTimesheetExportedAtMs` says exported). Web's review page no longer offers line actions on an exported sheet.
-- **Create revision wording** (§8, issue 22B): `TIMESHEET_CREATE_REVISION_LABEL` is "Create revision to adjust this timesheet" and `TIMESHEET_CREATE_REVISION_HELP` the owner's text; web drops the "(REV n)" suffix on the button.
+- **The line manager's ⚙ and ✕ change the booking** (§8, §16, owner decisions 23 Nov, A and B): new `timesheetReviewBookingEditWrites`, `timesheetReviewBookingDelete`, `timesheetReviewDeleteBookingWarning`, `timesheetLabourLineReviewActions`, `isTimesheetReviewBookingCollection`, `TIMESHEET_REVIEW_BOOKING_FIELDS` and the `TIMESHEET_REVIEW_*` copy (`lib/canonical/timesheetReviewBookingWrites.ts`). ⚙ on a labour line under review writes the booking's times, slot, break toggle and overtime rate (partial update, write metadata) instead of a `payrollLineReviews` entry; ✕ deletes the booking with its tombstone; the 1.47.0 rule then sends the sheet back to the person. ✓ is unchanged. Stored edited / declined reviews are read as before (guardrail 3). Web: the review page writes the booking, confirms ✕ and says the sheet goes back to the person; the dead `payrollReviewAfterSave` is removed.
+- **Security rules** (§16): the line manager's booking update allows `isBreakRemoved` (a bool); a person's line manager deletes their labour (users id, not a ghost) or manager site booking with a tombstone they write in the same batch (`lineManagerTombstoneNew`), and a tombstone is accepted when its booking is deleted in that batch. Compile cost kept below main: `jobListsCaller` matches its two manager lists in one string, `isPlatformOwner` reads `email_verified` directly and `callerLineManagesUser` binds the users document once (no allow / deny change). Emulator suite `tests/timesheetReviewBooking.rules.test.ts`; the line manager's new delete changed two older tests' fixtures (`bookingReplace`: the operative's line manager is the admin; `overtime`: a tombstone with no request now succeeds for the line manager).
+- **Company data export has no download links** (§12, owner decision 23 Nov, C): files.csv lists name, kind and storage path; every download URL in the records becomes its storage path (web `lib/companyExport`, not packed).
+- **`timesheetLineDisplay`** reads the slot from the part before " · ", so "FULL DAY · no break" reads "Full day 07:00–16:00 · no break".
+- **Issue 21** (web): the adjustments card names the day and job ("Day adjusted · Mon 23 Nov · J-1042 · Station Road"), never the line id.
 
-## iOS work for 1.71.0
+## iOS work for 1.72.0
 
-1. **No ✓ ✕ ⚙ on an exported timesheet (issue 22A).** In `Views/InvoicingView.swift` (`OperativeTimesheetReviewView` / the manager review rows) and `Views/TimesheetManagerReviewSupport.swift`, offer approve / decline / Edit hours on labour lines, price work, expenses and late extras only while `timesheetLineReviewActionsAllowed(sheet)` is true (pass the stored sheet fields, at least `exportedAt` and `invoiceGeneratedAt`). An exported sheet is read-only; the live 1.54.1 rules already refuse any change to it.
-2. **Create revision wording (issue 22B).** The reviewer's revision button shows `TIMESHEET_CREATE_REVISION_LABEL` exactly ("Create revision to adjust this timesheet", no "(REV n)" suffix) and `TIMESHEET_CREATE_REVISION_HELP` under it (`Core/Rulebook+TimesheetRevisions.swift`, `Views/InvoicingView.swift`). Read both from `CanonicalBusinessEngine`; keep no copy in Swift.
-3. **Company data export (issue 11).** iOS has no export screen; nothing to build. `canExportCompanyData` is packed so a future iPhone export asks the same Super Admin rule.
+1. **⚙ Edit hours on a timesheet line under review changes the BOOKING (decision A).** In `Views/InvoicingView.swift` (`OperativeTimesheetReviewView` and the manager review rows) and `Views/TimesheetManagerReviewSupport.swift` (Edit hours save, `applyPayrollReviewSave` / `revisedAmount`): stop writing `payrollLineReviews[lineId] = { decision: 'edited', … }`. Read the live booking fresh (`bookings/{id}` or `managerSiteBookings/{id}`; collection from the line, `mgr-` = manager site), call `timesheetReviewBookingEditWrites({ booking, startTime, endTime, isBreakRemoved, otMultiplierOverride, slotWindow })` through `CanonicalBusinessEngine` (`otMultiplierOverride` undefined = leave the booking's rate; `slotWindow` = the times the editor opened with, so an unchanged Full day writes nothing) and write `set` / `remove` as a partial `updateData` plus write metadata. Show `TIMESHEET_REVIEW_EDIT_BOOKING_NOTE` in the editor, "Save to booking" on the button and `TIMESHEET_REVIEW_BOOKING_SENT_BACK_MESSAGE` after a change. Keep `revisedPayrollLineAmounts` for the preview and to refuse times that cannot be priced. Online only.
+2. **✕ on a labour line deletes the booking (decision B).** Show `timesheetReviewDeleteBookingWarning({ summary, overtimeLine })` (title, summary, message, overtime note, undo note, Remove booking / Go back); on confirm write `timesheetReviewBookingDelete({ booking, deletedBy, platform: 'ios' })` → the booking delete and its tombstone (with server `deletedAt`) in ONE batch. No `declined` review is written for a labour line. Price work, expenses and late extras keep their ✓ ✕ ⚙ unchanged.
+3. **Which actions a line gets:** `timesheetLabourLineReviewActions({ sheet, line })` → `{ approve, removeBooking, editBooking }` (none once exported, on a PAYE day or leave line; ✕ ⚙ only when the line names a labour or manager site booking).
+4. **Refused writes:** permission-denied → `TIMESHEET_REVIEW_BOOKING_REFUSED_MESSAGE`; a booking deleted elsewhere → `TIMESHEET_REVIEW_BOOKING_MISSING_MESSAGE`. The live sheet then goes back to the person through the existing 1.47.0 `signedTimesheetBookingChanges` (nothing else to write).
+5. **Old data:** keep reading stored edited / declined `payrollLineReviews` exactly as now (they still price older sheets).
+6. **Timesheet line wording:** `timesheetLineDisplay` now reads "FULL DAY · no break" as "Full day 07:00–16:00 · no break" (rulebook change only; no Swift change if iOS already calls it).
+7. **Adjustments card (issue 21):** if iOS shows "Day adjusted (op-…)", name the day and job instead (organisation-zone day + `timesheetLineDisplay(line).title`, "a booking no longer on this timesheet" when the line is gone).
+8. **Release order:** iOS 1.72 ships before web merges; the owner raises `minimumIosBuild` to it before the 1.72.0 Firestore rules are published.
 
 ## New rulebook sections
 
-- 1.71.0 — 2026-11-23
+- 1.72.0 — 2026-11-23
 
 ## Workflow for the iOS agent
 

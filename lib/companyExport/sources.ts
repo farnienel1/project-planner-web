@@ -295,7 +295,7 @@ export const EXCLUSION_NOTES: readonly string[] = [
   'Stripe customer, subscription and price ids, payment history and revenue: billing is reduced to the plan status (status, interval, trial end, current period end, cancel at period end).',
   'Private tax ids (VAT number and UTR, users/{uid}/private/taxIds). They are each person\'s own billing details for the invoices they send, not the company\'s; admins can see them per person in the app.',
   'Sign-in data held by Firebase Authentication (passwords, sign-in methods). The export never reads it.',
-  'Uploaded files themselves (photos, certificates, RAMS, logos): files.csv lists each one with its storage path and download URL, but the binaries are not in the zip.',
+  'Uploaded files themselves (photos, certificates, RAMS, logos): files.csv lists each one with its name, kind and storage path (no download links, 1.72.0), but the binaries are not in the zip.',
   ...Object.entries(EXCLUDED_COLLECTIONS).map(([name, why]) => `${name}: ${why}.`),
   'Other companies\' data, and each person\'s memberships of other companies. A member whose own account belongs to another company is listed with their name and contact details only (their account\'s other settings and pay belong to that company).',
   'Invitations (they hold the secret link that accepts them) and account confirmation links.',

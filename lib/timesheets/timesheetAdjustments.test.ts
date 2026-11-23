@@ -72,6 +72,21 @@ test('managerAdjustmentRows lists declined and edited extras and days', () => {
   assert.match(rows[2]?.title || '', /Day adjusted/)
 })
 
+test('1.72.0 issue 21: an adjusted day names its day and job, never the line id', () => {
+  const draft = {
+    ...emptyTimesheetDraft(),
+    payrollLineReviews: {
+      'OP-E415B000-NORMAL': { decision: 'edited' as const, revisedAmount: 150 },
+      'op-gone-normal': { decision: 'declined' as const, revisedAmount: null },
+    },
+  }
+  const lines = [{ id: 'op-e415b000-normal', date: new Date('2026-11-23T00:00:00Z'), jobNumber: 'J-1042', projectName: 'Station Road' }]
+  const rows = managerAdjustmentRows(draft, 'GBP', lines, 'Europe/London')
+  assert.equal(rows[0]?.title, 'Day adjusted · Mon 23 Nov · J-1042 · Station Road')
+  assert.equal(rows[1]?.title, 'Day removed · a booking no longer on this timesheet')
+  assert.ok(rows.every((row) => !/op-/i.test(row.title)))
+})
+
 test('payroll line reviews are found without case, as on the invoice (payrollLineReview)', async () => {
   const { effectivePayrollAmount, isPayrollLineRemoved, draftTimesheetTotals } = await import('./timesheetAdjustments.ts')
   const line = { id: 'booking-abc-line', amount: 200, isOvertimeLine: false } as never

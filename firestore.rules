@@ -400,7 +400,7 @@ service cloud.firestore {
   function isPlatformOwner() {
     return request.auth != null &&
       request.auth.token.get('email', '').lower() == 'info@projectplanner.us' &&
-      request.auth.token.email_verified == true;
+      request.auth.token.email_verified;
   }
 
   function isOrgAdminOrOwner(organizationId) {
@@ -1293,8 +1293,7 @@ service cloud.firestore {
         let primary = job.get('managerId', '');
         let pattern = '.*,(user:)?' + uid + ',.*';
         let row = /databases/(default)/documents/organizations/$(organizationId)/managers/$(primary);
-        return (',' + job.get('managerUserIds', []).join(',').lower() + ',').matches(pattern) ||
-          (',' + job.get('managerIds', []).join(',').lower() + ',').matches(pattern) ||
+        return (',' + job.get('managerUserIds', []).join(',') + ',' + job.get('managerIds', []).join(',') + ',').lower().matches(pattern) ||
           primary is string && (primary.lower() in [uid, 'user:' + uid] ||
             primary.size() > 0 && !primary.matches('.*/.*') && request.auth.token.email is string &&
             exists(row) && string(get(row).data.get('email', '')).lower() == request.auth.token.email.lower());
@@ -1405,7 +1404,10 @@ service cloud.firestore {
           request.resource.data.deletedFrom in ['web', 'ios', 'android'] &&
           request.resource.data.collection in ['bookings', 'managerSiteBookings', 'subcontractorBookings'] &&
           (request.resource.data.get('overtimeRequestId', '') == ''
-            ? bookingTombstoneAllowed(request.resource.data.collection, bookingId)
+            ? (bookingTombstoneAllowed(request.resource.data.collection, bookingId) ||
+              request.resource.data.collection in ['bookings', 'managerSiteBookings'] &&
+                exists(/databases/(default)/documents/organizations/$(organizationId)/$(request.resource.data.collection)/$(bookingId)) &&
+                !existsAfter(/databases/(default)/documents/organizations/$(organizationId)/$(request.resource.data.collection)/$(bookingId)))
             : (request.resource.data.collection == 'bookings' && (isOrgAdminOrOwner(organizationId)
               ? overtimeReturnFor(bookingId, request.resource.data.overtimeRequestId, 'deletedBookingIds', '', true)
               : (overtimeCallerIsStaffHere() && overtimeReturnFor(bookingId, request.resource.data.overtimeRequestId, 'deletedBookingIds',
@@ -1415,10 +1417,11 @@ service cloud.firestore {
 
       function callerLineManagesUser(uid) {
         let path = /databases/(default)/documents/users/$(uid);
+        let d = get(path).data;
         return uid is string && uid.size() > 0 && !uid.matches('.*/.*') && uid != request.auth.uid &&
-          exists(path) && homeOrgIs(get(path).data, organizationId) &&
-          get(path).data.get('hasNoLineManager', false) != true &&
-          request.auth.uid in lineManagerIdList(get(path).data) &&
+          exists(path) && homeOrgIs(d, organizationId) &&
+          d.get('hasNoLineManager', false) != true &&
+          request.auth.uid in lineManagerIdList(d) &&
           !callerHomeIsOperative();
       }
       function overtimeMultiplierWriteValid() {
@@ -1436,7 +1439,7 @@ service cloud.firestore {
         let affected = affected();
         let person = collection == 'bookings' ? resource.data.get('operativeId', '') : resource.data.get('userId', '');
         return affected.hasOnly([
-            'workStartTime', 'workEndTime', 'timeSlot', 'otMultiplierOverride', 'status', 'overtimeReturnRequestId', 'updatedAt', 'updatedBy', 'updatedFrom'
+            'workStartTime', 'workEndTime', 'timeSlot', 'isBreakRemoved', 'otMultiplierOverride', 'status', 'overtimeReturnRequestId', 'updatedAt', 'updatedBy', 'updatedFrom'
           ]) ? (('overtimeReturnRequestId' in affected
             ? overtimeReturnFor(bookingId, request.resource.data.overtimeReturnRequestId, 'appliedBookingIds', person, false)
             : (collection == 'bookings' ? ((person is string && person.size() > 0 && !person.matches('.*/.*')) ? (
@@ -1446,11 +1449,17 @@ service cloud.firestore {
           (!('workStartTime' in affected) || request.resource.data['workStartTime'] is string && request.resource.data['workStartTime'].size() <= 8) &&
           (!('workEndTime' in affected) || request.resource.data['workEndTime'] is string && request.resource.data['workEndTime'].size() <= 8) &&
           (!('timeSlot' in affected) || request.resource.data.timeSlot in ['CUSTOM_HOURS', 'CUSTOM', 'FULL DAY', 'FULL_DAY', 'AM', 'PM']) &&
+          (!('isBreakRemoved' in affected) || request.resource.data.isBreakRemoved is bool) &&
           (request.resource.data.get('status', null) == resource.data.get('status', null) ||
             request.resource.data.get('status', null) == 'Cancelled') &&
           overtimeMultiplierWriteValid() &&
           writeMetadataValidWhenPresent() &&
           overtimeCallerIsStaffHere()) : false) : false;
+      }
+      function lineManagerTombstoneNew(bookingId) {
+        let tomb = /databases/(default)/documents/organizations/$(organizationId)/deletedBookings/$(bookingId);
+        return !exists(tomb) && existsAfter(tomb) && getAfter(tomb).data.get('deletedBy', '') == request.auth.uid &&
+          getAfter(tomb).data.get('overtimeRequestId', '') == '' && overtimeCallerIsStaffHere();
       }
       function callerLineManagesRowPerson(personId) {
         let email = string(get(/databases/(default)/documents/organizations/$(organizationId)/operatives/$(personId)).data.get('email', '')).lower();
@@ -1711,7 +1720,9 @@ service cloud.firestore {
           ? getAfter(/databases/(default)/documents/organizations/$(organizationId)/deletedBookings/$(bookingId)).data.deletedBy == request.auth.uid
           : ((request.method == 'delete' || !bookingTombstoned(bookingId)) && (
             (request.method == 'delete' && operativesManagerRemovesOrphanBooking(resource.data)) ||
-            bookingWriteAllowed('bookings', request.method)));
+            bookingWriteAllowed('bookings', request.method) ||
+            request.method == 'delete' && lineManagerTombstoneNew(bookingId) && callerLineManagesUser(resource.data.get('operativeId', '')) &&
+              get(/databases/(default)/documents/users/$(resource.data.operativeId)).data.get('ghost', false) != true));
       }
 
       match /qualifications/{qualificationId} {
@@ -2001,7 +2012,8 @@ service cloud.firestore {
         allow read: if bookingReadAllowed('managerSiteBookings');
         allow create, update, delete: if (request.method == 'delete' || !bookingTombstoned(bookingId)) && (
           (request.method == 'update' && overtimeLineManagerBookingUpdate('managerSiteBookings', bookingId)) ||
-          bookingWriteAllowed('managerSiteBookings', request.method));
+          bookingWriteAllowed('managerSiteBookings', request.method) ||
+          request.method == 'delete' && lineManagerTombstoneNew(bookingId) && callerLineManagesUser(resource.data.get('userId', '')));
       }
 
       match /subcontractors/{subcontractorId} {

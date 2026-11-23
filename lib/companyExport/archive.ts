@@ -11,7 +11,7 @@ import { organizationTimeZone } from '../canonical/organizationTimeZone'
 import { resolveOrganizationCurrency } from '../canonical/money'
 import { parseOrganizationName } from '../canonical/organizationSettings'
 import { CSV_BOM, escapeCsvCell, toCsv } from './csv'
-import { fileReferencesInDocument, type FileReference } from './files'
+import { fileReferencesInDocument, withoutDownloadUrls, type FileReference } from './files'
 import {
   EXCLUSION_NOTES,
   EXPORT_FILES,
@@ -125,8 +125,10 @@ export function companyExportEntries(input: CompanyExportInput): Record<string, 
     if (document.collection === 'users') {
       data = exportUserDocument(data, documentOrganizationId(document.data.organizationId), input.organizationId)
     }
-    ;(json[document.collectionPath] ??= {})[document.id] = data
     fileRefs.push(...fileReferencesInDocument(document.collectionPath, document.id, data))
+    // 1.72.0 (owner decision 23 Nov, C): no download URL anywhere in the export, only storage paths.
+    data = withoutDownloadUrls(data)
+    ;(json[document.collectionPath] ??= {})[document.id] = data
     const row: Record<string, ExportValue> = {
       ...data,
       documentId: document.id,
@@ -151,7 +153,7 @@ export function companyExportEntries(input: CompanyExportInput): Record<string, 
     counts.push({ ...spec, rows: rows.length })
   }
 
-  const fileColumns = ['collectionPath', 'documentId', 'field', 'storagePath', 'url'] as const
+  const fileColumns = ['collectionPath', 'documentId', 'field', 'name', 'kind', 'storagePath'] as const
   entries[FILES_CSV] =
     CSV_BOM +
     [
@@ -227,7 +229,7 @@ function readmeText(args: {
     'Files',
     '-----',
     ...args.counts.map((entry) => `${entry.file} (${rowsLabel(entry.rows)}) — ${entry.description}`),
-    `${FILES_CSV} (${rowsLabel(args.fileCount)}) — Every uploaded file the records point to (photos, certificates, RAMS, logos, evidence): where it is referenced, its Cloud Storage path and its download URL. The files themselves are NOT in this zip; open each URL to download it.`,
+    `${FILES_CSV} (${rowsLabel(args.fileCount)}) — Every uploaded file the records point to (photos, certificates, RAMS, logos, evidence): where it is referenced, its file name, its kind and its Cloud Storage path. The files themselves are NOT in this zip and no download links are included: open them in Project Planner, or ask Project Planner support for a copy.`,
     `${EXPORT_JSON} — A full JSON copy of the same documents, keyed by collection path and then document id.`,
     `${README_TXT} — This file.`,
     '',
@@ -238,7 +240,7 @@ function readmeText(args: {
     '',
     'Keep this file safe',
     '-------------------',
-    'It holds personal data (names, contact details, pay) and download links that open the company\'s files without signing in. Store it as you would payroll records.',
+    'It holds personal data (names, contact details, pay). Store it as you would payroll records. It has no download links: file links in the records are replaced by their storage path.',
   ]
   if (args.problems.length > 0) {
     lines.push(

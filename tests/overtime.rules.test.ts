@@ -453,8 +453,19 @@ test('1.33.0 delete on Return: the line manager deletes the one booking their re
     batch.delete(doc(d, 'organizations', ORG, 'bookings', 'B1'))
     batch.set(doc(d, 'organizations', ORG, 'deletedBookings', 'B1'), { bookingId: 'B1', collection: 'bookings', deletedBy: LM, deletedFrom: 'web', deletedAt: serverTimestamp() })
     batch.update(doc(d, 'organizations', ORG, 'overtimeRequests', 'R1'), { status: 'approved', decidedBy: LM, deletedBookingIds: ['B1'] })
-    await assertFails(batch.commit())
+    // 1.72.0 (owner decision 23 Nov, B): the person's line manager may delete their booking with a tombstone that names
+    // no request (the timesheet review ✕), so this batch is now allowed (tests/timesheetReviewBooking.rules.test.ts).
+    await assertSucceeds(batch.commit())
   }
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const d = ctx.firestore()
+    await deleteDoc(doc(d, 'organizations', ORG, 'deletedBookings', 'B1'))
+    await setDoc(doc(d, 'organizations', ORG, 'overtimeRequests', 'R1'), requestData(SAM))
+    await setDoc(doc(d, 'organizations', ORG, 'bookings', 'B1'), {
+      id: 'B1', operativeId: SAM, projectId: 'job1', jobCollection: 'projects', date: 1762214400000, timeSlot: 'CUSTOM_HOURS',
+      workStartTime: '06:30', workEndTime: '14:00', status: 'Confirmed', bookedBy: 'Ada', notes: '',
+    })
+  })
   // B1 is Sam's, on job1 (PM's job): LM is not the job's manager, but the Return deletes it.
   await assertSucceeds(returnDelete(LM, 'B1', 'R1', { deletedBookingIds: ['B1'] }))
 })

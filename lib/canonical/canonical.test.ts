@@ -18576,3 +18576,97 @@ test('1.71.0: the Create revision button and its text are exact', () => {
     'This timesheet has already been exported. Please make changes to the user’s schedule via projects or small works, which reflect the actual hours they have worked, then return here and click the create revision button. This will allow the user to sign their timesheet again with the changes made, for you as their line manager to approve.'
   )
 })
+
+test('1.72.0 timesheetLineDisplay: a "FULL DAY · no break" line reads its window and keeps the note', () => {
+  const policy = parsePolicy112({
+    standardDayStart: '07:00',
+    standardDayEnd: '16:00',
+    breakWindowStart: '12:00',
+    breakWindowEnd: '12:30',
+    unpaidBreakMinutes: 30,
+  })
+  assert.deepEqual(
+    R112.timesheetLineDisplay({ jobNumber: 'J-1', projectName: 'Site', details: 'FULL DAY · no break', dayKey: '2026-11-23' }, policy),
+    { title: 'J-1 · Site', times: 'Full day 07:00–16:00 · no break' }
+  )
+  assert.equal(R112.timesheetLineDisplay({ jobNumber: 'J-1', projectName: 'Site', details: 'FULL DAY · no break' }).times, 'Full day · no break')
+  // Unchanged for a plain slot and clock lines.
+  assert.equal(R112.timesheetLineDisplay({ jobNumber: 'J-1', projectName: 'Site', details: 'FULL DAY', dayKey: '2026-11-23' }, policy).times, 'Full day 07:00–16:00')
+  assert.equal(R112.timesheetLineDisplay({ jobNumber: 'J-1', projectName: 'Site', details: '07:00–16:00 · no break' }).times, '07:00–16:00 · no break')
+})
+
+test('1.72.0 timesheetReviewBookingEditWrites: ⚙ changes the booking, only the fields a line manager may write', () => {
+  const booking = { id: 'B1', collection: 'bookings', timeSlot: 'CUSTOM_HOURS', workStartTime: '07:00', workEndTime: '16:00' }
+  const edit = R112.timesheetReviewBookingEditWrites({ booking, startTime: '07:00', endTime: '19:00', isBreakRemoved: false })
+  assert.equal(edit.ok, true)
+  if (!edit.ok) return
+  assert.equal(edit.collection, 'bookings')
+  assert.equal(edit.bookingId, 'B1')
+  assert.equal(edit.changed, true)
+  // The slot group goes together; a never-stored false break toggle is not added.
+  assert.deepEqual(edit.set, { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:00', workEndTime: '19:00' })
+  assert.deepEqual(edit.remove, [])
+  for (const key of Object.keys(edit.set)) assert.ok((R112.TIMESHEET_REVIEW_BOOKING_FIELDS as readonly string[]).includes(key), key)
+
+  // Break toggle on: written with its group.
+  const noBreak = R112.timesheetReviewBookingEditWrites({ booking, startTime: '07:00', endTime: '16:00', isBreakRemoved: true })
+  assert.ok(noBreak.ok && noBreak.set.isBreakRemoved === true && noBreak.changed)
+
+  // Nothing changed: no write.
+  const same = R112.timesheetReviewBookingEditWrites({ booking, startTime: '07:00', endTime: '16:00', isBreakRemoved: false })
+  assert.ok(same.ok && !same.changed)
+
+  // A Full day with no clock times: unchanged times keep the slot (no write); changed times become custom hours.
+  const fullDay = { id: 'B2', collection: 'managerSiteBookings', timeSlot: 'FULL DAY' }
+  const keep = R112.timesheetReviewBookingEditWrites({ booking: fullDay, startTime: '07:00', endTime: '16:00', isBreakRemoved: false, slotWindow: { start: '07:00', end: '16:00' } })
+  assert.ok(keep.ok && !keep.changed)
+  const longer = R112.timesheetReviewBookingEditWrites({ booking: fullDay, startTime: '07:00', endTime: '18:00', isBreakRemoved: false, slotWindow: { start: '07:00', end: '16:00' } })
+  assert.ok(longer.ok)
+  if (longer.ok) {
+    assert.equal(longer.collection, 'managerSiteBookings')
+    assert.deepEqual(longer.set, { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:00', workEndTime: '18:00' })
+  }
+
+  // Overtime rate: set, remove (organisation's), refused when off the 0.25 step.
+  const rate = R112.timesheetReviewBookingEditWrites({ booking, startTime: '07:00', endTime: '19:00', isBreakRemoved: false, otMultiplierOverride: 2 })
+  assert.ok(rate.ok && rate.set.otMultiplierOverride === 2)
+  const org = R112.timesheetReviewBookingEditWrites({ booking: { ...booking, otMultiplierOverride: 2 }, startTime: '07:00', endTime: '16:00', isBreakRemoved: false, otMultiplierOverride: null })
+  assert.ok(org.ok && org.remove.includes('otMultiplierOverride'))
+  const bad = R112.timesheetReviewBookingEditWrites({ booking, startTime: '07:00', endTime: '19:00', isBreakRemoved: false, otMultiplierOverride: 1.3 })
+  assert.equal(bad.ok, false)
+
+  // Refused: equal times, a subcontractor booking, no booking.
+  assert.equal(R112.timesheetReviewBookingEditWrites({ booking, startTime: '07:00', endTime: '07:00', isBreakRemoved: false }).ok, false)
+  assert.equal(R112.timesheetReviewBookingEditWrites({ booking: { ...booking, collection: 'subcontractorBookings' }, startTime: '07:00', endTime: '18:00', isBreakRemoved: false }).ok, false)
+  assert.equal(R112.timesheetReviewBookingEditWrites({ booking: null, startTime: '07:00', endTime: '18:00', isBreakRemoved: false }).ok, false)
+})
+
+test('1.72.0 timesheetReviewBookingDelete: ✕ deletes the booking with its tombstone', () => {
+  const del = R112.timesheetReviewBookingDelete({ booking: { id: 'B1', collection: 'bookings' }, deletedBy: 'LM', platform: 'web' })
+  assert.deepEqual(del, { collection: 'bookings', bookingId: 'B1', tombstone: { bookingId: 'B1', collection: 'bookings', deletedBy: 'LM', deletedFrom: 'web' } })
+  assert.equal(R112.timesheetReviewBookingDelete({ booking: { id: 'M1', collection: 'managerSiteBookings' }, deletedBy: 'LM', platform: 'ios' })?.collection, 'managerSiteBookings')
+  assert.equal(R112.timesheetReviewBookingDelete({ booking: { id: 'S1', collection: 'subcontractorBookings' }, deletedBy: 'LM', platform: 'web' }), null)
+  assert.equal(R112.timesheetReviewBookingDelete({ booking: { id: 'a/b', collection: 'bookings' }, deletedBy: 'LM', platform: 'web' }), null)
+  const warning = R112.timesheetReviewDeleteBookingWarning({ summary: 'Mon 23 Nov · J-1', overtimeLine: true })
+  assert.equal(warning.title, 'Remove this booking?')
+  assert.equal(warning.overtimeNote, R112.TIMESHEET_REVIEW_DELETE_OVERTIME_NOTE)
+  assert.equal(R112.timesheetReviewDeleteBookingWarning({}).overtimeNote, null)
+})
+
+test('1.72.0 timesheetLabourLineReviewActions: none on an exported sheet, PAYE or leave line; ✕ ⚙ need a booking', () => {
+  const line = { bookingId: 'B1', bookingCollection: 'bookings' }
+  assert.deepEqual(R112.timesheetLabourLineReviewActions({ sheet: {}, line }), { approve: true, removeBooking: true, editBooking: true })
+  assert.deepEqual(R112.timesheetLabourLineReviewActions({ sheet: { exportedAt: Date.UTC(2026, 10, 20) }, line }), {
+    approve: false,
+    removeBooking: false,
+    editBooking: false,
+  })
+  assert.equal(R112.timesheetLabourLineReviewActions({ sheet: {}, line: { ...line, isPayeDay: true } }).approve, false)
+  assert.deepEqual(R112.timesheetLabourLineReviewActions({ sheet: {}, line: {} }), { approve: true, removeBooking: false, editBooking: false })
+  assert.equal(R112.timesheetLabourLineReviewActions({ sheet: {}, line: { bookingId: 'B1', bookingCollection: 'subcontractorBookings' } }).removeBooking, false)
+})
+
+test('1.72.0 old edited / declined reviews still apply (guardrail 3)', () => {
+  const sheet = { payrollLineReviews: { 'op-B1-normal': { decision: 'declined', revisedAmount: null } } }
+  assert.equal(R112.payrollLineReview(sheet, 'op-B1-normal')?.decision, 'declined')
+})

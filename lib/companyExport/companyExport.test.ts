@@ -231,8 +231,9 @@ test('uploaded files are found by URL, gs:// address or *Path field', () => {
       collectionPath: 'organizations/o1/settings',
       documentId: 'healthSafety_projects_J1',
       field: 'ramsDocuments[0].fileURL',
+      name: 'profile.jpg',
+      kind: 'profile_photo',
       storagePath: 'organizations/o1/userProfiles/u1/profile.jpg',
-      url,
     },
   ])
 })
@@ -258,7 +259,7 @@ test('1.71.0: only the organisation\'s Super Admin may export', () => {
 // ─── The whole zip ───────────────────────────────────────────────────────────
 
 test('the zip holds one CSV per area, files.csv, export.json and README.txt', () => {
-  const photo = 'https://firebasestorage.googleapis.com/v0/b/b/o/organizations%2Fo1%2Fbranding%2Flogo.png?alt=media&token=t'
+  const photo = 'https://firebasestorage.googleapis.com/v0/b/b/o/organizations%2Fo1%2Fbranding%2Fcompany_logo%2Flogo.png?alt=media&token=t'
   const entries = companyExportEntries({
     organizationId: 'o1',
     organization: {
@@ -301,7 +302,11 @@ test('the zip holds one CSV per area, files.csv, export.json and README.txt', ()
   assert.ok(!all.includes('cus_secret'), 'Stripe id left out')
 
   const files = parseCsv(entries['files.csv'].slice(1))
-  assert.deepEqual(files[1], ['organizations', 'o1', 'companyLogoURL', 'organizations/o1/branding/logo.png', photo])
+  // 1.72.0 (owner decision 23 Nov, C): name, kind and storage path only; no download URL anywhere in the zip.
+  assert.deepEqual(files[0], ['collectionPath', 'documentId', 'field', 'name', 'kind', 'storagePath'])
+  assert.deepEqual(files[1], ['organizations', 'o1', 'companyLogoURL', 'logo.png', 'company_logo', 'organizations/o1/branding/company_logo/logo.png'])
+  assert.ok(!all.includes('firebasestorage.googleapis.com'), 'no download URL in any file')
+  assert.ok(!all.includes('token=t'), 'no download token in any file')
 
   const json = JSON.parse(entries['export.json'])
   assert.equal(json.exportedAt, '2026-07-01T14:00:00+01:00')
