@@ -1,12 +1,15 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { ownerChangeUserEmail, ownerSendPasswordReset } from '@/lib/owner/ownerActions'
-import { ownerPersonName } from '@/lib/analytics/ownerDirectory'
-import { isPlatformOwnerEmail } from '@/lib/platform/owner'
 import type { User } from '@/types'
 
+/**
+ * Row menu on the organisation page. Owner console PR 5: the person actions (password reset, change name, change
+ * login email, sign out everywhere) live on the person page, with their confirmation, reason and fresh-code step; the
+ * menu opens it.
+ */
 export function OwnerUserAccountMenu({
   user,
   onDone,
@@ -16,22 +19,9 @@ export function OwnerUserAccountMenu({
   onDone: (message: string) => void
   extra?: ReactNode
 }) {
-  const lockedOwner = isPlatformOwnerEmail(user.email)
   const [open, setOpen] = useState(false)
-  const [emailOpen, setEmailOpen] = useState(false)
-  const [email, setEmail] = useState('')
-  const [reason, setReason] = useState('')
-  const [sendReset, setSendReset] = useState(true)
-  const [busy, setBusy] = useState('')
-  const [error, setError] = useState('')
   const buttonRef = useRef<HTMLButtonElement>(null)
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0, dropUp: false })
-
-  const close = () => {
-    setOpen(false)
-    setEmailOpen(false)
-    setError('')
-  }
 
   function toggleMenu() {
     const rect = buttonRef.current?.getBoundingClientRect()
@@ -39,7 +29,7 @@ export function OwnerUserAccountMenu({
       setOpen((value) => !value)
       return
     }
-    const menuHeight = 220
+    const menuHeight = 160
     const dropUp = rect.bottom + menuHeight > window.innerHeight - 12
     setMenuPos({
       top: dropUp ? rect.top - 8 : rect.bottom + 4,
@@ -75,56 +65,24 @@ export function OwnerUserAccountMenu({
         right: menuPos.right,
       }}
     >
+      <Link
+        href={`/developer/users/${encodeURIComponent(user.id)}`}
+        className="block rounded-lg px-3 py-2 text-left text-sm hover:bg-(--soft)"
+      >
+        Open person (actions)
+      </Link>
       {extra}
-      {lockedOwner ? (
-        <p className="px-3 py-2 text-xs text-(--ink3)">Owner login email is locked.</p>
-      ) : (
-        <>
-          <button
-            type="button"
-            className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-(--soft)"
-            disabled={Boolean(busy)}
-            onClick={async () => {
-              setBusy('reset')
-              setError('')
-              try {
-                await ownerSendPasswordReset(user.id, user.email)
-                onDone(`Password reset emailed to ${ownerPersonName(user)}.`)
-                close()
-              } catch (err) {
-                setError(err instanceof Error ? err.message : 'Could not send a reset.')
-              } finally {
-                setBusy('')
-              }
-            }}
-          >
-            {busy === 'reset' ? 'Sending reset…' : 'Send password reset'}
-          </button>
-          <button
-            type="button"
-            className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-(--soft)"
-            onClick={() => {
-              setEmail(user.email || '')
-              setEmailOpen(true)
-              setOpen(false)
-            }}
-          >
-            Change login email…
-          </button>
-        </>
-      )}
       <button
         type="button"
         className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-(--soft)"
         onClick={() => {
           void navigator.clipboard.writeText(user.id)
           onDone('User id copied.')
-          close()
+          setOpen(false)
         }}
       >
         Copy user ID
       </button>
-      {error ? <p className="px-3 py-2 text-xs text-(--red)">{error}</p> : null}
     </div>
   ) : null
 
@@ -134,68 +92,6 @@ export function OwnerUserAccountMenu({
         ⋯
       </button>
       {typeof document !== 'undefined' && menu ? createPortal(menu, document.body) : menu}
-      {emailOpen ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="true">
-          <div className="w-full max-w-md rounded-2xl bg-(--card) p-5 shadow-xl">
-            <h2 className="text-lg font-extrabold">Change login email</h2>
-            <p className="mt-2 text-sm text-(--ink2)">
-              Updates Firebase Auth for {ownerPersonName(user)} using their account id, then the user record. They sign in
-              with the new email after that.
-            </p>
-            <label className="f mt-4 block text-sm font-semibold">
-              New login email
-              <input className="pp-in mt-1" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
-            </label>
-            <label className="f mt-3 block text-sm font-semibold">
-              Reason (optional)
-              <input className="pp-in mt-1" value={reason} onChange={(event) => setReason(event.target.value)} />
-            </label>
-            <label className="mt-3 flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={sendReset} onChange={(event) => setSendReset(event.target.checked)} />
-              Email a password reset to the new address
-            </label>
-            {error ? (
-              <p className="banner mt-3" data-hue="red">
-                {error}
-              </p>
-            ) : null}
-            <div className="mt-4 flex justify-end gap-2">
-              <button type="button" className="btn sm ghost" onClick={close}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="btn sm primary"
-                disabled={busy === 'email'}
-                onClick={async () => {
-                  setBusy('email')
-                  setError('')
-                  try {
-                    const result = await ownerChangeUserEmail({
-                      uid: user.id,
-                      newEmail: email,
-                      reason,
-                      sendReset,
-                    })
-                    onDone(
-                      result.incomplete.length > 0
-                        ? `Login email updated for ${ownerPersonName(user)}, but these could not be updated: ${result.incomplete.join(', ')}.`
-                        : `Login email updated for ${ownerPersonName(user)}.`
-                    )
-                    close()
-                  } catch (err) {
-                    setError(err instanceof Error ? err.message : 'Could not change that email.')
-                  } finally {
-                    setBusy('')
-                  }
-                }}
-              >
-                {busy === 'email' ? 'Saving…' : 'Update email'}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </td>
   )
 }

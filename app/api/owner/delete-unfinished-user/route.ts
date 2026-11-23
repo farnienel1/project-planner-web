@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { enforceRateLimit, isFirebaseUser, jsonError } from '@/lib/security/apiGuard'
 import { apiObject, apiText, readApiBody } from '@/lib/security/apiBody'
-import { requireOwner } from '@/lib/owner/requireOwner'
+import { requireOwnerSession } from '@/lib/owner/requireOwner'
+import { ownerReasonError } from '@/lib/owner/personActions'
 import { clearOwnerDirectoryCache } from '@/lib/owner/directoryServer'
 import { OWNER_AUDIT_UNAVAILABLE_MESSAGE, beginOwnerAudit, type OwnerAuditRun } from '@/lib/owner/ownerAudit'
 import { bearerToken, firestoreDelete, firestoreGet, restFieldsToPlain } from '@/lib/owner/firestoreRest'
@@ -24,13 +25,17 @@ const DOC_ID = /^[A-Za-z0-9_-]{1,128}$/
 export async function POST(request: NextRequest) {
   const limited = enforceRateLimit(request, 'owner-delete-user', 20, 10 * 60 * 1000)
   if (limited) return limited
-  const owner = await requireOwner(request)
+  // PLAN §4: a code entered within the last 10 minutes (owner console PR 5).
+  const owner = await requireOwnerSession(request, { fresh: true })
   if (!isFirebaseUser(owner)) return owner
-  const body = await readApiBody(request, apiObject({ uid: apiText(200) }))
+  const body = await readApiBody(request, apiObject({ uid: apiText(200), reason: apiText(1000) }))
   if (!body.ok) return body.response
   const uid = body.value.uid
   if (!uid) return jsonError('uid is required', 400)
   if (!DOC_ID.test(uid)) return jsonError('uid is not valid', 400)
+  // Review of #434: a reason (3–500 characters) is required before anything is read or written.
+  const reasonError = ownerReasonError(body.value.reason)
+  if (reasonError) return jsonError(reasonError, 400)
   // The security rules let only the person list their own `orgMemberships`, so the owner's token can never
   // prove "not a member anywhere" (review of #340). That, and the Auth creation time, need the server key.
   if (!firebaseAdminConfigured()) {
@@ -103,7 +108,7 @@ export async function POST(request: NextRequest) {
         authCreatedAt:
           authAccount.state === 'read' && authAccount.createdAtMs ? new Date(authAccount.createdAtMs).toISOString() : null,
       },
-      reason: `abandoned-or-orphan cleanup after ${abandonedSignupCutoff().toISOString()}`,
+      reason: [(body.value.reason || '').trim(), `abandoned-or-orphan cleanup after ${abandonedSignupCutoff().toISOString()}`].filter(Boolean).join(' · '),
     })
   } catch {
     return jsonError(OWNER_AUDIT_UNAVAILABLE_MESSAGE, 502)

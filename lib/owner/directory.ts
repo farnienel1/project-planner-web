@@ -126,6 +126,10 @@ export type DirectoryQuery<F, S> = {
   includeTestData?: boolean
   cursor?: string | null
   limit?: number
+  /** People only: last seen inside this window (the Overview's "Active people" tile, owner console PR 5). */
+  seenIn?: { start: Date; end: Date } | null
+  /** People only: created inside this window (the Overview's "New people" tile). */
+  joinedIn?: { start: Date; end: Date } | null
 }
 
 export type DirectoryPage<T> = {
@@ -334,6 +338,11 @@ function personMatchesFilter(row: OwnerPersonRow, filter: OwnerPeopleFilter): bo
   return row.segment === filter
 }
 
+function inWindow(ms: number | null, window: { start: Date; end: Date } | null | undefined): boolean {
+  if (!window) return true
+  return ms != null && ms >= window.start.getTime() && ms <= window.end.getTime()
+}
+
 function personMatchesQuery(row: OwnerPersonRow, needle: string): boolean {
   if (!needle) return true
   const hidden = row as OwnerPersonRow & { _search?: string; _emails?: string[] }
@@ -351,7 +360,11 @@ export function selectOwnerPeople(
   const needle = (query.q || '').trim().toLowerCase()
   const kept = rows.filter(
     (row) =>
-      (query.includeTestData || filter === 'test' || !row.isTest) && personMatchesFilter(row, filter) && personMatchesQuery(row, needle)
+      (query.includeTestData || filter === 'test' || !row.isTest) &&
+      personMatchesFilter(row, filter) &&
+      personMatchesQuery(row, needle) &&
+      inWindow(row.lastSeenAtMs, query.seenIn) &&
+      inWindow(row.createdAtMs, query.joinedIn)
   )
   const sorted = [...kept].sort((a, b) => {
     if (query.sort === 'lastSeen') return (b.lastSeenAtMs ?? 0) - (a.lastSeenAtMs ?? 0) || compareText(a.name, b.name)

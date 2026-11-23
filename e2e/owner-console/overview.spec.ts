@@ -31,9 +31,10 @@ test.describe('overview page', () => {
     await expect(page.getByTestId('overview-mrr')).toContainText('£148')
     for (const [metric, href] of [
       ['activeOrganisations', '/developer/organisations'],
-      ['activePeople', '/developer/users'],
+      // Owner console PR 5: the people tiles open the matching list for the selected period (default This month).
+      ['activePeople', '/developer/users?seen=month'],
       ['mrr', '/developer/revenue'],
-      ['newPeople', '/developer/users'],
+      ['newPeople', '/developer/users?joined=month'],
       ['newOrganisations', '/developer/organisations'],
     ] as const) {
       const links = page.getByTestId(`overview-${metric}`).getByRole('link')
