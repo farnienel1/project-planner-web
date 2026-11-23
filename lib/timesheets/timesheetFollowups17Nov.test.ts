@@ -14,11 +14,11 @@ import {
   timesheetOwnerResolver,
   userTimesheetQueueRows,
 } from './timesheetQueue.ts'
-import type { TimesheetQueueStoredSheet } from './timesheetStorage.ts'
+import { draftToFirestoreMap, type TimesheetQueueStoredSheet } from './timesheetStorage.ts'
 import { mineChangedPeriodStarts, mineSheetRows } from './mineChanged.ts'
 import { snapshotRepairCandidates } from './snapshotAutoRepair.ts'
 import { listSelectablePayPeriods, organizationCreatedAt, payRunListStartDayKey } from './paymentRunCopy.ts'
-import { earlierVersionCards } from './timesheetRevisionCopy.ts'
+import { earlierVersionCards, exportedVersionRows } from './timesheetRevisionCopy.ts'
 import { exportedSheetOwnerResolver, isFormerTimesheetPerson, isUnresolvedTimesheetPerson, unresolvedTimesheetPerson } from './timesheetStorage.ts'
 import { timesheetVersionsForPeriod } from '../canonical/index.ts'
 
@@ -285,6 +285,57 @@ test('item 3: earlier versions as cards — label, signed by whom, total and wha
   assert.equal(cards[0].signedAtMs, Date.parse('2026-11-14T10:00:00Z'))
   assert.match(cards[0].changeText, /^\+2 bookings · \+£/)
   assert.equal(earlierVersionCards({ chain: chain.slice(0, 1), latestTotal: 0, currency: 'GBP' }).length, 0)
+})
+
+test('item 23 (23 Nov): every exported version listed oldest first with its invoice number, total and difference', () => {
+  const original = signedOff([booking()])
+  const revised = signedOff([booking(), booking({ id: 'b2', date: new Date('2026-11-11T00:00:00Z') })])
+  const stored = (draft: TimesheetDraft, extra: Record<string, unknown> = {}) => ({
+    userId: 'u1',
+    managerSignedAt: draft.managerSignedAt,
+    weeklyReportOverride: draft.weeklyReportOverride,
+    exportedAt: new Date('2026-11-16T09:00:00Z'),
+    ...extra,
+  })
+  const rows = exportedVersionRows({
+    versions: [
+      { documentId: 'timesheet_u1_1793491200_rev1', revision: 1, data: stored(revised) },
+      { documentId: 'timesheet_u1_1793491200', revision: 0, data: stored(original) },
+      // Guardrail 3: a version without a known document id (older loader) is still listed.
+      { documentId: '', revision: 2, data: stored(revised, { weeklyReportOverride: null }) },
+    ],
+    shownDocumentId: '',
+    currency: 'GBP',
+  })
+  assert.deepEqual(rows.map((row) => row.label), ['Original', 'REV 1', 'REV 2'])
+  assert.equal(rows[0].differenceText, null)
+  assert.match(rows[0].invoiceNumber, /^TS-1793491200-/)
+  assert.match(rows[1].invoiceNumber, /-REV1$/)
+  assert.match(rows[1].differenceText ?? '', /^\+£/)
+  assert.match(rows[0].totalText, /^£/)
+  assert.equal(rows[1].signedAtMs, Date.parse('2026-11-14T10:00:00Z'))
+  assert.equal(rows[2].invoiceNumber, '')
+  assert.equal(rows[2].totalText, 'Total not available (older export)')
+  assert.equal(rows[2].differenceText, 'Difference not available (older export)')
+  assert.deepEqual(rows.map((row) => row.latest), [false, false, true])
+  // Review of #421: built through draftToFirestoreMap (the screen's real input, no userId), two originals under alias
+  // ids in one pay run — each version reads its own chain, and only the shown version is Latest.
+  const asMap = (draft: TimesheetDraft) => ({ ...draftToFirestoreMap(draft), exportedAt: new Date('2026-11-16T09:00:00Z') })
+  const aliasRows = exportedVersionRows({
+    versions: [
+      { documentId: 'timesheet_old-invite_1793491200', revision: 0, data: asMap(original) },
+      { documentId: 'timesheet_u1_1793491200', revision: 0, data: asMap(original) },
+      { documentId: 'timesheet_u1_1793491200_rev1', revision: 1, data: asMap(revised) },
+    ],
+    shownDocumentId: 'timesheet_u1_1793491200_rev1',
+    currency: 'GBP',
+  })
+  assert.deepEqual(aliasRows.map((row) => row.latest), [false, false, true])
+  assert.match(aliasRows[0].invoiceNumber, /^TS-1793491200-OLDINV/)
+  assert.match(aliasRows[1].invoiceNumber, /^TS-1793491200-U1$/)
+  assert.match(aliasRows[2].invoiceNumber, /^TS-1793491200-U1-REV1$/)
+  assert.match(aliasRows[2].differenceText ?? '', /^\+£/)
+  assert.match(aliasRows[0].totalText, /^£/)
 })
 
 // ---- Review of #368 ----
