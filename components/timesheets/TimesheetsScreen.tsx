@@ -11,6 +11,7 @@ import { hasAdminAccess } from '@/lib/navigation/menuPermissions'
 import {
   forgetExportedTimesheetHistory,
   isUnresolvedTimesheetPerson,
+  isFormerTimesheetPerson,
   loadExportedTimesheetHistory,
   loadTimesheetDraft,
   loadTimesheetDraftAt,
@@ -117,7 +118,8 @@ import { EXPORT_DELIVERY_TAB_ID, exportDeliveryLiveElsewhere, exportDeliveryNoti
 /** Review of #363: PDFs built and backed up at once during an export's delivery. */
 const EXPORT_DELIVERY_CONCURRENCY = 3
 import type { PayrollTimePolicyState } from '@/lib/canonical'
-import { UNRESOLVED_BOOKING_PERSON_CHIP } from '@/lib/canonical'
+import { FORMER_PERSON_CHIP, UNRESOLVED_BOOKING_PERSON_CHIP } from '@/lib/canonical'
+import { useFormerPeople } from '@/lib/people/formerPeople'
 import { SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE, TIMESHEET_LATE_EXTRAS_EXPORT_SKIPPED_MESSAGE, signedTimesheetActions } from '@/lib/canonical'
 
 /** Third review #325: Export left a sheet out because the bookings or pay inputs were still loading. */
@@ -227,6 +229,9 @@ export function TimesheetsScreen({
   useEffect(() => {
     if (organization?.id) loadDelivery(organization.id)
   }, [organization?.id, loadDelivery])
+  // 23 Nov (owner, issue 20 web part): admins' "Unknown person" Exported rows of a deleted person read "Former: <name>"
+  // (`formerPersonForId` over `deletedPeople`); a refused or failed read gives none and the rows keep their label.
+  const formerPeople = useFormerPeople(organization?.id, hasAdminAccess(user) && teamTab === 'exported')
   const deliveryHere = useExportDeliveryStore((state) => Boolean(organization?.id && state.live[organization.id]))
   const deliveryNowMs = useExportDeliveryStore((state) => state.nowMs)
   const deliveryElsewhere = exportDeliveryLiveElsewhere(deliveryEntry, EXPORT_DELIVERY_TAB_ID, deliveryNowMs)
@@ -282,6 +287,7 @@ export function TimesheetsScreen({
             rosterLoaded: rosterLoadedHere && users.length > 0,
             viewerIsOperative: isOperativeMode(user),
             viewerIsAdmin: hasAdminAccess(user),
+            formerPeople,
           })
         )
       } catch {
@@ -321,7 +327,7 @@ export function TimesheetsScreen({
     } finally {
       if (!stale()) setRecordsLoading(false)
     }
-  }, [organization?.id, roster, user, users, timeZone, teamTab, invoicing, loading, rosterLoadedHere])
+  }, [organization?.id, roster, user, users, timeZone, teamTab, invoicing, loading, rosterLoadedHere, formerPeople])
 
   useEffect(() => {
     void reload()
@@ -595,6 +601,9 @@ export function TimesheetsScreen({
         weekdayPaidHours(
           orgPayrollPolicyForDay(date, payrollPolicy, payrollPolicyPrior, payrollPolicyEffectiveFrom, timeZone, null, payrollPolicyState)
         ),
+      // Rulebook 1.70.0 §8 (`timesheetLineDisplay`): a Full day / AM / PM line reads its window, as on the screen.
+      dayPolicyOn: (date: Date) =>
+        orgPayrollPolicyForDay(date, payrollPolicy, payrollPolicyPrior, payrollPolicyEffectiveFrom, timeZone, null, payrollPolicyState),
       currencyCode: currency,
       // Rulebook 1.11.0: only the self-employed days of the period reach the invoice.
       timesheetDays: timesheetDayKeysForPeriod(member, start, end, timeZone),
@@ -1108,7 +1117,7 @@ function MemberRow({
           <span>
             {unresolved ? (
               <>
-                <b>{name}</b> <Chip tone="amber">{UNKNOWN_TIMESHEET_PERSON_CHIP}</Chip>
+                <b>{name}</b> <Chip tone="amber">{isFormerTimesheetPerson(member) ? FORMER_PERSON_CHIP : UNKNOWN_TIMESHEET_PERSON_CHIP}</Chip>
               </>
             ) : (
               <button

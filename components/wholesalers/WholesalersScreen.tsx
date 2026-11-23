@@ -164,14 +164,14 @@ export function WholesalersScreen({ selectedId }: { selectedId?: string }) {
 
   const detail = selected ? (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <h2 className="text-[17px] font-semibold">Wholesaler</h2>
+      {/* 23 Nov (owner): no extra "Wholesaler" sub heading under the list; the wholesaler's name below is the heading. */}
+      <div className="flex items-center justify-end">
         <button type="button" onClick={() => setEditor(selected)} className="text-[15px] font-medium text-(--blue)">
           Edit
         </button>
       </div>
       <div className="rounded-xl bg-(--soft) p-5">
-        <h3 className="text-[32px] font-bold leading-tight">{selected.name}</h3>
+        <h2 className="text-[32px] font-bold leading-tight">{selected.name}</h2>
         {selected.trade ? <p className="mt-1 text-[15px] text-(--ink3)">{selected.trade}</p> : null}
       </div>
       <div className="grid grid-cols-3 gap-2.5">

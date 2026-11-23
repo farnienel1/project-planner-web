@@ -421,7 +421,8 @@ test('export PDF lines skip declined override rows', () => {
     },
   })
   assert.equal(lines.length, 1)
-  assert.equal(lines[0].projectName, 'Site One')
+  // Rulebook 1.70.0 §8 (`timesheetLineDisplay`, 23 Nov): the job number and name, as on the timesheet screen.
+  assert.equal(lines[0].projectName, 'J-1 · Site One')
   assert.equal(lines[0].amount, 200)
 })
 
@@ -469,8 +470,9 @@ test('a signed hourly line stays in hours at the stored amount', () => {
     },
   })
   assert.equal(lines.length, 1)
-  assert.equal(lines[0].details, '24.00 hours × £20.00/hr = £480.00')
-  assert.equal(lines[0].details.includes('day'), false)
+  // Rulebook 1.70.0 §8 (`timesheetLineDisplay`, 23 Nov): a Full day line names its slot before the stored figures.
+  assert.equal(lines[0].details, 'Full day · 24.00 hours × £20.00/hr = £480.00')
+  assert.equal(lines[0].details.replace(/^Full day · /, '').includes('day'), false)
 })
 
 test('pay periods overlapping a midweek report stay on that pay run', () => {

@@ -10,9 +10,9 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { arrayUnion, collection, doc, documentId, getDocs, query, runTransaction, serverTimestamp, where } from 'firebase/firestore'
+import { collection, getDocs } from 'firebase/firestore'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
-import { auth } from '@/lib/firebase/config'
+import { linkPersonIdErrorMessage, linkPersonIdToPerson, loadFiledUnder, loadOrgRoster } from '@/lib/dataHealth/linkPersonId'
 import {
   LINK_BOOKING_PERSON_ACTION,
   LINK_BOOKING_PERSON_ALREADY_MESSAGE,
@@ -25,13 +25,10 @@ import {
   linkBookingPersonConfirmMessage,
   linkBookingPersonDoneMessage,
   linkBookingPersonImpact,
-  linkBookingPersonRefusal,
-  linkBookingPersonWriteFields,
   parseBookingDocument,
   parseManagerSiteBookingDocument,
   rosterAliasIdsFor,
   unresolvedBookingPeople,
-  type LinkBookingPersonFiledUnder,
   type LinkBookingPersonImpact,
   type LinkCandidateProfile,
   type UnresolvedBookingInput,
@@ -47,72 +44,6 @@ import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { formatLongDayKey } from '@/lib/canonical/dayKeys'
 
 type Loaded = { bookings: UnresolvedBookingInput[] }
-
-/** A users document as the link rules read it (every document of the organisation, never the email fold). */
-function linkProfile(id: string, data: Record<string, unknown>): LinkCandidateProfile {
-  const list = (value: unknown) => (Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [])
-  const str = (value: unknown) => (typeof value === 'string' ? value : null)
-  return {
-    id,
-    firstName: str(data.firstName),
-    surname: str(data.surname) ?? str(data.lastName),
-    name: str(data.name),
-    displayName: str(data.displayName),
-    email: str(data.email),
-    organizationId: str(data.organizationId),
-    isActive: typeof data.isActive === 'boolean' ? data.isActive : null,
-    passwordSet: typeof data.passwordSet === 'boolean' ? data.passwordSet : null,
-    ghost: data.ghost === true,
-    formerUserIds: list(data.formerUserIds),
-    sameEmailUserIds: list(data.sameEmailUserIds),
-  }
-}
-
-/** Every users document of the organisation, read from the server (the picker and the re-check). */
-async function loadOrgRoster(organizationId: string): Promise<LinkCandidateProfile[]> {
-  const snap = await getDocs(query(collection(getFirebaseDb(), 'users'), where('organizationId', '==', organizationId)))
-  return snap.docs.map((row) => linkProfile(row.id, row.data()))
-}
-
-/**
- * Rulebook 1.44.0 §11 (`linkBookingPersonImpact`): what else is filed under the id — counted once per document,
- * whichever field names it. Admin reads; a collection the viewer may not read counts as 0 rather than blocking the link.
- */
-async function loadFiledUnder(organizationId: string, personId: string): Promise<LinkBookingPersonFiledUnder> {
-  const db = getFirebaseDb()
-  const org = (name: string) => collection(db, 'organizations', organizationId, name)
-  const count = async (queries: Array<ReturnType<typeof query>>): Promise<number> => {
-    const ids = new Set<string>()
-    for (const q of queries) {
-      try {
-        const snap = await getDocs(q)
-        for (const d of snap.docs) ids.add(d.id)
-      } catch {
-        // Not readable for this viewer: leave it out of the count.
-      }
-    }
-    return ids.size
-  }
-  const prefix = `timesheet_${personId}_`
-  const [rateHistoryRows, leaveRecords, timesheets, overtimeRequests, priceWorkItems, expenseItems] = await Promise.all([
-    count([
-      query(org('operativeDayRateHistory'), where('userId', '==', personId)),
-      query(org('operativeDayRateHistory'), where('operativeId', '==', personId)),
-    ]),
-    count([
-      query(org('holidayBookings'), where('userId', '==', personId)),
-      query(org('holidayBookings'), where('operativeId', '==', personId)),
-    ]),
-    count([
-      query(org('settings'), where(documentId(), '>=', prefix), where(documentId(), '<', `${prefix}\uf8ff`)),
-      query(org('settings'), where('userId', '==', personId)),
-    ]),
-    count([query(org('overtimeRequests'), where('userId', '==', personId))]),
-    count([query(org('priceWorkItems'), where('userId', '==', personId))]),
-    count([query(org('expenseItems'), where('userId', '==', personId))]),
-  ])
-  return { rateHistoryRows, leaveRecords, timesheets, overtimeRequests, priceWorkItems, expenseItems }
-}
 
 function jobLabel(data: Record<string, unknown>): string {
   const number = typeof data.jobNumber === 'string' || typeof data.jobNumber === 'number' ? String(data.jobNumber).trim() : ''
@@ -263,46 +194,7 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
     setError(null)
     setNotice(null)
     try {
-      const db = getFirebaseDb()
-      // A fresh read of the organisation's people and catalogue rows for the re-check (`linkBookingPersonRefusal`).
-      const [freshRoster, operativeSnap] = await Promise.all([
-        loadOrgRoster(organizationId),
-        getDocs(collection(db, 'organizations', organizationId, 'operatives')),
-      ])
-      const freshOperatives = operativeSnap.docs.map((d) => ({
-        id: d.id,
-        email: typeof d.data().email === 'string' ? (d.data().email as string) : null,
-      }))
-      const ref = doc(db, 'users', person.id)
-      const outcome = await runTransaction(db, async (tx) => {
-        const snap = await tx.get(ref)
-        if (!snap.exists()) return { refused: 'That person no longer exists. Check again to refresh the list.' }
-        // The chosen person as stored right now, laid over the fresh roster.
-        const target = linkProfile(snap.id, snap.data())
-        const rosterNow = [...freshRoster.filter((r) => r.id !== snap.id), target]
-        const refusal = linkBookingPersonRefusal({
-          personId: row.personId,
-          targetId: person.id,
-          roster: rosterNow,
-          operatives: freshOperatives,
-          organizationId,
-          viewerIds,
-        })
-        if (refusal) return { refused: refusal.message }
-        const write = linkBookingPersonWriteFields({
-          person: { id: snap.id, formerUserIds: target.formerUserIds ?? [] },
-          personId: row.personId,
-          actorUserId: auth?.currentUser?.uid ?? '',
-          platform: 'web',
-        })
-        if (!write) return { wrote: false }
-        tx.update(ref, {
-          formerUserIds: arrayUnion(...write.arrayUnion.formerUserIds),
-          ...write.set,
-          updatedAt: serverTimestamp(),
-        })
-        return { wrote: true }
-      })
+      const outcome = await linkPersonIdToPerson({ organizationId, personId: row.personId, targetId: person.id, viewerIds })
       if ('refused' in outcome) {
         setError(outcome.refused ?? null)
       } else {
@@ -316,13 +208,7 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
         await run()
       }
     } catch (err) {
-      setError(
-        err instanceof Error && /permission/i.test(err.message)
-          ? 'You do not have permission to change this person. Only an admin of this company can link bookings.'
-          : err instanceof Error
-            ? err.message
-            : 'Could not link the bookings'
-      )
+      setError(linkPersonIdErrorMessage(err, 'Could not link the bookings'))
     } finally {
       setSaving(false)
     }
