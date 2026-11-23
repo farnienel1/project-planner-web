@@ -5,8 +5,10 @@
  * their ids (own uid, former / same-email ids on their users document, an `operatives` row on their sign-in email) or
  * its `userId` is their sign-in email (any letter case). Admins, managers, a user with no level flag (claims role
  * 'member') and an admin with a stray operative-mode flag are not narrowed. Switch off = every member reads, as before.
- * The rules accept the apps' exact query (`leaveQueryPlan`): one `or` of `userId in` (ids + two email spellings) and
- * `operativeId in` (ids), up to 14 ids — within the 10 document-lookup budget.
+ * The rules accept the apps' exact queries (`leaveQueryPlan`): one `or` of `userId in` (ids + two email spellings on the
+ * first query only) and `operativeId in` (ids) per `OWN_LEAVE_IDS_PER_QUERY` (6) ids. Each `operatives`-row id costs
+ * the rule one document lookup and one query may make 10 (3 are the rule's own), so 6 ids per query always fit —
+ * however many rows the person has (1.73.2: 14 ids per query refused an operative with 8 or more row ids).
  * Emulator only (own project id).
  *
  *   npm run test:rules
@@ -37,6 +39,7 @@ const COLLEAGUE = 'ol-colleague'
 const ROW_A = 'ol-row-a'
 const ROW_B = 'ol-row-b'
 const FORMER = Array.from({ length: 11 }, (_, i) => `ol-former-${i}`)
+const MANY_ROWS = Array.from({ length: 14 }, (_, i) => `ol-many-row-${i}`)
 
 let env: RulesTestEnvironment
 
@@ -74,6 +77,10 @@ async function seed(switchConfig: Record<string, unknown> | null) {
     await user(COLLEAGUE, { role: 'operative', operativeMode: true, assignedManagerUserIds: [MANAGER] })
     await setDoc(doc(d, 'organizations', ORG, 'operatives', ROW_A), { firstName: 'Ol', lastName: 'Op', email: OP_TOKEN_EMAIL, isActive: true })
     await setDoc(doc(d, 'organizations', ORG, 'operatives', ROW_B), { firstName: 'Ol', lastName: 'Op', email: OP_EMAIL_STORED, isActive: true })
+    for (const row of MANY_ROWS) {
+      // Every one of these ids is an `operatives` row on the operative's email: the worst case for the lookup budget.
+      await setDoc(doc(d, 'organizations', ORG, 'operatives', row), { firstName: 'Ol', lastName: 'Op', email: OP_TOKEN_EMAIL, isActive: true })
+    }
     await setDoc(doc(d, 'organizations', ORG, 'operatives', 'ol-colleague-row'), { firstName: 'Co', lastName: 'L', email: `${COLLEAGUE}@test.com`, isActive: true })
     const hb = (id: string, fields: Record<string, unknown>) => setDoc(doc(d, 'organizations', ORG, 'holidayBookings', id), leave(fields))
     await hb('H-OWN', { userId: OP })
@@ -82,6 +89,8 @@ async function seed(switchConfig: Record<string, unknown> | null) {
     await hb('H-ROW-USERID', { userId: ROW_B })
     await hb('H-EMAIL', { userId: OP_EMAIL_STORED })
     await hb('H-EMAIL-LOWER', { userId: OP_TOKEN_EMAIL })
+    await hb('H-MANY-LAST-OP', { operativeId: MANY_ROWS[13] })
+    await hb('H-MANY-LAST-USER', { userId: MANY_ROWS[12] })
     await hb('H-COLLEAGUE', { userId: COLLEAGUE })
     await hb('H-COLLEAGUE-ROW', { operativeId: 'ol-colleague-row' })
   })
@@ -101,7 +110,7 @@ test.after(async () => {
 const leaveCol = async (uid: string, email?: string) => collection(await db(uid, email), 'organizations', ORG, 'holidayBookings')
 const leaveDoc = async (id: string, uid: string, email?: string) => doc(await db(uid, email), 'organizations', ORG, 'holidayBookings', id)
 
-/** The operative's query exactly as `leaveQueryPlan` builds it (one `or` per 14 ids). */
+/** The operative's queries exactly as `leaveQueryPlan` builds them (one `or` per `OWN_LEAVE_IDS_PER_QUERY` ids). */
 async function ownQueries(ids: string[], email = OP_EMAIL_STORED) {
   const plan = leaveQueryPlan(
     { uid: OP, ids: [OP], email, role: { isAdmin: false, isManager: false, isOperativeMode: true } } as never,
@@ -154,14 +163,35 @@ for (const [label, config] of [
   })
 }
 
-test('switch on: 14 ids (uid, 11 former ids, two operatives rows) plus two email spellings fit the lookup budget', async () => {
+test('switch on: 14 ids (uid, 11 former ids, two operatives rows) plus two email spellings fit, in 6-id queries', async () => {
   await env.clearFirestore()
   await seed({ operativeOwnLeave: true })
-  const ids = [OP, ...FORMER, ROW_A, ROW_B]
-  const queries = await ownQueries(ids)
-  if (queries.length !== 1) throw new Error(`expected one query, got ${queries.length}`)
-  await assertSucceedsWithinBudget(getDocs(queries[0]))
+  const queries = await ownQueries([OP, ...FORMER, ROW_A, ROW_B])
+  if (queries.length !== 3) throw new Error(`expected three queries, got ${queries.length}`)
+  for (const q of queries) await assertSucceedsWithinBudget(getDocs(q))
 })
+
+for (const count of [10, 14]) {
+  test(`switch on: an operative with ${count} operatives rows reads their own leave with the app's chunked queries`, async () => {
+    await env.clearFirestore()
+    await seed({ operativeOwnLeave: true })
+    const rows = MANY_ROWS.slice(0, count)
+    const queries = await ownQueries([OP, ...rows])
+    const expected = Math.ceil((count + 1) / 6)
+    if (queries.length !== expected) throw new Error(`expected ${expected} queries, got ${queries.length}`)
+    const ids = new Set<string>()
+    for (const q of queries) {
+      const snap = (await assertSucceedsWithinBudget(getDocs(q))) as { docs: { id: string }[] }
+      for (const d of snap.docs) ids.add(d.id)
+    }
+    for (const id of ['H-OWN', 'H-EMAIL', 'H-EMAIL-LOWER']) if (!ids.has(id)) throw new Error(`missing ${id}`)
+    if (count === 14 && !(ids.has('H-MANY-LAST-OP') && ids.has('H-MANY-LAST-USER'))) throw new Error('missing a last-row record')
+    if (ids.has('H-COLLEAGUE') || ids.has('H-COLLEAGUE-ROW')) throw new Error('a colleague record was returned')
+    // Still refused: the whole collection and a colleague's record.
+    await assertLogicalDeny(getDocs(await leaveCol(OP, OP_TOKEN_EMAIL)))
+    await assertLogicalDeny(getDoc(await leaveDoc('H-COLLEAGUE', OP, OP_TOKEN_EMAIL)))
+  })
+}
 
 test('switch on: admins, managers, a no-flag user and an admin with a stray operative-mode flag are not narrowed', async () => {
   await env.clearFirestore()

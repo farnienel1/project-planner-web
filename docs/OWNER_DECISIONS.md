@@ -1212,8 +1212,8 @@ UI only, web only (`docs/design/projects-overview-ui/projects-overview-ui-spec.m
 | Date | Choice | Status |
 |---|---|---|
 | 23 Nov | Phase B reads the operative level from the sign-in claims (role `operative` in this organisation), so a level change applies on the person's next token (at most an hour; §16). | done, owner to confirm |
-| 23 Nov | Known limit (10-lookup budget): an operative with eight or more `operatives` rows on their email has their own-leave query refused once the switch is on (seven fit with 14 ids). The duplicate rows are listed in Data health; fix the data before switching on. | known limit, owner to confirm |
-| 23 Nov | The sign-in email check compares without case (the rulebook said "as stored or lower-cased"); a stored "Jo@X.com" matches the token "jo@x.com". | done, owner to confirm |
+| 23 Nov | ~~Known limit (10-lookup budget): an operative with eight or more `operatives` rows on their email has their own-leave query refused once the switch is on.~~ **Owner 23 Nov: fix before launch** — `OWN_LEAVE_IDS_PER_QUERY` 14 → 6, so `leaveQueryPlan` sends more, smaller queries (the emails on the first only). Emulator probe: 7 row ids per query fit, 8 are refused (10 lookups, 3 the rule's own); 6 leaves one spare. Proved with 10 and 14 rows. Side effect: an operative with more than 6 ids gets several queries, and a record whose `userId` and `operativeId` fall in different queries is counted twice by the data check (re-read and logged, nothing lost). iPhone picks up 6 through the mirror sync. | done (1.73.2, w1732-leave-phase-b) |
+| 23 Nov | **Owner answer (a):** the sign-in email check compares without letter case (email addresses are unique without case; the rulebook said "as stored or lower-cased"); a stored "Jo@X.com" matches the token "jo@x.com". | done (1.73.2), owner confirmed 23 Nov |
 
 ## 23 Nov decisions (for 1.70, shared fixes)
 
