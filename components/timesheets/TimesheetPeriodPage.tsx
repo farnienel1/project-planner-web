@@ -47,7 +47,7 @@ import {
   timesheetPersonIds,
 } from '@/lib/timesheets/timesheetBookingChanges'
 import { BookingsChangedWarning } from '@/components/timesheets/BookingsChangedWarning'
-import { dayKeyInOrganizationZone, signedTimesheetActions, SIGNED_TIMESHEET_CHANGED_MESSAGE } from '@/lib/canonical'
+import { dayKeyInOrganizationZone, organizationOvertimeMultiplier, signedTimesheetActions, SIGNED_TIMESHEET_CHANGED_MESSAGE } from '@/lib/canonical'
 import { staffAccountRole } from '@/lib/permissions'
 import {
   SENSITIVE_EXPORT_OPTION_LABEL,
@@ -145,7 +145,7 @@ import { SignaturePad } from '@/components/timesheets/SignaturePad'
 import { signaturePngSrc } from '@/lib/signature/signatureImage'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
 import { formatAbbreviatedDayInZone, formatStampInZone } from '@/lib/orgTime/zoneTime'
-import { formatTimesheetHours, overtimeHoursBeyondPaidStandard, overtimeHoursText, paidBookedHours, weekdayOtMultiplier } from '@/lib/timesheets/timesheetHours'
+import { formatTimesheetHours, overtimeHoursBeyondPaidStandard, overtimeHoursText, paidBookedHours } from '@/lib/timesheets/timesheetHours'
 import { parseTimesheetManagerAmount, parseTimesheetMoneyAmount } from '@/lib/timesheets/timesheetMoney'
 import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
@@ -960,6 +960,15 @@ export function TimesheetPeriodPage({
   const policyOnDay = (date: Date): OrgPayrollTimePolicy =>
     orgPayrollPolicyForDay(date, payrollPolicy, payrollPolicyPrior, payrollPolicyEffectiveFrom, timeZone, null, payrollPolicyState)
 
+  // Review of #416: the organisation's overtime rate for the line's own day (a weekend day's own rate, the working
+  // hours in effect that day, organisation zone) — the rate a reviewer's change is compared with.
+  const organizationRateOn = (date: Date): number =>
+    organizationOvertimeMultiplier(
+      payrollPolicyState ?? { current: payrollPolicy, prior: payrollPolicyPrior, effectiveFrom: payrollPolicyEffectiveFrom, scheduled: null },
+      dayKeyInOrganizationZone(date.toISOString(), timeZone),
+      timeZone,
+    )
+
   const openPayrollHoursEditor = (line: TimesheetPayrollLineItem) => {
     const linePolicy = policyOnDay(line.date)
     const bookingId = bookingIdFromLineId(line.id)
@@ -981,7 +990,7 @@ export function TimesheetPeriodPage({
     setHoursInitial({ start: choice.startTime, end: choice.endTime })
     setHoursBreakRemoved(choice.breakRemoved)
     // 1.46.0: the line's own multiplier (the booking's overtime rate, else the organisation's for that day).
-    const openedOt = line.isOvertimeLine ? String(line.otMultiplier ?? weekdayOtMultiplier(line.date, linePolicy)) : ''
+    const openedOt = line.isOvertimeLine ? String(line.otMultiplier ?? organizationRateOn(line.date)) : ''
     setHoursOt(openedOt)
     setHoursOtOpened(openedOt)
     setEditingLineId(line.id)
@@ -1033,7 +1042,7 @@ export function TimesheetPeriodPage({
       isBreakRemoved: hoursBreakRemoved,
       // Review of #416: only a rate the reviewer changed is written; back to the organisation's removes a stored one.
       overtimeRate: row.isOvertimeLine
-        ? { typed: typedOvertimeRate(row, hoursOt), opened: hoursOtOpened, organizationMultiplier: weekdayOtMultiplier(row.date, rowPolicy) }
+        ? { typed: typedOvertimeRate(row, hoursOt), opened: hoursOtOpened, organizationMultiplier: organizationRateOn(row.date) }
         : null,
       slotWindow: hoursInitial,
       timeZone,
