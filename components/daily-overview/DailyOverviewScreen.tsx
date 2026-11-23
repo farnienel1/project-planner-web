@@ -45,6 +45,7 @@ import {
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { overviewHolidayName as holidayName, overviewPersonName as personName } from '@/lib/daily-overview/dailyOverviewToday'
 import { useDailyOverviewModel } from '@/lib/daily-overview/useDailyOverviewModel'
+import { dailyOverviewStandardHoursLabel } from '@/lib/daily-overview/standardHoursLabel'
 
 export function DailyOverviewScreen() {
   const router = useRouter()
@@ -127,6 +128,8 @@ export function DailyOverviewScreen() {
 
   const canBook = Boolean(user && (hasAdminAccess(user) || user.permissions?.manager))
   const dateParam = dayKey(day)
+  // Owner decision 23 Nov (item 31): on a set-window weekend day the figure is the window's hours (wording only).
+  const standardHoursLabel = dailyOverviewStandardHoursLabel(payrollPolicy, dayKey(day, orgTimeZone), orgTimeZone)
   const mayPublish = dailyOverviewMayPublish({
     bookingsLoading,
     bookingCount: bookings.length,
@@ -178,10 +181,12 @@ export function DailyOverviewScreen() {
             </button>
             <button
               type="button"
-              className={model.isToday ? 'on' : undefined}
+              className={model.isToday ? 'pu-datenav-today on' : 'pu-datenav-today'}
               onClick={() => setDay(londonMidnight(new Date(), organizationZoneOr()))}
             >
-              {model.isToday ? 'Today' : 'Back to today'}
+              <span>{model.isToday ? 'Today' : 'Back to today'}</span>
+              {/* Reserves the width of the longer label so the arrows never move. */}
+              <span aria-hidden="true">{model.isToday ? 'Back to today' : 'Today'}</span>
             </button>
             <button type="button" aria-label="Next day" onClick={() => setDay(shiftOverviewDay(day, 1))}>
               <ChevronRightIcon width={18} height={18} aria-hidden="true" />
@@ -201,7 +206,11 @@ export function DailyOverviewScreen() {
           <>
             <StatRow
               items={[
-                { value: overviewFormatHours(model.standardWorkedHours), label: 'Standard hrs' },
+                {
+                  value: overviewFormatHours(model.standardWorkedHours),
+                  label: standardHoursLabel.label,
+                  hint: standardHoursLabel.hint,
+                },
                 { value: overtimeValue, label: 'Overtime', tone: 'amber' },
                 { value: model.jobsCount, label: model.jobsCount === 1 ? 'Job active' : 'Jobs active' },
                 {
