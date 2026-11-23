@@ -21,6 +21,7 @@ import {
   treatsAsAllDay,
   type ClashTimelineEntry,
 } from '@/lib/warnings/clashTimeline'
+import { WarningCardActions, WarningDismissButton } from '@/components/warnings/WarningCardActions'
 
 function dateLabel(date: Date, timeZone: string): string {
   return new Intl.DateTimeFormat('en-GB', {
@@ -48,7 +49,7 @@ function HourGrid() {
       {FULL_DAY_TICKS.map((tick) => (
         <div
           key={`grid-${tick}`}
-          className="pointer-events-none absolute inset-y-0 w-px bg-black/[0.08]"
+          className="pointer-events-none absolute inset-y-0 w-px bg-black/8"
           style={{ left: `${(tick / (24 * 60)) * 100}%` }}
         />
       ))}
@@ -85,7 +86,7 @@ function ClashLane({
         return (
           <div
             key={`${region.startMinutes}-${region.endMinutes}`}
-            className="absolute inset-y-0 bg-[#B3261E]/[0.12]"
+            className="absolute inset-y-0 bg-[#B3261E]/12"
             style={{ left: `${rLeft * 100}%`, width: `${Math.max(0.2, (rRight - rLeft) * 100)}%` }}
           />
         )
@@ -155,6 +156,7 @@ export function ClashWarningCard({
   onApprove,
   onRemove,
   canRemove,
+  onDismiss,
 }: {
   title: string
   personName: string
@@ -166,6 +168,8 @@ export function ClashWarningCard({
   onRemove?: (entry: ClashTimelineEntry) => Promise<void>
   /** Rulebook §2 (1.33.0): the ⌫ shows only when `bookingRemoveAction` is `delete` for that row's booking. */
   canRemove?: (entry: ClashTimelineEntry) => boolean
+  /** Owner request 17 Nov: opens the Dismiss sheet (admins and managers). Missing → no Dismiss. */
+  onDismiss?: () => void
 }) {
   const [timelineOpen, setTimelineOpen] = useState(false)
   const analysis = useMemo(() => analyse(entries, FULL_DAY_WINDOW), [entries])
@@ -181,8 +185,13 @@ export function ClashWarningCard({
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
           </svg>
         </div>
-        <p className="h2 grow" style={{ fontSize: 17 }}>{title}</p>
-        <span className="pill solid" data-hue={hue}>{severity === 'medium' ? 'MEDIUM' : 'HIGH'}</span>
+        <p className="h2 grow" style={{ fontSize: 17, minWidth: 0 }}>{title}</p>
+        <span className="wd-head-end">
+          <span className="pill solid" data-hue={hue}>{severity === 'medium' ? 'MEDIUM' : 'HIGH'}</span>
+          {onDismiss ? (
+            <WarningDismissButton onClick={onDismiss} label={`${title}, ${personName}, ${label}`} />
+          ) : null}
+        </span>
       </header>
 
       <div className="card-b stack" style={{ gap: 12 }}>
@@ -197,7 +206,7 @@ export function ClashWarningCard({
         </div>
 
         <div className="ritem" style={{ cursor: 'default', boxShadow: 'none', background: 'var(--soft)' }}>
-          <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-[var(--blue)] text-[11px] font-semibold text-white">
+          <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-(--blue) text-[11px] font-semibold text-white">
             {initialsFrom(personName)}
           </span>
           <span className="grow">
@@ -232,7 +241,7 @@ export function ClashWarningCard({
           <AxisRow />
         </div>
 
-        <div className="overflow-hidden rounded-xl border border-black/[0.08]">
+        <div className="overflow-hidden rounded-xl border border-black/8">
           {entries.map((entry, index) => {
             const palette = CLASH_BAR_PALETTES[index % CLASH_BAR_PALETTES.length]
             const mine = clashMinutesFor(entry, FULL_DAY_WINDOW, analysis)
@@ -257,7 +266,7 @@ export function ClashWarningCard({
                     </p>
                     <p className="muted small num">
                       {timeText(entry)} ·{' '}
-                      <span className="font-semibold text-[var(--red)]">{formatDuration(mine)} clashing</span>
+                      <span className="font-semibold text-(--red)">{formatDuration(mine)} clashing</span>
                     </p>
                   </div>
                   {onRemove && canRemove?.(entry) ? (
@@ -275,14 +284,6 @@ export function ClashWarningCard({
               </div>
             )
           })}
-          <div className="h-px bg-black/10" />
-          <button
-            type="button"
-            onClick={() => setTimelineOpen((value) => !value)}
-            className="btn ghost block"
-          >
-            {timelineOpen ? 'Hide full timeline' : 'Show full timeline'}
-          </button>
         </div>
 
         {timelineOpen ? (
@@ -316,26 +317,35 @@ export function ClashWarningCard({
           </div>
         ) : null}
 
-        {onApprove ? (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void onApprove()}
-            className="btn hue block"
-            data-hue="green"
-          >
-            Approve for weekly report
-          </button>
-        ) : null}
-      </div>
-
-      <div className="card-b" style={{ paddingTop: 0 }}>
-        <Link
-          href={`/dashboard/daily-overview?date=${dayKey(date)}`}
-          className="btn block"
-        >
-          Open daily overview
-        </Link>
+        <WarningCardActions
+          primary={
+            onApprove ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void onApprove()}
+                className="btn hue block"
+                data-hue="green"
+              >
+                Approve for weekly report
+              </button>
+            ) : null
+          }
+          secondary={[
+            <button
+              key="timeline"
+              type="button"
+              onClick={() => setTimelineOpen((value) => !value)}
+              className="btn sm"
+              aria-expanded={timelineOpen}
+            >
+              {timelineOpen ? 'Hide full timeline' : 'Show full timeline'}
+            </button>,
+            <Link key="day" href={`/dashboard/daily-overview?date=${dayKey(date)}`} className="btn sm">
+              Open daily overview
+            </Link>,
+          ]}
+        />
       </div>
     </article>
   )

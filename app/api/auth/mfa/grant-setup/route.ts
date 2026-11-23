@@ -11,7 +11,7 @@ import { clearSessionCookie } from '@/lib/auth/mfa/mfaCookiePolicy'
 import { mintFirebaseSessionCookie } from '@/lib/auth/mfa/mfaSessionCookieMint'
 import { verifyAppSessionCookie } from '@/lib/auth/mfa/mfaSessionCookie'
 import { bearerToken, firestoreGet, readBool, restFieldsToPlain } from '@/lib/owner/firestoreRest'
-import { isPlatformOwnerEmail } from '@/lib/platform/owner'
+import { isVerifiedPlatformOwner } from '@/lib/canonical'
 import { clampString, isValidUuid } from '@/lib/security/validation'
 import { mfaSetupGrantAllowed } from '@/lib/security/mfaSetupGrant'
 import { membershipAllows, membershipFromOrgFields, parseOrganizationId, timestampMs } from '@/lib/security/requireOrgAccess'
@@ -89,7 +89,8 @@ export async function POST(request: NextRequest) {
 
   if (
     !mfaSetupGrantAllowed({
-      isPlatformOwner: isPlatformOwnerEmail(user.email),
+      // Mass-assignment audit 17 Nov: the verified token email only (rulebook §14), never an unverified one.
+      isPlatformOwner: isVerifiedPlatformOwner({ email: user.email, emailVerified: user.emailVerified }),
       accountConfirmed,
       invitationEmailMatches,
       invitationIsUsed,

@@ -28,7 +28,7 @@ export function SetupAuthGuard({ children }: { children: React.ReactNode }) {
   // The wizard and check-email are always dark (owner, 14 Nov), so the wait is too.
   if (loading || sendToCheckEmail) {
     return (
-      <div className="dark pp-site-dark min-h-screen bg-[var(--bg)] pt-16">
+      <div className="dark pp-site-dark min-h-screen bg-(--bg) pt-16">
         <LoadingSpinner label={loading ? 'Loading…' : 'Redirecting…'} />
       </div>
     )

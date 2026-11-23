@@ -92,17 +92,17 @@ export function PayBasisFields({
     <div className="space-y-2 sm:col-span-2">
       <SegmentedControl value={payBasis} disabled={disabled} options={basisOptions} onChange={onBasis} />
       <div className="flex items-center gap-2">
-        <span className="text-sm font-semibold text-[var(--ink2)]">{symbol}</span>
+        <span className="text-sm font-semibold text-(--ink2)">{symbol}</span>
         {amountInput}
-        <span className="text-sm font-semibold text-[var(--ink2)]">{hourly ? '/hr' : '/day'}</span>
+        <span className="text-sm font-semibold text-(--ink2)">{hourly ? '/hr' : '/day'}</span>
       </div>
       {error ? (
-        <p role="alert" className="text-sm font-medium text-[var(--red,#dc2626)]">
+        <p role="alert" className="text-sm font-medium text-(--red,#dc2626)">
           {error}
         </p>
       ) : null}
-      <p className="text-[12.5px] leading-relaxed text-[var(--ink3)]">{hourly ? HOURLY_HELP : DAY_HELP}</p>
-      <p className="text-[12.5px] leading-relaxed text-[var(--ink3)]">{PAY_BASIS_SAVE_NOTE}</p>
+      <p className="text-[12.5px] leading-relaxed text-(--ink3)">{hourly ? HOURLY_HELP : DAY_HELP}</p>
+      <p className="text-[12.5px] leading-relaxed text-(--ink3)">{PAY_BASIS_SAVE_NOTE}</p>
     </div>
   )
 }

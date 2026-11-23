@@ -52,21 +52,21 @@ export function SchedulePersonDayRows({
         // Rulebook 1.16.0: annual leave on this day is a purple row; double bookings stay orange.
         const leave = person.leaveByDay?.[key]
         const removed = state === 'removed'
-        const pendingBorder = clashes.length > 0 ? 'border-[var(--warn)]' : 'border-[var(--purple)]'
+        const pendingBorder = clashes.length > 0 ? 'border-(--warn)' : 'border-(--purple)'
 
         return (
           <div
             key={key}
-            className={`rounded-xl border bg-[var(--card)] ${
-              compact ? 'p-3' : 'p-4 shadow-sm'
-            } ${state === 'clash_pending' ? pendingBorder : 'border-[var(--line)]'}`}
+            className={`rounded-xl border bg-(--card) ${
+              compact ? 'p-3' : 'p-4 shadow-xs'
+            } ${state === 'clash_pending' ? pendingBorder : 'border-(--line)'}`}
           >
             <div className="flex items-start gap-3">
               <DayStateIcon state={state} />
               <div className="min-w-0 flex-1">
                 <p
                   className={`text-sm font-semibold ${
-                    removed ? 'text-[var(--ink3)] line-through' : 'text-[var(--ink)]'
+                    removed ? 'text-(--ink3) line-through' : 'text-(--ink)'
                   }`}
                 >
                   {format(slot.date, 'EEE d MMM yyyy')}
@@ -80,20 +80,20 @@ export function SchedulePersonDayRows({
                 )}
 
                 {state === 'clash_accepted' && clashes.length > 0 && (
-                  <p className="mt-1 text-xs font-medium text-[var(--warn)]">
+                  <p className="mt-1 text-xs font-medium text-(--warn)">
                     Overlap accepted · {formatClashSummary(clashes)}
                   </p>
                 )}
 
                 {state === 'clash_pending' && clashes.length > 0 && (
-                  <p className="mt-1 text-xs font-medium text-[var(--warn)]">
+                  <p className="mt-1 text-xs font-medium text-(--warn)">
                     Already booked · {formatClashSummary(clashes)}
                   </p>
                 )}
 
                 {leave && !removed && (
                   <p
-                    className="mt-1 text-xs font-medium text-[var(--purple)]"
+                    className="mt-1 text-xs font-medium text-(--purple)"
                     style={{ opacity: leave.status === 'pending' ? 0.8 : 1 }}
                   >
                     {leaveConflictDetail(leave)}
@@ -109,7 +109,7 @@ export function SchedulePersonDayRows({
                   <button
                     type="button"
                     onClick={() => onPersonChange(removeDayFromPerson(person, key))}
-                    className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--red)] bg-[var(--card)] text-[var(--red)]"
+                    className="flex h-8 w-8 items-center justify-center rounded-full border border-(--red) bg-(--card) text-(--red)"
                     aria-label={`Remove ${format(slot.date, 'd MMM')}`}
                   >
                     ✕
@@ -135,8 +135,8 @@ export function SchedulePersonDayRows({
 function SelectionDot({ selected }: { selected: boolean }) {
   return (
     <span
-      className={`h-3.5 w-3.5 shrink-0 rounded-full border-2 border-[var(--blue)] ${
-        selected ? 'bg-[var(--blue)]' : 'bg-[var(--card)]'
+      className={`h-3.5 w-3.5 shrink-0 rounded-full border-2 border-(--blue) ${
+        selected ? 'bg-(--blue)' : 'bg-(--card)'
       }`}
       aria-hidden
     />
@@ -165,7 +165,7 @@ export function SchedulePersonPickerRow({
       className={`ritem w-full ${selected ? 'sel' : ''}`}
     >
       <SelectionDot selected={selected} />
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--soft2)] text-xs font-bold text-[var(--ink)]">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-(--soft2) text-xs font-bold text-(--ink)">
         {person.name
           .split(' ')
           .map((part) => part[0] || '')

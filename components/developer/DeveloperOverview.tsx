@@ -350,7 +350,7 @@ export function DeveloperOverviewScreen() {
       eventsFrom={consoleEventsSince(period)}
       actions={
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-xs text-[var(--ink3)]">
+          <p className="text-xs text-(--ink3)">
             {loadedAt ? `Updated ${loadedAt.toLocaleTimeString('en-GB')}` : 'Live directory from organisations and users'}
           </p>
           <button
@@ -402,12 +402,12 @@ export function DeveloperOverviewScreen() {
             <div key={card.label} className="card pad">
               <p className="eyebrow flex items-center gap-1">
                 {card.label}
-                <span title={card.definition} className="cursor-help text-[11px] font-bold text-[var(--ink3)]">
+                <span title={card.definition} className="cursor-help text-[11px] font-bold text-(--ink3)">
                   ⓘ
                 </span>
               </p>
               <p className="mt-1 text-2xl font-extrabold">{card.value}</p>
-              <p className="mt-1 text-xs text-[var(--ink3)]">{card.hint}</p>
+              <p className="mt-1 text-xs text-(--ink3)">{card.hint}</p>
             </div>
           ))}
         </div>
@@ -417,12 +417,12 @@ export function DeveloperOverviewScreen() {
           <div key={card.label} className="card pad">
             <p className="eyebrow flex items-center gap-1">
               {card.label}
-              <span title={card.definition} className="cursor-help text-[11px] font-bold text-[var(--ink3)]">
+              <span title={card.definition} className="cursor-help text-[11px] font-bold text-(--ink3)">
                 ⓘ
               </span>
             </p>
             <p className="mt-1 text-2xl font-extrabold">{card.value}</p>
-            <p className="mt-1 text-xs text-[var(--ink3)]">{card.hint}</p>
+            <p className="mt-1 text-xs text-(--ink3)">{card.hint}</p>
           </div>
         ))}
       </div>
@@ -456,10 +456,10 @@ export function DeveloperOverviewScreen() {
         </div>
         <table className="w-full whitespace-nowrap text-sm">
           <thead>
-            <tr className="text-xs uppercase text-[var(--ink3)]">
+            <tr className="text-xs uppercase text-(--ink3)">
               <th className="px-2 py-2 text-left">Metric</th>
               {scoreboard.columns.map((col) => (
-                <th key={col.id} className={`px-2 py-2 text-right ${col.id === period ? 'text-[var(--blue)]' : ''}`}>
+                <th key={col.id} className={`px-2 py-2 text-right ${col.id === period ? 'text-(--blue)' : ''}`}>
                   {col.label}
                 </th>
               ))}
@@ -467,12 +467,12 @@ export function DeveloperOverviewScreen() {
           </thead>
           <tbody>
             {scoreboard.rows.map((row) => (
-              <tr key={row.label} className="border-t border-[var(--line)]">
+              <tr key={row.label} className="border-t border-(--line)">
                 <td className="px-2 py-2 font-semibold" title={row.definition}>{row.label}</td>
                 {row.values.map((value, index) => (
                   <td
                     key={scoreboard.columns[index].id}
-                    className={`px-2 py-2 text-right ${scoreboard.columns[index].id === period ? 'bg-[var(--soft)] font-bold' : ''}`}
+                    className={`px-2 py-2 text-right ${scoreboard.columns[index].id === period ? 'bg-(--soft) font-bold' : ''}`}
                   >
                     {value === null ? (
                       <span title={activityRowTitle(row.label, ownerActivity)}>—</span>
@@ -483,10 +483,10 @@ export function DeveloperOverviewScreen() {
                 ))}
               </tr>
             ))}
-            <tr className="border-t border-[var(--line)]">
+            <tr className="border-t border-(--line)">
               <td className="px-2 py-2 font-semibold">Timesheet value (selected period)</td>
               {scoreboard.columns.map((col) => (
-                <td key={col.id} className={`px-2 py-2 text-right ${col.id === period ? 'bg-[var(--soft)] font-bold' : ''}`}>
+                <td key={col.id} className={`px-2 py-2 text-right ${col.id === period ? 'bg-(--soft) font-bold' : ''}`}>
                   {col.id === period && timesheetValue.loaded ? formatGbpFromPence(timesheetValue.valuePence) : '—'}
                 </td>
               ))}
@@ -497,12 +497,12 @@ export function DeveloperOverviewScreen() {
       <section className="card pad">
         <h2 className="h2">Needs attention</h2>
         {alerts.length === 0 ? (
-          <p className="mt-2 text-sm text-[var(--ink3)]">No billing alerts yet. Payment failed, trials ending and cancellations appear here from organizations/{'{id}'}.billing.</p>
+          <p className="mt-2 text-sm text-(--ink3)">No billing alerts yet. Payment failed, trials ending and cancellations appear here from organizations/{'{id}'}.billing.</p>
         ) : (
           <ul className="mt-3 space-y-2">
             {alerts.map((alert) => (
               <li key={alert.id}>
-                <Link href={alert.href} className="block rounded-xl bg-[var(--soft)] px-3 py-2 text-sm font-semibold">
+                <Link href={alert.href} className="block rounded-xl bg-(--soft) px-3 py-2 text-sm font-semibold">
                   {alert.text}
                 </Link>
               </li>
@@ -513,7 +513,7 @@ export function DeveloperOverviewScreen() {
       <section className="card pad">
         <h2 className="h2">Most active organisations</h2>
         {metrics.topOrgs.length === 0 ? (
-          <p className="mt-3 text-sm text-[var(--ink3)]">Organisations appear here as soon as a company completes setup.</p>
+          <p className="mt-3 text-sm text-(--ink3)">Organisations appear here as soon as a company completes setup.</p>
         ) : (
           <ul className="mt-3 space-y-2">
             {metrics.topOrgs.map((org) => {
@@ -522,13 +522,13 @@ export function DeveloperOverviewScreen() {
                 <li key={org.id}>
                   <Link
                     href={`/developer/organisations/${encodeURIComponent(org.id)}`}
-                    className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-xl bg-[var(--soft)] px-3 py-2 text-sm"
+                    className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-xl bg-(--soft) px-3 py-2 text-sm"
                   >
                     <span>
                       <span className="font-semibold">{org.name}</span>
-                      <span className="ml-2 text-[11px] text-[var(--ink3)]">{billingLabel(full?.billing)} · {billingStatusLabel(full?.billing)}</span>
+                      <span className="ml-2 text-[11px] text-(--ink3)">{billingLabel(full?.billing)} · {billingStatusLabel(full?.billing)}</span>
                     </span>
-                    <span className="text-[var(--ink3)]">
+                    <span className="text-(--ink3)">
                       {org.userCount} users
                       {org.activeUsers ? ` · ${org.activeUsers} active` : ''}
                     </span>
@@ -541,7 +541,7 @@ export function DeveloperOverviewScreen() {
       </section>
       <section className="card pad">
         <h2 className="h2">Logins</h2>
-        <p className="mt-1 text-xs text-[var(--ink3)]">From product events when they exist; otherwise last-seen on user records.</p>
+        <p className="mt-1 text-xs text-(--ink3)">From product events when they exist; otherwise last-seen on user records.</p>
         <div className="mt-4">
           <MiniBars points={metrics.hasEvents ? uniqueUsersChart(events, periodRange) : directoryDateChart(visibleUsers, periodRange, 'lastSeenAt')} />
         </div>
@@ -558,18 +558,18 @@ export function DeveloperOverviewScreen() {
       </section>
       <section className="card pad">
         <h2 className="h2">Live activity</h2>
-        <p className="mt-1 text-xs text-[var(--ink3)]">Last 50 product events. Names and emails are not stored in metadata.</p>
+        <p className="mt-1 text-xs text-(--ink3)">Last 50 product events. Names and emails are not stored in metadata.</p>
         <ul className="mt-3 space-y-1 text-sm">
           {events.slice(0, 50).length === 0 ? (
-            <li className="text-[var(--ink3)]">No product events recorded yet.</li>
+            <li className="text-(--ink3)">No product events recorded yet.</li>
           ) : (
             [...events]
               .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
               .slice(0, 50)
               .map((event) => (
-                <li key={event.id} className="flex flex-wrap justify-between gap-x-3 rounded-lg px-2 py-1 hover:bg-[var(--soft)]">
+                <li key={event.id} className="flex flex-wrap justify-between gap-x-3 rounded-lg px-2 py-1 hover:bg-(--soft)">
                   <span>{event.eventName.replace(/_/g, ' ')}</span>
-                  <span className="text-[var(--ink3)]">{event.createdAt.toLocaleString('en-GB')}</span>
+                  <span className="text-(--ink3)">{event.createdAt.toLocaleString('en-GB')}</span>
                 </li>
               ))
           )}
@@ -579,7 +579,7 @@ export function DeveloperOverviewScreen() {
         <h2 className="h2">Last seen</h2>
         <ul className="mt-3 grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
           {metrics.lanes.map((row) => (
-            <li key={row.id} className="rounded-xl bg-[var(--soft)] px-3 py-2">
+            <li key={row.id} className="rounded-xl bg-(--soft) px-3 py-2">
               <p className="eyebrow">{row.label}</p>
               <p className="text-2xl font-extrabold">{row.count}</p>
             </li>

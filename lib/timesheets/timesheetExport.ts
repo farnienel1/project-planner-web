@@ -14,6 +14,7 @@ import { personRateHistoryIds } from '@/lib/pay/personRateHistoryIds'
 import type { OperativeDayRateHistoryCollection, OperativeDayRateHistoryEntry } from '@/lib/timesheets/dayRateHistoryStorage'
 import { formatMoney } from '@/lib/canonical/money'
 import { parseMultipliedHoursText, timesheetLineClockText } from '@/lib/canonical/payrollHours'
+import { signedDayRateOvertimeText } from '@/lib/canonical/dayRateOvertimeText'
 import { timesheetInvoiceRows } from '@/lib/canonical/reportPay'
 import { priceWorkJobNumberText } from '@/lib/canonical/priceWorkJobNumber'
 import { emailDocument, emailHeading, emailLink, emailList, emailStrong, emailText } from '@/lib/email/emailTheme'
@@ -121,11 +122,29 @@ function signedOverrideDetails(
     amount: number
     isOvertime: boolean
     payBasis?: string | null
+    /** The multiplier stored on the signed line (1.46.0 snapshots), when any. */
+    otMultiplier?: number | null
+    /** Rulebook 1.67.0: the day rate and divisor stored at signing, when any (never worked out from the amount). */
+    otBaseDayRate?: number | null
+    otDayRateHours?: number | null
+    decision?: string | null
     details?: string
   },
   standardDayHours: number,
   currencyCode?: string
 ): string {
+  // 1.43.0: the clock part only (`timesheetLineClockText`); the multiplied text is in the equation.
+  const clockPart = timesheetLineClockText(line.details)
+  const clock = clockPart && isClockSpanLabel(clockPart) ? `${clockPart} · ` : ''
+  // Rulebook 1.67.0 §8 (review of #378, S1): a signed day-rate overtime line reads in hours only from the day rate and
+  // divisor stored at signing, when its stored amount is exactly what they pay (`signedDayRateOvertimeText`). Never a
+  // rate worked out backwards from the signed amount; any other signed line keeps the older wording below.
+  try {
+    const calc = signedDayRateOvertimeText(line, { currency: currencyCode ?? null })
+    if (calc) return `${clock}${calc.text}`
+  } catch {
+    // The older wording; the amount is the stored one either way.
+  }
   const standard = orgDayHours(standardDayHours)
   // 1.20.3: a signed overtime line with a break shows "6.5h × 2 − 0.5h break = 12.5h" as a live line does
   // (`parseMultipliedHoursText` on its stored text); other signed lines are shown as before.
@@ -144,9 +163,6 @@ function signedOverrideDetails(
       ? { isOvertime: true, otMultiplier: slice.otMultiplier, clockHours: slice.clockHours ?? null, breakHours: slice.breakHours ?? null }
       : {}),
   }).equation
-  // 1.43.0: the clock part only (`timesheetLineClockText`); the multiplied text is in the equation.
-  const clockPart = timesheetLineClockText(line.details)
-  const clock = clockPart && isClockSpanLabel(clockPart) ? `${clockPart} · ` : ''
   return `${clock}${equation}`
 }
 
@@ -193,8 +209,10 @@ export function invoiceLinesForTimesheet({
     if (row.kind === 'labour') {
       const live = row.line
       const signed = row.source === 'override' ? (row.stored as unknown as SignedOverrideLine) : null
+      // Review of #378 (SF1): the details show the row's decided amount (after an Edit hours or other review), never
+      // the live line's own; a calculation that does not price to it falls back to the older wording.
       const details = live
-        ? timesheetLabourDetails(live, currencyCode)
+        ? timesheetLabourDetails(row.amount === live.amount ? live : { ...live, amount: row.amount }, currencyCode)
         : signedOverrideDetails(
             signed as SignedOverrideLine,
             signed?.date && standardDayHoursOn ? standardDayHoursOn(new Date(signed.date as Date)) : standardDayHours,

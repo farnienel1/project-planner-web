@@ -51,10 +51,10 @@ export function OrganizationDeletedScreen() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--bg,white)] px-4">
+    <div className="flex min-h-screen items-center justify-center bg-(--bg,white) px-4">
       <div className="w-full max-w-md text-center">
-        <p className="text-lg font-semibold text-[var(--ink,#0f172a)]">Organisation deleted</p>
-        <p className="mt-2 text-sm text-[var(--ink2,#475569)]">{message}</p>
+        <p className="text-lg font-semibold text-(--ink,#0f172a)">Organisation deleted</p>
+        <p className="mt-2 text-sm text-(--ink2,#475569)">{message}</p>
         {notice ? <p className="mt-3 text-sm text-emerald-700">{notice}</p> : null}
         {error ? <p className="mt-3 text-sm text-red-700">{error}</p> : null}
         <div className="mt-6 flex flex-col items-center gap-3">

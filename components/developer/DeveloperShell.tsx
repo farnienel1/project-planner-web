@@ -133,7 +133,7 @@ export function DeveloperAppShell({ children }: { children: ReactNode }) {
 
   return (
     <div
-      className="app-frame min-h-screen text-[var(--ink)]"
+      className="app-frame min-h-screen text-(--ink)"
       data-testid="owner-console"
       onKeyDown={(event) => {
         if (event.key === 'Escape' && menuOpen) setMenuOpen(false)
@@ -141,13 +141,13 @@ export function DeveloperAppShell({ children }: { children: ReactNode }) {
     >
       {menuOpen ? (
         // The dimmed backdrop closes the menu on a tap; keyboard users use the Close button or Escape.
-        <div className="fixed inset-0 z-[60] bg-[rgba(10,20,40,.4)] lg:hidden" aria-hidden onClick={() => setMenuOpen(false)} />
+        <div className="fixed inset-0 z-60 bg-[rgba(10,20,40,.4)] lg:hidden" aria-hidden onClick={() => setMenuOpen(false)} />
       ) : null}
       <div className="flex min-h-screen">
         <aside
           className={cn(
             'sb flex min-h-0 flex-col',
-            'max-[1023px]:fixed max-[1023px]:inset-y-0 max-[1023px]:left-0 max-[1023px]:z-[70] max-[1023px]:w-[290px] max-[1023px]:transition-transform',
+            'max-[1023px]:fixed max-[1023px]:inset-y-0 max-[1023px]:left-0 max-[1023px]:z-70 max-[1023px]:w-[290px] max-[1023px]:transition-transform',
             menuOpen ? 'max-[1023px]:translate-x-0' : 'max-[1023px]:-translate-x-full max-[1023px]:invisible',
             'lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-[244px] lg:shrink-0'
           )}
@@ -167,7 +167,7 @@ export function DeveloperAppShell({ children }: { children: ReactNode }) {
               <Bars3Icon className="h-5 w-5" />
             </button>
             <ConsoleSearch />
-            <div className="ml-auto flex flex-wrap items-center gap-3 text-[12.5px] text-[var(--dash-ink-2)] max-[640px]:ml-0 max-[640px]:w-full max-[640px]:justify-between">
+            <div className="ml-auto flex flex-wrap items-center gap-3 text-[12.5px] text-(--dash-ink-2) max-[640px]:ml-0 max-[640px]:w-full max-[640px]:justify-between">
               <button
                 type="button"
                 role="switch"
@@ -177,8 +177,8 @@ export function DeveloperAppShell({ children }: { children: ReactNode }) {
                 data-testid="include-test-data"
               >
                 Include test data
-                <span className={`relative h-5 w-9 rounded-full ${includeTestData ? 'bg-[var(--dash-blue-solid)]' : 'bg-[var(--dash-track)]'}`}>
-                  <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition ${includeTestData ? 'left-4' : 'left-0.5'}`} />
+                <span className={`relative h-5 w-9 rounded-full ${includeTestData ? 'bg-(--dash-blue-solid)' : 'bg-(--dash-track)'}`}>
+                  <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition ${includeTestData ? 'left-4' : 'left-0.5'}`} />
                 </span>
               </button>
               {/*
@@ -189,20 +189,20 @@ export function DeveloperAppShell({ children }: { children: ReactNode }) {
               {counts ? (
                 <span className="flex flex-wrap items-center gap-2" data-testid="console-counts">
                   <Link href="/developer/organisations" className="underline-offset-2 hover:underline" title={OWNER_COUNT_HINTS.organisations}>
-                    <b className="font-semibold text-[var(--dash-ink)]">{counts.organisations}</b> organisations
+                    <b className="font-semibold text-(--dash-ink)">{counts.organisations}</b> organisations
                   </Link>
 
                 </span>
               ) : countsError ? (
-                <span className="text-[var(--dash-warn-ink)]" title={countsError}>
+                <span className="text-(--dash-warn-ink)" title={countsError}>
                   Counts unavailable
                 </span>
               ) : null}
             </div>
           </header>
           {showPeriod ? (
-            <div className="flex flex-wrap items-center gap-2 border-b border-[var(--dash-line)] bg-[var(--dash-panel)] px-5 py-2 max-[760px]:px-3.5">
-              <span className="text-[12px] text-[var(--dash-muted)]" id="console-period-label">
+            <div className="flex flex-wrap items-center gap-2 border-b border-(--dash-line) bg-(--dash-panel) px-5 py-2 max-[760px]:px-3.5">
+              <span className="text-[12px] text-(--dash-muted)" id="console-period-label">
                 Period
               </span>
               <div className="flex flex-wrap gap-1" role="group" aria-labelledby="console-period-label">
@@ -214,7 +214,7 @@ export function DeveloperAppShell({ children }: { children: ReactNode }) {
                     onClick={() => setPeriod(item.id)}
                     className={cn(
                       'rounded-[8px] px-3 py-1.5 text-[12.5px] font-medium',
-                      period === item.id ? 'bg-[var(--dash-primary-bg)] text-[var(--dash-primary-ink)]' : 'tb-control'
+                      period === item.id ? 'bg-(--dash-primary-bg) text-(--dash-primary-ink)' : 'tb-control'
                     )}
                   >
                     {item.label}
@@ -225,7 +225,7 @@ export function DeveloperAppShell({ children }: { children: ReactNode }) {
           ) : null}
           <main className="mx-auto w-full max-w-[1400px] min-w-0 px-4 py-5">{children}</main>
           {organization && orgApp ? (
-            <p className="px-4 pb-4 text-center text-xs text-[var(--dash-muted)]">
+            <p className="px-4 pb-4 text-center text-xs text-(--dash-muted)">
               Signed in with a profile that also belongs to {organization.name}. The pages above still show every organisation.
             </p>
           ) : null}
@@ -263,7 +263,7 @@ export function DeveloperShell({
         </Link>
       ) : null}
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <h1 className="min-w-0 break-words text-xl font-extrabold leading-tight text-[var(--ink)]">{title}</h1>
+        <h1 className="min-w-0 wrap-break-word text-xl font-extrabold leading-tight text-(--ink)">{title}</h1>
         {actions}
       </div>
       {eventsFrom !== undefined ? <ConsoleEventsNotice from={eventsFrom} /> : null}
@@ -282,7 +282,7 @@ export function DeveloperStatus({
   return (
     <>
       {error ? <ErrorBanner message={error} /> : null}
-      {loading ? <p className="text-xs text-[var(--ink3)]">Refreshing live directory…</p> : null}
+      {loading ? <p className="text-xs text-(--ink3)">Refreshing live directory…</p> : null}
     </>
   )
 }
@@ -305,13 +305,13 @@ export function MetricCard({
       <p className="eyebrow flex items-center gap-1">
         {label}
         {definition ? (
-          <span title={definition} className="cursor-help text-[11px] font-bold text-[var(--ink3)]">
+          <span title={definition} className="cursor-help text-[11px] font-bold text-(--ink3)">
             ⓘ
           </span>
         ) : null}
       </p>
       <p className="mt-1 text-2xl font-extrabold">{value}</p>
-      {hint ? <p className="mt-1 text-xs text-[var(--ink3)]">{hint}</p> : null}
+      {hint ? <p className="mt-1 text-xs text-(--ink3)">{hint}</p> : null}
     </>
   )
   if (href) {
@@ -332,7 +332,7 @@ export function MiniBars({ points, hue = 'blue' }: { points: { day: string; valu
         <i
           key={point.day}
           title={`${point.day}: ${point.value}`}
-          className="flex-1 rounded-sm bg-[var(--h)]"
+          className="flex-1 rounded-xs bg-(--h)"
           style={{ height: `${Math.max(4, (point.value / max) * 100)}%`, opacity: point.value ? 1 : 0.2 }}
         />
       ))}
@@ -341,12 +341,12 @@ export function MiniBars({ points, hue = 'blue' }: { points: { day: string; valu
 }
 
 export function ChangeHint({ current, previous }: { current: number; previous: number }) {
-  if (previous === 0 && current === 0) return <span className="text-[var(--ink3)]">No change</span>
-  if (previous === 0) return <span className="text-[var(--ink3)]">No previous-period data</span>
+  if (previous === 0 && current === 0) return <span className="text-(--ink3)">No change</span>
+  if (previous === 0) return <span className="text-(--ink3)">No previous-period data</span>
   const pct = Math.round(((current - previous) / previous) * 1000) / 10
   const up = pct >= 0
   return (
-    <span className={up ? 'text-[var(--hs)]' : 'text-[var(--red)]'}>
+    <span className={up ? 'text-(--hs)' : 'text-(--red)'}>
       {up ? '+' : ''}
       {pct}% vs previous period
     </span>

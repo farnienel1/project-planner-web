@@ -4,6 +4,7 @@
  */
 'use client'
 
+import { pruneSiteAuditOutbox } from '@/lib/siteAudit/siteAuditSender'
 import { useNotificationStore } from '@/lib/stores/notificationStore'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
@@ -93,6 +94,11 @@ export default function ChangeOrganisationPage() {
         })
         if (!cancelled) {
           setDiscoveryIncomplete(membershipListDiscoveryFailed(rows))
+          // Review of #389 (owner confirmed 17 Nov): unsent site audits of companies this person no longer belongs
+          // to are removed from the browser — only with a complete list (an incomplete one removes nothing).
+          if (!membershipListDiscoveryFailed(rows) && rows.length > 0) {
+            void pruneSiteAuditOutbox({ userId: firebaseUser.uid, memberOrganizationIds: rows.map((row) => row.organizationId) })
+          }
           if (rows.length === 0 && organization && user) {
             setMemberships([membershipFromCurrentOrg(organization, user)])
           } else if (rows.length > 0) {
@@ -284,9 +290,9 @@ export default function ChangeOrganisationPage() {
                 ) : isActive ? (
                   <span className="pill" data-hue="green">Current</span>
                 ) : locked ? (
-                  <LockClosedIcon className="h-4 w-4 text-[var(--ink3)]" />
+                  <LockClosedIcon className="h-4 w-4 text-(--ink3)" />
                 ) : (
-                  <ChevronRightIcon className="h-4 w-4 text-[var(--ink3)]" />
+                  <ChevronRightIcon className="h-4 w-4 text-(--ink3)" />
                 )}
               </button>
             )

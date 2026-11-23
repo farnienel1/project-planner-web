@@ -22,6 +22,7 @@ import { UsersMissingLevel } from '@/components/dataHealth/UsersMissingLevel'
 import { UsersMissingEmploymentType } from '@/components/dataHealth/UsersMissingEmploymentType'
 import { UsersMissingLineManager } from '@/components/dataHealth/UsersMissingLineManager'
 import { TimesheetsHalfSigned } from '@/components/dataHealth/TimesheetsHalfSigned'
+import { ReportChecks } from '@/components/dataHealth/ReportChecks'
 import {
   parseAppUserDocument,
   parseBooking,
@@ -144,12 +145,13 @@ export default function DataHealthPage() {
         <LeaveNotLinkedToPerson organizationId={organization.id} />
         {/* Rulebook 1.54.0 §8: sheets the line manager signed whose person signature is missing (`timesheetsHalfSigned`). */}
         <TimesheetsHalfSigned organizationId={organization.id} />
+        <ReportChecks organizationId={organization.id} />
         <BookingHealthScan organizationId={organization.id} />
       </div>
     ) : null
 
   if (!isDev) {
-    return scan ?? <p className="text-sm text-[var(--ink3)]">Data health is for admins.</p>
+    return scan ?? <p className="text-sm text-(--ink3)">Data health is for admins.</p>
   }
 
   return (
@@ -159,10 +161,10 @@ export default function DataHealthPage() {
         Development only. Reads up to 25 documents per collection. Never writes.
       </p>
       {error ? <p className="banner" data-hue="red">{error}</p> : null}
-      {running ? <p className="text-sm text-[var(--ink3)]">Sampling collections…</p> : null}
+      {running ? <p className="text-sm text-(--ink3)">Sampling collections…</p> : null}
       <div className="card overflow-hidden">
         <table className="w-full text-left text-sm">
-          <thead className="bg-black/[0.03] text-[12px] uppercase tracking-wide text-[var(--ink3)]">
+          <thead className="bg-black/3 text-[12px] uppercase tracking-wide text-(--ink3)">
             <tr>
               <th className="px-4 py-2">Collection</th>
               <th className="px-4 py-2">Sampled</th>
@@ -173,12 +175,12 @@ export default function DataHealthPage() {
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.collection} className="border-t border-[var(--line)] align-top">
+              <tr key={row.collection} className="border-t border-(--line) align-top">
                 <td className="px-4 py-2 font-medium">{row.collection}</td>
                 <td className="px-4 py-2">{row.sampled}</td>
                 <td className="px-4 py-2">{row.ok}</td>
                 <td className="px-4 py-2">{row.skipped}</td>
-                <td className="px-4 py-2 text-xs text-[var(--ink3)]">
+                <td className="px-4 py-2 text-xs text-(--ink3)">
                   {row.examples.length === 0 ? '—' : row.examples.map((ex) => <div key={ex}>{ex}</div>)}
                 </td>
               </tr>

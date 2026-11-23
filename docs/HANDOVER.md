@@ -1,3 +1,79 @@
+# Handover — 21 Nov 2026
+
+> Read this first; the 19 Nov section below is older.
+
+- **Web main:** rulebook **1.69.0**. Merged 19–21 Nov: #381 (1.66), #378 (1.67), #389 (1.68), #380 (Warnings Dismiss, no rulebook change), #379 (1.69, was 1.62), #338 (owner console docs), #394 and #395 (minor dependency updates).
+- **iOS main:** merged #252 (1.60.1) and #263 (mass assignment). Open, each with main merged in and the rulebook mirror synced to 1.69.0: #253 (overtime wording, now through `liveDayRateOvertimeText`), #254, #256, #257, #260, #261, #262. Merge each once its Mac checks are green.
+- **Upgrades (owner 21–22 Nov: do all three before launch):** React 19 merged (#402); Tailwind 4 merged (#403, Tailwind 3 look kept: 120 screenshots light + dark matched, e2e 40/40); TypeScript 6.0 merged (#404) — TypeScript 7 waits for typescript-eslint support (Dependabot #397 left open). Follow-up: the 59 styles that never showed on Tailwind 3 stay off (owner 22 Nov), switch on after launch if wanted. Web #399 (date-fns 4): branch updated, CI re-running. Web #365: owner preview check.
+- **Still to do:** iOS #262 and #266 (see the iOS queue), checklist artifact rows, owner key revocations (`docs/security-audit-log.md`).
+
+---
+
+# Handover — 19 Nov 2026
+
+> **Read this section first; everything below "Handover — 17 Nov" is older history.** A new chat starts with no memory: read this, then `docs/OWNER_DECISIONS.md`, then the rule files (`owner-working-style.md` especially).
+
+**Dates:** full test 20 Nov · scan pass 2 on 22–23 Nov · launch 25 Nov. Checklist: https://claude.ai/artifact/7Q7erHuNW9RBFFK4VuiAcR
+
+**Usage is tight (owner bought credits 19 Nov).** Work lean:
+- No background agents that wait on CI. Unsubscribe from PR activity; check CI once with `gh api` when needed.
+- One independent review per change, then one quick re-check. Small fixes: do them yourself.
+- Finish the queue below before starting anything new. Short messages to the owner.
+
+## Live now [Certain]
+
+- **Web main `c93bb19b`**, rulebook **1.65.5**. Merged 17–19 Nov: #388 variations (1.63), #392 rules 1.64.0 (**published 18 Nov**, live matches main), #386 timesheet lookups by every id, #391 server allowlist + report checks (1.65.x), #390 Projects restyle, #371 Managers page / "Saving…" fix, #384 read-only report, #361 branded account emails.
+- **Functions deployed by the owner 18–19 Nov:** `overtimeReportIntegrityCheck`, `payeClaimReportIntegrityCheck`, `sendEmail`.
+- **iOS main:** merged #249, #258, #264, #250 (rulebook 1.57 + 1.58), #259 (timesheet lookups), #251 (leave cover + multi-person block, rulebook 1.60.0).
+- `minimumIosBuild` = **10** (owner, 18 Nov; not verified against TestFlight build numbers).
+
+## Queue — web (rulebook order; each needs main merged in, repack, hand-off with `--base origin/main`, green CI)
+
+| PR | What | Version | State |
+|---|---|---|---|
+| #381 | Timesheet queue (awaiting all) | 1.66.0 | Reviewed clean, all findings fixed. Needs main merged (conflicts since #386/#391/#371), then merge. |
+| #378 | Overtime wording (`liveDayRateOvertimeText`) | 1.67.0 | Reviewed clean. Needs main merged after #381. |
+| #389 | Site audit uploads / PDF / field limits | 1.68.0 | Reviewed clean. Needs main merged after #378. Follow-ups: re-submit from the open form leaves a spare photo; no test for web sign-out photo delete. |
+| #380 | Warnings: Dismiss on every type | renumber to 1.69.0 | Not reviewed since rebase. Needs main, renumber, review. |
+| #379 | Simple booking hours breakdown | renumber to 1.70.0 (was 1.62.0) | Not reviewed since rebase. Needs main, renumber, review. |
+| #365 | middleware.ts → proxy.ts | none | Code review clean. **Do not merge** until the owner confirms, signed out, that `deploy-preview-365…/dashboard` redirects to sign-in (Netlify may not run `proxy.ts`). Fine to leave until after launch. |
+
+Tip: after each merge the next PR conflicts in `docs/RULEBOOK.md`, the packed files, `docs/ios-handoff/*`, `package.json` test lists and `docs/OWNER_DECISIONS.md`. Keep both sides; take main's generated files then `npm run build:canonical`; commit with `--no-verify` and run `node scripts/rulebook-sync.mjs check --base origin/main` by hand. This checkout's `origin` fetch refspec is narrow: fetch branches explicitly (`git fetch origin <b>:refs/remotes/origin/<b>`).
+
+## Queue — iOS (in this order; each needs iOS main merged in and green parity-tests + screen-checks; macOS runners queue for hours)
+
+| PR | What | State |
+|---|---|---|
+| #252 | Rulebook 1.60.1 (timesheet notice per signature) | Merged. |
+| #263 | Mass-assignment fixes (pair of web #391) | Merged. |
+| #253 | Overtime wording (pair of #378) | Merged 21 Nov. |
+| #261 | Variations 1.63 | Merged 21 Nov. |
+| #257 | Timesheet queue (pair of #381) | Merged 21 Nov. |
+| #262 | Site audit (pair of #389) | Main merged (`7c0b1aea`); merge when parity-tests and screen-checks are green. |
+| #254 | Hours breakdown 1.62 | Merged 21 Nov. |
+| #256 | Clash cluster dismiss (every overlapping pair) | Merged 21 Nov (stale `variationIsPinned` and dismiss-sound anchor tests fixed). |
+| #260 | Daily Overview Other / Site survey rows (UI only) | Merged 21 Nov. |
+| #255 | Rules-test tooling: firebase 13.3.0, firebase-tools 15.36.0 (replaces #206, #229) | Merged 21 Nov. |
+| #266 | Dependabot: firebase 13.3.0 → 13.4.0 (rules-test tooling) | Code checks pass; only the PR-description check fails (Dependabot body). Fill the body, then merge. #265 closed. |
+
+Known trap (bit #251): since iOS #249 `Booking.storedOperativeId(for:)` returns `String?` and is write-only; reads and matching use `Booking.operativeMatchKey(for:)`.
+
+## Waiting on the owner
+
+- Results of the 18–19 Nov test (seven web items: timesheet lookups, own-profile security refusals, report checks in Data health, restyle, Managers/Edit user saves, branded emails, variations).
+- #365 preview check (above).
+- Confirm `minimumIosBuild` 10 does not lock out the newest TestFlight build.
+- Security review: `STRIPE_TRIAL_REQUIRES_CARD` value; TOTP for the owner login (step 6); **Part B approval**; revoke the leaked keys if not yet done (M365 app password, two Resend keys, SendGrid key). `docs/security-audit-log.md` is still to be written (no secrets or customer data in it).
+- Open judgement calls in `docs/OWNER_DECISIONS.md` ("owner to confirm"), incl. #390's two colour choices (recommended options built), Super Admin own `isActive`, own line-manager lock, legacy partly-id'd tasks, one-email-per-pay-run export on iOS, other admins changing the Super Admin's pay.
+
+## Not recorded yet (do in the next chat)
+
+- `docs/OWNER_DECISIONS.md` rows for 17–19 Nov answers (mass-assignment A–D approved, site audit report "all yes" + never drop text + logo top right, restyle 13 answers, overtime wording "new is clearer", sign-out rule ok, build 10).
+- Checklist artifact rows for everything merged above.
+- Main's `Rulebook / ios-mirror` check is red by design until iOS syncs 1.65.
+
+---
+
 # Handover — 17 Nov 2026 (morning)
 
 This file hands the work from one Claude Code chat to the next. A new chat starts with no memory: **read this file first**, then `docs/OWNER_DECISIONS.md`, then the repo rule files (`CLAUDE.md`, `AGENTS.md`, `docs/RULEBOOK.md`, `docs/agent-rules/*`, especially `owner-working-style.md`). Update this file at the end of every chat.

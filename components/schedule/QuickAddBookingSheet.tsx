@@ -7,8 +7,7 @@ import {
   customHoursPrefillForDate,
   isWeekendDate,
   slotOfferedOnDate,
-  weekendBreakdownForDates,
-  weekdayExplanationForDate,
+  hoursBreakdownForDates,
   weekendNotesForDates,
 } from '@/lib/scheduling/bookingSlotRules'
 import { useMemo, useState } from 'react'
@@ -18,7 +17,6 @@ import { format } from 'date-fns'
 import { calendarDateOfKey } from '@/lib/orgTime/organizationWeek'
 import { slotToFirestore, type ScheduleSlotChoice } from '@/lib/scheduling/scheduleUtils'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
-import { hoursBreakdown } from '@/lib/scheduling/paidHours'
 import { HoursBreakdownCard } from '@/components/schedule/HoursBreakdownCard'
 import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { formatClockMinutes, halfDayWindows } from '@/lib/canonical'
@@ -99,16 +97,20 @@ export function QuickAddBookingSheet({
     ] as { value: ScheduleSlotChoice; label: string }[]
   ).filter((opt) => slotOfferedOnDate(opt.value, date, payroll))
 
+  // Rulebook 1.69.0 (`bookingHoursBreakdownDays`): the Hours breakdown box for the slot and times on screen, under the
+  // working hours in effect on the booking day.
   const breakdown = useMemo(() => {
     const firestoreSlot = slotToFirestore({ date, slot, workStartTime, workEndTime })
-    return hoursBreakdown({
-      timeSlot: firestoreSlot.timeSlot,
-      workStartTime: slot === 'CUSTOM' ? firestoreSlot.workStartTime || workStartTime : undefined,
-      workEndTime: slot === 'CUSTOM' ? firestoreSlot.workEndTime || workEndTime : undefined,
-      isBreakRemoved: slot === 'CUSTOM' ? breakRemoved : undefined,
-      policy: dayPayroll,
-      dayKey: bookingDayKey(date),
-    })
+    return hoursBreakdownForDates(
+      [date],
+      {
+        timeSlot: firestoreSlot.timeSlot,
+        workStartTime: slot === 'CUSTOM' ? firestoreSlot.workStartTime || workStartTime : null,
+        workEndTime: slot === 'CUSTOM' ? firestoreSlot.workEndTime || workEndTime : null,
+        isBreakRemoved: slot === 'CUSTOM' ? breakRemoved : false,
+      },
+      dayPayroll
+    )
   }, [date, slot, workStartTime, workEndTime, breakRemoved, dayPayroll])
 
   const handleSave = async () => {
@@ -203,17 +205,14 @@ export function QuickAddBookingSheet({
               policy={payroll}
               date={date}
               showBreak
+              showBreakdown={false}
               onStart={setWorkStartTime}
               onEnd={setWorkEndTime}
               onBreak={setBreakRemoved}
             />
           )}
 
-          <HoursBreakdownCard
-            breakdown={breakdown}
-            dayRows={slot === 'CUSTOM' ? weekendBreakdownForDates([date], workStartTime, workEndTime, breakRemoved, payroll) : []}
-            explanation={slot === 'CUSTOM' ? weekdayExplanationForDate(date, workStartTime, workEndTime, breakRemoved, payroll) : null}
-          />
+          <HoursBreakdownCard breakdown={breakdown} />
 
           {showNotes ? (
             <div>

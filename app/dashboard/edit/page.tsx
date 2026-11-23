@@ -285,7 +285,7 @@ export default function DashboardEditPage() {
           placeholder="Search tiles…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="mb-4 w-full max-w-md rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="mb-4 w-full max-w-md rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
           aria-label="Search tiles"
         />
 
@@ -329,7 +329,7 @@ export default function DashboardEditPage() {
                 } ${
                   isOnDashboard
                     ? 'border-blue-300 bg-blue-50'
-                    : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm'
+                    : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-xs'
                 } ${meta.heroEligible ? 'cursor-grab active:cursor-grabbing' : ''}`}
               >
                 <div className="absolute right-3 top-3 flex items-center gap-1.5">

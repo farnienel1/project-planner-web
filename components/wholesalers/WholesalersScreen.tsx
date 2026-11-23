@@ -90,7 +90,7 @@ export function WholesalersScreen({ selectedId }: { selectedId?: string }) {
   if (loading && wholesalers.length === 0) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-[var(--blue)]" />
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-(--blue)" />
       </div>
     )
   }
@@ -100,7 +100,7 @@ export function WholesalersScreen({ selectedId }: { selectedId?: string }) {
       <button
         type="button"
         onClick={() => setEditor(emptyWholesaler())}
-        className="flex w-full items-center gap-3 rounded-xl border border-dashed border-[var(--blue)]/40 bg-white px-4 py-3 text-left text-[var(--blue)] shadow-sm"
+        className="flex w-full items-center gap-3 rounded-xl border border-dashed bg-white px-4 py-3 text-left text-(--blue) shadow-xs"
       >
         <PlusIcon className="h-5 w-5" />
         <span className="font-semibold">Add wholesaler</span>
@@ -113,7 +113,7 @@ export function WholesalersScreen({ selectedId }: { selectedId?: string }) {
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         placeholder="Search by name, trade or contact…"
-        className="w-full rounded-xl border border-[var(--line2)] bg-white px-4 py-2.5 text-[15px]"
+        className="w-full rounded-xl border border-(--line2) bg-white px-4 py-2.5 text-[15px]"
       />
       {filtered.length === 0 ? (
         <div className="rounded-2xl bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
@@ -123,7 +123,7 @@ export function WholesalersScreen({ selectedId }: { selectedId?: string }) {
             subtitle="Add your first wholesaler to send material orders and quote requests from your projects."
           />
           <div className="flex justify-center">
-            <button type="button" onClick={() => setEditor(emptyWholesaler())} className="rounded-xl bg-[var(--blue)] px-4 py-2 text-sm font-semibold text-white">
+            <button type="button" onClick={() => setEditor(emptyWholesaler())} className="rounded-xl bg-(--blue) px-4 py-2 text-sm font-semibold text-white">
               + Add Wholesaler
             </button>
           </div>
@@ -142,17 +142,17 @@ export function WholesalersScreen({ selectedId }: { selectedId?: string }) {
                 }`}
               >
                 <p className="text-[16px] font-bold">{row.name}</p>
-                {row.trade ? <p className="mt-1 text-[13px] text-[var(--ink3)]">{row.trade}</p> : null}
+                {row.trade ? <p className="mt-1 text-[13px] text-(--ink3)">{row.trade}</p> : null}
                 {primary ? (
-                  <p className="mt-2 text-[13px] text-[var(--ink3)]">
-                    <span className="mr-2 rounded-full bg-[var(--blue-t)] px-2 py-0.5 text-[10px] font-bold text-[var(--blue)]">
+                  <p className="mt-2 text-[13px] text-(--ink3)">
+                    <span className="mr-2 rounded-full bg-(--blue-t) px-2 py-0.5 text-[10px] font-bold text-(--blue)">
                       PRIMARY
                     </span>
                     {primary.name}
                   </p>
                 ) : null}
                 {row.contacts.length > 1 ? (
-                  <p className="mt-1 text-[12px] text-[var(--ink3)]">+{row.contacts.length - 1} more contacts</p>
+                  <p className="mt-1 text-[12px] text-(--ink3)">+{row.contacts.length - 1} more contacts</p>
                 ) : null}
               </button>
             )
@@ -166,13 +166,13 @@ export function WholesalersScreen({ selectedId }: { selectedId?: string }) {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h2 className="text-[17px] font-semibold">Wholesaler</h2>
-        <button type="button" onClick={() => setEditor(selected)} className="text-[15px] font-medium text-[var(--blue)]">
+        <button type="button" onClick={() => setEditor(selected)} className="text-[15px] font-medium text-(--blue)">
           Edit
         </button>
       </div>
-      <div className="rounded-xl bg-[var(--soft)] p-5">
+      <div className="rounded-xl bg-(--soft) p-5">
         <h3 className="text-[32px] font-bold leading-tight">{selected.name}</h3>
-        {selected.trade ? <p className="mt-1 text-[15px] text-[var(--ink3)]">{selected.trade}</p> : null}
+        {selected.trade ? <p className="mt-1 text-[15px] text-(--ink3)">{selected.trade}</p> : null}
       </div>
       <div className="grid grid-cols-3 gap-2.5">
         <Stat label="Total orders" value={history.filter((r) => r.requestType === 'order').length} />
@@ -186,7 +186,7 @@ export function WholesalersScreen({ selectedId }: { selectedId?: string }) {
           className="w-full rounded-xl bg-white p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.10)]"
         >
           <p className="font-semibold">Quote & order history</p>
-          <p className="mt-1 text-[13px] text-[var(--ink3)]">Search sends across all projects and small works</p>
+          <p className="mt-1 text-[13px] text-(--ink3)">Search sends across all projects and small works</p>
         </button>
       ) : null}
       <section>
@@ -194,20 +194,20 @@ export function WholesalersScreen({ selectedId }: { selectedId?: string }) {
           Contacts · {selected.contacts.length}
         </p>
         {selected.contacts.length === 0 ? (
-          <p className="text-sm text-[var(--ink3)]">Add your first contact in Edit.</p>
+          <p className="text-sm text-(--ink3)">Add your first contact in Edit.</p>
         ) : (
           <div className="space-y-2">
             {selected.contacts.map((contact) => (
-              <div key={contact.id} className="rounded-xl bg-white px-4 py-3 shadow-sm">
+              <div key={contact.id} className="rounded-xl bg-white px-4 py-3 shadow-xs">
                 <p className="font-medium">
                   {contact.name}{' '}
                   {contact.isPrimary ? (
-                    <span className="ml-1 rounded-full bg-[var(--blue-t)] px-2 py-0.5 text-[10px] font-bold text-[var(--blue)]">
+                    <span className="ml-1 rounded-full bg-(--blue-t) px-2 py-0.5 text-[10px] font-bold text-(--blue)">
                       PRIMARY
                     </span>
                   ) : null}
                 </p>
-                <p className="text-sm text-[var(--ink3)]">{contact.email}</p>
+                <p className="text-sm text-(--ink3)">{contact.email}</p>
               </div>
             ))}
           </div>
@@ -215,29 +215,29 @@ export function WholesalersScreen({ selectedId }: { selectedId?: string }) {
       </section>
       <section>
         <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.4px] text-slate-500">Details</p>
-        <div className="rounded-xl bg-white p-4 text-sm shadow-sm">
+        <div className="rounded-xl bg-white p-4 text-sm shadow-xs">
           {selected.accountNumber ? (
             <p>
               <span className="font-semibold">Account number</span> {selected.accountNumber}
             </p>
           ) : null}
           {selected.address ? <p className="mt-2">{selected.address}</p> : null}
-          {!selected.accountNumber && !selected.address ? <p className="text-[var(--ink3)]">No extra details.</p> : null}
+          {!selected.accountNumber && !selected.address ? <p className="text-(--ink3)">No extra details.</p> : null}
         </div>
       </section>
       <section>
         <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.4px] text-slate-500">Recent activity</p>
         {history.slice(0, 5).length === 0 ? (
-          <p className="text-sm text-[var(--ink3)]">No recent sends.</p>
+          <p className="text-sm text-(--ink3)">No recent sends.</p>
         ) : (
           <div className="space-y-2">
             {history.slice(0, 5).map((record) => (
-              <div key={record.id} className="rounded-xl bg-white px-4 py-3 text-sm shadow-sm">
+              <div key={record.id} className="rounded-xl bg-white px-4 py-3 text-sm shadow-xs">
                 <p className="font-medium">
                   {record.requestType === 'order' ? 'Order' : 'Quote'} · {record.lines.length} item
                   {record.lines.length === 1 ? '' : 's'}
                 </p>
-                <p className="mt-1 text-[var(--ink3)]">
+                <p className="mt-1 text-(--ink3)">
                   {record.lines
                     .slice(0, 3)
                     .map((line) => `${line.name} × ${line.quantity}`)
@@ -251,7 +251,7 @@ export function WholesalersScreen({ selectedId }: { selectedId?: string }) {
       </section>
     </div>
   ) : (
-    <div className="hidden rounded-2xl bg-[var(--soft)] p-8 text-sm text-[var(--ink3)] xl:block">
+    <div className="hidden rounded-2xl bg-(--soft) p-8 text-sm text-(--ink3) xl:block">
       Select a wholesaler to see contacts and send history.
     </div>
   )
@@ -300,9 +300,9 @@ export function WholesalersScreen({ selectedId }: { selectedId?: string }) {
 
 function Stat({ label, value }: { label: string; value: number | string }) {
   return (
-    <div className="rounded-[14px] border border-[var(--line)] bg-white py-2.5 text-center">
+    <div className="rounded-[14px] border border-(--line) bg-white py-2.5 text-center">
       <p className="text-[20px] font-medium">{value}</p>
-      <p className="mt-1 text-[12px] text-[var(--ink3)]">{label}</p>
+      <p className="mt-1 text-[12px] text-(--ink3)">{label}</p>
     </div>
   )
 }
@@ -359,23 +359,23 @@ function WholesalerEditor({
       onCancel={onCancel}
       width="md"
       footer={
-        <button type="submit" form="wholesaler-editor" disabled={!canSave || !changed || saving} className="w-full rounded-xl bg-[var(--blue)] py-3 font-semibold text-white disabled:opacity-50">
+        <button type="submit" form="wholesaler-editor" disabled={!canSave || !changed || saving} className="w-full rounded-xl bg-(--blue) py-3 font-semibold text-white disabled:opacity-50">
           Save
         </button>
       }
     >
       <form id="wholesaler-editor" onSubmit={submit} className="space-y-4">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ink3)]">Wholesaler details</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-(--ink3)">Wholesaler details</p>
         <Field label="Name" required value={draft.name} onChange={(name) => setDraft({ ...draft, name })} />
         <Field label="Trade / category" value={draft.trade || ''} onChange={(trade) => setDraft({ ...draft, trade })} />
         <Field label="Address · optional" value={draft.address || ''} onChange={(address) => setDraft({ ...draft, address })} />
         <Field label="Account number · optional" value={draft.accountNumber || ''} onChange={(accountNumber) => setDraft({ ...draft, accountNumber })} />
-        <p className="pt-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--ink3)]">
+        <p className="pt-2 text-[11px] font-semibold uppercase tracking-wide text-(--ink3)">
           Staff / contacts · {draft.contacts.length}
         </p>
         {!canSave ? <p className="text-sm text-red-600">Add at least one contact with name and email.</p> : null}
         {draft.contacts.map((contact, index) => (
-          <div key={contact.id} className="rounded-xl bg-[var(--soft)] p-3">
+          <div key={contact.id} className="rounded-xl bg-(--soft) p-3">
             <Field
               label="Name"
               value={contact.name}
@@ -407,11 +407,11 @@ function WholesalerEditor({
               />
             </div>
             {contact.isPrimary ? (
-              <p className="mt-2 text-[12px] font-semibold text-[var(--blue)]">PRIMARY · order & quote emails go here</p>
+              <p className="mt-2 text-[12px] font-semibold text-(--blue)">PRIMARY · order & quote emails go here</p>
             ) : (
               <button
                 type="button"
-                className="mt-2 text-[13px] font-semibold text-[var(--blue)]"
+                className="mt-2 text-[13px] font-semibold text-(--blue)"
                 onClick={() =>
                   setDraft({
                     ...draft,
@@ -437,7 +437,7 @@ function WholesalerEditor({
         ))}
         <button
           type="button"
-          className="text-[15px] font-semibold text-[var(--blue)]"
+          className="text-[15px] font-semibold text-(--blue)"
           onClick={() =>
             setDraft({
               ...draft,
@@ -491,13 +491,13 @@ function HistorySheet({
   return (
     <IosFormModal title={`${name} history`} onCancel={onClose} width="md">
       <div className="space-y-4">
-        <div className="inline-flex rounded-xl bg-[var(--soft2)] p-1">
+        <div className="inline-flex rounded-xl bg-(--soft2) p-1">
           {(['quote', 'order'] as const).map((value) => (
             <button
               key={value}
               type="button"
               onClick={() => setType(value)}
-              className={`rounded-lg px-4 py-1.5 text-[13px] font-semibold ${type === value ? 'bg-white shadow-sm' : 'text-[var(--ink3)]'}`}
+              className={`rounded-lg px-4 py-1.5 text-[13px] font-semibold ${type === value ? 'bg-white shadow-xs' : 'text-(--ink3)'}`}
             >
               {value === 'quote' ? 'Quotes' : 'Orders'}
             </button>
@@ -514,12 +514,12 @@ function HistorySheet({
             placeholder="Search materials (name, brand, code)"
             className="flex-1 rounded-lg border px-3 py-2 text-sm"
           />
-          <button type="button" onClick={() => { setDate(''); setQuery('') }} className="text-sm font-semibold text-[var(--blue)]">
+          <button type="button" onClick={() => { setDate(''); setQuery('') }} className="text-sm font-semibold text-(--blue)">
             Clear
           </button>
         </div>
         {filtered.length === 0 ? (
-          <p className="text-sm text-[var(--ink3)]">No {type === 'quote' ? 'quotes' : 'orders'} match your filters</p>
+          <p className="text-sm text-(--ink3)">No {type === 'quote' ? 'quotes' : 'orders'} match your filters</p>
         ) : (
           <div className="space-y-4">
             {filtered.map((record) => (
@@ -529,17 +529,17 @@ function HistorySheet({
                     {record.requestType === 'order' ? 'Order' : 'Quote'} · materials day{' '}
                     {(record.materialsDate || record.sentAt).toLocaleDateString('en-GB')}
                   </p>
-                  <p className="text-[13px] text-[var(--ink3)]">by {record.sentBy}</p>
+                  <p className="text-[13px] text-(--ink3)">by {record.sentBy}</p>
                 </div>
                 {record.lines.length === 0 ? (
-                  <p className="mt-3 text-sm text-[var(--ink3)]">No line items were stored on this send.</p>
+                  <p className="mt-3 text-sm text-(--ink3)">No line items were stored on this send.</p>
                 ) : (
                   <div className="mt-3 divide-y divide-[#E5E5EA]">
                     {record.lines.map((line, index) => (
                       <div key={`${record.id}-${line.materialId || index}`} className="flex items-start justify-between gap-3 py-2.5 text-sm">
                         <div>
                           <p className="font-medium">{line.name}</p>
-                          <p className="text-[13px] text-[var(--ink3)]">
+                          <p className="text-[13px] text-(--ink3)">
                             {[materialBrandStored(line.brand), line.productCode].filter(Boolean).join(' · ') || '—'}
                           </p>
                         </div>
@@ -582,7 +582,7 @@ function Field({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={required ? 'Required' : 'Optional'}
-        className="mt-1.5 w-full rounded-lg border border-[var(--line2)] bg-white px-3 py-2.5 text-[15px]"
+        className="mt-1.5 w-full rounded-lg border border-(--line2) bg-white px-3 py-2.5 text-[15px]"
       />
     </label>
   )

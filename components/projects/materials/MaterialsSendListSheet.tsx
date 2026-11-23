@@ -336,11 +336,8 @@ export function MaterialsSendListSheet({
           jobNumber: project.jobNumber,
           siteName: project.siteName,
           siteAddress,
-          senderName,
-          senderEmail: user.email,
-          senderPhone: user.mobileNumber,
-          senderCompany: organization.name,
-          companyLogoURL: organization.companyLogoURL,
+          // Mass-assignment audit 17 Nov: the sender's name, email, phone, company and logo are read by the route
+          // from the signed-in user's own users document and the stored organisation, never sent from here.
           recipients: recipients.map((row) => ({ name: row.name, email: row.email })),
           materials: items.map((item) => ({
             material: item.material,
@@ -423,7 +420,7 @@ export function MaterialsSendListSheet({
 
   if (confirmation) {
     return (
-      <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 p-4 sm:items-center">
+      <div className="fixed inset-0 z-70 flex items-end justify-center bg-black/40 p-4 sm:items-center">
         <div className="w-full max-w-lg rounded-2xl bg-white p-8 text-center shadow-xl">
           <CheckCircleIcon className="mx-auto h-14 w-14 text-[#0F6E56]" />
           <p className="mt-4 text-xl font-semibold text-slate-900">
@@ -455,17 +452,17 @@ export function MaterialsSendListSheet({
       ...partitioned.fresh.map((item) => item.id),
     ]
     return (
-      <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 p-4 sm:items-center">
+      <div className="fixed inset-0 z-70 flex items-end justify-center bg-black/40 p-4 sm:items-center">
         <div className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
           <header className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-            <button type="button" className="text-sm font-medium text-[var(--blue)]" onClick={() => setReviewType(null)}>
+            <button type="button" className="text-sm font-medium text-(--blue)" onClick={() => setReviewType(null)}>
               Cancel
             </button>
             <p className="text-sm font-semibold text-slate-900">Review materials</p>
             <button
               type="button"
               disabled={continueIds.length === 0 || isSending}
-              className="text-sm font-semibold text-[var(--blue)] disabled:opacity-40"
+              className="text-sm font-semibold text-(--blue) disabled:opacity-40"
               onClick={() => void proceedSend(reviewType, continueIds)}
             >
               Continue
@@ -526,10 +523,10 @@ export function MaterialsSendListSheet({
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 sm:items-center sm:p-4">
-      <div className="flex h-[96vh] w-full max-w-2xl flex-col overflow-hidden bg-[var(--bg)] shadow-xl sm:h-auto sm:max-h-[92vh] sm:rounded-2xl">
+    <div className="fixed inset-0 z-60 flex items-end justify-center bg-black/40 sm:items-center sm:p-4">
+      <div className="flex h-[96vh] w-full max-w-2xl flex-col overflow-hidden bg-(--bg) shadow-xl sm:h-auto sm:max-h-[92vh] sm:rounded-2xl">
         <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3">
-          <button type="button" onClick={onClose} className="text-sm font-medium text-[var(--blue)]">
+          <button type="button" onClick={onClose} className="text-sm font-medium text-(--blue)">
             Cancel
           </button>
           <p className="text-sm font-semibold text-slate-900">Send list</p>
@@ -541,7 +538,7 @@ export function MaterialsSendListSheet({
 
           <FeatureCard className="p-3">
             <div className="flex items-center gap-2">
-              <p className="text-xs font-medium text-[var(--blue)]">{project.jobNumber}</p>
+              <p className="text-xs font-medium text-(--blue)">{project.jobNumber}</p>
               <p className="text-xs font-medium text-slate-900">{project.siteName}</p>
               <span className="ml-auto rounded-full bg-[#E1F5EE] px-2 py-0.5 text-[10px] font-medium text-[#0F6E56]">
                 {selectedMaterialIds.size} items
@@ -571,7 +568,7 @@ export function MaterialsSendListSheet({
                     >
                       <span
                         className={`mt-0.5 flex h-4 w-4 items-center justify-center rounded border ${
-                          selected ? 'border-[var(--blue)] bg-[var(--blue)] text-white' : 'border-slate-300'
+                          selected ? 'border-(--blue) bg-(--blue) text-white' : 'border-slate-300'
                         }`}
                       >
                         {selected ? '✓' : ''}
@@ -662,7 +659,7 @@ export function MaterialsSendListSheet({
                         }
                         className="flex w-full items-center gap-2.5 px-3 py-3 text-left"
                       >
-                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-[#185FA5] to-[#378ADD] text-[10px] font-medium text-white">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-linear-to-br/srgb from-[#185FA5] to-[#378ADD] text-[10px] font-medium text-white">
                           {wholesaler.name.slice(0, 2).toUpperCase()}
                         </span>
                         <span className="min-w-0 flex-1">
@@ -672,7 +669,7 @@ export function MaterialsSendListSheet({
                           </span>
                         </span>
                         {selectedInGroup > 0 && (
-                          <span className="text-[10px] font-medium text-[var(--blue)]">{selectedInGroup} selected</span>
+                          <span className="text-[10px] font-medium text-(--blue)">{selectedInGroup} selected</span>
                         )}
                         {expanded ? (
                           <ChevronUpIcon className="h-3.5 w-3.5 text-slate-400" />
@@ -699,7 +696,7 @@ export function MaterialsSendListSheet({
                               </span>
                               <span
                                 className={`flex h-4 w-4 items-center justify-center rounded border ${
-                                  selected ? 'border-[var(--blue)] bg-[var(--blue)] text-white' : 'border-slate-300'
+                                  selected ? 'border-(--blue) bg-(--blue) text-white' : 'border-slate-300'
                                 }`}
                               >
                                 {selected ? '✓' : ''}
@@ -765,7 +762,7 @@ export function MaterialsSendListSheet({
                     type="button"
                     onClick={addOneOff}
                     disabled={!parseOneOffRecipient(newRecipientName, newEmail) || oneOffLimitReached}
-                    className="text-sm font-semibold text-[var(--blue)] disabled:opacity-40"
+                    className="text-sm font-semibold text-(--blue) disabled:opacity-40"
                   >
                     Add
                   </button>
@@ -789,21 +786,21 @@ export function MaterialsSendListSheet({
               type="checkbox"
               checked={sendAsPlainText}
               onChange={(e) => setSendAsPlainText(e.target.checked)}
-              className="mt-1 h-4 w-4 accent-[#185FA5]"
+              className="mt-1 h-4 w-4 accent-primary-600"
             />
           </label>
           <div className="mt-2 flex items-center justify-between text-[11px]">
             <span className="text-slate-500">
               {selectedMaterialIds.size} items · {recipientCount} recipients
             </span>
-            <span className="font-medium text-[var(--blue)]">Cut-off {cutOffLabel}</span>
+            <span className="font-medium text-(--blue)">Cut-off {cutOffLabel}</span>
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2">
             <button
               type="button"
               disabled={selectedMaterialIds.size === 0 || recipientCount === 0 || isSending}
               onClick={() => beginSend('quote')}
-              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-[var(--blue)] px-3 py-2.5 text-sm font-semibold text-[var(--blue)] disabled:opacity-40"
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-(--blue) px-3 py-2.5 text-sm font-semibold text-(--blue) disabled:opacity-40"
             >
               <DocumentTextIcon className="h-4 w-4" />
               Quote
@@ -834,14 +831,14 @@ export function MaterialsSendListSheet({
       </div>
 
       {multiWholesalerAlert && (
-        <div className="absolute inset-0 z-[80] flex items-center justify-center bg-black/30 p-6">
+        <div className="absolute inset-0 z-80 flex items-center justify-center bg-black/30 p-6">
           <div className="w-full max-w-sm rounded-2xl bg-white p-5 text-center shadow-xl">
             <p className="text-base font-semibold text-slate-900">Multiple wholesalers</p>
             <p className="mt-2 text-sm text-slate-600">{MULTIPLE_WHOLESALER_ORDER_MESSAGE}</p>
             <button
               type="button"
               onClick={() => setMultiWholesalerAlert(false)}
-              className="mt-4 rounded-xl bg-[var(--blue)] px-5 py-2 text-sm font-semibold text-white"
+              className="mt-4 rounded-xl bg-(--blue) px-5 py-2 text-sm font-semibold text-white"
             >
               OK
             </button>
@@ -850,10 +847,10 @@ export function MaterialsSendListSheet({
       )}
 
       {whatsAppOpen && (
-        <div className="absolute inset-0 z-[80] flex items-end justify-center bg-black/40 p-4 sm:items-center">
+        <div className="absolute inset-0 z-80 flex items-end justify-center bg-black/40 p-4 sm:items-center">
           <div className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
             <header className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-              <button type="button" className="text-sm font-medium text-[var(--blue)]" onClick={() => setWhatsAppOpen(false)}>
+              <button type="button" className="text-sm font-medium text-(--blue)" onClick={() => setWhatsAppOpen(false)}>
                 Cancel
               </button>
               <p className="text-sm font-semibold text-slate-900">WhatsApp message</p>
@@ -867,7 +864,7 @@ export function MaterialsSendListSheet({
                     type="button"
                     onClick={() => setWhatsAppType(type)}
                     className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
-                      whatsAppType === type ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
+                      whatsAppType === type ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500'
                     }`}
                   >
                     {type === 'order' ? 'Order' : 'Quote request'}
@@ -920,7 +917,7 @@ export function MaterialsSendListSheet({
                 <p className="text-xs text-red-600">
                   {whatsAppRow?.reason}{' '}
                   {activeWhatsAppRecipient?.wholesalerId ? (
-                    <Link href={`/dashboard/wholesalers/${activeWhatsAppRecipient.wholesalerId}`} className="font-semibold text-[var(--blue)]">
+                    <Link href={`/dashboard/wholesalers/${activeWhatsAppRecipient.wholesalerId}`} className="font-semibold text-(--blue)">
                       Add mobile number
                     </Link>
                   ) : null}
@@ -935,7 +932,7 @@ export function MaterialsSendListSheet({
                   type="button"
                   disabled={savingContactPhone}
                   onClick={() => void saveMobileToContact()}
-                  className="text-xs font-semibold text-[var(--blue)] disabled:opacity-40"
+                  className="text-xs font-semibold text-(--blue) disabled:opacity-40"
                 >
                   {savingContactPhone ? 'Saving…' : 'Save mobile to this contact'}
                 </button>
@@ -1013,7 +1010,7 @@ function ReviewSection({
               <button
                 type="button"
                 onClick={() => onToggle(item.id)}
-                className={isExcluded ? 'text-[var(--blue)]' : 'text-red-500'}
+                className={isExcluded ? 'text-(--blue)' : 'text-red-500'}
                 aria-label={isExcluded ? `Include ${item.material}` : `Exclude ${item.material}`}
               >
                 {isExcluded ? '+' : '×'}

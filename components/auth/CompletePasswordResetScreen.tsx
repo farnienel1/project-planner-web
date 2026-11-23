@@ -12,8 +12,10 @@ import { HoneypotField } from '@/components/security/HoneypotField'
 import { PASSKEYS_MAYBE_REMOVED_NOTICE, reportPasswordChanged } from '@/lib/auth/passkeys/passkeyClient'
 import { passkeysEnabled } from '@/lib/auth/passkeys/passkeyConfig'
 import { postPublicForm } from '@/lib/security/publicFormClient'
+import { ApplyEmailActionScreen } from '@/components/auth/ApplyEmailActionScreen'
 import {
   formatPasswordResetError,
+  isApplyEmailAction,
   isPasswordResetAction,
   loginPathForResetEmail,
   minPasswordLengthForEmail,
@@ -103,13 +105,16 @@ export function CompletePasswordResetScreen() {
     }
   }
 
+  // Verify email, confirm a new login email and undo an email change share this action URL (17 Nov).
+  if (isApplyEmailAction(action)) return <ApplyEmailActionScreen action={action} />
+
   return (
     <div className="login" style={{ gridTemplateColumns: '1fr' }}>
       <div className="form-side">
         <div style={{ width: 'min(420px, 100%)' }}>
           <div className="mb-6 flex items-center gap-3">
             <AppLogoMark size={40} radius={12} />
-            <b className="font-[family-name:var(--head)] text-lg">Project Planner</b>
+            <b className="font-(family-name:--head) text-lg">Project Planner</b>
           </div>
           {checking ? (
             <p className="muted">Checking this reset link…</p>
@@ -153,7 +158,7 @@ export function CompletePasswordResetScreen() {
                         type="button"
                         aria-label={showPassword ? 'Hide password' : 'Show password'}
                         onClick={() => setShowPassword((v) => !v)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ink3)]"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-(--ink3)"
                       >
                         {showPassword ? <EyeIcon className="h-5 w-5" /> : <EyeSlashIcon className="h-5 w-5" />}
                       </button>

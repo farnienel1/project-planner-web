@@ -267,9 +267,9 @@ export function AddProjectTaskSheet({
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 sm:items-center sm:p-4">
-      <div className="flex h-[96vh] w-full max-w-2xl flex-col overflow-hidden bg-[var(--bg)] shadow-xl sm:h-auto sm:max-h-[92vh] sm:rounded-2xl">
-        <header className="flex items-center justify-between border-b border-[#EEF0F3] bg-[var(--bg)] px-4 py-3">
+    <div className="fixed inset-0 z-70 flex items-end justify-center bg-black/40 sm:items-center sm:p-4">
+      <div className="flex h-[96vh] w-full max-w-2xl flex-col overflow-hidden bg-(--bg) shadow-xl sm:h-auto sm:max-h-[92vh] sm:rounded-2xl">
+        <header className="flex items-center justify-between border-b border-[#EEF0F3] bg-(--bg) px-4 py-3">
           <button
             type="button"
             onClick={onClose}
@@ -284,14 +284,14 @@ export function AddProjectTaskSheet({
         <div className="flex-1 space-y-4 overflow-y-auto px-[18px] py-3 pb-6">
           {error && <ErrorBanner message={error} />}
           <div className="flex items-center gap-3.5 rounded-[18px] border border-[#EEF0F3] bg-white px-[18px] py-4">
-            <div className="relative flex h-[52px] w-[52px] items-center justify-center rounded-2xl bg-gradient-to-br from-[#185FA5] to-[#378ADD] text-white">
+            <div className="relative flex h-[52px] w-[52px] items-center justify-center rounded-2xl bg-linear-to-br/srgb from-[#185FA5] to-[#378ADD] text-white">
               <ClipboardDocumentCheckIcon className="h-6 w-6" />
-              <span className="absolute -bottom-1 -right-1 flex h-[22px] w-[22px] items-center justify-center rounded-full border-2 border-[#F7F8FA] bg-white text-[var(--blue)]">
+              <span className="absolute -bottom-1 -right-1 flex h-[22px] w-[22px] items-center justify-center rounded-full border-2 border-[#F7F8FA] bg-white text-(--blue)">
                 <PlusIcon className="h-3 w-3" />
               </span>
             </div>
             <div>
-              <p className="text-[16px] font-medium tracking-tight text-[#0B1020]">Create a new task</p>
+              <p className="text-[16px] font-medium tracking-tight text-primary-900">Create a new task</p>
               <p className="text-xs text-[#6B7280]">Assign to a manager or operative</p>
             </div>
           </div>
@@ -302,14 +302,14 @@ export function AddProjectTaskSheet({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Task title…"
-              className="w-full bg-transparent text-[15px] font-medium text-[#0B1020] outline-none"
+              className="w-full bg-transparent text-[15px] font-medium text-primary-900 outline-hidden"
             />
             <textarea
               value={details}
               onChange={(e) => setDetails(e.target.value)}
               placeholder="Add a description (optional)"
               rows={3}
-              className="w-full resize-none bg-transparent text-xs text-[#0B1020] outline-none"
+              className="w-full resize-none bg-transparent text-xs text-primary-900 outline-hidden"
             />
           </div>
           <p className="px-1 text-[10px] text-[#6B7280]">
@@ -327,7 +327,7 @@ export function AddProjectTaskSheet({
                     setChecklist((prev) => prev.map((row) => (row.id === item.id ? { ...row, title: e.target.value } : row)))
                   }
                   placeholder="Checklist item"
-                  className="flex-1 bg-transparent text-[13px] outline-none"
+                  className="flex-1 bg-transparent text-[13px] outline-hidden"
                 />
                 <button
                   type="button"
@@ -342,7 +342,7 @@ export function AddProjectTaskSheet({
             <button
               type="button"
               onClick={() => setChecklist((prev) => [...prev, { id: newUuid(), title: '' }])}
-              className="flex w-full items-center gap-3 py-2.5 text-[13px] font-medium text-[var(--blue)]"
+              className="flex w-full items-center gap-3 py-2.5 text-[13px] font-medium text-(--blue)"
             >
               <span className="flex h-[18px] w-[18px] items-center justify-center rounded-[5px] border-[1.5px] border-dashed border-[#C5C9D2]">
                 <PlusIcon className="h-3 w-3 text-[#C5C9D2]" />
@@ -374,11 +374,11 @@ export function AddProjectTaskSheet({
               onClick={openPicker}
               className="flex w-full items-center gap-3 rounded-2xl border border-[#EEF0F3] bg-white p-3.5 text-left"
             >
-              <span className="flex h-[34px] w-[34px] items-center justify-center rounded-lg bg-[var(--blue-t)] text-[var(--blue)]">
+              <span className="flex h-[34px] w-[34px] items-center justify-center rounded-lg bg-(--blue-t) text-(--blue)">
                 <UserGroupIcon className="h-4 w-4" />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block text-[13px] font-semibold text-[#0B1020]">
+                <span className="block text-[13px] font-semibold text-primary-900">
                   {includeManagers && includeOperatives
                     ? 'Managers & operatives'
                     : includeManagers
@@ -409,7 +409,7 @@ export function AddProjectTaskSheet({
                     selected && chip.id === 'Normal'
                       ? 'border-[#854F0B] bg-[#FAEEDA] text-[#854F0B]'
                       : selected
-                        ? 'border-[var(--blue)] bg-white text-[#0B1020]'
+                        ? 'border-(--blue) bg-white text-primary-900'
                         : 'border-[#EEF0F3] bg-white text-[#6B7280]'
                   }`}
                 >
@@ -481,7 +481,7 @@ export function AddProjectTaskSheet({
               />
             </label>
             <label className="flex cursor-pointer flex-col items-center gap-1 rounded-xl border border-[#EEF0F3] bg-white py-3 text-[10px] text-slate-600">
-              <DocumentIcon className="h-5 w-5 text-[var(--blue)]" />
+              <DocumentIcon className="h-5 w-5 text-(--blue)" />
               File
               <input
                 type="file"
@@ -508,7 +508,7 @@ export function AddProjectTaskSheet({
               onClick={() => setShowAuditPicker(true)}
               className="flex flex-col items-center gap-1 rounded-xl border border-[#EEF0F3] bg-white py-3 text-[10px] text-slate-600"
             >
-              <PaperClipIcon className="h-5 w-5 text-[var(--blue)]" />
+              <PaperClipIcon className="h-5 w-5 text-(--blue)" />
               Site audit
             </button>
           </div>
@@ -529,7 +529,7 @@ export function AddProjectTaskSheet({
             type="button"
             disabled={!canSave}
             onClick={() => void handleSave()}
-            className="w-full rounded-xl bg-[var(--blue)] py-3 text-sm font-semibold text-white disabled:bg-[#C5C9D2]"
+            className="w-full rounded-xl bg-(--blue) py-3 text-sm font-semibold text-white disabled:bg-[#C5C9D2]"
           >
             {saving ? 'Saving…' : existing ? 'Save task' : canSave ? 'Create task' : 'Add a title and assignee to continue'}
           </button>
@@ -553,7 +553,7 @@ export function AddProjectTaskSheet({
       )}
 
       {showAuditPicker && (
-        <div className="absolute inset-0 z-[80] flex items-end justify-center bg-black/30 p-4 sm:items-center">
+        <div className="absolute inset-0 z-80 flex items-end justify-center bg-black/30 p-4 sm:items-center">
           <div className="w-full max-w-md rounded-2xl bg-white p-4">
             <p className="text-sm font-semibold text-slate-900">Attach site audit</p>
             <div className="mt-3 max-h-64 space-y-1 overflow-y-auto">
@@ -610,11 +610,11 @@ function AssignPill({
       type="button"
       onClick={onToggle}
       className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-[14px] border py-2.5 ${
-        on ? 'border-[var(--blue)] bg-[var(--blue-t)] text-[var(--blue)]' : 'border-[#EEF0F3] bg-white text-[#6B7280]'
+        on ? 'border-(--blue) bg-(--blue-t) text-(--blue)' : 'border-[#EEF0F3] bg-white text-[#6B7280]'
       }`}
     >
       {icon}
-      <span className={`text-[11px] font-medium ${on ? 'text-[var(--blue)]' : 'text-[#0B1020]'}`}>{title}</span>
+      <span className={`text-[11px] font-medium ${on ? 'text-(--blue)' : 'text-primary-900'}`}>{title}</span>
     </button>
   )
 }
@@ -687,10 +687,10 @@ function PeoplePicker({
   }
 
   return (
-    <div className="absolute inset-0 z-[80] flex items-end justify-center bg-black/30 p-4 sm:items-center">
+    <div className="absolute inset-0 z-80 flex items-end justify-center bg-black/30 p-4 sm:items-center">
       <div className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white">
         <header className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-          <button type="button" onClick={onClose} className="text-sm text-[var(--blue)]">
+          <button type="button" onClick={onClose} className="text-sm text-(--blue)">
             Done
           </button>
           <p className="text-sm font-semibold">
@@ -705,7 +705,7 @@ function PeoplePicker({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search"
-              className="w-full text-sm outline-none"
+              className="w-full text-sm outline-hidden"
             />
           </div>
           {trades.length > 0 && (
@@ -739,7 +739,7 @@ function PeoplePicker({
                     <span className="block text-sm font-medium">{personDisplayName(row)}</span>
                     <span className="text-[11px] text-slate-500">{tradeLabel(row) || 'Manager'}</span>
                   </span>
-                  {on && <CheckIcon className="h-4 w-4 text-[var(--blue)]" />}
+                  {on && <CheckIcon className="h-4 w-4 text-(--blue)" />}
                 </button>
               )
             })}
@@ -758,7 +758,7 @@ function PeoplePicker({
                     <span className="block text-sm font-medium">{personDisplayName(row)}</span>
                     <span className="text-[11px] text-slate-500">{tradeLabel(row) || 'Operative'}</span>
                   </span>
-                  {on && <CheckIcon className="h-4 w-4 text-[var(--blue)]" />}
+                  {on && <CheckIcon className="h-4 w-4 text-(--blue)" />}
                 </button>
               )
             })}
@@ -774,7 +774,7 @@ function PeoplePicker({
                 <span className="block text-sm font-medium">{row.label}</span>
                 <span className="text-[11px] text-slate-500">Already assigned · tap to remove</span>
               </span>
-              <CheckIcon className="h-4 w-4 text-[var(--blue)]" />
+              <CheckIcon className="h-4 w-4 text-(--blue)" />
             </button>
           ))}
         </div>

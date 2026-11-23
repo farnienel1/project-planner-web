@@ -11948,6 +11948,21 @@ test('1.28.0 the organisation creator is its Super Admin even without the flag; 
   assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'S', isSuperAdmin: true, organizationId: 'organizations/org' }, { id: 'ORG' }), true)
   assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'S', isSuperAdmin: true, organizationId: 'ORG' }, { id: 'ORG-B' }), false)
   assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'A', isSuperAdmin: false }, { id: 'ORG', creatorUserId: 'C' }), false)
+  // 1.65.0: no fallback when the viewer's home organisation or the organisation id is blank — only an exact match
+  // (or the creator) counts. Before, a stray `isSuperAdmin` on a users document with no organisationId passed anywhere.
+  assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'S', isSuperAdmin: true }, { id: 'ORG' }), false)
+  assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'S', isSuperAdmin: true, organizationId: '' }, { id: 'ORG' }), false)
+  assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'S', isSuperAdmin: true, organizationId: '  ' }, { id: 'ORG' }), false)
+  assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'S', isSuperAdmin: true, organizationId: 'ORG' }, { id: '' }), false)
+  assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'S', isSuperAdmin: true, organizationId: 'ORG' }, null), false)
+  assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'S', isSuperAdmin: true, organizationId: 'org' }, { id: 'ORG' }), true)
+  // The creator still counts with no home organisation.
+  assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'C', isSuperAdmin: false }, { id: 'ORG', creatorUserId: 'C' }), true)
+  // accountDeletionPath and canRestoreOrganization follow: a flagged viewer with no home organisation just deletes.
+  assert.equal(
+    rulebook.accountDeletionPath({ id: 'S', isSuperAdmin: true }, [{ id: 'S', isActive: true, passwordSet: true }], { id: 'ORG', creatorUserId: 'C' }),
+    'delete'
+  )
 
   // A lone unflagged creator admin with no line manager: satisfied, self-signed, self-booked, saves pass.
   const creator = { id: 'C', email: 'c@x.com', role: 'admin', adminAccess: true, hasNoLineManager: true, organizationSuperAdmin: true }
@@ -17567,6 +17582,73 @@ test('1.57.0 J1 review: a gap-only change never hides late extras waiting for th
   assert.equal(R112.signedTimesheetChangeForReports(R112.timesheetChangesWithLateExtras(gap, { waitingForLineManager: false })), null)
 })
 
+// ── 1.69.0 §4.3: the simple hours breakdown always adds up (owner, 17 Nov: the text only displays the calculation) ──
+test('1.69.0 property: breakdown rows add up exactly to the Total, which is the Save label, for random bookings', () => {
+  let seed = 162
+  const rand = () => {
+    seed = (seed * 1103515245 + 12345) % 2147483648
+    return seed / 2147483648
+  }
+  const pick = <T,>(list: readonly T[]): T => list[Math.floor(rand() * list.length)]
+  const clock = (minutes: number) => `${String(Math.floor(minutes / 60) % 24).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
+  const rates = [1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3]
+  const days = ['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20', '2026-11-21', '2026-11-22']
+  const cents = (value: string) => Math.round(Number(value.replace(/h$/, '')) * 100)
+  let multiRow = 0
+  for (let i = 0; i < 3000; i += 1) {
+    const dayStart = 360 + 30 * Math.floor(rand() * 6)
+    const dayEnd = dayStart + 300 + 30 * Math.floor(rand() * 10)
+    const breakStart = dayStart + 60 + 15 * Math.floor(rand() * 8)
+    const breakMinutes = pick([0, 15, 30, 45, 60])
+    const winStart = 390 + 30 * Math.floor(rand() * 4)
+    const weekend = () => ({
+      allHoursAtMultiplierMode: rand() < 0.4,
+      allHoursMultiplier: pick(rates),
+      definedWindowStart: clock(winStart),
+      definedWindowEnd: clock(winStart + 240 + 30 * Math.floor(rand() * 6)),
+      countsAsStandardHours: pick([4, 5.5, 6, 7.5, 8]),
+      outsideWindowMultiplier: pick(rates),
+      sameAsSaturday: false,
+      breakPaid: rand() < 0.5,
+      breakMinutes: pick([0, 15, 30, 45]),
+      breakWindowStart: clock(winStart + 150),
+      breakWindowEnd: clock(winStart + 195),
+    })
+    const policy = {
+      standardDayStart: clock(dayStart),
+      standardDayEnd: clock(dayEnd),
+      unpaidBreakMinutes: breakMinutes,
+      breakPaid: rand() < 0.2,
+      breakWindowStart: clock(breakStart),
+      breakWindowEnd: clock(breakStart + Math.max(breakMinutes, 15)),
+      weekdayOutsideStandardMultiplier: pick(rates),
+      saturday: weekend(),
+      sunday: weekend(),
+    } as never
+    const start = 15 * Math.floor(rand() * 88)
+    const length = 15 * (1 + Math.floor(rand() * 64))
+    const booking = {
+      timeSlot: rand() < 0.1 ? pick(['FULL DAY', 'AM', 'PM']) : 'CUSTOM_HOURS',
+      workStartTime: clock(start),
+      workEndTime: clock(start + length),
+      isBreakRemoved: rand() < 0.25,
+      otMultiplierOverride: rand() < 0.3 ? pick(rates) : null,
+    }
+    const out = R112.bookingHoursBreakdownRows(policy, pick(days), booking, 'Europe/London')
+    if (!out) continue
+    const paid = R112.payrollHoursResult({ booking, dayKey: out.dayKey, policy, timeZone: 'Europe/London' })
+    const totalRow = out.rows[out.rows.length - 1]
+    const parts = out.rows.filter((row) => row.kind !== 'total')
+    if (parts.length > 1) multiRow += 1
+    const where = JSON.stringify({ policy, booking, day: out.dayKey, rows: out.rows.map((row) => row.value) })
+    assert.equal(cents(totalRow.value), Math.round(paid.totalPaidHours * 100), where)
+    assert.equal(parts.reduce((sum, row) => sum + cents(row.value), 0), cents(totalRow.value), where)
+    assert.equal(Math.round((out.normalPaidHours + out.overtimePaidHours) * 100), cents(totalRow.value), where)
+    assert.equal(R112.saveHoursLabel(out.totalPaidHours), `Save · ${totalRow.value.replace(/h$/, '')} hours`, where)
+  }
+  assert.ok(multiRow > 300, `only ${multiRow} cases had both rows`)
+})
+
 test('1.60.0 multiPersonBookingBlocks: more than one person, anyone already booked that day is named', () => {
   const { multiPersonBookingBlocks, MULTI_PERSON_ALREADY_BOOKED_MESSAGE } = R112
   const people = [
@@ -17831,4 +17913,528 @@ test('1.59.0 review M2: a booking under a managers row with no account stays in 
   assert.equal(groups[0].label, `Jo Bloggs · ${R112.MANAGER_ROW_NOT_LINKED_LABEL}`)
   // The grid still names it (not "Unknown person").
   assert.equal(R112.scheduleRowPerson('mgr-noacc', { accounts: [], operatives: [], managers: [{ id: 'MGR-NOACC' }] }).unresolved, false)
+})
+
+// MARK: - 1.68.0 site audit report (§29): one layout, nothing clipped, field limits
+
+test('1.68.0 site audit report: the shared fixture lays out exactly as expected (text lines, page breaks, file names)', () => {
+  for (const { name, input } of R112.SITE_AUDIT_REPORT_FIXTURE_INPUTS) {
+    const expected = R112.SITE_AUDIT_REPORT_FIXTURE_EXPECTED.find((row) => row.name === name)
+    assert.ok(expected, name)
+    const layout = R112.siteAuditReportLayout(input)
+    assert.equal(layout.fileName, expected!.fileName, name)
+    assert.equal(layout.pages.length, expected!.pageCount, name)
+    assert.equal(layout.pages.reduce((n, p) => n + p.ops.length, 0), expected!.opCount, name)
+    assert.deepEqual(R112.siteAuditReportTextLines(layout), expected!.pages, name)
+  }
+  const forApps = R112.siteAuditReportFixtureForApps()
+  assert.equal(forApps.inputs.length, R112.SITE_AUDIT_REPORT_FIXTURE_INPUTS.length)
+  assert.equal(forApps.expected.length, forApps.inputs.length)
+})
+
+test('1.68.0 site audit report: footers read "Page n of N" with the real total (owner bug: "Page 2 of 2" on 3 pages)', () => {
+  const layout = R112.siteAuditReportLayout(R112.SITE_AUDIT_REPORT_FIXTURE_INPUTS[0].input)
+  const total = layout.pages.length
+  assert.ok(total > 1)
+  layout.pages.forEach((page, index) => {
+    assert.ok(R112.siteAuditReportTextLines({ ...layout, pages: [page] })[0].includes(`Page ${index + 1} of ${total}`))
+  })
+})
+
+test('1.68.0 site audit report: no field text is dropped or clipped, and nothing is drawn off the page', () => {
+  const squash = (value: string) => value.replace(/\s+/g, '')
+  for (const { name, input } of R112.SITE_AUDIT_REPORT_FIXTURE_INPUTS) {
+    const layout = R112.siteAuditReportLayout(input)
+    // Field values are the 10.5-point lines and titles the 12-point lines (footers and "Continued" headers between
+    // the parts of a flowing card are other sizes).
+    const textOfSize = (size: number) =>
+      squash(layout.pages.flatMap((page) => page.ops.flatMap((op) => (op.kind === 'text' && op.size === size ? [op.text] : []))).join(''))
+    const values = textOfSize(10.5)
+    const titles = textOfSize(12)
+    for (const item of input.audit.items) {
+      for (const field of ['title', 'location', 'assignee', 'comments', 'annotations'] as const) {
+        const value = String(item[field] ?? '').trim()
+        if (value) assert.ok((field === 'title' ? titles : values).includes(squash(R112.siteAuditReportText(value))), `${name} ${item.id} ${field}`)
+      }
+    }
+    for (const page of layout.pages) {
+      for (const op of page.ops) {
+        if (op.kind === 'text') {
+          assert.ok(op.baseline <= layout.page.height, `${name} text below the page`)
+          assert.ok(op.x + R112.siteAuditReportTextWidth(op.text, op.size, op.bold) <= layout.page.width - 31, `${name} text past the right margin: ${op.text}`)
+        }
+        if (op.kind === 'rect' || op.kind === 'image') assert.ok(op.y + op.h <= layout.page.height + 0.01, `${name} ${op.kind} below the page`)
+      }
+      // Body content stays above the footer line; the footer is exactly three one-line texts.
+      const footer = layout.page.height - 60
+      for (const op of page.ops) {
+        if (op.kind === 'image') assert.ok(op.y + op.h <= footer, `${name} photo over the footer`)
+        if (op.kind === 'rect') assert.ok(op.y + op.h <= footer + 0.01 || op.y >= footer, `${name} box over the footer`)
+        if (op.kind === 'text' && op.baseline < footer) assert.ok(op.baseline <= footer - 10, `${name} text over the footer: ${op.text.slice(0, 40)}`)
+      }
+      assert.equal(page.ops.filter((op) => op.kind === 'text' && op.baseline > footer).length, 3, `${name} footer lines`)
+    }
+    // Every printed field, header and details grid included, is in the report character for character (the footer
+    // is a repeat and is left out): the characters printed above the footer include every field's characters.
+    const footer = layout.page.height - 60
+    const printed = new Map<string, number>()
+    for (const page of layout.pages) {
+      for (const op of page.ops) {
+        if (op.kind !== 'text' || op.baseline > footer) continue
+        for (const ch of Array.from(squash(op.text))) printed.set(ch, (printed.get(ch) ?? 0) + 1)
+      }
+    }
+    const needed = new Map<string, number>()
+    const fields: unknown[] = [input.organizationName, input.clientName, input.siteAddress, input.audit.projectName, input.audit.type, input.audit.customTitle, input.audit.authorName]
+    for (const item of input.audit.items) fields.push(item.title, item.location, item.assignee, item.comments, item.annotations)
+    for (const field of fields) {
+      for (const ch of Array.from(squash(R112.siteAuditReportText(field ?? '')))) needed.set(ch, (needed.get(ch) ?? 0) + 1)
+    }
+    for (const [ch, n] of needed) assert.ok((printed.get(ch) ?? 0) >= n, `${name}: "${ch}" printed ${printed.get(ch) ?? 0} of ${n}`)
+  }
+})
+
+test('1.68.0 site audit report: text normalised one character per grapheme, counters count graphemes', () => {
+  assert.equal(R112.siteAuditReportText('ﬁne ❤️ ©️ 👨‍👩‍👧 🇬🇧 Łódź\u200b\ufeff ｆｕｌｌ'), 'fine ? © ? ? Lódz full')
+  assert.equal(R112.siteAuditFieldLength('❤️👨‍👩‍👧🇬🇧é'), 4)
+  assert.equal(R112.siteAuditFieldCounter('title', '👍🏽'.repeat(120)).over, false)
+  assert.equal(R112.siteAuditReportFitLine('x'.repeat(500), 9, 100).endsWith('…'), true)
+  assert.ok(R112.siteAuditReportTextWidth(R112.siteAuditReportFitLine('x'.repeat(500), 9, 100), 9) <= 100.01)
+})
+
+test('1.68.0 site audit report input: the same audit gives the same input on both apps', () => {
+  const input = R112.siteAuditReportInput({
+    audit: {
+      id: 'A', projectJobNumber: 'C1', projectName: 'Job', type: 'General', authorName: 'Ann', dateMs: 0, createdAtMs: 0,
+      items: [
+        { id: 'loaded', imageURL: 'https://x/a.jpg' },
+        { id: 'failed', imageURL: 'https://x/b.jpg' },
+        { id: 'none' },
+      ],
+    },
+    organizationName: '  Raccord  ',
+    job: { clientName: 'RED', addressLine1: '71 Broadwick St', addressLine2: '', townCity: 'London', postcode: 'W1F 9QY' },
+    photos: { loaded: { width: 300, height: 400 }, failed: null },
+    logo: { width: 0, height: 10 },
+    timeZone: 'Europe/London',
+  })
+  assert.equal(input.siteAddress, '71 Broadwick St, London, W1F 9QY')
+  assert.equal(input.clientName, 'RED')
+  assert.equal(input.organizationName, 'Raccord')
+  assert.equal(input.logo, null)
+  assert.deepEqual(input.audit.items.map((item) => item.photo), [{ width: 300, height: 400 }, { width: 4, height: 3 }, null])
+  // Never map coordinates, never a client the job does not have.
+  assert.equal(R112.siteAuditReportSiteAddress({}), '')
+  assert.equal(R112.siteAuditReportInput({ audit: { items: [] }, job: null }).clientName, null)
+})
+
+test('1.68.0 site audit report: photos are whole (aspect kept), at most 200 wide and 240 tall', () => {
+  assert.deepEqual(R112.siteAuditReportPhotoBox({ width: 1170, height: 2532 }), { w: 110.9, h: 240 })
+  assert.deepEqual(R112.siteAuditReportPhotoBox({ width: 4032, height: 3024 }), { w: 200, h: 150 })
+  assert.deepEqual(R112.siteAuditReportPhotoBox({ width: 4000, height: 600 }), { w: 200, h: 30 })
+  assert.equal(R112.siteAuditReportPhotoBox(null), null)
+})
+
+test('1.68.0 site audit report: text the standard fonts cannot draw is replaced, never dropped; long words break', () => {
+  assert.equal(R112.siteAuditReportText('Café Zoë — £5 “ok”'), 'Café Zoë — £5 “ok”')
+  assert.equal(R112.siteAuditReportText('Łódź'), 'Lódz')
+  assert.equal(R112.siteAuditReportText('Snag 🚧!'), 'Snag ?!')
+  assert.equal(R112.siteAuditReportText('a\r\nb\tc'), 'a\nb c')
+  const lines = R112.wrapSiteAuditReportText(`https://example.com/${'x'.repeat(400)}`, 10, 100)
+  assert.ok(lines.length > 5)
+  assert.ok(lines.every((line) => R112.siteAuditReportTextWidth(line, 10) <= 100.01))
+  assert.equal(lines.join(''), `https://example.com/${'x'.repeat(400)}`)
+  assert.deepEqual(R112.wrapSiteAuditReportText('one\n\ntwo', 10, 300), ['one', '', 'two'])
+})
+
+test('1.68.0 site audit report: item rows, order, labels and empty values (owner Q2, Q3, Q5) and the taken time (Q1)', () => {
+  assert.deepEqual(
+    R112.siteAuditReportItemFields({ id: 'i', location: 'Hall', comments: '', annotations: '' }).map((row) => [row.label, row.value]),
+    [['Location', 'Hall'], ['Assignee', '—'], ['Comments', '—'], ['Annotations', 'None']]
+  )
+  assert.equal(R112.siteAuditItemTakenMs({ imageCapturedAtMs: 5, createdAtMs: 9 }), 5)
+  assert.equal(R112.siteAuditItemTakenMs({ imageCapturedAtMs: null, createdAtMs: 9 }), 9)
+  assert.equal(R112.siteAuditAuthorSignature('Zoë Anne Smith'), 'Z. Anne Smith')
+  assert.equal(R112.siteAuditReferenceCode({ projectJobNumber: 'C 646', createdAtMs: 1794943857123 }), 'SA-C646-1794943857')
+})
+
+test('1.68.0 site audit field limits: counters, new edits limited, stored longer text never refused', () => {
+  assert.deepEqual(R112.SITE_AUDIT_FIELD_LIMITS, { title: 120, location: 120, assignee: 80, comments: 2000, annotations: 2000, customTitle: 120, jobNumber: 60, jobName: 200 })
+  assert.equal(R112.siteAuditFieldCounter('title', 'abc').label, '3 / 120')
+  assert.equal(R112.siteAuditFieldLength('🚧🚧'), 2)
+  const long = 'x'.repeat(121)
+  assert.equal(R112.siteAuditFieldCounter('title', long).blocksSave, true)
+  assert.match(R112.siteAuditFieldLimitError({ title: long }) ?? '', /Title can be up to 120 characters \(121 now\)/)
+  assert.equal(R112.siteAuditFieldLimitError({ title: long }, { title: long }), null)
+  assert.equal(R112.siteAuditFieldLimitError({ comments: 'x'.repeat(2000) }), null)
+  // Review of #389: personal audits refuse a long job number / name instead of cutting it.
+  assert.equal(R112.siteAuditFieldCounter('jobNumber', 'J-1').label, '3 / 60')
+  assert.match(R112.siteAuditFieldLimitError({ jobName: 'n'.repeat(201) }) ?? '', /Job name can be up to 200 characters \(201 now\)/)
+  const draft = (jobNumber: string, jobName: string) => ({ jobNumber, jobName, date: '2026-11-18', items: [{ id: 'i', title: 'T' }] })
+  assert.match(R112.personalSiteAuditValidationError(draft('9'.repeat(61), 'Job')) ?? '', /Job number can be up to 60 characters/)
+  assert.equal(R112.personalSiteAuditValidationError(draft('9'.repeat(60), 'n'.repeat(200))), null)
+  const fields = R112.personalSiteAuditWriteFields({
+    ownerUserId: 'U1',
+    organizationId: 'org',
+    draft: { ...draft('9'.repeat(60), 'n'.repeat(200)), items: [{ id: 'i', title: 'T', imagePath: 'organizations/org/personalSiteAudits/U1/a/U1_5.jpg' }] },
+  })
+  assert.equal(fields?.jobName, 'n'.repeat(200))
+  assert.equal(R112.personalSiteAuditWriteFields({ ownerUserId: 'U1', draft: draft('1', 'n'.repeat(201)) }), null)
+})
+
+test('1.68.0 site audit photo object path: unique per item, the same on every retry', () => {
+  const base = { organizationId: 'org', userId: 'U1abc', auditId: 'A1', createdAtMs: 1_763_400_000_000, extension: 'jpg' }
+  const project = [0, 1, 2].map((index) => R112.siteAuditPhotoObjectPath({ ...base, kind: 'project', index }))
+  assert.deepEqual(project, [0, 1, 2].map((i) => `organizations/org/siteAudits/A1/images/U1abc_${1_763_400_000_000 + i}.jpg`))
+  assert.equal(R112.siteAuditPhotoObjectPath({ ...base, kind: 'project', index: 1 }), project[1])
+  assert.equal(R112.siteAuditPhotoObjectPath({ ...base, kind: 'personal', index: 0 }), 'organizations/org/personalSiteAudits/U1abc/A1/U1abc_1763400000000.jpg')
+  assert.equal(R112.siteAuditPhotoObjectPath({ ...base, kind: 'project', index: -1 }), null)
+  assert.equal(R112.siteAuditPhotoObjectPath({ ...base, kind: 'project', auditId: 'a/b', index: 0 }), null)
+})
+
+test('1.68.0 site audit report: the company logo at the top right, fitted whole; the initials badge otherwise', () => {
+  const box = R112.SITE_AUDIT_REPORT_LOGO_BOX
+  const pad = R112.SITE_AUDIT_REPORT_LOGO_PADDING
+  const right = box.x + box.w
+  const close = (a: number, b: number) => Math.abs(a - b) < 0.02
+  const cases: [string, { width: number; height: number }][] = [
+    ['landscape', { width: 400, height: 300 }],
+    ['very wide', { width: 2400, height: 200 }],
+    ['very tall', { width: 200, height: 2400 }],
+    ['tiny', { width: 10, height: 10 }],
+  ]
+  for (const [name, logo] of cases) {
+    const placed = R112.siteAuditReportLogoPlacement(logo)
+    assert.ok(placed, name)
+    // Aspect ratio kept (never stretched), fits inside the box less its padding (never cropped).
+    assert.ok(Math.abs(placed.image.w / placed.image.h - logo.width / logo.height) / (logo.width / logo.height) < 0.02, `${name}: aspect`)
+    assert.ok(placed.image.w <= box.w - pad * 2 + 0.01 && placed.image.h <= box.h - pad * 2 + 0.01, `${name}: fits`)
+    assert.ok(close(placed.image.w, box.w - pad * 2) || close(placed.image.h, box.h - pad * 2), `${name}: fills one side`)
+    // Top right: the tile's right edge on the box's right edge (the page margin), its top on the box's top.
+    assert.ok(close(placed.tile.x + placed.tile.w, right) && placed.tile.y === box.y, `${name}: top right`)
+    assert.ok(close(right, R112.SITE_AUDIT_REPORT_PAGE.width - 32), `${name}: right margin`)
+  }
+  for (const bad of [null, undefined, { width: 0, height: 10 }, { width: Number.NaN, height: 10 }]) {
+    assert.equal(R112.siteAuditReportLogoPlacement(bad), null)
+  }
+  const fixture = R112.siteAuditReportFixtureForApps()
+  const ops = (name: string) => {
+    const entry = fixture.inputs.find((row) => row.name === name)!
+    return R112.siteAuditReportLayout(entry.input).pages[0].ops
+  }
+  for (const name of ['logo-very-wide', 'logo-very-tall', 'owner-c646']) {
+    const logoOps = ops(name).filter((op) => op.kind === 'image' && op.ref === 'logo')
+    assert.equal(logoOps.length, 1, `${name}: one logo drawn`)
+    assert.ok(!ops(name).some((op) => op.kind === 'text' && op.text === 'RM'), `${name}: no initials badge`)
+  }
+  // No logo, or one the app could not load (null): the initials badge, never an empty box.
+  const missing = ops('logo-missing-or-failed')
+  assert.ok(!missing.some((op) => op.kind === 'image' && op.ref === 'logo'))
+  assert.ok(missing.some((op) => op.kind === 'text' && op.text === 'RM'))
+})
+
+test('1.67.0 dayRateOvertimeCalcText: a day-rate overtime line reads in hours, amount unchanged', () => {
+  // Owner example: 6h of overtime at ×1.5, £225/day, 8.5h paid day → £238.24 (payForHours).
+  const pay = R112.payForHours({ payBasis: 'day', dayRate: 225, paidHours: 6, standardDayHours: 8.5, otMultiplier: 1.5 })
+  assert.equal(pay, 238.24)
+  const weekday = R112.dayRateOvertimeCalcText({ clockHours: 6, multiplier: 1.5, dayRate: 225, dayRateHours: 8.5, pay, currency: 'GBP' })
+  assert.ok(weekday)
+  assert.equal(weekday.hoursText, '6h × 1.5 = 9h')
+  assert.equal(weekday.payText, '9h × £26.47/h (rounded) = £238.24')
+  assert.equal(weekday.rateText, '£225.00/day ÷ 8.5h = £26.47/h (rounded)')
+  assert.equal(weekday.hourlyRateRounded, true)
+  assert.equal(weekday.text, '6h × 1.5 = 9h · 9h × £26.47/h (rounded) = £238.24 (£225.00/day ÷ 8.5h)')
+  assert.deepEqual(weekday.lines, ['6h × 1.5 = 9h · 9h × £26.47/h (rounded) = £238.24', '£225.00/day ÷ 8.5h = £26.47/h (rounded)'])
+  // Sunday 15 Nov: 14:00–16:00 at ×2 → 4h, £105.88.
+  const sundayPay = R112.payForHours({ payBasis: 'day', dayRate: 225, paidHours: 2, standardDayHours: 8.5, otMultiplier: 2 })
+  const sunday = R112.dayRateOvertimeCalcText({ clockHours: 2, multiplier: 2, dayRate: 225, dayRateHours: 8.5, pay: sundayPay, currency: 'GBP' })
+  assert.equal(sunday?.text, '2h × 2 = 4h · 4h × £26.47/h (rounded) = £105.88 (£225.00/day ÷ 8.5h)')
+  // An unpaid break in multiplied hours follows multipliedHoursText; the pay is shown as given, never re-worked out.
+  const brk = R112.dayRateOvertimeCalcText({ clockHours: 6.5, multiplier: 2, breakHours: 0.5, dayRate: 200, dayRateHours: 8, pay: 312.5, currency: 'GBP' })
+  assert.equal(brk?.text, '6.5h × 2 − 0.5h break = 12.5h · 12.5h × £25.00/h = £312.50 (£200.00/day ÷ 8h)')
+  assert.equal(brk?.hourlyRateRounded, false)
+  // Nothing to show in hours: the caller keeps its older wording.
+  assert.equal(R112.dayRateOvertimeCalcText({ clockHours: 6, multiplier: 1.5, dayRate: 0, dayRateHours: 8.5, pay: 0 }), null)
+  assert.equal(R112.dayRateOvertimeCalcText({ clockHours: 6, multiplier: 1.5, dayRate: 225, dayRateHours: 0.5, pay: 1 }), null)
+  assert.equal(R112.DAY_RATE_OVERTIME_ROUNDED_NOTE, 'Hourly rate is rounded; amounts use the exact rate.')
+})
+
+test('1.67.0: multipliedHoursParts and dayRateHourlyEquivalent are the figures the overtime text shows', () => {
+  assert.deepEqual(R112.multipliedHoursParts({ clockHours: 6.5, multiplier: 2, breakHours: 0.5 }), {
+    clockHours: 6.5, multiplier: 2, breakHours: 0.5, paidHours: 12.5, text: '6.5h × 2 − 0.5h break = 12.5h',
+  })
+  // payrollMultipliedHours returns the same parts for a booking (Sunday 07:30–14:00 every hour ×2, 30 min unpaid).
+  const policy = { ...R112.DEFAULT_PAYROLL_POLICY, sunday: { allHoursAtMultiplierMode: true, allHoursMultiplier: 2, breakPaid: false, breakMinutes: 30, breakWindowStart: '12:00', breakWindowEnd: '12:30', sameAsSaturday: false } } as unknown as Parameters<typeof R112.payrollHoursResult>[0]['policy']
+  const result = R112.payrollHoursResult({ booking: { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '14:00' }, dayKey: '2026-11-15', policy, timeZone: 'Europe/London' })
+  const parts = R112.payrollMultipliedHours(result)!
+  assert.deepEqual(parts, R112.multipliedHoursParts(parts))
+  assert.equal(parts.paidHours, result.outsideHours * result.outsideMultiplier)
+  assert.deepEqual(R112.dayRateHourlyEquivalent(225, 8.5), { exactRate: 225 / 8.5, hourlyRate: 26.47, rounded: true })
+  assert.deepEqual(R112.dayRateHourlyEquivalent(200, 8), { exactRate: 25, hourlyRate: 25, rounded: false })
+  assert.equal(R112.dayRateHourlyEquivalent(225, 0.5), null)
+})
+
+// Rulebook 1.65.0 (§25, §26; mass-assignment audit 17 Nov, owner decision B): the server-side report check.
+test('1.65.0 overtimeReportIntegrity: a report built from its reviewed bookings passes; edited figures are flagged', () => {
+  const booking = { id: 'B1', collection: 'bookings', personId: 'sam', dayKey: '2026-11-05', timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '18:00', status: 'Confirmed' }
+  const figures = r129.overtimeForBooking({ booking, organization: R129_ORG, timeZone: R129_TZ })!
+  assert.equal(figures.overtimeHours, 3)
+  const fingerprint = r129.overtimeBookingFingerprint(booking)
+  const line = { bookingId: 'B1', dayKey: '2026-11-05', jobNumber: 'J-1', start: '07:30', end: '18:00', text: figures.text, clockHours: figures.clockHours, multiplier: figures.multiplier, breakHours: 0, overtimeHours: 3, fingerprint, state: 'returnedApproved' }
+  const report = { userId: 'sam', kind: 'overtime', rangeStart: '2026-11-01', rangeEnd: '2026-11-30', lines: [line], totals: { overtimeHours: 3, clockHours: figures.clockHours, lineCount: 1 } }
+  const reviews = [{ id: 'sam_B1', data: { userId: 'sam', bookingId: 'B1', decision: 'approved', fingerprint } }]
+  const ok = r129.overtimeReportIntegrity({ reportId: 'R', report, reviews, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ })
+  assert.equal(ok.ok, true)
+  assert.deepEqual([ok.reportedTotal, ok.recomputedTotal], [3, 3])
+
+  // Hours raised on the line and in the totals: the booking gives 3h, the line can be at most clock × rate.
+  const raised = { ...report, lines: [{ ...line, overtimeHours: 9 }], totals: { ...report.totals, overtimeHours: 9 } }
+  const bad = r129.overtimeReportIntegrity({ reportId: 'R', report: raised, reviews, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ })
+  assert.equal(bad.ok, false)
+  assert.deepEqual(bad.problems.map((p) => p.code).sort(), ['hours_differ'])
+  assert.equal(bad.recomputedTotal, 3)
+
+  // Review of #391, blocker 1: a blank fingerprint never skips the check. A forged 10h × 3 line with no fingerprint fails.
+  const forged = { ...line, fingerprint: '', clockHours: 10, multiplier: 3, overtimeHours: 30 }
+  const blank = r129.overtimeReportIntegrity({
+    reportId: 'R', report: { ...report, lines: [forged], totals: { overtimeHours: 30, lineCount: 1 } },
+    reviews, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ,
+  })
+  assert.equal(blank.ok, false)
+  assert.deepEqual(blank.problems.map((p) => p.code), ['missing_fingerprint'])
+  assert.equal(blank.recomputedTotal, 0)
+  // The same forged figures with the real fingerprint: clock and multiplier come from the booking, never the report.
+  const forgedClock = r129.overtimeReportIntegrity({
+    reportId: 'R', report: { ...report, lines: [{ ...forged, fingerprint }], totals: { overtimeHours: 30, lineCount: 1 } },
+    reviews, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ,
+  })
+  assert.deepEqual(forgedClock.problems.map((p) => p.code), ['clock_differs', 'hours_differ'])
+  assert.equal(forgedClock.recomputedTotal, 3)
+  // Booking deleted after the report: priced from the reviewed fingerprint (ok as built; forged figures still flagged).
+  assert.equal(r129.overtimeReportIntegrity({ reportId: 'R', report, reviews, bookings: [], organization: R129_ORG, timeZone: R129_TZ }).ok, true)
+  const gone = r129.overtimeReportIntegrity({
+    reportId: 'R', report: { ...report, lines: [{ ...forged, fingerprint }], totals: { overtimeHours: 30, lineCount: 1 } },
+    reviews, bookings: [], organization: R129_ORG, timeZone: R129_TZ,
+  })
+  assert.deepEqual(gone.problems.map((p) => p.code), ['clock_differs', 'hours_differ'])
+  // A review with no fingerprint, or another booking's, is not the line's review.
+  const blankReview = r129.overtimeReportIntegrity({
+    reportId: 'R', report, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ,
+    reviews: [{ id: 'sam_B1', data: { userId: 'sam', bookingId: 'B1', decision: 'approved', fingerprint: '' } }],
+  })
+  assert.deepEqual(blankReview.problems.map((p) => p.code), ['differs_from_review'])
+  // The same booking listed twice counts once.
+  const twice = r129.overtimeReportIntegrity({
+    reportId: 'R', report: { ...report, lines: [line, { ...line }], totals: { overtimeHours: 6, lineCount: 2 } },
+    reviews, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ,
+  })
+  assert.deepEqual(twice.problems.map((p) => p.code), ['duplicate_line'])
+  assert.equal(twice.recomputedTotal, 3)
+
+  // Re-review of #391 (blocker): what the PDF prints comes from the booking. The reviewer's probe — a real line edited
+  // to "12h × 2 = 24h", 06:00–22:00, job J-OTHER — no longer passes.
+  const run = (lines: unknown[], extra: Record<string, unknown> = {}, rows = [booking] as unknown[]) =>
+    r129.overtimeReportIntegrity({
+      reportId: 'R', report: { ...report, ...extra, lines, totals: { overtimeHours: 3, lineCount: lines.length } },
+      reviews, bookings: rows as never, organization: R129_ORG, timeZone: R129_TZ,
+    })
+  assert.deepEqual(run([{ ...line, text: '12h × 2 = 24h' }]).problems.map((p) => p.code), ['text_differs'])
+  assert.deepEqual(run([{ ...line, start: '06:00', end: '22:00' }]).problems.map((p) => p.code), ['details_differ'])
+  assert.deepEqual(run([{ ...line, dayLabel: 'Mon 2 Nov' }]).problems.map((p) => p.code), ['details_differ'])
+  const probe = run([{ ...line, text: '12h × 2 = 24h', start: '06:00', end: '22:00', jobNumber: 'J-OTHER' }])
+  assert.equal(probe.ok, false)
+  assert.deepEqual(probe.problems.map((p) => p.code), ['details_differ', 'text_differs'])
+  // The job is compared when the booking's job was looked up (`jobId` given).
+  const onJob = { ...booking, jobId: 'P1', jobNumber: 'J-1', jobName: 'Riverside' }
+  assert.equal(run([line], {}, [onJob]).ok, true)
+  assert.deepEqual(run([{ ...line, jobNumber: 'J-OTHER' }], {}, [onJob]).problems.map((p) => p.code), ['job_differs'])
+  assert.deepEqual(run([{ ...line, jobName: 'Elsewhere' }], {}, [onJob]).problems.map((p) => p.code), ['job_differs'])
+  assert.deepEqual(run([line], {}, [{ ...booking, jobId: '' }]).problems.map((p) => p.code), ['job_differs'], 'an office booking names no job')
+
+  // Should-fix 2: a line outside the report's range, and a report with no range.
+  assert.deepEqual(run([line], { rangeStart: '2026-11-06', rangeEnd: '2026-11-30' }).problems.map((p) => p.code), ['outside_range'])
+  assert.deepEqual(run([line], { rangeStart: '', rangeEnd: '' }).problems.map((p) => p.code), ['outside_range'])
+
+  // Third review of #391 (B1): a manager site booking at a custom place — the app shows the place's name as the job.
+  const custom = { ...booking, collection: 'managerSiteBookings', jobId: '', customLocationName: 'Head office' }
+  assert.equal(run([{ ...line, jobNumber: '', jobName: 'Head office' }], {}, [custom]).ok, true)
+  assert.deepEqual(run([{ ...line, jobNumber: '', jobName: 'Elsewhere' }], {}, [custom]).problems.map((p) => p.code), ['job_differs'])
+
+  // S1: 0h lines print exactly what the snapshot writes, with the state their review gives.
+  const declinedReview = [{ id: 'sam_B1', data: { userId: 'sam', bookingId: 'B1', decision: 'declined', fingerprint, reviewedBy: 'lee', requestId: 'Q1' } }]
+  const zeroLine = { ...line, state: 'returnedDeclined', declined: true, declinedByName: 'Lee Manager', text: 'Declined by Lee Manager · 0h', clockHours: 0, overtimeHours: 0 }
+  const zeroRun = (lines: unknown[], reviewRows: unknown[] = declinedReview, rows: unknown[] = [booking]) =>
+    r129.overtimeReportIntegrity({
+      reportId: 'R', report: { ...report, lines, totals: { overtimeHours: 0, lineCount: lines.length } },
+      reviews: reviewRows as never, bookings: rows as never, organization: R129_ORG, timeZone: R129_TZ,
+      reviewerNames: { lee: 'Lee Manager' },
+    })
+  assert.equal(zeroRun([zeroLine]).ok, true)
+  assert.deepEqual(zeroRun([{ ...zeroLine, text: '12h × 2 = 24h' }]).problems.map((p) => p.code), ['text_differs'])
+  assert.deepEqual(
+    zeroRun([{ ...zeroLine, declinedByName: 'Someone', text: 'Declined by Someone · 0h' }]).problems.map((p) => p.code),
+    ['details_differ', 'text_differs']
+  )
+  assert.deepEqual(zeroRun([zeroLine], reviews).problems.map((p) => p.code), ['state_differs', 'decider_unknown'], 'declined on the report, approved in the review')
+  assert.deepEqual(zeroRun([{ ...zeroLine, fingerprint: '' }]).problems.map((p) => p.code), ['missing_fingerprint'])
+  assert.deepEqual(zeroRun([{ ...zeroLine, start: '06:00' }]).problems.map((p) => p.code), ['details_differ'])
+  const removedReview = [{ id: 'sam_B1', data: { userId: 'sam', bookingId: 'B1', decision: 'deleted', fingerprint, reviewedBy: 'lee', requestId: 'Q1' } }]
+  const removed = { ...line, state: 'deleted', text: 'Booking removed — not worked · 0h', clockHours: 0, overtimeHours: 0 }
+  assert.equal(zeroRun([removed], removedReview, []).ok, true)
+  assert.deepEqual(zeroRun([removed], removedReview, [booking]).problems.map((p) => p.code), ['state_differs'], 'the booking still exists')
+  assert.deepEqual(zeroRun([removed], reviews, []).problems.map((p) => p.code), ['state_differs'], 'no removal decision')
+  assert.deepEqual(zeroRun([{ ...removed, end: '22:00' }], removedReview, []).problems.map((p) => p.code), ['details_differ'])
+
+  // S3: the booking changed after the report — a note; a mismatch when the person confirmed it themselves.
+  const changedLive = { ...booking, workEndTime: '20:00' }
+  const lmReviewed = [{ id: 'sam_B1', data: { userId: 'sam', bookingId: 'B1', decision: 'approved', fingerprint, reviewedBy: 'lee' } }]
+  const changedByLm = r129.overtimeReportIntegrity({ reportId: 'R', report, reviews: lmReviewed, bookings: [changedLive], organization: R129_ORG, timeZone: R129_TZ })
+  assert.equal(changedByLm.ok, true)
+  assert.deepEqual(changedByLm.problems.map((p) => [p.code, p.severity]), [['booking_changed_since', 'note']])
+  const selfReviews = [{ id: 'sam_B1', data: { userId: 'sam', bookingId: 'B1', decision: 'approved', fingerprint, reviewedBy: 'sam' } }]
+  const changedSelf = r129.overtimeReportIntegrity({ reportId: 'R', report, reviews: selfReviews, bookings: [changedLive], organization: R129_ORG, timeZone: R129_TZ })
+  assert.equal(changedSelf.ok, false)
+  assert.deepEqual(changedSelf.problems.map((p) => [p.code, p.severity]), [['self_reviewed', 'note'], ['booking_changed_since', 'mismatch']])
+
+  // Fourth review of #391. N3: a decider the server could not read — a note, and the report's own name is never
+  // the expected one (only the "Declined by … · 0h" form is checked).
+  const unknownDecider = r129.overtimeReportIntegrity({
+    reportId: 'R', report: { ...report, lines: [zeroLine], totals: { overtimeHours: 0, lineCount: 1 } },
+    reviews: declinedReview as never, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ,
+  })
+  assert.equal(unknownDecider.ok, true)
+  assert.deepEqual(unknownDecider.problems.map((p) => [p.code, p.severity]), [['decider_unknown', 'note']])
+  const unknownForged = r129.overtimeReportIntegrity({
+    reportId: 'R', report: { ...report, lines: [{ ...zeroLine, text: '12h × 2 = 24h' }], totals: { overtimeHours: 0, lineCount: 1 } },
+    reviews: declinedReview as never, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ,
+  })
+  assert.deepEqual(unknownForged.problems.map((p) => p.code), ['decider_unknown', 'text_differs'])
+  // S1: a booking that is not the report person's (under any id they go by).
+  assert.deepEqual(
+    r129.overtimeReportIntegrity({ reportId: 'R', report, reviews, bookings: [{ ...booking, personId: 'ann' }], organization: R129_ORG, timeZone: R129_TZ, personIds: ['sam', 'sam-old'] }).problems.map((p) => p.code),
+    ['not_their_booking']
+  )
+  assert.equal(r129.overtimeReportIntegrity({ reportId: 'R', report, reviews, bookings: [{ ...booking, personId: 'SAM-OLD' }], organization: R129_ORG, timeZone: R129_TZ, personIds: ['sam', 'sam-old'] }).ok, true)
+  // S2: a self-confirmed line when the person has an active line manager is a mismatch.
+  const selfWithManager = r129.overtimeReportIntegrity({
+    reportId: 'R', report, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ, personHasLineManager: true,
+    reviews: [{ id: 'sam_B1', data: { userId: 'sam', bookingId: 'B1', decision: 'approved', fingerprint, reviewedBy: 'sam' } }],
+  })
+  assert.deepEqual(selfWithManager.problems.map((p) => [p.code, p.severity]), [['self_reviewed', 'mismatch']])
+  // N4: the printed person and company against the stored ones (a blank on either side passes).
+  const named = { ...report, userName: 'Sam Smith', companyName: 'Acme Electrical' }
+  assert.equal(r129.overtimeReportIntegrity({ reportId: 'R', report: named, reviews, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ, personName: 'sam  smith', organizationName: 'Acme Electrical' }).ok, true)
+  assert.deepEqual(
+    r129.overtimeReportIntegrity({ reportId: 'R', report: named, reviews, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ, personName: 'Kim Jones', organizationName: 'Other Ltd' }).problems.map((p) => p.code),
+    ['details_differ', 'details_differ']
+  )
+
+  // Nit 6: the person confirmed their own line — a note, still ok.
+  const self = r129.overtimeReportIntegrity({
+    reportId: 'R', report, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ,
+    reviews: [{ id: 'sam_B1', data: { userId: 'sam', bookingId: 'B1', decision: 'approved', fingerprint, reviewedBy: 'sam' } }],
+  })
+  assert.equal(self.ok, true)
+  assert.deepEqual(self.problems.map((p) => [p.code, p.severity]), [['self_reviewed', 'note']])
+
+  // Totals that do not add up, a missing review, and a declined line counted.
+  const totals = r129.overtimeReportIntegrity({ reportId: 'R', report: { ...report, totals: { overtimeHours: 30, lineCount: 2 } }, reviews, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ })
+  assert.deepEqual(totals.problems.map((p) => p.code), ['totals_differ', 'line_count_differs'])
+  const unreviewed = r129.overtimeReportIntegrity({ reportId: 'R', report, reviews: [], bookings: [booking], organization: R129_ORG, timeZone: R129_TZ })
+  assert.deepEqual(unreviewed.problems.map((p) => p.code), ['not_reviewed'])
+  const declined = r129.overtimeReportIntegrity({
+    reportId: 'R', report, bookings: [booking], organization: R129_ORG, timeZone: R129_TZ,
+    reviews: [{ id: 'sam_B1', data: { userId: 'sam', bookingId: 'B1', decision: 'declined', fingerprint } }],
+  })
+  // The declined line still prints the booking's hours: both flagged.
+  assert.deepEqual(declined.problems.map((p) => p.code), ['declined_line_counted', 'state_differs', 'text_differs'])
+  assert.equal(declined.recomputedTotal, 0)
+
+  // A booking changed after the report is not a mismatch (the report is older, not wrong).
+  const later = { ...booking, workEndTime: '20:00' }
+  assert.equal(r129.overtimeReportIntegrity({ reportId: 'R', report, reviews, bookings: [later], organization: R129_ORG, timeZone: R129_TZ }).ok, true)
+})
+
+test('1.65.0 payeClaimReportIntegrity: totals and items are checked against the stored items; a rejected item is a note', () => {
+  const items = [
+    { id: 'E1', data: { userId: 'sam', title: 'Fuel', amount: 40, currency: 'GBP', date: '2026-11-05', evidence: [] } },
+    { id: 'E2', data: { userId: 'sam', title: 'Parking', amount: 12.5, currency: 'GBP', date: '2026-11-06', evidence: [] } },
+  ]
+  const report = {
+    userId: 'sam', kind: 'expense', currency: 'GBP', rangeStart: '2026-11-01', rangeEnd: '2026-11-30',
+    items: [{ id: 'E1', title: 'Fuel', amount: 40, startDate: '2026-11-05' }, { id: 'E2', title: 'Parking', amount: 12.5, startDate: '2026-11-06' }],
+    totals: { amount: 52.5, itemCount: 2 },
+  }
+  const ok = r129.payeClaimReportIntegrity({ reportId: 'P', report, items })
+  assert.equal(ok.ok, true)
+  assert.deepEqual([ok.reportedTotal, ok.recomputedTotal], [52.5, 52.5])
+
+  const inflated = { ...report, items: [{ ...report.items[0], amount: 400 }, report.items[1]], totals: { amount: 999, itemCount: 2 } }
+  const bad = r129.payeClaimReportIntegrity({ reportId: 'P', report: inflated, items })
+  assert.equal(bad.ok, false)
+  assert.deepEqual(bad.problems.map((p) => p.code), ['totals_differ', 'amount_differs'])
+  assert.equal(bad.recomputedTotal, 52.5)
+
+  const other = r129.payeClaimReportIntegrity({ reportId: 'P', report, items: [{ ...items[0], data: { ...items[0].data, userId: 'kim' } }, items[1]] })
+  assert.deepEqual(other.problems.map((p) => p.code), ['not_their_item'])
+  const missing = r129.payeClaimReportIntegrity({ reportId: 'P', report, items: [items[1]] })
+  assert.deepEqual(missing.problems.map((p) => p.code), ['item_missing'])
+  // Review of #391: the same item listed twice is flagged and counted once.
+  const twice = r129.payeClaimReportIntegrity({
+    reportId: 'P', items,
+    report: { ...report, items: [...report.items, { ...report.items[0], id: 'e1' }], totals: { amount: 92.5, itemCount: 3 } },
+  })
+  assert.deepEqual(twice.problems.map((p) => p.code), ['duplicate_item'])
+  assert.equal(twice.recomputedTotal, 52.5)
+
+  // Re-review of #391: an item dated outside the report's range, edited name / job number / date, other currency.
+  assert.deepEqual(
+    r129.payeClaimReportIntegrity({ reportId: 'P', items, report: { ...report, rangeStart: '2026-11-06', rangeEnd: '2026-11-30', items: [report.items[0]], totals: { amount: 40, itemCount: 1 } } }).problems.map((p) => p.code),
+    ['outside_range']
+  )
+  assert.deepEqual(
+    r129.payeClaimReportIntegrity({ reportId: 'P', items, report: { ...report, rangeStart: '', rangeEnd: '' } }).problems.map((p) => p.code),
+    ['outside_range']
+  )
+  const relabelled = { ...report, items: [{ ...report.items[0], title: 'Hotel', startDate: '2026-11-07' }, report.items[1]] }
+  assert.deepEqual(r129.payeClaimReportIntegrity({ reportId: 'P', report: relabelled, items }).problems.map((p) => p.code), ['details_differ'])
+  // Third review of #391 (S2): description, approver (price work) and evidence as stored.
+  const described = { ...report, items: [{ ...report.items[0], details: 'Diesel for the van' }, report.items[1]] }
+  assert.deepEqual(r129.payeClaimReportIntegrity({ reportId: 'P', report: described, items }).problems.map((p) => p.code), ['details_differ'])
+  const evidenced = [{ ...items[0], data: { ...items[0].data, evidence: [{ path: 'organizations/o/payeClaims/sam/sam_1.jpg', name: 'r.jpg', kind: 'photo' }] } }, items[1]]
+  const withEvidence = r129.payeClaimReportIntegrity({ reportId: 'P', report, items: evidenced, organizationId: 'o' })
+  assert.deepEqual(withEvidence.problems.map((p) => p.code), ['details_differ'], 'the stored item has evidence the report does not list')
+  const priceItems = [{ id: 'W1', data: { userId: 'sam', title: 'Kitchen', amount: 300, currency: 'GBP', startDate: '2026-11-03', endDate: '2026-11-04', jobNumber: 'J-1', approvedByUserId: 'lee', approvedByName: 'Lee Manager', evidence: [] } }]
+  const priceReport = {
+    userId: 'sam', kind: 'priceWork', currency: 'GBP', rangeStart: '2026-11-01', rangeEnd: '2026-11-30',
+    items: [{ id: 'W1', title: 'Kitchen', amount: 300, startDate: '2026-11-03', endDate: '2026-11-04', jobNumber: 'J-1', approvedByName: 'Lee Manager' }],
+    totals: { amount: 300, itemCount: 1 },
+  }
+  assert.equal(r129.payeClaimReportIntegrity({ reportId: 'W', report: priceReport, items: priceItems }).ok, true)
+  assert.deepEqual(
+    r129.payeClaimReportIntegrity({ reportId: 'W', items: priceItems, report: { ...priceReport, items: [{ ...priceReport.items[0], approvedByName: 'The Boss' }] } }).problems.map((p) => p.code),
+    ['details_differ']
+  )
+  // N1: the report's currency is the organisation's.
+  assert.equal(r129.payeClaimReportIntegrity({ reportId: 'P', report, items, organization: { currencyCode: 'GBP' } }).ok, true)
+  assert.deepEqual(r129.payeClaimReportIntegrity({ reportId: 'P', report, items, organization: { currencyCode: 'EUR' } }).problems.map((p) => p.code), ['currency_differs'])
+  const euro = [{ ...items[0], data: { ...items[0].data, currency: 'EUR' } }, items[1]]
+  assert.deepEqual(r129.payeClaimReportIntegrity({ reportId: 'P', report, items: euro }).problems.map((p) => p.code), ['currency_differs'])
+
+  // A reviewer's rejection of that same version is a note: the review never gates the report (1.32.0).
+  const parsed = r129.parseExpenseDocument('E1', items[0].data)
+  const fingerprint = r129.payeClaimFingerprint(parsed)
+  const rejected = r129.payeClaimReportIntegrity({
+    reportId: 'P', report, items,
+    reviews: [{ id: 'expense_E1', data: { userId: 'sam', itemId: 'E1', kind: 'expense', decision: 'rejected', fingerprint } }],
+  })
+  assert.equal(rejected.ok, true)
+  assert.deepEqual(rejected.problems.map((p) => [p.code, p.severity]), [['rejected_item', 'note']])
+
+  // What the server stores, read back.
+  const fields = r129.reportCheckWriteFields({ reportId: 'P', collection: 'payeClaimReports', result: bad })
+  const back = r129.parseReportCheckDocument('P', JSON.parse(JSON.stringify(fields)))
+  assert.equal(back.ok, false)
+  assert.equal(back.problems.length, 2)
+  assert.equal(r129.REPORT_CHECKS_COLLECTION, 'reportChecks')
 })

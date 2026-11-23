@@ -50,13 +50,13 @@ export function LeaveNotLinkedToPerson({ organizationId }: { organizationId: str
     <section className="card p-4" aria-label="Leave not linked to a person">
       <h2 className="text-[15px] font-bold">Leave not linked to a person</h2>
       {rows.length === 0 ? (
-        <p className="mt-1 text-sm text-[var(--ink3)]">Every annual leave record matches a person.</p>
+        <p className="mt-1 text-sm text-(--ink3)">Every annual leave record matches a person.</p>
       ) : (
         <ul className="mt-2 space-y-1.5">
           {rows.map((row) => (
             <li key={row.id} className="text-sm">
               <span className="font-semibold">Person not found (id {row.userId || row.operativeId || '—'})</span>
-              <span className="text-[var(--ink3)]">
+              <span className="text-(--ink3)">
                 {' '}
                 — {row.startDayKey}
                 {row.endDayKey && row.endDayKey !== row.startDayKey ? ` to ${row.endDayKey}` : ''} · {row.status} · leave record {row.id}

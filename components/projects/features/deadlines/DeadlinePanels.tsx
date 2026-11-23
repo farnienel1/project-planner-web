@@ -61,7 +61,7 @@ export function Sheet({
   const backdropArmed = useRef(false)
   return (
     <div
-      className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
+      className="fixed inset-0 z-80 flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       onPointerDown={(event) => {
@@ -73,21 +73,21 @@ export function Sheet({
       }}
     >
       <div
-        className="relative z-10 flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[22px] bg-[var(--bg)] shadow-[var(--sh-pop)] sm:rounded-[22px]"
+        className="relative z-10 flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[22px] bg-(--bg) shadow-(color:--sh-pop) sm:rounded-[22px]"
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-start gap-3 border-b border-[var(--line)] bg-[var(--card)] px-4 py-3">
+        <div className="flex items-start gap-3 border-b border-(--line) bg-(--card) px-4 py-3">
           <button type="button" className="btn sm ghost" onClick={onClose}>
             Close
           </button>
           <div className="min-w-0 pt-1">
-            <p className="truncate font-[family-name:var(--head)] text-lg font-extrabold text-[var(--ink)]">{title}</p>
-            {subtitle ? <p className="truncate text-xs text-[var(--ink3)]">{subtitle}</p> : null}
+            <p className="truncate font-(family-name:--head) text-lg font-extrabold text-(--ink)">{title}</p>
+            {subtitle ? <p className="truncate text-xs text-(--ink3)">{subtitle}</p> : null}
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
-        {footer ? <div className="border-t border-[var(--line)] bg-[var(--card)] p-4">{footer}</div> : null}
+        {footer ? <div className="border-t border-(--line) bg-(--card) p-4">{footer}</div> : null}
       </div>
     </div>
   )
@@ -109,20 +109,20 @@ export function Pacing({ item, now }: { item: Deadline; now: Date }) {
   const gap = pacingGap(item, now)
   return (
     <div>
-      <div className="relative h-2 overflow-hidden rounded-full bg-[var(--soft2)]">
+      <div className="relative h-2 overflow-hidden rounded-full bg-(--soft2)">
         <div
           className="h-full rounded-full"
           data-hue={tone}
           style={{ width: `${Math.min(100, Math.max(0, item.progress * 100))}%`, background: 'var(--h)' }}
         />
         {expected != null ? (
-          <span className="absolute top-[-2px] h-3 w-[2px] bg-[var(--ink)]" style={{ left: `${Math.min(100, expected * 100)}%` }} />
+          <span className="absolute top-[-2px] h-3 w-[2px] bg-(--ink)" style={{ left: `${Math.min(100, expected * 100)}%` }} />
         ) : null}
       </div>
-      <p className="mt-1 text-[11.5px] font-semibold text-[var(--ink3)]">
+      <p className="mt-1 text-[11.5px] font-semibold text-(--ink3)">
         {progressPercent(item)}% complete
         {gap != null && gap >= 5 && item.status !== 'complete' ? (
-          <span className="font-bold text-[var(--red)]"> · {gap}% behind pace</span>
+          <span className="font-bold text-(--red)"> · {gap}% behind pace</span>
         ) : null}
       </p>
     </div>
@@ -132,7 +132,7 @@ export function Pacing({ item, now }: { item: Deadline; now: Date }) {
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div className="px-4 py-3">
-      <p className="text-[11px] font-bold tracking-wide text-[var(--ink3)]">{label.toUpperCase()}</p>
+      <p className="text-[11px] font-bold tracking-wide text-(--ink3)">{label.toUpperCase()}</p>
       <p className="text-sm font-semibold">{value}</p>
     </div>
   )
@@ -194,14 +194,14 @@ export function DetailSheet({
       <div className="space-y-4">
         <div className="card pad" data-hue={urgencyTone(value)}>
           <div className="flex items-start gap-3">
-            <h2 className="min-w-0 grow font-[family-name:var(--head)] text-xl font-extrabold">{item.title}</h2>
+            <h2 className="min-w-0 grow font-(family-name:--head) text-xl font-extrabold">{item.title}</h2>
             <Countdown value={value} />
           </div>
-          <p className="mt-1 text-sm text-[var(--ink3)]">{urgencyPhrase(value)}</p>
+          <p className="mt-1 text-sm text-(--ink3)">{urgencyPhrase(value)}</p>
         </div>
         <div className="card pad">
           <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-[11px] font-bold tracking-[0.08em] text-[var(--ink3)]">PROGRESS</h3>
+            <h3 className="text-[11px] font-bold tracking-[0.08em] text-(--ink3)">PROGRESS</h3>
             <span className="pill">{statusLabel(item.status)}</span>
           </div>
           <Pacing item={item} now={now} />
@@ -220,12 +220,12 @@ export function DetailSheet({
             </button>
           ) : null}
           {gap != null && gap >= 5 && item.status !== 'complete' ? (
-            <p className="mt-3 rounded-xl bg-[var(--warn-t)] p-3 text-[12.5px]">
+            <p className="mt-3 rounded-xl bg-(--warn-t) p-3 text-[12.5px]">
               At the current rate this finishes around {formatDay(finish)}. That is {gap}% behind where the programme expects it to be today.
             </p>
           ) : null}
         </div>
-        <div className="card divide-y divide-[var(--line)]">
+        <div className="card divide-y divide-(--line)">
           <Field label="Location" value={item.location || 'Not set'} />
           <Field label="Trade" value={item.trade || 'Not set'} />
           <Field
@@ -239,8 +239,8 @@ export function DetailSheet({
         </div>
         {item.fileURL || item.fileName || item.siteAuditId ? (
           <section>
-            <h3 className="mb-2 text-[11px] font-bold tracking-[0.08em] text-[var(--ink3)]">ATTACHED</h3>
-            <div className="card divide-y divide-[var(--line)]">
+            <h3 className="mb-2 text-[11px] font-bold tracking-[0.08em] text-(--ink3)">ATTACHED</h3>
+            <div className="card divide-y divide-(--line)">
               {item.fileURL ? (
                 <div className="px-4 py-3">
                   <StoredFileLink className="block text-sm font-semibold" fileRef={item.fileURL}>
@@ -256,16 +256,16 @@ export function DetailSheet({
               ) : null}
               {item.siteAuditId ? (
                 <div className="px-4 py-3">
-                  <a className="text-sm font-semibold text-[var(--blue)]" href="/dashboard/site-audit">
+                  <a className="text-sm font-semibold text-(--blue)" href="/dashboard/site-audit">
                     {audit ? auditTitle(audit) : item.siteAuditTitle || 'Attached site audit'}
                   </a>
                   {audit ? (
                     <div className="mt-3 space-y-3">
                       {audit.items.map((entry) => (
-                        <div key={entry.id} className="rounded-xl bg-[var(--soft)] p-3">
+                        <div key={entry.id} className="rounded-xl bg-(--soft) p-3">
                           <p className="text-sm font-semibold">{entry.title}</p>
-                          <p className="text-[11px] font-semibold text-[var(--ink3)]">Taken {formatStamp(entry.createdAt)}</p>
-                          {entry.location ? <p className="text-xs text-[var(--ink3)]">{entry.location}</p> : null}
+                          <p className="text-[11px] font-semibold text-(--ink3)">Taken {formatStamp(entry.createdAt)}</p>
+                          {entry.location ? <p className="text-xs text-(--ink3)">{entry.location}</p> : null}
                           {entry.comments ? <p className="mt-1 text-sm">{entry.comments}</p> : null}
                           {entry.imageURL ? (
                             <>
@@ -279,7 +279,7 @@ export function DetailSheet({
                       ))}
                     </div>
                   ) : (
-                    <p className="mt-1 text-xs text-[var(--ink3)]">Open site audits to see the photos if this one is not on the job yet.</p>
+                    <p className="mt-1 text-xs text-(--ink3)">Open site audits to see the photos if this one is not on the job yet.</p>
                   )}
                 </div>
               ) : null}
@@ -288,18 +288,18 @@ export function DetailSheet({
         ) : null}
         {before.length > 0 || after.length > 0 ? (
           <section>
-            <h3 className="mb-2 text-[11px] font-bold tracking-[0.08em] text-[var(--ink3)]">KNOCK-ON EFFECTS</h3>
-            <div className="card divide-y divide-[var(--line)]">
+            <h3 className="mb-2 text-[11px] font-bold tracking-[0.08em] text-(--ink3)">KNOCK-ON EFFECTS</h3>
+            <div className="card divide-y divide-(--line)">
               {before.map((dep) => (
                 <button key={dep.id} type="button" className="block w-full px-4 py-3 text-left" onClick={() => onOpen(dep.id)}>
                   <span className="block text-sm font-semibold">{dep.title}</span>
-                  <span className="text-xs text-[var(--ink3)]">Must finish first · {urgencyPhrase(urgency(dep, now))}</span>
+                  <span className="text-xs text-(--ink3)">Must finish first · {urgencyPhrase(urgency(dep, now))}</span>
                 </button>
               ))}
               {after.map((dep) => (
                 <button key={dep.id} type="button" className="block w-full px-4 py-3 text-left" onClick={() => onOpen(dep.id)}>
                   <span className="block text-sm font-semibold">{dep.title}</span>
-                  <span className="text-xs text-[var(--ink3)]">Waits on this · due {formatDay(dep.due)}</span>
+                  <span className="text-xs text-(--ink3)">Waits on this · due {formatDay(dep.due)}</span>
                 </button>
               ))}
             </div>
@@ -307,24 +307,24 @@ export function DetailSheet({
         ) : null}
         {item.detail ? (
           <section>
-            <h3 className="mb-2 text-[11px] font-bold tracking-[0.08em] text-[var(--ink3)]">SCOPE</h3>
-            <p className="card pad text-sm text-[var(--ink2)]">{item.detail}</p>
+            <h3 className="mb-2 text-[11px] font-bold tracking-[0.08em] text-(--ink3)">SCOPE</h3>
+            <p className="card pad text-sm text-(--ink2)">{item.detail}</p>
           </section>
         ) : null}
         {item.history.length > 0 ? (
           <section>
-            <h3 className="mb-2 text-[11px] font-bold tracking-[0.08em] text-[var(--ink3)]">HISTORY</h3>
-            <div className="card divide-y divide-[var(--line)]">
+            <h3 className="mb-2 text-[11px] font-bold tracking-[0.08em] text-(--ink3)">HISTORY</h3>
+            <div className="card divide-y divide-(--line)">
               {item.history.map((change) => (
                 <div key={change.id} className="px-4 py-3">
                   <p className="text-sm font-semibold">{historyLine(change)}</p>
-                  <p className="text-xs text-[var(--ink3)]">
+                  <p className="text-xs text-(--ink3)">
                     {change.author} · {formatStamp(change.at)}
                   </p>
                 </div>
               ))}
             </div>
-            <p className="mt-2 text-[11.5px] text-[var(--ink3)]">
+            <p className="mt-2 text-[11.5px] text-(--ink3)">
               Every date change is recorded with who moved it and why. This is the record you will want if the programme is ever disputed.
             </p>
           </section>
@@ -350,19 +350,19 @@ function PeopleList({
 }) {
   if (people.length === 0) return null
   return (
-    <div className="card divide-y divide-[var(--line)]">
+    <div className="card divide-y divide-(--line)">
       {people.map((person) => (
         <button key={person.id} type="button" className="flex w-full items-center gap-3 px-4 py-2.5 text-left" onClick={() => onToggle(person.id)}>
           <span
             className={`grid h-7 w-7 place-items-center rounded-full text-xs font-bold ${
-              selected.includes(person.id) ? 'bg-[var(--hs)] text-white' : 'bg-[var(--soft2)] text-[var(--ink3)]'
+              selected.includes(person.id) ? 'bg-(--hs) text-white' : 'bg-(--soft2) text-(--ink3)'
             }`}
           >
             {selected.includes(person.id) ? '✓' : ''}
           </span>
           <span>
             <span className="block text-sm font-semibold">{person.name}</span>
-            <span className="text-xs text-[var(--ink3)]">{person.subtitle}</span>
+            <span className="text-xs text-(--ink3)">{person.subtitle}</span>
           </span>
         </button>
       ))}
@@ -520,7 +520,7 @@ export function EditorSheet({
       onClose={onClose}
       footer={
         <div>
-          {formError ? <p className="mb-2 text-xs font-semibold text-[var(--red)]">{formError}</p> : null}
+          {formError ? <p className="mb-2 text-xs font-semibold text-(--red)">{formError}</p> : null}
           <button type="button" className="btn primary" disabled={saving} onClick={() => void submit()}>
             {saving ? 'Saving…' : existing ? 'Save changes' : 'Add deadline'}
           </button>
@@ -529,14 +529,14 @@ export function EditorSheet({
     >
       <form id="deadline-editor" className="space-y-5" onSubmit={submit}>
         <section>
-          <h3 className="mb-2 text-[11px] font-bold tracking-[0.08em] text-[var(--ink3)]">WHAT IS DUE</h3>
+          <h3 className="mb-2 text-[11px] font-bold tracking-[0.08em] text-(--ink3)">WHAT IS DUE</h3>
           <div className="card space-y-3 p-4">
             <input className="pp-in w-full" placeholder="e.g. 3rd Floor WC 1st Fix" value={title} onChange={(e) => setTitle(e.target.value)} />
             <textarea className="pp-in w-full" rows={3} placeholder="Scope detail (optional)" value={detail} onChange={(e) => setDetail(e.target.value)} />
           </div>
         </section>
         <section>
-          <h3 className="mb-2 text-[11px] font-bold tracking-[0.08em] text-[var(--ink3)]">WHERE</h3>
+          <h3 className="mb-2 text-[11px] font-bold tracking-[0.08em] text-(--ink3)">WHERE</h3>
           <div className="chips">
             <button
               type="button"
@@ -567,13 +567,13 @@ export function EditorSheet({
           ) : null}
         </section>
         <section>
-          <h3 className="mb-2 text-[11px] font-bold tracking-[0.08em] text-[var(--ink3)]">WHEN</h3>
+          <h3 className="mb-2 text-[11px] font-bold tracking-[0.08em] text-(--ink3)">WHEN</h3>
           <div className="card space-y-3 p-4">
             <label className="flex items-center justify-between gap-3 text-sm font-semibold">
               Has a start date
               <input type="checkbox" checked={hasStart} onChange={(e) => setHasStart(e.target.checked)} />
             </label>
-            <p className="text-xs text-[var(--ink3)]">Needed for pace tracking and the timeline</p>
+            <p className="text-xs text-(--ink3)">Needed for pace tracking and the timeline</p>
             {hasStart ? (
               <label className="block text-sm font-semibold">
                 Starts
@@ -588,11 +588,11 @@ export function EditorSheet({
         </section>
         <section>
           <div className="mb-2 flex items-center gap-2">
-            <h3 className="text-[11px] font-bold tracking-[0.08em] text-[var(--ink3)]">WHO</h3>
+            <h3 className="text-[11px] font-bold tracking-[0.08em] text-(--ink3)">WHO</h3>
             {live.length > 0 ? (
               <button
                 type="button"
-                className="ml-auto text-xs font-bold text-[var(--hs)]"
+                className="ml-auto text-xs font-bold text-(--hs)"
                 onClick={() => {
                   const liveIds = live.map((person) => person.id)
                   const allOn = liveIds.every((id) => selected.includes(id))
@@ -604,18 +604,18 @@ export function EditorSheet({
             ) : null}
           </div>
           {live.length === 0 && people.every((person) => person.isLive) ? (
-            <p className="card pad text-sm text-[var(--ink3)]">No people available to assign yet.</p>
+            <p className="card pad text-sm text-(--ink3)">No people available to assign yet.</p>
           ) : (
             <>
               {live.length > 0 ? (
                 <>
-                  <p className="mb-1 text-[11.5px] font-bold text-[var(--ink3)]">Booked or tasked on this job</p>
+                  <p className="mb-1 text-[11.5px] font-bold text-(--ink3)">Booked or tasked on this job</p>
                   <PeopleList people={live} selected={selected} onToggle={toggle} />
                 </>
               ) : null}
               {people.some((person) => !person.isLive) ? (
                 <div className="mt-3">
-                  <p className="mb-1 text-[11.5px] font-bold text-[var(--ink3)]">Add extra people</p>
+                  <p className="mb-1 text-[11.5px] font-bold text-(--ink3)">Add extra people</p>
                   <input className="pp-in mb-2 w-full" placeholder="Search everyone else" value={extraSearch} onChange={(e) => setExtraSearch(e.target.value)} />
                   <PeopleList people={extras} selected={selected} onToggle={toggle} />
                 </div>
@@ -634,12 +634,12 @@ export function EditorSheet({
           </label>
         </section>
         <section>
-          <h3 className="mb-2 text-[11px] font-bold tracking-[0.08em] text-[var(--ink3)]">ATTACH</h3>
+          <h3 className="mb-2 text-[11px] font-bold tracking-[0.08em] text-(--ink3)">ATTACH</h3>
           <div className="card space-y-3 p-4">
             <label className="block text-sm font-semibold">
               File
               <input className="mt-1 block w-full text-sm" type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} />
-              <span className="mt-1 block text-xs font-medium text-[var(--ink3)]">{file?.name || existing?.fileName || 'None — tap to upload'}</span>
+              <span className="mt-1 block text-xs font-medium text-(--ink3)">{file?.name || existing?.fileName || 'None — tap to upload'}</span>
             </label>
             <label className="block text-sm font-semibold">
               Site audit
@@ -655,19 +655,19 @@ export function EditorSheet({
           </div>
         </section>
         <section>
-          <h3 className="mb-2 text-[11px] font-bold tracking-[0.08em] text-[var(--ink3)]">PRIORITY AND REMINDERS</h3>
+          <h3 className="mb-2 text-[11px] font-bold tracking-[0.08em] text-(--ink3)">PRIORITY AND REMINDERS</h3>
           <div className="card space-y-3 p-4">
             <label className="flex items-center justify-between gap-3 text-sm font-semibold">
               <span>
                 On the critical path
-                <span className="mt-0.5 block text-xs font-medium text-[var(--ink3)]">Slipping this pushes the whole programme</span>
+                <span className="mt-0.5 block text-xs font-medium text-(--ink3)">Slipping this pushes the whole programme</span>
               </span>
               <input type="checkbox" checked={critical} onChange={(e) => setCritical(e.target.checked)} />
             </label>
             <label className="flex items-center justify-between gap-3 text-sm font-semibold">
               <span>
                 Remind me
-                <span className="mt-0.5 block text-xs font-medium text-[var(--ink3)]">Two days before, and again on the day</span>
+                <span className="mt-0.5 block text-xs font-medium text-(--ink3)">Two days before, and again on the day</span>
               </span>
               <input type="checkbox" checked={reminder} onChange={(e) => setReminder(e.target.checked)} />
             </label>
@@ -705,7 +705,7 @@ export function RescheduleSheet({
       footer={
         <div>
           {!canSave ? (
-            <p className="mb-2 text-xs text-[var(--ink3)]">{movedDays === 0 ? 'Pick a different date to continue' : 'Choose a reason to continue'}</p>
+            <p className="mb-2 text-xs text-(--ink3)">{movedDays === 0 ? 'Pick a different date to continue' : 'Choose a reason to continue'}</p>
           ) : null}
           <button type="button" className="btn primary" disabled={!canSave} onClick={() => onSave(next, reason)}>
             Confirm new date
@@ -716,19 +716,19 @@ export function RescheduleSheet({
       <div className="space-y-4">
         <div className="card grid grid-cols-[1fr_auto_1fr] items-center gap-3 p-4">
           <div>
-            <p className="text-[10px] font-bold tracking-wide text-[var(--ink3)]">CURRENTLY</p>
+            <p className="text-[10px] font-bold tracking-wide text-(--ink3)">CURRENTLY</p>
             <p className="text-lg font-extrabold">{formatDay(item.due)}</p>
-            <p className="text-[11px] text-[var(--ink3)]">{formatWeekCommencing(item.due)}</p>
+            <p className="text-[11px] text-(--ink3)">{formatWeekCommencing(item.due)}</p>
           </div>
-          <span className="text-[var(--ink3)]">→</span>
+          <span className="text-(--ink3)">→</span>
           <div>
-            <p className="text-[10px] font-bold tracking-wide text-[var(--ink3)]">MOVING TO</p>
-            <p className={`text-lg font-extrabold ${movedDays > 0 ? 'text-[var(--red)]' : movedDays < 0 ? 'text-[var(--green)]' : ''}`}>{formatDay(next)}</p>
-            <p className="text-[11px] text-[var(--ink3)]">{formatWeekCommencing(next)}</p>
+            <p className="text-[10px] font-bold tracking-wide text-(--ink3)">MOVING TO</p>
+            <p className={`text-lg font-extrabold ${movedDays > 0 ? 'text-(--red)' : movedDays < 0 ? 'text-(--green)' : ''}`}>{formatDay(next)}</p>
+            <p className="text-[11px] text-(--ink3)">{formatWeekCommencing(next)}</p>
           </div>
         </div>
         {movedDays !== 0 ? (
-          <p className={`text-[12.5px] font-bold ${movedDays > 0 ? 'text-[var(--red)]' : 'text-[var(--green)]'}`}>
+          <p className={`text-[12.5px] font-bold ${movedDays > 0 ? 'text-(--red)' : 'text-(--green)'}`}>
             {movedDays > 0
               ? `Pushing back ${movedDays} day${movedDays === 1 ? '' : 's'}`
               : `Pulling forward ${-movedDays} day${movedDays === -1 ? '' : 's'}`}
@@ -736,20 +736,20 @@ export function RescheduleSheet({
         ) : null}
         <input className="pp-in w-full" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         {knockOn.length > 0 && movedDays > 0 ? (
-          <div className="rounded-[14px] bg-[var(--leave-t)] p-3 text-sm">
+          <div className="rounded-[14px] bg-(--leave-t) p-3 text-sm">
             <p className="font-bold">
               {knockOn.length} deadline{knockOn.length === 1 ? '' : 's'} depend{knockOn.length === 1 ? 's' : ''} on this
             </p>
             {knockOn.map((dep) => (
-              <p key={dep.id} className="text-[var(--ink2)]">
+              <p key={dep.id} className="text-(--ink2)">
                 · {dep.title} — currently due {formatDay(dep.due)}
               </p>
             ))}
-            <p className="mt-1 text-[11.5px] text-[var(--ink3)]">They are not moved automatically. Review them after saving.</p>
+            <p className="mt-1 text-[11.5px] text-(--ink3)">They are not moved automatically. Review them after saving.</p>
           </div>
         ) : null}
         <section>
-          <h3 className="mb-2 text-[11px] font-bold tracking-[0.08em] text-[var(--ink3)]">REASON — REQUIRED</h3>
+          <h3 className="mb-2 text-[11px] font-bold tracking-[0.08em] text-(--ink3)">REASON — REQUIRED</h3>
           <div className="chips">
             {DEADLINE_RESCHEDULE_REASONS.map((reasonChip) => (
               <button

@@ -53,34 +53,34 @@ export default async function InterestUnsubscribePage({
   const copy = COPY[state]
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] text-[var(--ink)]">
-      <header className="border-b border-[var(--line)] bg-[var(--bg)]">
+    <div className="min-h-screen bg-(--bg) text-(--ink)">
+      <header className="border-b border-(--line) bg-(--bg)">
         <div className="mx-auto flex max-w-[720px] items-center gap-3 px-4 py-3 sm:px-6">
           <AppLogoMark size={36} radius={10} />
-          <b className="font-[family-name:var(--head)] text-[17px]">Project Planner</b>
+          <b className="font-(family-name:--head) text-[17px]">Project Planner</b>
         </div>
       </header>
       <main className="mx-auto max-w-[720px] px-4 py-14 sm:px-6">
-        <h1 className="font-[family-name:var(--head)] text-[clamp(28px,4vw,40px)] font-extrabold leading-tight tracking-tight">
+        <h1 className="font-(family-name:--head) text-[clamp(28px,4vw,40px)] font-extrabold leading-tight tracking-tight">
           {copy.title}
         </h1>
-        <p className="mt-4 max-w-[52ch] text-lg text-[var(--ink2)]">{copy.body}</p>
-        <p className="mt-6 text-[15px] text-[var(--ink2)]">
-          <a className="font-semibold text-[var(--blue)]" href={`mailto:${LEGAL_ENTITY.privacyEmail}`}>
+        <p className="mt-4 max-w-[52ch] text-lg text-(--ink2)">{copy.body}</p>
+        <p className="mt-6 text-[15px] text-(--ink2)">
+          <a className="font-semibold text-(--blue)" href={`mailto:${LEGAL_ENTITY.privacyEmail}`}>
             {LEGAL_ENTITY.privacyEmail}
           </a>
         </p>
       </main>
-      <footer className="border-t border-[var(--line)] px-4 py-7 text-[13.5px] text-[var(--ink3)] sm:px-6">
+      <footer className="border-t border-(--line) px-4 py-7 text-[13.5px] text-(--ink3) sm:px-6">
         <div className="mx-auto flex max-w-[720px] flex-wrap items-center gap-3">
           <span>
             {LEGAL_ENTITY.name} · {LEGAL_ENTITY.registeredOffice}
           </span>
           <span className="flex-1" />
-          <Link href="/privacy" className="text-[var(--ink2)]">
+          <Link href="/privacy" className="text-(--ink2)">
             Privacy
           </Link>
-          <Link href="/register-interest" className="text-[var(--ink2)]">
+          <Link href="/register-interest" className="text-(--ink2)">
             Register interest
           </Link>
         </div>

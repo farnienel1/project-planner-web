@@ -22,7 +22,7 @@ export function SubcontractorsScreen({ selectedId }: { selectedId?: string }) {
     <Suspense
       fallback={
         <div className="flex h-64 items-center justify-center">
-          <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-[var(--blue)]" />
+          <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-(--blue)" />
         </div>
       }
     >
@@ -110,7 +110,7 @@ function SubcontractorsScreenInner({ selectedId }: { selectedId?: string }) {
   if (loading && subcontractors.length === 0) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-[var(--blue)]" />
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-(--blue)" />
       </div>
     )
   }
@@ -358,7 +358,7 @@ function FirmEditor({
           type="submit"
           form="firm-editor"
           disabled={!valid || saving}
-          className="w-full rounded-xl bg-[var(--blue)] py-3 font-semibold text-white disabled:opacity-50"
+          className="w-full rounded-xl bg-(--blue) py-3 font-semibold text-white disabled:opacity-50"
         >
           Save
         </button>
@@ -419,7 +419,7 @@ function FirmEditor({
           Address · optional
           <input value={draft.address || ''} onChange={(e) => setDraft({ ...draft, address: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2" />
         </label>
-        <p className="text-[13px] text-[var(--ink3)]">Names only · no logins</p>
+        <p className="text-[13px] text-(--ink3)">Names only · no logins</p>
         {onDelete ? (
           <button type="button" onClick={() => void onDelete()} className="text-sm font-semibold text-red-600">
             Delete
@@ -458,7 +458,7 @@ function OperativeEditor({
           type="submit"
           form="op-editor"
           disabled={!valid || saving}
-          className="w-full rounded-xl bg-[var(--blue)] py-3 font-semibold text-white disabled:opacity-50"
+          className="w-full rounded-xl bg-(--blue) py-3 font-semibold text-white disabled:opacity-50"
         >
           Save
         </button>
@@ -486,7 +486,7 @@ function OperativeEditor({
         }}
         className="space-y-3"
       >
-        <p className="text-[13px] text-[var(--ink3)]">Adding to this firm&apos;s roster · {firmName}</p>
+        <p className="text-[13px] text-(--ink3)">Adding to this firm&apos;s roster · {firmName}</p>
         <label className="block text-sm font-medium">
           First name *
           <input required value={first} onChange={(e) => setFirst(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2" />

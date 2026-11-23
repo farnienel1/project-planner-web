@@ -87,12 +87,12 @@ export function DeveloperFeedbackScreen() {
         </button>
       }
     >
-      <p className="text-sm text-[var(--ink2)]">
+      <p className="text-sm text-(--ink2)">
         Shared board for every organisation. Customers submit from Feedback in the app; you triage, merge and move cards
         onto the roadmap here.
       </p>
       <DeveloperStatus error={error} loading={loading && suggestions.length > 0} />
-      <div className="flex gap-1 border-b border-[var(--line)]">
+      <div className="flex gap-1 border-b border-(--line)">
         {(
           [
             ['inbox', 'Inbox'],
@@ -104,7 +104,7 @@ export function DeveloperFeedbackScreen() {
             key={id}
             type="button"
             className={`border-b-2 px-3 py-2 text-sm font-semibold ${
-              ownerTab === id ? 'border-[var(--blue)] text-[var(--ink)]' : 'border-transparent text-[var(--ink3)]'
+              ownerTab === id ? 'border-(--blue) text-(--ink)' : 'border-transparent text-(--ink3)'
             }`}
             onClick={() => {
               setOwnerTab(id)
@@ -146,7 +146,7 @@ export function DeveloperFeedbackScreen() {
         ))}
       </div>
       ) : (
-        <p className="text-xs text-[var(--ink3)]">
+        <p className="text-xs text-(--ink3)">
           Keyboard: A approve · D decline · H hide · J/K next. Oldest unreviewed ideas first.
         </p>
       )}
@@ -167,13 +167,13 @@ export function DeveloperFeedbackScreen() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-bold">{row.title}</p>
-                    <p className="mt-1 line-clamp-2 text-sm text-[var(--ink2)]">{row.details || 'No extra detail yet.'}</p>
-                    <p className="mt-1 text-xs text-[var(--ink3)]">
+                    <p className="mt-1 line-clamp-2 text-sm text-(--ink2)">{row.details || 'No extra detail yet.'}</p>
+                    <p className="mt-1 text-xs text-(--ink3)">
                       {row.voteCount} votes · {row.commentCount} comments · {row.category} ·{' '}
                       {row.organizationName?.trim() || 'Unfinished setup'} · {row.authorName}
                     </p>
                     {duplicate ? (
-                      <p className="mt-1 text-xs text-[var(--ink3)]">
+                      <p className="mt-1 text-xs text-(--ink3)">
                         Suggested duplicate: {duplicate.row.title} ({Math.round(duplicate.score * 100)}%)
                       </p>
                     ) : null}
@@ -277,14 +277,14 @@ function InsightsPanel({
             .map((row) => (
               <li key={row.category} className="flex justify-between gap-3">
                 <span>{row.category}</span>
-                <span className="text-[var(--ink3)]">
+                <span className="text-(--ink3)">
                   {row.ideas} ideas · {row.votes} votes
                 </span>
               </li>
             ))}
         </ul>
       </section>
-      <p className="text-xs text-[var(--ink3)]">
+      <p className="text-xs text-(--ink3)">
         {shipped} shipped. Cycle time, deflection and MRR-at-stake need daily rollups (not yet computed on the client).
       </p>
     </div>
@@ -325,9 +325,9 @@ function OwnerIdeaComposer({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4">
-      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-[var(--bg)] p-4 sm:rounded-2xl">
+      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-(--bg) p-4 sm:rounded-2xl">
         <div className="mb-3 flex items-center justify-between">
-          <button type="button" className="text-sm font-semibold text-[var(--blue)]" onClick={onClose}>
+          <button type="button" className="text-sm font-semibold text-(--blue)" onClick={onClose}>
             Cancel
           </button>
           <p className="text-sm font-bold">Add feedback</p>
@@ -376,7 +376,7 @@ export function DeveloperRoadmapScreen() {
 
   return (
     <DeveloperShell title="Roadmap">
-      <p className="text-sm text-[var(--ink2)]">
+      <p className="text-sm text-(--ink2)">
         Move customer feedback through the same status model customers see. Needs review is everything still awaiting
         triage. Declined feedback stays on Feedback, not on this board.
       </p>
@@ -394,16 +394,16 @@ export function DeveloperRoadmapScreen() {
               <section key={column.id} className="card pad">
                 <div className="flex items-baseline justify-between gap-2">
                   <h2 className="h2">{column.label}</h2>
-                  <span className="text-xs font-bold text-[var(--ink3)]">{cards.length}</span>
+                  <span className="text-xs font-bold text-(--ink3)">{cards.length}</span>
                 </div>
                 <div className="mt-3 space-y-2">
-                  {cards.length === 0 ? <p className="text-xs text-[var(--ink3)]">Nothing in this column</p> : null}
+                  {cards.length === 0 ? <p className="text-xs text-(--ink3)">Nothing in this column</p> : null}
                   {cards.map((row) => (
-                    <div key={row.id} className="rounded-xl bg-[var(--soft)] p-3">
+                    <div key={row.id} className="rounded-xl bg-(--soft) p-3">
                       <Link href={`/developer/feedback/${row.id}`} className="text-sm font-bold">
                         {row.title}
                       </Link>
-                      <p className="mt-1 text-xs text-[var(--ink3)]">
+                      <p className="mt-1 text-xs text-(--ink3)">
                         {row.voteCount} votes · {row.organizationName?.trim() || 'Unfinished setup'}
                       </p>
                       <select

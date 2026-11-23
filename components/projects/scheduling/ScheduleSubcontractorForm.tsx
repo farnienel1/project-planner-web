@@ -277,7 +277,7 @@ export function ScheduleSubcontractorForm({
                 setUseGeneralAttendance(e.target.checked)
                 if (e.target.checked) setSelectedContactIds(new Set())
               }}
-              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+              className="mt-0.5 h-4 w-4 rounded-sm border-slate-300 text-violet-600 focus:ring-violet-500"
             />
             <span>
               <span className="block text-sm font-semibold text-slate-900">
@@ -346,7 +346,7 @@ export function ScheduleSubcontractorForm({
 
       {error && <ErrorBanner message={error} />}
 
-      <div className="fixed bottom-0 left-0 right-0 border-t border-slate-200 bg-white/95 p-4 backdrop-blur md:pl-64">
+      <div className="fixed bottom-0 left-0 right-0 border-t border-slate-200 bg-white/95 p-4 backdrop-blur-sm md:pl-64">
         <div className="mx-auto max-w-3xl">
           <p className="mb-2 text-xs text-slate-500">
             {selectedSubcontractorId ? '1 sub contractor' : 'No sub contractor'} · {slotsList.length} day(s)

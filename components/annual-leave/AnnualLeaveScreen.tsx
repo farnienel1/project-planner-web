@@ -130,14 +130,14 @@ export function AnnualLeaveScreen() {
           <button
             type="button"
             onClick={() => setTab('mine')}
-            className={`flex-1 rounded-xl py-2 text-sm font-semibold ${tab === 'mine' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+            className={`flex-1 rounded-xl py-2 text-sm font-semibold ${tab === 'mine' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500'}`}
           >
             My leave
           </button>
           <button
             type="button"
             onClick={() => setTab('team')}
-            className={`flex-1 rounded-xl py-2 text-sm font-semibold ${tab === 'team' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+            className={`flex-1 rounded-xl py-2 text-sm font-semibold ${tab === 'team' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500'}`}
           >
             Team
             {queueCount > 0 ? (

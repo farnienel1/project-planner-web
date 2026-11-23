@@ -143,7 +143,7 @@ export function OperativeQualificationsEditor({
             type="button"
             disabled={saving}
             onClick={() => void handlePickerSave()}
-            className="w-full rounded-xl bg-[var(--blue)] py-3 text-[16px] font-semibold text-white disabled:opacity-50"
+            className="w-full rounded-xl bg-(--blue) py-3 text-[16px] font-semibold text-white disabled:opacity-50"
           >
             {saving ? 'Saving…' : pickerSelected.length > 1 ? `Save (${pickerSelected.length})` : 'Save'}
           </button>
@@ -151,7 +151,7 @@ export function OperativeQualificationsEditor({
       }
     >
       {availableTemplates.length === 0 ? (
-        <p className="text-[15px] text-[var(--ink3)]">
+        <p className="text-[15px] text-(--ink3)">
           {templates.length === 0
             ? canManageOrg
               ? 'No qualification templates yet. Click Add to create one for the organisation.'
@@ -168,7 +168,7 @@ export function OperativeQualificationsEditor({
             )
           }
           hint={
-            <p className="text-[13px] text-[var(--ink3)]">
+            <p className="text-[13px] text-(--ink3)">
               Search or filter, click + to choose a qualification, then Save. Set expiry dates and
               certificates on the cards after saving.
             </p>
@@ -180,9 +180,9 @@ export function OperativeQualificationsEditor({
 
   if (!linked || !draft) {
     return (
-      <div className={pv ? 'up-qempty' : 'rounded-[18px] bg-[var(--card)] p-6 shadow-[var(--sh)]'}>
+      <div className={pv ? 'up-qempty' : 'rounded-[18px] bg-(--card) p-6 shadow-(color:--sh)'}>
         <p className={pv ? undefined : 'text-[18px] font-semibold'}>{pv ? <b>Profile not linked</b> : 'Profile not linked'}</p>
-        <p className={pv ? undefined : 'mt-2 text-[15px] text-[var(--ink3)]'}>
+        <p className={pv ? undefined : 'mt-2 text-[15px] text-(--ink3)'}>
           No operative record matches this email. Ask an admin to check the account email matches the
           operative profile.
         </p>
@@ -193,8 +193,8 @@ export function OperativeQualificationsEditor({
   if (draft.qualifications.length === 0) {
     return (
       <>
-        <div className={pv ? 'up-qempty' : 'rounded-[18px] bg-[var(--card)] p-6 shadow-[var(--sh)]'}>
-          <p className={pv ? undefined : 'text-[15px] text-[var(--ink3)]'}>
+        <div className={pv ? 'up-qempty' : 'rounded-[18px] bg-(--card) p-6 shadow-(color:--sh)'}>
+          <p className={pv ? undefined : 'text-[15px] text-(--ink3)'}>
             {templates.length === 0
               ? 'No qualifications have been set up for your organisation yet. Ask a manager or admin to add qualification templates.'
               : 'No qualifications on this profile yet. Click Add qualifications to pick from the organisation library, then set expiry dates and certificates below.'}
@@ -251,7 +251,7 @@ export function OperativeQualificationsEditor({
         className={
           pv
             ? 'up-qbar'
-            : 'sticky bottom-20 z-10 flex flex-wrap items-center justify-end gap-3 rounded-[18px] bg-[color-mix(in_srgb,var(--card)_95%,transparent)] p-3 shadow-[var(--sh)] backdrop-blur lg:bottom-4'
+            : 'sticky bottom-20 z-10 flex flex-wrap items-center justify-end gap-3 rounded-[18px] bg-[color-mix(in_srgb,var(--card)_95%,transparent)] p-3 shadow-(color:--sh) backdrop-blur-sm lg:bottom-4'
         }
       >
         <Button variant="ghost" onClick={openPicker}>
@@ -274,9 +274,9 @@ export function OperativeQualificationsEditor({
           const pending = pendingFiles[qual.id]
           const preview = previewUrls[qual.id]
           return (
-            <div key={qual.id} className={pv ? 'up-qcard' : 'rounded-[18px] bg-[var(--card)] p-5 shadow-[var(--sh)]'}>
+            <div key={qual.id} className={pv ? 'up-qcard' : 'rounded-[18px] bg-(--card) p-5 shadow-(color:--sh)'}>
               {pv ? <b>{qual.name}</b> : <p className="text-[17px] font-semibold">{qual.name}</p>}
-              <label className={pv ? 'up-f up-f-label' : 'mt-3 block text-[13px] font-medium text-[var(--ink3)]'}>
+              <label className={pv ? 'up-f up-f-label' : 'mt-3 block text-[13px] font-medium text-(--ink3)'}>
                 Expiry date
                 <input
                   type="date"
@@ -291,10 +291,10 @@ export function OperativeQualificationsEditor({
                       return { ...current, qualificationExpiryDates: nextDates }
                     })
                   }}
-                  className={pv ? 'pp-in' : 'mt-1 w-full rounded-[13px] border-[1.5px] border-[var(--line2)] bg-[var(--card)] px-3.5 py-2.5'}
+                  className={pv ? 'pp-in' : 'mt-1 w-full rounded-[13px] border-[1.5px] border-(--line2) bg-(--card) px-3.5 py-2.5'}
                 />
               </label>
-              {pv ? null : <p className="mt-3 text-[12px] text-[var(--ink3)]">{QUALIFICATION_CERT_HINT}</p>}
+              {pv ? null : <p className="mt-3 text-[12px] text-(--ink3)">{QUALIFICATION_CERT_HINT}</p>}
               {wrapFile(
                 pv,
                 saving || uploading,
@@ -323,7 +323,7 @@ export function OperativeQualificationsEditor({
                   <p className="font-semibold">Ready to upload: {pending.name}</p>
                   <p>Save to store this certificate.</p>
                   {preview ? (
-                    <a href={preview} target="_blank" rel="noreferrer" className={pv ? 'up-lk' : 'mt-1 inline-block font-semibold text-[var(--blue)]'}>
+                    <a href={preview} target="_blank" rel="noreferrer" className={pv ? 'up-lk' : 'mt-1 inline-block font-semibold text-(--blue)'}>
                       View new certificate
                     </a>
                   ) : null}
@@ -335,7 +335,7 @@ export function OperativeQualificationsEditor({
                       <span aria-hidden="true">✓</span> Certificate uploaded
                     </Chip>
                   ) : null}
-                  <a href={safeExternalUrl(cert) ?? undefined} target="_blank" rel="noreferrer" className={pv ? 'up-lk' : 'font-semibold text-[var(--blue)]'}>
+                  <a href={safeExternalUrl(cert) ?? undefined} target="_blank" rel="noreferrer" className={pv ? 'up-lk' : 'font-semibold text-(--blue)'}>
                     View certificate
                   </a>
                   {showReportLink && draft?.id ? (
@@ -367,12 +367,12 @@ export function OperativeQualificationsEditor({
                     <Chip tone="slate">No certificate uploaded</Chip>
                   </span>
                 ) : (
-                  <p className="mt-2 text-[13px] text-[var(--ink3)]">No certificate uploaded</p>
+                  <p className="mt-2 text-[13px] text-(--ink3)">No certificate uploaded</p>
                 )
               )}
               {pending && cert ? (
                 <div className={pv ? 'up-qlinks' : 'mt-2 flex flex-wrap gap-3 text-sm'}>
-                  <a href={safeExternalUrl(cert) ?? undefined} target="_blank" rel="noreferrer" className={pv ? 'up-lk' : 'font-semibold text-[var(--blue)]'}>
+                  <a href={safeExternalUrl(cert) ?? undefined} target="_blank" rel="noreferrer" className={pv ? 'up-lk' : 'font-semibold text-(--blue)'}>
                     View current certificate
                   </a>
                   <button

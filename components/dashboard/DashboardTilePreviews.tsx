@@ -348,7 +348,7 @@ function DraggablePreviewTile({
       </div>
       <div className="pointer-events-none absolute inset-0 rounded-2xl border-2 border-transparent transition group-hover:border-blue-200" />
       <div className="pointer-events-none absolute left-2 top-2 flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
-        <span className="flex items-center gap-1 rounded-lg bg-slate-900/80 px-2 py-1 text-[10px] font-semibold text-white backdrop-blur-sm">
+        <span className="flex items-center gap-1 rounded-lg bg-slate-900/80 px-2 py-1 text-[10px] font-semibold text-white backdrop-blur-xs">
           <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
           </svg>
@@ -358,7 +358,7 @@ function DraggablePreviewTile({
       <button
         type="button"
         onClick={onRemove}
-        className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 shadow-sm opacity-0 transition hover:border-red-200 hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
+        className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 shadow-xs opacity-0 transition hover:border-red-200 hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
         aria-label="Remove tile"
       >
         <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

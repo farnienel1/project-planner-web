@@ -7,6 +7,7 @@ import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 
 import { doc, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { confirmChosenSignOut } from '@/lib/siteAudit/siteAuditSignOut'
 import { uploadFile, profilePhotoPath } from '@/lib/firebase/storageUtils'
 import { PROFILE_PHOTO_ACCEPT, validateProfilePhotoFile } from '@/lib/settings/profilePhotoUpload'
 import { ProfilePhotoCropModal } from '@/components/settings/ProfilePhotoCropModal'
@@ -287,13 +288,13 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
         <p className="eyebrow" style={{ marginBottom: 12 }}>Profile image</p>
         <div className="flex items-center gap-4">
           {user ? <UserAvatar user={{ ...user, firstName, surname }} size={56} /> : (
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-xl font-bold text-white flex-shrink-0">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-linear-to-br/srgb from-blue-500 to-indigo-600 text-xl font-bold text-white shrink-0">
               {(firstName[0] || '') + (surname[0] || '')}
             </div>
           )}
           <div className="flex-1">
-            <p className="text-sm font-bold text-[var(--ink)]">Profile photo</p>
-            <p className="text-xs text-[var(--ink3)]">Used across Home and Settings. Image only · max 2MB. Same photo as iOS.</p>
+            <p className="text-sm font-bold text-(--ink)">Profile photo</p>
+            <p className="text-xs text-(--ink3)">Used across Home and Settings. Image only · max 2MB. Same photo as iOS.</p>
           </div>
           <label className={`btn sm ${uploadingPhoto ? 'opacity-50' : ''}`}>
             {uploadingPhoto ? 'Uploading…' : 'Change photo'}
@@ -318,14 +319,14 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
       {/* Fields */}
       <SettingsCard>
         <div className="px-4 py-3 space-y-1">
-          <div className="flex items-center justify-between py-1"><span className="text-sm text-[var(--ink3)]">Name</span><span className="text-sm font-semibold text-[var(--ink)]">{user?.firstName} {user?.surname}</span></div>
-          <div className="flex items-center justify-between py-1"><span className="text-sm text-[var(--ink3)]">Email</span><span className="text-sm font-semibold text-[var(--ink)]">{user?.email}</span></div>
-          <div className="flex items-center justify-between py-1"><span className="text-sm text-[var(--ink3)]">Organisation</span><span className="text-sm font-semibold text-[var(--ink)]">{orgName}</span></div>
+          <div className="flex items-center justify-between py-1"><span className="text-sm text-(--ink3)">Name</span><span className="text-sm font-semibold text-(--ink)">{user?.firstName} {user?.surname}</span></div>
+          <div className="flex items-center justify-between py-1"><span className="text-sm text-(--ink3)">Email</span><span className="text-sm font-semibold text-(--ink)">{user?.email}</span></div>
+          <div className="flex items-center justify-between py-1"><span className="text-sm text-(--ink3)">Organisation</span><span className="text-sm font-semibold text-(--ink)">{orgName}</span></div>
           {rateRow ? (
-            <div className="flex items-center justify-between py-1"><span className="text-sm text-[var(--ink3)]">{rateRow.label}</span><span className="text-sm font-semibold text-[var(--ink)]">{rateRow.value}</span></div>
+            <div className="flex items-center justify-between py-1"><span className="text-sm text-(--ink3)">{rateRow.label}</span><span className="text-sm font-semibold text-(--ink)">{rateRow.value}</span></div>
           ) : null}
           {employmentToday ? (
-            <div className="flex items-center justify-between py-1"><span className="text-sm text-[var(--ink3)]">Employment type</span><span className="text-sm font-semibold text-[var(--ink)]">{employmentToday}</span></div>
+            <div className="flex items-center justify-between py-1"><span className="text-sm text-(--ink3)">Employment type</span><span className="text-sm font-semibold text-(--ink)">{employmentToday}</span></div>
           ) : null}
         </div>
       </SettingsCard>
@@ -341,9 +342,9 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
       <div className="space-y-3 card pad">
         <p className="eyebrow">Billing details</p>
         {taxIdsState === 'loading' ? (
-          <p className="text-xs text-[var(--ink3)]">Loading…</p>
+          <p className="text-xs text-(--ink3)">Loading…</p>
         ) : taxIdsState === 'failed' ? (
-          <p className="text-xs text-[var(--ink3)]">Billing details could not be loaded. Try again later.</p>
+          <p className="text-xs text-(--ink3)">Billing details could not be loaded. Try again later.</p>
         ) : (
           <>
             <FormField label="VAT number">
@@ -607,7 +608,7 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
       ) : null}
 
       <section className="hero" style={{ padding: '22px 26px' }}>
-        <div className="relative z-[1] flex items-center gap-4">
+        <div className="relative z-1 flex items-center gap-4">
           {user ? <UserAvatar user={user} size={72} /> : null}
           <div className="min-w-0 grow">
             <div className="big" style={{ fontSize: 26 }}>
@@ -708,8 +709,8 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
 
       {/* Sign out */}
       <SettingsCard>
-        <button type="button" onClick={async () => { if (window.confirm('Are you sure you want to sign out?')) await signOut() }}
-          className="flex w-full items-center justify-center gap-2 px-4 py-4 text-[var(--red)] hover:bg-[var(--red-t)] transition-colors">
+        <button type="button" onClick={async () => { if (await confirmChosenSignOut(useAuthStore.getState().firebaseUser?.uid ?? useAuthStore.getState().user?.id)) await signOut() }}
+          className="flex w-full items-center justify-center gap-2 px-4 py-4 text-(--red) hover:bg-(--red-t) transition-colors">
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
           <span className="text-sm font-bold">Sign out</span>
         </button>

@@ -149,7 +149,7 @@ function DeleteAccountConfirmDialog({
     >
       <div className="space-y-3">
         {ACCOUNT_DELETE_COPY.body.map((paragraph) => (
-          <p key={paragraph} className="text-sm leading-relaxed text-[var(--ink2)]">
+          <p key={paragraph} className="text-sm leading-relaxed text-(--ink2)">
             {paragraph}
           </p>
         ))}
@@ -172,7 +172,7 @@ function DeleteAccountConfirmDialog({
         {companies.length > 0 ? (
           <div className="space-y-2 rounded-lg border border-red-200 p-3">
             <p className="text-sm font-semibold text-red-700">{ACCOUNT_DELETE_COPY.companyTitle}</p>
-            <p className="text-sm leading-relaxed text-[var(--ink2)]">{ACCOUNT_DELETE_COPY.companyNote}</p>
+            <p className="text-sm leading-relaxed text-(--ink2)">{ACCOUNT_DELETE_COPY.companyNote}</p>
             {companies.map((org) => (
               <FormField key={org.orgId} label={ACCOUNT_DELETE_COPY.companyNameLabel(org.orgName)}>
                 <Input
@@ -250,15 +250,15 @@ function HandoverSuperAdminDialog({ org, onClose }: { org: AccountDeleteOrg | nu
       }
     >
       <div className="space-y-3">
-        <p className="text-sm leading-relaxed text-[var(--ink2)]">{ACCOUNT_HANDOVER_REQUIRED_MESSAGE}</p>
+        <p className="text-sm leading-relaxed text-(--ink2)">{ACCOUNT_HANDOVER_REQUIRED_MESSAGE}</p>
         {done ? (
           <p className="text-sm text-emerald-700">{ACCOUNT_DELETE_COPY.handoverDone}</p>
         ) : !sameOrg ? (
-          <p className="text-sm leading-relaxed text-[var(--ink2)]">{ACCOUNT_DELETE_COPY.handoverOtherOrg(org?.orgName || '')}</p>
+          <p className="text-sm leading-relaxed text-(--ink2)">{ACCOUNT_DELETE_COPY.handoverOtherOrg(org?.orgName || '')}</p>
         ) : (
           <>
-            <p className="text-sm font-semibold text-[var(--ink)]">{ACCOUNT_DELETE_COPY.handoverPickLabel}</p>
-            {admins.length === 0 ? <p className="text-sm text-[var(--ink3)]">{SUPER_ADMIN_SUCCESSOR_EMPTY}</p> : null}
+            <p className="text-sm font-semibold text-(--ink)">{ACCOUNT_DELETE_COPY.handoverPickLabel}</p>
+            {admins.length === 0 ? <p className="text-sm text-(--ink3)">{SUPER_ADMIN_SUCCESSOR_EMPTY}</p> : null}
             {admins.map((row) => (
               <Button key={row.id} variant="secondary" disabled={busy} onClick={() => void handOver(row, false)}>
                 {`${row.firstName} ${row.surname}`.trim() || row.email}
@@ -266,7 +266,7 @@ function HandoverSuperAdminDialog({ org, onClose }: { org: AccountDeleteOrg | nu
             ))}
             {members.length > 0 ? (
               <>
-                <p className="text-sm font-semibold text-[var(--ink)]">{ACCOUNT_DELETE_COPY.handoverPromoteLabel}</p>
+                <p className="text-sm font-semibold text-(--ink)">{ACCOUNT_DELETE_COPY.handoverPromoteLabel}</p>
                 {members.map((row) => (
                   <Button key={row.id} variant="secondary" disabled={busy} onClick={() => void handOver(row, true)}>
                     {`${row.firstName} ${row.surname}`.trim() || row.email}

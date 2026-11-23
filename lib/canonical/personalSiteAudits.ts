@@ -18,6 +18,7 @@ import { formatPaymentRunDay } from './paymentRuns'
 import { documentInstantMs } from './peopleDocuments'
 import { storedFileKind, storedFileObjectName } from './storedFiles'
 import type { PayeClaimEvidence } from './claimEvidence'
+import { siteAuditFieldLimitError } from './siteAuditReport'
 
 export const PERSONAL_SITE_AUDITS_COLLECTION = 'personalSiteAudits'
 export const PERSONAL_SITE_AUDIT_SECTION_LABEL = 'Personal'
@@ -94,6 +95,35 @@ export function personalSiteAuditImagePath(input: {
   return name ? `organizations/${parts[0]}/${PERSONAL_SITE_AUDITS_COLLECTION}/${parts[1]}/${parts[2]}/${name}` : null
 }
 
+/**
+ * Where one site audit photo is stored (rulebook §29, review of #389), project and personal audits alike: the §24
+ * object name `{uid}_{ms}.{ext}` with `ms` = the audit's created time (epoch ms) plus the item's place in the audit
+ * (0, 1, 2 …). Unique per item, so photos uploaded at the same moment never share a name and silently replace one
+ * another, and the same on every retry, so a retry replaces its own earlier upload. Null when an input is unusable.
+ */
+export function siteAuditPhotoObjectPath(input: {
+  kind: 'project' | 'personal'
+  organizationId: string
+  userId: string
+  auditId: string
+  createdAtMs: number
+  index: number
+  extension?: string | null
+}): string | null {
+  const index = Math.floor(Number(input.index))
+  const created = Math.floor(Number(input.createdAtMs))
+  if (!Number.isFinite(index) || index < 0 || !Number.isFinite(created) || created < 0) return null
+  const unixMs = created + index
+  if (input.kind === 'personal') {
+    return personalSiteAuditImagePath({ organizationId: input.organizationId, ownerUserId: input.userId, auditId: input.auditId, unixMs, extension: input.extension })
+  }
+  const org = text(input.organizationId)
+  const audit = text(input.auditId)
+  if (!org || !audit || org.includes('/') || audit.includes('/')) return null
+  const name = storedFileObjectName({ uid: text(input.userId), unixMs, extension: input.extension })
+  return name ? `organizations/${org}/siteAudits/${audit}/images/${name}` : null
+}
+
 /** Only the owner sees a personal site audit (uids compare exactly, as Auth uids are case-sensitive). */
 export function canViewPersonalSiteAudit(viewerUserId: unknown, audit: Pick<PersonalSiteAudit, 'ownerUserId'> | null | undefined): boolean {
   const viewer = text(viewerUserId)
@@ -116,6 +146,9 @@ export function personalSiteAuditValidationError(
   context?: { organizationId?: string | null; ownerUserId?: string | null } | null
 ): string | null {
   if (!text(draft.jobName)) return PERSONAL_SITE_AUDIT_JOB_NAME_MESSAGE
+  // Never cut: over the limit is refused with a message, as every other site audit field (owner decision 17 Nov).
+  const limit = siteAuditFieldLimitError({ jobNumber: text(draft.jobNumber), jobName: text(draft.jobName) })
+  if (limit) return limit
   if (!isDayKey(text(draft.date))) return PERSONAL_SITE_AUDIT_DATE_MESSAGE
   const items = draft.items || []
   if (items.length === 0 || items.length > PERSONAL_SITE_AUDIT_ITEMS_MAX) return PERSONAL_SITE_AUDIT_ITEMS_MESSAGE
@@ -164,8 +197,8 @@ export function personalSiteAuditWriteFields(input: {
   })
   return {
     ownerUserId: owner,
-    jobNumber: text(input.draft.jobNumber).slice(0, 60),
-    jobName: text(input.draft.jobName).slice(0, 200),
+    jobNumber: text(input.draft.jobNumber),
+    jobName: text(input.draft.jobName),
     type: text(input.draft.type).slice(0, 60) || 'General',
     customTitle: text(input.draft.customTitle).slice(0, 200),
     date: text(input.draft.date),

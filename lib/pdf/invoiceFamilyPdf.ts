@@ -7,6 +7,7 @@
  */
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib'
 import { INVOICE_PDF_STYLE, pdfMoneyText, winAnsiCanDraw } from '@/lib/timesheets/invoicePdf'
+import { loadCompanyLogo } from '@/lib/pdf/companyLogo'
 
 const S = INVOICE_PDF_STYLE
 const PAGE: [number, number] = [S.pageWidth, S.pageHeight]
@@ -24,16 +25,13 @@ export function familyPdfText(value: string, currencyCode?: string | null): stri
 export type FamilyColumn = { title: string; width: number; align?: 'left' | 'right' }
 export type FamilyCell = { text: string; bold?: boolean; size?: number; color?: Color; lines?: string[] }
 
-/** Embeds a PNG or JPEG logo from a URL; null when it cannot be read (the PDF is made without it). */
+/** Embeds the company logo (`loadCompanyLogo`: https only, a timeout, type from the bytes); null when it cannot be
+ * read (the PDF is made without it). */
 export async function familyLogo(pdf: PDFDocument, url: string | null | undefined): Promise<PDFImage | null> {
-  if (!url) return null
+  const logo = await loadCompanyLogo(url)
+  if (!logo) return null
   try {
-    const response = await fetch(url)
-    if (!response.ok) return null
-    const bytes = new Uint8Array(await response.arrayBuffer())
-    const type = response.headers.get('content-type') || ''
-    if (type.includes('png') || /\.png(\?|$)/i.test(url) || (bytes[0] === 0x89 && bytes[1] === 0x50)) return await pdf.embedPng(bytes)
-    return await pdf.embedJpg(bytes)
+    return logo.format === 'png' ? await pdf.embedPng(logo.bytes) : await pdf.embedJpg(logo.bytes)
   } catch {
     return null
   }

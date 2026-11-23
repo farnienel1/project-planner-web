@@ -4,18 +4,16 @@ import { useMemo, useRef } from 'react'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import { parseHhMm } from '@/lib/ios-parity/londonTime'
-import { bookingPayrollHours, hoursBreakdown } from '@/lib/scheduling/paidHours'
+import { bookingPayrollHours } from '@/lib/scheduling/paidHours'
 import {
   bookingDayKey,
   payrollDayWindowsForDate,
   policyForBookingDate,
   unpaidBreakAppliesOnDate,
-  weekendBreakdownForDates,
-  weekdayExplanationForDate,
+  hoursBreakdownForDates,
 } from '@/lib/scheduling/bookingSlotRules'
-import { BookingDayBreakdownRows } from '@/components/scheduling/BookingDayBreakdownRows'
-import { BookingHoursExplanationList } from '@/components/scheduling/BookingHoursExplanation'
-import { bookingBreakText, bookingHoursCountText } from '@/lib/canonical'
+import { HoursBreakdownBox, HoursBreakdownSummary } from '@/components/scheduling/HoursBreakdownBox'
+import { bookingBreakText } from '@/lib/canonical'
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
 const MINUTES = [0, 15, 30, 45]
@@ -60,6 +58,7 @@ export function HoursTimelinePicker({
   onBreak,
   showBreak = true,
   otMultiplierOverride = null,
+  showBreakdown = true,
 }: {
   start: string
   end: string
@@ -78,6 +77,11 @@ export function HoursTimelinePicker({
    * bands, the hours figure and the explanation price the overtime at the rate on screen.
    */
   otMultiplierOverride?: number | null
+  /**
+   * Rulebook 1.69.0: draw the Hours breakdown box under the summary line. Screens that show the box themselves (the
+   * sheets with `HoursBreakdownCard`) pass false, so it is never drawn twice.
+   */
+  showBreakdown?: boolean
 }) {
   const startHm = parse(start)
   const endHm = parse(end)
@@ -143,24 +147,15 @@ export function HoursTimelinePicker({
     return out
   }, [valid, start, end, breakRemoved, otMultiplierOverride, dayPolicy, dayKeyOfBooking])
 
-  const breakdown = hoursBreakdown({
-    timeSlot: 'CUSTOM_HOURS',
-    workStartTime: start,
-    workEndTime: end,
-    isBreakRemoved: breakRemoved,
-    otMultiplierOverride,
-    policy: dayPolicy,
-    dayKey: dayKeyOfBooking,
-  })
-
-  // Rulebook 1.18.0 (`weekendBookingBreakdown`): a weekend selection shows each day as pay prices it, not one summary.
-  const dayRows = valid ? weekendBreakdownForDates(dates ?? (date ? [date] : []), start, end, breakRemoved, policy, otMultiplierOverride) : []
-  // Rulebook 1.39.0 (`bookingHoursExplanation`): a weekday selection explains its hours the same way (working day,
-  // unpaid break, hours at the overtime multiplier). Weekend rows carry their own explanation.
-  const weekdayExplanations =
-    valid && dayRows.length === 0
-      ? (dates ?? (date ? [date] : [])).map((booked) => weekdayExplanationForDate(booked, start, end, breakRemoved, policy, otMultiplierOverride))
-      : []
+  // Rulebook 1.69.0 (`bookingHoursBreakdownDays`): one summary line under the timeline and the Hours breakdown box —
+  // Normal hours, Overtime, Total paid hours — for every booked day, each under the working hours in effect on it.
+  const breakdown = valid
+    ? hoursBreakdownForDates(
+        dates && dates.length > 0 ? dates : date ? [date] : [],
+        { timeSlot: 'CUSTOM_HOURS', workStartTime: start, workEndTime: end, isBreakRemoved: breakRemoved, otMultiplierOverride },
+        policy
+      )
+    : null
 
   function minutesFromClientX(clientX: number, rect: DOMRect): number {
     const raw = ((clientX - rect.left) / rect.width) * DAY_MINUTES
@@ -181,7 +176,7 @@ export function HoursTimelinePicker({
   return (
     <div className="space-y-4">
       <div>
-        <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">Hours · 00:00 to 24:00</p>
+        <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.4px] text-(--ink3)">Hours · 00:00 to 24:00</p>
         <div className="rounded-xl bg-[#F2F3F5] px-3 pb-2 pt-3">
           <div
             data-hours-track
@@ -218,7 +213,7 @@ export function HoursTimelinePicker({
               {AXIS.map((label) => (
                 <div
                   key={`tick-${label}`}
-                  className="absolute inset-y-0 w-px bg-black/[0.08]"
+                  className="absolute inset-y-0 w-px bg-black/8"
                   style={{ left: `${(label / 24) * 100}%` }}
                 />
               ))}
@@ -258,7 +253,7 @@ export function HoursTimelinePicker({
               breakStart < endMin &&
               breakEnd > startMin ? (
                 <div
-                  className="absolute inset-y-1 rounded-sm bg-white/50"
+                  className="absolute inset-y-1 rounded-xs bg-white/50"
                   style={{
                     left: `${fraction(Math.max(startMin, breakStart)) * 100}%`,
                     width: `${Math.max(0.4, fraction(Math.min(endMin, breakEnd)) - fraction(Math.max(startMin, breakStart))) * 100}%`,
@@ -285,22 +280,15 @@ export function HoursTimelinePicker({
             })}
           </div>
         </div>
-        {dayRows.length > 0 ? (
-          <div className="mt-2">
-            <BookingDayBreakdownRows rows={dayRows} />
-          </div>
+        {valid ? (
+          breakdown ? (
+            <>
+              <HoursBreakdownSummary breakdown={breakdown} />
+              {showBreakdown ? <HoursBreakdownBox breakdown={breakdown} className="mt-2" /> : null}
+            </>
+          ) : null
         ) : (
-          <>
-            <p className="mt-2 text-[12px] tabular-nums text-[var(--ink3)]">
-              {valid
-                ? `${format(startHm.hour, startHm.minute)}–${format(endHm.hour, endHm.minute)} · ${bookingHoursCountText(breakdown.totalPaidHours)}`
-                : 'Finish must be after start'}
-            </p>
-            {breakdown.overtimeLine ? (
-              <p className="mt-1 text-[12px] font-semibold text-[#854F0B]">{breakdown.overtimeLine}</p>
-            ) : null}
-            <BookingHoursExplanationList explanations={weekdayExplanations} className="mt-1.5" />
-          </>
+          <p className="mt-2 text-[12px] tabular-nums text-(--ink3)">Finish must be after start</p>
         )}
       </div>
 
@@ -321,7 +309,7 @@ export function HoursTimelinePicker({
         />
       </div>
       {showBreak && breakApplies ? (
-      <label className="flex items-center justify-between rounded-xl border border-[var(--line)] bg-white px-3.5 py-3 text-[13px] font-medium">
+      <label className="flex items-center justify-between rounded-xl border border-(--line) bg-white px-3.5 py-3 text-[13px] font-medium">
         {breakToggleLabel}
         <input
           type="checkbox"
@@ -349,12 +337,12 @@ function Handle({
       className="pointer-events-none absolute top-0 z-10 -translate-x-1/2"
       style={{ left: `${left}%` }}
     >
-      <span className="mb-0.5 block text-center text-[9px] font-semibold tabular-nums text-[var(--blue)]">
+      <span className="mb-0.5 block text-center text-[9px] font-semibold tabular-nums text-(--blue)">
         {label}
       </span>
       <span
         className={`mx-auto block h-3.5 w-3.5 rounded-full border-2 border-white shadow ${
-          side === 'start' ? 'bg-[var(--blue)]' : 'bg-[#0F6E56]'
+          side === 'start' ? 'bg-(--blue)' : 'bg-[#0F6E56]'
         }`}
       />
     </div>
@@ -375,13 +363,13 @@ function TimeColumn({
   onMinute: (value: number) => void
 }) {
   return (
-    <div className="rounded-[10px] bg-[var(--bg)] p-2.5">
-      <p className="mb-1 text-[9px] uppercase tracking-[0.4px] text-[var(--ink3)]">{title}</p>
+    <div className="rounded-[10px] bg-(--bg) p-2.5">
+      <p className="mb-1 text-[9px] uppercase tracking-[0.4px] text-(--ink3)">{title}</p>
       <div className="flex items-center gap-1">
         <select
           value={hour}
           onChange={(e) => onHour(Number(e.target.value))}
-          className="h-[100px] flex-1 appearance-none rounded-lg bg-white px-2 text-center text-[16px] font-medium tabular-nums outline-none"
+          className="h-[100px] flex-1 appearance-none rounded-lg bg-white px-2 text-center text-[16px] font-medium tabular-nums outline-hidden"
           size={5}
         >
           {HOURS.map((h) => (
@@ -394,7 +382,7 @@ function TimeColumn({
         <select
           value={minute}
           onChange={(e) => onMinute(Number(e.target.value))}
-          className="h-[100px] w-16 appearance-none rounded-lg bg-white px-1 text-center text-[16px] font-medium tabular-nums outline-none"
+          className="h-[100px] w-16 appearance-none rounded-lg bg-white px-1 text-center text-[16px] font-medium tabular-nums outline-hidden"
           size={4}
         >
           {MINUTES.map((m) => (

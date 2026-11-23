@@ -10,7 +10,7 @@ export function SetupSectionLabel({ children }: { children: ReactNode }) {
 
 export function SetupCard({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-hidden card shadow-sm divide-y divide-slate-100">
+    <div className="overflow-hidden card shadow-xs divide-y divide-slate-100">
       {children}
     </div>
   )
@@ -51,7 +51,7 @@ export function SetupToggle({
         role="switch"
         aria-checked={checked}
         onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-7 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+        className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
           checked ? 'bg-blue-600' : 'bg-slate-200'
         }`}
       >
@@ -82,7 +82,7 @@ export function SetupSegmentedControl<T extends string>({
           type="button"
           onClick={() => onChange(opt.value)}
           className={`flex-1 rounded-lg px-2 py-2 text-xs font-semibold transition-all ${
-            value === opt.value ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            value === opt.value ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-700'
           }`}
         >
           {opt.label}
@@ -110,7 +110,7 @@ export function SetupRadioCard({
       }`}
     >
       <span
-        className={`mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2 ${
+        className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
           checked ? 'border-blue-600 bg-blue-600' : 'border-slate-300'
         }`}
       >
@@ -129,7 +129,7 @@ export function SetupWarningNote({ children }: { children: ReactNode }) {
   return (
     <div className="flex gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-relaxed text-red-800">
       <svg
-        className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-500"
+        className="mt-0.5 h-5 w-5 shrink-0 text-red-500"
         fill="none"
         viewBox="0 0 24 24"
         stroke="currentColor"

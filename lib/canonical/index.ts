@@ -636,6 +636,7 @@ export {
   payrollOutsideClockHours,
   multipliedHoursText,
   payrollMultipliedHours,
+  multipliedHoursParts,
   parseMultipliedHoursText,
   payrollLineClockRanges,
   timesheetLineClockText,
@@ -1346,7 +1347,7 @@ export { payrollLineReview, payrollLineReviewKey } from './timesheetEntryReviews
 export type { PayrollLineLiveBooking } from './timesheetEntryReviews'
 export { inviteAcceptWrites } from './inviteAccept'
 export { timesheetParticipant } from './peopleDocuments'
-export { orgDayHours, payForHours, roundPennies } from './payRate'
+export { dayRateHourlyEquivalent, orgDayHours, payForHours, roundPennies } from './payRate'
 export type { TimesheetInvoiceRow, TimesheetInvoiceRowKind, TimesheetInvoiceRowsInput } from './reportPay'
 export type { PayrollLineReview } from './timesheetEntryReviews'
 export type { InviteAcceptMode, InviteAcceptPlan } from './inviteAccept'
@@ -1476,6 +1477,16 @@ export {
 } from './bookingSlots'
 export { weekendFullDayWindow, weekendRuleForIsoWeekday } from './payrollHours'
 export { bookingHoursExplanation, bookingShortfall } from './bookingHoursExplanation'
+export { bookingHoursBreakdownRows, bookingHoursBreakdownDays } from './bookingHoursBreakdown'
+export type {
+  BookingHoursBreakdown,
+  BookingHoursBreakdownBooking,
+  BookingHoursBreakdownDays,
+  BookingHoursBreakdownDayKind,
+  BookingHoursBreakdownGroup,
+  BookingHoursBreakdownRow,
+  BookingHoursBreakdownRowKind,
+} from './bookingHoursBreakdown'
 export {
   overtimeTotalText,
   overtimeIncludedText,
@@ -1798,8 +1809,13 @@ export * from './payeClaims'
 export * from './claimEvidence'
 export * from './timesheetEntryEvidence'
 export * from './payeClaimReviews'
+// Rulebook 1.65.0 (§25, §26): server-side check that a saved overtime or claims report agrees with its records.
+export * from './reportIntegrity'
 export * from './priceWorkJobNumber'
 export * from './personalSiteAudits'
+export * from './siteAuditReport'
+export * from './siteAuditReportFixtureInputs'
+export * from './siteAuditReportFixture'
 
 // Rulebook 1.30.3 §11: job-manager candidates and how a job's stored managers read now.
 export {
@@ -2340,3 +2356,9 @@ export {
 } from './materialSafeSender'
 export { taskCompletionFields } from './operationsDocuments'
 export { MANAGER_ROW_NOT_LINKED_LABEL } from './unresolvedBookingPeople'
+
+// 1.67.0: a day-rate overtime line reads in hours (owner decision 17 Nov), wording only.
+export { DAY_RATE_OVERTIME_ROUNDED_NOTE, dayRateOvertimeCalcText, liveDayRateOvertimeText, signedDayRateOvertimeText } from './dayRateOvertimeText'
+export type { DayRateOvertimeCalcInput, DayRateOvertimeCalcText, LiveDayRateOvertimeLine, SignedDayRateOvertimeLine } from './dayRateOvertimeText'
+export { timesheetSheetHasActivity, userTimesheetQueue, userTimesheetQueueCounts } from './userTimesheetQueue'
+export type { UserTimesheetQueueInput, UserTimesheetQueueMember, UserTimesheetQueueRow, UserTimesheetQueueSheet } from './userTimesheetQueue'

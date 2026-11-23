@@ -82,7 +82,7 @@ export function IosModal({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(10,20,40,.4)] p-4 backdrop-blur-[3px]">
-      <div className="flex max-h-[80vh] w-full max-w-[620px] flex-col overflow-hidden rounded-[24px] bg-[var(--card)] shadow-[var(--sh-pop)]">
+      <div className="flex max-h-[80vh] w-full max-w-[620px] flex-col overflow-hidden rounded-[24px] bg-(--card) shadow-(color:--sh-pop)">
         <header className="flex items-center justify-between px-6 pb-3 pt-[22px]">
           <h3 className="text-xl font-extrabold">{title}</h3>
           <button type="button" onClick={onDone} className="btn sm ghost">
@@ -115,7 +115,7 @@ export function IosFormModal({
         role="dialog"
         aria-labelledby="ios-form-title"
         className={cn(
-          'flex max-h-[85vh] w-full flex-col overflow-hidden rounded-[24px] bg-[var(--card)] shadow-[var(--sh-pop)]',
+          'flex max-h-[85vh] w-full flex-col overflow-hidden rounded-[24px] bg-(--card) shadow-(color:--sh-pop)',
           width === 'md' ? 'max-w-[860px]' : 'max-w-[620px]'
         )}
         onClick={(e) => e.stopPropagation()}
@@ -129,7 +129,7 @@ export function IosFormModal({
           </button>
         </header>
         <div className="overflow-y-auto px-6 py-4">{children}</div>
-        {footer ? <div className="flex justify-end gap-2.5 border-t border-[var(--line)] px-6 py-4">{footer}</div> : null}
+        {footer ? <div className="flex justify-end gap-2.5 border-t border-(--line) px-6 py-4">{footer}</div> : null}
       </div>
     </div>
   )

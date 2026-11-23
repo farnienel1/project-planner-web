@@ -109,7 +109,7 @@ export function ProfilePhotoCropModal({
   if (!mounted) return null
 
   return createPortal(
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 px-4">
+    <div className="fixed inset-0 z-80 flex items-center justify-center bg-black/50 px-4">
       <div className="w-full max-w-md rounded-3xl bg-white p-5 shadow-xl">
         <h2 className="text-lg font-extrabold text-slate-900">Choose the visible area</h2>
         <p className="mt-1 text-sm text-slate-600">

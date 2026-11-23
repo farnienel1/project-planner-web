@@ -36,6 +36,7 @@ import { useOrgBankHolidays } from './useOrgBankHolidays'
 import { AnnualLeaveReportButton } from './AnnualLeaveReport'
 import { annualLeaveReportLeaveState } from '@/lib/annualLeave/annualLeaveReport'
 import { feedback } from '@/lib/feedbackSounds/feedback'
+import { afterPrimaryWrite } from '@/lib/client/afterPrimaryWrite'
 
 function dayFromKey(key: string): Date {
   const [year, month, day] = key.split('-').map(Number)
@@ -287,7 +288,7 @@ export function OperativeAnnualLeaveCalendar({
       // Rulebook §13 (web from 1.40.0): the person hears that leave was booked for them (`holidayDecisionRecipients`).
       if (status === 'approved') {
         for (const booking of saved ?? []) {
-          await notifyLeaveChangedForPerson({
+          afterPrimaryWrite('notifyLeaveChangedForPerson', notifyLeaveChangedForPerson({
             organizationId: organization.id,
             booking,
             kind: 'booked',
@@ -295,7 +296,7 @@ export function OperativeAnnualLeaveCalendar({
             actorUserId: user.id,
             users,
             operatives,
-          })
+          }))
         }
       }
       setMessage(`Annual leave booked for ${person.displayName}.`)
@@ -348,7 +349,7 @@ export function OperativeAnnualLeaveCalendar({
       await decideBooking(organization.id, pendingBooking, { status: 'approved', approverUid: user.id })
       saved = true
       feedback('leaveApproved')
-      await notifyHolidayRequestDecisionToUser({
+      afterPrimaryWrite('notifyHolidayRequestDecisionToUser', notifyHolidayRequestDecisionToUser({
         organizationId: organization.id,
         booking: pendingBooking,
         approved: true,
@@ -356,7 +357,7 @@ export function OperativeAnnualLeaveCalendar({
         decidedByUserId: user?.id ?? null,
         users,
         operatives,
-      })
+      }))
       setMessage('Request approved.')
       setSelectedDay(null)
       setTimeout(() => setMessage(null), 3000)
@@ -380,7 +381,7 @@ export function OperativeAnnualLeaveCalendar({
       feedback('leaveRemoved')
       // Rulebook §13 (web from 1.40.0): the person hears that their leave was removed (`holiday_cancelled_by_manager`).
       if (user) {
-        await notifyLeaveChangedForPerson({
+        afterPrimaryWrite('notifyLeaveChangedForPerson', notifyLeaveChangedForPerson({
           organizationId: organization.id,
           booking,
           kind: 'removed',
@@ -388,7 +389,7 @@ export function OperativeAnnualLeaveCalendar({
           actorUserId: user.id,
           users,
           operatives,
-        })
+        }))
       }
       setMessage('Annual leave removed.')
       if (approvedBooking?.id === booking.id) setSelectedDay(null)
@@ -417,7 +418,7 @@ export function OperativeAnnualLeaveCalendar({
       await decideBooking(organization.id, pendingBooking, { status: 'rejected', approverUid: user.id, decisionNote: note })
       saved = true
       feedback('leaveDeclined')
-      await notifyHolidayRequestDecisionToUser({
+      afterPrimaryWrite('notifyHolidayRequestDecisionToUser', notifyHolidayRequestDecisionToUser({
         organizationId: organization.id,
         booking: pendingBooking,
         approved: false,
@@ -426,7 +427,7 @@ export function OperativeAnnualLeaveCalendar({
         reason: note,
         users,
         operatives,
-      })
+      }))
       setMessage('Request declined.')
       setSelectedDay(null)
       setTimeout(() => setMessage(null), 3000)
@@ -594,7 +595,7 @@ export function OperativeAnnualLeaveCalendar({
       )}
 
       {selectedDay && pendingBooking && (
-        <div className="rounded-2xl border border-red-200 bg-red-50/40 p-4 shadow-sm">
+        <div className="rounded-2xl border border-red-200 bg-red-50/40 p-4 shadow-xs">
           <p className="text-sm font-bold text-slate-900">Pending request</p>
           <p className="mt-0.5 text-xs text-slate-600">
             {fmtDate(selectedDay)} · {pendingBooking.timeSlot}
@@ -703,7 +704,7 @@ export function OperativeAnnualLeaveCalendar({
               </button>
               <button
                 type="button"
-                className="rounded-xl bg-[var(--red)] py-2.5 text-sm font-bold text-white"
+                className="rounded-xl bg-(--red) py-2.5 text-sm font-bold text-white"
                 onClick={() => void deleteAnnualLeave(pendingDelete)}
               >
                 Remove

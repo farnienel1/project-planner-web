@@ -98,7 +98,7 @@ export function WarningsSetupSection({ value, onChange }: WarningsSetupSectionPr
                   onChange={(e) =>
                     patch({ clashLookaheadMode: fromUiMode(e.target.value as LookAheadUiMode) })
                   }
-                  className="max-w-[12rem] border-none bg-transparent text-right text-sm font-semibold text-blue-600"
+                  className="max-w-48 border-none bg-transparent text-right text-sm font-semibold text-blue-600"
                 >
                   <option value="week">Full week (Monday–Friday)</option>
                   <option value="invoicing">End of invoicing period</option>
@@ -196,7 +196,7 @@ export function WarningsSetupSection({ value, onChange }: WarningsSetupSectionPr
           {SEVERITY_GUIDE.map((item) => (
             <div
               key={item.key}
-              className={`overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm border-l-4 ${item.border}`}
+              className={`overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs border-l-4 ${item.border}`}
             >
               <div className="flex items-start gap-3 px-4 py-3">
                 <span

@@ -152,9 +152,9 @@ export function OrganisationHubPanel({
       {feedback?.kind === 'success' && <SuccessBanner message={feedback.msg} />}
       {feedback?.kind === 'error' && <ErrorBanner message={feedback.msg} />}
 
-      <div className="rounded-2xl bg-gradient-to-br from-[#185FA5] to-[#378ADD] p-5 text-white shadow-lg">
+      <div className="rounded-2xl bg-linear-to-br/srgb from-[#185FA5] to-[#378ADD] p-5 text-white shadow-lg">
         <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-[13px] bg-white/[0.18] text-sm font-semibold">
+          <div className="flex h-12 w-12 items-center justify-center rounded-[13px] bg-white/18 text-sm font-semibold">
             {orgInitials(orgName)}
           </div>
           <div className="min-w-0">
@@ -166,7 +166,7 @@ export function OrganisationHubPanel({
         <div className="my-3.5 h-px bg-white/20" />
 
         <div className="flex items-center gap-2.5">
-          <div className="flex h-[26px] w-[26px] items-center justify-center rounded-full bg-gradient-to-br from-[#993556] to-[#C2547A] text-[9px] font-semibold ring-[1.5px] ring-white/40">
+          <div className="flex h-[26px] w-[26px] items-center justify-center rounded-full bg-linear-to-br/srgb from-[#993556] to-[#C2547A] text-[9px] font-semibold ring-[1.5px] ring-white/40">
             {owner.initials}
           </div>
           <div className="min-w-0">
@@ -178,7 +178,7 @@ export function OrganisationHubPanel({
               {owner.isYou && <span className="text-[10px] text-white/75">· you</span>}
             </div>
           </div>
-          <span className="ml-auto rounded-full bg-white/[0.18] px-2 py-0.5 text-[9px] font-semibold">
+          <span className="ml-auto rounded-full bg-white/18 px-2 py-0.5 text-[9px] font-semibold">
             {orgCreatedLabel(organization?.createdAt)}
           </span>
         </div>
@@ -188,8 +188,8 @@ export function OrganisationHubPanel({
       <SettingsCard>
         <SettingsRow
           icon={ICON.building}
-          iconBg="bg-[var(--blue)]/10"
-          iconColor="text-[var(--blue)]"
+          iconBg=""
+          iconColor="text-(--blue)"
           label="Company details"
           description="Name, logo, office address, currency and region"
           chevron
@@ -197,7 +197,7 @@ export function OrganisationHubPanel({
         />
         <SettingsRow
           icon={ICON.globe}
-          iconBg="bg-[#854F0B]/[0.18]"
+          iconBg="bg-[#854F0B]/18"
           iconColor="text-[#854F0B]"
           label="Currency & region"
           value={`GBP · ${country}`}
@@ -248,7 +248,7 @@ export function OrganisationHubPanel({
         />
         <SettingsRow
           icon={ICON.bell}
-          iconBg="bg-[#854F0B]/[0.18]"
+          iconBg="bg-[#854F0B]/18"
           iconColor="text-[#854F0B]"
           label="Material cut-off"
           description={reminderSubtitle}
@@ -261,8 +261,8 @@ export function OrganisationHubPanel({
       <SettingsCard>
         <SettingsRow
           icon={ICON.document}
-          iconBg="bg-[var(--blue)]/10"
-          iconColor="text-[var(--blue)]"
+          iconBg=""
+          iconColor="text-(--blue)"
           label="Payment runs & timesheets"
           description={paymentSubtitle}
           chevron
@@ -274,8 +274,8 @@ export function OrganisationHubPanel({
       <SettingsCard>
         <SettingsRow
           icon={ICON.document}
-          iconBg="bg-[var(--blue)]/10"
-          iconColor="text-[var(--blue)]"
+          iconBg=""
+          iconColor="text-(--blue)"
           label="Billing"
           description="Plan, trial, invoices and payment method"
           chevron
@@ -284,8 +284,8 @@ export function OrganisationHubPanel({
         {canReviewFileReports(staffAccountRole(user)) ? (
           <SettingsRow
             icon={ICON.warning}
-            iconBg="bg-[var(--blue)]/10"
-            iconColor="text-[var(--blue)]"
+            iconBg=""
+            iconColor="text-(--blue)"
             label="Reported files"
             description="Files people reported for review"
             chevron
@@ -298,7 +298,7 @@ export function OrganisationHubPanel({
       <SettingsCard>
         <SettingsRow
           icon={ICON.users}
-          iconBg="bg-[#0F6E56]/[0.15]"
+          iconBg="bg-[#0F6E56]/15"
           iconColor="text-[#0F6E56]"
           label="Roles & permissions"
           description={rolesSubtitle}
@@ -313,8 +313,8 @@ export function OrganisationHubPanel({
           <SettingsCard>
             <SettingsRow
               icon={ICON.download}
-              iconBg="bg-[var(--blue)]/10"
-              iconColor="text-[var(--blue)]"
+              iconBg=""
+              iconColor="text-(--blue)"
               label="Export company data"
               description="Download every company record as one .zip"
               chevron

@@ -3,8 +3,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { format } from 'date-fns'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { useSiteAuditStore } from '@/lib/stores/siteAuditStore'
-import { uploadFile, siteAuditImagePath } from '@/lib/firebase/storageUtils'
 import { FormInput, FormLabel, FormTextarea } from '@/components/forms/FormShell'
 import { SITE_AUDIT_TYPES } from '@/components/projects/features/featureUi'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
@@ -12,6 +10,11 @@ import { prepareAuditPhoto } from '@/lib/siteAudit/prepareAuditPhoto'
 import type { Project } from '@/types'
 import { isPlausibleDayKey } from '@/lib/security/boundedValue'
 import { uploadLimitError, uploadPickError } from '@/lib/security/uploadLimits'
+import { sendSiteAudit, useSiteAuditOutbox } from '@/lib/siteAudit/siteAuditSender'
+import { SITE_AUDIT_FIELD_LABELS, siteAuditFieldLimitError } from '@/lib/canonical'
+import { SiteAuditFieldCounter } from '@/components/site-audit/SiteAuditFieldCounter'
+import type { SiteAuditOutboxRecord } from '@/lib/siteAudit/siteAuditOutbox'
+import { uploadSummary, type PhotoUpload } from '@/lib/siteAudit/auditPhotoUploads'
 
 type DraftItem = {
   id: string
@@ -34,7 +37,6 @@ type Props = {
 
 export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
   const { organization, user } = useAuthStore()
-  const { saveAudit } = useSiteAuditStore()
 
   const [step, setStep] = useState<1 | 2>(1)
   const [auditType, setAuditType] = useState('General')
@@ -44,7 +46,14 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
   const [items, setItems] = useState<DraftItem[]>([])
   const [preparing, setPreparing] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [uploadLabel, setUploadLabel] = useState<string | null>(null)
+  /** One id per audit, kept across Retry so photos already uploaded are not sent again. */
+  const [auditId] = useState(() => newUuid())
+  const [uploads, setUploads] = useState<Record<string, PhotoUpload>>({})
+  const outbox = useSiteAuditOutbox(organization?.id, user?.id)
+  const sending = outbox.find((record) => record.id === auditId)
+  const livePhotos = sending ? sending.items.map((item) => item.upload) : Object.values(uploads)
+  const liveSummary = uploadSummary(livePhotos)
+  const photoState = (id: string): PhotoUpload | undefined => sending?.items.find((item) => item.id === id)?.upload ?? uploads[id]
   const [error, setError] = useState<string | null>(null)
 
   const authorName = user ? `${user.firstName} ${user.surname}`.trim() || user.email : 'Unknown'
@@ -154,6 +163,14 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
       setError('Each photo needs a title before the audit can be saved.')
       return
     }
+    const limitError =
+      siteAuditFieldLimitError({ customTitle }) ??
+      items.map((item) => siteAuditFieldLimitError(item)).find((message) => message) ??
+      null
+    if (limitError) {
+      setError(limitError)
+      return
+    }
     if (!isPlausibleDayKey(auditDate)) {
       setError('Enter a valid audit date.')
       return
@@ -161,62 +178,60 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
 
     setSaving(true)
     setError(null)
-    try {
-      const auditId = newUuid()
-      const expanded = []
-      for (let index = 0; index < items.length; index += 1) {
-        const item = items[index]
-        setUploadLabel(`Uploading photo ${index + 1} of ${items.length}`)
-        const path = siteAuditImagePath(organization.id, auditId, item.photo.name)
-        const imageURL = await uploadFile(path, item.photo, item.photo.type)
-        expanded.push({
-          title: item.title.trim(),
-          location: item.location.trim(),
-          assignee: item.assignee.trim(),
-          comments: item.comments.trim(),
-          annotations: item.annotations.trim(),
-          imageURL,
-          createdAt: item.takenAt,
-        })
-      }
-      setUploadLabel('Saving audit')
-      await saveAudit(organization.id, {
-        id: auditId,
-        projectId: project.id,
-        projectJobNumber: project.jobNumber,
-        projectName: project.siteName,
-        type: auditType,
-        customTitle: customTitle.trim() || undefined,
-        authorName,
-        date: new Date(auditDate),
-        createdByUserId: user.id,
-        visibleToOperatives,
-        items: expanded,
-      })
+    // Owner bug 17 Nov: the audit (text, items, photos) is kept in this browser BEFORE any upload, so a stuck or
+    // failed photo never loses it. It stays listed as "Not sent" with Retry until the save succeeds.
+    const record: SiteAuditOutboxRecord = {
+      id: auditId,
+      kind: 'project',
+      organizationId: organization.id,
+      userId: user.id,
+      createdAtMs: Date.now(),
+      updatedAtMs: Date.now(),
+      project: { id: project.id, jobNumber: project.jobNumber, siteName: project.siteName },
+      meta: { type: auditType, customTitle: customTitle.trim(), date: auditDate, authorName, visibleToOperatives },
+      items: items.map((item) => ({
+        id: item.id,
+        title: item.title.trim(),
+        location: item.location.trim(),
+        comments: item.comments.trim(),
+        assignee: item.assignee.trim(),
+        annotations: item.annotations.trim(),
+        takenAtMs: item.takenAt.getTime(),
+        photo: item.photo,
+        fileName: item.photo.name,
+        upload: uploads[item.id] ?? { itemId: item.id, status: 'pending', progress: 0, attempts: 0 },
+      })),
+    }
+    const result = await sendSiteAudit(record)
+    setSaving(false)
+    if (result.saved) {
       onCreated()
       onClose()
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to save site audit')
-    } finally {
-      setSaving(false)
-      setUploadLabel(null)
+      return
     }
+    setUploads(Object.fromEntries(result.record.items.map((item) => [item.id, item.upload])))
+    setError(`${result.error ?? 'The audit was not sent.'} It is kept on this device as "Not sent" — you can close this and retry from the audit list.`)
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
-      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-[var(--card)] p-4 shadow-xl">
+      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-(--card) p-4 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <p className="text-base font-bold text-[var(--ink)]">New site audit</p>
-            <p className="text-xs text-[var(--ink3)]">Step {step} of 2 · {project.siteName}</p>
+            <p className="text-base font-bold text-(--ink)">New site audit</p>
+            <p className="text-xs text-(--ink3)">Step {step} of 2 · {project.siteName}</p>
           </div>
-          <button type="button" onClick={onClose} className="text-[var(--ink3)]" aria-label="Close">
+          <button type="button" onClick={onClose} className="text-(--ink3)" aria-label="Close">
             ✕
           </button>
         </div>
 
-        {error ? <p className="mb-3 rounded-lg bg-[var(--red-t)] px-3 py-2 text-xs font-medium text-[var(--red)]">{error}</p> : null}
+        {saving ? (
+          <p className="mb-3 rounded-lg bg-(--blue-t) px-3 py-2 text-xs font-medium text-(--blue)">
+            {liveSummary.label}. You can close this — the audit keeps uploading and stays listed until it is saved.
+          </p>
+        ) : null}
+        {error ? <p className="mb-3 rounded-lg bg-(--red-t) px-3 py-2 text-xs font-medium text-(--red)">{error}</p> : null}
 
         {step === 1 ? (
           <div className="space-y-4">
@@ -230,8 +245,8 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
                     onClick={() => setAuditType(type)}
                     className={`rounded-xl border px-3 py-2.5 text-xs font-semibold ${
                       auditType === type
-                        ? 'border-[var(--blue)] bg-[var(--blue-t)] text-[var(--blue)]'
-                        : 'border-[var(--line)] bg-[var(--card)] text-[var(--ink2)]'
+                        ? 'border-(--blue) bg-(--blue-t) text-(--blue)'
+                        : 'border-(--line) bg-(--card) text-(--ink2)'
                     }`}
                   >
                     {type}
@@ -240,15 +255,16 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
               </div>
             </div>
             <FormInput value={customTitle} onChange={(e) => setCustomTitle(e.target.value)} placeholder="e.g. Plant room snags" />
+            <SiteAuditFieldCounter field="customTitle" value={customTitle} />
             <div>
               <FormLabel>Author</FormLabel>
-              <p className="rounded-xl border border-[var(--line)] bg-[var(--soft)] px-3 py-2 text-sm text-[var(--ink)]">{authorName}</p>
+              <p className="rounded-xl border border-(--line) bg-(--soft) px-3 py-2 text-sm text-(--ink)">{authorName}</p>
             </div>
             <div>
               <FormLabel>Date</FormLabel>
               <FormInput type="date" value={auditDate} onChange={(e) => setAuditDate(e.target.value)} />
             </div>
-            <label className="flex items-center gap-2 text-sm text-[var(--ink2)]">
+            <label className="flex items-center gap-2 text-sm text-(--ink2)">
               <input
                 type="checkbox"
                 checked={visibleToOperatives}
@@ -256,25 +272,25 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
               />
               Visible to operatives
             </label>
-            <p className="text-xs text-[var(--ink3)]">Ops working on this job can view it.</p>
-            <button type="button" onClick={() => setStep(2)} className="w-full rounded-xl bg-[var(--blue)] py-2.5 text-sm font-bold text-white">
+            <p className="text-xs text-(--ink3)">Ops working on this job can view it.</p>
+            <button type="button" onClick={() => setStep(2)} className="w-full rounded-xl bg-(--blue) py-2.5 text-sm font-bold text-white">
               Next: add items and photos
             </button>
           </div>
         ) : (
           <div className="space-y-4">
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-bold text-[var(--ink)]">Items · {items.length}</h3>
+              <h3 className="text-sm font-bold text-(--ink)">Items · {items.length}</h3>
             </div>
-            <p className="text-xs text-[var(--ink3)]">
+            <p className="text-xs text-(--ink3)">
               Photos get auto-timestamped so the report shows when each was taken.
             </p>
-            {preparing ? <p className="text-sm font-semibold text-[var(--ink2)]">Preparing photos — this may take a moment for large batches.</p> : null}
+            {preparing ? <p className="text-sm font-semibold text-(--ink2)">Preparing photos — this may take a moment for large batches.</p> : null}
 
             {items.length === 0 && !preparing ? (
-              <div className="rounded-2xl border border-dashed border-[var(--line2)] px-4 py-8 text-center">
-                <p className="font-semibold text-[var(--ink)]">No items yet</p>
-                <p className="mt-1 text-sm text-[var(--ink3)]">
+              <div className="rounded-2xl border border-dashed border-(--line2) px-4 py-8 text-center">
+                <p className="font-semibold text-(--ink)">No items yet</p>
+                <p className="mt-1 text-sm text-(--ink3)">
                   Tap Add item for one photo, then its details. Multi-add stacks several photos so you can scroll down through each one.
                 </p>
               </div>
@@ -287,25 +303,36 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
                       cardRefs.current[item.id] = node
                     }}
                     className={`scroll-mt-4 space-y-2 rounded-2xl border p-3 ${
-                      item.detailsAdded ? 'border-[var(--proj)] bg-[var(--card)]' : 'border-[var(--line)] bg-[var(--soft)]'
+                      item.detailsAdded ? 'border-(--proj) bg-(--card)' : 'border-(--line) bg-(--soft)'
                     }`}
                   >
-                    <p className="text-xs font-bold tracking-wide text-[var(--ink3)]">PHOTO {index + 1}</p>
+                    <p className="text-xs font-bold tracking-wide text-(--ink3)">PHOTO {index + 1}</p>
                     <img src={item.previewUrl} alt="" className="max-h-72 w-full rounded-xl object-cover" />
-                    <p className="text-xs font-semibold text-[var(--ink2)]">Taken {format(item.takenAt, 'd MMM yyyy, HH:mm')}</p>
-                    <FormInput value={item.title} onChange={(e) => patch(item.id, { title: e.target.value, detailsAdded: false })} placeholder="Title, e.g. Front courtyard" />
-                    <FormInput value={item.location} onChange={(e) => patch(item.id, { location: e.target.value })} placeholder="Location, e.g. Front entrance courtyard" />
-                    <FormTextarea value={item.comments} onChange={(e) => patch(item.id, { comments: e.target.value })} placeholder="Notes…" rows={2} />
+                    <p className="text-xs font-semibold text-(--ink2)">Taken {format(item.takenAt, 'd MMM yyyy, HH:mm')}</p>
+                    <PhotoUploadLine upload={photoState(item.id)} />
+                    <FormLabel>{SITE_AUDIT_FIELD_LABELS.title}</FormLabel>
+                    <FormInput value={item.title} onChange={(e) => patch(item.id, { title: e.target.value, detailsAdded: false })} placeholder="e.g. Front courtyard" />
+                    <SiteAuditFieldCounter field="title" value={item.title} />
+                    <FormLabel>{SITE_AUDIT_FIELD_LABELS.location}</FormLabel>
+                    <FormInput value={item.location} onChange={(e) => patch(item.id, { location: e.target.value })} placeholder="e.g. Front entrance courtyard" />
+                    <SiteAuditFieldCounter field="location" value={item.location} />
+                    <FormLabel>{SITE_AUDIT_FIELD_LABELS.comments}</FormLabel>
+                    <FormTextarea value={item.comments} onChange={(e) => patch(item.id, { comments: e.target.value })} rows={3} />
+                    <SiteAuditFieldCounter field="comments" value={item.comments} />
+                    <FormLabel>{SITE_AUDIT_FIELD_LABELS.assignee}</FormLabel>
                     <FormInput value={item.assignee} onChange={(e) => patch(item.id, { assignee: e.target.value })} placeholder="Assignee name" />
-                    <FormInput value={item.annotations} onChange={(e) => patch(item.id, { annotations: e.target.value })} placeholder="Notes on the photo" />
+                    <SiteAuditFieldCounter field="assignee" value={item.assignee} />
+                    <FormLabel>{SITE_AUDIT_FIELD_LABELS.annotations}</FormLabel>
+                    <FormTextarea value={item.annotations} onChange={(e) => patch(item.id, { annotations: e.target.value })} rows={2} />
+                    <SiteAuditFieldCounter field="annotations" value={item.annotations} />
                     <div className="flex items-center justify-between gap-2">
-                      <button type="button" className="text-sm font-semibold text-[var(--red)]" onClick={() => removeItem(item.id)}>
+                      <button type="button" className="text-sm font-semibold text-(--red)" onClick={() => removeItem(item.id)}>
                         Remove
                       </button>
                       <button
                         type="button"
                         onClick={() => confirmDetails(item.id)}
-                        className="rounded-xl bg-[var(--blue)] px-3 py-2 text-sm font-bold text-white"
+                        className="rounded-xl bg-(--blue) px-3 py-2 text-sm font-bold text-white"
                       >
                         {item.detailsAdded ? 'Details added' : 'Add these details'}
                       </button>
@@ -316,7 +343,7 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
             )}
 
             <div className="grid grid-cols-2 gap-2">
-              <label className="cursor-pointer rounded-xl border border-[var(--blue)] py-2.5 text-center text-sm font-bold text-[var(--blue)]">
+              <label className="cursor-pointer rounded-xl border border-(--blue) py-2.5 text-center text-sm font-bold text-(--blue)">
                 + Add item
                 <input
                   type="file"
@@ -328,7 +355,7 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
                   }}
                 />
               </label>
-              <label className="cursor-pointer rounded-xl border border-[var(--blue)] py-2.5 text-center text-sm font-bold text-[var(--blue)]">
+              <label className="cursor-pointer rounded-xl border border-(--blue) py-2.5 text-center text-sm font-bold text-(--blue)">
                 Multi-add
                 <input
                   type="file"
@@ -344,16 +371,16 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
             </div>
 
             <div className="flex gap-2" id="audit-submit">
-              <button type="button" onClick={() => setStep(1)} className="rounded-xl border border-[var(--line)] px-4 py-2.5 text-sm text-[var(--ink2)]">
+              <button type="button" onClick={() => setStep(1)} className="rounded-xl border border-(--line) px-4 py-2.5 text-sm text-(--ink2)">
                 Back
               </button>
               <button
                 type="button"
                 disabled={saving || preparing}
                 onClick={() => void submit()}
-                className="flex-1 rounded-xl bg-[var(--blue)] py-2.5 text-sm font-bold text-white disabled:opacity-50"
+                className="flex-1 rounded-xl bg-(--blue) py-2.5 text-sm font-bold text-white disabled:opacity-50"
               >
-                {saving ? uploadLabel || 'Uploading…' : 'Submit audit'}
+                {saving ? liveSummary.label : Object.keys(uploads).length ? 'Retry' : 'Submit audit'}
               </button>
             </div>
           </div>
@@ -361,4 +388,18 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
       </div>
     </div>
   )
+}
+
+function PhotoUploadLine({ upload }: { upload: PhotoUpload | undefined }) {
+  if (!upload) return null
+  if (upload.status === 'done') return <p className="text-xs font-semibold text-(--proj)">Uploaded</p>
+  if (upload.status === 'failed') return <p className="text-xs font-semibold text-(--red)">Not uploaded — {upload.error}</p>
+  if (upload.status === 'uploading') {
+    return (
+      <p className="text-xs font-semibold text-(--ink2)">
+        Uploading {Math.round(upload.progress * 100)}%{upload.attempts > 1 ? ` (try ${upload.attempts})` : ''}
+      </p>
+    )
+  }
+  return <p className="text-xs text-(--ink3)">Waiting to upload</p>
 }

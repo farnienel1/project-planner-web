@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { enforceRateLimit, isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
+import { enforceRateLimit, isFirebaseUser, jsonError } from '@/lib/security/apiGuard'
+import { apiObject, apiText, readApiBody } from '@/lib/security/apiBody'
 import { requireOwner } from '@/lib/owner/requireOwner'
 import { clearOwnerDirectoryCache } from '@/lib/owner/directoryServer'
 import { OWNER_AUDIT_UNAVAILABLE_MESSAGE, beginOwnerAudit, type OwnerAuditRun } from '@/lib/owner/ownerAudit'
@@ -25,9 +26,9 @@ export async function POST(request: NextRequest) {
   if (limited) return limited
   const owner = await requireOwner(request)
   if (!isFirebaseUser(owner)) return owner
-  const body = await readJsonBody<{ uid?: string }>(request)
+  const body = await readApiBody(request, apiObject({ uid: apiText(200) }))
   if (!body.ok) return body.response
-  const uid = (body.value.uid || '').trim()
+  const uid = body.value.uid
   if (!uid) return jsonError('uid is required', 400)
   if (!DOC_ID.test(uid)) return jsonError('uid is not valid', 400)
   // The security rules let only the person list their own `orgMemberships`, so the owner's token can never

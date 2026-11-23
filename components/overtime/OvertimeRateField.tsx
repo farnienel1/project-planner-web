@@ -90,7 +90,7 @@ export function CreateOvertimeRateField({
   const control = useMemo(() => overtimeRateCreateControl({ organization: data ?? {}, dayKey, timeZone }), [data, dayKey, timeZone])
   const shown = value ?? control.prefill
   return (
-    <label className="block text-[13px] font-semibold text-[var(--ink2)]">
+    <label className="block text-[13px] font-semibold text-(--ink2)">
       Overtime rate
       <select
         className="input mt-1 w-full"
@@ -106,7 +106,7 @@ export function CreateOvertimeRateField({
           </option>
         ))}
       </select>
-      <span className="mt-1 block text-[12px] font-normal text-[var(--ink3)]">Applies to the hours outside the working day.</span>
+      <span className="mt-1 block text-[12px] font-normal text-(--ink3)">Applies to the hours outside the working day.</span>
     </label>
   )
 }

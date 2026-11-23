@@ -3,8 +3,8 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { sendEmailVerification } from 'firebase/auth'
 import { getFirebaseAuth } from '@/lib/firebase/ensureFirebase'
+import { requestEmailVerification } from '@/lib/auth/requestAccountEmails'
 
 export default function VerifyEmailClient() {
   const router = useRouter()
@@ -26,7 +26,7 @@ export default function VerifyEmailClient() {
     setError(null)
     setResent(false)
     try {
-      await sendEmailVerification(user)
+      await requestEmailVerification(user)
       setResent(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not resend verification email')
@@ -59,7 +59,7 @@ export default function VerifyEmailClient() {
   }
 
   return (
-    <div className="dark pp-site-dark flex min-h-screen items-center justify-center bg-[var(--bg)] px-5 py-10">
+    <div className="dark pp-site-dark flex min-h-screen items-center justify-center bg-(--bg) px-5 py-10">
       <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-8 shadow-[0_2px_30px_rgba(15,23,42,0.08)]">
         <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
           <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
@@ -74,7 +74,7 @@ export default function VerifyEmailClient() {
         </p>
 
         <div className="mt-6 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-          Check your inbox and spam folder. The email comes from Firebase / your project&apos;s auth sender.
+          Check your inbox and spam folder. The email comes from Project Planner.
         </div>
 
         {error && (

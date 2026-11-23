@@ -236,25 +236,25 @@ function TimesheetRowFields({
         <div className="flex items-center gap-2.5">
           {runLabel ? (
             <span
-              className={`grid h-7 min-w-[52px] place-items-center rounded-md px-2 text-[12px] font-bold text-[var(--card)] ${
-                runTone === 'ops' ? 'bg-[var(--ops)]' : 'bg-[var(--blue)]'
+              className={`grid h-7 min-w-[52px] place-items-center rounded-md px-2 text-[12px] font-bold text-(--card) ${
+                runTone === 'ops' ? 'bg-(--ops)' : 'bg-(--blue)'
               }`}
             >
               {runLabel}
             </span>
           ) : null}
-          <span className="text-[14.5px] font-semibold text-[var(--ink)]">{paymentLabel}</span>
+          <span className="text-[14.5px] font-semibold text-(--ink)">{paymentLabel}</span>
         </div>
         {customised ? (
-          <button type="button" onClick={onReset} className="text-[12.5px] font-semibold text-[var(--blue)] hover:underline">
+          <button type="button" onClick={onReset} className="text-[12.5px] font-semibold text-(--blue) hover:underline">
             Reset to payment-day defaults
           </button>
         ) : null}
       </div>
 
       <div className="[display:grid] gap-3 sm:grid-cols-2">
-        <div className="rounded-xl bg-[var(--soft)] p-3.5 shadow-[inset_0_0_0_1px_var(--line)]">
-          <div className="mb-2.5 text-[13px] font-semibold text-[var(--ink)]">Timesheets to be submitted by</div>
+        <div className="rounded-xl bg-(--soft) p-3.5 shadow-[inset_0_0_0_1px_var(--line)]">
+          <div className="mb-2.5 text-[13px] font-semibold text-(--ink)">Timesheets to be submitted by</div>
           <div className="[display:grid] grid-cols-2 gap-2">
             <FormField label="Day">
               <DaySelect label="Timesheets to be submitted by" value={deadlineDay} disabled={disabled} options={dayOptions} onChange={onDeadlineDay} />
@@ -264,8 +264,8 @@ function TimesheetRowFields({
             </FormField>
           </div>
         </div>
-        <div className="rounded-xl bg-[var(--soft)] p-3.5 shadow-[inset_0_0_0_1px_var(--line)]">
-          <div className="mb-2.5 text-[13px] font-semibold text-[var(--ink)]">When to send the notification</div>
+        <div className="rounded-xl bg-(--soft) p-3.5 shadow-[inset_0_0_0_1px_var(--line)]">
+          <div className="mb-2.5 text-[13px] font-semibold text-(--ink)">When to send the notification</div>
           <div className="[display:grid] grid-cols-2 gap-2">
             <FormField label="Day">
               <DaySelect label="When to send the notification" value={notifyDay} disabled={disabled} options={dayOptions} onChange={onNotifyDay} />
@@ -278,13 +278,13 @@ function TimesheetRowFields({
       </div>
 
       {preview ? (
-        <div className="rounded-xl bg-[var(--blue-t)] px-3.5 py-2.5 text-[13px] leading-relaxed text-[var(--ink2)]">
-          <span className="font-semibold text-[var(--ink)]">Operatives will see: </span>
+        <div className="rounded-xl bg-(--blue-t) px-3.5 py-2.5 text-[13px] leading-relaxed text-(--ink2)">
+          <span className="font-semibold text-(--ink)">Operatives will see: </span>
           {preview}
         </div>
       ) : null}
       {!customised ? (
-        <p className="text-[12.5px] text-[var(--ink3)]">Auto-filled from the payment day. Edit to keep a custom pair.</p>
+        <p className="text-[12.5px] text-(--ink3)">Auto-filled from the payment day. Edit to keep a custom pair.</p>
       ) : null}
     </div>
   )

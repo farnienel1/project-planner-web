@@ -336,7 +336,7 @@ export function VariationsWorkspace({
   return (
     <div className="stack" style={{ gap: 16 }}>
       <section className="hero" data-hue={parentType === 'smallWork' ? 'sw' : 'proj'} style={{ padding: '22px 24px' }}>
-        <div className="relative z-[1]">
+        <div className="relative z-1">
           <p className="eb">{parentName}</p>
           <h1 className="big" style={{ fontSize: 32 }}>Variations</h1>
           <p style={{ opacity: 0.92, marginTop: 6, maxWidth: 640 }}>{VARIATION_HEADER_COPY}</p>
@@ -760,7 +760,7 @@ function VariationEditor({
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-end bg-black/40 sm:place-items-center" role="dialog" aria-modal="true" aria-label={existing ? 'Edit variation' : 'New variation'}>
-      <div className="h-[min(100dvh,920px)] w-full max-w-lg overflow-hidden bg-[var(--bg)] shadow-2xl sm:rounded-3xl">
+      <div className="h-[min(100dvh,920px)] w-full max-w-lg overflow-hidden bg-(--bg) shadow-2xl sm:rounded-3xl">
         <NewVariationSheet
           parentName="this job"
           defaultVoNumber={existing?.voNumber || suggested}
@@ -911,7 +911,7 @@ function VariationDrawer({
   )
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-black/30" role="dialog" aria-modal="true" aria-label={`${row.voNumber} ${row.heading}`}>
-      <aside className="h-full w-full max-w-md overflow-auto bg-[var(--card)] p-5 shadow-xl">
+      <aside className="h-full w-full max-w-md overflow-auto bg-(--card) p-5 shadow-xl">
         <div className="row" style={{ alignItems: 'center', gap: 8 }}>
           <h2 className="h2 grow">{row.voNumber}</h2>
           <span className="pill dot" data-hue={STATUS_HUE[row.status]}>{STATUS_LABEL[row.status]}</span>

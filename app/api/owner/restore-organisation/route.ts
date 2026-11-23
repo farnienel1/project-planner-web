@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
+import { apiObject, apiText, readApiBody } from '@/lib/security/apiBody'
 import { bearerToken, firestoreGet, firestorePatch, restFieldsToPlain, stringField } from '@/lib/owner/firestoreRest'
-import { enforceRateLimit, isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
+import { enforceRateLimit, isFirebaseUser, jsonError } from '@/lib/security/apiGuard'
 import { parseOrganizationId } from '@/lib/security/requireOrgAccess'
 import { requireOwner } from '@/lib/owner/requireOwner'
 import { clearOwnerDirectoryCache } from '@/lib/owner/directoryServer'
@@ -22,7 +23,7 @@ export async function POST(request: NextRequest) {
   if (limited) return limited
   const owner = await requireOwner(request)
   if (!isFirebaseUser(owner)) return owner
-  const body = await readJsonBody<{ orgId?: string }>(request)
+  const body = await readApiBody(request, apiObject({ orgId: apiText(128) }))
   if (!body.ok) return body.response
   const organizationId = parseOrganizationId(body.value.orgId)
   if (!organizationId) return jsonError('orgId is required', 400)
