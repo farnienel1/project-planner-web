@@ -132,6 +132,12 @@
     "reason": "Platform-owner analytics date ranges (all organisations), not an organisation business day."
   },
   {
+    "path": "components/developer/DeveloperOverview.tsx",
+    "pattern": "london-zone-constant",
+    "count": 2,
+    "reason": "Platform-owner Overview (all organisations): times are shown in the platform's reporting zone (PLAN §2), not an organisation business day."
+  },
+  {
     "path": "lib/healthSafety/hsTalks.ts",
     "pattern": "getHours",
     "count": 1,
