@@ -12,6 +12,7 @@ import {
   isoWeekdayInZone,
   midnightInZone,
   partsInZone,
+  wallTimeInZone,
 } from '../orgTime/zoneTime'
 import { zoneOrLondon } from './dayKeys'
 import { formatClockMinutes, invoicingPeriod, organizationScopedKey } from './engine'
@@ -416,9 +417,9 @@ function weekdayOnOrBefore(dayKey: string, weekday: string, timeZone: string): s
   return dayKey
 }
 
+/** Rulebook 1.78.0: the wall-clock time on that day in the zone (never midnight + N hours, which a clock change moves). */
 function instantOnDay(dayKey: string, hour: number, minute: number, timeZone: string): Date {
-  const midnight = dateFromDayKeyInZone(dayKey, timeZone)
-  return new Date(midnight.getTime() + (hour * 60 + minute) * 60_000)
+  return wallTimeInZone(dayKey, hour, minute, timeZone)
 }
 
 function resolveDateRangeInstants(

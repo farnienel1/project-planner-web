@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import * as R from './index'
-import { dateFromDayKeyInZone } from '../orgTime/zoneTime'
+import { dateFromDayKeyInZone, wallTimeInZone } from '../orgTime/zoneTime'
 
 // Rulebook 1.78.0 §8 / §13 (owner decision 23 Nov, point 4): the sign-off reminder to line managers before payday.
 
@@ -16,12 +16,12 @@ const DATE_RANGES = {
   paymentDates: [20, 5],
 }
 
-/** Epoch ms of `HH:mm` on a day key in a zone. */
+/** Epoch ms of the wall-clock time `HH:mm` on a day key in a zone. */
 function at(dayKey: string, hh: number, mm: number, zone = LONDON): number {
-  return dateFromDayKeyInZone(dayKey, zone).getTime() + (hh * 60 + mm) * 60_000
+  return wallTimeInZone(dayKey, hh, mm, zone).getTime()
 }
 
-test('1.78.0 sign-off reminder timing: 08:00 two days before payday, until the start of payday (date ranges)', () => {
+test('1.78.0 sign-off reminder timing: 08:00 two days before payday by default, until the start of payday (date ranges)', () => {
   const due = (now: number) => R.timesheetSignOffReminderDue({ invoicing: DATE_RANGES, now, timeZone: LONDON })
   // 16–30 Nov paid 5 Dec → reminder Thu 3 Dec 08:00.
   assert.equal(due(at('2026-12-03', 7, 59)).due, false)
@@ -32,6 +32,7 @@ test('1.78.0 sign-off reminder timing: 08:00 two days before payday, until the s
       startDayKey: '2026-11-16',
       endDayKey: '2026-11-30',
       startMs: dateFromDayKeyInZone('2026-11-16', LONDON).getTime(),
+      endExclusiveMs: dateFromDayKeyInZone('2026-12-01', LONDON).getTime(),
       paymentDayKey: '2026-12-05',
       notifyDayKey: '2026-12-03',
       notifyAtMs: at('2026-12-03', 8, 0),
@@ -156,7 +157,7 @@ test('1.78.0 sign-off reminder notice text and a stable id', () => {
   const id = R.timesheetSignOffReminderNoticeId(input)
   assert.match(id ?? '', /^[0-9A-F-]{36}$/)
   assert.equal(R.timesheetSignOffReminderNoticeId({ ...input, recipientId: 'mgr' }), id, 'recipient without case')
-  assert.notEqual(R.timesheetSignOffReminderNoticeId({ ...input, paymentDayKey: '2026-12-06' }), id)
+  assert.equal(R.timesheetSignOffReminderNoticeId({ ...input, paymentDayKey: '2026-12-06' }), id, 'a moved payday never re-sends')
   assert.equal(R.timesheetSignOffReminderNoticeId({ ...input, recipientId: '' }), null)
 })
 
@@ -237,7 +238,7 @@ test('1.78.0 sign-off reminder: month-end paydays in 28, 29, 30 and 31-day month
   assert.deepEqual(runs.map((run) => [run.startDayKey, run.endDayKey, run.paymentDayKey]), [['2026-12-16', '2026-12-31', '2027-01-05']])
 })
 
-test('1.78.0 escalation timing: 08:00 on the day before each run\'s payday (payday 08:00 less 24h), both modes', () => {
+test('1.78.0 escalation timing: 08:00 on the day before each run\'s payday, both modes', () => {
   const due = (invoicing: Record<string, unknown>, dayKey: string, hh = 8, zone = LONDON) =>
     R.timesheetSignOffEscalationDue({ invoicing, now: at(dayKey, hh, 0, zone), timeZone: zone }).runs.map((run) => [run.startDayKey, run.paymentDayKey, run.notifyDayKey])
   // 16–30 Nov paid Sat 5 Dec → escalation Fri 4 Dec 08:00, whatever the reminder days.
@@ -288,4 +289,111 @@ test('1.78.0 escalation: an admin\'s own waiting sheet goes to the other admins,
   const adm3 = R.timesheetSignOffReminderRosterMember('ADM3', { organizationId: ORG, firstName: 'Ada', surname: 'Three', email: 'ada@x.test', adminAccess: true, passwordSet: true, assignedManagerUserIds: ['ADMIN'] }, { organizationId: ORG, creatorUserId: 'ADMIN' })!
   const out = R.timesheetSignOffEscalationRecipients({ sheets: [sheet('ADM3', personSigned)], roster: [...roster, adm3], payRun: run, timeZone: LONDON })
   assert.deepEqual(out.map((row) => row.userId).sort(), ['ADMIN', 'SELF'])
+})
+
+test('1.78.0 sign-off reminder: 08:00 wall clock on clock-change days (London, Auckland)', () => {
+  const custom = (pay: number) => ({ ...DATE_RANGES, paymentDates: [pay, 5] })
+  // London: 1–15 Mar 2027 paid Tue 30 Mar; 2 days → Sun 28 Mar 2027 (clocks go forward 01:00 GMT) → 08:00 BST = 07:00 UTC.
+  const march = R.timesheetSignOffReminderDue({ invoicing: custom(30), now: Date.parse('2027-03-28T07:00:00Z'), timeZone: LONDON }).runs
+  assert.deepEqual(march.map((r) => [r.notifyDayKey, r.notifyAtMs]), [['2027-03-28', Date.parse('2027-03-28T07:00:00Z')]])
+  assert.equal(R.timesheetSignOffReminderDue({ invoicing: custom(30), now: Date.parse('2027-03-28T06:59:00Z'), timeZone: LONDON }).due, false)
+  // London: 1–15 Oct 2026 paid Tue 27 Oct; 2 days → Sun 25 Oct 2026 (clocks go back) → 08:00 GMT = 08:00 UTC.
+  const oct = R.timesheetSignOffReminderDue({ invoicing: custom(27), now: Date.parse('2026-10-25T08:00:00Z'), timeZone: LONDON }).runs
+  assert.deepEqual(oct.map((r) => [r.notifyDayKey, r.notifyAtMs]), [['2026-10-25', Date.parse('2026-10-25T08:00:00Z')]])
+  assert.equal(R.timesheetSignOffReminderDue({ invoicing: custom(27), now: Date.parse('2026-10-25T07:59:00Z'), timeZone: LONDON }).due, false)
+  // Auckland: Sun 27 Sep 2026 clocks go forward (NZST → NZDT, UTC+13): 08:00 local = 19:00 UTC on 26 Sep.
+  const sep = R.timesheetSignOffReminderDue({ invoicing: custom(29), now: Date.parse('2026-09-26T19:00:00Z'), timeZone: AUCKLAND }).runs
+  assert.deepEqual(sep.map((r) => [r.notifyDayKey, r.notifyAtMs]), [['2026-09-27', Date.parse('2026-09-26T19:00:00Z')]])
+  // Auckland: Sun 4 Apr 2027 clocks go back (NZDT → NZST, UTC+12): 08:00 local = 20:00 UTC on 3 Apr.
+  const apr = R.timesheetSignOffReminderDue({ invoicing: custom(6), now: Date.parse('2027-04-03T20:00:00Z'), timeZone: AUCKLAND }).runs
+  // (16–31 Mar, paid 5 Apr, is due too: its reminder went out on 3 Apr.)
+  assert.deepEqual(apr.filter((r) => r.notifyDayKey === '2027-04-04').map((r) => r.notifyAtMs), [Date.parse('2027-04-03T20:00:00Z')])
+  assert.ok(!R.timesheetSignOffReminderDue({ invoicing: custom(6), now: Date.parse('2027-04-03T19:59:00Z'), timeZone: AUCKLAND }).runs.some((r) => r.notifyDayKey === '2027-04-04'))
+  // The escalation the same way: 1–15 Mar paid Mon 29 Mar 2027 → Sun 28 Mar 08:00 BST.
+  const esc = R.timesheetSignOffEscalationDue({ invoicing: custom(29), now: Date.parse('2027-03-28T07:00:00Z'), timeZone: LONDON }).runs
+  assert.deepEqual(esc.map((r) => r.notifyAtMs), [Date.parse('2027-03-28T07:00:00Z')])
+})
+
+test('1.78.0 sign-off reminder: a sheet a booking change sent back to the person is not counted (owner fix 2)', () => {
+  // A labour booking Olly signed on Tue 17 Nov 07:00–16:00, and its fingerprint as the collector writes it.
+  const booking = {
+    bookingId: 'B1',
+    collection: 'bookings',
+    dayKey: '2026-11-17',
+    timeSlot: 'CUSTOM',
+    workStartTime: '07:00',
+    workEndTime: '16:00',
+    personId: 'OP1',
+    projectId: 'J1',
+    createdAt: SIGNED - 86_400_000,
+    updatedAt: SIGNED - 86_400_000,
+  }
+  const lines = R.timesheetLiveLinesFromBookings({ bookings: [booking], personIds: ['OP1'], periodStartDayKey: run.startDayKey, periodEndDayKey: run.endDayKey, timeZone: LONDON })
+  assert.equal(lines.length, 1)
+  const record = R.signedTimesheetBookingRecord(lines, [booking])
+  const signed = { ...personSigned, operativeSignedBookings: record, operativeSignedBookingsSignedAt: SIGNED, operativeSignedBookingsAt: SIGNED }
+  const sheets = [sheet('OP1', signed)]
+  const counted = (bookings: Array<Record<string, unknown>>) =>
+    R.timesheetSignOffReminderRecipients({ sheets, roster, payRun: run, timeZone: LONDON, bookings: bookings as never, bookingsLoaded: true }).map((row) => [row.userId, row.names])
+  // Unchanged: waiting for the line manager.
+  assert.deepEqual(counted([booking]), [['MGR', ['Olly One']]])
+  // Changed after signing (finish moved): back with the person — not counted.
+  assert.deepEqual(counted([{ ...booking, workEndTime: '18:00', updatedAt: SIGNED + 86_400_000 }]), [])
+  // Deleted: back with the person — not counted.
+  assert.deepEqual(counted([]), [])
+  // Without the bookings (a failed read): stored signals only, as before.
+  assert.deepEqual(
+    R.timesheetSignOffReminderRecipients({ sheets, roster, payRun: run, timeZone: LONDON, bookings: [], bookingsLoaded: false }).map((row) => row.userId),
+    ['MGR']
+  )
+})
+
+test('1.78.0 sign-off reminder: a PAYE-day booking and another run\'s booking are never live lines', () => {
+  const payeFromNov20 = R.timesheetSignOffReminderRosterMember(
+    'OPX',
+    { organizationId: ORG, firstName: 'X', employmentType: 'paye', employmentTypeTransitionFrom: 'self_employed', employmentTypeEffectiveAt: dateFromDayKeyInZone('2026-11-20', LONDON).getTime() },
+    { organizationId: ORG }
+  )!
+  const base = { collection: 'bookings', timeSlot: 'FULL DAY', personId: 'OPX', projectId: 'J1' }
+  const lines = R.timesheetLiveLinesFromBookings({
+    bookings: [
+      { ...base, bookingId: 'SE', dayKey: '2026-11-17' },
+      { ...base, bookingId: 'PAYE', dayKey: '2026-11-24' },
+      { ...base, bookingId: 'OUT', dayKey: '2026-12-01' },
+      { ...base, bookingId: 'CANCELLED', dayKey: '2026-11-18', status: 'Cancelled' },
+      { ...base, bookingId: 'OTHER', dayKey: '2026-11-18', personId: 'SOMEONE' },
+      { bookingId: 'OFFICE', collection: 'managerSiteBookings', dayKey: '2026-11-19', timeSlot: 'FULL DAY', personId: 'opx', locationType: 'office' },
+    ],
+    personIds: ['OPX'],
+    periodStartDayKey: run.startDayKey,
+    periodEndDayKey: run.endDayKey,
+    person: payeFromNov20,
+    timeZone: LONDON,
+  })
+  assert.deepEqual(lines.map((line) => [line.bookingId, line.scheduleOptionPlace]), [['SE', false], ['OFFICE', true]])
+})
+
+test('1.78.0 sign-off reminder roster: a member through the members map takes their level here, not their home company\'s', () => {
+  // Visiting admin elsewhere, a manager here (members map): reviews their reports here.
+  const visitor = R.timesheetSignOffReminderRosterMember(
+    'VIS',
+    { organizationId: 'other-org', firstName: 'Vi', surname: 'Sitor', email: 'vi@x.test', adminAccess: true, annualLeaveSelfBook: true, timesheetSelfSign: true, passwordSet: true },
+    { organizationId: ORG, membersRole: 'manager' }
+  )!
+  assert.equal(visitor.role?.isAdmin, false)
+  assert.equal(visitor.role?.isManager, true)
+  assert.equal(visitor.timesheetSelfSign, false, 'never the home company\'s toggles')
+  const op = R.timesheetSignOffReminderRosterMember(
+    'OPV',
+    { organizationId: ORG, firstName: 'Op', surname: 'Visited', role: 'operative', operativeMode: true, passwordSet: true, assignedManagerUserIds: ['VIS'] },
+    { organizationId: ORG }
+  )!
+  const out = R.timesheetSignOffReminderRecipients({ sheets: [sheet('OPV', personSigned)], roster: [...roster, visitor, op], payRun: run, timeZone: LONDON })
+  assert.deepEqual(out.map((row) => [row.userId, row.names]), [['VIS', ['Op Visited']]])
+  // A users document storing its organisation as a path is a home member.
+  const pathed = R.timesheetSignOffReminderRosterMember('P', { organizationId: `organizations/${ORG}`, adminAccess: true }, { organizationId: ORG })!
+  assert.equal(pathed.role?.isAdmin, true)
+  // The creator is admin and Super Admin here whatever their users document says.
+  const creator = R.timesheetSignOffReminderRosterMember('C', { organizationId: 'other-org', role: 'operative', operativeMode: true }, { organizationId: ORG, creatorUserId: 'C' })!
+  assert.equal(creator.role?.isSuperAdmin, true)
 })

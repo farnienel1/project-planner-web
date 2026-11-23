@@ -2312,11 +2312,14 @@ export {
   TIMESHEET_BOOKINGS_CHANGED_NOTICE_TITLE,
   TIMESHEET_BOOKINGS_CHANGED_NOTICE_TYPE,
   timesheetBookingChangeNotice,
+  timesheetBookingSheetTest,
   timesheetBookingWriteMatters,
   timesheetBookingsChangedNoticeId,
   timesheetBookingsChangedRecipients,
+  timesheetLiveLinesFromBookings,
   timesheetRevisionDueNoticeId,
 } from './timesheetBookingNotice'
+export type { TimesheetBookingOnSheet, TimesheetLiveBookingDocument } from './timesheetBookingNotice'
 // Rulebook 1.54.0 §8 / §11: Settings → Data health "Timesheets half signed".
 export {
   TIMESHEETS_HALF_SIGNED_HEADING,

@@ -141,3 +141,39 @@ test('1.78.0 escalation: the day before payday every admin gets one row per pay 
   assert.equal(store.calls.sheets, 1, 'one sheets read per pay run for both passes')
   assert.equal((await reminders.run())[0].written, 0)
 })
+
+test('1.78.0 sign-off reminders: a sheet a booking change sent back to the person is not counted (bookings read)', async () => {
+  const booking = { operativeId: 'OP1', projectId: 'J1', date: new Date('2026-11-17T00:00:00Z'), timeSlot: 'CUSTOM', workStartTime: '07:00', workEndTime: '16:00', createdAt: new Date('2026-11-10T09:00:00Z'), updatedAt: new Date('2026-11-10T09:00:00Z') }
+  const record = [{ bookingId: 'B1', collection: 'bookings', fingerprint: canonical.timesheetLiveLinesFromBookings({ bookings: [{ bookingId: 'B1', collection: 'bookings', dayKey: '2026-11-17', timeSlot: 'CUSTOM', workStartTime: '07:00', workEndTime: '16:00', personId: 'OP1' }], personIds: ['OP1'], periodStartDayKey: '2026-11-16', periodEndDayKey: '2026-11-30' })[0].bookingFingerprint, personId: 'OP1', place: 'job|j1' }]
+  const signed = { operativeSignedAt: SIGNED, operativeSignedByName: 'Signed', operativeSignedBookings: record, operativeSignedBookingsSignedAt: SIGNED, operativeSignedBookingsAt: SIGNED }
+  const runWith = async (bookingRows, complete = true) => {
+    const store = storeWith({ orgs: [{ id: ORG, data: { countryCode: 'GB', invoicing: INVOICING, creatorUserId: 'ADMIN' } }], users, sheets: [sheet('OP1', signed)] })
+    store.bookingsForRun = async () => ({ rows: bookingRows.map((data, i) => ({ collection: 'bookings', id: `B${i + 1}`, data })), complete })
+    store.operatives = async () => []
+    const reminders = createTimesheetSignOffReminders({ store, canonical, logger: { info() {}, error() {} }, now: () => DUE_NOW })
+    await reminders.run()
+    return [...store.created.values()].map((row) => row.userId)
+  }
+  assert.deepEqual(await runWith([booking]), ['MGR'], 'unchanged: still waiting for the line manager')
+  assert.deepEqual(await runWith([{ ...booking, workEndTime: '18:00', updatedAt: new Date('2026-11-28T09:00:00Z') }]), [], 'changed: back with the person')
+  assert.deepEqual(await runWith([]), [], 'deleted: back with the person')
+  assert.deepEqual(await runWith([], false), ['MGR'], 'bookings limit reached: stored signatures only')
+})
+
+test('1.78.0 sign-off reminders: a line manager who belongs through the members map is reminded with their level here', async () => {
+  const store = storeWith({
+    orgs: [{ id: ORG, data: { countryCode: 'GB', invoicing: INVOICING, creatorUserId: 'ADMIN', members: { VIS: 'manager' } } }],
+    users: [...users, { id: 'OPV', data: { organizationId: ORG, firstName: 'Op', surname: 'Visited', role: 'operative', operativeMode: true, passwordSet: true, assignedManagerUserIds: ['VIS'] } }],
+    sheets: [sheet('OPV', { operativeSignedAt: SIGNED, operativeSignedByName: 'Signed' })],
+  })
+  const asked = []
+  store.usersByIds = async (ids) => {
+    asked.push(...ids)
+    return ids.includes('VIS') ? [{ id: 'VIS', data: { organizationId: 'other-org', firstName: 'Vi', surname: 'Sitor', adminAccess: true, passwordSet: true } }] : []
+  }
+  store.memberships = async () => ({})
+  const reminders = createTimesheetSignOffReminders({ store, canonical, logger: { info() {}, error() {} }, now: () => DUE_NOW })
+  await reminders.run()
+  assert.deepEqual(asked, ['VIS'], 'only anchored ids not already read')
+  assert.deepEqual([...store.created.values()].map((row) => [row.userId, row.detail]), [['VIS', 'Op Visited']])
+})

@@ -457,7 +457,7 @@ for (const [exportName, collection] of [
 
 /**
  * Rulebook 1.78.0 §8 / §13 (owner decision 23 Nov, point 4): every hour, for each organisation whose pay run's sign-off
- * reminder is due in its own time zone (`timesheetSignOffReminderDue`: 08:00 two days before payday, until payday), one
+ * reminder is due in its own time zone (`timesheetSignOffReminderDue`: 08:00 the organisation's 1–3 days — default 2 — before payday, until payday), one
  * "Timesheets waiting for your sign-off" row per line manager / reviewing admin (`timesheetSignOffReminderRecipients`),
  * created once per recipient per pay run, so running twice adds nothing. Pushed by `sendDevicePushOnNotificationCreate`.
  * `timesheetSignOffReminder.js` holds the reads; it never writes a timesheet.

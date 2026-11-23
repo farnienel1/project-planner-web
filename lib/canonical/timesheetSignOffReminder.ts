@@ -10,9 +10,11 @@
  *   - Who and what: `timesheetSignOffReminderRecipients` — the pay run's sheets that User Timesheets lists under
  *     Awaiting sign-off (`userTimesheetQueue`, so one row per person, PAYE runs skipped, the latest version of a revised
  *     sheet, late extras waiting for the line manager), and for each one the people `timesheetSubmittedRecipients`
- *     names (the active line managers, else the active admins; never the subject; nobody when self-signed). The server
- *     has no live bookings, so a sheet reopened by a booking change (1.47.0) is judged on its stored signals only: it
- *     reads as it is stored (a person-signed, not counter-signed sheet is Awaiting), never by its bookings.
+ *     names (the active line managers, else the active admins; never the subject; nobody when self-signed). A sheet a
+ *     booking change sent back to the person (1.47.0) is not counted: given the pay run's booking documents
+ *     (`bookingsLoaded`), each sheet's `signedTimesheetBookingChanges` is worked out exactly as the apps do, from live
+ *     lines built by `timesheetLiveLinesFromBookings`, and folded with its late extras (`timesheetChangesWithLateExtras`).
+ *     Without them (a failed read) a sheet is judged on its stored signatures and late extras only.
  *   - The row: `timesheetSignOffReminderNotice` — title, message (singular / plural) and the inbox-only `detail` with
  *     the names; `timesheetSignOffReminderNoticeId` — one row per recipient per pay run, created once.
  *
@@ -20,11 +22,11 @@
  * only route the row (`notificationDestination` → `timesheetTeamAwaiting` with the pay run's first day).
  */
 
-import { addDaysInZone, dateFromDayKeyInZone, dayKeyInZone, midnightInZone } from '../orgTime/zoneTime'
+import { addDaysInZone, dateFromDayKeyInZone, dayKeyInZone, midnightInZone, wallTimeInZone } from '../orgTime/zoneTime'
 import { zoneOrLondon } from './dayKeys'
 import { derivedDocumentId } from './derivedIds'
 import { invoicingPeriod } from './engine'
-import { isAdminOutsideOperativeMode } from './leaveRequests'
+import { isAdminOutsideOperativeMode, timesheetSelfSigned, type LeaveSelfBookUser } from './leaveRequests'
 import { notificationRecipientAccountId, timesheetSubmittedRecipients, type NotificationRosterMember } from './notificationRecipients'
 import {
   DEFAULT_LINE_MANAGER_REMINDER_DAYS,
@@ -34,9 +36,14 @@ import {
 } from './organizationSettings'
 import { isOrganizationSuperAdmin } from './organizationDeletion'
 import { formatPaymentRunDay, paymentRunPayDate } from './paymentRuns'
-import { documentInstantMs } from './peopleDocuments'
+import { organizationLevelFor, organizationSelfManageFlags } from './orgRoster'
+import { documentInstantMs, documentOrganizationId } from './peopleDocuments'
 import { permissionLevelOf } from './permissionLevels'
-import { idKey } from './personIds'
+import { idKey, personIdSet, rosterMemberFor } from './personIds'
+import { signedTimesheetBookingChanges } from './timesheetBookingChanges'
+import { timesheetLiveLinesFromBookings, type TimesheetLiveBookingDocument } from './timesheetBookingNotice'
+import { timesheetChangesWithLateExtras, timesheetLateExtrasSummary } from './timesheetLateExtras'
+import { timesheetDocumentSubjectId } from './timesheetPeriod'
 import { userTimesheetQueue, type UserTimesheetQueueMember, type UserTimesheetQueueSheet } from './userTimesheetQueue'
 
 export const TIMESHEET_SIGNOFF_REMINDER_NOTICE_TYPE = 'timesheet_signoff_reminder'
@@ -78,9 +85,11 @@ export type TimesheetSignOffReminderRun = {
   endDayKey: string
   /** Midnight of `startDayKey` in the organisation zone, epoch ms (the row's `deepLinkWeekStart`). */
   startMs: number
+  /** Midnight of the day after `endDayKey` in the organisation zone, epoch ms (the run's bookings end before it). */
+  endExclusiveMs: number
   /** The payday (`paymentRunPayDate`). */
   paymentDayKey: string
-  /** The day the reminder goes out (payday − 2 days). */
+  /** The day the reminder goes out (payday less the organisation's 1–3 days, or 1 day for the escalation). */
   notifyDayKey: string
   /** 08:00 on `notifyDayKey` in the organisation zone, epoch ms. */
   notifyAtMs: number
@@ -95,9 +104,10 @@ export type TimesheetSignOffReminderDueInput = {
 }
 
 /**
- * The pay runs whose sign-off reminder is due at `now`: 08:00 (organisation zone) two days before the payday, up to
- * the start of the payday. Usually none or one; two date-range runs can be due together only when their paydays are
- * within two days of each other. Oldest payday first. `due` is whether there is any.
+ * The pay runs whose sign-off reminder is due at `now`: 08:00 (organisation zone) the organisation's 1–3 days (default
+ * 2, `invoicing.lineManagerReminderDaysBeforePayday`) before the payday, up to the start of the payday. Usually none or
+ * one; two date-range runs can be due together only when their paydays are that close. Oldest payday first. `due` is
+ * whether there is any.
  */
 export function timesheetSignOffReminderDue(input: TimesheetSignOffReminderDueInput): {
   due: boolean
@@ -106,13 +116,13 @@ export function timesheetSignOffReminderDue(input: TimesheetSignOffReminderDueIn
   return dueRuns(input, (settings) => settings.lineManagerReminderDaysBeforePayday)
 }
 
-/** Days before payday of the admin escalation: the day before payday, 08:00 (payday 08:00 less 24 hours). */
+/** Days before payday of the admin escalation: the day before payday, 08:00 organisation time. */
 export const TIMESHEET_SIGNOFF_ESCALATION_DAYS_BEFORE_PAYMENT = 1
 
 /**
  * Rulebook 1.78.0 (owner decision 23 Nov, b): the escalation to every admin — due at 08:00 organisation time on the day
- * before each pay run's payday (payday 08:00 less 24 hours; in a zone with a clock change that night it is still 08:00
- * local on the day before), until the start of payday. Same shape as `timesheetSignOffReminderDue`; one entry per pay
+ * before each pay run's payday (08:00 wall-clock time on that day, `wallTimeInZone`, so a clock change that night does not
+ * move it), until the start of payday. Same shape as `timesheetSignOffReminderDue`; one entry per pay
  * run. Independent of the organisation's reminder days (with 1 day both are due together; they are separate rows).
  */
 export function timesheetSignOffEscalationDue(input: TimesheetSignOffReminderDueInput): {
@@ -151,13 +161,13 @@ function dueRuns(
     const payMidnight = dateFromDayKeyInZone(paymentDayKey, timeZone)
     const notify = addDaysInZone(payMidnight, -offset, timeZone)
     const notifyDayKey = dayKeyInZone(notify, timeZone)
-    const notifyAtMs =
-      dateFromDayKeyInZone(notifyDayKey, timeZone).getTime() +
-      (TIMESHEET_SIGNOFF_REMINDER_HOUR * 60 + TIMESHEET_SIGNOFF_REMINDER_MINUTE) * 60_000
+    // 08:00 on the wall clock that day (never midnight + 8h, which a clock change that night moves to 07:00 or 09:00).
+    const notifyAtMs = wallTimeInZone(notifyDayKey, TIMESHEET_SIGNOFF_REMINDER_HOUR, TIMESHEET_SIGNOFF_REMINDER_MINUTE, timeZone).getTime()
     seen.set(key, {
       startDayKey: period.startDayKey,
       endDayKey: period.endDayKey,
       startMs: dateFromDayKeyInZone(period.startDayKey, timeZone).getTime(),
+      endExclusiveMs: addDaysInZone(dateFromDayKeyInZone(period.endDayKey, timeZone), 1, timeZone).getTime(),
       paymentDayKey,
       notifyDayKey,
       notifyAtMs,
@@ -177,42 +187,43 @@ export type TimesheetSignOffReminderMember = NotificationRosterMember &
   }
 
 /**
- * One `users/{uid}` document of the organisation as a reminder roster row: the level from `permissionLevelOf` (a
- * person with no level flag reads as manager level, §11 1.23.1), the organisation's Super Admin from
- * `isOrganizationSuperAdmin` (its creator, or `isSuperAdmin` on a users document of this organisation), and the stored
- * line-manager, alias, employment and self-manage fields. Instants may be epoch ms or Timestamp-like values.
+ * One `users/{uid}` document as a reminder roster row: the level from `permissionLevelOf` (a person with no level flag
+ * reads as manager level, §11 1.23.1), the organisation's Super Admin from `isOrganizationSuperAdmin` (its creator, or
+ * `isSuperAdmin` on a users document of this organisation), and the stored line-manager, alias, employment and
+ * self-manage fields. Instants may be epoch ms or Timestamp-like values; the stored `organizationId` may be an id, a
+ * path or a reference (`documentOrganizationId`).
+ *
+ * An anchored person (§1, `rosterMembersForOrganization`: a key of the organisation's `members` map, or its creator)
+ * whose users document names another company takes their level in THIS organisation (`organizationLevelFor`: the
+ * creator, else their membership here, else the `members` role) and their self-manage toggles here
+ * (`organizationSelfManageFlags`), never the other company's flags. Pass `membersRole` and, when read, `membership`.
  */
 export function timesheetSignOffReminderRosterMember(
   id: string,
   data: Record<string, unknown> | null | undefined,
-  org: { organizationId: string; creatorUserId?: string | null }
+  org: {
+    organizationId: string
+    creatorUserId?: string | null
+    /** `organizations/{orgId}.members[id]` when listed. */
+    membersRole?: unknown
+    /** `users/{id}/orgMemberships/{orgId}` when read. */
+    membership?: Record<string, unknown> | null
+  }
 ): TimesheetSignOffReminderMember | null {
   const docId = text(id)
   if (!docId || !data || typeof data !== 'object') return null
+  const organizationId = documentOrganizationId(data.organizationId) ?? ''
+  const home = organizationId !== '' && organizationId.toLowerCase() === text(org.organizationId).toLowerCase()
+  const bool = (value: unknown) => (typeof value === 'boolean' ? value : null)
+  if (!home) return anchoredMember(docId, data, org)
   const level = permissionLevelOf(data)
-  const storedOrg = data.organizationId
-  const organizationId =
-    typeof storedOrg === 'string'
-      ? storedOrg
-      : storedOrg && typeof storedOrg === 'object' && typeof (storedOrg as { id?: unknown }).id === 'string'
-        ? (storedOrg as { id: string }).id
-        : ''
   const organizationSuperAdmin = isOrganizationSuperAdmin(
     { id: docId, isSuperAdmin: data.isSuperAdmin === true, organizationId },
     { id: org.organizationId, creatorUserId: org.creatorUserId ?? null }
   )
   const permissions = data.permissions && typeof data.permissions === 'object' ? (data.permissions as Record<string, unknown>) : {}
-  const bool = (value: unknown) => (typeof value === 'boolean' ? value : null)
-  const firstName = text(data.firstName)
-  const surname = text(data.surname) || text(data.lastName)
-  const email = text(data.email)
-  const displayName = [firstName, surname].filter(Boolean).join(' ') || text(data.displayName) || text(data.name) || email
   return {
-    id: docId,
-    email,
-    isActive: data.isActive !== false,
-    passwordSet: bool(data.passwordSet),
-    ghost: data.ghost === true,
+    ...sharedMemberFields(docId, data),
     role: {
       isSuperAdmin: organizationSuperAdmin,
       isAdmin: level === 'admin',
@@ -220,14 +231,6 @@ export function timesheetSignOffReminderRosterMember(
       isOperativeMode: level === 'operative',
     },
     organizationSuperAdmin,
-    formerUserIds: textList(data.formerUserIds),
-    sameEmailUserIds: textList(data.sameEmailUserIds),
-    assignedManagerUserIds: textList(data.assignedManagerUserIds),
-    assignedManagerUserId: text(data.assignedManagerUserId) || null,
-    hasNoLineManager: data.hasNoLineManager === true,
-    employmentType: text(data.employmentType) || null,
-    employmentTypeTransitionFrom: text(data.employmentTypeTransitionFrom) || null,
-    employmentTypeEffectiveAt: documentInstantMs(data.employmentTypeEffectiveAt),
     annualLeaveSelfBook: bool(data.annualLeaveSelfBook),
     timesheetSelfSign: bool(data.timesheetSelfSign),
     operativeMode: bool(data.operativeMode),
@@ -240,7 +243,74 @@ export function timesheetSignOffReminderRosterMember(
       adminAccess: bool(permissions.adminAccess),
       isSuperAdmin: bool(permissions.isSuperAdmin),
     },
-    displayName,
+  } as TimesheetSignOffReminderMember
+}
+
+/** The person-id, line-manager, employment and name fields every roster row carries, whatever its level source. */
+function sharedMemberFields(docId: string, data: Record<string, unknown>) {
+  const firstName = text(data.firstName)
+  const surname = text(data.surname) || text(data.lastName)
+  const email = text(data.email)
+  return {
+    id: docId,
+    email,
+    isActive: data.isActive !== false,
+    passwordSet: typeof data.passwordSet === 'boolean' ? data.passwordSet : null,
+    ghost: data.ghost === true,
+    formerUserIds: textList(data.formerUserIds),
+    sameEmailUserIds: textList(data.sameEmailUserIds),
+    assignedManagerUserIds: textList(data.assignedManagerUserIds),
+    assignedManagerUserId: text(data.assignedManagerUserId) || null,
+    hasNoLineManager: data.hasNoLineManager === true,
+    employmentType: text(data.employmentType) || null,
+    employmentTypeTransitionFrom: text(data.employmentTypeTransitionFrom) || null,
+    employmentTypeEffectiveAt: documentInstantMs(data.employmentTypeEffectiveAt),
+    displayName: [firstName, surname].filter(Boolean).join(' ') || text(data.displayName) || text(data.name) || email,
+  }
+}
+
+/** §1 anchored person from another company: level and self-manage toggles in this organisation, never the home ones. */
+function anchoredMember(
+  docId: string,
+  data: Record<string, unknown>,
+  org: { organizationId: string; creatorUserId?: string | null; membersRole?: unknown; membership?: Record<string, unknown> | null }
+): TimesheetSignOffReminderMember {
+  const here = organizationLevelFor({
+    organizationId: org.organizationId,
+    userId: docId,
+    user: data,
+    membership: org.membership ?? null,
+    membersRole: org.membersRole,
+    creatorUserId: org.creatorUserId ?? null,
+  })
+  const flags = organizationSelfManageFlags({
+    organizationId: org.organizationId,
+    userId: docId,
+    user: data,
+    membership: org.membership ?? null,
+    creatorUserId: org.creatorUserId ?? null,
+  })
+  const superAdmin = here.isSuperAdmin === true || flags.superAdmin === true
+  const level = here.level
+  const membershipActive = flags.source === 'membership' ? flags.active : true
+  const shared = sharedMemberFields(docId, data)
+  return {
+    ...shared,
+    isActive: shared.isActive && membershipActive,
+    role: { isSuperAdmin: superAdmin, isAdmin: level === 'admin', isManager: level === 'manager', isOperativeMode: level === 'operative' },
+    organizationSuperAdmin: superAdmin,
+    annualLeaveSelfBook: flags.annualLeaveSelfBook,
+    timesheetSelfSign: flags.timesheetSelfSign,
+    operativeMode: level === 'operative',
+    adminAccess: level === 'admin',
+    isSuperAdmin: superAdmin,
+    permissions: {
+      annualLeaveSelfBook: flags.annualLeaveSelfBook,
+      timesheetSelfSign: flags.timesheetSelfSign,
+      operativeMode: level === 'operative',
+      adminAccess: level === 'admin',
+      isSuperAdmin: superAdmin,
+    },
   } as TimesheetSignOffReminderMember
 }
 
@@ -264,6 +334,46 @@ export type TimesheetSignOffReminderRecipientsInput = {
   roster: ReadonlyArray<TimesheetSignOffReminderMember>
   payRun: { startDayKey: string; endDayKey: string }
   timeZone?: string | null
+  /**
+   * The pay run's labour and manager site booking documents (any person, organisation-zone day keys, write times) —
+   * with `bookingsLoaded: true` each sheet's booking changes are judged as the apps judge them (1.47.0), so a sheet sent
+   * back to the person is not counted. Missing, or `bookingsLoaded` not true: stored signatures and late extras only.
+   */
+  bookings?: ReadonlyArray<TimesheetLiveBookingDocument | null | undefined> | null
+  bookingsLoaded?: boolean | null
+  /** Tombstones of the pay run's deleted bookings when read (`{ collection, bookingId }`). */
+  tombstonedBookingIds?: ReadonlyArray<{ collection?: unknown; bookingId?: unknown } | null | undefined> | null
+  /**
+   * The organisation's `operatives` rows (`{ id, email, linkedUserId?, userId?, uid? }`): a row on the person's email,
+   * or linked to one of their ids, is one of their ids (`bookingIdsForAccount`), so a labour booking filed under it is
+   * on their sheet.
+   */
+  operatives?: ReadonlyArray<{ id?: unknown; email?: unknown; linkedUserId?: unknown; userId?: unknown; uid?: unknown } | null | undefined> | null
+}
+
+/**
+ * Every id a sheet's person goes by: `personIdSet` over the roster, plus the `operatives` rows on any of their emails or
+ * linked to one of their ids (as `bookingIdsForAccount`).
+ */
+function sheetPersonIds(
+  member: TimesheetSignOffReminderMember,
+  roster: ReadonlyArray<TimesheetSignOffReminderMember>,
+  operatives: TimesheetSignOffReminderRecipientsInput['operatives']
+): string[] {
+  const ids = personIdSet(member, roster)
+  const keys = new Set(ids.map(idKey))
+  const emails = new Set(roster.filter((row) => keys.has(idKey(row.id))).map((row) => idKey(row.email)).filter(Boolean))
+  for (const row of operatives ?? []) {
+    const rowId = text(row?.id)
+    if (!rowId || keys.has(idKey(rowId))) continue
+    const linked = [row?.linkedUserId, row?.userId, row?.uid].some((value) => keys.has(idKey(value)))
+    const email = idKey(row?.email)
+    if (linked || (email && emails.has(email))) {
+      ids.push(rowId)
+      keys.add(idKey(rowId))
+    }
+  }
+  return ids
 }
 
 /** The pay run's sheets as the queue reads them (a sheet whose end is not stored takes the pay run's end). */
@@ -271,9 +381,14 @@ function runSheets(
   rows: ReadonlyArray<TimesheetSignOffReminderSheet>,
   start: string,
   end: string,
-  timeZone: string
+  timeZone: string,
+  input?: TimesheetSignOffReminderRecipientsInput,
+  roster?: ReadonlyArray<TimesheetSignOffReminderMember>
 ): UserTimesheetQueueSheet[] {
   const sheets: UserTimesheetQueueSheet[] = []
+  const readBookings = input?.bookingsLoaded === true && Array.isArray(input?.bookings) && Boolean(roster?.length)
+  const bookings = readBookings ? (input!.bookings as ReadonlyArray<TimesheetLiveBookingDocument | null | undefined>) : []
+  const tombstones = input?.tombstonedBookingIds ?? []
   for (const row of rows) {
     const documentId = text(row?.documentId)
     const data = row?.data && typeof row.data === 'object' ? row.data : null
@@ -281,7 +396,34 @@ function runSheets(
     const startDayKey = sheetDayKey(data, 'weekStartKey', 'weekStart', timeZone)
     const endDayKey = sheetDayKey(data, 'weekEndKey', 'weekEnd', timeZone) || end
     if (startDayKey !== start || endDayKey !== end) continue
-    sheets.push({ documentId, data, userId: text(data.userId) || null, startDayKey, endDayKey })
+    const userId = text(data.userId) || null
+    const sheet: UserTimesheetQueueSheet = { documentId, data, userId, startDayKey, endDayKey }
+    if (readBookings) {
+      // 1.78.0 (owner fix 2): judge the sheet's bookings exactly as the apps do (1.47.0), folded with its late extras.
+      const member = rosterMemberFor(userId || timesheetDocumentSubjectId(documentId), roster!)
+      if (member) {
+        const personIds = sheetPersonIds(member, roster!, input?.operatives)
+        const liveLines = timesheetLiveLinesFromBookings({
+          bookings,
+          personIds,
+          periodStartDayKey: start,
+          periodEndDayKey: end,
+          person: member,
+          timeZone,
+        })
+        const bookingChange = signedTimesheetBookingChanges({
+          sheet: data,
+          liveLines,
+          liveLoaded: true,
+          selfSigned: timesheetSelfSigned(member as LeaveSelfBookUser),
+          liveBookings: bookings,
+          tombstonedBookingIds: tombstones,
+          personIds,
+        })
+        sheet.bookingsChange = timesheetChangesWithLateExtras(bookingChange, timesheetLateExtrasSummary(data, { sheetDocId: documentId }))
+      }
+    }
+    sheets.push(sheet)
   }
   return sheets
 }
@@ -307,8 +449,9 @@ function sheetDayKey(data: Record<string, unknown>, keyField: string, instantFie
  * Who gets the reminder for one pay run, and for how many sheets: for each reviewer, the pay run's rows their User
  * Timesheets lists under Awaiting sign-off (`userTimesheetQueue`) whose person names them in
  * `timesheetSubmittedRecipients` (line managers, else active admins; never the person; self-signed people never).
- * A sheet whose end is not stored takes the pay run's end. Booking changes are not read (no bookings on the server):
- * a sheet counts by its stored signatures and late extras. Recipients in roster order; nobody with a count of 0.
+ * A sheet whose end is not stored takes the pay run's end. With the pay run's bookings (`bookingsLoaded`) a sheet a
+ * booking change sent back to the person is not counted (1.47.0, as the apps); without them a sheet counts by its
+ * stored signatures and late extras. Recipients in roster order; nobody with a count of 0.
  */
 export function timesheetSignOffReminderRecipients(input: TimesheetSignOffReminderRecipientsInput): TimesheetSignOffReminderRecipient[] {
   const timeZone = zoneOrLondon(input?.timeZone)
@@ -317,14 +460,18 @@ export function timesheetSignOffReminderRecipients(input: TimesheetSignOffRemind
   const end = text(input?.payRun?.endDayKey)
   if (!DAY_KEY.test(start) || !DAY_KEY.test(end) || roster.length === 0) return []
 
-  const sheets = runSheets(input?.sheets ?? [], start, end, timeZone)
+  const sheets = runSheets(input?.sheets ?? [], start, end, timeZone, input, roster)
   if (sheets.length === 0) return []
 
   // Reviewers to ask: every account a sheet's person would notify on submission.
   const byKey = new Map(roster.map((member) => [idKey(member.id), member]))
+  // Each person's reviewers, worked out once per run (not once per reviewer).
+  const reviewersOf = new Map<string, Set<string>>()
   const reviewerIds = new Set<string>()
   for (const member of roster) {
-    for (const id of timesheetSubmittedRecipients(member, roster)) reviewerIds.add(idKey(id))
+    const ids = new Set(timesheetSubmittedRecipients(member, roster).map(idKey))
+    reviewersOf.set(idKey(member.id), ids)
+    for (const id of ids) reviewerIds.add(id)
   }
 
   const out: TimesheetSignOffReminderRecipient[] = []
@@ -340,8 +487,7 @@ export function timesheetSignOffReminderRecipients(input: TimesheetSignOffRemind
     for (const row of rows) {
       const person = byKey.get(idKey(row.personId))
       if (!person) continue
-      const recipients = timesheetSubmittedRecipients(person, roster).map(idKey)
-      if (!recipients.includes(idKey(account))) continue
+      if (!reviewersOf.get(idKey(person.id))?.has(idKey(account))) continue
       personIds.push(person.id)
       names.push(person.displayName || person.id)
     }
@@ -362,7 +508,7 @@ export function timesheetSignOffEscalationRecipients(input: TimesheetSignOffRemi
   const start = text(input?.payRun?.startDayKey)
   const end = text(input?.payRun?.endDayKey)
   if (!DAY_KEY.test(start) || !DAY_KEY.test(end) || roster.length === 0) return []
-  const sheets = runSheets(input?.sheets ?? [], start, end, timeZone)
+  const sheets = runSheets(input?.sheets ?? [], start, end, timeZone, input, roster)
   if (sheets.length === 0) return []
   const byKey = new Map(roster.map((member) => [idKey(member.id), member]))
   const out: TimesheetSignOffReminderRecipient[] = []
@@ -404,21 +550,24 @@ export function timesheetSignOffEscalationNotice(input: {
   return { title: TIMESHEET_SIGNOFF_ESCALATION_NOTICE_TITLE, message, detail: namesDetail(input?.names) }
 }
 
-/** The escalation's document id: one per admin per pay run, never the reminder's id (`timesheetSignOffEscalation|…`). */
+/**
+ * The escalation's document id: one per admin per pay run, never the reminder's id
+ * (`timesheetSignOffEscalation|{orgId}|{recipient}|{start}|{end}`). The payday is not part of it, so moving the payday
+ * inside the window never sends a second escalation (`paymentDayKey` is accepted and ignored).
+ */
 export function timesheetSignOffEscalationNoticeId(input: {
   organizationId: string
   recipientId: string
   startDayKey: string
   endDayKey: string
-  paymentDayKey: string
+  paymentDayKey?: string | null
 }): string | null {
   const org = text(input?.organizationId)
   const recipient = idKey(input?.recipientId)
   const start = text(input?.startDayKey)
   const end = text(input?.endDayKey)
-  const pay = text(input?.paymentDayKey)
-  if (!org || !recipient || !DAY_KEY.test(start) || !DAY_KEY.test(end) || !DAY_KEY.test(pay)) return null
-  return derivedDocumentId(`timesheetSignOffEscalation|${org}|${recipient}|${start}|${end}|${pay}`)
+  if (!org || !recipient || !DAY_KEY.test(start) || !DAY_KEY.test(end)) return null
+  return derivedDocumentId(`timesheetSignOffEscalation|${org}|${recipient}|${start}|${end}`)
 }
 
 function namesDetail(list: ReadonlyArray<string> | null | undefined): string {
@@ -446,20 +595,21 @@ export function timesheetSignOffReminderNotice(input: {
 
 /**
  * The reminder's document id: one row per recipient per pay run (`timesheetSignOffReminder|{orgId}|{recipient, lower
- * case}|{start}|{end}|{payday}`, `derivedDocumentId`, UUID-shaped, the same on every run). Null when a part is missing.
+ * case}|{start}|{end}`, `derivedDocumentId`, UUID-shaped, the same on every run). The payday is not part of it, so an
+ * admin moving the payday inside the window never sends a second reminder for the same pay run (`paymentDayKey` is
+ * accepted and ignored). Null when a part is missing.
  */
 export function timesheetSignOffReminderNoticeId(input: {
   organizationId: string
   recipientId: string
   startDayKey: string
   endDayKey: string
-  paymentDayKey: string
+  paymentDayKey?: string | null
 }): string | null {
   const org = text(input?.organizationId)
   const recipient = idKey(input?.recipientId)
   const start = text(input?.startDayKey)
   const end = text(input?.endDayKey)
-  const pay = text(input?.paymentDayKey)
-  if (!org || !recipient || !DAY_KEY.test(start) || !DAY_KEY.test(end) || !DAY_KEY.test(pay)) return null
-  return derivedDocumentId(`timesheetSignOffReminder|${org}|${recipient}|${start}|${end}|${pay}`)
+  if (!org || !recipient || !DAY_KEY.test(start) || !DAY_KEY.test(end)) return null
+  return derivedDocumentId(`timesheetSignOffReminder|${org}|${recipient}|${start}|${end}`)
 }

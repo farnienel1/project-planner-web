@@ -1,7 +1,7 @@
 {
   "rulebookVersion": "1.78.0",
-  "rulebookSha256": "281139f10b2d37e71f83227fc487db20a1d0542521723088ee35b950b4382cbe",
-  "bundleSha256": "8ec667e0928ea3dec85c552a8a4ec5b6a0d0d3849f9cdf0bb40a82dbc0d298c2",
+  "rulebookSha256": "87f49abd25957b4b394f4f1750ae598e45f30c0f72e2fc4c7692807226447ce6",
+  "bundleSha256": "a6b7c697723dff18a442da8fdb1d247bd1dd12fe4f600779cba3f488e9157e4e",
   "crossPlatformContractSha256": "926b910948b674b1fa259e8f933ddd15f14bad00b8e0b050ccbd88c723bf64aa",
   "dataParityFixtureSha256": "c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f",
   "exports": [
@@ -1799,6 +1799,7 @@
     "timeSlotAllowedOnDay",
     "timesheetBelongsToOrganization",
     "timesheetBookingChangeNotice",
+    "timesheetBookingSheetTest",
     "timesheetBookingWriteMatters",
     "timesheetBookingsChangedNoticeId",
     "timesheetBookingsChangedRecipients",
@@ -1855,6 +1856,7 @@
     "timesheetLineReviewActionsAllowed",
     "timesheetLineShownDeclined",
     "timesheetListBucket",
+    "timesheetLiveLinesFromBookings",
     "timesheetMakeChangesAction",
     "timesheetMakeChangesHelp",
     "timesheetNotificationDedupeKey",
