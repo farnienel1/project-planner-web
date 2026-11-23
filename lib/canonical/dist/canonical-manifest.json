@@ -1,7 +1,7 @@
 {
-  "rulebookVersion": "1.73.1",
-  "rulebookSha256": "b4d98b0ad58da768d469aa6da4961d55800e5f04d16225c6ef70cd753e8d5356",
-  "bundleSha256": "5dad4b2e8544af3eeee77df438f489f76fa10661bcb514680f4a3d736542b610",
+  "rulebookVersion": "1.76.0",
+  "rulebookSha256": "a1e46f4dac74697f966a277570ff09bc1544c190651ccf8cc0b429ecc31f58c0",
+  "bundleSha256": "1a9755c869c596238ee948c427df287d848ac5fd5990b140a103e538949a159c",
   "crossPlatformContractSha256": "926b910948b674b1fa259e8f933ddd15f14bad00b8e0b050ccbd88c723bf64aa",
   "dataParityFixtureSha256": "c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f",
   "exports": [
@@ -1626,6 +1626,7 @@
     "qualificationSearchRecordFromItem",
     "qualificationSearchScore",
     "qualificationSectionChipLabel",
+    "qualificationsMissingOwnExpiry",
     "rankMaterialRecords",
     "rankQualificationRecords",
     "rateHistoryQueryPlan",

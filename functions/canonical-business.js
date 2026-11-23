@@ -1642,6 +1642,7 @@ var ProjectPlannerCanonical = (() => {
     qualificationSearchRecordFromItem: () => qualificationSearchRecordFromItem,
     qualificationSearchScore: () => qualificationSearchScore,
     qualificationSectionChipLabel: () => qualificationSectionChipLabel,
+    qualificationsMissingOwnExpiry: () => qualificationsMissingOwnExpiry,
     rankMaterialRecords: () => rankMaterialRecords,
     rankQualificationRecords: () => rankQualificationRecords,
     rateHistoryQueryPlan: () => rateHistoryQueryPlan,
@@ -8723,6 +8724,101 @@ var ProjectPlannerCanonical = (() => {
     const personKey2 = index.keyOf("operative", personId2);
     return rows3.filter((row3) => index.keyOf("operative", row3.id) === personKey2);
   }
+  function hasLibraryEndDate(entry) {
+    if (!entry) return false;
+    if (typeof entry.hasEndDate === "boolean") return entry.hasEndDate;
+    const end = entry.endDate;
+    if (end && typeof end === "object" && typeof end.toDate === "function") return true;
+    if (end && typeof end === "object" && typeof end.seconds === "number") return true;
+    return Boolean(expiryDateFromUnknown(end));
+  }
+  function nameText(first, last) {
+    return `${typeof first === "string" ? first.trim() : ""} ${typeof last === "string" ? last.trim() : ""}`.trim();
+  }
+  function qualificationsMissingOwnExpiry(input) {
+    const rows3 = (input?.operatives || []).filter(
+      (row3) => row3 && trimId(row3.id) && !isPlaceholderOperativeRow(row3) && // As the expiry warnings (`qualificationExpiryRowsUnscoped`): an anonymised deleted profile is never listed.
+      !isAnonymisedDeletedProfile({
+        email: row3.email ?? "",
+        firstName: row3.firstName,
+        lastName: row3.lastName
+      })
+    );
+    const roster = (input?.roster || []).filter((row3) => row3 && trimId(row3.id));
+    const library = (input?.qualifications || []).filter((entry) => entry && trimId(entry.id));
+    const libraryById = new Map(library.map((entry) => [trimId(entry.id).toLowerCase(), entry]));
+    const libraryByName = /* @__PURE__ */ new Map();
+    for (const entry of library) {
+      const name = String(entry.name ?? "").trim().toLowerCase();
+      if (name && !libraryByName.has(name)) libraryByName.set(name, entry);
+    }
+    const { keys } = taskPersonKeys({ managers: [], operatives: rows3, roster });
+    const keyOf2 = (id2) => keys[id2.toLowerCase()] || `id:${id2.toLowerCase()}`;
+    const groups = /* @__PURE__ */ new Map();
+    for (const row3 of rows3) {
+      const k = keyOf2(trimId(row3.id));
+      const list = groups.get(k);
+      if (list) list.push(row3);
+      else groups.set(k, [row3]);
+    }
+    const rosterByKey = /* @__PURE__ */ new Map();
+    for (const person of roster) {
+      const k = keyOf2(trimId(person.id));
+      const list = rosterByKey.get(k);
+      if (list) list.push(person);
+      else rosterByKey.set(k, [person]);
+    }
+    const out = [];
+    for (const [personKey2, personRows] of groups) {
+      const accounts = rosterByKey.get(personKey2) || [];
+      const aliasKeys = /* @__PURE__ */ new Set();
+      for (const member of accounts) {
+        for (const alias of [...member.formerUserIds || [], ...member.sameEmailUserIds || []]) {
+          if (trimId(alias).toLowerCase() !== trimId(member.id).toLowerCase()) aliasKeys.add(trimId(alias).toLowerCase());
+        }
+      }
+      const rank = (member) => (member.isActive !== false && !isAnonymisedDeletedProfile(member) ? 0 : 4) + (member.passwordSet === false ? 2 : 0) + (aliasKeys.has(trimId(member.id).toLowerCase()) ? 1 : 0);
+      const account = [...accounts].sort(
+        (a, b) => rank(a) - rank(b) || trimId(a.id).toLowerCase().localeCompare(trimId(b.id).toLowerCase())
+      )[0];
+      if (account && accounts.every((member) => isAnonymisedDeletedProfile(member))) continue;
+      const personName = account && nameText(account.firstName, account.lastName) || personRows.map((row3) => nameText(row3.firstName, row3.lastName)).find(Boolean) || trimId(account?.email) || personRows.map((row3) => trimId(row3.email)).find(Boolean) || "";
+      const active = personRows.some((row3) => row3.isActive !== false) && (accounts.length === 0 || accounts.some((a) => a.isActive !== false));
+      const activeRows = personRows.filter((row3) => row3.isActive !== false);
+      const judgedRows = activeRows.length > 0 ? activeRows : personRows;
+      const merged = personQualifications({ rows: judgedRows });
+      for (const qual of merged) {
+        if (qual.expiry) continue;
+        if (!String(qual.name ?? "").trim()) continue;
+        const id2 = trimId(qual.id);
+        const libraryEntry = libraryById.get(id2.toLowerCase()) || libraryByName.get(qual.name.trim().toLowerCase());
+        let templated = hasLibraryEndDate(libraryEntry);
+        if (!libraryEntry) {
+          for (const row3 of judgedRows) {
+            const assignment = (row3.qualifications || []).find((entry) => trimId(entry?.id).toLowerCase() === id2.toLowerCase());
+            if (hasLibraryEndDate(assignment)) {
+              templated = true;
+              break;
+            }
+          }
+        }
+        if (!templated) continue;
+        const holder = judgedRows.find((row3) => (row3.qualifications || []).some((entry) => trimId(entry?.id).toLowerCase() === id2.toLowerCase())) || judgedRows[0];
+        out.push({
+          personKey: personKey2,
+          userId: account ? trimId(account.id) : null,
+          operativeId: trimId(holder.id),
+          personName,
+          active,
+          qualificationId: id2,
+          qualificationName: qual.name.trim()
+        });
+      }
+    }
+    return out.sort(
+      (a, b) => a.personName.localeCompare(b.personName) || a.personKey.localeCompare(b.personKey) || a.qualificationName.localeCompare(b.qualificationName)
+    );
+  }
 
   // lib/canonical/materialDelivery.ts
   var DEFAULT_MATERIAL_DELIVERY_HOUR = 8;
@@ -14242,8 +14338,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.73.1" : "",
-      sha256: true ? "b4d98b0ad58da768d469aa6da4961d55800e5f04d16225c6ef70cd753e8d5356" : ""
+      version: true ? "1.76.0" : "",
+      sha256: true ? "a1e46f4dac74697f966a277570ff09bc1544c190651ccf8cc0b429ecc31f58c0" : ""
     };
   }
   function rulebookVersionLabel(version) {

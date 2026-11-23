@@ -413,3 +413,183 @@ export function operativeRowsForPerson<T extends { id: string; email?: string | 
   const personKey = index.keyOf('operative', personId)
   return rows.filter((row) => index.keyOf('operative', row.id) === personKey)
 }
+
+import { taskPersonKeys } from './taskPeople'
+import { isAnonymisedDeletedProfile } from './userRosterSegment'
+
+/** A qualification library entry (`organizations/{orgId}/qualifications/{id}`) as this check reads it. */
+export type QualificationLibraryEntry = {
+  id: string
+  name?: unknown
+  hasEndDate?: unknown
+  endDate?: unknown
+}
+
+/** One `operatives` row as the missing-own-expiry check reads it. */
+export type QualificationMissingOwnExpiryOperativeRow = QualificationOperativeRow & {
+  email?: string | null
+  linkedUserId?: string | null
+  userId?: string | null
+  uid?: string | null
+  firstName?: unknown
+  lastName?: unknown
+}
+
+export type QualificationMissingOwnExpiryRow = {
+  /** The person's key from the rulebook person fold (`taskPersonKeys`): the same for every record of them. */
+  personKey: string
+  /** The person's users id (as stored) when one of their users documents is on the roster, else null. */
+  userId: string | null
+  /** The `operatives` row the qualification is on (the first of the person's rows holding it). */
+  operativeId: string
+  /** The person's name as stored (roster first name and surname, else the row's, else the email), '' when none. */
+  personName: string
+  /** Whether any of the person's rows (or their users document) is active. */
+  active: boolean
+  qualificationId: string
+  qualificationName: string
+}
+
+function hasLibraryEndDate(entry: { hasEndDate?: unknown; endDate?: unknown } | null | undefined): boolean {
+  if (!entry) return false
+  // A stored boolean `hasEndDate` decides; `endDate` is read only when `hasEndDate` is missing (review of #426).
+  if (typeof entry.hasEndDate === 'boolean') return entry.hasEndDate
+  const end = entry.endDate as unknown
+  if (end && typeof end === 'object' && typeof (end as { toDate?: unknown }).toDate === 'function') return true
+  if (end && typeof end === 'object' && typeof (end as { seconds?: unknown }).seconds === 'number') return true
+  return Boolean(expiryDateFromUnknown(end))
+}
+
+function nameText(first: unknown, last: unknown): string {
+  return `${typeof first === 'string' ? first.trim() : ''} ${typeof last === 'string' ? last.trim() : ''}`.trim()
+}
+
+/**
+ * Rulebook 1.76.0 §5 (owner 23 Nov, C12): people who hold a qualification whose library entry has an end date
+ * (`hasEndDate` true or an `endDate`) but who have no expiry of their own for it (`qualificationExpiryDate` gives none
+ * on every `operatives` row of theirs). The library entry's own end date is a template and never an expiry (1.73.0),
+ * so these people get no qualification-expiry warning or reminder until their own date is set.
+ *
+ * - People are folded with the rulebook person fold (`taskPersonKeys` over the roster and the rows — every users
+ *   document by `personIdSet`, emails, `linkedUserId` / `userId` / `uid`), named by their live users document (the
+ *   `rosterPersonGroups` order). They are judged on their active rows (as the warnings and iOS reminders read them),
+ *   or all rows when every row is inactive; an own expiry on any judged row counts (`personQualifications`).
+ *   Placeholder rows and anonymised deleted profiles are left out; blank-named qualifications are skipped.
+ * - A stored boolean `hasEndDate` decides whether the library entry has an end date; `endDate` only when it is missing.
+ * - The library entry is matched by qualification id without case, else by name without case; a qualification whose
+ *   library entry is missing reads the assignment row's own copy (`hasEndDate` / `endDate`).
+ * - Inactive people are listed too (marked `active: false`); nothing is hidden. One row per person + qualification,
+ *   sorted by person name then qualification name. Read only.
+ */
+export function qualificationsMissingOwnExpiry(input: {
+  operatives: ReadonlyArray<QualificationMissingOwnExpiryOperativeRow>
+  qualifications?: ReadonlyArray<QualificationLibraryEntry> | null
+  roster?: ReadonlyArray<TaskPersonRosterRow & { firstName?: unknown; lastName?: unknown }> | null
+}): QualificationMissingOwnExpiryRow[] {
+  const rows = (input?.operatives || []).filter(
+    (row) =>
+      row &&
+      trimId(row.id) &&
+      !isPlaceholderOperativeRow(row as Record<string, unknown>) &&
+      // As the expiry warnings (`qualificationExpiryRowsUnscoped`): an anonymised deleted profile is never listed.
+      !isAnonymisedDeletedProfile({
+        email: row.email ?? '',
+        firstName: row.firstName as string | undefined,
+        lastName: row.lastName as string | undefined,
+      } as never)
+  )
+  const roster = (input?.roster || []).filter((row) => row && trimId(row.id))
+  const library = (input?.qualifications || []).filter((entry) => entry && trimId(entry.id))
+  const libraryById = new Map(library.map((entry) => [trimId(entry.id).toLowerCase(), entry]))
+  const libraryByName = new Map<string, QualificationLibraryEntry>()
+  for (const entry of library) {
+    const name = String(entry.name ?? '').trim().toLowerCase()
+    if (name && !libraryByName.has(name)) libraryByName.set(name, entry)
+  }
+  const { keys } = taskPersonKeys({ managers: [], operatives: rows, roster })
+  const keyOf = (id: string) => keys[id.toLowerCase()] || `id:${id.toLowerCase()}`
+  const groups = new Map<string, QualificationMissingOwnExpiryOperativeRow[]>()
+  for (const row of rows) {
+    const k = keyOf(trimId(row.id))
+    const list = groups.get(k)
+    if (list) list.push(row)
+    else groups.set(k, [row])
+  }
+  const rosterByKey = new Map<string, (typeof roster)[number][]>()
+  for (const person of roster) {
+    const k = keyOf(trimId(person.id))
+    const list = rosterByKey.get(k)
+    if (list) list.push(person)
+    else rosterByKey.set(k, [person])
+  }
+  const out: QualificationMissingOwnExpiryRow[] = []
+  for (const [personKey, personRows] of groups) {
+    const accounts = rosterByKey.get(personKey) || []
+    // The person's live document speaks for them (as `rosterPersonGroups`): active and not anonymised first, then
+    // signed up (`passwordSet` not false), then not listed as another document's former / same-email id; ties go to
+    // the smallest id (review of #426).
+    const aliasKeys = new Set<string>()
+    for (const member of accounts) {
+      for (const alias of [...(member.formerUserIds || []), ...(member.sameEmailUserIds || [])]) {
+        if (trimId(alias).toLowerCase() !== trimId(member.id).toLowerCase()) aliasKeys.add(trimId(alias).toLowerCase())
+      }
+    }
+    const rank = (member: (typeof accounts)[number]) =>
+      (member.isActive !== false && !isAnonymisedDeletedProfile(member as never) ? 0 : 4) +
+      ((member as { passwordSet?: unknown }).passwordSet === false ? 2 : 0) +
+      (aliasKeys.has(trimId(member.id).toLowerCase()) ? 1 : 0)
+    const account = [...accounts].sort(
+      (a, b) => rank(a) - rank(b) || trimId(a.id).toLowerCase().localeCompare(trimId(b.id).toLowerCase())
+    )[0]
+    if (account && accounts.every((member) => isAnonymisedDeletedProfile(member as never))) continue
+    const personName =
+      (account && nameText(account.firstName, account.lastName)) ||
+      personRows.map((row) => nameText(row.firstName, row.lastName)).find(Boolean) ||
+      trimId(account?.email) ||
+      personRows.map((row) => trimId(row.email)).find(Boolean) ||
+      ''
+    const active =
+      personRows.some((row) => row.isActive !== false) && (accounts.length === 0 || accounts.some((a) => a.isActive !== false))
+    // As the expiry warnings and iOS reminders (active rows only): a person with any active row is judged on their
+    // active rows; a fully inactive person on all their rows (review of #426).
+    const activeRows = personRows.filter((row) => row.isActive !== false)
+    const judgedRows = activeRows.length > 0 ? activeRows : personRows
+    // The person's qualifications with an expiry from any judged row (personQualifications merges them).
+    const merged = personQualifications({ rows: judgedRows })
+    for (const qual of merged) {
+      if (qual.expiry) continue
+      if (!String(qual.name ?? '').trim()) continue
+      const id = trimId(qual.id)
+      const libraryEntry = libraryById.get(id.toLowerCase()) || libraryByName.get(qual.name.trim().toLowerCase())
+      let templated = hasLibraryEndDate(libraryEntry)
+      if (!libraryEntry) {
+        for (const row of judgedRows) {
+          const assignment = (row.qualifications || []).find((entry) => trimId(entry?.id).toLowerCase() === id.toLowerCase())
+          if (hasLibraryEndDate(assignment as { hasEndDate?: unknown; endDate?: unknown } | undefined)) {
+            templated = true
+            break
+          }
+        }
+      }
+      if (!templated) continue
+      const holder =
+        judgedRows.find((row) => (row.qualifications || []).some((entry) => trimId(entry?.id).toLowerCase() === id.toLowerCase())) ||
+        judgedRows[0]
+      out.push({
+        personKey,
+        userId: account ? trimId(account.id) : null,
+        operativeId: trimId(holder.id),
+        personName,
+        active,
+        qualificationId: id,
+        qualificationName: qual.name.trim(),
+      })
+    }
+  }
+  return out.sort(
+    (a, b) =>
+      a.personName.localeCompare(b.personName) ||
+      a.personKey.localeCompare(b.personKey) ||
+      a.qualificationName.localeCompare(b.qualificationName)
+  )
+}
