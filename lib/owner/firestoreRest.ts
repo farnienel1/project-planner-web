@@ -8,7 +8,7 @@ export async function firestoreGet(idToken: string, path: string) {
   const response = await fetch(docUrl(path), { headers: { Authorization: `Bearer ${idToken}` } })
   if (response.status === 404) return null
   if (!response.ok) throw new Error(`Could not read ${path}`)
-  return (await response.json()) as { fields?: Record<string, unknown> }
+  return (await response.json()) as { fields?: Record<string, unknown>; updateTime?: string }
 }
 
 export async function firestorePatch(
@@ -94,8 +94,8 @@ export async function firestoreListCollection(
   idToken: string,
   collectionPath: string,
   limit = 500
-): Promise<{ id: string; fields?: Record<string, unknown> }[]> {
-  const out: { id: string; fields?: Record<string, unknown> }[] = []
+): Promise<{ id: string; fields?: Record<string, unknown>; updateTime?: string }[]> {
+  const out: { id: string; fields?: Record<string, unknown>; updateTime?: string }[] = []
   let pageToken = ''
   while (out.length < limit) {
     const query = new URLSearchParams({ pageSize: String(Math.min(300, limit - out.length)) })
@@ -105,12 +105,12 @@ export async function firestoreListCollection(
     })
     if (!response.ok) throw new Error(`Could not read ${collectionPath}`)
     const body = (await response.json()) as {
-      documents?: { name?: string; fields?: Record<string, unknown> }[]
+      documents?: { name?: string; fields?: Record<string, unknown>; updateTime?: string }[]
       nextPageToken?: string
     }
     for (const row of body.documents || []) {
       const name = row.name || ''
-      out.push({ id: name.slice(name.lastIndexOf('/') + 1), fields: row.fields })
+      out.push({ id: name.slice(name.lastIndexOf('/') + 1), fields: row.fields, updateTime: row.updateTime })
     }
     if (!body.nextPageToken) break
     pageToken = body.nextPageToken
@@ -287,6 +287,19 @@ export type RestUpdateWrite = {
   set: Record<string, string | boolean | number>
   /** Fields to delete (only ones the stored document has). */
   remove?: readonly string[]
+  /**
+   * The document's `updateTime` as read. When given, the write is refused if the document changed since (review of
+   * #434: a change made between the read and the commit is never overwritten). Without it, only "still exists".
+   */
+  updateTime?: string
+}
+
+/** Thrown when a document changed (or was deleted) between the read and the commit; nothing was written. */
+export class FirestoreChangedMeanwhileError extends Error {
+  constructor() {
+    super('Someone changed this record while you were working. Nothing was changed. Reload and try again.')
+    this.name = 'FirestoreChangedMeanwhileError'
+  }
 }
 
 function restScalar(value: string | boolean | number): RestValue {
@@ -315,7 +328,7 @@ export function restCommitBody(documentsBase: string, writes: readonly RestUpdat
       return {
         update: { name: `${prefix}/${write.path}`, fields },
         updateMask: { fieldPaths },
-        currentDocument: { exists: true },
+        currentDocument: write.updateTime ? { updateTime: write.updateTime } : { exists: true },
         updateTransforms: [{ fieldPath: 'updatedAt', setToServerValue: 'REQUEST_TIME' }],
       }
     }),
@@ -334,6 +347,9 @@ export async function firestoreCommitUpdates(idToken: string, writes: readonly R
   })
   if (!response.ok) {
     const text = await response.text().catch(() => '')
-    throw new Error(response.status === 404 || /NOT_FOUND/.test(text) ? 'A record was deleted while you were changing it. Nothing was changed.' : `The change was refused (${response.status}). Nothing was changed.`)
+    if (response.status === 404 || response.status === 409 || /NOT_FOUND|FAILED_PRECONDITION|ABORTED/.test(text)) {
+      throw new FirestoreChangedMeanwhileError()
+    }
+    throw new Error(`The change was refused (${response.status}). Nothing was changed.`)
   }
 }

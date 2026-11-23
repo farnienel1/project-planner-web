@@ -63,7 +63,7 @@ const BASE_DOCS: Docs = {
   'users/owner-uid': { email: PLATFORM_OWNER_EMAIL, firstName: 'Owner', surname: 'P', passwordSet: true, isActive: true },
 }
 
-function stub(options: { serverKey?: boolean; auditOk?: boolean; commitOk?: boolean; docs?: Docs } = {}) {
+function stub(options: { serverKey?: boolean; auditOk?: boolean; commitOk?: boolean; commitStatus?: number; commitText?: string; docs?: Docs } = {}) {
   process.env.NEXT_PUBLIC_FIREBASE_API_KEY = 'test-key'
   process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID = 'demo'
   delete process.env.GOOGLE_APPLICATION_CREDENTIALS
@@ -88,16 +88,19 @@ function stub(options: { serverKey?: boolean; auditOk?: boolean; commitOk?: bool
     if (url.includes('accounts:revokeRefreshTokens')) return new Response('{}')
     if (url.includes('/adminAuditLog') && method === 'POST') return new Response('{}', { status: options.auditOk === false ? 403 : 200 })
     if (url.includes(':runQuery')) return new Response('[]')
-    if (url.endsWith(':commit')) return new Response('{}', { status: options.commitOk === false ? 403 : 200 })
+    if (url.endsWith(':commit')) {
+      if (options.commitStatus) return new Response(options.commitText || '{}', { status: options.commitStatus })
+      return new Response('{}', { status: options.commitOk === false ? 403 : 200 })
+    }
     if (url.includes('/orgMemberships')) return new Response(JSON.stringify({ documents: [] }))
     if (url.startsWith('https://email.test/')) return new Response(JSON.stringify({ ok: true, id: 'm1' }))
     const marker = '/documents/'
     const path = decodeURIComponent(url.slice(url.indexOf(marker) + marker.length).split('?')[0])
     if (method === 'GET') {
-      if (docs[path]) return new Response(JSON.stringify({ name: docName(path), fields: toRestFields(docs[path]) }))
+      if (docs[path]) return new Response(JSON.stringify({ name: docName(path), fields: toRestFields(docs[path]), updateTime: `2026-11-23T10:00:00.${path.length}Z` }))
       const children = Object.keys(docs).filter((key) => key.startsWith(`${path}/`) && !key.slice(path.length + 1).includes('/'))
       if (children.length || ['users', 'organizations'].includes(path) || /\/(operatives|managers)$/.test(path)) {
-        return new Response(JSON.stringify({ documents: children.map((key) => ({ name: docName(key), fields: toRestFields(docs[key]) })) }))
+        return new Response(JSON.stringify({ documents: children.map((key) => ({ name: docName(key), fields: toRestFields(docs[key]), updateTime: `2026-11-23T10:00:00.${key.length}Z` })) }))
       }
       return new Response('{}', { status: 404 })
     }
@@ -167,7 +170,7 @@ test('change name: audit is written before the one atomic commit, which holds on
   const commit = JSON.parse(calls[commitIndex(calls)].body) as { writes: { update: { name: string; fields: Record<string, unknown> }; currentDocument: unknown }[] }
   assert.deepEqual(commit.writes.map((write) => write.update.name.split('/documents/')[1]).sort(), ['organizations/org-a/operatives/op-1', 'users/sam-uid'])
   for (const write of commit.writes) {
-    assert.deepEqual(write.currentDocument, { exists: true })
+    assert.ok((write.currentDocument as { updateTime?: string }).updateTime, 'precondition: the read updateTime')
     for (const key of Object.keys(write.update.fields)) {
       assert.ok(['firstName', 'surname', 'lastName', 'name', 'displayName', 'updatedBy', 'updatedFrom'].includes(key), key)
     }
@@ -294,4 +297,42 @@ test('re-verify: refused to anyone without the owner MFA cookie', async () => {
   stub()
   const response = await reverify(req('/api/owner/reverify', {}, { mfa: false }))
   assert.equal(response.status, 403)
+})
+
+test('review of #434: change name refuses an anonymised deleted profile', async () => {
+  const calls = stub({
+    docs: { ...BASE_DOCS, 'users/gone-uid': { email: '', firstName: 'Deleted', surname: 'user', organizationId: 'org-a', passwordSet: true, isActive: true } },
+  })
+  const response = await changeName(req('/api/owner/actions/change-name', { ...NAME_BODY, uid: 'gone-uid' }))
+  assert.equal(response.status, 409)
+  assert.equal(commitIndex(calls), -1)
+  assert.equal(auditIndex(calls), -1)
+})
+
+test('review of #434: a stored same-email id whose email changed is not renamed', async () => {
+  const calls = stub({
+    docs: {
+      ...BASE_DOCS,
+      'users/sam-uid': { ...BASE_DOCS['users/sam-uid'], sameEmailUserIds: ['moved-uid'] },
+      'users/moved-uid': { email: 'moved@elsewhere.co', firstName: 'Moe', surname: 'Ved', organizationId: 'org-a', passwordSet: true, isActive: true },
+    },
+  })
+  const response = await changeName(req('/api/owner/actions/change-name', NAME_BODY))
+  assert.equal(response.status, 200)
+  const commit = JSON.parse(calls[commitIndex(calls)].body) as { writes: { update: { name: string } }[] }
+  assert.equal(commit.writes.some((write) => write.update.name.endsWith('/users/moved-uid')), false)
+})
+
+test('review of #434: the commit carries each read updateTime; a change made meanwhile is refused (409)', async () => {
+  let calls = stub()
+  const ok = await changeName(req('/api/owner/actions/change-name', NAME_BODY))
+  assert.equal(ok.status, 200)
+  const commit = JSON.parse(calls[commitIndex(calls)].body) as { writes: { currentDocument: { updateTime?: string } }[] }
+  for (const write of commit.writes) assert.match(write.currentDocument.updateTime || '', /^2026-11-23T10:00:00\./)
+  calls = stub({ commitStatus: 400, commitText: '{"error":{"status":"FAILED_PRECONDITION"}}' })
+  const stale = await changeName(req('/api/owner/actions/change-name', NAME_BODY))
+  assert.equal(stale.status, 409)
+  assert.match(((await stale.json()) as { error: string }).error, /changed this record/i)
+  const audits = calls.filter((call) => call.url.includes('/adminAuditLog') && call.method === 'POST')
+  assert.match(audits[audits.length - 1].body, /"failed"/)
 })

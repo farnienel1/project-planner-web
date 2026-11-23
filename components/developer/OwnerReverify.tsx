@@ -66,7 +66,9 @@ function OwnerReverifyDialog({ onVerified, onCancel }: { onVerified: () => void;
             await verifyEmailMfa(code)
             onVerified()
           } catch (err) {
-            setError(err instanceof Error ? err.message : 'That code was not accepted.')
+            // The shared verify route tells a signing-in user to sign in again; here the owner just asks for a new code.
+            const message = err instanceof Error ? err.message : 'That code was not accepted.'
+            setError(message.replace(/Sign in again to receive a new (one|code)\./i, 'Press “Send a new code”.'))
           } finally {
             setBusy(false)
           }
@@ -115,7 +117,7 @@ function OwnerReverifyDialog({ onVerified, onCancel }: { onVerified: () => void;
               }
             }}
           >
-            Send again
+            Send a new code
           </button>
           <button type="button" className="btn sm ghost" onClick={onCancel} disabled={busy}>
             Cancel

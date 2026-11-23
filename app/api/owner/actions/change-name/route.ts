@@ -3,12 +3,22 @@ import { apiFlag, apiObject, apiText, readApiBody } from '@/lib/security/apiBody
 import { enforceRateLimit, enforceRateLimitKey, isFirebaseUser, jsonError } from '@/lib/security/apiGuard'
 import { isValidDocumentId } from '@/lib/security/validation'
 import { ownerFreshnessRefusal, requireOwnerSession } from '@/lib/owner/requireOwner'
-import { bearerToken, firestoreCommitUpdates, firestoreListCollection, restFieldsToPlain } from '@/lib/owner/firestoreRest'
+import { FirestoreChangedMeanwhileError, bearerToken, firestoreCommitUpdates, firestoreListCollection, restFieldsToPlain } from '@/lib/owner/firestoreRest'
 import { OWNER_AUDIT_UNAVAILABLE_MESSAGE, beginOwnerAudit, type OwnerAuditRun } from '@/lib/owner/ownerAudit'
 import { clearOwnerDirectoryCache } from '@/lib/owner/directoryServer'
 import { ownerJson } from '@/lib/owner/ownerReadRoute'
 import { OwnerPersonNotFoundError, loadOwnerPerson, ownerPersonEmails } from '@/lib/owner/personServer'
-import { ownerNameChangePlan, ownerNamePartError, ownerNameFields, ownerReasonError, rosterRowsForEmails, type RosterRowDoc } from '@/lib/owner/personActions'
+import {
+  nameChangeRefusal,
+  ownerNameChangePlan,
+  ownerNameFields,
+  ownerNamePartError,
+  ownerReasonError,
+  renameableUserDocs,
+  rosterRowsForPerson,
+  type RosterRowDoc,
+} from '@/lib/owner/personActions'
+import { ownerPersonIds } from '@/lib/owner/person360'
 import { isPlatformOwnerEmail } from '@/lib/platform/owner'
 import { rosterPersonName, type RosterSegmentProfile } from '@/lib/canonical/userRosterSegment'
 
@@ -58,10 +68,23 @@ export async function POST(request: NextRequest) {
     if (error instanceof OwnerPersonNotFoundError) return jsonError(error.message, 404)
     return jsonError('Could not read that person, so nothing was changed. Try again.', 503)
   }
-  const emails = ownerPersonEmails(person.userDocs)
-  if (emails.some((email) => isPlatformOwnerEmail(email)) || person.userDocs.some((doc) => doc.id === owner.uid)) {
+  const allEmails = ownerPersonEmails(person.userDocs)
+  if (allEmails.some((email) => isPlatformOwnerEmail(email)) || person.userDocs.some((doc) => doc.id === owner.uid)) {
     return jsonError('The owner account is not changed from this console.', 400)
   }
+  // Review of #434: never rename an anonymised deleted profile.
+  const refusal = nameChangeRefusal(person.userDocs)
+  if (refusal) return jsonError(refusal, 409)
+  // The person's email is the one on the directory's kept users document (rulebook `rosterPeople` keeps one per email);
+  // a stored same-email id whose email has since changed is someone else now and is left alone.
+  const kept = person.userDocs.find((doc) => doc.id === person.row.id) || person.userDocs[0]
+  const keptEmail = typeof kept.data?.email === 'string' ? kept.data.email.trim().toLowerCase() : ''
+  const emails = keptEmail ? [keptEmail] : allEmails
+  const userDocs = renameableUserDocs(
+    person.userDocs.map((doc) => ({ ...doc, updateTime: person.updateTimes.get(doc.id) })),
+    emails
+  )
+  const personIds = ownerPersonIds(person.row, userDocs)
 
   const rosterRows: RosterRowDoc[] = []
   const unread: string[] = []
@@ -72,10 +95,11 @@ export async function POST(request: NextRequest) {
         const rows = (await firestoreListCollection(token, path, 5000)).map((row) => ({
           id: row.id,
           data: restFieldsToPlain(row.fields),
+          updateTime: row.updateTime,
           organizationId,
           collection,
         }))
-        rosterRows.push(...rosterRowsForEmails(rows, emails))
+        rosterRows.push(...rosterRowsForPerson(rows, emails, personIds))
       } catch {
         unread.push(path)
       }
@@ -84,7 +108,7 @@ export async function POST(request: NextRequest) {
   // A list the owner could not read would leave that company's copy of the name behind: refuse instead.
   if (unread.length) return jsonError('Could not read every list this person is on, so nothing was changed. Try again.', 503)
 
-  const plan = ownerNameChangePlan({ firstName, surname, userDocs: person.userDocs, rosterRows })
+  const plan = ownerNameChangePlan({ firstName, surname, userDocs, rosterRows })
   const orgName = new Map(person.orgRows.map((org) => [org.id, org.name]))
   const summary = {
     users: plan.users.map((row) => ({ id: row.id, organisation: orgName.get(row.organizationId) || 'No organisation' })),
@@ -94,7 +118,6 @@ export async function POST(request: NextRequest) {
   if (preview) return ownerJson({ preview: true, ...summary })
   if (plan.unchanged) return jsonError('That is already the name on every record.', 400)
 
-  const kept = person.userDocs[0]
   let audit: OwnerAuditRun
   try {
     audit = await beginOwnerAudit(request, owner.uid, {
@@ -112,6 +135,7 @@ export async function POST(request: NextRequest) {
     await firestoreCommitUpdates(token, plan.writes, owner.uid)
   } catch (error) {
     await audit.fail(error)
+    if (error instanceof FirestoreChangedMeanwhileError) return jsonError(error.message, 409)
     return jsonError(error instanceof Error ? error.message : 'The change was refused. Nothing was changed.', 502)
   }
   clearOwnerDirectoryCache()

@@ -74,11 +74,18 @@ export async function GET(request: NextRequest, context: { params: Promise<{ uid
     let auditError: string | null = null
     let auditEntries: PlainDoc[] = []
     try {
-      const rows = await firestoreRunQuery(
-        token,
-        structuredQuery('adminAuditLog', restIn('targetUserId', personIds), { limit: PERSON_AUDIT_READ_MAX })
+      // Firestore `in` takes at most 30 values: one query per 30 ids (review of #434).
+      const chunks: string[][] = []
+      for (let i = 0; i < personIds.length; i += 30) chunks.push(personIds.slice(i, i + 30))
+      const results = await Promise.all(
+        chunks.map((ids) => firestoreRunQuery(token, structuredQuery('adminAuditLog', restIn('targetUserId', ids), { limit: PERSON_AUDIT_READ_MAX })))
       )
-      auditEntries = rows.map((row) => ({ id: row.id, data: restFieldsToPlain(row.fields) }))
+      const seen = new Set<string>()
+      for (const row of results.flat()) {
+        if (seen.has(row.id)) continue
+        seen.add(row.id)
+        auditEntries.push({ id: row.id, data: restFieldsToPlain(row.fields) })
+      }
     } catch (error) {
       console.error('[owner/people] audit', error)
       auditError = 'Owner actions about this person could not be read.'

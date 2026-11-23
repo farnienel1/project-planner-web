@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { enforceRateLimit, isFirebaseUser, jsonError } from '@/lib/security/apiGuard'
 import { apiObject, apiText, readApiBody } from '@/lib/security/apiBody'
 import { requireOwnerSession } from '@/lib/owner/requireOwner'
+import { ownerReasonError } from '@/lib/owner/personActions'
 import { clearOwnerDirectoryCache } from '@/lib/owner/directoryServer'
 import { OWNER_AUDIT_UNAVAILABLE_MESSAGE, beginOwnerAudit, type OwnerAuditRun } from '@/lib/owner/ownerAudit'
 import { bearerToken, firestoreDelete, firestoreGet, restFieldsToPlain } from '@/lib/owner/firestoreRest'
@@ -32,6 +33,9 @@ export async function POST(request: NextRequest) {
   const uid = body.value.uid
   if (!uid) return jsonError('uid is required', 400)
   if (!DOC_ID.test(uid)) return jsonError('uid is not valid', 400)
+  // Review of #434: a reason (3–500 characters) is required before anything is read or written.
+  const reasonError = ownerReasonError(body.value.reason)
+  if (reasonError) return jsonError(reasonError, 400)
   // The security rules let only the person list their own `orgMemberships`, so the owner's token can never
   // prove "not a member anywhere" (review of #340). That, and the Auth creation time, need the server key.
   if (!firebaseAdminConfigured()) {

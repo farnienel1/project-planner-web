@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { apiObject, apiText, readApiBody } from '@/lib/security/apiBody'
-import { enforceRateLimit, isFirebaseUser, jsonError } from '@/lib/security/apiGuard'
+import { enforceRateLimit, enforceRateLimitKey, isFirebaseUser, jsonError } from '@/lib/security/apiGuard'
 import { isValidDocumentId } from '@/lib/security/validation'
 import { requireOwnerSession } from '@/lib/owner/requireOwner'
 import { bearerToken } from '@/lib/owner/firestoreRest'
@@ -19,6 +19,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ ui
   if (limited) return limited
   const owner = await requireOwnerSession(request)
   if (!isFirebaseUser(owner)) return owner
+  const perOwner = enforceRateLimitKey('owner-reveal-email:uid', owner.uid, 60, 10 * 60 * 1000)
+  if (perOwner) return perOwner
   const { uid } = await context.params
   if (!isValidDocumentId(uid)) return jsonError('That person id is not valid.', 400)
   const body = await readApiBody(request, apiObject({ reason: apiText(500) }))

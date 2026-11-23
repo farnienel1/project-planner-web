@@ -11,6 +11,8 @@ export type OwnerPersonContext = {
   row: OwnerPersonRow
   /** Every users document of the person that still exists, the directory's kept one first. */
   userDocs: PlainDoc[]
+  /** Each users document's `updateTime` as read (review of #434: the precondition of a write). */
+  updateTimes: Map<string, string>
   orgRows: OwnerOrgRow[]
   truncated: boolean
 }
@@ -28,15 +30,17 @@ export async function loadOwnerPerson(token: string, uid: string, options: { ref
   const row = findDirectoryPerson(directory.peopleRows, uid)
   if (!row) throw new OwnerPersonNotFoundError()
   const ids = row.userIds.slice(0, PERSON_USER_DOCS_MAX)
+  const updateTimes = new Map<string, string>()
   const docs = await Promise.all(
     ids.map(async (id) => {
       const doc = await firestoreGet(token, `users/${id}`)
+      if (doc?.updateTime) updateTimes.set(id, doc.updateTime)
       return doc ? ({ id, data: restFieldsToPlain(doc.fields) } as PlainDoc) : null
     })
   )
   const userDocs = docs.filter((doc): doc is PlainDoc => Boolean(doc))
   if (!userDocs.length) throw new OwnerPersonNotFoundError()
-  return { row, userDocs, orgRows: directory.orgRows, truncated: directory.truncated }
+  return { row, userDocs, updateTimes, orgRows: directory.orgRows, truncated: directory.truncated }
 }
 
 /** Every email the person's users documents hold, lower case. */

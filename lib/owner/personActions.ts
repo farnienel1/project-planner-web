@@ -10,6 +10,7 @@ import {
   userProfileWriteFields,
   type DocumentWriteFields,
 } from '@/lib/canonical/peopleDocuments'
+import { isAnonymisedDeletedProfile, type RosterSegmentProfile } from '@/lib/canonical/userRosterSegment'
 import type { RestUpdateWrite } from '@/lib/owner/firestoreRest'
 import type { PlainDoc } from '@/lib/owner/directory'
 
@@ -48,7 +49,36 @@ export function ownerNameFields(firstName: string, surname: string) {
   return { firstName: first, surname: last, lastName: last, name: full, displayName: full }
 }
 
-export type RosterRowDoc = PlainDoc & { organizationId: string; collection: 'operatives' | 'managers' }
+/** A document as read, with its `updateTime` (the write precondition). */
+export type ReadDoc = PlainDoc & { updateTime?: string }
+
+export type RosterRowDoc = ReadDoc & { organizationId: string; collection: 'operatives' | 'managers' }
+
+export const NAME_CHANGE_DELETED_MESSAGE =
+  'One of this person’s records is an anonymised deleted profile, so the name is not changed from here.'
+
+/** Review of #434: refuse a rename when any users document of the person is an anonymised deleted profile. */
+export function nameChangeRefusal(userDocs: readonly PlainDoc[]): string | null {
+  return userDocs.some((doc) => isAnonymisedDeletedProfile((doc.data || {}) as RosterSegmentProfile)) ? NAME_CHANGE_DELETED_MESSAGE : null
+}
+
+function emailOf(doc: PlainDoc): string {
+  const email = doc.data?.email
+  return typeof email === 'string' ? email.trim().toLowerCase() : ''
+}
+
+/**
+ * The users documents a rename may touch (review of #434): those whose stored email is one of the person's emails
+ * (without case), or that have no email (an invite placeholder or a ghost). A document listed in `sameEmailUserIds`
+ * whose email has since changed belongs to someone else now and is never renamed.
+ */
+export function renameableUserDocs<T extends PlainDoc>(userDocs: readonly T[], personEmails: readonly string[]): T[] {
+  const emails = new Set(personEmails.map((email) => email.trim().toLowerCase()).filter(Boolean))
+  return userDocs.filter((doc) => {
+    const email = emailOf(doc)
+    return !email || emails.has(email)
+  })
+}
 
 export type NameChangePlan = {
   writes: RestUpdateWrite[]
@@ -59,14 +89,14 @@ export type NameChangePlan = {
   unchanged: boolean
 }
 
-function toWrite(path: string, fields: DocumentWriteFields): RestUpdateWrite | null {
+function toWrite(path: string, fields: DocumentWriteFields, updateTime?: string): RestUpdateWrite | null {
   const set: Record<string, string> = {}
   for (const [key, value] of Object.entries(fields.set)) {
     if (typeof value === 'string') set[key] = value
   }
   const remove = fields.remove.filter((key) => !(key in set))
   if (!Object.keys(set).length && !remove.length) return null
-  return { path, set, remove }
+  return updateTime ? { path, set, remove, updateTime } : { path, set, remove }
 }
 
 /**
@@ -77,7 +107,7 @@ function toWrite(path: string, fields: DocumentWriteFields): RestUpdateWrite | n
 export function ownerNameChangePlan(input: {
   firstName: string
   surname: string
-  userDocs: readonly PlainDoc[]
+  userDocs: readonly ReadDoc[]
   rosterRows: readonly RosterRowDoc[]
 }): NameChangePlan {
   const next = ownerNameFields(input.firstName, input.surname)
@@ -85,7 +115,7 @@ export function ownerNameChangePlan(input: {
   const users: NameChangePlan['users'] = []
   const rows: NameChangePlan['rows'] = []
   for (const doc of input.userDocs) {
-    const write = toWrite(`users/${doc.id}`, userProfileWriteFields(doc.data || {}, next))
+    const write = toWrite(`users/${doc.id}`, userProfileWriteFields(doc.data || {}, next), doc.updateTime)
     if (!write) continue
     writes.push(write)
     const org = doc.data?.organizationId
@@ -93,7 +123,7 @@ export function ownerNameChangePlan(input: {
   }
   for (const row of input.rosterRows) {
     const helper = row.collection === 'operatives' ? operativeRowWriteFields : managerRowWriteFields
-    const write = toWrite(`organizations/${row.organizationId}/${row.collection}/${row.id}`, helper(row.data || {}, next))
+    const write = toWrite(`organizations/${row.organizationId}/${row.collection}/${row.id}`, helper(row.data || {}, next), row.updateTime)
     if (!write) continue
     writes.push(write)
     rows.push({ organizationId: row.organizationId, collection: row.collection, id: row.id })
@@ -101,12 +131,25 @@ export function ownerNameChangePlan(input: {
   return { writes, users, rows, unchanged: writes.length === 0 }
 }
 
-/** Roster rows whose stored email is one of the person's emails, without case. */
-export function rosterRowsForEmails<T extends { data?: Record<string, unknown> }>(rows: readonly T[], emails: readonly string[]): T[] {
+/**
+ * Roster rows of the person: stored email is one of the person's emails (without case), or — for a row with no email,
+ * such as a converted ghost's operatives row — the row id is one of the person's ids (review of #434).
+ */
+export function rosterRowsForPerson<T extends { id: string; data?: Record<string, unknown> }>(
+  rows: readonly T[],
+  emails: readonly string[],
+  personIds: readonly string[] = []
+): T[] {
   const keys = new Set(emails.map((email) => email.trim().toLowerCase()).filter(Boolean))
-  if (!keys.size) return []
+  const ids = new Set(personIds.map((id) => id.trim().toLowerCase()).filter(Boolean))
   return rows.filter((row) => {
-    const email = row.data?.email
-    return typeof email === 'string' && keys.has(email.trim().toLowerCase())
+    const email = typeof row.data?.email === 'string' ? row.data.email.trim().toLowerCase() : ''
+    if (email) return keys.has(email)
+    return ids.has(row.id.toLowerCase())
   })
+}
+
+/** Roster rows whose stored email is one of the person's emails, without case. */
+export function rosterRowsForEmails<T extends { id: string; data?: Record<string, unknown> }>(rows: readonly T[], emails: readonly string[]): T[] {
+  return rosterRowsForPerson(rows, emails, [])
 }

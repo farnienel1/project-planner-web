@@ -8,6 +8,9 @@ import {
   ownerNamePartError,
   ownerReasonError,
   rosterRowsForEmails,
+  rosterRowsForPerson,
+  nameChangeRefusal,
+  renameableUserDocs,
 } from './personActions.ts'
 import { restCommitBody } from './firestoreRest.ts'
 import {
@@ -213,4 +216,38 @@ test('Auth record: provider ids only, times read, validSince in seconds', () => 
   assert.equal(record.lastRefreshAtMs, Date.parse('2026-11-20T10:00:00.000Z'))
   assert.deepEqual(record.providers, ['password'])
   assert.equal(JSON.stringify(record).includes('secret'), false)
+})
+
+test('review of #434: a rename is refused when any users document is an anonymised deleted profile', () => {
+  assert.equal(nameChangeRefusal([{ id: 'u1', data: { email: 'sam@x.co', firstName: 'Sam' } }]), null)
+  assert.ok(nameChangeRefusal([{ id: 'u1', data: { email: 'sam@x.co', firstName: 'Sam' } }, { id: 'u2', data: { email: '', firstName: 'Deleted', surname: 'user' } }]))
+})
+
+test('review of #434: only documents on the person’s email, or with no email, are renamed', () => {
+  const docs = [
+    { id: 'kept', data: { email: 'Sam@X.co' } },
+    { id: 'placeholder', data: {} },
+    { id: 'moved-on', data: { email: 'someone.else@x.co' } },
+  ]
+  assert.deepEqual(renameableUserDocs(docs, ['sam@x.co']).map((doc) => doc.id), ['kept', 'placeholder'])
+})
+
+test('review of #434: a row with no email is the person’s when its id is one of theirs (a converted ghost)', () => {
+  const rows = [
+    { id: 'GHOST-1', data: { firstName: 'Gus' } },
+    { id: 'other', data: {} },
+    { id: 'emailed', data: { email: 'x@y.co' } },
+  ]
+  assert.deepEqual(rosterRowsForPerson(rows, ['sam@x.co'], ['ghost-1', 'emailed']).map((row) => row.id), ['GHOST-1'])
+})
+
+test('review of #434: the commit uses each document’s read updateTime as its precondition', () => {
+  const plan = ownerNameChangePlan({
+    firstName: 'New',
+    surname: 'Name',
+    userDocs: [{ id: 'u1', updateTime: '2026-11-23T10:00:00.000001Z', data: { firstName: 'Old', surname: 'Name' } }],
+    rosterRows: [],
+  })
+  const body = restCommitBody('https://firestore.googleapis.com/v1/projects/demo/databases/(default)/documents', plan.writes, 'owner-uid')
+  assert.deepEqual(body.writes[0].currentDocument, { updateTime: '2026-11-23T10:00:00.000001Z' })
 })
