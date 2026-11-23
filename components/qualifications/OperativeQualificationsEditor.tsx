@@ -7,6 +7,7 @@ import { Button } from '@/components/ui'
 import { qualificationCertificatePath, uploadFile } from '@/lib/firebase/storageUtils'
 import { prepareClientUpload } from '@/lib/security/stripPhotoLocation'
 import {
+  CertificatesNotLinkedError,
   QUALIFICATION_CERT_ACCEPT,
   QUALIFICATION_CERT_HINT,
   certificateUrlForQualification,
@@ -240,7 +241,20 @@ export function OperativeQualificationsEditor({
       setPendingFiles({})
       setDirty(false)
     } catch (err: unknown) {
-      setLocalError(formatCertificateSaveError(err))
+      if (err instanceof CertificatesNotLinkedError) {
+        // Review of #415: keep what uploaded as the draft's links ("uploaded, waiting for the server") and drop those
+        // files from the queue, so the next Save writes the links and never uploads a second copy.
+        setDraft((current) => (current ? { ...current, qualificationCertificateURLs: err.certificateUrls } : current))
+        setPendingFiles((current) => {
+          const next = { ...current }
+          for (const uploadedId of err.uploadedIds) delete next[uploadedId]
+          return next
+        })
+        setDirty(true)
+        setLocalError(err.message)
+      } else {
+        setLocalError(formatCertificateSaveError(err))
+      }
     } finally {
       setUploading(false)
     }

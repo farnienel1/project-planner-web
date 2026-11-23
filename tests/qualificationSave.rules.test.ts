@@ -14,7 +14,10 @@ import test from 'node:test'
 import { initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing'
 import { claimsContext } from './authClaimsContext.ts'
 import { isExpressionLimitDenial } from './rulesAssert.ts'
-import { doc, setDoc, Timestamp } from 'firebase/firestore'
+import { deleteField, doc, FieldPath, setDoc, Timestamp, updateDoc } from 'firebase/firestore'
+import type { Operative } from '../types'
+import { serializeOperative } from '../lib/ios-parity/converters.ts'
+import { operativeQualificationPatch } from '../lib/qualifications/qualificationPatch.ts'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const rules = readFileSync(path.join(root, 'firestore.rules'), 'utf8')
@@ -27,6 +30,7 @@ const OP = 'qs-operative'
 const MGR = 'qs-manager'
 const ROW = 'qs-operative-row'
 const MGR_ROW = 'qs-manager-row'
+const OTHER_ROW = 'qs-someone-else-row'
 const QUAL = 'A1B2C3D4-0000-4000-8000-000000000001'
 const WAIT_MS = 8000
 const EMAILS: Record<string, string> = {
@@ -64,25 +68,51 @@ async function dbAs(uid: string) {
 }
 type Db = Awaited<ReturnType<typeof dbAs>>
 
-/** The payload `patchOperativeQualifications` writes for an existing row (serializeOperative, qualification keys only). */
-function qualificationWrite(url: string) {
-  const now = Timestamp.now()
+function operative(id: string, email: string, linkedUserId: string, urlKey: string, url: string, expiry: string): Operative {
+  const at = new Date('2026-01-01T00:00:00Z')
   return {
-    qualifications: [{ id: QUAL, name: 'CSCS', hasEndDate: true, createdAt: now, updatedAt: now }],
-    qualificationExpiryDates: { [QUAL]: Timestamp.fromDate(new Date('2027-05-01T00:00:00Z')) },
-    qualificationCertificateURLs: { [QUAL]: url },
-    updatedAt: now,
+    id,
+    firstName: 'Op',
+    lastName: 'One',
+    email,
+    linkedUserId,
+    startDate: at,
+    hourlyRate: 0,
+    skills: [],
+    qualifications: [{ id: urlKey, name: 'CSCS', hasEndDate: true, createdAt: at, updatedAt: at }],
+    qualificationExpiryDates: { [urlKey]: new Date(expiry) },
+    qualificationCertificateURLs: { [urlKey]: url },
+    isActive: true,
+    createdAt: at,
+    updatedAt: at,
+    organizationId: ORG,
   }
 }
 
-async function renew(uid: string, row: string): Promise<Outcome[]> {
-  const db: Db = await dbAs(uid)
-  const ref = doc(db, 'organizations', ORG, 'operatives', row)
-  // Save 1: the assignment (old certificate URL still on the draft). Save 2: the new certificate URL.
-  return [
-    await outcome(setDoc(ref, qualificationWrite('https://example.test/old.pdf'), { merge: true })),
-    await outcome(setDoc(ref, qualificationWrite('https://example.test/new.pdf'), { merge: true })),
-  ]
+/** The stored row, in the real shape (`serializeOperative`), keyed by the iOS upper-case id. */
+function storedRow(id: string, email: string, linkedUserId: string): Operative {
+  return operative(id, email, linkedUserId, QUAL, 'https://example.test/old.pdf', '2026-05-01T00:00:00Z')
+}
+
+/**
+ * Exactly what `patchOperativeQualifications` sends for a renewal of an existing row: `serializeOperative` for the
+ * qualifications array and `updatedAt`, and `operativeQualificationPatch` field-path writes for the maps (the new
+ * key set, the old spelling deleted).
+ */
+function renewalUpdate(db: Db, row: Operative) {
+  const draft = operative(row.id, row.email, row.linkedUserId || '', QUAL.toLowerCase(), 'https://example.test/new.pdf', '2029-05-01T00:00:00Z')
+  const patch = operativeQualificationPatch(row, draft)
+  const payload = serializeOperative({ ...row, ...draft, qualifications: patch.qualifications, updatedAt: new Date() }, { currencyCode: 'GBP' })
+  const more: unknown[] = []
+  for (const write of patch.mapWrites) {
+    more.push(new FieldPath(write.field, write.key), 'delete' in write ? deleteField() : write.value instanceof Date ? Timestamp.fromDate(write.value) : write.value)
+  }
+  more.push('updatedAt', payload.updatedAt)
+  return updateDoc(doc(db, 'organizations', ORG, 'operatives', row.id), 'qualifications', payload.qualifications, ...more)
+}
+
+async function renew(uid: string, row: Operative): Promise<Outcome> {
+  return outcome(renewalUpdate(await dbAs(uid), row))
 }
 
 test.before(async () => {
@@ -113,12 +143,9 @@ test.before(async () => {
       assignedManagerUserIds: [OPM], employmentType: 'self_employed', payBasis: 'day', dayRate: 200,
       permissions: { operativeMode: true },
     })
-    const stored = {
-      ...qualificationWrite('https://example.test/old.pdf'),
-      firstName: 'Op', lastName: 'One', email: EMAILS[OP], linkedUserId: OP, isActive: true, organizationId: ORG,
+    for (const row of [storedRow(ROW, EMAILS[OP], OP), storedRow(MGR_ROW, EMAILS[MGR], MGR), storedRow(OTHER_ROW, 'someone@test.com', '')]) {
+      await setDoc(doc(db, 'organizations', ORG, 'operatives', row.id), serializeOperative(row, { currencyCode: 'GBP' }))
     }
-    await setDoc(doc(db, 'organizations', ORG, 'operatives', ROW), stored)
-    await setDoc(doc(db, 'organizations', ORG, 'operatives', MGR_ROW), { ...stored, email: EMAILS[MGR], linkedUserId: MGR })
   })
 })
 
@@ -126,16 +153,43 @@ test.after(async () => {
   await env.cleanup()
 })
 
+// Each renewal runs on a fresh copy of the row (the stored shape), so every case starts from the old certificate.
+async function reset(row: Operative) {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG, 'operatives', row.id), serializeOperative(row, { currencyCode: 'GBP' }))
+  })
+}
+
 for (const who of [SA, ADMIN, OPM]) {
   test(`${who}: renewing a certificate on an operative's row answers (allowed, never a hang)`, async () => {
-    assert.deepEqual(await renew(who, ROW), ['allowed', 'allowed'])
+    const row = storedRow(ROW, EMAILS[OP], OP)
+    await reset(row)
+    assert.equal(await renew(who, row), 'allowed')
   })
 }
 
 test('an operative: renewing their own certificate answers (allowed, never a hang)', async () => {
-  assert.deepEqual(await renew(OP, ROW), ['allowed', 'allowed'])
+  const row = storedRow(ROW, EMAILS[OP], OP)
+  await reset(row)
+  assert.equal(await renew(OP, row), 'allowed')
 })
 
 test('a manager: renewing their own certificate on their own row answers (allowed, never a hang)', async () => {
-  assert.deepEqual(await renew(MGR, MGR_ROW), ['allowed', 'allowed'])
+  const row = storedRow(MGR_ROW, EMAILS[MGR], MGR)
+  await reset(row)
+  assert.equal(await renew(MGR, row), 'allowed')
+})
+
+test('an operative may not edit someone else\'s row', async () => {
+  const row = storedRow(OTHER_ROW, 'someone@test.com', '')
+  await reset(row)
+  assert.equal(await renew(OP, row), 'denied')
+})
+
+test('an operative may not change a non-qualification key on their own row', async () => {
+  const row = storedRow(ROW, EMAILS[OP], OP)
+  await reset(row)
+  const db = await dbAs(OP)
+  assert.equal(await outcome(updateDoc(doc(db, 'organizations', ORG, 'operatives', ROW), { isActive: false })), 'denied')
+  assert.equal(await outcome(updateDoc(doc(db, 'organizations', ORG, 'operatives', ROW), { notes: 'x', qualifications: [] })), 'denied')
 })

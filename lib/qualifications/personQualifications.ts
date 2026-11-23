@@ -98,8 +98,8 @@ function rowWeight(row: Operative): number {
 
 /**
  * The person's qualifications, one per qualification id (without case), from every row of theirs. Rows are read in
- * order — `preferredRowId` first (the row the editor saves to), then active rows, then the rows holding the most —
- * and a qualification's expiry and certificate come from the first row that has them.
+ * order — active rows first (the expiry warnings read only those), then `preferredRowId` (the row the editor saves
+ * to), then the rows holding the most — and a qualification's expiry and certificate come from the first row that has them.
  */
 export function personQualificationRows(input: {
   person: { id: string; email?: string | null }
@@ -108,11 +108,13 @@ export function personQualificationRows(input: {
   preferredRowId?: string | null
 }): PersonQualificationRow[] {
   const preferred = idKey(input.preferredRowId)
+  // Review of #415: active rows first (the expiry warnings read active rows only), so an inactive duplicate's date
+  // never wins over an active row's; then the row the editor saves to; then the row holding the most.
   const rows = operativeRowsForPerson(input).sort((a, b) => {
+    if ((a.isActive !== false) !== (b.isActive !== false)) return a.isActive !== false ? -1 : 1
     const ap = idKey(a.id) === preferred ? 1 : 0
     const bp = idKey(b.id) === preferred ? 1 : 0
     if (ap !== bp) return bp - ap
-    if (a.isActive !== b.isActive) return a.isActive ? -1 : 1
     return rowWeight(b) - rowWeight(a)
   })
   const out = new Map<string, PersonQualificationRow>()
@@ -135,4 +137,47 @@ export function personQualificationRows(input: {
     }
   }
   return [...out.values()]
+}
+
+export type QualificationMapField = 'qualificationExpiryDates' | 'qualificationCertificateURLs'
+
+/** One field-path change of a qualification map: set `field.key` to `value`, or delete it. */
+export type QualificationMapWrite =
+  | { field: 'qualificationExpiryDates'; key: string; value: Date }
+  | { field: 'qualificationCertificateURLs'; key: string; value: string }
+  | { field: QualificationMapField; key: string; delete: true }
+
+function sameInstant(a: unknown, b: Date): boolean {
+  return a instanceof Date && !Number.isNaN(a.getTime()) && a.getTime() === b.getTime()
+}
+
+/**
+ * The field-path changes that turn the stored qualification maps into the canonical merge result
+ * (`mergeOperativeQualificationWrite`): a key set only when its value changed, a key deleted only when the merge
+ * dropped it (a cleared expiry, a removed certificate, or another spelling of an id the save replaced). A key the
+ * merge kept unchanged is never written (owner issue 16, review of #415: a merge-set of the whole map never
+ * deleted a superseded spelling on the server).
+ */
+export function qualificationMapWrites(input: {
+  storedExpiry?: Record<string, Date>
+  storedUrls?: Record<string, string>
+  mergedExpiry: Record<string, Date>
+  mergedUrls: Record<string, string>
+}): QualificationMapWrite[] {
+  const writes: QualificationMapWrite[] = []
+  const storedExpiry = input.storedExpiry || {}
+  const storedUrls = input.storedUrls || {}
+  for (const [key, value] of Object.entries(input.mergedExpiry)) {
+    if (!sameInstant(storedExpiry[key], value)) writes.push({ field: 'qualificationExpiryDates', key, value })
+  }
+  for (const key of Object.keys(storedExpiry)) {
+    if (!(key in input.mergedExpiry)) writes.push({ field: 'qualificationExpiryDates', key, delete: true })
+  }
+  for (const [key, value] of Object.entries(input.mergedUrls)) {
+    if (storedUrls[key] !== value) writes.push({ field: 'qualificationCertificateURLs', key, value })
+  }
+  for (const key of Object.keys(storedUrls)) {
+    if (!(key in input.mergedUrls)) writes.push({ field: 'qualificationCertificateURLs', key, delete: true })
+  }
+  return writes
 }

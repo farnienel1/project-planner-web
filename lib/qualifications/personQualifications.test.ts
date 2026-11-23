@@ -10,12 +10,12 @@ import {
 } from './personQualifications.ts'
 import {
   QUALIFICATION_SAVE_UNCONFIRMED_MESSAGE,
-  canonicalCertificateUrls,
-  certificateUrlsWithoutReplaced,
   confirmQualificationWrite,
   persistQualificationsThenCertificates,
+  CertificatesNotLinkedError,
 } from './certificateUpload.ts'
-import { mergeOperativeQualificationWrite, removedQualificationCertificateIds } from '../canonical/operativeQualifications.ts'
+import { operativeQualificationPatch } from './qualificationPatch.ts'
+import { qualificationExpiryOperatives } from '../warnings/generateOrgWarnings.ts'
 
 const QUAL = 'A1B2C3D4-0000-4000-8000-000000000001'
 
@@ -172,42 +172,123 @@ test('issue 16: the save does not hang — a stuck assignment write rejects and 
   assert.equal(uploaded, 0)
 })
 
-test('issue 16: a renewed certificate supersedes the old one in the stored map (iOS upper-case key too)', async () => {
-  let saved: Record<string, string> | null = null
-  await persistQualificationsThenCertificates({
-    pending: { [QUAL.toLowerCase()]: { name: 'new.pdf', type: 'application/pdf', size: 1000 } },
-    existingUrls: { [QUAL]: 'https://files.test/old.pdf' },
-    saveAssignment: async () => {},
-    uploadOne: async () => 'https://files.test/new.pdf',
-    saveCertificateUrls: async (urls) => {
-      saved = urls
-    },
+test('issue 16: a renewed certificate is written as a field-path set of the new key and a delete of the old spelling', () => {
+  const lower = QUAL.toLowerCase()
+  const stored = row('op1', {
+    email: 'pat@test.com',
+    qualifications: [qual(QUAL, 'CSCS'), qual('q2', 'IPAF')],
+    qualificationExpiryDates: { [QUAL]: new Date('2026-05-01T00:00:00Z'), q2: new Date('2027-01-01T00:00:00Z') },
+    qualificationCertificateURLs: { [QUAL]: 'https://files.test/old.pdf', q2: 'https://files.test/ipaf.pdf' },
   })
-  const qualifications = [{ id: QUAL.toLowerCase(), name: 'CSCS' }]
-  const urls = canonicalCertificateUrls(qualifications, saved!)
-  const merged = mergeOperativeQualificationWrite({
-    previous: {
-      qualifications,
-      qualificationCertificateURLs: certificateUrlsWithoutReplaced({ [QUAL]: 'https://files.test/old.pdf', other: 'https://files.test/x.pdf' }, urls),
-    },
-    next: {
-      qualifications,
-      qualificationCertificateURLs: urls,
-      removedCertificateIds: removedQualificationCertificateIds({ [QUAL]: 'https://files.test/old.pdf' }, urls, [QUAL.toLowerCase()]),
-    },
+  // The editor's draft after the renewal: the new URL and new date under the id the draft holds (lower case);
+  // IPAF untouched.
+  const draft = row('op1', {
+    email: 'pat@test.com',
+    qualifications: [qual(lower, 'CSCS'), qual('q2', 'IPAF')],
+    qualificationExpiryDates: { [lower]: new Date('2029-05-01T00:00:00Z'), q2: new Date('2027-01-01T00:00:00Z') },
+    qualificationCertificateURLs: { [lower]: 'https://files.test/new.pdf', q2: 'https://files.test/ipaf.pdf' },
   })
-  // The web reader (exact key first) opens the new file; the old object is never deleted (§24, a new {uid}_{ms} name).
-  assert.equal(merged.qualificationCertificateURLs[QUAL.toLowerCase()], 'https://files.test/new.pdf')
-  assert.equal(merged.qualificationCertificateURLs[QUAL], undefined, 'the old spelling no longer opens the old file')
-  assert.equal(merged.qualificationCertificateURLs.other, 'https://files.test/x.pdf', 'other certificates are kept')
+  const patch = operativeQualificationPatch(stored, draft)
+  const byKey = (field: string) =>
+    patch.mapWrites
+      .filter((w) => w.field === field)
+      .map((w) => ('delete' in w ? `-${w.key}` : `${w.key}=${w.value instanceof Date ? w.value.toISOString() : w.value}`))
+      .sort()
+  assert.deepEqual(byKey('qualificationCertificateURLs'), [`-${QUAL}`, `${lower}=https://files.test/new.pdf`].sort())
+  assert.deepEqual(byKey('qualificationExpiryDates'), [`-${QUAL}`, `${lower}=2029-05-01T00:00:00.000Z`].sort())
+  // The untouched qualification is not written at all.
+  assert.ok(!patch.mapWrites.some((w) => w.key === 'q2'))
+  assert.equal(patch.qualificationCertificateURLs[lower], 'https://files.test/new.pdf')
+  assert.equal(patch.qualificationCertificateURLs[QUAL], undefined)
 })
 
-test('issue 16: every wait in the save is bounded (store write, upload stall, no re-upload after a time-out)', () => {
+test('issue 16: clearing an expiry and removing a certificate delete the stored keys', () => {
+  const stored = row('op1', {
+    qualifications: [qual(QUAL, 'CSCS')],
+    qualificationExpiryDates: { [QUAL]: new Date('2026-05-01T00:00:00Z') },
+    qualificationCertificateURLs: { [QUAL]: 'https://files.test/old.pdf' },
+  })
+  const draft = row('op1', { qualifications: [qual(QUAL, 'CSCS')], qualificationExpiryDates: {}, qualificationCertificateURLs: {} })
+  const writes = operativeQualificationPatch(stored, draft).mapWrites
+  assert.deepEqual(
+    writes.map((w) => `${w.field}:${'delete' in w ? 'delete' : 'set'}:${w.key}`).sort(),
+    [`qualificationCertificateURLs:delete:${QUAL}`, `qualificationExpiryDates:delete:${QUAL}`]
+  )
+  // Nothing changed → nothing written to the maps.
+  assert.deepEqual(operativeQualificationPatch(stored, stored).mapWrites, [])
+})
+
+test('issue 16: the store writes the maps with updateDoc field paths (deleteField for removals), bounded', () => {
   const store = readFileSync(new URL('../stores/operativeStore.ts', import.meta.url), 'utf8')
   const storage = readFileSync(new URL('../firebase/storageUtils.ts', import.meta.url), 'utf8')
   const fn = store.slice(store.indexOf('patchOperativeQualifications: async'), store.indexOf('saveManager: async'))
-  assert.match(fn, /await confirmQualificationWrite\(\s*setDoc\(/)
+  assert.match(fn, /operativeQualificationPatch\(existing, operative\)/)
+  assert.match(fn, /new FieldPath\(write\.field, write\.key\)/)
+  assert.match(fn, /'delete' in write \? deleteField\(\)/)
+  assert.match(fn, /await confirmQualificationWrite\(updateDoc\(ref, 'qualifications'/)
+  assert.doesNotMatch(fn, /qualificationExpiryDates: payload\.qualificationExpiryDates/)
   assert.match(storage, /export const UPLOAD_STALL_MS = 60_000/)
   assert.match(storage, /cancel\(UPLOAD_STALLED_MESSAGE\)/)
   assert.match(storage, /isStoragePermissionError\(first\) \|\| isTimeoutError\(first\)/)
+})
+
+test('issue 16: a certificate that uploaded but whose link was not saved is reported with its URL (no second upload)', async () => {
+  let uploads = 0
+  const attempt = persistQualificationsThenCertificates({
+    pending: { [QUAL]: { name: 'new.pdf', type: 'application/pdf', size: 1000 } },
+    existingUrls: { q2: 'https://files.test/ipaf.pdf' },
+    saveAssignment: async () => {},
+    uploadOne: async () => {
+      uploads += 1
+      return 'https://files.test/new.pdf'
+    },
+    saveCertificateUrls: () => confirmQualificationWrite(new Promise<void>(() => {}), 20),
+  })
+  await assert.rejects(attempt, (error: unknown) => {
+    assert.ok(error instanceof CertificatesNotLinkedError)
+    assert.deepEqual(error.uploadedIds, [QUAL])
+    assert.equal(error.certificateUrls[QUAL], 'https://files.test/new.pdf')
+    assert.equal(error.certificateUrls.q2, 'https://files.test/ipaf.pdf')
+    return true
+  })
+  // The retry (the editor dropped the uploaded file from the queue): nothing pending, so nothing is uploaded again.
+  await persistQualificationsThenCertificates({
+    pending: {},
+    existingUrls: { [QUAL]: 'https://files.test/new.pdf' },
+    saveAssignment: async () => {},
+    uploadOne: async () => {
+      uploads += 1
+      return 'x'
+    },
+    saveCertificateUrls: async () => {},
+  })
+  assert.equal(uploads, 1)
+  const editor = readFileSync(new URL('../../components/qualifications/OperativeQualificationsEditor.tsx', import.meta.url), 'utf8')
+  assert.match(editor, /err instanceof CertificatesNotLinkedError/)
+  assert.match(editor, /for \(const uploadedId of err\.uploadedIds\) delete next\[uploadedId\]/)
+})
+
+// ── Review of #415: the expiry warnings and the profile agree ───────────────────────────────────────────────────────
+
+test('review #415: the expiry warnings read the expiry without case, as the profile page does', () => {
+  const op = row('op1', {
+    email: 'pat@test.com',
+    qualifications: [qual(QUAL.toLowerCase(), 'CSCS')],
+    qualificationExpiryDates: { [QUAL]: new Date('2026-12-01T00:00:00Z') },
+  })
+  const [input] = qualificationExpiryOperatives([op])
+  assert.deepEqual(input.expiries, [{ qualificationId: QUAL.toLowerCase(), name: 'CSCS', expiryIso: '2026-12-01T00:00:00.000Z' }])
+})
+
+test('review #415: an inactive duplicate row\'s date never wins over an active row\'s on the profile', () => {
+  const rows = personQualificationRows({
+    person: { id: 'u1', email: 'pat@test.com' },
+    operatives: [
+      row('old', { email: 'pat@test.com', isActive: false, qualifications: [qual(QUAL, 'CSCS')], qualificationExpiryDates: { [QUAL]: new Date('2020-01-01T00:00:00Z') } }),
+      row('live', { email: 'pat@test.com', qualifications: [qual(QUAL, 'CSCS')], qualificationExpiryDates: { [QUAL]: new Date('2027-01-01T00:00:00Z') } }),
+    ],
+    roster: [{ id: 'u1', email: 'pat@test.com' }],
+    preferredRowId: 'old',
+  })
+  assert.equal(rows[0].expiry?.toISOString(), '2027-01-01T00:00:00.000Z')
 })

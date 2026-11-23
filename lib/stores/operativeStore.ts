@@ -7,7 +7,10 @@ import {
   getDoc,
   setDoc,
   deleteDoc,
+  deleteField,
   doc,
+  FieldPath,
+  updateDoc,
   limit,
   query,
   serverTimestamp,
@@ -24,10 +27,6 @@ import { filterRealManagers, isPlaceholderManager } from '@/lib/staff/managerRos
 import { forgetOrgCollectionDoc, subscribeOrgCollectionLoaded } from '@/lib/firebase/subscribeOrgCollection'
 import { liveResultStillCurrent } from '@/lib/firebase/liveResult'
 import { applyExclusiveRateFields } from '@/lib/firebase/userPayload'
-import {
-  mergeOperativeQualificationWrite,
-  removedQualificationCertificateIds,
-} from '@/lib/canonical/operativeQualifications'
 import { parseManager, parseOperative, serializeManager, serializeOperative } from '@/lib/ios-parity/converters'
 import { currentOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
 import { readStoredRates } from '@/lib/timesheets/payBasis'
@@ -47,7 +46,9 @@ async function countBookingsUnder(organizationId: string, id: string): Promise<n
   }
 }
 import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
-import { certificateUrlsWithoutReplaced, confirmQualificationWrite } from '@/lib/qualifications/certificateUpload'
+import { confirmQualificationWrite } from '@/lib/qualifications/certificateUpload'
+import { operativeQualificationPatch } from '@/lib/qualifications/qualificationPatch'
+import { asTimestamp } from '@/lib/ios-parity/firestoreCodec'
 import {
   noteOperativeRows,
   notePayOperativesOverlaid,
@@ -337,66 +338,39 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
     const id = operative.id
     if (!id) throw new Error('Operative profile is missing.')
     const existing = get().operatives.find((row) => row.id === id)
-    const nextIds = (operative.qualifications || []).map((row) => String(row.id || '').trim()).filter(Boolean)
-    const merged = mergeOperativeQualificationWrite({
-      previous: {
-        qualifications: existing?.qualifications,
-        qualificationExpiryDates: existing?.qualificationExpiryDates,
-        // Owner issue 16: a renewed certificate replaces the stored one under every spelling of its id, so no reader
-        // keeps opening the old file (the old Storage object itself is kept, §24).
-        qualificationCertificateURLs: certificateUrlsWithoutReplaced(
-          existing?.qualificationCertificateURLs,
-          operative.qualificationCertificateURLs
-        ),
-      },
-      next: {
-        qualifications: operative.qualifications,
-        qualificationExpiryDates: operative.qualificationExpiryDates,
-        qualificationCertificateURLs: operative.qualificationCertificateURLs,
-        removedCertificateIds: removedQualificationCertificateIds(
-          existing?.qualificationCertificateURLs,
-          operative.qualificationCertificateURLs,
-          nextIds
-        ),
-      },
-    })
+    const patch = operativeQualificationPatch(existing, operative)
     const mergedOperative: Operative = {
       ...existing,
       ...operative,
       id,
       organizationId,
-      qualifications: merged.qualifications.map((row) => ({
-        id: row.id,
-        name: row.name,
-        hasEndDate: row.hasEndDate,
-        createdAt: new Date(row.createdAtIso),
-        updatedAt: new Date(row.updatedAtIso),
-        endDate: row.endDateIso ? new Date(row.endDateIso) : undefined,
-      })),
-      qualificationExpiryDates: Object.fromEntries(
-        Object.entries(merged.qualificationExpiryDates).map(([key, iso]) => [key, new Date(iso)])
-      ),
-      qualificationCertificateURLs: merged.qualificationCertificateURLs,
+      qualifications: patch.qualifications,
+      qualificationExpiryDates: patch.qualificationExpiryDates,
+      qualificationCertificateURLs: patch.qualificationCertificateURLs,
       updatedAt: new Date(),
     }
     const payload = serializeOperative({ ...mergedOperative, organizationId }, { currencyCode: currentOrganizationCurrency() })
+    const ref = doc(db, 'organizations', organizationId, 'operatives', id)
     operativeMutationEpoch += 1
     try {
       // Owner issue 16: never wait for ever — a write the server does not confirm in time is reported, not hung on.
-      await confirmQualificationWrite(
-        setDoc(
-          doc(db, 'organizations', organizationId, 'operatives', id),
-          existing
-            ? {
-                qualifications: payload.qualifications,
-                qualificationExpiryDates: payload.qualificationExpiryDates,
-                qualificationCertificateURLs: payload.qualificationCertificateURLs,
-                updatedAt: payload.updatedAt,
-              }
-            : sharedDocumentPayWrite(payload, { privatePay: privatePayFor(organizationId) }),
-          { merge: true }
+      if (existing) {
+        // Review of #415: the maps are written key by key (field paths), so a superseded spelling of an id, a cleared
+        // expiry and a removed certificate are deleted on the server too; keys this save did not change are not sent.
+        const more: unknown[] = []
+        for (const write of patch.mapWrites) {
+          more.push(
+            new FieldPath(write.field, write.key),
+            'delete' in write ? deleteField() : write.value instanceof Date ? asTimestamp(write.value) : write.value
+          )
+        }
+        more.push('updatedAt', payload.updatedAt)
+        await confirmQualificationWrite(updateDoc(ref, 'qualifications', payload.qualifications, ...more))
+      } else {
+        await confirmQualificationWrite(
+          setDoc(ref, sharedDocumentPayWrite(payload, { privatePay: privatePayFor(organizationId) }), { merge: true })
         )
-      )
+      }
     } finally {
       operativeMutationEpoch += 1
     }

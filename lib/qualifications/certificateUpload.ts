@@ -121,8 +121,30 @@ export async function uploadPendingCertificates<T extends NamedFile>(args: {
 }
 
 /**
+ * Thrown when one or more certificates uploaded but their links were not saved (the link write failed or timed out,
+ * or a later upload failed). Carries the links so the screen keeps them as "uploaded, waiting for the server": the
+ * next Save writes the links and never uploads the same file again (review of #415).
+ */
+export class CertificatesNotLinkedError extends Error {
+  readonly certificateUrls: Record<string, string>
+  readonly uploadedIds: string[]
+  readonly cause: unknown
+  constructor(certificateUrls: Record<string, string>, uploadedIds: string[], cause: unknown) {
+    super(CERTIFICATE_UPLOADED_NOT_LINKED_MESSAGE)
+    this.name = 'CertificatesNotLinkedError'
+    this.certificateUrls = certificateUrls
+    this.uploadedIds = uploadedIds
+    this.cause = cause
+  }
+}
+
+export const CERTIFICATE_UPLOADED_NOT_LINKED_MESSAGE =
+  'The certificate uploaded, but the server has not confirmed it on this profile yet. Press Save again to finish — the file will not be uploaded again.'
+
+/**
  * Persist the assignment first. Certificate upload runs after and must not
- * prevent that write. A failed upload leaves pending files for retry.
+ * prevent that write. A failed upload leaves pending files for retry; files that did upload are reported with
+ * `CertificatesNotLinkedError` so they are never uploaded twice.
  */
 export async function persistQualificationsThenCertificates<T extends NamedFile>(args: {
   pending: Record<string, T>
@@ -136,12 +158,25 @@ export async function persistQualificationsThenCertificates<T extends NamedFile>
   if (Object.keys(args.pending).length === 0) {
     return { certificateUrls: existing }
   }
-  const certificateUrls = await uploadPendingCertificates({
-    pending: args.pending,
-    existingUrls: existing,
-    uploadOne: args.uploadOne,
-  })
-  await args.saveCertificateUrls(certificateUrls)
+  for (const file of Object.values(args.pending)) {
+    const error = qualificationCertificateFileError(file)
+    if (error) throw new Error(error)
+  }
+  const uploaded: Record<string, string> = {}
+  try {
+    for (const [qualificationId, file] of Object.entries(args.pending)) {
+      uploaded[qualificationId] = await args.uploadOne(qualificationId, file)
+    }
+  } catch (error) {
+    if (Object.keys(uploaded).length === 0) throw error
+    throw new CertificatesNotLinkedError(mergeQualificationCertificateUrls(existing, uploaded), Object.keys(uploaded), error)
+  }
+  const certificateUrls = mergeQualificationCertificateUrls(existing, uploaded)
+  try {
+    await args.saveCertificateUrls(certificateUrls)
+  } catch (error) {
+    throw new CertificatesNotLinkedError(certificateUrls, Object.keys(uploaded), error)
+  }
   return { certificateUrls }
 }
 
