@@ -1263,7 +1263,7 @@ UI only, web only (`docs/design/projects-overview-ui/projects-overview-ui-spec.m
 |---|---|---|
 | 23 Nov | **Item 2: the Daily overview Today button has a fixed size** — it keeps the width of "Back to today", so the ‹ › arrows never move. UI only. | done web (#417); iOS n/a |
 | 23 Nov | **Item 4: New site audit job filter** All / Active / Upcoming / Completed with counts, default Active (as iOS), from `worksInTab` / `worksTabCounts` on the organisation day. | done web (#417); iOS already |
-| 23 Nov | **Item 5: New site audit as a step-by-step page** (Job → Details → Photos → Review & save) instead of a dialog, from the Site audit hub and from a job's Site audits page (`…/site-audit/new`); fields, checks and the saved record unchanged (`siteAuditDraftProblem`, `siteAuditOutboxRecord`). Leaving with photos or a typed title asks first ("Leave this audit? Your photos and details will be lost."; browser close / reload asks too). Personal site audits keep their dialog. | done web (#417); iOS n/a |
+| 23 Nov | **Item 5: New site audit as a step-by-step page** (Job → Details → Photos → Review & save) instead of a dialog, from the Site audit hub and from a job's Site audits page (`…/site-audit/new`); fields, checks and the saved record unchanged (`siteAuditDraftProblem`, `siteAuditOutboxRecord`). Leaving with photos or a typed title asks first ("Leave this audit? Your photos and details will be lost."; browser close / reload asks too). Personal site audits keep their dialog. | done web (#417); iOS n/a · leave warning **extended** 23 Nov to every in-app link and the browser's Back (see "23 Nov decisions (site audit, before launch)") |
 | 23 Nov | **Item 31: weekend overtime checked correct** for the organisation's Saturday setting (no pay change), and option 1: a clearer label on a set-window Saturday / Sunday — "Weekend window hrs · 07:30–14:00 counts as a full day" (`weekendCustomHoursDefault`, the working hours in effect that day; "Standard hrs" on a day paid every hour at a multiplier, on weekdays and while the settings load). Figures unchanged. | done web (#417); wording moved to the rulebook (1.73.0, `dailyOverviewStandardHoursLabel`); iOS open (`DailyOverviewView.swift:652`, hand-off v1.73.0) |
 
 ## UI batch 3 judgement calls (owner to confirm)
@@ -1274,7 +1274,7 @@ UI only, web only (`docs/design/projects-overview-ui/projects-overview-ui-spec.m
 | 23 Nov | Cancel (any step) and the band's "Site audit" back link go to the Site audit hub; "Change job" goes back to the job step. | done web (#417), owner to confirm |
 | 23 Nov | New wording: step names "Job / Details / Photos / Review & save", "Change job", "Next: review", "Review", the summary labels, the audit date on Review as "23 Nov 2026", "You can leave this page — the audit keeps uploading…" (was "You can close this"), "You can't create site audits." on a New site audit link opened without the permission. | done web (#417), owner to confirm |
 | 23 Nov | The new audit's date now defaults to today in the organisation's time zone (was the browser's day); stored as before (yyyy-MM-dd). | done web (#417) |
-| 23 Nov | The New site audit job list is not narrowed by `visibleJobs` (the hub's Projects / Small works browse lists aren't either). Narrowing would hide, for operatives with Site audit on, every job they have no booking, task or deadline on and any job hidden from them (`hiddenOperativeUserIds`) — admins and managers would see no change. Owner to decide. | question |
+| 23 Nov | The New site audit job list is not narrowed by `visibleJobs` (the hub's Projects / Small works browse lists aren't either). Narrowing would hide, for operatives with Site audit on, every job they have no booking, task or deadline on and any job hidden from them (`hiddenOperativeUserIds`) — admins and managers would see no change. Owner to decide. | **answered 23 Nov: narrow before launch** (see "23 Nov decisions (site audit, before launch)") |
 
 ## 23 Nov decisions (for 1.73)
 
@@ -1292,3 +1292,20 @@ UI only, web only (`docs/design/projects-overview-ui/projects-overview-ui-spec.m
 | 23 Nov | The shared expiry reader also accepts ISO text and epoch milliseconds (web only ever passed Dates; iOS passes stored values through the packed script). A value that is not a date is still no expiry. | done, owner to confirm |
 | 23 Nov | Which `operatives` rows are a person's, placeholder rows left out, is one rulebook rule (`operativeRowsForPerson` over `taskPersonIndex`, `isPlaceholderOperativeRow`), so iOS calls the same rule (review of #418, guardrail 1). | done |
 | 23 Nov | An expiry stored as a number is read as epoch milliseconds; zero, below zero, or a number no date can hold is no expiry (review of #418). | done, owner to confirm |
+
+## 23 Nov decisions (site audit, before launch)
+
+| Date | Decision | Status |
+|---|---|---|
+| 23 Nov | **The leave warning also on in-app navigation.** While a New site audit has unsaved photos or details, every in-app way out asks "Leave this audit? Your photos and details will be lost." first — a click on the sidebar, the job's workspace tabs, the app header or any other in-app link, the command palette, and the browser's Back button; Cancel stays on the page. Never asked once the save has started (the audit keeps uploading and stays listed, `siteAuditAfterSend`). One small reusable guard (`lib/navigation/unsavedChangesGuard.ts`, `useUnsavedChangesGuard`), used only by the New site audit page for now. UI only, no rulebook change. | done web (branch `w-site-audit-guard`, draft PR); iOS n/a (iOS keeps an unsaved audit as a draft on the phone, owner decision 12 Nov item 6) |
+| 23 Nov | **An operative starting a new site audit sees only their own jobs.** The New site audit job step (Site audit hub) lists only the jobs rulebook §21 `visibleJobs` shows them — jobs of their own labour bookings, tasks assigned to them and their deadlines, less jobs hidden from them (`hiddenOperativeUserIds`); a job's own New site audit page refuses any other job ("You can't create site audits for this job."). Admins, super admins and managers: no change (every job). Nothing is listed until their bookings, tasks, deadlines and roster rows have loaded ("Loading jobs…"; a failed load says so, never "No jobs"). Guardrail 3: an operative no longer sees, in that picker, the jobs they have no booking, task or deadline on, nor jobs hidden from them. | done web (branch `w-site-audit-guard`, draft PR); iOS already (`SiteAuditCreateFlowView` → `WorkAccess.visibleWorks` → `CanonicalBusinessEngine.visibleJobs`) |
+
+## Site audit guard judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 23 Nov | The browser's Back button is guarded by one extra history entry for the same page: after leaving the page normally (Cancel, a saved audit, a confirmed link), pressing Back from the next page lands once more on an empty New site audit page before going further back. | done web, owner to confirm |
+| 23 Nov | Confirming Back when the previous page is outside the app (the audit opened in a new tab) may also show the browser's own "Leave site?" box. | known limit |
+| 23 Nov | A legacy user with no level flag (no admin or manager flag or role) is narrowed like the Projects list (`visibleJobs`' third branch: jobs they manage or are booked onto), not treated as a manager. | done (as the Projects list), owner to confirm |
+| 23 Nov | The Site audit hub's Projects / Small works browse lists (viewing audits, not starting one) are still not narrowed for operatives; the job's own Site audits page still shows its "+ New audit" button (the page it opens refuses the job). | follow-up |
+

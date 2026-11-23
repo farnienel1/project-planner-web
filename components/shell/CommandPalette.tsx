@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { MagnifyingGlassIcon } from '@heroicons/react/24/solid'
 import { IconChip } from '@/components/ui/IconChip'
 import { filterPaletteItems, groupPaletteItems, type PaletteItem } from '@/lib/ui/commandPalette'
+import { confirmLeaveIfUnsaved } from '@/lib/navigation/unsavedChangesGuard'
 
 export function CommandPalette({
   open,
@@ -67,6 +68,8 @@ export function CommandPalette({
                     className="flex w-full items-center gap-3 rounded-[14px] px-3 py-2.5 text-left hover:bg-(--blue-t)"
                     onClick={() => {
                       onClose()
+                      // A page with unsaved work (New site audit) asks before leaving (owner decision 23 Nov).
+                      if (!confirmLeaveIfUnsaved()) return
                       router.push(hit.href)
                     }}
                   >
