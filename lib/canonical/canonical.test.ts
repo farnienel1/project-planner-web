@@ -19522,3 +19522,13 @@ test('1.76.0 (b) review of #427: no clock test — what the entry pays against i
   assert.equal(r176bChange(exported), null)
   assert.equal(R112.TIMESHEET_SIGNED_ENTRIES_CHANGED_PERSON_MESSAGE, 'Your line manager changed your price work or expenses — Generate Invoice unlocks after they sign it off again.')
 })
+
+test('1.78.0 sign-off reminder is in the packed rulebook (functions and iOS call it; full cases in timesheetSignOffReminder.test.ts)', () => {
+  const due = R112.timesheetSignOffReminderDue({
+    invoicing: { paymentRunMode: 'date_ranges', paymentRunDateRanges: [{ startDay: 1, endDay: 15 }, { startDay: 16, endDay: 31 }], paymentDates: [20, 5] },
+    now: zoneMidnight112('2026-12-03', 'Europe/London').getTime() + 8 * 3_600_000,
+    timeZone: 'Europe/London',
+  })
+  assert.deepEqual(due.runs.map((row) => row.paymentDayKey), ['2026-12-05'])
+  assert.equal(R112.notificationDeliversDevicePush(R112.TIMESHEET_SIGNOFF_REMINDER_NOTICE_TYPE), true)
+})

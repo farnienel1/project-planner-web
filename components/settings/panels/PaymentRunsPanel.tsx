@@ -43,6 +43,7 @@ import {
 } from '@/components/settings/primitives'
 import { TimesheetSubmissionSection } from '@/components/settings/TimesheetSubmissionSection'
 import { PayePaydayCard } from '@/components/settings/PayePaydayCard'
+import { LineManagerReminderSection } from '@/components/settings/LineManagerReminderSection'
 import { hasAdminAccess } from '@/lib/permissions'
 import {
   syncedTimesheetSubmission,
@@ -406,8 +407,11 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
 
       <TimesheetSubmissionSection draft={draft} onChange={patch} step={4} />
 
+      {/* Rulebook 1.78.0: the line-manager sign-off reminder, saved by this screen's Save. */}
+      <LineManagerReminderSection draft={draft} onChange={patch} step={5} />
+
       <SectionLabel
-        step={5}
+        step={6}
         label="Note to operatives"
         description="Shown on operative timesheet pages. Add anything specific, e.g. submit price work by Thursday."
       />
@@ -426,7 +430,7 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
       </SettingsFormBody>
 
       {/* Rulebook 1.32.0 §4.5: the PAYE payday, saved by this screen's Save. */}
-      <PayePaydayCard canEdit={hasAdminAccess(user)} step={6} picked={paydayPick} onPick={setPaydayPick} />
+      <PayePaydayCard canEdit={hasAdminAccess(user)} step={7} picked={paydayPick} onPick={setPaydayPick} />
 
       <SaveBar dirty={dirty} hint={settingsSaveBarHint(loadState)}>
         <SaveButton saving={saving} saved={saved} dirty={dirty} onClick={save} />

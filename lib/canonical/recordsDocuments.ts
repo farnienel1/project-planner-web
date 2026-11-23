@@ -1342,6 +1342,8 @@ export const NOTIFICATION_RELATED_ID: Readonly<Record<string, NotificationRelate
   timesheet_bookings_changed: 'none',
   // 1.55.0: identified by deepLinkUserId + dayKey (the pay run's first day); the period page opens the latest version.
   timesheet_revision_to_sign: 'none',
+  // 1.78.0: the payday of the pay run the reminder is about.
+  timesheet_signoff_reminder: 'paymentDayKey',
   line_manager_peer_update: 'holidayBookingOrNone',
   timesheet_submission_reminder: 'paymentDayKey',
   material_order_placed: 'job',

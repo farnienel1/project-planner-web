@@ -1921,3 +1921,37 @@ export { MANAGER_ROW_NOT_LINKED_LABEL } from './unresolvedBookingPeople'
 export { DAY_RATE_OVERTIME_ROUNDED_NOTE, dayRateOvertimeCalcText, liveDayRateOvertimeText, signedDayRateOvertimeText } from './dayRateOvertimeText'
 // 1.66.0 §8: User Timesheets → Awaiting sign-off / Signed off from every stored sheet, however old (owner decision 17 Nov).
 export { timesheetSheetHasActivity, userTimesheetQueue, userTimesheetQueueCounts } from './userTimesheetQueue'
+
+// Rulebook 1.78.0 §8 / §13: the sign-off reminder to line managers before payday.
+export {
+  TIMESHEET_SIGNOFF_REMINDER_DAYS_BEFORE_PAYMENT,
+  TIMESHEET_SIGNOFF_REMINDER_HOUR,
+  TIMESHEET_SIGNOFF_REMINDER_MINUTE,
+  TIMESHEET_SIGNOFF_REMINDER_NOTICE_TITLE,
+  TIMESHEET_SIGNOFF_REMINDER_NOTICE_TYPE,
+  TIMESHEET_SIGNOFF_ESCALATION_DAYS_BEFORE_PAYMENT,
+  TIMESHEET_SIGNOFF_ESCALATION_NOTICE_TITLE,
+  timesheetSignOffEscalationDue,
+  timesheetSignOffEscalationNotice,
+  timesheetSignOffEscalationNoticeId,
+  timesheetSignOffEscalationRecipients,
+  timesheetSignOffReminderDue,
+  timesheetSignOffReminderNotice,
+  timesheetSignOffReminderNoticeId,
+  timesheetSignOffReminderRecipients,
+  timesheetSignOffReminderRosterMember,
+} from './timesheetSignOffReminder'
+export {
+  DEFAULT_LINE_MANAGER_REMINDER_DAYS,
+  LINE_MANAGER_REMINDER_ADMIN_NOTE,
+  LINE_MANAGER_REMINDER_DAYS_LABEL,
+  LINE_MANAGER_REMINDER_DAYS_OPTIONS,
+  LINE_MANAGER_REMINDER_HELP,
+  LINE_MANAGER_REMINDER_HOUR,
+  LINE_MANAGER_REMINDER_LABEL,
+  LINE_MANAGER_REMINDER_MINUTE,
+  lineManagerReminderDaysValidationError,
+  lineManagerReminderSummary,
+  lineManagerReminderWriteFields,
+  parseLineManagerReminderDays,
+} from './organizationSettings'

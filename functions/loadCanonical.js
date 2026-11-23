@@ -28,4 +28,9 @@ if (typeof canonical.overtimeReportIntegrity !== 'function' || typeof canonical.
   throw new Error('packed rulebook missing report check helpers (run npm run build:canonical)')
 }
 
+// Rulebook 1.78.0: the sign-off reminder (timesheetSignOffReminder.js) needs its rule.
+if (typeof canonical.timesheetSignOffReminderDue !== 'function' || typeof canonical.timesheetSignOffReminderRecipients !== 'function' || typeof canonical.timesheetSignOffEscalationRecipients !== 'function') {
+  throw new Error('packed rulebook missing timesheet sign-off reminder helpers (run npm run build:canonical)')
+}
+
 module.exports = canonical
