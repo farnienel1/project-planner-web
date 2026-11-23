@@ -84,7 +84,15 @@ function mapWritesFor<T>(input: {
   }
   for (const [k, value] of Object.entries(input.baseline)) {
     if (!input.present(value)) continue
-    if (!input.present(input.draft[k])) drop(k)
+    if (input.present(input.draft[k])) continue
+    drop(k)
+    // A removed certificate also goes under the live row's other spellings of that id (mixed web / iOS keys),
+    // so the stored link cannot come back on the next load.
+    if (input.supersedeLiveSpellings) {
+      for (const liveKey of Object.keys(input.live)) {
+        if (liveKey !== k && key(liveKey) === key(k)) drop(liveKey)
+      }
+    }
   }
   if (input.supersedeLiveSpellings) {
     for (const setKey of setKeys) {

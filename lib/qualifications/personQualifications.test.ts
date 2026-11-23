@@ -215,6 +215,18 @@ test('issue 16: clearing an expiry and removing a certificate delete only the ke
   assert.equal(unchanged.qualificationsChanged, false)
 })
 
+test('review #415: removing a certificate stored under another spelling of the id deletes that stored key too', () => {
+  const upper = QUAL.toUpperCase()
+  const stored = row('op1', {
+    qualifications: [qual(QUAL, 'CSCS')],
+    qualificationCertificateURLs: { [upper]: 'https://files.test/old.pdf' },
+  })
+  const draft = row('op1', { qualifications: [qual(QUAL, 'CSCS')], qualificationCertificateURLs: {} })
+  const patch = operativeQualificationPatch({ baseline: stored, draft, live: stored })
+  assert.ok(writesText(patch.mapWrites).includes(`url:-${upper}`))
+  assert.deepEqual(patch.qualificationCertificateURLs, {})
+})
+
 test('review #415: an expiry or certificate another device added after the editor loaded survives the save', () => {
   const loaded = row('op1', { qualifications: [qual(QUAL, 'CSCS'), qual('q2', 'IPAF')] })
   const live = row('op1', {
