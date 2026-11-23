@@ -15,7 +15,9 @@ import {
   BOOKING_TOMBSTONE_COLLECTION,
   timesheetReviewBookingDelete,
   timesheetReviewBookingEditWrites,
+  timesheetReviewOvertimeStrike,
   type TimesheetReviewBookingCollection,
+  type TimesheetReviewOvertimeStrike,
 } from '@/lib/canonical'
 import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
 import { firestoreUpdateFields, MissingDocumentError } from '@/lib/firebase/partialWrite'
@@ -45,8 +47,10 @@ export async function saveTimesheetReviewBookingEdit(
     startTime: string
     endTime: string
     isBreakRemoved: boolean
-    otMultiplierOverride?: number | null
+    /** The rate box: typed on save, shown when opened, the organisation's that day (`timesheetReviewOvertimeRate`). */
+    overtimeRate?: { typed: unknown; opened: unknown; organizationMultiplier: unknown } | null
     slotWindow?: { start: string; end: string } | null
+    timeZone?: string | null
   }
 ): Promise<boolean> {
   const ref = doc(db, 'organizations', input.organizationId, input.booking.collection, input.booking.bookingId)
@@ -57,8 +61,9 @@ export async function saveTimesheetReviewBookingEdit(
     startTime: input.startTime,
     endTime: input.endTime,
     isBreakRemoved: input.isBreakRemoved,
-    otMultiplierOverride: input.otMultiplierOverride,
+    overtimeRate: input.overtimeRate ?? null,
     slotWindow: input.slotWindow,
+    timeZone: input.timeZone ?? null,
   })
   if (!edit.ok) throw new Error(edit.error)
   if (!edit.changed) return false
@@ -91,5 +96,45 @@ export async function deleteTimesheetReviewBooking(
     tombstoneExists: async () => (await getDoc(tombstoneRef)).exists(),
     bookingExists: async () => (await getDoc(bookingRef)).exists(),
     deleteAlone: () => deleteDoc(bookingRef),
+  })
+}
+
+/**
+ * ✕ on an overtime line (owner answer 23 Nov, #416 Q3): what removing the overtime does to the stored booking (read
+ * fresh). `trim` → confirm, then `applyTimesheetReviewOvertimeTrim`; `delete` → the ordinary delete warning and delete.
+ */
+export async function planTimesheetReviewOvertimeStrike(
+  db: Firestore,
+  input: {
+    organizationId: string
+    booking: { bookingId: string; collection: TimesheetReviewBookingCollection }
+    dayKey: string
+    organization: unknown
+    timeZone: string | null
+    summary: string
+  }
+): Promise<TimesheetReviewOvertimeStrike> {
+  const ref = doc(db, 'organizations', input.organizationId, input.booking.collection, input.booking.bookingId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new MissingDocumentError(ref.path)
+  return timesheetReviewOvertimeStrike({
+    booking: { ...(snap.data() as Record<string, unknown>), id: snap.id, collection: input.booking.collection, dayKey: input.dayKey },
+    organization: input.organization,
+    timeZone: input.timeZone,
+    summary: input.summary,
+  })
+}
+
+/** Writes a confirmed overtime trim: times and slot only, as a partial update with write metadata. */
+export async function applyTimesheetReviewOvertimeTrim(
+  db: Firestore,
+  input: { organizationId: string; userId: string; strike: Extract<TimesheetReviewOvertimeStrike, { kind: 'trim' }> }
+): Promise<void> {
+  const ref = doc(db, 'organizations', input.organizationId, input.strike.collection, input.strike.bookingId)
+  if (Object.keys(input.strike.set).length === 0 && input.strike.remove.length === 0) return
+  await updateDoc(ref, {
+    ...firestoreUpdateFields({ set: input.strike.set, remove: input.strike.remove }),
+    updatedAt: serverTimestamp(),
+    ...(writeMetadataFields(input.userId, 'web') ?? {}),
   })
 }

@@ -256,6 +256,30 @@ test('1.71.0: only the organisation\'s Super Admin may export', () => {
   assert.equal(canExportCompanyData(null, org), false)
 })
 
+test('1.72.0 review of #416: a download URL inside any text is replaced by its storage path in every file', () => {
+  const note =
+    'see https://firebasestorage.googleapis.com/v0/b/pp.appspot.com/o/organizations%2Fo1%2Ftasks%2FT1%2Fa.pdf?alt=media&token=T and ' +
+    'https://storage.googleapis.com/pp.appspot.com/organizations/o1/tasks/T1/b.pdf?X-Goog-Signature=S for details'
+  const entries = companyExportEntries({
+    organizationId: 'o1',
+    organization: { name: 'Acme Ltd', countryCode: 'GB' },
+    documents: [
+      { collectionPath: 'organizations/o1/tasks', collection: 'tasks', id: 'T1', data: { note, items: [{ comment: note }], meta: { inner: note } } },
+    ],
+    problems: [],
+    includeNotifications: false,
+    exportedAt: new Date('2026-07-01T13:00:00Z'),
+    rulebookVersion: '1.72.0',
+  })
+  const all = Object.values(entries).join('\n')
+  for (const leak of ['firebasestorage', 'token=', 'storage.googleapis.com', 'X-Goog-Signature']) assert.ok(!all.includes(leak), leak)
+  const json = JSON.parse(entries['export.json'])
+  assert.equal(
+    json.collections['organizations/o1/tasks'].T1.note,
+    'see organizations/o1/tasks/T1/a.pdf and organizations/o1/tasks/T1/b.pdf for details'
+  )
+})
+
 // ─── The whole zip ───────────────────────────────────────────────────────────
 
 test('the zip holds one CSV per area, files.csv, export.json and README.txt', () => {

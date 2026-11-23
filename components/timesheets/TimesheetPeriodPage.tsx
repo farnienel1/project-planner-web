@@ -47,7 +47,7 @@ import {
   timesheetPersonIds,
 } from '@/lib/timesheets/timesheetBookingChanges'
 import { BookingsChangedWarning } from '@/components/timesheets/BookingsChangedWarning'
-import { signedTimesheetActions, SIGNED_TIMESHEET_CHANGED_MESSAGE } from '@/lib/canonical'
+import { dayKeyInOrganizationZone, signedTimesheetActions, SIGNED_TIMESHEET_CHANGED_MESSAGE } from '@/lib/canonical'
 import { staffAccountRole } from '@/lib/permissions'
 import {
   SENSITIVE_EXPORT_OPTION_LABEL,
@@ -229,11 +229,13 @@ import {
   withBookingsGate,
   type TimesheetInputsState,
 } from '@/lib/timesheets/timesheetInputs'
-import type { PayrollTimePolicyState } from '@/lib/canonical'
+import type { PayrollTimePolicyState, TimesheetReviewOvertimeStrike } from '@/lib/canonical'
 import { afterPrimaryWrite } from '@/lib/client/afterPrimaryWrite'
 import { db as firestoreDb } from '@/lib/firebase/config'
 import {
+  applyTimesheetReviewOvertimeTrim,
   deleteTimesheetReviewBooking,
+  planTimesheetReviewOvertimeStrike,
   saveTimesheetReviewBookingEdit,
   timesheetLineBooking,
 } from '@/lib/timesheets/timesheetReviewBookingWrite'
@@ -353,6 +355,10 @@ export function TimesheetPeriodPage({
   // Rulebook 1.72.0: the times Edit hours opened with (a Full day with no clock times keeps its slot when unchanged).
   const [hoursInitial, setHoursInitial] = useState<{ start: string; end: string } | null>(null)
   const [removingLine, setRemovingLine] = useState<TimesheetPayrollLineItem | null>(null)
+  // Owner answer 23 Nov (#416 Q3): ✕ on an overtime line trims the booking to its standard part, after this confirm.
+  const [trimmingOvertime, setTrimmingOvertime] = useState<Extract<TimesheetReviewOvertimeStrike, { kind: 'trim' }> | null>(null)
+  // What the overtime rate box showed when Edit hours opened (review of #416: never write a rate nobody changed).
+  const [hoursOtOpened, setHoursOtOpened] = useState('')
   const [reviewNotice, setReviewNotice] = useState<string | null>(null)
   const [editingExtra, setEditingExtra] = useState<{
     type: 'expense' | 'priceWork'
@@ -975,9 +981,9 @@ export function TimesheetPeriodPage({
     setHoursInitial({ start: choice.startTime, end: choice.endTime })
     setHoursBreakRemoved(choice.breakRemoved)
     // 1.46.0: the line's own multiplier (the booking's overtime rate, else the organisation's for that day).
-    setHoursOt(
-      line.isOvertimeLine ? String(line.otMultiplier ?? weekdayOtMultiplier(line.date, linePolicy)) : ''
-    )
+    const openedOt = line.isOvertimeLine ? String(line.otMultiplier ?? weekdayOtMultiplier(line.date, linePolicy)) : ''
+    setHoursOt(openedOt)
+    setHoursOtOpened(openedOt)
     setEditingLineId(line.id)
   }
 
@@ -1016,7 +1022,6 @@ export function TimesheetPeriodPage({
     // sheet back to the person to sign again; scheduling, Daily Overview and the weekly report follow the booking.
     const booking = timesheetLineBooking(row)
     if (!organization?.id || !viewer?.id || !booking) return
-    const rate = typedOvertimeRate(row, hoursOt)
     setBusy(true)
     setError(null)
     void saveTimesheetReviewBookingEdit(firestoreDb, {
@@ -1026,14 +1031,70 @@ export function TimesheetPeriodPage({
       startTime: hoursStart,
       endTime: hoursEnd,
       isBreakRemoved: hoursBreakRemoved,
-      otMultiplierOverride: rate == null ? undefined : rate,
+      // Review of #416: only a rate the reviewer changed is written; back to the organisation's removes a stored one.
+      overtimeRate: row.isOvertimeLine
+        ? { typed: typedOvertimeRate(row, hoursOt), opened: hoursOtOpened, organizationMultiplier: weekdayOtMultiplier(row.date, rowPolicy) }
+        : null,
       slotWindow: hoursInitial,
+      timeZone,
     })
       .then((changed) => {
         setEditingLineId(null)
         if (changed) setReviewNotice(TIMESHEET_REVIEW_BOOKING_SENT_BACK_MESSAGE)
       })
       .catch((err: unknown) => setError(reviewBookingErrorMessage(err)))
+      .finally(() => setBusy(false))
+  }
+
+  // Owner answer 23 Nov (#416 Q3): ✕ on an OVERTIME line removes the overtime only (`timesheetReviewOvertimeStrike`):
+  // the booking is trimmed to its standard part after a confirm; a booking with no standard part falls back to the
+  // delete warning below. ✕ on a standard line is always the delete.
+  const startRemoveLine = (line: TimesheetPayrollLineItem) => {
+    if (!line.isOvertimeLine) {
+      setRemovingLine(line)
+      return
+    }
+    const booking = timesheetLineBooking(line)
+    if (!booking || !organization?.id) return
+    setBusy(true)
+    setError(null)
+    const display = timesheetLineDisplay(line)
+    void planTimesheetReviewOvertimeStrike(firestoreDb, {
+      organizationId: organization.id,
+      booking,
+      dayKey: dayKeyInOrganizationZone(line.date.toISOString(), timeZone),
+      organization: payrollPolicyState ?? {
+        current: payrollPolicy,
+        prior: payrollPolicyPrior,
+        effectiveFrom: payrollPolicyEffectiveFrom,
+        scheduled: null,
+      },
+      timeZone,
+      summary: [abbreviatedDate(line.date, timeZone), display.title].filter(Boolean).join(' · '),
+    })
+      .then((strike) => {
+        if (strike.kind === 'trim') setTrimmingOvertime(strike)
+        else if (strike.kind === 'delete') setRemovingLine(line)
+        else setError(strike.error)
+      })
+      .catch((err: unknown) => setError(reviewBookingErrorMessage(err)))
+      .finally(() => setBusy(false))
+  }
+
+  const confirmTrimOvertime = () => {
+    const strike = trimmingOvertime
+    if (!strike || !organization?.id || !viewer?.id) return
+    setBusy(true)
+    setError(null)
+    void applyTimesheetReviewOvertimeTrim(firestoreDb, { organizationId: organization.id, userId: viewer.id, strike })
+      .then(() => {
+        setTrimmingOvertime(null)
+        setReviewNotice(TIMESHEET_REVIEW_BOOKING_SENT_BACK_MESSAGE)
+      })
+      .catch((err: unknown) => {
+        setTrimmingOvertime(null)
+        setError(reviewBookingErrorMessage(err))
+      })
       .finally(() => setBusy(false))
   }
 
@@ -1592,7 +1653,7 @@ export function TimesheetPeriodPage({
                         line: { ...row.line, isLeave: false },
                       })}
                       onApprove={() => setLineDecision(row.line.id, 'approved')}
-                      onDecline={() => setRemovingLine(row.line)}
+                      onDecline={() => startRemoveLine(row.line)}
                       onEdit={() => openPayrollHoursEditor(row.line)}
                     />
                   )
@@ -1999,6 +2060,26 @@ export function TimesheetPeriodPage({
           onCancel={() => setEditingExtra(null)}
           onSave={saveExtraAmount}
         />
+      ) : null}
+
+      {trimmingOvertime ? (
+        <Modal
+          size="sm"
+          labelledBy="ts-remove-overtime-title"
+          title={trimmingOvertime.title}
+          tile={<IconTile tone="amber" size="sm"><WarnIcon /></IconTile>}
+          footer={
+            <>
+              <PuButton onClick={() => setTrimmingOvertime(null)} disabled={busy}>{trimmingOvertime.cancelLabel}</PuButton>
+              <PuButton variant="primary" onClick={confirmTrimOvertime} disabled={busy}>
+                {trimmingOvertime.confirmLabel}
+              </PuButton>
+            </>
+          }
+        >
+          {trimmingOvertime.summary ? <p style={{ fontWeight: 600 }}>{trimmingOvertime.summary}</p> : null}
+          <p className="pu-sub" style={{ fontSize: 14 }}>{trimmingOvertime.message}</p>
+        </Modal>
       ) : null}
 
       {removingLine ? (() => {

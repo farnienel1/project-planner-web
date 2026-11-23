@@ -22,10 +22,15 @@
 
 import { bookingUpdateWriteFields, managerSiteBookingUpdateWriteFields } from './workDocumentReaders'
 import { bookingTombstoneWriteFields, type BookingTombstoneWriteFields } from './bookingTombstones'
-import { overtimeMultiplierValid, OVERTIME_MULTIPLIER_MESSAGE } from './payeOvertime'
+import {
+  overtimeMultiplierValid,
+  overtimeStrikeOutcome,
+  OVERTIME_MULTIPLIER_MESSAGE,
+  type OvertimeOrganization,
+} from './payeOvertime'
+import { bookingClock } from './bookings'
 import { revisedPayrollLineTimesError } from './timesheetLineEdit'
 import { timesheetLineReviewActionsAllowed } from './timesheetPeriod'
-import { formatClockMinutes } from './engine'
 
 export type TimesheetReviewBookingCollection = 'bookings' | 'managerSiteBookings'
 
@@ -46,7 +51,11 @@ export const TIMESHEET_REVIEW_DELETE_BOOKING_CANCEL_LABEL = 'Go back'
 export const TIMESHEET_REVIEW_DELETE_BOOKING_MESSAGE =
   'This deletes the booking from the schedule, not just from this timesheet. Scheduling, Daily Overview and the weekly report will no longer show it, and the timesheet goes back to the person to review and sign again.'
 export const TIMESHEET_REVIEW_DELETE_OVERTIME_NOTE =
-  'This removes the whole booking, its standard hours included. To remove only the overtime, use ⚙ and change the finish time instead.'
+  'This booking is all overtime (it has no hours inside the working day), so removing the overtime removes the whole booking.'
+export const TIMESHEET_REVIEW_REMOVE_OVERTIME_TITLE = 'Remove the overtime from this booking?'
+export const TIMESHEET_REVIEW_REMOVE_OVERTIME_CONFIRM_LABEL = 'Remove overtime'
+export const TIMESHEET_REVIEW_REMOVE_OVERTIME_MESSAGE =
+  'This changes the booking itself, so scheduling, Daily Overview and the weekly report show the new hours. The standard hours stay; the timesheet then goes back to the person to review and sign again.'
 export const TIMESHEET_REVIEW_DELETE_BOOKING_UNDO_NOTE = 'This cannot be undone. A manager can book it again.'
 export const TIMESHEET_REVIEW_BOOKING_REFUSED_MESSAGE =
   "You can't change this booking from the timesheet. Ask an admin or the job's manager to change it in projects or small works."
@@ -58,13 +67,36 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-function clock(value: unknown): string {
-  const match = text(value).match(/^(\d{1,2}):(\d{2})$/)
-  if (!match) return ''
-  const hours = Number(match[1])
-  const minutes = Number(match[2])
-  if (hours > 23 || minutes > 59) return ''
-  return formatClockMinutes(hours * 60 + minutes)
+/** `HH:mm` from any stored clock shape the booking reader accepts ("7:30", "07:30:00", "7:30 AM", a Timestamp). */
+function clock(value: unknown, timeZone?: string | null): string {
+  return bookingClock(value, timeZone) ?? ''
+}
+
+function rateOf(value: unknown): number | null {
+  const rate = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN
+  return Number.isFinite(rate) && rate > 0 ? rate : null
+}
+
+/**
+ * The overtime rate a reviewer's ⚙ writes. `typed` is the rate box on save, `opened` what the box showed when the editor
+ * opened (the stored override, else the organisation's rate that day), `organizationMultiplier` the organisation's rate
+ * that day, `stored` the booking's stored `otMultiplierOverride`. Unchanged (or blank) → undefined (leave the booking's
+ * rate); set to the organisation's rate → null (remove the override) only when one is stored, else undefined; anything
+ * else → the number. Never writes a rate nobody changed (review of #416).
+ */
+export function timesheetReviewOvertimeRate(input: {
+  typed: unknown
+  opened: unknown
+  organizationMultiplier: unknown
+  stored: unknown
+}): number | null | undefined {
+  const typed = rateOf(input.typed)
+  if (typed == null) return undefined
+  const opened = rateOf(input.opened)
+  if (opened != null && Math.abs(typed - opened) < 1e-9) return undefined
+  const organization = rateOf(input.organizationMultiplier)
+  if (organization != null && Math.abs(typed - organization) < 1e-9) return rateOf(input.stored) != null ? null : undefined
+  return typed
 }
 
 function slotKey(value: unknown): string {
@@ -122,9 +154,13 @@ export function timesheetReviewBookingEditWrites(input: {
   endTime: unknown
   isBreakRemoved: unknown
   otMultiplierOverride?: number | null
+  /** Preferred over `otMultiplierOverride`: resolved with `timesheetReviewOvertimeRate` against the stored booking. */
+  overtimeRate?: { typed: unknown; opened: unknown; organizationMultiplier: unknown } | null
   slotWindow?: { start: string; end: string } | null
+  timeZone?: string | null
 }): TimesheetReviewBookingEdit {
   const booking = input.booking
+  const zone = input.timeZone ?? null
   const bookingId = documentId(booking?.id)
   const collection = booking?.collection
   if (!booking || !bookingId || !isTimesheetReviewBookingCollection(collection)) {
@@ -132,13 +168,16 @@ export function timesheetReviewBookingEditWrites(input: {
   }
   const timesError = revisedPayrollLineTimesError(input.startTime, input.endTime)
   if (timesError) return { ok: false, error: timesError }
-  if (input.otMultiplierOverride != null && !overtimeMultiplierValid(input.otMultiplierOverride)) {
+  const rate = input.overtimeRate
+    ? timesheetReviewOvertimeRate({ ...input.overtimeRate, stored: booking.otMultiplierOverride })
+    : input.otMultiplierOverride
+  if (rate != null && !overtimeMultiplierValid(rate)) {
     return { ok: false, error: OVERTIME_MULTIPLIER_MESSAGE }
   }
   const start = clock(input.startTime)
   const end = clock(input.endTime)
-  const storedStart = clock(booking.workStartTime)
-  const storedEnd = clock(booking.workEndTime)
+  const storedStart = clock(booking.workStartTime, zone)
+  const storedEnd = clock(booking.workEndTime, zone)
   const shownStart = storedStart || clock(input.slotWindow?.start)
   const shownEnd = storedEnd || clock(input.slotWindow?.end)
   const timesChanged = start !== shownStart || end !== shownEnd
@@ -154,8 +193,9 @@ export function timesheetReviewBookingEditWrites(input: {
     workEndTime: timesChanged ? end : undefined,
     isBreakRemoved: nextBreak === storedBreak && booking.isBreakRemoved === undefined ? undefined : nextBreak,
   }
-  if (input.otMultiplierOverride === null) next.otMultiplierOverride = null
-  else if (input.otMultiplierOverride !== undefined) next.otMultiplierOverride = Number(input.otMultiplierOverride)
+  if (rate === null) {
+    if (booking.otMultiplierOverride != null) next.otMultiplierOverride = null
+  } else if (rate !== undefined) next.otMultiplierOverride = Number(rate)
   // Keep the slot group whole when it is written: unchanged group fields are the stored values.
   if (timesChanged || next.isBreakRemoved !== undefined) {
     if (next.timeSlot === undefined && booking.timeSlot !== undefined) next.timeSlot = booking.timeSlot
@@ -230,4 +270,93 @@ export function timesheetLabourLineReviewActions(input: {
   const collection = text(input.line.bookingCollection) || 'bookings'
   const hasBooking = Boolean(documentId(input.line.bookingId)) && isTimesheetReviewBookingCollection(collection)
   return { approve: true, removeBooking: hasBooking, editBooking: hasBooking }
+}
+
+export type TimesheetReviewOvertimeStrike =
+  | {
+      /** ✕ on the overtime line keeps the standard part: a partial update of the booking's times (rate untouched). */
+      kind: 'trim'
+      collection: TimesheetReviewBookingCollection
+      bookingId: string
+      start: string
+      end: string
+      set: Record<string, unknown>
+      remove: string[]
+      title: string
+      summary: string
+      message: string
+      confirmLabel: string
+      cancelLabel: string
+    }
+  | {
+      /** The booking has no standard part (all overtime, or a weekend paid every hour at a multiplier): only a delete. */
+      kind: 'delete'
+    }
+  | { kind: 'refused'; error: string }
+
+/**
+ * ✕ on a booking's OVERTIME line under review (owner answer 23 Nov, #416 Q3): remove the overtime only. The booking is
+ * trimmed to its standard part with the §25 rule (`overtimeStrikeOutcome`): a weekday booking back inside the working
+ * day, a set-window weekend booking to the window. The write is `workStartTime` / `workEndTime` / `timeSlot` only
+ * (`otMultiplierOverride` and the break toggle stay as stored). A booking with no standard part — all overtime, a weekend
+ * paid every hour at a multiplier, or no clock times — can only be removed entirely: `delete` (the app then shows
+ * `timesheetReviewDeleteBookingWarning` with `overtimeLine: true` and deletes with its tombstone). ✕ on the standard line
+ * is always the delete.
+ */
+export function timesheetReviewOvertimeStrike(input: {
+  booking: (TimesheetReviewBookingInput & { dayKey: string; personId?: string | null }) | null | undefined
+  organization: OvertimeOrganization
+  timeZone?: string | null
+  /** "Mon 23 Nov · J-1042 Station Road" (the app builds it in the organisation zone). */
+  summary?: string | null
+}): TimesheetReviewOvertimeStrike {
+  const booking = input.booking
+  const bookingId = documentId(booking?.id)
+  const collection = booking?.collection
+  if (!booking || !bookingId || !isTimesheetReviewBookingCollection(collection)) {
+    return { kind: 'refused', error: TIMESHEET_REVIEW_BOOKING_MISSING_MESSAGE }
+  }
+  const zone = input.timeZone ?? null
+  const outcome = overtimeStrikeOutcome({
+    booking: {
+      id: bookingId,
+      collection,
+      personId: text(booking.personId),
+      dayKey: text(booking.dayKey),
+      timeSlot: text(booking.timeSlot) || undefined,
+      workStartTime: clock(booking.workStartTime, zone) || undefined,
+      workEndTime: clock(booking.workEndTime, zone) || undefined,
+      isBreakRemoved: booking.isBreakRemoved === true,
+    },
+    organization: input.organization,
+    timeZone: zone,
+  })
+  if (outcome.kind !== 'trim') return { kind: 'delete' }
+  const edit = timesheetReviewBookingEditWrites({
+    booking,
+    startTime: outcome.start,
+    endTime: outcome.end,
+    isBreakRemoved: booking.isBreakRemoved === true,
+    timeZone: zone,
+  })
+  if (!edit.ok) return { kind: 'refused', error: edit.error }
+  const keep = new Set(['timeSlot', 'workStartTime', 'workEndTime'])
+  const set: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(edit.set)) if (keep.has(key)) set[key] = value
+  const remove = edit.remove.filter((key) => keep.has(key))
+  const range = `${outcome.start}–${outcome.end}`
+  return {
+    kind: 'trim',
+    collection,
+    bookingId,
+    start: outcome.start,
+    end: outcome.end,
+    set,
+    remove,
+    title: TIMESHEET_REVIEW_REMOVE_OVERTIME_TITLE,
+    summary: [text(input.summary), `New times ${range}`].filter(Boolean).join(' · '),
+    message: TIMESHEET_REVIEW_REMOVE_OVERTIME_MESSAGE,
+    confirmLabel: TIMESHEET_REVIEW_REMOVE_OVERTIME_CONFIRM_LABEL,
+    cancelLabel: TIMESHEET_REVIEW_DELETE_BOOKING_CANCEL_LABEL,
+  }
 }

@@ -78,22 +78,29 @@ export function fileReferencesInDocument(
 
 /**
  * 1.72.0 (owner decision 23 Nov, C): the document with every Cloud Storage download URL (`firebasestorage…` /
- * `storage.googleapis.com`) replaced by its storage path, so nothing in the export opens a file without signing in.
- * Other values are kept as they are.
+ * `storage.googleapis.com`) replaced by its storage path — a whole value or a link inside any text — so nothing in the
+ * export opens a file without signing in. Other text is kept as it is.
  */
+// Every Cloud Storage download URL inside a string, wherever it appears (review of #416: a note or description that
+// quotes a link must not keep its token). Group 1 is the encoded object path.
+const DOWNLOAD_URL_IN_TEXT =
+  /https?:\/\/(?:firebasestorage\.googleapis\.com\/v0\/b\/[^/\s"'<>]+\/o\/|storage\.(?:googleapis|cloud\.google)\.com\/[^/\s"'<>]+\/)([^?#\s"'<>]+)(?:\?[^#\s"'<>]*)?(?:#[^\s"'<>]*)?/gi
+
+/** A string with every Cloud Storage download URL in it replaced by the object's storage path. */
+export function withoutDownloadUrlsInText(value: string): string {
+  return value.replace(DOWNLOAD_URL_IN_TEXT, (_match, path: string) => safeDecode(path))
+}
+
 export function withoutDownloadUrls(data: Record<string, ExportValue>): Record<string, ExportValue> {
-  const strip = (value: ExportValue, name: string): ExportValue => {
-    if (typeof value === 'string') {
-      const ref = storagePathFromValue(value, name)
-      return ref && ref.url ? ref.storagePath : value
-    }
-    if (Array.isArray(value)) return value.map((entry) => strip(entry, name))
+  const strip = (value: ExportValue): ExportValue => {
+    if (typeof value === 'string') return withoutDownloadUrlsInText(value)
+    if (Array.isArray(value)) return value.map((entry) => strip(entry))
     if (value !== null && typeof value === 'object') {
       const out: { [key: string]: ExportValue } = {}
-      for (const [key, inner] of Object.entries(value)) out[key] = strip(inner, key)
+      for (const [key, inner] of Object.entries(value)) out[key] = strip(inner)
       return out
     }
     return value
   }
-  return strip(data, '') as Record<string, ExportValue>
+  return strip(data) as Record<string, ExportValue>
 }
