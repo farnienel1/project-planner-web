@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useSiteAuditStore } from '@/lib/stores/siteAuditStore'
@@ -11,6 +12,7 @@ import {
   SITE_AUDIT_JOB_REFUSED_MESSAGE,
   SITE_AUDIT_JOBS_FAILED_MESSAGE,
   siteAuditJobAllowed,
+  siteAuditJobPageGrant,
 } from '@/lib/siteAudit/siteAuditCreateDraft'
 
 /**
@@ -34,13 +36,27 @@ export function ProjectSiteAuditNewPage({ project, basePath }: { project: Projec
     contextLoaded: jobContext.contextLoaded,
     contextFailed: jobContext.contextFailed,
   })
+  // Once allowed for this job, the form stays (a booking or task change mid-audit never unmounts it).
+  const [grantedJobId, setGrantedJobId] = useState<string | null>(null)
+  const grant = siteAuditJobPageGrant({ grantedJobId, jobId: project.id, allowed })
+  // Kept during render (React's "adjust state when a prop changes" pattern), so the very next check already sees it.
+  if (grant.grantedJobId !== grantedJobId) setGrantedJobId(grant.grantedJobId)
 
   if (!canCreate) {
     return <p className="py-8 text-center text-sm text-(--ink3)">You can&apos;t create site audits.</p>
   }
-  if (allowed === 'loading') return <p className="py-8 text-center text-sm text-(--ink3)">Loading…</p>
-  if (allowed === 'failed') return <p className="py-8 text-center text-sm text-(--red)">{SITE_AUDIT_JOBS_FAILED_MESSAGE}</p>
-  if (allowed === 'refused') return <p className="py-8 text-center text-sm text-(--ink3)">{SITE_AUDIT_JOB_REFUSED_MESSAGE}</p>
+  if (grant.show === 'loading') return <p className="py-8 text-center text-sm text-(--ink3)">Loading…</p>
+  if (grant.show === 'failed') {
+    return (
+      <div className="py-8 text-center">
+        <p className="text-sm text-(--red)">{SITE_AUDIT_JOBS_FAILED_MESSAGE}</p>
+        <button type="button" onClick={jobContext.retry} className="pu-btn sm mt-3">
+          Retry
+        </button>
+      </div>
+    )
+  }
+  if (grant.show === 'refused') return <p className="py-8 text-center text-sm text-(--ink3)">{SITE_AUDIT_JOB_REFUSED_MESSAGE}</p>
   return (
     <div className="mx-auto max-w-2xl pb-10">
       <h2 className="mb-3 text-lg font-bold text-(--ink)">New site audit</h2>

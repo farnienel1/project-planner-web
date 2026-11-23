@@ -9,6 +9,7 @@ import {
   siteAuditHasUnsavedWork,
   siteAuditJobAllowed,
   siteAuditJobChoice,
+  siteAuditJobPageGrant,
   SITE_AUDIT_JOB_DEFAULT_TAB,
   SITE_AUDIT_JOB_TABS,
   siteAuditDraftProblem,
@@ -203,4 +204,18 @@ test('per-job new site audit: an operative is refused a job they cannot see, all
     'allowed'
   )
   assert.equal(siteAuditJobAllowed({ job: jobsForChoice[0], viewer: operative, context: null, contextLoaded: false }), 'loading')
+})
+
+test('per-job new site audit: once allowed, the form stays for that job (review of #419)', () => {
+  let grant = siteAuditJobPageGrant({ grantedJobId: null, jobId: 'J1', allowed: 'loading' })
+  assert.deepEqual(grant, { grantedJobId: null, show: 'loading' })
+  grant = siteAuditJobPageGrant({ grantedJobId: grant.grantedJobId, jobId: 'J1', allowed: 'allowed' })
+  assert.deepEqual(grant, { grantedJobId: 'J1', show: 'flow' })
+  // A booking or task change, or a listener restart, mid-audit: the form is never unmounted.
+  for (const later of ['loading', 'failed', 'refused'] as const) {
+    assert.equal(siteAuditJobPageGrant({ grantedJobId: 'J1', jobId: 'J1', allowed: later }).show, 'flow')
+  }
+  // Another job (a new URL) starts again.
+  assert.deepEqual(siteAuditJobPageGrant({ grantedJobId: 'J1', jobId: 'J2', allowed: 'refused' }), { grantedJobId: 'J1', show: 'refused' })
+  assert.equal(siteAuditJobPageGrant({ grantedJobId: null, jobId: 'J1', allowed: 'failed' }).show, 'failed')
 })

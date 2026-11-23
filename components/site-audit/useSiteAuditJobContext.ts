@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { seesEveryJob, type JobAccessViewer, type WorksListContext } from '@/lib/canonical'
 import { jobAccessViewer } from '@/lib/access/bookingAccess'
 import { worksListContext } from '@/lib/access/workAccess'
+import { SITE_AUDIT_JOBS_LOAD_TIMEOUT_MS } from '@/lib/siteAudit/siteAuditCreateDraft'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useDeadlineStore } from '@/lib/stores/deadlineStore'
@@ -17,6 +18,8 @@ export type SiteAuditJobContext = {
   /** Everything `visibleJobs` reads for this viewer has loaded (always true for admins and managers). */
   contextLoaded: boolean
   contextFailed: boolean
+  /** Start the reads again after a failure or the 15-second wait (the Retry button). */
+  retry: () => void
 }
 
 /**
@@ -24,7 +27,9 @@ export type SiteAuditJobContext = {
  * (owner decision 23 Nov). Admins, super admins and managers see every job (`seesEveryJob`), so nothing extra is
  * loaded for them. For anyone else it loads, as the Projects list does, their bookings (whole archive), tasks,
  * deadline assignments and the operatives / managers rows, and reports `contextLoaded` only once the bookings listener
- * has a server answer and the other reads have finished — so the page never shows "No jobs" too early.
+ * has a server answer and the other reads have finished — so the page never shows "No jobs" too early. After
+ * `SITE_AUDIT_JOBS_LOAD_TIMEOUT_MS` without that answer it reports `contextFailed` (the page shows the error and Retry)
+ * rather than using rows from the cache, which may be partial and so hide the person's own jobs (review of #419).
  */
 export function useSiteAuditJobContext(): SiteAuditJobContext {
   const { organization, user } = useAuthStore()
@@ -46,11 +51,17 @@ export function useSiteAuditJobContext(): SiteAuditJobContext {
   const assignedProjectIds = useDeadlineStore((state) => state.assignedProjectIds)
   const loadAssignedProjectIds = useDeadlineStore((state) => state.loadAssignedProjectIds)
   const [readsDone, setReadsDone] = useState<string | null>(null)
+  const [attempt, setAttempt] = useState(0)
+  const [timedOutAttempt, setTimedOutAttempt] = useState<string | null>(null)
+  const retry = useCallback(() => setAttempt((n) => n + 1), [])
 
   useEffect(() => {
     if (everyJob || !orgId || !user?.id) return
     let cancelled = false
-    const key = `${orgId}|${user.id}`
+    const key = `${orgId}|${user.id}|${attempt}`
+    const timer = window.setTimeout(() => {
+      if (!cancelled) setTimedOutAttempt(key)
+    }, SITE_AUDIT_JOBS_LOAD_TIMEOUT_MS)
     void loadBookings(orgId, { fullHistory: true })
     // An account with no staff role also sees jobs through its manager schedule bookings (§21); operatives never.
     if (!operativeMode) void loadManagerSiteBookings(orgId, { fullHistory: true })
@@ -64,8 +75,9 @@ export function useSiteAuditJobContext(): SiteAuditJobContext {
     })
     return () => {
       cancelled = true
+      window.clearTimeout(timer)
     }
-  }, [everyJob, operativeMode, orgId, user?.id, loadBookings, loadManagerSiteBookings, loadTasks, loadOperatives, loadManagers, loadAssignedProjectIds])
+  }, [attempt, everyJob, operativeMode, orgId, user?.id, loadBookings, loadManagerSiteBookings, loadTasks, loadOperatives, loadManagers, loadAssignedProjectIds])
 
   const context = useMemo(
     () =>
@@ -82,19 +94,23 @@ export function useSiteAuditJobContext(): SiteAuditJobContext {
     [everyJob, operativeMode, operatives, managers, bookings, managerSiteBookings, tasks, assignedProjectIds]
   )
 
-  if (everyJob) return { viewer, context: null, contextLoaded: true, contextFailed: false }
-  const readsFinished = Boolean(orgId && user?.id && readsDone === `${orgId}|${user.id}`)
+  if (everyJob) return { viewer, context: null, contextLoaded: true, contextFailed: false, retry }
+  const attemptKey = `${orgId}|${user?.id ?? ''}|${attempt}`
+  const readsFinished = Boolean(orgId && user?.id && readsDone === attemptKey)
   const bookingsLoaded = bookingCoverage?.organizationId === orgId && bookingCoverage.fullHistory === true
   const managerBookingsLoaded =
     operativeMode || (managerCoverage?.organizationId === orgId && managerCoverage.fullHistory === true)
+  const loadedNow = readsFinished && bookingsLoaded && managerBookingsLoaded
   const contextFailed =
+    (!loadedNow && timedOutAttempt === attemptKey) ||
     (readsFinished && (tasksLoadedOrgId !== orgId || operativesLoadedOrgId !== orgId)) ||
     (!bookingsLoaded && Boolean(bookingError)) ||
     (!managerBookingsLoaded && Boolean(managerError))
   return {
     viewer,
     context,
-    contextLoaded: readsFinished && bookingsLoaded && managerBookingsLoaded && !contextFailed,
+    contextLoaded: loadedNow && !contextFailed,
     contextFailed,
+    retry,
   }
 }

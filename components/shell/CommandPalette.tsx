@@ -67,9 +67,10 @@ export function CommandPalette({
                     type="button"
                     className="flex w-full items-center gap-3 rounded-[14px] px-3 py-2.5 text-left hover:bg-(--blue-t)"
                     onClick={() => {
-                      onClose()
-                      // A page with unsaved work (New site audit) asks before leaving (owner decision 23 Nov).
+                      // A page with unsaved work (New site audit) asks before leaving (owner decision 23 Nov); Cancel
+                      // keeps the palette open.
                       if (!confirmLeaveIfUnsaved()) return
+                      onClose()
                       router.push(hit.href)
                     }}
                   >

@@ -93,7 +93,7 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated, onChangeJob, 
     return () => window.removeEventListener('beforeunload', warn)
   }, [unsaved, onUnsavedChange])
   useEffect(() => () => onUnsavedChange?.(false), [onUnsavedChange])
-  // Owner decision 23 Nov: every in-app way out (sidebar, job tabs, header links, the browser's Back) asks the same
+  // Owner decision 23 Nov: every in-app link (sidebar, job tabs, header) and the command palette ask the same
   // question while photos or details would be lost; never once the save has started.
   useUnsavedChangesGuard(unsaved, SITE_AUDIT_LEAVE_CONFIRM_MESSAGE)
   const leaveIfConfirmed = (go: () => void) => {

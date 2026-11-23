@@ -1,11 +1,11 @@
 /**
  * Leave-the-page guard for unsaved work (owner decision 23 Nov, site audit before launch). A page with work that would
- * be lost (today only New site audit) registers a guard; every in-app way out asks the same question first:
+ * be lost (today only New site audit) registers a guard; these in-app ways out ask the same question first:
  *   - a click on an in-app link (the sidebar, the job's workspace tabs, the header links, any `<a>` / Next `<Link>`),
  *     caught by `useUnsavedChangesGuard` before Next.js sees it;
  *   - a programmatic navigation that calls `confirmLeaveIfUnsaved()` first (the command palette);
- *   - the browser's back button (`useUnsavedChangesGuard`'s history entry);
  *   - closing the tab or a full reload stays the page's own `beforeunload` (the browser's own wording).
+ * The browser's Back button is not guarded (follow-up).
  * UI only: nothing is written and no business rule is involved.
  */
 

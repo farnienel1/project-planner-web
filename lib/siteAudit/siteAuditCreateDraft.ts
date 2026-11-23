@@ -206,3 +206,22 @@ export function siteAuditJobAllowed(input: {
 
 export const SITE_AUDIT_JOB_REFUSED_MESSAGE = 'You can\'t create site audits for this job.'
 export const SITE_AUDIT_JOBS_FAILED_MESSAGE = 'Your jobs did not finish loading. Check the connection and try again.'
+
+/**
+ * The per-job New site audit page, once it has said "allowed" for a job, keeps showing the form for that job whatever
+ * the access check says later (review of #419): a booking or task change, or a listener restarting mid-audit, must never
+ * unmount the form and lose the photos. Loading / failed / refused only apply before the first grant. Returns the job id
+ * granted so far (the page keeps it in state) and what to show.
+ */
+export function siteAuditJobPageGrant(input: {
+  grantedJobId: string | null
+  jobId: string
+  allowed: 'loading' | 'failed' | 'allowed' | 'refused'
+}): { grantedJobId: string | null; show: 'flow' | 'loading' | 'failed' | 'refused' } {
+  if (input.grantedJobId && input.grantedJobId === input.jobId) return { grantedJobId: input.grantedJobId, show: 'flow' }
+  if (input.allowed === 'allowed') return { grantedJobId: input.jobId, show: 'flow' }
+  return { grantedJobId: input.grantedJobId, show: input.allowed }
+}
+
+/** How long the job list waits for an operative's bookings and tasks before saying it did not load (review of #419). */
+export const SITE_AUDIT_JOBS_LOAD_TIMEOUT_MS = 15_000

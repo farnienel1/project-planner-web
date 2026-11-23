@@ -809,7 +809,12 @@ export function SiteAuditNewScreen() {
             {jobsState === 'loading' ? (
               <p className="py-8 text-center text-sm text-(--ink3)">Loading jobs…</p>
             ) : jobsState === 'failed' ? (
-              <p className="py-8 text-center text-sm text-(--red)">{SITE_AUDIT_JOBS_FAILED_MESSAGE}</p>
+              <div className="py-8 text-center">
+                <p className="text-sm text-(--red)">{SITE_AUDIT_JOBS_FAILED_MESSAGE}</p>
+                <button type="button" onClick={jobContext.retry} className="pu-btn sm mt-3">
+                  Retry
+                </button>
+              </div>
             ) : shown.length === 0 ? (
               <p className="py-8 text-center text-sm text-(--ink3)">No jobs available</p>
             ) : (

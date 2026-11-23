@@ -7,19 +7,15 @@ import {
   registerUnsavedChangesGuard,
 } from '@/lib/navigation/unsavedChangesGuard'
 
-const SENTINEL_KEY = 'ppUnsavedGuard'
-
 /**
- * While `active`, every in-app way out of the page asks `message` first (owner decision 23 Nov, site audit):
+ * While `active`, every in-app link and the command palette ask `message` first (owner decision 23 Nov, site audit):
  *   - a click on an in-app link anywhere on the page — the sidebar, the job's workspace tabs, the header — is caught in
  *     the capture phase on `document`, before Next.js's `<Link>` handler sees it; Cancel keeps the person on the page,
  *     OK lets the click through unchanged;
- *   - the browser's back button: one extra history entry for this same page is added while active, so Back first lands
- *     on this page again (nothing visible changes); the question is asked there, Cancel puts the entry back and OK goes
- *     back for real;
  *   - code that navigates with `router.push` calls `confirmLeaveIfUnsaved()` (the command palette does).
- * Closing the tab or reloading is the page's own `beforeunload`. Nothing is asked while `active` is false (e.g. once a
- * save has started: the audit keeps uploading and stays listed).
+ * Closing the tab or reloading is the page's own `beforeunload`. The browser's Back button is not guarded (follow-up:
+ * a history-entry trick could switch the guard off with no page to go back to, or ask twice). Nothing is asked while
+ * `active` is false (e.g. once a save has started: the audit keeps uploading and stays listed).
  */
 export function useUnsavedChangesGuard(active: boolean, message: string): void {
   useEffect(() => {
@@ -31,7 +27,8 @@ export function useUnsavedChangesGuard(active: boolean, message: string): void {
       const anchor = target?.closest('a')
       if (!anchor) return
       const leaves = linkClickLeavesPage({
-        href: anchor.getAttribute('href') === null ? null : anchor.href,
+        // The attribute as written (an SVG <a> has no string `.href`), resolved against this page inside the check.
+        href: anchor.getAttribute('href'),
         currentHref: window.location.href,
         button: event.button,
         metaKey: event.metaKey,
@@ -45,42 +42,16 @@ export function useUnsavedChangesGuard(active: boolean, message: string): void {
       if (!leaves) return
       const ask = activeUnsavedChangesMessage()
       if (!ask || window.confirm(ask)) return
+      // Cancel: stop the navigation. stopImmediatePropagation also stops every other click listener for this one
+      // click (Next.js's <Link> handler and any onClick on the link), which is intended — the person stays put.
       event.preventDefault()
       event.stopImmediatePropagation()
     }
     document.addEventListener('click', onClick, true)
 
-    let armed = false
-    const arm = () => {
-      if (window.history.state?.[SENTINEL_KEY]) {
-        armed = true
-        return
-      }
-      // Next.js copies its own router state onto an entry pushed this way (no URL change, no navigation).
-      window.history.pushState({ [SENTINEL_KEY]: true }, '')
-      armed = true
-    }
-    arm()
-    const onPopState = (event: PopStateEvent) => {
-      if (!armed) return
-      const state = event.state as Record<string, unknown> | null
-      if (state?.[SENTINEL_KEY]) return
-      // Back was pressed: we are on the page's own entry again.
-      const ask = activeUnsavedChangesMessage()
-      if (!ask || window.confirm(ask)) {
-        armed = false
-        unregister()
-        window.history.back()
-        return
-      }
-      arm()
-    }
-    window.addEventListener('popstate', onPopState, true)
-
     return () => {
       unregister()
       document.removeEventListener('click', onClick, true)
-      window.removeEventListener('popstate', onPopState, true)
     }
   }, [active, message])
 }
