@@ -119,7 +119,9 @@ import { EXPORT_DELIVERY_TAB_ID, exportDeliveryLiveElsewhere, exportDeliveryNoti
 const EXPORT_DELIVERY_CONCURRENCY = 3
 import type { PayrollTimePolicyState } from '@/lib/canonical'
 import { FORMER_PERSON_CHIP, UNRESOLVED_BOOKING_PERSON_CHIP } from '@/lib/canonical'
-import { useFormerPeople } from '@/lib/people/formerPeople'
+import { loadFormerPeople } from '@/lib/people/formerPeople'
+import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
+import type { FormerPerson } from '@/lib/canonical'
 import { SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE, TIMESHEET_LATE_EXTRAS_EXPORT_SKIPPED_MESSAGE, signedTimesheetActions } from '@/lib/canonical'
 
 /** Third review #325: Export left a sheet out because the bookings or pay inputs were still loading. */
@@ -231,7 +233,25 @@ export function TimesheetsScreen({
   }, [organization?.id, loadDelivery])
   // 23 Nov (owner, issue 20 web part): admins' "Unknown person" Exported rows of a deleted person read "Former: <name>"
   // (`formerPersonForId` over `deletedPeople`); a refused or failed read gives none and the rows keep their label.
-  const formerPeople = useFormerPeople(organization?.id, hasAdminAccess(user) && teamTab === 'exported')
+  // Review of #414: read once per organisation, before the first Exported load (a failed read gives []), so the list
+  // loads once. `formerPeopleFor` is the organisation it was read for; the records are read through a ref.
+  const wantsFormerPeople = hasAdminAccess(user) && teamTab === 'exported'
+  const formerPeopleRef = useRef<FormerPerson[]>([])
+  const [formerPeopleFor, setFormerPeopleFor] = useState<string | null>(null)
+  useEffect(() => {
+    const org = organization?.id
+    if (!org || !wantsFormerPeople || formerPeopleFor === org) return
+    let live = true
+    void loadFormerPeople(getFirebaseDb(), org).then((rows) => {
+      if (!live) return
+      formerPeopleRef.current = rows
+      setFormerPeopleFor(org)
+    })
+    return () => {
+      live = false
+    }
+  }, [organization?.id, wantsFormerPeople, formerPeopleFor])
+  const formerPeopleReady = !wantsFormerPeople || (organization?.id != null && formerPeopleFor === organization.id)
   const deliveryHere = useExportDeliveryStore((state) => Boolean(organization?.id && state.live[organization.id]))
   const deliveryNowMs = useExportDeliveryStore((state) => state.nowMs)
   const deliveryElsewhere = exportDeliveryLiveElsewhere(deliveryEntry, EXPORT_DELIVERY_TAB_ID, deliveryNowMs)
@@ -274,6 +294,8 @@ export function TimesheetsScreen({
       }
       setRecordsLoading(true)
       setLoadError(null)
+      // Wait for the former-person records (admins) so the rows load once with their names.
+      if (!formerPeopleReady) return
       try {
         // 17 Nov follow-up (guardrail 3): sheets under any id a listed person goes by; admins also see a sheet whose
         // person is nobody in the organisation, as "Unknown person · …", never dropped.
@@ -287,7 +309,7 @@ export function TimesheetsScreen({
             rosterLoaded: rosterLoadedHere && users.length > 0,
             viewerIsOperative: isOperativeMode(user),
             viewerIsAdmin: hasAdminAccess(user),
-            formerPeople,
+            formerPeople: hasAdminAccess(user) ? formerPeopleRef.current : [],
           })
         )
       } catch {
@@ -327,7 +349,7 @@ export function TimesheetsScreen({
     } finally {
       if (!stale()) setRecordsLoading(false)
     }
-  }, [organization?.id, roster, user, users, timeZone, teamTab, invoicing, loading, rosterLoadedHere, formerPeople])
+  }, [organization?.id, roster, user, users, timeZone, teamTab, invoicing, loading, rosterLoadedHere, formerPeopleReady])
 
   useEffect(() => {
     void reload()

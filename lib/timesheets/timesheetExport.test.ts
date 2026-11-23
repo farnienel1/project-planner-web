@@ -276,7 +276,7 @@ test('1.67.0 review (SF1): an edited day-rate overtime row on the invoice never 
   assert.ok(revised[0].details.endsWith('£300.00'), revised[0].details)
 })
 
-test('1.70.0 (23 Nov): invoice booking lines read as the timesheet screen (timesheetLineDisplay); amounts never change', async () => {
+test('1.70.0 (23 Nov): live invoice booking lines read their slot window (timesheetLineDisplay); amounts never change', async () => {
   const { DEFAULT_PAYROLL_POLICY } = await import('../canonical/organizationSettings.ts')
   const fullDay = {
     id: 'op-b1',
@@ -306,7 +306,10 @@ test('1.70.0 (23 Nov): invoice booking lines read as the timesheet screen (times
   assert.deepEqual(plain.map((line) => line.amount), [200, 125, 200])
   assert.deepEqual(withPolicy.map((line) => line.amount), [200, 125, 200])
   assert.equal(invoiceLinesTotal(withPolicy), 525)
-  assert.deepEqual(withPolicy.map((line) => line.projectName), ['J-1042 · Station Road', 'J-1042 · Station Road', 'Office'])
+  // The title is the stored job name or place; the job number stays in its own column (review of #414: never twice).
+  assert.deepEqual(withPolicy.map((line) => line.projectName), ['Station Road', 'Station Road', 'Office'])
+  assert.deepEqual(withPolicy.map((line) => line.jobNumber), ['J-1042', 'J-1042', '—'])
+  assert.ok(withPolicy[0].description.startsWith('J-1042 Station Road · '))
   // A Full day line reads its window on that day; a custom line keeps its clock times once (no second prefix).
   assert.match(withPolicy[0].details, /^Full day \d{2}:\d{2}–\d{2}:\d{2} · /)
   assert.match(withPolicy[1].details, /^07:00–12:00 · /)

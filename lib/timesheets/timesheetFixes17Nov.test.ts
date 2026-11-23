@@ -143,9 +143,8 @@ test('(a)/(f) re-sign and counter-sign after a booking change: the invoice keeps
   assert.equal(changes(draft, bookings)?.reopened, false)
   const invoice = invoiceLinesForTimesheet({ payroll: { lineItems: screenLines(bookings) } as never, draft, timeZone: tz, extrasMode: 'export', standardDayHours: 8, currencyCode: 'GBP' })
   assert.deepEqual(
-    // Rulebook 1.70.0 §8 (`timesheetLineDisplay`, 23 Nov): the invoice title reads as the timesheet screen.
     invoice.map((line) => line.projectName),
-    ['C646 · 1 Carnaby Street', 'C646 · 1 Carnaby Street', 'C646 · 1 Carnaby Street (Overtime)', 'Price work']
+    ['1 Carnaby Street', '1 Carnaby Street', '1 Carnaby Street (Overtime)', 'Price work']
   )
   assert.ok(invoiceLinesTotal(invoice) > 195 + 2 * 225 - 0.01)
   // (g) the price work row shows its title, never "0h · rate not set".

@@ -208,7 +208,13 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
         await run()
       }
     } catch (err) {
-      setError(linkPersonIdErrorMessage(err, 'Could not link the bookings'))
+      setError(
+        linkPersonIdErrorMessage(
+          err,
+          'Could not link the bookings',
+          'You do not have permission to change this person. Only an admin of this company can link bookings.'
+        )
+      )
     } finally {
       setSaving(false)
     }

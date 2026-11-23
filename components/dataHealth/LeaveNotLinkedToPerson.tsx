@@ -39,6 +39,9 @@ import { createLatestRequest } from '@/lib/dataHealth/latestRequest'
 import { linkPersonIdErrorMessage, linkPersonIdToPerson, loadFiledUnder, loadOrgRoster } from '@/lib/dataHealth/linkPersonId'
 import { leaveLinkTarget } from '@/lib/dataHealth/leaveLinkTarget'
 
+const LEAVE_LINK_PERMISSION_MESSAGE =
+  'You do not have permission to change this person. Only an admin of this company can link leave.'
+
 export function LeaveNotLinkedToPerson({ organizationId }: { organizationId: string }) {
   const { bookings: holidays, loadBookings, loadedOrgId } = useHolidayStore()
   const { operatives, loadOperatives } = useOperativeStore()
@@ -60,6 +63,8 @@ export function LeaveNotLinkedToPerson({ organizationId }: { organizationId: str
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const impactRequest = useRef(createLatestRequest())
+  // Only the open row's roster read may land (review of #414: a slow read for an earlier row never fills this one).
+  const rosterRequest = useRef(createLatestRequest())
 
   useEffect(() => {
     void loadBookings(organizationId)
@@ -103,6 +108,7 @@ export function LeaveNotLinkedToPerson({ organizationId }: { organizationId: str
     setImpact(null)
     setPayAck(false)
     impactRequest.current.clear()
+    rosterRequest.current.clear()
   }
 
   const open = (rowId: string, personId: string) => {
@@ -112,8 +118,17 @@ export function LeaveNotLinkedToPerson({ organizationId }: { organizationId: str
     setPayAck(false)
     setError(null)
     setNotice(null)
+    // Review of #414: the previous row's people list is cleared, so the picker never offers a stale list.
+    setRoster([])
     // Rulebook 1.44.0 §11: every users document of the organisation (never the email fold), read fresh.
-    void loadOrgRoster(organizationId).then(setRoster).catch((err) => setError(linkPersonIdErrorMessage(err, 'Could not read the people list')))
+    const rosterToken = rosterRequest.current.begin(rowId)
+    void loadOrgRoster(organizationId)
+      .then((next) => {
+        if (rosterRequest.current.isCurrent(rosterToken)) setRoster(next)
+      })
+      .catch((err) => {
+        if (rosterRequest.current.isCurrent(rosterToken)) setError(linkPersonIdErrorMessage(err, 'Could not read the people list', LEAVE_LINK_PERMISSION_MESSAGE))
+      })
     const token = impactRequest.current.begin(personId)
     void loadFiledUnder(organizationId, personId).then((filed) => {
       if (impactRequest.current.isCurrent(token)) setImpact(linkBookingPersonImpact(filed))
@@ -147,7 +162,7 @@ export function LeaveNotLinkedToPerson({ organizationId }: { organizationId: str
         await loadUsers(organizationId, { force: true })
       }
     } catch (err) {
-      setError(linkPersonIdErrorMessage(err, 'Could not link the leave'))
+      setError(linkPersonIdErrorMessage(err, 'Could not link the leave', LEAVE_LINK_PERMISSION_MESSAGE))
     } finally {
       setSaving(false)
     }
@@ -225,7 +240,7 @@ export function LeaveNotLinkedToPerson({ organizationId }: { organizationId: str
                 </div>
               ) : (
                 <div>
-                  <button type="button" className="btn sm mt-1.5" onClick={() => open(row.id, row.link.id)}>
+                  <button type="button" className="btn sm mt-1.5" disabled={saving} onClick={() => open(row.id, row.link.id)}>
                     {LINK_BOOKING_PERSON_ACTION}
                   </button>
                 </div>

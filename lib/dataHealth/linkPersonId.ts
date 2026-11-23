@@ -71,7 +71,7 @@ export async function loadFiledUnder(organizationId: string, personId: string): 
       query(org('holidayBookings'), where('operativeId', '==', personId)),
     ]),
     count([
-      query(org('settings'), where(documentId(), '>=', prefix), where(documentId(), '<', `${prefix}`)),
+      query(org('settings'), where(documentId(), '>=', prefix), where(documentId(), '<', `${prefix}\uf8ff`)),
       query(org('settings'), where('userId', '==', personId)),
     ]),
     count([query(org('overtimeRequests'), where('userId', '==', personId))]),
@@ -135,10 +135,8 @@ export async function linkPersonIdToPerson(input: {
   })
 }
 
-/** The same message the Bookings flow shows for a refused write. */
-export function linkPersonIdErrorMessage(err: unknown, fallback: string): string {
-  if (err instanceof Error && /permission/i.test(err.message)) {
-    return 'You do not have permission to change this person. Only an admin of this company can link records to a person.'
-  }
+/** A refused or failed link: `permissionMessage` for a permission refusal, else the error's message, else `fallback`. */
+export function linkPersonIdErrorMessage(err: unknown, fallback: string, permissionMessage: string): string {
+  if (err instanceof Error && /permission/i.test(err.message)) return permissionMessage
   return err instanceof Error ? err.message : fallback
 }

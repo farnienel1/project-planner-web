@@ -229,31 +229,28 @@ export function invoiceLinesForTimesheet({
       const jobNumber = row.source === 'override'
         ? (live?.jobNumber || signed?.jobNumber || '—').trim() || '—'
         : live?.jobNumber || '—'
-      const storedProjectName = live?.projectName || signed?.projectName || ''
-      // Rulebook 1.70.0 §8 (`timesheetLineDisplay`, owner 23 Nov): the line reads as on the timesheet screen — the job
-      // number and name (or the place) as its title, and a Full day / AM / PM line its window. Display only: the amount,
-      // hours and the signed snapshot's stored text never change; a signed line whose stored text the rule cannot read
-      // keeps it as stored.
-      const lineDate = (live?.date || (signed?.date as Date)) as Date
-      const storedDetails = String(live?.details ?? signed?.details ?? '')
-      const display = timesheetLineDisplay(
-        {
-          jobNumber: live?.jobNumber || signed?.jobNumber || '',
-          projectName: storedProjectName,
-          details: storedDetails,
-          dayKey: lineDate ? dayKey(new Date(lineDate), timeZone) : '',
-        },
-        dayPolicyOn && lineDate ? dayPolicyOn(new Date(lineDate)) : null
-      )
-      const projectName = display.title
-      const readSlot = display.times !== '' && display.times !== storedDetails.trim() && !isClockSpanLabel(timesheetLineClockText(storedDetails))
-      const shownDetails = readSlot ? `${display.times} · ${details}` : details
+      const projectName = live?.projectName || signed?.projectName || ''
+      // Rulebook 1.70.0 §8 (`timesheetLineDisplay`, owner 23 Nov): a live Full day / AM / PM line reads its window on
+      // that day ("Full day 07:30–16:00 · …"), as on the timesheet screen. The title stays the stored job name or place
+      // (the job number is already in the invoice's date column). Display only; a signed snapshot line keeps its stored
+      // wording exactly (review of #414), and the amount and hours never change.
+      let shownDetails = details
+      if (live && row.source !== 'override') {
+        const storedDetails = String(live.details ?? '')
+        const display = timesheetLineDisplay(
+          { jobNumber: '', projectName, details: storedDetails, dayKey: dayKey(new Date(live.date), timeZone) },
+          dayPolicyOn ? dayPolicyOn(new Date(live.date)) : null
+        )
+        const readSlot =
+          display.times !== '' && display.times !== storedDetails.trim() && !isClockSpanLabel(timesheetLineClockText(storedDetails))
+        if (readSlot) shownDetails = `${display.times} · ${details}`
+      }
       rows.push({
         date: formatAbbreviatedDayInZone((live?.date || (signed?.date as Date)), timeZone),
         jobNumber,
         projectName,
         details: shownDetails,
-        description: `${projectName} · ${shownDetails}`,
+        description: `${row.source === 'override' ? jobNumber : live?.jobNumber} ${projectName} · ${shownDetails}`,
         amount: row.amount,
         kind: 'labour',
         entryId: row.id,

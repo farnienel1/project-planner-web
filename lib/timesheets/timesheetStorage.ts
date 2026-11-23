@@ -1943,7 +1943,7 @@ export async function loadExportedTimesheetHistory({
 }): Promise<ExportedTimesheetHistoryRow[]> {
   const includeUnresolved = includeUnresolvedAsked && rosterLoaded && (roster?.length ?? 0) > 0
   if (users.length === 0 && !includeUnresolved) return []
-  const cacheKey = `${exportedHistoryCacheKey(organizationId, users)}|${includeUnresolved ? 'u' : ''}|${(roster ?? []).length}|${viewerIsOperative ? 'o' : ''}|${viewerIsAdmin ? 'a' : ''}|f${formerPeople.length}`
+  const cacheKey = `${exportedHistoryCacheKey(organizationId, users)}|${includeUnresolved ? 'u' : ''}|${(roster ?? []).length}|${viewerIsOperative ? 'o' : ''}|${viewerIsAdmin ? 'a' : ''}|${formerPeople.length > 0 ? 'f' : ''}`
   const now = Date.now()
   if (exportedHistoryMemo && exportedHistoryMemo.key === cacheKey && now - exportedHistoryMemo.at < EXPORTED_HISTORY_TTL_MS) {
     return exportedHistoryMemo.rows
