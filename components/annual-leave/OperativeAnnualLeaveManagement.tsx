@@ -12,7 +12,6 @@ import { rulebookPerson } from '@/lib/staff/rulebookPeople'
 import {
   resolvePersonName,
   sortAnnualLeavePeople,
-  bookingMatchesPerson,
   type AnnualLeavePerson,
   type AnnualLeavePersonSort,
 } from '@/lib/annualLeave/annualLeavePerson'
@@ -23,7 +22,7 @@ import {
   notifyHolidayRequestDecisionToUser,
 } from '@/lib/annualLeave/notifyHolidayRequestDecision'
 import { bookingDayCount, daysLabel, formatLeaveRange } from '@/lib/annualLeave/formatLeaveDays'
-import { getDayKindForBookings } from '@/lib/annualLeave/dayStatus'
+import { teamAwayCaption, teamAwayOnDay } from '@/lib/annualLeave/teamAway'
 import type { HolidayBooking } from '@/types'
 import { OperativeAnnualLeaveCalendar } from './OperativeAnnualLeaveCalendar'
 import { AnnualLeaveLegend, LeaveDayCalendar } from './LeaveDayCalendar'
@@ -32,12 +31,6 @@ import { feedback } from '@/lib/feedbackSounds/feedback'
 import { afterPrimaryWrite } from '@/lib/client/afterPrimaryWrite'
 
 type HubTab = 'manage' | 'approved' | 'requests'
-
-function initials(name: string): string {
-  const parts = name.split(/\s+/).filter(Boolean)
-  if (parts.length >= 2) return `${parts[0][0] || ''}${parts[parts.length - 1][0] || ''}`.toUpperCase()
-  return name.slice(0, 2).toUpperCase()
-}
 
 function BookingListRow({
   booking,
@@ -175,19 +168,10 @@ export function OperativeAnnualLeaveManagement({
   // Rulebook 1.53.0 (B7): the region's bank holidays — a bank holiday inside a multi-day record is not a leave day.
   const bankDayKeys = bank.holidays.map((holiday) => holiday.date)
 
-  const awayCaption = (day: Date) => {
-    const names = people
-      .filter((person) => {
-        const rows = teamBookings.filter(
-          (booking) => bookingMatchesPerson(booking, person) && booking.status !== 'rejected'
-        )
-        return getDayKindForBookings(day, rows, bankDayKeys) !== 'none'
-      })
-      .map((person) => initials(person.displayName))
-    if (names.length === 0) return null
-    if (names.length <= 2) return names.join(' ')
-    return `${names[0]} +${names.length - 1}`
-  }
+  // Owner decision 23 Nov (iOS `HolidayView.teamAway(on:)`): approved leave only, via rulebook `leaveDayKind`.
+  const teamAwayNames = (day: Date) =>
+    teamAwayOnDay(day, people, teamBookings, bankDayKeys).map((person) => person.displayName)
+  const awayCaption = (day: Date) => teamAwayCaption(teamAwayNames(day))
 
   const updateStatus = async (booking: HolidayBooking, status: 'approved' | 'rejected', decisionNote?: string) => {
     if (!organization?.id || !user) return
@@ -356,7 +340,7 @@ export function OperativeAnnualLeaveManagement({
 
           <div className="card pad">
             <p className="text-sm font-bold text-slate-900">Who is off</p>
-            <p className="mt-0.5 text-xs text-slate-500">Initials show people with leave on that day.</p>
+            <p className="mt-0.5 text-xs text-slate-500">Initials show people with approved leave on that day.</p>
             <div className="mt-3">
               <LeaveDayCalendar
                 month={awayMonth}
@@ -370,10 +354,11 @@ export function OperativeAnnualLeaveManagement({
                   )
                 }
                 dayCaption={awayCaption}
+                teamAway={teamAwayNames}
               />
             </div>
             <div className="mt-3">
-              <AnnualLeaveLegend />
+              <AnnualLeaveLegend showTwoOrMoreAway />
             </div>
             <p className="mt-3 text-xs leading-relaxed text-slate-500">{bank.sentence}</p>
             {holidayNote ? <p className="mt-2 rounded-xl bg-violet-50 px-3 py-2 text-sm text-violet-900">{holidayNote}</p> : null}
