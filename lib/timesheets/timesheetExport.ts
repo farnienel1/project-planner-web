@@ -7,7 +7,7 @@ import type { TimesheetPayrollSummary } from '@/lib/timesheets/timesheetPayrollC
 import { timesheetLabourDetails } from '@/lib/timesheets/timesheetPayrollCollector'
 import { isClockSpanLabel, orgDayHours, payLineDisplay, roundPennies } from '@/lib/timesheets/payBasis'
 import { signedLabourSlice } from '@/lib/weekly-report/weeklyReportPayroll'
-import { formatAbbreviatedDayInZone, formatStampInZone } from '@/lib/orgTime/zoneTime'
+import { dateFromDayKeyInZone, formatAbbreviatedDayInZone, formatStampInZone } from '@/lib/orgTime/zoneTime'
 import { londonDateParts, dayKey } from '@/lib/ios-parity/londonTime'
 import type { Operative, User } from '@/types'
 import { personRateHistoryIds } from '@/lib/pay/personRateHistoryIds'
@@ -17,7 +17,7 @@ import { parseMultipliedHoursText, timesheetLineClockText } from '@/lib/canonica
 import { signedDayRateOvertimeText } from '@/lib/canonical/dayRateOvertimeText'
 import { timesheetInvoiceRows } from '@/lib/canonical/reportPay'
 import { priceWorkJobNumberText } from '@/lib/canonical/priceWorkJobNumber'
-import { timesheetLineDisplay } from '@/lib/canonical/timesheetLineDisplay'
+import { timesheetLineDisplay, timesheetLineDisplayOrder } from '@/lib/canonical/timesheetLineDisplay'
 import type { OrgPayrollTimePolicy } from '@/lib/canonical/organizationSettings'
 import { emailDocument, emailHeading, emailLink, emailList, emailStrong, emailText } from '@/lib/email/emailTheme'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
@@ -211,9 +211,48 @@ export function invoiceLinesForTimesheet({
     timeZone,
     // Rulebook 1.45.0: the draft is the loaded copy; its entries carry the reader's fingerprints.
     entryFingerprints: draftEntryFingerprints(draft),
+    // Rulebook 1.74.0 (choice 6): no lone £0 standard row of a booking with an overtime line on the invoice.
+    omitEmptyStandardParts: true,
   })
+  // Rulebook 1.74.0 §8 (`timesheetLineDisplayOrder`, owner report 23 Nov): labour rows booking by booking (each booking's
+  // standard row then its overtime row), and a live booking's 0h / £0 standard row is left off when the booking has no
+  // standard part. Display only: the rows are the same rulebook rows and amounts (a hidden row is £0), so the total
+  // is unchanged. Price work and expenses keep their place after the labour rows.
+  const zone = timeZone
+  const labourOrder = timesheetLineDisplayOrder(
+    decided
+      .map((row, index) => ({ row, index }))
+      .filter(({ row }) => row.kind === 'labour')
+      .map(({ row, index }) => {
+        const live = row.line
+        const stored = row.source === 'override' ? (row.stored as Record<string, unknown> | null) : null
+        const date = live?.date ?? (stored?.date as Date | undefined)
+        return {
+          index,
+          id: row.id,
+          bookingId: live?.bookingId ?? (typeof stored?.bookingId === 'string' && stored.bookingId ? stored.bookingId : undefined),
+          bookingCollection: live?.bookingCollection,
+          dayKey: live?.dayKey || (date ? dayKey(new Date(date), zone) : ''),
+          isOvertimeLine: live ? live.isOvertimeLine === true : stored?.isOvertime === true,
+          paidHours: live ? live.paidHours : typeof stored?.paidHours === 'number' ? stored.paidHours : null,
+          amount: row.amount,
+          bookingStartTime: live?.bookingStartTime ?? null,
+          bookingEndTime: live?.bookingEndTime ?? null,
+          details: live ? String(live.details ?? '') : String(stored?.details ?? ''),
+        }
+      }),
+    {
+      // Only a live row is ever left off: a signed snapshot never holds a £0 row (`timesheetInvoiceRows`).
+      effectiveAmount: (line) => (decided[line.index].source === 'override' ? Number.POSITIVE_INFINITY : line.amount ?? 0),
+      day: dayPolicyOn ? (key) => dayPolicyOn(dateFromDayKeyInZone(key, zone)) : undefined,
+    }
+  )
+  const ordered = [
+    ...labourOrder.map((line) => decided[line.index]),
+    ...decided.filter((row) => row.kind !== 'labour'),
+  ]
   const rows: TimesheetInvoiceLine[] = []
-  for (const row of decided) {
+  for (const row of ordered) {
     if (row.kind === 'labour') {
       const live = row.line
       const signed = row.source === 'override' ? (row.stored as unknown as SignedOverrideLine) : null

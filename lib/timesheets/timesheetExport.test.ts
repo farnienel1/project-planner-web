@@ -319,3 +319,50 @@ test('1.70.0 (23 Nov): live invoice booking lines read their slot window (timesh
   // The equation part is unchanged.
   assert.equal(withPolicy[0].details.split(' · ').slice(1).join(' · '), plain[0].details.split(' · ').slice(1).join(' · '))
 })
+
+test('1.74.0: the invoice runs booking by booking and leaves off the £0 standard row of an all-overtime booking; total unchanged', () => {
+  const base = { jobNumber: 'C984', projectName: '71 Broadwick Street', payrollBasis: 'dayRate' as const, dayRate: 250, isPayeDay: false, hasRate: true, standardDayHours: 8.5 }
+  const line = (id: string, day: string, over: Record<string, unknown>) => ({
+    id,
+    date: new Date(`${day}T00:00:00Z`),
+    dayKey: day,
+    bookingId: `op-${id.split('-')[1]}`,
+    bookingCollection: 'bookings',
+    isOvertimeLine: id.endsWith('-ot'),
+    details: '',
+    paidHours: 8.5,
+    amount: 250,
+    ...base,
+    ...over,
+  })
+  const lineItems = [
+    // Sunday 8 Nov 07:30–11:45, every hour at the multiplier: a 0h / £0 standard line and its overtime line.
+    line('op-sun-normal', '2026-11-08', { paidHours: 0, amount: 0, details: '07:30–11:45', bookingStartTime: '07:30', bookingEndTime: '11:45' }),
+    line('op-sun-ot', '2026-11-08', { projectName: '71 Broadwick Street (Overtime)', amount: 239.06, details: '07:30–11:45', otMultiplier: 2, bookingStartTime: '07:30', bookingEndTime: '11:45' }),
+    // 11 Nov: two bookings, as the collector sorted them (both standard lines first).
+    line('op-b-normal', '2026-11-11', { details: '07:30–16:00', bookingStartTime: '07:30', bookingEndTime: '17:00' }),
+    line('op-a-normal', '2026-11-11', { details: '07:00–16:00', bookingStartTime: '07:00', bookingEndTime: '22:00' }),
+    line('op-b-ot', '2026-11-11', { projectName: '71 Broadwick Street (Overtime)', paidHours: 1.5, amount: 44.12, details: '16:00–17:00', otMultiplier: 1.5, bookingStartTime: '07:30', bookingEndTime: '17:00' }),
+    line('op-a-ot', '2026-11-11', { projectName: '71 Broadwick Street (Overtime)', paidHours: 9, amount: 264.71, details: '16:00–22:00', otMultiplier: 1.5, bookingStartTime: '07:00', bookingEndTime: '22:00' }),
+  ]
+  const payroll = { totalHours: 0, overtimeHours: 0, shiftCount: 3, baseAmount: 500, overtimeAmount: 547.89, workAmount: 1047.89, lineItems } as unknown as TimesheetPayrollSummary
+  const rows = invoiceLinesForTimesheet({ payroll, draft: emptyTimesheetDraft(), timeZone: 'Europe/London', extrasMode: 'export', standardDayHours: 8.5 })
+  assert.equal(rows.length, 5)
+  assert.deepEqual(rows.map((row) => row.amount), [239.06, 250, 264.71, 250, 44.12])
+  assert.equal(invoiceLinesTotal(rows), 1047.89)
+  assert.equal(invoiceLinesTotal(rows), Math.round(lineItems.reduce((sum, row) => sum + row.amount, 0) * 100) / 100)
+})
+
+test('1.74.0 (owner answer 23 Nov, choice 6): a declined overtime row and its £0 standard row are both left off the invoice', () => {
+  const base = { jobNumber: 'C984', projectName: '71 Broadwick Street', payrollBasis: 'dayRate' as const, dayRate: 250, isPayeDay: false, hasRate: true, standardDayHours: 8.5, bookingCollection: 'bookings' }
+  const lineItems = [
+    { ...base, id: 'op-sun-normal', bookingId: 'op-sun', date: new Date('2026-11-08T00:00:00Z'), dayKey: '2026-11-08', isOvertimeLine: false, details: '07:30–11:45', paidHours: 0, amount: 0 },
+    { ...base, id: 'op-sun-ot', bookingId: 'op-sun', date: new Date('2026-11-08T00:00:00Z'), dayKey: '2026-11-08', isOvertimeLine: true, details: '07:30–11:45', paidHours: 8.5, amount: 239.06, otMultiplier: 2 },
+    { ...base, id: 'op-mon-normal', bookingId: 'op-mon', date: new Date('2026-11-09T00:00:00Z'), dayKey: '2026-11-09', isOvertimeLine: false, details: '07:00–16:00', paidHours: 8.5, amount: 250 },
+  ]
+  const payroll = { totalHours: 0, overtimeHours: 0, shiftCount: 2, baseAmount: 250, overtimeAmount: 239.06, workAmount: 489.06, lineItems } as unknown as TimesheetPayrollSummary
+  const draft = { ...emptyTimesheetDraft(), managerSignedAt: new Date('2026-11-20T09:00:00Z'), payrollLineReviews: { 'op-sun-ot': { decision: 'declined' as const, revisedAmount: null } } }
+  const rows = invoiceLinesForTimesheet({ payroll, draft, timeZone: 'Europe/London', extrasMode: 'export', standardDayHours: 8.5 })
+  assert.deepEqual(rows.map((row) => row.entryId), ['op-mon-normal'])
+  assert.equal(invoiceLinesTotal(rows), 250)
+})

@@ -556,6 +556,21 @@ function parseOperativeSignedBookings(raw: unknown): TimesheetDraft['operativeSi
     .filter((row) => row.bookingId !== '')
 }
 
+/** `reviewerBookingEdits` with Firestore instants read as epoch ms (the rulebook compares numbers). */
+function reviewerBookingEditsOf(raw: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(raw)) {
+    if (!value || typeof value !== 'object') continue
+    const row = { ...(value as Record<string, unknown>) }
+    if (row.forSignedAtMs != null && typeof row.forSignedAtMs !== 'number') {
+      row.forSignedAtMs = parseSharedFirestoreDate(row.forSignedAtMs)?.getTime() ?? null
+    }
+    delete row.editedAt
+    out[key] = row
+  }
+  return out
+}
+
 export function draftFromFirestoreMap(
   data: Record<string, unknown>,
   options?: { includeSignatures?: boolean; sheetDocId?: string | null; timeZone?: string | null; ownerUserIds?: ReadonlyArray<string> | null }
@@ -573,6 +588,10 @@ export function draftFromFirestoreMap(
     operativeSignedBookings: parseOperativeSignedBookings(data.operativeSignedBookings),
     operativeSignedBookingsAt: parseSharedFirestoreDate(data.operativeSignedBookingsAt) ?? null,
     operativeSignedBookingsSignedAt: parseSharedFirestoreDate(data.operativeSignedBookingsSignedAt) ?? null,
+    // Rulebook 1.74.0: the reviewer's own booking edits (read only; never written by a draft save).
+    ...(data.reviewerBookingEdits && typeof data.reviewerBookingEdits === 'object' && !Array.isArray(data.reviewerBookingEdits)
+      ? { reviewerBookingEdits: reviewerBookingEditsOf(data.reviewerBookingEdits as Record<string, unknown>) }
+      : {}),
     managerSignedAt: status.managerSignedAtMs ? new Date(status.managerSignedAtMs) : null,
     managerSignedByName: status.managerSignedByName || null,
     managerSignedByUserId: status.managerSignedByUserId || null,

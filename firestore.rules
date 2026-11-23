@@ -1757,8 +1757,8 @@ service cloud.firestore {
         }
         function tsIsSubject() {
           return request.auth != null && (
-            (resource != null && 'userId' in resource.data && resource.data.userId == request.auth.uid) ||
-            request.method == 'create' && 'userId' in request.resource.data && request.resource.data.userId == request.auth.uid ||
+            (resource != null && resource.data.get('userId', null) == request.auth.uid) ||
+            request.method == 'create' && request.resource.data.get('userId', null) == request.auth.uid ||
             tsOwn()
           ) || tsUid() is string && tsIdIsCallers(tsUid());
         }
@@ -1792,7 +1792,7 @@ service cloud.firestore {
         function tsOwnerReviewFieldsUnchanged() {
           let written = writtenKeys();
           return tsOwnerLeaves('payrollLineReviews', written) && tsOwnerLeaves('extraEntryReviews', written) &&
-            tsOwnerLeaves('weeklyReportOverride', written) &&
+            tsOwnerLeaves('weeklyReportOverride', written) && !('reviewerBookingEdits' in written) &&
             ((resource != null && (resource.data.get('managerSignedAt', null) is timestamp || resource.data.get('managerSignedAt', null) is number || resource.data.get('approvedAt', null) is timestamp || resource.data.get('approvedAt', null) is number)) ? (
               (!('expenseEntries' in written) || request.resource.data.get('expenseEntries', null) in [null, []] && resource.data.get('expenseEntries', null) in [null, []]) && (!('priceWorkEntries' in written) || request.resource.data.get('priceWorkEntries', null) in [null, []] && resource.data.get('priceWorkEntries', null) in [null, []]) &&
               (!('lateExtras' in written) || !tsExportedIn(resource.data) &&
