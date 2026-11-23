@@ -43,29 +43,6 @@ export function qualificationCertificateFileError(file: NamedFile): string | nul
   return uploadLimitError(file, 'certificate')
 }
 
-/**
- * The stored certificate URLs less every key a save is replacing — the same qualification id in another letter case
- * (iOS stores upper-case UUIDs). Keys the save does not name are kept, so a partial draft never wipes other
- * certificates. Display/merge input only; `mergeOperativeQualificationWrite` still decides the write.
- */
-export function certificateUrlsWithoutReplaced(
-  stored: Record<string, string> | undefined,
-  next: Record<string, string> | undefined
-): Record<string, string> | undefined {
-  if (!stored) return stored
-  const replaced = new Map<string, string>()
-  for (const [key, value] of Object.entries(next || {})) {
-    if (typeof value === 'string' && value.trim()) replaced.set(key.toLowerCase(), key)
-  }
-  const out: Record<string, string> = {}
-  for (const [key, value] of Object.entries(stored)) {
-    const nextKey = replaced.get(key.toLowerCase())
-    if (nextKey !== undefined && nextKey !== key) continue
-    out[key] = value
-  }
-  return out
-}
-
 export function mergeCertificateUrls(
   existing: Record<string, string> | undefined,
   uploaded: Record<string, string>

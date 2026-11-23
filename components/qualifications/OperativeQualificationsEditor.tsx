@@ -58,7 +58,11 @@ export function OperativeQualificationsEditor({
   linked?: LinkedOperative
   templates: Qualification[]
   saving: boolean
-  onSave: (next: LinkedOperative) => Promise<void>
+  /**
+   * `baseline` is the row as this editor loaded it (review of #415): the store writes only what the person changed
+   * against it, so changes another device made meanwhile are kept.
+   */
+  onSave: (next: LinkedOperative, baseline: LinkedOperative | undefined) => Promise<void>
   organizationId: string
   canManageOrg: boolean
   /** Someone else's certificates (Edit User). Off on My Qualifications. */
@@ -71,6 +75,8 @@ export function OperativeQualificationsEditor({
 }) {
   const pv = variant === 'profile'
   const [draft, setDraft] = useState(linked)
+  // The row as loaded: refreshed with the draft whenever nothing is being edited.
+  const [baseline, setBaseline] = useState(linked)
   // `editing` stops a live update replacing the draft; `dirty` (below) is whether it differs from what is saved.
   const [editing, setDirty] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -83,6 +89,7 @@ export function OperativeQualificationsEditor({
   useEffect(() => {
     if (editing) return
     setDraft(linked)
+    setBaseline(linked)
     setPendingFiles({})
     setLocalError(null)
   }, [linked, editing])
@@ -124,7 +131,7 @@ export function OperativeQualificationsEditor({
     setPickerSelected([])
     setLocalError(null)
     try {
-      await onSave(next)
+      await onSave(next, baseline)
       setDirty(false)
     } catch (err: unknown) {
       setLocalError(formatCertificateSaveError(err))
@@ -227,14 +234,14 @@ export function OperativeQualificationsEditor({
       const { certificateUrls } = await persistQualificationsThenCertificates({
         pending: pendingFiles,
         existingUrls: draft.qualificationCertificateURLs,
-        saveAssignment: () => onSave(draft),
+        saveAssignment: () => onSave(draft, baseline),
         uploadOne: async (qualificationId, file) => {
           const prepared = await prepareClientUpload(file, 'certificate')
           if (prepared.error) throw new Error(prepared.error)
           const path = qualificationCertificatePath(organizationId, draft.id, qualificationId, prepared.file.name)
           return uploadFile(path, prepared.file, prepared.file.type)
         },
-        saveCertificateUrls: (urls) => onSave({ ...draft, qualificationCertificateURLs: urls }),
+        saveCertificateUrls: (urls) => onSave({ ...draft, qualificationCertificateURLs: urls }, baseline),
       })
       const next = { ...draft, qualificationCertificateURLs: certificateUrls }
       setDraft(next)

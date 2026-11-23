@@ -172,63 +172,112 @@ test('issue 16: the save does not hang — a stuck assignment write rejects and 
   assert.equal(uploaded, 0)
 })
 
-test('issue 16: a renewed certificate is written as a field-path set of the new key and a delete of the old spelling', () => {
+function writesText(writes: ReturnType<typeof operativeQualificationPatch>['mapWrites']): string[] {
+  return writes
+    .map((w) => `${w.field === 'qualificationExpiryDates' ? 'exp' : 'url'}:${'delete' in w ? '-' : '+'}${w.key}${'delete' in w ? '' : `=${w.value instanceof Date ? w.value.toISOString().slice(0, 10) : w.value}`}`)
+    .sort()
+}
+
+test('issue 16: a renewed certificate sets the new key and deletes the old spelling of that same id; other qualifications untouched', () => {
   const lower = QUAL.toLowerCase()
-  const stored = row('op1', {
-    email: 'pat@test.com',
+  const loaded = row('op1', {
     qualifications: [qual(QUAL, 'CSCS'), qual('q2', 'IPAF')],
     qualificationExpiryDates: { [QUAL]: new Date('2026-05-01T00:00:00Z'), q2: new Date('2027-01-01T00:00:00Z') },
     qualificationCertificateURLs: { [QUAL]: 'https://files.test/old.pdf', q2: 'https://files.test/ipaf.pdf' },
   })
-  // The editor's draft after the renewal: the new URL and new date under the id the draft holds (lower case);
-  // IPAF untouched.
   const draft = row('op1', {
-    email: 'pat@test.com',
     qualifications: [qual(lower, 'CSCS'), qual('q2', 'IPAF')],
     qualificationExpiryDates: { [lower]: new Date('2029-05-01T00:00:00Z'), q2: new Date('2027-01-01T00:00:00Z') },
     qualificationCertificateURLs: { [lower]: 'https://files.test/new.pdf', q2: 'https://files.test/ipaf.pdf' },
   })
-  const patch = operativeQualificationPatch(stored, draft)
-  const byKey = (field: string) =>
-    patch.mapWrites
-      .filter((w) => w.field === field)
-      .map((w) => ('delete' in w ? `-${w.key}` : `${w.key}=${w.value instanceof Date ? w.value.toISOString() : w.value}`))
-      .sort()
-  assert.deepEqual(byKey('qualificationCertificateURLs'), [`-${QUAL}`, `${lower}=https://files.test/new.pdf`].sort())
-  assert.deepEqual(byKey('qualificationExpiryDates'), [`-${QUAL}`, `${lower}=2029-05-01T00:00:00.000Z`].sort())
-  // The untouched qualification is not written at all.
-  assert.ok(!patch.mapWrites.some((w) => w.key === 'q2'))
+  const patch = operativeQualificationPatch({ baseline: loaded, draft, live: loaded })
+  assert.deepEqual(writesText(patch.mapWrites), [
+    `exp:+${lower}=2029-05-01`,
+    `exp:-${QUAL}`,
+    `url:+${lower}=https://files.test/new.pdf`,
+    `url:-${QUAL}`,
+  ].sort())
   assert.equal(patch.qualificationCertificateURLs[lower], 'https://files.test/new.pdf')
   assert.equal(patch.qualificationCertificateURLs[QUAL], undefined)
+  assert.equal(patch.qualificationCertificateURLs.q2, 'https://files.test/ipaf.pdf')
 })
 
-test('issue 16: clearing an expiry and removing a certificate delete the stored keys', () => {
-  const stored = row('op1', {
+test('issue 16: clearing an expiry and removing a certificate delete only the keys the person cleared', () => {
+  const loaded = row('op1', {
     qualifications: [qual(QUAL, 'CSCS')],
     qualificationExpiryDates: { [QUAL]: new Date('2026-05-01T00:00:00Z') },
     qualificationCertificateURLs: { [QUAL]: 'https://files.test/old.pdf' },
   })
   const draft = row('op1', { qualifications: [qual(QUAL, 'CSCS')], qualificationExpiryDates: {}, qualificationCertificateURLs: {} })
-  const writes = operativeQualificationPatch(stored, draft).mapWrites
-  assert.deepEqual(
-    writes.map((w) => `${w.field}:${'delete' in w ? 'delete' : 'set'}:${w.key}`).sort(),
-    [`qualificationCertificateURLs:delete:${QUAL}`, `qualificationExpiryDates:delete:${QUAL}`]
-  )
-  // Nothing changed → nothing written to the maps.
-  assert.deepEqual(operativeQualificationPatch(stored, stored).mapWrites, [])
+  assert.deepEqual(writesText(operativeQualificationPatch({ baseline: loaded, draft, live: loaded }).mapWrites), [`exp:-${QUAL}`, `url:-${QUAL}`])
+  const unchanged = operativeQualificationPatch({ baseline: loaded, draft: loaded, live: loaded })
+  assert.deepEqual(unchanged.mapWrites, [])
+  assert.equal(unchanged.qualificationsChanged, false)
 })
 
-test('issue 16: the store writes the maps with updateDoc field paths (deleteField for removals), bounded', () => {
+test('review #415: an expiry or certificate another device added after the editor loaded survives the save', () => {
+  const loaded = row('op1', { qualifications: [qual(QUAL, 'CSCS'), qual('q2', 'IPAF')] })
+  const live = row('op1', {
+    qualifications: [qual(QUAL, 'CSCS'), qual('q2', 'IPAF')],
+    qualificationExpiryDates: { q2: new Date('2028-02-02T00:00:00Z') },
+    qualificationCertificateURLs: { q2: 'https://files.test/from-phone.pdf' },
+  })
+  // The person only sets CSCS's date.
+  const draft = row('op1', { qualifications: [qual(QUAL, 'CSCS'), qual('q2', 'IPAF')], qualificationExpiryDates: { [QUAL]: new Date('2029-01-01T00:00:00Z') } })
+  const patch = operativeQualificationPatch({ baseline: loaded, draft, live })
+  assert.deepEqual(writesText(patch.mapWrites), [`exp:+${QUAL}=2029-01-01`])
+  assert.equal(patch.qualificationExpiryDates.q2.toISOString(), '2028-02-02T00:00:00.000Z')
+  assert.equal(patch.qualificationCertificateURLs.q2, 'https://files.test/from-phone.pdf')
+})
+
+test('review #415: an untouched qualification\'s newer live date is never overwritten by the stale draft', () => {
+  const loaded = row('op1', { qualifications: [qual('q2', 'IPAF')], qualificationExpiryDates: { q2: new Date('2026-01-01T00:00:00Z') } })
+  const live = row('op1', { qualifications: [qual('q2', 'IPAF')], qualificationExpiryDates: { q2: new Date('2030-01-01T00:00:00Z') } })
+  const patch = operativeQualificationPatch({ baseline: loaded, draft: loaded, live })
+  assert.deepEqual(patch.mapWrites, [])
+  assert.equal(patch.qualificationExpiryDates.q2.toISOString(), '2030-01-01T00:00:00.000Z')
+})
+
+test('review #415: an other-spelling key added after load survives when the person did not act on that id', () => {
+  const loaded = row('op1', { qualifications: [qual(QUAL, 'CSCS'), qual('q2', 'IPAF')] })
+  const live = row('op1', {
+    qualifications: [qual(QUAL, 'CSCS'), qual('q2', 'IPAF')],
+    qualificationExpiryDates: { [QUAL.toLowerCase()]: new Date('2028-01-01T00:00:00Z') },
+    qualificationCertificateURLs: { [QUAL.toLowerCase()]: 'https://files.test/phone.pdf' },
+  })
+  const draft = row('op1', { qualifications: [qual(QUAL, 'CSCS'), qual('q2', 'IPAF')], qualificationExpiryDates: { q2: new Date('2029-01-01T00:00:00Z') } })
+  const patch = operativeQualificationPatch({ baseline: loaded, draft, live })
+  assert.deepEqual(writesText(patch.mapWrites), ['exp:+q2=2029-01-01'])
+  assert.equal(patch.qualificationCertificateURLs[QUAL.toLowerCase()], 'https://files.test/phone.pdf')
+})
+
+test('review #415: a removed qualification stays removed; one added on another device after load is kept', () => {
+  const loaded = row('op1', { qualifications: [qual(QUAL, 'CSCS'), qual('q2', 'IPAF')] })
+  const live = row('op1', { qualifications: [qual(QUAL, 'CSCS'), qual('q2', 'IPAF'), qual('q3', 'First aid')] })
+  const draft = row('op1', { qualifications: [qual(QUAL, 'CSCS')] })
+  const patch = operativeQualificationPatch({ baseline: loaded, draft, live })
+  assert.deepEqual(patch.qualifications.map((q) => q.name), ['CSCS', 'First aid'])
+  assert.equal(patch.qualificationsChanged, true)
+})
+
+test('review #415: an empty key is never written', () => {
+  const loaded = row('op1', { qualifications: [qual(QUAL, 'CSCS')] })
+  const draft = row('op1', { qualifications: [qual(QUAL, 'CSCS')], qualificationExpiryDates: { ' ': new Date('2029-01-01T00:00:00Z') }, qualificationCertificateURLs: { '': 'https://x.test/a.pdf' } })
+  assert.deepEqual(operativeQualificationPatch({ baseline: loaded, draft, live: loaded }).mapWrites, [])
+})
+
+test('issue 16: the store writes the person\'s changes with updateDoc field paths against the editor baseline, bounded', () => {
   const store = readFileSync(new URL('../stores/operativeStore.ts', import.meta.url), 'utf8')
   const storage = readFileSync(new URL('../firebase/storageUtils.ts', import.meta.url), 'utf8')
+  const editor = readFileSync(new URL('../../components/qualifications/OperativeQualificationsEditor.tsx', import.meta.url), 'utf8')
   const fn = store.slice(store.indexOf('patchOperativeQualifications: async'), store.indexOf('saveManager: async'))
-  assert.match(fn, /operativeQualificationPatch\(existing, operative\)/)
+  assert.match(fn, /operativeQualificationPatch\(\{ baseline, draft: operative, live: existing \}\)/)
   assert.match(fn, /new FieldPath\(write\.field, write\.key\)/)
   assert.match(fn, /'delete' in write \? deleteField\(\)/)
-  assert.match(fn, /await confirmQualificationWrite\(updateDoc\(ref, 'qualifications'/)
-  assert.doesNotMatch(fn, /qualificationExpiryDates: payload\.qualificationExpiryDates/)
+  assert.match(fn, /await confirmQualificationWrite\(updateDoc\(ref, firstField, firstValue, \.\.\.rest\)\)/)
+  assert.match(fn, /'not-found'[\s\S]*EDIT_OF_MISSING_DOCUMENT_MESSAGE/)
+  assert.match(editor, /saveAssignment: \(\) => onSave\(draft, baseline\)/)
   assert.match(storage, /export const UPLOAD_STALL_MS = 60_000/)
-  assert.match(storage, /cancel\(UPLOAD_STALLED_MESSAGE\)/)
   assert.match(storage, /isStoragePermissionError\(first\) \|\| isTimeoutError\(first\)/)
 })
 

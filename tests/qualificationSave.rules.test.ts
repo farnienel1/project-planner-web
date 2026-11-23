@@ -101,14 +101,16 @@ function storedRow(id: string, email: string, linkedUserId: string): Operative {
  */
 function renewalUpdate(db: Db, row: Operative) {
   const draft = operative(row.id, row.email, row.linkedUserId || '', QUAL.toLowerCase(), 'https://example.test/new.pdf', '2029-05-01T00:00:00Z')
-  const patch = operativeQualificationPatch(row, draft)
+  const patch = operativeQualificationPatch({ baseline: row, draft, live: row })
   const payload = serializeOperative({ ...row, ...draft, qualifications: patch.qualifications, updatedAt: new Date() }, { currencyCode: 'GBP' })
   const more: unknown[] = []
   for (const write of patch.mapWrites) {
     more.push(new FieldPath(write.field, write.key), 'delete' in write ? deleteField() : write.value instanceof Date ? Timestamp.fromDate(write.value) : write.value)
   }
+  if (patch.qualificationsChanged) more.push('qualifications', payload.qualifications)
   more.push('updatedAt', payload.updatedAt)
-  return updateDoc(doc(db, 'organizations', ORG, 'operatives', row.id), 'qualifications', payload.qualifications, ...more)
+  const [first, value, ...rest] = more as [FieldPath | string, unknown, ...unknown[]]
+  return updateDoc(doc(db, 'organizations', ORG, 'operatives', row.id), first, value, ...rest)
 }
 
 async function renew(uid: string, row: Operative): Promise<Outcome> {

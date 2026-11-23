@@ -147,37 +147,3 @@ export type QualificationMapWrite =
   | { field: 'qualificationCertificateURLs'; key: string; value: string }
   | { field: QualificationMapField; key: string; delete: true }
 
-function sameInstant(a: unknown, b: Date): boolean {
-  return a instanceof Date && !Number.isNaN(a.getTime()) && a.getTime() === b.getTime()
-}
-
-/**
- * The field-path changes that turn the stored qualification maps into the canonical merge result
- * (`mergeOperativeQualificationWrite`): a key set only when its value changed, a key deleted only when the merge
- * dropped it (a cleared expiry, a removed certificate, or another spelling of an id the save replaced). A key the
- * merge kept unchanged is never written (owner issue 16, review of #415: a merge-set of the whole map never
- * deleted a superseded spelling on the server).
- */
-export function qualificationMapWrites(input: {
-  storedExpiry?: Record<string, Date>
-  storedUrls?: Record<string, string>
-  mergedExpiry: Record<string, Date>
-  mergedUrls: Record<string, string>
-}): QualificationMapWrite[] {
-  const writes: QualificationMapWrite[] = []
-  const storedExpiry = input.storedExpiry || {}
-  const storedUrls = input.storedUrls || {}
-  for (const [key, value] of Object.entries(input.mergedExpiry)) {
-    if (!sameInstant(storedExpiry[key], value)) writes.push({ field: 'qualificationExpiryDates', key, value })
-  }
-  for (const key of Object.keys(storedExpiry)) {
-    if (!(key in input.mergedExpiry)) writes.push({ field: 'qualificationExpiryDates', key, delete: true })
-  }
-  for (const [key, value] of Object.entries(input.mergedUrls)) {
-    if (storedUrls[key] !== value) writes.push({ field: 'qualificationCertificateURLs', key, value })
-  }
-  for (const key of Object.keys(storedUrls)) {
-    if (!(key in input.mergedUrls)) writes.push({ field: 'qualificationCertificateURLs', key, delete: true })
-  }
-  return writes
-}

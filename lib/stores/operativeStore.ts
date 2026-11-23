@@ -48,6 +48,7 @@ async function countBookingsUnder(organizationId: string, id: string): Promise<n
 import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
 import { confirmQualificationWrite } from '@/lib/qualifications/certificateUpload'
 import { operativeQualificationPatch } from '@/lib/qualifications/qualificationPatch'
+import { EDIT_OF_MISSING_DOCUMENT_MESSAGE } from '@/lib/canonical'
 import { asTimestamp } from '@/lib/ios-parity/firestoreCodec'
 import {
   noteOperativeRows,
@@ -85,7 +86,8 @@ interface OperativeState {
   getOperative: (organizationId: string, id: string) => Promise<Operative | null>
   getManager: (organizationId: string, id: string) => Promise<Manager | null>
   saveOperative: (organizationId: string, operative: Operative) => Promise<string>
-  patchOperativeQualifications: (organizationId: string, operative: Operative) => Promise<string>
+  /** `baseline`: the row as the editor loaded it (review of #415: only the person's changes against it are written). */
+  patchOperativeQualifications: (organizationId: string, operative: Operative, baseline?: Operative) => Promise<string>
   saveManager: (organizationId: string, manager: Manager) => Promise<string>
   /** `formerRecordSkipped` true when the former-person record (rulebook 1.59.0) was refused; the row was deleted. */
   deleteOperative: (id: string, organizationId: string) => Promise<{ formerRecordSkipped: boolean }>
@@ -334,11 +336,11 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
    * The certificate map stays qualification UUID → download URL, which is what iOS reads.
    * Assignment write shape and map merge are lib/canonical/operativeQualifications.
    */
-  patchOperativeQualifications: async (organizationId, operative) => {
+  patchOperativeQualifications: async (organizationId, operative, baseline) => {
     const id = operative.id
     if (!id) throw new Error('Operative profile is missing.')
     const existing = get().operatives.find((row) => row.id === id)
-    const patch = operativeQualificationPatch(existing, operative)
+    const patch = operativeQualificationPatch({ baseline, draft: operative, live: existing })
     const mergedOperative: Operative = {
       ...existing,
       ...operative,
@@ -364,8 +366,19 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
             'delete' in write ? deleteField() : write.value instanceof Date ? asTimestamp(write.value) : write.value
           )
         }
+        if (patch.qualificationsChanged) more.push('qualifications', payload.qualifications)
+        if (more.length === 0) return id
         more.push('updatedAt', payload.updatedAt)
-        await confirmQualificationWrite(updateDoc(ref, 'qualifications', payload.qualifications, ...more))
+        const [firstField, firstValue, ...rest] = more as [string | FieldPath, unknown, ...unknown[]]
+        try {
+          await confirmQualificationWrite(updateDoc(ref, firstField, firstValue, ...rest))
+        } catch (error) {
+          // §1: an edit of a row deleted on another device is refused, never re-created.
+          if (typeof error === 'object' && error && (error as { code?: string }).code === 'not-found') {
+            throw new Error(EDIT_OF_MISSING_DOCUMENT_MESSAGE)
+          }
+          throw error
+        }
       } else {
         await confirmQualificationWrite(
           setDoc(ref, sharedDocumentPayWrite(payload, { privatePay: privatePayFor(organizationId) }), { merge: true })
