@@ -77,3 +77,64 @@ test('the sheet writes the chosen slot on every save path, never a hard-coded CU
   assert.match(sheet, /sheetSlotOptions\(/)
   assert.match(sheet, /sheetSlotWriteFields\(/)
 })
+
+// Review of w-do-fullday (1): a slot word the sheet does not offer is never read as Full day over stored times.
+test('a stored Evening / Overtime booking with clock times opens as Custom and is saved back exactly as stored', () => {
+  const storedTimes = { workStartTime: '18:00', workEndTime: '22:00' }
+  assert.equal(sheetSlotChoiceFromRaw('Evening', storedTimes), 'CUSTOM')
+  assert.equal(sheetSlotChoiceFromRaw('OVERTIME', storedTimes), 'CUSTOM')
+  const stored = { collection: 'bookings' as const, timeSlot: 'Evening', ...storedTimes, isBreakRemoved: true }
+  // Unchanged save: the stored word, times and break stay as they were.
+  assert.deepEqual(
+    sheetSlotWriteFields('CUSTOM', 'bookings', { workStartTime: '18:00', workEndTime: '22:00', isBreakRemoved: true }, stored),
+    { timeSlot: 'Evening', workStartTime: '18:00', workEndTime: '22:00', isBreakRemoved: true }
+  )
+  // Hours changed on screen: written as custom hours with the new times.
+  assert.deepEqual(
+    sheetSlotWriteFields('CUSTOM', 'bookings', { workStartTime: '17:00', workEndTime: '22:00', isBreakRemoved: true }, { ...stored, hoursTouched: true }),
+    { timeSlot: 'CUSTOM_HOURS', workStartTime: '17:00', workEndTime: '22:00', isBreakRemoved: true }
+  )
+  // Moved to the other collection: that collection's own word.
+  assert.equal(sheetSlotWriteFields('CUSTOM', 'managerSiteBookings', { ...storedTimes, isBreakRemoved: true }, stored).timeSlot, 'CUSTOM_HOURS')
+  // The person picks Full day on purpose: Full day, no clock times.
+  assert.equal(sheetSlotWriteFields('FULL DAY', 'bookings', { ...storedTimes, isBreakRemoved: true }, stored).timeSlot, 'FULL DAY')
+})
+
+test('a stored slot word with no clock times saved unchanged keeps its word, never becomes Full day', () => {
+  const stored = { collection: 'managerSiteBookings' as const, timeSlot: 'Overtime', isBreakRemoved: false }
+  assert.equal(sheetSlotChoiceFromRaw('Overtime'), 'FULL DAY')
+  assert.deepEqual(sheetSlotWriteFields('FULL DAY', 'managerSiteBookings', hours, stored), {
+    timeSlot: 'Overtime',
+    workStartTime: undefined,
+    workEndTime: undefined,
+    isBreakRemoved: false,
+  })
+})
+
+// Review of w-do-fullday (2): a labour row passes the stored slot through (no Full day default).
+test('a labour booking stored with no slot word but with clock times opens the sheet as Custom', async () => {
+  const { buildDailyOverview } = await import('./buildDailyOverview.ts')
+  const { dateFromDayKey } = await import('../ios-parity/londonTime.ts')
+  const day = dateFromDayKey('2026-11-17')
+  const model = buildDailyOverview({
+    day,
+    today: day,
+    projects: [{ id: 'P1', jobNumber: 'J1', siteName: 'Site', jobType: 'CAT A' } as never],
+    bookings: [
+      { id: 'B1', operativeId: 'op', projectId: 'P1', date: day, timeSlot: '', workStartTime: '08:00', workEndTime: '12:00', status: 'Confirmed', bookedBy: 'a', createdAt: day, updatedAt: day },
+      { id: 'B2', operativeId: 'op2', projectId: 'P1', date: day, timeSlot: 'FULL DAY', status: 'Confirmed', bookedBy: 'a', createdAt: day, updatedAt: day },
+    ] as never,
+    managerBookings: [],
+    holidays: [],
+    users: [],
+    operatives: [],
+  })
+  const rows = model.projectCards.flatMap((card) => card.people)
+  const noWord = rows.find((row) => row.bookingId === 'B1')
+  const fullDay = rows.find((row) => row.bookingId === 'B2')
+  assert.ok(noWord && fullDay)
+  assert.equal(noWord.timeSlotRaw, undefined)
+  assert.equal(sheetSlotChoiceFromRaw(noWord.timeSlotRaw, noWord), 'CUSTOM')
+  assert.equal(fullDay.timeSlotRaw, 'FULL DAY')
+  assert.equal(sheetSlotChoiceFromRaw(fullDay.timeSlotRaw, fullDay), 'FULL DAY')
+})

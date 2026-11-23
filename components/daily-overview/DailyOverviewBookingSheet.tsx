@@ -143,6 +143,8 @@ export function DailyOverviewBookingSheet({
       newDocument,
     })
   const hoursTouched = useRef(false)
+  // The same flag for render (the ref is read only in effects): whether the person changed the hours on screen.
+  const [hoursEdited, setHoursEdited] = useState(false)
   const leaveCheck = useLeaveConflictCheck(payroll)
   const leaveGate = useBookingConflictGate('Save')
   // Rulebook 1.19.0 (`customHoursPrefillForDays`): a booking with no clock times opens with that day's own prefill —
@@ -163,6 +165,7 @@ export function DailyOverviewBookingSheet({
 
   useEffect(() => {
     hoursTouched.current = false
+    setHoursEdited(false)
     const operative = bookings.find((entry) => entry.id === row.bookingId)
     const manager = managerSiteBookings.find((entry) => entry.id === row.bookingId)
     setBreakRemoved(operative?.isBreakRemoved === true || manager?.isBreakRemoved === true)
@@ -258,15 +261,31 @@ export function DailyOverviewBookingSheet({
     () =>
       hoursBreakdownForDates(
         [day],
-        { ...sheetSlotWriteFields(slot, 'bookings', { workStartTime, workEndTime, isBreakRemoved: breakRemoved }), otMultiplierOverride: overtimeRate },
+        { ...hoursFields(), otMultiplierOverride: overtimeRate },
         payroll
       ),
-    [slot, workStartTime, workEndTime, breakRemoved, overtimeRate, payroll, day]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [slot, workStartTime, workEndTime, breakRemoved, overtimeRate, payroll, day, hoursEdited, row.timeSlotRaw]
   )
 
   // The slot fields for the collection the booking is written to (labour `FULL DAY`, manager site `FULL_DAY`).
-  const hoursFields = (collection: SheetBookingCollection = row.kind === 'operative' ? 'bookings' : 'managerSiteBookings') =>
-    sheetSlotWriteFields(slot, collection, { workStartTime, workEndTime, isBreakRemoved: breakRemoved })
+  // An unchanged booking whose stored slot word the sheet does not offer (`Evening`, `Overtime`) is written back as
+  // stored (`sheetSlotWriteFields` `stored`).
+  const sourceCollection: SheetBookingCollection = row.kind === 'operative' ? 'bookings' : 'managerSiteBookings'
+  function hoursFields(collection: SheetBookingCollection = sourceCollection) {
+    const storedBooking =
+      sourceCollection === 'bookings'
+        ? bookings.find((entry) => entry.id === row.bookingId)
+        : managerSiteBookings.find((entry) => entry.id === row.bookingId)
+    return sheetSlotWriteFields(slot, collection, { workStartTime, workEndTime, isBreakRemoved: breakRemoved }, {
+      collection: sourceCollection,
+      timeSlot: row.timeSlotRaw,
+      workStartTime: row.workStartTime,
+      workEndTime: row.workEndTime,
+      isBreakRemoved: storedBooking?.isBreakRemoved === true,
+      hoursTouched: hoursEdited,
+    })
+  }
 
   // 1.13.0 lunch warning (`customHoursBreakWarning`): the confirm step before custom hours are saved.
   const breakConfirmed = () => confirmCustomHoursBreak(payroll, day, hoursFields())
@@ -555,14 +574,17 @@ export function DailyOverviewBookingSheet({
             showBreakdown={false}
             onStart={(value) => {
               hoursTouched.current = true
+              setHoursEdited(true)
               setWorkStartTime(value)
             }}
             onEnd={(value) => {
               hoursTouched.current = true
+              setHoursEdited(true)
               setWorkEndTime(value)
             }}
             onBreak={(value) => {
               hoursTouched.current = true
+              setHoursEdited(true)
               setBreakRemoved(value)
             }}
           />

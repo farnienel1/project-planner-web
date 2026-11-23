@@ -21,16 +21,34 @@ export const SHEET_SLOT_OPTIONS: ReadonlyArray<{ value: ScheduleSlotChoice; labe
   { value: 'CUSTOM', label: 'Custom hours' },
 ]
 
+function compactSlotWord(raw: string | null | undefined): string {
+  return String(raw ?? '').toUpperCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+/** Whether the stored word is one of the slots the sheet offers (AM, PM, Full day, Custom). */
+export function sheetSlotWordKnown(raw: string | null | undefined): boolean {
+  const compact = compactSlotWord(raw)
+  return (
+    compact === 'AM' ||
+    compact === 'PM' ||
+    compact.includes('MORNING') ||
+    compact.includes('AFTERNOON') ||
+    compact.includes('FULL') ||
+    compact.includes('CUSTOM')
+  )
+}
+
 /**
- * The stored slot as the sheet's choice. A booking stored with no slot word reads as Custom when it has both clock
- * times (it has always been saved as custom hours here), else Full day.
+ * The stored slot as the sheet's choice. A slot word the sheet does not offer (a stored `Evening` / `Overtime`, or
+ * none at all) reads as Custom when the booking has both clock times, else Full day — never Full day over stored
+ * times, which would change the pay on an unchanged save.
  */
 export function sheetSlotChoiceFromRaw(
   raw: string | null | undefined,
   times?: { workStartTime?: string | null; workEndTime?: string | null }
 ): ScheduleSlotChoice {
-  const compact = String(raw ?? '').toUpperCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim()
-  if (!compact) return times?.workStartTime && times?.workEndTime ? 'CUSTOM' : 'FULL DAY'
+  const compact = compactSlotWord(raw)
+  if (!sheetSlotWordKnown(raw)) return times?.workStartTime && times?.workEndTime ? 'CUSTOM' : 'FULL DAY'
   if (compact === 'AM' || compact.includes('MORNING')) return 'AM'
   if (compact === 'PM' || compact.includes('AFTERNOON')) return 'PM'
   if (compact.includes('CUSTOM')) return 'CUSTOM'
@@ -56,12 +74,39 @@ export function sheetTimeSlotWord(choice: ScheduleSlotChoice, collection: SheetB
 /**
  * The slot fields an edit writes: Custom hours carry the clock times and the break toggle; a named slot carries no
  * clock times and no break removal (as `BookingEditSheet` saves it).
+ *
+ * `stored` is the booking as loaded. While the person has not changed the slot or the hours and the booking stays in
+ * its own collection, a slot word the sheet does not offer (`Evening`, `Overtime`) is written back exactly as stored,
+ * with its stored times and break — an unchanged booking stays as it was.
  */
 export function sheetSlotWriteFields(
   choice: ScheduleSlotChoice,
   collection: SheetBookingCollection,
-  hours: { workStartTime: string; workEndTime: string; isBreakRemoved: boolean }
+  hours: { workStartTime: string; workEndTime: string; isBreakRemoved: boolean },
+  stored?: {
+    collection: SheetBookingCollection
+    timeSlot?: string | null
+    workStartTime?: string | null
+    workEndTime?: string | null
+    isBreakRemoved?: boolean
+    hoursTouched?: boolean
+  }
 ): { timeSlot: string; workStartTime: string | undefined; workEndTime: string | undefined; isBreakRemoved: boolean } {
+  if (
+    stored &&
+    stored.timeSlot &&
+    !sheetSlotWordKnown(stored.timeSlot) &&
+    stored.collection === collection &&
+    !stored.hoursTouched &&
+    choice === sheetSlotChoiceFromRaw(stored.timeSlot, stored)
+  ) {
+    return {
+      timeSlot: stored.timeSlot,
+      workStartTime: stored.workStartTime || undefined,
+      workEndTime: stored.workEndTime || undefined,
+      isBreakRemoved: stored.isBreakRemoved === true,
+    }
+  }
   const timeSlot = sheetTimeSlotWord(choice, collection)
   if (choice === 'CUSTOM') {
     return { timeSlot, workStartTime: hours.workStartTime, workEndTime: hours.workEndTime, isBreakRemoved: hours.isBreakRemoved }
