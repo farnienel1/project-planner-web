@@ -72,7 +72,7 @@ export function PageBand({
   )
 }
 
-export type StatItem = { value: ReactNode; label: ReactNode; tone?: 'amber' | 'red' }
+export type StatItem = { value: ReactNode; label: ReactNode; tone?: 'amber' | 'red'; /** Small line under the label. Display only. */ hint?: ReactNode }
 
 /** Display-only figures: never clickable (spec §1). */
 export function StatRow({ items }: { items: StatItem[] }) {
@@ -83,6 +83,7 @@ export function StatRow({ items }: { items: StatItem[] }) {
         <div key={index} className={cn('pu-stat', item.tone)}>
           <b>{item.value}</b>
           <span>{item.label}</span>
+          {item.hint ? <small className="pu-stat-hint">{item.hint}</small> : null}
         </div>
       ))}
     </div>

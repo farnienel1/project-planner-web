@@ -1256,3 +1256,22 @@ UI only, web only (`docs/design/projects-overview-ui/projects-overview-ui-spec.m
 | 23 Nov | No audit entry is written when the export runs: writing one needs a new collection and a security rule (or a server route). | follow-up |
 | 23 Nov | files.csv keeps each file's download URL (owner 3 Nov: the export lists the files); those URLs open the file without signing in, so the zip must be kept safe (the README says so). Alternative: storage paths only, files then need the app to open. | **superseded** 23 Nov (C row below): no download URLs in the export (1.72.0) |
 | 23 Nov | Private tax ids (VAT, UTR) stay out of the company export: they are each person's own billing details (§12 `taxIds`), not the company's. | done (as before), owner to confirm |
+
+## 23 Nov decisions (UI batch 3, web, #417)
+
+| Date | Decision | Status |
+|---|---|---|
+| 23 Nov | **Item 2: the Daily overview Today button has a fixed size** — it keeps the width of "Back to today", so the ‹ › arrows never move. UI only. | done web (#417); iOS n/a |
+| 23 Nov | **Item 4: New site audit job filter** All / Active / Upcoming / Completed with counts, default Active (as iOS), from `worksInTab` / `worksTabCounts` on the organisation day. | done web (#417); iOS already |
+| 23 Nov | **Item 5: New site audit as a step-by-step page** (Job → Details → Photos → Review & save) instead of a dialog, from the Site audit hub and from a job's Site audits page (`…/site-audit/new`); fields, checks and the saved record unchanged (`siteAuditDraftProblem`, `siteAuditOutboxRecord`). Leaving with photos or a typed title asks first ("Leave this audit? Your photos and details will be lost."; browser close / reload asks too). Personal site audits keep their dialog. | done web (#417); iOS n/a |
+| 23 Nov | **Item 31: weekend overtime checked correct** for the organisation's Saturday setting (no pay change), and option 1: a clearer label on a set-window Saturday / Sunday — "Weekend window hrs · 07:30–14:00 counts as a full day" (`weekendCustomHoursDefault`, the working hours in effect that day; "Standard hrs" on a day paid every hour at a multiplier, on weekdays and while the settings load). Figures unchanged. | done web (#417); iOS open (`DailyOverviewView.swift:652`) |
+
+## UI batch 3 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 23 Nov | After saving an audit started from the Site audit hub, the page returns to the Site audit hub (the dialog returned to the job list); from a job it returns to that job's Site audits. If the person already left while it uploaded, they are not pulled back. | done web (#417), owner to confirm |
+| 23 Nov | Cancel (any step) and the band's "Site audit" back link go to the Site audit hub; "Change job" goes back to the job step. | done web (#417), owner to confirm |
+| 23 Nov | New wording: step names "Job / Details / Photos / Review & save", "Change job", "Next: review", "Review", the summary labels, the audit date on Review as "23 Nov 2026", "You can leave this page — the audit keeps uploading…" (was "You can close this"), "You can't create site audits." on a New site audit link opened without the permission. | done web (#417), owner to confirm |
+| 23 Nov | The new audit's date now defaults to today in the organisation's time zone (was the browser's day); stored as before (yyyy-MM-dd). | done web (#417) |
+| 23 Nov | The New site audit job list is not narrowed by `visibleJobs` (the hub's Projects / Small works browse lists aren't either). Narrowing would hide, for operatives with Site audit on, every job they have no booking, task or deadline on and any job hidden from them (`hiddenOperativeUserIds`) — admins and managers would see no change. Owner to decide. | question |

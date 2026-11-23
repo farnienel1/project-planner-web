@@ -152,6 +152,7 @@
 .pu-stat:first-child { padding-left: 0; border-left: 0; }
 .pu-stat b { font-size: 28px; font-weight: 700; line-height: 1.05; color: #fff; }
 .pu-stat span { font-size: 12.5px; color: var(--pu-band-muted); }
+.pu-stat-hint { font-size: 11px; line-height: 1.3; color: var(--pu-band-muted); }
 .pu-stat.amber b { color: #FBC15E; }
 .pu-stat.red b { color: #FF8F92; }
 
@@ -168,6 +169,10 @@
 .pu-datenav button { height: 32px; min-width: 32px; border: 0; border-radius: 8px; background: transparent; color: #fff; display: flex; align-items: center; justify-content: center; padding: 0 10px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .pu-datenav button:hover { background: rgba(255, 255, 255, 0.08); }
 .pu-datenav button.on { background: #fff; color: #0A1530; }
+/* The centre button reads "Today" or "Back to today": both labels sit in one grid cell so its width never changes and the arrows stay put. */
+.pu-datenav button.pu-datenav-today { display: inline-grid; place-items: center; }
+.pu-datenav-today > span { grid-area: 1 / 1; text-align: center; }
+.pu-datenav-today > span[aria-hidden='true'] { visibility: hidden; }
 .pu-datenav input { height: 32px; border: 0; border-radius: 8px; background: rgba(255, 255, 255, 0.1); color: #fff; padding: 0 10px; color-scheme: dark; font: inherit; font-size: 13px; }
 
 /* Buttons */
@@ -389,3 +394,23 @@ button.pu-item:disabled { cursor: not-allowed; opacity: 0.55; }
 .pu-clickcard:hover { border-color: var(--dash-hover-line); }
 .pu-btn.danger { border: 0; background: #C4242C; color: #fff; }
 .pu-page .pill { font-variant-numeric: tabular-nums; }
+
+/* New site audit page (owner request 23 Nov): step bar, card and review list. Tokens only, light and dark. */
+.sa-steps { display: flex; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.sa-step { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--pu-line); background: var(--pu-card); color: var(--pu-ink-2); font-size: 12.5px; font-weight: 600; }
+.sa-step-n { flex: none; width: 22px; height: 22px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-size: 11.5px; font-weight: 700; background: var(--pu-bg); border: 1px solid var(--pu-line); color: var(--pu-ink-2); }
+.sa-step-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sa-step.on { border-color: var(--pu-seg-on); color: var(--pu-ink); }
+.sa-step.on .sa-step-n { background: var(--pu-seg-on); border-color: transparent; color: var(--pu-seg-on-ink); }
+.sa-step.done .sa-step-n { background: var(--pu-bg); color: var(--pu-ink); }
+.sa-new-card { padding: 16px; }
+.sa-review-list { margin: 0; display: grid; gap: 8px; }
+.sa-review-list > div { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+.sa-review-list dt { color: var(--pu-ink-2); }
+.sa-review-list dd { margin: 0; color: var(--pu-ink); font-weight: 600; text-align: right; }
+.sa-job-row { width: 100%; display: flex; align-items: center; gap: 10px; text-align: left; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--pu-line); background: var(--pu-card); color: var(--pu-ink); cursor: pointer; }
+.sa-job-row:hover { border-color: var(--dash-hover-line); }
+@media (max-width: 640px) {
+  .sa-step { padding: 7px; justify-content: center; }
+  .sa-step:not(.on) .sa-step-t { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+}
