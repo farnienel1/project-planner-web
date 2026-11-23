@@ -156,6 +156,14 @@ How to use it:
 | 4 Nov | Price work: approver is a required pick from admins and managers only. Expenses need at least one piece of evidence. Personal site audits are visible to their creator only. | done (1.30) |
 | 4 Nov | 1.32: the price work and expenses review screen matches the overtime review (✓ ✕ per line, one Approve button), plus the same all-records-per-person check. | done web + rulebook (1.32.0 / PR #274); iOS open (hand-off) |
 
+
+## Settings bugs (23 Nov)
+
+| Date | Decision | Status |
+|---|---|---|
+| 23 Nov | **Bug: PAYE payday reverted to "Not set" on Payment runs & timesheets** (owner report). The security rules accept the Save with the payday on both apps' write shapes (emulator, `tests/payePayday.rules.test.ts`); web's card keeps the pick until Save and reads it back live. iPhone: the payday was a menu-style Picker over a hand-made Binding (every other day menu on the screen is a Menu of Buttons); it is now a Menu of Buttons setting the pick directly, and after Save the pick is cleared only once the organisation reads that payday back — otherwise it stays with "The PAYE payday was not saved…". Root cause on iPhone [Likely], not proven on a device. | done iOS (branch `ios-paye-payday-settings-nav`); web: rules test only (branch `w-paye-payday-fix`) |
+| 23 Nov | **Bug: More → Settings while on Payment runs & timesheets stayed on that page** (owner report). On iPhone, choosing the already-open Settings tab only posted `resetNavigationForTab`, which Settings does not handle. Choosing Settings, Help, Wholesalers, Annual leave or Subcontractors again now rebuilds that tab at its root (the main page). UI only. Web has no More menu; its Settings link always opens the Settings page. | done iOS (branch `ios-paye-payday-settings-nav`); web n/a |
+
 ## Files, data and privacy
 
 | Date | Decision | Status |
