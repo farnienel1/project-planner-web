@@ -22,6 +22,7 @@ import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
 import { Chip } from '@/components/ui/page'
 import { ProfileIcon } from '@/components/users/profile-ui'
 import { safeExternalUrl } from '@/lib/canonical/uploadPolicy'
+import { qualificationExpiryDate, withQualificationExpiry } from '@/lib/qualifications/personQualifications'
 
 type LinkedOperative = Operative
 
@@ -269,7 +270,7 @@ export function OperativeQualificationsEditor({
       ) : null}
       <div className={pv ? 'up-qgrid' : 'grid gap-4 md:grid-cols-2'}>
         {draft.qualifications.map((qual) => {
-          const expiry = draft.qualificationExpiryDates?.[qual.id]
+          const expiry = qualificationExpiryDate(draft.qualificationExpiryDates, qual.id)
           const cert = certificateUrlForQualification(draft.qualificationCertificateURLs, qual.id)
           const pending = pendingFiles[qual.id]
           const preview = previewUrls[qual.id]
@@ -283,13 +284,16 @@ export function OperativeQualificationsEditor({
                   value={localDateInputValue(expiry)}
                   onChange={(e) => {
                     const value = e.target.value
-                    patch((current) => {
-                      const nextDates = { ...(current.qualificationExpiryDates || {}) }
-                      const parsed = dateFromLocalInputValue(value)
-                      if (parsed) nextDates[qual.id] = parsed
-                      else delete nextDates[qual.id]
-                      return { ...current, qualificationExpiryDates: nextDates }
-                    })
+                    patch((current) => ({
+                      ...current,
+                      // Owner issue 19: one spelling of the id per qualification, so the profile page and this editor
+                      // read the same date (`qualificationExpiryDate`).
+                      qualificationExpiryDates: withQualificationExpiry(
+                        current.qualificationExpiryDates,
+                        qual.id,
+                        dateFromLocalInputValue(value)
+                      ),
+                    }))
                   }}
                   className={pv ? 'pp-in' : 'mt-1 w-full rounded-[13px] border-[1.5px] border-(--line2) bg-(--card) px-3.5 py-2.5'}
                 />

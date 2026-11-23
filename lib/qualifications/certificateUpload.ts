@@ -12,8 +12,25 @@ import {
 } from '@/lib/canonical/operativeQualifications'
 import { QUALIFICATION_CERT_MAX_BYTES, uploadLimitError } from '@/lib/security/uploadLimits'
 import { uploadAcceptAttribute, uploadAllowedHint } from '@/lib/canonical/uploadPolicy'
+import { withTimeout } from '@/lib/client/withTimeout'
 
 export { QUALIFICATION_CERT_MAX_BYTES }
+
+/**
+ * How long a qualification save waits for the server to confirm a write (owner issue 16, 23 Nov: renewing a
+ * certificate left Save on "Saving…"). Firestore keeps a write it cannot send queued and retries it for ever, so an
+ * unbounded `await setDoc(...)` never settles on a poor link and the screen never comes back. After this long the
+ * save stops waiting and says so; the write may still arrive (the live list then shows it).
+ */
+export const QUALIFICATION_SAVE_CONFIRM_MS = 20_000
+
+export const QUALIFICATION_SAVE_UNCONFIRMED_MESSAGE =
+  'The server has not confirmed this save yet. Check your connection — the change may still arrive. Reload the page before saving again.'
+
+/** A qualification write, waited for at most `ms` (rejects with `QUALIFICATION_SAVE_UNCONFIRMED_MESSAGE`). */
+export function confirmQualificationWrite<T>(write: Promise<T>, ms: number = QUALIFICATION_SAVE_CONFIRM_MS): Promise<T> {
+  return withTimeout(write, ms, QUALIFICATION_SAVE_UNCONFIRMED_MESSAGE)
+}
 
 /** Rulebook 1.50.0 §24: a PDF or a photo (JPEG, PNG, HEIC, WebP); the file is still checked by `uploadAllowed`. */
 export const QUALIFICATION_CERT_ACCEPT = uploadAcceptAttribute('qualification_certificate')
@@ -24,6 +41,29 @@ type NamedFile = { name: string; type?: string; size: number }
 
 export function qualificationCertificateFileError(file: NamedFile): string | null {
   return uploadLimitError(file, 'certificate')
+}
+
+/**
+ * The stored certificate URLs less every key a save is replacing — the same qualification id in another letter case
+ * (iOS stores upper-case UUIDs). Keys the save does not name are kept, so a partial draft never wipes other
+ * certificates. Display/merge input only; `mergeOperativeQualificationWrite` still decides the write.
+ */
+export function certificateUrlsWithoutReplaced(
+  stored: Record<string, string> | undefined,
+  next: Record<string, string> | undefined
+): Record<string, string> | undefined {
+  if (!stored) return stored
+  const replaced = new Map<string, string>()
+  for (const [key, value] of Object.entries(next || {})) {
+    if (typeof value === 'string' && value.trim()) replaced.set(key.toLowerCase(), key)
+  }
+  const out: Record<string, string> = {}
+  for (const [key, value] of Object.entries(stored)) {
+    const nextKey = replaced.get(key.toLowerCase())
+    if (nextKey !== undefined && nextKey !== key) continue
+    out[key] = value
+  }
+  return out
 }
 
 export function mergeCertificateUrls(

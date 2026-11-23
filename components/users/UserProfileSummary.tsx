@@ -7,7 +7,7 @@ import { UserProfileSkeleton } from '@/components/users/profile-ui/skeletons'
 import { format } from 'date-fns'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
-import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
+import { useOrgUserStore, useRosterDocuments } from '@/lib/stores/siteAuditStore'
 import { useUserStore } from '@/lib/stores/userStore'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import { displayTradeType } from '@/lib/staff/staffTradeTypes'
@@ -26,6 +26,8 @@ import { isPlatformOwnerEmail } from '@/lib/platform/owner'
 import type { PayProfileDocument } from '@/lib/canonical'
 import { useOrganizationCurrency, useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { normalizeEmploymentType } from '@/lib/ios-parity/enums'
+import { personQualificationRows } from '@/lib/qualifications/personQualifications'
+import { safeExternalUrl } from '@/lib/canonical/uploadPolicy'
 
 function employmentLabel(value?: string) {
   return normalizeEmploymentType(value) === 'paye' ? 'PAYE' : 'Self-employed'
@@ -107,10 +109,19 @@ export function UserProfileSummary({
     [organization?.id, target, payProfile, switchTick]
   ) as { payBasis?: string; dayRate?: number | null; hourlyRate?: number | null; employmentType?: string } | null
 
-  const linkedOperative = useMemo(
-    () => (target ? findOperativeForUser(target, operatives) : undefined),
-    [target, operatives]
-  )
+  const rosterDocuments = useRosterDocuments(organization?.id)
+  // Owner issues 18 and 19 (23 Nov): every level shows its qualifications, from every `operatives` row of the person
+  // (the rulebook person fold, guardrail 1), with the expiry the editor saves (`qualificationExpiryDates`).
+  const quals = useMemo(() => {
+    if (!target) return []
+    const preferred = findOperativeForUser(target, operatives)
+    return personQualificationRows({
+      person: { id: target.id, email: target.email },
+      operatives,
+      roster: rosterDocuments,
+      preferredRowId: preferred?.id,
+    })
+  }, [target, operatives, rosterDocuments])
   const lineManager = useMemo(() => {
     if (!target?.assignedManagerUserId) return null
     return users.find((row) => row.id === target.assignedManagerUserId) || null
@@ -137,7 +148,6 @@ export function UserProfileSummary({
   const editHref = `/dashboard/users/${target.id}/edit?from=${encodeURIComponent(from)}`
   const name = `${target.firstName} ${target.surname}`.trim() || roleLabel(target)
   const status = rosterStatusLabel(target)
-  const quals = linkedOperative?.qualifications || []
   const nowIso = new Date().toISOString()
   const tradeText = displayTradeType(target.tradeTypePreset, target.tradeTypeCustom)
   const lineManagerText = lineManager ? `${lineManager.firstName} ${lineManager.surname}`.trim() : 'No line manager'
@@ -223,30 +233,36 @@ export function UserProfileSummary({
           />
         ) : null}
 
-        {target.permissions.operativeMode ? (
-          <section className="pu-card">
-            <div className="up-card-h">
-              <IconTile tone="amber" size="sm">
-                <ProfileIcon name="badge" />
-              </IconTile>
-              <h2>Qualifications</h2>
-            </div>
-            {quals.length === 0 ? (
-              <p className="up-empty-text">No qualifications yet.</p>
-            ) : (
-              <div>
-                {quals.map((qual) => (
+        <section className="pu-card">
+          <div className="up-card-h">
+            <IconTile tone="amber" size="sm">
+              <ProfileIcon name="badge" />
+            </IconTile>
+            <h2>Qualifications</h2>
+          </div>
+          {quals.length === 0 ? (
+            <p className="up-empty-text">No qualifications yet.</p>
+          ) : (
+            <div>
+              {quals.map((qual) => {
+                const certificate = qual.certificateUrl ? safeExternalUrl(qual.certificateUrl) : null
+                return (
                   <div key={qual.id} className="up-qrow">
                     <b>{qual.name}</b>
-                    <Chip tone={qual.hasEndDate && qual.endDate ? qualificationExpiryTone(qual.endDate, nowIso, timeZone) : 'slate'}>
-                      {qual.hasEndDate && qual.endDate ? `Expires ${format(qual.endDate, 'd MMM yyyy')}` : 'No expiry'}
+                    {certificate ? (
+                      <a href={certificate} target="_blank" rel="noreferrer" className="up-lk">
+                        View certificate
+                      </a>
+                    ) : null}
+                    <Chip tone={qual.expiry ? qualificationExpiryTone(qual.expiry, nowIso, timeZone) : 'slate'}>
+                      {qual.expiry ? `Expires ${format(qual.expiry, 'd MMM yyyy')}` : 'No expiry'}
                     </Chip>
                   </div>
-                ))}
-              </div>
-            )}
-          </section>
-        ) : null}
+                )
+              })}
+            </div>
+          )}
+        </section>
       </div>
 
     </ProfilePage>

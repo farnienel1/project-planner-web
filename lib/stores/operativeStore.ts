@@ -47,6 +47,7 @@ async function countBookingsUnder(organizationId: string, id: string): Promise<n
   }
 }
 import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
+import { certificateUrlsWithoutReplaced, confirmQualificationWrite } from '@/lib/qualifications/certificateUpload'
 import {
   noteOperativeRows,
   notePayOperativesOverlaid,
@@ -341,7 +342,12 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
       previous: {
         qualifications: existing?.qualifications,
         qualificationExpiryDates: existing?.qualificationExpiryDates,
-        qualificationCertificateURLs: existing?.qualificationCertificateURLs,
+        // Owner issue 16: a renewed certificate replaces the stored one under every spelling of its id, so no reader
+        // keeps opening the old file (the old Storage object itself is kept, §24).
+        qualificationCertificateURLs: certificateUrlsWithoutReplaced(
+          existing?.qualificationCertificateURLs,
+          operative.qualificationCertificateURLs
+        ),
       },
       next: {
         qualifications: operative.qualifications,
@@ -375,19 +381,25 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
     }
     const payload = serializeOperative({ ...mergedOperative, organizationId }, { currencyCode: currentOrganizationCurrency() })
     operativeMutationEpoch += 1
-    await setDoc(
-      doc(db, 'organizations', organizationId, 'operatives', id),
-      existing
-        ? {
-            qualifications: payload.qualifications,
-            qualificationExpiryDates: payload.qualificationExpiryDates,
-            qualificationCertificateURLs: payload.qualificationCertificateURLs,
-            updatedAt: payload.updatedAt,
-          }
-        : sharedDocumentPayWrite(payload, { privatePay: privatePayFor(organizationId) }),
-      { merge: true }
-    )
-    operativeMutationEpoch += 1
+    try {
+      // Owner issue 16: never wait for ever — a write the server does not confirm in time is reported, not hung on.
+      await confirmQualificationWrite(
+        setDoc(
+          doc(db, 'organizations', organizationId, 'operatives', id),
+          existing
+            ? {
+                qualifications: payload.qualifications,
+                qualificationExpiryDates: payload.qualificationExpiryDates,
+                qualificationCertificateURLs: payload.qualificationCertificateURLs,
+                updatedAt: payload.updatedAt,
+              }
+            : sharedDocumentPayWrite(payload, { privatePay: privatePayFor(organizationId) }),
+          { merge: true }
+        )
+      )
+    } finally {
+      operativeMutationEpoch += 1
+    }
     set({ operatives: [...get().operatives.filter((row) => row.id !== id), mergedOperative] })
     return id
   },
