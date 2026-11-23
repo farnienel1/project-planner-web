@@ -7,7 +7,10 @@ import {
   getDoc,
   setDoc,
   deleteDoc,
+  deleteField,
   doc,
+  FieldPath,
+  updateDoc,
   limit,
   query,
   serverTimestamp,
@@ -24,10 +27,6 @@ import { filterRealManagers, isPlaceholderManager } from '@/lib/staff/managerRos
 import { forgetOrgCollectionDoc, subscribeOrgCollectionLoaded } from '@/lib/firebase/subscribeOrgCollection'
 import { liveResultStillCurrent } from '@/lib/firebase/liveResult'
 import { applyExclusiveRateFields } from '@/lib/firebase/userPayload'
-import {
-  mergeOperativeQualificationWrite,
-  removedQualificationCertificateIds,
-} from '@/lib/canonical/operativeQualifications'
 import { parseManager, parseOperative, serializeManager, serializeOperative } from '@/lib/ios-parity/converters'
 import { currentOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
 import { readStoredRates } from '@/lib/timesheets/payBasis'
@@ -47,6 +46,10 @@ async function countBookingsUnder(organizationId: string, id: string): Promise<n
   }
 }
 import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
+import { confirmQualificationWrite } from '@/lib/qualifications/certificateUpload'
+import { operativeQualificationPatch } from '@/lib/qualifications/qualificationPatch'
+import { EDIT_OF_MISSING_DOCUMENT_MESSAGE } from '@/lib/canonical'
+import { asTimestamp } from '@/lib/ios-parity/firestoreCodec'
 import {
   noteOperativeRows,
   notePayOperativesOverlaid,
@@ -83,7 +86,8 @@ interface OperativeState {
   getOperative: (organizationId: string, id: string) => Promise<Operative | null>
   getManager: (organizationId: string, id: string) => Promise<Manager | null>
   saveOperative: (organizationId: string, operative: Operative) => Promise<string>
-  patchOperativeQualifications: (organizationId: string, operative: Operative) => Promise<string>
+  /** `baseline`: the row as the editor loaded it (review of #415: only the person's changes against it are written). */
+  patchOperativeQualifications: (organizationId: string, operative: Operative, baseline?: Operative) => Promise<string>
   saveManager: (organizationId: string, manager: Manager) => Promise<string>
   /** `formerRecordSkipped` true when the former-person record (rulebook 1.59.0) was refused; the row was deleted. */
   deleteOperative: (id: string, organizationId: string) => Promise<{ formerRecordSkipped: boolean }>
@@ -332,62 +336,57 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
    * The certificate map stays qualification UUID → download URL, which is what iOS reads.
    * Assignment write shape and map merge are lib/canonical/operativeQualifications.
    */
-  patchOperativeQualifications: async (organizationId, operative) => {
+  patchOperativeQualifications: async (organizationId, operative, baseline) => {
     const id = operative.id
     if (!id) throw new Error('Operative profile is missing.')
     const existing = get().operatives.find((row) => row.id === id)
-    const nextIds = (operative.qualifications || []).map((row) => String(row.id || '').trim()).filter(Boolean)
-    const merged = mergeOperativeQualificationWrite({
-      previous: {
-        qualifications: existing?.qualifications,
-        qualificationExpiryDates: existing?.qualificationExpiryDates,
-        qualificationCertificateURLs: existing?.qualificationCertificateURLs,
-      },
-      next: {
-        qualifications: operative.qualifications,
-        qualificationExpiryDates: operative.qualificationExpiryDates,
-        qualificationCertificateURLs: operative.qualificationCertificateURLs,
-        removedCertificateIds: removedQualificationCertificateIds(
-          existing?.qualificationCertificateURLs,
-          operative.qualificationCertificateURLs,
-          nextIds
-        ),
-      },
-    })
+    const patch = operativeQualificationPatch({ baseline, draft: operative, live: existing })
     const mergedOperative: Operative = {
       ...existing,
       ...operative,
       id,
       organizationId,
-      qualifications: merged.qualifications.map((row) => ({
-        id: row.id,
-        name: row.name,
-        hasEndDate: row.hasEndDate,
-        createdAt: new Date(row.createdAtIso),
-        updatedAt: new Date(row.updatedAtIso),
-        endDate: row.endDateIso ? new Date(row.endDateIso) : undefined,
-      })),
-      qualificationExpiryDates: Object.fromEntries(
-        Object.entries(merged.qualificationExpiryDates).map(([key, iso]) => [key, new Date(iso)])
-      ),
-      qualificationCertificateURLs: merged.qualificationCertificateURLs,
+      qualifications: patch.qualifications,
+      qualificationExpiryDates: patch.qualificationExpiryDates,
+      qualificationCertificateURLs: patch.qualificationCertificateURLs,
       updatedAt: new Date(),
     }
     const payload = serializeOperative({ ...mergedOperative, organizationId }, { currencyCode: currentOrganizationCurrency() })
+    const ref = doc(db, 'organizations', organizationId, 'operatives', id)
     operativeMutationEpoch += 1
-    await setDoc(
-      doc(db, 'organizations', organizationId, 'operatives', id),
-      existing
-        ? {
-            qualifications: payload.qualifications,
-            qualificationExpiryDates: payload.qualificationExpiryDates,
-            qualificationCertificateURLs: payload.qualificationCertificateURLs,
-            updatedAt: payload.updatedAt,
+    try {
+      // Owner issue 16: never wait for ever — a write the server does not confirm in time is reported, not hung on.
+      if (existing) {
+        // Review of #415: the maps are written key by key (field paths), so a superseded spelling of an id, a cleared
+        // expiry and a removed certificate are deleted on the server too; keys this save did not change are not sent.
+        const more: unknown[] = []
+        for (const write of patch.mapWrites) {
+          more.push(
+            new FieldPath(write.field, write.key),
+            'delete' in write ? deleteField() : write.value instanceof Date ? asTimestamp(write.value) : write.value
+          )
+        }
+        if (patch.qualificationsChanged) more.push('qualifications', payload.qualifications)
+        if (more.length === 0) return id
+        more.push('updatedAt', payload.updatedAt)
+        const [firstField, firstValue, ...rest] = more as [string | FieldPath, unknown, ...unknown[]]
+        try {
+          await confirmQualificationWrite(updateDoc(ref, firstField, firstValue, ...rest))
+        } catch (error) {
+          // §1: an edit of a row deleted on another device is refused, never re-created.
+          if (typeof error === 'object' && error && (error as { code?: string }).code === 'not-found') {
+            throw new Error(EDIT_OF_MISSING_DOCUMENT_MESSAGE)
           }
-        : sharedDocumentPayWrite(payload, { privatePay: privatePayFor(organizationId) }),
-      { merge: true }
-    )
-    operativeMutationEpoch += 1
+          throw error
+        }
+      } else {
+        await confirmQualificationWrite(
+          setDoc(ref, sharedDocumentPayWrite(payload, { privatePay: privatePayFor(organizationId) }), { merge: true })
+        )
+      }
+    } finally {
+      operativeMutationEpoch += 1
+    }
     set({ operatives: [...get().operatives.filter((row) => row.id !== id), mergedOperative] })
     return id
   },

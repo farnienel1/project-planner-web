@@ -1309,6 +1309,7 @@ export function TimesheetPeriodPage({
       extrasMode: draft.managerSignedAt || isRevision ? 'export' : 'raw',
       standardDayHours: weekdayPaidHours(payrollPolicy),
       standardDayHoursOn: (date: Date) => weekdayPaidHours(policyOnDay(date)),
+      dayPolicyOn: policyOnDay,
       currencyCode: currency,
       // Rulebook 1.11.0: only the self-employed days of the period reach the invoice.
       timesheetDays: subjectUser ? timesheetDayKeysForPeriod(subjectUser, periodStart, periodEnd, timeZone) : [],

@@ -195,10 +195,10 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
     }
   }
 
-  const updateMine = async (next: typeof linked) => {
+  const updateMine = async (next: typeof linked, baseline?: typeof linked) => {
     if (!organization?.id || !next?.id) return
     const urls = canonicalCertificateUrls(next.qualifications, next.qualificationCertificateURLs)
-    await patchOperativeQualifications(organization.id, { ...next, qualificationCertificateURLs: urls })
+    await patchOperativeQualifications(organization.id, { ...next, qualificationCertificateURLs: urls }, baseline)
   }
 
   if (loading) {
@@ -305,11 +305,11 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
           linked={linked}
           templates={templates}
           saving={saving}
-          onSave={async (next) => {
+          onSave={async (next, baseline) => {
             setSaving(true)
             setError(null)
             try {
-              await updateMine(next)
+              await updateMine(next, baseline)
             } catch (err: unknown) {
               const message = formatCertificateSaveError(err)
               setError(message)

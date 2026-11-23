@@ -275,3 +275,47 @@ test('1.67.0 review (SF1): an edited day-rate overtime row on the invoice never 
   // The details show the amount paid, never the live line's £238.24.
   assert.ok(revised[0].details.endsWith('£300.00'), revised[0].details)
 })
+
+test('1.70.0 (23 Nov): live invoice booking lines read their slot window (timesheetLineDisplay); amounts never change', async () => {
+  const { DEFAULT_PAYROLL_POLICY } = await import('../canonical/organizationSettings.ts')
+  const fullDay = {
+    id: 'op-b1',
+    date: new Date('2026-11-02T00:00:00Z'),
+    jobNumber: 'J-1042',
+    projectName: 'Station Road',
+    details: 'FULL DAY',
+    paidHours: 8,
+    payrollBasis: 'dayRate' as const,
+    dayRate: 200,
+    amount: 200,
+    isPayeDay: false,
+    isOvertimeLine: false,
+    hasRate: true,
+    standardDayHours: 8,
+  }
+  const custom = { ...fullDay, id: 'op-b2', date: new Date('2026-11-03T00:00:00Z'), details: '07:00–12:00', paidHours: 5, amount: 125 }
+  const office = { ...fullDay, id: 'mgr-b3', date: new Date('2026-11-04T00:00:00Z'), jobNumber: '—', projectName: 'Office', details: 'FULL DAY' }
+  const payroll: TimesheetPayrollSummary = {
+    totalHours: 21, overtimeHours: 0, shiftCount: 3, baseAmount: 525, overtimeAmount: 0, workAmount: 525,
+    lineItems: [fullDay, custom, office],
+  }
+  const common = { payroll, draft: emptyTimesheetDraft(), timeZone: 'Europe/London', extrasMode: 'export' as const, standardDayHours: 8 }
+  const plain = invoiceLinesForTimesheet(common)
+  const withPolicy = invoiceLinesForTimesheet({ ...common, dayPolicyOn: () => DEFAULT_PAYROLL_POLICY })
+  // Amounts and the total are the rulebook's (`timesheetInvoiceRows`), whatever the wording.
+  assert.deepEqual(plain.map((line) => line.amount), [200, 125, 200])
+  assert.deepEqual(withPolicy.map((line) => line.amount), [200, 125, 200])
+  assert.equal(invoiceLinesTotal(withPolicy), 525)
+  // The title is the stored job name or place; the job number stays in its own column (review of #414: never twice).
+  assert.deepEqual(withPolicy.map((line) => line.projectName), ['Station Road', 'Station Road', 'Office'])
+  assert.deepEqual(withPolicy.map((line) => line.jobNumber), ['J-1042', 'J-1042', '—'])
+  assert.ok(withPolicy[0].description.startsWith('J-1042 Station Road · '))
+  // A Full day line reads its window on that day; a custom line keeps its clock times once (no second prefix).
+  assert.match(withPolicy[0].details, /^Full day \d{2}:\d{2}–\d{2}:\d{2} · /)
+  assert.match(withPolicy[1].details, /^07:00–12:00 · /)
+  assert.equal(withPolicy[1].details.indexOf('07:00–12:00', 1), -1)
+  // Without the day's working hours the slot name still reads plainly.
+  assert.match(plain[0].details, /^Full day · /)
+  // The equation part is unchanged.
+  assert.equal(withPolicy[0].details.split(' · ').slice(1).join(' · '), plain[0].details.split(' · ').slice(1).join(' · '))
+})
