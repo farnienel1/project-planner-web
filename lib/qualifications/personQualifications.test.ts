@@ -5,9 +5,8 @@ import type { Operative, Qualification } from '@/types'
 import {
   operativeRowsForPerson,
   personQualificationRows,
-  qualificationExpiryDate,
-  withQualificationExpiry,
 } from './personQualifications.ts'
+import { qualificationExpiryDate, withQualificationExpiry } from '../canonical/operativeQualifications.ts'
 import {
   QUALIFICATION_SAVE_UNCONFIRMED_MESSAGE,
   confirmQualificationWrite,
@@ -78,7 +77,10 @@ test('issue 19: the profile page and the qualifications editor read the expiry w
   const summary = readFileSync(new URL('../../components/users/UserProfileSummary.tsx', import.meta.url), 'utf8')
   const helper = readFileSync(new URL('./personQualifications.ts', import.meta.url), 'utf8')
   assert.match(editor, /qualificationExpiryDate\(draft\.qualificationExpiryDates, qual\.id\)/)
-  assert.match(helper, /expiry = qualificationExpiryDate\(row\.qualificationExpiryDates, qual\.id\)/)
+  // Rulebook 1.73.0: the rule lives in lib/canonical; the web helper only folds the person's rows and calls it.
+  assert.match(helper, /personQualifications\(\{ rows: operativeRowsForPerson\(input\)/)
+  assert.doesNotMatch(helper, /export function qualificationExpiryDate/)
+  assert.match(editor, /from '@\/lib\/canonical\/operativeQualifications'/)
   assert.match(summary, /personQualificationRows\(/)
   assert.doesNotMatch(summary, /qual\.endDate/)
 })

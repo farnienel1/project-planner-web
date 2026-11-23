@@ -128,9 +128,17 @@ export type LeaveCoverageRow = {
   missingHours: number
   bookedHours: number
   severity: 'high' | 'medium'
-  title: 'Booked during annual leave' | 'Half-day leave not covered'
+  title: typeof LEAVE_CLASH_WARNING_TITLE | typeof LEAVE_COVER_WARNING_TITLE
   message: string
 }
+
+/** The title of a `leave_clash` row (Warnings, Daily Overview). */
+export const LEAVE_CLASH_WARNING_TITLE = 'Booked during annual leave'
+/**
+ * The title of a `leave_cover` row, the same on Warnings and Daily Overview on both apps. Rulebook 1.73.0 (owner
+ * 23 Nov, batch 3 item 3): "Half-day unbooked" (was "Half-day leave not covered").
+ */
+export const LEAVE_COVER_WARNING_TITLE = 'Half-day unbooked'
 
 export function leaveSlotKind(timeSlot: string | null | undefined): LeaveSlot {
   const kind = namedSlotKind(timeSlot)
@@ -280,7 +288,7 @@ export function leaveCoverageRows(input: LeaveCoverageInput): LeaveCoverageRow[]
           missingHours: 0,
           bookedHours: hoursOf(mergeMinuteIntervals(intervals.map((entry) => entry.interval))),
           severity: 'high',
-          title: 'Booked during annual leave',
+          title: LEAVE_CLASH_WARNING_TITLE,
           message: `${personName} is booked ${bookedText} on ${longDay} while on ${leaveText}.`,
         })
       }
@@ -326,7 +334,7 @@ export function leaveCoverageRows(input: LeaveCoverageInput): LeaveCoverageRow[]
         missingHours,
         bookedHours,
         severity: 'medium',
-        title: 'Half-day leave not covered',
+        title: LEAVE_COVER_WARNING_TITLE,
         message,
       })
     }

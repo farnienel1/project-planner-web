@@ -209,3 +209,207 @@ export function qualificationCertificateStoragePath(input: {
   if (!organizationId || !operativeId || !qualificationId || !fileName) return null
   return `organizations/${organizationId}/operatives/${operativeId}/qualifications/${qualificationId}/certificates/${fileName}`
 }
+
+import { taskPersonIndex, type TaskPersonRosterRow } from './taskPeople'
+
+/**
+ * Rulebook 1.73.0 (owner 23 Nov, gap 1): one qualification expiry rule for both apps (moved from web
+ * `lib/qualifications/personQualifications.ts`, web #415). A qualification's expiry is
+ * `qualificationExpiryDates[qualificationId]` — the exact key first, else the same id in another letter case (iOS
+ * writes upper-case UUIDs) — read as a Date (a Date, an ISO string or epoch ms; anything else is no expiry). The
+ * assignment row's own `endDate` is not an expiry. The profile page, the qualifications editor and the
+ * qualification-expiry warnings (`qualificationExpiryRows` input) all read it this way.
+ */
+function expiryDateFromUnknown(value: unknown): Date | undefined {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? undefined : value
+  if (typeof value === 'number') {
+    // Epoch milliseconds. Zero or below (a cleared or default field) and anything a Date cannot hold are no date.
+    if (!Number.isFinite(value) || value <= 0) return undefined
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? undefined : date
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = new Date(value)
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed
+  }
+  return undefined
+}
+
+export function qualificationExpiryDate(
+  dates: Record<string, unknown> | null | undefined,
+  qualificationId: unknown
+): Date | undefined {
+  if (!dates) return undefined
+  const id = trimId(qualificationId)
+  if (!id) return undefined
+  const direct = expiryDateFromUnknown(dates[id])
+  if (direct) return direct
+  const target = id.toLowerCase()
+  for (const [key, value] of Object.entries(dates)) {
+    if (key.toLowerCase() === target) {
+      const date = expiryDateFromUnknown(value)
+      if (date) return date
+    }
+  }
+  return undefined
+}
+
+/**
+ * The expiry map after the editor sets (or clears) one qualification's date: every other spelling of that id is
+ * removed, so a key stored in another letter case cannot keep showing the old date.
+ */
+export function withQualificationExpiry<T>(
+  dates: Record<string, T> | null | undefined,
+  qualificationId: unknown,
+  date: T | null | undefined
+): Record<string, T> {
+  const id = trimId(qualificationId)
+  const target = id.toLowerCase()
+  const next: Record<string, T> = {}
+  for (const [key, value] of Object.entries(dates || {})) {
+    if (key.toLowerCase() !== target) next[key] = value
+  }
+  if (date && target) next[id] = date
+  return next
+}
+
+/** One `operatives` row as the qualification rules read it. */
+export type QualificationOperativeRow = {
+  id: string
+  isActive?: boolean | null
+  qualifications?: ReadonlyArray<{ id?: unknown; name?: unknown } | null | undefined> | null
+  qualificationExpiryDates?: Record<string, unknown> | null
+  qualificationCertificateURLs?: Record<string, string> | null
+}
+
+/**
+ * One row's assigned qualifications that have an expiry, one per qualification id (without case): the input the
+ * expiry warnings give `qualificationExpiryRows` / `qualificationExpiryCount` / `myProfileSummary`.
+ */
+export function assignedQualificationExpiries(
+  row: Pick<QualificationOperativeRow, 'qualifications' | 'qualificationExpiryDates'> | null | undefined
+): { qualificationId: string; name: string; expiryIso: string }[] {
+  if (!row) return []
+  const seen = new Set<string>()
+  return (row.qualifications || []).flatMap((qualification) => {
+    const qualificationId = trimId(qualification?.id)
+    const name = String(qualification?.name || '')
+    if (!qualificationId || !name || seen.has(qualificationId.toLowerCase())) return []
+    seen.add(qualificationId.toLowerCase())
+    const expiry = qualificationExpiryDate(row.qualificationExpiryDates, qualificationId)
+    if (!expiry) return []
+    return [{ qualificationId, name, expiryIso: expiry.toISOString() }]
+  })
+}
+
+export type PersonQualification = {
+  id: string
+  name: string
+  expiry?: Date
+  /** The same expiry as ISO text (what iOS reads through the packed script). */
+  expiryIso?: string
+  certificateUrl?: string
+  /** The `operatives` row the qualification (or its certificate) was read from. */
+  operativeId: string
+}
+
+function rowWeight(row: QualificationOperativeRow): number {
+  return (
+    (row.qualifications?.length ?? 0) +
+    Object.keys(row.qualificationExpiryDates || {}).length +
+    Object.keys(row.qualificationCertificateURLs || {}).length
+  )
+}
+
+/**
+ * A person's qualifications from every `operatives` row of theirs (the caller passes the rows of one person — the
+ * rulebook's person fold, `taskPersonIndex`), one per qualification id without case. Rows are read in order — active
+ * rows first (the expiry warnings read only those), then `preferredRowId` (the row the editor saves to), then the
+ * row holding the most — and a qualification's expiry and certificate come from the first row that has them.
+ */
+export function personQualifications(input: {
+  rows: ReadonlyArray<QualificationOperativeRow>
+  preferredRowId?: string | null
+}): PersonQualification[] {
+  const preferred = trimId(input.preferredRowId).toLowerCase()
+  const rows = [...(input.rows || [])]
+    .filter((row) => row && trimId(row.id))
+    .sort((a, b) => {
+      if ((a.isActive !== false) !== (b.isActive !== false)) return a.isActive !== false ? -1 : 1
+      const ap = trimId(a.id).toLowerCase() === preferred ? 1 : 0
+      const bp = trimId(b.id).toLowerCase() === preferred ? 1 : 0
+      if (ap !== bp) return bp - ap
+      return rowWeight(b) - rowWeight(a)
+    })
+  const out = new Map<string, PersonQualification>()
+  for (const row of rows) {
+    for (const qual of row.qualifications || []) {
+      const id = trimId(qual?.id)
+      const key = id.toLowerCase()
+      if (!key) continue
+      const expiry = qualificationExpiryDate(row.qualificationExpiryDates, id)
+      const certificateUrl = qualificationCertificateUrl(row.qualificationCertificateURLs || undefined, id)
+      const current = out.get(key)
+      if (!current) {
+        out.set(key, {
+          id,
+          name: String(qual?.name ?? ''),
+          expiry,
+          expiryIso: expiry?.toISOString(),
+          certificateUrl,
+          operativeId: row.id,
+        })
+        continue
+      }
+      if (!current.expiry && expiry) {
+        current.expiry = expiry
+        current.expiryIso = expiry.toISOString()
+      }
+      if (!current.certificateUrl && certificateUrl) {
+        current.certificateUrl = certificateUrl
+        current.operativeId = row.id
+      }
+    }
+  }
+  return [...out.values()]
+}
+
+/**
+ * Rulebook 1.73.0 (review of #418, guardrail 1): a placeholder `operatives` row — a name or email containing
+ * "placeholder", or a name containing "initial" (the starter rows older builds wrote) — is never a person.
+ */
+export function isPlaceholderOperativeRow(
+  row: { firstName?: unknown; lastName?: unknown; email?: unknown } | null | undefined
+): boolean {
+  if (!row) return false
+  const name = `${String(row.firstName ?? '')} ${String(row.lastName ?? '')}`.trim().toLowerCase()
+  const email = String(row.email ?? '').toLowerCase()
+  return name.includes('placeholder') || email.includes('placeholder') || name.includes('initial')
+}
+
+/**
+ * Rulebook 1.73.0 (review of #418, guardrail 1): every `operatives` row that is this person, by the rulebook's person
+ * fold (`taskPersonIndex`: every users document of the person by `personIdSet`, their emails, and the rows on those
+ * emails or ids or linked to those accounts through `linkedUserId` / `userId` / `uid`). Placeholder rows
+ * (`isPlaceholderOperativeRow`) are left out. Never one row picked by email. Rows keep their stored shape.
+ */
+export function operativeRowsForPerson<T extends { id: string; email?: string | null; linkedUserId?: string | null }>(
+  input: {
+    person: { id: string; email?: string | null }
+    operatives: ReadonlyArray<T>
+    roster?: ReadonlyArray<TaskPersonRosterRow> | null
+  }
+): T[] {
+  const personId = trimId(input.person?.id)
+  if (!personId) return []
+  const roster: TaskPersonRosterRow[] = [...(input.roster || [])]
+  if (!roster.some((row) => trimId(row?.id).toLowerCase() === personId.toLowerCase())) {
+    roster.push({ id: personId, email: input.person.email ?? '' })
+  }
+  const rows = (input.operatives || []).filter(
+    (row) => row && trimId(row.id) && !isPlaceholderOperativeRow(row as Record<string, unknown>)
+  )
+  const index = taskPersonIndex({ managers: [], operatives: rows, roster })
+  const personKey = index.keyOf('operative', personId)
+  return rows.filter((row) => index.keyOf('operative', row.id) === personKey)
+}

@@ -18758,3 +18758,180 @@ test('1.72.0 owner answer #416 Q3: ✕ on the overtime line removes the overtime
   assert.equal(strike('2026-11-23', '17:00', '20:00', { collection: 'managerSiteBookings' }).kind, 'delete')
   assert.equal(R112.timesheetReviewOvertimeStrike({ booking: null, organization: org }).kind, 'refused')
 })
+
+// ── 1.73.0 (owner 23 Nov): qualification expiry, the leave-cover title and the weekend label are shared rules ─────────
+
+test('1.73.0 gap 1: qualificationExpiryDate reads the exact key, else the same id in another letter case', () => {
+  const Q = 'A1B2C3D4-0000-4000-8000-000000000001'
+  const expiry = new Date('2027-05-01T00:00:00Z')
+  assert.equal(R112.qualificationExpiryDate({ [Q]: expiry }, Q.toLowerCase())?.toISOString(), expiry.toISOString())
+  assert.equal(R112.qualificationExpiryDate({ [Q.toLowerCase()]: expiry }, Q)?.toISOString(), expiry.toISOString())
+  // iOS reaches it through the packed script with ISO strings.
+  assert.equal(R112.qualificationExpiryDate({ [Q]: expiry.toISOString() }, Q)?.toISOString(), expiry.toISOString())
+  assert.equal(R112.qualificationExpiryDate({ [Q]: new Date('nope') }, Q), undefined)
+  assert.equal(R112.qualificationExpiryDate({ [Q]: 'not a date' }, Q), undefined)
+  assert.equal(R112.qualificationExpiryDate(undefined, Q), undefined)
+  assert.equal(R112.qualificationExpiryDate({ [Q]: expiry }, '  '), undefined)
+})
+
+test('1.73.0 gap 1: withQualificationExpiry leaves one spelling of the id', () => {
+  const Q = 'A1B2C3D4-0000-4000-8000-000000000001'
+  const old = new Date('2026-01-01T00:00:00Z')
+  const fresh = new Date('2028-01-01T00:00:00Z')
+  const next = R112.withQualificationExpiry({ [Q]: old, other: old }, Q.toLowerCase(), fresh)
+  assert.deepEqual(Object.keys(next).sort(), [Q.toLowerCase(), 'other'].sort())
+  assert.equal(next[Q.toLowerCase()], fresh)
+  assert.deepEqual(Object.keys(R112.withQualificationExpiry({ [Q]: old }, Q, undefined)), [])
+})
+
+test('1.73.0 gap 1: assignedQualificationExpiries is one row per qualification with a readable expiry', () => {
+  const rows = R112.assignedQualificationExpiries({
+    qualifications: [
+      { id: 'Q1', name: 'CSCS' },
+      { id: 'q1', name: 'CSCS again' },
+      { id: 'Q2', name: 'IPAF' },
+      { id: '', name: 'Blank' },
+    ],
+    qualificationExpiryDates: { q1: new Date('2027-01-01T00:00:00Z') },
+  })
+  assert.deepEqual(rows, [{ qualificationId: 'Q1', name: 'CSCS', expiryIso: '2027-01-01T00:00:00.000Z' }])
+})
+
+test('1.73.0 gap 1: personQualifications reads active rows first, then the preferred row, then the fullest', () => {
+  const activeDate = new Date('2027-06-01T00:00:00Z')
+  const inactiveDate = new Date('2026-06-01T00:00:00Z')
+  const rows = R112.personQualifications({
+    preferredRowId: 'inactive',
+    rows: [
+      {
+        id: 'inactive',
+        isActive: false,
+        qualifications: [{ id: 'Q1', name: 'CSCS' }],
+        qualificationExpiryDates: { Q1: inactiveDate },
+        qualificationCertificateURLs: { Q1: 'https://example.com/old.pdf' },
+      },
+      { id: 'active', isActive: true, qualifications: [{ id: 'q1', name: 'CSCS' }], qualificationExpiryDates: { q1: activeDate } },
+    ],
+  })
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].expiry?.toISOString(), activeDate.toISOString())
+  // The certificate comes from the first row that has one; its row is the one linked.
+  assert.equal(rows[0].certificateUrl, 'https://example.com/old.pdf')
+  assert.equal(rows[0].operativeId, 'inactive')
+  const preferred = R112.personQualifications({
+    preferredRowId: 'B',
+    rows: [
+      { id: 'A', qualifications: [{ id: 'Q1', name: 'CSCS' }], qualificationExpiryDates: { Q1: inactiveDate } },
+      { id: 'B', qualifications: [{ id: 'Q1', name: 'CSCS' }], qualificationExpiryDates: { Q1: activeDate } },
+    ],
+  })
+  assert.equal(preferred[0].expiry?.toISOString(), activeDate.toISOString())
+})
+
+test('1.73.0 batch 3 item 3: the half-day leave-cover row is titled "Half-day unbooked"', () => {
+  assert.equal(R112.LEAVE_COVER_WARNING_TITLE, 'Half-day unbooked')
+  assert.equal(R112.LEAVE_CLASH_WARNING_TITLE, 'Booked during annual leave')
+  const source = readFileSync(new URL('./leaveCoverage.ts', import.meta.url), 'utf8')
+  assert.doesNotMatch(source, /title: 'Half-day leave not covered'/)
+})
+
+test('1.73.0 item 31: dailyOverviewStandardHoursLabel names a set weekend window, else "Standard hrs"', () => {
+  const windowDay = {
+    allHoursAtMultiplierMode: false,
+    allHoursMultiplier: 2,
+    definedWindowStart: '07:30',
+    definedWindowEnd: '14:00',
+    countsAsStandardHours: 8,
+    outsideWindowMultiplier: 1.5,
+    sameAsSaturday: false,
+  }
+  const policy = {
+    ...DEFAULT_PAYROLL_POLICY,
+    saturday: windowDay,
+    sunday: { allHoursAtMultiplierMode: true, allHoursMultiplier: 2, sameAsSaturday: false },
+  } as unknown as typeof DEFAULT_PAYROLL_POLICY
+  const zone = 'Europe/London'
+  const label = (dayKey: string, p: unknown = policy, loaded?: boolean) =>
+    R112.dailyOverviewStandardHoursLabel({ policyOrState: p as typeof policy, dayKey, timeZone: zone, loaded })
+  assert.deepEqual(label('2026-11-21'), { label: 'Weekend window hrs', hint: '07:30–14:00 counts as a full day' })
+  assert.deepEqual(label('2026-11-22'), { label: 'Standard hrs', hint: null })
+  assert.deepEqual(label('2026-11-23'), { label: 'Standard hrs', hint: null })
+  assert.deepEqual(label('2026-11-21', null), { label: 'Standard hrs', hint: null })
+  const same = { ...policy, sunday: { ...windowDay, sameAsSaturday: true } }
+  assert.deepEqual(label('2026-11-22', same), { label: 'Weekend window hrs', hint: '07:30–14:00 counts as a full day' })
+  // While settings load the factory default policy (Saturday is a set window) still reads "Standard hrs".
+  assert.deepEqual(label('2026-11-21', DEFAULT_PAYROLL_POLICY, false), { label: 'Standard hrs', hint: null })
+  assert.equal(label('2026-11-21', DEFAULT_PAYROLL_POLICY, true).label, 'Weekend window hrs')
+  // A policy state is read under the working hours in effect that day.
+  const allHours = { ...policy, saturday: { ...windowDay, allHoursAtMultiplierMode: true } }
+  const state = { current: allHours, prior: policy, effectiveFrom: '2026-11-22', scheduled: null }
+  assert.equal(label('2026-11-21', state).label, 'Weekend window hrs')
+  assert.equal(label('2026-11-28', state).label, 'Standard hrs')
+})
+
+test('1.73.0 review of #418: an epoch number that is not a real date, zero or below is no expiry (never throws)', () => {
+  const Q = 'Q1'
+  for (const bad of [9e15, Number.NaN, Number.POSITIVE_INFINITY, 0, -1]) {
+    assert.equal(R112.qualificationExpiryDate({ [Q]: bad }, Q), undefined, String(bad))
+    assert.deepEqual(
+      R112.assignedQualificationExpiries({ qualifications: [{ id: Q, name: 'CSCS' }], qualificationExpiryDates: { [Q]: bad } }),
+      []
+    )
+  }
+  const ms = Date.UTC(2027, 4, 1)
+  assert.equal(R112.qualificationExpiryDate({ [Q]: ms }, Q)?.toISOString(), '2027-05-01T00:00:00.000Z')
+  const rows = R112.personQualifications({
+    rows: [{ id: 'r', qualifications: [{ id: Q, name: 'CSCS' }], qualificationExpiryDates: { [Q]: ms } }],
+  })
+  assert.equal(rows[0].expiryIso, '2027-05-01T00:00:00.000Z')
+})
+
+test('1.73.0 review of #418: operativeRowsForPerson folds the person\'s rows and leaves placeholders out', () => {
+  assert.equal(R112.isPlaceholderOperativeRow({ firstName: 'Initial', lastName: 'Operative' }), true)
+  assert.equal(R112.isPlaceholderOperativeRow({ firstName: 'Jo', lastName: 'Smith', email: 'placeholder@x.co' }), true)
+  assert.equal(R112.isPlaceholderOperativeRow({ firstName: 'Jo', lastName: 'Smith', email: 'jo@x.co' }), false)
+  const operatives = [
+    { id: 'row-email', firstName: 'Jo', lastName: 'Smith', email: 'JO@x.co' },
+    { id: 'row-linked', firstName: 'Jo', lastName: 'S', email: '', linkedUserId: 'u2' },
+    { id: 'row-placeholder', firstName: 'Placeholder', lastName: 'Row', email: 'jo@x.co' },
+    { id: 'row-other', firstName: 'Ann', lastName: 'Lee', email: 'ann@x.co' },
+  ]
+  const roster = [
+    { id: 'u1', email: 'jo@x.co' },
+    { id: 'u2', email: 'jo@x.co' },
+    { id: 'u3', email: 'ann@x.co' },
+  ]
+  const ids = R112.operativeRowsForPerson({ person: { id: 'u1', email: 'jo@x.co' }, operatives, roster }).map((r) => r.id)
+  assert.deepEqual(ids.sort(), ['row-email', 'row-linked'])
+  assert.deepEqual(R112.operativeRowsForPerson({ person: { id: '' }, operatives, roster }), [])
+})
+
+test('1.73.0 review of #418: the weekend label reads the working-hours history for the day shown', () => {
+  const windowDay = {
+    allHoursAtMultiplierMode: false,
+    allHoursMultiplier: 2,
+    definedWindowStart: '07:30',
+    definedWindowEnd: '14:00',
+    countsAsStandardHours: 8,
+    outsideWindowMultiplier: 1.5,
+    sameAsSaturday: false,
+  }
+  const setWindow = { ...DEFAULT_PAYROLL_POLICY, saturday: windowDay }
+  const everyHour = { ...DEFAULT_PAYROLL_POLICY, saturday: { ...windowDay, allHoursAtMultiplierMode: true } }
+  const state = {
+    current: setWindow,
+    prior: null,
+    effectiveFrom: '2026-11-16',
+    scheduled: null,
+    history: [
+      { effectiveFrom: '1970-01-01', policy: everyHour },
+      { effectiveFrom: '2026-11-16', policy: setWindow },
+    ],
+  } as unknown as Parameters<typeof R112.dailyOverviewStandardHoursLabel>[0]['policyOrState']
+  const at = (dayKey: string) =>
+    R112.dailyOverviewStandardHoursLabel({ policyOrState: state, dayKey, timeZone: 'Europe/London' }).label
+  assert.equal(at('2026-11-14'), 'Standard hrs') // before the change: every hour at ×2, no window
+  assert.equal(at('2026-11-21'), 'Weekend window hrs') // after it: the set window
+  const screen = readFileSync(new URL('../../components/daily-overview/DailyOverviewScreen.tsx', import.meta.url), 'utf8')
+  assert.match(screen, /policyOrState: settings\.payrollPolicyState \?\? payrollPolicy/)
+})

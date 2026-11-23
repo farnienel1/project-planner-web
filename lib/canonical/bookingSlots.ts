@@ -691,3 +691,33 @@ export function bookingHoursLabel(
   }
   return { hours: total, label: hoursText(total) }
 }
+
+/**
+ * Rulebook 1.73.0 (owner decision 23 Nov, item 31 option 1; moved from web `lib/daily-overview/standardHoursLabel.ts`,
+ * web #417, so iOS shows the same text): the label of Daily Overview's standard-hours figure. On a Saturday or Sunday
+ * whose working-hours rule (in effect that day) is a set window, a booking that covers the window counts as one full
+ * day (§4.3, 1.49.0), so the figure reads "Weekend window hrs" with the window as a hint ("07:30–14:00 counts as a
+ * full day"). The window is `weekendCustomHoursDefault`; null on a weekday or a day paid every hour at a multiplier,
+ * which keep "Standard hrs". Wording only: the figure is unchanged. While the organisation's settings have not loaded
+ * (`loaded` false) the label stays "Standard hrs" rather than naming a window the company may not have.
+ */
+export const DAILY_OVERVIEW_STANDARD_HOURS_LABEL = 'Standard hrs'
+export const DAILY_OVERVIEW_WEEKEND_WINDOW_HOURS_LABEL = 'Weekend window hrs'
+
+export function dailyOverviewStandardHoursLabel(input: {
+  policyOrState: OrgPayrollTimePolicy | PayrollTimePolicyState | null | undefined
+  dayKey: string
+  timeZone?: string | null
+  loaded?: boolean
+}): { label: string; hint: string | null } {
+  const standard = { label: DAILY_OVERVIEW_STANDARD_HOURS_LABEL, hint: null }
+  if (input.loaded === false || !input.policyOrState) return standard
+  const key = String(input.dayKey || '').trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return standard
+  const policy = isPolicyState(input.policyOrState)
+    ? payrollTimePolicyForDayFromState(input.policyOrState, key)
+    : input.policyOrState
+  const window = weekendCustomHoursDefault(policy, key, input.timeZone)
+  if (!window) return standard
+  return { label: DAILY_OVERVIEW_WEEKEND_WINDOW_HOURS_LABEL, hint: `${window.start}–${window.end} counts as a full day` }
+}

@@ -773,7 +773,7 @@ test('the Book labour day heading is the organisation day, not London', () => {
   assert.equal(bookLabourDayLine(new Date('2026-11-15T00:00:00Z'), 'Europe/London'), 'Sunday 15 Nov')
 })
 
-// Owner report (17 Nov 2026): "Book the PM" on a "Half-day leave not covered" warning opened Book labour on
+// Owner report (17 Nov 2026): "Book the PM" on a "Half-day unbooked" warning opened Book labour on
 // "Everyone is booked". Book labour now lists the day's leave_cover rows too, with the uncovered time.
 const MON_AM_LEAVE = '2026-11-23'
 const MON_AM_DATE = new Date('2026-11-23T12:00:00Z')

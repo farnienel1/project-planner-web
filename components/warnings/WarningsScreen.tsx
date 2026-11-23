@@ -9,7 +9,7 @@ import { groupUnbookedWarningsByDay, type UnbookedLabourWarning } from '@/lib/wa
 import { formatWarningHours } from '@/lib/warnings/clashIntervals'
 import type { QualificationExpiryWarning, UnverifiedOperativeWarning } from '@/lib/warnings/generateOrgWarnings'
 import { leaveWarningAnnualLeaveHref, type LeaveCoverageWarning } from '@/lib/warnings/leaveCoverageWarnings'
-import { formatClockMinutes, type WarningsSortDirection } from '@/lib/canonical'
+import { formatClockMinutes, LEAVE_COVER_WARNING_TITLE, type WarningsSortDirection } from '@/lib/canonical'
 import { orderWarningListItems } from '@/lib/warnings/warningListOrder'
 import { projectMaterialsPath } from '@/lib/navigation/projectSchedulePaths'
 import { ClashWarningCard } from '@/components/warnings/ClashWarningCard'
@@ -632,7 +632,7 @@ export function WarningsScreen({
                 <div className="big" style={{ fontSize: 28 }}>{allCount} need attention</div>
                 <p className="small" style={{ marginTop: 8, maxWidth: 640 }}>
                   High: operative booking clashes, unbooked labour &amp; bookings during annual leave · Medium:
-                  manager/admin overlaps &amp; half-day leave not covered · Low: materials and qualifications
+                  manager/admin overlaps &amp; {LEAVE_COVER_WARNING_TITLE.toLowerCase()} · Low: materials and qualifications
                 </p>
               </div>
               {canBook ? (
@@ -650,7 +650,7 @@ export function WarningsScreen({
               <button type="button" className="st" onClick={() => setFilter('clashes')}>
                 <b>{mediumCount}</b>
                 <span>Medium</span>
-                <div className="xs" style={{ opacity: 0.75, marginTop: 2 }}>Manager/admin overlaps & half-day leave cover</div>
+                <div className="xs" style={{ opacity: 0.75, marginTop: 2 }}>Manager/admin overlaps & {LEAVE_COVER_WARNING_TITLE.toLowerCase()}</div>
               </button>
               <button type="button" className="st" onClick={() => setFilter('all')}>
                 <b>{lowCount}</b>
@@ -692,7 +692,7 @@ export function WarningsScreen({
               <p className="mt-2 text-[18px] font-semibold">No active warnings</p>
               <p className="mx-auto mt-2 max-w-md text-[14px] text-(--ink3)">
                 High: operative booking clashes, unbooked labour and bookings during annual leave. Medium:
-                manager/admin overlaps and half-day leave not covered. Low: materials and qualifications.
+                manager/admin overlaps and {LEAVE_COVER_WARNING_TITLE.toLowerCase()}. Low: materials and qualifications.
               </p>
             </>
           )}

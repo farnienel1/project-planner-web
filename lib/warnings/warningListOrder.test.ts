@@ -45,7 +45,7 @@ function leave(id: string, day: string): LeaveCoverageWarning {
     missingHours: 4,
     bookedHours: 0,
     severity: 'medium',
-    title: 'Half-day leave not covered',
+    title: 'Half-day unbooked',
     message: id,
   }
 }

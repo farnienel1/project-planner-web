@@ -179,7 +179,7 @@ test('unbooked labour day card: every person row of the day (iOS warningsToDismi
   assert.equal(after, 0)
 })
 
-test('half-day leave not covered: writes the leaveCoverageRows id; the row leaves', async () => {
+test('half-day unbooked: writes the leaveCoverageRows id; the row leaves', async () => {
   const rows = leaveCoverageRows({
     timeZone: TZ,
     startDayKey: '2026-10-12',

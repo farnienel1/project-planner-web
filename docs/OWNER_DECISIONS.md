@@ -1264,7 +1264,7 @@ UI only, web only (`docs/design/projects-overview-ui/projects-overview-ui-spec.m
 | 23 Nov | **Item 2: the Daily overview Today button has a fixed size** — it keeps the width of "Back to today", so the ‹ › arrows never move. UI only. | done web (#417); iOS n/a |
 | 23 Nov | **Item 4: New site audit job filter** All / Active / Upcoming / Completed with counts, default Active (as iOS), from `worksInTab` / `worksTabCounts` on the organisation day. | done web (#417); iOS already |
 | 23 Nov | **Item 5: New site audit as a step-by-step page** (Job → Details → Photos → Review & save) instead of a dialog, from the Site audit hub and from a job's Site audits page (`…/site-audit/new`); fields, checks and the saved record unchanged (`siteAuditDraftProblem`, `siteAuditOutboxRecord`). Leaving with photos or a typed title asks first ("Leave this audit? Your photos and details will be lost."; browser close / reload asks too). Personal site audits keep their dialog. | done web (#417); iOS n/a |
-| 23 Nov | **Item 31: weekend overtime checked correct** for the organisation's Saturday setting (no pay change), and option 1: a clearer label on a set-window Saturday / Sunday — "Weekend window hrs · 07:30–14:00 counts as a full day" (`weekendCustomHoursDefault`, the working hours in effect that day; "Standard hrs" on a day paid every hour at a multiplier, on weekdays and while the settings load). Figures unchanged. | done web (#417); iOS open (`DailyOverviewView.swift:652`) |
+| 23 Nov | **Item 31: weekend overtime checked correct** for the organisation's Saturday setting (no pay change), and option 1: a clearer label on a set-window Saturday / Sunday — "Weekend window hrs · 07:30–14:00 counts as a full day" (`weekendCustomHoursDefault`, the working hours in effect that day; "Standard hrs" on a day paid every hour at a multiplier, on weekdays and while the settings load). Figures unchanged. | done web (#417); wording moved to the rulebook (1.73.0, `dailyOverviewStandardHoursLabel`); iOS open (`DailyOverviewView.swift:652`, hand-off v1.73.0) |
 
 ## UI batch 3 judgement calls (owner to confirm)
 
@@ -1275,3 +1275,20 @@ UI only, web only (`docs/design/projects-overview-ui/projects-overview-ui-spec.m
 | 23 Nov | New wording: step names "Job / Details / Photos / Review & save", "Change job", "Next: review", "Review", the summary labels, the audit date on Review as "23 Nov 2026", "You can leave this page — the audit keeps uploading…" (was "You can close this"), "You can't create site audits." on a New site audit link opened without the permission. | done web (#417), owner to confirm |
 | 23 Nov | The new audit's date now defaults to today in the organisation's time zone (was the browser's day); stored as before (yyyy-MM-dd). | done web (#417) |
 | 23 Nov | The New site audit job list is not narrowed by `visibleJobs` (the hub's Projects / Small works browse lists aren't either). Narrowing would hide, for operatives with Site audit on, every job they have no booking, task or deadline on and any job hidden from them (`hiddenOperativeUserIds`) — admins and managers would see no change. Owner to decide. | question |
+
+## 23 Nov decisions (for 1.73)
+
+| Date | Decision | Status |
+|---|---|---|
+| 23 Nov | **Batch 3 item 3: "Half-day leave not covered" is renamed "Half-day unbooked"** on Daily Overview and Warnings, both apps; one rulebook constant `LEAVE_COVER_WARNING_TITLE`. Button words ("Book the AM / PM", "Open daily overview", "Annual leave") unchanged. | done web + rulebook (1.73.0, w173-quals-halfday); iOS open (hand-off v1.73.0) |
+| 23 Nov | **Gap 1: one qualification expiry rule for both apps.** `qualificationExpiryDate` (the exact key, else the id in another letter case), `withQualificationExpiry`, `assignedQualificationExpiries` and `personQualifications` (active rows first, then the editor's row) move from web into the rulebook; web's copies are deleted. | done web + rulebook (1.73.0); iOS open (`PersonQualifications.expiryDate` → the rulebook, hand-off v1.73.0) |
+| 23 Nov | **Item 31 (iOS): the weekend label is a rulebook rule** (`dailyOverviewStandardHoursLabel`), so iOS shows "Weekend window hrs · 07:30–14:00 counts as a full day" with the same text. | done rulebook + web (1.73.0); iOS open (hand-off v1.73.0) |
+| 23 Nov | **Gap 3: iOS Book labour checks** — `HomeQuickActionRegistry`, `ProjectDetailView` and `MyScheduleView` decide who may open Book labour with `canScheduleOperatives` through `CanonicalBusinessEngine` (web already does). No rulebook change. | iOS open (listed in #418 and in the hand-off notes v1.73.0) |
+
+## 1.73.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 23 Nov | The shared expiry reader also accepts ISO text and epoch milliseconds (web only ever passed Dates; iOS passes stored values through the packed script). A value that is not a date is still no expiry. | done, owner to confirm |
+| 23 Nov | Which `operatives` rows are a person's, placeholder rows left out, is one rulebook rule (`operativeRowsForPerson` over `taskPersonIndex`, `isPlaceholderOperativeRow`), so iOS calls the same rule (review of #418, guardrail 1). | done |
+| 23 Nov | An expiry stored as a number is read as epoch milliseconds; zero, below zero, or a number no date can hold is no expiry (review of #418). | done, owner to confirm |
