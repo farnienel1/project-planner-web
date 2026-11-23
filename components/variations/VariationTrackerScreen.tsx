@@ -45,6 +45,16 @@ import {
   variationTotals,
 } from '@/lib/canonical'
 import type { Project } from '@/types'
+import {
+  trackerEdgeScrollDelta,
+  trackerRowMovable,
+  trackerTouchDragEnd,
+  trackerTouchDragMove,
+  trackerTouchDragStart,
+  trackerOrderAfterMove,
+  variationPinnedMoveText,
+  type TrackerTouchDrag,
+} from '@/lib/variations/variationTrackerDrag'
 
 const NOTES = [
   'Every variation on the job is here, in its current order. Turning the tracker on renumbered nothing.',
@@ -87,10 +97,18 @@ export function VariationTrackerScreen({
   const [dragId, setDragId] = useState<string | null>(null)
   const [filter, setFilter] = useState<VariationListFilter>('all')
   const [heading, setHeading] = useState('')
-  const [message, setMessage] = useState<{ text: string; tone: 'ok' | 'warn' } | null>(null)
+  const [message, setMessage] = useState<{ text: string; tone: 'ok' | 'warn' | 'locked'; reload?: boolean } | null>(null)
   const [busy, setBusy] = useState(false)
   const baseRows = useRef<Variation[] | null>(null)
   const dragging = useRef<string | null>(null)
+  // Touch and pen drag (the browser's own drag and drop is mouse only). The state lives in a ref and the listeners on
+  // `window`, so lifting the finger always ends the drag even after React has moved the row (review of #420).
+  const pointerDrag = useRef<TrackerTouchDrag | null>(null)
+  const stopPointerDrag = useRef<(() => void) | null>(null)
+  const tableRef = useRef<HTMLTableElement | null>(null)
+  // The latest save, for the window listeners (they outlive the render that started the drag).
+  const saveRef = useRef<((order: string[]) => Promise<void>) | null>(null)
+  useEffect(() => () => stopPointerDrag.current?.(), [])
   const allowed = canUseVariationTracker(user, project, managers)
   const showCost = canSeeVariationCostsFor(user)
   const base = parentType === 'smallWork' ? `/dashboard/small-works/${project.id}/variations` : `/dashboard/projects/${project.id}/variations`
@@ -132,26 +150,20 @@ export function VariationTrackerScreen({
   const orderLocked = Boolean(tracker?.orderLocked)
   const canDrag = Boolean(tracker?.enabled) && !orderLocked && filter === 'all' && !busy
 
-  if (!allowed) {
-    return (
-      <div className="empty card pad">
-        <h3>VO tracker</h3>
-        <p>The tracker is for admins and the managers of this job.</p>
-        <Link href={base} className="btn sm">Back to variations</Link>
-      </div>
-    )
-  }
-
   // Moves an open variation to the place of another open one; a pinned row is never a target and never moves.
   const move = (fromId: string, toId: string) => {
-    if (fromId === toId) return
-    const current = [...openIds]
-    const from = current.indexOf(fromId)
-    const to = current.indexOf(toId)
-    if (from < 0 || to < 0) return
-    const [item] = current.splice(from, 1)
-    current.splice(to, 0, item)
-    setOrder(current)
+    const next = trackerOrderAfterMove(openIds, fromId, toId)
+    if (next) setOrder(next)
+  }
+
+  // Owner 23 Nov: trying to move a Submitted or Closed variation says why it cannot move.
+  const showLocked = (row: Variation) => setMessage({ text: variationPinnedMoveText(row), tone: 'locked' })
+
+  // Touch / pen: the row under the finger (`data-vo-id`), or null.
+  const rowIdAt = (x: number, y: number): string | null => {
+    const element = typeof document === 'undefined' ? null : document.elementFromPoint(x, y)
+    const tr = element instanceof Element ? element.closest('tr[data-vo-id]') : null
+    return tr?.getAttribute('data-vo-id') ?? null
   }
 
   const save = async (nextOrder: string[]) => {
@@ -179,6 +191,11 @@ export function VariationTrackerScreen({
       )
     } catch (error) {
       console.error('[variations] tracker save failed', error)
+      // `variationRenumberPlan` refused an order that would move a pinned variation (`VARIATION_PINNED_MESSAGE`).
+      if (error instanceof Error && error.message === VARIATION_PINNED_MESSAGE) {
+        setMessage({ text: VARIATION_PINNED_MESSAGE, tone: 'locked', reload: true })
+        return
+      }
       setMessage({
         text: error instanceof VariationsChangedError ? error.message : error instanceof Error ? `Nothing was renumbered: ${error.message}` : 'Nothing was renumbered.',
         tone: 'warn',
@@ -202,6 +219,80 @@ export function VariationTrackerScreen({
     void save(current)
   }
 
+  // Touch / pen: start a drag by the handle. Listeners on `window`, filtered by pointer id, removed on up / cancel /
+  // unmount (no pointer capture, which is lost when React moves the row); an animation frame scrolls the page while
+  // the finger is near the top or bottom edge.
+  const startPointerDrag = (rowId: string, pointerId: number, clientX: number, clientY: number) => {
+    stopPointerDrag.current?.()
+    const state = trackerTouchDragStart(openIds, rowId, pointerId)
+    if (!state) return
+    pointerDrag.current = state
+    baseRows.current = rows
+    setDragId(rowId)
+    let lastX = clientX
+    let lastY = clientY
+    let frame = 0
+    const follow = (x: number, y: number) => {
+      const current = pointerDrag.current
+      if (!current) return
+      const next = trackerTouchDragMove(current, rowIdAt(x, y))
+      if (next !== current) {
+        pointerDrag.current = next
+        setOrder(next.order)
+      }
+    }
+    const tick = () => {
+      frame = 0
+      if (!pointerDrag.current) return
+      const scroller = scrollParentOf(tableRef.current)
+      const box = scroller === document.scrollingElement ? { top: 0, bottom: window.innerHeight } : scroller.getBoundingClientRect()
+      const delta = trackerEdgeScrollDelta(lastY, box.top, box.bottom)
+      if (delta) {
+        scroller.scrollBy(0, delta)
+        follow(lastX, lastY)
+        frame = window.requestAnimationFrame(tick)
+      }
+    }
+    const onMove = (event: PointerEvent) => {
+      if (event.pointerId !== pointerId) return
+      event.preventDefault()
+      lastX = event.clientX
+      lastY = event.clientY
+      follow(lastX, lastY)
+      if (!frame) frame = window.requestAnimationFrame(tick)
+    }
+    const finish = (save: boolean) => {
+      const ended = pointerDrag.current
+      stopPointerDrag.current?.()
+      setDragId(null)
+      const order = save ? trackerTouchDragEnd(ended) : null
+      if (order && saveRef.current) {
+        void saveRef.current(order)
+      } else {
+        setOrder(null)
+        baseRows.current = null
+      }
+    }
+    const onUp = (event: PointerEvent) => {
+      if (event.pointerId === pointerId) finish(true)
+    }
+    const onCancel = (event: PointerEvent) => {
+      if (event.pointerId === pointerId) finish(false)
+    }
+    window.addEventListener('pointermove', onMove, { passive: false })
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onCancel)
+    stopPointerDrag.current = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onCancel)
+      if (frame) window.cancelAnimationFrame(frame)
+      frame = 0
+      pointerDrag.current = null
+      stopPointerDrag.current = null
+    }
+  }
+
   const patch = async (row: Variation, changes: Partial<Pick<Variation, 'heading' | 'description'>>) => {
     if (!organization?.id || !user) return
     const next = { ...row, ...changes }
@@ -215,6 +306,20 @@ export function VariationTrackerScreen({
       console.error('[variations] tracker edit failed', error)
       setMessage({ text: error instanceof Error ? error.message : 'Could not save.', tone: 'warn' })
     }
+  }
+
+  useEffect(() => {
+    saveRef.current = save
+  })
+
+  if (!allowed) {
+    return (
+      <div className="empty card pad">
+        <h3>VO tracker</h3>
+        <p>The tracker is for admins and the managers of this job.</p>
+        <Link href={base} className="btn sm">Back to variations</Link>
+      </div>
+    )
   }
 
   return (
@@ -317,7 +422,16 @@ export function VariationTrackerScreen({
           </span>
         </div>
 
-        {message ? (
+        {message?.tone === 'locked' ? (
+          // The same banner as the order lock: readable in light and dark (amber text on white fails AA).
+          <div className="banner" data-hue="warn" role="status">
+            <div className="grow small">📌 {message.text}</div>
+            {message.reload ? (
+              <button type="button" className="btn sm ghost" onClick={() => window.location.reload()}>Reload</button>
+            ) : null}
+            <button type="button" className="btn sm ghost" onClick={() => setMessage(null)}>OK</button>
+          </div>
+        ) : message ? (
           <p role="status" className="small" style={{ margin: 0, color: message.tone === 'warn' ? 'var(--red)' : 'var(--green)', fontWeight: 600 }}>
             {message.text}
             {message.tone === 'warn' ? (
@@ -327,10 +441,10 @@ export function VariationTrackerScreen({
         ) : null}
 
         <div className="card" style={{ overflowX: 'auto' }}>
-          <table className="w-full text-sm" style={{ borderCollapse: 'collapse', minWidth: 990 }}>
+          <table ref={tableRef} className="w-full text-sm" style={{ borderCollapse: 'collapse', minWidth: 990 }}>
             <thead>
               <tr style={{ textAlign: 'left', color: 'var(--ink3)', fontSize: 12 }}>
-                <th style={{ padding: '10px 8px', width: 64 }} aria-label="Move" />
+                <th style={{ padding: '10px 8px', width: 112 }} aria-label="Move" />
                 <th style={{ padding: '10px 8px', width: 130 }}>VO</th>
                 <th style={{ padding: '10px 8px' }}>Heading and description</th>
                 <th style={{ padding: '10px 8px', width: 130 }}>Status</th>
@@ -348,12 +462,18 @@ export function VariationTrackerScreen({
                 const pinned = variationIsPinned(row)
                 const t = variationTotals(row)
                 const previous = variationPreviousNumbers(row)
-                const draggable = canDrag && !pinned
+                const draggable = trackerRowMovable(row, canDrag)
                 return (
                   <tr
                     key={row.id}
+                    data-vo-id={row.id}
                     draggable={draggable}
                     onDragStart={(event) => {
+                      // A touch drag by the handle is already moving this row; never start a second, native drag.
+                      if (pointerDrag.current) {
+                        event.preventDefault()
+                        return
+                      }
                       if (!draggable) return
                       baseRows.current = rows
                       dragging.current = row.id
@@ -385,12 +505,48 @@ export function VariationTrackerScreen({
                       opacity: dragId && dragId !== row.id ? 0.92 : 1,
                     }}
                   >
-                    <td style={{ padding: '10px 8px', verticalAlign: 'top' }}>
+                    <td
+                      style={{ padding: '10px 8px', verticalAlign: 'top' }}
+                      // Owner 23 Nov: pressing on a pinned row's handle cell (mouse or finger) says it is locked.
+                      onPointerDown={pinned && canDrag ? () => showLocked(row) : undefined}
+                    >
                       {pinned ? (
-                        <span title={VARIATION_PINNED_MESSAGE} aria-label="Pinned" className="muted">📌</span>
+                        <button
+                          type="button"
+                          className="btn sm ghost"
+                          style={{ padding: '0 6px' }}
+                          title={VARIATION_PINNED_MESSAGE}
+                          aria-label={`${row.voNumber} is locked`}
+                          onClick={() => showLocked(row)}
+                        >
+                          📌
+                        </button>
                       ) : (
                         <span className="row" style={{ gap: 2 }}>
-                          <span aria-hidden style={{ cursor: draggable ? 'grab' : 'default', color: 'var(--ink3)', fontSize: 18 }}>⋮⋮</span>
+                          <span
+                            aria-hidden
+                            style={{
+                              cursor: draggable ? 'grab' : 'default',
+                              color: 'var(--ink3)',
+                              fontSize: 18,
+                              touchAction: draggable ? 'none' : undefined,
+                              // A 44 × 44 touch target; the negative margin keeps the row height as before.
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              minWidth: 44,
+                              minHeight: 44,
+                              margin: '-10px -4px -10px -8px',
+                            }}
+                            onPointerDown={(event) => {
+                              // Mouse uses the browser's drag and drop on the row; touch and pen drag by this handle.
+                              if (event.pointerType === 'mouse' || !draggable) return
+                              event.preventDefault()
+                              startPointerDrag(row.id, event.pointerId, event.clientX, event.clientY)
+                            }}
+                          >
+                            ⋮⋮
+                          </span>
                           <button type="button" className="btn sm ghost" style={{ padding: '0 6px' }} disabled={!canDrag || openIds.indexOf(row.id) <= 0} aria-label={`Move ${row.voNumber} up`} onClick={() => moveBy(row.id, -1)}>↑</button>
                           <button type="button" className="btn sm ghost" style={{ padding: '0 6px' }} disabled={!canDrag || openIds.indexOf(row.id) === openIds.length - 1} aria-label={`Move ${row.voNumber} down`} onClick={() => moveBy(row.id, 1)}>↓</button>
                         </span>
@@ -576,4 +732,15 @@ function InlineText({
       className="focus:border-(--line2)"
     />
   )
+}
+
+/** The nearest ancestor that scrolls vertically, else the page. */
+function scrollParentOf(element: Element | null): Element {
+  let node = element?.parentElement ?? null
+  while (node) {
+    const overflow = window.getComputedStyle(node).overflowY
+    if ((overflow === 'auto' || overflow === 'scroll') && node.scrollHeight > node.clientHeight) return node
+    node = node.parentElement
+  }
+  return document.scrollingElement ?? document.documentElement
 }
