@@ -242,7 +242,11 @@ export function TimesheetsScreen({
     const org = organization?.id
     if (!org || !wantsFormerPeople || formerPeopleFor === org) return
     let live = true
-    void loadFormerPeople(getFirebaseDb(), org).then((rows) => {
+    // Review of #414: never wait more than 5 s for the names; without them rows keep "Unknown person".
+    void Promise.race([
+      loadFormerPeople(getFirebaseDb(), org),
+      new Promise<Awaited<ReturnType<typeof loadFormerPeople>>>((resolve) => setTimeout(() => resolve([]), 5000)),
+    ]).then((rows) => {
       if (!live) return
       formerPeopleRef.current = rows
       setFormerPeopleFor(org)
