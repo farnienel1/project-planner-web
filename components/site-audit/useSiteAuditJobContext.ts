@@ -30,8 +30,9 @@ export type SiteAuditJobContext = {
  * has a server answer and the other reads have finished — so the page never shows "No jobs" too early. After
  * `SITE_AUDIT_JOBS_LOAD_TIMEOUT_MS` without that answer it reports `contextFailed` (the page shows the error and Retry)
  * rather than using rows from the cache, which may be partial and so hide the person's own jobs (review of #419).
+ * `enabled` false loads nothing (a caller that will not use the answer, e.g. a job page for someone without Site audit).
  */
-export function useSiteAuditJobContext(): SiteAuditJobContext {
+export function useSiteAuditJobContext(enabled = true): SiteAuditJobContext {
   const { organization, user } = useAuthStore()
   const orgId = organization?.id ?? ''
   const viewer = useMemo(() => jobAccessViewer(user), [user])
@@ -56,7 +57,7 @@ export function useSiteAuditJobContext(): SiteAuditJobContext {
   const retry = useCallback(() => setAttempt((n) => n + 1), [])
 
   useEffect(() => {
-    if (everyJob || !orgId || !user?.id) return
+    if (!enabled || everyJob || !orgId || !user?.id) return
     let cancelled = false
     const key = `${orgId}|${user.id}|${attempt}`
     const timer = window.setTimeout(() => {
@@ -77,7 +78,7 @@ export function useSiteAuditJobContext(): SiteAuditJobContext {
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [attempt, everyJob, operativeMode, orgId, user?.id, loadBookings, loadManagerSiteBookings, loadTasks, loadOperatives, loadManagers, loadAssignedProjectIds])
+  }, [attempt, enabled, everyJob, operativeMode, orgId, user?.id, loadBookings, loadManagerSiteBookings, loadTasks, loadOperatives, loadManagers, loadAssignedProjectIds])
 
   const context = useMemo(
     () =>

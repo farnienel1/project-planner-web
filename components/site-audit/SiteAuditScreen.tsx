@@ -9,7 +9,7 @@ import { isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { useSiteAuditStore } from '@/lib/stores/siteAuditStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { deriveWorkStatus } from '@/lib/projects/workStatus'
-import { jobWorkStatus, worksInTab, worksListMembership, worksTab, type WorksTab } from '@/lib/canonical'
+import { jobWorkStatus, normalizeDocumentId, worksInTab, worksListMembership, worksTab, type WorksTab } from '@/lib/canonical'
 import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { SiteAuditCreateFlow } from '@/components/projects/siteAudit/SiteAuditCreateFlow'
 import { UnsentSiteAudits } from '@/components/site-audit/UnsentSiteAudits'
@@ -570,11 +570,12 @@ export function SiteAuditScreen() {
   // marked visible to operatives and their own (as the job's Site audits page and iOS).
   const jobContext = useSiteAuditJobContext()
   const operativeMode = isOperativeMode(user)
+  const viewerIds = jobContext.viewer?.ids
   const audits = useMemo(
-    () => siteAuditsVisibleToViewer(storedAudits, { operativeMode, userId: user?.id }),
-    [storedAudits, operativeMode, user?.id]
+    () => siteAuditsVisibleToViewer(storedAudits, { operativeMode, viewerIds: viewerIds ?? [] }),
+    [storedAudits, operativeMode, viewerIds]
   )
-  const authoredJobIds = useMemo(() => siteAuditAuthoredJobIds(storedAudits, user?.id), [storedAudits, user?.id])
+  const authoredJobIds = useMemo(() => siteAuditAuthoredJobIds(storedAudits, viewerIds ?? []), [storedAudits, viewerIds])
   const browseChoice = (jobs: Project[], loadedOrgId: string | null | undefined): SiteAuditJobChoice<Project> => {
     const choice = siteAuditBrowseJobs({
       jobs,
@@ -589,7 +590,18 @@ export function SiteAuditScreen() {
   }
   const projectChoice = browseChoice(worksListMembership(projects, 'projects'), projectsLoadedOrgId)
   const smallWorksChoice = browseChoice(worksListMembership(smallWorks, 'smallWorks'), smallWorksLoadedOrgId)
-  const choiceCount = (choice: SiteAuditJobChoice<Project>) => (choice.state === 'ready' ? choice.jobs.length : '…')
+  const choiceCount = (choice: SiteAuditJobChoice<Project>) =>
+    choice.state === 'ready' ? choice.jobs.length : choice.state === 'loading' ? '…' : null
+  // An operative's hub totals count only the audits on the jobs they can browse (both lists ready); everyone else all.
+  const browsableJobKeys =
+    projectChoice.state === 'ready' && smallWorksChoice.state === 'ready'
+      ? new Set([...projectChoice.jobs, ...smallWorksChoice.jobs].map((job) => normalizeDocumentId(job.id)))
+      : null
+  const hubAudits = !operativeMode
+    ? audits
+    : browsableJobKeys
+      ? audits.filter((audit) => browsableJobKeys.has(normalizeDocumentId(audit.projectId)))
+      : []
   const [view, setView] = useState<View>({ type: 'hub' })
   // Rulebook 1.30.0 §26: the signed-in person's own personal audits (owner only).
   const personal = usePersonalSiteAudits()
@@ -611,8 +623,8 @@ export function SiteAuditScreen() {
   )
 
   if (view.type === 'hub') {
-    const totalAudits = audits.length
-    const totalPhotos = audits.reduce((sum, a) => sum + a.items.filter((i) => i.imageURL).length, 0)
+    const totalAudits = hubAudits.length
+    const totalPhotos = hubAudits.reduce((sum, a) => sum + a.items.filter((i) => i.imageURL).length, 0)
 
     return shell(
       <div className="space-y-5">
@@ -659,7 +671,7 @@ export function SiteAuditScreen() {
               <span className="t">Projects</span>
               <span className="s">Browse audits by project</span>
             </span>
-            <span className="count soft">{choiceCount(projectChoice)}</span>
+            {choiceCount(projectChoice) !== null && <span className="count soft">{choiceCount(projectChoice)}</span>}
           </button>
 
           <button type="button" onClick={() => setView({ type: 'small-works' })} className="ritem" data-hue="sw">
@@ -672,7 +684,7 @@ export function SiteAuditScreen() {
               <span className="t">Small works</span>
               <span className="s">Browse audits by small works job</span>
             </span>
-            <span className="count soft">{choiceCount(smallWorksChoice)}</span>
+            {choiceCount(smallWorksChoice) !== null && <span className="count soft">{choiceCount(smallWorksChoice)}</span>}
           </button>
 
           <button type="button" onClick={() => setView({ type: 'personal' })} className="ritem" data-hue="hs">

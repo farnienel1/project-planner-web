@@ -87,3 +87,30 @@ test('with no current entry key a non-cancelable Back cannot be undone and is al
   const guard = createBackNavigationGuard()
   assert.equal(guard.onNavigate(traverse({ cancelable: false, currentKey: null }), () => false), 'allow')
 })
+
+test('a second Back during the return trip restores to the page itself, never onto the page it was leaving for', () => {
+  const guard = createBackNavigationGuard()
+  guard.onNavigate(traverse({ cancelable: false }), () => false)
+  assert.deepEqual(guard.onPopState(), { action: 'swallowAndReturn', key: 'k-page' })
+  // While returning, the browser is on the hub entry; a new Back from there must still come home to k-page.
+  assert.equal(
+    guard.onNavigate(
+      traverse({ cancelable: true, destinationKey: 'k-before-hub', destinationUrl: 'https://app.example/dashboard', currentKey: 'k-hub', currentUrl: HUB }),
+      () => false
+    ),
+    'restore'
+  )
+  assert.deepEqual(guard.onPopState(), { action: 'swallowAndReturn', key: 'k-page' })
+  // Forward straight to the page itself during a restore is just the return: allowed without asking.
+  const guard2 = createBackNavigationGuard()
+  guard2.onNavigate(traverse({ cancelable: false }), () => false)
+  assert.equal(
+    guard2.onNavigate(
+      traverse({ destinationKey: 'k-page', destinationUrl: PAGE, currentKey: 'k-hub', currentUrl: HUB }),
+      () => {
+        throw new Error('must not ask')
+      }
+    ),
+    'allow'
+  )
+})

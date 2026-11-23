@@ -76,15 +76,21 @@ export function createBackNavigationGuard(): BackNavigationGuard {
         return 'allow'
       }
       if (returningKey && input.destinationKey === returningKey) return 'allow'
-      // Any other traversal supersedes one still pending.
+      // Any other traversal supersedes one still pending — but the page's own entry is kept: during a restore or the
+      // return trip the browser's current entry is the page the person was leaving for, never this page.
+      const home = returningKey ?? restoreKey
       restoreKey = null
       returningKey = null
       if (!input.sameDocument) return 'allow'
-      if (sameRoute(input.currentUrl, input.destinationUrl)) return 'allow'
+      if (!home && sameRoute(input.currentUrl, input.destinationUrl)) return 'allow'
+      if (home && input.destinationKey === home) return 'allow'
       if (ask()) return 'allow'
-      if (input.cancelable) return 'prevent'
-      if (!input.currentKey) return 'allow'
-      restoreKey = input.currentKey
+      // While a return is pending, cancelling the new traversal would also have cancelled our return (a new
+      // navigation aborts the one in flight), leaving the address bar on the other page: always restore to home.
+      if (input.cancelable && !home) return 'prevent'
+      const key = home ?? input.currentKey
+      if (!key) return 'allow'
+      restoreKey = key
       return 'restore'
     },
     onPopState() {

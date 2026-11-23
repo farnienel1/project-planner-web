@@ -225,15 +225,20 @@ test('per-job new site audit: once allowed, the form stays for that job (review 
 
 test('hub browse lists (owner 23 Nov): an operative sees visibleJobs plus the jobs holding an audit they wrote', () => {
   const audits = [
-    { projectId: 'J-OTHER', createdByUserId: 'op-user' }, // their own audit on a job they no longer see
-    { projectId: 'j-hidden', createdByUserId: 'someone-else' }, // another person's audit: never brings the job back
+    { projectId: 'J-OTHER', createdByUserId: 'op-former' }, // their own audit (under a former id) on a job they no longer see
+    { projectId: 'j-hidden', createdByUserId: 'op-user' }, // their own audit on a job hidden from them: stays hidden
+    { projectId: 'j-task', createdByUserId: 'someone-else' },
   ]
-  const authored = siteAuditAuthoredJobIds(audits, 'op-user')
-  assert.deepEqual(authored, ['J-OTHER'])
-  const choice = siteAuditBrowseJobs({ jobs: jobsForChoice, viewer: operative, context: opContext, contextLoaded: true, authoredJobIds: authored })
+  const viewer: JobAccessViewer = { ...operative, ids: ['op-user', 'op-former'] }
+  const authored = siteAuditAuthoredJobIds(audits, viewer.ids)
+  assert.deepEqual(authored, ['J-OTHER', 'j-hidden'])
+  assert.deepEqual(siteAuditAuthoredJobIds(audits, ['someone-else']), ['j-task'])
+  const choice = siteAuditBrowseJobs({ jobs: jobsForChoice, viewer, context: opContext, contextLoaded: true, authoredJobIds: authored })
   assert.equal(choice.state, 'ready')
-  // Catalogue order; 'j-other' matched to the audit's 'J-OTHER' without case; 'j-hidden' stays out.
+  // 'j-other' matched to 'J-OTHER' without case; 'j-hidden' stays out (hiddenOperativeUserIds), as iOS.
   assert.deepEqual(choice.jobs.map((j) => j.id), ['J-BOOKED', 'j-task', 'j-deadline', 'j-other'])
+  // Exactly the rulebook: visibleJobs with the authored jobs as extra own jobs.
+  assert.deepEqual(choice.jobs, visibleJobs(jobsForChoice, viewer, { ...opContext, deadlineJobIds: [...opContext.deadlineJobIds, ...authored] }))
 })
 
 test('hub browse lists: admins and managers keep every job; loading and failed are passed through', () => {
@@ -252,13 +257,17 @@ test('hub browse lists: admins and managers keep every job; loading and failed a
   )
 })
 
-test('audits an operative sees: visible to operatives, or their own; everyone else every audit', () => {
+test('audits an operative sees: visible to operatives, or their own under any of their ids; everyone else every audit', () => {
   const audits = [
     { id: 'a', visibleToOperatives: true, createdByUserId: 'x' },
     { id: 'b', visibleToOperatives: false, createdByUserId: 'op-user' },
     { id: 'c', visibleToOperatives: false, createdByUserId: 'x' },
+    { id: 'd', visibleToOperatives: false, createdByUserId: 'op-former' },
   ]
-  assert.deepEqual(siteAuditsVisibleToViewer(audits, { operativeMode: true, userId: 'op-user' }).map((a) => a.id), ['a', 'b'])
-  assert.deepEqual(siteAuditsVisibleToViewer(audits, { operativeMode: true, userId: '' }).map((a) => a.id), ['a'])
-  assert.equal(siteAuditsVisibleToViewer(audits, { operativeMode: false, userId: 'm' }).length, 3)
+  assert.deepEqual(
+    siteAuditsVisibleToViewer(audits, { operativeMode: true, viewerIds: ['op-user', 'op-former'] }).map((a) => a.id),
+    ['a', 'b', 'd']
+  )
+  assert.deepEqual(siteAuditsVisibleToViewer(audits, { operativeMode: true, viewerIds: [] }).map((a) => a.id), ['a'])
+  assert.equal(siteAuditsVisibleToViewer(audits, { operativeMode: false, viewerIds: ['m'] }).length, 4)
 })

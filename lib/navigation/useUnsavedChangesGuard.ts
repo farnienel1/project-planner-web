@@ -80,7 +80,6 @@ function installBackNavigationGuard(): () => void {
     const machine = createBackNavigationGuard()
     let closing = false
     const onNavigate = (event: NavigateEvent) => {
-      if (closing) return
       const decision = machine.onNavigate(
         {
           navigationType: event.navigationType,
@@ -97,10 +96,15 @@ function installBackNavigationGuard(): () => void {
         }
       )
       if (decision === 'prevent') event.preventDefault()
+      // The page asked to stop while a return was pending; once the machine has cleared itself, remove the listeners.
+      if (closing && !machine.busy()) remove()
     }
     const onPopState = (event: PopStateEvent) => {
       const decision = machine.onPopState()
-      if (decision.action === 'pass') return
+      if (decision.action === 'pass') {
+        if (closing && !machine.busy()) remove()
+        return
+      }
       // Capture on window runs before Next.js's popstate listener, so the app router never sees this traversal.
       event.stopImmediatePropagation()
       if (decision.action === 'swallowAndReturn') {

@@ -1,6 +1,5 @@
 import {
   dayKeyInOrganizationZone,
-  normalizeDocumentId,
   seesEveryJob,
   siteAuditFieldLimitError,
   visibleJobs,
@@ -229,24 +228,25 @@ export const SITE_AUDIT_JOBS_LOAD_TIMEOUT_MS = 15_000
 
 /**
  * The audits a person sees in the Site audit hub and on a job's Site audits page (the rule the job page already used,
- * and iOS `siteAuditsForCurrentUser`): an operative sees audits marked visible to operatives and the audits they wrote;
- * everyone else sees every audit.
+ * and iOS `siteAuditsForCurrentUser`): an operative sees audits marked visible to operatives and the audits they wrote
+ * under any of their ids (`viewerIds`: the users id and former ids, `jobAccessViewer`); everyone else sees every audit.
  */
 export function siteAuditsVisibleToViewer<T extends Pick<SiteAudit, 'visibleToOperatives' | 'createdByUserId'>>(
   audits: ReadonlyArray<T>,
-  viewer: { operativeMode: boolean; userId: string | null | undefined }
+  viewer: { operativeMode: boolean; viewerIds: ReadonlyArray<string | null | undefined> }
 ): T[] {
   if (!viewer.operativeMode) return [...audits]
-  const uid = viewer.userId ?? ''
-  return audits.filter((audit) => audit.visibleToOperatives || (uid !== '' && audit.createdByUserId === uid))
+  const ids = viewerIdSet(viewer.viewerIds)
+  return audits.filter((audit) => audit.visibleToOperatives || ids.has(audit.createdByUserId))
 }
 
 /**
  * The jobs in the Site audit hub's Projects / Small works browse lists (owner decision 23 Nov, before launch; iOS
- * `SiteAuditProjectsBrowserView`): the jobs `siteAuditJobChoice` gives the person (rulebook §21 `visibleJobs` — every
- * job for admins and managers), plus, for anyone else, every job that holds an audit they wrote (`authoredJobIds`,
- * ids without case), so an operative's own past audits stay reachable after their booking, task or deadline on that
- * job has gone. Loading / failed as `siteAuditJobChoice`; catalogue order kept.
+ * `SiteAuditProjectsBrowserView`): exactly rulebook §21 `visibleJobs`, with the jobs that hold an audit the person wrote
+ * (`authoredJobIds`) added to the context as extra own jobs (`deadlineJobIds`, as iOS passes them), so an operative's own
+ * past audits stay reachable after their booking, task or deadline on that job has gone — and a job hidden from them
+ * (`hiddenOperativeUserIds`) stays hidden even when they wrote an audit there. Admins and managers see every job.
+ * Loading / failed as `siteAuditJobChoice`.
  */
 export function siteAuditBrowseJobs<T extends Project>(input: {
   jobs: ReadonlyArray<T>
@@ -254,28 +254,25 @@ export function siteAuditBrowseJobs<T extends Project>(input: {
   context: WorksListContext | null
   contextLoaded: boolean
   contextFailed?: boolean
-  authoredJobIds: Iterable<string>
+  authoredJobIds: ReadonlyArray<string>
 }): SiteAuditJobChoice<T> {
-  const choice = siteAuditJobChoice(input)
-  if (choice.state !== 'ready' || !input.viewer?.role || seesEveryJob(input.viewer.role)) return choice
-  const authored = new Set<string>()
-  for (const id of input.authoredJobIds) {
-    const key = normalizeDocumentId(id)
-    if (key) authored.add(key)
-  }
-  if (authored.size === 0) return choice
-  const shown = new Set(choice.jobs.map((job) => job.id))
-  return {
-    state: 'ready',
-    jobs: input.jobs.filter((job) => shown.has(job.id) || authored.has(normalizeDocumentId(job.id))),
-  }
+  const context: WorksListContext | null =
+    input.context && input.authoredJobIds.length > 0
+      ? { ...input.context, deadlineJobIds: [...(input.context.deadlineJobIds ?? []), ...input.authoredJobIds] }
+      : input.context
+  return siteAuditJobChoice({ ...input, context })
 }
 
-/** The job ids of the audits `userId` wrote (`createdByUserId`, as stored). */
+/** The job ids of the audits the person wrote under any of their ids (`createdByUserId`, as stored). */
 export function siteAuditAuthoredJobIds(
   audits: ReadonlyArray<Pick<SiteAudit, 'projectId' | 'createdByUserId'>>,
-  userId: string | null | undefined
+  viewerIds: ReadonlyArray<string | null | undefined>
 ): string[] {
-  if (!userId) return []
-  return audits.filter((audit) => audit.createdByUserId === userId && audit.projectId).map((audit) => audit.projectId)
+  const ids = viewerIdSet(viewerIds)
+  if (ids.size === 0) return []
+  return audits.filter((audit) => audit.projectId && ids.has(audit.createdByUserId)).map((audit) => audit.projectId)
+}
+
+function viewerIdSet(ids: ReadonlyArray<string | null | undefined>): Set<string> {
+  return new Set(ids.map((id) => (typeof id === 'string' ? id.trim() : '')).filter(Boolean))
 }
