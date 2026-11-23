@@ -18541,3 +18541,38 @@ test('1.70.0 weekly report leave: a deleted person kept as a former-person recor
   assert.equal(liveWins.rows[0].person, 'Live Person')
   assert.equal(R112.formerPersonRecordNeeded({ bookings: 0, managerSiteBookings: 0, leaveRecords: 1 }), true)
 })
+
+test('1.71.0: company data export is the organisation Super Admin only', () => {
+  const org = { id: 'o1', creatorUserId: 'founder' }
+  assert.equal(R112.canExportCompanyData({ id: 'founder', organizationId: 'o1' }, org), true)
+  assert.equal(R112.canExportCompanyData({ id: 'sa', isSuperAdmin: true, organizationId: 'o1' }, org), true)
+  assert.equal(R112.canExportCompanyData({ id: 'sa', isSuperAdmin: true, organizationId: 'o2', homeOrganizationId: 'o1' }, org), true)
+  // An admin who is not the Super Admin no longer exports (guardrail 3).
+  assert.equal(R112.canExportCompanyData({ id: 'admin1', organizationId: 'o1' }, org), false)
+  assert.equal(R112.canExportCompanyData({ id: 'sa2', isSuperAdmin: true, organizationId: 'o2' }, org), false)
+  assert.equal(R112.canExportCompanyData({ id: 'sa', isSuperAdmin: true, organizationId: '' }, org), false)
+  assert.equal(R112.canExportCompanyData({ id: 'founder', isActive: false }, org), false)
+  assert.equal(R112.canExportCompanyData({ id: 'founder' }, { id: ' ', creatorUserId: 'founder' }), false)
+  assert.equal(R112.canExportCompanyData(null, org), false)
+  assert.equal(R112.COMPANY_EXPORT_REFUSED_MESSAGE, 'Only the Super Admin can export company data.')
+})
+
+test('1.71.0: an exported timesheet offers no line review actions', () => {
+  assert.equal(R112.timesheetLineReviewActionsAllowed({}), true)
+  assert.equal(R112.timesheetLineReviewActionsAllowed(null), true)
+  assert.equal(R112.timesheetLineReviewActionsAllowed({ exportedAt: new Date('2026-11-17T10:00:00Z') }), false)
+  assert.equal(R112.timesheetLineReviewActionsAllowed({ exportedAt: 1763373600 }), false)
+  // An exportedAt an old web build copied from Generate Invoice (within a minute) is not an export.
+  assert.equal(
+    R112.timesheetLineReviewActionsAllowed({ exportedAt: 1763373600_000, invoiceGeneratedAt: 1763373630_000 }),
+    true
+  )
+})
+
+test('1.71.0: the Create revision button and its text are exact', () => {
+  assert.equal(R112.TIMESHEET_CREATE_REVISION_LABEL, 'Create revision to adjust this timesheet')
+  assert.equal(
+    R112.TIMESHEET_CREATE_REVISION_HELP,
+    'This timesheet has already been exported. Please make changes to the user’s schedule via projects or small works, which reflect the actual hours they have worked, then return here and click the create revision button. This will allow the user to sign their timesheet again with the changes made, for you as their line manager to approve.'
+  )
+})

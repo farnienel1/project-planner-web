@@ -307,7 +307,7 @@ export function OrganisationHubPanel({
         />
       </SettingsCard>
 
-      {canExportCompanyData(user, organization?.id) ? (
+      {canExportCompanyData(user, organization) ? (
         <>
           <SectionLabel label="Your data" />
           <SettingsCard>
