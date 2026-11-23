@@ -19380,15 +19380,139 @@ test('1.76.0 review of #427 (finding 1): a signed copy that cannot tell a change
   assert.equal(R112.timesheetMakeChangesHelp(null, old, { ...reviewer, change: { reopened: true } }), null)
 })
 
-test('1.76.0 re-check of #427: a signed copy with no labour line (price work / expenses only) gets no button and no old-sheet help', () => {
+test('1.76.0 re-check of #427 + owner answer b: a signed copy with only price work / expenses offers Make changes; an empty one offers nothing', () => {
   const reviewer = { viewerIsReviewer: true }
+  // Owner answer 23 Nov (b): the signed price work and expenses can be changed, so such a copy gets the button.
   const extrasOnly = { ...R176_COUNTERSIGNED, weeklyReportOverride: { lines: [{ id: 'leave', isLeave: true }], priceWork: [{ id: 'pw1', amount: 100 }] } }
-  assert.equal(R112.timesheetMakeChangesAction(extrasOnly, reviewer), null)
-  assert.equal(R112.timesheetMakeChangesHelp(null, extrasOnly, reviewer), null)
+  assert.equal(R112.timesheetMakeChangesAction(extrasOnly, reviewer), 'reopenReview')
+  assert.equal(R112.timesheetMakeChangesHelp('reopenReview', extrasOnly, reviewer), R112.TIMESHEET_MAKE_CHANGES_REOPEN_HELP)
+  // Only approved late extras on the copy: nothing signed to change.
+  const lateOnly = { ...R176_COUNTERSIGNED, weeklyReportOverride: { lines: [], expenses: [{ id: 'l1', amount: 5, lateExtra: true }] } }
+  assert.equal(R112.timesheetMakeChangesAction(lateOnly, reviewer), null)
+  assert.equal(R112.timesheetMakeChangesHelp(null, lateOnly, reviewer), null)
   const empty = { ...R176_COUNTERSIGNED, weeklyReportOverride: { lines: [] } }
+  assert.equal(R112.timesheetMakeChangesAction(empty, reviewer), null)
   assert.equal(R112.timesheetMakeChangesHelp(null, empty, reviewer), null)
   // No signed copy at all still reads as an old sheet.
   const { weeklyReportOverride: _omit, ...noCopy } = R176_COUNTERSIGNED
   void _omit
   assert.equal(R112.timesheetMakeChangesHelp(null, noCopy, reviewer), R112.TIMESHEET_MAKE_CHANGES_OLD_SHEET_HELP)
+})
+
+
+// MARK: - 1.76.0 owner answer 23 Nov (b): Make changes on the signed price work and expenses
+
+const R176B_SIGNED_MS = Date.parse('2026-11-20T09:00:00Z')
+function r176bSheet(reviews: Record<string, unknown> | null = null): Record<string, unknown> {
+  return {
+    operativeSignedAt: '2026-11-20T08:00:00Z',
+    operativeSignedByName: 'Jo Bloggs',
+    managerSignedAt: '2026-11-20T09:00:00Z',
+    managerSignedByName: 'Line Manager',
+    priceWorkEntries: [{ id: 'pw1', title: 'Fit doors', amount: 300, jobNumber: 'J1', startDate: '2026-11-18' }],
+    expenseEntries: [{ id: 'ex1', title: 'Parking', amount: 40, jobNumber: 'J1', date: '2026-11-18' }],
+    extraEntryReviews: reviews,
+    weeklyReportOverride: {
+      approvedAt: '2026-11-20T09:00:00Z',
+      lines: [{ id: 'op-b1', bookingId: 'b1', bookingFingerprint: 'fp-b1', amount: 250, days: 1, paidHours: 8 }],
+      priceWork: [{ id: 'pw1', title: 'Fit doors', amount: 300, decision: 'approved', date: '2026-11-18' }],
+      expenses: [{ id: 'ex1', title: 'Parking', amount: 40, decision: 'approved', date: '2026-11-18' }],
+    },
+  }
+}
+function r176bTotal(sheet: Record<string, unknown>): number {
+  return R112.timesheetInvoiceRows({ sheet, payrollLines: [], extrasMode: 'decided' }).reduce((sum: number, row: { amount: number }) => sum + row.amount, 0)
+}
+function r176bChange(sheet: Record<string, unknown>) {
+  return R112.timesheetChangesWithLateExtras(null, R112.timesheetLateExtrasSummary(sheet))
+}
+
+test('1.76.0 (b): removing a signed expense after sign-off waits for the line manager, never the person; export is blocked', () => {
+  const signed = r176bSheet()
+  assert.equal(r176bTotal(signed), 590)
+  assert.equal(R112.timesheetSignedEntriesChangedSinceSignOff(signed), false)
+  assert.equal(r176bChange(signed), null)
+  const removed = r176bSheet({
+    ex1: { decision: 'declined', revisedAmount: null, reviewedAmount: 40, reviewedByUserId: 'lm', reviewedAtMs: R176B_SIGNED_MS + 60_000 },
+  })
+  assert.equal(R112.timesheetSignedEntriesChangedSinceSignOff(removed), true)
+  const change = r176bChange(removed)
+  assert.equal(change?.reopened, true)
+  assert.equal(change?.waitingFor, 'lineManager')
+  assert.equal(change?.message, null)
+  assert.equal(change?.signedEntriesChanged, true)
+  assert.equal(change?.bookingsChanged, false)
+  assert.equal(change?.reviewerMessage, R112.TIMESHEET_SIGNED_ENTRIES_CHANGED_REVIEWER_MESSAGE)
+  assert.equal(R112.timesheetListBucket(R112.parseTimesheetStatusFields(removed), true, change), 'awaiting')
+  const actions = R112.signedTimesheetActions(change)
+  assert.equal(actions.mayExport, false)
+  assert.equal(actions.mayGenerateInvoice, false)
+  assert.equal(actions.lineManagerMayCounterSign, true)
+  assert.equal(actions.personMaySignAgain, false)
+  // Until signed off again the signed copy still pays the signed figures.
+  assert.equal(r176bTotal(removed), 590)
+  // Signed off again: the copy's money rows come from the decided entries — the expense pays 0, the total goes down.
+  const resigned = {
+    ...removed,
+    managerSignedAt: '2026-11-20T10:00:00Z',
+    weeklyReportOverride: {
+      ...(removed.weeklyReportOverride as Record<string, unknown>),
+      expenses: [{ id: 'ex1', title: 'Parking', amount: 0, decision: 'declined', date: '2026-11-18' }],
+    },
+  }
+  assert.equal(R112.timesheetSignedEntriesChangedSinceSignOff(resigned), false)
+  assert.equal(r176bChange(resigned), null)
+  assert.equal(r176bTotal(resigned), 550)
+  assert.equal(R112.timesheetListBucket(R112.parseTimesheetStatusFields(resigned), true, null), 'signed')
+})
+
+test('1.76.0 (b): editing a signed price work amount after sign-off waits the same way; signing off again pays the new amount', () => {
+  const edited = r176bSheet({
+    pw1: { decision: 'edited', revisedAmount: 250, reviewedAmount: 300, reviewedByUserId: 'lm', reviewedAtMs: R176B_SIGNED_MS + 60_000 },
+  })
+  const change = r176bChange(edited)
+  assert.equal(change?.waitingFor, 'lineManager')
+  assert.equal(R112.signedTimesheetActions(change).mayExport, false)
+  const resigned = {
+    ...edited,
+    managerSignedAt: '2026-11-20T10:00:00Z',
+    weeklyReportOverride: {
+      ...(edited.weeklyReportOverride as Record<string, unknown>),
+      priceWork: [{ id: 'pw1', title: 'Fit doors', amount: 250, decision: 'edited', date: '2026-11-18' }],
+    },
+  }
+  assert.equal(r176bChange(resigned), null)
+  assert.equal(r176bTotal(resigned), 540)
+  // The judgement call: an edit may also raise an amount, as before sign-off.
+  // Both apps also write the inline decision for older builds; the inline value only ever lowers what is paid.
+  const raised = r176bSheet({
+    pw1: { decision: 'edited', revisedAmount: 350, reviewedAmount: 300, reviewedByUserId: 'lm', reviewedAtMs: R176B_SIGNED_MS + 60_000 },
+  })
+  ;(raised.priceWorkEntries as Array<Record<string, unknown>>)[0] = {
+    ...(raised.priceWorkEntries as Array<Record<string, unknown>>)[0],
+    managerDecision: 'edited',
+    managerRevisedAmount: 350,
+  }
+  assert.equal(r176bChange(raised)?.waitingFor, 'lineManager')
+})
+
+test('1.76.0 (b) guardrail 3: reviews written before or at the sign-off, an exported sheet and a review that matches the copy never reopen', () => {
+  // A review written with the counter-signature (the same save) or before it.
+  const atSignOff = r176bSheet({
+    ex1: { decision: 'declined', revisedAmount: null, reviewedAmount: 40, reviewedByUserId: 'lm', reviewedAtMs: R176B_SIGNED_MS + 1_000 },
+  })
+  assert.equal(R112.timesheetSignedEntriesChangedSinceSignOff(atSignOff), false)
+  // A review after sign-off that matches the signed copy (as every pre-1.76.0 save re-priced it).
+  const inStep = {
+    ...r176bSheet({ ex1: { decision: 'declined', revisedAmount: null, reviewedAmount: 40, reviewedByUserId: 'lm', reviewedAtMs: R176B_SIGNED_MS + 60_000 } }),
+  }
+  ;(inStep.weeklyReportOverride as Record<string, unknown>).expenses = [{ id: 'ex1', amount: 0, decision: 'declined' }]
+  assert.equal(R112.timesheetSignedEntriesChangedSinceSignOff(inStep), false)
+  // Exported: frozen.
+  const exported = {
+    ...r176bSheet({ ex1: { decision: 'declined', revisedAmount: null, reviewedAmount: 40, reviewedByUserId: 'lm', reviewedAtMs: R176B_SIGNED_MS + 60_000 } }),
+    exportedAt: '2026-11-21T09:00:00Z',
+  }
+  assert.equal(R112.timesheetSignedEntriesChangedSinceSignOff(exported), false)
+  assert.equal(r176bChange(exported), null)
 })

@@ -78,6 +78,13 @@ export type WeeklyReportOverrideInput = {
    * signatures. Never for an exported sheet (it stays frozen). Any other save keeps the stored lines.
    */
   rebuildSnapshot?: boolean
+  /**
+   * Rulebook 1.76.0 §8 (owner answer 23 Nov, b): the signed price work and expense rows are taken afresh from the decided
+   * entries only when the line manager signs (counter-signs) the sheet, never on any other save. A review written after
+   * the counter-signature (Make changes) then reads as a change waiting for the line manager
+   * (`timesheetSignedEntriesChangedSinceSignOff`) until they sign it off again. Late extra rows are always refreshed.
+   */
+  refreshSignedMoney?: boolean
 }
 
 function personName(user: User | null | undefined): string {
@@ -421,9 +428,19 @@ function reapplyReviews(existing: WeeklyReportOverride, input: WeeklyReportOverr
       existing.approvedByName,
     selfSigned: userTimesheetSelfSigned(input.user, input.users ?? []),
     lines: lines.map(flagged),
-    priceWork: money.priceWork,
-    expenses: money.expenses,
+    priceWork: signedMoneyRows(existing.priceWork, money.priceWork, input.refreshSignedMoney === true),
+    expenses: signedMoneyRows(existing.expenses, money.expenses, input.refreshSignedMoney === true),
   }
+}
+
+/** 1.76.0: keep the stored signed money rows unless the line manager is signing; late extra rows always come fresh. */
+function signedMoneyRows(
+  stored: WeeklyReportMoneyLine[] | undefined,
+  fresh: WeeklyReportMoneyLine[],
+  refresh: boolean
+): WeeklyReportMoneyLine[] {
+  if (refresh || !Array.isArray(stored)) return fresh
+  return [...stored.filter((row) => row.lateExtra !== true), ...fresh.filter((row) => row.lateExtra === true)]
 }
 
 /** Write or clear `weeklyReportOverride`. Existing labour lines are not rebuilt from bookings (1.47.0: unless re-signed after a booking change, `rebuildSnapshot`). */

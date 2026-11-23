@@ -634,7 +634,7 @@ export function TimesheetPeriodPage({
   const hoursSubtotal = totals.standardLabour
 
   const persist = useCallback(
-    async (next: TimesheetDraft, options: { rebuildSnapshot?: boolean } = {}) => {
+    async (next: TimesheetDraft, options: { rebuildSnapshot?: boolean; refreshSignedMoney?: boolean } = {}) => {
       if (!organization?.id) return
       // 1.43.0: never save over a sheet that could not be loaded (a second copy under another id).
       if (loadFailed) throw new Error(TIMESHEET_HISTORY_LOAD_FAILED_MESSAGE)
@@ -646,6 +646,10 @@ export function TimesheetPeriodPage({
         draft: next,
         // Rulebook 1.47.0: a fresh signature on changed bookings rebuilds the snapshot from the live bookings.
         rebuildSnapshot: options.rebuildSnapshot === true,
+        // Rulebook 1.76.0 (owner answer 23 Nov, b): the signed price work and expense rows are taken afresh only when the
+        // sheet is signed off (counter-signed, or a self-signed person's signature); any other save keeps them, so a
+        // review written after sign-off waits for the line manager to sign it off again.
+        refreshSignedMoney: options.refreshSignedMoney === true,
         user: subjectUser,
         users,
         viewer,
@@ -1293,7 +1297,7 @@ export function TimesheetPeriodPage({
         users
       )
       // A self-signed person's signature on changed bookings rebuilds their snapshot (1.47.0).
-      await persist(next, { rebuildSnapshot: bookingsReopened && sheetSelfSigned })
+      await persist(next, { rebuildSnapshot: bookingsReopened && sheetSelfSigned, refreshSignedMoney: sheetSelfSigned })
       // Owner decision 17 Nov (review of #363): this pay run no longer waits for the person — the sidebar triangle drops it
       // (the hub's own answer, `useMineChangedStore`; the hub replaces it the next time it works it out).
       useMineChangedStore.getState().resolvePeriod(mineChangedKey(organization?.id, subjectUser.id), periodStartKey(periodStart, timeZone))
@@ -1348,7 +1352,7 @@ export function TimesheetPeriodPage({
         },
         // Rulebook 1.47.0: counter-signing a reopened sheet rebuilds the snapshot from the live bookings.
         // 1.54.0: late extras alone never rebuild the snapshot's labour (the approving save already added them).
-        { rebuildSnapshot: bookingsReopened }
+        { rebuildSnapshot: bookingsReopened, refreshSignedMoney: true }
       )
       if (organization?.id) {
         // Counter-sign is already saved; inbox delivery is best-effort.
@@ -1365,7 +1369,10 @@ export function TimesheetPeriodPage({
           signedAt: managerSignedAt,
           // Rulebook 1.74.0 (owner answer 23 Nov): the person is told their timesheet was updated when this line
           // manager changed bookings from the review under the person's current signature.
-          changedByReviewer: timesheetSheetChangedByReviewer(signedTimesheetSheetFromDraft(draft)),
+          changedByReviewer:
+            timesheetSheetChangedByReviewer(signedTimesheetSheetFromDraft(draft)) ||
+            // 1.76.0 (owner answer 23 Nov, b): signed price work or expenses changed in Make changes count too.
+            bookingChange.signedEntriesChanged === true,
         }))
       }
       setManagerSignOpen(false)
@@ -1920,6 +1927,9 @@ export function TimesheetPeriodPage({
             <ReviewExtras
               draft={draft}
               canReview={canManagerReview}
+              // Rulebook 1.76.0 (owner answer 23 Nov, b): in Make changes mode the line manager may also remove (✕) or
+              // change (⚙) the signed price work and expenses; there is nothing to approve (✓).
+              canChangeSigned={makingChanges && !canManagerReview}
               timeZone={timeZone}
               onSave={(next) => void persistOrReport(next)}
               onEditExtra={(type, id, title, _original, current, late) => {
@@ -2045,7 +2055,9 @@ export function TimesheetPeriodPage({
                     Generate Invoice
                   </PuButton>
                   <p className="pu-sub" style={{ textAlign: 'center' }}>
-                    {lateOnlyWaiting
+                    {lateOnlyWaiting && bookingChange.signedEntriesChanged === true
+                      ? 'Your line manager changed your price work or expenses — Generate Invoice unlocks after they sign it off again.'
+                      : lateOnlyWaiting
                       ? TIMESHEET_LATE_EXTRA_WAITING_LABEL
                       : bookingChange.reopened
                       ? waitingForPerson
@@ -2776,12 +2788,15 @@ function ExtraList({
 function ReviewExtras({
   draft,
   canReview,
+  canChangeSigned = false,
   timeZone,
   onSave,
   onEditExtra,
 }: {
   draft: TimesheetDraft
   canReview: boolean
+  /** 1.76.0: Make changes on a signed-off sheet — ✕ / ⚙ on the signed entries, no ✓ (late extras unchanged). */
+  canChangeSigned?: boolean
   timeZone: string
   onSave: (next: TimesheetDraft) => void
   onEditExtra: (
@@ -2898,10 +2913,10 @@ function ReviewExtras({
                       />
                     )}
                   </span>
-                  {canReview ? (
+                  {canReview || canChangeSigned ? (
                     <TickCross
                       decision={entry.managerDecision}
-                      onApprove={() => {
+                      onApprove={!canReview ? undefined : () => {
                         const next = [...draft.expenseEntries]
                         next[index] = { ...entry, managerDecision: 'approved', managerRevisedAmount: null }
                         onSave({ ...draft, expenseEntries: next })
@@ -2958,10 +2973,10 @@ function ReviewExtras({
                       />
                     )}
                   </span>
-                  {canReview ? (
+                  {canReview || canChangeSigned ? (
                     <TickCross
                       decision={entry.managerDecision}
-                      onApprove={() => {
+                      onApprove={!canReview ? undefined : () => {
                         const next = [...draft.priceWorkEntries]
                         next[index] = { ...entry, managerDecision: 'approved', managerRevisedAmount: null }
                         onSave({ ...draft, priceWorkEntries: next })

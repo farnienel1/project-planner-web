@@ -209,8 +209,19 @@ test('later schedule changes do not rebuild stored labour lines', () => {
   assert.equal(line?.projectName, 'Site One')
   assert.equal(line?.decision, 'edited')
   assert.equal(line?.amount, 50)
-  assert.equal(second.weeklyReportOverride?.priceWork[0].amount, 40)
-  assert.equal(second.weeklyReportOverride?.priceWork[0].decision, 'edited')
+  // Rulebook 1.76.0 (owner answer 23 Nov, b): a save after sign-off keeps the signed price work and expense rows, so
+  // the change waits for the line manager (`timesheetSignedEntriesChangedSinceSignOff`) ...
+  assert.equal(second.weeklyReportOverride?.priceWork[0].amount, 80)
+  assert.equal(second.weeklyReportOverride?.priceWork[0].decision, 'approved')
+  // ... and signing it off again takes them afresh from the decided entries.
+  const resigned = applyWeeklyReportOverride({
+    ...base,
+    refreshSignedMoney: true,
+    draft: { ...second, managerSignedAt: new Date(day.getTime() + 3_600_000) },
+  })
+  assert.equal(resigned.weeklyReportOverride?.priceWork[0].amount, 40)
+  assert.equal(resigned.weeklyReportOverride?.priceWork[0].decision, 'edited')
+  assert.equal(resigned.weeklyReportOverride?.expenses[0].amount, 0)
 })
 
 test('admin with Timesheet self-sign (1.28.0): own signature is full approval and selfSigned (timesheetSelfSigned)', () => {

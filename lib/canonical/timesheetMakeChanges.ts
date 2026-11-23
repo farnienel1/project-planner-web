@@ -8,6 +8,8 @@
  *   (Awaiting sign-off; no export or invoice on the stale snapshot), and the counter-signature again rebuilds the snapshot
  *   from the live bookings and tells the person ("changed and signed off", `timesheetSignedNoticeText`). Leaving without
  *   a change leaves the sheet exactly as signed. The person never signs again for these edits.
+ *   Owner answer 23 Nov (b): the signed price work and expenses too, with ✕ / ⚙ (the entry review); the sheet then
+ *   waits for the line manager (`timesheetSignedEntriesChangedSinceSignOff`) until they sign it off again.
  * - **Exported** (`createRevision`, B1): the next revision is created (`canCreateTimesheetRevision`,
  *   `timesheetRevisionCreateFields`, 1.55.0 — the old "Create revision" button, renamed). The reviewer may then change
  *   the revision's labour lines before the person signs it (`timesheetRevisionReviewerMayEditBookings`); the person signs,
@@ -22,13 +24,13 @@ import { timesheetSheetIsRevision } from './timesheetSnapshot'
 export const TIMESHEET_MAKE_CHANGES_LABEL = 'Make changes'
 /** Help under the button on a signed-off (not exported) sheet. */
 export const TIMESHEET_MAKE_CHANGES_REOPEN_HELP =
-  'Change or remove bookings on this timesheet with ⚙ and ✕, then sign it off again. The person does not sign again; they are told it was changed and signed off.'
+  'Change or remove bookings, price work or expenses on this timesheet with ⚙ and ✕, then sign it off again. The person does not sign again; they are told it was changed and signed off.'
 /** Help under the button on an exported sheet. */
 export const TIMESHEET_MAKE_CHANGES_REVISION_HELP =
   'This timesheet has been exported, so changes go on a new revision. You can change its bookings, then the person signs it again and you sign it off. It is exported as the next REV.'
 /** Shown while the reviewer has pressed Make changes on a signed-off sheet and has not changed anything yet. */
 export const TIMESHEET_MAKE_CHANGES_ACTIVE_NOTE =
-  'Making changes: use ⚙ to change a booking or ✕ to remove it. The timesheet stays signed off until you change something; then sign it off again.'
+  'Making changes: use ⚙ to change a booking, price work or expense, or ✕ to remove it. The timesheet stays signed off until you change something; then sign it off again.'
 export const TIMESHEET_MAKE_CHANGES_CANCEL_LABEL = 'Stop making changes'
 /**
  * Review of #427 (finding 1): a signed-off sheet whose signed copy cannot tell a changed booking (signed before 1.46.0 —
@@ -84,8 +86,23 @@ function hasFingerprint(row: Record<string, unknown>): boolean {
 
 export function timesheetSignedCopyTracksBookings(sheet: Record<string, unknown> | null | undefined): boolean {
   const labour = signedCopyLabourLines(sheet)
-  if (!labour || labour.length === 0) return false
-  return labour.every(hasFingerprint)
+  return labour != null && labour.every(hasFingerprint)
+}
+
+/** 1.76.0 (owner answer 23 Nov, b): the signed copy holds signed price work or expense rows (not late extras). */
+function signedCopyHasSignedMoney(sheet: Record<string, unknown>): boolean {
+  const override = sheet.weeklyReportOverride
+  if (!override || typeof override !== 'object') return false
+  return ['priceWork', 'expenses'].some((key) => {
+    const rows = (override as Record<string, unknown>)[key]
+    return Array.isArray(rows) && rows.some((row) => row && typeof row === 'object' && (row as Record<string, unknown>).lateExtra !== true)
+  })
+}
+
+/** Something on the signed copy Make changes can change: a labour line, or a signed price work / expense row. */
+function signedCopyHasSomethingToChange(sheet: Record<string, unknown>): boolean {
+  const labour = signedCopyLabourLines(sheet)
+  return (labour != null && labour.length > 0) || signedCopyHasSignedMoney(sheet)
 }
 
 /**
@@ -120,7 +137,7 @@ export function timesheetMakeChangesAction(
   if (!sheet || input.viewerIsReviewer !== true || input.viewerIsSubject === true) return null
   if (resolveTimesheetExportedAtMs(sheet) != null) return input.revisionAllowed === true ? 'createRevision' : null
   if (!signedOffForReview(sheet, input)) return null
-  return timesheetSignedCopyTracksBookings(sheet) ? 'reopenReview' : null
+  return timesheetSignedCopyTracksBookings(sheet) && signedCopyHasSomethingToChange(sheet) ? 'reopenReview' : null
 }
 
 /**
