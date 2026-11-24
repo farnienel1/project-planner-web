@@ -3753,12 +3753,13 @@ test('1.12.2: an admin (not the Super Admin) demotes another admin and promotes 
   await assertFails(updateDoc(doc(ad, 'users', T_AD), { isSuperAdmin: true }))
 })
 
-test('1.12.2: a membership is read by the person and the admins of that organisation only', async () => {
+test('1.12.2 / 1.88.0: a membership is read by the person and the members of that organisation only', async () => {
   await seed1122()
   await assertSucceeds(getDoc(doc(await authDb(T_AD, 't-ad@test.com'), 'users', T_MGR, 'orgMemberships', ORG_T)))
   await assertSucceeds(getDoc(doc(await authDb(T_MGR, 't-mgr@test.com'), 'users', T_MGR, 'orgMemberships', ORG_T)))
-  // Another member who is not an admin, and an admin of another company, cannot.
-  await assertFails(getDoc(doc(await authDb(T_MGR, 't-mgr@test.com'), 'users', T_AD, 'orgMemberships', ORG_T)))
+  // 1.88.0 (line managers per organisation): another member of that organisation reads it (its `lineManager` map is
+  // that company's line manager for the person); an admin of another company still cannot.
+  await assertSucceeds(getDoc(doc(await authDb(T_MGR, 't-mgr@test.com'), 'users', T_AD, 'orgMemberships', ORG_T)))
   await assertFails(getDoc(doc(await authDb(ADMIN_B, 'admin-b@test.com'), 'users', T_MGR, 'orgMemberships', ORG_T)))
   // Listing someone else's memberships stays closed.
   await assertFails(getDocs(collection(await authDb(T_AD, 't-ad@test.com'), 'users', T_MGR, 'orgMemberships')))

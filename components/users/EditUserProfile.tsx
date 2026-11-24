@@ -100,6 +100,7 @@ import {
   canViewPersonPay,
   annualLeaveBalanceNotes,
   lineManagerSelectedIds,
+  withOrganizationLineManager,
   SELF_EMAIL_INVALID_MESSAGE,
   selfEmailChangeAction,
   selfEmailChangeSentMessage,
@@ -121,7 +122,8 @@ import {
   ADMIN_ACCESS_LOCKED_MESSAGE,
 } from '@/lib/staff/userPermissionDescriptions'
 import { SUPER_ADMIN_SUCCESSOR_EMPTY, superAdminSuccessors } from '@/lib/staff/superAdminTransfer'
-import { displayedLineManagerId, userWithLineManagerChoice } from '@/lib/firebase/userPayload'
+import { userWithLineManagerChoice } from '@/lib/firebase/userPayload'
+import { heldMembership } from '@/lib/staff/memberLineManagersLive'
 import { confirmWriteWithin, whenQueued } from '@/lib/works/watchWrite'
 import {
   profileSaveNoticeFor,
@@ -441,8 +443,15 @@ export function EditUserProfile({
     // basis / employment type (the rate-history "previous" row) all start from the same copy — the pay profile laid
     // over the users document while `privatePay` is on, the users document as stored while it is off.
     getUser(userId, { payEditor: true })
-      .then((row) => {
+      .then((loaded) => {
         if (generation !== profileLoadGen.current) return
+        // Rulebook 1.88.0: a member whose home is another company is edited with THIS company's line manager (their
+        // membership's `lineManager` map); the save writes it back there (`orgLineManagerEditTarget`).
+        const orgId = useAuthStore.getState().organization?.id
+        const row =
+          loaded && orgId
+            ? withOrganizationLineManager(loaded, { organizationId: orgId, membership: heldMembership(orgId, loaded.id) })
+            : loaded
         setTarget(row)
         savedUser.current = row
         setOriginalDayRate(row?.payBasis === 'hourly' ? row?.hourlyRate : row?.dayRate)
@@ -549,13 +558,16 @@ export function EditUserProfile({
 
 
   // Rulebook §11 `lineManagerCandidates(person, roster)`: the picker list, never the person under any of their ids.
+  // Owner bug 24 Nov: the options and the selected value come from the same rulebook rules over the UNFOLDED roster
+  // (every users document of the organisation), the same input the profile page's `lineManagerSummary` reads, so the
+  // two screens can never disagree.
   const managers = useMemo(() => {
-    const byId = new Map(users.map((row) => [row.id, row]))
-    const subject = target?.id ? users.find((row) => row.id === target.id) ?? { id: target.id } : null
-    return lineManagerCandidates(subject as never, users as never)
+    const byId = new Map(rosterDocs.map((row) => [row.id, row]))
+    const subject = target?.id ? rosterDocs.find((row) => row.id === target.id) ?? { id: target.id } : null
+    return lineManagerCandidates(subject as never, rosterDocs as never)
       .map((candidate) => byId.get(candidate.id))
-      .filter((row): row is (typeof users)[number] => Boolean(row))
-  }, [users, target?.id])
+      .filter((row): row is (typeof rosterDocs)[number] => Boolean(row))
+  }, [rosterDocs, target?.id])
 
   const previousRateEntries = useMemo(() => {
     if (!target) return []
@@ -1719,7 +1731,7 @@ export function EditUserProfile({
                   }
                 >
                   <Select
-                    value={lineManagerSelectedIds(target as never, users as never)[0] ?? displayedLineManagerId(target)}
+                    value={lineManagerSelectedIds(target as never, rosterDocs as never)[0] ?? ''}
                     disabled={!canEdit || !mayChangeLineManager || saving || typeSaving}
                     onChange={(e) => {
                       setLineManagerError(null)

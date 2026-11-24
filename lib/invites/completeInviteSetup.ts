@@ -326,7 +326,7 @@ export async function completeInvitationPasswordSetup(params: {
     // Rulebook 1.31.1 (fourth review, S-1): the membership is written in the same batch, in the `inviteMembershipWrites`
     // shape the rules accept from an invitee (`membershipFromInvitation`). Written later, a non-admin invitee's own
     // membership write was refused after the account existed, and a retry then found the invitation used.
-    const membershipWrite = inviteMembershipWrites({ invitation: record.raw, invitationId: params.invitationId, authUid, now })
+    const membershipWrite = inviteMembershipWrites({ invitation: record.raw, invitationId: params.invitationId, authUid, now, homeAccount: true })
     if (membershipWrite) {
       batch.set(doc(db, 'users', authUid, 'orgMemberships', membershipWrite.organizationId), membershipWrite.membership)
     }

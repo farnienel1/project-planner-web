@@ -37,6 +37,7 @@ import {
 import { isOrganizationSuperAdmin } from './organizationDeletion'
 import { formatPaymentRunDay, paymentRunPayDate } from './paymentRuns'
 import { organizationLevelFor, organizationSelfManageFlags } from './orgRoster'
+import { withOrganizationLineManager } from './orgLineManagers'
 import { documentInstantMs, documentOrganizationId } from './peopleDocuments'
 import { permissionLevelOf } from './permissionLevels'
 import { idKey, personIdSet, rosterMemberFor } from './personIds'
@@ -294,7 +295,12 @@ function anchoredMember(
   const level = here.level
   // §14: deactivated here only by their membership here; their home company's `isActive` never counts.
   const membershipActive = flags.source === 'membership' ? flags.active : true
-  const shared = sharedMemberFields(docId, data)
+  // 1.88.0: their line manager here is their membership's `lineManager` map when it holds one, else the users document.
+  const shared = withOrganizationLineManager(sharedMemberFields(docId, data), {
+    organizationId: org.organizationId,
+    membership: org.membership ?? null,
+    homeOrganizationId: data.organizationId ?? null,
+  })
   return {
     ...shared,
     isActive: membershipActive,

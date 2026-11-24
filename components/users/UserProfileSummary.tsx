@@ -17,7 +17,17 @@ import { rosterStatusLabel } from '@/lib/staff/userRosterUtils'
 import { UserAvatar } from '@/components/users/UserAvatar'
 import { Chip, IconTile } from '@/components/ui/page'
 import { ProfileBack, ProfileBand, ProfileIcon, ProfilePage, SaveState } from '@/components/users/profile-ui'
-import { GHOST_UPGRADE_HELP, GHOST_UPGRADE_LABEL, canUpgradeGhost, canViewPersonPay, ghostBadgeLabel, isGhostUser } from '@/lib/canonical'
+import {
+  GHOST_UPGRADE_HELP,
+  GHOST_UPGRADE_LABEL,
+  canUpgradeGhost,
+  canViewPersonPay,
+  ghostBadgeLabel,
+  isGhostUser,
+  lineManagerSummary,
+  withOrganizationLineManager,
+} from '@/lib/canonical'
+import { heldMembership } from '@/lib/staff/memberLineManagersLive'
 import { GhostAppAccessCard } from '@/components/users/GhostAppAccessCard'
 import { profileRateRow, qualificationExpiryTone } from '@/lib/users/profileUi'
 import { loadPayProfile } from '@/lib/pay/payProfileService'
@@ -123,10 +133,19 @@ export function UserProfileSummary({
       preferredRowId: preferred?.id,
     })
   }, [target, operatives, rosterDocuments])
+  // Owner bug 24 Nov (Luke: Edit user showed his line manager, this page "No line manager"): this page read only the
+  // legacy single `assignedManagerUserId` and matched it exactly on the email-folded roster, while Edit user reads the
+  // list (`lineManagerSelectedIds`). Both screens now use the rulebook over the unfolded roster: `lineManagerSummary`
+  // here, of the person as this organisation sees them (rulebook 1.88.0: the membership's line manager for a member
+  // whose home is another company, `withOrganizationLineManager`). `users` re-runs it when a membership arrives.
   const lineManager = useMemo(() => {
-    if (!target?.assignedManagerUserId) return null
-    return users.find((row) => row.id === target.assignedManagerUserId) || null
-  }, [users, target?.assignedManagerUserId])
+    if (!target) return null
+    const subject = organization?.id
+      ? withOrganizationLineManager(target, { organizationId: organization.id, membership: heldMembership(organization.id, target.id) })
+      : target
+    return lineManagerSummary(subject as never, rosterDocuments as never)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target, rosterDocuments, organization?.id, users])
 
   if (loading) return <UserProfileSkeleton />
 
@@ -151,7 +170,8 @@ export function UserProfileSummary({
   const status = rosterStatusLabel(target)
   const nowIso = new Date().toISOString()
   const tradeText = displayTradeType(target.tradeTypePreset, target.tradeTypeCustom)
-  const lineManagerText = lineManager ? `${lineManager.firstName} ${lineManager.surname}`.trim() : 'No line manager'
+  const lineManagerText = lineManager?.label ?? 'Not set'
+  const lineManagerNames = lineManager && lineManager.ids.length > 0 ? lineManager.ids.map((entry) => entry.name).join(', ') : lineManagerText
   const rate = payVisible ? profileRateRow(pay, currencyCode) : null
 
   return (
@@ -217,7 +237,7 @@ export function UserProfileSummary({
             ) : null}
             <SummaryRow label="Trade" value={tradeText} />
             {payVisible ? <SummaryRow label="Employment" value={employmentLabel(pay?.employmentType)} /> : null}
-            <SummaryRow label="Line manager" value={lineManagerText} />
+            <SummaryRow label="Line manager" value={lineManagerNames} />
             {rate ? <SummaryRow label={rate.label} value={rate.value} /> : null}
           </dl>
         </section>

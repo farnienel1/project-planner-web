@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { UserRole, type User, type UserPermissions } from '../../types/index.ts'
-import { buildSaveUserPayload, displayedLineManagerId, userWithLineManagerChoice } from '../firebase/userPayload.ts'
+import { buildSaveUserPayload, userWithLineManagerChoice } from '../firebase/userPayload.ts'
+import { lineManagerSelectedIds, lineManagerSummary } from '../canonical/index.ts'
 import { applyAccountTypeChange } from './accountTypeChange.ts'
 import { applyDeviceOrgMembership } from '../orgMembership/webActiveOrg.ts'
 import { isSuperAdminSuccessor, superAdminSuccessors, SUPER_ADMIN_SUCCESSOR_EMPTY } from './superAdminTransfer.ts'
@@ -107,7 +108,8 @@ test('no line manager clears a leftover manager id on save', () => {
   assert.equal(cleared.hasNoLineManager, true)
   assert.equal(cleared.assignedManagerUserId, undefined)
   assert.deepEqual(cleared.assignedManagerUserIds, [])
-  assert.equal(displayedLineManagerId(cleared), '')
+  assert.deepEqual(lineManagerSelectedIds(cleared as never, []), [])
+  assert.equal(lineManagerSummary(cleared as never, []).label, 'No line manager')
   const payload = buildSaveUserPayload(cleared)
   assert.equal(payload.hasNoLineManager, true)
   assert.equal(Array.isArray(payload.assignedManagerUserIds), false)

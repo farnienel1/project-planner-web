@@ -9,6 +9,7 @@
  */
 
 import { accountKindFromFlags, normalizeEmploymentType } from './userProfile'
+import { ORG_MEMBERSHIP_LINE_MANAGER_FIELD, invitationLineManagerMap } from './orgLineManagers'
 
 export type InviteAcceptMode =
   /** No account yet: `users/{authUid}` is created from the invitation. */
@@ -285,6 +286,8 @@ export function inviteMembershipWrites(input: {
   invitationId: string
   authUid: string
   now: unknown
+  /** 1.88.0: true for a NEW account (its home is this organisation): the line manager goes on the users document, never the membership. */
+  homeAccount?: boolean
 }): { organizationId: string; membership: Record<string, unknown>; membersField: string; role: string } | null {
   const row = record(input?.invitation) ?? {}
   const organizationId = text(row.organizationId)
@@ -306,6 +309,12 @@ export function inviteMembershipWrites(input: {
   }
   const invitedBy = text(row.invitedBy)
   if (invitedBy) membership.invitedBy = invitedBy
+  // 1.88.0: for an account whose home is another company, the line manager the inviter set (under the 1.33.0 lock)
+  // becomes this organisation's line manager for the person — exactly as stored on the invitation (the security rules
+  // compare it). A new account's home membership carries none: its users document holds the line manager, and a map
+  // on a home membership is never written by the apps (the security rules read a map when it is there).
+  const lineManager = input.homeAccount === true ? null : invitationLineManagerMap(row)
+  if (lineManager) membership[ORG_MEMBERSHIP_LINE_MANAGER_FIELD] = lineManager
   return { organizationId, membership, membersField: `members.${authUid}`, role }
 }
 

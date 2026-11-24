@@ -33,6 +33,9 @@ const OPMODE_ADMIN_A = 'opmode-admin-a'
 // 1.30.0: a PAYE operative whose line managers are MGR_A and an inactive manager.
 const CLAIM_OP_A = 'claim-op-a'
 const GONE_MGR_A = 'gone-mgr-a'
+// 1.88.0: home company B, also a member of A; A's line manager for them is on their membership in A (or not).
+const VISITOR_MAPPED = 'visitor-mapped'
+const VISITOR_PLAIN = 'visitor-plain'
 
 const MB = 1024 * 1024
 
@@ -63,7 +66,7 @@ test.before(async () => {
     const db = ctx.firestore()
     await setDoc(doc(db, 'organizations', ORG_A), {
       name: 'Company A',
-      members: { [ADMIN_A]: 'admin', [OP_A]: 'member', [CLAIM_OP_A]: 'member', [GONE_MGR_A]: 'member', [MGR_A]: 'member', [OPMODE_ADMIN_A]: 'member', [ADMIN_B]: 'member' },
+      members: { [ADMIN_A]: 'admin', [OP_A]: 'member', [CLAIM_OP_A]: 'member', [GONE_MGR_A]: 'member', [MGR_A]: 'member', [OPMODE_ADMIN_A]: 'member', [ADMIN_B]: 'member', [VISITOR_MAPPED]: 'operative', [VISITOR_PLAIN]: 'operative' },
       creatorUserId: ADMIN_A,
     })
     await setDoc(doc(db, 'organizations', ORG_B), {
@@ -125,6 +128,14 @@ test.before(async () => {
       adminAccess: true,
       firstName: 'Bea',
     })
+    for (const id of [VISITOR_MAPPED, VISITOR_PLAIN]) {
+      // Their users document names B and lists MGR_A as line manager there (never read in A).
+      await setDoc(doc(db, 'users', id), { email: `${id}@test.com`, organizationId: ORG_B, role: 'operative', operativeMode: true, assignedManagerUserIds: [MGR_A] })
+      await setDoc(doc(db, 'users', id, 'orgMemberships', ORG_A), {
+        organizationId: ORG_A, role: 'operative', status: 'active', accountActive: true, permissions: { operativeMode: true },
+        ...(id === VISITOR_MAPPED ? { lineManager: { assignedManagerUserIds: [MGR_A], assignedManagerUserId: MGR_A, hasNoLineManager: false } } : {}),
+      })
+    }
     await setDoc(doc(db, 'users', OP_B), {
       email: 'op-b@test.com',
       organizationId: ORG_B,
@@ -595,6 +606,19 @@ test('1.30.0 claim evidence is read by the person, their line manager and admins
   // Delete as §24: the uploader within the undo window or an admin; never the line manager.
   await assertFails(del(MGR_A, objectPath))
   await assertSucceeds(del(CLAIM_OP_A, objectPath))
+})
+
+test('1.88.0 claim evidence of a member from another company: their line manager here (membership map) reads it', async () => {
+  EMAIL[VISITOR_MAPPED] = 'visitor-mapped@test.com'
+  EMAIL[VISITOR_PLAIN] = 'visitor-plain@test.com'
+  const mapped = `organizations/${ORG_A}/payeClaims/${VISITOR_MAPPED}/${VISITOR_MAPPED}_${Date.now() + 13}.pdf`
+  const plain = `organizations/${ORG_A}/payeClaims/${VISITOR_PLAIN}/${VISITOR_PLAIN}_${Date.now() + 17}.pdf`
+  await assertSucceeds(put(VISITOR_MAPPED, EMAIL[VISITOR_MAPPED], mapped, 128, 'application/pdf'))
+  await assertSucceeds(put(VISITOR_PLAIN, EMAIL[VISITOR_PLAIN], plain, 128, 'application/pdf'))
+  await assertSucceeds(read(MGR_A, mapped))
+  // No map here: their home company's line manager list never counts in A (as before 1.88.0).
+  await assertFails(read(MGR_A, plain))
+  await assertFails(read(OP_A, mapped))
 })
 
 test('1.30.0 personal site audit photos are the owner\'s only — admins included cannot read or delete them', async () => {

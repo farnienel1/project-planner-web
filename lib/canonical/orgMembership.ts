@@ -10,6 +10,8 @@
  * update, and only an admin of that organisation writes role, permissions, super admin or the active flag. Pure.
  */
 
+import { ORG_MEMBERSHIP_LINE_MANAGER_FIELD, orgMembershipLineManagerFields, parseOrgLineManager, type OrgLineManagerFields } from './orgLineManagers'
+
 export const ORG_MEMBERSHIP_PERMISSION_KEYS = [
   'adminAccess',
   'manager',
@@ -39,7 +41,15 @@ export const ORG_MEMBERSHIP_DEFAULT_ON: ReadonlyArray<OrgMembershipPermissionKey
 ]
 
 /** Fields only an admin of the organisation writes (the rules refuse a self write that changes them). */
-export const ORG_MEMBERSHIP_ADMIN_FIELDS = ['role', 'isSuperAdmin', 'accountActive', 'isActive', 'permissions', ...ORG_MEMBERSHIP_PERMISSION_KEYS] as const
+export const ORG_MEMBERSHIP_ADMIN_FIELDS = [
+  'role',
+  'isSuperAdmin',
+  'accountActive',
+  'isActive',
+  'permissions',
+  ORG_MEMBERSHIP_LINE_MANAGER_FIELD,
+  ...ORG_MEMBERSHIP_PERMISSION_KEYS,
+] as const
 
 /** Fields the person writes on their own membership: accepting (`status` active, `acceptedAt`). */
 export const ORG_MEMBERSHIP_SELF_FIELDS = ['status', 'acceptedAt', 'updatedAt', 'updatedBy', 'updatedFrom'] as const
@@ -60,6 +70,11 @@ export type OrgMembershipDocument = {
   updatedAtMs: number | null
   /** True when any flag was read from the legacy flat (top-level) shape. */
   hasLegacyFlatFlags: boolean
+  /**
+   * 1.88.0: this organisation's line manager for a member whose home is elsewhere (`parseOrgLineManager` of the
+   * `lineManager` map); null when the membership holds none (the users document is read, as before).
+   */
+  lineManager: OrgLineManagerFields | null
 }
 
 function text(value: unknown): string {
@@ -132,6 +147,7 @@ export function parseOrgMembershipDocument(
     acceptedAtMs: instantMs(row.acceptedAt),
     updatedAtMs: instantMs(row.updatedAt),
     hasLegacyFlatFlags,
+    lineManager: parseOrgLineManager(row[ORG_MEMBERSHIP_LINE_MANAGER_FIELD]),
   }
 }
 
@@ -142,6 +158,15 @@ export type OrgMembershipChange = {
   accountActive?: boolean | null
   permissions?: Partial<Record<OrgMembershipPermissionKey, boolean>> | null
   invitedBy?: string | null
+  /**
+   * 1.88.0: this organisation's line manager for a member whose home is elsewhere (admin only): written whole as the
+   * `lineManager` map (`orgMembershipLineManagerFields`) when it differs from the stored one.
+   */
+  lineManager?: {
+    assignedManagerUserIds?: ReadonlyArray<unknown> | null
+    assignedManagerUserId?: unknown
+    hasNoLineManager?: unknown
+  } | null
 }
 
 export type OrgMembershipWrite = {
@@ -207,6 +232,7 @@ export function orgMembershipWriteFields(input: {
     if (status === 'active') set.acceptedAt = input.now
     const invitedBy = text(next.invitedBy)
     if (invitedBy) set.invitedBy = invitedBy
+    if (next.lineManager) set[ORG_MEMBERSHIP_LINE_MANAGER_FIELD] = orgMembershipLineManagerFields(next.lineManager)
     return { mode: 'create', fields: set, remove: [] }
   }
 
@@ -217,6 +243,16 @@ export function orgMembershipWriteFields(input: {
   }
   if (typeof next.isSuperAdmin === 'boolean' && next.isSuperAdmin !== current.isSuperAdmin) fields.isSuperAdmin = next.isSuperAdmin
   if (typeof next.accountActive === 'boolean' && next.accountActive !== current.accountActive) fields.accountActive = next.accountActive
+  if (next.lineManager) {
+    const lineManager = orgMembershipLineManagerFields(next.lineManager)
+    const stored = current.lineManager
+    const same =
+      stored != null &&
+      stored.hasNoLineManager === lineManager.hasNoLineManager &&
+      stored.assignedManagerUserIds.length === lineManager.assignedManagerUserIds.length &&
+      stored.assignedManagerUserIds.every((id, at) => id === lineManager.assignedManagerUserIds[at])
+    if (!same) fields[ORG_MEMBERSHIP_LINE_MANAGER_FIELD] = lineManager
+  }
   const nested =
     storedRaw && storedRaw.permissions && typeof storedRaw.permissions === 'object'
       ? (storedRaw.permissions as Record<string, unknown>)
