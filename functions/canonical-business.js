@@ -348,6 +348,21 @@ var ProjectPlannerCanonical = (() => {
     OFFLINE_LAST_UPDATED_PREFIX: () => OFFLINE_LAST_UPDATED_PREFIX,
     OFFLINE_ONLINE_ONLY_MESSAGE: () => OFFLINE_ONLINE_ONLY_MESSAGE,
     OFFLINE_PENDING_SYNC_LABEL: () => OFFLINE_PENDING_SYNC_LABEL,
+    OFFLINE_REPLACE_CHANGED_MESSAGE: () => OFFLINE_REPLACE_CHANGED_MESSAGE,
+    OFFLINE_REPLACE_REFUSED_MESSAGE: () => OFFLINE_REPLACE_REFUSED_MESSAGE,
+    OFFLINE_REPLACE_REPLAY_DECISIONS: () => OFFLINE_REPLACE_REPLAY_DECISIONS,
+    OFFLINE_REPLACE_TARGET_OUTCOMES: () => OFFLINE_REPLACE_TARGET_OUTCOMES,
+    OFFLINE_SYNC_RESULT_BANNER: () => OFFLINE_SYNC_RESULT_BANNER,
+    OFFLINE_SYNC_RESULT_DETAIL_CHANGED: () => OFFLINE_SYNC_RESULT_DETAIL_CHANGED,
+    OFFLINE_SYNC_RESULT_DETAIL_DELETED: () => OFFLINE_SYNC_RESULT_DETAIL_DELETED,
+    OFFLINE_SYNC_RESULT_DETAIL_PERMISSION: () => OFFLINE_SYNC_RESULT_DETAIL_PERMISSION,
+    OFFLINE_SYNC_RESULT_DISMISS_LABEL: () => OFFLINE_SYNC_RESULT_DISMISS_LABEL,
+    OFFLINE_SYNC_RESULT_EMPTY: () => OFFLINE_SYNC_RESULT_EMPTY,
+    OFFLINE_SYNC_RESULT_KINDS: () => OFFLINE_SYNC_RESULT_KINDS,
+    OFFLINE_SYNC_RESULT_NOTIFICATION_TITLE: () => OFFLINE_SYNC_RESULT_NOTIFICATION_TITLE,
+    OFFLINE_SYNC_RESULT_OPEN_DAY_LABEL: () => OFFLINE_SYNC_RESULT_OPEN_DAY_LABEL,
+    OFFLINE_SYNC_RESULT_REASONS: () => OFFLINE_SYNC_RESULT_REASONS,
+    OFFLINE_SYNC_RESULT_TITLE: () => OFFLINE_SYNC_RESULT_TITLE,
     ONBOARDING_DISMISSED_AT_FIELD: () => ONBOARDING_DISMISSED_AT_FIELD,
     ONBOARDING_DISMISSED_BY_FIELD: () => ONBOARDING_DISMISSED_BY_FIELD,
     ONBOARDING_DISMISS_CONFIRM: () => ONBOARDING_DISMISS_CONFIRM,
@@ -1469,6 +1484,13 @@ var ProjectPlannerCanonical = (() => {
     offlineDeleteRefusalDecision: () => offlineDeleteRefusalDecision,
     offlineDeleteReplayDecision: () => offlineDeleteReplayDecision,
     offlineLastUpdatedLabel: () => offlineLastUpdatedLabel,
+    offlineReplaceOrganizationReadDecision: () => offlineReplaceOrganizationReadDecision,
+    offlineReplaceRefusalDecision: () => offlineReplaceRefusalDecision,
+    offlineReplaceReplayDecision: () => offlineReplaceReplayDecision,
+    offlineSyncBookingText: () => offlineSyncBookingText,
+    offlineSyncResultNotificationText: () => offlineSyncResultNotificationText,
+    offlineSyncResultRows: () => offlineSyncResultRows,
+    offlineSyncTimesText: () => offlineSyncTimesText,
     onSiteHoursText: () => onSiteHoursText,
     onboardingCardVisible: () => onboardingCardVisible,
     onboardingChecklist: () => onboardingChecklist,
@@ -2556,8 +2578,8 @@ var ProjectPlannerCanonical = (() => {
     if (typeof value === "number") {
       return Number.isFinite(value) && value >= 0 && value <= 24 * 60 ? Math.round(value) : null;
     }
-    const text60 = String(value ?? "").trim();
-    const match = /^(\d{1,2}):(\d{2})$/.exec(text60);
+    const text62 = String(value ?? "").trim();
+    const match = /^(\d{1,2}):(\d{2})$/.exec(text62);
     if (!match) return null;
     const hours2 = Number(match[1]);
     const minutes = Number(match[2]);
@@ -5691,8 +5713,8 @@ var ProjectPlannerCanonical = (() => {
     const breakPaid = policy.breakPaid === true;
     const paidHours = derivedWeekdayPaidHours(policy);
     const range = `${formatClockMinutes(day.start)}\u2013${formatClockMinutes(day.end)}`;
-    const dayText3 = hoursMinutesText(dayMinutes);
-    const line = breakMinutes <= 0 ? `${range} = ${dayText3}` : breakPaid ? `${range} = ${dayText3}, ${breakMinutes} min break paid = ${dayText3}` : `${range} = ${dayText3} \u2212 ${breakMinutes} min unpaid break = ${hoursMinutesText(paidHours * 60)}`;
+    const dayText4 = hoursMinutesText(dayMinutes);
+    const line = breakMinutes <= 0 ? `${range} = ${dayText4}` : breakPaid ? `${range} = ${dayText4}, ${breakMinutes} min break paid = ${dayText4}` : `${range} = ${dayText4} \u2212 ${breakMinutes} min unpaid break = ${hoursMinutesText(paidHours * 60)}`;
     return { start: formatClockMinutes(day.start), end: formatClockMinutes(day.end), dayMinutes, breakMinutes, breakPaid, paidHours, line };
   }
   function payrollPolicyToFirestore(policy) {
@@ -5790,15 +5812,15 @@ var ProjectPlannerCanonical = (() => {
   }
   var COVERAGE_CLOCK_RE = /^\d{1,2}:\d{2}$/;
   function clockMinutesOf(value) {
-    const text60 = coverageClock(value);
-    if (!text60) return null;
-    const [h4, m] = text60.split(":").map(Number);
+    const text62 = coverageClock(value);
+    if (!text62) return null;
+    const [h4, m] = text62.split(":").map(Number);
     return h4 * 60 + m;
   }
   function coverageClock(value) {
-    const text60 = typeof value === "string" ? value.trim() : "";
-    if (!COVERAGE_CLOCK_RE.test(text60)) return null;
-    const [h4, m] = text60.split(":").map(Number);
+    const text62 = typeof value === "string" ? value.trim() : "";
+    if (!COVERAGE_CLOCK_RE.test(text62)) return null;
+    const [h4, m] = text62.split(":").map(Number);
     return h4 >= 0 && h4 < 24 && m >= 0 && m < 60 ? `${String(h4).padStart(2, "0")}:${String(m).padStart(2, "0")}` : null;
   }
   function parseWeekendCoverage(value, includeWeekends) {
@@ -5962,11 +5984,11 @@ var ProjectPlannerCanonical = (() => {
     const fromOrg = asSettingsRecord(input.organizationMaterialCutOff) ?? (settings ? asSettingsRecord(settings.materialCutOff) : void 0);
     return parseMaterialCutOff(fromOrg);
   }
-  function materialCutOffClockMinutes(clock5) {
-    return clock5.materialCutOffHour * 60 + clock5.materialCutOffMinute;
+  function materialCutOffClockMinutes(clock6) {
+    return clock6.materialCutOffHour * 60 + clock6.materialCutOffMinute;
   }
-  function formatMaterialCutOffClock(clock5) {
-    return formatClockMinutes(materialCutOffClockMinutes(clock5));
+  function formatMaterialCutOffClock(clock6) {
+    return formatClockMinutes(materialCutOffClockMinutes(clock6));
   }
   function materialCutOffToFirestore(prefs) {
     return {
@@ -6101,8 +6123,8 @@ var ProjectPlannerCanonical = (() => {
     return policy.weekdayOutsideStandardMultiplier;
   }
   function segment(kind, baseHours, multiplier, start, end, workedHours = baseHours, unpaidBreakHours = 0) {
-    const clock5 = (value) => value == null ? void 0 : typeof value === "number" ? formatClockMinutes(value > 24 * 60 ? value - 24 * 60 : Math.min(value, 24 * 60 - 1)) : value;
-    const row3 = { kind, clockStart: clock5(start), clockEnd: clock5(end), baseHours, multiplier, paidHours: baseHours * multiplier, workedHours };
+    const clock6 = (value) => value == null ? void 0 : typeof value === "number" ? formatClockMinutes(value > 24 * 60 ? value - 24 * 60 : Math.min(value, 24 * 60 - 1)) : value;
+    const row3 = { kind, clockStart: clock6(start), clockEnd: clock6(end), baseHours, multiplier, paidHours: baseHours * multiplier, workedHours };
     if (unpaidBreakHours > 0) row3.unpaidBreakHours = unpaidBreakHours;
     return row3;
   }
@@ -6114,15 +6136,15 @@ var ProjectPlannerCanonical = (() => {
     return row3;
   }
   function payrollOutsideClockHours(result2) {
-    let clock5 = 0;
+    let clock6 = 0;
     let brk = 0;
     for (const row3 of result2?.segments ?? []) {
       if (row3.kind === "standardWindow") continue;
       const b = row3.unpaidBreakHours ?? 0;
-      clock5 += row3.baseHours + (b > 0 && row3.multiplier > 0 ? b / row3.multiplier : 0);
+      clock6 += row3.baseHours + (b > 0 && row3.multiplier > 0 ? b / row3.multiplier : 0);
       brk += b;
     }
-    return { outsideClockHours: clock5, outsideBreakHours: brk };
+    return { outsideClockHours: clock6, outsideBreakHours: brk };
   }
   function roundHundredths(value) {
     return Math.round(value * 100) / 100;
@@ -6131,15 +6153,15 @@ var ProjectPlannerCanonical = (() => {
     return `${roundHundredths(hours2)}h`;
   }
   function multipliedHoursText(input) {
-    const clock5 = Math.max(0, Number(input.clockHours) || 0);
+    const clock6 = Math.max(0, Number(input.clockHours) || 0);
     const n = Number(input.multiplier) > 0 ? Number(input.multiplier) : 1;
     const brk = Math.max(0, Number(input.breakHours) || 0);
-    const multiplied = `${plainHoursText(clock5)} \xD7 ${roundHundredths(n)}`;
-    const total = plainHoursText(Math.max(0, clock5 * n - brk));
+    const multiplied = `${plainHoursText(clock6)} \xD7 ${roundHundredths(n)}`;
+    const total = plainHoursText(Math.max(0, clock6 * n - brk));
     return roundHundredths(brk) > 0 ? `${multiplied} \u2212 ${plainHoursText(brk)} break = ${total}` : `${multiplied} = ${total}`;
   }
-  function parseMultipliedHoursText(text60) {
-    const match = /(\d+(?:\.\d+)?)h × (\d+(?:\.\d+)?)(?: − (\d+(?:\.\d+)?)h break)? = \d+(?:\.\d+)?h/.exec(String(text60 ?? ""));
+  function parseMultipliedHoursText(text62) {
+    const match = /(\d+(?:\.\d+)?)h × (\d+(?:\.\d+)?)(?: − (\d+(?:\.\d+)?)h break)? = \d+(?:\.\d+)?h/.exec(String(text62 ?? ""));
     if (!match) return null;
     const clockHours = Number(match[1]);
     const multiplier = Number(match[2]);
@@ -6185,9 +6207,9 @@ var ProjectPlannerCanonical = (() => {
     return { standard, overtime, standardText: standard.join(" + "), overtimeText: overtime.join(" + ") };
   }
   function timesheetLineClockText(details) {
-    const text60 = String(details ?? "").trim();
-    const cut = text60.indexOf(" \xB7 OT ");
-    return cut >= 0 ? text60.slice(0, cut).trim() : text60;
+    const text62 = String(details ?? "").trim();
+    const cut = text62.indexOf(" \xB7 OT ");
+    return cut >= 0 ? text62.slice(0, cut).trim() : text62;
   }
   function result(segments, outsideMultiplier) {
     let total = 0;
@@ -7399,8 +7421,8 @@ var ProjectPlannerCanonical = (() => {
   }
   function formatHours(hours2) {
     const rounded = Math.round(hours2 * 4) / 4;
-    const text60 = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, "");
-    return `${text60} hour${rounded === 1 ? "" : "s"}`;
+    const text62 = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, "");
+    return `${text62} hour${rounded === 1 ? "" : "s"}`;
   }
   function joinRanges(intervals) {
     const labels = intervals.map(rangeLabel);
@@ -12135,8 +12157,8 @@ var ProjectPlannerCanonical = (() => {
     return typeof value === "string" ? value.trim().toLowerCase() : "";
   }
   function dayKeyText(value) {
-    const text60 = typeof value === "string" ? value.trim() : "";
-    return DAY_KEY2.test(text60) ? text60 : null;
+    const text62 = typeof value === "string" ? value.trim() : "";
+    return DAY_KEY2.test(text62) ? text62 : null;
   }
   function compareText(a, b) {
     if (a === b) return 0;
@@ -12264,8 +12286,8 @@ var ProjectPlannerCanonical = (() => {
   function personDayItems(input) {
     const managerIdByKey = /* @__PURE__ */ new Map();
     for (const id2 of input?.managerIds || []) {
-      const text60 = idText2(id2);
-      if (text60) managerIdByKey.set(text60.toLowerCase(), text60);
+      const text62 = idText2(id2);
+      if (text62) managerIdByKey.set(text62.toLowerCase(), text62);
     }
     const people = input?.people || { accounts: [], operatives: [] };
     const managerIdByEmail = /* @__PURE__ */ new Map();
@@ -12366,9 +12388,9 @@ var ProjectPlannerCanonical = (() => {
     return [idText2(bookingAId), idText2(bookingBId)].sort(compareText).join("|");
   }
   function comparableKey(key8) {
-    const text60 = normalizeDocumentId(key8);
-    const parts3 = text60.split("|");
-    return parts3.length === 2 && parts3[0] && parts3[1] ? [...parts3].sort(compareText).join("|") : text60;
+    const text62 = normalizeDocumentId(key8);
+    const parts3 = text62.split("|");
+    return parts3.length === 2 && parts3[0] && parts3[1] ? [...parts3].sort(compareText).join("|") : text62;
   }
   function isClashAccepted(bookingAId, bookingBId, accepted) {
     const a = idKey7(bookingAId);
@@ -12512,14 +12534,14 @@ var ProjectPlannerCanonical = (() => {
       const id2 = idText2(booking?.id);
       const day = dayKeyText(booking?.dayKey);
       if (!id2 || !day || seen.has(id2.toLowerCase()) || !occupiesDay(booking.status)) continue;
-      const clock5 = { timeSlot: booking.timeSlot, workStartTime: booking.workStartTime, workEndTime: booking.workEndTime };
+      const clock6 = { timeSlot: booking.timeSlot, workStartTime: booking.workStartTime, workEndTime: booking.workEndTime };
       let interval2 = null;
-      if (day === dayKey) interval2 = slotInterval(clock5, standard);
+      if (day === dayKey) interval2 = slotInterval(clock6, standard);
       else if (nextCalendarDayKey(day) === dayKey) {
-        const own = slotInterval(clock5, bookingStandardDayOn(input.day, day));
+        const own = slotInterval(clock6, bookingStandardDayOn(input.day, day));
         interval2 = own && intervalCrossesMidnight(own) ? overnightCarryInterval(own) : null;
       } else if (nextCalendarDayKey(dayKey) === day && intervalCrossesMidnight(probe)) {
-        const own = slotInterval(clock5, bookingStandardDayOn(input.day, day));
+        const own = slotInterval(clock6, bookingStandardDayOn(input.day, day));
         interval2 = own ? { start: own.start + 24 * 60, end: own.end + 24 * 60 } : null;
       }
       if (!interval2 || !intervalsOverlap(probe, interval2)) continue;
@@ -14217,9 +14239,9 @@ var ProjectPlannerCanonical = (() => {
     return "apply";
   }
   function offlineDeleteRefusalDecision(code) {
-    const text60 = errorCodeText(code);
-    if (text60 === "not-found" || text60 === "5") return "alreadyGone";
-    if (text60 === "permission-denied" || text60 === "7") return "refusePermission";
+    const text62 = errorCodeText(code);
+    if (text62 === "not-found" || text62 === "5") return "alreadyGone";
+    if (text62 === "permission-denied" || text62 === "7") return "refusePermission";
     return "retry";
   }
   function bookingDeleteSignedTimesheetWarning(dayKey, sheets) {
@@ -16707,8 +16729,8 @@ var ProjectPlannerCanonical = (() => {
     const name = text19(line?.projectName);
     const title = NO_JOB_NUMBER.has(jobNumber) ? name || "Booking" : name ? `${jobNumber} \xB7 ${name}` : jobNumber;
     const details = text19(line?.details);
-    const clock5 = timesheetLineClockText(details);
-    if (/\d{1,2}:\d{2}/.test(clock5)) return { title, times: clock5 };
+    const clock6 = timesheetLineClockText(details);
+    if (/\d{1,2}:\d{2}/.test(clock6)) return { title, times: clock6 };
     const [head, ...rest] = details.split(" \xB7 ");
     const suffix = rest.length > 0 ? ` \xB7 ${rest.join(" \xB7 ")}` : "";
     const slot = normalizeBookingTimeSlot(head.trim());
@@ -17408,8 +17430,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.85.0" : "",
-      sha256: true ? "970bf206de5099894da4faeea7d315a58a8492d00c748a373901aed26660faec" : ""
+      version: true ? "1.86.0" : "",
+      sha256: true ? "e9ea201a3187a84aa7db612c73c3aa7f2dc16b6487b6ed5b91478ac30d7f2c8c" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -17718,8 +17740,8 @@ var ProjectPlannerCanonical = (() => {
     return Math.round(value * 1e4) / 1e4;
   }
   function basisOf(value) {
-    const text60 = String(value ?? "").trim().toLowerCase();
-    return text60 === "hourly" || text60 === "hour" ? "hourly" : "day";
+    const text62 = String(value ?? "").trim().toLowerCase();
+    return text62 === "hourly" || text62 === "hour" ? "hourly" : "day";
   }
   var PAYROLL_LINE_EDIT_TIMES_MESSAGE = "Enter a start and a finish time that are different.";
   function clockMinutes2(value) {
@@ -19223,14 +19245,14 @@ var ProjectPlannerCanonical = (() => {
     const timeZone = zoneOrLondon(input.timeZone);
     const now = instant(input.now);
     if (Number.isNaN(now.getTime())) return [];
-    const clock5 = resolveMaterialCutOffClock({ organizationMaterialCutOff: input.cutOff ?? null });
-    if (clock5.materialOrderCutOff === false) return [];
+    const clock6 = resolveMaterialCutOffClock({ organizationMaterialCutOff: input.cutOff ?? null });
+    if (clock6.materialOrderCutOff === false) return [];
     const parts3 = partsInZone(now, timeZone);
-    if (parts3.h * 60 + parts3.min < materialCutOffClockMinutes(clock5)) return [];
+    if (parts3.h * 60 + parts3.min < materialCutOffClockMinutes(clock6)) return [];
     const tomorrow = addDaysInZone(midnightInZone(now, timeZone), 1, timeZone);
     const weekday2 = isoWeekdayInZone(tomorrow, timeZone);
-    if (weekday2 === 6 && clock5.materialCutOffOnSaturday !== true) return [];
-    if (weekday2 === 7 && clock5.materialCutOffOnSunday !== true) return [];
+    if (weekday2 === 6 && clock6.materialCutOffOnSaturday !== true) return [];
+    if (weekday2 === 7 && clock6.materialCutOffOnSunday !== true) return [];
     const tomorrowKey = dayKeyInZone(tomorrow, timeZone);
     const bookedProjectIds = [];
     const seen = /* @__PURE__ */ new Set();
@@ -19244,7 +19266,7 @@ var ProjectPlannerCanonical = (() => {
     }
     const projectsById = new Map((input.projects || []).map((project) => [text27(project.id), project]));
     const ordered = orderedMaterialIds(input.sendRecords);
-    const cutOffLabel = formatMaterialCutOffClock(clock5);
+    const cutOffLabel = formatMaterialCutOffClock(clock6);
     const rows3 = [];
     for (const projectId of bookedProjectIds) {
       const project = projectsById.get(projectId);
@@ -19318,13 +19340,14 @@ var ProjectPlannerCanonical = (() => {
     "booking.edit": "allowedOffline",
     // 1.33.0: labour (`bookings`) and manager schedule (`managerSiteBookings`) deletes, iOS and Android.
     "booking.delete": "allowedOffline",
+    // 1.86.0 (owner decision 24 Nov): Replace on a double-booking row (create + delete + tombstone in one batch) is
+    // queued as one item and replayed through `offlineReplaceReplayDecision`. Online only from 1.41.0 to 1.85.
+    "booking.replace": "allowedOffline",
     "annual_leave.request": "allowedOffline",
     "profile.own_fields": "allowedOffline",
     "notifications.own_toggles": "allowedOffline",
     // Online only: bookings (1.33.0: subcontractor bookings are deleted online only)
     "booking.delete_subcontractor": "onlineOnly",
-    // 1.41.0 (owner decision 11 Nov): Replace on a double-booking row (create + delete + tombstone in one batch).
-    "booking.replace": "onlineOnly",
     // Online only: organisation settings
     "settings.company_details": "onlineOnly",
     "settings.currency": "onlineOnly",
@@ -22554,7 +22577,7 @@ var ProjectPlannerCanonical = (() => {
       const range = rangeOf(row3);
       const prefix = parts3 > 0 ? "+ " : "";
       if (row3.kind === "standardWindow") {
-        const clock5 = clockSpanHours(row3) ?? row3.workedHours + (row3.unpaidBreakHours ?? 0);
+        const clock6 = clockSpanHours(row3) ?? row3.workedHours + (row3.unpaidBreakHours ?? 0);
         const note = breakNote(row3, brk);
         if (kind === "weekendWindow") {
           const credited = row3.baseHours + (row3.unpaidBreakHours ?? 0);
@@ -22572,7 +22595,7 @@ var ProjectPlannerCanonical = (() => {
             summaryParts.push(`${h(row3.baseHours)} (full day, unpaid break allowed for)`);
           } else if (!full && lessBreak && lessBreak.window > 0 && windowHours && fullDayHours != null && range) {
             const windowLess = round(windowHours - lessBreak.window / 60);
-            const coveredLess = round(Math.max(0, clock5 - lessBreak.covered / 60));
+            const coveredLess = round(Math.max(0, clock6 - lessBreak.covered / 60));
             const proRata = `${h(fullDayHours)} \xD7 ${coveredLess} \xF7 ${windowLess} = ${h(credited)}`;
             steps.push(`${prefix}Booked ${range} = ${h(coveredLess)} of the ${h(windowLess)} window outside the unpaid break \u2192 ${proRata}`);
             summaryParts.push(`${proRata} (part of the window, unpaid break not counted)`);
@@ -22581,9 +22604,9 @@ var ProjectPlannerCanonical = (() => {
             steps.push(`${prefix}${range ?? label} = ${h(row3.baseHours)} (${why})`);
             summaryParts.push(`${h(row3.baseHours)} (${why})`);
           } else if (windowHours && fullDayHours != null && range) {
-            const proRata = `${h(fullDayHours)} \xD7 ${round(clock5)} \xF7 ${round(windowHours)} = ${h(credited)}`;
+            const proRata = `${h(fullDayHours)} \xD7 ${round(clock6)} \xF7 ${round(windowHours)} = ${h(credited)}`;
             const tail = brk > 0 ? `, ${note} = ${h(row3.baseHours)}` : note ? ` (${note})` : "";
-            steps.push(`${prefix}Booked ${range} = ${h(clock5)} of the ${h(windowHours)} window \u2192 ${proRata}${tail}`);
+            steps.push(`${prefix}Booked ${range} = ${h(clock6)} of the ${h(windowHours)} window \u2192 ${proRata}${tail}`);
             summaryParts.push(`${proRata}${tail} (part of the ${h(windowHours)} window)`);
           } else {
             steps.push(`${prefix}${range ?? label} = ${h(row3.baseHours)}${note ? ` (${note})` : ""}`);
@@ -22596,14 +22619,14 @@ var ProjectPlannerCanonical = (() => {
         }
         parts3 += 1;
       } else {
-        const clock5 = clockSpanHours(row3) ?? row3.baseHours + (row3.multiplier > 0 ? (row3.unpaidBreakHours ?? 0) / row3.multiplier : 0);
-        const multiplied = clock5 * row3.multiplier;
-        steps.push(`${prefix}${range ?? label} = ${h(clock5)} \xD7 ${times(row3.multiplier)} = ${h(multiplied)}`);
+        const clock6 = clockSpanHours(row3) ?? row3.baseHours + (row3.multiplier > 0 ? (row3.unpaidBreakHours ?? 0) / row3.multiplier : 0);
+        const multiplied = clock6 * row3.multiplier;
+        steps.push(`${prefix}${range ?? label} = ${h(clock6)} \xD7 ${times(row3.multiplier)} = ${h(multiplied)}`);
         if (brk > 0) {
           steps.push(`\u2212 ${h(brk)} unpaid break`);
           multipliedBreak = true;
         }
-        summaryParts.push(`${h(clock5)} \xD7 ${times(row3.multiplier)} = ${h(multiplied)}${brk > 0 ? ` \u2212 ${h(brk)} unpaid break` : ""}`);
+        summaryParts.push(`${h(clock6)} \xD7 ${times(row3.multiplier)} = ${h(multiplied)}${brk > 0 ? ` \u2212 ${h(brk)} unpaid break` : ""}`);
         parts3 += 1;
       }
     }
@@ -22650,10 +22673,10 @@ var ProjectPlannerCanonical = (() => {
   var WEEKEND_TIME_SLOTS = ["CUSTOM"];
   function isoWeekdayOf(day, timeZone) {
     if (typeof day === "number") return day;
-    const text60 = String(day || "").trim().toLowerCase();
-    if (text60 === "saturday") return 6;
-    if (text60 === "sunday") return 7;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(text60)) return isoWeekdayOfDayKey(text60, zoneOrLondon(timeZone));
+    const text62 = String(day || "").trim().toLowerCase();
+    if (text62 === "saturday") return 6;
+    if (text62 === "sunday") return 7;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text62)) return isoWeekdayOfDayKey(text62, zoneOrLondon(timeZone));
     return 0;
   }
   function isWeekendDayKey(dayKey, timeZone) {
@@ -22966,7 +22989,7 @@ var ProjectPlannerCanonical = (() => {
     const kind = namedSlotKind(input.timeSlot);
     const slot = kind === "UNKNOWN" ? identityPart(input.timeSlot) : kind;
     const custom = kind === "CUSTOM";
-    const clock5 = (value) => {
+    const clock6 = (value) => {
       const minutes = parseClockMinutes(value ?? null);
       return minutes === null ? identityPart(value) : String(minutes);
     };
@@ -22977,8 +23000,8 @@ var ProjectPlannerCanonical = (() => {
       identityPart(input.locationType),
       identityPart(input.locationId),
       identityPart(input.customLocationName),
-      custom ? clock5(input.workStartTime) : "",
-      custom ? clock5(input.workEndTime) : "",
+      custom ? clock6(input.workStartTime) : "",
+      custom ? clock6(input.workEndTime) : "",
       input.isBreakRemoved === true ? "break-off" : ""
     ].join("|");
   }
@@ -22989,9 +23012,9 @@ var ProjectPlannerCanonical = (() => {
     if (!result2) return { hours: 0, label: "0h" };
     const total = roundHours2(Number(result2.totalPaidHours) || 0);
     const standard = roundHours2(Number(result2.standardHours) || 0);
-    const clock5 = result2.segments ? payrollOutsideClockHours({ segments: result2.segments }) : null;
-    const outside = roundHours2(clock5 ? clock5.outsideClockHours : Number(result2.outsideHours) || 0);
-    const outsideBreak = roundHours2(clock5 ? clock5.outsideBreakHours : 0);
+    const clock6 = result2.segments ? payrollOutsideClockHours({ segments: result2.segments }) : null;
+    const outside = roundHours2(clock6 ? clock6.outsideClockHours : Number(result2.outsideHours) || 0);
+    const outsideBreak = roundHours2(clock6 ? clock6.outsideBreakHours : 0);
     const multiplier = roundHours2(Number(result2.outsideMultiplier) || 1);
     if (outside > 0 && Math.abs(multiplier - 1) > 1e-3) {
       const multiplied = standard > 0 ? `${hoursText2(standard)} + ${hoursText2(outside)} \xD7 ${multiplier}` : `${hoursText2(outside)} \xD7 ${multiplier}`;
@@ -23045,8 +23068,8 @@ var ProjectPlannerCanonical = (() => {
         return "Full day";
     }
   }
-  function spoken(text60) {
-    return text60.replace(/–/g, " to ").replace(/ − /g, " less ").replace(/×(\d+(?:\.\d+)?)/g, "$1 times").replace(/(\d+(?:\.\d+)?)h\b/g, (_, n) => `${n} ${n === "1" ? "hour" : "hours"}`);
+  function spoken(text62) {
+    return text62.replace(/–/g, " to ").replace(/ − /g, " less ").replace(/×(\d+(?:\.\d+)?)/g, "$1 times").replace(/(\d+(?:\.\d+)?)h\b/g, (_, n) => `${n} ${n === "1" ? "hour" : "hours"}`);
   }
   function row2(kind, label, details, hours2) {
     const value = h2(hours2);
@@ -23205,23 +23228,23 @@ var ProjectPlannerCanonical = (() => {
     return Number.isFinite(n) && n > 0 ? n : 1;
   }
   function overtimeTotalText(input) {
-    const clock5 = Math.max(0, Number(input?.clockHours) || 0);
-    if (!(round5(clock5) > 0)) return "";
+    const clock6 = Math.max(0, Number(input?.clockHours) || 0);
+    if (!(round5(clock6) > 0)) return "";
     const n = multiplierOf2(input?.multiplier);
     const brk = Math.max(0, Number(input?.breakHours) || 0);
-    const total = h3(Math.max(0, clock5 * n - brk));
-    return round5(brk) > 0 ? `${h3(clock5)} OT \xD7 ${round5(n)} \u2212 ${h3(brk)} break = ${total}` : `${h3(clock5)} OT \xD7 ${round5(n)} = ${total}`;
+    const total = h3(Math.max(0, clock6 * n - brk));
+    return round5(brk) > 0 ? `${h3(clock6)} OT \xD7 ${round5(n)} \u2212 ${h3(brk)} break = ${total}` : `${h3(clock6)} OT \xD7 ${round5(n)} = ${total}`;
   }
   function overtimeIncludedText(input) {
-    const text60 = overtimeTotalText(input);
-    return text60 ? `incl. ${text60}` : "";
+    const text62 = overtimeTotalText(input);
+    return text62 ? `incl. ${text62}` : "";
   }
   function bookedWithOvertimeText(input) {
     const booked = `${h3(Math.max(0, Number(input?.bookedHours) || 0))} booked`;
-    const clock5 = Math.max(0, Number(input?.clockHours) || 0);
-    if (!(round5(clock5) > 0)) return booked;
-    if (input?.multiplier == null) return `${booked} (incl. ${h3(clock5)} OT)`;
-    return `${booked} (incl. ${h3(clock5)} OT \xD7 ${round5(multiplierOf2(input.multiplier))})`;
+    const clock6 = Math.max(0, Number(input?.clockHours) || 0);
+    if (!(round5(clock6) > 0)) return booked;
+    if (input?.multiplier == null) return `${booked} (incl. ${h3(clock6)} OT)`;
+    return `${booked} (incl. ${h3(clock6)} OT \xD7 ${round5(multiplierOf2(input.multiplier))})`;
   }
   function bookingHoursCountText(hours2) {
     const value = round5(Math.max(0, Number(hours2) || 0));
@@ -25098,11 +25121,11 @@ var ProjectPlannerCanonical = (() => {
     for (const booking of bookings) {
       paid += Math.max(0, Number(booking.paidHours) || 0);
       overtime += Math.max(0, Number(booking.overtimeHours) || 0);
-      const clock5 = Math.max(0, Number(booking.overtime?.clockHours) || 0);
-      if (clock5 > 0) {
+      const clock6 = Math.max(0, Number(booking.overtime?.clockHours) || 0);
+      if (clock6 > 0) {
         const rate = Number(booking.overtime?.multiplier) > 0 ? hundredths(Number(booking.overtime?.multiplier)) : 1;
         const row3 = byRate.get(rate) ?? { clock: 0, brk: 0 };
-        row3.clock += clock5;
+        row3.clock += clock6;
         row3.brk += Math.max(0, Number(booking.overtime?.breakHours) || 0);
         byRate.set(rate, row3);
       }
@@ -25701,13 +25724,13 @@ var ProjectPlannerCanonical = (() => {
     if (startsWith(bytes, [208, 207, 17, 224, 161, 177, 26, 225])) return "application/x-ole-storage";
     if (startsWith(bytes, [66, 77])) return "image/bmp";
     if (startsWith(bytes, [73, 73, 42, 0]) || startsWith(bytes, [77, 77, 0, 42])) return "image/tiff";
-    const text60 = ascii(bytes, 0, bytes.length);
-    const lead = text60.replace(/^(\uFEFF|\xEF\xBB\xBF)/, "").trimStart().toLowerCase();
+    const text62 = ascii(bytes, 0, bytes.length);
+    const lead = text62.replace(/^(\uFEFF|\xEF\xBB\xBF)/, "").trimStart().toLowerCase();
     if (lead.startsWith("<")) {
       return lead.includes("<svg") ? "image/svg+xml" : "text/html";
     }
-    const pdfAt = text60.indexOf("%PDF-");
-    if (pdfAt >= 0 && !text60.slice(0, pdfAt).includes("<")) return "application/pdf";
+    const pdfAt = text62.indexOf("%PDF-");
+    if (pdfAt >= 0 && !text62.slice(0, pdfAt).includes("<")) return "application/pdf";
     if (!bytes.includes(0)) {
       if (lead.includes("<svg")) return "image/svg+xml";
       if (lead.includes("<html") || lead.includes("<script")) return "text/html";
@@ -27261,14 +27284,14 @@ var ProjectPlannerCanonical = (() => {
       if (zeroLine) continue;
       const figures = overtimeForBooking({ booking, organization: input.organization, timeZone: input.timeZone });
       const priced = figures ? figures.overtimeHours : 0;
-      const clock5 = figures ? figures.clockHours : 0;
+      const clock6 = figures ? figures.clockHours : 0;
       const multiplier = figures ? figures.multiplier : null;
-      if (Math.abs(clock5 - line.clockHours) > EPSILON || multiplier != null && Math.abs(multiplier - line.multiplier) > 1e-3) {
+      if (Math.abs(clock6 - line.clockHours) > EPSILON || multiplier != null && Math.abs(multiplier - line.multiplier) > 1e-3) {
         problems.push({
           code: "clock_differs",
           recordId: id2,
           severity: "mismatch",
-          message: `${label}: the report says ${line.clockHours}h \xD7 ${line.multiplier}; the booking gives ${clock5}h \xD7 ${multiplier ?? "\u2014"}.`
+          message: `${label}: the report says ${line.clockHours}h \xD7 ${line.multiplier}; the booking gives ${clock6}h \xD7 ${multiplier ?? "\u2014"}.`
         });
       }
       if (Math.abs(priced - line.overtimeHours) > EPSILON) {
@@ -27491,9 +27514,9 @@ var ProjectPlannerCanonical = (() => {
   var SQUARE = { width: 1280, height: 1280 };
   var PANORAMA = { width: 4e3, height: 600 };
   var AT = Date.UTC(2026, 10, 17, 9, 30);
-  var repeat = (text60, length) => {
+  var repeat = (text62, length) => {
     let out = "";
-    while (out.length < length) out += text60;
+    while (out.length < length) out += text62;
     return out.slice(0, length);
   };
   var SITE_AUDIT_REPORT_FIXTURE_INPUTS = [
@@ -27724,7 +27747,7 @@ var ProjectPlannerCanonical = (() => {
   var EXTRA_LATIN = { \u0142: "l", \u0141: "L", \u0111: "d", \u0110: "D", \u0127: "h", \u0126: "H", \u0131: "i", \u00F8: "\xF8", \u00D8: "\xD8" };
   function siteAuditReportText(value) {
     const table = widthTable(false);
-    const drawable = (text60) => text60.length > 0 && Array.from(text60).every((c) => table.has(c.codePointAt(0) ?? 0));
+    const drawable = (text62) => text62.length > 0 && Array.from(text62).every((c) => table.has(c.codePointAt(0) ?? 0));
     const source = String(value ?? "").normalize("NFC").replace(/\r\n?/g, "\n").replace(/\t/g, " ");
     let out = "";
     for (const cluster of siteAuditGraphemes(source)) {
@@ -27767,23 +27790,23 @@ var ProjectPlannerCanonical = (() => {
     return out;
   }
   function siteAuditReportFitLine(value, size, maxWidth, bold = false) {
-    const text60 = siteAuditReportText(value).replace(/\n/g, " ");
-    if (siteAuditReportTextWidth(text60, size, bold) <= maxWidth + 0.01) return text60;
-    const chars = Array.from(text60);
+    const text62 = siteAuditReportText(value).replace(/\n/g, " ");
+    if (siteAuditReportTextWidth(text62, size, bold) <= maxWidth + 0.01) return text62;
+    const chars = Array.from(text62);
     while (chars.length > 0 && siteAuditReportTextWidth(chars.join("") + "\u2026", size, bold) > maxWidth + 0.01) chars.pop();
     return chars.join("").trimEnd() + "\u2026";
   }
-  function siteAuditReportTextWidth(text60, size, bold = false) {
+  function siteAuditReportTextWidth(text62, size, bold = false) {
     const table = widthTable(bold);
     let units = 0;
-    for (const ch of Array.from(text60)) units += table.get(ch.codePointAt(0) ?? 0) ?? 556;
+    for (const ch of Array.from(text62)) units += table.get(ch.codePointAt(0) ?? 0) ?? 556;
     return units * size / 1e3;
   }
   function wrapSiteAuditReportText(value, size, maxWidth, bold = false) {
-    const text60 = siteAuditReportText(value);
+    const text62 = siteAuditReportText(value);
     const fits = (line) => siteAuditReportTextWidth(line, size, bold) <= maxWidth + 0.01;
     const lines = [];
-    for (const paragraph of text60.split("\n")) {
+    for (const paragraph of text62.split("\n")) {
       const words = paragraph.split(" ");
       let line = "";
       for (const word of words) {
@@ -27888,9 +27911,9 @@ var ProjectPlannerCanonical = (() => {
     });
     return top + lines.length * lineHeight;
   }
-  function flowLine(b, text60, x, size, lineHeight, bold, color) {
+  function flowLine(b, text62, x, size, lineHeight, bold, color) {
     if (b.y + lineHeight > BODY_BOTTOM) b.newPage();
-    textOps(b.ops, [text60], x, b.y, size, lineHeight, bold, color);
+    textOps(b.ops, [text62], x, b.y, size, lineHeight, bold, color);
     b.y += lineHeight;
   }
   var SITE_AUDIT_REPORT_LOGO_BOX = Object.freeze({
@@ -27939,10 +27962,10 @@ var ProjectPlannerCanonical = (() => {
     const headerTextW = W - MARGIN - 150;
     const subtitle = `${jobNumber} \xB7 ${str(input.siteAddress) || str(audit.projectName)}`;
     const leftLines = [{ text: "SITE AUDIT REPORT", size: 9, lh: 14, bold: true, color: C.whiteSoft, gap: 0 }];
-    wrapSiteAuditReportText(type, 22, headerTextW, true).forEach((text60, i) => leftLines.push({ text: text60, size: 22, lh: 26, bold: true, color: C.white, gap: i === 0 ? 2 : 0 }));
-    wrapSiteAuditReportText(subtitle, 12, headerTextW).forEach((text60, i) => leftLines.push({ text: text60, size: 12, lh: 15, bold: false, color: C.whiteSoft, gap: i === 0 ? 4 : 0 }));
+    wrapSiteAuditReportText(type, 22, headerTextW, true).forEach((text62, i) => leftLines.push({ text: text62, size: 22, lh: 26, bold: true, color: C.white, gap: i === 0 ? 2 : 0 }));
+    wrapSiteAuditReportText(subtitle, 12, headerTextW).forEach((text62, i) => leftLines.push({ text: text62, size: 12, lh: 15, bold: false, color: C.whiteSoft, gap: i === 0 ? 4 : 0 }));
     if (str(audit.customTitle)) {
-      wrapSiteAuditReportText(str(audit.customTitle), 10.5, headerTextW).forEach((text60) => leftLines.push({ text: text60, size: 10.5, lh: 13, bold: false, color: C.whiteSoft, gap: 0 }));
+      wrapSiteAuditReportText(str(audit.customTitle), 10.5, headerTextW).forEach((text62) => leftLines.push({ text: text62, size: 10.5, lh: 13, bold: false, color: C.whiteSoft, gap: 0 }));
     }
     const orgLines = wrapSiteAuditReportText(orgName, 10, 110, true);
     const leftHeight = 24 + leftLines.reduce((sum, line) => sum + line.gap + line.lh, 0) + 20;
@@ -29789,10 +29812,10 @@ var ProjectPlannerCanonical = (() => {
     if (!isPlainMap(perms)) return false;
     return truthy(get(perms, kind, get(m, kind, false)));
   }
-  function utf8Bytes2(text60) {
+  function utf8Bytes2(text62) {
     let bytes = 0;
-    for (let i = 0; i < text60.length; i += 1) {
-      const code = text60.charCodeAt(i);
+    for (let i = 0; i < text62.length; i += 1) {
+      const code = text62.charCodeAt(i);
       if (code < 128) bytes += 1;
       else if (code < 2048) bytes += 2;
       else if (code >= 55296 && code <= 56319) {
@@ -31094,8 +31117,8 @@ var ProjectPlannerCanonical = (() => {
         rows3.set(person.id, list);
       }
       const row3 = list.get(key8) ?? seed();
-      const clock5 = Number(slice.breakHours) > 0 ? Number(slice.clockHours) || 0 : slice.paidHours;
-      row3.clockHours += row3.overtime ? clock5 : 0;
+      const clock6 = Number(slice.breakHours) > 0 ? Number(slice.clockHours) || 0 : slice.paidHours;
+      row3.clockHours += row3.overtime ? clock6 : 0;
       row3.breakHours += row3.overtime ? Number(slice.breakHours) || 0 : 0;
       const merged = mergeBookingPaySlice({ isOvertime: row3.overtime, paidHours: 0, pay: row3.pay }, slice);
       row3.pay = merged.pay;
@@ -33078,6 +33101,204 @@ var ProjectPlannerCanonical = (() => {
     return true;
   }
 
+  // lib/canonical/offlineReplace.ts
+  var OFFLINE_REPLACE_REPLAY_DECISIONS = [
+    "apply",
+    "createOnly",
+    "alreadyApplied",
+    "dropLocal",
+    "refuseChanged",
+    "refusePermission"
+  ];
+  var OFFLINE_REPLACE_TARGET_OUTCOMES = ["delete", "dropLocal", "alreadyGone", "refuseChanged", "refusePermission"];
+  var OFFLINE_REPLACE_CHANGED_MESSAGE = "Changed on another device \u2014 not replaced";
+  var OFFLINE_REPLACE_REFUSED_MESSAGE = "Not replaced \u2014 you can no longer remove the existing booking, so both bookings are as they were";
+  function text58(value) {
+    return typeof value === "string" ? value.trim() : "";
+  }
+  function usableId(value) {
+    const id2 = text58(value);
+    return id2 && !id2.includes("/") ? id2 : "";
+  }
+  function isReplaceCollection2(value) {
+    return BOOKING_REPLACE_COLLECTIONS.includes(text58(value));
+  }
+  function refKey2(collection, bookingId) {
+    return `${collection}/${bookingId.toLowerCase()}`;
+  }
+  function offlineReplaceReplayDecision(input) {
+    const nothing = (decision, targets2 = []) => ({
+      decision,
+      deletes: [],
+      targets: targets2,
+      message: decision === "refuseChanged" ? OFFLINE_REPLACE_CHANGED_MESSAGE : decision === "refusePermission" ? OFFLINE_REPLACE_REFUSED_MESSAGE : null
+    });
+    const queued = input?.queued;
+    const bookingId = usableId(queued?.booking?.bookingId);
+    if (!queued || !bookingId || !isReplaceCollection2(queued.booking?.collection)) return nothing("dropLocal");
+    if (queued.newBookingDeleted === true) return nothing("dropLocal");
+    if (input.newBooking?.exists === true || input.newBooking?.tombstoned === true) return nothing("alreadyApplied");
+    const readRows = (input.replaced || []).filter((row3) => !!row3 && !!usableId(row3.bookingId));
+    const readFor = (collection, id2) => readRows.find((row3) => refKey2(text58(row3.collection), usableId(row3.bookingId)) === refKey2(collection, id2)) || readRows.find((row3) => !text58(row3.collection) && usableId(row3.bookingId).toLowerCase() === id2.toLowerCase());
+    const targets = [];
+    const deletes = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const target of queued.replaced || []) {
+      const id2 = usableId(target?.bookingId);
+      const collection = text58(target?.collection);
+      if (!target || !id2) continue;
+      const key8 = refKey2(collection, id2);
+      if (seen.has(key8)) continue;
+      seen.add(key8);
+      if (id2.toLowerCase() === bookingId.toLowerCase()) {
+        targets.push({ collection, bookingId: id2, outcome: "refusePermission" });
+        continue;
+      }
+      if (target.createdOffline === true) {
+        targets.push({ collection, bookingId: id2, outcome: "dropLocal" });
+        continue;
+      }
+      if (!isReplaceCollection2(collection)) {
+        targets.push({ collection, bookingId: id2, outcome: "refusePermission" });
+        continue;
+      }
+      const read = readFor(collection, id2);
+      if (!read) {
+        targets.push({ collection, bookingId: id2, outcome: "refuseChanged" });
+        continue;
+      }
+      if (read.tombstoned === true || read.live === null) {
+        targets.push({ collection, bookingId: id2, outcome: "alreadyGone" });
+        continue;
+      }
+      if (!read.live) {
+        targets.push({ collection, bookingId: id2, outcome: "refuseChanged" });
+        continue;
+      }
+      if (read.mayDelete === false) {
+        targets.push({ collection, bookingId: id2, outcome: "refusePermission" });
+        continue;
+      }
+      const queuedFingerprint = text58(target.fingerprint);
+      const liveFingerprint = bookingDeleteFingerprint({ ...read.live, collection }, input.timeZone);
+      if (!queuedFingerprint || !liveFingerprint || queuedFingerprint !== liveFingerprint) {
+        targets.push({ collection, bookingId: id2, outcome: "refuseChanged" });
+        continue;
+      }
+      targets.push({ collection, bookingId: id2, outcome: "delete" });
+      deletes.push({ collection, bookingId: id2 });
+    }
+    if (input.mayCreate === false || targets.some((t) => t.outcome === "refusePermission")) return nothing("refusePermission", targets);
+    if (targets.some((t) => t.outcome === "refuseChanged")) return nothing("refuseChanged", targets);
+    if (deletes.length === 0) return { decision: "createOnly", deletes: [], targets, message: null };
+    return { decision: "apply", deletes, targets, message: null };
+  }
+  function offlineReplaceRefusalDecision(code) {
+    return offlineDeleteRefusalDecision(code);
+  }
+
+  // lib/canonical/offlineSyncResults.ts
+  var OFFLINE_SYNC_RESULT_TITLE = "Not synced";
+  var OFFLINE_SYNC_RESULT_OPEN_DAY_LABEL = "Open day";
+  var OFFLINE_SYNC_RESULT_DISMISS_LABEL = "Got it";
+  var OFFLINE_SYNC_RESULT_EMPTY = "Everything on this phone has synced.";
+  var OFFLINE_SYNC_RESULT_BANNER = "Some changes from this phone were not synced. Tap to see what happened.";
+  var OFFLINE_SYNC_RESULT_NOTIFICATION_TITLE = "Some changes were not synced";
+  var OFFLINE_SYNC_RESULT_DETAIL_DELETED = "deleted on another device";
+  var OFFLINE_SYNC_RESULT_DETAIL_PERMISSION = "you no longer have permission";
+  var OFFLINE_SYNC_RESULT_DETAIL_CHANGED = "changed on another device";
+  var OFFLINE_SYNC_RESULT_KINDS = ["replace", "delete", "edit"];
+  var OFFLINE_SYNC_RESULT_REASONS = ["changed", "permission", "missing"];
+  var MONTHS6 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  var WEEKDAYS4 = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  function text59(value) {
+    return typeof value === "string" ? value.trim() : "";
+  }
+  function dayText3(dayKey) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text59(dayKey));
+    if (!m) return "";
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+    const weekday2 = WEEKDAYS4[new Date(Date.UTC(y, mo - 1, d)).getUTCDay()];
+    return `${weekday2} ${d} ${MONTHS6[mo - 1]}`;
+  }
+  function clock5(value) {
+    const m = /^(\d{1,2}):(\d{2})/.exec(text59(value));
+    return m ? `${m[1].padStart(2, "0")}:${m[2]}` : "";
+  }
+  function offlineSyncTimesText(booking) {
+    const start = clock5(booking?.startTime);
+    const end = clock5(booking?.endTime);
+    if (start && end) return `${start}\u2013${end}`;
+    const slot = text59(booking?.timeSlot).toUpperCase().replace(/[_\s]+/g, " ");
+    if (slot === "FULL DAY") return "Full day";
+    if (slot === "AM" || slot === "PM") return slot;
+    if (slot === "CUSTOM" || slot === "CUSTOM HOURS") return "Custom hours";
+    return slot ? slot.charAt(0) + slot.slice(1).toLowerCase() : "";
+  }
+  function offlineSyncBookingText(booking) {
+    const parts3 = [dayText3(booking?.dayKey), text59(booking?.place), offlineSyncTimesText(booking)].filter(Boolean);
+    return parts3.length ? parts3.join(" \xB7 ") : "a booking";
+  }
+  function whenText(atMs, timeZone) {
+    if (typeof atMs !== "number" || !Number.isFinite(atMs)) return "";
+    const p = partsInZone(new Date(atMs), zoneOrLondon(timeZone));
+    return `${p.d} ${MONTHS6[p.m - 1]}, ${String(p.h).padStart(2, "0")}:${String(p.min).padStart(2, "0")}`;
+  }
+  function changedText(before, live) {
+    const out = [];
+    const liveDay = dayText3(live.dayKey);
+    if (liveDay && liveDay !== dayText3(before?.dayKey)) out.push(`now ${liveDay}`);
+    const livePlace = text59(live.place);
+    if (livePlace && livePlace !== text59(before?.place)) out.push(`now at ${livePlace}`);
+    const liveTimes = offlineSyncTimesText(live);
+    if (liveTimes && liveTimes !== offlineSyncTimesText(before)) out.push(`now ${liveTimes}`);
+    return out.length ? out.join(", ") : OFFLINE_SYNC_RESULT_DETAIL_CHANGED;
+  }
+  function offlineSyncResultRows(results, timeZone) {
+    const rows3 = [];
+    for (const result2 of results || []) {
+      const id2 = text59(result2?.id);
+      if (!result2 || !id2) continue;
+      const replaced = (result2.replaced || []).filter(Boolean);
+      const attempted = result2.attempted || null;
+      const kind = text59(result2.kind);
+      const title = kind === "replace" ? `You tried to replace ${replaced.length ? replaced.map(offlineSyncBookingText).join(" and ") : "a booking"} with ${offlineSyncBookingText(attempted)}` : kind === "delete" ? `You tried to delete ${offlineSyncBookingText(attempted)}` : `You tried to change ${offlineSyncBookingText(attempted)}`;
+      const reason = text59(result2.reason);
+      let detail;
+      if (reason === "permission") detail = OFFLINE_SYNC_RESULT_DETAIL_PERMISSION;
+      else if (reason === "missing" || result2.live === null) detail = OFFLINE_SYNC_RESULT_DETAIL_DELETED;
+      else if (result2.live) detail = changedText(result2.before ?? (kind === "replace" ? replaced[0] : attempted), result2.live);
+      else detail = OFFLINE_SYNC_RESULT_DETAIL_CHANGED;
+      const day = text59(result2.live?.dayKey) || text59(attempted?.dayKey) || text59(replaced[0]?.dayKey);
+      rows3.push({
+        id: id2,
+        title,
+        detail: detail.charAt(0).toUpperCase() + detail.slice(1),
+        whenText: whenText(result2.atMs, timeZone),
+        dayKey: /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null,
+        openDayLabel: OFFLINE_SYNC_RESULT_OPEN_DAY_LABEL,
+        dismissLabel: OFFLINE_SYNC_RESULT_DISMISS_LABEL,
+        at: typeof result2.atMs === "number" && Number.isFinite(result2.atMs) ? result2.atMs : 0
+      });
+    }
+    return rows3.sort((a, b) => b.at - a.at).map(({ at: _at, ...row3 }) => row3);
+  }
+  function offlineSyncResultNotificationText(count2) {
+    const n = Math.max(1, Math.floor(Number(count2) || 1));
+    return {
+      title: OFFLINE_SYNC_RESULT_NOTIFICATION_TITLE,
+      body: `${n === 1 ? "1 change" : `${n} changes`} from this phone ${n === 1 ? "was" : "were"} not saved. Tap to see what happened.`
+    };
+  }
+  function offlineReplaceOrganizationReadDecision(input) {
+    if (input?.exists === false) return "refusePermission";
+    const code = typeof input?.code === "number" ? String(input.code) : text59(input?.code).toLowerCase().replace(/^firestore\//, "");
+    if (code === "permission-denied" || code === "7" || code === "not-found" || code === "5") return "refusePermission";
+    return "wait";
+  }
+
   // lib/canonical/clientErrors.ts
   var CLIENT_ERRORS_COLLECTION = "clientErrors";
   var CLIENT_ERROR_PLATFORMS = ["web", "ios"];
@@ -33129,15 +33350,15 @@ var ProjectPlannerCanonical = (() => {
   };
   function clientErrorMessageKey(message) {
     if (typeof message !== "string") return CLIENT_ERROR_OTHER_MESSAGE_KEY;
-    const text60 = message.trim();
-    for (const [key8, known] of Object.entries(CLIENT_ERROR_KNOWN_MESSAGES)) if (known === text60) return key8;
+    const text62 = message.trim();
+    for (const [key8, known] of Object.entries(CLIENT_ERROR_KNOWN_MESSAGES)) if (known === text62) return key8;
     return CLIENT_ERROR_OTHER_MESSAGE_KEY;
   }
-  function redactClientErrorTokens(text60) {
-    return text60.replace(/[A-Za-z0-9]{16,}/g, "*");
+  function redactClientErrorTokens(text62) {
+    return text62.replace(/[A-Za-z0-9]{16,}/g, "*");
   }
-  function cap(text60, max) {
-    return text60.length <= max ? text60 : text60.slice(0, max);
+  function cap(text62, max) {
+    return text62.length <= max ? text62 : text62.slice(0, max);
   }
   function clientErrorKind(name, code) {
     const t = typeof name === "string" ? name.trim() : "";
@@ -33261,18 +33482,18 @@ var ProjectPlannerCanonical = (() => {
   }
   function parseClientErrorDocument(id2, data) {
     const d = data || {};
-    const text60 = (key8) => typeof d[key8] === "string" ? d[key8] : "";
+    const text62 = (key8) => typeof d[key8] === "string" ? d[key8] : "";
     return {
       id: id2,
-      platform: text60("platform"),
-      source: text60("source"),
-      kind: text60("kind"),
-      where: text60("where"),
-      route: text60("route"),
-      build: text60("build"),
-      messageKey: text60("messageKey") || CLIENT_ERROR_OTHER_MESSAGE_KEY,
-      messageHash: text60("messageHash"),
-      organizationId: text60("organizationId"),
+      platform: text62("platform"),
+      source: text62("source"),
+      kind: text62("kind"),
+      where: text62("where"),
+      route: text62("route"),
+      build: text62("build"),
+      messageKey: text62("messageKey") || CLIENT_ERROR_OTHER_MESSAGE_KEY,
+      messageHash: text62("messageHash"),
+      organizationId: text62("organizationId"),
       createdAtMs: instantMs5(d.createdAt)
     };
   }
@@ -33343,7 +33564,7 @@ var ProjectPlannerCanonical = (() => {
     const date = new Date(Date.UTC(y, m - 1, d));
     return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
   }
-  function text58(value) {
+  function text60(value) {
     return typeof value === "string" ? value.trim() : "";
   }
   function record20(value) {
@@ -33374,8 +33595,8 @@ var ProjectPlannerCanonical = (() => {
     const entries = record20(record20(data).entries);
     for (const [key8, raw] of Object.entries(entries)) {
       const row3 = record20(raw);
-      const section = text58(row3.section);
-      const entryId = text58(row3.entryId);
+      const section = text60(row3.section);
+      const entryId = text60(row3.entryId);
       if (!ORG_COMPLIANCE_SECTION_KEYS.includes(section) || !entryId) continue;
       if (!validDayKey5(row3.expiresOn) || !validDayKey5(row3.setDayKey)) continue;
       const sent = {};
@@ -33402,7 +33623,7 @@ var ProjectPlannerCanonical = (() => {
     if (!validDayKey5(todayKey4)) return { due, ledger: prior };
     for (const section of ORG_COMPLIANCE_SECTION_KEYS) {
       for (const entry of documents?.[section] ?? []) {
-        if (!entry || !validDayKey5(entry.expiresOn) || !text58(entry.id)) continue;
+        if (!entry || !validDayKey5(entry.expiresOn) || !text60(entry.id)) continue;
         const key8 = ledgerKey(section, entry.id);
         if (ledger.entries[key8]) continue;
         const before = prior.entries[key8];
@@ -33477,18 +33698,18 @@ var ProjectPlannerCanonical = (() => {
     const seen = /* @__PURE__ */ new Set();
     for (const id2 of ids) {
       const member = members.find((m) => normalizeDocumentId(String(m.id ?? "")) === normalizeDocumentId(id2));
-      const email = text58(member?.email).toLowerCase();
+      const email = text60(member?.email).toLowerCase();
       if (!member || !email || !email.includes("@") || seen.has(email)) continue;
       const extra = member;
       if (extra.passwordSet === false || extra.ghost === true) continue;
       seen.add(email);
-      const first = text58(member.firstName);
+      const first = text60(member.firstName);
       out.push({ userId: id2, email, firstName: first });
     }
     return out;
   }
   var ORG_COMPLIANCE_PAGE_PATH = "/dashboard/settings/insurance-accreditations";
-  function whenText(daysLeft) {
+  function whenText2(daysLeft) {
     if (daysLeft <= 0) return "Expires today";
     if (daysLeft === 1) return "Expires tomorrow";
     return `Expires in ${daysLeft} days`;
@@ -33496,7 +33717,7 @@ var ProjectPlannerCanonical = (() => {
   function orgComplianceReminderEmail(input) {
     const reminders = input.reminders || [];
     if (reminders.length === 0) return null;
-    const org = text58(input.organizationName) || "your organisation";
+    const org = text60(input.organizationName) || "your organisation";
     const n = reminders.length;
     const first = reminders[0];
     const subject = n === 1 ? `${first.title} expires ${subcontractorDocumentExpiryDateText(first.expiresOn)} \u2014 ${org}` : `${n} insurance or accreditation documents expire soon \u2014 ${org}`;
@@ -33508,7 +33729,7 @@ var ProjectPlannerCanonical = (() => {
         title: r.title,
         kind: `${r.sectionTitle} \xB7 ${r.docTypeLabel}`,
         expiryText: subcontractorDocumentExpiryDateText(r.expiresOn),
-        whenText: whenText(r.daysLeft)
+        whenText: whenText2(r.daysLeft)
       })),
       buttonLabel: `Open ${ORG_COMPLIANCE_PAGE_TITLE}`,
       path: ORG_COMPLIANCE_PAGE_PATH,
@@ -33524,7 +33745,7 @@ var ProjectPlannerCanonical = (() => {
   var ONBOARDING_OPTIONAL_LABEL = "Optional";
   var ONBOARDING_DISMISSED_AT_FIELD = "onboardingDismissedAt";
   var ONBOARDING_DISMISSED_BY_FIELD = "onboardingDismissedBy";
-  function text59(value) {
+  function text61(value) {
     return typeof value === "string" ? value.trim() : "";
   }
   function record21(value) {
@@ -33534,9 +33755,9 @@ var ProjectPlannerCanonical = (() => {
     return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
   }
   function hasOfficeAddress(org) {
-    if (text59(org.officeAddressLine1) || text59(org.officePostcode)) return true;
+    if (text61(org.officeAddressLine1) || text61(org.officePostcode)) return true;
     const legacy = record21(org.officeAddress);
-    return !!(text59(legacy.line1) || text59(legacy.addressLine1) || text59(legacy.postcode));
+    return !!(text61(legacy.line1) || text61(legacy.addressLine1) || text61(legacy.postcode));
   }
   function onboardingChecklist(org, counts) {
     const o = record21(org);
@@ -33552,7 +33773,7 @@ var ProjectPlannerCanonical = (() => {
         key: "company",
         title: "Add your company details and logo",
         detail: "Name, office address and logo \u2014 shown on reports and emails.",
-        done: !!text59(o.name) && hasOfficeAddress(o) && !!text59(o.companyLogoURL),
+        done: !!text61(o.name) && hasOfficeAddress(o) && !!text61(o.companyLogoURL),
         optional: false,
         destination: "companyDetails",
         href: "/dashboard/settings/company-details"
@@ -33570,7 +33791,7 @@ var ProjectPlannerCanonical = (() => {
         key: "payRuns",
         title: "Set the PAYE payday and payment runs",
         detail: "When timesheets close and people are paid.",
-        done: !!text59(invoicing.paymentRunMode) && !payePaydayMissing(o),
+        done: !!text61(invoicing.paymentRunMode) && !payePaydayMissing(o),
         optional: false,
         destination: "paymentRuns",
         href: "/dashboard/settings/payment-runs"
@@ -33628,7 +33849,7 @@ var ProjectPlannerCanonical = (() => {
     return input.viewerIsAdmin === true && input.checklist.ready && !input.checklist.complete && !onboardingDismissed(input.org);
   }
   function onboardingDismissWriteFields(userId) {
-    const uid = text59(userId);
+    const uid = text61(userId);
     return uid ? { [ONBOARDING_DISMISSED_BY_FIELD]: uid } : null;
   }
   return __toCommonJS(bundleEntry_exports);

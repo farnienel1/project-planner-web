@@ -12,8 +12,9 @@
  * document paths and tombstones; the booking's own fields are the app's usual create / edit write. Nothing is half
  * applied: the batch either saves the new booking and removes the old ones, or changes nothing.
  *
- * Offline (iOS, Android): Replace is online only (`offlineAvailability('booking.replace')`), disabled with
- * `OFFLINE_ONLINE_ONLY_MESSAGE`; ✓ and ✕ work offline as before. Web is online only anyway.
+ * Offline (iOS, Android): 1.86.0 — Replace is queued as one item (`offlineAvailability('booking.replace')` =
+ * `allowedOffline`) and replayed through `offlineReplaceReplayDecision` (`offlineReplace.ts`). 1.41.0–1.85 it was
+ * online only. Web is online only anyway.
  */
 
 import {

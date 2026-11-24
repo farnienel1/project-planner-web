@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.85.0
+# iOS follow-on — rulebook 1.86.0
 
 Generated 2026-11-24 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.84.0 → 1.85.0
-Packed hash: baa36c96da52162ec17ab8963c320a066b0defbcb22dd47607171373aefdcb10
-Rulebook sha256: 970bf206de5099894da4faeea7d315a58a8492d00c748a373901aed26660faec
+Rulebook version: 1.85.0 → 1.86.0
+Packed hash: 27b500a23ea1d453e970bbccb16153c43f43a9ce5aed94a4878b7c51ee966351
+Rulebook sha256: e9ea201a3187a84aa7db612c73c3aa7f2dc16b6487b6ed5b91478ac30d7f2c8c
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,41 +22,36 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: d2d465abcf0ab7c7747385346b87d2b47226412b1014602c5a26bff8e951c0ca
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: ONBOARDING_DISMISSED_AT_FIELD, ONBOARDING_DISMISSED_BY_FIELD, ONBOARDING_DISMISS_CONFIRM, ONBOARDING_DISMISS_LABEL, ONBOARDING_OPTIONAL_LABEL, ONBOARDING_SUBTITLE, ONBOARDING_TITLE, ORG_COMPLIANCE_PAGE_PATH, ORG_COMPLIANCE_REMINDERS_SWITCH_FIELD, ORG_COMPLIANCE_REMINDER_LEDGER_ID, ORG_COMPLIANCE_REMINDER_THRESHOLDS, onboardingCardVisible, onboardingChecklist, onboardingDismissWriteFields, onboardingDismissed, orgComplianceReminderBatchTag, orgComplianceReminderDayKey, orgComplianceReminderEmail, orgComplianceReminderLedgerAfter, orgComplianceReminderLedgerFields, orgComplianceReminderLedgerPath, orgComplianceReminderRecipients, orgComplianceReminderSetDayKey, orgComplianceRemindersDue, orgComplianceRemindersEnabled, parseOrgComplianceReminderLedger
+Exports added: OFFLINE_REPLACE_CHANGED_MESSAGE, OFFLINE_REPLACE_REFUSED_MESSAGE, OFFLINE_REPLACE_REPLAY_DECISIONS, OFFLINE_REPLACE_TARGET_OUTCOMES, OFFLINE_SYNC_RESULT_BANNER, OFFLINE_SYNC_RESULT_DETAIL_CHANGED, OFFLINE_SYNC_RESULT_DETAIL_DELETED, OFFLINE_SYNC_RESULT_DETAIL_PERMISSION, OFFLINE_SYNC_RESULT_DISMISS_LABEL, OFFLINE_SYNC_RESULT_EMPTY, OFFLINE_SYNC_RESULT_KINDS, OFFLINE_SYNC_RESULT_NOTIFICATION_TITLE, OFFLINE_SYNC_RESULT_OPEN_DAY_LABEL, OFFLINE_SYNC_RESULT_REASONS, OFFLINE_SYNC_RESULT_TITLE, offlineReplaceOrganizationReadDecision, offlineReplaceRefusalDecision, offlineReplaceReplayDecision, offlineSyncBookingText, offlineSyncResultNotificationText, offlineSyncResultRows, offlineSyncTimesText
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/index.ts, lib/canonical/onboardingChecklist.test.ts, lib/canonical/onboardingChecklist.ts, lib/canonical/orgComplianceReminders.test.ts, lib/canonical/orgComplianceReminders.ts, lib/canonical/organizationSettings.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bookingReplace.ts, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/offlinePolicy.ts, lib/canonical/offlineReplace.ts, lib/canonical/offlineSyncResults.ts, lib/canonical/scheduleReplace141.test.ts
 Done when:
-- [ ] Packed hash in iOS equals baa36c96da52162ec17ab8963c320a066b0defbcb22dd47607171373aefdcb10
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 970bf206de5099894da4faeea7d315a58a8492d00c748a373901aed26660faec)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.85.0)
+- [ ] Packed hash in iOS equals 27b500a23ea1d453e970bbccb16153c43f43a9ce5aed94a4878b7c51ee966351
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 e9ea201a3187a84aa7db612c73c3aa7f2dc16b6487b6ed5b91478ac30d7f2c8c)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.86.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.85.0
+## What changed in 1.86.0
 
-- **Insurance & accreditation expiry emails** (§31, owner decision 24 Nov: 2 months, 1 month and 7 days, never twice; only thresholds still ahead when the expiry was set). New `lib/canonical/orgComplianceReminders.ts`: `ORG_COMPLIANCE_REMINDER_THRESHOLDS`, `orgComplianceReminderDayKey`, `orgComplianceReminderSetDayKey`, `orgComplianceRemindersDue`, `parseOrgComplianceReminderLedger`, `orgComplianceReminderLedgerAfter`, `orgComplianceReminderLedgerFields`, `orgComplianceReminderLedgerPath`, `orgComplianceReminderRecipients`, `orgComplianceReminderEmail`, `orgComplianceReminderBatchTag`, `ORG_COMPLIANCE_PAGE_PATH`, `orgComplianceRemindersEnabled`, `ORG_COMPLIANCE_REMINDERS_SWITCH_FIELD`. Daily Cloud Function `orgComplianceExpiryReminders` (`functions/orgComplianceReminders.js`), off until `platformConfig/app.orgComplianceRemindersEnabled` (§18).
-- **Getting started checklist** (new §33, owner 24 Nov): `lib/canonical/onboardingChecklist.ts` — `onboardingChecklist`, `onboardingCardVisible`, `onboardingDismissed`, `onboardingDismissWriteFields`, `ONBOARDING_*` copy. `ORGANIZATION_DOCUMENT_FIELDS` lists `onboardingDismissedAt`, `onboardingDismissedBy`. Web: the card at the top of Home (admins) and on the setup wizard's last screen.
-- Owner answer 24 Nov (same version): a threshold on the very day the expiry is set counts as still ahead and is sent that day (an expiry set exactly 7 days, 1 month or 2 months away); a threshold already passed is never sent.
-- Review of #447 / #294 (same version): the reminder ledger is claimed before sending and released only when nothing was accepted (at most once); the idempotency key carries the documents and thresholds (`orgComplianceReminderBatchTag`); the dry run records set days; duplicate entry ids skipped; greeting from the stored first name only; failures logged by status only. Web Home asks `canManageOrganizationCompliance`; Hide never waits for the server.
+- **Offline Replace on iPhone** (§2, §5, owner decision 24 Nov "Replace works offline, is queued, and is applied when signal returns"): `booking.replace` is `allowedOffline` in `OFFLINE_ACTIONS` (was `onlineOnly` from 1.41.0). New `lib/canonical/offlineReplace.ts`: `offlineReplaceReplayDecision` (`apply`, `createOnly`, `alreadyApplied`, `dropLocal`, `refuseChanged`, `refusePermission`, per-target outcomes), `offlineReplaceRefusalDecision` (the `offlineDeleteRefusalDecision` mapping), `OFFLINE_REPLACE_REPLAY_DECISIONS`, `OFFLINE_REPLACE_TARGET_OUTCOMES`, `OFFLINE_REPLACE_CHANGED_MESSAGE`, `OFFLINE_REPLACE_REFUSED_MESSAGE`. A replaced booking changed on another device refuses the whole Replace (nothing written, both bookings as the server has them). Web unchanged (online only). No rules change.
+- Owner decisions 24 Nov (same version): the "Not synced" summary — `offlineSyncResultRows`, `offlineSyncResultNotificationText`, `offlineSyncBookingText`, `offlineSyncTimesText`, `OFFLINE_SYNC_RESULT_*` (`lib/canonical/offlineSyncResults.ts`), a local notification and a page on the phone for refused queued Replaces, deletes and edits; `offlineReplaceOrganizationReadDecision` (a queued Replace waits for another company's settings only on a network failure; access lost or the company gone → `refusePermission`).
+- Review of #446 (same version): a replaced booking with no read row, or a read with no answer, refuses instead of reading as gone; a read row without a collection is matched to its target by id. iOS keeps an item queued when the script does not answer, restores replaced bookings on `dropLocal`, and never merges into or replaces around an item being sent. Emulator test of the replay transaction reading the missing new booking and its tombstone.
 
-## iOS work for 1.85.0
+## iOS work for 1.86.0
 
-Built in iOS PR on branch `ios-1.85-reminders-onboarding` (from `ios-1.83-accreditations`). Calls through `CanonicalBusinessEngine` only:
-
-1. `Project Planner/Core/Rulebook+Onboarding.swift` — wrappers for `onboardingChecklist`, `onboardingCardVisible`, `onboardingDismissWriteFields` and the `ONBOARDING_*` copy; `OnboardingOrganizationDocument` keeps the stored fields the checklist reads.
-2. `Project Planner/Models/Organization.swift` + `Project Planner/FirebaseBackend.swift` — `Organization.onboardingDocumentJSON`, filled in `applyPayrollPolicyFields` and on every organisation snapshot.
-3. `Project Planner/Core/FirebaseBackend+Onboarding.swift` — Hide: one partial update of `organizations/{orgId}` (`onboardingDismissedBy`, `onboardingDismissedAt` server time, write metadata).
-4. `Project Planner/Views/GettingStartedHomeCard.swift`, placed first in Home's light sheet (`HomeView.homeLightSheet`) — admins only; each item opens its screen in a sheet.
-5. `ProjectPlannerTests/OnboardingChecklistTests.swift`.
-
-The expiry emails (§31) are server-only: nothing to build on iOS.
+- Companion PR: project-planner-ios #293 (branch `ios-1.86-offline-replace`): `Core/Rulebook+OfflineReplace.swift`, `Core/FirebaseBackend+OfflineReplace.swift`, `Core/OfflineOutboxStore.swift` (`.replaceBooking`), `Core/OfflineSyncCoordinator.swift` (`replayReplace`, `undoReplace`), `Core/BookingStore.swift` / `Core/ManagerScheduleStore.swift` (queue when offline), `Views/OfflineStatusBanner.swift` (Undo replace).
+- iOS never passes `mayCreate` to `offlineReplaceReplayDecision`: the new booking's write permission was checked when the Replace was queued (`writeRefusal`), and on replay the security rules decide (a refusal is read with `offlineReplaceRefusalDecision`).
+- Every replaced booking is read in the transaction and passed with its collection; a read with no answer is never passed as missing (`live: null` only for a document the read found missing).
+- When the script does not answer, or `bookingReplaceWrites` returns nil, the item stays queued (retry), never removed.
+- "Not synced" (owner 24 Nov): record each refused queued Replace / delete (changed or permission) and refused queued edit (not-found or permission) on the phone; schedule one local notification (`offlineSyncResultNotificationText`), or show `OFFLINE_SYNC_RESULT_BANNER` when notifications are off; the page renders `offlineSyncResultRows` and opens Daily Overview on the row's `dayKey`; "Got it" removes the row. iOS: `Core/OfflineSyncResultStore.swift`, `Views/NotSyncedView.swift`.
+- Another company's settings read before a queued Replace: `offlineReplaceOrganizationReadDecision` — refused / not-found / missing → `refusePermission` at once; network failure → wait.
 
 ## New rulebook sections
 
-- 33. Getting started checklist (1.85.0)
-- 1.85.0 — 2026-11-24
+- 1.86.0 — 2026-11-24
 
 ## Workflow for the iOS agent
 
