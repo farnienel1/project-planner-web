@@ -407,7 +407,7 @@ function ResetDialog({ uid, name, onClose, onDone, run }: DialogProps) {
       canConfirm
       onClose={onClose}
       onConfirm={async () => {
-        await run(() => ownerSendPasswordReset(uid, undefined, reason))
+        await run(() => ownerSendPasswordReset(uid, reason))
         onDone(`Password reset emailed to ${name}.`)
       }}
     />
