@@ -8,6 +8,7 @@ import { mineChangedKey, useMineChangedStore } from '@/lib/timesheets/mineChange
 import { periodStartKey } from '@/lib/timesheets/paymentRunCopy'
 import { feedback } from '@/lib/feedbackSounds/feedback'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
+import { lineManagerRosterRows, soleLineManagerName } from '@/lib/timesheets/memberLineManagerLabel'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Booking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
@@ -99,7 +100,7 @@ import {
   timesheetVersionChain,
 } from '@/lib/timesheets/timesheetStorage'
 import { earlierVersionCards, timesheetRevisionCopy } from '@/lib/timesheets/timesheetRevisionCopy'
-import { lineManagerSummary, timesheetCorrectionOption, timesheetNextStep } from '@/lib/canonical'
+import { timesheetCorrectionOption, timesheetNextStep } from '@/lib/canonical'
 import { TimesheetChangesCard, TimesheetCorrectionEntry, TimesheetNextStepLine } from '@/components/timesheets/TimesheetClarity'
 import {
   TIMESHEET_MAKE_CHANGES_ACTIVE_NOTE,
@@ -334,7 +335,7 @@ export function TimesheetPeriodPage({
 }) {
   const currency = useOrganizationCurrency()
   const { user: viewer, organization } = useAuthStore()
-  const { users } = useOrgUserStore()
+  const { users, rosterDocuments, rosterDocumentsOrgId } = useOrgUserStore()
   const operativesLoadedOrgId = useOperativeStore((state) => state.operativesLoadedOrgId)
   const operativesLoaded = Boolean(organization?.id) && operativesLoadedOrgId === organization?.id
   // Rulebook 1.43.0 (`timesheetSnapshotReady`): the pay inputs AND the period's bookings. A counter-signature made before
@@ -645,11 +646,12 @@ export function TimesheetPeriodPage({
   // Every word is the rulebook's; the page only passes what it already holds.
   const subjectName = `${subjectUser.firstName ?? ''} ${subjectUser.surname ?? ''}`.trim() || null
   // `lineManagerSummary` (one rule with iOS): named only when there is exactly one known line manager.
-  const lineManagerName = (() => {
-    const summary = lineManagerSummary(rulebookPerson(subjectUser, users) as never, rulebookRoster(users) as never)
-    const only = summary.ids.length === 1 ? summary.ids[0] : null
-    return only && only.resolved && only.name.trim() ? only.name.trim() : null
-  })()
+  // 24 Nov (#451): over every users document of this organisation, with names (before: the folded roster without
+  // names, so the line manager read as their email, or not at all when stored under a folded-away document).
+  const lineManagerName = soleLineManagerName(
+    subjectUser,
+    lineManagerRosterRows(rosterDocumentsOrgId === organization?.id ? rosterDocuments : [], users)
+  )
   const viewerIsAdmin = Boolean(viewer && seesEveryUserTimesheet(staffAccountRole(viewer)))
   // Same inputs as `draftBookingChanges` above (computed every render like it).
   const changeDetails = draftChangeDetails({

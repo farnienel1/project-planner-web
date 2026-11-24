@@ -76,3 +76,15 @@ test('resolver: one roster build, labels cached per stored line manager, same an
   assert.equal(label(ops[5]), memberLineManagerLabel(ops[5], roster))
   assert.ok(elapsed < 1500, `100 rows over 320 users took ${elapsed} ms`)
 })
+
+test('whose-turn name: the live document by name, never the email; null for none or several', async () => {
+  const { soleLineManagerName } = await import('./memberLineManagerLabel.ts')
+  const live = person('mgr-live', { email: 'jo@test.com', firstName: 'Jo' })
+  const old = person('mgr-old', { email: 'JO@test.com', firstName: 'Stale', passwordSet: false })
+  const luke = person('luke', { assignedManagerUserIds: ['mgr-old'] })
+  assert.equal(soleLineManagerName(luke, lineManagerRosterRows([live, old, luke], [live, luke])), 'Jo Test')
+  assert.equal(soleLineManagerName(person('x'), [live]), null)
+  assert.equal(soleLineManagerName(person('y', { assignedManagerUserIds: ['gone'] }), [live]), null)
+  const two = person('z', { assignedManagerUserIds: ['mgr-live', 'm2'] })
+  assert.equal(soleLineManagerName(two, [live, person('m2'), two]), null)
+})

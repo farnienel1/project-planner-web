@@ -32,15 +32,32 @@ function lineManagerSubject(member: User) {
   }
 }
 
-/** Builds the named roster once; the returned function gives a person's label (cached per stored line-manager fields). */
-export function lineManagerLabelResolver(roster: ReadonlyArray<User>): (member: User) => string {
+/**
+ * The roster as `lineManagerSummary` reads it, with names: `rulebookRoster` carries ids, aliases and flags but no
+ * names, so a line manager it resolved was named by email (`rosterPersonName` falls back to it).
+ */
+export function lineManagerNamedRoster(roster: ReadonlyArray<User>) {
   const rows = [...roster]
-  // `rulebookRoster` carries ids, aliases and flags but no names; the summary names each line manager from these.
-  const named = rulebookRoster(rows).map((row, index) => ({
+  return rulebookRoster(rows).map((row, index) => ({
     ...row,
     firstName: rows[index].firstName ?? null,
     surname: rows[index].surname ?? null,
   }))
+}
+
+/**
+ * The whose-turn line on the timesheet page (rulebook 1.77.0 §8): the line manager's name only when the person has
+ * exactly one known line manager, from `lineManagerSummary` over the unfolded, named roster; null otherwise.
+ */
+export function soleLineManagerName(member: User, roster: ReadonlyArray<User>): string | null {
+  const summary = lineManagerSummary(lineManagerSubject(member) as never, lineManagerNamedRoster(roster) as never)
+  const only = summary.ids.length === 1 ? summary.ids[0] : null
+  return only && only.resolved && only.name.trim() ? only.name.trim() : null
+}
+
+/** Builds the named roster once; the returned function gives a person's label (cached per stored line-manager fields). */
+export function lineManagerLabelResolver(roster: ReadonlyArray<User>): (member: User) => string {
+  const named = lineManagerNamedRoster(roster)
   const cache = new Map<string, string>()
   return (member: User) => {
     const subject = lineManagerSubject(member)

@@ -1656,6 +1656,7 @@ The owner's answers of 24 Nov (items 1, 2, 5, 9 of the list sent that day) and c
 |---|---|---|
 | 24 Nov | **Line manager "Unknown" was a display bug** (guardrail 1): the column matched only the first stored line-manager id, exactly, against the email-folded roster, so a line manager stored under a same-email second users document, a former invite id or another letter case read "Unknown". It now reads the rulebook's `lineManagerSummary` over every users document of the organisation, on Awaiting, Signed off and Exported. Words change with it: "Unassigned" → "Not set", "Unknown" → "Unknown person" (an id nobody goes by), "No line manager" when chosen, and "Jo Smith +1 more" for two line managers (only the first was shown). Nothing stored changes. | done web, owner confirmed 24 Nov (wording fine) |
 | 24 Nov | The "Signed …" date inside the versions list uses the same short form ("18 Nov, 12:28"). | done web, owner to confirm |
+| 24 Nov | **Whose-turn line names the line manager by the same rule** (coordinator, both apps): the timesheet page's "counter-signed by / waiting for" line uses `lineManagerSummary` over the unfolded, named roster (`soleLineManagerName`); before, web handed the rulebook people without names (it read the email) and the folded roster (no name for a line manager stored under a folded-away document). | done web (#451), iOS (project-planner-ios#300) |
 
 ## 24 Nov owner report (timesheet review ✕ / ⚙, 1.87)
 
