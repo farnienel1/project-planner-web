@@ -76,7 +76,7 @@ test('re-review of #348: change-email answers a clear 503 when the user record c
     }
     return new Response('{"error":{"status":"UNAVAILABLE"}}', { status: 500 })
   }) as typeof fetch
-  const response = await changeEmail(post('/api/owner/change-email', { uid: 'u1', newEmail: 'new@example.com', reason: 'typo' }, true))
+  const response = await changeEmail(post('/api/owner/change-email', { uid: 'u1', newEmail: 'new@example.com', confirmEmail: 'new@example.com', reason: 'typo' }, true))
   assert.equal(response.status, 503)
   assert.match(((await response.json()) as { error: string }).error, /nothing was changed/)
   assert.equal(calls.some((call) => call.url.includes('/adminAuditLog') || call.method === 'PATCH'), false)

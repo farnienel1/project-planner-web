@@ -1,6 +1,6 @@
 # iOS follow-on — rulebook 1.76.0
 
-Generated 2026-11-23 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
+Generated 2026-11-24 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
 
 ```
@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.76.0 → 1.76.0
-Packed hash: 4e91e47f7381fd1f5b93dd8e4dd507fa9270d238834dd32b6319682fbb735820
-Rulebook sha256: 5ab7acd5d7140d5aedba8b98b0ff2613074e8150fe47b81b78d3a1fcaf92b423
+Packed hash: 41f1b460062ab7925a581a1fe8f46d57625bee426414b322d1acede84145bc94
+Rulebook sha256: 355f20463958f3fdadda7f7ad24e23b3047d946e902a0554cf0fbc8e74c7fcbc
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,12 +22,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 926b910948b674b1fa259e8f933ddd15f14bad00b8e0b050ccbd88c723bf64aa
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: TIMESHEET_SIGNED_ENTRIES_CHANGED_PERSON_MESSAGE
-Exports removed: TIMESHEET_SIGN_OFF_REVIEW_TOLERANCE_MS
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/timesheetLateExtras.ts
+Exports added: qualificationsMissingOwnExpiry
+Exports removed: none
+Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/operativeQualifications.ts, lib/canonical/staffAccess.ts
 Done when:
-- [ ] Packed hash in iOS equals 4e91e47f7381fd1f5b93dd8e4dd507fa9270d238834dd32b6319682fbb735820
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 5ab7acd5d7140d5aedba8b98b0ff2613074e8150fe47b81b78d3a1fcaf92b423)
+- [ ] Packed hash in iOS equals 41f1b460062ab7925a581a1fe8f46d57625bee426414b322d1acede84145bc94
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 355f20463958f3fdadda7f7ad24e23b3047d946e902a0554cf0fbc8e74c7fcbc)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.76.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -66,6 +66,10 @@ No new `minimumIosBuild` raise beyond 1.74.0's (an iPhone before 1.74 does not r
 - Tests (`Rulebook1760Tests`): remove an expense after sign-off → awaiting, export blocked, re-signed copy without it, total down; edit a price work amount → the same.
 - Review of #427 / #278: the rule has no time test (what the entry pays against its signed row decides); the person's note is `TIMESHEET_SIGNED_ENTRIES_CHANGED_PERSON_MESSAGE`; the owner path refreshes the signed money rows only when the person is signing (as web); the 1.43.0 empty-copy repair keeps the signed money rows (`signedMoneyRows(existing, fresh, refreshSignedMoney)`).
 
+## New rulebook sections
+
+- 1.75.0 — 2026-11-23
+- 1.73.2 — 2026-11-23
 
 ## Workflow for the iOS agent
 

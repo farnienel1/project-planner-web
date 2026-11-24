@@ -26,7 +26,12 @@ async function readAll(token: string, collection: string): Promise<PlainDoc[]> {
  * routes (the guard runs first), so the cache never serves anyone else. Owner actions that change a person or an
  * organisation clear it (`clearOwnerDirectoryCache`); `refresh: true` reads again.
  */
-export const OWNER_DIRECTORY_CACHE_MS = 60_000
+/**
+ * Review of #433 (S1): a little longer than the Overview's 180-second poll, so an open Overview tab reads the
+ * collections at most once per server cache life instead of on almost every poll (each read lists every organisation
+ * and users document).
+ */
+export const OWNER_DIRECTORY_CACHE_MS = 200_000
 
 type CacheEntry<T> = { at: number; value: Promise<T> }
 let orgCache: CacheEntry<Omit<OwnerDirectoryData, 'peopleRows'>> | null = null

@@ -13,12 +13,15 @@ import { useConsolePrefs } from '@/lib/analytics/consolePrefs'
 import { dataQualityTestOrgSections, filterMarkableOrgs, settledMarkOverrides } from '@/lib/owner/dataQualityTestOrgs'
 import { auditOwnerAction, ownerDeleteUnfinishedUser, ownerMarkInternal } from '@/lib/owner/ownerActions'
 import { formatOwnerWhen } from '@/lib/analytics/ownerDirectory'
+import { useOwnerFreshAction } from '@/components/developer/OwnerReverify'
 
 export function DeveloperDataQualityScreen() {
   const { organisations, users, events, loading, error, load, refresh } = useAnalyticsStore()
   const period = useConsolePrefs((state) => state.period)
   const { showFullEmails } = useConsolePrefs()
   const [notice, setNotice] = useState('')
+  // Owner console PR 5: deleting needs a code from the last 10 minutes; asked for here when it is older.
+  const { run: runFresh, dialog: reverifyDialog } = useOwnerFreshAction()
   /** Rows with a save in flight (several at once: one row finishing never re-enables another). */
   const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(() => new Set())
   const isBusy = (id: string) => busyIds.has(id)
@@ -198,7 +201,7 @@ export function DeveloperDataQualityScreen() {
                           if (!window.confirm(`Delete unfinished account ${user.email}?`)) return
                           startBusy(user.id)
                           try {
-                            await ownerDeleteUnfinishedUser(user.id)
+                            await runFresh(() => ownerDeleteUnfinishedUser(user.id, 'Data quality: unfinished sign-up'))
                             setNotice('Deleted unfinished account.')
                             await refresh()
                           } catch (err) {
@@ -291,6 +294,7 @@ export function DeveloperDataQualityScreen() {
           )}
         </div>
       </section>
+      {reverifyDialog}
     </DeveloperShell>
   )
 }

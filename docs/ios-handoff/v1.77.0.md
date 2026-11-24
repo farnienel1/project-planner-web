@@ -1,6 +1,6 @@
 # iOS follow-on — rulebook 1.77.0
 
-Generated 2026-11-23 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
+Generated 2026-11-24 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
 
 ```
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.76.0 → 1.77.0
-Packed hash: 9988f97afcb3bf1db782ea838d238a91c020faa0d32848a071359c1e0a4a7537
-Rulebook sha256: 9cb23b8d83184433d6d30a95c4f5f0b384991715b3892cfb7e56366c3043fc5b
+Rulebook version: 1.77.0 → 1.77.0
+Packed hash: fd0451906e5e84f90009f1301e7a0a48fd43e1b64726b1f1eadd0c975aed3e6a
+Rulebook sha256: f2009fc1328593e503da5bc4b02292dd494657fa3e24483d61c9c0b11db8c0d7
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,12 +22,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 926b910948b674b1fa259e8f933ddd15f14bad00b8e0b050ccbd88c723bf64aa
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: TIMESHEET_CHANGE_DETAILS_COLLAPSED_ROWS, TIMESHEET_CHANGE_DETAILS_HEADING, TIMESHEET_CHANGE_DETAILS_REVIEWER_HEADING, TIMESHEET_CHANGE_NOT_IN_SIGNED_COPY_LABEL, TIMESHEET_CORRECTION_LABEL, TIMESHEET_CORRECTION_REVISION_BOOKINGS_HELP, TIMESHEET_GENERATE_INVOICE_PROMPT, TIMESHEET_NEXT_STEP_ADMIN_SIGNER, TIMESHEET_NEXT_STEP_EXPORTED_TEXT, TIMESHEET_NEXT_STEP_INVOICE_TEXT, TIMESHEET_REPORT_AWAITING_APPROVAL_LABEL, TIMESHEET_REPORT_AWAITING_RESIGN_LABEL, TIMESHEET_SIGNED_NOTICE_INVOICE_NEXT, TIMESHEET_SNAPSHOT_AWAITING_APPROVAL_LABEL, parseTimesheetBookingFingerprint, signedTimesheetChangeDetails, timesheetChangeDayLabel, timesheetCorrectionOption, timesheetNextStep, timesheetReportKeepsSignedFigures, timesheetReportWaiting, timesheetSignedEntryChanges
+Exports added: qualificationsMissingOwnExpiry
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/payrunSnapshot.ts, lib/canonical/timesheetBookingChanges.ts, lib/canonical/timesheetClarity.ts, lib/canonical/timesheetLateExtras.ts, lib/canonical/weeklyReportPay.ts
+Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/operativeQualifications.ts, lib/canonical/staffAccess.ts
 Done when:
-- [ ] Packed hash in iOS equals 9988f97afcb3bf1db782ea838d238a91c020faa0d32848a071359c1e0a4a7537
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 9cb23b8d83184433d6d30a95c4f5f0b384991715b3892cfb7e56366c3043fc5b)
+- [ ] Packed hash in iOS equals fd0451906e5e84f90009f1301e7a0a48fd43e1b64726b1f1eadd0c975aed3e6a
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 f2009fc1328593e503da5bc4b02292dd494657fa3e24483d61c9c0b11db8c0d7)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.77.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -55,7 +55,8 @@ Built in iOS PR on branch `ios-1.77-timesheet-clarity` (stacked on the 1.76 bran
 
 ## New rulebook sections
 
-- 1.77.0 — 2026-11-23
+- 1.75.0 — 2026-11-23
+- 1.73.2 — 2026-11-23
 
 ## Workflow for the iOS agent
 

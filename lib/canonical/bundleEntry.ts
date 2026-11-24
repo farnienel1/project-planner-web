@@ -200,6 +200,7 @@ export {
   personQualifications,
   qualificationCertificateUrl,
   qualificationExpiryDate,
+  qualificationsMissingOwnExpiry,
   removedQualificationCertificateIds,
   withQualificationExpiry,
 } from './operativeQualifications'

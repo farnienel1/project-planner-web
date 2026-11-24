@@ -265,6 +265,7 @@ export {
   personQualifications,
   qualificationCertificateUrl,
   qualificationExpiryDate,
+  qualificationsMissingOwnExpiry,
   removedQualificationCertificateIds,
   withQualificationExpiry,
 } from './operativeQualifications'
@@ -275,6 +276,9 @@ export type {
   OperativeQualificationMapsInput,
   OperativeQualificationWrite,
   PersonQualification,
+  QualificationLibraryEntry,
+  QualificationMissingOwnExpiryOperativeRow,
+  QualificationMissingOwnExpiryRow,
   QualificationOperativeRow,
 } from './operativeQualifications'
 

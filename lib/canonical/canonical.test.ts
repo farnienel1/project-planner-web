@@ -17302,15 +17302,30 @@ test('1.56.0 leaveQueryPlan: no viewer, role or uid → no query (never the whol
   assert.deepEqual(l156Plan({ role: l156Operative, ids: [] } as never, { operativeOwnLeave: true }), { readsEveryLeave: false, queries: [] })
 })
 
-test('1.56.0 leaveQueryPlan: up to 14 ids and the two email spellings fit one query (≤ 30 disjuncts); more ids chunk', () => {
-  assert.equal(l156PerQuery, 14)
+test('1.73.2 leaveQueryPlan: 6 ids per query (the Phase B rules lookup budget); the emails only on the first query', () => {
+  assert.equal(l156PerQuery, 6)
   const viewer = { role: l156Operative, ids: ['uid'], uid: 'uid' } as never
-  const one = l156Plan(viewer, { ownIds: Array.from({ length: 13 }, (_, i) => `id-${i}`), email: 'A@x.com', operativeOwnLeave: true })
-  assert.equal(one.queries.length, 1)
-  const disjuncts = l156Own(one.queries[0]).anyOf.reduce((sum, part) => sum + part.values.length, 0)
-  assert.ok(disjuncts <= 30, `${disjuncts} disjuncts`)
-  const two = l156Plan(viewer, { ownIds: Array.from({ length: 20 }, (_, i) => `id-${i}`), email: 'a@x.com', operativeOwnLeave: true })
-  assert.deepEqual(two.queries.map((q) => l156Own(q).anyOf.map((p) => p.values.length)), [[15, 14], [7, 7]])
+  const shape = (n: number, email: string | null) =>
+    l156Plan(viewer, { ownIds: Array.from({ length: n }, (_, i) => `id-${i}`), email, operativeOwnLeave: true })
+  // 1 query: uid + 5 ids, then the two email spellings on userId only.
+  const one = shape(5, 'A@x.com')
+  assert.deepEqual(one.queries.map((q) => l156Own(q).anyOf.map((p) => p.values.length)), [[8, 6]])
+  assert.deepEqual(l156Own(one.queries[0]).anyOf[0].values.slice(-2), ['A@x.com', 'a@x.com'])
+  assert.ok(!l156Own(one.queries[0]).anyOf[1].values.some((v) => v.includes('@')))
+  // 2 queries: uid + 6 ids = 7.
+  const two = shape(6, 'a@x.com')
+  assert.deepEqual(two.queries.map((q) => l156Own(q).anyOf.map((p) => p.values.length)), [[7, 6], [1, 1]])
+  assert.deepEqual(l156Own(two.queries[1]).anyOf[0].values, ['id-5'])
+  // 3 queries: uid + 14 ids = 15 (6, 6, 3); emails never after the first.
+  const three = shape(14, 'a@x.com')
+  assert.deepEqual(three.queries.map((q) => l156Own(q).anyOf.map((p) => p.values.length)), [[7, 6], [6, 6], [3, 3]])
+  for (const q of three.queries.slice(1)) assert.ok(!l156Own(q).anyOf.some((p) => p.values.some((v) => v.includes('@'))))
+  // Every id is queried exactly once on each field; no query holds more than 6 ids.
+  const all = three.queries.flatMap((q) => l156Own(q).anyOf[1].values)
+  assert.deepEqual(all, ['uid', ...Array.from({ length: 14 }, (_, i) => `id-${i}`)])
+  for (const q of three.queries) assert.ok(l156Own(q).anyOf[1].values.length <= 6)
+  // No email: the first query has the ids only.
+  assert.deepEqual(shape(2, null).queries.map((q) => l156Own(q).anyOf.map((p) => p.values.length)), [[3, 3]])
 })
 
 test('1.56.0 leaveQueryValues: stored case kept, exact de-dupe, emails apart, blanks dropped', () => {
@@ -19249,6 +19264,104 @@ test('1.74.0 (choice 6): timesheetInvoiceRows omitEmptyStandardParts leaves off 
   const total = (input: Record<string, unknown>) =>
     R112.roundPennies(R112.timesheetInvoiceRows({ payrollLines, extrasMode: 'decided', ...input } as never).reduce((sum, row) => sum + row.amount, 0))
   assert.equal(total({ sheet: declined }), total({ sheet: declined, omitEmptyStandardParts: true }))
+})
+
+test('1.75.0 qualificationsMissingOwnExpiry: a library end date with no own expiry is listed, once per person', () => {
+  const roster = [
+    { id: 'U-JO', email: 'jo@x.co', firstName: 'Jo', lastName: 'Bloggs' },
+    { id: 'u-jo-old', email: 'JO@x.co' },
+    { id: 'U-SAM', email: 'sam@x.co', firstName: 'Sam', lastName: 'Lee', isActive: false },
+  ]
+  const library = [
+    { id: 'Q-CSCS', name: 'CSCS', hasEndDate: true, endDate: '2027-01-01T00:00:00Z' },
+    { id: 'Q-FA', name: 'First aid', hasEndDate: false },
+    // A stored boolean decides: hasEndDate false with an endDate is not a dated library entry.
+    { id: 'Q-IPAF', name: 'IPAF', hasEndDate: false, endDate: '2028-01-01T00:00:00Z' },
+    // hasEndDate missing: the endDate decides.
+    { id: 'Q-SMSTS', name: 'SMSTS', endDate: '2028-01-01T00:00:00Z' },
+  ]
+  const operatives = [
+    // Jo: two rows (email in another case). CSCS has an own expiry on the second row only.
+    { id: 'op-jo-1', email: 'jo@x.co', qualifications: [{ id: 'q-cscs', name: 'CSCS' }, { id: 'Q-FA', name: 'First aid' }, { id: 'Q-IPAF', name: 'IPAF' }, { id: 'Q-SMSTS', name: 'SMSTS' }, { id: 'Q-BLANK', name: '  ', hasEndDate: true }] },
+    { id: 'op-jo-2', email: 'JO@X.CO', qualifications: [{ id: 'Q-CSCS', name: 'CSCS' }], qualificationExpiryDates: { 'Q-CSCS': '2027-06-01T00:00:00Z' } },
+    // Sam (inactive): CSCS with no expiry of their own.
+    { id: 'op-sam', email: 'sam@x.co', isActive: false, qualifications: [{ id: 'Q-CSCS', name: 'CSCS' }] },
+    // Catalogue row with no account; library entry unknown, assignment copy has an end date.
+    { id: 'op-cat', firstName: 'Ann', lastName: 'Row', qualifications: [{ id: 'Q-OLD', name: 'Old card', hasEndDate: true }] },
+    // Placeholder row and an anonymised deleted profile: never listed.
+    { id: 'op-ph', firstName: 'Placeholder', lastName: 'Row', qualifications: [{ id: 'Q-CSCS', name: 'CSCS' }] },
+    { id: 'op-del', email: '', firstName: 'Deleted', lastName: 'user', qualifications: [{ id: 'Q-CSCS', name: 'CSCS' }] },
+  ]
+  const rows = R112.qualificationsMissingOwnExpiry({ operatives, qualifications: library, roster })
+  assert.deepEqual(
+    rows.map((r) => [r.personName, r.userId, r.operativeId, r.qualificationName, r.active]),
+    [
+      ['Ann Row', null, 'op-cat', 'Old card', true],
+      ['Jo Bloggs', 'U-JO', 'op-jo-1', 'SMSTS', true],
+      ['Sam Lee', 'U-SAM', 'op-sam', 'CSCS', false],
+    ]
+  )
+  // An own expiry in another letter case counts.
+  const fixed = R112.qualificationsMissingOwnExpiry({
+    operatives: [{ id: 'op-sam', email: 'sam@x.co', qualifications: [{ id: 'Q-CSCS', name: 'CSCS' }], qualificationExpiryDates: { 'q-cscs': '2027-01-01' } }],
+    qualifications: library,
+    roster,
+  })
+  assert.deepEqual(fixed, [])
+  // Library matched by name when the id differs; no library and no assignment end date → not listed.
+  assert.equal(
+    R112.qualificationsMissingOwnExpiry({
+      operatives: [{ id: 'op-x', qualifications: [{ id: 'other-id', name: 'cscs' }, { id: 'Q-NONE', name: 'Nothing' }] }],
+      qualifications: library,
+    }).map((r) => r.qualificationName).join(','),
+    'cscs'
+  )
+  assert.deepEqual(R112.qualificationsMissingOwnExpiry({ operatives: [] }), [])
+})
+
+test('1.75.0 review of #426: judged on active rows, as the warnings; the live document names the person', () => {
+  const library = [{ id: 'Q-CSCS', name: 'CSCS', hasEndDate: true }]
+  // Active row A without a date, inactive row B with one: the warnings read only A, so Jo is listed.
+  const split = R112.qualificationsMissingOwnExpiry({
+    operatives: [
+      { id: 'op-a', email: 'jo@x.co', qualifications: [{ id: 'Q-CSCS', name: 'CSCS' }] },
+      { id: 'op-b', email: 'jo@x.co', isActive: false, qualifications: [{ id: 'Q-CSCS', name: 'CSCS' }], qualificationExpiryDates: { 'Q-CSCS': '2027-01-01T00:00:00Z' } },
+    ],
+    qualifications: library,
+    roster: [{ id: 'U-JO', email: 'jo@x.co', firstName: 'Jo', lastName: 'Bloggs' }],
+  })
+  assert.deepEqual(split.map((r) => [r.operativeId, r.active]), [['op-a', true]])
+  // A fully inactive person is judged on all their rows: the inactive row's date counts.
+  assert.deepEqual(
+    R112.qualificationsMissingOwnExpiry({
+      operatives: [
+        { id: 'op-a', email: 'jo@x.co', isActive: false, qualifications: [{ id: 'Q-CSCS', name: 'CSCS' }] },
+        { id: 'op-b', email: 'jo@x.co', isActive: false, qualifications: [{ id: 'Q-CSCS', name: 'CSCS' }], qualificationExpiryDates: { 'Q-CSCS': '2027-01-01T00:00:00Z' } },
+      ],
+      qualifications: library,
+    }),
+    []
+  )
+  // Two users documents on one email: the stale, inactive AAA-old never names or links the person; ZZZ-live does.
+  const named = R112.qualificationsMissingOwnExpiry({
+    operatives: [{ id: 'op-jo', email: 'jo@x.co', qualifications: [{ id: 'Q-CSCS', name: 'CSCS' }] }],
+    qualifications: library,
+    roster: [
+      { id: 'AAA-old', email: 'jo@x.co', firstName: 'Old', lastName: 'Name', isActive: false },
+      { id: 'ZZZ-live', email: 'jo@x.co', firstName: 'Jo', lastName: 'Bloggs', passwordSet: true },
+    ],
+  })
+  assert.deepEqual(named.map((r) => [r.userId, r.personName]), [['ZZZ-live', 'Jo Bloggs']])
+  // An unsigned invite placeholder loses to the signed-up document; equal ranks fall back to the smallest id.
+  const signed = R112.qualificationsMissingOwnExpiry({
+    operatives: [{ id: 'op-jo', email: 'jo@x.co', qualifications: [{ id: 'Q-CSCS', name: 'CSCS' }] }],
+    qualifications: library,
+    roster: [
+      { id: 'AAA-invite', email: 'jo@x.co', firstName: 'Jo', lastName: 'Invite', passwordSet: false },
+      { id: 'ZZZ-live', email: 'jo@x.co', firstName: 'Jo', lastName: 'Bloggs', passwordSet: true },
+    ],
+  })
+  assert.equal(signed[0].userId, 'ZZZ-live')
 })
 
 // MARK: - 1.76.0 "Make changes" on a signed-off or exported timesheet (owner decisions 23 Nov, A1 and B1)
