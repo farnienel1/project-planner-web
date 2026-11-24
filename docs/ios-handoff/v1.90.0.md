@@ -22,9 +22,9 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: d2d465abcf0ab7c7747385346b87d2b47226412b1014602c5a26bff8e951c0ca
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: TIMESHEET_REVIEWER_CANCEL_CHANGES_DONE_MESSAGE, TIMESHEET_REVIEWER_CANCEL_CHANGES_LABEL, TIMESHEET_REVIEWER_REVIEW_RECORD_PREFIX, TIMESHEET_REVIEWER_UNDO_CHANGED_SINCE_MESSAGE, TIMESHEET_REVIEWER_UNDO_GONE_MESSAGE, TIMESHEET_REVIEWER_UNDO_NOT_ALLOWED_MESSAGE, TIMESHEET_REVIEWER_UNDO_NO_BEFORE_MESSAGE, timesheetReviewerBookingFingerprint, timesheetReviewerCancelChangesConfirmMessage, timesheetReviewerCancelChangesOffered, timesheetReviewerEditBefore, timesheetReviewerEditStillAsLeft, timesheetReviewerRestoredRecords, timesheetReviewerReviewRecord, timesheetReviewerSession, timesheetReviewerSessionRecords, timesheetReviewerUndoPlan
+Exports added: none
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/timesheetBookingChanges.ts, lib/canonical/timesheetReviewerUndo.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/canonical.test.ts, lib/canonical/timesheetReviewBookingWrites.ts
 Done when:
 - [ ] Packed hash in iOS equals 357c9a5c158637bf73640c4d1b09aa9facfe8e45c4192ddf80447af1b109e4be
 - [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 6a7461e3a7478b9523263811391838e52120d1d9a6d9ba7fb62cf5b4c337c348)
