@@ -34,6 +34,7 @@ import {
 } from './timesheetBookingChanges'
 import { resolveTimesheetExportedAtMs, timesheetTimestampMs, TIMESHEET_SIGNED_AFTER_MS } from './timesheetPeriod'
 import { bookingOccupiesDay } from './warningRows'
+import { isSiteLocationType } from './homeOverview'
 
 export const TIMESHEET_BOOKINGS_CHANGED_NOTICE_TYPE = 'timesheet_bookings_changed'
 export const TIMESHEET_BOOKINGS_CHANGED_NOTICE_TITLE = 'Your signed timesheet has changed'
@@ -105,6 +106,87 @@ function occupies(doc: SignedTimesheetBookingDocument): boolean {
   return status === '' || bookingOccupiesDay(status)
 }
 
+/** Where a booking stands against one person's sheet for a pay run (`timesheetBookingSheetTest`). */
+export type TimesheetBookingOnSheet = 'yes' | 'no-person' | 'no-period' | 'no-paye'
+
+/** A stored booking with its write times (epoch ms, Date, Timestamp-like or ISO), for `timesheetLiveLinesFromBookings`. */
+export type TimesheetLiveBookingDocument = SignedTimesheetBookingDocument & { createdAt?: unknown; updatedAt?: unknown }
+
+/**
+ * Rulebook 1.54.0 / 1.78.0 §8: whether a booking is on one person's timesheet for a pay run — the booking's person is
+ * one of `personIds` (without case), its organisation-zone day is inside the pay run, the person is self-employed that
+ * day (`timesheetDaysForPerson`, when `person` is given; a PAYE day is never a timesheet line) and its status occupies
+ * the day (`bookingOccupiesDay`; no status occupies it). The one test behind `timesheetBookingChangeNotice` and
+ * `timesheetLiveLinesFromBookings`, so the server reads a sheet's bookings exactly as the notice does.
+ */
+export function timesheetBookingSheetTest(input: {
+  personIds: ReadonlyArray<string | null | undefined>
+  periodStartDayKey: string
+  periodEndDayKey: string
+  person?: TimesheetPerson | null
+  timeZone?: string | null
+}): (doc: SignedTimesheetBookingDocument | null | undefined) => TimesheetBookingOnSheet {
+  const ids = new Set((input.personIds ?? []).map((id) => normalizeDocumentId(text(id))).filter(Boolean))
+  const start = text(input.periodStartDayKey)
+  const end = text(input.periodEndDayKey)
+  const selfEmployedDays = input.person
+    ? new Set(timesheetDaysForPerson(input.person, { startDayKey: start, endDayKey: end }, input.timeZone))
+    : null
+  return (doc) => {
+    if (!doc) return 'no-person'
+    if (!ids.has(normalizeDocumentId(text(doc.personId)))) return 'no-person'
+    const day = text(doc.dayKey)
+    if (!day || day < start || day > end) return 'no-period'
+    if (selfEmployedDays && !selfEmployedDays.has(day)) return 'no-paye'
+    return occupies(doc) ? 'yes' : 'no-period'
+  }
+}
+
+/**
+ * Rulebook 1.78.0 §8: one person's live timesheet lines for a pay run, from the stored booking documents (labour and
+ * manager site, any person) — for a caller with no timesheet collector (the sign-off reminder Cloud Function), so it can
+ * ask `signedTimesheetBookingChanges` exactly as the apps do. One line per booking on the sheet
+ * (`timesheetBookingSheetTest`): `bookingId`, `bookingCollection`, `bookingFingerprint` (`overtimeBookingFingerprint`
+ * of the booking, as the collector writes it), `bookingCreatedAt` / `bookingUpdatedAt`, and `scheduleOptionPlace` for a
+ * manager site booking that is not on a project or small works (Office, Working from home, Site survey, a custom place).
+ * PAYE days and bookings off their day are left out (they are never timesheet lines). Lines carry no hours or pay.
+ */
+export function timesheetLiveLinesFromBookings(input: {
+  bookings: ReadonlyArray<TimesheetLiveBookingDocument | null | undefined> | null | undefined
+  personIds: ReadonlyArray<string | null | undefined>
+  periodStartDayKey: string
+  periodEndDayKey: string
+  person?: TimesheetPerson | null
+  timeZone?: string | null
+}): SignedTimesheetLine[] {
+  const onSheet = timesheetBookingSheetTest(input)
+  const lines: SignedTimesheetLine[] = []
+  for (const doc of input.bookings ?? []) {
+    if (!doc || !text(doc.bookingId) || onSheet(doc) !== 'yes') continue
+    const collection = text(doc.collection) || 'bookings'
+    const fingerprint = overtimeBookingFingerprint({
+      id: text(doc.bookingId),
+      personId: '',
+      dayKey: text(doc.dayKey),
+      timeSlot: text(doc.timeSlot),
+      workStartTime: text(doc.workStartTime) || undefined,
+      workEndTime: text(doc.workEndTime) || undefined,
+      isBreakRemoved: doc.isBreakRemoved === true,
+      otMultiplierOverride: typeof doc.otMultiplierOverride === 'number' ? doc.otMultiplierOverride : null,
+    } as Parameters<typeof overtimeBookingFingerprint>[0])
+    lines.push({
+      bookingId: text(doc.bookingId),
+      bookingCollection: collection,
+      bookingFingerprint: fingerprint,
+      isPayeDay: false,
+      bookingCreatedAt: doc.createdAt ?? null,
+      bookingUpdatedAt: doc.updatedAt ?? null,
+      scheduleOptionPlace: collection === 'managerSiteBookings' && !isSiteLocationType(doc.locationType),
+    })
+  }
+  return lines
+}
+
 /** Whether a booking write changed anything the 1.47.0 rule reads (day, slot, times, rate, break, place, person, status). */
 export function timesheetBookingWriteMatters(
   before: SignedTimesheetBookingDocument | null | undefined,
@@ -150,20 +232,13 @@ export function timesheetBookingChangeNotice(input: {
   const exported = resolveTimesheetExportedAtMs(sheet as Record<string, unknown>) != null || realMs(sheet.exportedAtMs) != null
   if (exported && input.includeExported !== true) return { notify: false, reason: 'exported' }
   if (!timesheetBookingWriteMatters(input.before, input.after)) return { notify: false, reason: 'no-change' }
-  const ids = new Set(input.personIds.map((id) => normalizeDocumentId(text(id))).filter(Boolean))
-  const start = text(input.periodStartDayKey)
-  const end = text(input.periodEndDayKey)
-  const selfEmployedDays = input.person
-    ? new Set(timesheetDaysForPerson(input.person, { startDayKey: start, endDayKey: end }, input.timeZone))
-    : null
-  const onSheet = (doc: SignedTimesheetBookingDocument | null | undefined): 'yes' | 'no-person' | 'no-period' | 'no-paye' => {
-    if (!doc) return 'no-person'
-    if (!ids.has(normalizeDocumentId(text(doc.personId)))) return 'no-person'
-    const day = text(doc.dayKey)
-    if (!day || day < start || day > end) return 'no-period'
-    if (selfEmployedDays && !selfEmployedDays.has(day)) return 'no-paye'
-    return occupies(doc) ? 'yes' : 'no-period'
-  }
+  const onSheet = timesheetBookingSheetTest({
+    personIds: input.personIds,
+    periodStartDayKey: input.periodStartDayKey,
+    periodEndDayKey: input.periodEndDayKey,
+    person: input.person,
+    timeZone: input.timeZone,
+  })
   const was = onSheet(input.before)
   const now = onSheet(input.after)
   if (was !== 'yes' && now !== 'yes') {

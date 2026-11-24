@@ -140,6 +140,62 @@ export type OrgInvoicingSettings = {
    * timesheets after payroll becomes 1–15 or switches to recurring.
    */
   paymentRunHistory?: PaymentRunHistoryWindow[]
+  /**
+   * Rulebook 1.78.0 §4.5 / §8 (owner decision 23 Nov): how many days before a pay run's payday the line-manager
+   * sign-off reminder goes out, at 08:00 organisation time — 1, 2 or 3 (`LINE_MANAGER_REMINDER_DAYS_OPTIONS`).
+   * Stored as `invoicing.lineManagerReminderDaysBeforePayday`; missing or not 1–3 reads as 2.
+   */
+  lineManagerReminderDaysBeforePayday: number
+}
+
+/** Rulebook 1.78.0: the choices for the line-manager sign-off reminder (days before payday). */
+export const LINE_MANAGER_REMINDER_DAYS_OPTIONS = [1, 2, 3] as const
+/** Rulebook 1.78.0: the default when nothing (or something outside 1–3) is stored. */
+export const DEFAULT_LINE_MANAGER_REMINDER_DAYS = 2
+/** Rulebook 1.78.0: the reminder's clock, 08:00 organisation time (owner confirmed 23 Nov). */
+export const LINE_MANAGER_REMINDER_HOUR = 8
+export const LINE_MANAGER_REMINDER_MINUTE = 0
+export const LINE_MANAGER_REMINDER_LABEL = 'Line manager sign-off reminder'
+export const LINE_MANAGER_REMINDER_DAYS_LABEL = 'Days before payday'
+export const LINE_MANAGER_REMINDER_HELP =
+  'At 08:00 on this day, each line manager gets one reminder listing the timesheets of that payment run still waiting for their sign-off. Admins get one for people with no line manager. Nobody is reminded when nothing is waiting.'
+
+/** Rulebook 1.78.0 (owner decision 23 Nov): the note under item 5 on both apps. */
+export const LINE_MANAGER_REMINDER_ADMIN_NOTE =
+  'Admins are also reminded about people with no line manager, and about any timesheet still not signed off 24 hours before payday.'
+
+/** `invoicing.lineManagerReminderDaysBeforePayday` as stored → 1, 2 or 3 (anything else is the default, 2). */
+export function parseLineManagerReminderDays(value: unknown): number {
+  const n = typeof value === 'string' && value.trim() !== '' ? Number(value) : value
+  return typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= 3 ? n : DEFAULT_LINE_MANAGER_REMINDER_DAYS
+}
+
+/** Null when `days` is 1, 2 or 3; otherwise the message a save shows. */
+export function lineManagerReminderDaysValidationError(days: unknown): string | null {
+  return typeof days === 'number' && Number.isInteger(days) && days >= 1 && days <= 3
+    ? null
+    : 'Choose 1, 2 or 3 days before payday for the line manager sign-off reminder.'
+}
+
+/**
+ * Rulebook 1.78.0: the partial-update field for the setting alone (an app that saves the invoicing map field by field,
+ * iOS): `{ 'invoicing.lineManagerReminderDaysBeforePayday': n }`, n 1–3. Empty when the stored value already reads the
+ * same, so an unchanged setting is never re-saved.
+ */
+export function lineManagerReminderWriteFields(
+  storedInvoicing: Record<string, unknown> | null | undefined,
+  days: unknown
+): Record<string, number> {
+  if (lineManagerReminderDaysValidationError(days)) return {}
+  const stored = storedInvoicing?.lineManagerReminderDaysBeforePayday
+  if (stored === days) return {}
+  return { 'invoicing.lineManagerReminderDaysBeforePayday': days as number }
+}
+
+/** One line for the setting's preview: "Sent at 08:00, 2 days before payday." */
+export function lineManagerReminderSummary(days: unknown): string {
+  const n = parseLineManagerReminderDays(days)
+  return `Sent at 08:00, ${n} day${n === 1 ? '' : 's'} before payday.`
 }
 
 export type MyScheduleOptions = {
@@ -355,6 +411,7 @@ export const DEFAULT_INVOICING: OrgInvoicingSettings = {
     "If your timesheet displays 0 against your rate, then your day/hourly rate hasn't been set by your line manager",
   timesheetSubmission: [],
   paymentRunHistory: [],
+  lineManagerReminderDaysBeforePayday: DEFAULT_LINE_MANAGER_REMINDER_DAYS,
 }
 
 /**
@@ -1062,6 +1119,7 @@ export function parseInvoicing(data: Record<string, unknown> | undefined): OrgIn
     noteToUsers: String(data.noteToUsers ?? DEFAULT_INVOICING.noteToUsers),
     timesheetSubmission,
     paymentRunHistory: parsePaymentRunHistory(data.paymentRunHistory),
+    lineManagerReminderDaysBeforePayday: parseLineManagerReminderDays(data.lineManagerReminderDaysBeforePayday),
   }
 }
 
@@ -1088,6 +1146,11 @@ export function invoicingToFirestore(settings: OrgInvoicingSettings): Record<str
     recurringPaymentDay: settings.recurringPaymentDay,
     timesheetSubmission,
     paymentRunHistory: paymentRunHistoryToFirestore(settings.paymentRunHistory ?? []),
+  }
+  // Rulebook 1.78.0: saved with the rest of the payment runs (one partial update, dotted `invoicing.` keys) — only when
+  // the caller's settings carry it, so a caller that does not know the field never resets a stored choice to 2.
+  if (settings.lineManagerReminderDaysBeforePayday != null) {
+    payload.lineManagerReminderDaysBeforePayday = parseLineManagerReminderDays(settings.lineManagerReminderDaysBeforePayday)
   }
   if (settings.paymentRunMode === 'recurring_timeframe' && timesheetSubmission[0]) {
     const recurring = timesheetSubmission[0]
@@ -1271,6 +1334,11 @@ export function validatePaymentDates(paymentDates: number[], expectedCount: numb
 }
 
 export function validateInvoicingSettings(settings: OrgInvoicingSettings): string | null {
+  // Rulebook 1.78.0: a missing value (older drafts) reads as the default; anything else must be 1–3.
+  if (settings.lineManagerReminderDaysBeforePayday != null) {
+    const reminderError = lineManagerReminderDaysValidationError(settings.lineManagerReminderDaysBeforePayday)
+    if (reminderError) return reminderError
+  }
   if (settings.paymentRunMode === 'date_ranges') {
     const rangeError = validatePaymentRunDateRanges(settings.paymentRunDateRanges)
     if (rangeError) return rangeError

@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.77.0
+# iOS follow-on — rulebook 1.78.0
 
 Generated 2026-11-24 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.77.0 → 1.77.0
-Packed hash: fd0451906e5e84f90009f1301e7a0a48fd43e1b64726b1f1eadd0c975aed3e6a
-Rulebook sha256: f2009fc1328593e503da5bc4b02292dd494657fa3e24483d61c9c0b11db8c0d7
+Rulebook version: 1.78.0 → 1.78.0
+Packed hash: c75fdba2eeb4f170d099c14a84bad67ddcf721d6fb922212dd3922c7e9fa9a44
+Rulebook sha256: fe36f5ad4d10bd10d2a87eedc9067fc870ed4d2b7588fb14f4548b337b0558e9
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,39 +22,26 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 926b910948b674b1fa259e8f933ddd15f14bad00b8e0b050ccbd88c723bf64aa
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: qualificationsMissingOwnExpiry
+Exports added: TIMESHEET_CHANGE_DETAILS_COLLAPSED_ROWS, TIMESHEET_CHANGE_DETAILS_HEADING, TIMESHEET_CHANGE_DETAILS_REVIEWER_HEADING, TIMESHEET_CHANGE_NOT_IN_SIGNED_COPY_LABEL, TIMESHEET_CORRECTION_LABEL, TIMESHEET_CORRECTION_REVISION_BOOKINGS_HELP, TIMESHEET_GENERATE_INVOICE_PROMPT, TIMESHEET_NEXT_STEP_ADMIN_SIGNER, TIMESHEET_NEXT_STEP_EXPORTED_TEXT, TIMESHEET_NEXT_STEP_INVOICE_TEXT, TIMESHEET_REPORT_AWAITING_APPROVAL_LABEL, TIMESHEET_REPORT_AWAITING_RESIGN_LABEL, TIMESHEET_SIGNED_NOTICE_INVOICE_NEXT, TIMESHEET_SNAPSHOT_AWAITING_APPROVAL_LABEL, parseTimesheetBookingFingerprint, qualificationsMissingOwnExpiry, signedTimesheetChangeDetails, timesheetChangeDayLabel, timesheetCorrectionOption, timesheetNextStep, timesheetReportKeepsSignedFigures, timesheetReportWaiting, timesheetSignedEntryChanges
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/operativeQualifications.ts, lib/canonical/staffAccess.ts
+Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/operativeQualifications.ts, lib/canonical/payrunSnapshot.ts, lib/canonical/staffAccess.ts, lib/canonical/timesheetBookingChanges.ts, lib/canonical/timesheetClarity.ts, lib/canonical/timesheetLateExtras.ts, lib/canonical/weeklyReportPay.ts
 Done when:
-- [ ] Packed hash in iOS equals fd0451906e5e84f90009f1301e7a0a48fd43e1b64726b1f1eadd0c975aed3e6a
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 f2009fc1328593e503da5bc4b02292dd494657fa3e24483d61c9c0b11db8c0d7)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.77.0)
+- [ ] Packed hash in iOS equals c75fdba2eeb4f170d099c14a84bad67ddcf721d6fb922212dd3922c7e9fa9a44
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 fe36f5ad4d10bd10d2a87eedc9067fc870ed4d2b7588fb14f4548b337b0558e9)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.78.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.77.0
+## What changed in 1.78.0
 
-- **Timesheet clarity** (§8, §7, §13, owner decisions 23 Nov, points 1, 2, 3, 5, 6; new `lib/canonical/timesheetClarity.ts`): `timesheetNextStep` (whose turn / what next, `TIMESHEET_NEXT_STEP_INVOICE_TEXT`, `TIMESHEET_NEXT_STEP_EXPORTED_TEXT`, `TIMESHEET_GENERATE_INVOICE_PROMPT`); `signedTimesheetChangeDetails` with `parseTimesheetBookingFingerprint`, `timesheetChangeDayLabel`, `TIMESHEET_CHANGE_DETAILS_HEADING`, `TIMESHEET_CHANGE_DETAILS_REVIEWER_HEADING`, `TIMESHEET_CHANGE_DETAILS_COLLAPSED_ROWS`; `timesheetCorrectionOption`, `TIMESHEET_CORRECTION_LABEL`, `TIMESHEET_CORRECTION_REVISION_BOOKINGS_HELP`; `timesheetReportKeepsSignedFigures`, `timesheetReportWaiting`, `TIMESHEET_REPORT_AWAITING_RESIGN_LABEL` ("Awaiting re-sign"), `TIMESHEET_REPORT_AWAITING_APPROVAL_LABEL`, `TIMESHEET_SNAPSHOT_AWAITING_APPROVAL_LABEL` (point 6 wording, owner chose (a)); `TIMESHEET_NEXT_STEP_ADMIN_SIGNER` and `hasLineManager` on `timesheetNextStep` / `timesheetCorrectionOption` (no active line manager: "Waiting for an admin to sign off"); `TIMESHEET_CHANGE_NOT_IN_SIGNED_COPY_LABEL`. New `timesheetSignedEntryChanges` (`timesheetSignedEntriesChangedSinceSignOff` is its non-empty test, unchanged answer).
-- `timesheetSignedNoticeText` messages end with `TIMESHEET_SIGNED_NOTICE_INVOICE_NEXT` ("Next: generate your invoice."; `invoiceNext: false` leaves it off). Same type, id, recipients and deep link.
-- `weeklyReportPayRows` check: new `showingSignedFigures` and `awaitingResign`; the state label adds "Awaiting re-sign" (back with the person) or "Awaiting line manager approval — showing last signed figures"; `PayrunSnapshotSheet.bookingsChange` takes `bookingsChanged`, and the Timesheet cell label adds "Awaiting re-sign" or "Awaiting line manager approval". No figure changes (tested).
-- Review of the 1.77.0 branch: a change-details job move against an older signed copy with no place key reads as a job change; a self-signed snapshot gap reads "Not in your signed copy"; the reviewer's revision help keeps the B1 sentence; web announces the whose-turn line to screen readers only when its text changes; iOS passes the real `hasInvoiceDays`, the revision label from `canCreateTimesheetRevision` and `hasLineManager`.
-- Web: the timesheet page shows the whose-turn line (with Generate invoice on a signed-off sheet), the "Changed since you signed" card and one "Correct this timesheet" entry (replacing the separate Make changes and revision buttons).
-
-## iOS work for 1.77.0
-
-Built in iOS PR on branch `ios-1.77-timesheet-clarity` (stacked on the 1.76 branch). Calls through `CanonicalBusinessEngine` only:
-
-1. `Project Planner/Core/Rulebook+TimesheetClarity.swift` — wrappers `timesheetNextStep`, `signedTimesheetChangeDetails`, `timesheetCorrectionOption`, `TIMESHEET_GENERATE_INVOICE_PROMPT`; `SignedTimesheetChanges.changeDetails(...)` (same inputs as the 1.47.0 comparison, plus jobs and entry options); `TimesheetClarityNames` (line manager name through `lineManagerSummary`, named only when there is exactly one).
-2. `Project Planner/Views/TimesheetClarityViews.swift` — `TimesheetNextStepCard`, `TimesheetChangesCard` (three rows, then "Show all (N)"), `TimesheetCorrectionEntryView`.
-3. `Project Planner/Views/InvoicingView.swift` — My Timesheet: whose-turn line at the top (Generate Invoice beside it when the existing button would be enabled), the changes card while the person must sign again or an update is due, one "Correct this timesheet" entry (revision → `createRevisionAndOpen`; late extras → asks price work / expense, then `beginAddingExtra`). Reviewer screen: whose-turn line, changes card while it waits for the line manager or an update is due, and "Correct this timesheet" in place of the two "Make changes" buttons (reopen review → `makingChangesFor`; revision → `createRevisionForPerson`).
-4. `Project Planner/Core/Rulebook+SignedTimesheetChanges.swift` — the report argument carries `bookingsChanged` (point 6 label on the weekly report check line and Payrun Snapshot comes from the rulebook).
-5. `ProjectPlannerTests/Rulebook1770Tests.swift` — the packed script answers for each function.
-6. Review fixes (same branch): `InvoicingView.swift` — the reviewer's correction help names the revision from `canCreateTimesheetRevision(...).nextRevision` (`reviewerRevisionCheck`), and the person's revision entry uses `canCreateTimesheetRevision(... writerIsSubject: true).allowed` (`personRevisionCheck`), as web; `hasInvoiceDays` is the real `timesheetDaysForPerson` answer and `hasLineManager` is `hasActiveLineManager` (`TimesheetClarityNames.hasInvoiceDays` / `.hasLineManager`), passed to `timesheetNextStep` and `timesheetCorrectionOption` ("Waiting for an admin to sign off" with no active line manager). Point 6 wording (owner chose (a)): the weekly report and Payrun Snapshot labels come from the rulebook (`timesheetReportWaiting`, "Awaiting re-sign" / "Awaiting line manager approval…"); nothing to change in Swift beyond passing `waitingFor` (already in `reportArgument`).
+- **Sign-off reminder before payday** (§4.5, §8, §13, owner decision 23 Nov, point 4, before launch; refined the same day): an organisation setting, item 5 "Line manager sign-off reminder" on Settings → Payment runs and timesheets (note → 6, PAYE payday → 7) and in organisation setup — 1, 2 or 3 days before payday (default 2) at 08:00, `invoicing.lineManagerReminderDaysBeforePayday` (`parseLineManagerReminderDays`, `lineManagerReminderDaysValidationError`, `lineManagerReminderWriteFields`, `lineManagerReminderSummary`, `LINE_MANAGER_REMINDER_*`, `parseInvoicing` / `invoicingToFirestore` / `validateInvoicingSettings`). Admin escalation (owner decision 23 Nov, b): `timesheetSignOffEscalationDue` (08:00 the day before payday), `timesheetSignOffEscalationRecipients` (every active admin, every awaiting sheet), `timesheetSignOffEscalationNotice`, `timesheetSignOffEscalationNoticeId`, `TIMESHEET_SIGNOFF_ESCALATION_*`, the note `LINE_MANAGER_REMINDER_ADMIN_NOTE` under item 5; same notification type. New `timesheetSignOffReminderDue`, `timesheetSignOffReminderRecipients`, `timesheetSignOffReminderRosterMember`, `timesheetSignOffReminderNotice`, `timesheetSignOffReminderNoticeId`, `TIMESHEET_SIGNOFF_REMINDER_*` (`lib/canonical/timesheetSignOffReminder.ts`); new notification type `timesheet_signoff_reminder` (push, toggle `timesheetSignOff`, destination `timesheetTeamAwaiting` with the pay run's first day, `relatedId` the payday; in `KNOWN_NOTIFICATION_TYPES`, `DEVICE_PUSH_NOTIFICATION_TYPES`, `NOTIFICATION_CATALOG`, `NOTIFICATION_RELATED_ID`; not a scheduled type — written when due, so it pushes). Written by the new scheduled Cloud Function `timesheetSignOffReminders` (functions/timesheetSignOffReminder.js). Judgement calls: due until payday; admins are reminded only for people with no active line manager; names in the inbox-only detail.
+- **Review of #429 (same version; owner 23 Nov answered judgement calls 2 and 4 "fix"):** 08:00 is the wall-clock time on the day in the organisation zone (new `wallTimeInZone`), never midnight + 8 hours, which a clock change that night moved to 07:00 or 09:00 — the same fix in the timesheet submission reminder's notify time (`dueTimesheetSubmissionNotices`, 08:00 on clock-change days only). A sheet a booking change sent back to the person is not counted: the function reads the run's bookings and the rule judges each sheet with `signedTimesheetBookingChanges` over lines from the new `timesheetLiveLinesFromBookings` (the booking-on-the-sheet test `timesheetBookingSheetTest` is now shared with `timesheetBookingChangeNotice`, same behaviour); new `TimesheetSignOffReminderRecipientsInput` fields `bookings`, `bookingsLoaded`, `tombstonedBookingIds`, `operatives`, and `endExclusiveMs` on each run. Members through the `members` map (and the creator) are read by id and take their level and self-manage toggles here (`timesheetSignOffReminderRosterMember` takes `membersRole` / `membership`; `organizationLevelFor`, `organizationSelfManageFlags`; organisation read with `documentOrganizationId`). The notice ids drop the payday (moving the payday never re-sends). The function processes four organisations at a time, logs when a limit is reached, and also finds sheets whose `weekStart` is stored as text.
 
 ## New rulebook sections
 
+- 1.77.0 — 2026-11-23
 - 1.75.0 — 2026-11-23
 - 1.73.2 — 2026-11-23
 

@@ -75,3 +75,8 @@ test('web falls back when a record id is missing and unknown types open the inbo
     '/dashboard/clients/C1'
   )
 })
+
+test('1.78.0 timesheet_signoff_reminder opens User Timesheets → Awaiting sign-off for that pay run', () => {
+  const href = inboxNotificationHref({ type: 'timesheet_signoff_reminder', relatedId: '2026-12-05', dayKey: '2026-11-16' }, user({ manager: true }))
+  assert.equal(href, '/dashboard/timesheets/team?tab=awaiting&period=2026-11-16')
+})

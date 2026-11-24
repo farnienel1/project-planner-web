@@ -20036,3 +20036,13 @@ test('1.77.0 point 6 (owner chose (a), 23 Nov): who a report says the sheet wait
     `${R112.PAYRUN_SNAPSHOT_STATE_LABELS.submitted} · Awaiting line manager approval`
   )
 })
+
+test('1.78.0 sign-off reminder is in the packed rulebook (functions and iOS call it; full cases in timesheetSignOffReminder.test.ts)', () => {
+  const due = R112.timesheetSignOffReminderDue({
+    invoicing: { paymentRunMode: 'date_ranges', paymentRunDateRanges: [{ startDay: 1, endDay: 15 }, { startDay: 16, endDay: 31 }], paymentDates: [20, 5] },
+    now: zoneMidnight112('2026-12-03', 'Europe/London').getTime() + 8 * 3_600_000,
+    timeZone: 'Europe/London',
+  })
+  assert.deepEqual(due.runs.map((row) => row.paymentDayKey), ['2026-12-05'])
+  assert.equal(R112.notificationDeliversDevicePush(R112.TIMESHEET_SIGNOFF_REMINDER_NOTICE_TYPE), true)
+})

@@ -2316,11 +2316,14 @@ export {
   TIMESHEET_BOOKINGS_CHANGED_NOTICE_TITLE,
   TIMESHEET_BOOKINGS_CHANGED_NOTICE_TYPE,
   timesheetBookingChangeNotice,
+  timesheetBookingSheetTest,
   timesheetBookingWriteMatters,
   timesheetBookingsChangedNoticeId,
   timesheetBookingsChangedRecipients,
+  timesheetLiveLinesFromBookings,
   timesheetRevisionDueNoticeId,
 } from './timesheetBookingNotice'
+export type { TimesheetBookingOnSheet, TimesheetLiveBookingDocument } from './timesheetBookingNotice'
 // Rulebook 1.54.0 §8 / §11: Settings → Data health "Timesheets half signed".
 export {
   TIMESHEETS_HALF_SIGNED_HEADING,
@@ -2493,3 +2496,44 @@ export type {
   TimesheetReportWaiting,
 } from './timesheetClarity'
 export type { TimesheetSignedEntryChange } from './timesheetLateExtras'
+
+// Rulebook 1.78.0 §8 / §13: the sign-off reminder to line managers before payday.
+export {
+  TIMESHEET_SIGNOFF_REMINDER_DAYS_BEFORE_PAYMENT,
+  TIMESHEET_SIGNOFF_REMINDER_HOUR,
+  TIMESHEET_SIGNOFF_REMINDER_MINUTE,
+  TIMESHEET_SIGNOFF_REMINDER_NOTICE_TITLE,
+  TIMESHEET_SIGNOFF_REMINDER_NOTICE_TYPE,
+  TIMESHEET_SIGNOFF_ESCALATION_DAYS_BEFORE_PAYMENT,
+  TIMESHEET_SIGNOFF_ESCALATION_NOTICE_TITLE,
+  timesheetSignOffEscalationDue,
+  timesheetSignOffEscalationNotice,
+  timesheetSignOffEscalationNoticeId,
+  timesheetSignOffEscalationRecipients,
+  timesheetSignOffReminderDue,
+  timesheetSignOffReminderNotice,
+  timesheetSignOffReminderNoticeId,
+  timesheetSignOffReminderRecipients,
+  timesheetSignOffReminderRosterMember,
+} from './timesheetSignOffReminder'
+export {
+  DEFAULT_LINE_MANAGER_REMINDER_DAYS,
+  LINE_MANAGER_REMINDER_ADMIN_NOTE,
+  LINE_MANAGER_REMINDER_DAYS_LABEL,
+  LINE_MANAGER_REMINDER_DAYS_OPTIONS,
+  LINE_MANAGER_REMINDER_HELP,
+  LINE_MANAGER_REMINDER_HOUR,
+  LINE_MANAGER_REMINDER_LABEL,
+  LINE_MANAGER_REMINDER_MINUTE,
+  lineManagerReminderDaysValidationError,
+  lineManagerReminderSummary,
+  lineManagerReminderWriteFields,
+  parseLineManagerReminderDays,
+} from './organizationSettings'
+export type {
+  TimesheetSignOffReminderMember,
+  TimesheetSignOffReminderRecipient,
+  TimesheetSignOffReminderRecipientsInput,
+  TimesheetSignOffReminderRun,
+  TimesheetSignOffReminderSheet,
+} from './timesheetSignOffReminder'

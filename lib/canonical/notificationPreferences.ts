@@ -123,6 +123,8 @@ const TYPE_TO_PREFERENCE: Record<string, NotificationPreferenceKey> = {
   timesheet_bookings_changed: 'timesheetSignOff',
   // 1.55.0 (§8, §13, owner decision 16 Nov): a revision of the person's exported timesheet to sign.
   timesheet_revision_to_sign: 'timesheetSignOff',
+  // 1.78.0 (§8, §13, owner decision 23 Nov): reminder to line managers before payday (written by a Cloud Function).
+  timesheet_signoff_reminder: 'timesheetSignOff',
   qualification_expiry: 'qualificationExpiry',
   line_manager_peer_update: 'lineManagerPeerUpdates',
   [TIMESHEET_SUBMISSION_NOTICE_TYPE]: 'timesheetSubmissionReminder',
@@ -441,6 +443,8 @@ export const DEVICE_PUSH_NOTIFICATION_TYPES = [
   'timesheet_bookings_changed',
   // 1.55.0: "Your timesheet has a revision to sign".
   'timesheet_revision_to_sign',
+  // 1.78.0: "Timesheets waiting for your sign-off" before payday (timesheetSignOffReminders Cloud Function).
+  'timesheet_signoff_reminder',
   'toolbox_talk_issued',
   'hs_toolbox_reminder',
   'material_order_placed',
@@ -722,6 +726,9 @@ export function notificationDestination(input: NotificationDestinationInput): No
     // 1.55.0: a revision to sign — My Timesheets on that pay run, which opens its latest version (the revision).
     case 'timesheet_revision_to_sign':
       return { kind: 'timesheetMine', userId, dayKey }
+    // 1.78.0: User Timesheets → Awaiting sign-off on that pay run (dayKey = its first day; no one person).
+    case 'timesheet_signoff_reminder':
+      return { kind: 'timesheetTeamAwaiting', dayKey }
     case 'line_manager_peer_update':
       if (userId || dayKey) return { kind: 'timesheetTeamSigned', userId, dayKey }
       return { kind: 'annualLeave' }

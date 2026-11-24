@@ -19,6 +19,7 @@ import {
   type PaymentRunDateRange,
 } from '@/lib/settings/organizationSettings'
 import { TimesheetSubmissionSection } from '@/components/settings/TimesheetSubmissionSection'
+import { LineManagerReminderSection } from '@/components/settings/LineManagerReminderSection'
 import { withPaymentDateAt, withRecurringPaymentDay } from '@/lib/settings/timesheetSubmissionDraft'
 
 type PaymentRunsSetupSectionProps = {
@@ -275,6 +276,8 @@ export function PaymentRunsSetupSection({
       </SetupCard>
 
       <TimesheetSubmissionSection draft={value} onChange={patch} />
+
+      <LineManagerReminderSection draft={value} onChange={patch} />
 
       <SetupCard>
         <div className="space-y-2 p-4">
