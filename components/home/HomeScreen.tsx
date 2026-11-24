@@ -660,7 +660,7 @@ export function HomeScreen() {
     [complianceAllowed, complianceDocuments, complianceTodayKey]
   )
 
-  // Rulebook 1.85.0 §32: the Getting started card (admins; `onboardingChecklist` over what Home already loads).
+  // Rulebook 1.85.0 §33: the Getting started card (admins; `onboardingChecklist` over what Home already loads).
   const onboarding = useMemo(() => {
     if (!displayUser || pauseHomeLoads || !orgId) return null
     // The same admin rule as iOS (`canManageOrganizationCompliance`: admin level, a stray operative flag ignored).

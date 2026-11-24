@@ -260,7 +260,7 @@ export const ORGANIZATION_DOCUMENT_FIELDS = [
   'warningDetection',
   'invoicing',
   'settings',
-  /** 1.85.0 (§32): an admin hid the Getting started card (`onboardingDismissWriteFields`). */
+  /** 1.85.0 (§33): an admin hid the Getting started card (`onboardingDismissWriteFields`). */
   'onboardingDismissedAt',
   'onboardingDismissedBy',
 ] as const

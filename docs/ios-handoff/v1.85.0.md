@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.83.0 → 1.85.0
-Packed hash: f7b1c009276f5dca052401495d00980e94d38a155db49118467497ce58d75664
-Rulebook sha256: 3994ebf52f28fa91514ddff58b2fbd904abcd8eb3fda2a6a2656c18ee4f3b5fe
+Rulebook version: 1.84.0 → 1.85.0
+Packed hash: baa36c96da52162ec17ab8963c320a066b0defbcb22dd47607171373aefdcb10
+Rulebook sha256: 970bf206de5099894da4faeea7d315a58a8492d00c748a373901aed26660faec
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -26,8 +26,8 @@ Exports added: ONBOARDING_DISMISSED_AT_FIELD, ONBOARDING_DISMISSED_BY_FIELD, ONB
 Exports removed: none
 Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/index.ts, lib/canonical/onboardingChecklist.test.ts, lib/canonical/onboardingChecklist.ts, lib/canonical/orgComplianceReminders.test.ts, lib/canonical/orgComplianceReminders.ts, lib/canonical/organizationSettings.ts
 Done when:
-- [ ] Packed hash in iOS equals f7b1c009276f5dca052401495d00980e94d38a155db49118467497ce58d75664
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 3994ebf52f28fa91514ddff58b2fbd904abcd8eb3fda2a6a2656c18ee4f3b5fe)
+- [ ] Packed hash in iOS equals baa36c96da52162ec17ab8963c320a066b0defbcb22dd47607171373aefdcb10
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 970bf206de5099894da4faeea7d315a58a8492d00c748a373901aed26660faec)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.85.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -37,7 +37,7 @@ Done when:
 ## What changed in 1.85.0
 
 - **Insurance & accreditation expiry emails** (§31, owner decision 24 Nov: 2 months, 1 month and 7 days, never twice; only thresholds still ahead when the expiry was set). New `lib/canonical/orgComplianceReminders.ts`: `ORG_COMPLIANCE_REMINDER_THRESHOLDS`, `orgComplianceReminderDayKey`, `orgComplianceReminderSetDayKey`, `orgComplianceRemindersDue`, `parseOrgComplianceReminderLedger`, `orgComplianceReminderLedgerAfter`, `orgComplianceReminderLedgerFields`, `orgComplianceReminderLedgerPath`, `orgComplianceReminderRecipients`, `orgComplianceReminderEmail`, `orgComplianceReminderBatchTag`, `ORG_COMPLIANCE_PAGE_PATH`, `orgComplianceRemindersEnabled`, `ORG_COMPLIANCE_REMINDERS_SWITCH_FIELD`. Daily Cloud Function `orgComplianceExpiryReminders` (`functions/orgComplianceReminders.js`), off until `platformConfig/app.orgComplianceRemindersEnabled` (§18).
-- **Getting started checklist** (new §32, owner 24 Nov): `lib/canonical/onboardingChecklist.ts` — `onboardingChecklist`, `onboardingCardVisible`, `onboardingDismissed`, `onboardingDismissWriteFields`, `ONBOARDING_*` copy. `ORGANIZATION_DOCUMENT_FIELDS` lists `onboardingDismissedAt`, `onboardingDismissedBy`. Web: the card at the top of Home (admins) and on the setup wizard's last screen.
+- **Getting started checklist** (new §33, owner 24 Nov): `lib/canonical/onboardingChecklist.ts` — `onboardingChecklist`, `onboardingCardVisible`, `onboardingDismissed`, `onboardingDismissWriteFields`, `ONBOARDING_*` copy. `ORGANIZATION_DOCUMENT_FIELDS` lists `onboardingDismissedAt`, `onboardingDismissedBy`. Web: the card at the top of Home (admins) and on the setup wizard's last screen.
 - Owner answer 24 Nov (same version): a threshold on the very day the expiry is set counts as still ahead and is sent that day (an expiry set exactly 7 days, 1 month or 2 months away); a threshold already passed is never sent.
 - Review of #447 / #294 (same version): the reminder ledger is claimed before sending and released only when nothing was accepted (at most once); the idempotency key carries the documents and thresholds (`orgComplianceReminderBatchTag`); the dry run records set days; duplicate entry ids skipped; greeting from the stored first name only; failures logged by status only. Web Home asks `canManageOrganizationCompliance`; Hide never waits for the server.
 
@@ -55,7 +55,7 @@ The expiry emails (§31) are server-only: nothing to build on iOS.
 
 ## New rulebook sections
 
-- 32. Getting started checklist (1.85.0)
+- 33. Getting started checklist (1.85.0)
 - 1.85.0 — 2026-11-24
 
 ## Workflow for the iOS agent

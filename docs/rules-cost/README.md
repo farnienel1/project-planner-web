@@ -124,3 +124,11 @@ Scratch harnesses (not in the repo):
   - `grid.sh RULES TAG` writes the grid to `mxg-TAG`;
   - the base results are in `out/base` and `mxg-base`.
 - `…/r1313/expr/run.sh RULES TAG`: expression counts.
+
+## 1.84.0: equivalence check and headroom scripts
+
+`scripts/rules-cost/equiv.py FILE` prints, per match path and method, the allow condition with every function and `let` substituted and parentheses normalised. Two files with identical output decide every request the same way (the rules language has no side effects and lets are lazy). Use it for any refactor meant to change no decision: `python3 scripts/rules-cost/equiv.py old.rules > a; python3 scripts/rules-cost/equiv.py firestore.rules > b; cmp a b`. A renamed match variable must be renamed in the old file first (`headroom_rename.py old.rules old-renamed.rules organizationId orgId`).
+
+`headroom_hoist.py`, `headroom_dedup.py`, `headroom_inl.py`, `headroom_inla.py` are the 1.84.0 transformations (docs/firestore-rules-notes.md "1.84.0 headroom"); run by hand, each output checked with `equiv.py`, the emulator type check (10 lets per function at most) and the suites.
+
+`let` bindings count towards the 1,000-expression limit even when unused, so the 1.84.0 run passed `PROTECT=scripts/rules-cost/headroom_protected.txt` (the functions reachable from the `users`, `orgMemberships`, organisation-root and `settings` allows) to `headroom_hoist.py`, `headroom_dedup.py` and `headroom_inl.py`, and `SKIP=orgCreateShape` to `headroom_inla.py` (`ALLOWDUP=1`, which copies a let used twice, raised run-time expressions and is not used). Always finish with `RULES_STRICT_BUDGET=1 npm run test:rules`.

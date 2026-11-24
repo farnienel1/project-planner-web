@@ -1,10 +1,16 @@
 'use client'
 
+import { useEffect } from 'react'
+import { reportClientError } from '@/lib/clientErrors/reportClientError'
+
 /**
  * Last-resort error screen: an exception in the root layout itself. It replaces the whole document, so it carries
  * its own <html>/<body> and inline styles (globals.css may not have loaded).
  */
 export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+  useEffect(() => {
+    void reportClientError('boundary', error)
+  }, [error])
   return (
     <html lang="en-GB">
       <body

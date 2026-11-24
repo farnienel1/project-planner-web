@@ -1,5 +1,5 @@
 /**
- * Rulebook 1.85.0 §32 (owner 24 Nov: an onboarding checklist for new companies): a "Getting started" card at the top
+ * Rulebook 1.85.0 §33 (owner 24 Nov: an onboarding checklist for new companies): a "Getting started" card at the top
  * of Home for admins, and the same list on the setup wizard's last screen, on web and iOS.
  *
  * Six items that tick themselves off from real data — never a stored tick:

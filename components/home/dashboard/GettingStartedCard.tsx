@@ -1,5 +1,5 @@
 /**
- * Rulebook 1.85.0 §32: the "Getting started" checklist (`onboardingChecklist`). The card at the top of Home for admins
+ * Rulebook 1.85.0 §33: the "Getting started" checklist (`onboardingChecklist`). The card at the top of Home for admins
  * (`onboardingCardVisible`), and the same list on the setup wizard's last screen (`OnboardingChecklistList`).
  * Presentational, apart from the admin's Hide (`onboardingDismissWriteFields`, one partial update of the organisation).
  */

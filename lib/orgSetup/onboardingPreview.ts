@@ -1,5 +1,5 @@
 /**
- * Rulebook 1.85.0 §32: the Getting started list on the setup wizard's last screen (Review & Pay), from the wizard's
+ * Rulebook 1.85.0 §33: the Getting started list on the setup wizard's last screen (Review & Pay), from the wizard's
  * draft as it will be written (`orgSetupSettingsToFirestoreFields`), through the one rule (`onboardingChecklist`).
  * The company has no other people, invitations or documents yet; the guided project counts as its first job.
  */
