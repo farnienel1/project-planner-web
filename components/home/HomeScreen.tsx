@@ -26,6 +26,8 @@ import { WaitingForYouCard, type WaitingItem } from '@/components/home/dashboard
 import { canManageOrganizationCompliance, orgComplianceCounts, orgComplianceReminder } from '@/lib/canonical/orgCompliance'
 import { useComplianceTodayKey, useOrgComplianceDocuments } from '@/components/settings/panels/InsuranceAccreditationsPanel'
 import { QuickActionsCard } from '@/components/home/dashboard/QuickActionsCard'
+import { GettingStartedCard } from '@/components/home/dashboard/GettingStartedCard'
+import { onboardingCardVisible, onboardingChecklist } from '@/lib/canonical/onboardingChecklist'
 import { UpNextCard } from '@/components/home/dashboard/UpNextCard'
 import { canViewSiteMap } from '@/lib/navigation/menuPermissions'
 
@@ -658,6 +660,39 @@ export function HomeScreen() {
     [complianceAllowed, complianceDocuments, complianceTodayKey]
   )
 
+  // Rulebook 1.85.0 §32: the Getting started card (admins; `onboardingChecklist` over what Home already loads).
+  const onboarding = useMemo(() => {
+    if (!displayUser || pauseHomeLoads || !orgId) return null
+    const viewerIsAdmin = hasAdminAccess(displayUser) && !isOperativeMode(displayUser)
+    if (!viewerIsAdmin) return null
+    const orgData = liveOrganization.organizationId === orgId && liveOrganization.loaded && !liveOrganization.error ? liveOrganization.data : null
+    if (!orgData) return null
+    const creatorUserId = String((orgData as Record<string, unknown>).creatorUserId ?? '').trim().toLowerCase()
+    const checklist = onboardingChecklist(orgData, {
+      people: rosterReady ? users.filter((member) => String(member.id ?? '').trim().toLowerCase() !== creatorUserId).length : null,
+      pendingInvites: rosterReady ? 0 : null,
+      jobs: projectsReady ? projects.length + smallWorks.length : null,
+      complianceDocuments: complianceAllowed && complianceDocuments ? orgComplianceCounts(complianceDocuments, complianceTodayKey).total : null,
+    })
+    return onboardingCardVisible({ checklist, viewerIsAdmin, org: orgData }) ? checklist : null
+  }, [
+    displayUser,
+    pauseHomeLoads,
+    orgId,
+    liveOrganization.organizationId,
+    liveOrganization.loaded,
+    liveOrganization.error,
+    liveOrganization.data,
+    rosterReady,
+    users,
+    projectsReady,
+    projects,
+    smallWorks,
+    complianceAllowed,
+    complianceDocuments,
+    complianceTodayKey,
+  ])
+
   // ---- Waiting for you (owner decision 12): only items whose data Home already has. ----
   const waitingItems = useMemo<WaitingItem[]>(() => {
     if (!displayUser || pauseHomeLoads) return []
@@ -821,6 +856,12 @@ export function HomeScreen() {
         onWeeklyReport={showWeekly ? () => router.push('/dashboard/weekly-report') : undefined}
         onBookLabour={showBook ? () => router.push('/dashboard/book-labour') : undefined}
       />
+
+      {onboarding ? (
+        <div className="dash-row single">
+          <GettingStartedCard checklist={onboarding} organizationId={orgId} userId={user.id} />
+        </div>
+      ) : null}
 
       {admin && taskLimitProjects.length > 0 ? (
         <div className="dash-alert" role="alert">

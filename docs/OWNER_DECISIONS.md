@@ -1567,3 +1567,23 @@ The owner's answers of 24 Nov (items 1, 2, 5, 9 of the list sent that day) and c
 | 24 Nov | Review of #440: with the switch off, a job past its end date that has people booked that day is still shown (it is being worked on). | done |
 | 24 Nov | Review of #440: the Home card (admins, loaded after the rest of Home) now calls postcodes.io for jobs not yet cached in that browser, so a pin shows without opening the full map. A lookup that cannot be reached is shown as "Couldn’t reach the postcode lookup — retry" (counted apart on Home), retried on Retry, back online or back on the tab; never treated as "not found". | done, owner to confirm |
 | 24 Nov | The site map's people count now also folds `managers` rows (rulebook §21 `siteMapPins` asks for them; the page did not pass them), so a person under a users id and a managers row counts once. | done |
+
+## 24 Nov decisions (for 1.85, expiry emails and Getting started)
+
+| Date | Decision | Status |
+|---|---|---|
+| 24 Nov | **Insurance & accreditation expiry emails, before launch** (owner): the organisation's admins are emailed 2 months, 1 month and 7 days before a document expires; a reminder only for thresholds still ahead when the expiry was set or the document added (owner example: expiry set 1 month and 2 days away → no 2-month email, only 1 month and 7 days); never twice for the same document, expiry and threshold; a changed expiry starts again from the new date; removed documents get nothing. Rule: `orgComplianceRemindersDue` (§31). Daily Cloud Function `orgComplianceExpiryReminders`, off until `platformConfig/app.orgComplianceRemindersEnabled` is true (dry-run log until then). | done web + rulebook + function (1.85.0, w185-reminders-onboarding, draft); Functions deploy and switch-on pending |
+| 24 Nov | **Getting started checklist for new companies** (owner asked where; built as a card at the top of Home for admins, as recommended): a progress bar ("3 of 6 done") and six items that tick themselves off from real data — company details and logo, working hours, PAYE payday and payment runs, invite your team, first project or small works, insurance & accreditations (optional) — each opening its screen; an admin can hide it for the company; hidden automatically once every required item is done; the setup wizard's last screen shows the same list. Rule: `onboardingChecklist` / `onboardingCardVisible` (§32). | done web + rulebook (1.85.0, draft); iOS Home card (ios-1.85-reminders-onboarding, draft) |
+
+## 1.85.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 24 Nov | Only the current band is sent: when the emails were off (or missed) for a while, the most urgent due threshold is sent, never a stale 2-month one beside a 7-day one; an expiry day itself still gets the 7-day email if it was missed. | done, owner to confirm |
+| 24 Nov | One email per admin per day listing every document due that day (not one email per document). Admins = active admins and super admins outside operative mode, signed up, never a ghost or pending invite, one per address. Managers never get it. | done, owner to confirm |
+| 24 Nov | A reminder counts as sent once at least one admin's email was accepted; an admin whose email failed that day is logged, not retried on a later day. | done, owner to confirm |
+| 24 Nov | No inbox row or push with the email: a new notification type needs both apps' type lists (follow-up if wanted). | done, owner to confirm |
+| 24 Nov | Known limit: a document added before 1.85.0 whose name or other details were edited after a threshold day reads that edit day as the day its expiry was set, so that one threshold is not sent. | known limit |
+| 24 Nov | Getting started: "3 of 6 done" counts the optional item; the card hides when the five required items are done even if accreditations are not. "Invite your team" is done as soon as one person besides the creator is on the roster (signed up or invited). Hiding is for the whole company, by any admin, with no way to show it again yet (every step stays in Settings). | done, owner to confirm |
+| 24 Nov | The card is not limited by the company's age: an existing company with a required item still open (most likely a missing logo or office address) also sees it once, until an admin hides it or finishes the step. | done, owner to confirm |
+| 24 Nov | The setup wizard's "last screen" is Review & Pay (the screen after payment only redirects); the list there is read-only (no links: the person is not signed in to the app yet). | done, owner to confirm |
