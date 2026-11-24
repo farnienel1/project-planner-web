@@ -91,13 +91,13 @@ function stubBackend(options: {
   return calls
 }
 
-function request(): NextRequest {
+function request(body: Record<string, unknown> = { uid: 'victim', reason: 'Abandoned sign-up' }): NextRequest {
   const req = new NextRequest('http://localhost/api/owner/delete-unfinished-user', {
     method: 'POST',
     headers: { authorization: 'Bearer token', 'content-type': 'application/json' },
-    body: JSON.stringify({ uid: 'victim' }),
+    body: JSON.stringify(body),
   })
-  req.cookies.set(mfaCookieName('ok', shouldSecureMfaCookies(req)), encodeMfaOk('owner-uid', Date.now() + 60_000))
+  req.cookies.set(mfaCookieName('ok', shouldSecureMfaCookies(req)), encodeMfaOk('owner-uid', Date.now() + 60_000, Date.now()))
   return req
 }
 
@@ -209,4 +209,12 @@ test('PLAN A4: the delete is recorded as requested, then completed, with one req
   // The email is masked in the stored entry.
   assert.match(requested.before.stringValue, /g•••@example\.com/)
   assert.ok(calls.some((call) => call.method === 'DELETE'))
+})
+
+test('review of #434: a reason (3–500 characters) is required before anything is read or written', async () => {
+  const calls = stubBackend({ serverKey: true, userFields: abandonedUser })
+  const response = await POST(request({ uid: 'victim' }))
+  assert.equal(response.status, 400)
+  assert.equal(deleted(calls), false)
+  assert.equal(calls.some((call) => call.url.includes('/adminAuditLog') || call.url.includes('/documents/')), false)
 })

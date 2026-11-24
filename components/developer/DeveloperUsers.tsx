@@ -1,183 +1,225 @@
 'use client'
 
+import { LONDON_TIME_ZONE } from '@/lib/orgTime/zoneTime'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { useAnalyticsStore } from '@/lib/analytics/analyticsStore'
-import { directoryActiveUsers } from '@/lib/analytics/aggregations'
-import { resolveDateRange } from '@/lib/analytics/dateRange'
-import { formatOwnerWhen, matchesOwnerSearch, ownerPersonName, ownerRoleLabel } from '@/lib/analytics/ownerDirectory'
-import { rosterStatusLabel } from '@/lib/staff/userRosterUtils'
-import { DateRangePicker } from '@/components/developer/DeveloperOverview'
-import { DeveloperShell, DeveloperStatus, MetricCard } from '@/components/developer/DeveloperShell'
+import { DeveloperShell } from '@/components/developer/DeveloperShell'
 import { EmptyState, LoadingSpinner, SearchField } from '@/components/dashboard/PageShell'
-import type { DateRangePreset } from '@/lib/analytics/events'
-import { MaskedEmail } from '@/components/developer/MaskedEmail'
-import { emailTypoHint } from '@/lib/auth/emailTypo'
 import { useConsolePrefs } from '@/lib/analytics/consolePrefs'
-import { isTestPerson, testOrganisationIds } from '@/lib/owner/testData'
-import { unfinishedSetupLabel } from '@/lib/owner/unfinishedSetup'
-import { auditOwnerAction } from '@/lib/owner/ownerActions'
-import { OwnerUserAccountMenu } from '@/components/developer/OwnerUserAccountMenu'
-import { collapseDirectoryUsers } from '@/lib/owner/collapseDirectoryUsers'
-import { emailsMatchIgnoreMask } from '@/lib/auth/maskEmail'
+import { CONSOLE_PERIODS, type ConsolePeriodId } from '@/lib/analytics/consolePeriod'
+import { ownerGet } from '@/lib/owner/client/ownerApi'
+import {
+  OWNER_PEOPLE_FILTERS,
+  OWNER_PEOPLE_SORTS,
+  type DirectoryPage,
+  type OwnerPeopleFilter,
+  type OwnerPeopleSort,
+  type OwnerPersonRow,
+} from '@/lib/owner/directory'
 
+type PeopleResponse = DirectoryPage<OwnerPersonRow> & { truncated: boolean; seenLabel: string | null; joinedLabel: string | null }
+
+const FILTER_LABEL: Record<OwnerPeopleFilter, string> = { all: 'Everyone', active: 'Active', inactive: 'Inactive', pending: 'Pending', test: 'Test' }
+const SORT_LABEL: Record<OwnerPeopleSort, string> = { name: 'Name', lastSeen: 'Last seen', created: 'Newest' }
+const SEGMENT_LABEL: Record<string, string> = { active: 'Active', inactive: 'Inactive', pending: 'Pending' }
+
+function periodParam(raw: string | null): ConsolePeriodId | null {
+  return raw && CONSOLE_PERIODS.some((item) => item.id === raw) ? (raw as ConsolePeriodId) : null
+}
+
+function when(ms: number | null): string {
+  if (!ms) return 'Never'
+  return new Date(ms).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: LONDON_TIME_ZONE })
+}
+
+/**
+ * People (spec §4.4, owner console PR 5): one row per person across every organisation, from the server directory
+ * (rulebook `rosterPeople`, one per email). `?seen=<period>` / `?joined=<period>` are the lists the Overview's
+ * "Active people" and "New people" tiles open; their total is the tile's figure. Each row opens the person page,
+ * where the actions are.
+ */
 export function DeveloperUsersScreen() {
-  const [preset, setPreset] = useState<DateRangePreset>('all_time')
-  const [query, setQuery] = useState('')
-  const [notice, setNotice] = useState('')
   const searchParams = useSearchParams()
-  const range = useMemo(() => resolveDateRange(preset), [preset])
-  const { organisations, users, loading, error, load, refresh } = useAnalyticsStore()
-  const { includeTestData, showFullEmails, setShowFullEmails, jumpQuery } = useConsolePrefs()
+  const seen = periodParam(searchParams.get('seen'))
+  const joined = periodParam(searchParams.get('joined'))
+  const { includeTestData, jumpQuery } = useConsolePrefs()
+  const [query, setQuery] = useState(jumpQuery)
+  const [debounced, setDebounced] = useState(jumpQuery)
+  const [filter, setFilter] = useState<OwnerPeopleFilter>('all')
+  const [sort, setSort] = useState<OwnerPeopleSort>(seen ? 'lastSeen' : joined ? 'created' : 'name')
+  const [rows, setRows] = useState<OwnerPersonRow[]>([])
+  const [page, setPage] = useState<PeopleResponse | null>(null)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [tick, setTick] = useState(0)
+
+  useEffect(() => setQuery(jumpQuery), [jumpQuery])
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(query.trim()), 300)
+    return () => window.clearTimeout(timer)
+  }, [query])
+
+  const params = useMemo(
+    () => ({ q: debounced, filter, sort, includeTestData, seen: seen || undefined, joined: joined || undefined }),
+    [debounced, filter, sort, includeTestData, seen, joined]
+  )
 
   useEffect(() => {
-    void load()
-  }, [load])
+    const controller = new AbortController()
+    setLoading(true)
+    ownerGet<PeopleResponse>('/api/owner/directory/people', { ...params, refresh: tick > 0 }, controller.signal)
+      .then((value) => {
+        setPage(value)
+        setRows(value.rows)
+        setError('')
+      })
+      .catch((err: unknown) => {
+        if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'Could not load people.')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false)
+      })
+    return () => controller.abort()
+  }, [params, tick])
 
-  const orgName = useMemo(() => {
-    const map = new Map(organisations.map((org) => [org.id, org]))
-    return (id: string, email?: string) => {
-      const org = map.get(id)
-      if (org?.unfinishedSetup || !org) return unfinishedSetupLabel(email, showFullEmails)
-      return org.name
+  const loadMore = async () => {
+    if (!page?.nextCursor) return
+    setLoading(true)
+    try {
+      const next = await ownerGet<PeopleResponse>('/api/owner/directory/people', { ...params, cursor: page.nextCursor })
+      setPage(next)
+      setRows((current) => [...current, ...next.rows])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load more people.')
+    } finally {
+      setLoading(false)
     }
-  }, [organisations, showFullEmails])
-
-  const filteredUsers = useMemo(() => {
-    const testOrgIds = testOrganisationIds(organisations)
-    const source = includeTestData ? users : users.filter((user) => !isTestPerson(user, testOrgIds))
-    return collapseDirectoryUsers(source).users
-  }, [includeTestData, users, organisations])
-
-  const visible = useMemo(() => {
-    const needle = (query || jumpQuery).trim()
-    return [...filteredUsers]
-      .sort((a, b) => ownerPersonName(a).localeCompare(ownerPersonName(b)))
-      .filter((user) =>
-        matchesOwnerSearch(
-          [ownerPersonName(user), user.email, orgName(user.organizationId, user.email), user.organizationId, user.role],
-          needle
-        ) || emailsMatchIgnoreMask(user.email, needle)
-      )
-  }, [filteredUsers, query, jumpQuery, orgName])
-
-  if (loading && users.length === 0 && !error) {
-    return <LoadingSpinner label="Loading users…" />
   }
+
+  if (loading && !page && !error) return <LoadingSpinner label="Loading people…" />
+
+  const windowLabel = page?.seenLabel ? `Seen ${page.seenLabel.toLowerCase()}` : page?.joinedLabel ? `Joined ${page.joinedLabel.toLowerCase()}` : null
+  const fix = searchParams.get('fix')
 
   return (
     <DeveloperShell
-      title="Users"
+      title="People"
       actions={
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            className={`btn sm ${showFullEmails ? 'primary' : 'ghost'}`}
-            onClick={() => {
-              const next = !showFullEmails
-              setShowFullEmails(next)
-              if (next) void auditOwnerAction('reveal_all_emails', { reason: 'users_table' })
-            }}
-          >
-            {showFullEmails ? 'Hide full emails' : 'Show full emails'}
-          </button>
-          <button type="button" className="btn sm ghost" onClick={() => void refresh()} disabled={loading}>
-            {loading ? 'Refreshing…' : 'Refresh'}
-          </button>
-        </div>
+        <button type="button" className="btn sm ghost" onClick={() => setTick((value) => value + 1)} disabled={loading}>
+          {loading ? 'Refreshing…' : 'Refresh'}
+        </button>
       }
     >
       <p className="text-sm text-(--ink2)">
-        Every live account across every organisation. Emails are masked until you reveal them. Each reveal is written to
-        the audit log.
+        One row per person across every organisation (people with the same email are one person). Emails are masked; open a
+        person to reveal theirs (logged) and for the actions.
       </p>
-      {searchParams.get('fix') ? (
+      {fix ? (
         <p className="banner" data-hue="warn">
-          Open support request for user {searchParams.get('fix')}. Use ⋯ to change their login email or send a password
-          reset.
+          Open support request for user {fix}.{' '}
+          <Link className="font-semibold" href={`/developer/users/${encodeURIComponent(fix)}`}>
+            Open this person
+          </Link>{' '}
+          to change their login email or send a password reset.
         </p>
       ) : null}
-      {notice ? (
-        <p className="banner" data-hue="green">
-          {notice}
+      {windowLabel ? (
+        <p className="flex flex-wrap items-center gap-2 text-sm" data-testid="people-window">
+          <span className="chip">{windowLabel}</span>
+          <Link href="/developer/users" className="pu-link">
+            Show everyone
+          </Link>
         </p>
       ) : null}
-      <DateRangePicker preset={preset} onChange={setPreset} />
-      <SearchField value={query} onChange={setQuery} placeholder="Search users, emails or organisations" />
-      <DeveloperStatus error={error} loading={loading && users.length > 0} />
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <MetricCard label="Registered users" value={filteredUsers.length} />
-        <MetricCard label="Active in range" value={directoryActiveUsers(filteredUsers, range)} hint="From last-seen on user records" />
-        <MetricCard label="Organisations" value={organisations.length} href="/developer/organisations" />
+      <div className="flex flex-wrap items-center gap-2">
+        <SearchField value={query} onChange={setQuery} placeholder="Search name, email, user id or organisation" />
+        <label className="flex items-center gap-1 text-sm">
+          Show
+          <select className="pp-in" value={filter} onChange={(event) => setFilter(event.target.value as OwnerPeopleFilter)} data-testid="people-filter">
+            {OWNER_PEOPLE_FILTERS.map((value) => (
+              <option key={value} value={value}>
+                {FILTER_LABEL[value]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-1 text-sm">
+          Sort
+          <select className="pp-in" value={sort} onChange={(event) => setSort(event.target.value as OwnerPeopleSort)}>
+            {OWNER_PEOPLE_SORTS.map((value) => (
+              <option key={value} value={value}>
+                {SORT_LABEL[value]}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
-      {filteredUsers.length === 0 ? (
-        <EmptyState
-          title="No users found"
-          description="Accounts appear here as soon as someone completes organisation setup."
-        />
-      ) : visible.length === 0 ? (
-        <EmptyState title="No matching users" description="Try a different name, email or organisation." />
+      {error ? (
+        <p className="banner" data-hue="red" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {page?.truncated ? (
+        <p className="banner" data-hue="warn">
+          The platform has more people than one read covers, so this list may be short.
+        </p>
+      ) : null}
+      <p className="text-sm font-semibold" data-testid="people-total">
+        {page ? `${page.total} ${page.total === 1 ? 'person' : 'people'}` : ''}
+      </p>
+      {page && page.total === 0 ? (
+        <EmptyState title="No matching people" description="Try a different name, email or filter." />
       ) : (
-        // The row menu is a portal (fixed), so the table can scroll sideways on a phone instead of the whole page.
         <div className="card overflow-x-auto">
           <table className="w-full whitespace-nowrap text-left text-sm">
             <thead className="bg-(--soft) text-xs uppercase text-(--ink3)">
               <tr>
                 <th className="px-4 py-2">Name</th>
-                <th className="px-4 py-2">Login email</th>
-                <th className="px-4 py-2">Organisation</th>
+                <th className="px-4 py-2">Email</th>
+                <th className="px-4 py-2">Organisations</th>
                 <th className="px-4 py-2">Role</th>
                 <th className="px-4 py-2">Status</th>
-                <th className="px-4 py-2">Last login</th>
-                <th className="px-4 py-2" />
+                <th className="px-4 py-2">Last seen</th>
+                <th className="px-4 py-2">Joined</th>
               </tr>
             </thead>
             <tbody>
-              {visible.map((user) => {
-                const typo = emailTypoHint(user.email)
-                return (
-                  <tr key={user.id} className="border-t border-(--line)">
-                    <td className="px-4 py-3 font-semibold">{ownerPersonName(user)}</td>
-                    <td className="px-4 py-3">
-                      <MaskedEmail
-                        email={user.email}
-                        reveal={showFullEmails}
-                        onReveal={() => void auditOwnerAction('reveal_email', { targetUserId: user.id })}
-                      />
-                      {typo ? <p className="text-[11px] font-bold text-(--warn,#b45309)">⚠ check · {typo}</p> : null}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Link href={`/developer/organisations/${encodeURIComponent(user.organizationId)}`} className="font-semibold">
-                        {orgName(user.organizationId, user.email)}
-                      </Link>
-                      <p className="max-w-[200px] truncate text-[11px] text-(--ink3)" title={user.organizationId}>{user.organizationId}</p>
-                    </td>
-                    <td className="px-4 py-3">{ownerRoleLabel(user.role)}</td>
-                    <td className="px-4 py-3">{rosterStatusLabel(user)}</td>
-                    <td className="px-4 py-3 text-(--ink2)">{formatOwnerWhen(user.lastSeenAt, 'Never')}</td>
-                    <OwnerUserAccountMenu
-                      user={user}
-                      onDone={(message) => {
-                        setNotice(message)
-                        void refresh()
-                      }}
-                      extra={
-                        <Link
-                          href={`/developer/organisations/${encodeURIComponent(user.organizationId)}`}
-                          className="block rounded-lg px-3 py-2 text-left text-sm hover:bg-(--soft)"
-                        >
-                          View organisation
-                        </Link>
-                      }
-                    />
-                  </tr>
-                )
-              })}
+              {rows.map((row) => (
+                <tr key={row.id} className="border-t border-(--line)">
+                  <td className="px-4 py-3">
+                    <Link href={`/developer/users/${encodeURIComponent(row.id)}`} className="font-semibold">
+                      {row.name}
+                    </Link>
+                    {row.ghost ? <span className="chip ml-2">No app login</span> : null}
+                    {row.isTest ? <span className="chip ml-2">Test</span> : null}
+                  </td>
+                  <td className="px-4 py-3">{row.emailMasked || '—'}</td>
+                  <td className="px-4 py-3">
+                    {row.organizationIds.length
+                      ? row.organizationIds.map((id, index) => (
+                          <span key={id}>
+                            {index ? ', ' : ''}
+                            <Link href={`/developer/organisations/${encodeURIComponent(id)}`}>{row.organizationNames[index]}</Link>
+                          </span>
+                        ))
+                      : '—'}
+                  </td>
+                  <td className="px-4 py-3">{row.role}</td>
+                  <td className="px-4 py-3">{SEGMENT_LABEL[row.segment] || row.segment}</td>
+                  <td className="px-4 py-3 text-(--ink2)">{when(row.lastSeenAtMs)}</td>
+                  <td className="px-4 py-3 text-(--ink2)">{when(row.createdAtMs)}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
       )}
+      {page?.nextCursor ? (
+        <button type="button" className="btn sm ghost w-fit" onClick={() => void loadMore()} disabled={loading}>
+          {loading ? 'Loading…' : `Show more (${rows.length} of ${page.total})`}
+        </button>
+      ) : null}
     </DeveloperShell>
   )
 }

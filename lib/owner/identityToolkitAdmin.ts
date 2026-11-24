@@ -478,3 +478,95 @@ export function adminSignCustomToken(
     )
   }
 }
+
+/**
+ * One Firebase Auth account as the owner console shows it (owner console PR 5, person page). Never the password hash,
+ * tokens or the raw provider data: only facts the owner acts on. `email` is the full address (the route masks it).
+ */
+export type AdminAuthRecord = {
+  uid: string
+  email: string
+  emailVerified: boolean
+  disabled: boolean
+  createdAtMs: number | null
+  lastLoginAtMs: number | null
+  lastRefreshAtMs: number | null
+  /** Refresh tokens issued before this instant are refused ("Sign out everywhere" moves it). */
+  validSinceMs: number | null
+  /** Provider ids only, e.g. `password`. */
+  providers: string[]
+}
+
+function msFromText(value: unknown): number | null {
+  if (typeof value === 'string' && /^\d+$/.test(value)) return Number(value)
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Date.parse(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
+/** Reads the Identity Toolkit `accounts:lookup` row into an AdminAuthRecord. Pure (tested). */
+export function adminAuthRecordFromLookup(row: Record<string, unknown>): AdminAuthRecord | null {
+  const uid = typeof row.localId === 'string' ? row.localId : ''
+  if (!uid) return null
+  const providers = Array.isArray(row.providerUserInfo)
+    ? (row.providerUserInfo as Record<string, unknown>[])
+        .map((item) => (typeof item?.providerId === 'string' ? item.providerId : ''))
+        .filter(Boolean)
+    : []
+  // `validSince` is in seconds; the others are milliseconds as text (lastRefreshAt is an RFC 3339 time).
+  const validSince = typeof row.validSince === 'string' && /^\d+$/.test(row.validSince) ? Number(row.validSince) * 1000 : null
+  return {
+    uid,
+    email: typeof row.email === 'string' ? row.email.trim().toLowerCase() : '',
+    emailVerified: row.emailVerified === true,
+    disabled: row.disabled === true,
+    createdAtMs: msFromText(row.createdAt),
+    lastLoginAtMs: msFromText(row.lastLoginAt),
+    lastRefreshAtMs: msFromText(row.lastRefreshAt),
+    validSinceMs: validSince,
+    providers: [...new Set(providers)],
+  }
+}
+
+/**
+ * The Firebase Auth accounts for these uids (at most 50), read with the server key. A uid with no Auth account (an
+ * invite placeholder) is simply missing from the result. Throws when the lookup itself fails.
+ */
+export async function adminLookupAuthRecords(uids: readonly string[]): Promise<AdminAuthRecord[]> {
+  const ids = [...new Set(uids.map((id) => id.trim()).filter(Boolean))].slice(0, 50)
+  if (!ids.length) return []
+  const { token, projectId } = await googleAccessToken([
+    'https://www.googleapis.com/auth/identitytoolkit',
+    'https://www.googleapis.com/auth/firebase',
+  ])
+  if (!projectId) throw new Error('Firebase project id is missing.')
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/accounts:lookup`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ localId: ids }),
+    }
+  )
+  if (!response.ok) throw new Error('Could not look up the Auth accounts.')
+  const data = (await response.json().catch(() => null)) as { users?: Record<string, unknown>[] } | null
+  if (!data) throw new Error('Could not read the Auth accounts.')
+  return (data.users || []).map(adminAuthRecordFromLookup).filter((row): row is AdminAuthRecord => Boolean(row && ids.includes(row.uid)))
+}
+
+/** One document's REST `fields`, read with the server key (rules do not apply). Null when missing; throws on failure. */
+export async function adminGetDocumentFields(path: string): Promise<Record<string, unknown> | null> {
+  const { token, projectId } = await googleAccessToken(['https://www.googleapis.com/auth/datastore'])
+  if (!projectId) throw new Error('Firebase project id is missing.')
+  const response = await fetch(
+    `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents/${path}`,
+    { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' }
+  )
+  if (response.status === 404) return null
+  if (!response.ok) throw new Error(`Could not read ${path}`)
+  const body = (await response.json().catch(() => null)) as { fields?: Record<string, unknown> } | null
+  if (!body) throw new Error(`Could not read ${path}`)
+  return body.fields || {}
+}
