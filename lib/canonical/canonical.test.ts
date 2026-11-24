@@ -20290,3 +20290,10 @@ test('1.87.0: the reviewer edit-booking note reads "daily Overview" (owner wordi
     'Saving changes the booking itself, so scheduling, daily Overview and the weekly report show the new hours. You can keep reviewing; the person sees the change when you counter-sign.'
   )
 })
+
+test('1.87.0: signedTimesheetLineBooking gives the stored booking id of a live line (owner report 24 Nov)', () => {
+  assert.deepEqual(R112.signedTimesheetLineBooking({ id: 'op-B1-normal', bookingId: 'op-B1' }), { collection: 'bookings', bookingId: 'B1' })
+  assert.deepEqual(R112.signedTimesheetLineBooking({ id: 'MGR-M1-ot', bookingId: 'mgr-M1' }), { collection: 'managerSiteBookings', bookingId: 'M1' })
+  assert.deepEqual(R112.signedTimesheetLineBooking({ id: 'op-B1-normal', bookingId: 'B1', bookingCollection: 'bookings' }), { collection: 'bookings', bookingId: 'B1' })
+  assert.equal(R112.signedTimesheetLineBooking({ id: 'leave-1' }), null)
+})

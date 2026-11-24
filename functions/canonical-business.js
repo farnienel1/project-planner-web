@@ -1948,6 +1948,7 @@ var ProjectPlannerCanonical = (() => {
     signedTimesheetBookingWriteReopens: () => signedTimesheetBookingWriteReopens,
     signedTimesheetChangeDetails: () => signedTimesheetChangeDetails,
     signedTimesheetChangeForReports: () => signedTimesheetChangeForReports,
+    signedTimesheetLineBooking: () => signedTimesheetLineBooking,
     signedTimesheetLineBookingKey: () => signedTimesheetLineBookingKey,
     siteAuditAuthorSignature: () => siteAuditAuthorSignature,
     siteAuditFieldCounter: () => siteAuditFieldCounter,
@@ -16313,6 +16314,9 @@ var ProjectPlannerCanonical = (() => {
     const left = fingerprintCore(a);
     return left !== "" && left === fingerprintCore(b);
   }
+  function signedTimesheetLineBooking(line) {
+    return lineBooking(line);
+  }
   function lineBooking(line) {
     if (!line) return null;
     const rawId = text18(line.id);
@@ -17431,7 +17435,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.87.0" : "",
-      sha256: true ? "f58d4b6d677e249a196874ecee3f42c2705b09f229a52613f66559bff354e268" : ""
+      sha256: true ? "47e3c59b1c97bf813e134a17a637b5038ede651108bd094fd81cb9d4ec0a57bc" : ""
     };
   }
   function rulebookVersionLabel(version) {

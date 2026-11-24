@@ -69,3 +69,38 @@ test('24 Nov: a bare bookingId (and a booking id that itself starts op-) is used
   assert.deepEqual(timesheetLineBooking({ id: 'op-op-x-normal', bookingId: 'op-op-x' }), { bookingId: 'op-x', collection: 'bookings' })
   assert.equal(timesheetLineBooking({ id: 'leave-1' }), null)
 })
+
+test('24 Nov end to end: a reviewer ✕ recorded under timesheetLineBooking keeps the sheet with the reviewer', async () => {
+  const { timesheetReviewerBookingEditRecord, signedTimesheetBookingChanges, signedTimesheetActions } = await import(
+    '../canonical/timesheetBookingChanges.ts'
+  )
+  const standard = lines().find((line) => !line.isOvertimeLine)
+  assert.ok(standard && standard.bookingFingerprint)
+  const signedAt = '2026-11-20T08:00:00Z'
+  const sheet = {
+    operativeSignedAt: signedAt,
+    operativeSignedBookingsSignedAt: signedAt,
+    operativeSignedBookingsAt: signedAt,
+    operativeSignedBookings: [
+      { bookingId: BOOKING_ID, collection: 'bookings', fingerprint: standard.bookingFingerprint, personId: 'op1', place: 'job|proj1' },
+    ],
+  }
+  const target = timesheetLineBooking(standard)
+  assert.ok(target)
+  const changesWith = (booking: { collection: string; bookingId: string }) => {
+    const recorded = timesheetReviewerBookingEditRecord({ sheet, booking, after: null, deleted: true, editedBy: 'lm1' })
+    assert.ok(recorded)
+    return signedTimesheetBookingChanges({
+      sheet: { ...sheet, reviewerBookingEdits: { [recorded.key]: recorded.value } },
+      liveLines: [],
+      liveLoaded: true,
+      liveBookings: [],
+      tombstonedBookingIds: [{ collection: 'bookings', bookingId: BOOKING_ID }],
+    } as Parameters<typeof signedTimesheetBookingChanges>[0])
+  }
+  // The id ✕ now deletes and records: the sheet is not reopened, the reviewer may counter-sign.
+  const fixed = changesWith(target)
+  assert.equal(fixed.reopened, false)
+  assert.equal(signedTimesheetActions(fixed).lineManagerMayCounterSign, true)
+  assert.equal(target.bookingId, BOOKING_ID)
+})

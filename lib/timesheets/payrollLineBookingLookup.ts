@@ -17,6 +17,11 @@ import {
   type RevisedPayrollLineAmounts,
 } from '@/lib/canonical/timesheetLineEdit'
 import type { EmploymentTypeUser } from '@/lib/canonical/userProfile'
+import { signedTimesheetLineBooking } from '@/lib/canonical/timesheetBookingChanges'
+import {
+  isTimesheetReviewBookingCollection,
+  type TimesheetReviewBookingCollection,
+} from '@/lib/canonical/timesheetReviewBookingWrites'
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { TIMESHEET_OVERTIME_LINE_MIN_HOURS, type TimesheetPayrollLineItem } from '@/lib/timesheets/timesheetPayrollCollector'
 
@@ -33,31 +38,18 @@ export function bookingIdFromLineId(lineId: string): string | null {
 }
 
 /**
- * The booking a timesheet line comes from: its collection and stored document id (`op-{id}-normal|ot` /
- * `mgr-{id}-normal|ot`).
- *
- * Owner report 24 Nov: the web collector stores a live line's `bookingId` as the line prefix plus the id (`op-{id}`,
- * `mgr-{id}`; the 1.47.0 rule reads it the same way, `signedTimesheetLineBookingKey`). Before this fix the prefixed
- * value was used as the document id, so ⚙ / ✕ read `bookings/op-{id}` — a document that never exists — and showed
- * "This was deleted on another device.", and a standard line's ✕ tried to delete it. The bare id is taken from the line
- * id when the line's `bookingId` is that prefix plus the same id; a bare `bookingId` is used as it is.
+ * The booking a timesheet line comes from: its collection and stored document id. Owner report 24 Nov: the collector
+ * keeps a live line's `bookingId` as `op-{id}` / `mgr-{id}`, and the review page used that as the document id, so ⚙ / ✕
+ * read `bookings/op-{id}` ("This was deleted on another device."). Rulebook 1.87.0: the id is the one the 1.47.0 rule
+ * reads (`signedTimesheetLineBooking`); null for a line that names no labour or manager site booking.
  */
 export function timesheetLineBooking(line: { id: string; bookingId?: string; bookingCollection?: string }): {
   bookingId: string
-  collection: 'bookings' | 'managerSiteBookings'
+  collection: TimesheetReviewBookingCollection
 } | null {
-  const fromLineId = bookingIdFromLineId(line.id) || ''
-  const linePrefix = line.id.startsWith('mgr-') ? 'mgr' : line.id.startsWith('op-') ? 'op' : ''
-  let bookingId = (line.bookingId || '').trim()
-  if (bookingId && fromLineId && linePrefix && bookingId.toLowerCase() === `${linePrefix}-${fromLineId}`.toLowerCase()) {
-    bookingId = fromLineId
-  }
-  if (!bookingId) bookingId = fromLineId
-  if (!bookingId) return null
-  const stated = line.bookingCollection
-  const collection: 'bookings' | 'managerSiteBookings' =
-    stated === 'managerSiteBookings' || (!stated && line.id.startsWith('mgr-')) ? 'managerSiteBookings' : 'bookings'
-  return { bookingId, collection }
+  const booking = signedTimesheetLineBooking({ id: line.id, bookingId: line.bookingId, bookingCollection: line.bookingCollection })
+  if (!booking || !isTimesheetReviewBookingCollection(booking.collection)) return null
+  return { bookingId: booking.bookingId, collection: booking.collection }
 }
 
 export function timesFromPayrollLineDetails(
