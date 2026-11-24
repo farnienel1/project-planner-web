@@ -1598,7 +1598,7 @@ The owner's answers of 24 Nov (items 1, 2, 5, 9 of the list sent that day) and c
 
 ## 24 Nov, Tasks pack (1.89.0; owner to confirm)
 
-The owner's Tasks pack (`docs/features/tasks-upgrade/`) was built on web and iOS in one sweep (branches `w188-tasks`, `ios-1.89-tasks`). Where the pack and the repo rules disagreed, the repo rules were followed; each choice is below.
+The owner's Tasks pack (`docs/features/tasks-upgrade/`) was built on web and iOS in one sweep (branches `w189-tasks`, `ios-1.89-tasks`). Where the pack and the repo rules disagreed, the repo rules were followed; each choice is below.
 
 | Date | Choice | Status |
 |---|---|---|
