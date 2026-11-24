@@ -14,7 +14,8 @@ export const OWNER_MFA_FRESH_MS = 10 * 60 * 1000
 /** Clock skew allowed between the server that signed the cookie and the one reading it. */
 const OWNER_MFA_SKEW_MS = 60 * 1000
 /** The `code` a refused "not fresh" request carries, so the console can ask for a new code. */
-export const OWNER_MFA_REVERIFY_CODE = 'mfa_reverify_required'
+export { OWNER_MFA_REVERIFY_CODE } from '@/lib/owner/ownerMfaCodes'
+import { OWNER_MFA_REVERIFY_CODE } from '@/lib/owner/ownerMfaCodes'
 
 export type OwnerSession = FirebaseAuthUser & {
   /** When the emailed code was accepted (the MFA cookie's `iat`); null for a cookie signed before `iat` existed. */
@@ -49,16 +50,27 @@ export async function requireOwnerSession(
     return jsonError('Two-factor verification is required. Sign in again and enter the emailed code.', 403)
   }
   const mfaVerifiedAtMs = typeof mfa.iat === 'number' ? mfa.iat : null
-  if (options.fresh && !ownerMfaIsFresh(mfaVerifiedAtMs)) {
-    return NextResponse.json(
-      {
-        error: 'For this action, enter a new emailed code first (the last one was more than 10 minutes ago).',
-        code: OWNER_MFA_REVERIFY_CODE,
-      },
-      { status: 403, headers: { 'Cache-Control': 'no-store' } }
-    )
-  }
+  if (options.fresh && !ownerMfaIsFresh(mfaVerifiedAtMs)) return ownerReverifyRequiredResponse()
   return { ...user, mfaVerifiedAtMs }
+}
+
+/** The 403 a destructive action answers when the emailed code is older than 10 minutes (the console asks for a new one). */
+export function ownerReverifyRequiredResponse(): NextResponse {
+  return NextResponse.json(
+    {
+      error: 'For this action, enter a new emailed code first (the last one was more than 10 minutes ago).',
+      code: OWNER_MFA_REVERIFY_CODE,
+    },
+    { status: 403, headers: { 'Cache-Control': 'no-store' } }
+  )
+}
+
+/**
+ * For routes whose dry run (`preview: true`) is read-only: the owner guard first, then — only for the real action —
+ * the freshness check. Returns null when the session may go on.
+ */
+export function ownerFreshnessRefusal(session: OwnerSession, preview: boolean): NextResponse | null {
+  return preview || ownerMfaIsFresh(session.mfaVerifiedAtMs) ? null : ownerReverifyRequiredResponse()
 }
 
 /** Owner guard without the freshness check (reads and non-destructive actions). */

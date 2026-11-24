@@ -504,21 +504,31 @@ export const TIMESHEET_SIGNED_NOTICE_TITLE = 'Timesheet signed'
  * "Your timesheet was updated and signed off" / "{signedByName} changed your timesheet and signed it off. Open it to
  * check the changes." — the signer may be the line manager or an admin, so it names them (without a name,
  * `TIMESHEET_SIGNED_UPDATED_NOTICE_MESSAGE`); otherwise "Timesheet signed" / "{signedByName} signed your timesheet." as
- * before. One notice at the counter-signature — never one per edit.
+ * before. One notice at the counter-signature — never one per edit. 1.77.0 (point 5): both messages end with
+ * `TIMESHEET_SIGNED_NOTICE_INVOICE_NEXT` ("Next: generate your invoice.").
  */
-export function timesheetSignedNoticeText(input: { signedByName?: string | null; changedByReviewer?: boolean | null }): {
+export function timesheetSignedNoticeText(input: {
+  signedByName?: string | null
+  changedByReviewer?: boolean | null
+  /** 1.77.0 (point 5): end with "Next: generate your invoice." — default true; false only for a sheet with no invoice. */
+  invoiceNext?: boolean | null
+}): {
   title: string
   message: string
 } {
   const name = text(input.signedByName)
+  const next = input.invoiceNext === false ? '' : ` ${TIMESHEET_SIGNED_NOTICE_INVOICE_NEXT}`
   if (input.changedByReviewer === true) {
     return {
       title: TIMESHEET_SIGNED_UPDATED_NOTICE_TITLE,
-      message: name ? `${name} changed your timesheet and signed it off. Open it to check the changes.` : TIMESHEET_SIGNED_UPDATED_NOTICE_MESSAGE,
+      message: `${name ? `${name} changed your timesheet and signed it off. Open it to check the changes.` : TIMESHEET_SIGNED_UPDATED_NOTICE_MESSAGE}${next}`,
     }
   }
-  return { title: TIMESHEET_SIGNED_NOTICE_TITLE, message: `${name || 'Your line manager'} signed your timesheet.` }
+  return { title: TIMESHEET_SIGNED_NOTICE_TITLE, message: `${name || 'Your line manager'} signed your timesheet.${next}` }
 }
+
+/** 1.77.0 §13 (point 5): the last sentence of the counter-signature notice. */
+export const TIMESHEET_SIGNED_NOTICE_INVOICE_NEXT = 'Next: generate your invoice.'
 
 /**
  * Rulebook 1.74.0 §8 (owner decision 23 Nov, reverses part of 1.72.0): what a reviewer's ⚙ / ✕ from THIS sheet's review

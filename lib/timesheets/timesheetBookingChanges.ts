@@ -7,6 +7,8 @@ import {
   bookingIdsForAccount,
   signedTimesheetBookingChanges,
   signedTimesheetBookingRecord,
+  signedTimesheetChangeDetails,
+  type SignedTimesheetChangeDetails,
   timesheetChangesWithLateExtras,
   timesheetLateExtrasSummary,
   timesheetSnapshotMoneyRowsCurrent,
@@ -341,3 +343,47 @@ export function clearSignedBookingsPending(current: TimesheetDraft, signedAt: Da
   return { ...current, operativeSignedBookingsAtPending: false }
 }
 
+
+/**
+ * Rulebook 1.77.0 §8 (point 3): the "Changed since you signed" rows for one web draft — `signedTimesheetChangeDetails`
+ * with the same inputs `draftBookingChanges` passes, plus the jobs to name and the signed price work / expenses (the
+ * same options `draftLateExtrasSummary` passes). No comparison happens here.
+ */
+export function draftChangeDetails(input: {
+  draft: TimesheetDraft
+  lines: ReadonlyArray<TimesheetPayrollLineItem>
+  bookings?: ReadonlyArray<Booking> | null
+  managerSiteBookings?: ReadonlyArray<ManagerSiteBooking> | null
+  timeZone?: string
+  personIds?: ReadonlyArray<string> | null
+  liveLoaded: boolean
+  selfSigned: boolean
+  jobs?: ReadonlyArray<{ id: string; jobNumber?: string | null; siteName?: string | null }> | null
+  currency?: string | null
+  viewerIsReviewer?: boolean
+}): SignedTimesheetChangeDetails {
+  const fields = timesheetSheetFields(input.draft)
+  const signed = signedTimesheetSheetFromDraft(input.draft)
+  const storedOverride = fields.weeklyReportOverride && typeof fields.weeklyReportOverride === 'object' ? (fields.weeklyReportOverride as Record<string, unknown>) : null
+  const sheet = {
+    ...fields,
+    ...signed,
+    weeklyReportOverride: signed.weeklyReportOverride ? { ...(storedOverride ?? {}), ...signed.weeklyReportOverride } : null,
+  }
+  return signedTimesheetChangeDetails({
+    sheet: sheet as never,
+    liveLines: signedTimesheetLiveLines(input.lines),
+    liveBookings:
+      input.bookings && input.managerSiteBookings
+        ? signedTimesheetBookingDocuments(input.bookings, input.managerSiteBookings, input.timeZone)
+        : null,
+    personIds: input.personIds ?? null,
+    liveLoaded: input.liveLoaded,
+    selfSigned: input.selfSigned,
+    jobs: (input.jobs ?? []).map((job) => ({ id: job.id, jobNumber: job.jobNumber ?? '', name: job.siteName ?? '' })),
+    timeZone: input.timeZone ?? organizationZoneOr(),
+    entryOptions: { entryFingerprints: draftEntryFingerprints(input.draft), exportedAtStored: draftStoredExported(input.draft) },
+    currency: input.currency ?? null,
+    viewerIsReviewer: input.viewerIsReviewer === true,
+  })
+}
