@@ -274,8 +274,10 @@ service firebase.storage {
 
     // Rulebook 1.83.0 §31: organisation insurance & accreditations. Admins of this organisation only.
     match /organizations/{orgId}/compliance/{fileName} {
-      allow read, delete: if orgMember(orgId) && orgFileAdmin(orgId);
-      allow create: if isNewObject() && orgFileAdmin(orgId) && memberSizedWrite(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
+      // An admin with a stray operative-mode flag is still an admin here, as in Firestore (orgAdminEither).
+      allow read, delete: if orgMember(orgId) && adminLike(orgId);
+      allow create: if isNewObject() && fileName.split('_')[0] == request.auth.uid && adminLike(orgId)
+        && memberSizedWrite(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
     }
 
     // Site audit images. Member + size/type only — do not staff-lock.

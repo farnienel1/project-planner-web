@@ -133,3 +133,91 @@ test('1.83.0 add, edit, replace and remove build from the stored document', () =
   assert.deepEqual(removed.set!.value, [])
   assert.equal(orgComplianceRemoveWriteFields(stored, { section: 'insurance', organizationId: ORG, entryId: 'gone' }).set, null)
 })
+
+import {
+  orgComplianceFileName,
+  orgCompliancePathLinked,
+  orgComplianceReminder,
+  orgComplianceZipEntryNames,
+  orgComplianceZipFileName,
+  orgComplianceShareSelection,
+  orgComplianceShareLinkCreateFields,
+  orgComplianceShareLinkState,
+  parseOrgComplianceShareLink,
+  orgCompliancePublicDocuments,
+  orgComplianceSharedEntry,
+  orgComplianceShareOpen,
+  parseOrgComplianceDocumentRef,
+  ORG_COMPLIANCE_SHARE_MAX_DOCUMENTS,
+  ORG_COMPLIANCE_SHARE_MESSAGES,
+} from './orgCompliance'
+
+test('review of #441: one stored file name on both apps', () => {
+  assert.equal(orgComplianceFileName('Site.heic', 'organizations/o/compliance/u_1.jpg'), 'Site.jpg')
+  assert.equal(orgComplianceFileName('PL.JPEG', 'organizations/o/compliance/u_1.jpg'), 'PL.JPEG')
+  assert.equal(orgComplianceFileName('dir/PL.pdf', 'organizations/o/compliance/u_1.pdf'), 'PL.pdf')
+  assert.equal(orgComplianceFileName('', 'organizations/o/compliance/u_1.pdf'), 'u_1.pdf')
+  assert.equal(orgComplianceFileName('NoExt', 'organizations/o/compliance/u_1.png'), 'NoExt.png')
+})
+
+test('review of #441: a file is linked when any stored entry names it (§22 alreadyLinked)', () => {
+  const stored = { documents: { trade: [{ path: 'organizations/o/compliance/u_1.pdf' }], insurance: 'junk' } }
+  assert.equal(orgCompliancePathLinked(stored, 'organizations/o/compliance/u_1.pdf'), true)
+  assert.equal(orgCompliancePathLinked(stored, 'organizations/o/compliance/u_2.pdf'), false)
+  assert.equal(orgCompliancePathLinked(null, 'organizations/o/compliance/u_1.pdf'), false)
+})
+
+test('1.83.0 Home reminder from the one status rule', () => {
+  assert.equal(orgComplianceReminder({ total: 3, expiringSoon: 0, expired: 0, attention: 0 }), null)
+  assert.deepEqual(orgComplianceReminder({ total: 3, expiringSoon: 1, expired: 1, attention: 2 }), {
+    count: 2, expired: 1, expiringSoon: 1,
+    title: '2 insurance or accreditation certificates need attention',
+    detail: '1 expired · 1 expiring within 30 days',
+  })
+  assert.equal(orgComplianceReminder({ total: 1, expiringSoon: 1, expired: 0, attention: 1 })?.title, '1 insurance or accreditation certificate needs attention')
+})
+
+test('1.83.0 zip names are unique and safe', () => {
+  assert.deepEqual(orgComplianceZipEntryNames([{ fileName: 'PL.pdf' }, { fileName: 'pl.pdf' }, { fileName: '../x/y:z.pdf' }, { fileName: '', title: 'ISO' }]), [
+    'PL.pdf', 'pl (2).pdf', '__x_y_z.pdf', 'ISO',
+  ])
+  assert.equal(orgComplianceZipFileName('2026-11-24'), 'Insurance-and-accreditations-2026-11-24.zip')
+})
+
+test('1.83.0 share links: selection, state, public fields only, the shared entry', () => {
+  const data = {
+    documents: {
+      insurance: [{ id: 'A', path: `organizations/${ORG}/compliance/u1_1.pdf`, title: 'PL', docType: 'public_liability', issuer: 'Aviva', coverAmount: 5000000, expiresOn: '2026-12-01', uploadedBy: 'secret-uid' }],
+      trade: [{ id: 'B', path: `organizations/${ORG}/compliance/u1_2.pdf`, title: 'Gas', docType: 'gas_safe' }],
+    },
+  }
+  const docs = parseOrgComplianceDocuments(data, { organizationId: ORG })
+  assert.deepEqual(orgComplianceShareSelection(docs, ['insurance:a', 'insurance:A', 'trade:B', 'trade:gone', 'bad']), {
+    refs: [{ section: 'insurance', id: 'A' }, { section: 'trade', id: 'B' }], error: null,
+  })
+  assert.equal(orgComplianceShareSelection(docs, []).error, ORG_COMPLIANCE_SHARE_MESSAGES.none)
+  assert.equal(orgComplianceShareSelection(docs, Array.from({ length: ORG_COMPLIANCE_SHARE_MAX_DOCUMENTS + 1 }, () => 'trade:B')).error, ORG_COMPLIANCE_SHARE_MESSAGES.tooMany)
+  assert.equal(parseOrgComplianceDocumentRef('quality:a/b'), null)
+  const fields = orgComplianceShareLinkCreateFields({ organizationId: ORG, documents: [{ section: 'insurance', id: 'A' }], createdBy: 'admin', nowMs: 1000 })
+  assert.equal(fields.expiresAtMs, 1000 + 7 * 24 * 3600 * 1000)
+  const link = parseOrgComplianceShareLink('h', fields)!
+  assert.equal(orgComplianceShareLinkState(link, 2000), 'active')
+  assert.equal(orgComplianceShareLinkState(link, Number(fields.expiresAtMs)), 'expired')
+  assert.equal(orgComplianceShareLinkState({ ...link, revokedAtMs: 1500 }, 2000), 'revoked')
+  const shown = orgCompliancePublicDocuments(docs, link.documents, TODAY, 'GBP')
+  assert.equal(shown.length, 1)
+  assert.equal(shown[0].cover, '£5,000,000')
+  assert.equal(shown[0].statusLabel, '7 days left · 1 Dec 2026')
+  assert.ok(!JSON.stringify(shown).includes('secret-uid'))
+  assert.ok(!JSON.stringify(shown).includes('compliance/u1_1'))
+  assert.equal(orgComplianceSharedEntry(docs, link, 'insurance:A')?.path, `organizations/${ORG}/compliance/u1_1.pdf`)
+  assert.equal(orgComplianceSharedEntry(docs, link, 'trade:B'), null) // not shared by this link
+})
+
+test('1.83.0 a lapsed or scheduled-for-deletion company shares nothing', () => {
+  assert.equal(orgComplianceShareOpen({ name: 'Co' }, 1000), true)
+  assert.equal(orgComplianceShareOpen({ deletion: { status: 'scheduled', eraseAfter: 99999999999 } }, 1000), false)
+  assert.equal(orgComplianceShareOpen({ billing: { accessOpen: false } }, 1000), false)
+  assert.equal(orgComplianceShareOpen({ billing: { status: 'canceled' } }, 1000), false)
+  assert.equal(orgComplianceShareOpen(null, 1000), false)
+})

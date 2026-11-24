@@ -7,7 +7,7 @@
  * added on another device meanwhile is kept. Admins only (firestore.rules / storage.rules enforce it).
  */
 
-import { doc, onSnapshot, runTransaction, serverTimestamp } from 'firebase/firestore'
+import { doc, getDocFromServer, onSnapshot, runTransaction, serverTimestamp } from 'firebase/firestore'
 import { deleteObject, getDownloadURL, ref } from 'firebase/storage'
 import { db, storage } from '@/lib/firebase/config'
 import { uploadFile } from '@/lib/firebase/storageUtils'
@@ -20,7 +20,9 @@ import {
   ORG_COMPLIANCE_DOCUMENT_ID,
   ORG_COMPLIANCE_MESSAGES,
   orgComplianceAddWriteFields,
+  orgComplianceFileName,
   orgComplianceMergePayload,
+  orgCompliancePathLinked,
   orgComplianceRemoveWriteFields,
   orgComplianceReplaceWriteFields,
   orgComplianceStoragePath,
@@ -71,6 +73,21 @@ async function writeSection<T extends { set: OrgComplianceWrite | null }>(
   })
 }
 
+/**
+ * After a failed save: re-read the document from the server and delete the new file only when no entry names it
+ * (`orgCompliancePathLinked`; a save that committed while the app saw an error keeps its file). When the re-read
+ * fails too, the file is kept (an unlinked file is safer than a lost one).
+ */
+async function deleteUnlinkedUpload(organizationId: string, path: string) {
+  try {
+    const snap = await getDocFromServer(complianceRef(organizationId))
+    if (orgCompliancePathLinked(snap.exists() ? (snap.data() as Record<string, unknown>) : null, path)) return
+  } catch {
+    return
+  }
+  await deleteObjectQuietly(path)
+}
+
 async function deleteObjectQuietly(path: string | null | undefined) {
   if (!storage || !path) return
   await deleteObject(ref(storage, path)).catch(() => {})
@@ -86,7 +103,7 @@ async function uploadComplianceFile(organizationId: string, actorUid: string, pi
   if (!path) throw new Error('This file cannot be uploaded here.')
   const contentType = await assertUploadAllowed(path, file, file.type)
   await uploadFile(path, file, contentType)
-  return { path, fileName: picked.name, contentType, sizeBytes: file.size, uploadedAtMs: nowMs, uploadedBy: actorUid }
+  return { path, fileName: orgComplianceFileName(picked.name, path), contentType, sizeBytes: file.size, uploadedAtMs: nowMs, uploadedBy: actorUid }
 }
 
 export async function addOrgComplianceDocument(input: {
@@ -110,7 +127,7 @@ export async function addOrgComplianceDocument(input: {
       })
     )
   } catch (error) {
-    await deleteObjectQuietly(uploaded.path)
+    await deleteUnlinkedUpload(input.organizationId, uploaded.path)
     throw error
   }
   if (result.outcome === 'refused' || result.outcome === 'invalid') {
@@ -165,7 +182,7 @@ export async function replaceOrgComplianceFile(input: {
       })
     )
   } catch (error) {
-    await deleteObjectQuietly(uploaded.path)
+    await deleteUnlinkedUpload(input.organizationId, uploaded.path)
     throw error
   }
   if (result.outcome === 'missing' || result.outcome === 'invalid') {

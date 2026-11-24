@@ -344,6 +344,7 @@ var ProjectPlannerCanonical = (() => {
     ORGANIZATION_DELETE_TITLE: () => ORGANIZATION_DELETE_TITLE,
     ORGANIZATION_DOCUMENT_FIELDS: () => ORGANIZATION_DOCUMENT_FIELDS,
     ORGANIZATION_RESTORED_MESSAGE: () => ORGANIZATION_RESTORED_MESSAGE,
+    ORG_COMPLIANCE_AUDIT_COLLECTION: () => ORG_COMPLIANCE_AUDIT_COLLECTION,
     ORG_COMPLIANCE_COLLECTION: () => ORG_COMPLIANCE_COLLECTION,
     ORG_COMPLIANCE_COVER_MAX: () => ORG_COMPLIANCE_COVER_MAX,
     ORG_COMPLIANCE_DOCUMENT_ID: () => ORG_COMPLIANCE_DOCUMENT_ID,
@@ -358,7 +359,13 @@ var ProjectPlannerCanonical = (() => {
     ORG_COMPLIANCE_PAGE_TITLE: () => ORG_COMPLIANCE_PAGE_TITLE,
     ORG_COMPLIANCE_SECTIONS: () => ORG_COMPLIANCE_SECTIONS,
     ORG_COMPLIANCE_SECTION_KEYS: () => ORG_COMPLIANCE_SECTION_KEYS,
+    ORG_COMPLIANCE_SHARE_LINKS_COLLECTION: () => ORG_COMPLIANCE_SHARE_LINKS_COLLECTION,
+    ORG_COMPLIANCE_SHARE_LINK_DAYS: () => ORG_COMPLIANCE_SHARE_LINK_DAYS,
+    ORG_COMPLIANCE_SHARE_MAX_DOCUMENTS: () => ORG_COMPLIANCE_SHARE_MAX_DOCUMENTS,
+    ORG_COMPLIANCE_SHARE_MESSAGES: () => ORG_COMPLIANCE_SHARE_MESSAGES,
+    ORG_COMPLIANCE_SIGNED_URL_SECONDS: () => ORG_COMPLIANCE_SIGNED_URL_SECONDS,
     ORG_COMPLIANCE_STATUS_ORDER: () => ORG_COMPLIANCE_STATUS_ORDER,
+    ORG_COMPLIANCE_ZIP_MAX_DOCUMENTS: () => ORG_COMPLIANCE_ZIP_MAX_DOCUMENTS,
     ORG_MEMBERSHIP_ADMIN_FIELDS: () => ORG_MEMBERSHIP_ADMIN_FIELDS,
     ORG_MEMBERSHIP_DEFAULT_ON: () => ORG_MEMBERSHIP_DEFAULT_ON,
     ORG_MEMBERSHIP_PERMISSION_KEYS: () => ORG_MEMBERSHIP_PERMISSION_KEYS,
@@ -1431,18 +1438,31 @@ var ProjectPlannerCanonical = (() => {
     orgComplianceDetailsError: () => orgComplianceDetailsError,
     orgComplianceDocTypeLabel: () => orgComplianceDocTypeLabel,
     orgComplianceDocumentPath: () => orgComplianceDocumentPath,
+    orgComplianceDocumentRefKey: () => orgComplianceDocumentRefKey,
     orgComplianceExpiryStatus: () => orgComplianceExpiryStatus,
+    orgComplianceFileName: () => orgComplianceFileName,
     orgComplianceFolder: () => orgComplianceFolder,
     orgComplianceHubSubtitle: () => orgComplianceHubSubtitle,
     orgComplianceMergePayload: () => orgComplianceMergePayload,
     orgCompliancePathBelongsTo: () => orgCompliancePathBelongsTo,
+    orgCompliancePathLinked: () => orgCompliancePathLinked,
+    orgCompliancePublicDocuments: () => orgCompliancePublicDocuments,
+    orgComplianceReminder: () => orgComplianceReminder,
     orgComplianceRemoveWriteFields: () => orgComplianceRemoveWriteFields,
     orgComplianceReplaceWriteFields: () => orgComplianceReplaceWriteFields,
     orgComplianceSection: () => orgComplianceSection,
+    orgComplianceShareLinkCreateFields: () => orgComplianceShareLinkCreateFields,
+    orgComplianceShareLinkState: () => orgComplianceShareLinkState,
+    orgComplianceShareOpen: () => orgComplianceShareOpen,
+    orgComplianceSharePath: () => orgComplianceSharePath,
+    orgComplianceShareSelection: () => orgComplianceShareSelection,
+    orgComplianceSharedEntry: () => orgComplianceSharedEntry,
     orgComplianceSortedEntries: () => orgComplianceSortedEntries,
     orgComplianceStoragePath: () => orgComplianceStoragePath,
     orgComplianceTodayKey: () => orgComplianceTodayKey,
     orgComplianceUpdateWriteFields: () => orgComplianceUpdateWriteFields,
+    orgComplianceZipEntryNames: () => orgComplianceZipEntryNames,
+    orgComplianceZipFileName: () => orgComplianceZipFileName,
     orgDayHours: () => orgDayHours,
     orgMembershipWriteFields: () => orgMembershipWriteFields,
     organizationCreateFields: () => organizationCreateFields,
@@ -1576,7 +1596,9 @@ var ProjectPlannerCanonical = (() => {
     parseNotificationDocument: () => parseNotificationDocument,
     parseOperativeDocument: () => parseOperativeDocument,
     parseOperativeProfileDocument: () => parseOperativeProfileDocument,
+    parseOrgComplianceDocumentRef: () => parseOrgComplianceDocumentRef,
     parseOrgComplianceDocuments: () => parseOrgComplianceDocuments,
+    parseOrgComplianceShareLink: () => parseOrgComplianceShareLink,
     parseOrgMembershipDocument: () => parseOrgMembershipDocument,
     parseOrganizationDeletion: () => parseOrganizationDeletion,
     parseOrganizationName: () => parseOrganizationName,
@@ -17317,7 +17339,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.83.0" : "",
-      sha256: true ? "2a45782f5051d454f3e365e47340f5b1666065388096fd8b3ff76238033079cb" : ""
+      sha256: true ? "6eb13486ad1648ffc13fc95fb8b857bf5631ead7c3a0472d59d04e980913ba48" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -32663,6 +32685,195 @@ var ProjectPlannerCanonical = (() => {
   }
   function orgComplianceCoverText(amount, currency) {
     return typeof amount === "number" && Number.isFinite(amount) ? formatMoney(amount, currency, { decimals: 0 }) : "";
+  }
+  function orgComplianceFileName(pickedName, storedPath) {
+    const objectName = text57(storedPath).split("/").pop() || "Document";
+    const picked = text57(pickedName).split(/[\\/]/).pop()?.trim() ?? "";
+    if (!picked) return objectName;
+    const ext = (name2) => {
+      const dot = name2.lastIndexOf(".");
+      return dot > 0 ? name2.slice(dot + 1).toLowerCase() : "";
+    };
+    const storedExt = ext(objectName);
+    const ownExt = ext(picked);
+    const norm = (e) => e === "jpeg" ? "jpg" : e;
+    let name = picked;
+    if (storedExt && norm(ownExt) !== norm(storedExt)) {
+      const base = ownExt ? picked.slice(0, picked.length - ownExt.length - 1) : picked;
+      name = `${base}.${storedExt}`;
+    }
+    return Array.from(name).slice(0, 200).join("");
+  }
+  function orgComplianceReminder(counts) {
+    const expired = counts?.expired ?? 0;
+    const expiringSoon = counts?.expiringSoon ?? 0;
+    const count = expired + expiringSoon;
+    if (!count) return null;
+    const parts3 = [
+      expired ? `${expired} expired` : "",
+      expiringSoon ? `${expiringSoon} expiring within ${ORG_COMPLIANCE_EXPIRING_SOON_DAYS} days` : ""
+    ].filter(Boolean);
+    return {
+      count,
+      expired,
+      expiringSoon,
+      title: `${count} insurance or accreditation certificate${count === 1 ? "" : "s"} need${count === 1 ? "s" : ""} attention`,
+      detail: parts3.join(" \xB7 ")
+    };
+  }
+  var ORG_COMPLIANCE_ZIP_MAX_DOCUMENTS = 50;
+  function orgComplianceZipEntryNames(entries) {
+    const used = /* @__PURE__ */ new Set();
+    return entries.map((entry) => {
+      const raw = text57(entry.fileName) || text57(entry.title) || "Document";
+      const safe = raw.replace(/[\u0000-\u001f\u007f/\\:*?"<>|]/g, "_").replace(/^\.+/, "_").slice(0, 150) || "Document";
+      const dot = safe.lastIndexOf(".");
+      const base = dot > 0 ? safe.slice(0, dot) : safe;
+      const ext = dot > 0 ? safe.slice(dot) : "";
+      let name = safe;
+      for (let n = 2; used.has(name.toLowerCase()); n += 1) name = `${base} (${n})${ext}`;
+      used.add(name.toLowerCase());
+      return name;
+    });
+  }
+  function orgComplianceZipFileName(todayKey4) {
+    return `Insurance-and-accreditations-${validDayKey4(todayKey4) ? todayKey4 : "documents"}.zip`;
+  }
+  var ORG_COMPLIANCE_SHARE_LINK_DAYS = 7;
+  var ORG_COMPLIANCE_SHARE_MAX_DOCUMENTS = 20;
+  var ORG_COMPLIANCE_SHARE_LINKS_COLLECTION = "complianceShareLinks";
+  var ORG_COMPLIANCE_AUDIT_COLLECTION = "complianceAudit";
+  var ORG_COMPLIANCE_SIGNED_URL_SECONDS = 60;
+  var ORG_COMPLIANCE_SHARE_MESSAGES = {
+    none: "Choose at least one document to share.",
+    tooMany: `Share up to ${ORG_COMPLIANCE_SHARE_MAX_DOCUMENTS} documents in one link.`,
+    gone: "This link has expired or been turned off. Ask the company for a new one.",
+    helper: `Anyone with the link can view and download the chosen documents for ${ORG_COMPLIANCE_SHARE_LINK_DAYS} days, or until you turn the link off.`
+  };
+  function parseOrgComplianceDocumentRef(value) {
+    if (value && typeof value === "object") {
+      const row3 = value;
+      if (isOrgComplianceSectionKey(row3.section) && text57(row3.id) && !text57(row3.id).includes("/")) return { section: row3.section, id: text57(row3.id) };
+      return null;
+    }
+    const raw = text57(value);
+    const at = raw.indexOf(":");
+    if (at < 0) return null;
+    const section = raw.slice(0, at);
+    const id2 = raw.slice(at + 1);
+    return isOrgComplianceSectionKey(section) && id2 && !id2.includes("/") && id2.length <= 200 ? { section, id: id2 } : null;
+  }
+  function orgComplianceDocumentRefKey(ref) {
+    return `${ref.section}:${ref.id}`;
+  }
+  function findEntry(documents, ref) {
+    return documents[ref.section].find((entry) => normalizeDocumentId(entry.id) === normalizeDocumentId(ref.id)) ?? null;
+  }
+  function orgComplianceShareSelection(documents, refs) {
+    if (refs.length > ORG_COMPLIANCE_SHARE_MAX_DOCUMENTS) return { refs: [], error: ORG_COMPLIANCE_SHARE_MESSAGES.tooMany };
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const value of refs) {
+      const ref = parseOrgComplianceDocumentRef(value);
+      const entry = ref ? findEntry(documents, ref) : null;
+      if (!ref || !entry) continue;
+      const key8 = orgComplianceDocumentRefKey({ section: ref.section, id: entry.id });
+      if (seen.has(key8)) continue;
+      seen.add(key8);
+      out.push({ section: ref.section, id: entry.id });
+    }
+    return { refs: out, error: out.length ? null : ORG_COMPLIANCE_SHARE_MESSAGES.none };
+  }
+  function parseOrgComplianceShareLink(id2, data) {
+    const row3 = record19(data);
+    const org = text57(row3.organizationId);
+    if (!text57(id2) || !org) return null;
+    const docs = Array.isArray(row3.documents) ? row3.documents.map(parseOrgComplianceDocumentRef).filter((r) => r !== null) : [];
+    const num2 = (value) => typeof value === "number" && Number.isFinite(value) ? value : documentInstantMs(value);
+    return {
+      id: text57(id2),
+      organizationId: org,
+      documents: docs,
+      createdBy: text57(row3.createdBy),
+      createdAtMs: num2(row3.createdAtMs),
+      expiresAtMs: num2(row3.expiresAtMs),
+      revokedAtMs: num2(row3.revokedAtMs),
+      openCount: Number.isFinite(Number(row3.openCount)) ? Math.max(0, Math.floor(Number(row3.openCount))) : 0,
+      lastOpenedAtMs: num2(row3.lastOpenedAtMs)
+    };
+  }
+  function orgComplianceShareLinkState(link, nowMs2) {
+    if (!link || link.expiresAtMs == null) return "expired";
+    if (link.revokedAtMs != null) return "revoked";
+    return nowMs2 < link.expiresAtMs ? "active" : "expired";
+  }
+  function orgComplianceShareLinkCreateFields(input) {
+    const expiresAtMs = input.nowMs + ORG_COMPLIANCE_SHARE_LINK_DAYS * 24 * 60 * 60 * 1e3;
+    return {
+      organizationId: input.organizationId,
+      documents: input.documents.map(orgComplianceDocumentRefKey),
+      createdBy: input.createdBy,
+      createdAtMs: input.nowMs,
+      expiresAtMs,
+      revokedAtMs: null,
+      openCount: 0,
+      lastOpenedAtMs: null
+    };
+  }
+  function orgComplianceSharePath(token) {
+    return `/shared/compliance/${encodeURIComponent(token)}`;
+  }
+  function orgCompliancePublicDocuments(documents, refs, todayKey4, currency) {
+    const out = [];
+    for (const ref of refs) {
+      const entry = findEntry(documents, ref);
+      const section = orgComplianceSection(ref.section);
+      if (!entry || !section) continue;
+      const status = orgComplianceExpiryStatus(entry.expiresOn, todayKey4);
+      out.push({
+        key: orgComplianceDocumentRefKey({ section: section.key, id: entry.id }),
+        sectionTitle: section.title,
+        typeLabel: orgComplianceDocTypeLabel(section.key, entry.docType),
+        title: entry.title,
+        issuer: entry.issuer,
+        issuerLabel: section.issuerLabel,
+        reference: entry.reference,
+        referenceLabel: section.referenceLabel,
+        cover: section.coverLabel ? orgComplianceCoverText(entry.coverAmount, currency) : "",
+        coverLabel: section.coverLabel,
+        statusLabel: status.label,
+        tone: status.tone,
+        contentType: entry.contentType
+      });
+    }
+    return out;
+  }
+  function orgComplianceSharedEntry(documents, link, key8) {
+    const ref = parseOrgComplianceDocumentRef(key8);
+    if (!ref) return null;
+    const shared = link.documents.some(
+      (item) => item.section === ref.section && normalizeDocumentId(item.id) === normalizeDocumentId(ref.id)
+    );
+    return shared ? findEntry(documents, ref) : null;
+  }
+  function orgCompliancePathLinked(stored, path) {
+    const target = text57(path);
+    if (!target) return false;
+    const documents = record19(record19(stored).documents);
+    return ORG_COMPLIANCE_SECTION_KEYS.some((key8) => {
+      const list = documents[key8];
+      return Array.isArray(list) && list.some((row3) => text57(record19(row3).path) === target);
+    });
+  }
+  function orgComplianceShareOpen(org, nowMs2) {
+    if (!org || typeof org !== "object") return false;
+    if (organizationDeletionState(org, nowMs2).state !== "active") return false;
+    const raw = org.billing;
+    const billing = record19(raw);
+    if (raw && typeof raw === "object" && !hasAccess(billing, nowMs2)) return false;
+    if (billing.accessOpen === false) return false;
+    const closes = documentInstantMs(billing.accessClosesAt);
+    return !(closes != null && nowMs2 >= closes);
   }
   return __toCommonJS(bundleEntry_exports);
 })();

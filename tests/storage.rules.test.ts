@@ -361,6 +361,13 @@ test('1.83.0 compliance documents: admins only; managers and operatives never; 1
   await assertFails(put(ADMIN_A, 'admin-a@test.com', `${folder}/${ADMIN_A}_${Date.now()}.svg`, 64, 'image/svg+xml'))
   await assertFails(del(MGR_A, file))
   await assertSucceeds(del(ADMIN_A, file))
+  // Review of #441: the object name starts with the uploader's own uid; an admin with a stray operative-mode flag is
+  // still an admin (as Firestore's orgAdminEither and the rulebook's canManageOrganizationCompliance).
+  await assertFails(put(ADMIN_A, 'admin-a@test.com', `${folder}/${MGR_A}_${Date.now()}.pdf`, 64, 'application/pdf'))
+  await assertFails(put(ADMIN_A, 'admin-a@test.com', `${folder}/x${ADMIN_A}_${Date.now()}.pdf`, 64, 'application/pdf'))
+  const opmode = `${folder}/${OPMODE_ADMIN_A}_${Date.now()}.pdf`
+  await assertSucceeds(put(OPMODE_ADMIN_A, 'opmode-admin-a@test.com', opmode, 64, 'application/pdf'))
+  await assertSucceeds(getBytes(ref(authStorage(OPMODE_ADMIN_A, 'opmode-admin-a@test.com'), opmode)))
 })
 
 // Rulebook 1.50.0 §24 (owner decisions 15 Nov): photos (JPEG, PNG, HEIC/HEIF, WebP) and PDF only, per path.
@@ -742,4 +749,25 @@ test('1.54.1 review: the platform owner is never locked out by a lapsed or sched
   // The same email unverified is not the platform owner.
   const unverified = env.authenticatedContext(OWNER, { email: 'info@projectplanner.us', email_verified: false }).storage()
   await assertFails(getBytes(ref(unverified, file)))
+})
+
+test('1.83.0 compliance documents: a deactivated admin, a lapsed and a scheduled-for-deletion company get nothing', async () => {
+  await seed154()
+  for (const [org, uid] of [[ORG_LAPSED, LAPSED_ADMIN], [ORG_DELETING, DELETING_ADMIN]]) {
+    const file = `organizations/${org}/compliance/${uid}_${Date.now()}.pdf`
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(ref(ctx.storage(), file), new Uint8Array(16), { contentType: 'application/pdf' })
+    })
+    await assertFails(read(uid, file))
+    await assertFails(put(uid, EMAIL[uid], `organizations/${org}/compliance/${uid}_${Date.now() + 1}.pdf`, 64, 'application/pdf'))
+  }
+  const DEACT_ADMIN = 'deact-admin-a'
+  EMAIL[DEACT_ADMIN] = `${DEACT_ADMIN}@test.com`
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', DEACT_ADMIN), { email: EMAIL[DEACT_ADMIN], organizationId: ORG_A, role: 'admin', adminAccess: true, isActive: false })
+  })
+  const file = `organizations/${ORG_A}/compliance/${ADMIN_A}_${Date.now()}.pdf`
+  await assertSucceeds(put(ADMIN_A, EMAIL[ADMIN_A], file, 64, 'application/pdf'))
+  await assertFails(read(DEACT_ADMIN, file))
+  await assertFails(put(DEACT_ADMIN, EMAIL[DEACT_ADMIN], `organizations/${ORG_A}/compliance/${DEACT_ADMIN}_${Date.now()}.pdf`, 64, 'application/pdf'))
 })

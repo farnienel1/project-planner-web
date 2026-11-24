@@ -27,6 +27,9 @@ const OPSMGR = 'oc-opsmgr'
 const OP = 'oc-op'
 const STRANGER = 'oc-stranger' // admin of HOME only
 const VADMIN = 'oc-vadmin' // home company HOME, an admin of ORG through the members map only
+const OPADMIN = 'oc-opadmin' // admin with a stray operativeMode flag (still an admin, rulebook 1.11.0)
+const DEADMIN = 'oc-deadmin' // admin whose users document of ORG says isActive: false
+const GONEADMIN = 'oc-goneadmin' // admin of ORG through the members map, membership there accountActive: false
 
 let env: RulesTestEnvironment
 
@@ -64,7 +67,7 @@ test.beforeEach(async () => {
     const d = ctx.firestore()
     await setDoc(doc(d, 'organizations', ORG), {
       name: 'Compliance Co', creatorUserId: ADMIN,
-      members: { [ADMIN]: 'admin', [MGR]: 'manager', [OPSMGR]: 'manager', [OP]: 'operative', [VADMIN]: 'admin' },
+      members: { [ADMIN]: 'admin', [MGR]: 'manager', [OPSMGR]: 'manager', [OP]: 'operative', [VADMIN]: 'admin', [OPADMIN]: 'admin', [DEADMIN]: 'admin', [GONEADMIN]: 'admin' },
     })
     await setDoc(doc(d, 'organizations', HOME), { name: 'Home Co', creatorUserId: STRANGER, members: { [STRANGER]: 'admin', [VADMIN]: 'manager' } })
     const user = (id: string, fields: Record<string, unknown>) =>
@@ -75,6 +78,10 @@ test.beforeEach(async () => {
     await user(OP, { role: 'operative', operativeMode: true, assignedManagerUserIds: [MGR] })
     await user(VADMIN, { role: 'manager', manager: true, organizationId: HOME })
     await user(STRANGER, { role: 'admin', adminAccess: true, isSuperAdmin: true, organizationId: HOME })
+    await user(OPADMIN, { role: 'admin', adminAccess: true, operativeMode: true })
+    await user(DEADMIN, { role: 'admin', adminAccess: true, isActive: false })
+    await user(GONEADMIN, { role: 'manager', manager: true, organizationId: HOME })
+    await setDoc(doc(d, 'users', GONEADMIN, 'orgMemberships', ORG), { organizationId: ORG, role: 'admin', accountActive: false })
     await setDoc(ref(d), payload(ADMIN, 1))
   })
 })
@@ -85,11 +92,12 @@ test('an admin of the organisation reads and writes it (also through a transacti
   await assertSucceeds(setDoc(ref(d), payload(ADMIN, 2), { merge: true }))
   await assertSucceeds(
     runTransaction(d, async (t) => {
-      const snap = await t.get(ref(d))
-      t.set(ref(d), { ...payload(ADMIN, 3), seen: snap.exists() }, { merge: true })
+      await t.get(ref(d))
+      t.set(ref(d), payload(ADMIN, 3), { merge: true })
     })
   )
-  await assertSucceeds(deleteDoc(ref(d)))
+  // Nobody deletes the whole document (it would orphan the files); entries are removed one by one.
+  await assertFails(deleteDoc(ref(d)))
 })
 
 test('an admin through the members map (home company elsewhere) reads and writes it', async () => {
@@ -114,4 +122,35 @@ test('a lapsed subscription closes it for the admin too', async () => {
   const d = await db(ADMIN)
   await assertFails(getDoc(ref(d)))
   await assertFails(setDoc(ref(d), payload(ADMIN, 6), { merge: true }))
+})
+
+test('review of #441: only the documents id, only documents / updatedAt / write metadata', async () => {
+  const d = await db(ADMIN)
+  await assertFails(setDoc(doc(d, 'organizations', ORG, 'orgCompliance', 'other'), payload(ADMIN, 7)))
+  await assertFails(getDoc(doc(d, 'organizations', ORG, 'orgCompliance', 'other')))
+  await assertFails(setDoc(ref(d), { ...payload(ADMIN, 8), extra: true }, { merge: true }))
+  await assertSucceeds(setDoc(ref(d), payload(ADMIN, 9)))
+})
+
+test('review of #441: an admin with a stray operative-mode flag is an admin (as Storage and the rulebook)', async () => {
+  const d = await db(OPADMIN)
+  await assertSucceeds(getDoc(ref(d)))
+  await assertSucceeds(setDoc(ref(d), payload(OPADMIN, 10), { merge: true }))
+})
+
+test('review of #441: a deactivated admin (users document or membership) reads and writes nothing', async () => {
+  for (const uid of [DEADMIN, GONEADMIN]) {
+    const d = await db(uid)
+    await assertFails(getDoc(ref(d)))
+    await assertFails(setDoc(ref(d), payload(uid, 11), { merge: true }))
+  }
+})
+
+test('review of #441: a company scheduled for deletion closes it for its admin', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG), { deletion: { status: 'scheduled' } }, { merge: true })
+  })
+  const d = await db(ADMIN)
+  await assertFails(getDoc(ref(d)))
+  await assertFails(setDoc(ref(d), payload(ADMIN, 12), { merge: true }))
 })

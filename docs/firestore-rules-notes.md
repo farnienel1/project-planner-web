@@ -1481,3 +1481,12 @@ it, with no allow / deny change: `staffFlag` (the ternary inside `truthyBool(...
 (`? ((`, `)) :`, the delete branch). 225,015 → 224,995; 156,533 → 156,638 bytes (budget 156,672 unchanged). The rule
 checks who writes, not the entry shape (a lean choice: admins already write the organisation document freely); the
 readers drop any entry whose file is not in this organisation's `compliance/` folder.
+
+Review of #441 (same version): the rule is now
+`allow read, write: if docId == 'documents' && 'c' in callerOrg(organizationId) && orgAdminEither(organizationId) && (request.method == 'get' || request.resource.data.keys().hasOnly(['documents', 'updatedAt', 'updatedBy', 'updatedFrom']))`
+— only the one document id, only those top-level keys, no delete (a delete has no `request.resource`), and the `c`
+claim so a deactivated members-map admin is refused. To pay for it, 150 redundant parenthesis pairs were removed
+across the file with a script that keeps every paren that holds `||`, `?` or `,`, every `!(`, every call, and every
+paren whose removal could change precedence; every rules suite passes unchanged. 224,167 static cost (main 225,015),
+156,496 bytes. Storage: `allow read, delete` uses `adminLike` (a stray operative-mode admin is still an admin, as
+`orgAdminEither`), and `create` needs the object name to start with the caller's uid + `_`.

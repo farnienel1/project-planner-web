@@ -70,6 +70,7 @@ export const EXPORT_FILES = {
   formerPeople: { file: 'former-people.csv', title: 'Former people', description: 'People deleted from the company whose old bookings, leave or timesheets keep their name (deletedPeople, rulebook 1.59.0 §11).' },
   reportChecks: { file: 'report-checks.csv', title: 'Report checks', description: 'The server\'s check of each saved overtime, price work and expenses report against its records (reportChecks, rulebook 1.65.0 §26).' },
   materialContacts: { file: 'material-contacts.csv', title: 'Material contacts', description: 'Wholesaler email addresses the company has sent a quote or order to, and when first (materialContacts, rulebook 1.59.0).' },
+  insuranceAccreditations: { file: 'insurance-and-accreditations.csv', title: 'Insurance & accreditations', description: 'The company\'s insurance and accreditation certificates: type, name, insurer or body, reference, cover, expiry and file path (orgCompliance, rulebook 1.83.0 §31). The files themselves are listed in files.csv.' },
   annualLeaveAdjustments: { file: 'annual-leave-adjustments.csv', title: 'Annual leave adjustments', description: 'Manual annual leave adjustments: days added or taken off, the reason, the leave year and who made them (annualLeaveAdjustments, rulebook 1.40.0 §4.4).' },
 } as const satisfies Record<string, ExportFile>
 
@@ -142,6 +143,8 @@ const FILE_FOR_COLLECTION: Record<string, ExportFileKey> = {
   deletedPeople: 'formerPeople',
   reportChecks: 'reportChecks',
   materialContacts: 'materialContacts',
+  // 1.83.0 §31: its own file.
+  orgCompliance: 'insuranceAccreditations',
 }
 
 const ADDITIONAL_COLLECTIONS = [

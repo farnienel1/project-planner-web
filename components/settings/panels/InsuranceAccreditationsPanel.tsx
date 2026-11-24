@@ -25,6 +25,11 @@ import {
   orgComplianceExpiryStatus,
   orgComplianceSortedEntries,
   orgComplianceTodayKey,
+  orgComplianceDocumentRefKey,
+  parseOrgComplianceDocumentRef,
+  ORG_COMPLIANCE_SHARE_MESSAGES,
+  ORG_COMPLIANCE_SHARE_MAX_DOCUMENTS,
+  ORG_COMPLIANCE_ZIP_MAX_DOCUMENTS,
   type OrgComplianceDocuments,
   type OrgComplianceEntry,
   type OrgComplianceSection,
@@ -38,6 +43,13 @@ import {
   updateOrgComplianceDocument,
 } from '@/lib/compliance/orgComplianceWrites'
 import { PanelHeader, SectionLabel, SettingsCard, ErrorBanner } from '@/components/settings/primitives'
+import {
+  createComplianceShareLink,
+  downloadComplianceZip,
+  listComplianceShareLinks,
+  revokeComplianceShareLink,
+  type ComplianceShareLinkRow,
+} from '@/lib/compliance/complianceShareClient'
 
 const SHIELD =
   'M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z'
@@ -67,10 +79,27 @@ export function useOrgComplianceDocuments(enabled: boolean): { documents: OrgCom
   return { documents: state.documents, error: state.error }
 }
 
-/** Today in the organisation zone, read once when the screen opens (status labels follow the organisation's day). */
+/**
+ * Today in the organisation zone (status labels follow the organisation's day). Worked out again when the window
+ * regains focus or the tab becomes visible, and once a minute, so a page left open past midnight moves to the new day.
+ */
 export function useComplianceTodayKey(): string {
   const timeZone = useOrganizationTimeZone()
-  const [nowMs] = useState(() => Date.now())
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  useEffect(() => {
+    const tick = () => setNowMs(Date.now())
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') tick()
+    }
+    window.addEventListener('focus', tick)
+    document.addEventListener('visibilitychange', onVisible)
+    const timer = window.setInterval(tick, 60_000)
+    return () => {
+      window.removeEventListener('focus', tick)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.clearInterval(timer)
+    }
+  }, [])
   return orgComplianceTodayKey(nowMs, timeZone)
 }
 
@@ -81,6 +110,14 @@ export function InsuranceAccreditationsPanel({ onBack }: { onBack: () => void })
   const currency = useOrganizationCurrency()
   const todayKey = useComplianceTodayKey()
   const counts = useMemo(() => orgComplianceCounts(documents, todayKey), [documents, todayKey])
+  const [selected, setSelected] = useState<Set<string>>(() => new Set())
+  const toggleSelected = (key: string) =>
+    setSelected((current) => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
 
   if (!allowed || !organization?.id || !user) {
     return (
@@ -101,6 +138,15 @@ export function InsuranceAccreditationsPanel({ onBack }: { onBack: () => void })
         <span className="pill" data-hue="red">{counts.expired} expired</span>
       </div>
       {documents === null && !error ? <p className="muted small">Loading…</p> : null}
+      {documents ? (
+        <ShareAndZipBar
+          organizationId={organization.id}
+          documents={documents}
+          selected={selected}
+          clearSelection={() => setSelected(new Set())}
+          todayKey={todayKey}
+        />
+      ) : null}
       {documents
         ? ORG_COMPLIANCE_SECTIONS.map((section) => (
             <SectionBlock
@@ -111,6 +157,8 @@ export function InsuranceAccreditationsPanel({ onBack }: { onBack: () => void })
               actorUid={user.id}
               todayKey={todayKey}
               currency={currency}
+              selected={selected}
+              toggleSelected={toggleSelected}
             />
           ))
         : null}
@@ -125,6 +173,8 @@ function SectionBlock({
   actorUid,
   todayKey,
   currency,
+  selected,
+  toggleSelected,
 }: {
   section: OrgComplianceSection
   entries: OrgComplianceEntry[]
@@ -132,6 +182,8 @@ function SectionBlock({
   actorUid: string
   todayKey: string
   currency: string
+  selected: Set<string>
+  toggleSelected: (key: string) => void
 }) {
   const toast = useToast()
   const [form, setForm] = useState<FormMode | null>(null)
@@ -181,6 +233,13 @@ function SectionBlock({
           ].filter(Boolean)
           return (
             <div key={entry.id} className="ritem" style={{ boxShadow: 'none', cursor: 'default' }}>
+              <input
+                type="checkbox"
+                aria-label={`Choose ${entry.title} to share or download`}
+                checked={selected.has(orgComplianceDocumentRefKey({ section: section.key, id: entry.id }))}
+                onChange={() => toggleSelected(orgComplianceDocumentRefKey({ section: section.key, id: entry.id }))}
+                style={{ marginRight: 10 }}
+              />
               <span className="grow" style={{ minWidth: 0 }}>
                 <span className="t" style={{ overflowWrap: 'anywhere' }}>{entry.title}</span>
                 <span className="s">{extra.join(' · ') || entry.fileName}</span>
@@ -365,5 +424,140 @@ function DocumentForm({
         </button>
       </div>
     </div>
+  )
+}
+
+function dateText(ms: number | null): string {
+  return ms ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(ms)) : ''
+}
+
+/** Share link (7 days) and zip download of the chosen documents, and the organisation's links with Turn off. */
+function ShareAndZipBar({
+  organizationId,
+  documents,
+  selected,
+  clearSelection,
+  todayKey,
+}: {
+  organizationId: string
+  documents: OrgComplianceDocuments
+  selected: Set<string>
+  clearSelection: () => void
+  todayKey: string
+}) {
+  const toast = useToast()
+  const [busy, setBusy] = useState<'zip' | 'link' | null>(null)
+  const [created, setCreated] = useState<string | null>(null)
+  const [links, setLinks] = useState<ComplianceShareLinkRow[] | null>(null)
+  const [linksError, setLinksError] = useState<string | null>(null)
+
+  const chosen = useMemo(() => {
+    const out: OrgComplianceEntry[] = []
+    for (const key of selected) {
+      const ref = parseOrgComplianceDocumentRef(key)
+      const entry = ref ? documents[ref.section].find((row) => row.id === ref.id) : undefined
+      if (entry) out.push(entry)
+    }
+    return out
+  }, [documents, selected])
+
+  async function loadLinks() {
+    try {
+      setLinks(await listComplianceShareLinks(organizationId))
+      setLinksError(null)
+    } catch (err) {
+      setLinksError(err instanceof Error ? err.message : 'The links could not be loaded.')
+    }
+  }
+
+  useEffect(() => {
+    void listComplianceShareLinks(organizationId)
+      .then((rows) => setLinks(rows))
+      .catch((err) => setLinksError(err instanceof Error ? err.message : 'The links could not be loaded.'))
+  }, [organizationId])
+
+  async function onZip() {
+    setBusy('zip')
+    try {
+      await downloadComplianceZip(chosen, todayKey)
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'The zip could not be made.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function onLink() {
+    setBusy('link')
+    try {
+      const result = await createComplianceShareLink(organizationId, [...selected])
+      setCreated(result.url)
+      clearSelection()
+      await loadLinks()
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'The link could not be made.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function onRevoke(id: string) {
+    if (!window.confirm('Turn this link off? Anyone who has it will no longer see the documents.')) return
+    try {
+      await revokeComplianceShareLink(organizationId, id)
+      await loadLinks()
+      toast('Link turned off.')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'The link could not be turned off.')
+    }
+  }
+
+  const count = chosen.length
+  // The server works out each link's state (`orgComplianceShareLinkState`).
+  const active = (links ?? []).filter((link) => link.state === 'active')
+
+  return (
+    <SettingsCard>
+      <div style={{ padding: 14 }} className="stack">
+        <p className="small">
+          {count ? `${count} chosen` : 'Tick documents below to share them or download them together.'}
+        </p>
+        <div className="row wrap" style={{ gap: 8 }}>
+          <button type="button" className="btn sm" disabled={!count || count > ORG_COMPLIANCE_ZIP_MAX_DOCUMENTS || busy !== null} onClick={() => void onZip()}>
+            {busy === 'zip' ? 'Preparing…' : 'Download zip'}
+          </button>
+          <button type="button" className="btn sm tint" disabled={!count || count > ORG_COMPLIANCE_SHARE_MAX_DOCUMENTS || busy !== null} onClick={() => void onLink()}>
+            {busy === 'link' ? 'Making link…' : 'Create share link'}
+          </button>
+        </div>
+        <p className="muted small">{ORG_COMPLIANCE_SHARE_MESSAGES.helper}</p>
+        {created ? (
+          <div className="row wrap" style={{ gap: 8, alignItems: 'center' }}>
+            <input className="in grow" readOnly value={created} aria-label="Share link" onFocus={(e) => e.currentTarget.select()} />
+            <button
+              type="button"
+              className="btn sm"
+              onClick={() => void navigator.clipboard?.writeText(created).then(() => toast('Link copied.'), () => toast('Copy the link from the box.'))}
+            >
+              Copy link
+            </button>
+          </div>
+        ) : null}
+        {linksError ? <p className="muted small">{linksError}</p> : null}
+        {active.length ? (
+          <div className="stack" style={{ gap: 6 }}>
+            <p className="small" style={{ fontWeight: 600 }}>Active links</p>
+            {active.map((link) => (
+              <div key={link.id} className="row wrap" style={{ gap: 8, alignItems: 'center' }}>
+                <span className="small grow">
+                  {link.documents.length} document{link.documents.length === 1 ? '' : 's'} · until {dateText(link.expiresAtMs)} · opened {link.openCount} time{link.openCount === 1 ? '' : 's'}
+                </span>
+                <button type="button" className="btn sm" onClick={() => void onRevoke(link.id)}>Turn off</button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </SettingsCard>
   )
 }

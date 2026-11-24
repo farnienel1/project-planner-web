@@ -13,7 +13,9 @@
  * subcontractor documents), so an entry added on another device meanwhile is kept. Pure, JSON in / JSON out.
  */
 
+import { hasAccess } from './billingAccess'
 import { derivedRowId } from './derivedIds'
+import { organizationDeletionState } from './organizationDeletion'
 import { calendarDaysBetween } from './dueDates'
 import { holidayDocumentDayKey } from './holidayDocument'
 import { formatMoney } from './money'
@@ -602,4 +604,312 @@ export function orgComplianceHubSubtitle(counts: OrgComplianceCounts | null | un
 /** Cover in the organisation currency, whole units ("£10,000,000"); '' when none. */
 export function orgComplianceCoverText(amount: number | null | undefined, currency: unknown): string {
   return typeof amount === 'number' && Number.isFinite(amount) ? formatMoney(amount, currency, { decimals: 0 }) : ''
+}
+
+// ── One stored file name (review of #441: both apps store the same name) ─────────────────────────────────────────
+
+/**
+ * The file name stored on an entry: the picked file's name with its extension changed to the stored object's (a
+ * photo redrawn to JPEG, "Site.heic" → "Site.jpg"; `jpeg` and `jpg` count as one), trimmed and without path parts;
+ * the object name when nothing was picked. At most 200 characters.
+ */
+export function orgComplianceFileName(pickedName: unknown, storedPath: unknown): string {
+  const objectName = text(storedPath).split('/').pop() || 'Document'
+  const picked = text(pickedName).split(/[\\/]/).pop()?.trim() ?? ''
+  if (!picked) return objectName
+  const ext = (name: string) => {
+    const dot = name.lastIndexOf('.')
+    return dot > 0 ? name.slice(dot + 1).toLowerCase() : ''
+  }
+  const storedExt = ext(objectName)
+  const ownExt = ext(picked)
+  const norm = (e: string) => (e === 'jpeg' ? 'jpg' : e)
+  let name = picked
+  if (storedExt && norm(ownExt) !== norm(storedExt)) {
+    const base = ownExt ? picked.slice(0, picked.length - ownExt.length - 1) : picked
+    name = `${base}.${storedExt}`
+  }
+  return Array.from(name).slice(0, 200).join('')
+}
+
+// ── Expiry reminder (Home card for admins) ──────────────────────────────────────────────────────────────────────
+
+export type OrgComplianceReminder = { count: number; expired: number; expiringSoon: number; title: string; detail: string }
+
+/**
+ * The admins' Home reminder from `orgComplianceCounts` (the one status rule): null when nothing is expired or expiring
+ * within `ORG_COMPLIANCE_EXPIRING_SOON_DAYS`; else "2 certificates need attention" / "1 expired · 1 expiring within
+ * 30 days".
+ */
+export function orgComplianceReminder(counts: OrgComplianceCounts | null | undefined): OrgComplianceReminder | null {
+  const expired = counts?.expired ?? 0
+  const expiringSoon = counts?.expiringSoon ?? 0
+  const count = expired + expiringSoon
+  if (!count) return null
+  const parts = [
+    expired ? `${expired} expired` : '',
+    expiringSoon ? `${expiringSoon} expiring within ${ORG_COMPLIANCE_EXPIRING_SOON_DAYS} days` : '',
+  ].filter(Boolean)
+  return {
+    count,
+    expired,
+    expiringSoon,
+    title: `${count} insurance or accreditation certificate${count === 1 ? '' : 's'} need${count === 1 ? 's' : ''} attention`,
+    detail: parts.join(' · '),
+  }
+}
+
+// ── Zip download of selected documents ──────────────────────────────────────────────────────────────────────────
+
+export const ORG_COMPLIANCE_ZIP_MAX_DOCUMENTS = 50
+
+/**
+ * One file name per selected entry inside a zip, in the order given: the stored file name made safe for a zip (no
+ * path parts or control characters), a second entry with the same name gets " (2)" before its extension.
+ */
+export function orgComplianceZipEntryNames(entries: readonly { fileName: string; title?: string }[]): string[] {
+  const used = new Set<string>()
+  return entries.map((entry) => {
+    const raw = text(entry.fileName) || text(entry.title) || 'Document'
+    const safe = raw.replace(/[\u0000-\u001f\u007f/\\:*?"<>|]/g, '_').replace(/^\.+/, '_').slice(0, 150) || 'Document'
+    const dot = safe.lastIndexOf('.')
+    const base = dot > 0 ? safe.slice(0, dot) : safe
+    const ext = dot > 0 ? safe.slice(dot) : ''
+    let name = safe
+    for (let n = 2; used.has(name.toLowerCase()); n += 1) name = `${base} (${n})${ext}`
+    used.add(name.toLowerCase())
+    return name
+  })
+}
+
+/** "Insurance-and-accreditations-2026-11-24.zip". */
+export function orgComplianceZipFileName(todayKey: string): string {
+  return `Insurance-and-accreditations-${validDayKey(todayKey) ? todayKey : 'documents'}.zip`
+}
+
+// ── Share links (7 days, public read-only page) ─────────────────────────────────────────────────────────────────
+
+export const ORG_COMPLIANCE_SHARE_LINK_DAYS = 7
+export const ORG_COMPLIANCE_SHARE_MAX_DOCUMENTS = 20
+/** Top-level, server-only (no security rule: default deny). The document id is the sha256 of the token. */
+export const ORG_COMPLIANCE_SHARE_LINKS_COLLECTION = 'complianceShareLinks'
+/** Top-level, server-only audit rows: link created, revoked, opened, file opened. */
+export const ORG_COMPLIANCE_AUDIT_COLLECTION = 'complianceAudit'
+/** How long a signed file link from a share page lasts. */
+export const ORG_COMPLIANCE_SIGNED_URL_SECONDS = 60
+
+export const ORG_COMPLIANCE_SHARE_MESSAGES = {
+  none: 'Choose at least one document to share.',
+  tooMany: `Share up to ${ORG_COMPLIANCE_SHARE_MAX_DOCUMENTS} documents in one link.`,
+  gone: 'This link has expired or been turned off. Ask the company for a new one.',
+  helper: `Anyone with the link can view and download the chosen documents for ${ORG_COMPLIANCE_SHARE_LINK_DAYS} days, or until you turn the link off.`,
+} as const
+
+export type OrgComplianceDocumentRef = { section: OrgComplianceSectionKey; id: string }
+
+/** `insurance:abc` → a ref (null when unusable). */
+export function parseOrgComplianceDocumentRef(value: unknown): OrgComplianceDocumentRef | null {
+  if (value && typeof value === 'object') {
+    const row = value as Record<string, unknown>
+    if (isOrgComplianceSectionKey(row.section) && text(row.id) && !text(row.id).includes('/')) return { section: row.section, id: text(row.id) }
+    return null
+  }
+  const raw = text(value)
+  const at = raw.indexOf(':')
+  if (at < 0) return null
+  const section = raw.slice(0, at)
+  const id = raw.slice(at + 1)
+  return isOrgComplianceSectionKey(section) && id && !id.includes('/') && id.length <= 200 ? { section, id } : null
+}
+
+export function orgComplianceDocumentRefKey(ref: OrgComplianceDocumentRef): string {
+  return `${ref.section}:${ref.id}`
+}
+
+function findEntry(documents: OrgComplianceDocuments, ref: OrgComplianceDocumentRef): OrgComplianceEntry | null {
+  return documents[ref.section].find((entry) => normalizeDocumentId(entry.id) === normalizeDocumentId(ref.id)) ?? null
+}
+
+/**
+ * The documents a new link may share: each ref must name a stored entry (refs to removed documents are dropped), once,
+ * 1–`ORG_COMPLIANCE_SHARE_MAX_DOCUMENTS`. `error` when none is left or too many were asked for.
+ */
+export function orgComplianceShareSelection(
+  documents: OrgComplianceDocuments,
+  refs: readonly unknown[]
+): { refs: OrgComplianceDocumentRef[]; error: string | null } {
+  if (refs.length > ORG_COMPLIANCE_SHARE_MAX_DOCUMENTS) return { refs: [], error: ORG_COMPLIANCE_SHARE_MESSAGES.tooMany }
+  const out: OrgComplianceDocumentRef[] = []
+  const seen = new Set<string>()
+  for (const value of refs) {
+    const ref = parseOrgComplianceDocumentRef(value)
+    const entry = ref ? findEntry(documents, ref) : null
+    if (!ref || !entry) continue
+    const key = orgComplianceDocumentRefKey({ section: ref.section, id: entry.id })
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ section: ref.section, id: entry.id })
+  }
+  return { refs: out, error: out.length ? null : ORG_COMPLIANCE_SHARE_MESSAGES.none }
+}
+
+export type OrgComplianceShareLink = {
+  id: string
+  organizationId: string
+  documents: OrgComplianceDocumentRef[]
+  createdBy: string
+  createdAtMs: number | null
+  expiresAtMs: number | null
+  revokedAtMs: number | null
+  openCount: number
+  lastOpenedAtMs: number | null
+}
+
+/** Reads a `complianceShareLinks` document (server side). Never throws. */
+export function parseOrgComplianceShareLink(id: unknown, data: Record<string, unknown> | null | undefined): OrgComplianceShareLink | null {
+  const row = record(data)
+  const org = text(row.organizationId)
+  if (!text(id) || !org) return null
+  const docs = Array.isArray(row.documents) ? row.documents.map(parseOrgComplianceDocumentRef).filter((r): r is OrgComplianceDocumentRef => r !== null) : []
+  // Stored as epoch milliseconds by the server; a Timestamp or ISO string reads too.
+  const num = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : documentInstantMs(value))
+  return {
+    id: text(id),
+    organizationId: org,
+    documents: docs,
+    createdBy: text(row.createdBy),
+    createdAtMs: num(row.createdAtMs),
+    expiresAtMs: num(row.expiresAtMs),
+    revokedAtMs: num(row.revokedAtMs),
+    openCount: Number.isFinite(Number(row.openCount)) ? Math.max(0, Math.floor(Number(row.openCount))) : 0,
+    lastOpenedAtMs: num(row.lastOpenedAtMs),
+  }
+}
+
+/** `active` until `expiresAtMs` and while not revoked; a link with no expiry is never active. */
+export function orgComplianceShareLinkState(link: OrgComplianceShareLink | null, nowMs: number): 'active' | 'expired' | 'revoked' {
+  if (!link || link.expiresAtMs == null) return 'expired'
+  if (link.revokedAtMs != null) return 'revoked'
+  return nowMs < link.expiresAtMs ? 'active' : 'expired'
+}
+
+/** The stored fields of a new link (the server adds nothing else; the id is sha256 of the token). */
+export function orgComplianceShareLinkCreateFields(input: {
+  organizationId: string
+  documents: readonly OrgComplianceDocumentRef[]
+  createdBy: string
+  nowMs: number
+}): Record<string, unknown> {
+  const expiresAtMs = input.nowMs + ORG_COMPLIANCE_SHARE_LINK_DAYS * 24 * 60 * 60 * 1000
+  return {
+    organizationId: input.organizationId,
+    documents: input.documents.map(orgComplianceDocumentRefKey),
+    createdBy: input.createdBy,
+    createdAtMs: input.nowMs,
+    expiresAtMs,
+    revokedAtMs: null,
+    openCount: 0,
+    lastOpenedAtMs: null,
+  }
+}
+
+/** The public share page's path for a token. */
+export function orgComplianceSharePath(token: string): string {
+  return `/shared/compliance/${encodeURIComponent(token)}`
+}
+
+export type OrgCompliancePublicDocument = {
+  key: string
+  sectionTitle: string
+  typeLabel: string
+  title: string
+  issuer: string
+  issuerLabel: string
+  reference: string
+  referenceLabel: string
+  cover: string
+  coverLabel: string | null
+  statusLabel: string
+  tone: OrgComplianceTone
+  contentType: string
+}
+
+/**
+ * What the public share page shows: only the linked documents still stored, with their own fields — never who
+ * uploaded or changed them, never a storage path. Status by the same rule as the app (`orgComplianceExpiryStatus`).
+ */
+export function orgCompliancePublicDocuments(
+  documents: OrgComplianceDocuments,
+  refs: readonly OrgComplianceDocumentRef[],
+  todayKey: string,
+  currency: unknown
+): OrgCompliancePublicDocument[] {
+  const out: OrgCompliancePublicDocument[] = []
+  for (const ref of refs) {
+    const entry = findEntry(documents, ref)
+    const section = orgComplianceSection(ref.section)
+    if (!entry || !section) continue
+    const status = orgComplianceExpiryStatus(entry.expiresOn, todayKey)
+    out.push({
+      key: orgComplianceDocumentRefKey({ section: section.key, id: entry.id }),
+      sectionTitle: section.title,
+      typeLabel: orgComplianceDocTypeLabel(section.key, entry.docType),
+      title: entry.title,
+      issuer: entry.issuer,
+      issuerLabel: section.issuerLabel,
+      reference: entry.reference,
+      referenceLabel: section.referenceLabel,
+      cover: section.coverLabel ? orgComplianceCoverText(entry.coverAmount, currency) : '',
+      coverLabel: section.coverLabel,
+      statusLabel: status.label,
+      tone: status.tone,
+      contentType: entry.contentType,
+    })
+  }
+  return out
+}
+
+/** The stored entry a share link's file key names, only when the link shares it (server side). */
+export function orgComplianceSharedEntry(
+  documents: OrgComplianceDocuments,
+  link: OrgComplianceShareLink,
+  key: unknown
+): OrgComplianceEntry | null {
+  const ref = parseOrgComplianceDocumentRef(key)
+  if (!ref) return null
+  const shared = link.documents.some(
+    (item) => item.section === ref.section && normalizeDocumentId(item.id) === normalizeDocumentId(ref.id)
+  )
+  return shared ? findEntry(documents, ref) : null
+}
+
+/**
+ * Whether any stored entry's file is `path` (review of #441, the §22 `alreadyLinked` pattern): after a failed save the
+ * app re-reads the document from the server and deletes the file it just uploaded only when this is false — a save
+ * that committed while the app saw an error never loses its file.
+ */
+export function orgCompliancePathLinked(stored: Record<string, unknown> | null | undefined, path: unknown): boolean {
+  const target = text(path)
+  if (!target) return false
+  const documents = record(record(stored).documents)
+  return ORG_COMPLIANCE_SECTION_KEYS.some((key) => {
+    const list = documents[key]
+    return Array.isArray(list) && list.some((row) => text(record(row).path) === target)
+  })
+}
+
+/**
+ * Whether a share link of this organisation may still be opened: not scheduled for deletion or erased (§20) and the
+ * subscription open (§19: `hasAccess`, and the `billing.accessOpen` / `accessClosesAt` the security rules read).
+ */
+export function orgComplianceShareOpen(org: unknown, nowMs: number): boolean {
+  if (!org || typeof org !== 'object') return false
+  if (organizationDeletionState(org, nowMs).state !== 'active') return false
+  const raw = (org as Record<string, unknown>).billing
+  const billing = record(raw)
+  // Missing billing is open (trials and companies created before billing), as `hasAccess`.
+  if (raw && typeof raw === 'object' && !hasAccess(billing as Parameters<typeof hasAccess>[0], nowMs)) return false
+  if (billing.accessOpen === false) return false
+  const closes = documentInstantMs(billing.accessClosesAt)
+  return !(closes != null && nowMs >= closes)
 }
