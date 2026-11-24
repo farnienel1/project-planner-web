@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.84.0
+# iOS follow-on — rulebook 1.85.0
 
 Generated 2026-11-24 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.83.0 → 1.84.0
-Packed hash: b31ded389d4833f09e3492a0c31e56fe51cbd3c198b489edf5d9e189a07371df
-Rulebook sha256: d63be3c1c90bba0d8abbc9d6c5ced4e0ff9ff4c2c3eac6e0bc40b12b6ceb1d09
+Rulebook version: 1.84.0 → 1.85.0
+Packed hash: baa36c96da52162ec17ab8963c320a066b0defbcb22dd47607171373aefdcb10
+Rulebook sha256: 970bf206de5099894da4faeea7d315a58a8492d00c748a373901aed26660faec
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,34 +22,41 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: d2d465abcf0ab7c7747385346b87d2b47226412b1014602c5a26bff8e951c0ca
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: CLIENT_ERRORS_COLLECTION, CLIENT_ERRORS_PER_DAY, CLIENT_ERROR_BUILD_MAX, CLIENT_ERROR_DAY_MS, CLIENT_ERROR_FIELDS, CLIENT_ERROR_KIND_MAX, CLIENT_ERROR_KNOWN_MESSAGES, CLIENT_ERROR_ORGANIZATION_ID_MAX, CLIENT_ERROR_OTHER_MESSAGE_KEY, CLIENT_ERROR_PLATFORMS, CLIENT_ERROR_ROUTE_MAX, CLIENT_ERROR_SOURCES, CLIENT_ERROR_TTL_DAYS, CLIENT_ERROR_WHERE_MAX, clientErrorBuild, clientErrorCreateFields, clientErrorDayIndex, clientErrorDocId, clientErrorGroups, clientErrorHashInput, clientErrorKind, clientErrorMessageKey, clientErrorNextSlot, clientErrorRoute, clientErrorSignature, clientErrorThrottle, clientErrorWhere, parseClientErrorDocument, redactClientErrorTokens
+Exports added: ONBOARDING_DISMISSED_AT_FIELD, ONBOARDING_DISMISSED_BY_FIELD, ONBOARDING_DISMISS_CONFIRM, ONBOARDING_DISMISS_LABEL, ONBOARDING_OPTIONAL_LABEL, ONBOARDING_SUBTITLE, ONBOARDING_TITLE, ORG_COMPLIANCE_PAGE_PATH, ORG_COMPLIANCE_REMINDERS_SWITCH_FIELD, ORG_COMPLIANCE_REMINDER_LEDGER_ID, ORG_COMPLIANCE_REMINDER_THRESHOLDS, onboardingCardVisible, onboardingChecklist, onboardingDismissWriteFields, onboardingDismissed, orgComplianceReminderBatchTag, orgComplianceReminderDayKey, orgComplianceReminderEmail, orgComplianceReminderLedgerAfter, orgComplianceReminderLedgerFields, orgComplianceReminderLedgerPath, orgComplianceReminderRecipients, orgComplianceReminderSetDayKey, orgComplianceRemindersDue, orgComplianceRemindersEnabled, parseOrgComplianceReminderLedger
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, firestore.indexes.json, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/clientErrors.test.ts, lib/canonical/clientErrors.ts, lib/canonical/crossPlatformContract.samples.ts, lib/canonical/index.ts, lib/canonical/liveSources.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/index.ts, lib/canonical/onboardingChecklist.test.ts, lib/canonical/onboardingChecklist.ts, lib/canonical/orgComplianceReminders.test.ts, lib/canonical/orgComplianceReminders.ts, lib/canonical/organizationSettings.ts
 Done when:
-- [ ] Packed hash in iOS equals b31ded389d4833f09e3492a0c31e56fe51cbd3c198b489edf5d9e189a07371df
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 d63be3c1c90bba0d8abbc9d6c5ced4e0ff9ff4c2c3eac6e0bc40b12b6ceb1d09)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.84.0)
+- [ ] Packed hash in iOS equals baa36c96da52162ec17ab8963c320a066b0defbcb22dd47607171373aefdcb10
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 970bf206de5099894da4faeea7d315a58a8492d00c748a373901aed26660faec)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.85.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.84.0
+## What changed in 1.85.0
 
-- **Client error reports** (new §32, owner decision D7, 16 Nov; new `lib/canonical/clientErrors.ts`; review of #448: no message text, pseudonymous): `CLIENT_ERRORS_COLLECTION`, `CLIENT_ERROR_FIELDS`, `CLIENT_ERROR_PLATFORMS`, `CLIENT_ERROR_SOURCES`, `CLIENT_ERRORS_PER_DAY` (20), `CLIENT_ERROR_TTL_DAYS` (30), the caps, `CLIENT_ERROR_KNOWN_MESSAGES`, `clientErrorMessageKey`, `clientErrorKind`, `clientErrorWhere`, `clientErrorRoute`, `clientErrorBuild`, `redactClientErrorTokens`, `clientErrorNextSlot`, `clientErrorDayIndex`, `clientErrorHashInput`, `clientErrorDocId`, `clientErrorSignature`, `clientErrorThrottle`, `clientErrorCreateFields`, `parseClientErrorDocument`, `clientErrorGroups`. `LIVE_COLLECTIONS` lists `clientErrors` (platform scope, never shown to members; `CONTRACT_NO_READER`). `firestore.rules`: create-only in the exact shape under the id the rules recompute (`hashing.sha256(uid|day)` + slot 0–19), owner-only read; composite indexes on `clientErrors` (platform / organizationId + createdAt). Web: `reportClientError` (window errors, unhandled rejections, the dashboard, root and timesheet error boundaries); owner console → Errors (`/developer/errors`, `/api/owner/errors`). iOS: `ClientErrorReporter` (`logAndReportError` on the logged error lines, uncaught exceptions on next launch).
-- **Security rules headroom** (no allow / deny change): one-use helpers written out in their callers, repeated expressions bound once with `let`, the match variable `{organizationId}` renamed `{orgId}`, the last comments moved to `docs/firestore-rules-notes.md` ("1.84.0 headroom"). Static compile cost 224,751 → 219,452 before the new rules (−2.4%); 155,533 → 151,286 bytes (−2.7%); functions behind the requests closest to the 1,000-expression limit are left as they were (a −11% variant refused 17 requests). New proof tool `scripts/rules-cost/equiv.py` (every allow fully inlined, compared token for token) and the transformation scripts `scripts/rules-cost/headroom_*.py`.
+- **Insurance & accreditation expiry emails** (§31, owner decision 24 Nov: 2 months, 1 month and 7 days, never twice; only thresholds still ahead when the expiry was set). New `lib/canonical/orgComplianceReminders.ts`: `ORG_COMPLIANCE_REMINDER_THRESHOLDS`, `orgComplianceReminderDayKey`, `orgComplianceReminderSetDayKey`, `orgComplianceRemindersDue`, `parseOrgComplianceReminderLedger`, `orgComplianceReminderLedgerAfter`, `orgComplianceReminderLedgerFields`, `orgComplianceReminderLedgerPath`, `orgComplianceReminderRecipients`, `orgComplianceReminderEmail`, `orgComplianceReminderBatchTag`, `ORG_COMPLIANCE_PAGE_PATH`, `orgComplianceRemindersEnabled`, `ORG_COMPLIANCE_REMINDERS_SWITCH_FIELD`. Daily Cloud Function `orgComplianceExpiryReminders` (`functions/orgComplianceReminders.js`), off until `platformConfig/app.orgComplianceRemindersEnabled` (§18).
+- **Getting started checklist** (new §33, owner 24 Nov): `lib/canonical/onboardingChecklist.ts` — `onboardingChecklist`, `onboardingCardVisible`, `onboardingDismissed`, `onboardingDismissWriteFields`, `ONBOARDING_*` copy. `ORGANIZATION_DOCUMENT_FIELDS` lists `onboardingDismissedAt`, `onboardingDismissedBy`. Web: the card at the top of Home (admins) and on the setup wizard's last screen.
+- Owner answer 24 Nov (same version): a threshold on the very day the expiry is set counts as still ahead and is sent that day (an expiry set exactly 7 days, 1 month or 2 months away); a threshold already passed is never sent.
+- Review of #447 / #294 (same version): the reminder ledger is claimed before sending and released only when nothing was accepted (at most once); the idempotency key carries the documents and thresholds (`orgComplianceReminderBatchTag`); the dry run records set days; duplicate entry ids skipped; greeting from the stored first name only; failures logged by status only. Web Home asks `canManageOrganizationCompliance`; Hide never waits for the server.
 
-## iOS work for 1.84.0
+## iOS work for 1.85.0
 
-## iOS work for 1.84.0
+Built in iOS PR on branch `ios-1.85-reminders-onboarding` (from `ios-1.83-accreditations`). Calls through `CanonicalBusinessEngine` only:
 
-1. **Error reports** (§32, D7; no message text, pseudonymous): `Core/ClientErrorReporter.swift` — `ClientErrorReporter.install()` at launch (chains to any earlier uncaught-exception handler; the pending crash report is sent from a background task, and again after sign-in), `logAndReportError(_:file:function:)` in place of the existing `print("❌ …")`, `print("Error …")` and failing `print("⚠️ …")` lines (kind `LoggedError`, `where` = `#fileID` + `#function`, message text only hashed). Fields, key, id, throttle and next slot from the packed rulebook (`clientErrorCreateFields`, `clientErrorHashInput`, `clientErrorDocId`, `clientErrorThrottle`, `clientErrorSignature`, `clientErrorNextSlot`) through `CanonicalBusinessEngine.callJSON`; hashes are CryptoKit SHA-256 in lower-case hex. A create refused because the slot is used tries the next slot. Signed-out devices send nothing. Tests: `ClientErrorReporterTests`.
-2. **Rules headroom**: nothing to do on iOS (no rule decides differently). The rules' match variable is now `{orgId}`; the iOS repo keeps no copy of `firestore.rules` it edits.
+1. `Project Planner/Core/Rulebook+Onboarding.swift` — wrappers for `onboardingChecklist`, `onboardingCardVisible`, `onboardingDismissWriteFields` and the `ONBOARDING_*` copy; `OnboardingOrganizationDocument` keeps the stored fields the checklist reads.
+2. `Project Planner/Models/Organization.swift` + `Project Planner/FirebaseBackend.swift` — `Organization.onboardingDocumentJSON`, filled in `applyPayrollPolicyFields` and on every organisation snapshot.
+3. `Project Planner/Core/FirebaseBackend+Onboarding.swift` — Hide: one partial update of `organizations/{orgId}` (`onboardingDismissedBy`, `onboardingDismissedAt` server time, write metadata).
+4. `Project Planner/Views/GettingStartedHomeCard.swift`, placed first in Home's light sheet (`HomeView.homeLightSheet`) — admins only; each item opens its screen in a sheet.
+5. `ProjectPlannerTests/OnboardingChecklistTests.swift`.
+
+The expiry emails (§31) are server-only: nothing to build on iOS.
 
 ## New rulebook sections
 
-- 32. Client error reports (1.84.0)
-- 1.84.0 — 2026-11-24
+- 33. Getting started checklist (1.85.0)
+- 1.85.0 — 2026-11-24
 
 ## Workflow for the iOS agent
 

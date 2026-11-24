@@ -46,6 +46,7 @@ import { SetupExplainer } from '@/components/setup/SetupExplainer'
 import { OrganisationDetailsStep } from '@/components/setup/OrganisationDetailsStep'
 import { OrganisationFeaturesStep } from '@/components/setup/OrganisationFeaturesStep'
 import { GuidedOrgSetup, createEmptyGuidedSetupData, type GuidedSetupData } from '@/components/setup/GuidedOrgSetup'
+import { setupOnboardingChecklist } from '@/lib/orgSetup/onboardingPreview'
 import {
   createDefaultOrgSetupSettings,
   type OrgSetupSettings,
@@ -1149,6 +1150,37 @@ export function OrgSetupWizard() {
                       </div>
                     </div>
                   </div>
+
+                  {(() => {
+                    // Rulebook 1.85.0 §32: the same Getting started list admins see on Home.
+                    const onboarding = setupOnboardingChecklist({
+                      settings: orgSetupSettings,
+                      organizationName,
+                      guidedProjectName: guidedData.project.siteName,
+                    })
+                    return (
+                      <div className="card pad" style={{ boxShadow: 'none', background: 'var(--soft)' }} aria-labelledby="setup-getting-started">
+                        <h3 id="setup-getting-started" style={{ fontSize: 16, marginBottom: 4 }}>
+                          {onboarding.title} · {onboarding.progressLabel}
+                        </h3>
+                        <div className="muted small" style={{ marginBottom: 8 }}>
+                          The rest is on your Home screen after you sign in. Each step ticks itself off when it’s done.
+                        </div>
+                        <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                          {onboarding.items.map((item) => (
+                            <li key={item.key} className="small ink2" style={{ display: 'flex', gap: 8, padding: '4px 0' }}>
+                              <span aria-hidden>{item.done ? '✓' : '○'}</span>
+                              <span>
+                                {item.title}
+                                {item.optional ? ' (optional)' : ''}
+                                <span className="sr-only">{item.done ? ' — done' : ' — not done yet'}</span>
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )
+                  })()}
 
                   <div className="card pad" style={{ boxShadow: 'none', background: 'var(--soft)' }}>
                     <h3 style={{ fontSize: 16, marginBottom: 8 }}>Team &amp; data you set up</h3>
