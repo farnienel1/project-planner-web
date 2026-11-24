@@ -33,3 +33,10 @@ test('review of #391: the stored logo is used only when it is an https link', ()
     'https://cdn.example/l.png'
   )
 })
+
+test('1.82.0: the sender\'s name is their name in this organisation when it has one', () => {
+  const callerDoc = { firstName: 'Farnie', surname: 'Nel' }
+  assert.equal(materialRequestSender({ tokenEmail: 'a@x.com', callerDoc, orgDoc: { name: 'Acme' }, memberNameDoc: { firstName: 'Farns', surname: 'N' }, userId: 'u1' }).name, 'Farns N')
+  assert.equal(materialRequestSender({ tokenEmail: 'a@x.com', callerDoc, orgDoc: { name: 'Acme' }, memberNameDoc: null, userId: 'u1' }).name, 'Farnie Nel')
+  assert.equal(materialRequestSender({ tokenEmail: 'a@x.com', callerDoc, orgDoc: { name: 'Acme' }, memberNameDoc: { firstName: '  ' } }).name, 'Farnie Nel')
+})

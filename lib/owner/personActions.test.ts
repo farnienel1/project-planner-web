@@ -289,7 +289,7 @@ test('1.81.0 change name everywhere removes the organisation names that exist', 
   ])
 })
 
-test('review of #439: "this organisation only" on the home organisation writes its users document and removes its entry', () => {
+test('1.82.0: "this organisation only" on the home organisation writes its users document and SETS its entry (never removes it)', () => {
   const plan = ownerNameChangePlan({
     firstName: 'Farns',
     surname: 'Nel',
@@ -302,6 +302,27 @@ test('review of #439: "this organisation only" on the home organisation writes i
   })
   assert.deepEqual(plan.writes.map((write) => [write.path, write.kind ?? 'update']), [
     ['users/u1', 'update'],
-    ['organizations/A/memberNames/u1', 'delete'],
+    ['organizations/A/memberNames/u1', 'upsert'],
   ])
+})
+
+test('review of #442: the per-organisation entry is the users document of that organisation, else the anchored id', async () => {
+  const { ownerNameEntryTarget } = await import('./personActions')
+  const userDocs = [
+    { id: 'u-home', data: { organizationId: 'A' } },
+    { id: 'u-b', data: { organizationId: 'organizations/B' } },
+  ]
+  assert.deepEqual(ownerNameEntryTarget({ userDocs, organizationId: 'B', personIds: ['u-home', 'u-b'], fallbackId: 'u-home' }), { userId: 'u-b', home: true })
+  assert.deepEqual(
+    ownerNameEntryTarget({ userDocs, organizationId: 'C', organizationData: { members: { 'U-HOME': 'manager' } }, personIds: ['u-home', 'u-b'], fallbackId: 'u-b' }),
+    { userId: 'U-HOME', home: false }
+  )
+  assert.deepEqual(ownerNameEntryTarget({ userDocs, organizationId: 'D', personIds: ['u-home'], fallbackId: 'u-home' }), { userId: 'u-home', home: false })
+  // A visit (not home) never writes the users document, even when the kept document's own organisation matched before.
+  const plan = ownerNameChangePlan({
+    firstName: 'Farns', surname: 'Nel', userDocs: [{ id: 'u-home', data: { firstName: 'Farnie', surname: 'Nel', organizationId: 'A' } }],
+    rosterRows: [], scope: 'organization', organizationId: 'C', keptUserId: 'U-HOME', homeOrganization: false,
+  })
+  assert.deepEqual(plan.users, [])
+  assert.deepEqual(plan.writes.map((write) => write.path), ['organizations/C/memberNames/U-HOME'])
 })

@@ -15,6 +15,7 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
 import type { DailyOverviewModel } from '@/lib/daily-overview/buildDailyOverview'
 import { officeCentreFromOrganization, siteMapJobSummary } from '@/lib/maps/siteMapView'
+import type { SiteMapLeaveSummary } from '@/lib/canonical'
 import { siteMapUnplacedText } from '@/lib/maps/siteMapPlacement'
 import { SiteMapBoard } from '@/components/site-map/SiteMapBoard'
 import { SiteMapJobSummaryCard } from '@/components/site-map/SiteMapJobSummaryCard'
@@ -24,11 +25,14 @@ import { useSiteMapJobs } from '@/components/site-map/useSiteMapJobs'
 
 export default function SiteMapHomeCard({
   model,
+  companyLeave,
   dayKey,
   timeZone,
 }: {
   /** Home's own Daily Overview model for today (null while it loads). */
   model: DailyOverviewModel | null
+  /** Rulebook 1.82.0 §21: the whole company's leave today (`useDailyOverviewModel().companyLeave`). */
+  companyLeave: SiteMapLeaveSummary | null
   dayKey: string
   timeZone: string
 }) {
@@ -49,8 +53,8 @@ export default function SiteMapHomeCard({
   )
   const selectedJob = jobs.find((job) => job.id === selectedId) ?? null
   const summary = useMemo(
-    () => (selectedJob ? siteMapJobSummary({ jobId: selectedJob.id, peopleOnSite: selectedJob.peopleCount, model }) : null),
-    [selectedJob, model]
+    () => (selectedJob ? siteMapJobSummary({ jobId: selectedJob.id, peopleOnSite: selectedJob.peopleCount, model, companyLeave }) : null),
+    [selectedJob, model, companyLeave]
   )
   const select = useCallback((id: string) => setSelectedId(id), [])
 

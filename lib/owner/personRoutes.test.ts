@@ -136,7 +136,8 @@ const params = (uid: string) => ({ params: Promise.resolve({ uid }) })
 const auditIndex = (calls: Call[]) => calls.findIndex((call) => call.url.includes('/adminAuditLog') && call.method === 'POST')
 const commitIndex = (calls: Call[]) => calls.findIndex((call) => call.url.endsWith(':commit'))
 
-const NAME_BODY = { uid: 'sam-uid', firstName: 'Samuel', surname: 'Lee', reason: 'Name spelt wrong (ticket 12)' }
+// Rulebook 1.82.0 §11: the change acts on one organisation (here Sam's home organisation).
+const NAME_BODY = { uid: 'sam-uid', firstName: 'Samuel', surname: 'Lee', reason: 'Name spelt wrong (ticket 12)', organizationId: 'org-a' }
 
 test('change name: without the MFA cookie it is refused and nothing is written', async () => {
   const calls = stub()
@@ -171,8 +172,14 @@ test('change name: audit is written before the one atomic commit, which holds on
   assert.equal(response.status, 200)
   assert.ok(auditIndex(calls) >= 0 && commitIndex(calls) > auditIndex(calls))
   const commit = JSON.parse(calls[commitIndex(calls)].body) as { writes: { update: { name: string; fields: Record<string, unknown> }; currentDocument: unknown }[] }
-  assert.deepEqual(commit.writes.map((write) => write.update.name.split('/documents/')[1]).sort(), ['organizations/org-a/operatives/op-1', 'users/sam-uid'])
+  assert.deepEqual(commit.writes.map((write) => write.update.name.split('/documents/')[1]).sort(), [
+    'organizations/org-a/memberNames/sam-uid',
+    'organizations/org-a/operatives/op-1',
+    'users/sam-uid',
+  ])
   for (const write of commit.writes) {
+    // 1.82.0: the organisation's own name for Sam is set (an upsert, no read precondition) beside the home users document.
+    if (write.update.name.includes('/memberNames/')) continue
     assert.ok((write.currentDocument as { updateTime?: string }).updateTime, 'precondition: the read updateTime')
     for (const key of Object.keys(write.update.fields)) {
       assert.ok(['firstName', 'surname', 'lastName', 'name', 'displayName', 'updatedBy', 'updatedFrom'].includes(key), key)
@@ -330,8 +337,12 @@ test('review of #434: the commit carries each read updateTime; a change made mea
   let calls = stub()
   const ok = await changeName(req('/api/owner/actions/change-name', NAME_BODY))
   assert.equal(ok.status, 200)
-  const commit = JSON.parse(calls[commitIndex(calls)].body) as { writes: { currentDocument: { updateTime?: string } }[] }
-  for (const write of commit.writes) assert.match(write.currentDocument.updateTime || '', /^2026-11-23T10:00:00\./)
+  const commit = JSON.parse(calls[commitIndex(calls)].body) as { writes: { update: { name: string }; currentDocument?: { updateTime?: string } }[] }
+  // 1.82.0: the memberNames entry is an upsert (no read to compare with); every read document carries its updateTime.
+  for (const write of commit.writes) {
+    if (write.update.name.includes('/memberNames/')) continue
+    assert.match(write.currentDocument?.updateTime || '', /^2026-11-23T10:00:00\./)
+  }
   calls = stub({ commitStatus: 400, commitText: '{"error":{"status":"FAILED_PRECONDITION"}}' })
   const stale = await changeName(req('/api/owner/actions/change-name', NAME_BODY))
   assert.equal(stale.status, 409)

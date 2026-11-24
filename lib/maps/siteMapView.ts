@@ -2,10 +2,11 @@
  * Site map view helpers (display only, owner 24 Nov): where the map opens, which colour a job's dot is, and the
  * figures of the summary card under the map. Every figure comes from a rulebook output that is already worked out
  * (`siteMapPins` for people on site, the Daily Overview model — `buildDailyOverview`, priced by `payrollHoursResult` —
- * for hours and overtime, its leave rows `dailyOverviewLeaveRows` for annual leave). Nothing is priced again here.
+ * for hours and overtime, `siteMapLeaveSummary` for the whole company's annual leave, rulebook 1.82.0). Nothing is
+ * priced again here.
  */
 
-import { parseCompanyDetails } from '@/lib/canonical'
+import { parseCompanyDetails, type SiteMapLeaveSummary } from '@/lib/canonical'
 import { normalizeWorkId, type DailyOverviewModel } from '@/lib/daily-overview/buildDailyOverview'
 
 /** The map opens on the office showing about this many miles around it. */
@@ -51,7 +52,7 @@ export type SiteMapJobSummary = {
   overtimeClockHours: number
   /** The one overtime rate on the job that day, or null when there are several (or none). */
   overtimeMultiplier: number | null
-  /** People on approved annual leave that day (Daily Overview's leave list, whole team). */
+  /** People on approved annual leave that day, the whole company (`siteMapLeaveSummary`, rulebook 1.82.0 §21). */
   onAnnualLeave: number
 }
 
@@ -62,7 +63,9 @@ export type SiteMapJobSummary = {
 export function siteMapJobSummary(input: {
   jobId: string
   peopleOnSite: number
-  model: Pick<DailyOverviewModel, 'projectCards' | 'holidays'> | null
+  model: Pick<DailyOverviewModel, 'projectCards'> | null
+  /** The whole company's leave that day (`useDailyOverviewModel().companyLeave`). Never the job's people only. */
+  companyLeave: Pick<SiteMapLeaveSummary, 'onAnnualLeave'> | null
 }): SiteMapJobSummary {
   const key = normalizeWorkId(input.jobId)
   const card = input.model?.projectCards.find((entry) => normalizeWorkId(entry.project.id) === key) ?? null
@@ -71,6 +74,6 @@ export function siteMapJobSummary(input: {
     hoursOnSite: card?.bookedHours ?? 0,
     overtimeClockHours: card?.overtimeClockHours ?? 0,
     overtimeMultiplier: card?.overtimeMultiplier ?? null,
-    onAnnualLeave: input.model?.holidays.length ?? 0,
+    onAnnualLeave: input.companyLeave?.onAnnualLeave ?? 0,
   }
 }

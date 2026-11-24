@@ -1079,6 +1079,7 @@ var ProjectPlannerCanonical = (() => {
     healthSafetyDocumentId: () => healthSafetyDocumentId,
     healthSafetyDocumentIds: () => healthSafetyDocumentIds,
     healthSafetyDocumentWriteFields: () => healthSafetyDocumentWriteFields,
+    healthSafetyIssueJob: () => healthSafetyIssueJob,
     healthSafetyIssueStatus: () => healthSafetyIssueStatus,
     healthSafetySignatureKey: () => healthSafetySignatureKey,
     healthSafetySignatureRemovalWrites: () => healthSafetySignatureRemovalWrites,
@@ -1307,11 +1308,16 @@ var ProjectPlannerCanonical = (() => {
     materialSendStatusWriteFields: () => materialSendStatusWriteFields,
     materialSizeText: () => materialSizeText,
     materialWhatsAppRows: () => materialWhatsAppRows,
+    memberNameBackfillEntries: () => memberNameBackfillEntries,
+    memberNameEditPlan: () => memberNameEditPlan,
     memberNameEditTarget: () => memberNameEditTarget,
+    memberNameEntryMissing: () => memberNameEntryMissing,
     memberNameFor: () => memberNameFor,
+    memberNameJoinEntry: () => memberNameJoinEntry,
     memberNamePath: () => memberNamePath,
     memberNameValidationError: () => memberNameValidationError,
     memberNameWriteFields: () => memberNameWriteFields,
+    memberNameWriterManagesOperative: () => memberNameWriterManagesOperative,
     mergeBookingPaySlice: () => mergeBookingPaySlice,
     mergeHealthSafetyRowCopies: () => mergeHealthSafetyRowCopies,
     mergeJobTypeCatalogues: () => mergeJobTypeCatalogues,
@@ -1822,6 +1828,7 @@ var ProjectPlannerCanonical = (() => {
     siteAuditReportTextLines: () => siteAuditReportTextLines,
     siteAuditReportTextWidth: () => siteAuditReportTextWidth,
     siteAuditWriteFields: () => siteAuditWriteFields,
+    siteMapLeaveSummary: () => siteMapLeaveSummary,
     siteMapPins: () => siteMapPins,
     skillsCatalogueWrites: () => skillsCatalogueWrites,
     slotInterval: () => slotInterval,
@@ -17271,8 +17278,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.81.0" : "",
-      sha256: true ? "4a43cb3457c191f2ec4b9c2cf4d897c2e39063aee5ac45a024cd6781408435cf" : ""
+      version: true ? "1.82.0" : "",
+      sha256: true ? "06a9fac2d84c9f5002c196aa2edd18f11311613e3ae0798d27e80faf65de742f" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -20748,6 +20755,20 @@ var ProjectPlannerCanonical = (() => {
     }
     return writes.sort((a, b) => a.documentId.localeCompare(b.documentId));
   }
+  function healthSafetyIssueJob(input) {
+    const wanted = normalizeDocumentId(input.issueId);
+    if (!wanted) return null;
+    for (const candidate of input.candidates || []) {
+      if (!candidate || !text29(candidate.jobId)) continue;
+      for (const data of candidate.documents || []) {
+        const issues = rows2(record9(data).issues);
+        if (issues.some((issue) => normalizeDocumentId(issue.id) === wanted)) {
+          return { jobId: candidate.jobId, collection: candidate.collection };
+        }
+      }
+    }
+    return null;
+  }
 
   // lib/canonical/liveSources.ts
   var LIVE_COLLECTIONS = [
@@ -21027,6 +21048,7 @@ var ProjectPlannerCanonical = (() => {
       { op: "delete", path: `users/${uid}/orgMemberships/${org}` }
     ];
     if (email && !email.includes("/")) account.push({ op: "delete", path: `organizations/${org}/userEmails/${email}` });
+    account.push({ op: "delete", path: `organizations/${org}/memberNames/${uid}`, optional: true });
     if (input.listedInMembers !== false) account.push({ op: "update", path: `organizations/${org}`, deleteFields: [`members.${uid}`] });
     const formerWrite = input.formerPerson ? {
       op: "set",
@@ -21990,8 +22012,8 @@ var ProjectPlannerCanonical = (() => {
   function memberNameEditTarget(input) {
     const org = key5(input?.organizationId);
     const home = key5(documentOrganizationId(input?.homeOrganizationId));
-    if (!org || !home) return "account";
-    return org === home ? "account" : "organization";
+    if (!org) return "account";
+    return home && org === home ? "account" : "organization";
   }
   function memberNameValidationError(input) {
     const firstName = text36(input?.firstName);
@@ -22011,7 +22033,43 @@ var ProjectPlannerCanonical = (() => {
   function canWriteMemberName(input) {
     const writer = key5(input?.writerUserId);
     if (!writer) return false;
-    return writer === key5(input?.subjectUserId) || input?.writerIsAdmin === true;
+    return writer === key5(input?.subjectUserId) || input?.writerIsAdmin === true || input?.writerManagesOperative === true;
+  }
+  function memberNameEditPlan(input) {
+    const org = key5(input?.organizationId);
+    const home = key5(documentOrganizationId(input?.homeOrganizationId));
+    return { writeEntry: Boolean(org), writeAccount: Boolean(org && home && org === home) };
+  }
+  function memberNameWriterManagesOperative(input) {
+    if (!input?.writer || !input?.subject) return false;
+    return canManageOperatives(input.writer) && permissionLevelOf(input.subject) === "operative";
+  }
+  function memberNameJoinEntry(candidates) {
+    for (const candidate of candidates || []) {
+      if (!candidate) continue;
+      const name = accountName(candidate);
+      if (!memberNameValidationError(name)) return { firstName: name.firstName, surname: name.surname };
+    }
+    return null;
+  }
+  function memberNameEntryMissing(input) {
+    if (!input?.serverRead || !input.person || !key5(input.person.id)) return false;
+    return !memberNameFor(input.person, input.names);
+  }
+  function memberNameBackfillEntries(input) {
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const person of input?.people || []) {
+      const userId = text36(person?.id);
+      if (!userId || seen.has(key5(userId))) continue;
+      seen.add(key5(userId));
+      const shown = accountName(person);
+      if (!text36(person?.email) && shown.displayName === "Deleted user") continue;
+      if (memberNameFor(person, input?.names)) continue;
+      const name = memberNameJoinEntry([person]);
+      if (name) out.push({ userId, ...name });
+    }
+    return out;
   }
 
   // lib/canonical/orgRoster.ts
@@ -24706,6 +24764,55 @@ var ProjectPlannerCanonical = (() => {
     return (records || []).filter(
       (record19) => Boolean(record19) && normalizeHolidayStatus(record19.status) === "approved" && leaveRecordDayKeys(record19, timeZone, nonWorkingDayKeys).includes(dayKey)
     );
+  }
+
+  // lib/canonical/siteMapLeave.ts
+  function siteMapLeaveSummary(input) {
+    const onDay = dailyOverviewLeaveRows(input.records, input.dayKey, input.timeZone, input.nonWorkingDayKeys);
+    const roster = (input.roster || []).filter((row3) => row3 && idKey(row3.id));
+    const byId = /* @__PURE__ */ new Map();
+    const byEmail = /* @__PURE__ */ new Map();
+    for (const row3 of roster) {
+      const owner = { key: `person:${idKey(row3.id)}`, name: (row3.name ?? "").trim() || null };
+      for (const id2 of personIdSet(row3, roster)) {
+        const k = idKey(id2);
+        if (k && !byId.has(k)) byId.set(k, owner);
+      }
+      const email = idKey(row3.email);
+      if (email && !byEmail.has(email)) byEmail.set(email, owner);
+    }
+    const operativeById = /* @__PURE__ */ new Map();
+    for (const row3 of input.operatives || []) if (row3 && idKey(row3.id)) operativeById.set(idKey(row3.id), row3);
+    const resolve = (record19) => {
+      for (const raw of [record19.userId, record19.operativeId]) {
+        const k = idKey(raw);
+        if (!k) continue;
+        const hit = byId.get(k) ?? byEmail.get(k);
+        if (hit) return hit;
+        const operative = operativeById.get(k);
+        if (operative) {
+          const viaEmail = byEmail.get(idKey(operative.email));
+          if (viaEmail) return viaEmail;
+          return { key: `operative:${k}`, name: (operative.name ?? "").trim() || null };
+        }
+      }
+      const fallback = idKey(record19.userId) || idKey(record19.operativeId);
+      return fallback ? { key: `id:${fallback}`, name: null } : null;
+    };
+    const people = [];
+    const index = /* @__PURE__ */ new Map();
+    onDay.forEach((record19, position) => {
+      const owner = resolve(record19) ?? { key: `record:${String(record19.id ?? position)}`, name: null };
+      const recordId = String(record19.id ?? "").trim();
+      const at = index.get(owner.key);
+      if (at === void 0) {
+        index.set(owner.key, people.length);
+        people.push({ key: owner.key, name: owner.name, recordIds: recordId ? [recordId] : [] });
+      } else if (recordId) {
+        people[at].recordIds.push(recordId);
+      }
+    });
+    return { onAnnualLeave: people.length, people };
   }
 
   // lib/canonical/jobScheduleLeave.ts

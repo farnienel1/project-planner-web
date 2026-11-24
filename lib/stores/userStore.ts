@@ -48,12 +48,13 @@ import {
   MEMBER_NAMES_COLLECTION,
   MEMBER_NAME_REFUSED_MESSAGE,
   canWriteMemberName,
-  memberNameEditTarget,
+  memberNameEditPlan,
   memberNameValidationError,
   memberNameWriteFields,
   documentOrganizationId,
 } from '@/lib/canonical'
 import { currentMemberNames, overlayMemberName } from '@/lib/staff/memberNamesLive'
+import { webWriterManagesOperative } from '@/lib/staff/memberNameOverlay'
 
 interface UserStoreState {
   saving: boolean
@@ -328,26 +329,39 @@ const prepareSaveUserImpl: UserStoreState['prepareSaveUser'] = async (user, orga
   // claim, the same-email copies' names, the linked operatives / managers rows' names and the operativeProfiles
   // mirror land together or not at all. Before 1.31.0 only the first three were batched and the rest followed one by
   // one, so a refusal half way left the documents disagreeing. Everything is read first.
-  // Rulebook 1.81.0 §11 `memberNameEditTarget`: outside the person's home organisation (the one their users document
-  // names) a name edit is this company's own name for them (`memberNames/{uid}`), never the users document every
-  // company reads; in the home organisation it stays on the users document and this company's entry is removed.
-  const homeOrganizationId = (baseline ?? user).organizationId
-  const nameTarget = memberNameEditTarget({ organizationId: orgId, homeOrganizationId })
+  // Rulebook 1.82.0 §11 `memberNameEditPlan` (owner 24 Nov, item 3): a name edit made in this organisation is this
+  // company's own name for them (`memberNames/{uid}`) — always written, so no other company reads it. Only in the
+  // person's home organisation (the one their users document names) does the users document's name change as well
+  // (account emails and older builds read it); outside it the users document's name is never touched.
+  // Review of #442 (fail closed): the home organisation is the stored users document's, read now; a read that fails
+  // or a document naming none is "unknown", and then only this organisation's entry is written.
+  let homeOrganizationId: unknown = null
+  try {
+    const stored = await getDoc(doc(db, 'users', user.id))
+    homeOrganizationId = stored.exists() ? (stored.data() as Record<string, unknown>).organizationId ?? null : null
+  } catch {
+    homeOrganizationId = null
+  }
+  const namePlan = memberNameEditPlan({ organizationId: orgId, homeOrganizationId })
   const nameBefore = editorBaseline ? identityFields(editorBaseline) : null
   const nameChanged = Boolean(nameBefore) && (nameBefore!.firstName !== names.firstName || nameBefore!.surname !== names.surname)
-  const nameWriter = canWriteMemberName({ writerUserId: saverId, subjectUserId: user.id, writerIsAdmin: saverIsAdmin })
-  let memberNameWrite: 'set' | 'delete' | null = null
-  if (orgId && nameChanged) {
-    if (nameTarget === 'organization') {
-      const nameError = memberNameValidationError({ firstName: names.firstName, surname: names.surname })
-      if (nameError) throw new Error(nameError)
-      if (!nameWriter) throw new Error(MEMBER_NAME_REFUSED_MESSAGE)
-      memberNameWrite = 'set'
-    } else if (nameWriter && currentMemberNames(orgId)[user.id.toLowerCase()]) {
-      memberNameWrite = 'delete'
-    }
+  const nameWriter = canWriteMemberName({
+    writerUserId: saverId,
+    subjectUserId: user.id,
+    writerIsAdmin: saverIsAdmin,
+    // 1.82.0 (owner correction): an Operatives manager of this organisation names any operative who is a member of it.
+    writerManagesOperative: webWriterManagesOperative(saver, user),
+  })
+  let memberNameWrite: 'set' | null = null
+  // A name belongs to an organisation: with none open there is nowhere to save it (never the account alone).
+  if (nameChanged && !namePlan.writeEntry) throw new Error('Open the company first, then change the name there.')
+  if (orgId && nameChanged && namePlan.writeEntry) {
+    const nameError = memberNameValidationError({ firstName: names.firstName, surname: names.surname })
+    if (nameError) throw new Error(nameError)
+    if (!nameWriter) throw new Error(MEMBER_NAME_REFUSED_MESSAGE)
+    memberNameWrite = 'set'
   }
-  if (nameTarget === 'organization') {
+  if (!namePlan.writeAccount) {
     for (const field of ['firstName', 'surname', 'lastName', 'name', 'displayName']) delete payload[field]
   }
   const email = user.email.toLowerCase().trim()
@@ -373,8 +387,6 @@ const prepareSaveUserImpl: UserStoreState['prepareSaveUser'] = async (user, orga
         ...memberNameWriteFields({ firstName: names.firstName, surname: names.surname, writerUserId: saverId, platform: 'web' }),
         updatedAt: serverTimestamp(),
       })
-    } else if (memberNameWrite === 'delete') {
-      batch.delete(nameRef)
     }
     // The operativeProfiles mirror holds pay, so only someone who may change this person's pay writes it
     // (`canChangePersonPay`; firestore.rules `canChangePayOf`). A person's own save never touches it.
@@ -782,11 +794,17 @@ export const useUserStore = create<UserStoreState>(() => ({
       } catch (error) {
         // Rulebook 1.59.0: the former-person record is optional — security rules older than 1.59.0 refuse it, and
         // the delete must still happen. The same batch runs again without it.
-        const optional = step.writes.filter((write) => write.op === 'set' && write.optional === true)
+        // 1.82.0: the person's `memberNames` entry delete is optional the same way (older rules refuse it for an
+        // Operatives manager).
+        const isOptional = (write: (typeof step.writes)[number]) => (write.op === 'set' || write.op === 'delete') && write.optional === true
+        const optional = step.writes.filter(isOptional)
         if (optional.length === 0 || !isPermissionDenied(error)) throw error
-        console.warn('[userStore] former-person record skipped', error)
-        formerRecordSkipped = true
-        await commitStep(step.writes.filter((write) => !(write.op === 'set' && write.optional === true)))
+        if (optional.some((write) => write.op === 'set')) {
+          console.warn('[userStore] former-person record skipped', error)
+          formerRecordSkipped = true
+        } else console.warn('[userStore] organisation name entry not removed', error)
+        const rest = step.writes.filter((write) => !isOptional(write))
+        if (rest.length > 0) await commitStep(rest)
       }
     }
     // Rulebook 1.31.0 §13: the admins hear that an operative was deleted (`operative_deleted`, company activity,

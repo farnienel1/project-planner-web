@@ -9,6 +9,7 @@
  * - Active / Inactive / Pending: `rosterSegment`; deletion: `organizationDeletionState`.
  * Emails leave the server masked; pay, tax ids and push tokens never leave it (only a count of tokens).
  */
+import { displayNameInOrganization, type MemberNames } from '@/lib/canonical/memberNames'
 import { documentOrganizationId } from '@/lib/canonical/peopleDocuments'
 import { organizationLevelFor } from '@/lib/canonical/orgRoster'
 import { personIdSet } from '@/lib/canonical/personIds'
@@ -135,6 +136,12 @@ export type OwnerPersonOrganisation = {
   deletion: OwnerOrgRow['deletion'] | 'unknown'
   lapsed: boolean
   isTest: boolean
+  /** Rulebook 1.82.0 §11: the person's name in this organisation (its `memberNames` entry, else the account name). */
+  nameHere: string
+  /** True when `nameHere` is the organisation's own entry; false when it falls back to the account name. */
+  nameFromOrganization: boolean
+  /** Active in this organisation: the users document of this organisation, else the membership here (`accountActive`). */
+  active: boolean
 }
 
 /**
@@ -149,6 +156,8 @@ export function ownerPersonOrganisations(input: {
   orgRows: readonly OwnerOrgRow[]
   orgDocs: readonly PlainDoc[]
   memberships: ReadonlyMap<string, Record<string, unknown>>
+  /** 1.82.0: `orgId` → the organisation's `memberNames` entries for the person's ids (read by id). */
+  memberNames?: ReadonlyMap<string, MemberNames>
 }): OwnerPersonOrganisation[] {
   const rowById = new Map(input.orgRows.map((row) => [row.id, row]))
   const docById = new Map(input.orgDocs.map((doc) => [doc.id, doc]))
@@ -170,7 +179,18 @@ export function ownerPersonOrganisations(input: {
       creatorUserId: creator || null,
     })
     const row = rowById.get(orgId)
+    const person = { ...((homeDoc || input.userDocs[0])?.data || {}), id: userId, formerUserIds: input.personIds }
+    const name = displayNameInOrganization({ person, names: input.memberNames?.get(orgId) || null })
+    const membership = input.memberships.get(orgId)
+    const active = homeDoc
+      ? homeDoc.data?.isActive !== false
+      : membership
+        ? (membership.accountActive ?? membership.isActive) !== false
+        : true
     return {
+      nameHere: name.displayName,
+      nameFromOrganization: name.source === 'organization',
+      active,
       id: orgId,
       name: row?.name || 'Unknown organisation',
       level: level.level,

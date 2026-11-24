@@ -67,7 +67,7 @@ export function SiteMapJobSummaryCard({
         </div>
       </dl>
       <p className="sitemap-note">
-        Annual leave is the whole team that day.{' '}
+        Annual leave is the whole company that day.{' '}
         <Link href={`/dashboard/daily-overview?date=${dayKey}`}>Open Daily overview</Link>
       </p>
     </section>

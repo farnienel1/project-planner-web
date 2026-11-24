@@ -1,3 +1,4 @@
+import { MEMBER_NAMES_COLLECTION, parseMemberNameDocuments, type MemberNames } from '@/lib/canonical/memberNames'
 import { NextRequest } from 'next/server'
 import { isFirebaseUser, jsonError } from '@/lib/security/apiGuard'
 import { isValidDocumentId } from '@/lib/security/validation'
@@ -70,6 +71,20 @@ export async function GET(request: NextRequest, context: { params: Promise<{ uid
       }
     }
     const allOrgIds = [...new Set([...organizationIds, ...memberships.keys()])].slice(0, PERSON_ORGANISATIONS_MAX)
+    // Rulebook 1.82.0 §11: the person's name in each organisation — its `memberNames` entries for their ids, read by id
+    // (a refused or failed read shows the account name, never a blank).
+    const memberNames = new Map<string, MemberNames>()
+    await Promise.all(
+      allOrgIds.map(async (orgId) => {
+        const docs = await Promise.all(
+          person.userDocs.map(async (userDoc) => {
+            const found = await firestoreGet(token, `organizations/${orgId}/${MEMBER_NAMES_COLLECTION}/${userDoc.id}`).catch(() => null)
+            return found ? { id: userDoc.id, data: restFieldsToPlain(found.fields) } : null
+          })
+        )
+        memberNames.set(orgId, parseMemberNameDocuments(docs.filter((row): row is { id: string; data: Record<string, unknown> } => Boolean(row))))
+      })
+    )
 
     let auditError: string | null = null
     let auditEntries: PlainDoc[] = []
@@ -104,6 +119,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ uid
         orgRows: person.orgRows,
         orgDocs,
         memberships,
+        memberNames,
       }),
       membershipsRead,
       auth,

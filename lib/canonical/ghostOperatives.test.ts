@@ -356,7 +356,7 @@ test('delete: the ghost flag never skips a document (review fix B1)', () => {
     actorManagesOperatives: true,
     listedInMembers: false,
   }))
-  assert.deepEqual(ghost.map((write) => write.path).sort(), [`users/g1`, `users/g1/orgMemberships/${ORG}`, 'users/g1/private/taxIds'].sort())
+  assert.deepEqual(ghost.map((write) => write.path).sort(), [`users/g1`, `users/g1/orgMemberships/${ORG}`, 'users/g1/private/taxIds', `organizations/${ORG}/memberNames/g1`].sort())
   // Someone who marked themself a ghost but is listed in `members` still loses the entry, membership and tax ids.
   const flagged = accountOf(userDeleteWrites({
     orgId: ORG,
@@ -370,7 +370,7 @@ test('delete: the ghost flag never skips a document (review fix B1)', () => {
   assert.ok(flagged.some((write) => write.path === 'users/self1/private/taxIds'))
   assert.ok(flagged.some((write) => write.op === 'update' && write.path === `organizations/${ORG}` && write.deleteFields.includes('members.self1')))
   const ordinary = userDeleteWrites({ orgId: ORG, user: { id: 'op1', role: opRole, email: 'op@x.com' }, actorUserId: 'admin1', platform: 'web', nowIso: '2026-11-07T09:00:00Z' })
-  assert.equal(ordinary[0].writes.length, 5)
+  assert.equal(ordinary[0].writes.length, 6)
 })
 
 test('Payrun Snapshot: a ghost is listed with a grey "No app login" Timesheet cell', () => {
