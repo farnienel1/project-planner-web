@@ -1,6 +1,7 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import type { OrganizationDetails, OrgInvoicingSettings } from '@/lib/settings/organizationSettings'
 import { formatInvoicingSubtitle } from '@/lib/settings/organizationSettings'
 import { canOpenWeeklyReport, organizationTimeZone, PAYRUN_SNAPSHOT_LABEL, type AcceptedClashRecord } from '@/lib/canonical'
@@ -175,7 +176,24 @@ export function WeeklyReportScreen({
   const canUnapprove = Boolean(viewer && hasAdminAccess(viewer))
   // Rulebook 1.33.0 §7: Payrun Snapshot, admins only (the Weekly report's own gate).
   const canOpenSnapshot = Boolean(viewer && canOpenWeeklyReport(viewer))
-  const [snapshotOpen, setSnapshotOpen] = useState(false)
+  // Owner 24 Nov: the sidebar's "Payrun Snapshot" entry opens the Weekly report with the snapshot already open
+  // (`?view=snapshot`), so it can be found without knowing it sits behind this page's button.
+  const searchParams = useSearchParams()
+  const openSnapshotFromLink = searchParams?.get('view') === 'snapshot'
+  const [snapshotOpen, setSnapshotOpen] = useState(openSnapshotFromLink)
+  // The link followed again while this page is open (the sidebar entry from the report itself) opens it again.
+  const [linkSeen, setLinkSeen] = useState(openSnapshotFromLink)
+  if (openSnapshotFromLink !== linkSeen) {
+    setLinkSeen(openSnapshotFromLink)
+    if (openSnapshotFromLink) setSnapshotOpen(true)
+  }
+  const snapshotRef = useRef<HTMLDivElement>(null)
+  const snapshotShown = snapshotOpen && canOpenSnapshot && Boolean(organizationId)
+  useEffect(() => {
+    if (!openSnapshotFromLink || !snapshotShown) return
+    const frame = window.requestAnimationFrame(() => snapshotRef.current?.scrollIntoView({ block: 'start' }))
+    return () => window.cancelAnimationFrame(frame)
+  }, [openSnapshotFromLink, snapshotShown])
   const { data: organizationDocument } = useOrganizationDocument()
   const invoicingOptions = useMemo(
     () => (invoicing ? listInvoicingPeriodOptions(invoicing, new Date(), undefined, timeZone) : []),
@@ -488,6 +506,7 @@ export function WeeklyReportScreen({
         </div>
       </div>
 
+      <div ref={snapshotRef} style={{ scrollMarginTop: 16 }} />
       {snapshotOpen && canOpenSnapshot && organizationId ? (
         <PayrunSnapshot
           organizationId={organizationId}

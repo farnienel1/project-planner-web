@@ -22,3 +22,17 @@ export function mapPinIconOptions(color: string, selected = false) {
     popupAnchor: [0, -height + 4],
   }
 }
+
+/** A round dot for the site map (owner 24 Nov: projects blue, small works red), white ring so it shows on any tile. */
+export function mapDotIconOptions(color: string, selected = false) {
+  const size = selected ? 22 : 16
+  const ring = selected ? 3 : 2
+  const shadow = selected ? '0 0 0 3px rgba(15,23,42,0.35)' : '0 1px 4px rgba(15,23,42,0.45)'
+  return {
+    className: '',
+    html: `<span style="display:block;width:${size}px;height:${size}px;border-radius:50%;background:${color};border:${ring}px solid #ffffff;box-shadow:${shadow};box-sizing:border-box"></span>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -size / 2],
+  }
+}

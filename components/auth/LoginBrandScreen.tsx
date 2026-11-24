@@ -21,6 +21,7 @@ import { postPublicForm } from '@/lib/security/publicFormClient'
 import { LegalLinks } from '@/components/legal/LegalLinks'
 import { PasskeySignIn } from '@/components/auth/PasskeySignIn'
 import { passkeysEnabled } from '@/lib/auth/passkeys/passkeyConfig'
+import { primeWelcomeSound } from '@/lib/feedbackSounds/feedback'
 
 export function LoginBrandScreen() {
   const router = useRouter()
@@ -91,6 +92,9 @@ export function LoginBrandScreen() {
       setLocalError('Please enter your password.')
       return
     }
+    // Owner 24 Nov: audio may start only inside the person's own press, so the sign-in chord is armed here (sounds on
+    // only); the code screen plays it once the sign-in is confirmed (it is the last step, rulebook MFA).
+    primeWelcomeSound()
     try {
       setSubmitting(true)
       const gated = await postPublicForm('/api/auth/public-gate', {

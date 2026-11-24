@@ -1,5 +1,6 @@
 import type { Organization, User } from '@/types'
 import { getNavigationLabel } from '@/lib/navigation/sharedUiLabels'
+import { canOpenWeeklyReport } from '@/lib/canonical'
 import {
   canAccessTeamSection,
   canAccessTimesheets,
@@ -123,6 +124,18 @@ const ALL_NAV_ITEMS: DashboardNavItem[] = [
     subtitle: 'Week summary, clashes, and labour coverage',
     navigationLabelKey: 'dashboard_weekly_report',
     iconPath: 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
+    tileClasses: 'bg-indigo-50 text-indigo-700',
+    section: 'navigate',
+  },
+  {
+    // Owner 24 Nov: the Payrun Snapshot was only a button inside the Weekly report and could not be found. Same gate
+    // as the Weekly report (`canOpenWeeklyReport`, rulebook §7); opens the report with the snapshot open.
+    id: 'dashboard_payrun_snapshot',
+    href: '/dashboard/weekly-report?view=snapshot',
+    label: 'Payrun Snapshot',
+    subtitle: 'Who has signed, submitted or generated reports',
+    navigationLabelKey: 'dashboard_payrun_snapshot',
+    iconPath: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
     tileClasses: 'bg-indigo-50 text-indigo-700',
     section: 'navigate',
   },
@@ -365,6 +378,9 @@ function canSeeNavItem(item: DashboardNavItem, user: User, orgUsers: User[] = []
       return canViewDailyOverview(user)
     case 'dashboard_weekly_report':
       return canViewWeeklyReports(user)
+    case 'dashboard_payrun_snapshot':
+      // The Payrun Snapshot's own gate (rulebook §7 `canOpenWeeklyReport`, admins only); never while the profile loads.
+      return !isOperativeMode(user) && canOpenWeeklyReport(user)
     case 'dashboard_schedule':
       return canViewMySchedule(user)
     case 'dashboard_warnings':

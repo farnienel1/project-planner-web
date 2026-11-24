@@ -200,6 +200,10 @@ export type DailyOverviewModel = {
     bookedHours: number
     /** 1.39.0: "60.5h booked (incl. 12h OT × 1.5)" (`bookedWithOvertimeText`). */
     bookedText: string
+    /** Clock hours at a multiplier on the job (the sum behind `bookedText`). */
+    overtimeClockHours: number
+    /** The one overtime rate on the job that day; null with several rates (or none). */
+    overtimeMultiplier: number | null
   }[]
   empty: boolean
 }
@@ -568,10 +572,11 @@ export function buildDailyOverview(params: {
       // 1.5)"; with different multipliers on one job the rate is left out rather than one of them shown.
       const otClock = people.reduce((sum, row) => sum + (row.otClockHours ?? 0), 0)
       const otRates = new Set(people.flatMap((row) => row.otMultipliers ?? []))
+      const overtimeMultiplier = otRates.size === 1 ? [...otRates][0] : null
       const bookedText = bookedWithOvertimeText({
         bookedHours,
         clockHours: otClock,
-        multiplier: otRates.size === 1 ? [...otRates][0] : null,
+        multiplier: overtimeMultiplier,
       })
       return {
         project,
@@ -582,6 +587,8 @@ export function buildDailyOverview(params: {
         peopleCount: people.length,
         bookedHours,
         bookedText,
+        overtimeClockHours: otClock,
+        overtimeMultiplier: otClock > 0 ? overtimeMultiplier : null,
       }
     })
     .sort(
