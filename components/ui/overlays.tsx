@@ -39,14 +39,14 @@ export function Modal({
   }, [open, onClose])
   if (!open || typeof document === 'undefined') return null
   return createPortal(
-    <div className="fixed inset-0 z-100">
-      <button type="button" className="absolute inset-0 bg-[rgba(10,20,40,.4)] backdrop-blur-[3px]" aria-label="Close" onClick={onClose} />
+    <div className="fixed inset-0 z-100 grid place-items-center">
+      <button type="button" className="absolute inset-0 bg-[rgba(10,20,40,.4)]" aria-label="Close" onClick={onClose} />
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby={labelledBy}
         className={cn(
-          'absolute left-1/2 top-1/2 flex max-h-[88vh] w-[min(620px,94vw)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-3xl bg-(--card) shadow-(--sh-pop)',
+          'relative flex max-h-[88vh] w-[min(620px,94vw)] flex-col rounded-3xl bg-(--card) shadow-(--sh-pop)',
           wide && 'w-[min(860px,94vw)]'
         )}
       >
