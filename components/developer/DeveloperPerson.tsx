@@ -187,6 +187,10 @@ export function DeveloperPersonScreen({ uid }: { uid: string }) {
                 <Link href={`/developer/organisations/${encodeURIComponent(org.id)}`} className="font-semibold">
                   {org.name}
                 </Link>
+                {/* Rulebook 1.82.0 §11: the person's name in THIS organisation, and whether they are active here. */}
+                <span data-testid="person-organisation-name">{org.nameHere || '—'}</span>
+                {org.nameFromOrganization ? null : <span className="text-xs text-(--ink3)">(account name)</span>}
+                <span className="chip">{org.active ? 'Active' : 'Inactive'}</span>
                 <span className="chip">
                   {LEVEL_LABEL[org.level] || org.level}
                   {org.isSuperAdmin ? ' · Super Admin' : ''}
@@ -424,38 +428,39 @@ function NameDialog({
   run,
 }: Omit<DialogProps, 'name'> & { person: OwnerPersonRow; documents: OwnerPersonDocument[]; organisations: OwnerPersonOrganisation[] }) {
   const kept = documents.find((doc) => doc.id === person.id) || documents[0]
-  const parts = (kept?.name || person.name).split(' ')
-  const [firstName, setFirstName] = useState(parts[0] || '')
-  const [surname, setSurname] = useState(parts.slice(1).join(' '))
+  // Rulebook 1.82.0 §11 "Names per organisation" (owner 24 Nov): a name belongs to one organisation; the change acts on
+  // one organisation at a time and starts from the name that organisation shows today.
+  const [organizationId, setOrganizationIdState] = useState(organisations[0]?.id || '')
+  const nameIn = (orgId: string) => (organisations.find((org) => org.id === orgId)?.nameHere || kept?.name || person.name).split(' ')
+  const [firstName, setFirstName] = useState(nameIn(organisations[0]?.id || '')[0] || '')
+  const [surname, setSurname] = useState(nameIn(organisations[0]?.id || '').slice(1).join(' '))
+  const setOrganizationId = (orgId: string) => {
+    setOrganizationIdState(orgId)
+    const parts = nameIn(orgId)
+    setFirstName(parts[0] || '')
+    setSurname(parts.slice(1).join(' '))
+  }
   const [reason, setReason] = useState('')
-  // Rulebook 1.81.0 §11 "Names per organisation": every organisation (default) or one organisation only.
-  const [scope, setScope] = useState<'all' | 'organization'>('all')
-  const [organizationId, setOrganizationId] = useState(organisations[0]?.id || '')
   const [preview, setPreview] = useState<NameChangeSummary | null>(null)
   const [previewError, setPreviewError] = useState('')
-  const scoped = scope === 'organization' ? { scope, organizationId } : { scope }
+  const scoped = { scope: 'organization' as const, organizationId }
   useEffect(() => {
     setPreview(null)
     setPreviewError('')
-    if (!firstName.trim() || !surname.trim()) return
-    if (scope === 'organization' && !organizationId) return
+    if (!firstName.trim() || !surname.trim() || !organizationId) return
     const timer = window.setTimeout(() => {
-      ownerChangeUserName({ uid, firstName, surname, preview: true, ...(scope === 'organization' ? { scope, organizationId } : { scope }) })
+      ownerChangeUserName({ uid, firstName, surname, preview: true, scope: 'organization', organizationId })
         .then(setPreview)
         .catch((err: unknown) => setPreviewError(err instanceof Error ? err.message : 'Could not check this change.'))
     }, 400)
     return () => window.clearTimeout(timer)
-  }, [uid, firstName, surname, scope, organizationId])
+  }, [uid, firstName, surname, organizationId])
   const orgLabel = organisations.find((org) => org.id === organizationId)?.name || organizationId
   return (
     <ActionDialog
       title="Change name"
       consequence={
-        scope === 'organization' ? (
-          <p>Changes the name {person.name} has in {orgLabel || 'this organisation'} only: that company&apos;s own name for them and its Operatives / Managers list rows. Their other organisations keep their name.</p>
-        ) : (
-          <p>Changes the first name and surname everywhere {person.name} appears: each of their user records and the Operatives / Managers list rows on their email, in every organisation, and removes any name an organisation set for them. It happens all at once or not at all.</p>
-        )
+        <p>Changes the name {person.name} has in {orgLabel || 'this organisation'} only: that company&apos;s own name for them and its Operatives / Managers list rows (and, in their home organisation, their user record). Their other organisations keep their own name.</p>
       }
       reason={reason}
       setReason={setReason}
@@ -467,32 +472,16 @@ function NameDialog({
         onDone(`Name changed to ${firstName.trim()} ${surname.trim()}.`)
       }}
     >
-      <fieldset className="mt-3 text-sm" data-testid="person-name-scope">
-        <legend className="font-semibold">Where</legend>
-        <label className="mt-1 flex items-center gap-2">
-          <input type="radio" name="person-name-scope" checked={scope === 'all'} onChange={() => setScope('all')} />
-          Every organisation
-        </label>
-        <label className="mt-1 flex items-center gap-2">
-          <input
-            type="radio"
-            name="person-name-scope"
-            checked={scope === 'organization'}
-            disabled={organisations.length === 0}
-            onChange={() => setScope('organization')}
-          />
-          This organisation only
-        </label>
-        {scope === 'organization' ? (
-          <select className="pp-in mt-1" value={organizationId} onChange={(event) => setOrganizationId(event.target.value)} data-testid="person-name-organisation">
-            {organisations.map((org) => (
-              <option key={org.id} value={org.id}>
-                {org.name || org.id}
-              </option>
-            ))}
-          </select>
-        ) : null}
-      </fieldset>
+      <label className="f mt-3 block text-sm font-semibold" data-testid="person-name-scope">
+        Organisation
+        <select className="pp-in mt-1" value={organizationId} onChange={(event) => setOrganizationId(event.target.value)} data-testid="person-name-organisation">
+          {organisations.map((org) => (
+            <option key={org.id} value={org.id}>
+              {org.name || org.id}
+            </option>
+          ))}
+        </select>
+      </label>
       <div className="mt-3 grid grid-cols-2 gap-2">
         <label className="f block text-sm font-semibold">
           First name

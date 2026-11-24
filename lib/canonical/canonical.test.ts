@@ -20102,3 +20102,19 @@ test('1.81.0 names per organisation are in the packed rulebook (full cases in me
   assert.equal(R112.memberNameEditTarget({ organizationId: 'B', homeOrganizationId: 'A' }), 'organization')
   assert.equal(R112.MEMBER_NAMES_COLLECTION, 'memberNames')
 })
+
+test('1.82.0 site map leave is in the packed rulebook (full cases in siteMapLeave.test.ts)', () => {
+  const s = R112.siteMapLeaveSummary({ dayKey: '2026-11-25', records: [{ id: 'a', userId: 'u', startDayKey: '2026-11-25', status: 'approved' }] })
+  assert.equal(s.onAnnualLeave, 1)
+})
+
+test('1.82.0 an older toolbox talk notice (issue id) finds its job from the health & safety documents held', () => {
+  const candidates = [
+    { jobId: 'p1', collection: 'projects' as const, documents: [null, { issues: [{ id: 'other' }] }] },
+    { jobId: 'sw-2', collection: 'smallWorks' as const, documents: [{ issues: [{ id: 'ISSUE-9' }] }, undefined] },
+  ]
+  assert.deepEqual(R112.healthSafetyIssueJob({ issueId: ' issue-9 ', candidates }), { jobId: 'sw-2', collection: 'smallWorks' })
+  assert.equal(R112.healthSafetyIssueJob({ issueId: 'none', candidates }), null)
+  assert.equal(R112.healthSafetyIssueJob({ issueId: '', candidates }), null)
+  assert.equal(R112.healthSafetyIssueJob({ issueId: 'x', candidates: null }), null)
+})

@@ -109,12 +109,18 @@ test('a person writes and removes their own entry (a member from another company
   await assertSucceeds(setDoc(ref(await db(OP), OP), entry(OP, 'Olly', '')))
 })
 
-test('a manager, an Operatives manager and an operative cannot write someone else\'s entry', async () => {
-  for (const uid of [MGR, OPSMGR, VISITOR]) {
+test('a manager and an operative cannot write someone else\'s entry; an Operatives manager only an operative\'s', async () => {
+  for (const uid of [MGR, VISITOR]) {
     await assertFails(setDoc(ref(await db(uid), OP), entry(uid)))
     await assertFails(deleteDoc(ref(await db(uid), OP)))
   }
   await assertFails(setDoc(ref(await db(OP), MGR), entry(OP)))
+  // 1.82.0 (owner 24 Nov, item 3): an Operatives manager names an operative of this organisation, never a manager or
+  // an admin, and never in an organisation that is not their home.
+  await assertSucceeds(setDoc(ref(await db(OPSMGR), OP), entry(OPSMGR, 'Olly', 'Op')))
+  await assertFails(setDoc(ref(await db(OPSMGR), MGR), entry(OPSMGR)))
+  await assertFails(setDoc(ref(await db(OPSMGR), ADMIN), entry(OPSMGR)))
+  await assertFails(setDoc(ref(await db(OPSMGR), OP, HOME), entry(OPSMGR)))
 })
 
 test('another company\'s admin cannot write here, even their own member\'s entry', async () => {

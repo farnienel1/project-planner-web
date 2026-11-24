@@ -1323,6 +1323,9 @@ export { homeUpNextRows } from './homeUpNext'
 export type { HomeUpNextBooking, HomeUpNextInput, HomeUpNextResult, HomeUpNextRow } from './homeUpNext'
 export type { FoldPersonRow, HomeOverviewInput, HomeOverviewMetrics, HomeOverviewTask, QualificationExpiryCountInput } from './homeOverview'
 export { dailyOverviewLeaveRows, leaveDayKind } from './leaveCalendar'
+export { siteMapLeaveSummary } from './siteMapLeave'
+export { healthSafetyIssueJob } from './recordsDocuments'
+export type { SiteMapLeaveRecord, SiteMapLeavePerson, SiteMapLeaveOperative, SiteMapLeaveSummary } from './siteMapLeave'
 export {
   jobScheduleLeaveMarks,
   scheduleCellHours,
@@ -2000,6 +2003,10 @@ export {
   accountName,
   applyMemberNames,
   canWriteMemberName,
+  memberNameEditPlan,
+  memberNameJoinEntry,
+  memberNameEntryMissing,
+  memberNameBackfillEntries,
   displayNameInOrganization,
   memberNameEditTarget,
   memberNameFor,

@@ -1682,3 +1682,33 @@ export function warningResolutionMigrationWrites(input: {
   }
   return writes.sort((a, b) => a.documentId.localeCompare(b.documentId))
 }
+
+/**
+ * Rulebook 1.82.0 §13 (owner 24 Nov, item 4): the job an older toolbox talk notice belongs to. Rows written before
+ * 1.79.0 (`toolbox_talk_issued`, `hs_toolbox_reminder`) carry the talk's issue id as `relatedId`, not the job id, so
+ * the job could not be found. The app passes the jobs it already holds, each with its health & safety documents as
+ * stored (`healthSafetyDocumentIds` settings copies and the web nested copy, any of them null when missing or not
+ * readable); the first job one of whose documents has an issue with that id (without case) is returned. Never
+ * written back: the notice row is not changed. Null when no job holds the issue. Pure.
+ */
+export function healthSafetyIssueJob<C extends string>(input: {
+  issueId: unknown
+  candidates: ReadonlyArray<{
+    jobId: string
+    collection: C
+    documents: ReadonlyArray<Record<string, unknown> | null | undefined>
+  }> | null | undefined
+}): { jobId: string; collection: C } | null {
+  const wanted = normalizeDocumentId(input.issueId)
+  if (!wanted) return null
+  for (const candidate of input.candidates || []) {
+    if (!candidate || !text(candidate.jobId)) continue
+    for (const data of candidate.documents || []) {
+      const issues = rows(record(data).issues)
+      if (issues.some((issue) => normalizeDocumentId(issue.id) === wanted)) {
+        return { jobId: candidate.jobId, collection: candidate.collection }
+      }
+    }
+  }
+  return null
+}

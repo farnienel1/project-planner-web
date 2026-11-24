@@ -48,7 +48,7 @@ import {
   MEMBER_NAMES_COLLECTION,
   MEMBER_NAME_REFUSED_MESSAGE,
   canWriteMemberName,
-  memberNameEditTarget,
+  memberNameEditPlan,
   memberNameValidationError,
   memberNameWriteFields,
   documentOrganizationId,
@@ -328,26 +328,32 @@ const prepareSaveUserImpl: UserStoreState['prepareSaveUser'] = async (user, orga
   // claim, the same-email copies' names, the linked operatives / managers rows' names and the operativeProfiles
   // mirror land together or not at all. Before 1.31.0 only the first three were batched and the rest followed one by
   // one, so a refusal half way left the documents disagreeing. Everything is read first.
-  // Rulebook 1.81.0 §11 `memberNameEditTarget`: outside the person's home organisation (the one their users document
-  // names) a name edit is this company's own name for them (`memberNames/{uid}`), never the users document every
-  // company reads; in the home organisation it stays on the users document and this company's entry is removed.
+  // Rulebook 1.82.0 §11 `memberNameEditPlan` (owner 24 Nov, item 3): a name edit made in this organisation is this
+  // company's own name for them (`memberNames/{uid}`) — always written, so no other company reads it. Only in the
+  // person's home organisation (the one their users document names) does the users document's name change as well
+  // (account emails and older builds read it); outside it the users document's name is never touched.
   const homeOrganizationId = (baseline ?? user).organizationId
-  const nameTarget = memberNameEditTarget({ organizationId: orgId, homeOrganizationId })
+  const namePlan = memberNameEditPlan({ organizationId: orgId, homeOrganizationId })
   const nameBefore = editorBaseline ? identityFields(editorBaseline) : null
   const nameChanged = Boolean(nameBefore) && (nameBefore!.firstName !== names.firstName || nameBefore!.surname !== names.surname)
-  const nameWriter = canWriteMemberName({ writerUserId: saverId, subjectUserId: user.id, writerIsAdmin: saverIsAdmin })
-  let memberNameWrite: 'set' | 'delete' | null = null
-  if (orgId && nameChanged) {
-    if (nameTarget === 'organization') {
-      const nameError = memberNameValidationError({ firstName: names.firstName, surname: names.surname })
-      if (nameError) throw new Error(nameError)
-      if (!nameWriter) throw new Error(MEMBER_NAME_REFUSED_MESSAGE)
-      memberNameWrite = 'set'
-    } else if (nameWriter && currentMemberNames(orgId)[user.id.toLowerCase()]) {
-      memberNameWrite = 'delete'
-    }
+  const nameWriter = canWriteMemberName({
+    writerUserId: saverId,
+    subjectUserId: user.id,
+    writerIsAdmin: saverIsAdmin,
+    // 1.82.0: an Operatives manager names an operative of this organisation (security rules: the operative's users
+    // document names this organisation and they may manage them, `managerMayManageOperative`).
+    writerManagesOperative:
+      Boolean(saver && saver.permissions.operatives && (saver.permissions.manager || saver.role === 'manager') && !saver.permissions.operativeMode) &&
+      Boolean(user.permissions.operativeMode || user.role === 'operative'),
+  })
+  let memberNameWrite: 'set' | null = null
+  if (orgId && nameChanged && namePlan.writeEntry) {
+    const nameError = memberNameValidationError({ firstName: names.firstName, surname: names.surname })
+    if (nameError) throw new Error(nameError)
+    if (!nameWriter) throw new Error(MEMBER_NAME_REFUSED_MESSAGE)
+    memberNameWrite = 'set'
   }
-  if (nameTarget === 'organization') {
+  if (!namePlan.writeAccount) {
     for (const field of ['firstName', 'surname', 'lastName', 'name', 'displayName']) delete payload[field]
   }
   const email = user.email.toLowerCase().trim()
@@ -373,8 +379,6 @@ const prepareSaveUserImpl: UserStoreState['prepareSaveUser'] = async (user, orga
         ...memberNameWriteFields({ firstName: names.firstName, surname: names.surname, writerUserId: saverId, platform: 'web' }),
         updatedAt: serverTimestamp(),
       })
-    } else if (memberNameWrite === 'delete') {
-      batch.delete(nameRef)
     }
     // The operativeProfiles mirror holds pay, so only someone who may change this person's pay writes it
     // (`canChangePersonPay`; firestore.rules `canChangePayOf`). A person's own save never touches it.

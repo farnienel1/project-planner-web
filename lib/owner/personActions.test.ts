@@ -289,7 +289,7 @@ test('1.81.0 change name everywhere removes the organisation names that exist', 
   ])
 })
 
-test('review of #439: "this organisation only" on the home organisation writes its users document and removes its entry', () => {
+test('1.82.0: "this organisation only" on the home organisation writes its users document and SETS its entry (never removes it)', () => {
   const plan = ownerNameChangePlan({
     firstName: 'Farns',
     surname: 'Nel',
@@ -302,6 +302,6 @@ test('review of #439: "this organisation only" on the home organisation writes i
   })
   assert.deepEqual(plan.writes.map((write) => [write.path, write.kind ?? 'update']), [
     ['users/u1', 'update'],
-    ['organizations/A/memberNames/u1', 'delete'],
+    ['organizations/A/memberNames/u1', 'upsert'],
   ])
 })

@@ -12,7 +12,7 @@ import {
   signInWithEmailAndPassword,
   type UserCredential,
 } from 'firebase/auth'
-import { deleteDoc, doc, getDoc, serverTimestamp, setDoc, Timestamp, updateDoc, writeBatch } from 'firebase/firestore'
+import { deleteDoc, doc, getDoc, runTransaction, serverTimestamp, setDoc, Timestamp, updateDoc, writeBatch } from 'firebase/firestore'
 import { waitForOrganizationClaims } from '@/lib/auth/authClaimsRefresh'
 import { getFirebaseAuth, getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { isValidUuid } from '@/lib/security/validation'
@@ -24,6 +24,30 @@ import { moveTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
 import { invitationUsedWriteFields } from '@/lib/canonical/createDocuments'
 import { sharedDocumentPayWrite } from '@/lib/canonical/payProfile'
 import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
+import { MEMBER_NAMES_COLLECTION, memberNameJoinEntry, memberNameWriteFields, type NamedPerson } from '@/lib/canonical/memberNames'
+
+/**
+ * Rulebook 1.82.0 §11 (owner 24 Nov, item 3): joining an organisation gives the person their own name there —
+ * `memberNames/{uid}`, from the invitation's placeholder, else the invitation, else the account (`memberNameJoinEntry`)
+ * — so a name edit in another of their organisations never changes it. Create-only (read in a transaction, never over
+ * an entry), after the auth claims cover the organisation (the rules let a member write their own entry). A refusal
+ * never stops the setup: the app creates the entry when the person first opens the organisation (`memberNamesLive`).
+ */
+async function ensureJoinMemberName(authUid: string, organizationId: string, candidates: ReadonlyArray<NamedPerson | null | undefined>) {
+  const name = memberNameJoinEntry(candidates)
+  const fields = name ? memberNameWriteFields({ ...name, writerUserId: authUid, platform: 'web' }) : null
+  if (!fields) return
+  const db = getFirebaseDb()
+  const ref = doc(db, 'organizations', organizationId, MEMBER_NAMES_COLLECTION, authUid)
+  try {
+    await runTransaction(db, async (transaction) => {
+      const snap = await transaction.get(ref)
+      if (!snap.exists()) transaction.set(ref, { ...fields, updatedAt: serverTimestamp() })
+    })
+  } catch (error) {
+    console.warn('Organisation name not written on join; it is created when the organisation is first opened', error instanceof Error ? error.message : 'unknown')
+  }
+}
 
 export type InvitationSummary = {
   invitationId: string
@@ -258,6 +282,8 @@ export async function completeInvitationPasswordSetup(params: {
     await acceptIntoAnotherCompany(authUid, record, params.invitationId)
     // Rulebook 1.32.4 §16: the new company reaches the rules through the auth claims; wait (bounded) for them.
     await waitForOrganizationClaims(authResult.user, record.organizationId)
+    // 1.82.0: the name the inviting company typed (its placeholder, else the invitation), never the other company's.
+    await ensureJoinMemberName(authUid, record.organizationId, [claimedUser, record, ownUser])
     return
   }
 
@@ -384,6 +410,7 @@ export async function completeInvitationPasswordSetup(params: {
   // Rulebook 1.32.4 §16: the app opens this company next; its rules read the auth claims the function sets from the
   // documents written above. Wait (bounded) until the token carries them.
   await waitForOrganizationClaims(authResult.user, record.organizationId)
+  await ensureJoinMemberName(authUid, record.organizationId, [claimedUser, record, nextUser, ownUser])
   const { grantMfaSkip } = await import('@/lib/auth/mfa/mfaClient')
   await grantMfaSkip({ invitationId: params.invitationId })
 }

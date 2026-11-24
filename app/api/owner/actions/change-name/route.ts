@@ -26,9 +26,8 @@ export const runtime = 'nodejs'
 
 /**
  * POST /api/owner/actions/change-name `{ uid, firstName, surname, reason, preview?, scope?, organizationId? }` — owner console PR 5.
- * 1.81.0: `scope: 'organization'` with `organizationId` changes the person's name in that organisation only (its
- * `memberNames` entry and its roster rows; users documents untouched); the default `all` also removes every
- * organisation's own name for them so the new name shows everywhere (rulebook §11 "Names per organisation").
+ * 1.82.0 (rulebook §11 "Names per organisation"): always one organisation (`organizationId`): its `memberNames` entry
+ * is set and its roster rows renamed; in the person's home organisation its users documents too. `scope` is ignored.
  * Changes a person's first name and surname on every users document of theirs (the directory's one-per-email fold,
  * every organisation) and on the `operatives` / `managers` rows on their email in their organisations, as the apps
  * do when a person's name is saved. Partial updates only (`userProfileWriteFields`, `operativeRowWriteFields`,
@@ -58,10 +57,11 @@ export async function POST(request: NextRequest) {
   )
   if (!body.ok) return body.response
   const preview = body.value.preview === true
-  // 1.81.0 (rulebook §11 "Names per organisation"): `organization` changes the name in one organisation only.
-  const scope = body.value.scope === 'organization' ? 'organization' : 'all'
+  // Rulebook 1.82.0 §11 "Names per organisation" (owner 24 Nov): a name belongs to one organisation, so the change acts
+  // on one organisation at a time (the 1.81.0 "every organisation" scope is gone).
+  const scope = 'organization' as const
   const scopedOrgId = (body.value.organizationId || '').trim()
-  if (scope === 'organization' && !isValidDocumentId(scopedOrgId)) return jsonError('Choose the organisation first.', 400)
+  if (!isValidDocumentId(scopedOrgId)) return jsonError('Choose the organisation first.', 400)
   const uid = (body.value.uid || '').trim()
   if (!isValidDocumentId(uid)) return jsonError('Choose a person first.', 400)
   const firstName = (body.value.firstName || '').trim()
@@ -123,7 +123,7 @@ export async function POST(request: NextRequest) {
         unread.push(path)
       }
     }
-    if (scope === 'all' || organizationId === scopedOrgId) {
+    if (organizationId === scopedOrgId) {
       const path = `organizations/${organizationId}/memberNames`
       try {
         for (const row of await firestoreListCollection(token, path, 5000)) existingMemberNames.add(`${organizationId}/${row.id}`.toLowerCase())

@@ -13,7 +13,7 @@ import {
 import { isAnonymisedDeletedProfile, type RosterSegmentProfile } from '@/lib/canonical/userRosterSegment'
 import type { RestUpdateWrite } from '@/lib/owner/firestoreRest'
 import type { PlainDoc } from '@/lib/owner/directory'
-import { MEMBER_NAMES_COLLECTION, memberNameEditTarget } from '@/lib/canonical/memberNames'
+import { MEMBER_NAMES_COLLECTION, memberNameEditPlan } from '@/lib/canonical/memberNames'
 import { documentOrganizationId } from '@/lib/canonical/peopleDocuments'
 
 /** PLAN §4: every action needs a reason of 3–500 characters (stored in the audit log, emails masked). */
@@ -134,11 +134,12 @@ export function ownerNameChangePlan(input: {
   if (input.scope === 'organization') {
     const org = (input.organizationId || '').trim()
     const kept = (input.keptUserId || '').trim()
-    // Review of #439: on the person's home organisation the name lives on the users document (`memberNameEditTarget`),
-    // so "this organisation only" there writes this organisation's users documents and removes its entry.
+    // Rulebook 1.82.0 §11 (`memberNameEditPlan`, owner 24 Nov): the organisation's own name for them is always set;
+    // on the person's home organisation its users documents take the name as well (account emails and older builds
+    // read them). No other organisation's name changes.
     const keptDoc = input.userDocs.find((doc) => doc.id === kept)
     const home = keptDoc ? documentOrganizationId(keptDoc.data?.organizationId) : null
-    if (org && kept && memberNameEditTarget({ organizationId: org, homeOrganizationId: home }) === 'account') {
+    if (org && kept && memberNameEditPlan({ organizationId: org, homeOrganizationId: home }).writeAccount) {
       for (const doc of input.userDocs) {
         if ((documentOrganizationId(doc.data?.organizationId) || '').toLowerCase() !== org.toLowerCase()) continue
         const write = toWrite(`users/${doc.id}`, userProfileWriteFields(doc.data || {}, next), doc.updateTime)
@@ -146,12 +147,8 @@ export function ownerNameChangePlan(input: {
         writes.push(write)
         users.push({ id: doc.id, organizationId: org })
       }
-      for (const doc of input.userDocs) {
-        if (!input.existingMemberNames?.has(`${org}/${doc.id}`.toLowerCase())) continue
-        writes.push({ path: `organizations/${org}/${MEMBER_NAMES_COLLECTION}/${doc.id}`, set: {}, kind: 'delete' })
-        if (!memberNames.length) memberNames.push({ organizationId: org, action: 'removed' })
-      }
-    } else if (org && kept) {
+    }
+    if (org && kept) {
       writes.push({
         path: `organizations/${org}/${MEMBER_NAMES_COLLECTION}/${kept}`,
         set: { firstName: input.firstName.trim(), surname: input.surname.trim() },

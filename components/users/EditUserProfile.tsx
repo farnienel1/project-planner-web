@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useToast } from '@/components/ui/ToastProvider'
 import { FORMER_PERSON_RECORD_SKIPPED_MESSAGE } from '@/lib/canonical/formerPeople'
-import { MEMBER_NAME_REFUSED_MESSAGE, canWriteMemberName, memberNameEditTarget } from '@/lib/canonical/memberNames'
+import { MEMBER_NAME_REFUSED_MESSAGE, canWriteMemberName } from '@/lib/canonical/memberNames'
 import { usePendingNavigation } from '@/lib/navigation/usePendingNavigation'
 import { EditUserSkeleton } from '@/components/users/profile-ui/skeletons'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -590,20 +590,20 @@ export function EditUserProfile({
     dirtyRef.current = unsavedEdits
   }, [target?.id, unsavedEdits])
   const canEditIdentity = target ? canEditIdentityDetails(currentUser, target) : false
-  // Rulebook 1.81.0 §11 "Names per organisation": outside the person's home organisation the name edited here is this
-  // company's own name for them; only an admin or the person may set it (the security rules hold the same).
-  const nameIsOrganizations = target
-    ? memberNameEditTarget({ organizationId: organization?.id, homeOrganizationId: target.organizationId }) === 'organization'
-    : false
+  // Rulebook 1.82.0 §11 "Names per organisation" (`memberNameEditPlan`): the name edited here is always this company's
+  // own name for them (its `memberNames` entry); only an admin, the person, or an Operatives manager for an operative
+  // may set it (the security rules hold the same).
   const canEditName =
     canEditIdentity &&
-    (!nameIsOrganizations ||
-      canWriteMemberName({
-        writerUserId: currentUser?.id,
-        subjectUserId: target?.id,
-        writerIsAdmin: Boolean(currentUser && (currentUser.isSuperAdmin || currentUser.permissions.adminAccess)),
-      }))
-  const nameHint = nameIsOrganizations
+    canWriteMemberName({
+      writerUserId: currentUser?.id,
+      subjectUserId: target?.id,
+      writerIsAdmin: Boolean(currentUser && (currentUser.isSuperAdmin || currentUser.permissions.adminAccess)),
+      writerManagesOperative:
+        Boolean(currentUser && currentUser.permissions.operatives && currentUser.permissions.manager && !currentUser.permissions.operativeMode) &&
+        Boolean(target && (target.permissions.operativeMode || target.role === 'operative')),
+    })
+  const nameHint = target
     ? canEditName
       ? `The name ${organization?.name || 'this company'} uses for them. Their other companies keep their own.`
       : MEMBER_NAME_REFUSED_MESSAGE

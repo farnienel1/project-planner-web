@@ -100,7 +100,7 @@ export default function SiteMapPage() {
   })
 
   // The figures under the map are the Daily Overview model of the day shown (owner 24 Nov): hours, overtime and leave.
-  const { model, settingsLoaded } = useDailyOverviewModel({
+  const { model, settingsLoaded, companyLeave } = useDailyOverviewModel({
     day,
     today,
     timeZone,
@@ -117,8 +117,8 @@ export default function SiteMapPage() {
 
   const selectedJob = jobs.find((job) => job.id === selectedPinId) ?? null
   const summary = useMemo(
-    () => (selectedJob ? siteMapJobSummary({ jobId: selectedJob.id, peopleOnSite: selectedJob.peopleCount, model }) : null),
-    [selectedJob, model]
+    () => (selectedJob ? siteMapJobSummary({ jobId: selectedJob.id, peopleOnSite: selectedJob.peopleCount, model, companyLeave }) : null),
+    [selectedJob, model, companyLeave]
   )
 
   const withCoords = jobs.filter((p) => p.latitude != null && p.longitude != null)

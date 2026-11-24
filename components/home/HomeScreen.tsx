@@ -502,7 +502,7 @@ export function HomeScreen() {
 
   // ---- Team panels (admins): Daily Overview's own model for today (owner decisions 3, 5, 7, 10). ----
   const todayStart = useMemo(() => dateFromDayKey(homeDayKey, homeTimeZone), [homeDayKey, homeTimeZone])
-  const { model: todayModel, settings: todaySettings, settingsLoaded } = useDailyOverviewModel({
+  const { model: todayModel, settings: todaySettings, settingsLoaded, companyLeave: todayCompanyLeave } = useDailyOverviewModel({
     day: todayStart,
     today: now,
     timeZone: homeTimeZone,
@@ -844,7 +844,7 @@ export function HomeScreen() {
 
       {teamPanels && canViewSiteMap(displayUser) ? (
         <div className="dash-row single">
-          <SiteMapHomeCard model={shownToday} dayKey={homeDayKey} timeZone={homeTimeZone} />
+          <SiteMapHomeCard model={shownToday} companyLeave={shownToday ? todayCompanyLeave : null} dayKey={homeDayKey} timeZone={homeTimeZone} />
         </div>
       ) : null}
 

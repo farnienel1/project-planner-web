@@ -1109,7 +1109,7 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 
 | Date | Choice | Status |
 |---|---|---|
-| 24 Nov | The site map summary's "On annual leave" is the whole team's approved leave that day (leave is not tied to a job), labelled so. | done, owner to confirm |
+| 24 Nov | The site map summary's "On annual leave" is the whole team's approved leave that day (leave is not tied to a job), labelled so. | **owner chose 24 Nov: the whole company** (1.82.0 row below) |
 | 24 Nov | With an office pin the map opens on it and does not jump back when the day changes; without one it fits all jobs as before. Maintenance jobs are blue (projects); the old orange pin is gone. | done, owner to confirm |
 | 24 Nov | The sign-in chord is D major 9, about 2.6 s. After the emailed code the page fully reloads; browsers that need a new tap before audio (Safari) then play nothing rather than later. | done, owner to confirm |
 
@@ -1123,9 +1123,9 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 
 | Date | Choice | Status |
 |---|---|---|
-| 24 Nov | Photos or PDF, 10 MB, at most 20 files of each kind per subcontractor; the expiry is a date only (no time), shown "Expired" / "Expires today" / "Expires in N days" (amber within 30 days) / "Expires 1 Mar 2027". | done, owner to confirm |
+| 24 Nov | Photos or PDF, 10 MB, at most 20 files of each kind per subcontractor; the expiry is a date only (no time), shown "Expired" / "Expires today" / "Expires in N days" (amber within 30 days) / "Expires 1 Mar 2027". | done, **owner confirmed 24 Nov (6: photos + PDF yes, yes)** |
 | 24 Nov | Only staff can open the files (Storage, as variation evidence); an operative never sees them. The list itself is on the firm document every member can read, but operatives have no Sub Contractors page. | done, owner to confirm |
-| 24 Nov | Not built (follow-ups): expiring / expired subcontractor documents on the Warnings page; narrowing the Firestore rule so only staff write `documents` (today any member of the company may write a subcontractor record, as before — `firestore.rules` has 65 bytes of budget left). | follow-up |
+| 24 Nov | Not built (follow-ups): expiring / expired subcontractor documents on the Warnings page; narrowing the Firestore rule so only staff write `documents` (today any member of the company may write a subcontractor record, as before — `firestore.rules` has 65 bytes of budget left). | Firestore rule **done in 1.82.0** (owner 24 Nov); Warnings follow-up open |
 
 ## Open questions for the owner
 
@@ -1491,3 +1491,26 @@ UI only, web only (`docs/design/projects-overview-ui/projects-overview-ui-spec.m
 | 24 Nov | The weekly report check line keeps "REV 1 waiting for signature" (only the Payrun Snapshot cell names whose turn, as asked). | done, owner to confirm |
 | 24 Nov | A person with no first name reads "REV 1 · waiting for the person". | done, owner to confirm |
 | 24 Nov | iPhone: the Payrun Snapshot link carries `documentId`, but the iPhone review screen still opens the pay run's latest version for that person (which is the same document unless it is filed under another id); passing it through to the review load is a follow-up. | follow-up |
+
+## 24 Nov decisions (for 1.82, owner answers and confirmations)
+
+The owner's answers of 24 Nov (items 1, 2, 5, 9 of the list sent that day) and confirmations (4: yes, admins only; 6: photos + PDF, yes, yes; 7: ok; 8: ok).
+
+| Date | Decision | Status |
+|---|---|---|
+| 24 Nov | **Site map "On annual leave" = the whole company's approved leave that day** (leave is not tied to a job), on web and iPhone through one rulebook function, `siteMapLeaveSummary` (one count per person). Web counted Daily Overview's list (a manager's own team only); iPhone counted only people booked on the job. | done web + rulebook (1.82.0, w182-owner-fixes, draft); iOS (ios-1.82-owner-fixes and ios-fixes-24nov, draft) |
+| 24 Nov | **Only admins and Sub Contractors managers change a subcontractor's documents** (Firestore rule on the 1.80 `documents` lists: one list and one entry at a time in the 1.80 shape, paths in this company's folder for this firm). A firm save that leaves the documents alone is unchanged. | done rules + rulebook (1.82.0); rules publish pending |
+| 24 Nov | **A person's name belongs to each organisation separately** ("whatever their name is on that org is set to that org and separate to others; the email is basically their account"): every name edit in a company writes only that company's name (and, in the person's home company, the account's name too); joining a company gives the person their own name there; an owner-run backfill gives existing members theirs. Admins and the person change the name only in the company they are working in; Operatives managers only for operatives in that company. Owner console: each company the person belongs to with their name, level and active state there; Change name acts on one company at a time. | done web + rulebook + rules (1.82.0); iOS (ios-1.82-owner-fixes); rules publish and backfill pending |
+| 24 Nov | **Old toolbox talk notices open their job**: a notice written before 1.79 (the talk's issue id) finds its job from the health & safety documents the app reads (`healthSafetyIssueJob`); no notice is edited. | done web + rulebook (1.82.0); iOS (ios-1.82-owner-fixes) |
+| 24 Nov | Confirmation 4: yes, admins only. | recorded (owner 24 Nov) |
+| 24 Nov | Confirmation 6: subcontractor documents photos + PDF — yes, yes. | recorded (1.80.0 row above) |
+| 24 Nov | Confirmations 7 and 8: ok. | recorded (owner 24 Nov) |
+
+## 1.82.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 24 Nov | The app creates the signed-in person's own name in a company the first time they open it with none (the name shown today, create-only), so nothing they see changes; this is a device write nobody pressed Save for (like seeding a starter library). | done, owner to confirm |
+| 24 Nov | An Operatives manager names an operative only when both are in the manager's home company; a visiting operative is named by an admin or themselves. Another manager can no longer change anyone's name, even in the home company (before, a home edit went through the account). | done, owner to confirm |
+| 24 Nov | Leak found, not fixed: a member whose account belongs to another company keeps the line managers stored on that account, so in the second company they read as having none (admins there cannot set them). Pay, role and access are already per company. | follow-up |
+| 24 Nov | Subcontractor documents rule: an expiry change may also rewrite that entry's name or content type (only `id` and `path` are pinned); staff only. | done, owner to confirm |

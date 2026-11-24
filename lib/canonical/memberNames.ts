@@ -203,11 +203,88 @@ export function memberNameWriteFields(input: {
 }
 
 /**
- * Who may write a person's entry in an organisation (the security rules hold the same): the person themself, or an
- * admin of that organisation (outside operative mode). Nobody else, Operatives managers included.
+ * Who may write a person's entry in an organisation (the security rules hold the same): the person themself, an
+ * admin of that organisation (outside operative mode), or — 1.82.0 (owner 24 Nov, item 3) — a manager with the
+ * Operatives permission for an operative of that organisation (`writerManagesOperative`: the writer may manage
+ * operatives there and the subject is at the operative level there). Nobody else.
  */
-export function canWriteMemberName(input: { writerUserId: unknown; subjectUserId: unknown; writerIsAdmin: boolean }): boolean {
+export function canWriteMemberName(input: {
+  writerUserId: unknown
+  subjectUserId: unknown
+  writerIsAdmin: boolean
+  writerManagesOperative?: boolean
+}): boolean {
   const writer = key(input?.writerUserId)
   if (!writer) return false
-  return writer === key(input?.subjectUserId) || input?.writerIsAdmin === true
+  return writer === key(input?.subjectUserId) || input?.writerIsAdmin === true || input?.writerManagesOperative === true
+}
+
+/**
+ * Rulebook 1.82.0 §11 (owner 24 Nov, item 3: "whatever their name is on that org is set to that org and separate to
+ * others; the email is basically their account"): what a name edit made in `organizationId` writes. Always that
+ * organisation's own entry (`memberNames/{uid}`, `writeEntry`), so no other organisation ever reads this edit; and,
+ * only in the person's home organisation (`memberNameEditTarget` → `account`), the users document's name as well
+ * (`writeAccount`), which account emails, older app builds and organisations with no entry read. An entry is never
+ * removed by an edit (before 1.82.0 a home edit removed the home entry and changed the name every entry-less
+ * organisation showed).
+ */
+export function memberNameEditPlan(input: { organizationId: unknown; homeOrganizationId: unknown }): {
+  writeEntry: boolean
+  writeAccount: boolean
+} {
+  const org = key(input?.organizationId)
+  return { writeEntry: Boolean(org), writeAccount: memberNameEditTarget(input) === 'account' }
+}
+
+/**
+ * Rulebook 1.82.0 §11: the name an organisation's entry starts with when a person joins it or opens it with no entry
+ * yet — the first of `candidates` (in order: the invitation's placeholder, the invitation, the account) whose name is
+ * a valid entry (`memberNameValidationError`). Null when none has one (then nothing is written).
+ */
+export function memberNameJoinEntry(candidates: ReadonlyArray<NamedPerson | null | undefined>): { firstName: string; surname: string } | null {
+  for (const candidate of candidates || []) {
+    if (!candidate) continue
+    const name = accountName(candidate)
+    if (!memberNameValidationError(name)) return { firstName: name.firstName, surname: name.surname }
+  }
+  return null
+}
+
+/**
+ * Rulebook 1.82.0 §1, §11: whether the app should create the signed-in person's own entry in the open organisation —
+ * true only when the organisation's entries have been read from the server and none names any id the person goes by
+ * (`memberNameFor`). The write is create-only (never over an entry, read in a transaction) and carries the name the
+ * organisation shows today (`memberNameJoinEntry([person])`), so nothing a person sees changes; it is the one
+ * device-started write of this kind (§1 "Never re-save what you didn't change", like seeding a missing starter
+ * library).
+ */
+export function memberNameEntryMissing(input: { person: NamedPerson | null | undefined; names: MemberNames | null | undefined; serverRead: boolean }): boolean {
+  if (!input?.serverRead || !input.person || !key(input.person.id)) return false
+  return !memberNameFor(input.person, input.names)
+}
+
+/**
+ * Rulebook 1.82.0 §11 (owner-run `scripts/backfill-member-names.mjs`, dry run first): the entries to create in one
+ * organisation so every member already there has their own name in it — one per person with no entry under any id
+ * they go by (`memberNameFor`), with the name the organisation shows them today (`memberNameJoinEntry([person])`, the
+ * users document's name). Never over an entry (the script creates only missing documents), never for an anonymised
+ * deleted profile ("Deleted user", no email) and never for a person with no valid name. One entry per users id. Pure.
+ */
+export function memberNameBackfillEntries(input: {
+  people: ReadonlyArray<NamedPerson & { id: unknown; email?: unknown }> | null | undefined
+  names: MemberNames | null | undefined
+}): Array<{ userId: string; firstName: string; surname: string }> {
+  const out: Array<{ userId: string; firstName: string; surname: string }> = []
+  const seen = new Set<string>()
+  for (const person of input?.people || []) {
+    const userId = text(person?.id)
+    if (!userId || seen.has(key(userId))) continue
+    seen.add(key(userId))
+    const shown = accountName(person)
+    if (!text(person?.email) && shown.displayName === 'Deleted user') continue
+    if (memberNameFor(person, input?.names)) continue
+    const name = memberNameJoinEntry([person])
+    if (name) out.push({ userId, ...name })
+  }
+  return out
 }
