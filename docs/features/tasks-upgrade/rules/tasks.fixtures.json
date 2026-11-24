@@ -1,0 +1,86 @@
+{
+  "_about": "Shared test cases for the tasks rulebook. iOS and web unit tests both load this file and must produce exactly these results. If either platform disagrees, it's a bug in that platform, not in this file.",
+  "rulebookVersion": 1,
+  "today": "2026-11-24",
+  "timezone": "Europe/London",
+
+  "dueLabels": [
+    { "name": "70 days overdue", "status": "to_do", "due": "2026-09-15", "expect": { "label": "70 days overdue", "tone": "red", "overdue": true } },
+    { "name": "1 day overdue", "status": "in_progress", "due": "2026-11-23", "expect": { "label": "1 day overdue", "tone": "red", "overdue": true } },
+    { "name": "due today", "status": "to_do", "due": "2026-11-24", "expect": { "label": "Due today", "tone": "amber", "overdue": false } },
+    { "name": "due tomorrow", "status": "to_do", "due": "2026-11-25", "expect": { "label": "Due tomorrow", "tone": "amber", "overdue": false } },
+    { "name": "due in 2 days shows weekday", "status": "to_do", "due": "2026-11-26", "expect": { "label": "Due Thu", "tone": "amber", "overdue": false } },
+    { "name": "due in 3 days shows weekday", "status": "to_do", "due": "2026-11-27", "expect": { "label": "Due Fri", "tone": "amber", "overdue": false } },
+    { "name": "due in 4 days shows date", "status": "to_do", "due": "2026-11-28", "expect": { "label": "Due 28 Nov", "tone": "grey", "overdue": false } },
+    { "name": "no due date", "status": "to_do", "due": null, "expect": { "label": "No due date", "tone": "grey", "overdue": false } },
+    { "name": "completed ignores due date", "status": "completed", "due": "2026-09-15", "completedAt": "2026-11-20T15:04:00Z", "expect": { "label": "Completed 20 Nov", "tone": "grey", "overdue": false } },
+    { "name": "device in another time zone still uses the UK date", "status": "to_do", "due": "2026-11-24", "now": "2026-11-24T23:30:00-08:00", "expect": { "label": "1 day overdue", "tone": "red", "overdue": true } }
+  ],
+
+  "tabs": [
+    { "name": "to do and overdue", "status": "to_do", "due": "2026-09-15", "expect": ["active", "overdue"] },
+    { "name": "in progress not overdue", "status": "in_progress", "due": "2026-12-02", "expect": ["active"] },
+    { "name": "completed", "status": "completed", "due": "2026-09-15", "expect": ["completed"] },
+    { "name": "no due date never overdue", "status": "to_do", "due": null, "expect": ["active"] }
+  ],
+
+  "legacyValues": [
+    { "field": "priority", "stored": "medium", "expect": "normal" },
+    { "field": "priority", "stored": "Normal", "expect": "normal" },
+    { "field": "priority", "stored": "URGENT", "expect": "urgent" },
+    { "field": "status", "stored": "done", "expect": "completed" },
+    { "field": "status", "stored": "todo", "expect": "to_do" },
+    { "field": "status", "stored": "inprogress", "expect": "in_progress" }
+  ],
+
+  "actions": [
+    { "status": "to_do", "expectPrimary": "start", "expectAvailable": ["start", "complete"] },
+    { "status": "in_progress", "expectPrimary": "complete", "expectAvailable": ["complete"] },
+    { "status": "completed", "expectPrimary": "reopen", "expectAvailable": ["reopen"] }
+  ],
+
+  "editForm": {
+    "expectStatusOptions": ["to_do", "in_progress"],
+    "expectCompletedSelectable": false
+  },
+
+  "completeStep": [
+    { "checklist": [true, true, false], "expect": { "completeEnabled": false, "saveProgressEnabled": true, "hint": "Tick 1 more to complete" } },
+    { "checklist": [true, false, false], "expect": { "completeEnabled": false, "saveProgressEnabled": true, "hint": "Tick 2 more to complete" } },
+    { "checklist": [true, true], "expect": { "completeEnabled": true, "saveProgressEnabled": true, "hint": null } },
+    { "checklist": [], "expect": { "completeEnabled": true, "saveProgressEnabled": true, "hint": null } }
+  ],
+
+  "attachmentSources": {
+    "ios": ["camera", "library", "files", "site_audit"],
+    "web": ["files", "site_audit"]
+  },
+
+  "attachmentValidation": [
+    { "name": "photo ok", "mime": "image/jpeg", "sizeMb": 4.2, "expect": "ok" },
+    { "name": "heic converted", "mime": "image/heic", "sizeMb": 3.1, "expect": "ok", "expectStoredMime": "image/jpeg" },
+    { "name": "pdf ok", "mime": "application/pdf", "sizeMb": 2, "expect": "ok" },
+    { "name": "too big after resize", "mime": "application/pdf", "sizeMb": 14, "expect": "tooBig" },
+    { "name": "wrong type", "mime": "application/zip", "sizeMb": 1, "expect": "wrongType" },
+    { "name": "eleventh file", "mime": "image/jpeg", "sizeMb": 1, "existingFiles": 10, "expect": "tooMany" }
+  ],
+
+  "sortActive": {
+    "input": [
+      { "id": "a", "status": "to_do", "due": "2026-12-02", "priority": "high", "title": "Commission BMS points" },
+      { "id": "b", "status": "in_progress", "due": "2026-09-15", "priority": "urgent", "title": "Replace distribution board DB-2" },
+      { "id": "c", "status": "to_do", "due": null, "priority": "urgent", "title": "Check riser labels" },
+      { "id": "d", "status": "to_do", "due": "2026-06-27", "priority": "high", "title": "Install 12 m gutter at rear" },
+      { "id": "e", "status": "to_do", "due": "2026-12-02", "priority": "low", "title": "Bag up offcuts" },
+      { "id": "f", "status": "in_progress", "due": "2026-11-24", "priority": "normal", "title": "Lighting adaptations, level 2" }
+    ],
+    "expectOrder": ["d", "b", "f", "a", "e", "c"],
+    "_why": "Overdue first (oldest due date first), then due date ascending, then higher priority first, then title. No due date goes last."
+  },
+
+  "defaultScope": [
+    { "role": "operative", "expect": "mine" },
+    { "role": "manager", "expect": "everyone" },
+    { "role": "admin", "expect": "everyone" }
+  ]
+}

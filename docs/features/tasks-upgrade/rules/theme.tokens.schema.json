@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "theme.tokens.schema.json",
+  "title": "Project Planner colour tokens (light and dark)",
+  "type": "object",
+  "required": ["tokensKey", "version", "appearance", "color", "contrastPairs"],
+  "properties": {
+    "tokensKey": { "const": "theme" },
+    "version": { "type": "integer", "minimum": 1 },
+    "appearance": {
+      "type": "object",
+      "required": ["options", "default", "scope"],
+      "properties": {
+        "options": { "type": "array", "items": { "enum": ["system", "light", "dark"] } },
+        "default": { "enum": ["system", "light", "dark"] },
+        "scope": { "enum": ["device", "account"] }
+      }
+    },
+    "color": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["light", "dark"],
+        "properties": {
+          "light": { "type": "string", "pattern": "^(#[0-9A-Fa-f]{6}|rgba\\(.+\\)|0 .+)$" },
+          "dark": { "type": "string", "pattern": "^(#[0-9A-Fa-f]{6}|rgba\\(.+\\)|0 .+)$" },
+          "use": { "type": "string" }
+        }
+      }
+    },
+    "contrastPairs": {
+      "type": "array",
+      "items": { "type": "object", "required": ["fg", "bg", "min"], "properties": { "min": { "type": "number", "minimum": 3 } } }
+    }
+  }
+}

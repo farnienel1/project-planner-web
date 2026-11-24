@@ -216,18 +216,6 @@
     "reason": "Billing copy (Stripe trial/renewal dates) — subscription billing, not organisation business dates (rulebook §4.2)."
   },
   {
-    "path": "lib/tasks/projectTaskFilters.ts",
-    "pattern": "single-id-person-match",
-    "count": 1,
-    "reason": "Name shown on a task filter chip for the chosen operatives row, display only."
-  },
-  {
-    "path": "lib/tasks/projectTaskFilters.ts",
-    "pattern": "toLocaleDateString",
-    "count": 1,
-    "reason": "FU-6: task filter chip date label in the browser zone; display only, should use the organisation zone."
-  },
-  {
     "path": "lib/timesheets/paymentRunCopy.ts",
     "pattern": "londonIsoWeekday",
     "count": 1,

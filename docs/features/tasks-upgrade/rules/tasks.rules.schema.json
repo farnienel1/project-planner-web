@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tasks.rules.schema.json",
+  "title": "Tasks rulebook",
+  "type": "object",
+  "required": ["rulebookKey", "rulebookVersion", "statuses", "actions", "editFormStatuses", "priorities", "due", "fields", "formOrder", "attachments", "completeStep", "views", "copy", "permissions"],
+  "properties": {
+    "rulebookKey": { "const": "tasks" },
+    "rulebookVersion": { "type": "integer", "minimum": 1 },
+    "statuses": {
+      "type": "array", "minItems": 2,
+      "items": { "type": "object", "required": ["key", "label", "tone"],
+        "properties": { "key": { "type": "string", "pattern": "^[a-z][a-z_]*$" }, "label": { "type": "string" }, "tone": { "enum": ["grey", "blue", "green", "amber", "red", "purple"] } } }
+    },
+    "actions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object", "required": ["label", "from", "to", "opensCompleteStep"],
+        "properties": { "label": { "type": "string" }, "from": { "type": "array", "items": { "type": "string" } }, "to": { "type": "string" }, "opensCompleteStep": { "type": "boolean" } }
+      }
+    },
+    "editFormStatuses": { "type": "array", "items": { "type": "string" } },
+    "priorities": {
+      "type": "array", "minItems": 2,
+      "items": { "type": "object", "required": ["key", "label", "tone", "rank"],
+        "properties": { "key": { "type": "string", "pattern": "^[a-z][a-z_]*$" }, "label": { "type": "string" }, "tone": { "type": "string" }, "rank": { "type": "integer" }, "default": { "type": "boolean" } } }
+    },
+    "legacyPriorityMap": { "type": "object", "additionalProperties": { "type": "string" } },
+    "legacyStatusMap": { "type": "object", "additionalProperties": { "type": "string" } },
+    "due": {
+      "type": "object", "required": ["requiredForNewTasks", "dueSoonDays", "labels"],
+      "properties": { "dueSoonDays": { "type": "integer", "minimum": 0, "maximum": 30 } }
+    },
+    "fields": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object", "required": ["kind", "label", "required"],
+        "properties": { "kind": { "enum": ["text", "longtext", "location", "people", "date", "priority", "checklist", "attachments", "status"] } }
+      }
+    },
+    "formOrder": { "type": "array", "items": { "type": "string" } },
+    "attachments": {
+      "type": "object", "required": ["maxFiles", "maxSizeMb", "accepted", "sources", "upload"],
+      "properties": {
+        "maxFiles": { "type": "integer", "minimum": 1, "maximum": 50 },
+        "maxSizeMb": { "type": "number", "exclusiveMinimum": 0, "maximum": 50 },
+        "sources": {
+          "type": "object", "required": ["ios", "web"],
+          "properties": {
+            "web": { "type": "array", "items": { "enum": ["files", "site_audit"] } },
+            "ios": { "type": "array", "items": { "enum": ["camera", "library", "files", "site_audit"] } },
+            "android": { "type": "array", "items": { "enum": ["camera", "library", "files", "site_audit"] } }
+          }
+        }
+      }
+    },
+    "views": { "type": "object", "required": ["scopes", "tabs", "defaultTab", "groupBy", "sortActive"] },
+    "copy": { "type": "object" },
+    "permissions": { "type": "object" }
+  }
+}
