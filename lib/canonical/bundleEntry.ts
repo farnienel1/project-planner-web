@@ -1713,6 +1713,7 @@ export {
   TIMESHEET_SIGNED_NOTICE_TITLE,
   TIMESHEET_REVIEWER_BOOKING_EDITS_FIELD,
   signedTimesheetBookingWriteReopens,
+  signedTimesheetLineBooking,
   signedTimesheetLineBookingKey,
   signedTimesheetChangeForReports,
   SNAPSHOT_GAP_REPORTS,

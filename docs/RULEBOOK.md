@@ -1,6 +1,6 @@
 # Project Planner Rulebook
 
-Version: 1.86.0
+Version: 1.87.0
 Updated: 2026-11-24
 
 This is the one rulebook for every Project Planner platform: web, iOS and (later) Android. It is written platform-neutral. Each rule names the shared function in `lib/canonical` that implements it; platforms call that function (web `@/lib/canonical`, iOS `CanonicalBusinessEngine`, Android the same packed script) and never keep a second copy.
@@ -1120,6 +1120,11 @@ No Functions, index or Storage change; no migration writes; `minimumIosBuild` un
 **1.10.0** (full order and checks in `docs/DEPLOY_1.10.0.md`): 1. merge the web change; 2. `node scripts/backfill-job-manager-user-ids.mjs --project <id> --all` (dry run, the default) and review the per-job diff; 3. the same with `--apply` (writes only `managerUserIds`, partial updates, idempotent, no write metadata — `updatedFrom` takes only `web` / `ios` / `android`); 4. `firebase deploy --only firestore:rules,firestore:indexes,functions`; 5. release iOS 1.10.0. The read rules (§17) refuse whole-collection job and booking queries for managers without a job toggle and for operatives, so app builds that predate 1.10.0 lose those lists for them until they update.
 
 ## Changelog
+
+### 1.87.0 — 2026-11-24
+- **Reviewer ⚙ / ✕ on web wrote to the wrong booking id** (owner report 24 Nov, testing a REV 1 sheet in Awaiting sign-off; web fix, no rule change): web's timesheet collector keeps a live line's `bookingId` as the line prefix plus the id (`op-{id}`, `mgr-{id}`, as the 1.47.0 `signedTimesheetLineBookingKey` already reads it), and the review page used that value as the booking's document id. ⚙ and ✕ on an overtime line read `bookings/op-{id}`, a document that never exists, and showed `EDIT_OF_MISSING_DOCUMENT_MESSAGE` ("This was deleted on another device."); ✕ on a standard line tried to delete it and was refused; nothing was struck through and the total did not move. Web `timesheetLineBooking` (`lib/timesheets/payrollLineBookingLookup.ts`) now gives the stored booking id (`signedTimesheetLineBooking`, below). Every sheet was affected from 1.72.0, not only revisions. The §16 security rules already allow the reviewer's booking write and its `reviewerBookingEdits` record on an unexported revision (emulator test added) and still refuse them once exported.
+- **One line → booking rule** (review of #450, Rule 0): `signedTimesheetLineBooking(line)` → `{ collection, bookingId }` (the stored id; `op-` / `mgr-` read without case, a stated collection kept) — the 1.47.0 rule's own line reader, now exported; web `timesheetLineBooking` calls it instead of a copy.
+- **Wording** (owner 24 Nov): `TIMESHEET_REVIEW_EDIT_BOOKING_NOTE` reads "… so scheduling, daily Overview and the weekly report show the new hours. …" ("Daily" → "daily").
 
 ### 1.86.0 — 2026-11-24
 - **Offline Replace on iPhone** (§2, §5, owner decision 24 Nov "Replace works offline, is queued, and is applied when signal returns"): `booking.replace` is `allowedOffline` in `OFFLINE_ACTIONS` (was `onlineOnly` from 1.41.0). New `lib/canonical/offlineReplace.ts`: `offlineReplaceReplayDecision` (`apply`, `createOnly`, `alreadyApplied`, `dropLocal`, `refuseChanged`, `refusePermission`, per-target outcomes), `offlineReplaceRefusalDecision` (the `offlineDeleteRefusalDecision` mapping), `OFFLINE_REPLACE_REPLAY_DECISIONS`, `OFFLINE_REPLACE_TARGET_OUTCOMES`, `OFFLINE_REPLACE_CHANGED_MESSAGE`, `OFFLINE_REPLACE_REFUSED_MESSAGE`. A replaced booking changed on another device refuses the whole Replace (nothing written, both bookings as the server has them). Web unchanged (online only). No rules change.

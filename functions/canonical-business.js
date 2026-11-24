@@ -1948,6 +1948,7 @@ var ProjectPlannerCanonical = (() => {
     signedTimesheetBookingWriteReopens: () => signedTimesheetBookingWriteReopens,
     signedTimesheetChangeDetails: () => signedTimesheetChangeDetails,
     signedTimesheetChangeForReports: () => signedTimesheetChangeForReports,
+    signedTimesheetLineBooking: () => signedTimesheetLineBooking,
     signedTimesheetLineBookingKey: () => signedTimesheetLineBookingKey,
     siteAuditAuthorSignature: () => siteAuditAuthorSignature,
     siteAuditFieldCounter: () => siteAuditFieldCounter,
@@ -16313,6 +16314,9 @@ var ProjectPlannerCanonical = (() => {
     const left = fingerprintCore(a);
     return left !== "" && left === fingerprintCore(b);
   }
+  function signedTimesheetLineBooking(line) {
+    return lineBooking(line);
+  }
   function lineBooking(line) {
     if (!line) return null;
     const rawId = text18(line.id);
@@ -17430,8 +17434,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.86.0" : "",
-      sha256: true ? "e9ea201a3187a84aa7db612c73c3aa7f2dc16b6487b6ed5b91478ac30d7f2c8c" : ""
+      version: true ? "1.87.0" : "",
+      sha256: true ? "47e3c59b1c97bf813e134a17a637b5038ede651108bd094fd81cb9d4ec0a57bc" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -17890,7 +17894,7 @@ var ProjectPlannerCanonical = (() => {
     "isBreakRemoved",
     "otMultiplierOverride"
   ];
-  var TIMESHEET_REVIEW_EDIT_BOOKING_NOTE = "Saving changes the booking itself, so scheduling, Daily Overview and the weekly report show the new hours. You can keep reviewing; the person sees the change when you counter-sign.";
+  var TIMESHEET_REVIEW_EDIT_BOOKING_NOTE = "Saving changes the booking itself, so scheduling, daily Overview and the weekly report show the new hours. You can keep reviewing; the person sees the change when you counter-sign.";
   var TIMESHEET_REVIEW_DELETE_BOOKING_TITLE = "Remove this booking?";
   var TIMESHEET_REVIEW_DELETE_BOOKING_CONFIRM_LABEL = "Remove booking";
   var TIMESHEET_REVIEW_DELETE_BOOKING_CANCEL_LABEL = "Go back";

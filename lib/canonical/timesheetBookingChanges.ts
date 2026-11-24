@@ -251,7 +251,16 @@ function sameBooking(a: unknown, b: unknown): boolean {
   return left !== '' && left === fingerprintCore(b)
 }
 
-/** The booking a line names, `{ collection, bookingId }` (stored case), or null when it names none. */
+/**
+ * The booking a line names, `{ collection, bookingId }` (stored case), or null when it names none. Web's live lines
+ * carry `bookingId` as the line prefix plus the id (`op-<id>`, `mgr-<id>`); this gives the stored document id. 1.87.0
+ * (owner report 24 Nov): exported as `signedTimesheetLineBooking` so the review page's ⚙ / ✕ write the booking this rule
+ * reads, never a second copy.
+ */
+export function signedTimesheetLineBooking(line: SignedTimesheetLine | null | undefined): { collection: string; bookingId: string } | null {
+  return lineBooking(line)
+}
+
 function lineBooking(line: SignedTimesheetLine | null | undefined): { collection: string; bookingId: string } | null {
   if (!line) return null
   const rawId = text(line.id)

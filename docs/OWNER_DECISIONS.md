@@ -1642,3 +1642,10 @@ The owner's answers of 24 Nov (items 1, 2, 5, 9 of the list sent that day) and c
 | 24 Nov | Getting started: "3 of 6 done" counts the optional item; the card hides when the five required items are done even if accreditations are not. "Invite your team" is done as soon as one person besides the creator is on the roster (signed up or invited). Hiding is for the whole company, by any admin, with no way to show it again yet (every step stays in Settings); it hides at once, offline too (the write is sent when back online). | done, owner confirmed 24 Nov |
 | 24 Nov | The card is not limited by the company's age: an existing company with a required item still open (most likely a missing logo or office address) also sees it once, until an admin hides it or finishes the step. | done, owner confirmed 24 Nov |
 | 24 Nov | The setup wizard's "last screen" is Review & Pay (the screen after payment only redirects); the list there is read-only (no links: the person is not signed in to the app yet). | done, owner confirmed 24 Nov |
+
+## 24 Nov owner report (timesheet review ✕ / ⚙, 1.87)
+
+| Date | Decision / finding | Status |
+|---|---|---|
+| 24 Nov | **Bug: the line manager's ✕ / ⚙ on a timesheet line did nothing and showed "This was deleted on another device."** (owner testing a REV 1 in Awaiting sign-off, and a Signed-off sheet in Make changes). Cause: web used the timesheet line's prefixed booking id (`op-{id}`) as the booking's document id, so ⚙ / overtime ✕ read a booking that never exists and a standard ✕ tried to delete it. Every sheet since 1.72.0 (23 Nov): plain, revision, Make changes. Fixed (`timesheetLineBooking` gives the stored id). No rules change: the rules already allow the batch on an unexported REV 1 and refuse it once exported (emulator test). iOS checked: uses the bare booking id (not affected). | done web (1.87.0, w-ts-review-revision-fix) |
+| 24 Nov | **Wording:** the ⚙ dialog note reads "… scheduling, daily Overview and the weekly report …" ("Daily" → "daily"), on both apps (`TIMESHEET_REVIEW_EDIT_BOOKING_NOTE`). | done web + rulebook (1.87.0); iOS (sync + fallback text, ios-ts-review-revision-fix) |

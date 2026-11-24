@@ -32,20 +32,10 @@ import {
 import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
 import { firestoreUpdateFields, MissingDocumentError } from '@/lib/firebase/partialWrite'
 import { commitBookingDeleteTolerantly } from '@/lib/bookings/bookingTombstoneWrite'
-import { bookingIdFromLineId } from '@/lib/timesheets/payrollLineBookingLookup'
+import { timesheetLineBooking } from '@/lib/timesheets/payrollLineBookingLookup'
 
-/** The booking a timesheet line comes from: its collection and id (`op-{id}-normal|ot` / `mgr-{id}-normal|ot`). */
-export function timesheetLineBooking(line: { id: string; bookingId?: string; bookingCollection?: string }): {
-  bookingId: string
-  collection: TimesheetReviewBookingCollection
-} | null {
-  const bookingId = line.bookingId || bookingIdFromLineId(line.id) || ''
-  if (!bookingId) return null
-  const stated = line.bookingCollection
-  const collection: TimesheetReviewBookingCollection =
-    stated === 'managerSiteBookings' || (!stated && line.id.startsWith('mgr-')) ? 'managerSiteBookings' : 'bookings'
-  return { bookingId, collection }
-}
+/** The booking a timesheet line comes from (moved to `payrollLineBookingLookup`, which has no Firebase imports). */
+export { timesheetLineBooking }
 
 /** The sheet a reviewer's booking write is recorded on (1.74.0). */
 export type TimesheetReviewSheetRecord = {
