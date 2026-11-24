@@ -14,6 +14,7 @@ import { changedFirestoreFields } from '@/lib/firebase/changedFields'
 import { firestoreUpdateFields } from '@/lib/firebase/partialWrite'
 import { timesheetChangedFields } from '@/lib/canonical/timesheetEntryReviews'
 import { timesheetDocumentSubjectId } from '@/lib/canonical/timesheetPeriod'
+import { urlDocumentId } from '@/lib/firebase/urlDocumentId'
 import { timesheetSheetHasActivity } from '@/lib/canonical/userTimesheetQueue'
 import { LONDON_TIME_ZONE, unixStartOfDay, dayKey } from '@/lib/ios-parity/londonTime'
 import { weekStartKey } from '@/lib/timesheets/timesheetWeekUtils'
@@ -963,8 +964,35 @@ export async function loadTimesheetDraft(
   timeZone: string = LONDON_TIME_ZONE,
   periodEnd?: Date,
   /** Rulebook 1.45.0: every id of the person (`personIdSet`); their own id when not given. */
-  ownerUserIds: ReadonlyArray<string> = [userId]
+  ownerUserIds: ReadonlyArray<string> = [userId],
+  /**
+   * Rulebook 1.79.0: a stored sheet to open first (a Payrun Snapshot cell names the version it reports). Used only when
+   * it exists, is a timesheet of this period and belongs to one of `ownerUserIds`; otherwise the usual lookup runs.
+   */
+  preferredDocumentId?: string | null
 ): Promise<TimesheetDraft> {
+  // Taken from a URL: refused when empty, a path ("/") or over 200 characters.
+  const preferred = urlDocumentId(preferredDocumentId) ?? ''
+  if (preferred && preferred.startsWith('timesheet_')) {
+    try {
+      const snap = await getDoc(doc(db, 'organizations', organizationId, 'settings', preferred))
+      if (snap.exists()) {
+        const data = snap.data() as Record<string, unknown>
+        const owners = new Set([userId, ...ownerUserIds].map(normalizeDocumentId).filter(Boolean))
+        // The person the document id names (`timesheet_{uid}_…`, a revision included) must be one of the owner's ids,
+        // without case; a stored `userId`, when there is one, too.
+        const subject = normalizeDocumentId(timesheetDocumentSubjectId(preferred))
+        const stored = typeof data.userId === 'string' ? normalizeDocumentId(data.userId) : ''
+        if (subject && owners.has(subject) && (!stored || owners.has(stored))) {
+          if (weekStartMatches(data, weekStart, timeZone)) {
+            return await latestVersionDraft(organizationId, snap.id, data, { timeZone, ownerUserIds })
+          }
+        }
+      }
+    } catch {
+      // Not readable by this viewer, or no longer there: the usual lookup below.
+    }
+  }
   const direct = await loadTimesheetDraftByCandidates(organizationId, userId, weekStart, timeZone, true, ownerUserIds)
   if (direct.draft) return direct.draft
   // 17 Nov follow-up (guardrail 1): a sheet filed under another id the person goes by (a former invite id, a second

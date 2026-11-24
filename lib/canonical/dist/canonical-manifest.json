@@ -1,7 +1,7 @@
 {
-  "rulebookVersion": "1.78.0",
-  "rulebookSha256": "fe36f5ad4d10bd10d2a87eedc9067fc870ed4d2b7588fb14f4548b337b0558e9",
-  "bundleSha256": "c75fdba2eeb4f170d099c14a84bad67ddcf721d6fb922212dd3922c7e9fa9a44",
+  "rulebookVersion": "1.79.0",
+  "rulebookSha256": "fc97b116875a13e740d28e3f60788603906e726dbccd57513dbc1902f3291d7c",
+  "bundleSha256": "b99e3b2ceba01432bb0e980d23357f692d02ecc42e202e9726fe9f89564a702e",
   "crossPlatformContractSha256": "926b910948b674b1fa259e8f933ddd15f14bad00b8e0b050ccbd88c723bf64aa",
   "dataParityFixtureSha256": "c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f",
   "exports": [
@@ -648,6 +648,7 @@
     "TIMESHEET_REVISION_OPEN_MESSAGE",
     "TIMESHEET_REVISION_REVIEWER_EDIT_NOTE",
     "TIMESHEET_REVISION_SUFFIX",
+    "TIMESHEET_REVISION_WAITING_LINE_MANAGER",
     "TIMESHEET_SELF_SIGNED_OWNER_FIELDS",
     "TIMESHEET_SELF_SIGN_PAYE_NOTE",
     "TIMESHEET_SIGNED_AFTER_MS",
@@ -1916,6 +1917,7 @@
     "timesheetRevisionReportState",
     "timesheetRevisionReviewerMayEditBookings",
     "timesheetRevisionToSignRecipients",
+    "timesheetRevisionWaitingForLabel",
     "timesheetRevisionWaitingLabel",
     "timesheetSelfSigned",
     "timesheetSheetChangedByReviewer",

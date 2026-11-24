@@ -469,6 +469,8 @@ async function notifyCreated(input: {
         message,
         userId,
         relatedId: input.variation.id,
+        // 1.79.0: the job's collection rides along so the notice can open the variation on its job.
+        catalogue: input.variation.parentType === 'smallWork' ? 'smallWorks' : 'projects',
       })
     )
   )

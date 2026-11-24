@@ -162,7 +162,8 @@ test('1.33.0 payrunSnapshotRows: self-employed cells — least-advanced timeshee
     state: 'submitted',
     label: 'Submitted · 1 of 2 signed',
     tone: 'warn',
-    link: { kind: 'timesheet', personId: 'pat', start: '2026-11-09', end: '2026-11-15' },
+    // 1.79.0: the link names the stored sheet the cell reports.
+    link: { kind: 'timesheet', personId: 'pat', start: '2026-11-09', end: '2026-11-15', documentId: 'timesheet_pat_2026-11-09' },
   })
   for (const key of ['overtime', 'expenses', 'priceWork'] as const) assert.deepEqual(pat.cells[key], { state: 'notApplicable', label: 'Self Employed', tone: 'blocked', link: null })
   // No line manager: the person's own signature signs the sheet.
@@ -243,4 +244,14 @@ test('1.33.0 payrunSnapshotRows: a report is out of date when its live lines cha
   assert.deepEqual([cellFor([{ ...b1, workEndTime: '18:00' }, b2]).state, cellFor([{ ...b1, workEndTime: '18:00' }, b2]).tone], ['reportOutOfDate', 'warn'])
   // Without bookings only a stored mark counts (older callers).
   assert.equal(cellFor(null).state, 'reportYes')
+})
+
+test('1.79.0 timesheetRevisionWaitingForLabel: an open revision names whose signature it waits for', async () => {
+  const { timesheetRevisionWaitingForLabel, TIMESHEET_REVISION_WAITING_LINE_MANAGER } = await import('./timesheetRevisions')
+  assert.equal(timesheetRevisionWaitingForLabel(1, 'person', 'Samantha Jones'), 'REV 1 · waiting for Samantha')
+  assert.equal(timesheetRevisionWaitingForLabel(2, 'person', '  '), 'REV 2 · waiting for the person')
+  assert.equal(timesheetRevisionWaitingForLabel(1, 'lineManager', 'Sam'), `REV 1 · waiting for ${TIMESHEET_REVISION_WAITING_LINE_MANAGER}`)
+  // No whose-turn given: the older wording (weekly report check line).
+  assert.equal(timesheetRevisionWaitingForLabel(1, null, 'Sam'), 'REV 1 waiting for signature')
+  assert.equal(timesheetRevisionWaitingForLabel(0, 'person', 'Sam'), '')
 })

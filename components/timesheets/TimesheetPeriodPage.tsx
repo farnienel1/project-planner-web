@@ -294,7 +294,13 @@ export function TimesheetPeriodPage({
   bookingsFailed = false,
   heading = 'Timesheet',
   back,
+  documentId = null,
 }: {
+  /**
+   * Rulebook 1.79.0: the stored sheet to open first (a Payrun Snapshot cell names the version it reports, which may be
+   * filed under another id the person goes by). Missing or not this person's: the usual lookup.
+   */
+  documentId?: string | null
   payInputs: TimesheetInputsState
   /**
    * Rulebook 1.43.0 (`timesheetSnapshotReady`): the period's bookings (labour and manager site, the whole archive) have
@@ -810,7 +816,7 @@ export function TimesheetPeriodPage({
     setLoading(true)
     setLoadFailed(false)
     // Rulebook 1.45.0: every id the person goes by (`personIdSet`), so evidence on a sheet filed under an older id is kept.
-    loadTimesheetDraft(organization.id, subjectUser.id, periodStart, timeZone, periodEnd, subjectEvidenceOwnerIds(subjectRef.current, usersRef.current))
+    loadTimesheetDraft(organization.id, subjectUser.id, periodStart, timeZone, periodEnd, subjectEvidenceOwnerIds(subjectRef.current, usersRef.current), documentId)
       .then((loaded) => {
         if (cancelled) return
         sourceDocumentId.current = timesheetSourceDocumentId(loaded)
@@ -830,7 +836,7 @@ export function TimesheetPeriodPage({
     return () => {
       cancelled = true
     }
-  }, [organization?.id, subjectUser.id, periodStart, periodEnd, timeZone, loadAttempt])
+  }, [organization?.id, subjectUser.id, periodStart, periodEnd, timeZone, loadAttempt, documentId])
 
   // Listen to the open sheet document once it has loaded (its stored id, else the id a new sheet is created at).
   useEffect(() => {
