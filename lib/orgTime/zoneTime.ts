@@ -89,6 +89,20 @@ function localMidnightMs(y: number, m: number, d: number, timeZone: string): num
   return dayOf(third) === wall ? third : second
 }
 
+/**
+ * Rulebook 1.78.0: the instant the wall clock in `timeZone` reads `hour:minute` on the calendar day `key`
+ * (`YYYY-MM-DD`). Works from the zone offset at that wall time (two passes), never "midnight + N hours", so on a
+ * clock-change day 08:00 is still 08:00 local (midnight + 8h is 07:00 or 09:00 there). A wall time skipped by a clock
+ * change reads as that wall time on the earlier offset (inside the hour after the gap).
+ */
+export function wallTimeInZone(key: string, hour: number, minute: number, timeZone: string): Date {
+  const [y, m, d] = key.split('-').map(Number)
+  const wall = Date.UTC(y, m - 1, d, hour, minute, 0)
+  if (Number.isNaN(wall)) return new Date(NaN)
+  const first = wall - zoneOffsetMs(wall, timeZone)
+  return new Date(wall - zoneOffsetMs(first, timeZone))
+}
+
 export function midnightInZone(date: Date, timeZone: string): Date {
   const { y, m, d } = partsInZone(date, timeZone)
   return new Date(localMidnightMs(y, m, d, timeZone))

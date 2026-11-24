@@ -24,6 +24,8 @@ import { normalizeDocumentId } from './scheduleSources'
 import type { SignedTimesheetBookingChanges } from './timesheetBookingChanges'
 import {
   parseTimesheetEntryReviews,
+  timesheetEntryDecision,
+  timesheetTrustedFingerprint,
   timesheetEntryEffectiveAmount,
   timesheetLateExtraRowProblem,
   timesheetSignedEntryKeys,
@@ -35,6 +37,7 @@ import { timesheetExportedFieldSet } from './timesheetSnapshot'
 import { timesheetTimestampMs } from './timesheetPeriod'
 import {
   parseTimesheetEntries,
+  timesheetEntryId,
   type TimesheetExpenseEntryDocument,
   type TimesheetPriceWorkEntryDocument,
 } from './workDocumentReaders'
@@ -58,6 +61,15 @@ export const TIMESHEET_LATE_EXTRA_ID_UNUSABLE_LABEL = "Can't be reviewed — del
 /** The reviewer's prompt while late extras wait for them. */
 export const TIMESHEET_LATE_EXTRAS_REVIEWER_MESSAGE =
   'Price work or expenses were added after this timesheet was signed. Approve or decline each one — only what you approve is paid.'
+/**
+ * Rulebook 1.76.0 (owner answer 23 Nov, b): the reviewer's prompt when they changed or removed signed price work or
+ * expenses with Make changes — the sheet waits for them to sign it off again (the person does not sign again).
+ */
+export const TIMESHEET_SIGNED_ENTRIES_CHANGED_REVIEWER_MESSAGE =
+  'You changed price work or expenses after signing this timesheet off. Sign it off again to update it — the person does not sign again.'
+/** 1.76.0 (owner answer 23 Nov, b): the person's note while their line manager's change waits for a new sign-off. */
+export const TIMESHEET_SIGNED_ENTRIES_CHANGED_PERSON_MESSAGE =
+  'Your line manager changed your price work or expenses — Generate Invoice unlocks after they sign it off again.'
 /** Export names a sheet it skipped for this reason. */
 export const TIMESHEET_LATE_EXTRAS_EXPORT_SKIPPED_MESSAGE =
   'Not exported — price work or expenses added after sign-off are waiting for the line manager.'
@@ -329,6 +341,84 @@ export function timesheetSnapshotMoneyRowsCurrent<R extends { id?: unknown; amou
   })
 }
 
+/**
+ * Rulebook 1.76.0 (owner answer 23 Nov, b): the line manager (or an admin) changed or removed a SIGNED price work or
+ * expense entry after counter-signing — with Make changes, through the same review map (`extraEntryReviews`: ✕ = declined,
+ * ⚙ = edited with `revisedAmount`) — so what is paid for it now differs from the signed snapshot's money row. True when
+ * the sheet is counter-signed (`managerSignedAt`, else `approvedAt`), not exported, has a signed snapshot, and some signed
+ * entry pays now (`timesheetEntryDecision`, `timesheetEntryEffectiveAmount`) a penny or more different from that entry's
+ * snapshot row (rows marked `lateExtra` are never compared). No time test (review of #427 / #278: the review time and the
+ * counter-signature are both device clocks): what the entry pays against what was signed decides. An entry the snapshot
+ * does not hold is never compared (older data, guardrail 3). The counter-signature again (which takes the rows afresh)
+ * ends it. Signed copies from before 1.76.0 already match their decisions (every save re-priced them); the read-only
+ * `scripts/report-signed-money-mismatch.mjs` counts any that do not.
+ */
+export function timesheetSignedEntriesChangedSinceSignOff(
+  sheet: Record<string, unknown> | null | undefined,
+  options: { entryFingerprints?: Record<string, string> | null; exportedAtStored?: boolean | null; sheetDocId?: string | null } = {}
+): boolean {
+  return timesheetSignedEntryChanges(sheet, options).length > 0
+}
+
+/**
+ * Rulebook 1.77.0 §8: the signed price work and expense entries whose pay now differs from the signed snapshot — the
+ * same comparison `timesheetSignedEntriesChangedSinceSignOff` makes (it is this list being non-empty), one row each:
+ * `{ id, kind, title, signedAmount, paidAmount, removed }` (`removed` when it now pays nothing: declined). In stored order
+ * (price work, then expenses). Empty when exported, not counter-signed or with no signed snapshot.
+ */
+export type TimesheetSignedEntryChange = {
+  id: string
+  kind: 'priceWork' | 'expense'
+  title: string
+  signedAmount: number
+  paidAmount: number
+  removed: boolean
+}
+
+export function timesheetSignedEntryChanges(
+  sheet: Record<string, unknown> | null | undefined,
+  options: { entryFingerprints?: Record<string, string> | null; exportedAtStored?: boolean | null; sheetDocId?: string | null } = {}
+): TimesheetSignedEntryChange[] {
+  const data = sheet && typeof sheet === 'object' ? sheet : {}
+  const exported = typeof options.exportedAtStored === 'boolean' ? options.exportedAtStored : timesheetExportedFieldSet(data.exportedAt)
+  if (exported) return []
+  const signedMs = timesheetTimestampMs(data.managerSignedAt) ?? timesheetTimestampMs(data.approvedAt)
+  if (signedMs == null) return []
+  const override = data.weeklyReportOverride
+  if (!override || typeof override !== 'object') return []
+  const snapshot = override as Record<string, unknown>
+  const signedPaid = new Map<string, number>()
+  for (const key of ['priceWork', 'expenses']) {
+    for (const row of rowsOf(snapshot[key])) {
+      if (row.lateExtra === true) continue
+      const id = normalizeDocumentId(row.id)
+      if (id) signedPaid.set(id, roundPennies(finite(row.amount) ?? 0))
+    }
+  }
+  const out: TimesheetSignedEntryChange[] = []
+  const docId = typeof options.sheetDocId === 'string' ? options.sheetDocId.trim() : ''
+  for (const [field, kind] of [['priceWorkEntries', 'priceWork'], ['expenseEntries', 'expense']] as const) {
+    const rows = Array.isArray(data[field]) ? (data[field] as unknown[]) : []
+    for (let index = 0; index < rows.length; index += 1) {
+      const raw = rows[index]
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
+      const row = raw as Record<string, unknown>
+      const storedId = typeof row.id === 'string' ? row.id.trim() : ''
+      const id = storedId || (docId ? timesheetEntryId(docId, kind, index, row) : '')
+      if (!id) continue
+      const signed = signedPaid.get(normalizeDocumentId(id))
+      if (signed == null) continue
+      const entry = { ...row, id }
+      const decided = timesheetEntryDecision(data, entry, kind, timesheetTrustedFingerprint(options.entryFingerprints ?? null, id))
+      const paid = roundPennies(timesheetEntryEffectiveAmount(decided.decision, decided.revisedAmount, finite(row.amount) ?? 0))
+      if (Math.abs(paid - signed) >= AMOUNT_EPSILON) {
+        out.push({ id, kind, title: text(row.title), signedAmount: signed, paidAmount: paid, removed: paid < AMOUNT_EPSILON })
+      }
+    }
+  }
+  return out
+}
+
 export type TimesheetLateExtrasSummary = {
   /** Late extras waiting for a decision (or whose decision went stale). */
   pending: number
@@ -337,7 +427,12 @@ export type TimesheetLateExtrasSummary = {
   /** The signed snapshot's late rows are the approved late extras (id and pennies); true without a snapshot. */
   snapshotInStep: boolean
   exported: boolean
-  /** Not exported, and a late extra waits or the snapshot's late rows are out of step. */
+  /**
+   * 1.76.0 (owner answer 23 Nov, b): a signed price work or expense entry was changed or removed after the
+   * counter-signature (`timesheetSignedEntriesChangedSinceSignOff`): the line manager signs it off again.
+   */
+  signedEntriesChanged: boolean
+  /** Not exported, and a late extra waits, the snapshot's late rows are out of step, or signed entries changed (1.76.0). */
   waitingForLineManager: boolean
 }
 
@@ -372,16 +467,20 @@ export function timesheetLateExtrasSummary(
       [...approved].every(([id, paid]) => signedLate.has(id) && Math.abs((signedLate.get(id) ?? 0) - paid) < AMOUNT_EPSILON)
   }
   const pending = count('pending')
+  const signedEntriesChanged = timesheetSignedEntriesChangedSinceSignOff(data, options)
   return {
     pending,
     approved: count('approved'),
     declined: count('declined'),
     snapshotInStep,
     exported,
+    signedEntriesChanged,
     // 1.55.0 (review of #344): late extras wait for the line manager only once they have signed. On an open revision
     // (copied late extras, nobody has signed yet) the sheet is still with the person — never "Awaiting".
     waitingForLineManager:
-      !exported && (timesheetTimestampMs(data.managerSignedAt) != null || timesheetTimestampMs(data.approvedAt) != null) && (pending > 0 || !snapshotInStep),
+      !exported &&
+      (timesheetTimestampMs(data.managerSignedAt) != null || timesheetTimestampMs(data.approvedAt) != null) &&
+      (pending > 0 || !snapshotInStep || signedEntriesChanged),
   }
 }
 
@@ -390,6 +489,11 @@ export type TimesheetChanges = SignedTimesheetBookingChanges & {
   lateExtrasWaiting: boolean
   /** The bookings themselves changed (1.47.0). False when only late extras wait: nothing is re-signed or re-priced. */
   bookingsChanged: boolean
+  /**
+   * 1.76.0 (owner answer 23 Nov, b): signed price work or expenses changed after the counter-signature — the line manager
+   * signs it off again (labour as signed; the snapshot's money rows rebuilt from the decided entries).
+   */
+  signedEntriesChanged: boolean
 }
 
 const NO_BOOKING_CHANGE: SignedTimesheetBookingChanges = {
@@ -415,10 +519,18 @@ const NO_BOOKING_CHANGE: SignedTimesheetBookingChanges = {
  */
 export function timesheetChangesWithLateExtras(
   bookingChange: SignedTimesheetBookingChanges | null | undefined,
-  late: Pick<TimesheetLateExtrasSummary, 'waitingForLineManager'> | null | undefined
+  late:
+    | (Pick<TimesheetLateExtrasSummary, 'waitingForLineManager'> &
+        Partial<Pick<TimesheetLateExtrasSummary, 'signedEntriesChanged' | 'pending' | 'snapshotInStep'>>)
+    | null
+    | undefined
 ): TimesheetChanges | null {
   const waiting = late?.waitingForLineManager === true
-  if (bookingChange?.reopened) return { ...bookingChange, lateExtrasWaiting: waiting, bookingsChanged: true }
+  const signedEntriesChanged = waiting && late?.signedEntriesChanged === true
+  // 1.76.0: the late extras themselves wait (a pending one, or late rows out of step), apart from signed entries — only
+  // to pick the reviewer's prompt.
+  const lateWaiting = waiting && (!signedEntriesChanged || (late?.pending ?? 0) > 0 || late?.snapshotInStep === false)
+  if (bookingChange?.reopened) return { ...bookingChange, lateExtrasWaiting: waiting, bookingsChanged: true, signedEntriesChanged }
   if (waiting) {
     return {
       ...(bookingChange ?? NO_BOOKING_CHANGE),
@@ -426,13 +538,16 @@ export function timesheetChangesWithLateExtras(
       reopened: true,
       waitingFor: 'lineManager',
       message: null,
-      reviewerMessage: TIMESHEET_LATE_EXTRAS_REVIEWER_MESSAGE,
+      reviewerMessage: lateWaiting ? TIMESHEET_LATE_EXTRAS_REVIEWER_MESSAGE : TIMESHEET_SIGNED_ENTRIES_CHANGED_REVIEWER_MESSAGE,
+      // As before 1.76.0: anything the line manager must decide or sign off again without a booking change (the
+      // signed labour stands; reports keep the signed figures). `signedEntriesChanged` says which.
       lateExtrasWaiting: true,
       bookingsChanged: false,
+      signedEntriesChanged,
     }
   }
   if (!bookingChange) return null
-  return { ...bookingChange, lateExtrasWaiting: false, bookingsChanged: bookingChange.changed }
+  return { ...bookingChange, lateExtrasWaiting: false, bookingsChanged: bookingChange.changed, signedEntriesChanged: false }
 }
 
 /**

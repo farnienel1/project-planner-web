@@ -51,6 +51,7 @@ const { FieldPath, FieldValue, Timestamp } = require('firebase-admin/firestore')
 const { createAuthClaimsSync, createAdminAuthClaimsStore } = require('./authClaims')
 const { createTimesheetBookingNotice, createAdminTimesheetNoticeStore } = require('./timesheetBookingNotice')
 const { createReportIntegrityCheck, createAdminReportIntegrityStore } = require('./reportIntegrity')
+const { createTimesheetSignOffReminders, createAdminSignOffReminderStore } = require('./timesheetSignOffReminder')
 
 initializeApp()
 
@@ -453,3 +454,24 @@ for (const [exportName, collection] of [
     }
   )
 }
+
+/**
+ * Rulebook 1.78.0 §8 / §13 (owner decision 23 Nov, point 4): every hour, for each organisation whose pay run's sign-off
+ * reminder is due in its own time zone (`timesheetSignOffReminderDue`: 08:00 the organisation's 1–3 days — default 2 — before payday, until payday), one
+ * "Timesheets waiting for your sign-off" row per line manager / reviewing admin (`timesheetSignOffReminderRecipients`),
+ * created once per recipient per pay run, so running twice adds nothing. Pushed by `sendDevicePushOnNotificationCreate`.
+ * `timesheetSignOffReminder.js` holds the reads; it never writes a timesheet.
+ * Deploy: `firebase deploy --only functions:inbox-push:timesheetSignOffReminders --project project-planner-f986c`
+ */
+exports.timesheetSignOffReminders = onSchedule(
+  { schedule: 'every 60 minutes', timeZone: 'UTC', region: 'us-central1', timeoutSeconds: 300, memory: '512MiB' },
+  async () => {
+    await createTimesheetSignOffReminders({
+      store: createAdminSignOffReminderStore(getFirestore(), Timestamp),
+      canonical,
+      logger,
+      serverTimestamp: () => FieldValue.serverTimestamp(),
+      toTimestamp: (ms) => Timestamp.fromMillis(ms),
+    }).run()
+  }
+)

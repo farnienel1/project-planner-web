@@ -128,7 +128,7 @@ export function payrunSnapshotRowsFor(input: {
    */
   bookingsChange?: (
     sheet: PayrunSnapshotSheet & { draft?: TimesheetDraft }
-  ) => { reopened: boolean; waitingFor: 'person' | 'lineManager' | null; changed?: boolean; exported?: boolean; snapshotGapOnly?: boolean; lateExtrasWaiting?: boolean } | null
+  ) => { reopened: boolean; waitingFor: 'person' | 'lineManager' | null; changed?: boolean; exported?: boolean; snapshotGapOnly?: boolean; lateExtrasWaiting?: boolean; bookingsChanged?: boolean } | null
 }): PayrunSnapshotRow[] {
   const list = input.users.filter((user) => user && user.id)
   const sheets = input.loaded.sheets.map((row): PayrunSnapshotSheet => {
@@ -143,7 +143,7 @@ export function payrunSnapshotRowsFor(input: {
     }
     const change = input.bookingsChange?.(row) ?? null
     return change
-      ? { ...sheet, bookingsChange: { reopened: change.reopened, waitingFor: change.waitingFor, changed: change.changed ?? null, exported: change.exported ?? null, snapshotGapOnly: change.snapshotGapOnly ?? null, lateExtrasWaiting: change.lateExtrasWaiting ?? null } }
+      ? { ...sheet, bookingsChange: { reopened: change.reopened, waitingFor: change.waitingFor, changed: change.changed ?? null, exported: change.exported ?? null, snapshotGapOnly: change.snapshotGapOnly ?? null, lateExtrasWaiting: change.lateExtrasWaiting ?? null, bookingsChanged: change.bookingsChanged ?? null } }
       : sheet
   })
   return payrunSnapshotRows({

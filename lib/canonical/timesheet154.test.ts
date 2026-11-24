@@ -174,7 +174,7 @@ test('1.54.0 late extras: lists treat a waiting late extra as with the line mana
   assert.equal(R.timesheetLateExtrasSummary(exported).waitingForLineManager, false)
   // Guardrail 3: a sheet signed before 1.54.0 (no lateExtras) reads exactly as before — no triangle, no re-pricing.
   const old = counterSignedSheet()
-  assert.deepEqual(R.timesheetLateExtrasSummary(old), { pending: 0, approved: 0, declined: 0, snapshotInStep: true, exported: false, waitingForLineManager: false })
+  assert.deepEqual(R.timesheetLateExtrasSummary(old), { pending: 0, approved: 0, declined: 0, snapshotInStep: true, exported: false, signedEntriesChanged: false, waitingForLineManager: false })
   assert.equal(invoiceTotal(old), 100)
   // A snapshot whose late rows no longer match the approved ones waits for the reviewer's next save.
   const stale = counterSignedSheet({

@@ -200,6 +200,7 @@ export {
   personQualifications,
   qualificationCertificateUrl,
   qualificationExpiryDate,
+  qualificationsMissingOwnExpiry,
   removedQualificationCertificateIds,
   withQualificationExpiry,
 } from './operativeQualifications'
@@ -495,6 +496,19 @@ export {
   timesheetLeaveLines,
 } from './timesheetLines'
 export { timesheetLineDisplay, timesheetLineDisplayOrder, timesheetLineIsEmptyStandardPart, timesheetLineShownDeclined } from './timesheetLineDisplay'
+export {
+  TIMESHEET_MAKE_CHANGES_LABEL,
+  TIMESHEET_MAKE_CHANGES_REOPEN_HELP,
+  TIMESHEET_MAKE_CHANGES_REVISION_HELP,
+  TIMESHEET_MAKE_CHANGES_ACTIVE_NOTE,
+  TIMESHEET_MAKE_CHANGES_CANCEL_LABEL,
+  TIMESHEET_MAKE_CHANGES_OLD_SHEET_HELP,
+  TIMESHEET_REVISION_REVIEWER_EDIT_NOTE,
+  timesheetMakeChangesAction,
+  timesheetMakeChangesHelp,
+  timesheetSignedCopyTracksBookings,
+  timesheetRevisionReviewerMayEditBookings,
+} from './timesheetMakeChanges'
 export {
   TIMESHEET_REVIEW_BOOKING_FIELDS,
   TIMESHEET_REVIEW_EDIT_BOOKING_NOTE,
@@ -1754,6 +1768,9 @@ export {
   TIMESHEET_LATE_EXTRAS_FIELD,
   TIMESHEET_LATE_EXTRAS_EXPORT_SKIPPED_MESSAGE,
   TIMESHEET_LATE_EXTRAS_REVIEWER_MESSAGE,
+  TIMESHEET_SIGNED_ENTRIES_CHANGED_REVIEWER_MESSAGE,
+  TIMESHEET_SIGNED_ENTRIES_CHANGED_PERSON_MESSAGE,
+  timesheetSignedEntriesChangedSinceSignOff,
   TIMESHEET_LATE_EXTRA_ADD_CONFIRM_MESSAGE,
   TIMESHEET_LATE_EXTRA_APPROVED_LABEL,
   TIMESHEET_LATE_EXTRA_DECLINED_LABEL,
@@ -1793,9 +1810,11 @@ export {
   TIMESHEET_BOOKINGS_CHANGED_NOTICE_TITLE,
   TIMESHEET_BOOKINGS_CHANGED_NOTICE_TYPE,
   timesheetBookingChangeNotice,
+  timesheetBookingSheetTest,
   timesheetBookingWriteMatters,
   timesheetBookingsChangedNoticeId,
   timesheetBookingsChangedRecipients,
+  timesheetLiveLinesFromBookings,
   timesheetRevisionDueNoticeId,
 } from './timesheetBookingNotice'
 // Rulebook 1.54.0 §8 / §11: Settings → Data health "Timesheets half signed".
@@ -1905,3 +1924,63 @@ export { MANAGER_ROW_NOT_LINKED_LABEL } from './unresolvedBookingPeople'
 export { DAY_RATE_OVERTIME_ROUNDED_NOTE, dayRateOvertimeCalcText, liveDayRateOvertimeText, signedDayRateOvertimeText } from './dayRateOvertimeText'
 // 1.66.0 §8: User Timesheets → Awaiting sign-off / Signed off from every stored sheet, however old (owner decision 17 Nov).
 export { timesheetSheetHasActivity, userTimesheetQueue, userTimesheetQueueCounts } from './userTimesheetQueue'
+
+// 1.77.0 §8: timesheet clarity — whose turn, what changed since signing, one correction entry, reports (owner 23 Nov).
+export {
+  timesheetChangeDayLabel,
+  parseTimesheetBookingFingerprint,
+  signedTimesheetChangeDetails,
+  TIMESHEET_CHANGE_DETAILS_HEADING,
+  TIMESHEET_CHANGE_DETAILS_REVIEWER_HEADING,
+  TIMESHEET_CHANGE_DETAILS_COLLAPSED_ROWS,
+  timesheetNextStep,
+  TIMESHEET_NEXT_STEP_INVOICE_TEXT,
+  TIMESHEET_NEXT_STEP_EXPORTED_TEXT,
+  TIMESHEET_GENERATE_INVOICE_PROMPT,
+  timesheetCorrectionOption,
+  TIMESHEET_CORRECTION_LABEL,
+  TIMESHEET_CORRECTION_REVISION_BOOKINGS_HELP,
+  TIMESHEET_CHANGE_NOT_IN_SIGNED_COPY_LABEL,
+  TIMESHEET_NEXT_STEP_ADMIN_SIGNER,
+  timesheetReportKeepsSignedFigures,
+  TIMESHEET_REPORT_AWAITING_RESIGN_LABEL,
+  TIMESHEET_REPORT_AWAITING_APPROVAL_LABEL,
+  TIMESHEET_SNAPSHOT_AWAITING_APPROVAL_LABEL,
+  timesheetReportWaiting,
+} from './timesheetClarity'
+export { timesheetSignedEntryChanges } from './timesheetLateExtras'
+export { TIMESHEET_SIGNED_NOTICE_INVOICE_NEXT } from './timesheetBookingChanges'
+
+// Rulebook 1.78.0 §8 / §13: the sign-off reminder to line managers before payday.
+export {
+  TIMESHEET_SIGNOFF_REMINDER_DAYS_BEFORE_PAYMENT,
+  TIMESHEET_SIGNOFF_REMINDER_HOUR,
+  TIMESHEET_SIGNOFF_REMINDER_MINUTE,
+  TIMESHEET_SIGNOFF_REMINDER_NOTICE_TITLE,
+  TIMESHEET_SIGNOFF_REMINDER_NOTICE_TYPE,
+  TIMESHEET_SIGNOFF_ESCALATION_DAYS_BEFORE_PAYMENT,
+  TIMESHEET_SIGNOFF_ESCALATION_NOTICE_TITLE,
+  timesheetSignOffEscalationDue,
+  timesheetSignOffEscalationNotice,
+  timesheetSignOffEscalationNoticeId,
+  timesheetSignOffEscalationRecipients,
+  timesheetSignOffReminderDue,
+  timesheetSignOffReminderNotice,
+  timesheetSignOffReminderNoticeId,
+  timesheetSignOffReminderRecipients,
+  timesheetSignOffReminderRosterMember,
+} from './timesheetSignOffReminder'
+export {
+  DEFAULT_LINE_MANAGER_REMINDER_DAYS,
+  LINE_MANAGER_REMINDER_ADMIN_NOTE,
+  LINE_MANAGER_REMINDER_DAYS_LABEL,
+  LINE_MANAGER_REMINDER_DAYS_OPTIONS,
+  LINE_MANAGER_REMINDER_HELP,
+  LINE_MANAGER_REMINDER_HOUR,
+  LINE_MANAGER_REMINDER_LABEL,
+  LINE_MANAGER_REMINDER_MINUTE,
+  lineManagerReminderDaysValidationError,
+  lineManagerReminderSummary,
+  lineManagerReminderWriteFields,
+  parseLineManagerReminderDays,
+} from './organizationSettings'

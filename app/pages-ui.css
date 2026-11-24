@@ -414,3 +414,33 @@ button.pu-item:disabled { cursor: not-allowed; opacity: 0.55; }
   .sa-step { padding: 7px; justify-content: center; }
   .sa-step:not(.on) .sa-step-t { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 }
+
+/* Rulebook 1.77.0 §8: timesheet "whose turn" line, "Changed since you signed" card, "Correct this timesheet".
+   Existing tokens only (light and dark come from them). */
+.pu-nextstep { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--pu-line); background: var(--pu-card); color: var(--pu-ink); margin: 0 0 12px; flex-wrap: wrap; }
+.pu-nextstep.action { border-color: var(--pu-primary); box-shadow: inset 4px 0 0 var(--pu-primary); }
+.pu-nextstep.waiting { box-shadow: inset 4px 0 0 var(--pu-c-amber-ink); }
+.pu-nextstep.done { box-shadow: inset 4px 0 0 var(--pu-c-green-ink); }
+.pu-nextstep-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--pu-muted); }
+.pu-nextstep.action .pu-nextstep-dot { background: var(--pu-primary); }
+.pu-nextstep.waiting .pu-nextstep-dot { background: var(--pu-c-amber-ink); }
+.pu-nextstep.done .pu-nextstep-dot { background: var(--pu-c-green-ink); }
+.pu-nextstep-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 220px; }
+.pu-nextstep-k { font-size: 11.5px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: var(--pu-muted); }
+.pu-nextstep-t { font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
+.pu-nextstep-act { flex: 0 0 auto; }
+.pu-changes { margin: 0 0 12px; }
+.pu-change-list { list-style: none; margin: 0; padding: 0; }
+.pu-change { display: flex; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 10px 16px; border-top: 1px solid var(--pu-line); flex-wrap: wrap; }
+.pu-change-where { display: flex; flex-direction: column; min-width: 0; flex: 1 1 180px; }
+.pu-change-day { font-size: 12px; color: var(--pu-muted); font-variant-numeric: tabular-nums; }
+.pu-change-title { font-weight: 600; color: var(--pu-ink); overflow-wrap: anywhere; }
+.pu-change-what { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; font-variant-numeric: tabular-nums; min-width: 0; }
+.pu-change-old { color: var(--pu-muted); text-decoration-thickness: 1.5px; overflow-wrap: anywhere; }
+.pu-change-arrow { color: var(--pu-muted); }
+.pu-change-new { color: var(--pu-ink); font-weight: 700; overflow-wrap: anywhere; }
+.pu-change-more { padding: 8px 16px 12px; border-top: 1px solid var(--pu-line); }
+.pu-linkbtn { background: none; border: 0; padding: 0; color: var(--pu-blue); font-weight: 600; cursor: pointer; font-size: 13px; }
+.pu-linkbtn:focus-visible { outline: 2px solid var(--pu-primary); outline-offset: 2px; border-radius: 4px; }
+.pu-correct { display: flex; flex-direction: column; gap: 6px; margin: 0 0 12px; }
+.pu-correct-t { color: var(--pu-ink); }
