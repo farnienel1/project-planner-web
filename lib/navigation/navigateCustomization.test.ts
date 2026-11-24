@@ -31,7 +31,7 @@ const catalog: DashboardNavItem[] = [
 
 test('parseNavigateConfig ignores unknown shapes and keeps project shortcuts', () => {
   const parsed = parseNavigateConfig({
-    version: 1,
+    version: 2,
     entries: [
       { type: 'item', id: 'dashboard_projects' },
       { type: 'project', id: 'P1', label: 'Riverside', jobNumber: 'J-1' },
@@ -72,4 +72,28 @@ test('add, remove and reorder Navigate entries', () => {
   const leftover = availableCatalogItems(config, catalog)
   assert.ok(leftover.some((item) => item.id === 'dashboard_warnings'))
   assert.equal(leftover.some((item) => item.id === 'dashboard_home'), false)
+})
+
+test('a layout saved before the Payrun Snapshot entry gets it after the Weekly report; a newer layout without it stays', () => {
+  const old = parseNavigateConfig({
+    version: 1,
+    entries: [
+      { type: 'item', id: 'dashboard_weekly_report' },
+      { type: 'item', id: 'dashboard_projects' },
+    ],
+  })
+  assert.deepEqual(
+    old!.entries.map((e) => e.id),
+    ['dashboard_weekly_report', 'dashboard_payrun_snapshot', 'dashboard_projects']
+  )
+  assert.equal(old!.version, 2)
+  // No version stored (the oldest layouts) reads as version 1; without the Weekly report the entry goes last.
+  const bare = parseNavigateConfig({ entries: [{ type: 'item', id: 'dashboard_projects' }] })
+  assert.deepEqual(bare!.entries.map((e) => e.id), ['dashboard_projects', 'dashboard_payrun_snapshot'])
+  // Saved after the entry existed and removed by the person: never put back.
+  const removed = parseNavigateConfig({ version: 2, entries: [{ type: 'item', id: 'dashboard_projects' }] })
+  assert.deepEqual(removed!.entries.map((e) => e.id), ['dashboard_projects'])
+  // Never twice.
+  const already = parseNavigateConfig({ version: 1, entries: [{ type: 'item', id: 'dashboard_payrun_snapshot' }] })
+  assert.equal(already!.entries.length, 1)
 })

@@ -8,6 +8,7 @@ import { format } from 'date-fns'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore, useRosterDocuments } from '@/lib/stores/siteAuditStore'
+import { lastActiveText, personLastSeenAt } from '@/lib/users/lastActive'
 import { useUserStore } from '@/lib/stores/userStore'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import { displayTradeType } from '@/lib/staff/staffTradeTypes'
@@ -210,7 +211,8 @@ export function UserProfileSummary({
             {!isGhostUser(target) ? (
               <SummaryRow
                 label="Last active"
-                value={target.lastSeenAt ? format(target.lastSeenAt, "d MMM yyyy 'at' HH:mm") : '—'}
+                // Owner 24 Nov: the newest across every users document of the person, in the organisation zone.
+                value={lastActiveText(personLastSeenAt(target, rosterDocuments), timeZone)}
               />
             ) : null}
             <SummaryRow label="Trade" value={tradeText} />

@@ -22,6 +22,7 @@ import {
   materialCutoffTimeLabel,
   orgCountryLabel,
   orgCreatedLabel,
+  orgBadgeText,
   orgInitials,
   ORG_HUB_MONTHS,
   personDisplayName,
@@ -155,7 +156,7 @@ export function OrganisationHubPanel({
       <div className="rounded-2xl bg-linear-to-br/srgb from-[#185FA5] to-[#378ADD] p-5 text-white shadow-lg">
         <div className="flex items-center gap-3">
           <div className="flex h-12 w-12 items-center justify-center rounded-[13px] bg-white/18 text-sm font-semibold">
-            {orgInitials(orgName)}
+            {orgBadgeText(details?.documentAbbreviation, orgName)}
           </div>
           <div className="min-w-0">
             <div className="truncate text-[15px] font-semibold">{orgName}</div>
