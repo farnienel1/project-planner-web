@@ -58,7 +58,7 @@ import {
   timesheetVersionSignedOff,
   type TimesheetStatusFields,
 } from './timesheetPeriod'
-import { timesheetRevisionReportState } from './timesheetRevisions'
+import { timesheetRevisionReportState, timesheetRevisionWaitingForLabel } from './timesheetRevisions'
 import { signedTimesheetChangeForReports } from './timesheetBookingChanges'
 import { timesheetReportWaiting, TIMESHEET_REPORT_AWAITING_RESIGN_LABEL, TIMESHEET_SNAPSHOT_AWAITING_APPROVAL_LABEL } from './timesheetClarity'
 import { isAnonymisedDeletedProfile, isGhostUser, rosterPersonName, rosterSegment } from './userRosterSegment'
@@ -114,7 +114,18 @@ export type PayrunSnapshotPeriod = { kind: PayrunSnapshotPeriodKind; start: stri
 
 export type PayrunSnapshotTone = 'neutral' | 'good' | 'warn' | 'blocked'
 export type PayrunSnapshotLinkKind = 'timesheet' | 'overtime' | 'expenses' | 'priceWork'
-export type PayrunSnapshotLink = { kind: PayrunSnapshotLinkKind; personId: string; start: string; end: string }
+export type PayrunSnapshotLink = {
+  kind: PayrunSnapshotLinkKind
+  personId: string
+  start: string
+  end: string
+  /**
+   * 1.79.0: a Timesheet cell names the stored sheet it reports (the pay run's latest version, `…_rev{N}` for a revision),
+   * so the page opens exactly that document even when it is filed under another id the person goes by. Missing when the
+   * person has no stored sheet for that run.
+   */
+  documentId?: string
+}
 export type PayrunSnapshotCellState =
   | 'notStarted'
   | 'submitted'
@@ -398,16 +409,29 @@ function timesheetCell(
       : null
     if (revision && revision.state !== 'none') state = revision.state === 'due' ? 'notStarted' : bucket === 'awaiting' ? 'submitted' : 'notStarted'
     // 1.77.0 (point 6, owner chose (a)): back with the person to sign again, or waiting for the line manager's approval.
+    const personSigned = sheet ? sheet.status.operativeSignedAtMs != null : false
     const waiting = sheet
-      ? timesheetReportWaiting(sheet.bookingsChange, { state: revision?.state ?? 'none', personSigned: sheet.status.operativeSignedAtMs != null })
+      ? timesheetReportWaiting(sheet.bookingsChange, { state: revision?.state ?? 'none', personSigned })
       : null
-    return { run, state, revisionLabel: revision?.label ?? '', waiting }
+    // 1.79.0 (owner decision 24 Nov): an open revision says whose signature it waits for — the person's, or (once they
+    // have signed) the line manager's counter-signature.
+    const revisionOpen = revision?.state === 'open'
+    const revisionLabel = revisionOpen
+      ? timesheetRevisionWaitingForLabel(
+          parseTimesheetRevisionDocId(sheet?.documentId)?.revision ?? 0,
+          personSigned ? 'lineManager' : 'person',
+          person.firstName || person.name || person.displayName
+        )
+      : revision?.label ?? ''
+    const documentId = text(sheet?.documentId) || undefined
+    return { run, state, revisionLabel, revisionOpen, waiting, documentId }
   })
-  const link = (run?: { startDayKey: string; endDayKey: string }): PayrunSnapshotLink => ({
+  const link = (run?: { startDayKey: string; endDayKey: string }, documentId?: string): PayrunSnapshotLink => ({
     kind: 'timesheet',
     personId: person.id,
     start: run?.startDayKey ?? period.start,
     end: run?.endDayKey ?? period.end,
+    ...(documentId ? { documentId } : {}),
   })
   if (states.length === 0) return cell('notStarted', PAYRUN_SNAPSHOT_STATE_LABELS.notStarted, 'neutral', link())
   const least = states.reduce((a, b) => (TIMESHEET_ORDER[b.state] < TIMESHEET_ORDER[a.state] ? b : a))
@@ -415,13 +439,15 @@ function timesheetCell(
   const base = least.revisionLabel || PAYRUN_SNAPSHOT_STATE_LABELS[least.state]
   const signed = states.filter((entry) => entry.state === 'signed').length
   const counted = states.length > 1 ? `${base} · ${signed} of ${states.length} signed` : base
-  const waitingLabel = states.some((entry) => entry.waiting === 'person')
+  // An open revision's own label already names whose turn it is (1.79.0); the other runs still add their note.
+  const others = states.filter((entry) => !entry.revisionOpen)
+  const waitingLabel = others.some((entry) => entry.waiting === 'person')
     ? TIMESHEET_REPORT_AWAITING_RESIGN_LABEL
-    : states.some((entry) => entry.waiting === 'lineManager')
+    : others.some((entry) => entry.waiting === 'lineManager')
       ? TIMESHEET_SNAPSHOT_AWAITING_APPROVAL_LABEL
       : ''
   const label = waitingLabel ? `${counted} · ${waitingLabel}` : counted
-  return cell(least.state, label, tone, link(least.run))
+  return cell(least.state, label, tone, link(least.run, least.documentId))
 }
 
 /** A request the line manager has returned. 1.33.0 Return writes `approved` (the plan's name); `returned` is read the same. */

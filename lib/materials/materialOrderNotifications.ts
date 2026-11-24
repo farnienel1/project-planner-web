@@ -31,7 +31,7 @@ import type { Project, User } from '@/types'
  */
 export async function notifyMaterialOrderPlaced(params: {
   organizationId: string
-  project: Pick<Project, 'id' | 'siteName' | 'managerIds'>
+  project: Pick<Project, 'id' | 'siteName' | 'managerIds'> & Partial<Pick<Project, 'collection'>>
   materialName: string
   addedByName: string
   adder: User
@@ -78,6 +78,8 @@ export async function notifyMaterialOrderPlaced(params: {
       message: copy.message,
       userId,
       relatedId: params.project.id,
+      // 1.79.0: the job's collection, so the notice opens that job's Materials.
+      ...(params.project.collection ? { catalogue: params.project.collection } : {}),
     })
     written += 1
   }

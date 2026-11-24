@@ -160,7 +160,10 @@ export function payrunSnapshotRowsFor(input: {
 
 /** Where a cell opens on web: the person's timesheet for that pay run, or Users' Overtime / Expenses / Price work. */
 export function payrunSnapshotHref(link: PayrunSnapshotLink): string {
-  if (link.kind === 'timesheet') return timesheetsTeamHref({ user: link.personId, period: link.start, periodEnd: link.end })
+  // Rulebook 1.79.0: the cell names the stored sheet it reports (`link.documentId`), so the page opens that version.
+  if (link.kind === 'timesheet') {
+    return timesheetsTeamHref({ user: link.personId, period: link.start, periodEnd: link.end, doc: link.documentId || null })
+  }
   const section = link.kind === 'overtime' ? 'overtime' : link.kind === 'expenses' ? 'expenses' : 'priceWork'
   return overtimeHref({ scope: 'users', user: link.personId, section, range: 'custom', start: link.start, end: link.end })
 }

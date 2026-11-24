@@ -1354,8 +1354,10 @@ export const NOTIFICATION_RELATED_ID: Readonly<Record<string, NotificationRelate
   variation_added: 'variation',
   variation_from_tracker: 'variation',
   variation_numbers_updated: 'job',
-  toolbox_talk_issued: 'healthSafetyIssue',
-  hs_toolbox_reminder: 'healthSafetyIssue',
+  // 1.79.0 (owner decision 24 Nov): the job the talk is on, so the notice opens that job's Health & safety (was the
+  // talk's issue id, 1.10.0–1.78.0, which no screen could open). Written with the job's `catalogue`.
+  toolbox_talk_issued: 'job',
+  hs_toolbox_reminder: 'job',
   booking_created: 'job',
   booked_onto_job: 'job',
   booking_clash: 'job',

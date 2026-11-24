@@ -963,8 +963,31 @@ export async function loadTimesheetDraft(
   timeZone: string = LONDON_TIME_ZONE,
   periodEnd?: Date,
   /** Rulebook 1.45.0: every id of the person (`personIdSet`); their own id when not given. */
-  ownerUserIds: ReadonlyArray<string> = [userId]
+  ownerUserIds: ReadonlyArray<string> = [userId],
+  /**
+   * Rulebook 1.79.0: a stored sheet to open first (a Payrun Snapshot cell names the version it reports). Used only when
+   * it exists, is a timesheet of this period and belongs to one of `ownerUserIds`; otherwise the usual lookup runs.
+   */
+  preferredDocumentId?: string | null
 ): Promise<TimesheetDraft> {
+  const preferred = (preferredDocumentId || '').trim()
+  if (preferred && preferred.startsWith('timesheet_')) {
+    try {
+      const snap = await getDoc(doc(db, 'organizations', organizationId, 'settings', preferred))
+      if (snap.exists()) {
+        const data = snap.data() as Record<string, unknown>
+        const owners = new Set([userId, ...ownerUserIds].filter(Boolean).map((id) => id.toLowerCase()))
+        const owner = typeof data.userId === 'string' ? data.userId.toLowerCase() : ''
+        if ((owner && owners.has(owner)) || (!owner && [...owners].some((id) => preferred.toLowerCase().includes(id)))) {
+          if (weekStartMatches(data, weekStart, timeZone)) {
+            return await latestVersionDraft(organizationId, snap.id, data, { timeZone, ownerUserIds })
+          }
+        }
+      }
+    } catch {
+      // Not readable by this viewer, or no longer there: the usual lookup below.
+    }
+  }
   const direct = await loadTimesheetDraftByCandidates(organizationId, userId, weekStart, timeZone, true, ownerUserIds)
   if (direct.draft) return direct.draft
   // 17 Nov follow-up (guardrail 1): a sheet filed under another id the person goes by (a former invite id, a second

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { db } from '@/lib/firebase/config'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
@@ -67,6 +68,23 @@ export function VariationsRollup() {
     )
     return () => unsubs.forEach((stop) => stop())
   }, [organization?.id, admin, visibleJobs.map((job) => job.id).join('|'), user])
+
+  // Rulebook 1.79.0 §13: a variation notice opens `/dashboard/variations?open={id}`. Once the variation is among the
+  // rows this page already listens to, move to its job's Variations with that variation open. Until then (or when it
+  // is not one this viewer may see) the list stays as it is.
+  const router = useRouter()
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const wanted = new URLSearchParams(window.location.search).get('open')?.trim().toLowerCase()
+    if (!wanted) return
+    const row = rows.find((item) => item.id.toLowerCase() === wanted && !item.isDeleted)
+    if (!row) return
+    const job = visibleJobs.find((item) => item.id === row.parentId)
+    if (!job) return
+    const smallWorksJob = smallWorks.some((item) => item.id === job.id) || row.parentType === 'smallWork'
+    const base = smallWorksJob ? '/dashboard/small-works' : '/dashboard/projects'
+    router.replace(`${base}/${encodeURIComponent(job.id)}/variations?open=${encodeURIComponent(row.id)}`)
+  }, [rows, visibleJobs.map((job) => job.id).join('|'), smallWorks, router])
 
   if (!canSeeAnyVariations(user)) {
     return (
