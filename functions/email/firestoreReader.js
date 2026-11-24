@@ -15,6 +15,8 @@ function createFirestoreReader(db) {
     getOrganization: (orgId) => getData(`organizations/${orgId}`),
     getUser: (uid) => getData(`users/${uid}`),
     getMembership: (uid, orgId) => (orgId ? getData(`users/${uid}/orgMemberships/${orgId}`) : Promise.resolve(null)),
+    // Rulebook 1.81.0 §11: this organisation's own name for a person (`memberNames/{uid}`).
+    getMemberName: (orgId, uid) => (orgId && uid ? getData(`organizations/${orgId}/memberNames/${uid}`) : Promise.resolve(null)),
     getInvitation: (id) => getData(`invitations/${id}`),
     /**
      * A job of this organisation as `{ kind, data }` (`kind` is its collection, `projects` or `smallWorks`, as

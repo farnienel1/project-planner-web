@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useToast } from '@/components/ui/ToastProvider'
 import { FORMER_PERSON_RECORD_SKIPPED_MESSAGE } from '@/lib/canonical/formerPeople'
+import { MEMBER_NAME_REFUSED_MESSAGE, canWriteMemberName, memberNameEditTarget } from '@/lib/canonical/memberNames'
 import { usePendingNavigation } from '@/lib/navigation/usePendingNavigation'
 import { EditUserSkeleton } from '@/components/users/profile-ui/skeletons'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -589,6 +590,24 @@ export function EditUserProfile({
     dirtyRef.current = unsavedEdits
   }, [target?.id, unsavedEdits])
   const canEditIdentity = target ? canEditIdentityDetails(currentUser, target) : false
+  // Rulebook 1.81.0 §11 "Names per organisation": outside the person's home organisation the name edited here is this
+  // company's own name for them; only an admin or the person may set it (the security rules hold the same).
+  const nameIsOrganizations = target
+    ? memberNameEditTarget({ organizationId: organization?.id, homeOrganizationId: target.organizationId }) === 'organization'
+    : false
+  const canEditName =
+    canEditIdentity &&
+    (!nameIsOrganizations ||
+      canWriteMemberName({
+        writerUserId: currentUser?.id,
+        subjectUserId: target?.id,
+        writerIsAdmin: Boolean(currentUser && (currentUser.isSuperAdmin || currentUser.permissions.adminAccess)),
+      }))
+  const nameHint = nameIsOrganizations
+    ? canEditName
+      ? `The name ${organization?.name || 'this company'} uses for them. Their other companies keep their own.`
+      : MEMBER_NAME_REFUSED_MESSAGE
+    : undefined
   const canEditMatrix = target ? canEditPermissionsMatrix(currentUser, target) : false
   const canAdminTools = canUseAdminAccountTools(currentUser)
   // Rulebook 1.10.0 section 11: Delete shows only when `canDeleteUser` allows it (the store checks again).
@@ -1594,17 +1613,17 @@ export function EditUserProfile({
       {/* Identity */}
       <FormSection title="User details" icon="user" tone="blue">
         <FieldGrid>
-          <Field label="First name">
+          <Field label="First name" hint={nameHint}>
             <Input
               value={target.firstName}
-              disabled={!canEditIdentity}
+              disabled={!canEditName}
               onChange={(e) => setTarget({ ...target, firstName: e.target.value })}
             />
           </Field>
           <Field label="Surname">
             <Input
               value={target.surname}
-              disabled={!canEditIdentity}
+              disabled={!canEditName}
               onChange={(e) => setTarget({ ...target, surname: e.target.value })}
             />
           </Field>

@@ -33,7 +33,7 @@ function appInput(collection, id, data, jobs) {
   return { id, collection, personId: b.userId, dayKey: canonical.dayKeyInOrganizationZone(new Date(b.dateMs).toISOString(), TZ), timeSlot: b.timeSlot, workStartTime: b.workStartTime ?? null, workEndTime: b.workEndTime ?? null, isBreakRemoved: b.isBreakRemoved, otMultiplierOverride: b.otMultiplierOverride ?? null, jobId: b.locationId ?? null, jobNumber: j ? j.jobNumber : '', jobName: j ? j.siteName : (b.customLocationName ?? '') }
 }
 function parsedUserName(id, data) { const u = canonical.parseUserDocument(id, data, {}); const n = [u.firstName, u.surname].filter(Boolean).join(' '); return n || u.email }
-async function run({ bookings = {}, reviews = {}, users = {}, jobs = {}, requests = [], range = ['2026-07-01', '2026-11-30'], extra = {} }) {
+async function run({ bookings = {}, reviews = {}, users = {}, jobs = {}, requests = [], range = ['2026-07-01', '2026-11-30'], extra = {}, printedNames = {} }) {
   const docs = { [`organizations/${ORG}`]: org, ...extra }
   const inputs = []
   for (const [key, data] of Object.entries(bookings)) { const [c, id] = key.split('/'); docs[`organizations/${ORG}/${c}/${id}`] = data; if (data) inputs.push(appInput(c, id, data, jobs)) }
@@ -41,7 +41,7 @@ async function run({ bookings = {}, reviews = {}, users = {}, jobs = {}, request
   const reviewRecs = []
   for (const [id, r] of Object.entries(reviews)) { docs[`organizations/${ORG}/overtimeReviews/${id}`] = r; reviewRecs.push(canonical.parseOvertimeReviewDocument(id, r)) }
   const names = {}
-  for (const [id, u] of Object.entries(users)) { docs[`users/${id}`] = u; names[id] = parsedUserName(id, u) }
+  for (const [id, u] of Object.entries(users)) { docs[`users/${id}`] = u; names[id] = printedNames[id] ?? parsedUserName(id, u) }
   const jobRows = Object.entries(jobs).map(([id, j]) => ({ id, jobNumber: j.jobNumber, jobName: j.siteName }))
   const lines = canonical.payeOvertimeLines({ personIds: ['sam'], bookings: inputs, organization: org, timeZone: TZ, range: { start: range[0], end: range[1] }, reviews: reviewRecs, requests, names, jobs: jobRows })
   const snap = canonical.overtimeReportSnapshot({ userId: 'sam', userName: 'Sam', rangeStart: range[0], rangeEnd: range[1], lines, generatedBy: 'sam' })
@@ -177,4 +177,15 @@ test('N3: an unreadable decider leaves the name unchecked with a note', async ()
   const r = await run({ bookings: { 'bookings/B1': b }, reviews: { sam_B1: rev('B1', i, 'declined', 'lee') }, jobs })
   assert.equal(r.res.ok, true)
   assert.deepEqual(r.res.problems.map((p) => p.code), ['decider_unknown'])
+})
+
+test('1.81.0 declined by a decider with an organisation name: either name on the report passes', async () => {
+  const b = labour('2026-11-05', '07:30', '18:00'); const i = appInput('bookings', 'B1', b, jobs)
+  const base = { bookings: { 'bookings/B1': b }, reviews: { sam_B1: rev('B1', i, 'declined', 'lee') }, jobs, users: { lee: { firstName: 'Lee', surname: 'Line', email: 'l@x' } }, extra: { [`organizations/${ORG}/memberNames/lee`]: { firstName: 'Leo', surname: 'Lane' } } }
+  const account = await run(base)
+  show('account name printed', account)
+  const company = await run({ ...base, printedNames: { lee: 'Leo Lane' } })
+  show('company name printed', company)
+  const other = await run({ ...base, printedNames: { lee: 'Someone Else' } })
+  assert.equal(other.res.ok, false)
 })

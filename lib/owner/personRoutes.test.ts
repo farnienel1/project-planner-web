@@ -102,7 +102,7 @@ function stub(options: { serverKey?: boolean; authEmpty?: boolean; auditOk?: boo
     if (method === 'GET') {
       if (docs[path]) return new Response(JSON.stringify({ name: docName(path), fields: toRestFields(docs[path]), updateTime: `2026-11-23T10:00:00.${path.length}Z` }))
       const children = Object.keys(docs).filter((key) => key.startsWith(`${path}/`) && !key.slice(path.length + 1).includes('/'))
-      if (children.length || ['users', 'organizations'].includes(path) || /\/(operatives|managers)$/.test(path)) {
+      if (children.length || ['users', 'organizations'].includes(path) || /\/(operatives|managers|memberNames)$/.test(path)) {
         return new Response(JSON.stringify({ documents: children.map((key) => ({ name: docName(key), fields: toRestFields(docs[key]), updateTime: `2026-11-23T10:00:00.${key.length}Z` })) }))
       }
       return new Response('{}', { status: 404 })

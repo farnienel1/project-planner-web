@@ -2542,3 +2542,24 @@ export type {
 
 // 1.80.0: subcontractor insurance and RAMS documents.
 export * from './subcontractorDocuments'
+// 1.81.0 — a person's name per organisation (rulebook §11 "Names per organisation").
+export {
+  MEMBER_NAMES_COLLECTION,
+  MEMBER_NAME_FIELDS,
+  MEMBER_NAME_MAX_LENGTH,
+  MEMBER_NAME_REFUSED_MESSAGE,
+  MEMBER_NAME_REQUIRED_MESSAGE,
+  MEMBER_NAME_TOO_LONG_MESSAGE,
+  accountName,
+  applyMemberNames,
+  canWriteMemberName,
+  displayNameInOrganization,
+  memberNameEditTarget,
+  memberNameFor,
+  memberNamePath,
+  memberNameValidationError,
+  memberNameWriteFields,
+  parseMemberNameDocument,
+  parseMemberNameDocuments,
+} from './memberNames'
+export type { MemberName, MemberNames, NameInOrganization, NamedPerson } from './memberNames'

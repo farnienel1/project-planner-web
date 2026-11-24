@@ -251,3 +251,57 @@ test('review of #434: the commit uses each document’s read updateTime as its p
   const body = restCommitBody('https://firestore.googleapis.com/v1/projects/demo/databases/(default)/documents', plan.writes, 'owner-uid')
   assert.deepEqual(body.writes[0].currentDocument, { updateTime: '2026-11-23T10:00:00.000001Z' })
 })
+
+test('1.81.0 change name in one organisation only: its memberNames entry and its rows, never a users document', () => {
+  const plan = ownerNameChangePlan({
+    firstName: 'Farns',
+    surname: 'Nel',
+    userDocs: [{ id: 'u1', data: { firstName: 'Farnie', surname: 'Nel', organizationId: 'A' } }],
+    rosterRows: [
+      { id: 'r1', organizationId: 'B', collection: 'operatives', data: { firstName: 'Farnie', lastName: 'Nel', name: 'Farnie Nel' } },
+      { id: 'r2', organizationId: 'A', collection: 'operatives', data: { firstName: 'Farnie', lastName: 'Nel', name: 'Farnie Nel' } },
+    ],
+    scope: 'organization',
+    organizationId: 'B',
+    keptUserId: 'u1',
+  })
+  assert.deepEqual(plan.users, [])
+  assert.deepEqual(plan.memberNames, [{ organizationId: 'B', action: 'set' }])
+  assert.deepEqual(plan.writes.map((write) => [write.path, write.kind ?? 'update']), [
+    ['organizations/B/memberNames/u1', 'upsert'],
+    ['organizations/B/operatives/r1', 'update'],
+  ])
+})
+
+test('1.81.0 change name everywhere removes the organisation names that exist', () => {
+  const plan = ownerNameChangePlan({
+    firstName: 'Farns',
+    surname: 'Nel',
+    userDocs: [{ id: 'u1', data: { firstName: 'Farnie', surname: 'Nel', organizationId: 'A' } }],
+    rosterRows: [],
+    organizationIds: ['A', 'B'],
+    existingMemberNames: new Set(['b/u1']),
+  })
+  assert.deepEqual(plan.memberNames, [{ organizationId: 'B', action: 'removed' }])
+  assert.deepEqual(plan.writes.map((write) => [write.path, write.kind ?? 'update']), [
+    ['organizations/B/memberNames/u1', 'delete'],
+    ['users/u1', 'update'],
+  ])
+})
+
+test('review of #439: "this organisation only" on the home organisation writes its users document and removes its entry', () => {
+  const plan = ownerNameChangePlan({
+    firstName: 'Farns',
+    surname: 'Nel',
+    userDocs: [{ id: 'u1', data: { firstName: 'Farnie', surname: 'Nel', organizationId: 'organizations/A' } }],
+    rosterRows: [],
+    scope: 'organization',
+    organizationId: 'A',
+    keptUserId: 'u1',
+    existingMemberNames: new Set(['a/u1']),
+  })
+  assert.deepEqual(plan.writes.map((write) => [write.path, write.kind ?? 'update']), [
+    ['users/u1', 'update'],
+    ['organizations/A/memberNames/u1', 'delete'],
+  ])
+})

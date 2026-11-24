@@ -44,6 +44,16 @@ import { notifyCompanyActivity } from '@/lib/notifications/companyActivity'
 import { operativeRowWriteFields } from '@/lib/canonical/peopleDocuments'
 import type { GhostDraft } from '@/lib/canonical'
 import { createGhostOperative } from '@/lib/staff/ghostWrites'
+import {
+  MEMBER_NAMES_COLLECTION,
+  MEMBER_NAME_REFUSED_MESSAGE,
+  canWriteMemberName,
+  memberNameEditTarget,
+  memberNameValidationError,
+  memberNameWriteFields,
+  documentOrganizationId,
+} from '@/lib/canonical'
+import { currentMemberNames, overlayMemberName } from '@/lib/staff/memberNamesLive'
 
 interface UserStoreState {
   saving: boolean
@@ -264,6 +274,9 @@ const prepareSaveUserImpl: UserStoreState['prepareSaveUser'] = async (user, orga
   // Always a partial update (rulebook §1, §11, `userProfileWriteFields`): against the copy the editor
   // loaded, else the stored document read now. Never a whole-document rewrite from a possibly stale copy.
   let baseline = options?.baseline && options.baseline.id === user.id ? options.baseline : null
+  // Rulebook 1.81.0 §11 (review of #439): a name edit is judged only against the copy the editor loaded (§1), never a
+  // copy read now — an editor opened before this company's names arrived holds the users-document name.
+  const editorBaseline = baseline
   if (!baseline) {
     const stored = await getDoc(doc(db, 'users', user.id))
     if (stored.exists()) {
@@ -315,6 +328,28 @@ const prepareSaveUserImpl: UserStoreState['prepareSaveUser'] = async (user, orga
   // claim, the same-email copies' names, the linked operatives / managers rows' names and the operativeProfiles
   // mirror land together or not at all. Before 1.31.0 only the first three were batched and the rest followed one by
   // one, so a refusal half way left the documents disagreeing. Everything is read first.
+  // Rulebook 1.81.0 §11 `memberNameEditTarget`: outside the person's home organisation (the one their users document
+  // names) a name edit is this company's own name for them (`memberNames/{uid}`), never the users document every
+  // company reads; in the home organisation it stays on the users document and this company's entry is removed.
+  const homeOrganizationId = (baseline ?? user).organizationId
+  const nameTarget = memberNameEditTarget({ organizationId: orgId, homeOrganizationId })
+  const nameBefore = editorBaseline ? identityFields(editorBaseline) : null
+  const nameChanged = Boolean(nameBefore) && (nameBefore!.firstName !== names.firstName || nameBefore!.surname !== names.surname)
+  const nameWriter = canWriteMemberName({ writerUserId: saverId, subjectUserId: user.id, writerIsAdmin: saverIsAdmin })
+  let memberNameWrite: 'set' | 'delete' | null = null
+  if (orgId && nameChanged) {
+    if (nameTarget === 'organization') {
+      const nameError = memberNameValidationError({ firstName: names.firstName, surname: names.surname })
+      if (nameError) throw new Error(nameError)
+      if (!nameWriter) throw new Error(MEMBER_NAME_REFUSED_MESSAGE)
+      memberNameWrite = 'set'
+    } else if (nameWriter && currentMemberNames(orgId)[user.id.toLowerCase()]) {
+      memberNameWrite = 'delete'
+    }
+  }
+  if (nameTarget === 'organization') {
+    for (const field of ['firstName', 'surname', 'lastName', 'name', 'displayName']) delete payload[field]
+  }
   const email = user.email.toLowerCase().trim()
   const [sameEmail, linkedRows] = orgId
     ? await Promise.all([sameEmailUserRefs(user, orgId, previousEmail, saverIsAdmin), linkedStaffRefs(orgId, user, previousEmail)])
@@ -328,8 +363,19 @@ const prepareSaveUserImpl: UserStoreState['prepareSaveUser'] = async (user, orga
     for (const row of historyRows) batch.set(doc(db, 'organizations', orgId, 'operativeDayRateHistory', row.id), row.fields)
     if (payWriter) addPayProfileWrite(batch, orgId, user.id, payload, saverId)
     if (email) batch.set(doc(db, 'organizations', orgId, 'userEmails', email), { userId: user.id })
+    // Same-email copies are users documents of THIS organisation (their home is here), and the operatives / managers
+    // rows are this company's own: both take the name as edited here, as before 1.81.0.
     for (const ref of sameEmail) batch.update(ref, identityFields(user))
     for (const ref of linkedRows) batch.update(ref, identityFields(user))
+    const nameRef = doc(db, 'organizations', orgId, MEMBER_NAMES_COLLECTION, user.id)
+    if (memberNameWrite === 'set') {
+      batch.set(nameRef, {
+        ...memberNameWriteFields({ firstName: names.firstName, surname: names.surname, writerUserId: saverId, platform: 'web' }),
+        updatedAt: serverTimestamp(),
+      })
+    } else if (memberNameWrite === 'delete') {
+      batch.delete(nameRef)
+    }
     // The operativeProfiles mirror holds pay, so only someone who may change this person's pay writes it
     // (`canChangePersonPay`; firestore.rules `canChangePayOf`). A person's own save never touches it.
     if (
@@ -422,16 +468,19 @@ export const useUserStore = create<UserStoreState>(() => ({
     const snap = await getDoc(doc(db, 'users', userId))
     if (!snap.exists()) return null
     const stored = snap.data() as Record<string, unknown>
-    const orgOnDoc = typeof stored.organizationId === 'string' ? stored.organizationId.trim() : ''
+    // 1.81.0 (review of #439): an organisation stored as a path or reference is read as its id (`documentOrganizationId`).
+    const orgOnDoc = documentOrganizationId(stored.organizationId) || ''
     // Read after the users document, exactly as before.
     const openOrgId = useAuthStore.getState().organization?.id || ''
     // Rulebook 1.26.1 §8 (`payEditorStartingValues`): a pay editor's copy has the pay profile laid over only while
     // `privatePay` is on for the open organisation; off (and for every other caller) `stored` is used unchanged.
     const data = options?.payEditor ? await payEditorRecord(openOrgId || orgOnDoc, snap.id, stored, loadProfile) : stored
-    if (orgOnDoc) return parseOrgUser(snap.id, data)
+    // Rulebook 1.81.0 §11: the person's name in the open organisation (`memberNameFor`); none → the users document's.
+    const named = (user: User | null) => overlayMemberName(user, currentMemberNames(openOrgId))
+    if (orgOnDoc) return named(parseOrgUser(snap.id, { ...data, organizationId: orgOnDoc }))
     const fallback = openOrgId || useAuthStore.getState().user?.organizationId || ''
-    if (!fallback) return parseOrgUser(snap.id, data)
-    return parseOrgUser(snap.id, { ...data, organizationId: fallback })
+    if (!fallback) return named(parseOrgUser(snap.id, data))
+    return named(parseOrgUser(snap.id, { ...data, organizationId: fallback }))
   },
 
   saveUser: async (user, organizationId, previousEmail, options) => {

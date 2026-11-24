@@ -292,6 +292,11 @@ export type RestUpdateWrite = {
    * #434: a change made between the read and the commit is never overwritten). Without it, only "still exists".
    */
   updateTime?: string
+  /**
+   * 1.81.0: `upsert` writes the fields whether or not the document exists (no precondition; a `memberNames` entry);
+   * `delete` removes the document (no precondition: removing a missing entry is allowed). Missing: update.
+   */
+  kind?: 'update' | 'upsert' | 'delete'
 }
 
 /** Thrown when a document changed (or was deleted) between the read and the commit; nothing was written. */
@@ -320,6 +325,7 @@ export function restCommitBody(documentsBase: string, writes: readonly RestUpdat
   const prefix = documentsBase.replace(/^https?:\/\/[^/]+\/v1\//, '')
   return {
     writes: writes.map((write) => {
+      if (write.kind === 'delete') return { delete: `${prefix}/${write.path}` }
       const fields: Record<string, RestValue> = {}
       for (const [key, value] of Object.entries(write.set)) fields[key] = restScalar(value)
       fields.updatedBy = { stringValue: actorUid }
@@ -328,7 +334,7 @@ export function restCommitBody(documentsBase: string, writes: readonly RestUpdat
       return {
         update: { name: `${prefix}/${write.path}`, fields },
         updateMask: { fieldPaths },
-        currentDocument: write.updateTime ? { updateTime: write.updateTime } : { exists: true },
+        ...(write.kind === 'upsert' ? {} : { currentDocument: write.updateTime ? { updateTime: write.updateTime } : { exists: true } }),
         updateTransforms: [{ fieldPath: 'updatedAt', setToServerValue: 'REQUEST_TIME' }],
       }
     }),

@@ -339,6 +339,12 @@ export type ParseUserDocumentOptions = {
   timeZone?: string | null
   /** The organisation's `annualLeaveDefaults` map (raw or parsed). Missing → 25 / 1 / 12 / false. */
   annualLeaveDefaults?: Partial<OrgAnnualLeaveDefaults> | Record<string, unknown> | null
+  /**
+   * 1.81.0 (§11 "Names per organisation"): the open organisation's `memberNames` entry for this person
+   * (`memberNameFor` / `parseMemberNameDocument`). When it holds a name, `firstName`, `surname` and `displayName` are
+   * that name; missing or blank → the users document's name, exactly as before.
+   */
+  memberName?: { firstName?: unknown; surname?: unknown } | null
 }
 
 function wholeMonth(value: unknown): number | null {
@@ -382,7 +388,14 @@ export function parseUserDocument(
     firstName = parts.first
     surname = parts.last
   }
-  const displayName = `${firstName} ${surname}`.trim() || combined
+  let displayName = `${firstName} ${surname}`.trim() || combined
+  const orgFirst = text(options?.memberName?.firstName)
+  const orgSurname = text(options?.memberName?.surname)
+  if (`${orgFirst} ${orgSurname}`.trim()) {
+    firstName = orgFirst
+    surname = orgSurname
+    displayName = `${orgFirst} ${orgSurname}`.trim()
+  }
 
   const role = normalizeUserRoleToken(row.role)
   const isSuperAdmin = flagIn(row, 'isSuperAdmin') === true

@@ -20094,3 +20094,11 @@ test('1.80.0 subcontractor documents are in the packed rulebook (full cases in s
   const storageRules = readFileSync(new URL('../../storage.rules', import.meta.url), 'utf8')
   assert.match(storageRules, /match \/organizations\/\{orgId\}\/subcontractors\/\{subcontractorId\}\/documents\/\{fileName\} \{\n\s+allow read: if staffLike\(orgId\);/)
 })
+
+test('1.81.0 names per organisation are in the packed rulebook (full cases in memberNames.test.ts)', () => {
+  const names = R112.parseMemberNameDocuments([{ id: 'U1', data: { firstName: 'Farns', surname: 'Nel' } }])
+  assert.equal(R112.displayNameInOrganization({ person: { id: 'u1', firstName: 'Farnie', surname: 'Nel' }, names }).displayName, 'Farns Nel')
+  assert.equal(R112.displayNameInOrganization({ person: { id: 'u2', firstName: 'Farnie', surname: 'Nel' }, names }).displayName, 'Farnie Nel')
+  assert.equal(R112.memberNameEditTarget({ organizationId: 'B', homeOrganizationId: 'A' }), 'organization')
+  assert.equal(R112.MEMBER_NAMES_COLLECTION, 'memberNames')
+})
