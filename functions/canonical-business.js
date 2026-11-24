@@ -17357,7 +17357,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.86.0" : "",
-      sha256: true ? "6b01a56b2c67f3efd0199e28c49878d352a7979b1b8f4a4e96dd95d7f873d9a3" : ""
+      sha256: true ? "4cdab0b48c7be52601d42bce6f57472b58737b9538b454a1c40701651defbc27" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -33063,12 +33063,8 @@ var ProjectPlannerCanonical = (() => {
     if (!queued || !bookingId || !isReplaceCollection2(queued.booking?.collection)) return nothing("dropLocal");
     if (queued.newBookingDeleted === true) return nothing("dropLocal");
     if (input.newBooking?.exists === true || input.newBooking?.tombstoned === true) return nothing("alreadyApplied");
-    const live = /* @__PURE__ */ new Map();
-    for (const row3 of input.replaced || []) {
-      const id2 = usableId(row3?.bookingId);
-      if (!row3 || !id2) continue;
-      live.set(refKey2(text58(row3.collection), id2), row3);
-    }
+    const readRows = (input.replaced || []).filter((row3) => !!row3 && !!usableId(row3.bookingId));
+    const readFor = (collection, id2) => readRows.find((row3) => refKey2(text58(row3.collection), usableId(row3.bookingId)) === refKey2(collection, id2)) || readRows.find((row3) => !text58(row3.collection) && usableId(row3.bookingId).toLowerCase() === id2.toLowerCase());
     const targets = [];
     const deletes = [];
     const seen = /* @__PURE__ */ new Set();
@@ -33091,9 +33087,17 @@ var ProjectPlannerCanonical = (() => {
         targets.push({ collection, bookingId: id2, outcome: "refusePermission" });
         continue;
       }
-      const read = live.get(key8);
-      if (!read || read.tombstoned === true || !read.live) {
+      const read = readFor(collection, id2);
+      if (!read) {
+        targets.push({ collection, bookingId: id2, outcome: "refuseChanged" });
+        continue;
+      }
+      if (read.tombstoned === true || read.live === null) {
         targets.push({ collection, bookingId: id2, outcome: "alreadyGone" });
+        continue;
+      }
+      if (!read.live) {
+        targets.push({ collection, bookingId: id2, outcome: "refuseChanged" });
         continue;
       }
       if (read.mayDelete === false) {

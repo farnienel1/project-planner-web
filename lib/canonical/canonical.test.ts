@@ -20171,7 +20171,13 @@ test('1.86.0 offlineReplaceReplayDecision: one outcome for each owner case', () 
   // Already gone (missing or tombstoned): create the new booking only.
   assert.equal(decide({ replaced: [{ bookingId: 'OLD-1', collection: 'bookings', live: null }] }).decision, 'createOnly')
   assert.equal(decide({ replaced: [{ bookingId: 'OLD-1', collection: 'bookings', live: old, tombstoned: true }] }).decision, 'createOnly')
-  assert.equal(decide({ replaced: [] }).decision, 'createOnly')
+  // Review of #446: a target nobody read, or read with no answer, refuses (it may still be there, changed); only an
+  // explicit `live: null` or a tombstone is gone. A read row without a collection is the target's.
+  assert.equal(decide({ replaced: [] }).decision, 'refuseChanged')
+  assert.equal(decide({ replaced: [{ bookingId: 'OLD-1', collection: 'bookings', live: undefined }] }).decision, 'refuseChanged')
+  assert.equal(decide({ replaced: [{ bookingId: 'OLD-1', collection: 'managerSiteBookings', live: null }] }).decision, 'refuseChanged')
+  assert.equal(decide({ replaced: [{ bookingId: 'old-1', live: old }] }).decision, 'apply')
+  assert.equal(decide({ replaced: [{ bookingId: 'old-1', live: null }] }).decision, 'createOnly')
   // Permission lost: refused with a message (before the change check).
   const refused = decide({ replaced: [{ bookingId: 'OLD-1', collection: 'bookings', live: { ...old, timeSlot: 'AM' }, mayDelete: false }] })
   assert.equal(refused.decision, 'refusePermission')

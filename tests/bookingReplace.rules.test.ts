@@ -230,3 +230,43 @@ test('transaction shape: a manager who may not delete the booking is refused who
   assert.equal(await exists(`organizations/${ORG}/bookings/ON2`), true)
   assert.equal(await exists(`organizations/${ORG}/deletedBookings/ON2`), false)
 })
+
+// Rulebook 1.86.0 §2 (offline Replace replay, iOS `FirebaseBackend.replayOfflineBookingReplace`): the transaction first
+// reads the NEW booking's (missing) document and its (missing) tombstone, then each replaced booking and its tombstone,
+// then writes the create and each delete + tombstone. The reads of missing documents must be allowed.
+async function offlineReplaceReplayTransaction(
+  d: Firestore,
+  uid: string,
+  booking: { collection: 'bookings' | 'managerSiteBookings'; bookingId: string; data: Record<string, unknown> },
+  replaced: Array<{ collection: 'bookings' | 'managerSiteBookings'; bookingId: string }>
+) {
+  const plan = bookingReplaceWrites({ organizationId: ORG, booking, replaced, deletedBy: uid, deletedFrom: 'ios' })
+  assert.ok(plan, 'the rulebook builds a plan')
+  await runTransaction(d, async (tx) => {
+    const fresh = await tx.get(doc(d, plan.bookingPath))
+    const freshTombstone = await tx.get(doc(d, `organizations/${ORG}/deletedBookings/${booking.bookingId}`))
+    assert.equal(fresh.exists(), false, 'the new booking is not there yet')
+    assert.equal(freshTombstone.exists(), false, 'nor its tombstone')
+    for (const row of plan.deletes) {
+      assert.equal((await tx.get(doc(d, row.path))).exists(), true)
+      assert.equal((await tx.get(doc(d, row.tombstonePath))).exists(), false)
+    }
+    tx.set(doc(d, plan.bookingPath), { ...booking.data, updatedAt: serverTimestamp(), updatedBy: uid, updatedFrom: 'ios' })
+    for (const row of plan.deletes) {
+      tx.delete(doc(d, row.path))
+      tx.set(doc(d, row.tombstonePath), { ...row.tombstone, deletedAt: serverTimestamp() })
+    }
+  })
+}
+
+test('1.86.0 offline Replace replay: reads the missing new booking and its tombstone, then replaces', async () => {
+  const d = await db(MGR)
+  await assertSucceeds(
+    offlineReplaceReplayTransaction(d, MGR, { collection: 'bookings', bookingId: 'NEWOFF', data: labour('NEWOFF', 'job1') }, [
+      { collection: 'bookings', bookingId: 'OLD2' },
+    ])
+  )
+  assert.equal(await exists(`organizations/${ORG}/bookings/NEWOFF`), true)
+  assert.equal(await exists(`organizations/${ORG}/bookings/OLD2`), false)
+  assert.equal(await exists(`organizations/${ORG}/deletedBookings/OLD2`), true)
+})

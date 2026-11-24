@@ -63,7 +63,10 @@ export type QueuedOfflineReplace = {
 export type OfflineReplaceLiveTarget = {
   bookingId: string
   collection?: string | null
-  /** The live document, or null when it is missing. */
+  /**
+   * The live document, or `null` when the read found it missing. Only an explicit `null` (or `tombstoned: true`) counts
+   * as gone; `undefined` (not read) refuses the Replace.
+   */
   live: BookingFingerprintInput | null | undefined
   tombstoned?: boolean | null
   /** `canDeleteBooking` for the signed-in user on the live booking; missing is read as allowed (the rules still check). */
@@ -113,8 +116,9 @@ function refKey(collection: string, bookingId: string): string {
  *     sent: only the new booking is created;
  *   - `apply` — the new booking is created and each live, unchanged, deletable replaced booking is deleted with its
  *     tombstone (`deletes`); replaced bookings already gone are skipped.
- * Per target: created offline → `dropLocal`; missing or tombstoned → `alreadyGone`; not deletable → `refusePermission`;
- * fingerprint differs → `refuseChanged`; else `delete`.
+ * Per target: created offline → `dropLocal`; read as missing (`live: null`) or tombstoned → `alreadyGone`; not read
+ * (no row, or `live` undefined) → `refuseChanged`; not deletable → `refusePermission`; fingerprint differs →
+ * `refuseChanged`; else `delete`. A read row without a `collection` is the target's with the same id.
  */
 export function offlineReplaceReplayDecision(input: {
   queued: QueuedOfflineReplace | null | undefined
@@ -142,12 +146,12 @@ export function offlineReplaceReplayDecision(input: {
   if (queued.newBookingDeleted === true) return nothing('dropLocal')
   if (input.newBooking?.exists === true || input.newBooking?.tombstoned === true) return nothing('alreadyApplied')
 
-  const live = new Map<string, OfflineReplaceLiveTarget>()
-  for (const row of input.replaced || []) {
-    const id = usableId(row?.bookingId)
-    if (!row || !id) continue
-    live.set(refKey(text(row.collection), id), row)
-  }
+  // Each read row by collection and id (without case); a row read without a collection belongs to the target with its
+  // id (review of #446: it was read as a different collection, so the target looked gone).
+  const readRows = (input.replaced || []).filter((row): row is OfflineReplaceLiveTarget => !!row && !!usableId(row.bookingId))
+  const readFor = (collection: string, id: string): OfflineReplaceLiveTarget | undefined =>
+    readRows.find((row) => refKey(text(row.collection), usableId(row.bookingId)) === refKey(collection, id)) ||
+    readRows.find((row) => !text(row.collection) && usableId(row.bookingId).toLowerCase() === id.toLowerCase())
 
   const targets: OfflineReplaceReplayResult['targets'] = []
   const deletes: OfflineReplaceReplayResult['deletes'] = []
@@ -171,9 +175,19 @@ export function offlineReplaceReplayDecision(input: {
       targets.push({ collection, bookingId: id, outcome: 'refusePermission' })
       continue
     }
-    const read = live.get(key)
-    if (!read || read.tombstoned === true || !read.live) {
+    const read = readFor(collection, id)
+    // Review of #446: a target nobody read, or read without an answer (`live` undefined), is never "gone" — it may
+    // still be there and changed, so the Replace is refused. Only an explicit missing read or a tombstone is gone.
+    if (!read) {
+      targets.push({ collection, bookingId: id, outcome: 'refuseChanged' })
+      continue
+    }
+    if (read.tombstoned === true || read.live === null) {
       targets.push({ collection, bookingId: id, outcome: 'alreadyGone' })
+      continue
+    }
+    if (!read.live) {
+      targets.push({ collection, bookingId: id, outcome: 'refuseChanged' })
       continue
     }
     if (read.mayDelete === false) {
