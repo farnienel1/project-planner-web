@@ -1,5 +1,6 @@
 'use client'
 
+import { formatPostcodeForSave, postcodeInputValue } from '@/lib/maps/ukPostcode'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { loadLeaflet, type LeafletMap, type LeafletMarker } from '@/lib/maps/leafletLoader'
@@ -283,8 +284,12 @@ export function SitePinPickerSheet({
                     value={addressFields.postcode}
                     onChange={(e) => {
                       addressDriven.current = true
-                      setAddressFields((f) => ({ ...f, postcode: e.target.value }))
+                      setAddressFields((f) => ({ ...f, postcode: postcodeInputValue(e.target.value) }))
                     }}
+                    autoCapitalize="characters"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    autoComplete="postal-code"
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                   />
                 </label>
@@ -333,7 +338,7 @@ export function SitePinPickerSheet({
                   addressLine1: addressFields.addressLine1.trim(),
                   addressLine2: addressFields.addressLine2.trim() || undefined,
                   townCity: addressFields.townCity.trim(),
-                  postcode: addressFields.postcode.trim(),
+                  postcode: formatPostcodeForSave(addressFields.postcode),
                   usesMapPinForLocation: true,
                 }
                 cacheGeocodeResult(formatSiteAddress(payload), point)

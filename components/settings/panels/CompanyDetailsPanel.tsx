@@ -1,5 +1,6 @@
 'use client'
 
+import { postcodeInputValue } from '@/lib/maps/ukPostcode'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { companyLogoPath, uploadFile } from '@/lib/firebase/storageUtils'
@@ -398,7 +399,14 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
                 <Input value={county} onChange={(e) => setCounty(e.target.value)} />
               </FormField>
               <FormField label="Postcode" hint="Optional">
-                <Input value={postcode} onChange={(e) => setPostcode(e.target.value)} />
+                <Input
+                  value={postcode}
+                  onChange={(e) => setPostcode(postcodeInputValue(e.target.value))}
+                  autoCapitalize="characters"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  autoComplete="postal-code"
+                />
               </FormField>
             </>
           ) : (

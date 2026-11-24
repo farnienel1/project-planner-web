@@ -1,5 +1,6 @@
 'use client'
 
+import { formatPostcodeForDisplay, formatPostcodeForSave, postcodeInputValue } from '@/lib/maps/ukPostcode'
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
@@ -94,7 +95,8 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
     addressLine1: initial?.addressLine1 || '',
     addressLine2: initial?.addressLine2 || '',
     townCity: initial?.townCity || '',
-    postcode: initial?.postcode || '',
+    // Display only: "Sw1× 9Hr" reads "SW1X 9HR"; it is written only when this form is saved.
+    postcode: formatPostcodeForDisplay(initial?.postcode),
     clientId: initial?.client?.id || '',
     startDate: initial?.startDate ? dayKey(new Date(initial.startDate), timeZone) : defaultProjectStart(timeZone),
     endDate: initial?.endDate ? dayKey(new Date(initial.endDate), timeZone) : defaultProjectEnd(timeZone),
@@ -318,7 +320,7 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
         addressLine1: form.addressLine1,
         addressLine2: form.addressLine2,
         townCity: form.townCity,
-        postcode: form.postcode,
+        postcode: formatPostcodeForSave(form.postcode),
         client,
         startDate: dateFromDayKey(form.startDate, timeZone),
         endDate: dateFromDayKey(form.endDate, timeZone),
@@ -486,7 +488,14 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
         </div>
         <div>
           <FormLabel required={!initial}>Postcode</FormLabel>
-          <FormInput value={form.postcode} onChange={(e) => setAddressField({ postcode: e.target.value })} />
+          <FormInput
+            value={form.postcode}
+            onChange={(e) => setAddressField({ postcode: postcodeInputValue(e.target.value) })}
+            autoCapitalize="characters"
+            autoCorrect="off"
+            spellCheck={false}
+            autoComplete="postal-code"
+          />
         </div>
         <div>
           <FormLabel required>Start date</FormLabel>
@@ -565,7 +574,7 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
             addressLine1: payload.addressLine1,
             addressLine2: payload.addressLine2 || '',
             townCity: payload.townCity,
-            postcode: payload.postcode,
+            postcode: postcodeInputValue(payload.postcode),
             latitude: String(payload.latitude),
             longitude: String(payload.longitude),
             useMapPin: true,

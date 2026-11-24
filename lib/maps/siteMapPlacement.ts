@@ -12,7 +12,7 @@
 
 import { jobWorkStatus, worksTab, type WorksListJob } from '@/lib/canonical'
 import { formatSiteAddress, isMappableSiteAddress, resolveStoredCoordinates } from '@/lib/maps/siteAddress'
-import { extractUkPostcode } from '@/lib/maps/ukPostcode'
+import { extractUkPostcode, formatUkPostcode } from '@/lib/maps/ukPostcode'
 
 export type LatLng = { latitude: number; longitude: number }
 
@@ -81,12 +81,7 @@ export function siteMapPostcode(site: SiteMapPlacementSite): string | null {
   return null
 }
 
-/** "sw1x9hr" / "Sw1x 9Hr" → "SW1X 9HR" (the inward code is always the last three characters). */
-export function formatUkPostcode(value: string): string {
-  const compact = value.replace(/\s+/g, '').toUpperCase()
-  if (compact.length < 5) return compact
-  return `${compact.slice(0, -3)} ${compact.slice(-3)}`
-}
+export { formatUkPostcode }
 
 function siteAddressInput(site: SiteMapPlacementSite) {
   return {
