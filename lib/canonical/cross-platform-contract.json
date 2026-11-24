@@ -1585,9 +1585,9 @@
     },
     {
       "id": "subcontractors",
-      "reader": "parseSubcontractorDocument",
+      "reader": "subcontractorDocument",
       "webWriter": "subcontractorStore save → subcontractorWriteFields",
-      "iosWriter": "FirebaseBackend subcontractor save",
+      "iosWriter": "FirebaseBackend subcontractor save (documents: FirebaseBackend.uploadSubcontractorDocument → subcontractorDocumentAddWriteFields)",
       "samples": [
         {
           "platform": "web",
@@ -1608,6 +1608,21 @@
               }
             ],
             "organizationId": "ORG-1",
+            "documents": {
+              "insurance": [
+                {
+                  "id": "69624FCD-DCEB-898B-96AF-55C315CFBABD",
+                  "path": "organizations/ORG-1/subcontractors/SUB-1/documents/user-web-1_1790937000000.pdf",
+                  "name": "Public liability.pdf",
+                  "contentType": "application/pdf",
+                  "sizeBytes": 120000,
+                  "uploadedAtMs": 1790937000000,
+                  "uploadedBy": "user-web-1",
+                  "expiresOn": "2027-03-31"
+                }
+              ],
+              "rams": []
+            },
             "createdAt": {
               "seconds": 1790845200,
               "nanoseconds": 0
@@ -1618,25 +1633,42 @@
             }
           },
           "expected": {
-            "id": "SUB-1",
-            "name": "Sparks Ltd",
-            "subcontractorType": "Electrical",
-            "website": null,
-            "address": null,
-            "contacts": [
-              {
-                "id": "c-1",
-                "idStored": true,
-                "name": "Sam Sub",
-                "email": "sam@sparks.test",
-                "contactNumber": "",
-                "position": "Installer",
-                "tradeType": null,
-                "createdAtMs": null
-              }
-            ],
-            "createdAtMs": 1790845200000,
-            "updatedAtMs": 1790937000000
+            "firm": {
+              "id": "SUB-1",
+              "name": "Sparks Ltd",
+              "subcontractorType": "Electrical",
+              "website": null,
+              "address": null,
+              "contacts": [
+                {
+                  "id": "c-1",
+                  "idStored": true,
+                  "name": "Sam Sub",
+                  "email": "sam@sparks.test",
+                  "contactNumber": "",
+                  "position": "Installer",
+                  "tradeType": null,
+                  "createdAtMs": null
+                }
+              ],
+              "createdAtMs": 1790845200000,
+              "updatedAtMs": 1790937000000
+            },
+            "documents": {
+              "insurance": [
+                {
+                  "id": "69624FCD-DCEB-898B-96AF-55C315CFBABD",
+                  "path": "organizations/ORG-1/subcontractors/SUB-1/documents/user-web-1_1790937000000.pdf",
+                  "name": "Public liability.pdf",
+                  "contentType": "application/pdf",
+                  "sizeBytes": 120000,
+                  "uploadedAtMs": 1790937000000,
+                  "uploadedBy": "user-web-1",
+                  "expiresOn": "2027-03-31"
+                }
+              ],
+              "rams": []
+            }
           }
         },
         {
@@ -1658,31 +1690,63 @@
               }
             ],
             "organizationId": "ORG-1",
+            "documents": {
+              "insurance": [
+                {
+                  "id": "9F4B8ECA-1B67-8208-AE78-C8A0294418BA",
+                  "path": "organizations/ORG-1/subcontractors/SUB-IOS-1/documents/USER-IOS-1_1790937000000.pdf",
+                  "name": "Public liability.pdf",
+                  "contentType": "application/pdf",
+                  "sizeBytes": 120000,
+                  "uploadedAtMs": 1790937000000,
+                  "uploadedBy": "USER-IOS-1",
+                  "expiresOn": null
+                }
+              ],
+              "rams": []
+            },
             "createdAt": {
               "seconds": 1790845200,
               "nanoseconds": 0
             }
           },
           "expected": {
-            "id": "SUB-IOS-1",
-            "name": "Pipes Ltd",
-            "subcontractorType": "Plumbing",
-            "website": null,
-            "address": null,
-            "contacts": [
-              {
-                "id": "658DF5FD-E5D7-8C33-BDA7-9CABE811B10D",
-                "idStored": false,
-                "name": "Pat Pipe",
-                "email": "",
-                "contactNumber": "07000 222222",
-                "position": "Supervisor",
-                "tradeType": null,
-                "createdAtMs": 1790845200000
-              }
-            ],
-            "createdAtMs": 1790845200000,
-            "updatedAtMs": 1790845200000
+            "firm": {
+              "id": "SUB-IOS-1",
+              "name": "Pipes Ltd",
+              "subcontractorType": "Plumbing",
+              "website": null,
+              "address": null,
+              "contacts": [
+                {
+                  "id": "658DF5FD-E5D7-8C33-BDA7-9CABE811B10D",
+                  "idStored": false,
+                  "name": "Pat Pipe",
+                  "email": "",
+                  "contactNumber": "07000 222222",
+                  "position": "Supervisor",
+                  "tradeType": null,
+                  "createdAtMs": 1790845200000
+                }
+              ],
+              "createdAtMs": 1790845200000,
+              "updatedAtMs": 1790845200000
+            },
+            "documents": {
+              "insurance": [
+                {
+                  "id": "9F4B8ECA-1B67-8208-AE78-C8A0294418BA",
+                  "path": "organizations/ORG-1/subcontractors/SUB-IOS-1/documents/USER-IOS-1_1790937000000.pdf",
+                  "name": "Public liability.pdf",
+                  "contentType": "application/pdf",
+                  "sizeBytes": 120000,
+                  "uploadedAtMs": 1790937000000,
+                  "uploadedBy": "USER-IOS-1",
+                  "expiresOn": null
+                }
+              ],
+              "rams": []
+            }
           }
         }
       ]

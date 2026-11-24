@@ -48,6 +48,7 @@ import {
   parseWarningResolutionDocument,
 } from './recordsDocuments'
 import { resolveSensitiveProfile } from './sensitiveProfile'
+import { parseSubcontractorDocuments } from './subcontractorDocuments'
 import { parseTimesheetStatusFields } from './timesheetPeriod'
 import {
   parseDeadlineDocument,
@@ -72,6 +73,8 @@ export const CROSS_PLATFORM_CONTRACT_READERS: Readonly<Record<string, Reader>> =
   parseManagerDocument: (id, data) => parseManagerDocument(id, data),
   parseClientDocument: (id, data) => parseClientDocument(id, data),
   parseSubcontractorDocument: (id, data) => parseSubcontractorDocument(id, data),
+  /** 1.80.0: `subcontractors/{id}`: the firm and its insurance / RAMS documents (§30) together. */
+  subcontractorDocument: (id, data) => ({ firm: parseSubcontractorDocument(id, data), documents: parseSubcontractorDocuments(id, data) }),
   parsePayRateHistoryDocument: (id, data, o) => parsePayRateHistoryDocument(id, data, o.timeZone),
   parseWarningResolutionDocument: (id, data, o) => parseWarningResolutionDocument(id, data, { timeZone: o.timeZone }),
   parseMaterialLineDocument: (id, data, o) => parseMaterialLineDocument(id, data, { timeZone: o.timeZone }),

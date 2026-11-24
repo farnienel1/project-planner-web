@@ -10,6 +10,7 @@ import { doc, runTransaction, serverTimestamp } from 'firebase/firestore'
 import { deleteObject, ref } from 'firebase/storage'
 import { db, storage } from '@/lib/firebase/config'
 import { uploadFile } from '@/lib/firebase/storageUtils'
+import { assertUploadAllowed } from '@/lib/security/uploadGuard'
 import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
 import { uploadFileExtension } from '@/lib/canonical/uploadPolicy'
 import { EDIT_OF_MISSING_DOCUMENT_MESSAGE } from '@/lib/canonical/liveSources'
@@ -77,7 +78,10 @@ export async function uploadSubcontractorDocument(input: {
     extension: uploadFileExtension(input.file.name),
   })
   if (!path) throw new Error('This file cannot be uploaded here.')
-  await uploadFile(path, input.file, input.file.type)
+  // §24: the type stored on the entry is the one the bytes were checked as (and the object is written with), never
+  // the browser's guess from the file name.
+  const contentType = await assertUploadAllowed(path, input.file, input.file.type)
+  await uploadFile(path, input.file, contentType)
   let outcome: string
   try {
     const result = await writeList(input.organizationId, input.subcontractorId, input.actorUid, (stored) =>
@@ -88,7 +92,7 @@ export async function uploadSubcontractorDocument(input: {
         entry: {
           path,
           name: input.file.name,
-          contentType: input.file.type,
+          contentType,
           sizeBytes: input.file.size,
           uploadedAtMs: nowMs,
           uploadedBy: input.actorUid,
