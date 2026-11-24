@@ -1,4 +1,5 @@
 import type { Project } from '@/types'
+import { formatPostcodeForDisplay, tidyUkPostcodesInText } from '@/lib/maps/ukPostcode'
 
 const UNMAPPABLE = ['site location not available', 'n/a', 'tbc', 'tba']
 
@@ -19,11 +20,13 @@ export function formatSiteAddress(
     >
   > & { siteAddress?: string }
 ): string {
-  const structured = [project.addressLine1, project.addressLine2, project.townCity, project.postcode]
+  // Display only: a UK postcode reads "SW1X 9HR" (an x look-alike such as "×" read as x); stored data is never rewritten.
+  const structured = [project.addressLine1, project.addressLine2, project.townCity, formatPostcodeForDisplay(project.postcode)]
     .map((part) => (part || '').trim())
     .filter(Boolean)
 
-  const legacy = project.siteAddress?.trim()
+  const legacyRaw = project.siteAddress?.trim()
+  const legacy = legacyRaw ? tidyUkPostcodesInText(legacyRaw) : legacyRaw
 
   if (structured.length > 0) {
     const structuredAddress = structured.join(', ')

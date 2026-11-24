@@ -7677,9 +7677,10 @@ test('1.10.0 userDeleteWrites: account batch first, then future bookings with to
     'users/U1/private/taxIds',
     'users/U1/orgMemberships/ORG',
     'organizations/ORG/userEmails/op@x.com',
+    'organizations/ORG/memberNames/U1',
     'organizations/ORG',
   ])
-  assert.deepEqual(steps[0].writes[4], { op: 'update', path: 'organizations/ORG', deleteFields: ['members.U1'] })
+  assert.deepEqual(steps[0].writes[5], { op: 'update', path: 'organizations/ORG', deleteFields: ['members.U1'] })
   const bookingPaths = steps[1].writes.map((w) => w.path)
   assert.deepEqual(bookingPaths, [
     'organizations/ORG/bookings/b1',
@@ -13194,10 +13195,10 @@ test('1.31.0 userDeleteWrites: an operatives manager runs the account step one w
     orgId: 'ORG', user: { id: 'OP', email: 'op@x', role }, actorUserId: 'M', platform: 'web', nowIso: '2026-11-04T10:00:00Z', actorManagesOperatives: true,
   })
   assert.deepEqual(steps.map((step) => step.writes.map((write) => write.path)), [
-    ['users/OP/private/taxIds'], ['users/OP/orgMemberships/ORG'], ['organizations/ORG/userEmails/op@x'], ['users/OP'], ['organizations/ORG'],
+    ['users/OP/private/taxIds'], ['users/OP/orgMemberships/ORG'], ['organizations/ORG/userEmails/op@x'], ['organizations/ORG/memberNames/OP'], ['users/OP'], ['organizations/ORG'],
   ])
   const admin = R112.userDeleteWrites({ orgId: 'ORG', user: { id: 'OP', email: 'op@x', role }, actorUserId: 'A', platform: 'web', nowIso: '2026-11-04T10:00:00Z' })
-  assert.equal(admin[0].writes.length, 5)
+  assert.equal(admin[0].writes.length, 6)
 })
 
 test('1.31.0 operativesManagerMayDeleteBooking: future bookings of a person with no account only; userDeleteWrites leaves today and the past', () => {
@@ -20101,6 +20102,22 @@ test('1.81.0 names per organisation are in the packed rulebook (full cases in me
   assert.equal(R112.displayNameInOrganization({ person: { id: 'u2', firstName: 'Farnie', surname: 'Nel' }, names }).displayName, 'Farnie Nel')
   assert.equal(R112.memberNameEditTarget({ organizationId: 'B', homeOrganizationId: 'A' }), 'organization')
   assert.equal(R112.MEMBER_NAMES_COLLECTION, 'memberNames')
+})
+
+test('1.82.0 site map leave is in the packed rulebook (full cases in siteMapLeave.test.ts)', () => {
+  const s = R112.siteMapLeaveSummary({ dayKey: '2026-11-25', records: [{ id: 'a', userId: 'u', startDayKey: '2026-11-25', status: 'approved' }] })
+  assert.equal(s.onAnnualLeave, 1)
+})
+
+test('1.82.0 an older toolbox talk notice (issue id) finds its job from the health & safety documents held', () => {
+  const candidates = [
+    { jobId: 'p1', collection: 'projects' as const, documents: [null, { issues: [{ id: 'other' }] }] },
+    { jobId: 'sw-2', collection: 'smallWorks' as const, documents: [{ issues: [{ id: 'ISSUE-9' }] }, undefined] },
+  ]
+  assert.deepEqual(R112.healthSafetyIssueJob({ issueId: ' issue-9 ', candidates }), { jobId: 'sw-2', collection: 'smallWorks' })
+  assert.equal(R112.healthSafetyIssueJob({ issueId: 'none', candidates }), null)
+  assert.equal(R112.healthSafetyIssueJob({ issueId: '', candidates }), null)
+  assert.equal(R112.healthSafetyIssueJob({ issueId: 'x', candidates: null }), null)
 })
 
 test('1.83.0 insurance & accreditations are in the packed rulebook (full cases in orgCompliance.test.ts)', () => {

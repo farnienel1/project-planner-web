@@ -12,7 +12,9 @@ import { storage } from '@/lib/firebase/config'
 import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
 import { safeExternalUrl } from '@/lib/canonical/uploadPolicy'
 import {
+  ORG_COMPLIANCE_ZIP_MAX_BYTES,
   ORG_COMPLIANCE_ZIP_MAX_DOCUMENTS,
+  ORG_COMPLIANCE_ZIP_TOO_LARGE_MESSAGE,
   orgComplianceZipEntryNames,
   orgComplianceZipFileName,
   type OrgComplianceEntry,
@@ -59,14 +61,21 @@ export async function downloadComplianceZip(entries: OrgComplianceEntry[], today
   if (!storage) throw new Error('File storage is not configured.')
   if (!entries.length) throw new Error('Choose at least one document.')
   if (entries.length > ORG_COMPLIANCE_ZIP_MAX_DOCUMENTS) throw new Error(`Choose up to ${ORG_COMPLIANCE_ZIP_MAX_DOCUMENTS} documents.`)
+  const stated = entries.reduce((sum, entry) => sum + (Number(entry.sizeBytes) || 0), 0)
+  if (stated > ORG_COMPLIANCE_ZIP_MAX_BYTES) throw new Error(ORG_COMPLIANCE_ZIP_TOO_LARGE_MESSAGE)
   const names = orgComplianceZipEntryNames(entries)
   const files: Record<string, Uint8Array> = {}
+  let total = 0
   for (const [index, entry] of entries.entries()) {
     const url = safeExternalUrl(await getDownloadURL(ref(storage, entry.path)))
     if (!url) throw new Error(`${entry.title} could not be opened.`)
     const response = await fetch(url)
     if (!response.ok) throw new Error(`${entry.title} could not be downloaded.`)
-    files[names[index]] = new Uint8Array(await response.arrayBuffer())
+    const bytes = new Uint8Array(await response.arrayBuffer())
+    total += bytes.byteLength
+    // The stored sizes may be missing on older entries: check what was really downloaded too.
+    if (total > ORG_COMPLIANCE_ZIP_MAX_BYTES) throw new Error(ORG_COMPLIANCE_ZIP_TOO_LARGE_MESSAGE)
+    files[names[index]] = bytes
   }
   // Photos and PDFs are already compressed: store them (level 0) so the zip is quick to build.
   const zipped = zipSync(files, { level: 0 })

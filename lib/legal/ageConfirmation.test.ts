@@ -132,8 +132,7 @@ test('age confirmation is create-time only; existing profiles load without those
   // 1.64.0: the identical `get` and `list` allows are one `read`.
   const usersBlock = rules.indexOf('match /users/{userId} {')
   const usersGet = rules.slice(usersBlock, rules.indexOf('allow create:', usersBlock))
-  // 1.83.0: the outer bracket is optional (removed for compile cost).
-  assert.match(usersGet, /allow read: if \(?request\.auth != null && \(/)
+  assert.match(usersGet, /allow read: if \(request\.auth != null && \(/)
   assert.match(usersGet, /request\.auth\.uid == userId/)
   assert.equal(usersGet.includes('selfCreateHasAgeConfirmation'), false)
   assert.equal(rules.includes('allow get: if selfCreateHasAgeConfirmation'), false)
@@ -145,8 +144,7 @@ test('age confirmation is create-time only; existing profiles load without those
   )
   // 1.31.1 (S1): the bootstrap create is ternary-gated, `isOrgBootstrapAdminProfileCreate(userId) ? (selfCreateHasAgeConfirmation() && …) : false`.
   // 1.31.3: isOrgBootstrapAdminProfileCreate is written out inside the users create (compile cost); its last test is the members-map admin entry.
-  // 1.83.0: redundant brackets removed for compile cost; the same ternary gate, with or without them.
-  assert.match(rules, /\.members\[request\.auth\.uid\] == 'admin'\)?\s*\?\s*\(?\s*selfCreateHasAgeConfirmation\(\)/)
+  assert.match(rules, /\.members\[request\.auth\.uid\] == 'admin'\) \? \(\s*selfCreateHasAgeConfirmation\(\)/)
   const userProfile = readFileSync(new URL('../canonical/userProfile.ts', import.meta.url), 'utf8')
   const documentFieldsBlock = userProfile.slice(
     userProfile.indexOf('export const USER_DOCUMENT_FIELDS'),

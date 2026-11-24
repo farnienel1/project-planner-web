@@ -28,21 +28,20 @@ test('the summary reads the Daily Overview job card and the pin people count, no
         overtimeMultiplier: 1.5,
       },
     ],
-    holidays: [{}, {}],
   } as unknown as Parameters<typeof siteMapJobSummary>[0]['model']
-  assert.deepEqual(siteMapJobSummary({ jobId: 'abc-1', peopleOnSite: 3, model }), {
+  assert.deepEqual(siteMapJobSummary({ jobId: 'abc-1', peopleOnSite: 3, model, companyLeave: { onAnnualLeave: 2 } }), {
     peopleOnSite: 3,
     hoursOnSite: 26,
     overtimeClockHours: 4,
     overtimeMultiplier: 1.5,
     onAnnualLeave: 2,
   })
-  assert.deepEqual(siteMapJobSummary({ jobId: 'other', peopleOnSite: 0, model }), {
+  assert.deepEqual(siteMapJobSummary({ jobId: 'other', peopleOnSite: 0, model, companyLeave: { onAnnualLeave: 2 } }), {
     peopleOnSite: 0,
     hoursOnSite: 0,
     overtimeClockHours: 0,
     overtimeMultiplier: null,
     onAnnualLeave: 2,
   })
-  assert.equal(siteMapJobSummary({ jobId: 'x', peopleOnSite: 1, model: null }).onAnnualLeave, 0)
+  assert.equal(siteMapJobSummary({ jobId: 'x', peopleOnSite: 1, model: null, companyLeave: null }).onAnnualLeave, 0)
 })

@@ -22,6 +22,7 @@ import { formatMoney } from './money'
 import { documentInstantMs } from './peopleDocuments'
 import { permissionLevelOf } from './permissionLevels'
 import { normalizeDocumentId } from './scheduleSources'
+import { organizationLevelFor } from './orgRoster'
 import { subcontractorDocumentExpiryDateText } from './subcontractorDocuments'
 
 export const ORG_COMPLIANCE_COLLECTION = 'orgCompliance'
@@ -227,18 +228,27 @@ export function canManageOrganizationCompliance(user: unknown): boolean {
   return permissionLevelOf(user) === 'admin'
 }
 
+/** An organisation id these paths accept (security review of #441): letters, digits, `_` and `-`, 1–128 characters. */
+export const ORG_COMPLIANCE_ORG_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/
+
+/** The organisation id, or null when it cannot be one (so no path is ever built from `..`, `%2F` or a query). */
+export function orgComplianceOrganizationId(organizationId: unknown): string | null {
+  const org = text(organizationId)
+  return ORG_COMPLIANCE_ORG_ID_PATTERN.test(org) ? org : null
+}
+
 /** `organizations/{orgId}/orgCompliance/documents`, or null for an unusable id. */
 export function orgComplianceDocumentPath(organizationId: unknown): string | null {
-  const org = text(organizationId)
-  if (!org || org.includes('/')) return null
-  return `organizations/${org}/${ORG_COMPLIANCE_COLLECTION}/${ORG_COMPLIANCE_DOCUMENT_ID}`
+  const org = orgComplianceOrganizationId(organizationId)
+  if (!org) return null
+  return `organizations/${encodeURIComponent(org)}/${ORG_COMPLIANCE_COLLECTION}/${ORG_COMPLIANCE_DOCUMENT_ID}`
 }
 
 /** The Storage folder `organizations/{orgId}/compliance`, or null. */
 export function orgComplianceFolder(organizationId: unknown): string | null {
-  const org = text(organizationId)
-  if (!org || org.includes('/')) return null
-  return `organizations/${org}/compliance`
+  const org = orgComplianceOrganizationId(organizationId)
+  if (!org) return null
+  return `organizations/${encodeURIComponent(org)}/compliance`
 }
 
 /** A new upload's Storage path `{folder}/{uid}_{unixMs}.{ext}` (§24). Null when a part cannot be a path. */
@@ -263,6 +273,7 @@ export function orgCompliancePathBelongsTo(path: unknown, organizationId: unknow
   if (!value || value.includes('..') || value.includes('//')) return false
   const parts = value.split('/')
   if (parts.length !== 4 || parts[0] !== 'organizations' || parts[2] !== 'compliance' || !parts[3]) return false
+  if (!ORG_COMPLIANCE_ORG_ID_PATTERN.test(parts[1])) return false
   const org = text(organizationId)
   return !org || normalizeDocumentId(parts[1]) === normalizeDocumentId(org)
 }
@@ -662,6 +673,9 @@ export function orgComplianceReminder(counts: OrgComplianceCounts | null | undef
 // ── Zip download of selected documents ──────────────────────────────────────────────────────────────────────────
 
 export const ORG_COMPLIANCE_ZIP_MAX_DOCUMENTS = 50
+/** A zip is built on the device, so its total size is capped (security review of #441): 200 MB. */
+export const ORG_COMPLIANCE_ZIP_MAX_BYTES = 200 * 1024 * 1024
+export const ORG_COMPLIANCE_ZIP_TOO_LARGE_MESSAGE = 'These documents are too large for one zip (200 MB). Choose fewer.'
 
 /**
  * One file name per selected entry inside a zip, in the order given: the stored file name made safe for a zip (no
@@ -912,4 +926,41 @@ export function orgComplianceShareOpen(org: unknown, nowMs: number): boolean {
   if (billing.accessOpen === false) return false
   const closes = documentInstantMs(billing.accessClosesAt)
   return !(closes != null && nowMs >= closes)
+}
+
+/**
+ * Whether the admin who made a share link is still an active admin of the organisation (security review of #441,
+ * owner to confirm): a link stops working when its creator stops being an admin or is deactivated, as if they had
+ * turned it off. Their level in this organisation is `organizationLevelFor` (the users document of this
+ * organisation, else their membership here, else the `members` role; the creator always admin); deactivated is the
+ * users document of this organisation `isActive: false` or the membership `accountActive` (else `isActive`) false.
+ */
+export function orgComplianceShareCreatorActive(input: {
+  organizationId: string
+  createdBy: string
+  organization?: Record<string, unknown> | null
+  user?: Record<string, unknown> | null
+  membership?: Record<string, unknown> | null
+}): boolean {
+  const uid = text(input.createdBy)
+  const org = record(input.organization)
+  if (!uid || !input.organization) return false
+  const members = record(org.members)
+  const level = organizationLevelFor({
+    organizationId: input.organizationId,
+    userId: uid,
+    user: input.user ?? null,
+    membership: input.membership ?? null,
+    membersRole: members[uid],
+    creatorUserId: text(org.creatorUserId) || null,
+  })
+  if (level.level !== 'admin') return false
+  const user = input.user ? record(input.user) : null
+  if (user && text(user.organizationId).toLowerCase() === text(input.organizationId).toLowerCase() && user.isActive === false) return false
+  const membership = input.membership ? record(input.membership) : null
+  if (membership) {
+    const active = 'accountActive' in membership ? membership.accountActive : membership.isActive
+    if (active === false) return false
+  }
+  return true
 }

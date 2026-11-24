@@ -150,6 +150,11 @@ import {
   parseOrgComplianceDocumentRef,
   ORG_COMPLIANCE_SHARE_MAX_DOCUMENTS,
   ORG_COMPLIANCE_SHARE_MESSAGES,
+  orgComplianceOrganizationId,
+  orgComplianceFolder,
+  orgCompliancePathBelongsTo,
+  orgComplianceShareCreatorActive,
+  ORG_COMPLIANCE_ZIP_MAX_BYTES,
 } from './orgCompliance'
 
 test('review of #441: one stored file name on both apps', () => {
@@ -220,4 +225,29 @@ test('1.83.0 a lapsed or scheduled-for-deletion company shares nothing', () => {
   assert.equal(orgComplianceShareOpen({ billing: { accessOpen: false } }, 1000), false)
   assert.equal(orgComplianceShareOpen({ billing: { status: 'canceled' } }, 1000), false)
   assert.equal(orgComplianceShareOpen(null, 1000), false)
+})
+
+test('security review of #441: organisation ids are checked before any path is built', () => {
+  assert.equal(orgComplianceOrganizationId('Org_1-A'), 'Org_1-A')
+  for (const bad of ['', 'a/b', '..', 'a%2Fb', 'a?x', 'a b', 'x'.repeat(129), null, 7]) {
+    assert.equal(orgComplianceOrganizationId(bad), null, String(bad))
+    assert.equal(orgComplianceDocumentPath(bad), null)
+    assert.equal(orgComplianceFolder(bad), null)
+  }
+  assert.equal(orgCompliancePathBelongsTo('organizations/a%2Fb/compliance/u_1.pdf', ''), false)
+  assert.equal(ORG_COMPLIANCE_ZIP_MAX_BYTES, 200 * 1024 * 1024)
+})
+
+test('security review of #441: a link stops when its creator is no longer an active admin', () => {
+  const organization = { members: { a1: 'admin', m1: 'manager', x1: 'admin' }, creatorUserId: 'c1' }
+  const base = { organizationId: 'org', organization }
+  assert.equal(orgComplianceShareCreatorActive({ ...base, createdBy: 'a1', user: { organizationId: 'org', adminAccess: true } }), true)
+  assert.equal(orgComplianceShareCreatorActive({ ...base, createdBy: 'a1', user: { organizationId: 'org', manager: true } }), false)
+  assert.equal(orgComplianceShareCreatorActive({ ...base, createdBy: 'a1', user: { organizationId: 'org', adminAccess: true, isActive: false } }), false)
+  assert.equal(orgComplianceShareCreatorActive({ ...base, createdBy: 'c1', user: null }), true)
+  assert.equal(orgComplianceShareCreatorActive({ ...base, createdBy: 'x1', user: { organizationId: 'other' }, membership: { role: 'admin', accountActive: false } }), false)
+  assert.equal(orgComplianceShareCreatorActive({ ...base, createdBy: 'x1', user: { organizationId: 'other' }, membership: null }), true)
+  assert.equal(orgComplianceShareCreatorActive({ ...base, createdBy: 'm1', user: null }), false)
+  assert.equal(orgComplianceShareCreatorActive({ ...base, createdBy: 'gone', user: null }), false)
+  assert.equal(orgComplianceShareCreatorActive({ organizationId: 'org', createdBy: 'a1', organization: null }), false)
 })

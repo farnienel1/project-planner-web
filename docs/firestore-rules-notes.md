@@ -1490,3 +1490,7 @@ across the file with a script that keeps every paren that holds `||`, `?` or `,`
 paren whose removal could change precedence; every rules suite passes unchanged. 224,167 static cost (main 225,015),
 156,496 bytes. Storage: `allow read, delete` uses `adminLike` (a stray operative-mode admin is still an admin, as
 `orgAdminEither`), and `create` needs the object name to start with the caller's uid + `_`.
+
+Merged onto 1.82.0 (24 Nov): main's rewritten `firestore.rules` taken as is, with only the `orgCompliance` match and
+the catch-all exclusion added (+220 static cost). To keep below main (225,001), the first 18 redundant parenthesis pairs
+the same script finds were removed (no allow / deny change; every rules suite passes): 224,751, 155,533 bytes.

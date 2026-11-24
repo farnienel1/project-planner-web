@@ -4,10 +4,18 @@ function docUrl(path: string) {
   return `${firestoreDocumentsBase()}/${path}`
 }
 
+/** A refused or failed REST read; `status` is the HTTP status (403 refused by the rules, 5xx an outage). */
+export class FirestoreReadError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message)
+    this.name = 'FirestoreReadError'
+  }
+}
+
 export async function firestoreGet(idToken: string, path: string) {
   const response = await fetch(docUrl(path), { headers: { Authorization: `Bearer ${idToken}` } })
   if (response.status === 404) return null
-  if (!response.ok) throw new Error(`Could not read ${path}`)
+  if (!response.ok) throw new FirestoreReadError(`Could not read ${path}`, response.status)
   return (await response.json()) as { fields?: Record<string, unknown>; updateTime?: string }
 }
 

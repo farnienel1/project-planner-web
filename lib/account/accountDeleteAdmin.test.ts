@@ -321,6 +321,8 @@ test('unused invitations and passwordSet false placeholders lose the live email;
     assert.equal(deleted.some((url) => url.includes(`/invitations/${usedInviteId}`)), false)
     assert.equal(deleted.some((url) => url.includes(`/users/${placeholderId}`)), true)
     assert.equal(deleted.some((url) => url.includes(`/users/${decoyLiveId}`)), false)
+    // Rulebook 1.82.0 §11: the placeholder's name in the organisation goes too (self-delete keeps no name).
+    assert.equal(deleted.some((url) => url.includes(`/organizations/${inviteOrgId}/memberNames/${placeholderId}`)), true)
     assert.equal(
       deleted.some((url) => url.includes(`/organizations/${inviteOrgId}/userEmails/${encodeURIComponent(email)}`)),
       true

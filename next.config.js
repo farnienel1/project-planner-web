@@ -23,7 +23,7 @@ const ContentSecurityPolicy = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  "connect-src 'self' https://*.googleapis.com https://*.gstatic.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasestorage.app https://*.firebaseapp.com https://*.cloudfunctions.net https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://firebasestorage.googleapis.com https://content-firebaseappcheck.googleapis.com https://firebaseappcheck.googleapis.com https://www.google.com https://www.gstatic.com https://api.stripe.com https://*.stripe.com https://*.stripe.network https://maps.googleapis.com https://photon.komoot.io https://nominatim.openstreetmap.org https://*.tile.openstreetmap.org" + emulatorConnectSrc,
+  "connect-src 'self' https://*.googleapis.com https://*.gstatic.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasestorage.app https://*.firebaseapp.com https://*.cloudfunctions.net https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://firebasestorage.googleapis.com https://content-firebaseappcheck.googleapis.com https://firebaseappcheck.googleapis.com https://www.google.com https://www.gstatic.com https://api.stripe.com https://*.stripe.com https://*.stripe.network https://maps.googleapis.com https://photon.komoot.io https://nominatim.openstreetmap.org https://api.postcodes.io https://*.tile.openstreetmap.org" + emulatorConnectSrc,
   "frame-src 'self' blob: https://js.stripe.com https://checkout.stripe.com https://hooks.stripe.com https://*.firebaseapp.com https://www.google.com https://www.gstatic.com https://recaptcha.google.com",
   "worker-src 'self' blob:",
   "media-src 'self' blob:",
@@ -86,6 +86,15 @@ const nextConfig = {
       {
         source: '/interest/unsubscribe',
         headers: [{ key: 'Cache-Control', value: 'private, no-store, must-revalidate' }],
+      },
+      {
+        // Rulebook 1.83.0 §31: a public share page is never cached and never sends its token on in a Referer.
+        source: '/shared/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'private, no-store, must-revalidate' },
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+        ],
       },
     ]
   },

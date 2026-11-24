@@ -30,6 +30,9 @@ const OP = 'mn-op'
 const VISITOR = 'mn-visitor' // home company HOME, a manager in ORG through the members map
 const STRANGER = 'mn-stranger' // admin of HOME only
 const VADMIN = 'mn-vadmin' // home company HOME, an admin of ORG through the members map only
+const VOPS = 'mn-vops' // home company HOME, an Operatives manager of ORG through the members map and their membership
+const VOP = 'mn-vop' // home company HOME, listed operative in ORG
+const HOMEOP = 'mn-homeop' // an operative of HOME only
 
 let env: RulesTestEnvironment
 
@@ -58,9 +61,9 @@ test.beforeEach(async () => {
     const d = ctx.firestore()
     await setDoc(doc(d, 'organizations', ORG), {
       name: 'Names Co', creatorUserId: ADMIN,
-      members: { [ADMIN]: 'admin', [OPSMGR]: 'manager', [MGR]: 'manager', [OP]: 'operative', [VISITOR]: 'manager', [VADMIN]: 'admin' },
+      members: { [ADMIN]: 'admin', [OPSMGR]: 'manager', [MGR]: 'manager', [OP]: 'operative', [VISITOR]: 'manager', [VADMIN]: 'admin', [VOPS]: 'manager', [VOP]: 'operative' },
     })
-    await setDoc(doc(d, 'organizations', HOME), { name: 'Home Co', creatorUserId: STRANGER, members: { [STRANGER]: 'admin', [VISITOR]: 'manager', [VADMIN]: 'manager' } })
+    await setDoc(doc(d, 'organizations', HOME), { name: 'Home Co', creatorUserId: STRANGER, members: { [STRANGER]: 'admin', [VISITOR]: 'manager', [VADMIN]: 'manager', [VOPS]: 'operative', [VOP]: 'operative', [HOMEOP]: 'operative' } })
     const user = (id: string, fields: Record<string, unknown>) =>
       setDoc(doc(d, 'users', id), { email: `${id}@test.com`, organizationId: ORG, passwordSet: true, isActive: true, firstName: 'First', surname: id, ...fields })
     await user(ADMIN, { role: 'admin', adminAccess: true, isSuperAdmin: true })
@@ -70,6 +73,11 @@ test.beforeEach(async () => {
     await user(VISITOR, { role: 'manager', manager: true, organizationId: HOME, firstName: 'Farnie', surname: 'Nel' })
     await user(VADMIN, { role: 'manager', manager: true, organizationId: HOME })
     await user(STRANGER, { role: 'admin', adminAccess: true, isSuperAdmin: true, organizationId: HOME })
+    await user(VOPS, { role: 'operative', operativeMode: true, organizationId: HOME })
+    await setDoc(doc(d, 'users', VOPS, 'orgMemberships', ORG), { organizationId: ORG, role: 'manager', status: 'active', permissions: { manager: true, operatives: true } })
+    await user(VOP, { role: 'operative', operativeMode: true, organizationId: HOME })
+    await setDoc(doc(d, 'users', VOP, 'orgMemberships', ORG), { organizationId: ORG, role: 'operative', status: 'active', permissions: { operativeMode: true } })
+    await user(HOMEOP, { role: 'operative', operativeMode: true, organizationId: HOME })
     await setDoc(doc(d, 'organizations', ORG, 'memberNames', OP), { firstName: 'Ollie', surname: 'Op' })
   })
 })
@@ -109,12 +117,41 @@ test('a person writes and removes their own entry (a member from another company
   await assertSucceeds(setDoc(ref(await db(OP), OP), entry(OP, 'Olly', '')))
 })
 
-test('a manager, an Operatives manager and an operative cannot write someone else\'s entry', async () => {
-  for (const uid of [MGR, OPSMGR, VISITOR]) {
+test('a manager and an operative cannot write someone else\'s entry; an Operatives manager only an operative\'s', async () => {
+  for (const uid of [MGR, VISITOR]) {
     await assertFails(setDoc(ref(await db(uid), OP), entry(uid)))
     await assertFails(deleteDoc(ref(await db(uid), OP)))
   }
   await assertFails(setDoc(ref(await db(OP), MGR), entry(OP)))
+  // 1.82.0 (owner 24 Nov, item 3): an Operatives manager names an operative of this organisation, never a manager or
+  // an admin, and never in an organisation that is not their home.
+  await assertSucceeds(setDoc(ref(await db(OPSMGR), OP), entry(OPSMGR, 'Olly', 'Op')))
+  await assertFails(setDoc(ref(await db(OPSMGR), MGR), entry(OPSMGR)))
+  await assertFails(setDoc(ref(await db(OPSMGR), ADMIN), entry(OPSMGR)))
+  await assertFails(setDoc(ref(await db(OPSMGR), OP, HOME), entry(OPSMGR)))
+})
+
+test('owner correction 24 Nov: an Operatives manager of this organisation names any operative member of it, whatever either home company', async () => {
+  // Home Operatives manager, operative homed elsewhere (listed operative here).
+  await assertSucceeds(setDoc(ref(await db(OPSMGR), VOP), entry(OPSMGR, 'Vic', 'Op')))
+  // Visiting Operatives manager (Operatives on their membership here), home and visiting operatives alike.
+  await assertSucceeds(setDoc(ref(await db(VOPS), OP), entry(VOPS, 'Olly', 'Op')))
+  await assertSucceeds(setDoc(ref(await db(VOPS), VOP), entry(VOPS, 'Vic', 'Op')))
+  await assertSucceeds(deleteDoc(ref(await db(VOPS), OP)))
+  // Never a manager or admin here, never an operative who is not a member here, never another organisation's copy.
+  await assertFails(setDoc(ref(await db(VOPS), MGR), entry(VOPS)))
+  await assertFails(setDoc(ref(await db(VOPS), ADMIN), entry(VOPS)))
+  await assertFails(setDoc(ref(await db(VOPS), HOMEOP), entry(VOPS)))
+  await assertFails(setDoc(ref(await db(VOPS), VOP, HOME), entry(VOPS)))
+  // A visiting manager without Operatives on their membership here cannot.
+  await assertFails(setDoc(ref(await db(VISITOR), VOP), entry(VISITOR)))
+})
+
+test('the person\'s delete removes their entry: an admin batch, and an Operatives manager write by write', async () => {
+  await assertSucceeds(deleteDoc(ref(await db(ADMIN), OP)))
+  await env.withSecurityRulesDisabled(async (ctx) => { await setDoc(doc(ctx.firestore(), 'organizations', ORG, 'memberNames', OP), { firstName: 'Ollie' }) })
+  await assertSucceeds(deleteDoc(ref(await db(OPSMGR), OP)))
+  await assertFails(deleteDoc(ref(await db(OPSMGR), MGR)))
 })
 
 test('another company\'s admin cannot write here, even their own member\'s entry', async () => {

@@ -355,6 +355,7 @@ var ProjectPlannerCanonical = (() => {
     ORG_COMPLIANCE_MAX_PER_SECTION: () => ORG_COMPLIANCE_MAX_PER_SECTION,
     ORG_COMPLIANCE_MAX_YEARS_AHEAD: () => ORG_COMPLIANCE_MAX_YEARS_AHEAD,
     ORG_COMPLIANCE_MESSAGES: () => ORG_COMPLIANCE_MESSAGES,
+    ORG_COMPLIANCE_ORG_ID_PATTERN: () => ORG_COMPLIANCE_ORG_ID_PATTERN,
     ORG_COMPLIANCE_PAGE_SUBTITLE: () => ORG_COMPLIANCE_PAGE_SUBTITLE,
     ORG_COMPLIANCE_PAGE_TITLE: () => ORG_COMPLIANCE_PAGE_TITLE,
     ORG_COMPLIANCE_SECTIONS: () => ORG_COMPLIANCE_SECTIONS,
@@ -365,7 +366,9 @@ var ProjectPlannerCanonical = (() => {
     ORG_COMPLIANCE_SHARE_MESSAGES: () => ORG_COMPLIANCE_SHARE_MESSAGES,
     ORG_COMPLIANCE_SIGNED_URL_SECONDS: () => ORG_COMPLIANCE_SIGNED_URL_SECONDS,
     ORG_COMPLIANCE_STATUS_ORDER: () => ORG_COMPLIANCE_STATUS_ORDER,
+    ORG_COMPLIANCE_ZIP_MAX_BYTES: () => ORG_COMPLIANCE_ZIP_MAX_BYTES,
     ORG_COMPLIANCE_ZIP_MAX_DOCUMENTS: () => ORG_COMPLIANCE_ZIP_MAX_DOCUMENTS,
+    ORG_COMPLIANCE_ZIP_TOO_LARGE_MESSAGE: () => ORG_COMPLIANCE_ZIP_TOO_LARGE_MESSAGE,
     ORG_MEMBERSHIP_ADMIN_FIELDS: () => ORG_MEMBERSHIP_ADMIN_FIELDS,
     ORG_MEMBERSHIP_DEFAULT_ON: () => ORG_MEMBERSHIP_DEFAULT_ON,
     ORG_MEMBERSHIP_PERMISSION_KEYS: () => ORG_MEMBERSHIP_PERMISSION_KEYS,
@@ -1102,6 +1105,7 @@ var ProjectPlannerCanonical = (() => {
     healthSafetyDocumentId: () => healthSafetyDocumentId,
     healthSafetyDocumentIds: () => healthSafetyDocumentIds,
     healthSafetyDocumentWriteFields: () => healthSafetyDocumentWriteFields,
+    healthSafetyIssueJob: () => healthSafetyIssueJob,
     healthSafetyIssueStatus: () => healthSafetyIssueStatus,
     healthSafetySignatureKey: () => healthSafetySignatureKey,
     healthSafetySignatureRemovalWrites: () => healthSafetySignatureRemovalWrites,
@@ -1331,11 +1335,16 @@ var ProjectPlannerCanonical = (() => {
     materialSendStatusWriteFields: () => materialSendStatusWriteFields,
     materialSizeText: () => materialSizeText,
     materialWhatsAppRows: () => materialWhatsAppRows,
+    memberNameBackfillEntries: () => memberNameBackfillEntries,
+    memberNameEditPlan: () => memberNameEditPlan,
     memberNameEditTarget: () => memberNameEditTarget,
+    memberNameEntryMissing: () => memberNameEntryMissing,
     memberNameFor: () => memberNameFor,
+    memberNameJoinEntry: () => memberNameJoinEntry,
     memberNamePath: () => memberNamePath,
     memberNameValidationError: () => memberNameValidationError,
     memberNameWriteFields: () => memberNameWriteFields,
+    memberNameWriterManagesOperative: () => memberNameWriterManagesOperative,
     mergeBookingPaySlice: () => mergeBookingPaySlice,
     mergeHealthSafetyRowCopies: () => mergeHealthSafetyRowCopies,
     mergeJobTypeCatalogues: () => mergeJobTypeCatalogues,
@@ -1444,6 +1453,7 @@ var ProjectPlannerCanonical = (() => {
     orgComplianceFolder: () => orgComplianceFolder,
     orgComplianceHubSubtitle: () => orgComplianceHubSubtitle,
     orgComplianceMergePayload: () => orgComplianceMergePayload,
+    orgComplianceOrganizationId: () => orgComplianceOrganizationId,
     orgCompliancePathBelongsTo: () => orgCompliancePathBelongsTo,
     orgCompliancePathLinked: () => orgCompliancePathLinked,
     orgCompliancePublicDocuments: () => orgCompliancePublicDocuments,
@@ -1451,6 +1461,7 @@ var ProjectPlannerCanonical = (() => {
     orgComplianceRemoveWriteFields: () => orgComplianceRemoveWriteFields,
     orgComplianceReplaceWriteFields: () => orgComplianceReplaceWriteFields,
     orgComplianceSection: () => orgComplianceSection,
+    orgComplianceShareCreatorActive: () => orgComplianceShareCreatorActive,
     orgComplianceShareLinkCreateFields: () => orgComplianceShareLinkCreateFields,
     orgComplianceShareLinkState: () => orgComplianceShareLinkState,
     orgComplianceShareOpen: () => orgComplianceShareOpen,
@@ -1882,6 +1893,7 @@ var ProjectPlannerCanonical = (() => {
     siteAuditReportTextLines: () => siteAuditReportTextLines,
     siteAuditReportTextWidth: () => siteAuditReportTextWidth,
     siteAuditWriteFields: () => siteAuditWriteFields,
+    siteMapLeaveSummary: () => siteMapLeaveSummary,
     siteMapPins: () => siteMapPins,
     skillsCatalogueWrites: () => skillsCatalogueWrites,
     slotInterval: () => slotInterval,
@@ -17339,7 +17351,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.83.0" : "",
-      sha256: true ? "6eb13486ad1648ffc13fc95fb8b857bf5631ead7c3a0472d59d04e980913ba48" : ""
+      sha256: true ? "628c13c24d92d052247d59b201d79c885510f023075d7bd431ae8093d7952c1a" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -20815,6 +20827,20 @@ var ProjectPlannerCanonical = (() => {
     }
     return writes.sort((a, b) => a.documentId.localeCompare(b.documentId));
   }
+  function healthSafetyIssueJob(input) {
+    const wanted = normalizeDocumentId(input.issueId);
+    if (!wanted) return null;
+    for (const candidate of input.candidates || []) {
+      if (!candidate || !text29(candidate.jobId)) continue;
+      for (const data of candidate.documents || []) {
+        const issues = rows2(record9(data).issues);
+        if (issues.some((issue) => normalizeDocumentId(issue.id) === wanted)) {
+          return { jobId: candidate.jobId, collection: candidate.collection };
+        }
+      }
+    }
+    return null;
+  }
 
   // lib/canonical/liveSources.ts
   var LIVE_COLLECTIONS = [
@@ -21095,6 +21121,7 @@ var ProjectPlannerCanonical = (() => {
       { op: "delete", path: `users/${uid}/orgMemberships/${org}` }
     ];
     if (email && !email.includes("/")) account.push({ op: "delete", path: `organizations/${org}/userEmails/${email}` });
+    account.push({ op: "delete", path: `organizations/${org}/memberNames/${uid}`, optional: true });
     if (input.listedInMembers !== false) account.push({ op: "update", path: `organizations/${org}`, deleteFields: [`members.${uid}`] });
     const formerWrite = input.formerPerson ? {
       op: "set",
@@ -22058,8 +22085,8 @@ var ProjectPlannerCanonical = (() => {
   function memberNameEditTarget(input) {
     const org = key5(input?.organizationId);
     const home = key5(documentOrganizationId(input?.homeOrganizationId));
-    if (!org || !home) return "account";
-    return org === home ? "account" : "organization";
+    if (!org) return "account";
+    return home && org === home ? "account" : "organization";
   }
   function memberNameValidationError(input) {
     const firstName = text36(input?.firstName);
@@ -22079,7 +22106,43 @@ var ProjectPlannerCanonical = (() => {
   function canWriteMemberName(input) {
     const writer = key5(input?.writerUserId);
     if (!writer) return false;
-    return writer === key5(input?.subjectUserId) || input?.writerIsAdmin === true;
+    return writer === key5(input?.subjectUserId) || input?.writerIsAdmin === true || input?.writerManagesOperative === true;
+  }
+  function memberNameEditPlan(input) {
+    const org = key5(input?.organizationId);
+    const home = key5(documentOrganizationId(input?.homeOrganizationId));
+    return { writeEntry: Boolean(org), writeAccount: Boolean(org && home && org === home) };
+  }
+  function memberNameWriterManagesOperative(input) {
+    if (!input?.writer || !input?.subject) return false;
+    return canManageOperatives(input.writer) && permissionLevelOf(input.subject) === "operative";
+  }
+  function memberNameJoinEntry(candidates) {
+    for (const candidate of candidates || []) {
+      if (!candidate) continue;
+      const name = accountName(candidate);
+      if (!memberNameValidationError(name)) return { firstName: name.firstName, surname: name.surname };
+    }
+    return null;
+  }
+  function memberNameEntryMissing(input) {
+    if (!input?.serverRead || !input.person || !key5(input.person.id)) return false;
+    return !memberNameFor(input.person, input.names);
+  }
+  function memberNameBackfillEntries(input) {
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const person of input?.people || []) {
+      const userId = text36(person?.id);
+      if (!userId || seen.has(key5(userId))) continue;
+      seen.add(key5(userId));
+      const shown = accountName(person);
+      if (!text36(person?.email) && shown.displayName === "Deleted user") continue;
+      if (memberNameFor(person, input?.names)) continue;
+      const name = memberNameJoinEntry([person]);
+      if (name) out.push({ userId, ...name });
+    }
+    return out;
   }
 
   // lib/canonical/orgRoster.ts
@@ -24774,6 +24837,55 @@ var ProjectPlannerCanonical = (() => {
     return (records || []).filter(
       (record20) => Boolean(record20) && normalizeHolidayStatus(record20.status) === "approved" && leaveRecordDayKeys(record20, timeZone, nonWorkingDayKeys).includes(dayKey)
     );
+  }
+
+  // lib/canonical/siteMapLeave.ts
+  function siteMapLeaveSummary(input) {
+    const onDay = dailyOverviewLeaveRows(input.records, input.dayKey, input.timeZone, input.nonWorkingDayKeys);
+    const roster = (input.roster || []).filter((row3) => row3 && idKey(row3.id));
+    const byId = /* @__PURE__ */ new Map();
+    const byEmail = /* @__PURE__ */ new Map();
+    for (const row3 of roster) {
+      const owner = { key: `person:${idKey(row3.id)}`, name: (row3.name ?? "").trim() || null };
+      for (const id2 of personIdSet(row3, roster)) {
+        const k = idKey(id2);
+        if (k && !byId.has(k)) byId.set(k, owner);
+      }
+      const email = idKey(row3.email);
+      if (email && !byEmail.has(email)) byEmail.set(email, owner);
+    }
+    const operativeById = /* @__PURE__ */ new Map();
+    for (const row3 of input.operatives || []) if (row3 && idKey(row3.id)) operativeById.set(idKey(row3.id), row3);
+    const resolve = (record20) => {
+      for (const raw of [record20.userId, record20.operativeId]) {
+        const k = idKey(raw);
+        if (!k) continue;
+        const hit = byId.get(k) ?? byEmail.get(k);
+        if (hit) return hit;
+        const operative = operativeById.get(k);
+        if (operative) {
+          const viaEmail = byEmail.get(idKey(operative.email));
+          if (viaEmail) return viaEmail;
+          return { key: `operative:${k}`, name: (operative.name ?? "").trim() || null };
+        }
+      }
+      const fallback = idKey(record20.userId) || idKey(record20.operativeId);
+      return fallback ? { key: `id:${fallback}`, name: null } : null;
+    };
+    const people = [];
+    const index = /* @__PURE__ */ new Map();
+    onDay.forEach((record20, position) => {
+      const owner = resolve(record20) ?? { key: `record:${String(record20.id ?? position)}`, name: null };
+      const recordId = String(record20.id ?? "").trim();
+      const at = index.get(owner.key);
+      if (at === void 0) {
+        index.set(owner.key, people.length);
+        people.push({ key: owner.key, name: owner.name, recordIds: recordId ? [recordId] : [] });
+      } else if (recordId) {
+        people[at].recordIds.push(recordId);
+      }
+    });
+    return { onAnnualLeave: people.length, people };
   }
 
   // lib/canonical/jobScheduleLeave.ts
@@ -32438,15 +32550,20 @@ var ProjectPlannerCanonical = (() => {
     if (!user || typeof user !== "object") return false;
     return permissionLevelOf(user) === "admin";
   }
-  function orgComplianceDocumentPath(organizationId) {
+  var ORG_COMPLIANCE_ORG_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+  function orgComplianceOrganizationId(organizationId) {
     const org = text57(organizationId);
-    if (!org || org.includes("/")) return null;
-    return `organizations/${org}/${ORG_COMPLIANCE_COLLECTION}/${ORG_COMPLIANCE_DOCUMENT_ID}`;
+    return ORG_COMPLIANCE_ORG_ID_PATTERN.test(org) ? org : null;
+  }
+  function orgComplianceDocumentPath(organizationId) {
+    const org = orgComplianceOrganizationId(organizationId);
+    if (!org) return null;
+    return `organizations/${encodeURIComponent(org)}/${ORG_COMPLIANCE_COLLECTION}/${ORG_COMPLIANCE_DOCUMENT_ID}`;
   }
   function orgComplianceFolder(organizationId) {
-    const org = text57(organizationId);
-    if (!org || org.includes("/")) return null;
-    return `organizations/${org}/compliance`;
+    const org = orgComplianceOrganizationId(organizationId);
+    if (!org) return null;
+    return `organizations/${encodeURIComponent(org)}/compliance`;
   }
   function orgComplianceStoragePath(input) {
     const folder = orgComplianceFolder(input.organizationId);
@@ -32462,6 +32579,7 @@ var ProjectPlannerCanonical = (() => {
     if (!value || value.includes("..") || value.includes("//")) return false;
     const parts3 = value.split("/");
     if (parts3.length !== 4 || parts3[0] !== "organizations" || parts3[2] !== "compliance" || !parts3[3]) return false;
+    if (!ORG_COMPLIANCE_ORG_ID_PATTERN.test(parts3[1])) return false;
     const org = text57(organizationId);
     return !org || normalizeDocumentId(parts3[1]) === normalizeDocumentId(org);
   }
@@ -32722,6 +32840,8 @@ var ProjectPlannerCanonical = (() => {
     };
   }
   var ORG_COMPLIANCE_ZIP_MAX_DOCUMENTS = 50;
+  var ORG_COMPLIANCE_ZIP_MAX_BYTES = 200 * 1024 * 1024;
+  var ORG_COMPLIANCE_ZIP_TOO_LARGE_MESSAGE = "These documents are too large for one zip (200 MB). Choose fewer.";
   function orgComplianceZipEntryNames(entries) {
     const used = /* @__PURE__ */ new Set();
     return entries.map((entry) => {
@@ -32874,6 +32994,29 @@ var ProjectPlannerCanonical = (() => {
     if (billing.accessOpen === false) return false;
     const closes = documentInstantMs(billing.accessClosesAt);
     return !(closes != null && nowMs2 >= closes);
+  }
+  function orgComplianceShareCreatorActive(input) {
+    const uid = text57(input.createdBy);
+    const org = record19(input.organization);
+    if (!uid || !input.organization) return false;
+    const members = record19(org.members);
+    const level = organizationLevelFor({
+      organizationId: input.organizationId,
+      userId: uid,
+      user: input.user ?? null,
+      membership: input.membership ?? null,
+      membersRole: members[uid],
+      creatorUserId: text57(org.creatorUserId) || null
+    });
+    if (level.level !== "admin") return false;
+    const user = input.user ? record19(input.user) : null;
+    if (user && text57(user.organizationId).toLowerCase() === text57(input.organizationId).toLowerCase() && user.isActive === false) return false;
+    const membership = input.membership ? record19(input.membership) : null;
+    if (membership) {
+      const active = "accountActive" in membership ? membership.accountActive : membership.isActive;
+      if (active === false) return false;
+    }
+    return true;
   }
   return __toCommonJS(bundleEntry_exports);
 })();

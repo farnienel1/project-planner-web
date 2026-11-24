@@ -13,6 +13,7 @@ import {
   noteShareLinkOpened,
   readComplianceAsServer,
   readShareLink,
+  shareLinkCreatorStillAdmin,
   shareLinkIdForToken,
   writeComplianceAudit,
 } from '@/lib/compliance/server/complianceShare'
@@ -33,14 +34,15 @@ function gone() {
 }
 
 export async function GET(request: NextRequest, context: { params: Promise<{ token: string }> }) {
+  // The token's shape first, so junk never costs a rate-limit read.
+  const { token } = await context.params
+  const id = shareLinkIdForToken(token)
+  if (!id) return gone()
   const limited = enforceRateLimit(request, 'compliance-shared', 60, 60 * 1000)
   if (limited) return limited
   if (!(await consumeAuthEmailBudget('compliance-share-open', clientIp(request), 300, 60 * 60 * 1000))) {
     return jsonError('Too many requests. Please try again shortly.', 429)
   }
-  const { token } = await context.params
-  const id = shareLinkIdForToken(token)
-  if (!id) return gone()
   try {
     const link = await readShareLink(id)
     const nowMs = Date.now()
@@ -49,6 +51,8 @@ export async function GET(request: NextRequest, context: { params: Promise<{ tok
     const org = orgDoc ? restFieldsToPlain(orgDoc.fields) : null
     // A company scheduled for deletion or lapsed shares nothing (as the security rules close it, §19, §20).
     if (!org || !orgComplianceShareOpen(org, Date.now())) return gone()
+    // A link stops when the admin who made it stops being an active admin here (owner to confirm).
+    if (!(await shareLinkCreatorStillAdmin(link, org))) return gone()
     const timeZone = organizationTimeZone(typeof org.countryCode === 'string' ? org.countryCode : 'GB')
     const documents = orgCompliancePublicDocuments(
       await readComplianceAsServer(link.organizationId),

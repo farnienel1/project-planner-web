@@ -2,13 +2,14 @@
 
 /**
  * The site map's jobs for one organisation day, shared by the Site map page and the Home card (owner 24 Nov).
- * Reads the stores the screen has loaded and never loads them itself. With `geocode` (the full Site map page) it looks up
- * job addresses with no stored pin, remembering misses per organisation for this tab (`sessionStorage`) so a revisit
- * never asks again; without it (the Home card) it never geocodes and shows only jobs with a stored pin.
+ * Reads the stores the screen has loaded and never loads them itself, and never writes (rulebook §1). Which jobs are
+ * shown is the rulebook job status on the day (`siteMapJobShown`: Active and Upcoming, Completed with the toggle,
+ * never inactive); where each goes is `siteMapPlacement` (stored pin, "lat, lng" address text, else the UK postcode
+ * looked up on postcodes.io and remembered in this browser). Jobs that cannot be placed are returned as `unplaced`.
  * Counts are rulebook 1.23.0 §21 `siteMapPins` (the day's bookings that occupy it, each person once).
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { jobKind, siteMapPins } from '@/lib/canonical'
 import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
@@ -16,8 +17,16 @@ import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
-import { geocodeSiteProject } from '@/lib/maps/geocoding'
-import { formatSiteAddress, isMappableSiteAddress, openMapsForProject, resolveStoredCoordinates } from '@/lib/maps/siteAddress'
+import { formatSiteAddress, openMapsForProject } from '@/lib/maps/siteAddress'
+import {
+  lookupPostcodes,
+  readCachedPostcodes,
+  siteMapJobShown,
+  siteMapPlacement,
+  siteMapPlacementUnplaced,
+  type LatLng,
+  type SiteMapPlacement,
+} from '@/lib/maps/siteMapPlacement'
 import type { SiteMapMarker } from '@/components/site-map/SiteMapBoard'
 import type { Project } from '@/types'
 
@@ -34,51 +43,64 @@ export type SiteMapJob = {
   collection: 'projects' | 'smallWorks'
   project: Project
   mapsUrl: string | null
-  geocodeFailed: boolean
-}
-
-/** This tab's remembered geocode misses for one organisation (site ids). */
-export function siteMapGeocodeMissKey(organizationId: string): string {
-  return `pp.siteMap.geocodeMisses:${organizationId}`
-}
-
-function readGeocodeMisses(organizationId: string): Set<string> {
-  try {
-    const raw = window.sessionStorage.getItem(siteMapGeocodeMissKey(organizationId))
-    const parsed: unknown = raw ? JSON.parse(raw) : []
-    return new Set(Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [])
-  } catch {
-    return new Set()
-  }
-}
-
-function writeGeocodeMisses(organizationId: string, ids: Set<string>): void {
-  try {
-    window.sessionStorage.setItem(siteMapGeocodeMissKey(organizationId), JSON.stringify([...ids]))
-  } catch {
-    // storage blocked or full: misses are asked again next time
-  }
+  placement: SiteMapPlacement
 }
 
 export function useSiteMapJobs(input: {
   organizationId: string | null | undefined
   dayKey: string
   timeZone: string
-  /** Look up addresses with no stored pin (the full map only; Home passes false). Default true. */
-  geocode?: boolean
+  /** Completed jobs as well as Active and Upcoming (the map's toggle; off by default). */
+  includeCompleted?: boolean
 }) {
-  const { organizationId, dayKey, timeZone, geocode = true } = input
+  const { organizationId, dayKey, timeZone, includeCompleted = false } = input
   const { projects, smallWorks } = useProjectStore()
   const { bookings } = useBookingStore()
   const { managerSiteBookings } = useManagerScheduleStore()
-  const { operatives } = useOperativeStore()
+  const { operatives, managers } = useOperativeStore()
   const { users } = useOrgUserStore()
-  const [coordinatesBySiteId, setCoordinatesBySiteId] = useState<Record<string, { latitude: number; longitude: number }>>({})
-  const [geocoding, setGeocoding] = useState(false)
-  const geocodedSiteIds = useRef<Set<string>>(new Set())
+  const [postcodes, setPostcodes] = useState<Map<string, LatLng | null>>(() => readCachedPostcodes())
+  /** Postcodes whose lookup could not be reached in this visit: `lookupFailed`, asked again on `online` / focus. */
+  const [failedPostcodes, setFailedPostcodes] = useState<Set<string>>(() => new Set())
+  /** Postcodes asked in this organisation (one request each; never cancelled by a re-render). */
+  const asked = useRef<Set<string>>(new Set())
+  /** Bumped on an organisation change and on unmount: answers of an older generation are dropped. */
+  const generation = useRef(0)
 
-  const liveSites = useMemo(
-    () => mergeProjectsAndSmallWorks(projects, smallWorks).filter((site) => site.isLive),
+  // A new organisation starts its own lookups; answers for the previous one are not applied.
+  useEffect(() => {
+    generation.current += 1
+    asked.current = new Set()
+    const mine = generation.current
+    return () => {
+      if (generation.current === mine) generation.current += 1
+    }
+  }, [organizationId])
+
+  /** Asks again the postcode lookups that could not be reached (Retry, back online, back on the tab). */
+  const retryLookups = useCallback(
+    () =>
+      setFailedPostcodes((current) => {
+        if (current.size === 0) return current
+        for (const postcode of current) asked.current.delete(postcode)
+        return new Set()
+      }),
+    []
+  )
+
+  // Back online, or back on the tab: the lookups that could not be reached are asked again.
+  useEffect(() => {
+    const retry = retryLookups
+    window.addEventListener('online', retry)
+    window.addEventListener('focus', retry)
+    return () => {
+      window.removeEventListener('online', retry)
+      window.removeEventListener('focus', retry)
+    }
+  }, [retryLookups])
+
+  const currentSites = useMemo(
+    () => mergeProjectsAndSmallWorks(projects, smallWorks).filter((site) => site.isLive !== false),
     [projects, smallWorks]
   )
 
@@ -86,94 +108,100 @@ export function useSiteMapJobs(input: {
     () => [
       ...users.map((u) => ({ id: u.id, email: u.email, isActive: u.isActive, formerUserIds: u.formerUserIds })),
       ...operatives.map((o) => ({ id: o.id, email: o.email, isActive: o.isActive })),
+      // `siteMapPins` folds users, `operatives` and `managers` rows into one person each (§21).
+      ...managers.map((m) => ({ id: m.id, email: m.email, isActive: m.isActive })),
     ],
-    [users, operatives]
+    [users, operatives, managers]
+  )
+
+  const counts = useMemo(
+    () =>
+      new Map(
+        siteMapPins({
+          jobs: currentSites.map((site) => ({ id: site.id, isLive: site.isLive })),
+          bookings: bookings.map((booking) => ({
+            projectId: booking.projectId,
+            operativeId: booking.operativeId,
+            date: booking.date,
+            status: String(booking.status ?? ''),
+          })),
+          managerSiteBookings: managerSiteBookings.map((booking) => ({
+            userId: booking.userId,
+            locationId: booking.locationId ?? null,
+            locationType: booking.locationType,
+            date: booking.date,
+          })),
+          dayKey,
+          timeZone,
+          people,
+        }).map((pin) => [pin.jobId, pin])
+      ),
+    [currentSites, bookings, managerSiteBookings, dayKey, timeZone, people]
   )
 
   const jobs = useMemo((): SiteMapJob[] => {
-    const counts = new Map(
-      siteMapPins({
-        jobs: liveSites.map((site) => ({ id: site.id, isLive: site.isLive })),
-        bookings: bookings.map((booking) => ({
-          projectId: booking.projectId,
-          operativeId: booking.operativeId,
-          date: booking.date,
-          status: String(booking.status ?? ''),
-        })),
-        managerSiteBookings: managerSiteBookings.map((booking) => ({
-          userId: booking.userId,
-          locationId: booking.locationId ?? null,
-          locationType: booking.locationType,
-          date: booking.date,
-        })),
-        dayKey,
-        timeZone,
-        people,
-      }).map((pin) => [pin.jobId, pin])
-    )
-    return liveSites
-      .map((site): SiteMapJob => {
-        const address = formatSiteAddress(site)
+    return currentSites
+      .flatMap((site): SiteMapJob[] => {
         const pin = counts.get(site.id)
-        const resolved = resolveStoredCoordinates(site) || coordinatesBySiteId[site.id]
+        const bookedThatDay = (pin?.bookingCount ?? 0) > 0 || (pin?.peopleCount ?? 0) > 0
+        if (!siteMapJobShown(site, { includeCompleted, dayKey, timeZone, bookedThatDay })) return []
+        const placement = siteMapPlacement(site, postcodes, failedPostcodes)
+        const coordinates = 'coordinates' in placement ? placement.coordinates : null
         // The collection decides the kind (`jobKind`, §17), never `jobType` text.
         const source = jobKind(site, site.collection) === 'smallWorks' ? ('smallWork' as const) : ('project' as const)
-        return {
-          id: site.id,
-          label: site.siteName || 'Untitled site',
-          jobNumber: site.jobNumber || '—',
-          address,
-          latitude: resolved?.latitude,
-          longitude: resolved?.longitude,
-          bookingCount: pin?.bookingCount ?? 0,
-          peopleCount: pin?.peopleCount ?? 0,
-          source,
-          collection: source === 'smallWork' ? 'smallWorks' : 'projects',
-          project: site,
-          mapsUrl: openMapsForProject(site),
-          geocodeFailed: Boolean(geocode && isMappableSiteAddress(address) && !resolved),
-        }
+        return [
+          {
+            id: site.id,
+            label: site.siteName || 'Untitled site',
+            jobNumber: site.jobNumber || '—',
+            address: formatSiteAddress(site),
+            latitude: coordinates?.latitude,
+            longitude: coordinates?.longitude,
+            bookingCount: pin?.bookingCount ?? 0,
+            peopleCount: pin?.peopleCount ?? 0,
+            source,
+            collection: source === 'smallWork' ? 'smallWorks' : 'projects',
+            project: site,
+            mapsUrl: openMapsForProject(site),
+            placement,
+          },
+        ]
       })
       .sort((a, b) => a.label.localeCompare(b.label))
-  }, [liveSites, bookings, managerSiteBookings, dayKey, timeZone, people, coordinatesBySiteId, geocode])
+  }, [currentSites, counts, includeCompleted, dayKey, timeZone, postcodes, failedPostcodes])
 
+  // One key per set of postcodes still to look up, so the lookup runs once per change, not per render.
+  const pendingKey = useMemo(
+    () =>
+      [...new Set(jobs.flatMap((job) => (job.placement.kind === 'pending' ? [job.placement.postcode] : [])))]
+        .sort()
+        .join('|'),
+    [jobs]
+  )
+
+  // Only the postcodes are sent (postcodes.io, no key); each batch's answers are applied and remembered in this
+  // browser as they arrive; nothing is written to Firestore. An answer is never cancelled by a later change; it is
+  // dropped only after unmount or an organisation change.
   useEffect(() => {
-    let cancelled = false
-    async function geocodeMissingSites(orgId: string) {
-      const misses = readGeocodeMisses(orgId)
-      const pending = liveSites.filter((site) => {
-        if (resolveStoredCoordinates(site)) return false
-        if (geocodedSiteIds.current.has(site.id) || misses.has(site.id)) return false
-        return isMappableSiteAddress(formatSiteAddress(site))
-      })
-      if (pending.length === 0) {
-        setGeocoding(false)
-        return
-      }
-      setGeocoding(true)
-      const next: Record<string, { latitude: number; longitude: number }> = {}
-      for (const site of pending) {
-        if (cancelled) return
-        const coords = await Promise.race([
-          geocodeSiteProject(site),
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), 8_000)),
-        ])
-        // A miss or a hung lookup must not leave "Locating sites…" up on the next pass.
-        geocodedSiteIds.current.add(site.id)
-        if (coords) next[site.id] = coords
-        else misses.add(site.id)
-      }
-      writeGeocodeMisses(orgId, misses)
-      if (!cancelled && Object.keys(next).length > 0) setCoordinatesBySiteId((current) => ({ ...current, ...next }))
-      if (!cancelled) setGeocoding(false)
-    }
-    // Home never geocodes; `geocoding` starts false and stays false there.
-    if (!geocode) return
-    if (organizationId && liveSites.length > 0) void geocodeMissingSites(organizationId)
-    return () => {
-      cancelled = true
-    }
-  }, [organizationId, liveSites, geocode])
+    if (!organizationId || !pendingKey) return
+    const toAsk = pendingKey.split('|').filter((postcode) => !asked.current.has(postcode))
+    if (toAsk.length === 0) return
+    for (const postcode of toAsk) asked.current.add(postcode)
+    const mine = generation.current
+    void lookupPostcodes(toAsk, {
+      onBatch: (found) => {
+        if (generation.current !== mine) return
+        setPostcodes((current) => {
+          const next = new Map(current)
+          for (const [key, value] of found) next.set(key, value)
+          return next
+        })
+      },
+    }).then(({ failed }) => {
+      if (generation.current !== mine || failed.length === 0) return
+      setFailedPostcodes((current) => new Set([...current, ...failed]))
+    })
+  }, [organizationId, pendingKey])
 
   const markers = useMemo(
     (): SiteMapMarker[] =>
@@ -191,5 +219,15 @@ export function useSiteMapJobs(input: {
     [jobs]
   )
 
-  return { jobs, markers, geocoding, setCoordinatesBySiteId }
+  const unplaced = useMemo(() => jobs.filter((job) => siteMapPlacementUnplaced(job.placement)), [jobs])
+  const lookupFailedCount = useMemo(() => unplaced.filter((job) => job.placement.kind === 'lookupFailed').length, [unplaced])
+
+  return {
+    jobs,
+    markers,
+    unplaced,
+    lookupFailedCount,
+    retryLookups,
+    locating: Boolean(organizationId) && pendingKey !== '',
+  }
 }

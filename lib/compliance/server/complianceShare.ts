@@ -2,13 +2,14 @@ import { createHash, randomBytes } from 'node:crypto'
 import { adminGoogleAccessToken, signWithServiceAccount } from '@/lib/owner/identityToolkitAdmin'
 import { firestoreDocumentsBase } from '@/lib/owner/googleApis'
 import { firestoreValue } from '@/lib/stripe/writeOrgBilling'
-import { firestoreGet, restFieldsToPlain } from '@/lib/owner/firestoreRest'
+import { FirestoreReadError, firestoreGet, restFieldsToPlain } from '@/lib/owner/firestoreRest'
 import {
   ORG_COMPLIANCE_AUDIT_COLLECTION,
   ORG_COMPLIANCE_SHARE_LINKS_COLLECTION,
   orgComplianceDocumentPath,
   parseOrgComplianceDocuments,
   parseOrgComplianceShareLink,
+  orgComplianceShareCreatorActive,
   type OrgComplianceDocuments,
   type OrgComplianceShareLink,
 } from '@/lib/canonical/orgCompliance'
@@ -113,7 +114,9 @@ export async function readComplianceAsCaller(
     const doc = await firestoreGet(idToken, path)
     return { ok: true, documents: parseOrgComplianceDocuments(doc ? restFieldsToPlain(doc.fields) : null, { organizationId }) }
   } catch (error) {
-    return { ok: false, status: String(error).includes('Could not read') ? 403 : 503 }
+    // 401 / 403: the rules refused this caller. Anything else (a network error, a 5xx) is an outage, never a 403.
+    const status = error instanceof FirestoreReadError ? error.status : 0
+    return { ok: false, status: status === 401 || status === 403 ? 403 : 503 }
   }
 }
 
@@ -128,6 +131,25 @@ export async function readOrganizationPublicName(organizationId: string): Promis
   const org = await adminGet(`organizations/${encodeURIComponent(organizationId)}`).catch(() => null)
   const name = org && typeof org.name === 'string' ? org.name.trim() : ''
   return name || 'Company'
+}
+
+/**
+ * Whether the link's creator is still an active admin of the organisation (`orgComplianceShareCreatorActive`). Reads
+ * their users document, and their membership here only when that document names another company. A read that fails
+ * counts as not an admin, so the link shares nothing.
+ */
+export async function shareLinkCreatorStillAdmin(link: OrgComplianceShareLink, organization: Record<string, unknown>): Promise<boolean> {
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(link.createdBy)) return false
+  try {
+    const user = await adminGet(`users/${encodeURIComponent(link.createdBy)}`)
+    const home = user && typeof user.organizationId === 'string' ? user.organizationId.trim().toLowerCase() : ''
+    const membership = home === link.organizationId.toLowerCase()
+      ? null
+      : await adminGet(`users/${encodeURIComponent(link.createdBy)}/orgMemberships/${encodeURIComponent(link.organizationId)}`)
+    return orgComplianceShareCreatorActive({ organizationId: link.organizationId, createdBy: link.createdBy, organization, user, membership })
+  } catch {
+    return false
+  }
 }
 
 export async function readShareLink(id: string): Promise<OrgComplianceShareLink | null> {
