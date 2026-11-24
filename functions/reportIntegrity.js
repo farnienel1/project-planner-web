@@ -137,12 +137,12 @@ function createReportIntegrityCheck({ store, canonical, logger, serverTimestamp 
     const user = canonical.parseUserDocument(userId, raw, {})
     if (!user) return { ...none, raw }
     const listOf = (value) => (Array.isArray(value) ? value.map(trimmed).filter(Boolean) : [])
-    // Rulebook 1.88.0 §8: the person's line manager in THIS organisation — their users document at home, else their
-    // membership's `lineManager` map here when it holds one (`organizationLineManagerFields`).
-    const membership = canonical.isHomeOrganization(raw, orgId)
+    // Rulebook 1.88.0 §8: the person's line manager in THIS organisation — their users document at home, else this
+    // organisation's `memberLineManagers/{uid}` record when there is one (`organizationLineManagerFields`).
+    const record = canonical.isHomeOrganization(raw, orgId)
       ? null
-      : await store.getDoc(`users/${userId}/orgMemberships/${orgId}`).catch(() => null)
-    const { source: _lineManagerSource, ...lineManager } = canonical.organizationLineManagerFields({ organizationId: orgId, user: raw, membership })
+      : await store.getDoc(`organizations/${orgId}/memberLineManagers/${userId}`).catch(() => null)
+    const { source: _lineManagerSource, ...lineManager } = canonical.organizationLineManagerFields({ organizationId: orgId, user: raw, record })
     void _lineManagerSource
     const managerIds = [
       ...new Set([...listOf(lineManager.assignedManagerUserIds), trimmed(lineManager.assignedManagerUserId)].filter((id) => DOC_ID.test(id))),

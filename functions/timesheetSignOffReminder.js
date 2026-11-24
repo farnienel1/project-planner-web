@@ -79,6 +79,7 @@ async function mapLimited(items, limit, worker) {
  *   users(orgId) → [{ id, data }]                          (users where organizationId == orgId)
  *   usersByIds?(ids) → [{ id, data }]                      (users/{id} that exist)
  *   memberships?(orgId, ids) → { [id]: data }               (users/{id}/orgMemberships/{orgId} that exist)
+ *   memberLineManagers?(orgId, ids) → { [id]: data }        (organizations/{orgId}/memberLineManagers/{id} that exist, 1.88.0)
  *   operatives?(orgId) → [{ id, data }]                    (operatives rows: email, linkedUserId, userId, uid)
  *   sheetsForRun(orgId, startDayKey, startMs) → [{ id, data }]
  *     (settings where weekStartKey == startDayKey, and settings where weekStart within a day of startMs as a Timestamp
@@ -124,6 +125,11 @@ function createTimesheetSignOffReminders({ store, canonical, logger = console, s
     const anchoredRows = anchoredIds.length && typeof store.usersByIds === 'function' ? await store.usersByIds(anchoredIds) : []
     const memberships =
       anchoredRows.length && typeof store.memberships === 'function' ? await store.memberships(orgId, anchoredRows.map((row) => row.id)) : {}
+    // Rulebook 1.88.0 §8: an anchored person's line manager here is this organisation's `memberLineManagers` record.
+    const lineManagerRecords =
+      anchoredRows.length && typeof store.memberLineManagers === 'function'
+        ? await store.memberLineManagers(orgId, anchoredRows.map((row) => row.id))
+        : {}
     const membersRoleOf = (id) => {
       const key = Object.keys(members).find((row) => row.toLowerCase() === trimmed(id).toLowerCase())
       return key == null ? undefined : members[key]
@@ -135,6 +141,7 @@ function createTimesheetSignOffReminders({ store, canonical, logger = console, s
           creatorUserId,
           membersRole: membersRoleOf(row.id),
           membership: memberships[row.id] ? plain(memberships[row.id]) : null,
+          lineManagerRecord: lineManagerRecords[row.id] ? plain(lineManagerRecords[row.id]) : null,
         })
       )
       .filter(Boolean)
@@ -292,6 +299,15 @@ function createAdminSignOffReminderStore(db, Timestamp) {
         const refs = ids.slice(at, at + GET_ALL_CHUNK).map((id) => db.doc(`users/${id}/orgMemberships/${orgId}`))
         if (refs.length === 0) continue
         for (const doc of await db.getAll(...refs)) if (doc.exists) out[doc.ref.parent.parent.id] = doc.data()
+      }
+      return out
+    },
+    memberLineManagers: async (orgId, ids) => {
+      const out = {}
+      for (let at = 0; at < ids.length; at += GET_ALL_CHUNK) {
+        const refs = ids.slice(at, at + GET_ALL_CHUNK).map((id) => db.doc(`organizations/${orgId}/memberLineManagers/${id}`))
+        if (refs.length === 0) continue
+        for (const doc of await db.getAll(...refs)) if (doc.exists) out[doc.id] = doc.data()
       }
       return out
     },

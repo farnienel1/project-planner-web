@@ -179,8 +179,8 @@ export function organizationSelfManageFlags(input: {
  *   - `unreadIds`: anchored people with no document in `users` that are not in `missingIds` (a denied or failed read):
  *     the app keeps their last known row (or a placeholder) and never drops them for it.
  * An anchored person whose document is confirmed missing (`missingIds`) is left out.
- * 1.88.0: each person whose home is another organisation carries this organisation's line manager when their
- * membership here holds one (`withOrganizationLineManager`).
+ * 1.88.0: each person whose home is another organisation carries this organisation's line manager when it holds a
+ * record for them (`memberLineManagers`: lower-case users id → record data, `withOrganizationLineManager`).
  */
 export function rosterMembersForOrganization<T extends RosterDocument & Record<string, unknown>>(input: {
   organizationId: string
@@ -189,6 +189,8 @@ export function rosterMembersForOrganization<T extends RosterDocument & Record<s
   creatorUserId?: string | null
   signedInUserId?: string | null
   memberships?: Record<string, Record<string, unknown> | null | undefined> | null
+  /** 1.88.0: this organisation's `memberLineManagers` records (lower-case users id → record data). */
+  memberLineManagers?: Record<string, Record<string, unknown> | null | undefined> | null
   missingIds?: ReadonlyArray<string> | null
   /** 1.81.0: this organisation's `memberNames` entries (`parseMemberNameDocuments`); each is laid over its person. */
   memberNames?: MemberNames | null
@@ -220,9 +222,12 @@ export function rosterMembersForOrganization<T extends RosterDocument & Record<s
   const people = applyMemberNames(folded.people, input?.memberNames).map((person) => {
     const id = text(person.id)
     const membersRole = Object.entries(members).find(([key]) => key.toLowerCase() === id.toLowerCase())?.[1]
-    // 1.88.0: a member whose home is elsewhere reads this organisation's line manager (their membership's
-    // `lineManager` map) when it holds one; everyone else exactly as before (`withOrganizationLineManager`).
-    const here = withOrganizationLineManager(person, { organizationId: org, membership: input?.memberships?.[id] ?? null })
+    // 1.88.0: a member whose home is elsewhere reads this organisation's line manager (its `memberLineManagers`
+    // record) when it holds one; everyone else exactly as before (`withOrganizationLineManager`).
+    const here = withOrganizationLineManager(person, {
+      organizationId: org,
+      record: input?.memberLineManagers?.[id.toLowerCase()] ?? input?.memberLineManagers?.[id] ?? null,
+    })
     return {
       ...here,
       organizationLevel: organizationLevelFor({

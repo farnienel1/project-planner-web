@@ -5,6 +5,7 @@ import {
   invitePayProfileCopyWrite,
 } from '@/lib/canonical/inviteAccept'
 import { PAY_PROFILES_COLLECTION } from '@/lib/canonical/payProfile'
+import { MEMBER_LINE_MANAGERS_COLLECTION } from '@/lib/canonical/orgLineManagers'
 import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
 import { inviteAcceptPlaceholderFields } from '@/lib/canonical/ghostOperatives'
 import {
@@ -231,6 +232,11 @@ async function acceptIntoAnotherCompany(authUid: string, record: InvitationRecor
   if (!writes) throw new Error('Invitation not found')
   const batch = writeBatch(db)
   batch.set(doc(db, 'users', authUid, 'orgMemberships', writes.organizationId), writes.membership)
+  // Rulebook 1.88.0 §8, §11: the line manager the inviter set becomes this company's own record for the person
+  // (`memberLineManagers/{uid}`, exactly as on the invitation; the rules accept it only in this accept batch).
+  if (writes.lineManagerRecord) {
+    batch.set(doc(db, 'organizations', writes.organizationId, MEMBER_LINE_MANAGERS_COLLECTION, authUid), writes.lineManagerRecord)
+  }
   batch.update(doc(db, 'organizations', writes.organizationId), { [writes.membersField]: writes.role })
   batch.update(doc(db, 'invitations', invitationId), invitationUsedWriteFields(now).set)
   try {

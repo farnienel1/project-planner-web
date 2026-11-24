@@ -8,7 +8,6 @@ import {
   organizationIdsMatch,
   organizationSelfManageFlags,
   provisionalOrganizationId,
-  withOrganizationLineManager,
   webSessionOrganizationStorageKey,
   type OrgAccessProbe,
 } from '@/lib/canonical'
@@ -269,14 +268,10 @@ export function applyDeviceOrgMembership(
     }
   }
 
-  // Rulebook 1.88.0 §8, §11: in a company that is not their home, the signed-in person's line manager here is their
-  // membership's `lineManager` map when it holds one (`withOrganizationLineManager`), else the users document as before.
-  const here = (profile: User): User =>
-    withOrganizationLineManager(profile, { organizationId, membership, homeOrganizationId: documentOrganizationId })
   const membershipRole = membership.role || listedRole
   const stub = explicitPermissionKeys(membership).size === 0
   if (stub && (isAdminRole(membershipRole) || user.isSuperAdmin === true)) {
-    return here({
+    return {
       ...user,
       organizationId,
       homeOrganizationId: user.homeOrganizationId ?? documentOrganizationId,
@@ -284,7 +279,7 @@ export function applyDeviceOrgMembership(
       isSuperAdmin: user.isSuperAdmin === true || membership.isSuperAdmin === true,
       isActive: membership.accountActive !== false,
       permissions: staffPermissions(Role.ADMIN),
-    })
+    }
   }
 
   const permissions = membershipPermissions(membership)
@@ -301,7 +296,7 @@ export function applyDeviceOrgMembership(
         ? Role.MANAGER
         : roleFrom(membership.role, user.role)
 
-  return here({
+  return {
     ...user,
     organizationId,
     homeOrganizationId: user.homeOrganizationId ?? documentOrganizationId,
@@ -317,7 +312,7 @@ export function applyDeviceOrgMembership(
       materials: operativeMode ? permissions.materials : true,
       siteAudit: operativeMode ? permissions.siteAudit : true,
     },
-  })
+  }
 }
 
 /**

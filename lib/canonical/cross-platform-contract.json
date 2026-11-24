@@ -3551,8 +3551,7 @@
             "invitedAtMs": 1790937000000,
             "acceptedAtMs": 1790937000000,
             "updatedAtMs": 1790937000000,
-            "hasLegacyFlatFlags": false,
-            "lineManager": null
+            "hasLegacyFlatFlags": false
           }
         },
         {
@@ -3643,8 +3642,7 @@
             "invitedAtMs": 1790937000000,
             "acceptedAtMs": 1790937000000,
             "updatedAtMs": 1790937000000,
-            "hasLegacyFlatFlags": false,
-            "lineManager": null
+            "hasLegacyFlatFlags": false
           }
         },
         {
@@ -3695,8 +3693,7 @@
             "invitedAtMs": null,
             "acceptedAtMs": null,
             "updatedAtMs": null,
-            "hasLegacyFlatFlags": true,
-            "lineManager": null
+            "hasLegacyFlatFlags": true
           }
         }
       ]

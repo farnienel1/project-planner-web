@@ -53,7 +53,8 @@ import {
   memberNameWriteFields,
   documentOrganizationId,
   ORG_LINE_MANAGER_HOME_UNKNOWN_MESSAGE,
-  ORG_LINE_MANAGER_NO_MEMBERSHIP_MESSAGE,
+  MEMBER_LINE_MANAGERS_COLLECTION,
+  memberLineManagerWriteFields,
   orgLineManagerEditTarget,
 } from '@/lib/canonical'
 import { currentMemberNames, overlayMemberName } from '@/lib/staff/memberNamesLive'
@@ -369,35 +370,27 @@ const prepareSaveUserImpl: UserStoreState['prepareSaveUser'] = async (user, orga
   }
   // Rulebook 1.88.0 §8, §11 `orgLineManagerEditTarget`: a line-manager change made in the person's home company is
   // saved on their users document (as before); in any other company it is that company's own line manager for them —
-  // the `lineManager` map on their membership here, written by this company's admin — and the users document's line
-  // manager is never touched. An unknown home (a failed read) refuses the change rather than guess.
+  // its record `organizations/{orgId}/memberLineManagers/{uid}` (`memberLineManagerWriteFields`), written by this
+  // company's admin — and the users document's line manager is never touched. Never on the membership (owner decision
+  // 24 Nov, review of #455 fix (a)). An unknown home (a failed read) refuses the change rather than guess.
   const lineManagerKeys = ['assignedManagerUserIds', 'assignedManagerUserId', 'hasNoLineManager']
   const lineManagerTarget = orgLineManagerEditTarget({ organizationId: orgId, homeOrganizationId })
-  let membershipLineManager: Record<string, unknown> | null = null
+  let lineManagerRecord: Record<string, unknown> | null = null
   if (lineManagerKeys.some((key) => key in payload) && lineManagerTarget !== 'users') {
     for (const key of lineManagerKeys) delete payload[key]
-    if (!lineManagerTarget) throw new Error(ORG_LINE_MANAGER_HOME_UNKNOWN_MESSAGE)
-    const membershipSnap = await getDoc(doc(db, 'users', user.id, 'orgMemberships', orgId))
-    if (!membershipSnap.exists()) throw new Error(ORG_LINE_MANAGER_NO_MEMBERSHIP_MESSAGE)
-    const write = orgMembershipWriteFields({
-      organizationId: orgId,
-      stored: membershipSnap.data() as Record<string, unknown>,
-      next: {
-        lineManager: {
-          assignedManagerUserIds: user.assignedManagerUserIds ?? [],
-          assignedManagerUserId: user.assignedManagerUserId ?? null,
-          hasNoLineManager: user.hasNoLineManager === true,
-        },
-      },
-      writer: 'admin',
-      now: serverTimestamp(),
+    if (!lineManagerTarget || !orgId) throw new Error(ORG_LINE_MANAGER_HOME_UNKNOWN_MESSAGE)
+    lineManagerRecord = memberLineManagerWriteFields({
+      assignedManagerUserIds: user.assignedManagerUserIds ?? [],
+      assignedManagerUserId: user.assignedManagerUserId ?? null,
+      hasNoLineManager: user.hasNoLineManager === true,
+      writerUserId: saverId,
+      platform: 'web',
     })
-    membershipLineManager = (write?.fields.lineManager as Record<string, unknown> | undefined) ?? null
   }
   // Outside the person's home company the users document is not this company's to write: with nothing left for it
   // (only write metadata), it is not updated at all.
   const accountUpdateNeeded =
-    lineManagerTarget !== 'membership' || Object.keys(payload).some((key) => !['updatedAt', 'updatedBy', 'updatedFrom'].includes(key))
+    lineManagerTarget !== 'record' || Object.keys(payload).some((key) => !['updatedAt', 'updatedBy', 'updatedFrom'].includes(key))
   const email = user.email.toLowerCase().trim()
   const [sameEmail, linkedRows] = orgId
     ? await Promise.all([sameEmailUserRefs(user, orgId, previousEmail, saverIsAdmin), linkedStaffRefs(orgId, user, previousEmail)])
@@ -409,8 +402,8 @@ const prepareSaveUserImpl: UserStoreState['prepareSaveUser'] = async (user, orga
   if (accountUpdateNeeded) {
     batch.update(doc(db, 'users', user.id), sharedDocumentPayWrite(payload, { privatePay: orgId ? privatePayFor(orgId) : false }))
   }
-  if (membershipLineManager && orgId) {
-    batch.update(doc(db, 'users', user.id, 'orgMemberships', orgId), { lineManager: membershipLineManager, updatedAt: serverTimestamp() })
+  if (lineManagerRecord && orgId) {
+    batch.set(doc(db, 'organizations', orgId, MEMBER_LINE_MANAGERS_COLLECTION, user.id), { ...lineManagerRecord, updatedAt: serverTimestamp() })
   }
   if (orgId) {
     for (const row of historyRows) batch.set(doc(db, 'organizations', orgId, 'operativeDayRateHistory', row.id), row.fields)

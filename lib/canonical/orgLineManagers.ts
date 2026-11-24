@@ -10,26 +10,33 @@
  * The rule (the 1.30.2 self-manage pattern, `organizationSelfManageFlags`):
  *   - in the person's home organisation (their users document's `organizationId`), the users document, exactly as
  *     before 1.88.0;
- *   - in any other organisation, the `lineManager` map on their membership there
- *     (`users/{uid}/orgMemberships/{orgId}.lineManager = { assignedManagerUserIds, assignedManagerUserId,
- *     hasNoLineManager }`), written only by an admin of that organisation (or copied from the invitation they
- *     accepted, set under the 1.33.0 line-manager lock);
- *   - a membership with no `lineManager` map (every membership written before 1.88.0, including the flat copies
- *     older iOS builds made of the whole users document) reads the users document, exactly as before — nobody loses a
- *     line manager they have today (guardrail 3).
- * It is a nested map, never the flat keys, so a pre-1.10.0 flat copy on a membership is never read as this
- * company's choice. The security rules read the same source (`firestore.rules` `lmData`, `storage.rules`
- * `callerLineManagesUser`). Pure.
+ *   - in any other organisation, that organisation's own record `organizations/{orgId}/memberLineManagers/{uid}`
+ *     (`MEMBER_LINE_MANAGERS_COLLECTION`), which holds ONLY the three line-manager keys and write metadata, is read by
+ *     every active member of the organisation and is written only by its admins — never by the person — or created
+ *     once by the invitee from the invitation they accept (exactly as the inviter set it, under the 1.33.0 lock);
+ *   - with no record, the users document is shown (display, as before 1.88.0: nobody loses a line manager they see
+ *     today, guardrail 3), but the security rules give that home-company line manager no rights in this organisation.
+ * Owner decision 24 Nov (review of #455, fix (a)): the record is its own document, never a field on the membership,
+ * because memberships written by iPhone builds before 1.10.0 hold a copy of the whole users document (pay, phone) and
+ * stay readable to the person and the organisation's admins only. The security rules read the same record
+ * (`firestore.rules` `lmData`, `storage.rules` `callerLineManagesUser`). Pure.
  */
 
 import { documentOrganizationId } from './peopleDocuments'
 
-/** The membership field holding this organisation's line manager for a member whose home is elsewhere. */
-export const ORG_MEMBERSHIP_LINE_MANAGER_FIELD = 'lineManager' as const
+/** The organisation subcollection holding this organisation's line manager for members whose home is elsewhere. */
+export const MEMBER_LINE_MANAGERS_COLLECTION = 'memberLineManagers' as const
 
-/** Shown when an admin sets a line manager for a member here who has no membership document to hold it. */
-export const ORG_LINE_MANAGER_NO_MEMBERSHIP_MESSAGE =
-  "This person's company record here could not be found, so their line manager can't be saved yet. Ask them to open this company in the app once, then try again."
+/** The only data keys a `memberLineManagers/{uid}` record holds (plus `updatedAt` / `updatedBy` / `updatedFrom`). */
+export const MEMBER_LINE_MANAGER_FIELDS = ['assignedManagerUserIds', 'assignedManagerUserId', 'hasNoLineManager'] as const
+
+/** `organizations/{orgId}/memberLineManagers/{uid}`; null when either id is blank or holds a slash. */
+export function memberLineManagerPath(organizationId: unknown, userId: unknown): string | null {
+  const org = text(organizationId)
+  const uid = text(userId)
+  if (!org || !uid || org.includes('/') || uid.includes('/')) return null
+  return `organizations/${org}/${MEMBER_LINE_MANAGERS_COLLECTION}/${uid}`
+}
 
 /** Shown when the person's home company could not be read, so where to save is unknown (fail closed). */
 export const ORG_LINE_MANAGER_HOME_UNKNOWN_MESSAGE = "Couldn't check this person's company — try saving the line manager again."
@@ -40,7 +47,7 @@ export type OrgLineManagerFields = {
   hasNoLineManager: boolean
 }
 
-export type OrgLineManagerSource = 'users' | 'membership'
+export type OrgLineManagerSource = 'users' | 'record'
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
@@ -61,15 +68,14 @@ function idList(many: unknown, one: unknown): string[] {
 }
 
 /**
- * Reads a `lineManager` map (a membership's, or any object carrying the three keys). Null when `value` is not a map, or an empty one —
- * the membership has no line manager of its own for this organisation. Ids trimmed, de-duplicated without case, in
- * stored order; `assignedManagerUserIds` falls back to the single id; with `hasNoLineManager` no ids are returned.
+ * Reads a `memberLineManagers/{uid}` record's data (or any object carrying the three keys). Null when `value` is not a
+ * map or holds none of the three keys — no line manager of this organisation's own. Ids trimmed, de-duplicated without
+ * case, in stored order; `assignedManagerUserIds` falls back to the single id; with `hasNoLineManager` no ids.
  */
 export function parseOrgLineManager(value: unknown): OrgLineManagerFields | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const row = value as Record<string, unknown>
-  // An empty map holds no choice (the security rules read `{}` as "none here" too).
-  if (Object.keys(row).length === 0) return null
+  if (!MEMBER_LINE_MANAGER_FIELDS.some((key) => key in row)) return null
   const hasNoLineManager = row.hasNoLineManager === true
   const ids = hasNoLineManager ? [] : idList(row.assignedManagerUserIds, row.assignedManagerUserId)
   return { assignedManagerUserIds: ids, assignedManagerUserId: ids[0] ?? null, hasNoLineManager }
@@ -94,22 +100,38 @@ export function isHomeOrganization(user: Record<string, unknown> | null | undefi
 }
 
 /**
+ * The organisation's records (`memberLineManagers` documents as `{ id, data }`) as lower-case users id → fields; a
+ * record holding none of the three keys is left out.
+ */
+export function parseMemberLineManagerDocuments(
+  docs: ReadonlyArray<{ id: string; data: Record<string, unknown> | null | undefined }> | null | undefined
+): Record<string, OrgLineManagerFields> {
+  const out: Record<string, OrgLineManagerFields> = {}
+  for (const row of docs ?? []) {
+    const id = text(row?.id).toLowerCase()
+    const parsed = id ? parseOrgLineManager(row?.data) : null
+    if (parsed) out[id] = parsed
+  }
+  return out
+}
+
+/**
  * The person's line-manager fields in `organizationId` (see file header): the users document's in their home
- * organisation, or when the membership here holds no `lineManager` map; otherwise the membership's. `user` is the
- * person's users document (its `organizationId` decides home), `membership` their `users/{uid}/orgMemberships/{orgId}`
- * document when read (null / missing: the users document). The users document's fields are returned as stored.
+ * organisation, or when this organisation holds no record for them; otherwise the record's. `user` is the person's
+ * users document (its `organizationId` decides home), `record` the data of `organizations/{orgId}/memberLineManagers/{uid}`
+ * when read (null / missing: the users document, for display only — the security rules give it no rights here). The
+ * users document's fields are returned as stored.
  */
 export function organizationLineManagerFields(input: {
   organizationId: string
   user?: Record<string, unknown> | null
-  membership?: Record<string, unknown> | null
+  record?: Record<string, unknown> | null
 }): OrgLineManagerFields & { source: OrgLineManagerSource } {
   const user = input?.user && typeof input.user === 'object' ? input.user : null
   const fromUsers = { ...storedFields(user), source: 'users' as const }
   if (isHomeOrganization(user, input?.organizationId)) return fromUsers
-  const membership = input?.membership && typeof input.membership === 'object' ? input.membership : null
-  const parsed = membership ? parseOrgLineManager(membership[ORG_MEMBERSHIP_LINE_MANAGER_FIELD]) : null
-  return parsed ? { ...parsed, source: 'membership' } : fromUsers
+  const parsed = parseOrgLineManager(input?.record)
+  return parsed ? { ...parsed, source: 'record' } : fromUsers
 }
 
 /**
@@ -122,12 +144,12 @@ export function organizationLineManagerFields(input: {
  */
 export function withOrganizationLineManager<T extends object>(
   person: T,
-  input: { organizationId: string; membership?: Record<string, unknown> | null; homeOrganizationId?: unknown }
+  input: { organizationId: string; record?: Record<string, unknown> | null; homeOrganizationId?: unknown }
 ): T {
   if (!person || typeof person !== 'object') return person
   const row = person as unknown as Record<string, unknown>
   const user = input?.homeOrganizationId !== undefined ? { ...row, organizationId: input.homeOrganizationId } : row
-  const fields = organizationLineManagerFields({ organizationId: input?.organizationId, user, membership: input?.membership })
+  const fields = organizationLineManagerFields({ organizationId: input?.organizationId, user, record: input?.record })
   if (fields.source === 'users') return person
   const same =
     row.hasNoLineManager === fields.hasNoLineManager &&
@@ -146,7 +168,7 @@ export function withOrganizationLineManager<T extends object>(
 
 /**
  * Where a line-manager change made in `organizationId` is saved: `users` in the person's home organisation (their
- * users document, as before 1.88.0), `membership` in any other (their membership's `lineManager` map). Null when the
+ * users document, as before 1.88.0), `record` in any other (`memberLineManagers/{uid}` here). Null when the
  * open organisation is blank or the home organisation is unknown (a failed read): the save is refused
  * (`ORG_LINE_MANAGER_HOME_UNKNOWN_MESSAGE`), never written to the wrong company.
  */
@@ -154,31 +176,58 @@ export function orgLineManagerEditTarget(input: { organizationId: unknown; homeO
   const org = text(input?.organizationId)
   const home = documentOrganizationId(input?.homeOrganizationId)
   if (!org || !home) return null
-  return home.trim().toLowerCase() === org.toLowerCase() ? 'users' : 'membership'
+  return home.trim().toLowerCase() === org.toLowerCase() ? 'users' : 'record'
 }
 
 /**
- * The `lineManager` map an admin writes on a membership (whole, the three keys together): ids trimmed and
- * de-duplicated without case, the first as the single id; "No line manager" stores no ids.
+ * The `memberLineManagers/{uid}` record an admin writes (a whole-document set, the three keys together): ids trimmed
+ * and de-duplicated without case, the first as the single id; "No line manager" stores no ids. With `writerUserId` /
+ * `platform` it adds `updatedBy` / `updatedFrom` (the app adds its server `updatedAt`).
  */
-export function orgMembershipLineManagerFields(next: {
+export function memberLineManagerWriteFields(next: {
   assignedManagerUserIds?: ReadonlyArray<unknown> | null
   assignedManagerUserId?: unknown
   hasNoLineManager?: unknown
-}): OrgLineManagerFields {
+  writerUserId?: unknown
+  platform?: unknown
+}): OrgLineManagerFields & { updatedBy?: string; updatedFrom?: string } {
   const hasNoLineManager = next?.hasNoLineManager === true
   const ids = hasNoLineManager ? [] : idList(next?.assignedManagerUserIds, next?.assignedManagerUserId)
-  return { assignedManagerUserIds: ids, assignedManagerUserId: ids[0] ?? null, hasNoLineManager }
+  const out: OrgLineManagerFields & { updatedBy?: string; updatedFrom?: string } = {
+    assignedManagerUserIds: ids,
+    assignedManagerUserId: ids[0] ?? null,
+    hasNoLineManager,
+  }
+  const writer = text(next?.writerUserId)
+  if (writer) out.updatedBy = writer
+  const platform = text(next?.platform)
+  if (platform === 'web' || platform === 'ios' || platform === 'android') out.updatedFrom = platform
+  return out
+}
+
+/** Whether two line-manager field sets are the same choice (ids in order, exactly as stored). */
+export function sameOrgLineManager(a: OrgLineManagerFields | null | undefined, b: OrgLineManagerFields | null | undefined): boolean {
+  if (!a || !b) return false
+  return (
+    a.hasNoLineManager === b.hasNoLineManager &&
+    a.assignedManagerUserIds.length === b.assignedManagerUserIds.length &&
+    a.assignedManagerUserIds.every((id, at) => id === b.assignedManagerUserIds[at])
+  )
 }
 
 /**
- * The `lineManager` map a membership created from an invitation carries (`inviteMembershipWrites`): the invitation's
- * three line-manager keys exactly as stored (the security rules compare them with the invitation), or null when the
- * invitation stores none.
+ * The `memberLineManagers/{uid}` record the invitee creates when accepting into a company that is not their home
+ * (`inviteMembershipWrites` → `lineManagerRecord`): the invitation's three line-manager keys exactly as stored (the
+ * security rules compare them with the invitation), or null when the invitation stores none — or stores one of them in
+ * a shape the record cannot copy exactly (ids not a list, the single id not text, the flag not a boolean), so a
+ * malformed invitation never makes the whole accept batch fail; an admin then sets the line manager here.
  */
-export function invitationLineManagerMap(invitation: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
+export function invitationLineManagerRecord(invitation: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
   const row = invitation && typeof invitation === 'object' ? invitation : {}
   if (!('assignedManagerUserIds' in row) && !('assignedManagerUserId' in row) && !('hasNoLineManager' in row)) return null
+  if ('assignedManagerUserIds' in row && !Array.isArray(row.assignedManagerUserIds)) return null
+  if (row.assignedManagerUserId != null && typeof row.assignedManagerUserId !== 'string') return null
+  if (row.hasNoLineManager != null && typeof row.hasNoLineManager !== 'boolean') return null
   return {
     assignedManagerUserIds: Array.isArray(row.assignedManagerUserIds) ? [...row.assignedManagerUserIds] : [],
     assignedManagerUserId: typeof row.assignedManagerUserId === 'string' ? row.assignedManagerUserId : null,

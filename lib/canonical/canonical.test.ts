@@ -8374,9 +8374,10 @@ test('1.11.0 invites: the invitation is the only source of role, permissions, pa
   assert.deepEqual(writes.membership, {
     organizationId: 'ORG-B', role: 'manager', status: 'active', isSuperAdmin: false, accountActive: true,
     permissions: { manager: true, projects: true }, invitationId: 'inv-1', invitedAt: 5, acceptedAt: 5, updatedAt: 5, invitedBy: 'adm',
-    // 1.88.0: the invited line manager is this organisation's line manager for the person, as stored on the invitation.
-    lineManager: { assignedManagerUserIds: ['m1', 'm2'], assignedManagerUserId: null, hasNoLineManager: false },
   })
+  // 1.88.0 (review of #455, fix (a)): the invited line manager is this organisation's own record for the person, as
+  // stored on the invitation — never on the membership.
+  assert.deepEqual(writes.lineManagerRecord, { assignedManagerUserIds: ['m1', 'm2'], assignedManagerUserId: null, hasNoLineManager: false })
   assert.equal(writes.membersField, 'members.u-1')
   assert.equal(r3InviteMembership({ invitation: {}, invitationId: 'inv', authUid: 'u', now: 1 }), null)
 })
@@ -20300,35 +20301,41 @@ test('1.87.0: signedTimesheetLineBooking gives the stored booking id of a live l
   assert.equal(R112.signedTimesheetLineBooking({ id: 'leave-1' }), null)
 })
 
-test('1.88.0 line managers per organisation: home reads the users document, elsewhere the membership map', () => {
+test('1.88.0 line managers per organisation: home reads the users document, elsewhere the memberLineManagers record', () => {
   const jane = { id: 'jane', organizationId: 'A', email: 'jane@x.test', assignedManagerUserIds: ['bobA'], assignedManagerUserId: 'bobA' }
-  // Home organisation: the users document, whatever the membership says.
-  const home = R112.organizationLineManagerFields({
-    organizationId: 'a',
-    user: jane,
-    membership: { lineManager: { assignedManagerUserIds: ['carolB'], hasNoLineManager: false } },
-  })
+  const record = { assignedManagerUserIds: [' carolB ', 'CAROLB', 'dan'], assignedManagerUserId: 'carolB', hasNoLineManager: false, updatedBy: 'adminB' }
+  // Home organisation: the users document, whatever a record says.
+  const home = R112.organizationLineManagerFields({ organizationId: 'a', user: jane, record })
   assert.equal(home.source, 'users')
   assert.deepEqual(home.assignedManagerUserIds, ['bobA'])
-  // Another organisation with a map: the membership.
-  const inB = R112.organizationLineManagerFields({
-    organizationId: 'B',
-    user: jane,
-    membership: { role: 'manager', lineManager: { assignedManagerUserIds: [' carolB ', 'CAROLB', 'dan'], assignedManagerUserId: 'carolB', hasNoLineManager: false } },
-  })
-  assert.deepEqual(inB, { source: 'membership', assignedManagerUserIds: ['carolB', 'dan'], assignedManagerUserId: 'carolB', hasNoLineManager: false })
-  // Guardrail 3: no map (every membership before 1.88.0, a pre-1.10.0 flat copy, no membership) → the users document.
-  for (const membership of [null, { role: 'manager' }, { assignedManagerUserIds: ['old'], hasNoLineManager: true }, { lineManager: 'x' }]) {
-    const row = R112.organizationLineManagerFields({ organizationId: 'B', user: jane, membership })
+  // Another organisation with a record: the record.
+  const inB = R112.organizationLineManagerFields({ organizationId: 'B', user: jane, record })
+  assert.deepEqual(inB, { source: 'record', assignedManagerUserIds: ['carolB', 'dan'], assignedManagerUserId: 'carolB', hasNoLineManager: false })
+  // Guardrail 3 (display): no record, or one holding none of the three keys → the users document.
+  for (const none of [null, undefined, {}, { updatedBy: 'x' }, 'x']) {
+    const row = R112.organizationLineManagerFields({ organizationId: 'B', user: jane, record: none as never })
     assert.equal(row.source, 'users')
     assert.deepEqual(row.assignedManagerUserIds, ['bobA'])
   }
+  // A membership is never read (owner decision 24 Nov, review of #455 fix (a)): the old field has no effect.
+  assert.equal(R112.organizationLineManagerFields({ organizationId: 'B', user: jane, membership: { lineManager: record } } as never).source, 'users')
   // Home stored as a path or reference.
-  assert.equal(R112.organizationLineManagerFields({ organizationId: 'A', user: { ...jane, organizationId: 'organizations/A' }, membership: { lineManager: {} } }).source, 'users')
+  assert.equal(R112.organizationLineManagerFields({ organizationId: 'A', user: { ...jane, organizationId: 'organizations/A' }, record }).source, 'users')
   // "No line manager" here keeps no ids.
   const none = R112.parseOrgLineManager({ assignedManagerUserIds: ['x'], hasNoLineManager: true })
   assert.deepEqual(none, { assignedManagerUserIds: [], assignedManagerUserId: null, hasNoLineManager: true })
   assert.equal(R112.parseOrgLineManager(null), null)
+  // The organisation's records, by lower-case id; a record with none of the keys is left out.
+  assert.deepEqual(
+    R112.parseMemberLineManagerDocuments([
+      { id: 'Jane', data: { assignedManagerUserIds: ['c'] } },
+      { id: 'x', data: { updatedBy: 'y' } },
+    ]),
+    { jane: { assignedManagerUserIds: ['c'], assignedManagerUserId: 'c', hasNoLineManager: false } }
+  )
+  assert.equal(R112.memberLineManagerPath('B', 'jane'), 'organizations/B/memberLineManagers/jane')
+  assert.equal(R112.memberLineManagerPath('B', 'a/b'), null)
+  assert.equal(R112.MEMBER_LINE_MANAGERS_COLLECTION, 'memberLineManagers')
 })
 
 test('1.88.0 every line-manager reader follows the organisation through the overlaid person', () => {
@@ -20338,71 +20345,96 @@ test('1.88.0 every line-manager reader follows the organisation through the over
     { id: 'carolB', organizationId: 'B', email: 'carol@x.test', role: 'manager', manager: true, isActive: true },
     { id: 'adminB', organizationId: 'B', email: 'admin@x.test', role: 'admin', adminAccess: true, isActive: true },
   ]
-  const membership = { role: 'operative', lineManager: { assignedManagerUserIds: ['carolB'], assignedManagerUserId: 'carolB', hasNoLineManager: false } }
+  const record = { assignedManagerUserIds: ['carolB'], assignedManagerUserId: 'carolB', hasNoLineManager: false }
   const built = R112.rosterMembersForOrganization({
     organizationId: 'B',
     users: roster as never,
     members: { jane: 'operative', carolB: 'manager', adminB: 'admin' },
-    memberships: { jane: membership },
+    memberLineManagers: { jane: record },
   })
   const janeHere = built.people.find((row) => row.id === 'jane')!
   assert.deepEqual(janeHere.assignedManagerUserIds, ['carolB'])
   const people = built.people as never[]
   assert.deepEqual(R112.lineManagerIds(janeHere as never, people), ['carolB'])
   assert.equal(R112.hasActiveLineManager(janeHere as never, people), true)
-  // Without the map Jane's A line manager (not on B's roster) does not count in B: B's admins decide (as before).
+  // A membership map is never read any more.
+  const viaMembership = R112.rosterMembersForOrganization({
+    organizationId: 'B',
+    users: roster as never,
+    members: { jane: 'operative' },
+    memberships: { jane: { role: 'operative', lineManager: record } },
+  })
+  assert.deepEqual(viaMembership.people.find((row) => row.id === 'jane')!.assignedManagerUserIds, ['bobA'])
+  // Without a record Jane's A line manager (not on B's roster) does not count in B: B's admins decide (as before).
   const before = R112.rosterMembersForOrganization({ organizationId: 'B', users: roster as never, members: { jane: 'operative', carolB: 'manager', adminB: 'admin' } })
   const janeBefore = before.people.find((row) => row.id === 'jane')!
   assert.deepEqual(janeBefore.assignedManagerUserIds, ['bobA'])
   assert.deepEqual(R112.lineManagerIds(janeBefore as never, before.people as never[]), [])
-  // In A (home) the users document as before; B's map never applies there.
-  const inA = R112.rosterMembersForOrganization({ organizationId: 'A', users: roster as never, members: {}, memberships: { jane: membership } })
+  // In A (home) the users document as before; B's record never applies there.
+  const inA = R112.rosterMembersForOrganization({ organizationId: 'A', users: roster as never, members: {}, memberLineManagers: { jane: record } })
   assert.deepEqual(inA.people.find((row) => row.id === 'jane')!.assignedManagerUserIds, ['bobA'])
   // The same object when nothing changes (the users document is the source).
   const plain = { id: 'bobA', organizationId: 'A' }
-  assert.equal(R112.withOrganizationLineManager(plain, { organizationId: 'B', membership: null }), plain)
+  assert.equal(R112.withOrganizationLineManager(plain, { organizationId: 'B', record: null }), plain)
   // A session profile whose organisationId was set to the open company: the home test uses homeOrganizationId.
   const session = { id: 'jane', organizationId: 'B', assignedManagerUserIds: ['bobA'] }
-  assert.deepEqual(R112.withOrganizationLineManager(session, { organizationId: 'B', membership, homeOrganizationId: 'A' }).assignedManagerUserIds, ['carolB'])
+  assert.deepEqual(R112.withOrganizationLineManager(session, { organizationId: 'B', record, homeOrganizationId: 'A' }).assignedManagerUserIds, ['carolB'])
 })
 
-test('1.88.0 where a line-manager change is saved, and the membership write', () => {
+test('1.88.0 where a line-manager change is saved, and the record write', () => {
   assert.equal(R112.orgLineManagerEditTarget({ organizationId: 'A', homeOrganizationId: 'a' }), 'users')
-  assert.equal(R112.orgLineManagerEditTarget({ organizationId: 'B', homeOrganizationId: 'organizations/A' }), 'membership')
+  assert.equal(R112.orgLineManagerEditTarget({ organizationId: 'B', homeOrganizationId: 'organizations/A' }), 'record')
   assert.equal(R112.orgLineManagerEditTarget({ organizationId: 'B', homeOrganizationId: null }), null)
   assert.equal(R112.orgLineManagerEditTarget({ organizationId: '', homeOrganizationId: 'A' }), null)
-  assert.deepEqual(R112.orgMembershipLineManagerFields({ assignedManagerUserIds: ['c', ' C', 'd'] }), {
+  assert.deepEqual(R112.memberLineManagerWriteFields({ assignedManagerUserIds: ['c', ' C', 'd'], writerUserId: 'adminB', platform: 'web' }), {
     assignedManagerUserIds: ['c', 'd'],
     assignedManagerUserId: 'c',
     hasNoLineManager: false,
+    updatedBy: 'adminB',
+    updatedFrom: 'web',
   })
-  const stored = { role: 'manager', permissions: {}, lineManager: { assignedManagerUserIds: ['c'], assignedManagerUserId: 'c', hasNoLineManager: false } }
-  // Unchanged → nothing written.
-  assert.equal(R112.orgMembershipWriteFields({ organizationId: 'B', stored, next: { lineManager: { assignedManagerUserIds: ['c'] } }, writer: 'admin', now: 1 }), null)
-  const write = R112.orgMembershipWriteFields({ organizationId: 'B', stored, next: { lineManager: { assignedManagerUserIds: ['d'] } }, writer: 'admin', now: 1 })
-  assert.deepEqual(write?.fields.lineManager, { assignedManagerUserIds: ['d'], assignedManagerUserId: 'd', hasNoLineManager: false })
-  // The person never writes their own line manager.
-  assert.equal(R112.orgMembershipWriteFields({ organizationId: 'B', stored, next: { lineManager: { assignedManagerUserIds: ['me'] } }, writer: 'self', now: 1 }), null)
-  // The parsed membership carries it.
-  assert.deepEqual(R112.parseOrgMembershipDocument('B', stored)?.lineManager?.assignedManagerUserIds, ['c'])
-  assert.equal(R112.parseOrgMembershipDocument('B', { role: 'manager' })?.lineManager, null)
+  assert.deepEqual(R112.memberLineManagerWriteFields({ assignedManagerUserIds: ['c'], hasNoLineManager: true }), {
+    assignedManagerUserIds: [],
+    assignedManagerUserId: null,
+    hasNoLineManager: true,
+  })
+  const a = R112.parseOrgLineManager({ assignedManagerUserIds: ['c'] })
+  assert.equal(R112.sameOrgLineManager(a, R112.parseOrgLineManager({ assignedManagerUserId: 'c' })), true)
+  assert.equal(R112.sameOrgLineManager(a, R112.parseOrgLineManager({ assignedManagerUserIds: ['d'] })), false)
+  // The membership shape is back to 1.87.0: no line manager is parsed from or written to it.
+  const membership = R112.parseOrgMembershipDocument('B', { role: 'manager', lineManager: { assignedManagerUserIds: ['c'] } }) as Record<string, unknown>
+  assert.equal('lineManager' in membership, false)
+  assert.equal((R112.ORG_MEMBERSHIP_ADMIN_FIELDS as readonly string[]).includes('lineManager'), false)
 })
 
-test('1.88.0 accepting an invitation copies the invited line manager onto the membership, exactly as stored', () => {
+test('1.88.0 accepting an invitation into another company creates the line-manager record, exactly as stored', () => {
   const invitation = { organizationId: 'B', role: 'operative', permissions: { operativeMode: true }, assignedManagerUserIds: ['carolB'], assignedManagerUserId: 'carolB', invitedBy: 'carolB' }
   const writes = R112.inviteMembershipWrites({ invitation, invitationId: 'inv1', authUid: 'jane', now: 1 })
-  assert.deepEqual(writes?.membership.lineManager, { assignedManagerUserIds: ['carolB'], assignedManagerUserId: 'carolB', hasNoLineManager: false })
+  assert.deepEqual(writes?.lineManagerRecord, { assignedManagerUserIds: ['carolB'], assignedManagerUserId: 'carolB', hasNoLineManager: false })
+  assert.equal('lineManager' in (writes?.membership ?? {}), false)
   const none = R112.inviteMembershipWrites({ invitation: { organizationId: 'B', role: 'admin', permissions: {} }, invitationId: 'inv2', authUid: 'jane', now: 1 })
-  assert.equal('lineManager' in (none?.membership ?? {}), false)
+  assert.equal(none?.lineManagerRecord, null)
+  // A malformed stored line manager is not copied (it would make the whole accept batch fail).
+  const bad = R112.inviteMembershipWrites({ invitation: { ...invitation, assignedManagerUserIds: 'carolB' }, invitationId: 'inv3', authUid: 'jane', now: 1 })
+  assert.equal(bad?.lineManagerRecord, null)
+  assert.equal(R112.invitationLineManagerRecord({ assignedManagerUserIds: null }), null)
+  assert.deepEqual(R112.invitationLineManagerRecord({ assignedManagerUserId: 'c' }), { assignedManagerUserIds: [], assignedManagerUserId: 'c', hasNoLineManager: false })
 })
 
 test('1.88.0 the sign-off reminder reads the line manager of the organisation', () => {
   const data = { organizationId: 'A', email: 'jane@x.test', assignedManagerUserIds: ['bobA'] }
-  const membership = { role: 'operative', lineManager: { assignedManagerUserIds: ['carolB'], hasNoLineManager: false } }
-  const member = R112.timesheetSignOffReminderRosterMember('jane', data, { organizationId: 'B', membersRole: 'operative', membership })
+  const lineManagerRecord = { assignedManagerUserIds: ['carolB'], hasNoLineManager: false }
+  const member = R112.timesheetSignOffReminderRosterMember('jane', data, { organizationId: 'B', membersRole: 'operative', lineManagerRecord })
   assert.deepEqual(member?.assignedManagerUserIds, ['carolB'])
-  const home = R112.timesheetSignOffReminderRosterMember('jane', data, { organizationId: 'A', membership })
+  const home = R112.timesheetSignOffReminderRosterMember('jane', data, { organizationId: 'A', lineManagerRecord })
   assert.deepEqual(home?.assignedManagerUserIds, ['bobA'])
+  // A membership map is not read.
+  const viaMembership = R112.timesheetSignOffReminderRosterMember('jane', data, {
+    organizationId: 'B',
+    membersRole: 'operative',
+    membership: { role: 'operative', lineManager: lineManagerRecord },
+  })
+  assert.deepEqual(viaMembership?.assignedManagerUserIds, ['bobA'])
 })
 
 test('1.88.0 owner bug 24 Nov: the profile summary and the Edit user picker read the same line manager', () => {
@@ -20429,10 +20461,11 @@ test('1.88.0 owner bug 24 Nov: the profile summary and the Edit user picker read
   assert.equal(same(luke).label, 'Not set')
 })
 
-test('1.88.0 a new account accepting an invitation keeps the line manager on its users document, never its home membership', () => {
+test('1.88.0 a new account accepting an invitation keeps the line manager on its users document, never a record', () => {
   const invitation = { organizationId: 'org-b', email: 'new@test.com', role: 'operative', assignedManagerUserIds: ['carol'], assignedManagerUserId: 'carol' }
   const home = R112.inviteMembershipWrites({ invitation, invitationId: 'inv-1', authUid: 'u1', now: 1, homeAccount: true })
+  assert.equal(home?.lineManagerRecord, null)
   assert.equal(home?.membership.lineManager, undefined)
   const visitor = R112.inviteMembershipWrites({ invitation, invitationId: 'inv-1', authUid: 'u1', now: 1 })
-  assert.deepEqual(visitor?.membership.lineManager, { assignedManagerUserIds: ['carol'], assignedManagerUserId: 'carol', hasNoLineManager: false })
+  assert.deepEqual(visitor?.lineManagerRecord, { assignedManagerUserIds: ['carol'], assignedManagerUserId: 'carol', hasNoLineManager: false })
 })

@@ -312,11 +312,11 @@ service firebase.storage {
     // operatives row).
     function callerLineManagesUser(orgId, uid) {
       let path = /databases/(default)/documents/users/$(uid);
-      let mp = /databases/(default)/documents/users/$(uid)/orgMemberships/$(orgId);
-      // 1.88.0: home company the users document; elsewhere the membership's `lineManager` map (none: refused).
+      let mp = /databases/(default)/documents/organizations/$(orgId)/memberLineManagers/$(uid);
+      // 1.88.0: home company the users document; elsewhere this company's record memberLineManagers/{uid} (none: refused).
       let d = firestore.get(path).data.get('organizationId', '') is string
             && firestore.get(path).data.get('organizationId', '').lower() == orgId.lower() ? firestore.get(path).data
-            : firestore.exists(mp) && firestore.get(mp).data.get('lineManager', null) is map ? firestore.get(mp).data.lineManager : {};
+            : firestore.exists(mp) ? firestore.get(mp).data : {};
       return signedIn() && uid != request.auth.uid
         // 1.30.0 review: the caller is active (as Firestore canAccessOrganization requires).
         && userDocExists() && userData().get('isActive', true) != false

@@ -932,10 +932,7 @@ service cloud.firestore {
         let inv = get(/databases/(default)/documents/invitations/$(next.get('invitationId', ''))).data;
         return resource == null && request.auth.uid == userId &&
           next.keys().hasOnly(['organizationId', 'role', 'status', 'isSuperAdmin', 'accountActive', 'permissions',
-            'invitationId', 'invitedBy', 'invitedAt', 'acceptedAt', 'updatedAt', 'lineManager']) &&
-          (next.get('lineManager', null) == null || next.get('lineManager', null) == {'assignedManagerUserIds': inv.get('assignedManagerUserIds', []),
-            'assignedManagerUserId': inv.get('assignedManagerUserId', null), 'hasNoLineManager': inv.get('hasNoLineManager', false) == true} &&
-            !homeOrgIs(getAfter(/databases/(default)/documents/users/$(userId)).data, membershipOrgId)) &&
+            'invitationId', 'invitedBy', 'invitedAt', 'acceptedAt', 'updatedAt']) &&
           inviteBeingAccepted(next.get('invitationId', ''), membershipOrgId) &&
           next.get('organizationId', membershipOrgId) == membershipOrgId &&
           next.get('role', '') == invitationRole(inv) &&
@@ -947,17 +944,14 @@ service cloud.firestore {
       }
       allow get: if request.auth != null && (
         request.auth.uid == userId ||
-        canAccessOrganization(membershipOrgId)
+        orgAdminEither(membershipOrgId)
       );
       allow list: if request.auth != null && request.auth.uid == userId;
       allow create, update: if request.auth != null &&
         (resource == null ? privilegeCreateTyped(request.resource.data, true) : privilegeWriteTyped(request.resource.data, resource.data, true)) && (
         (resource == null && request.auth.uid == userId && request.resource.data.get('invitationId', '') != '')
           ? membershipFromInvitation() : (
-        ((orgAdminEither(membershipOrgId)) && (!('lineManager' in writtenKeys()) || userId != request.auth.uid &&
-          !homeOrgIs(get(/databases/(default)/documents/users/$(userId)).data, membershipOrgId) &&
-          (request.resource.data.get('role', '') == 'admin' ||
-          request.resource.data.get('lineManager', {}).get('hasNoLineManager', false) != true)) &&
+        ((orgAdminEither(membershipOrgId)) &&
          ((privilegeFlag(request.resource.data, 'isSuperAdmin') ==
            (resource == null ? false : privilegeFlag(resource.data, 'isSuperAdmin'))) || callerIsSuperAdminOf(membershipOrgId))) ||
         request.auth.uid == userId && (writtenKeys().hasOnly([
@@ -1370,21 +1364,13 @@ service cloud.firestore {
       allow delete: if orgAdminEither(orgId) || isPlatformOwner();
     }
 
-    function lmMap(uid) {
-      let mp = /databases/(default)/documents/users/$(uid)/orgMemberships/$(orgId);
-      return exists(mp) ? get(mp).data.get('lineManager', {}) : {};
-    }
-    function lmData(uid, d) {
-      return exists(/databases/(default)/documents/users/$(uid)/orgMemberships/$(orgId)) ? lmOr(uid, d) : d;
-    }
-    function lmOr(uid, d) {
-      let m = get(/databases/(default)/documents/users/$(uid)/orgMemberships/$(orgId)).data.get('lineManager', {});
-      return m is map && m != {} ? m : d;
+    function lmData(uid, u) {
+      let mp = /databases/(default)/documents/organizations/$(orgId)/memberLineManagers/$(uid);
+      return homeOrgIs(u, orgId) ? u : exists(mp) ? get(mp).data : {};
     }
     function callerLineManagesUser(uid) {
       let path = /databases/(default)/documents/users/$(uid);
-      let u = get(path).data;
-      let d = homeOrgIs(u, orgId) ? u : lmMap(uid);
+      let d = lmData(uid, get(path).data);
       return uid is string && uid.size() > 0 && !uid.matches('.*/.*') && uid != request.auth.uid &&
         exists(path) &&
         d.get('hasNoLineManager', false) != true &&
@@ -1432,8 +1418,7 @@ service cloud.firestore {
       let email = string(get(/databases/(default)/documents/organizations/$(orgId)/operatives/$(personId)).data.get('email', '')).lower();
       let rplmUid = get(/databases/(default)/documents/organizations/$(orgId)/userEmails/$(email)).data.get('userId', '');
       let rplmMe = request.auth.uid;
-      let rplmG = get(/databases/(default)/documents/users/$(rplmUid)).data;
-      let rplmU = homeOrgIs(rplmG, orgId) ? rplmG : lmMap(rplmUid);
+      let rplmU = lmData(rplmUid, get(/databases/(default)/documents/users/$(rplmUid)).data);
       let rplmIds = rplmU.get('assignedManagerUserIds', []);
       return (email.size() > 0 && !email.matches('.*/.*'))
         ? (((rplmIds is list && rplmIds.size() > 0) ? rplmMe in rplmIds : rplmU.get('assignedManagerUserId', '') == rplmMe)
@@ -2417,6 +2402,24 @@ service cloud.firestore {
       allow read: if request.auth != null && callerOrg(orgId)[0] in ['admin', 'manager'] && orgBillingOpen(orgId);
       allow create: if request.auth != null && callerOrg(orgId)[0] in ['admin', 'manager'] && orgBillingOpen(orgId) &&
         request.resource.data.keys().hasOnly(['firstSentAt']) && request.resource.data.firstSentAt == request.time;
+    }
+
+    match /memberLineManagers/{lmUid} {
+      allow write: if request.auth != null && (request.resource == null || request.resource.data.keys().hasOnly(['assignedManagerUserIds',
+          'assignedManagerUserId', 'hasNoLineManager', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
+          request.resource.data.get('assignedManagerUserIds', []) is list && request.resource.data.get('hasNoLineManager', false) is bool &&
+          writeMetadataKeysValid(request.resource.data.keys())) && (lmUid != request.auth.uid &&
+        orgAdminEither(orgId) && (request.resource == null || request.resource.data.get('hasNoLineManager', false) == false ||
+          get(/databases/(default)/documents/organizations/$(orgId)).data.get('members', {}).get(lmUid, '') == 'admin') ||
+        lmUid == request.auth.uid && request.resource != null && resource == null && lmInvitee(request.resource.data));
+      function lmInvitee(d) {
+        let mp = /databases/(default)/documents/users/$(lmUid)/orgMemberships/$(orgId);
+        let inv = getAfter(mp).data.get('invitationId', '');
+        let iv = get(/databases/(default)/documents/invitations/$(inv)).data;
+        return !exists(mp) && inviteBeingAccepted(inv, orgId) &&
+          [d.get('assignedManagerUserIds', []), d.get('assignedManagerUserId', null), d.get('hasNoLineManager', false)] ==
+          [iv.get('assignedManagerUserIds', []), iv.get('assignedManagerUserId', null), iv.get('hasNoLineManager', false) == true];
+      }
     }
 
     match /memberNames/{nameUid} {
