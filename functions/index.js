@@ -52,6 +52,7 @@ const { createAuthClaimsSync, createAdminAuthClaimsStore } = require('./authClai
 const { createTimesheetBookingNotice, createAdminTimesheetNoticeStore } = require('./timesheetBookingNotice')
 const { createReportIntegrityCheck, createAdminReportIntegrityStore } = require('./reportIntegrity')
 const { createTimesheetSignOffReminders, createAdminSignOffReminderStore } = require('./timesheetSignOffReminder')
+const { createOrgComplianceReminders, createAdminOrgComplianceReminderStore } = require('./orgComplianceReminders')
 
 initializeApp()
 
@@ -472,6 +473,34 @@ exports.timesheetSignOffReminders = onSchedule(
       logger,
       serverTimestamp: () => FieldValue.serverTimestamp(),
       toTimestamp: (ms) => Timestamp.fromMillis(ms),
+    }).run()
+  }
+)
+
+/**
+ * Rulebook 1.85.0 §31 (owner decision 24 Nov): once a day, email each organisation's admins about insurance &
+ * accreditation documents 2 months, 1 month and 7 days before they expire (`orgComplianceRemindersDue`), only for
+ * thresholds still ahead when the expiry was set, never twice (ledger `organizations/{orgId}/orgCompliance/reminders`).
+ * Off until the platform owner sets `platformConfig/app.orgComplianceRemindersEnabled` true: until then a dry run that
+ * logs "org compliance reminders (dry run, switch off): would send". `orgComplianceReminders.js` holds the reads.
+ * Deploy: `firebase deploy --only functions:inbox-push:orgComplianceExpiryReminders --project project-planner-f986c`
+ */
+exports.orgComplianceExpiryReminders = onSchedule(
+  {
+    schedule: 'every day 07:23',
+    timeZone: 'Europe/London',
+    region: 'us-central1',
+    timeoutSeconds: 300,
+    memory: '512MiB',
+    secrets: [RESEND_API_KEY],
+  },
+  async () => {
+    const db = getFirestore()
+    await createOrgComplianceReminders({
+      store: createAdminOrgComplianceReminderStore(db, createAdminSignOffReminderStore(db, Timestamp)),
+      canonical,
+      sendEmail: resendSender(() => RESEND_API_KEY.value()),
+      logger,
     }).run()
   }
 )

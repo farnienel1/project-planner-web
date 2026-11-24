@@ -1,5 +1,5 @@
 /**
- * Rulebook 1.89.0 §32 (tasks upgrade, owner pack 24 Nov `docs/features/tasks-upgrade/`): everything about a task that
+ * Rulebook 1.89.0 §34 (tasks upgrade, owner pack 24 Nov `docs/features/tasks-upgrade/`): everything about a task that
  * web and iOS must show and decide the same way — status and priority words, due-date wording, the Active / Overdue /
  * Completed tabs and their counts, sorting, the Start / Complete / Reopen actions, the statuses Edit offers, the
  * complete step, the checklist kept through an edit, who may do what, the default scope, attachment limits and
@@ -155,7 +155,7 @@ export type TaskDueLabel = {
 }
 
 /**
- * Rulebook 1.89.0 §32 (F6, F20, fixtures `dueLabels`): a task's due date in words, on the organisation day (never the
+ * Rulebook 1.89.0 §34 (F6, F20, fixtures `dueLabels`): a task's due date in words, on the organisation day (never the
  * phone's or browser's). A completed task shows when it was completed and is never overdue; a task with no due date
  * shows "No due date" and is never overdue.
  */
@@ -264,7 +264,7 @@ function instantMs(raw: unknown): number {
 }
 
 /**
- * Rulebook 1.89.0 §32 (F18, fixtures `sortActive`): the order of a tab. Active and Overdue: overdue first (oldest due
+ * Rulebook 1.89.0 §34 (F18, fixtures `sortActive`): the order of a tab. Active and Overdue: overdue first (oldest due
  * first), then due date, then higher priority, then title; a task with no due date last. Completed: newest completion
  * first (the last update when no completion time is stored). Returns the given rows, sorted (a new array).
  */
@@ -309,7 +309,7 @@ export const TASK_ACTION_LABELS: Readonly<Record<TaskActionKey, string>> = {
 }
 
 /**
- * Rulebook 1.89.0 §32 (F1, F3, fixtures `actions`): the main action and every action a task offers. To do: Start (one
+ * Rulebook 1.89.0 §34 (F1, F3, fixtures `actions`): the main action and every action a task offers. To do: Start (one
  * tap, To do → In progress) and Complete (opens the complete step). In progress: Complete. Completed: Reopen (→ In
  * progress). "Carry out" is gone: on both apps it opened the complete step (iOS) or moved the task to In progress
  * (web), now Complete and Start.
@@ -415,7 +415,7 @@ export type TaskCompleteStep = {
   showChecklist: boolean
 }
 
-/** Rulebook 1.89.0 §32 (F2, F25, fixtures `completeStep`): the complete step, from the task's real items only. */
+/** Rulebook 1.89.0 §34 (F2, F25, fixtures `completeStep`): the complete step, from the task's real items only. */
 export function taskCompleteStep(task: TaskChecklistInput | null | undefined): TaskCompleteStep {
   const items = (task?.items || []).map((item) => idKey(item?.id)).filter(Boolean)
   const ticked = new Set((task?.completedItemIds || []).map(idKey))
@@ -445,7 +445,7 @@ export type TaskAccess = {
 }
 
 /**
- * Rulebook 1.89.0 §32 (permissions as the apps and `firestore.rules` behave today; the pack's proposal is an owner
+ * Rulebook 1.89.0 §34 (permissions as the apps and `firestore.rules` behave today; the pack's proposal is an owner
  * question): admins and managers outside operative mode see every task and edit any task; only admins (and the
  * super admin) delete — the rules refuse anyone else, web showed Delete to managers before 1.89.0; anyone in the
  * organisation creates a task; staff and the task's assignees start, tick, complete and reopen it.
@@ -558,7 +558,7 @@ function sizeText(bytes: number): string {
 }
 
 /**
- * Rulebook 1.89.0 §32 (fixtures `attachmentValidation`): one picked file against the task limits, before any upload:
+ * Rulebook 1.89.0 §34 (fixtures `attachmentValidation`): one picked file against the task limits, before any upload:
  * count first (`existingFiles` already on the task or picked), then type, then size (a PDF is never resized; a photo's
  * size is judged after it is scaled). Messages are the pack's.
  */
@@ -616,7 +616,7 @@ export type TaskFormDraft = {
 }
 
 /**
- * Rulebook 1.89.0 §32 (F21, bug B10): the form's errors, each under its own field. A due date is required for a new
+ * Rulebook 1.89.0 §34 (F21, bug B10): the form's errors, each under its own field. A due date is required for a new
  * task, and an Edit save of a task that has none asks for one. Empty object = the form may save.
  */
 export function taskFormErrors(draft: TaskFormDraft | null | undefined): Partial<Record<'title' | 'location' | 'assignees' | 'dueDate' | 'checklist', string>> {

@@ -18,6 +18,7 @@ import { claimsContext } from './authClaimsContext.ts'
 import { doc, FieldPath, getDoc, serverTimestamp, setDoc, Timestamp, updateDoc, writeBatch, type Firestore } from 'firebase/firestore'
 import { timesheetReviewBookingAfterEdit, timesheetReviewBookingDocument, timesheetReviewBookingEditWrites } from '../lib/canonical/timesheetReviewBookingWrites.ts'
 import { timesheetReviewerBookingEditRecord } from '../lib/canonical/timesheetBookingChanges.ts'
+import { timesheetReviewBookingDelete } from '../lib/canonical/timesheetReviewBookingWrites.ts'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const rules = readFileSync(path.join(root, 'firestore.rules'), 'utf8')
@@ -82,7 +83,7 @@ test.after(async () => {
 })
 
 /** The batch the review page writes: the booking's ⚙ change and the sheet's record, exactly as the rulebook builds them. */
-function reviewBatch(d: Firestore, uid: string) {
+function reviewBatch(d: Firestore, uid: string, sheetId: string = SHEET) {
   const stored = labour('B1')
   const edit = timesheetReviewBookingEditWrites({
     booking: { ...stored, collection: 'bookings' } as never,
@@ -101,7 +102,7 @@ function reviewBatch(d: Firestore, uid: string) {
   const batch = writeBatch(d)
   batch.update(doc(d, 'organizations', ORG, 'bookings', 'B1'), { ...edit.set, updatedAt: serverTimestamp(), updatedBy: uid, updatedFrom: 'web' })
   batch.update(
-    doc(d, 'organizations', ORG, 'settings', SHEET),
+    doc(d, 'organizations', ORG, 'settings', sheetId),
     new FieldPath('reviewerBookingEdits', recorded.key), { ...recorded.value, editedAt: serverTimestamp() },
     'updatedAt', serverTimestamp(), 'updatedBy', uid, 'updatedFrom', 'web'
   )
@@ -203,4 +204,79 @@ test('1.76.0 (b): only the review map entry (signed copy untouched) — the line
   await env.clearFirestore()
   await seed(SIGNED_COPY)
   await assertFails(reviewOnly(await db(OP), OP))
+})
+
+// MARK: - Owner report 24 Nov: a REV 1 in Awaiting sign-off (signed by the person, not counter-signed, not exported)
+
+const REV1 = `${SHEET}_rev1`
+const EXPORTED = Timestamp.fromMillis(Date.parse('2026-11-20T09:00:00Z'))
+
+async function seedRevision(revExtra: Record<string, unknown> = {}) {
+  await env.clearFirestore()
+  // The original: signed, counter-signed and exported (frozen).
+  await seed({ managerSignedAt: SIGNED, managerSignedByName: 'LM', exportedAt: EXPORTED })
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG, 'settings', REV1), {
+      userId: OP, weekStart: DAY, weekStartKey: '2026-11-16', weekEnd: DAY, weekEndKey: '2026-11-30',
+      expenseEntries: [], priceWorkEntries: [], revisionOf: SHEET, revision: 1, previousVersionId: SHEET,
+      revisionCreatedBy: OP, revisionCreatedAt: SIGNED,
+      operativeSignedAt: SIGNED, operativeSignedByName: 'Op',
+      ...revExtra,
+    })
+  })
+}
+
+/** ✕ on a standard line: the booking delete, its tombstone and the record on the revision, in one batch. */
+function revisionDeleteBatch(d: Firestore, uid: string) {
+  const plan = timesheetReviewBookingDelete({ booking: { id: 'B1', collection: 'bookings' }, deletedBy: uid, platform: 'web' })
+  assert.ok(plan)
+  const recorded = timesheetReviewerBookingEditRecord({
+    sheet: { operativeSignedAt: SIGNED.toMillis() },
+    booking: { collection: 'bookings', bookingId: 'B1' },
+    after: null,
+    deleted: true,
+    editedBy: uid,
+  })
+  assert.ok(recorded)
+  const batch = writeBatch(d)
+  batch.delete(doc(d, 'organizations', ORG, 'bookings', 'B1'))
+  batch.set(doc(d, 'organizations', ORG, 'deletedBookings', 'B1'), { ...plan.tombstone, deletedAt: serverTimestamp() })
+  batch.update(
+    doc(d, 'organizations', ORG, 'settings', REV1),
+    new FieldPath('reviewerBookingEdits', recorded.key), { ...recorded.value, editedAt: serverTimestamp() },
+    'updatedAt', serverTimestamp(), 'updatedBy', uid, 'updatedFrom', 'web'
+  )
+  return batch
+}
+
+test('24 Nov: the line manager deletes a booking (✕) and records it on a signed, unexported REV 1', async () => {
+  await seedRevision()
+  await assertSucceeds(revisionDeleteBatch(await db(LM), LM).commit())
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const d = ctx.firestore()
+    assert.equal((await getDoc(doc(d, 'organizations', ORG, 'bookings', 'B1'))).exists(), false)
+    const rev = (await getDoc(doc(d, 'organizations', ORG, 'settings', REV1))).data()
+    assert.equal(Object.keys((rev?.reviewerBookingEdits ?? {}) as object).length, 1)
+  })
+})
+
+test('24 Nov: the line manager edits a booking (⚙) and records it on a signed, unexported REV 1; an admin too', async () => {
+  await seedRevision()
+  await assertSucceeds(reviewBatch(await db(LM), LM, REV1).commit())
+  await seedRevision()
+  await assertSucceeds(reviewBatch(await db(ADMIN), ADMIN, REV1).commit())
+})
+
+test('24 Nov: once REV 1 is exported the batch is refused whole and the booking stays', async () => {
+  await seedRevision({ managerSignedAt: SIGNED, managerSignedByName: 'LM', exportedAt: EXPORTED })
+  await assertFails(revisionDeleteBatch(await db(LM), LM).commit())
+  await assertFails(reviewBatch(await db(LM), LM, REV1).commit())
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    assert.equal((await getDoc(doc(ctx.firestore(), 'organizations', ORG, 'bookings', 'B1'))).exists(), true)
+  })
+})
+
+test('24 Nov: the person never records a reviewer edit on their own REV 1', async () => {
+  await seedRevision()
+  await assertFails(revisionDeleteBatch(await db(OP), OP).commit())
 })

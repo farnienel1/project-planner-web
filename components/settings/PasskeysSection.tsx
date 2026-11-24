@@ -46,6 +46,13 @@ export function PasskeysSection() {
     if (ok) void load()
   }, [load])
 
+  // "Take me to passkeys" (the passkey reminder) links here with #passkeys; this section renders after the page, so
+  // scroll to it once it is on screen.
+  useEffect(() => {
+    if (!available || typeof window === 'undefined' || window.location.hash !== '#passkeys') return
+    document.getElementById('passkeys')?.scrollIntoView({ block: 'start' })
+  }, [available])
+
   if (!available) return null
 
   const add = async () => {
@@ -81,7 +88,7 @@ export function PasskeysSection() {
   }
 
   return (
-    <section className="space-y-3 card pad" aria-labelledby="passkeys-heading" data-testid="passkeys-section">
+    <section id="passkeys" className="space-y-3 card pad scroll-mt-24" aria-labelledby="passkeys-heading" data-testid="passkeys-section">
       <div>
         <h2 id="passkeys-heading" className="text-lg font-bold">Passkeys</h2>
         <p className="muted small mt-1">

@@ -1,5 +1,5 @@
 /**
- * Rulebook 1.89.0 §32: the owner's tasks pack fixtures (`docs/features/tasks-upgrade/rules/tasks.fixtures.json`, copied
+ * Rulebook 1.89.0 §34: the owner's tasks pack fixtures (`docs/features/tasks-upgrade/rules/tasks.fixtures.json`, copied
  * into the repo unchanged) run against the rulebook functions. The same cases are in `parity-fixture.json`, which iOS
  * runs through the packed script (`CanonicalParityFixtureTests`), so both apps answer them identically.
  */

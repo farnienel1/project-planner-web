@@ -1,7 +1,7 @@
 import { isTaskOverdue as canonicalIsTaskOverdue } from '@/lib/canonical'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 /**
- * Small task helpers for screens. 1.89.0 §32: the old job-tab scopes, stat cards and filters (`filterTasksForScope`,
+ * Small task helpers for screens. 1.89.0 §34: the old job-tab scopes, stat cards and filters (`filterTasksForScope`,
  * `taskStatCounts`, `applyJobTaskFilter`, …) are gone — tabs, counts and sorting are the rulebook's (`taskTabCounts`,
  * `sortTasksForTab`), shared with iOS.
  */

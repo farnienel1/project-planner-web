@@ -2,7 +2,7 @@
 
 /**
  * The data every task screen needs (main Tasks page, the Tasks tab of Projects and Small works, the task popup), read
- * from the existing stores. Decisions come from the rulebook (§32 `taskAccess`, §23 `tasksAssignedToViewer` via
+ * from the existing stores. Decisions come from the rulebook (§34 `taskAccess`, §23 `tasksAssignedToViewer` via
  * `tasksAssignedToUser`, §21 `taskPersonIndex`); this hook only gathers inputs.
  */
 

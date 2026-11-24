@@ -139,7 +139,7 @@ export class UploadCancelledError extends Error {
 }
 
 /**
- * Rulebook 1.89.0 §32 (tasks, issue 1): one upload with progress, cancel and a stall watchdog. It never hangs: no
+ * Rulebook 1.89.0 §34 (tasks, issue 1): one upload with progress, cancel and a stall watchdog. It never hangs: no
  * progress for `stallMs` cancels it (a `TimeoutError`), and the SDK is told to stop retrying a failing request after
  * `sdkRetryMs` (it retries for 10 minutes by default, which looked like "Saving… for ages"). The bytes are checked
  * first (`assertUploadAllowed`, §24) and written with the detected type.

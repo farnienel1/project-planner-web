@@ -2,7 +2,7 @@
 
 /**
  * The writes behind every task button (Start, Complete, Reopen, a tick, Save progress, Delete). The rulebook decides
- * the fields (§32 `taskActionStatus`, `taskStatusChangeFields`, `taskToggleChecklistItem`; §1 `taskWriteFields` through
+ * the fields (§34 `taskActionStatus`, `taskStatusChangeFields`, `taskToggleChecklistItem`; §1 `taskWriteFields` through
  * the store's partial save); this file only calls the store and reports the outcome. Every path settles: it returns
  * an error message instead of throwing, so no button is left spinning.
  */
