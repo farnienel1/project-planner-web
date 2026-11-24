@@ -9,7 +9,7 @@
  * Counts are rulebook 1.23.0 §21 `siteMapPins` (the day's bookings that occupy it, each person once).
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { jobKind, siteMapPins } from '@/lib/canonical'
 import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
@@ -60,16 +60,48 @@ export function useSiteMapJobs(input: {
   const { operatives, managers } = useOperativeStore()
   const { users } = useOrgUserStore()
   const [postcodes, setPostcodes] = useState<Map<string, LatLng | null>>(() => readCachedPostcodes())
-  /** Postcodes whose lookup failed in this visit (network): not placed for now, never remembered as unknown. */
+  /** Postcodes whose lookup could not be reached in this visit: `lookupFailed`, asked again on `online` / focus. */
   const [failedPostcodes, setFailedPostcodes] = useState<Set<string>>(() => new Set())
+  /** Postcodes asked in this organisation (one request each; never cancelled by a re-render). */
   const asked = useRef<Set<string>>(new Set())
+  /** Bumped on an organisation change and on unmount: answers of an older generation are dropped. */
+  const generation = useRef(0)
 
-  const shownSites = useMemo(
+  // A new organisation starts its own lookups; answers for the previous one are not applied.
+  useEffect(() => {
+    generation.current += 1
+    asked.current = new Set()
+    const mine = generation.current
+    return () => {
+      if (generation.current === mine) generation.current += 1
+    }
+  }, [organizationId])
+
+  /** Asks again the postcode lookups that could not be reached (Retry, back online, back on the tab). */
+  const retryLookups = useCallback(
     () =>
-      mergeProjectsAndSmallWorks(projects, smallWorks).filter((site) =>
-        siteMapJobShown(site, { includeCompleted, dayKey, timeZone })
-      ),
-    [projects, smallWorks, includeCompleted, dayKey, timeZone]
+      setFailedPostcodes((current) => {
+        if (current.size === 0) return current
+        for (const postcode of current) asked.current.delete(postcode)
+        return new Set()
+      }),
+    []
+  )
+
+  // Back online, or back on the tab: the lookups that could not be reached are asked again.
+  useEffect(() => {
+    const retry = retryLookups
+    window.addEventListener('online', retry)
+    window.addEventListener('focus', retry)
+    return () => {
+      window.removeEventListener('online', retry)
+      window.removeEventListener('focus', retry)
+    }
+  }, [retryLookups])
+
+  const currentSites = useMemo(
+    () => mergeProjectsAndSmallWorks(projects, smallWorks).filter((site) => site.isLive !== false),
+    [projects, smallWorks]
   )
 
   const people = useMemo(
@@ -82,55 +114,61 @@ export function useSiteMapJobs(input: {
     [users, operatives, managers]
   )
 
+  const counts = useMemo(
+    () =>
+      new Map(
+        siteMapPins({
+          jobs: currentSites.map((site) => ({ id: site.id, isLive: site.isLive })),
+          bookings: bookings.map((booking) => ({
+            projectId: booking.projectId,
+            operativeId: booking.operativeId,
+            date: booking.date,
+            status: String(booking.status ?? ''),
+          })),
+          managerSiteBookings: managerSiteBookings.map((booking) => ({
+            userId: booking.userId,
+            locationId: booking.locationId ?? null,
+            locationType: booking.locationType,
+            date: booking.date,
+          })),
+          dayKey,
+          timeZone,
+          people,
+        }).map((pin) => [pin.jobId, pin])
+      ),
+    [currentSites, bookings, managerSiteBookings, dayKey, timeZone, people]
+  )
+
   const jobs = useMemo((): SiteMapJob[] => {
-    const counts = new Map(
-      siteMapPins({
-        jobs: shownSites.map((site) => ({ id: site.id, isLive: site.isLive })),
-        bookings: bookings.map((booking) => ({
-          projectId: booking.projectId,
-          operativeId: booking.operativeId,
-          date: booking.date,
-          status: String(booking.status ?? ''),
-        })),
-        managerSiteBookings: managerSiteBookings.map((booking) => ({
-          userId: booking.userId,
-          locationId: booking.locationId ?? null,
-          locationType: booking.locationType,
-          date: booking.date,
-        })),
-        dayKey,
-        timeZone,
-        people,
-      }).map((pin) => [pin.jobId, pin])
-    )
-    return shownSites
-      .map((site): SiteMapJob => {
+    return currentSites
+      .flatMap((site): SiteMapJob[] => {
         const pin = counts.get(site.id)
-        let placement = siteMapPlacement(site, postcodes)
-        if (placement.kind === 'pending' && failedPostcodes.has(placement.postcode)) {
-          placement = { kind: 'postcodeNotFound', postcode: placement.postcode }
-        }
+        const bookedThatDay = (pin?.bookingCount ?? 0) > 0 || (pin?.peopleCount ?? 0) > 0
+        if (!siteMapJobShown(site, { includeCompleted, dayKey, timeZone, bookedThatDay })) return []
+        const placement = siteMapPlacement(site, postcodes, failedPostcodes)
         const coordinates = 'coordinates' in placement ? placement.coordinates : null
         // The collection decides the kind (`jobKind`, §17), never `jobType` text.
         const source = jobKind(site, site.collection) === 'smallWorks' ? ('smallWork' as const) : ('project' as const)
-        return {
-          id: site.id,
-          label: site.siteName || 'Untitled site',
-          jobNumber: site.jobNumber || '—',
-          address: formatSiteAddress(site),
-          latitude: coordinates?.latitude,
-          longitude: coordinates?.longitude,
-          bookingCount: pin?.bookingCount ?? 0,
-          peopleCount: pin?.peopleCount ?? 0,
-          source,
-          collection: source === 'smallWork' ? 'smallWorks' : 'projects',
-          project: site,
-          mapsUrl: openMapsForProject(site),
-          placement,
-        }
+        return [
+          {
+            id: site.id,
+            label: site.siteName || 'Untitled site',
+            jobNumber: site.jobNumber || '—',
+            address: formatSiteAddress(site),
+            latitude: coordinates?.latitude,
+            longitude: coordinates?.longitude,
+            bookingCount: pin?.bookingCount ?? 0,
+            peopleCount: pin?.peopleCount ?? 0,
+            source,
+            collection: source === 'smallWork' ? 'smallWorks' : 'projects',
+            project: site,
+            mapsUrl: openMapsForProject(site),
+            placement,
+          },
+        ]
       })
       .sort((a, b) => a.label.localeCompare(b.label))
-  }, [shownSites, bookings, managerSiteBookings, dayKey, timeZone, people, postcodes, failedPostcodes])
+  }, [currentSites, counts, includeCompleted, dayKey, timeZone, postcodes, failedPostcodes])
 
   // One key per set of postcodes still to look up, so the lookup runs once per change, not per render.
   const pendingKey = useMemo(
@@ -141,32 +179,28 @@ export function useSiteMapJobs(input: {
     [jobs]
   )
 
-  // Only the postcodes are sent (postcodes.io, no key); answers are remembered in this browser, nothing is written.
+  // Only the postcodes are sent (postcodes.io, no key); each batch's answers are applied and remembered in this
+  // browser as they arrive; nothing is written to Firestore. An answer is never cancelled by a later change; it is
+  // dropped only after unmount or an organisation change.
   useEffect(() => {
     if (!organizationId || !pendingKey) return
-    const askedSet = asked.current
-    const toAsk = pendingKey.split('|').filter((postcode) => !askedSet.has(postcode))
+    const toAsk = pendingKey.split('|').filter((postcode) => !asked.current.has(postcode))
     if (toAsk.length === 0) return
-    let cancelled = false
-    for (const postcode of toAsk) askedSet.add(postcode)
-    lookupPostcodes(toAsk)
-      .then((found) => {
-        if (cancelled) return
+    for (const postcode of toAsk) asked.current.add(postcode)
+    const mine = generation.current
+    void lookupPostcodes(toAsk, {
+      onBatch: (found) => {
+        if (generation.current !== mine) return
         setPostcodes((current) => {
           const next = new Map(current)
           for (const [key, value] of found) next.set(key, value)
           return next
         })
-      })
-      .catch(() => {
-        if (cancelled) return
-        setFailedPostcodes((current) => new Set([...current, ...toAsk]))
-      })
-    return () => {
-      cancelled = true
-      // A lookup cut short by a change is asked again.
-      for (const postcode of toAsk) askedSet.delete(postcode)
-    }
+      },
+    }).then(({ failed }) => {
+      if (generation.current !== mine || failed.length === 0) return
+      setFailedPostcodes((current) => new Set([...current, ...failed]))
+    })
   }, [organizationId, pendingKey])
 
   const markers = useMemo(
@@ -186,5 +220,14 @@ export function useSiteMapJobs(input: {
   )
 
   const unplaced = useMemo(() => jobs.filter((job) => siteMapPlacementUnplaced(job.placement)), [jobs])
-  return { jobs, markers, unplaced, locating: pendingKey !== '' }
+  const lookupFailedCount = useMemo(() => unplaced.filter((job) => job.placement.kind === 'lookupFailed').length, [unplaced])
+
+  return {
+    jobs,
+    markers,
+    unplaced,
+    lookupFailedCount,
+    retryLookups,
+    locating: Boolean(organizationId) && pendingKey !== '',
+  }
 }

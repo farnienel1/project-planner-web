@@ -117,24 +117,60 @@ test('postcodes.io bulk answers are read per query; unknown postcodes are null',
   assert.equal(parsePostcodesIoBulk(null).size, 0)
 })
 
-test('lookups send only the postcodes, 100 at a time, and throw on a network failure', async () => {
+test('lookups send only the postcodes, 100 at a time, hand over each batch, and report unreachable batches', async () => {
   const sent: Array<{ url: string; body: unknown }> = []
   const fakeFetch = (async (url: string, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body)) as { postcodes: string[] }
     sent.push({ url, body })
+    if (sent.length === 2) throw new TypeError('Failed to fetch')
     return new Response(
       JSON.stringify({ result: body.postcodes.map((query) => ({ query, result: { latitude: 51, longitude: 0 } })) }),
       { status: 200 }
     )
   }) as unknown as typeof fetch
-  const postcodes = Array.from({ length: 150 }, (_, i) => `E${(i % 9) + 1} ${i % 10}AA`)
-  const found = await lookupPostcodes(['sw1x9hr', 'SW1X 9HR', ...postcodes], fakeFetch)
+  const postcodes = Array.from({ length: 150 }, (_, i) => `E${(i % 9) + 1} ${i % 10}A${String.fromCharCode(65 + (i % 26))}`)
+  const batches: number[] = []
+  const { found, failed } = await lookupPostcodes(['sw1x9hr', 'SW1X 9HR', ...postcodes], {
+    fetchImpl: fakeFetch,
+    onBatch: (answers) => batches.push(answers.size),
+  })
   assert.equal(found.get('SW1X 9HR')?.latitude, 51)
   assert.ok(sent.every((call) => call.url === 'https://api.postcodes.io/postcodes'))
   assert.ok(sent.every((call) => Object.keys(call.body as object).join() === 'postcodes'))
   assert.ok(sent.every((call) => (call.body as { postcodes: string[] }).postcodes.length <= 100))
+  assert.equal(batches.length, 1)
+  assert.equal(batches[0], 100)
+  assert.ok(failed.length > 0)
+  assert.ok(failed.every((postcode) => !found.has(postcode)))
   const failing = (async () => new Response('', { status: 503 })) as unknown as typeof fetch
-  await assert.rejects(() => lookupPostcodes(['W1F 9QY'], failing))
+  const down = await lookupPostcodes(['W1F 9QY'], { fetchImpl: failing })
+  assert.deepEqual(down.failed, ['W1F 9QY'])
+  assert.equal(down.found.size, 0)
+})
+
+test('an unreachable lookup is its own kind, never "not found"', () => {
+  const placement = siteMapPlacement({ postcode: 'W1F 9QY' }, none, new Set(['W1F 9QY']))
+  assert.deepEqual(placement, { kind: 'lookupFailed', postcode: 'W1F 9QY' })
+  assert.ok(siteMapPlacementUnplaced(placement))
+  assert.equal(siteMapUnplacedReason(placement), 'Couldn’t reach the postcode lookup — retry')
+  // An answer that did arrive wins over a stale failure.
+  assert.equal(
+    siteMapPlacement({ postcode: 'W1F 9QY' }, new Map([['W1F 9QY', null]]), new Set(['W1F 9QY'])).kind,
+    'postcodeNotFound'
+  )
+  assert.equal(siteMapUnplacedText(0, 2), '2 jobs are waiting for the postcode lookup — retry.')
+  assert.equal(
+    siteMapUnplacedText(1, 1),
+    '1 job could not be placed on the map. 1 job is waiting for the postcode lookup — retry.'
+  )
+})
+
+test('a job past its end date with people booked that day is shown with the toggle off', () => {
+  const completed = { id: 'c', startDayKey: '2026-10-01', endDayKey: '2026-11-01' }
+  const options = { includeCompleted: false, dayKey: '2026-11-24', timeZone: 'Europe/London' }
+  assert.equal(siteMapJobShown(completed, options), false)
+  assert.equal(siteMapJobShown(completed, { ...options, bookedThatDay: true }), true)
+  assert.equal(siteMapJobShown({ ...completed, isLive: false }, { ...options, bookedThatDay: true }), false)
 })
 
 test('every Leaflet map sits in its own stacking context, under app menus and dialogs (owner bug 24 Nov)', async () => {

@@ -26,6 +26,7 @@ import { SiteMapBoard } from '@/components/site-map/SiteMapBoard'
 import { SetSitePinButton } from '@/components/site-map/SetSitePinButton'
 import { SiteMapJobSummaryCard } from '@/components/site-map/SiteMapJobSummaryCard'
 import { SiteMapCompletedToggle, SiteMapLegend } from '@/components/site-map/SiteMapLegend'
+import { SiteMapJobButtons } from '@/components/site-map/SiteMapJobButtons'
 import { useSiteMapJobs } from '@/components/site-map/useSiteMapJobs'
 
 export default function SiteMapPage() {
@@ -34,7 +35,7 @@ export default function SiteMapPage() {
   const { loadProjects, loadSmallWorks } = useProjectStore()
   const { loadBookings } = useBookingStore()
   const { loadManagerSiteBookings } = useManagerScheduleStore()
-  const { loadOperatives, loadManagers } = useOperativeStore()
+  const { managers, loadOperatives, loadManagers } = useOperativeStore()
   const { loadUsers } = useOrgUserStore()
   const { loadBookings: loadHolidays } = useHolidayStore()
   const { subcontractors, loadSubcontractors } = useSubcontractorStore()
@@ -97,7 +98,7 @@ export default function SiteMapPage() {
   // A past day reaches before the launch booking download.
   useBookingHistoryFrom(organization?.id, day)
 
-  const { jobs, markers, unplaced, locating } = useSiteMapJobs({
+  const { jobs, markers, unplaced, locating, retryLookups } = useSiteMapJobs({
     organizationId: organization?.id,
     dayKey: selectedDate,
     timeZone,
@@ -176,6 +177,12 @@ export default function SiteMapPage() {
           officeCentre={officeCentre}
         />
       </div>
+      <SiteMapJobButtons markers={markers} selectedId={selectedPinId} onSelect={handleSelectMarker} />
+      {!locating && jobs.length === 0 ? (
+        <p className="muted small">
+          {includeCompleted ? 'No jobs on this day.' : 'No active or upcoming jobs on this day.'}
+        </p>
+      ) : null}
 
       <SiteMapJobSummaryCard
         job={selectedJob}
@@ -206,7 +213,11 @@ export default function SiteMapPage() {
                     {job.address || 'No address'} · {siteMapUnplacedReason(job.placement)}
                   </span>
                 </span>
-                {userCanEditJob(user, job.project, job.collection) ? (
+                {job.placement.kind === 'lookupFailed' ? (
+                  <button type="button" className="btn xs" onClick={retryLookups}>
+                    Retry
+                  </button>
+                ) : userCanEditJob(user, job.project, job.collection, managers) ? (
                   <SetSitePinButton project={job.project} collection={job.collection} />
                 ) : (
                   <span className="muted xs">Ask an admin to set the pin</span>

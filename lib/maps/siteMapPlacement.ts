@@ -6,8 +6,8 @@
  * placed: it is listed under "Jobs without an address" on the full map, where an admin sets its pin by hand.
  *
  * Which jobs are shown is the rulebook's job status (`jobWorkStatus` / `worksTab`, §21) on the day the map shows, in
- * the organisation zone: Active and Upcoming always, Completed only when the toggle is on, inactive (`isLive` false)
- * never (`siteMapPins` §21 counts no inactive job).
+ * the organisation zone: Active and Upcoming always, Completed only when the toggle is on or when someone is booked
+ * on it that day (`siteMapPins`), inactive (`isLive` false) never (`siteMapPins` §21 counts no inactive job).
  */
 
 import { jobWorkStatus, worksTab, type WorksListJob } from '@/lib/canonical'
@@ -34,12 +34,19 @@ export type SiteMapPlacement =
   | { kind: 'postcode'; coordinates: LatLng; postcode: string }
   | { kind: 'pending'; postcode: string }
   | { kind: 'postcodeNotFound'; postcode: string }
+  /** The lookup could not be reached (network): not placed for now, never remembered as unknown. */
+  | { kind: 'lookupFailed'; postcode: string }
   | { kind: 'noPostcode' }
   | { kind: 'noAddress' }
 
 /** Placements that are not on the map and are listed for a manual pin. */
 export function siteMapPlacementUnplaced(placement: SiteMapPlacement): boolean {
-  return placement.kind === 'postcodeNotFound' || placement.kind === 'noPostcode' || placement.kind === 'noAddress'
+  return (
+    placement.kind === 'postcodeNotFound' ||
+    placement.kind === 'lookupFailed' ||
+    placement.kind === 'noPostcode' ||
+    placement.kind === 'noAddress'
+  )
 }
 
 const COORDINATE_TEXT = /^\s*\(?\s*(-?\d{1,2}(?:\.\d+)?)\s*[,\s]\s*(-?\d{1,3}(?:\.\d+)?)\s*\)?\s*$/
@@ -97,7 +104,8 @@ function siteAddressInput(site: SiteMapPlacementSite) {
  */
 export function siteMapPlacement(
   site: SiteMapPlacementSite,
-  postcodes: ReadonlyMap<string, LatLng | null>
+  postcodes: ReadonlyMap<string, LatLng | null>,
+  failedPostcodes: ReadonlySet<string> = new Set()
 ): SiteMapPlacement {
   const stored = resolveStoredCoordinates({
     latitude: site.latitude ?? undefined,
@@ -111,38 +119,60 @@ export function siteMapPlacement(
   }
   const postcode = siteMapPostcode(site)
   if (postcode) {
-    if (!postcodes.has(postcode)) return { kind: 'pending', postcode }
+    if (!postcodes.has(postcode)) {
+      return failedPostcodes.has(postcode) ? { kind: 'lookupFailed', postcode } : { kind: 'pending', postcode }
+    }
     const point = postcodes.get(postcode)
     return point ? { kind: 'postcode', coordinates: point, postcode } : { kind: 'postcodeNotFound', postcode }
   }
   return isMappableSiteAddress(formatSiteAddress(input)) ? { kind: 'noPostcode' } : { kind: 'noAddress' }
 }
 
+export const SITE_MAP_LOOKUP_FAILED_TEXT = 'Couldn’t reach the postcode lookup — retry'
+
 /** The reason shown beside a job that could not be placed. */
 export function siteMapUnplacedReason(placement: SiteMapPlacement): string {
   if (placement.kind === 'noAddress') return 'No address'
   if (placement.kind === 'noPostcode') return 'No postcode in the address'
   if (placement.kind === 'postcodeNotFound') return `Postcode ${placement.postcode} not found`
+  if (placement.kind === 'lookupFailed') return SITE_MAP_LOOKUP_FAILED_TEXT
   return ''
 }
 
 /**
- * Whether a job is on the map on `dayKey`: Active and Upcoming always, Completed only with `includeCompleted`,
- * inactive never. Status is the rulebook's (`jobWorkStatus`, `worksTab`) in the organisation zone.
+ * Whether a job is on the map on `dayKey`: Active and Upcoming always, Completed only with `includeCompleted` or when
+ * someone is booked on it that day (`bookedThatDay`, from `siteMapPins`: a job past its end date still being worked
+ * on is never hidden), inactive never. Status is the rulebook's (`jobWorkStatus`, `worksTab`) in the organisation zone.
  */
 export function siteMapJobShown(
   job: WorksListJob,
-  options: { includeCompleted: boolean; dayKey: string; timeZone: string }
+  options: { includeCompleted: boolean; dayKey: string; timeZone: string; bookedThatDay?: boolean }
 ): boolean {
   if (job.isLive === false) return false
+  if (options.bookedThatDay) return true
   const tab = worksTab(jobWorkStatus(job, options.dayKey, options.timeZone))
   return tab === 'completed' ? options.includeCompleted : true
 }
 
-/** The Home card line for jobs that could not be placed, or null when every job is placed. */
-export function siteMapUnplacedText(count: number): string | null {
-  if (!Number.isFinite(count) || count <= 0) return null
-  return count === 1 ? '1 job could not be placed on the map.' : `${count} jobs could not be placed on the map.`
+function plural(count: number, one: string, many: string): string {
+  return count === 1 ? one : many.replace('{n}', String(count))
+}
+
+/**
+ * The Home card line for jobs that are not on the map, or null when every job is placed. Jobs whose postcode lookup
+ * could not be reached are counted apart (they are placed once the lookup answers).
+ */
+export function siteMapUnplacedText(count: number, lookupFailedCount = 0): string | null {
+  const unplaced = Number.isFinite(count) && count > 0 ? Math.floor(count) : 0
+  const failed = Number.isFinite(lookupFailedCount) && lookupFailedCount > 0 ? Math.floor(lookupFailedCount) : 0
+  const parts: string[] = []
+  if (unplaced > 0) parts.push(plural(unplaced, '1 job could not be placed on the map.', '{n} jobs could not be placed on the map.'))
+  if (failed > 0) {
+    parts.push(
+      plural(failed, '1 job is waiting for the postcode lookup — retry.', '{n} jobs are waiting for the postcode lookup — retry.')
+    )
+  }
+  return parts.length > 0 ? parts.join(' ') : null
 }
 
 // MARK: - postcodes.io lookups (browser)
@@ -226,28 +256,39 @@ function rememberPostcodes(found: Map<string, LatLng | null>): void {
 }
 
 /**
- * Looks up postcodes on postcodes.io (bulk, 100 at a time) and remembers the answers. A network failure throws, so
- * the caller can show the jobs as not placed for now without remembering them as unknown.
+ * Looks up postcodes on postcodes.io (bulk, 100 at a time), remembering and handing over each batch's answers as it
+ * arrives (`onBatch`). A batch that cannot be reached (network or a server error) is returned in `failed`, never
+ * remembered as unknown, so it is asked again later.
  */
 export async function lookupPostcodes(
   postcodes: ReadonlyArray<string>,
-  fetchImpl: typeof fetch = fetch
-): Promise<Map<string, LatLng | null>> {
+  options: { fetchImpl?: typeof fetch; onBatch?: (found: Map<string, LatLng | null>) => void } = {}
+): Promise<{ found: Map<string, LatLng | null>; failed: string[] }> {
+  const fetchImpl = options.fetchImpl ?? fetch
   const unique = [...new Set(postcodes.map(formatUkPostcode))].filter(Boolean)
-  const out = new Map<string, LatLng | null>()
+  const found = new Map<string, LatLng | null>()
+  const failed: string[] = []
   for (let i = 0; i < unique.length; i += POSTCODES_IO_BULK_LIMIT) {
     const batch = unique.slice(i, i + POSTCODES_IO_BULK_LIMIT)
-    const response = await fetchImpl(POSTCODES_IO_BULK_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ postcodes: batch }),
-      credentials: 'omit',
-      referrerPolicy: 'no-referrer',
-    })
-    if (!response.ok) throw new Error(`postcodes.io ${response.status}`)
-    const parsed = parsePostcodesIoBulk(await response.json())
-    for (const postcode of batch) out.set(postcode, parsed.get(postcode) ?? null)
+    let answers: Map<string, LatLng | null>
+    try {
+      const response = await fetchImpl(POSTCODES_IO_BULK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ postcodes: batch }),
+        credentials: 'omit',
+        referrerPolicy: 'no-referrer',
+      })
+      if (!response.ok) throw new Error(`postcodes.io ${response.status}`)
+      const parsed = parsePostcodesIoBulk(await response.json())
+      answers = new Map(batch.map((postcode) => [postcode, parsed.get(postcode) ?? null] as const))
+    } catch {
+      failed.push(...batch)
+      continue
+    }
+    rememberPostcodes(answers)
+    for (const [key, value] of answers) found.set(key, value)
+    options.onBatch?.(answers)
   }
-  rememberPostcodes(out)
-  return out
+  return { found, failed }
 }

@@ -19,6 +19,7 @@ import { siteMapUnplacedText } from '@/lib/maps/siteMapPlacement'
 import { SiteMapBoard } from '@/components/site-map/SiteMapBoard'
 import { SiteMapJobSummaryCard } from '@/components/site-map/SiteMapJobSummaryCard'
 import { SiteMapCompletedToggle, SiteMapLegend } from '@/components/site-map/SiteMapLegend'
+import { SiteMapJobButtons } from '@/components/site-map/SiteMapJobButtons'
 import { useSiteMapJobs } from '@/components/site-map/useSiteMapJobs'
 
 export default function SiteMapHomeCard({
@@ -35,8 +36,13 @@ export default function SiteMapHomeCard({
   const liveOrganization = useOrganizationDocument()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [includeCompleted, setIncludeCompleted] = useState(false)
-  const { jobs, markers, unplaced, locating } = useSiteMapJobs({ organizationId, dayKey, timeZone, includeCompleted })
-  const unplacedText = locating ? null : siteMapUnplacedText(unplaced.length)
+  const { jobs, markers, unplaced, lookupFailedCount, locating } = useSiteMapJobs({
+    organizationId,
+    dayKey,
+    timeZone,
+    includeCompleted,
+  })
+  const unplacedText = locating ? null : siteMapUnplacedText(unplaced.length - lookupFailedCount, lookupFailedCount)
   const officeCentre = useMemo(
     () => (liveOrganization.organizationId === organizationId ? officeCentreFromOrganization(liveOrganization.data) : null),
     [liveOrganization.organizationId, liveOrganization.data, organizationId]
@@ -69,6 +75,12 @@ export default function SiteMapHomeCard({
         </p>
       ) : null}
       <SiteMapBoard markers={markers} selectedMarkerId={selectedId} onSelectMarker={select} officeCentre={officeCentre} compact />
+      <SiteMapJobButtons markers={markers} selectedId={selectedId} onSelect={select} />
+      {!locating && jobs.length === 0 ? (
+        <p className="dash-muted" style={{ margin: '8px 0 0' }}>
+          {includeCompleted ? 'No jobs on this day.' : 'No active or upcoming jobs on this day.'}
+        </p>
+      ) : null}
       <div style={{ marginTop: 10 }}>
         <SiteMapJobSummaryCard
           job={selectedJob}

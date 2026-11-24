@@ -1137,6 +1137,26 @@ button.tb-new:hover {
   height: 18px;
   accent-color: var(--dash-blue, var(--blue, #2563eb));
 }
+.sitemap-job-buttons ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+.sitemap-job-buttons button {
+  min-height: 32px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--dash-line, var(--line));
+  background: var(--dash-card, var(--card));
+  color: var(--dash-ink, var(--ink));
+  font-size: 13px;
+}
+.sitemap-job-buttons button[aria-pressed='true'] {
+  border-color: var(--dash-blue, #2563eb);
+}
 .sitemap-unplaced h2 {
   margin: 0 0 4px;
   font-size: 16px;
