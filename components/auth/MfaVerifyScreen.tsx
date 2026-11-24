@@ -30,6 +30,23 @@ import {
   playPrimedWelcomeSound,
   primeWelcomeSound,
 } from '@/lib/feedbackSounds/feedback'
+import {
+  MFA_SCREEN_CHECKING_MAX_MS,
+  MFA_SCREEN_SIGNING_IN_TEXT,
+  mfaShowsCodeForm,
+  mfaStepAfterStart,
+  mfaStepAfterStatus,
+  type MfaScreenStep,
+} from '@/lib/auth/mfa/mfaScreenPhase'
+import { markPasskeyReminderDue } from '@/lib/auth/passkeys/passkeyReminder'
+
+function sessionStore(): Storage | null {
+  try {
+    return typeof window === 'undefined' ? null : window.sessionStorage
+  } catch {
+    return null
+  }
+}
 
 export function MfaVerifyScreen() {
   const router = useRouter()
@@ -42,6 +59,9 @@ export function MfaVerifyScreen() {
   const [submitting, setSubmitting] = useState(false)
   const [resending, setResending] = useState(false)
   const [cooldown, setCooldown] = useState(0)
+  // Owner 24 Nov: start neutral, so a passkey sign-in (already verified) never flashes the code form.
+  const [step, setStep] = useState<MfaScreenStep>('checking')
+  const [waitedTooLong, setWaitedTooLong] = useState(false)
   const startedFor = useRef('')
   const submittingRef = useRef(false)
   const email = firebaseUser?.email || user?.email || ''
@@ -128,17 +148,21 @@ export function MfaVerifyScreen() {
           throw statusError
         }
         if (cancelled) return
-        if (status.verified) {
+        const statusStep = mfaStepAfterStatus(status)
+        setStep(statusStep)
+        if (statusStep === 'goToApp') {
           goToApp(status.next || fallback)
           return
         }
-        if (status.pending) {
+        if (statusStep === 'enterCode') {
           setNotice('Enter the 6-digit code from your email.')
           return
         }
         const result = await startEmailMfa(fallback)
         if (cancelled) return
-        if (result.skipped) {
+        const startStep = mfaStepAfterStart(result)
+        setStep(startStep)
+        if (startStep === 'goToApp') {
           goToApp(fallback)
           return
         }
@@ -154,6 +178,12 @@ export function MfaVerifyScreen() {
     // goToApp reads latest next from search params; mount once per uid
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fallback, firebaseUser?.uid])
+
+  useEffect(() => {
+    // Never leave the person with only "Signing you in…": after a while the full screen shows (resend, other account).
+    const timer = window.setTimeout(() => setWaitedTooLong(true), MFA_SCREEN_CHECKING_MAX_MS)
+    return () => window.clearTimeout(timer)
+  }, [])
 
   useEffect(() => {
     if (cooldown <= 0) return
@@ -173,7 +203,11 @@ export function MfaVerifyScreen() {
     primeWelcomeSound()
     try {
       const result = await verifyEmailMfa(digits)
-      goToApp(result.next || fallback)
+      const destination = safePostMfaPath(result.next || requestedNext, fallback)
+      // A password + emailed code sign-in: the app may suggest a passkey once (owner 24 Nov). A passkey sign-in never
+      // reaches this line (its status is already verified), so it is never reminded.
+      markPasskeyReminderDue(uid, destination, sessionStore())
+      goToApp(destination)
     } catch (err) {
       submittingRef.current = false
       setSubmitting(false)
@@ -207,6 +241,18 @@ export function MfaVerifyScreen() {
     } finally {
       setResending(false)
     }
+  }
+
+  if (!mfaShowsCodeForm({ step, hasError: Boolean(error), waitedTooLong })) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-(--bg)" data-testid="mfa-signing-in">
+        <div className="flex flex-col items-center gap-4" role="status" aria-live="polite">
+          <AppLogoMark size={72} radius={18} />
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--blue) border-t-transparent" aria-hidden="true" />
+          <p className="text-(--ink2) font-semibold">{MFA_SCREEN_SIGNING_IN_TEXT}</p>
+        </div>
+      </div>
+    )
   }
 
   return (
