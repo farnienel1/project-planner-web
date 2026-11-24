@@ -1382,3 +1382,18 @@ UI only, web only (`docs/design/projects-overview-ui/projects-overview-ui-spec.m
 | 23 Nov | Back when the browser will not let the page cancel it (Chrome lets a page cancel one Back per click or key press, so a second Back straight after a Cancel): the question is still asked; on Cancel the address bar moves for a moment and the page puts it straight back, keeping the photos. Relies on the browser running the page's capture listener before Next.js's own — current Chrome, Edge, Safari and Firefox do. | done, owner to confirm |
 | 23 Nov | `router.back()` from in-app buttons and Forward are guarded too while the audit has unsaved work. | done, owner to confirm |
 
+## 23 Nov decisions (qualification expiries, 1.75)
+
+| Date | Decision | Status |
+|---|---|---|
+| 23 Nov | **C12: yes — Data health lists qualifications with no expiry date of their own.** A person whose qualification's library entry has an end date (`hasEndDate` or `endDate`) but who has no `qualificationExpiryDates` entry for it on any of their `operatives` rows gets no expiry warning or reminder (the library date is a template, 1.73.0). Settings → Data health (admins, read only) lists one row per person + qualification, each linked to the person's qualifications editor. Rule: `qualificationsMissingOwnExpiry` (§5), people folded with the rulebook person fold. Guardrail 3: nothing hidden — inactive people listed and marked. | done web + rulebook (1.75.0, w176-quals); iOS n/a (no Data health screen) |
+| 23 Nov | **C13: yes — iPhone qualification expiry reminders use the organisation's time zone.** The local reminders (3 months, 1 month, 1 week, 1 day before, at 09:00) are worked out on the organisation's day and fire at 09:00 organisation time, never the phone's zone. | iOS (branch ios-quals-tz) |
+
+## 1.75.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 23 Nov | The library entry is matched by qualification id without case, else by name without case; a qualification whose library entry is missing (removed from the library) is listed when the copy on the person's row says it has an end date. | done, owner to confirm |
+| 23 Nov | A person with no app account (a catalogue `operatives` row) links to that row's edit page; everyone else to Edit user (qualifications). | done, owner to confirm |
+| 23 Nov | Review of #426: a person with any active `operatives` row is judged on their active rows only (as the warnings and iPhone reminders read them), so a date only on an inactive duplicate row does not hide them from the list; a fully inactive person is judged on all rows. A library entry's stored `hasEndDate` decides (an `endDate` beside `hasEndDate: false` is ignored). The person is named and linked by their live users document; anonymised deleted profiles and blank-named qualifications are skipped. If the qualification library fails to load, the card shows an error and Retry, never a list. | done |
+
