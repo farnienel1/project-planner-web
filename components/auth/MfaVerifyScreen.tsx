@@ -203,9 +203,10 @@ export function MfaVerifyScreen() {
     primeWelcomeSound()
     try {
       const result = await verifyEmailMfa(digits)
-      const destination = safePostMfaPath(result.next || requestedNext, fallback)
+      const destination = result.next || requestedNext || fallback
       // A password + emailed code sign-in: the app may suggest a passkey once (owner 24 Nov). A passkey sign-in never
       // reaches this line (its status is already verified), so it is never reminded.
+      // goToApp makes the path safe (once); the mark only notes a /dashboard destination and never navigates.
       markPasskeyReminderDue(uid, destination, sessionStore())
       goToApp(destination)
     } catch (err) {

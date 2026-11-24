@@ -5,9 +5,19 @@ import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 
 import { useAuthStore } from '@/lib/stores/authStore'
+import { auth } from '@/lib/firebase/config'
+import { onPlatformConfigChange, webUpdateRequiredFor } from '@/lib/access/securitySwitches'
+import { webUpdateGateShown } from '@/lib/app/webUpdateGate'
+import {
+  getAnalyticsConsent,
+  shouldAutoPromptAnalyticsConsent,
+  subscribeAnalyticsConsent,
+  type AnalyticsConsentChoice,
+} from '@/lib/analytics/analyticsConsent'
 import { listPasskeys, passkeysAvailableHere } from '@/lib/auth/passkeys/passkeyClient'
 import {
   isPasskeyReminderSilenced,
+  passkeyReminderBlocked,
   passkeyReminderShows,
   passkeyReminderWorthChecking,
   PASSKEY_REMINDER_BODY,
@@ -38,7 +48,16 @@ const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), [tabin
 export function PasskeyReminder() {
   const router = useRouter()
   const uid = useAuthStore((state) => state.user?.id || '')
+  const signedInUser = useAuthStore((state) => state.user)
   const [open, setOpen] = useState(false)
+  // Review of #449: wait while the forced-update screen or the analytics consent prompt is up (the same tests
+  // WebUpdateGate and AnalyticsConsentHost use, which the dashboard renders alongside this).
+  const [updateRequired, setUpdateRequired] = useState(false)
+  // Read on first render (this renders nothing until the reminder opens, so no hydration mismatch).
+  const [consent, setConsent] = useState<AnalyticsConsentChoice | null>(() =>
+    typeof window === 'undefined' ? null : getAnalyticsConsent()
+  )
+  const consentRead = typeof window !== 'undefined'
   const checkedFor = useRef('')
   const dialogRef = useRef<HTMLDivElement>(null)
   const returnFocus = useRef<HTMLElement | null>(null)
@@ -68,7 +87,27 @@ export function PasskeyReminder() {
   }, [uid])
 
   useEffect(() => {
-    if (!open) return
+    const running = process.env.NEXT_PUBLIC_RULEBOOK_VERSION
+    const check = () => setUpdateRequired(webUpdateRequiredFor(running))
+    check()
+    return onPlatformConfigChange(check)
+  }, [])
+
+  useEffect(() => subscribeAnalyticsConsent(setConsent), [])
+
+  const firebaseUser = signedInUser ? auth?.currentUser : null
+  const blocked = passkeyReminderBlocked({
+    updateGateShown: webUpdateGateShown(
+      updateRequired,
+      firebaseUser ? { email: firebaseUser.email, emailVerified: firebaseUser.emailVerified } : null
+    ),
+    // Until the stored choice is read, assume the prompt may show (never flash on top of it).
+    consentPromptShown: !consentRead || shouldAutoPromptAnalyticsConsent({ autoPrompt: true, choice: consent, ready: true }),
+  })
+  const visible = open && !blocked
+
+  useEffect(() => {
+    if (!visible) return
     returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const dialog = dialogRef.current
     dialog?.querySelector<HTMLElement>('[data-autofocus]')?.focus()
@@ -97,9 +136,9 @@ export function PasskeyReminder() {
       document.removeEventListener('keydown', onKey)
       returnFocus.current?.focus?.()
     }
-  }, [open])
+  }, [visible])
 
-  if (!open || typeof document === 'undefined') return null
+  if (!visible || typeof document === 'undefined') return null
 
   const close = () => setOpen(false)
   const never = () => {

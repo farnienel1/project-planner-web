@@ -24,6 +24,10 @@ test('mfa screen: a password sign-in still has to enter the emailed code', () =>
 
 test('mfa screen: errors and a long wait show the full screen', () => {
   assert.equal(mfaShowsCodeForm({ step: 'checking', hasError: true, waitedTooLong: false }), true)
-  assert.equal(mfaShowsCodeForm({ step: 'goToApp', hasError: false, waitedTooLong: true }), true)
+  assert.equal(mfaShowsCodeForm({ step: 'checking', hasError: false, waitedTooLong: true }), true)
+  assert.equal(mfaShowsCodeForm({ step: 'sendCode', hasError: false, waitedTooLong: true }), true)
+  // Review of #449: once verified, a slow hand-over to the app never shows the form; an error still does.
+  assert.equal(mfaShowsCodeForm({ step: 'goToApp', hasError: false, waitedTooLong: true }), false)
+  assert.equal(mfaShowsCodeForm({ step: 'goToApp', hasError: true, waitedTooLong: true }), true)
   assert.equal(mfaStepAfterStart({ skipped: true }), 'goToApp')
 })

@@ -49,6 +49,12 @@ export function takePasskeyReminderDue(uid: string, store?: KeyValueStore | null
   return due === uid
 }
 
+/** Sign-out: a due mark never carries over to the next sign-in in this tab (review of #449). */
+export function clearPasskeyReminderDue(store?: KeyValueStore | null): void {
+  if (!store) return
+  safe(() => store.removeItem(PASSKEY_REMINDER_DUE_KEY), undefined)
+}
+
 export function isPasskeyReminderSilenced(uid: string, store?: KeyValueStore | null): boolean {
   if (!uid || !store) return false
   return safe(() => store.getItem(passkeyReminderSilencedKey(uid)), null) === '1'
@@ -62,6 +68,14 @@ export function silencePasskeyReminder(uid: string, store?: KeyValueStore | null
 /** Whether to ask the server for the passkey list at all (the list is read only when the reminder would show). */
 export function passkeyReminderWorthChecking(input: { due: boolean; available: boolean; silenced: boolean }): boolean {
   return input.due && input.available && !input.silenced
+}
+
+/**
+ * Never on top of another screen that needs the person first (review of #449): the forced-update screen
+ * (`WebUpdateGate`) or the analytics consent prompt. The reminder waits until they are gone.
+ */
+export function passkeyReminderBlocked(input: { updateGateShown: boolean; consentPromptShown: boolean }): boolean {
+  return input.updateGateShown || input.consentPromptShown
 }
 
 /** Show only when the account has no passkey; an unknown count (the list failed) never shows it. */

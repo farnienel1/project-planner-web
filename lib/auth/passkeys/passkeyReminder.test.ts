@@ -2,7 +2,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  clearPasskeyReminderDue,
   isPasskeyReminderSilenced,
+  passkeyReminderBlocked,
   markPasskeyReminderDue,
   passkeyReminderShows,
   passkeyReminderSilencedKey,
@@ -31,6 +33,20 @@ test('passkey reminder: due once after a code sign-in into the app, for that acc
   markPasskeyReminderDue('u1', '/dashboard/projects', session)
   assert.equal(takePasskeyReminderDue('u1', session), true)
   assert.equal(takePasskeyReminderDue('u1', session), false, 'once per sign-in: ✕ brings it back only at the next one')
+})
+
+test('passkey reminder: sign-out clears the due mark', () => {
+  const session = memoryStore()
+  markPasskeyReminderDue('u1', '/dashboard', session)
+  clearPasskeyReminderDue(session)
+  assert.equal(takePasskeyReminderDue('u1', session), false)
+  assert.doesNotThrow(() => clearPasskeyReminderDue(null))
+})
+
+test('passkey reminder: waits while the forced-update screen or the analytics consent prompt is up', () => {
+  assert.equal(passkeyReminderBlocked({ updateGateShown: true, consentPromptShown: false }), true)
+  assert.equal(passkeyReminderBlocked({ updateGateShown: false, consentPromptShown: true }), true)
+  assert.equal(passkeyReminderBlocked({ updateGateShown: false, consentPromptShown: false }), false)
 })
 
 test('passkey reminder: not marked for the developer console, a blank uid or no storage', () => {

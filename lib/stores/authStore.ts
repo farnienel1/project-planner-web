@@ -89,6 +89,7 @@ import { waitForAuthToken } from '@/lib/firebase/waitForAuthToken'
 import { MISSING_USER_PROFILE_MESSAGE } from '@/lib/auth/missingProfile'
 import { activeOrganizationIdentity, setActiveOrganizationIdentity } from '@/lib/staff/activeOrganizationIdentity'
 import { AUTH_CLAIMS_REFRESHED_EVENT, watchAuthClaims } from '@/lib/auth/authClaimsRefresh'
+import { clearPasskeyReminderDue } from '@/lib/auth/passkeys/passkeyReminder'
 
 interface AuthState {
   user: User | null
@@ -1102,6 +1103,12 @@ export const useAuthStore = create<AuthState>((set) => {
       // Keep pp.webActiveOrg:{userId}. Same-user login must reopen this company.
       // Keep pp.analyticsConsent.v1. Same-browser login must not re-prompt Accept/Reject.
       writeSignedOutFlag(true)
+      // A passkey reminder due from this sign-in never carries over to the next one in this tab (review of #449).
+      try {
+        clearPasskeyReminderDue(typeof window === 'undefined' ? null : window.sessionStorage)
+      } catch {
+        /* storage blocked */
+      }
       try {
         if (opts?.idle) markWebIdleExpired()
         else clearWebIdleActivity()
