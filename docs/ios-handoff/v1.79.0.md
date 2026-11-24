@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.79.0 → 1.79.0
-Packed hash: 3c93bd8a0c7b81afcde4c320e739fa10b8b9190b8c5f1246a1c88984a024f8f0
-Rulebook sha256: b910abd33b9762af026b883f2298360a5dfba31846d08024ecdfc9dfe2417ea8
+Packed hash: b99e3b2ceba01432bb0e980d23357f692d02ecc42e202e9726fe9f89564a702e
+Rulebook sha256: fc97b116875a13e740d28e3f60788603906e726dbccd57513dbc1902f3291d7c
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -26,8 +26,8 @@ Exports added: none
 Exports removed: none
 Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/canonical.test.ts, lib/canonical/payrunSnapshot.ts
 Done when:
-- [ ] Packed hash in iOS equals 3c93bd8a0c7b81afcde4c320e739fa10b8b9190b8c5f1246a1c88984a024f8f0
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 b910abd33b9762af026b883f2298360a5dfba31846d08024ecdfc9dfe2417ea8)
+- [ ] Packed hash in iOS equals b99e3b2ceba01432bb0e980d23357f692d02ecc42e202e9726fe9f89564a702e
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 fc97b116875a13e740d28e3f60788603906e726dbccd57513dbc1902f3291d7c)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.79.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -38,7 +38,7 @@ Done when:
 
 - **App-icon number = unread inbox rows, always** (§13, owner decision 24 Nov): `NOTIFICATION_ICON_BADGE_CLEARS_ON_FOREGROUND` is false. Opening the iPhone app no longer clears the icon; it goes down only when rows are read (owner saw 16, opened the app, 0, force-closed, 16 again). iOS keeps the icon at the unread count once the inbox has loaded.
 - **Notification destinations** (§13, owner decision 24 Nov): toolbox talk notices (`toolbox_talk_issued`, `hs_toolbox_reminder`) carry the job id (`NOTIFICATION_RELATED_ID` `job`, was `healthSafetyIssue`) and open that job's Health & safety; material line notices open that job's Materials (new kind `jobMaterials`; `materialOrders` / Wholesalers only without a job id); variation notices open the variation on its job on web too (`/dashboard/variations?open=`). `NotificationDestination` gains `catalogue` (from the row). Web adds `/dashboard/notifications/open` to resolve a job with no catalogue. No new notification field.
-- **Payrun Snapshot whose turn** (§7, owner decision 24 Nov): an open revision reads "REV 1 · waiting for <first name>" or "REV 1 · waiting for line manager" (`timesheetRevisionWaitingForLabel`, `TIMESHEET_REVISION_WAITING_LINE_MANAGER`); a Timesheet cell's link carries `documentId` and web opens that stored sheet (`timesheetsTeamHref` `doc`). The weekly report check line keeps "REV 1 waiting for signature".
+- **Payrun Snapshot whose turn** (§7, owner decision 24 Nov): an open revision reads "REV 1 · waiting for <first name>" or "REV 1 · waiting for line manager" (`timesheetRevisionWaitingForLabel`, `TIMESHEET_REVISION_WAITING_LINE_MANAGER`; never "line manager" for a self-signed person, `timesheetSelfSigned`); a Timesheet cell's link carries `documentId` and web opens that stored sheet (`timesheetsTeamHref` `doc`). The weekly report check line keeps "REV 1 waiting for signature".
 
 
 ## Workflow for the iOS agent

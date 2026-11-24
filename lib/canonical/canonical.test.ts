@@ -17206,6 +17206,13 @@ test('1.53.0 review: a new night shift clashes with the next morning\'s early bo
     assert.equal(run([exportedSheet, openRev]), 'REV 1 · waiting for S')
     const personSignedRev = R.parsePayrunSnapshotSheet(`${ORIGINAL}_rev1`, { userId: SUBJECT, weekStartKey: '2026-11-01', weekEndKey: '2026-11-15', operativeSignedAt: signedAt, operativeSignedByName: 'S P', operativeSignatureImageBase64: 'x' })!
     assert.equal(run([exportedSheet, personSignedRev]), 'REV 1 · waiting for line manager')
+    // A self-signed person (Timesheet self-sign on) who has signed waits for nobody: the plain label stays.
+    const selfSignedRoster = roster.map((p) => (p.id === SUBJECT ? { ...p, adminAccess: true, role: 'admin', timesheetSelfSign: true } : p))
+    const runSelf = (sheets: unknown[]) =>
+      (R.payrunSnapshotRows({ roster: selfSignedRoster, organization: {}, period: { start: '2026-11-01', end: '2026-11-15' }, sheets, overtimeRequests: [], overtimeReports: [], payeClaimReports: [], priceWork: [], expenses: [], timeZone: 'Europe/London' } as never) as Array<{ personId: string; cells: { timesheet: { label: string } } }>)
+        .find((row) => row.personId === SUBJECT)?.cells.timesheet.label
+    assert.equal(runSelf([exportedSheet, personSignedRev]), 'REV 1 waiting for signature')
+    assert.equal(runSelf([exportedSheet, openRev]), 'REV 1 · waiting for S')
     const signedRev = R.parsePayrunSnapshotSheet(`${ORIGINAL}_rev1`, { userId: SUBJECT, weekStartKey: '2026-11-01', weekEndKey: '2026-11-15', operativeSignedAt: signedAt, operativeSignedByName: 'S P', operativeSignatureImageBase64: 'x', managerSignedAt: signedAt, managerSignedByName: 'L M', managerSignatureImageBase64: 'y', weeklyReportOverride: { lines: [] } })!
     assert.equal(run([exportedSheet, signedRev]), R.PAYRUN_SNAPSHOT_STATE_LABELS.signed)
   })

@@ -7,6 +7,7 @@ import { doc, getDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { jobIdQueryValues } from '@/lib/canonical'
+import { urlDocumentId } from '@/lib/firebase/urlDocumentId'
 import {
   NOTIFICATION_JOB_SECTIONS,
   jobSectionPath,
@@ -32,7 +33,8 @@ function NotificationJobResolver() {
   const router = useRouter()
   const params = useSearchParams()
   const { organization } = useAuthStore()
-  const jobId = (params.get('job') || '').trim()
+  // Taken from the URL: refused when empty, a path ("/") or over 200 characters (shows the not-found note).
+  const jobId = urlDocumentId(params.get('job')) ?? ''
   const rawSection = params.get('section') || ''
   const section: NotificationJobSection = (NOTIFICATION_JOB_SECTIONS as ReadonlyArray<string>).includes(rawSection)
     ? (rawSection as NotificationJobSection)

@@ -29,7 +29,7 @@
 
 import { dateFromDayKeyInZone } from '../orgTime/zoneTime'
 import { zoneOrLondon } from './dayKeys'
-import { hasActiveLineManager, isSuperAdminAccount, type LeaveSelfBookUser } from './leaveRequests'
+import { hasActiveLineManager, isSuperAdminAccount, timesheetSelfSigned, type LeaveSelfBookUser } from './leaveRequests'
 import { parseInvoicing } from './organizationSettings'
 import {
   overtimePersonIds,
@@ -387,6 +387,8 @@ function timesheetCell(
 ): PayrunSnapshotCell {
   const theirs = sheets.filter((sheet) => ids.has(idKey(sheet.userId)))
   const lineManager = hasActiveLineManager(person, roster as never)
+  // A self-signed person's own signature completes the sheet (§8): never "waiting for line manager".
+  const selfSigned = timesheetSelfSigned(person as LeaveSelfBookUser)
   const states = runs.map((run) => {
     const index = pickTimesheetRowForPeriod(
       // 1.55.0: of an original and its revisions, the latest version.
@@ -414,12 +416,13 @@ function timesheetCell(
       ? timesheetReportWaiting(sheet.bookingsChange, { state: revision?.state ?? 'none', personSigned })
       : null
     // 1.79.0 (owner decision 24 Nov): an open revision says whose signature it waits for — the person's, or (once they
-    // have signed) the line manager's counter-signature.
+    // have signed) the line manager's counter-signature. A self-signed person who has signed waits for nobody's
+    // signature: the plain "REV 1 waiting for signature" label stays (the snapshot is written with their signature).
     const revisionOpen = revision?.state === 'open'
     const revisionLabel = revisionOpen
       ? timesheetRevisionWaitingForLabel(
           parseTimesheetRevisionDocId(sheet?.documentId)?.revision ?? 0,
-          personSigned ? 'lineManager' : 'person',
+          personSigned ? (selfSigned ? null : 'lineManager') : 'person',
           person.firstName || person.name || person.displayName
         )
       : revision?.label ?? ''

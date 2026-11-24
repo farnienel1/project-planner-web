@@ -14,6 +14,7 @@ import { changedFirestoreFields } from '@/lib/firebase/changedFields'
 import { firestoreUpdateFields } from '@/lib/firebase/partialWrite'
 import { timesheetChangedFields } from '@/lib/canonical/timesheetEntryReviews'
 import { timesheetDocumentSubjectId } from '@/lib/canonical/timesheetPeriod'
+import { urlDocumentId } from '@/lib/firebase/urlDocumentId'
 import { timesheetSheetHasActivity } from '@/lib/canonical/userTimesheetQueue'
 import { LONDON_TIME_ZONE, unixStartOfDay, dayKey } from '@/lib/ios-parity/londonTime'
 import { weekStartKey } from '@/lib/timesheets/timesheetWeekUtils'
@@ -970,15 +971,19 @@ export async function loadTimesheetDraft(
    */
   preferredDocumentId?: string | null
 ): Promise<TimesheetDraft> {
-  const preferred = (preferredDocumentId || '').trim()
+  // Taken from a URL: refused when empty, a path ("/") or over 200 characters.
+  const preferred = urlDocumentId(preferredDocumentId) ?? ''
   if (preferred && preferred.startsWith('timesheet_')) {
     try {
       const snap = await getDoc(doc(db, 'organizations', organizationId, 'settings', preferred))
       if (snap.exists()) {
         const data = snap.data() as Record<string, unknown>
-        const owners = new Set([userId, ...ownerUserIds].filter(Boolean).map((id) => id.toLowerCase()))
-        const owner = typeof data.userId === 'string' ? data.userId.toLowerCase() : ''
-        if ((owner && owners.has(owner)) || (!owner && [...owners].some((id) => preferred.toLowerCase().includes(id)))) {
+        const owners = new Set([userId, ...ownerUserIds].map(normalizeDocumentId).filter(Boolean))
+        // The person the document id names (`timesheet_{uid}_…`, a revision included) must be one of the owner's ids,
+        // without case; a stored `userId`, when there is one, too.
+        const subject = normalizeDocumentId(timesheetDocumentSubjectId(preferred))
+        const stored = typeof data.userId === 'string' ? normalizeDocumentId(data.userId) : ''
+        if (subject && owners.has(subject) && (!stored || owners.has(stored))) {
           if (weekStartMatches(data, weekStart, timeZone)) {
             return await latestVersionDraft(organizationId, snap.id, data, { timeZone, ownerUserIds })
           }
