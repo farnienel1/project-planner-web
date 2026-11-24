@@ -1637,3 +1637,17 @@ The owner's answers of 24 Nov (items 1, 2, 5, 9 of the list sent that day) and c
 | 24 Nov | Getting started: "3 of 6 done" counts the optional item; the card hides when the five required items are done even if accreditations are not. "Invite your team" is done as soon as one person besides the creator is on the roster (signed up or invited). Hiding is for the whole company, by any admin, with no way to show it again yet (every step stays in Settings); it hides at once, offline too (the write is sent when back online). | done, owner confirmed 24 Nov |
 | 24 Nov | The card is not limited by the company's age: an existing company with a required item still open (most likely a missing logo or office address) also sees it once, until an admin hides it or finishes the step. | done, owner confirmed 24 Nov |
 | 24 Nov | The setup wizard's "last screen" is Review & Pay (the screen after payment only redirects); the list there is read-only (no links: the person is not signed in to the app yet). | done, owner confirmed 24 Nov |
+
+## 24 Nov decisions (User Timesheets → Exported list, UI)
+
+| Date | Decision | Status |
+|---|---|---|
+| 24 Nov | **Versions collapsed by default** on User Timesheets → Exported: each row's "Versions of this pay run" list (Original, REV 1, REV 2…) sits behind a small "Versions · N" toggle under the person's name, closed until opened; an opened row stays open for the browser session. The row's Status still reads "Exported · REV N" with the latest version's PDF. | done web (w-exported-list-compact); iOS open (follow-up) |
+| 24 Nov | **Compact Exported list at 100% zoom**: every column (Person, Pay run, Exported, Hrs, OT, PW, Exp, Role, Line manager, Status) fits on a 1280–1440px laptop with the sidebar, no sideways scroll: tighter padding, pay run "16–30 Nov 2026", exported "24 Nov, 20:07" (the year only when not this year), Status on one line with a short "⬇ PDF" link (aria-label "Download PDF of REV N"). Narrower screens scroll inside the table only. | done web (w-exported-list-compact); iOS n/a |
+
+## Exported list judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 24 Nov | **Line manager "Unknown" was a display bug** (guardrail 1): the column matched only the first stored line-manager id, exactly, against the email-folded roster, so a line manager stored under a same-email second users document, a former invite id or another letter case read "Unknown". It now reads the rulebook's `lineManagerSummary` over every users document of the organisation, on Awaiting, Signed off and Exported. Words change with it: "Unassigned" → "Not set", "Unknown" → "Unknown person" (an id nobody goes by), "No line manager" when chosen, and "Jo Smith +1 more" for two line managers (only the first was shown). Nothing stored changes. | done web, owner to confirm |
+| 24 Nov | The "Signed …" date inside the versions list uses the same short form ("18 Nov, 12:28"). | done web, owner to confirm |

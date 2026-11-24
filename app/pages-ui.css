@@ -444,3 +444,25 @@ button.pu-item:disabled { cursor: not-allowed; opacity: 0.55; }
 .pu-linkbtn:focus-visible { outline: 2px solid var(--pu-primary); outline-offset: 2px; border-radius: 4px; }
 .pu-correct { display: flex; flex-direction: column; gap: 6px; margin: 0 0 12px; }
 .pu-correct-t { color: var(--pu-ink); }
+
+/* User Timesheets → Exported (owner 24 Nov): every column fits at 100% zoom on a 1280–1440px laptop; versions collapsed
+   by default. Tokens only, light and dark. Narrower screens keep the table's own sideways scroll (`.pu-tw`). */
+.pu-x-list .pu-table { font-size: 13px; }
+.pu-x-list .pu-table th { padding: 9px 7px; letter-spacing: 0.03em; }
+.pu-x-list .pu-table td { padding: 9px 7px; }
+.pu-x-list .pu-table th:first-child, .pu-x-list .pu-table td:first-child { padding-left: 12px; }
+.pu-x-list .pu-table th:last-child, .pu-x-list .pu-table td:last-child { padding-right: 10px; }
+.pu-x-list .pu-who { gap: 8px; }
+.pu-x-list .pu-sub { font-size: 12.5px; }
+.pu-x-run { color: var(--pu-blue); font-weight: 600; white-space: nowrap; }
+.pu-x-nowrap { white-space: nowrap; }
+.pu-x-status { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.pu-x-status .pu-chip { padding: 3px 7px; }
+.pu-x-pdf { all: unset; display: inline-flex; align-items: center; gap: 3px; cursor: pointer; font-weight: 600; font-size: 12px; color: var(--pu-blue); text-decoration: underline; text-underline-offset: 2px; border-radius: 4px; }
+.pu-x-pdf:focus-visible, .pu-x-versions:focus-visible { outline: 2px solid var(--dash-focus); outline-offset: 2px; }
+.pu-x-versions { all: unset; display: inline-flex; align-items: center; gap: 3px; margin-top: 2px; cursor: pointer; font-size: 12px; font-weight: 600; color: var(--pu-muted); border-radius: 4px; white-space: nowrap; }
+.pu-x-versions:hover { color: var(--pu-ink-2); }
+.pu-x-versions svg { transition: transform 0.15s ease; }
+.pu-x-versions svg[data-open='true'] { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .pu-x-versions svg { transition: none; } }
+.pu-x-versions-row td { padding-top: 6px; }
