@@ -1094,6 +1094,24 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 | 21 Nov | Web #380 (Warnings Dismiss on every type) carried no rulebook change once main had 1.60, so it took no version number; web #379 (hours breakdown) took **1.69.0** (drafted 1.62.0). Review of #380: a cluster Dismiss leaves an already-approved pair as stored (no approval turned into a dismissal). | done (#380, #379 merged 19 Nov) |
 | 21 Nov | **Major dependency upgrades held for the owner** (Tailwind 4 #396, TypeScript 7 #397, React DOM 19 #398): each fails the build and needs code changes, four days before launch. Minor and patch updates merged (#394, #395). | question |
 
+## 24 Nov decisions (web fixes)
+
+| Date | Decision | Status |
+|---|---|---|
+| 24 Nov | **Site map for admins**: opens on the office pin (Company details `defaultLatitude` / `defaultLongitude`), about 10 miles around; projects blue dots, small works red dots; clicking a dot shows a card under the map for the day shown — people on site (`siteMapPins`), paid hours (incl. the overtime multiplier, labelled "Paid hours") and overtime (the Daily Overview job card), people on annual leave; a compact copy on the Home dashboard for admins with "Open full map" ("a really basic interactive map … not too much detail"). | done web (w-fixes-24nov, draft PR); iOS open |
+| 24 Nov | **Payrun Snapshot easy to find**: a sidebar entry "Payrun Snapshot" (same gate as the Weekly report, `canOpenWeeklyReport`) opens the Weekly report with the snapshot open; the button in the report stays. | done web (w-fixes-24nov) |
+| 24 Nov | **Organisation hub badge** shows the stored document abbreviation (as iOS), the name's initials only when none is stored. | done web (w-fixes-24nov) |
+| 24 Nov | **"Last active"** is the newest `lastSeenAt` across every users document of the person, shown in the organisation's time zone; the web app refreshes `lastSeenAt` every 15 minutes while the tab is open and showing (and when it becomes visible; at most once every 2 minutes); iOS will match 15 minutes. | done web (w-fixes-24nov) |
+| 24 Nov | **Sign-in sound**: "a nice slow harmony when you first log in — unique, generated, mind copyright". An original chord made in code (guide §2.1, `signedIn` / `welcome`), once after a sign-in on this device, never on a reload; follows the Sounds setting. | done web (w-fixes-24nov); iOS open (guide 1.2) |
+
+## 24 Nov judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 24 Nov | The site map summary's "On annual leave" is the whole team's approved leave that day (leave is not tied to a job), labelled so. | done, owner to confirm |
+| 24 Nov | With an office pin the map opens on it and does not jump back when the day changes; without one it fits all jobs as before. Maintenance jobs are blue (projects); the old orange pin is gone. | done, owner to confirm |
+| 24 Nov | The sign-in chord is D major 9, about 2.6 s. After the emailed code the page fully reloads; browsers that need a new tap before audio (Safari) then play nothing rather than later. | done, owner to confirm |
+
 ## 24 Nov decisions (for 1.80, subcontractor documents)
 
 | Date | Decision | Status |
@@ -1452,3 +1470,23 @@ UI only, web only (`docs/design/projects-overview-ui/projects-overview-ui-spec.m
 | 23 Nov | Review nit c: on a self-signed sheet, a booking on the sheet that is missing from the person's own signed copy (1.57.0 gap) reads "Not in your signed copy" (amber) instead of "Added"; for everyone else it stays "Added". | done, owner to confirm |
 | 23 Nov | Review nit b: when an older signed copy holds no place key, the job is compared by its stored job words, so a job move reads "job and times changed"; if nothing can be compared the row reads "booking changed" and shows the job. | done, owner to confirm |
 | 23 Nov | Review nit e: the reviewer's "Correct this timesheet" help on an exported sheet ends "You can change its bookings before they sign it." (the 1.76.0 B1 sentence). | done |
+
+## 24 Nov decisions (for 1.79, notifications and Payrun Snapshot)
+
+| Date | Decision | Status |
+|---|---|---|
+| 24 Nov | **iPhone app-icon badge = the unread inbox rows, always**; it goes down only when rows are read (owner saw 16, opening the app cleared it, a force-close brought 16 back). `NOTIFICATION_ICON_BADGE_CLEARS_ON_FOREGROUND` false; iOS keeps the icon at the unread count once the inbox has loaded. | done rulebook (1.79.0, w179-notify-snapshot); iOS (ios-1.79-notify-snapshot) |
+| 24 Nov | **Toolbox talk notices open the job's Health & safety** (both apps opened Home or tried to open a job with the talk id). The notice now carries the job id (`NOTIFICATION_RELATED_ID` `job`) and the job's `catalogue`. | done web + rulebook (1.79.0); iOS (ios-1.79-notify-snapshot) |
+| 24 Nov | **Variation notices open that variation** on web too (web opened the company-wide Variations list). | done web (1.79.0, `/dashboard/variations?open=`); iOS already |
+| 24 Nov | **Material line notices open that job's Materials** (both apps opened Wholesalers). New destination kind `jobMaterials`. | done web + rulebook (1.79.0); iOS (ios-1.79-notify-snapshot) |
+| 24 Nov | **Payrun Snapshot says whose signature a revision waits for**: "REV 1 · waiting for <first name>" / "REV 1 · waiting for line manager"; the cell's link carries the stored sheet's `documentId` so the page opens exactly that version. | done web + rulebook (1.79.0); iOS link field (ios-1.79-notify-snapshot) |
+
+## 1.79.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 24 Nov | Guardrail 3: toolbox notices written before 1.79.0 carry the talk's issue id, not the job: web shows "This notice's job could not be found" with links to the job lists, iOS opens the job list. New notices open the job. | done, owner to confirm |
+| 24 Nov | A notice row with no `catalogue` (older rows) is resolved on web by reading the job by id (`projects/{id}`, then `smallWorks/{id}`), the read every member may make; iOS looks in its loaded jobs. | done, owner to confirm |
+| 24 Nov | The weekly report check line keeps "REV 1 waiting for signature" (only the Payrun Snapshot cell names whose turn, as asked). | done, owner to confirm |
+| 24 Nov | A person with no first name reads "REV 1 · waiting for the person". | done, owner to confirm |
+| 24 Nov | iPhone: the Payrun Snapshot link carries `documentId`, but the iPhone review screen still opens the pay run's latest version for that person (which is the same document unless it is filed under another id); passing it through to the review load is a follow-up. | follow-up |

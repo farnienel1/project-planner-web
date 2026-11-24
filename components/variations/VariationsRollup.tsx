@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { db } from '@/lib/firebase/config'
+import { normalizeDocumentId } from '@/lib/canonical'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
@@ -67,6 +69,26 @@ export function VariationsRollup() {
     )
     return () => unsubs.forEach((stop) => stop())
   }, [organization?.id, admin, visibleJobs.map((job) => job.id).join('|'), user])
+
+  // Rulebook 1.79.0 §13: a variation notice opens `/dashboard/variations?open={id}`. Once the variation is among the
+  // rows this page already listens to, move to its job's Variations with that variation open. Until then (or when it
+  // is not one this viewer may see) the list stays as it is.
+  const router = useRouter()
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const wanted = normalizeDocumentId(new URLSearchParams(window.location.search).get('open'))
+    if (!wanted) return
+    const row = rows.find((item) => normalizeDocumentId(item.id) === wanted && !item.isDeleted)
+    if (!row) return
+    // Job ids compare without case (§1): an iOS upper-case `parentId` matches a lower-case stored job id.
+    const parent = normalizeDocumentId(row.parentId)
+    const job = visibleJobs.find((item) => normalizeDocumentId(item.id) === parent)
+    if (!job) return
+    const smallWorksJob =
+      smallWorks.some((item) => normalizeDocumentId(item.id) === normalizeDocumentId(job.id)) || row.parentType === 'smallWork'
+    const base = smallWorksJob ? '/dashboard/small-works' : '/dashboard/projects'
+    router.replace(`${base}/${encodeURIComponent(job.id)}/variations?open=${encodeURIComponent(row.id)}`)
+  }, [rows, visibleJobs.map((job) => job.id).join('|'), smallWorks, router])
 
   if (!canSeeAnyVariations(user)) {
     return (

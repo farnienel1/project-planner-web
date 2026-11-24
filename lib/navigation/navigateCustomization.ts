@@ -8,7 +8,21 @@
 
 import type { DashboardNavItem } from '@/lib/navigation/dashboardNavigation'
 
-export const NAVIGATE_CONFIG_VERSION = 1 as const
+/**
+ * 2 (24 Nov): adds the Payrun Snapshot entry to layouts saved before it existed. A saved layout's version says which
+ * entries it already knew about, so an entry the person removed later is never put back.
+ */
+export const NAVIGATE_CONFIG_VERSION = 2
+
+/**
+ * Entries added to the sidebar after people could save their own layout. A layout saved before `version` gets the
+ * entry (after `after` when that is there, else at the end); the person's permissions still decide whether it shows
+ * (`resolveNavigateRows` keeps only catalogue items they may open). Add a row here, and bump the version, for every new
+ * Navigate entry.
+ */
+export const NAVIGATE_ITEMS_ADDED: ReadonlyArray<{ version: number; id: string; after?: string }> = [
+  { version: 2, id: 'dashboard_payrun_snapshot', after: 'dashboard_weekly_report' },
+]
 
 export type NavigateEntry =
   | { type: 'item'; id: string }
@@ -16,7 +30,7 @@ export type NavigateEntry =
   | { type: 'smallWorks'; id: string; label: string; jobNumber?: string }
 
 export type NavigateConfig = {
-  version: typeof NAVIGATE_CONFIG_VERSION
+  version: number
   entries: NavigateEntry[]
 }
 
@@ -63,7 +77,21 @@ export function parseNavigateConfig(raw: unknown): NavigateConfig | null {
       entries.push({ type, id, label, jobNumber })
     }
   }
-  return { version: NAVIGATE_CONFIG_VERSION, entries }
+  const storedVersion = typeof rec.version === 'number' && Number.isFinite(rec.version) ? rec.version : 1
+  return { version: NAVIGATE_CONFIG_VERSION, entries: withAddedItems(entries, storedVersion) }
+}
+
+/** Puts entries added after `storedVersion` into a saved layout that does not have them yet. */
+export function withAddedItems(entries: NavigateEntry[], storedVersion: number): NavigateEntry[] {
+  let next = entries
+  for (const added of NAVIGATE_ITEMS_ADDED) {
+    if (added.version <= storedVersion) continue
+    if (next.some((row) => row.type === 'item' && row.id === added.id)) continue
+    const entry: NavigateEntry = { type: 'item', id: added.id }
+    const at = added.after ? next.findIndex((row) => row.type === 'item' && row.id === added.after) : -1
+    next = at >= 0 ? [...next.slice(0, at + 1), entry, ...next.slice(at + 1)] : [...next, entry]
+  }
+  return next
 }
 
 export function readLocalNavigateConfig(userId: string): NavigateConfig | null {

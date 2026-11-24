@@ -1860,6 +1860,8 @@ export {
   timesheetRevisionLabourReviews,
   timesheetRevisionReportState,
   timesheetRevisionWaitingLabel,
+  timesheetRevisionWaitingForLabel,
+  TIMESHEET_REVISION_WAITING_LINE_MANAGER,
   timesheetRevisionCreateFields,
   timesheetRevisionDifference,
   timesheetRevisionDocId,

@@ -7,199 +7,128 @@ import { canViewSiteMap } from '@/lib/navigation/menuPermissions'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
-import { dayKeyInOrganizationZone, jobKind, siteMapPins } from '@/lib/canonical'
-import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
+import { useOperativeStore } from '@/lib/stores/operativeStore'
+import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
+import { useHolidayStore } from '@/lib/stores/holidayStore'
+import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
+import { useOrganizationDocument, useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
+import { useBookingHistoryFrom } from '@/lib/stores/useBookingHistory'
+import { useOrganizationDayKey } from '@/lib/warnings/useOrganizationDayKey'
+import { dateFromDayKey } from '@/lib/ios-parity/londonTime'
+import { watchSubcontractorBookings } from '@/lib/weekly-report/loadSubcontractorBookings'
+import type { SubcontractorBookingRow } from '@/lib/weekly-report/weeklyReportData'
+import { useDailyOverviewModel } from '@/lib/daily-overview/useDailyOverviewModel'
+import { officeCentreFromOrganization, siteMapJobSummary } from '@/lib/maps/siteMapView'
+import { isMappableSiteAddress } from '@/lib/maps/siteAddress'
 import { EmptyState, LoadingSpinner } from '@/components/dashboard/PageShell'
-import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
-import { geocodeSiteProject } from '@/lib/maps/geocoding'
-import {
-  formatSiteAddress,
-  isMappableSiteAddress,
-  openMapsForProject,
-  resolveStoredCoordinates,
-} from '@/lib/maps/siteAddress'
-import { SiteMapBoard, type SiteMapMarker } from '@/components/site-map/SiteMapBoard'
+import { SiteMapBoard } from '@/components/site-map/SiteMapBoard'
 import { SetSitePinButton } from '@/components/site-map/SetSitePinButton'
-import type { Project } from '@/types'
-
-type SitePin = {
-  id: string
-  label: string
-  jobNumber: string
-  address: string
-  latitude?: number
-  longitude?: number
-  bookingCount: number
-  source: 'project' | 'smallWork'
-  collection: 'projects' | 'smallWorks'
-  project: Project
-  pinKind: SiteMapMarker['pinKind']
-  mapsUrl: string | null
-  geocodeFailed: boolean
-}
-
-function pinKindForProject(project: Project): SiteMapMarker['pinKind'] {
-  const jobType = (project.jobType || '').toLowerCase()
-  if (jobType.includes('small work')) return 'smallWork'
-  if (jobType.includes('maintenance')) return 'maintenance'
-  return 'project'
-}
+import { SiteMapJobSummaryCard } from '@/components/site-map/SiteMapJobSummaryCard'
+import { SiteMapLegend } from '@/components/site-map/SiteMapLegend'
+import { useSiteMapJobs } from '@/components/site-map/useSiteMapJobs'
 
 export default function SiteMapPage() {
   const router = useRouter()
   const { user, organization } = useAuthStore()
-  const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
-  const { bookings, loadBookings } = useBookingStore()
-  const { managerSiteBookings, loadManagerSiteBookings } = useManagerScheduleStore()
-  const [selectedDate, setSelectedDate] = useState(() => dayKeyInOrganizationZone(new Date().toISOString(), organizationZoneOr()))
+  const { loadProjects, loadSmallWorks } = useProjectStore()
+  const { loadBookings } = useBookingStore()
+  const { loadManagerSiteBookings } = useManagerScheduleStore()
+  const { loadOperatives } = useOperativeStore()
+  const { loadUsers } = useOrgUserStore()
+  const { loadBookings: loadHolidays } = useHolidayStore()
+  const { subcontractors, loadSubcontractors } = useSubcontractorStore()
+  const liveOrganization = useOrganizationDocument()
+  const timeZone = useOrganizationTimeZone()
+  const todayKey = useOrganizationDayKey(timeZone)
+  const today = useMemo(() => new Date(), [todayKey]) // eslint-disable-line react-hooks/exhaustive-deps -- new instant per organisation day
+  const [selectedDate, setSelectedDate] = useState(todayKey)
   const [selectedPinId, setSelectedPinId] = useState<string | null>(null)
-  const [coordinatesBySiteId, setCoordinatesBySiteId] = useState<
-    Record<string, { latitude: number; longitude: number }>
-  >({})
-  const [geocoding, setGeocoding] = useState(false)
-  const geocodedSiteIds = useRef<Set<string>>(new Set())
+  const [subcontractorBookings, setSubcontractorBookings] = useState<SubcontractorBookingRow[]>([])
+  const day = useMemo(() => dateFromDayKey(selectedDate, timeZone), [selectedDate, timeZone])
+  const allowed = Boolean(user && canViewSiteMap(user))
+  // Today moves on at the organisation's midnight (and once the organisation zone is known): a viewer on the old
+  // today follows to the new one; a viewer on another day stays there (as Daily Overview).
+  const lastTodayKey = useRef(todayKey)
+  useEffect(() => {
+    const previous = lastTodayKey.current
+    lastTodayKey.current = todayKey
+    if (previous === todayKey) return
+    setSelectedDate((current) => (current === previous ? todayKey : current))
+  }, [todayKey])
 
   useEffect(() => {
     if (user && !canViewSiteMap(user)) router.replace('/dashboard')
   }, [user, router])
 
   useEffect(() => {
-    if (organization?.id) {
-      loadProjects(organization.id)
-      loadSmallWorks(organization.id)
-      loadBookings(organization.id)
-      loadManagerSiteBookings(organization.id)
-    }
-  }, [organization?.id, loadProjects, loadSmallWorks, loadBookings, loadManagerSiteBookings])
+    if (!organization?.id || !allowed) return
+    loadProjects(organization.id)
+    loadSmallWorks(organization.id)
+    loadBookings(organization.id)
+    loadManagerSiteBookings(organization.id)
+    loadOperatives(organization.id)
+    loadUsers(organization.id)
+    loadHolidays(organization.id)
+    loadSubcontractors(organization.id)
+  }, [
+    organization?.id,
+    allowed,
+    loadProjects,
+    loadSmallWorks,
+    loadBookings,
+    loadManagerSiteBookings,
+    loadOperatives,
+    loadUsers,
+    loadHolidays,
+    loadSubcontractors,
+  ])
 
-  const basePins = useMemo(() => {
-    const allSites = mergeProjectsAndSmallWorks(projects, smallWorks).filter((site) => site.isLive)
-    // Rulebook 1.23.0 §21 `siteMapPins`: the organisation day's bookings that occupy it (never cancelled ones).
-    const zone = organizationZoneOr()
-    const counts = new Map(
-      siteMapPins({
-        jobs: allSites.map((site) => ({ id: site.id, isLive: site.isLive })),
-        bookings: bookings.map((booking) => ({
-          projectId: booking.projectId,
-          operativeId: booking.operativeId,
-          date: booking.date,
-          status: String(booking.status ?? ''),
-        })),
-        managerSiteBookings: managerSiteBookings.map((booking) => ({
-          userId: booking.userId,
-          locationId: booking.locationId ?? null,
-          locationType: booking.locationType,
-          date: booking.date,
-        })),
-        dayKey: selectedDate,
-        timeZone: zone,
-      }).map((pin) => [pin.jobId, pin.bookingCount])
-    )
-
-    return allSites
-      .map((site): Omit<SitePin, 'latitude' | 'longitude' | 'geocodeFailed'> & {
-        latitude?: number
-        longitude?: number
-        geocodeFailed: boolean
-      } => {
-        const address = formatSiteAddress(site)
-        const bookingCount = counts.get(site.id) ?? 0
-        const stored = resolveStoredCoordinates(site)
-        const resolved = stored || coordinatesBySiteId[site.id]
-
-        // The collection decides the kind (`jobKind`, §17), never `jobType` text.
-        const source = jobKind(site, site.collection) === 'smallWorks' ? 'smallWork' as const : 'project' as const
-
-        return {
-          id: site.id,
-          label: site.siteName || 'Untitled site',
-          jobNumber: site.jobNumber || '—',
-          address,
-          latitude: resolved?.latitude,
-          longitude: resolved?.longitude,
-          bookingCount,
-          source,
-          collection: source === 'smallWork' ? 'smallWorks' : 'projects',
-          project: site,
-          pinKind: pinKindForProject(site),
-          mapsUrl: openMapsForProject(site),
-          geocodeFailed: Boolean(isMappableSiteAddress(address) && !resolved),
-        }
-      })
-      .sort((a, b) => a.label.localeCompare(b.label))
-  }, [projects, smallWorks, bookings, managerSiteBookings, selectedDate, coordinatesBySiteId])
-
+  // Rulebook 1.9.0 §1: subcontractor bookings are live while the screen showing them is open (Daily Overview's model).
   useEffect(() => {
-    let cancelled = false
+    if (!organization?.id || !allowed) return
+    setSubcontractorBookings([])
+    return watchSubcontractorBookings(organization.id, setSubcontractorBookings, () => setSubcontractorBookings([]))
+  }, [organization?.id, allowed])
 
-    async function geocodeMissingSites() {
-      const allSites = mergeProjectsAndSmallWorks(projects, smallWorks).filter((site) => site.isLive)
-      const pending = allSites.filter((site) => {
-        if (resolveStoredCoordinates(site)) return false
-        if (geocodedSiteIds.current.has(site.id)) return false
-        const address = formatSiteAddress(site)
-        return isMappableSiteAddress(address)
-      })
+  // A past day reaches before the launch booking download.
+  useBookingHistoryFrom(organization?.id, day)
 
-      if (pending.length === 0) {
-        setGeocoding(false)
-        return
-      }
+  const { jobs, markers, geocoding, setCoordinatesBySiteId } = useSiteMapJobs({
+    organizationId: organization?.id,
+    dayKey: selectedDate,
+    timeZone,
+  })
 
-      setGeocoding(true)
-      const next: Record<string, { latitude: number; longitude: number }> = {}
+  // The figures under the map are the Daily Overview model of the day shown (owner 24 Nov): hours, overtime and leave.
+  const { model, settingsLoaded } = useDailyOverviewModel({
+    day,
+    today,
+    timeZone,
+    subcontractorBookings,
+    subcontractors,
+    enabled: allowed,
+  })
 
-      for (const site of pending) {
-        if (cancelled) return
-        const coords = await Promise.race([
-          geocodeSiteProject(site),
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), 8_000)),
-        ])
-        // A miss or a hung lookup must not leave "Locating sites…" up on the next pass.
-        geocodedSiteIds.current.add(site.id)
-        if (coords) next[site.id] = coords
-      }
-
-      if (!cancelled && Object.keys(next).length > 0) {
-        setCoordinatesBySiteId((current) => ({ ...current, ...next }))
-      }
-      if (!cancelled) setGeocoding(false)
-    }
-
-    if (organization?.id && (projects.length > 0 || smallWorks.length > 0)) {
-      void geocodeMissingSites()
-    }
-
-    return () => {
-      cancelled = true
-    }
-  }, [organization?.id, projects, smallWorks])
-
-  const mapMarkers = useMemo(
-    (): SiteMapMarker[] =>
-      basePins
-        .filter((pin) => pin.latitude != null && pin.longitude != null)
-        .map((pin) => ({
-          id: pin.id,
-          label: pin.label,
-          jobNumber: pin.jobNumber,
-          latitude: pin.latitude!,
-          longitude: pin.longitude!,
-          bookingCount: pin.bookingCount,
-          pinKind: pin.pinKind,
-        })),
-    [basePins]
+  const officeCentre = useMemo(
+    () =>
+      liveOrganization.organizationId === organization?.id ? officeCentreFromOrganization(liveOrganization.data) : null,
+    [liveOrganization.organizationId, liveOrganization.data, organization?.id]
   )
 
-  const withCoords = basePins.filter((p) => p.latitude != null && p.longitude != null)
-  const withBookings = basePins.filter((p) => p.bookingCount > 0)
-  const withAddress = basePins.filter((p) => isMappableSiteAddress(p.address))
+  const selectedJob = jobs.find((job) => job.id === selectedPinId) ?? null
+  const summary = useMemo(
+    () => (selectedJob ? siteMapJobSummary({ jobId: selectedJob.id, peopleOnSite: selectedJob.peopleCount, model }) : null),
+    [selectedJob, model]
+  )
+
+  const withCoords = jobs.filter((p) => p.latitude != null && p.longitude != null)
+  const withAddress = jobs.filter((p) => isMappableSiteAddress(p.address))
 
   const handleSelectMarker = useCallback((id: string) => {
     setSelectedPinId(id)
   }, [])
 
-  if (!user || !canViewSiteMap(user)) return null
+  if (!user || !allowed) return null
   if (!organization) return <LoadingSpinner />
 
   return (
@@ -207,7 +136,7 @@ export default function SiteMapPage() {
       <div className="phead" data-hue="proj">
         <div>
           <h1>Site map</h1>
-          <div className="sub">Every job on one map, with who is on site today</div>
+          <div className="sub">Every job on one map, with who is on site</div>
         </div>
         <div className="acts">
           <input
@@ -215,8 +144,8 @@ export default function SiteMapPage() {
             value={selectedDate}
             aria-label="Selected day"
             onChange={(e) => {
+              if (!/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) return
               setSelectedDate(e.target.value)
-              setSelectedPinId(null)
             }}
             className="in"
             style={{ width: 170, height: 44 }}
@@ -225,13 +154,24 @@ export default function SiteMapPage() {
       </div>
       {geocoding ? <p className="muted small">Locating sites on map…</p> : null}
 
-      <div className="map card" style={{ minHeight: 420 }}>
+      <SiteMapLegend />
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <SiteMapBoard
-          markers={mapMarkers}
+          markers={markers}
           selectedMarkerId={selectedPinId}
           onSelectMarker={handleSelectMarker}
+          officeCentre={officeCentre}
         />
       </div>
+
+      <SiteMapJobSummaryCard
+        job={selectedJob}
+        summary={summary}
+        dayLabel={model?.dayLabel ?? selectedDate}
+        dayKey={selectedDate}
+        loading={!settingsLoaded || !model}
+        onClose={() => setSelectedPinId(null)}
+      />
 
       {withCoords.length === 0 && withAddress.length > 0 && (
         <div className="banner" data-hue="warn">
@@ -241,17 +181,18 @@ export default function SiteMapPage() {
         </div>
       )}
 
-      {basePins.length === 0 ? (
+      {jobs.length === 0 ? (
         <EmptyState title="No sites found" description="Projects and small works from Firebase will appear here." />
       ) : (
         <div className="rows">
-          {basePins.map((pin) => {
+          {jobs.map((pin) => {
             const isSelected = selectedPinId === pin.id
             return (
               <div
                 key={pin.id}
                 role="button"
                 tabIndex={0}
+                aria-pressed={isSelected}
                 onClick={() => setSelectedPinId(pin.id)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') setSelectedPinId(pin.id)
@@ -267,11 +208,7 @@ export default function SiteMapPage() {
                   </span>
                 </span>
                 <span className="pill">{pin.bookingCount} booked</span>
-                <span
-                  className="row"
-                  style={{ gap: 8 }}
-                  onClick={(event) => event.stopPropagation()}
-                >
+                <span className="row" style={{ gap: 8 }} onClick={(event) => event.stopPropagation()}>
                   <SetSitePinButton
                     project={pin.project}
                     collection={pin.collection}

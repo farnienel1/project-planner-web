@@ -672,6 +672,7 @@ var ProjectPlannerCanonical = (() => {
     TIMESHEET_REVISION_OPEN_MESSAGE: () => TIMESHEET_REVISION_OPEN_MESSAGE,
     TIMESHEET_REVISION_REVIEWER_EDIT_NOTE: () => TIMESHEET_REVISION_REVIEWER_EDIT_NOTE,
     TIMESHEET_REVISION_SUFFIX: () => TIMESHEET_REVISION_SUFFIX,
+    TIMESHEET_REVISION_WAITING_LINE_MANAGER: () => TIMESHEET_REVISION_WAITING_LINE_MANAGER,
     TIMESHEET_SELF_SIGNED_OWNER_FIELDS: () => TIMESHEET_SELF_SIGNED_OWNER_FIELDS,
     TIMESHEET_SELF_SIGN_PAYE_NOTE: () => TIMESHEET_SELF_SIGN_PAYE_NOTE,
     TIMESHEET_SIGNED_AFTER_MS: () => TIMESHEET_SIGNED_AFTER_MS,
@@ -1954,6 +1955,7 @@ var ProjectPlannerCanonical = (() => {
     timesheetRevisionReportState: () => timesheetRevisionReportState,
     timesheetRevisionReviewerMayEditBookings: () => timesheetRevisionReviewerMayEditBookings,
     timesheetRevisionToSignRecipients: () => timesheetRevisionToSignRecipients,
+    timesheetRevisionWaitingForLabel: () => timesheetRevisionWaitingForLabel,
     timesheetRevisionWaitingLabel: () => timesheetRevisionWaitingLabel,
     timesheetSelfSigned: () => timesheetSelfSigned,
     timesheetSheetChangedByReviewer: () => timesheetSheetChangedByReviewer,
@@ -7706,7 +7708,7 @@ var ProjectPlannerCanonical = (() => {
     "overtime_request_reviewed"
   ];
   var DEVICE_PUSH_TYPE_SET = new Set(DEVICE_PUSH_NOTIFICATION_TYPES);
-  var NOTIFICATION_ICON_BADGE_CLEARS_ON_FOREGROUND = true;
+  var NOTIFICATION_ICON_BADGE_CLEARS_ON_FOREGROUND = false;
   function devicePushNotificationTypes() {
     return DEVICE_PUSH_NOTIFICATION_TYPES;
   }
@@ -7802,6 +7804,7 @@ var ProjectPlannerCanonical = (() => {
     const catalogue = asCatalogue(input.catalogue);
     const role = input.role === "admin" || input.role === "operative" || input.role === "manager" ? input.role : "manager";
     const userId = trimmed3(input.deepLinkUserId) || void 0;
+    const withCatalogue = catalogue ? { catalogue } : {};
     switch (type) {
       case "booking_created":
       case "booked_onto_job":
@@ -7828,9 +7831,11 @@ var ProjectPlannerCanonical = (() => {
         return relatedId ? { kind: "smallWorksDetail", relatedId } : { kind: "smallWorksList" };
       case "material_order_cut_off":
         return { kind: "warnings" };
+      // 1.79.0 (owner decision 24 Nov): relatedId is the job id (`notificationRelatedId`: job) — open that job's
+      // Materials. With no job id, Wholesalers (`materialOrders`) as before.
       case "material_order_placed":
       case "material_order_created":
-        return { kind: "materialOrders", relatedId };
+        return relatedId ? { kind: "jobMaterials", relatedId, ...withCatalogue } : { kind: "materialOrders" };
       case "operative_created":
       case "manager_created":
       case "job_manager_removed":
@@ -7853,18 +7858,18 @@ var ProjectPlannerCanonical = (() => {
         return { kind: "tasks", relatedId };
       case "toolbox_talk_issued":
       case "hs_toolbox_reminder":
-        return { kind: "healthSafety", relatedId };
+        return { kind: "healthSafety", relatedId, ...withCatalogue };
       // Variations (1.10.0). relatedId follows `notificationRelatedId`: the variation id for a new or added variation,
       // the job id when a job's variations were renumbered. Operatives never see variations (`canSeeVariations`).
       case "variation":
       case "variation_added":
       case "variation_from_tracker":
         if (role === "operative") return { kind: "notifications" };
-        return relatedId ? { kind: "variationDetail", relatedId } : { kind: "variations" };
+        return relatedId ? { kind: "variationDetail", relatedId, ...withCatalogue } : { kind: "variations", ...withCatalogue };
       case "variation_renumbered":
       case "variation_numbers_updated":
         if (role === "operative") return { kind: "notifications" };
-        return { kind: "variations", relatedId };
+        return { kind: "variations", relatedId, ...withCatalogue };
       case "timesheet_pending_manager_signoff":
         return { kind: "timesheetTeamAwaiting", userId, dayKey };
       case "timesheet_signed_by_manager":
@@ -14511,7 +14516,7 @@ var ProjectPlannerCanonical = (() => {
       "A line is added to a job material list",
       "materialOrderRecipients, then excludeActor",
       ["web", "ios"],
-      "iOS: falls back to every admin when the job has no managers; there is no fallback \u2014 write nothing."
+      "1.79.0: opens that job's Materials (jobMaterials); both apps write the job's catalogue."
     ),
     row("variation", "Variation created", "receivesJobNotification, then excludeActor", ["web", "ios"], "ok (iOS reads the type and passes the job managers)."),
     row("variation_renumbered", "Variation renumbered", "receivesJobNotification, then excludeActor", ["web", "ios"], "ok. relatedId is the job id."),
@@ -14520,16 +14525,16 @@ var ProjectPlannerCanonical = (() => {
       "Variation added to a job",
       "receivesJobNotification, then excludeActor",
       ["web", "ios"],
-      "iOS: relatedId is the job id; write the variation id (notificationRelatedIdFor)."
+      "1.79.0: opens that variation on its job (web /dashboard/variations?open=, iOS reads the variation's job); iOS writes the job's catalogue."
     ),
     row(
       "toolbox_talk_issued",
       "Toolbox talk issued",
       "toolboxTalkRecipients",
       ["web", "ios"],
-      "web writes it from 1.10.0. iOS: relatedId is the job id; write the issue id (notificationRelatedIdFor)."
+      "1.79.0: relatedId the job id with the job's catalogue; opens that job's Health & safety."
     ),
-    row("hs_toolbox_reminder", "Reminder to the people who have not signed a toolbox talk", "toolboxTalkRecipients", ["web"], "ok"),
+    row("hs_toolbox_reminder", "Reminder to the people who have not signed a toolbox talk", "toolboxTalkRecipients", ["web", "ios"], "1.79.0: as toolbox_talk_issued."),
     row(
       "booking_created",
       "People booked onto a job",
@@ -17241,7 +17246,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.80.0" : "",
-      sha256: true ? "b57845332d7407311ff54f18ae187abb13faa6f3b59ae637a3b1548d610a4f85" : ""
+      sha256: true ? "fcd71330edf5959050820a946486e2084b088da9fbbe1dc2fae315b6f2254299" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -20517,8 +20522,10 @@ var ProjectPlannerCanonical = (() => {
     variation_added: "variation",
     variation_from_tracker: "variation",
     variation_numbers_updated: "job",
-    toolbox_talk_issued: "healthSafetyIssue",
-    hs_toolbox_reminder: "healthSafetyIssue",
+    // 1.79.0 (owner decision 24 Nov): the job the talk is on, so the notice opens that job's Health & safety (was the
+    // talk's issue id, 1.10.0–1.78.0, which no screen could open). Written with the job's `catalogue`.
+    toolbox_talk_issued: "job",
+    hs_toolbox_reminder: "job",
     booking_created: "job",
     booked_onto_job: "job",
     booking_clash: "job",
@@ -28224,6 +28231,17 @@ var ProjectPlannerCanonical = (() => {
     const label = timesheetRevisionLabel(revision);
     return label ? `${label} waiting for signature` : "";
   }
+  var TIMESHEET_REVISION_WAITING_LINE_MANAGER = "line manager";
+  function timesheetRevisionWaitingForLabel(revision, waitingFor, personFirstName) {
+    const label = timesheetRevisionLabel(revision);
+    if (!label) return "";
+    if (waitingFor === "lineManager") return `${label} \xB7 waiting for ${TIMESHEET_REVISION_WAITING_LINE_MANAGER}`;
+    if (waitingFor === "person") {
+      const name = String(personFirstName ?? "").trim().split(/\s+/)[0] || "the person";
+      return `${label} \xB7 waiting for ${name}`;
+    }
+    return timesheetRevisionWaitingLabel(revision);
+  }
   function timesheetRevisionReportState(input) {
     const revision = typeof input.revision === "number" && input.revision > 0 ? input.revision : 0;
     if (input.exported === true && input.change?.exported === true && input.change?.changed === true) {
@@ -28927,6 +28945,7 @@ var ProjectPlannerCanonical = (() => {
   function timesheetCell(person, ids, roster, sheets, runs, period) {
     const theirs = sheets.filter((sheet) => ids.has(idKey(sheet.userId)));
     const lineManager = hasActiveLineManager(person, roster);
+    const selfSigned = timesheetSelfSigned(person);
     const states = runs.map((run) => {
       const index = pickTimesheetRowForPeriod(
         // 1.55.0: of an original and its revisions, the latest version.
@@ -28944,14 +28963,23 @@ var ProjectPlannerCanonical = (() => {
         change: reportChange
       }) : null;
       if (revision && revision.state !== "none") state = revision.state === "due" ? "notStarted" : bucket === "awaiting" ? "submitted" : "notStarted";
-      const waiting = sheet ? timesheetReportWaiting(sheet.bookingsChange, { state: revision?.state ?? "none", personSigned: sheet.status.operativeSignedAtMs != null }) : null;
-      return { run, state, revisionLabel: revision?.label ?? "", waiting };
+      const personSigned = sheet ? sheet.status.operativeSignedAtMs != null : false;
+      const waiting = sheet ? timesheetReportWaiting(sheet.bookingsChange, { state: revision?.state ?? "none", personSigned }) : null;
+      const revisionOpen = revision?.state === "open";
+      const revisionLabel = revisionOpen ? timesheetRevisionWaitingForLabel(
+        parseTimesheetRevisionDocId(sheet?.documentId)?.revision ?? 0,
+        personSigned ? selfSigned ? null : "lineManager" : "person",
+        person.firstName || person.name || person.displayName
+      ) : revision?.label ?? "";
+      const documentId3 = text49(sheet?.documentId) || void 0;
+      return { run, state, revisionLabel, revisionOpen, waiting, documentId: documentId3 };
     });
-    const link = (run) => ({
+    const link = (run, documentId3) => ({
       kind: "timesheet",
       personId: person.id,
       start: run?.startDayKey ?? period.start,
-      end: run?.endDayKey ?? period.end
+      end: run?.endDayKey ?? period.end,
+      ...documentId3 ? { documentId: documentId3 } : {}
     });
     if (states.length === 0) return cell("notStarted", PAYRUN_SNAPSHOT_STATE_LABELS.notStarted, "neutral", link());
     const least = states.reduce((a, b) => TIMESHEET_ORDER[b.state] < TIMESHEET_ORDER[a.state] ? b : a);
@@ -28959,9 +28987,10 @@ var ProjectPlannerCanonical = (() => {
     const base = least.revisionLabel || PAYRUN_SNAPSHOT_STATE_LABELS[least.state];
     const signed = states.filter((entry) => entry.state === "signed").length;
     const counted = states.length > 1 ? `${base} \xB7 ${signed} of ${states.length} signed` : base;
-    const waitingLabel = states.some((entry) => entry.waiting === "person") ? TIMESHEET_REPORT_AWAITING_RESIGN_LABEL : states.some((entry) => entry.waiting === "lineManager") ? TIMESHEET_SNAPSHOT_AWAITING_APPROVAL_LABEL : "";
+    const others = states.filter((entry) => !entry.revisionOpen);
+    const waitingLabel = others.some((entry) => entry.waiting === "person") ? TIMESHEET_REPORT_AWAITING_RESIGN_LABEL : others.some((entry) => entry.waiting === "lineManager") ? TIMESHEET_SNAPSHOT_AWAITING_APPROVAL_LABEL : "";
     const label = waitingLabel ? `${counted} \xB7 ${waitingLabel}` : counted;
-    return cell(least.state, label, tone, link(least.run));
+    return cell(least.state, label, tone, link(least.run, least.documentId));
   }
   function requestReturned(status) {
     const value = text49(status).toLowerCase();

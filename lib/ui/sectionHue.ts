@@ -42,6 +42,7 @@ export function hueForNavId(id: string): SectionHue {
     case 'dashboard_operatives':
       return 'ops'
     case 'dashboard_weekly_report':
+    case 'dashboard_payrun_snapshot':
     case 'dashboard_qualifications':
     case 'dashboard_my_qualifications':
       return 'rep'

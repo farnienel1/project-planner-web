@@ -165,6 +165,8 @@ export function TimesheetsHub() {
   const periodParam = searchParams.get('period')
   const periodEndParam = searchParams.get('periodEnd')
   const userParam = searchParams.get('user')
+  // Rulebook 1.79.0: a Payrun Snapshot cell names the stored sheet it reports.
+  const docParam = searchParams.get('doc')
   const tabParam = (searchParams.get('tab') as TeamTimesheetTab | null) || 'awaiting'
   const { user, organization } = useAuthStore()
   const { bookings, loadBookings, coverage: bookingCoverage, error: bookingsError } = useBookingStore()
@@ -514,6 +516,7 @@ export function TimesheetsHub() {
                 payProfilesInputLoad(payStatusOf(selectedUser), 'ready')
               )}
               subjectUser={selectedUser}
+              documentId={docParam}
               mode="review"
               heading="Review Timesheet"
               back={{ label: teamTitle, onClick: () => router.replace(teamBackHref) }}

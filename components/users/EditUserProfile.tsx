@@ -8,7 +8,6 @@ import { useToast } from '@/components/ui/ToastProvider'
 import { FORMER_PERSON_RECORD_SKIPPED_MESSAGE } from '@/lib/canonical/formerPeople'
 import { usePendingNavigation } from '@/lib/navigation/usePendingNavigation'
 import { EditUserSkeleton } from '@/components/users/profile-ui/skeletons'
-import { format } from 'date-fns'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { resendInvitationEmail } from '@/lib/orgSetup/resendInvitation'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
@@ -72,6 +71,7 @@ import {
 } from '@/lib/annualLeave/leaveBalance'
 import { useAnnualLeaveAdjustments } from '@/lib/annualLeave/leaveAdjustments'
 import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
+import { lastActiveText, personLastSeenAt } from '@/lib/users/lastActive'
 import { useLeaveEmployment } from '@/lib/annualLeave/useLeaveEmployment'
 import {
   DEFAULT_ANNUAL_LEAVE,
@@ -1635,7 +1635,8 @@ export function EditUserProfile({
           </Field>
           <Field label="Last active">
             <Input
-              value={target.lastSeenAt ? format(target.lastSeenAt, "d MMM yyyy 'at' HH:mm") : '—'}
+              // Owner 24 Nov: the newest sign of life across every users document of the person, organisation zone.
+              value={lastActiveText(personLastSeenAt(target, rosterDocs), organizationTimeZone)}
               disabled
             />
           </Field>

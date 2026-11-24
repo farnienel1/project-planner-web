@@ -215,6 +215,30 @@ export function timesheetRevisionWaitingLabel(revision: unknown): string {
   return label ? `${label} waiting for signature` : ''
 }
 
+/** 1.79.0: who an open revision waits for when it is the line manager's turn. */
+export const TIMESHEET_REVISION_WAITING_LINE_MANAGER = 'line manager'
+
+/**
+ * Rulebook 1.79.0 §7 (owner decision 24 Nov): an open revision says whose signature it waits for — "REV 1 · waiting for
+ * Sam" while the person must sign, "REV 1 · waiting for line manager" once the person has signed and the counter-
+ * signature is due (`timesheetReportWaiting` decides whose turn). `personFirstName` is the person's first name (blank:
+ * "the person"). With no `waitingFor` it is the older "REV 1 waiting for signature" (`timesheetRevisionWaitingLabel`).
+ */
+export function timesheetRevisionWaitingForLabel(
+  revision: unknown,
+  waitingFor: 'person' | 'lineManager' | null | undefined,
+  personFirstName?: string | null
+): string {
+  const label = timesheetRevisionLabel(revision)
+  if (!label) return ''
+  if (waitingFor === 'lineManager') return `${label} · waiting for ${TIMESHEET_REVISION_WAITING_LINE_MANAGER}`
+  if (waitingFor === 'person') {
+    const name = String(personFirstName ?? '').trim().split(/\s+/)[0] || 'the person'
+    return `${label} · waiting for ${name}`
+  }
+  return timesheetRevisionWaitingLabel(revision)
+}
+
 /**
  * Owner decision 16 Nov (J4, changed): the weekly report and Payrun Snapshot read the pay run's LATEST version and the
  * latest bookings. While a revision is due (the latest version is exported and its bookings changed since,
