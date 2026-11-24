@@ -12,6 +12,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { useOrganizationDayKey } from '@/lib/warnings/useOrganizationDayKey'
 import { useRouter } from 'next/navigation'
+import dynamic from 'next/dynamic'
 import { ExclamationTriangleIcon, PlusIcon } from '@heroicons/react/24/solid'
 import { QuickActionIcon } from '@/components/home/QuickActionIcon'
 import { HomeHeader } from '@/components/home/dashboard/HomeHeader'
@@ -24,6 +25,17 @@ import { TASKS_SHOWN, TasksToDoCard } from '@/components/home/dashboard/TasksToD
 import { WaitingForYouCard, type WaitingItem } from '@/components/home/dashboard/WaitingForYouCard'
 import { QuickActionsCard } from '@/components/home/dashboard/QuickActionsCard'
 import { UpNextCard } from '@/components/home/dashboard/UpNextCard'
+import { canViewSiteMap } from '@/lib/navigation/menuPermissions'
+
+// Owner 24 Nov: a small site map card for admins, loaded on its own so Leaflet never slows Home's first paint.
+const SiteMapHomeCard = dynamic(() => import('@/components/home/dashboard/SiteMapHomeCard'), {
+  ssr: false,
+  loading: () => (
+    <section className="dash-card" aria-label="Site map">
+      <p className="dash-empty">Loading map…</p>
+    </section>
+  ),
+})
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
@@ -829,6 +841,12 @@ export function HomeScreen() {
           {banner}
         </div>
       )}
+
+      {teamPanels && canViewSiteMap(displayUser) ? (
+        <div className="dash-row single">
+          <SiteMapHomeCard model={shownToday} dayKey={homeDayKey} timeZone={homeTimeZone} />
+        </div>
+      ) : null}
 
       <div className={waitingItems.length > 0 ? 'dash-row' : 'dash-row single'}>
         <TasksToDoCard pending={tasksPending == null ? '…' : String(tasksPending)} rows={taskRows?.rows ?? null} total={taskRows?.total ?? 0} />

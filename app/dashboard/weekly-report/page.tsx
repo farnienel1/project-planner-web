@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
@@ -121,6 +121,8 @@ export default function WeeklyReportPage() {
   if (loading || !user || !allowed) return null
 
   return (
+    // `WeeklyReportScreen` reads `?view=snapshot` (useSearchParams), which needs a Suspense boundary.
+    <Suspense fallback={null}>
     <WeeklyReportScreen
       organizationId={organization?.id}
       organizationName={organization?.name || orgDetails?.name || 'Organisation'}
@@ -140,5 +142,6 @@ export default function WeeklyReportPage() {
       invoicingReadFinished={invoicingReadFinished || Boolean(rememberedInvoicing)}
       loading={bookingsLoading || managerLoading || subsLoading}
     />
+    </Suspense>
   )
 }

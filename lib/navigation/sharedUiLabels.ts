@@ -8,6 +8,7 @@ export const DEFAULT_NAVIGATION_LABELS: Record<string, string> = {
   dashboard_schedule: 'My Schedule',
   dashboard_daily_overview: 'Daily overview',
   dashboard_weekly_report: 'Weekly report',
+  dashboard_payrun_snapshot: 'Payrun Snapshot',
   dashboard_warnings: 'Warnings',
   dashboard_tasks: 'Tasks',
   dashboard_annual_leave: 'Annual Leave',

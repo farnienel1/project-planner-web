@@ -21,6 +21,7 @@ import { postPublicForm } from '@/lib/security/publicFormClient'
 import { LegalLinks } from '@/components/legal/LegalLinks'
 import { PasskeySignIn } from '@/components/auth/PasskeySignIn'
 import { passkeysEnabled } from '@/lib/auth/passkeys/passkeyConfig'
+import { markWelcomeSoundPending, primeWelcomeSound } from '@/lib/feedbackSounds/feedback'
 
 export function LoginBrandScreen() {
   const router = useRouter()
@@ -91,6 +92,8 @@ export function LoginBrandScreen() {
       setLocalError('Please enter your password.')
       return
     }
+    // Owner 24 Nov: audio may start only inside the person's own gesture, so it is primed here (sounds on only).
+    primeWelcomeSound()
     try {
       setSubmitting(true)
       const gated = await postPublicForm('/api/auth/public-gate', {
@@ -104,6 +107,8 @@ export function LoginBrandScreen() {
       }
       if (!gated.proceed) return
       await signIn(trimmedEmail, password, { next: nextPath })
+      // Signed in with no code step: the app shell plays the welcome chord once when it opens.
+      markWelcomeSoundPending()
     } catch (err) {
       if (isMfaRequiredError(err)) {
         router.replace(mfaVerifyHref(nextPath))

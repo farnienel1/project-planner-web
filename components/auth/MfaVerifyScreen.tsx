@@ -25,6 +25,7 @@ import {
   startEmailMfa,
   verifyEmailMfa,
 } from '@/lib/auth/mfa/mfaClient'
+import { markWelcomeSoundPending, primeWelcomeSound } from '@/lib/feedbackSounds/feedback'
 
 export function MfaVerifyScreen() {
   const router = useRouter()
@@ -158,8 +159,12 @@ export function MfaVerifyScreen() {
     setCode(digits)
     setError('')
     setSubmitting(true)
+    // Owner 24 Nov: the code is the last sign-in step; audio is primed in this gesture (sounds on only) and the app
+    // shell plays the welcome chord once when it opens.
+    primeWelcomeSound()
     try {
       const result = await verifyEmailMfa(digits)
+      markWelcomeSoundPending()
       goToApp(result.next || fallback)
     } catch (err) {
       submittingRef.current = false

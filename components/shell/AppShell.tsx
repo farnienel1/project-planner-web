@@ -82,6 +82,9 @@ import { inboxOwnerIds } from '@/lib/staff/rulebookPeople'
 import { FeedbackSoundsUnlock } from '@/components/client/FeedbackSoundsUnlock'
 import { confirmChosenSignOut } from '@/lib/siteAudit/siteAuditSignOut'
 
+/** While the tab is visible, `lastSeenAt` is refreshed this often (owner 24 Nov). */
+const LAST_SEEN_VISIBLE_INTERVAL_MS = 5 * 60_000
+
 function NavGlyph({ path, className }: { path: string; className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8} aria-hidden>
@@ -239,7 +242,15 @@ function AppShellInner({ children }: { children: ReactNode }) {
       if (document.visibilityState === 'visible') void recordLastSeenIfDue()
     }
     document.addEventListener('visibilitychange', onVis)
-    return () => document.removeEventListener('visibilitychange', onVis)
+    // Owner 24 Nov: "Last active" stays current while the tab is open and showing (the store keeps its own 2-minute
+    // throttle). `lastSeenAt` is the one field a device may write without a user action (rulebook §1).
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void recordLastSeenIfDue()
+    }, LAST_SEEN_VISIBLE_INTERVAL_MS)
+    return () => {
+      document.removeEventListener('visibilitychange', onVis)
+      window.clearInterval(interval)
+    }
   }, [user?.id, recordLastSeenIfDue])
 
   useEffect(() => {
@@ -728,6 +739,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
     </div>
   )
 }
+
 
 export function AppShell({ children }: { children: ReactNode }) {
   return (

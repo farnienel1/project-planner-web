@@ -1,6 +1,6 @@
 # Project Planner: sound and haptic feedback guide (web + iOS)
 
-**Version 1.1, 16 Nov 2026.** This is the single shared spec for feedback sounds (web and iOS) and haptics (iOS only).
+**Version 1.2, 24 Nov 2026.** This is the single shared spec for feedback sounds (web and iOS) and haptics (iOS only).
 
 Put an identical copy in both repos at `docs/design/feedback/feedback-sounds-haptics-guide.md`. Web is the source; iOS copies it, the same way it mirrors the rulebook.
 
@@ -17,7 +17,7 @@ Put an identical copy in both repos at `docs/design/feedback/feedback-sounds-hap
    - No sound for live updates from other people or devices.
    - No sound for listeners refreshing, app launch, background sync, push notifications arriving, or screens loading.
 3. **One action, one sound.** A bulk action (book 12 people, approve 5 requests) plays **one** sound at the end. Throttle: at most one feedback sound every 400 ms.
-4. **Quiet and short.** Every sound is under 650 ms, peaks at −6 dBFS in the file, and plays at a low volume (web gain 0.35). Nothing loops, no music and no voice.
+4. **Quiet and short.** Every sound is under 650 ms (the one exception is the sign-in chord, §2.1, about 2.6 s), peaks at −6 dBFS in the file, and plays at a low volume (web gain 0.35). Nothing loops, no music and no voice.
 5. **Respect the person and the device.**
    - **iOS:** sounds use the `.ambient` audio session, so the **silent switch mutes them** and they never stop someone's music or podcast. Haptics follow the system "System Haptics" setting automatically.
    - **Web:** sounds play only after a user gesture, which our actions always are. They never interrupt other tabs.
@@ -46,6 +46,26 @@ Put an identical copy in both repos at `docs/design/feedback/feedback-sounds-hap
   - a `preview.html` for the owner to listen to all seven.
 - **iOS** copies the masters from the web repo and converts them to `.caf` (`afconvert -f caff -d LEI16`) in the app bundle.
 - If the owner wants a different feel, change the script, never hand-edited audio, and regenerate for both.
+
+### 2.1 The sign-in chord (`welcome`, made in code)
+
+Owner 24 Nov: "a nice slow harmony when you first log in — unique, generated, mind copyright". It is **not a file**: each app builds it at play time with its audio engine (web: Web Audio API oscillators; iOS: `AVAudioEngine` with `AVAudioSourceNode`, or render the same numbers to a buffer once). No samples and no melody from anywhere else: it is a plain chord, which is not protected.
+
+| Parameter | Value |
+|---|---|
+| Chord | D major 9: D3, A3, F♯4, C♯5, E5 |
+| Frequencies (Hz) | 146.83, 220.00, 369.99, 554.37, 659.25 |
+| Waveform | sine, plus a second sine one octave up at 0.12 of the voice |
+| Voice levels (before ÷ 5) | 0.55, 0.70, 0.85, 0.80, 0.65 — each voice peaks at level ÷ 5 |
+| Entry | one voice every 0.16 s, lowest first |
+| Attack | each voice rises linearly from silence (0.0001) to its level over 0.55 s |
+| Release | each voice falls exponentially to 0.0001 at 2.6 s after the first voice entered; oscillators stop 0.05 s later |
+| Master | web gain 0.35 × 0.75 (iOS: the same relative level under the `.ambient` session) |
+| Length | 2.6 s |
+
+When: once, after a successful sign-in made on this device — the password form (no code step), a passkey, or the emailed code — never on a reload or when the app reopens an existing session. Web marks it in this tab's `sessionStorage` (`pp.feedback.welcomePending`, dropped after 60 s) and the app shell plays it once and clears the mark. It follows the **Sounds** setting. Audio is primed inside the sign-in tap; if the browser still will not let audio start (for example Safari after the full page load that follows the code), nothing plays and nothing is queued. No haptic.
+
+Web source: `lib/feedbackSounds/feedback.ts` (`WELCOME_CHORD`, `scheduleWelcomeChord`).
 
 ---
 
@@ -96,8 +116,9 @@ Each platform calls **one** function with a named event, for example `Feedback.p
 | `claimsDeclined` | Price work or expense review: Approve saved with every decided item rejected (owner decision 2) | removed | removed |
 | `actionRefused` | The server or rules refused a save, request or approval, or it failed | error | error |
 | `warningShown` | A blocking warning is shown on save (e.g. unpaid break, clash) | none | warn |
+| `signedIn` | The person signs in on this device: password with no code step, a passkey, or the emailed code (owner 24 Nov; once, never on a reload; §2.1) | welcome | none |
 
-**Not in v1:** navigation, tab switches, pull-to-refresh, typing, toggles in settings, sign in or out, push notifications. Anything new is added to this table first, in both repos.
+**Not in v1:** navigation, tab switches, pull-to-refresh, typing, toggles in settings, sign out, push notifications (sign in is `signedIn` from 1.2). Anything new is added to this table first, in both repos.
 
 ---
 
@@ -187,5 +208,6 @@ if __name__ == '__main__':
 
 ## Changelog
 
+- **1.2, 24 Nov 2026** (owner request 24 Nov). New event `signedIn` with a new sound `welcome`, the sign-in chord of §2.1: made in code (no file), about 2.6 s, played once after the person signs in on this device, following the Sounds setting. iOS builds the same notes from §2.1 and copies this file again.
 - **1.1, 16 Nov 2026** (owner decisions 1–13, 16 Nov, recorded in web `docs/OWNER_DECISIONS.md`). Six events added to §4 for features that exist today: `leaveEdited`, `leaveRemoved`, `overtimeSent`, `overtimeReturned`, `claimsApproved`, `claimsDeclined`. They reuse the existing sounds; no new sound file. `bookingRequested`, `bookingApproved` and `bookingDeclined` stay in the table but have no feature yet (there is no booking-request flow). A sound plays only after the person's own action on this device, never from a listener, another person's change, page load or autosave. A partly saved bulk action plays `actionRefused`; "nothing new to save" plays no sound. Web default: Sounds **on**. iOS copies this file again (it is the source).
 - **1.0, 16 Nov 2026.** First version.
