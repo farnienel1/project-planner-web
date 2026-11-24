@@ -2,7 +2,7 @@
  * Rulebook 1.81.0 §11 "Names per organisation": lay this organisation's `memberNames` entries over web `User` rows
  * (`memberNameFor` decides the entry). Pure: `memberNamesLive` feeds the stores through it.
  */
-import { memberNameFor, type MemberNames } from '@/lib/canonical/memberNames'
+import { memberNameFor, memberNameWriterManagesOperative, type MemberNames } from '@/lib/canonical/memberNames'
 import type { User } from '@/types'
 
 export type Overlay = { firstName: string; surname: string; accountFirstName: string; accountSurname: string }
@@ -67,3 +67,17 @@ export function overlayMemberNames<T extends NamedUser>(users: readonly T[], ent
   return changed ? next : (users as T[])
 }
 
+
+/**
+ * Rulebook 1.82.0 §11 (owner correction 24 Nov) `memberNameWriterManagesOperative`, with web `User` rows passed in
+ * the shape the rulebook's level and toggle readers take (`{ ...permissions, role }`, as every web caller of
+ * `canManageOperatives` does): the writer manages operatives in the open organisation and the subject is an operative
+ * there, whatever their home company.
+ */
+export function webWriterManagesOperative(writer: User | null | undefined, subject: User | null | undefined): boolean {
+  if (!writer || !subject) return false
+  return memberNameWriterManagesOperative({
+    writer: { ...writer.permissions, role: writer.role },
+    subject: { ...subject.permissions, role: subject.role },
+  })
+}

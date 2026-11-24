@@ -37,16 +37,25 @@ test('change name: preview, then the change with a fresh code, then back; an old
   const uid = 'op-large-002'
   const before = await (await request.get(`/api/owner/people/${uid}`, { headers })).json()
   const [first, ...rest] = String(before.person.name).split(' ')
-  const preview = await request.post('/api/owner/actions/change-name', { headers, data: { uid, firstName: 'Renamed', surname: 'Person', preview: true } })
+  // Rulebook 1.82.0 §11: Change name acts on one organisation. The person's home organisation (the one their users
+  // document names) also takes the account name, which the directory shows.
+  const home = (before.organisations as { id: string; homeUserId: string | null }[]).find((org) => org.homeUserId)
+  expect(home, 'the seeded person has a home organisation').toBeTruthy()
+  const organizationId = home!.id
+  const noOrganisation = await request.post('/api/owner/actions/change-name', { headers, data: { uid, firstName: 'Renamed', surname: 'Person', preview: true } })
+  expect(noOrganisation.status()).toBe(400)
+  const preview = await request.post('/api/owner/actions/change-name', { headers, data: { uid, organizationId, firstName: 'Renamed', surname: 'Person', preview: true } })
   expect(preview.status()).toBe(200)
-  expect((await preview.json()).users.length).toBeGreaterThan(0)
+  const previewBody = await preview.json()
+  expect(previewBody.users.length).toBeGreaterThan(0)
+  expect(previewBody.memberNames).toEqual([expect.objectContaining({ action: 'set' })])
 
-  const noReason = await request.post('/api/owner/actions/change-name', { headers, data: { uid, firstName: 'Renamed', surname: 'Person' } })
+  const noReason = await request.post('/api/owner/actions/change-name', { headers, data: { uid, organizationId, firstName: 'Renamed', surname: 'Person' } })
   expect(noReason.status()).toBe(400)
 
   const changed = await request.post('/api/owner/actions/change-name', {
     headers,
-    data: { uid, firstName: 'Renamed', surname: 'Person', reason: 'e2e rename' },
+    data: { uid, organizationId, firstName: 'Renamed', surname: 'Person', reason: 'e2e rename' },
   })
   expect(changed.status(), await changed.text()).toBe(200)
   const after = await (await request.get(`/api/owner/people/${uid}`, { headers })).json()
@@ -55,7 +64,7 @@ test('change name: preview, then the change with a fresh code, then back; an old
 
   const restored = await request.post('/api/owner/actions/change-name', {
     headers,
-    data: { uid, firstName: first, surname: rest.join(' ') || first, reason: 'e2e restore' },
+    data: { uid, organizationId, firstName: first, surname: rest.join(' ') || first, reason: 'e2e restore' },
   })
   expect(restored.status()).toBe(200)
 })

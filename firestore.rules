@@ -2020,7 +2020,7 @@ service cloud.firestore {
       function subDocsWrite() {
         let c = callerOrg(organizationId);
         let d = request.resource.data.documents;
-        let q = request.method == 'create' ? {} : resource.data.get('documents', {});
+        let q = request.method == 'create' || resource.data.get('documents', null) == null ? {} : resource.data.documents;
         let k = d.get('insurance', []) == q.get('insurance', []) ? 'rams' : 'insurance';
         let n = d.get(k, []);
         let p = q.get(k, []);
@@ -2033,7 +2033,7 @@ service cloud.firestore {
             membershipFlag(get(/databases/(default)/documents/users/$(request.auth.uid)/orgMemberships/$(organizationId)).data, 'subContractors'))) &&
           d.keys().hasOnly(['insurance', 'rams']) && (k == 'rams' || d.get('rams', []) == q.get('rams', [])) && n.size() <= 20 &&
           (n == p || n.size() == p.size() - 1 && a.size() == 0 && r.size() == 1 ||
-          (add ? n == p.concat([e]) && e.uploadedBy == request.auth.uid : n.size() == p.size() && r.size() == 1 && e.path == r[0].path && e.id == r[0].id) &&
+          (add ? n == p.concat([e]) && e.uploadedBy == request.auth.uid : n.size() == p.size() && r.size() == 1 && e.diff(r[0]).affectedKeys().hasOnly(['expiresOn'])) &&
           e.keys().hasOnly(['id', 'path', 'name', 'contentType', 'sizeBytes', 'uploadedAtMs', 'uploadedBy', 'expiresOn']) &&
           w.size() == 6 && w[5] != '' && w[0:5].join('/').lower() == ('organizations/' + organizationId + '/subcontractors/' + subcontractorId + '/documents').lower() &&
           e.id is string && e.name is string && e.name.size() > 0 && e.name.size() <= 300 && e.uploadedBy is string &&
@@ -2447,15 +2447,25 @@ service cloud.firestore {
     }
 
     match /memberNames/{nameUid} {
-      function nameWriter(d) {
+      // 1.82.0 (owner correction 24 Nov): a name belongs to this organisation. Its admins, the person, and its
+      // Operatives managers (home here: the claims' 'q'; visiting: their membership here) for any operative member of
+      // it (home here: an operative users document; homed elsewhere: listed `operative` in `members`).
+      function nameWriter() {
         let c = callerOrg(organizationId);
-        return (isPlatformOwner() || request.auth != null && orgBillingOpen(organizationId) && ('E' in c || request.auth.uid == nameUid && 'c' in c ||
-          'c' in c && 'h' in c && managerMayManageOperative(nameUid, get(/databases/(default)/documents/users/$(nameUid)).data))) &&
+        let d = request.resource;
+        let t = get(/databases/(default)/documents/users/$(nameUid)).data;
+        let ops = c[0] == 'manager' && request.auth.uid != nameUid &&
+          ('h' in c ? 'q' in callerHomeFlags() :
+            membershipFlag(get(/databases/(default)/documents/users/$(request.auth.uid)/orgMemberships/$(organizationId)).data, 'operatives')) &&
+          (homeOrgIs(t, organizationId) ? manageableOperative(t) :
+            get(/databases/(default)/documents/organizations/$(organizationId)).data.get('members', {}).get(nameUid, '') == 'operative');
+        return (isPlatformOwner() || request.auth != null && orgBillingOpen(organizationId) && 'c' in c &&
+          ('E' in c || request.auth.uid == nameUid || ops)) &&
           (d == null || d.data.keys().hasOnly(['firstName', 'surname', 'updatedAt', 'updatedBy', 'updatedFrom']) && d.data.firstName is string &&
             d.data.firstName.trim() != '' && d.data.firstName.size() <= 100 && d.data.get('surname', '') is string &&
             d.data.get('surname', '').size() <= 100 && d.data.get('updatedBy', request.auth.uid) == request.auth.uid);
       }
-      allow write: if nameWriter(request.resource);
+      allow write: if nameWriter();
     }
 
     match /dashboardLayouts/{layoutUserId} {

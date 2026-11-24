@@ -3,7 +3,7 @@ import { apiFlag, apiObject, apiText, readApiBody } from '@/lib/security/apiBody
 import { enforceRateLimit, enforceRateLimitKey, isFirebaseUser, jsonError } from '@/lib/security/apiGuard'
 import { isValidDocumentId } from '@/lib/security/validation'
 import { ownerFreshnessRefusal, requireOwnerSession } from '@/lib/owner/requireOwner'
-import { FirestoreChangedMeanwhileError, bearerToken, firestoreCommitUpdates, firestoreListCollection, restFieldsToPlain } from '@/lib/owner/firestoreRest'
+import { FirestoreChangedMeanwhileError, bearerToken, firestoreCommitUpdates, firestoreGet, firestoreListCollection, restFieldsToPlain } from '@/lib/owner/firestoreRest'
 import { OWNER_AUDIT_UNAVAILABLE_MESSAGE, beginOwnerAudit, type OwnerAuditRun } from '@/lib/owner/ownerAudit'
 import { clearOwnerDirectoryCache } from '@/lib/owner/directoryServer'
 import { ownerJson } from '@/lib/owner/ownerReadRoute'
@@ -11,6 +11,7 @@ import { OwnerPersonNotFoundError, loadOwnerPerson, ownerPersonEmails } from '@/
 import {
   nameChangeRefusal,
   ownerNameChangePlan,
+  ownerNameEntryTarget,
   ownerNameFields,
   ownerNamePartError,
   ownerReasonError,
@@ -135,6 +136,14 @@ export async function POST(request: NextRequest) {
   // A list the owner could not read would leave that company's copy of the name behind: refuse instead.
   if (unread.length) return jsonError('Could not read every list this person is on, so nothing was changed. Try again.', 503)
 
+  const orgDoc = await firestoreGet(token, `organizations/${scopedOrgId}`).catch(() => null)
+  const target = ownerNameEntryTarget({
+    userDocs,
+    organizationId: scopedOrgId,
+    organizationData: orgDoc ? restFieldsToPlain(orgDoc.fields) : null,
+    personIds,
+    fallbackId: kept.id,
+  })
   const plan = ownerNameChangePlan({
     firstName,
     surname,
@@ -143,7 +152,10 @@ export async function POST(request: NextRequest) {
     scope,
     organizationId: scopedOrgId,
     organizationIds: person.row.organizationIds,
-    keptUserId: kept.id,
+    // Review of #442: the entry is the person's users document of THIS organisation (home), else the id the
+    // organisation anchors — never the directory's kept document of another company.
+    keptUserId: target.userId,
+    homeOrganization: target.home,
     existingMemberNames,
   })
   const orgName = new Map(person.orgRows.map((org) => [org.id, org.name]))
@@ -160,7 +172,7 @@ export async function POST(request: NextRequest) {
   try {
     audit = await beginOwnerAudit(request, owner.uid, {
       action: 'ownerChangeUserName',
-      targetUserId: kept.id,
+      targetUserId: target.userId,
       targetOrgId: (scope === 'organization' ? scopedOrgId : person.row.organizationIds[0]) || undefined,
       reason: body.value.reason,
       before: { name: rosterPersonName(kept.data as RosterSegmentProfile) },

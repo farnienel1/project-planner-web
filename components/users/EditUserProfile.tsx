@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { useToast } from '@/components/ui/ToastProvider'
 import { FORMER_PERSON_RECORD_SKIPPED_MESSAGE } from '@/lib/canonical/formerPeople'
 import { MEMBER_NAME_REFUSED_MESSAGE, canWriteMemberName } from '@/lib/canonical/memberNames'
+import { webWriterManagesOperative } from '@/lib/staff/memberNameOverlay'
 import { usePendingNavigation } from '@/lib/navigation/usePendingNavigation'
 import { EditUserSkeleton } from '@/components/users/profile-ui/skeletons'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -599,9 +600,7 @@ export function EditUserProfile({
       writerUserId: currentUser?.id,
       subjectUserId: target?.id,
       writerIsAdmin: Boolean(currentUser && (currentUser.isSuperAdmin || currentUser.permissions.adminAccess)),
-      writerManagesOperative:
-        Boolean(currentUser && currentUser.permissions.operatives && currentUser.permissions.manager && !currentUser.permissions.operativeMode) &&
-        Boolean(target && (target.permissions.operativeMode || target.role === 'operative')),
+      writerManagesOperative: webWriterManagesOperative(currentUser, target),
     })
   const nameHint = target
     ? canEditName

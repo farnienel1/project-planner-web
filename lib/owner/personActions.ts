@@ -108,6 +108,31 @@ function toWrite(path: string, fields: DocumentWriteFields, updateTime?: string)
  * fold) and every `operatives` / `managers` row on the person's email in their organisations (the rows the apps copy
  * the name onto, matched by email without case as web `linkedStaffRefs` does). Only fields that change are written.
  */
+/**
+ * Rulebook 1.82.0 §11 (review of #442): whose `memberNames` entry a per-organisation Change name writes, and whether
+ * that organisation is the person's home — the person's users document that names `organizationId` (its id; home),
+ * else an id of theirs the organisation anchors (a key of its `members` map or its creator; not home), else
+ * `fallbackId` (not home). Never the directory's kept document of another organisation, which would treat a visit as
+ * home and write the wrong id. Ids compare without case.
+ */
+export function ownerNameEntryTarget(input: {
+  userDocs: readonly PlainDoc[]
+  organizationId: string
+  organizationData?: Record<string, unknown> | null
+  personIds: readonly string[]
+  fallbackId: string
+}): { userId: string; home: boolean } {
+  const org = (input.organizationId || '').trim().toLowerCase()
+  const homeDoc = input.userDocs.find((doc) => (documentOrganizationId(doc.data?.organizationId) || '').toLowerCase() === org)
+  if (org && homeDoc) return { userId: homeDoc.id, home: true }
+  const data = input.organizationData || {}
+  const members = data.members && typeof data.members === 'object' ? Object.keys(data.members as Record<string, unknown>) : []
+  const anchored = [...members, typeof data.creatorUserId === 'string' ? data.creatorUserId : '']
+  const ids = new Set(input.personIds.map((id) => id.toLowerCase()))
+  const anchoredId = anchored.find((id) => id && ids.has(id.toLowerCase()))
+  return { userId: anchoredId || input.fallbackId, home: false }
+}
+
 export function ownerNameChangePlan(input: {
   firstName: string
   surname: string
@@ -123,6 +148,8 @@ export function ownerNameChangePlan(input: {
   organizationId?: string
   organizationIds?: readonly string[]
   keptUserId?: string
+  /** 1.82.0: whether `organizationId` is the person's home (`ownerNameEntryTarget`); unknown → not home (fail closed). */
+  homeOrganization?: boolean
   /** Lower-case `orgId/uid` keys of the `memberNames` entries that exist (only those are removed for `all`). */
   existingMemberNames?: ReadonlySet<string>
 }): NameChangePlan {
@@ -138,7 +165,7 @@ export function ownerNameChangePlan(input: {
     // on the person's home organisation its users documents take the name as well (account emails and older builds
     // read them). No other organisation's name changes.
     const keptDoc = input.userDocs.find((doc) => doc.id === kept)
-    const home = keptDoc ? documentOrganizationId(keptDoc.data?.organizationId) : null
+    const home = input.homeOrganization === false ? null : keptDoc ? documentOrganizationId(keptDoc.data?.organizationId) : null
     if (org && kept && memberNameEditPlan({ organizationId: org, homeOrganizationId: home }).writeAccount) {
       for (const doc of input.userDocs) {
         if ((documentOrganizationId(doc.data?.organizationId) || '').toLowerCase() !== org.toLowerCase()) continue

@@ -219,11 +219,13 @@ export async function POST(request: NextRequest) {
   // Mass-assignment audit 17 Nov (rulebook §16, `materialRequestEmailEnvelope`): the sender's name and phone come
   // from the caller's own users document and the company and logo from the stored organisation document, never from
   // the request. The sender's copy goes to the signed-in account's email only.
-  const [callerDoc, orgDoc] = await Promise.all([
+  // Rulebook 1.82.0 §11 (review of #442): the sender's name is their name in this organisation (`memberNames`).
+  const [callerDoc, orgDoc, memberNameDoc] = await Promise.all([
     plainDoc(bearerToken(request), `users/${access.user.uid}`).catch(() => null),
     plainDoc(bearerToken(request), `organizations/${access.organizationId}`).catch(() => null),
+    plainDoc(bearerToken(request), `organizations/${access.organizationId}/memberNames/${access.user.uid}`).catch(() => null),
   ])
-  const sender = materialRequestSender({ tokenEmail: access.user.email, callerDoc, orgDoc })
+  const sender = materialRequestSender({ tokenEmail: access.user.email, callerDoc, orgDoc, memberNameDoc, userId: access.user.uid })
   const { name: senderName, email: senderEmail, phone: senderPhone, company: senderCompany, logoURL: companyLogoURL } =
     sender
   if (!jobNumber) return jsonError('jobNumber is required', 400)

@@ -193,3 +193,24 @@ test('a create carrying documents follows the same rule', async () => {
   await assertFails(setDoc(ref(await db(MGR)), good))
   await assertSucceeds(setDoc(ref(await db(ADMIN)), good))
 })
+
+test('review of #442: an expiry change may change only expiresOn on that entry', async () => {
+  await addAs(ADMIN, 1000)
+  const d = await db(ADMIN)
+  const insurance = ((await stored()).documents as { insurance: Record<string, unknown>[] }).insurance
+  const one = insurance[0]
+  await assertSucceeds(updateDoc(firm(d), { 'documents.insurance': [{ ...one, expiresOn: '2029-01-01' }] }))
+  await assertFails(updateDoc(firm(d), { 'documents.insurance': [{ ...one, name: 'Renamed.pdf' }] }))
+  await assertFails(updateDoc(firm(d), { 'documents.insurance': [{ ...one, uploadedBy: SUBMGR, expiresOn: '2030-01-01' }] }))
+  await assertFails(updateDoc(firm(d), { 'documents.insurance': [{ ...one, sizeBytes: 5, expiresOn: '2030-01-01' }] }))
+})
+
+test('review of #442: stored documents null reads as no documents', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => { await updateDoc(firm(ctx.firestore()), { documents: null }) })
+  // A firm save that leaves the null alone, by any member.
+  await assertSucceeds(updateDoc(firm(await db(OP)), { name: 'Sparks 2' }))
+  // The first document onto a null list.
+  await assertSucceeds(addAs(ADMIN, 2000))
+  await env.withSecurityRulesDisabled(async (ctx) => { await updateDoc(firm(ctx.firestore()), { documents: null }) })
+  await assertFails(addAs(MGR, 3000))
+})

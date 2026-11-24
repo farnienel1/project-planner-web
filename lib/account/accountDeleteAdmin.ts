@@ -420,6 +420,8 @@ async function leaveOrganisation(
   if (email) await adminDelete(session, `organizations/${orgId}/userEmails/${encodeURIComponent(email)}`)
   await adminDelete(session, `organizations/${orgId}/operativeProfiles/${uid}`)
   await adminDelete(session, `organizations/${orgId}/dashboardLayouts/${uid}`)
+  // Rulebook 1.82.0 §11: the person's own name in this organisation goes with them; self-delete keeps no name (1.59.0).
+  await adminDelete(session, `organizations/${orgId}/memberNames/${uid}`)
   await deleteStorageObject(`organizations/${orgId}/userProfiles/${uid}/profile.jpg`)
   if (snapshot.members[uid] != null) {
     await adminPatch(session, `organizations/${orgId}`, {}, [`members.${uid}`])
@@ -466,6 +468,7 @@ async function scrubInvitePlaceholder(
     await anonymiseUnsignedTimesheets(session, orgId, placeholderId)
     await anonymiseVariations(session, orgId, placeholderId)
     await deleteQueryMatches(session, `organizations/${orgId}`, 'notifications', 'userId', placeholderId)
+    await adminDelete(session, `organizations/${orgId}/memberNames/${placeholderId}`)
     await unlinkScrubbedOrg(session, placeholderId, email, orgId)
   }
   const user = await adminGet(session, `users/${placeholderId}`)

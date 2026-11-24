@@ -92,7 +92,11 @@ async function backfillOrg(orgId) {
     ids.add(id.toLowerCase())
     people.push({ id, ...data })
   }
-  for (const doc of (await db.collection('users').where('organizationId', '==', orgId).get()).docs) add(doc.id, doc.data() || {})
+  // Review of #442 (item 10): a users document may store its organisation as the id, a path or a DocumentReference
+  // (`documentOrganizationId`, §1); all three are this organisation's people.
+  for (const value of [orgId, `organizations/${orgId}`, `/organizations/${orgId}`, orgRef]) {
+    for (const doc of (await db.collection('users').where('organizationId', '==', value).get()).docs) add(doc.id, doc.data() || {})
+  }
   const anchored = [...Object.keys(org.members && typeof org.members === 'object' ? org.members : {}), String(org.creatorUserId || '')]
   for (const id of anchored) {
     if (!id || ids.has(id.toLowerCase())) continue

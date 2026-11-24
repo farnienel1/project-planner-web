@@ -1317,6 +1317,7 @@ var ProjectPlannerCanonical = (() => {
     memberNamePath: () => memberNamePath,
     memberNameValidationError: () => memberNameValidationError,
     memberNameWriteFields: () => memberNameWriteFields,
+    memberNameWriterManagesOperative: () => memberNameWriterManagesOperative,
     mergeBookingPaySlice: () => mergeBookingPaySlice,
     mergeHealthSafetyRowCopies: () => mergeHealthSafetyRowCopies,
     mergeJobTypeCatalogues: () => mergeJobTypeCatalogues,
@@ -17278,7 +17279,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.82.0" : "",
-      sha256: true ? "2bb3f60763ae5cfbf56a5cd804d32f9050174cf0ca0622477820aedc8e20d977" : ""
+      sha256: true ? "06a9fac2d84c9f5002c196aa2edd18f11311613e3ae0798d27e80faf65de742f" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -21047,6 +21048,7 @@ var ProjectPlannerCanonical = (() => {
       { op: "delete", path: `users/${uid}/orgMemberships/${org}` }
     ];
     if (email && !email.includes("/")) account.push({ op: "delete", path: `organizations/${org}/userEmails/${email}` });
+    account.push({ op: "delete", path: `organizations/${org}/memberNames/${uid}`, optional: true });
     if (input.listedInMembers !== false) account.push({ op: "update", path: `organizations/${org}`, deleteFields: [`members.${uid}`] });
     const formerWrite = input.formerPerson ? {
       op: "set",
@@ -22010,8 +22012,8 @@ var ProjectPlannerCanonical = (() => {
   function memberNameEditTarget(input) {
     const org = key5(input?.organizationId);
     const home = key5(documentOrganizationId(input?.homeOrganizationId));
-    if (!org || !home) return "account";
-    return org === home ? "account" : "organization";
+    if (!org) return "account";
+    return home && org === home ? "account" : "organization";
   }
   function memberNameValidationError(input) {
     const firstName = text36(input?.firstName);
@@ -22035,7 +22037,12 @@ var ProjectPlannerCanonical = (() => {
   }
   function memberNameEditPlan(input) {
     const org = key5(input?.organizationId);
-    return { writeEntry: Boolean(org), writeAccount: memberNameEditTarget(input) === "account" };
+    const home = key5(documentOrganizationId(input?.homeOrganizationId));
+    return { writeEntry: Boolean(org), writeAccount: Boolean(org && home && org === home) };
+  }
+  function memberNameWriterManagesOperative(input) {
+    if (!input?.writer || !input?.subject) return false;
+    return canManageOperatives(input.writer) && permissionLevelOf(input.subject) === "operative";
   }
   function memberNameJoinEntry(candidates) {
     for (const candidate of candidates || []) {

@@ -1,4 +1,4 @@
-import { parseOrganizationName, safeExternalUrl } from '@/lib/canonical'
+import { parseMemberNameDocument, parseOrganizationName, safeExternalUrl } from '@/lib/canonical'
 import { clampString } from '@/lib/security/validation'
 
 /**
@@ -18,12 +18,16 @@ export function materialRequestSender(input: {
   tokenEmail: string | null | undefined
   callerDoc: Record<string, unknown> | null | undefined
   orgDoc: Record<string, unknown> | null | undefined
+  /** Rulebook 1.82.0 §11: the caller's `memberNames/{uid}` entry in this organisation — their name here wins. */
+  memberNameDoc?: Record<string, unknown> | null
+  userId?: string | null
 }): MaterialRequestSender {
   const email = String(input.tokenEmail ?? '').trim().toLowerCase()
   const caller = input.callerDoc ?? {}
   const first = clampString(caller.firstName, 100) ?? ''
   const surname = clampString(caller.surname, 100) ?? ''
-  const name = clampString(`${first} ${surname}`.trim(), 120) || email
+  const here = input.memberNameDoc ? parseMemberNameDocument(input.userId || 'me', input.memberNameDoc) : null
+  const name = clampString(here?.displayName ?? '', 120) || clampString(`${first} ${surname}`.trim(), 120) || email
   const phone = clampString(caller.mobileNumber, 40) || clampString(caller.phone, 40) || ''
   const company = (parseOrganizationName(input.orgDoc ?? undefined) || '').slice(0, 200)
   // https only (review of #391): a stored `javascript:`, `data:` or plain `http:` logo is never put in the email.

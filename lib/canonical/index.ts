@@ -2557,6 +2557,7 @@ export {
   applyMemberNames,
   canWriteMemberName,
   memberNameEditPlan,
+  memberNameWriterManagesOperative,
   memberNameJoinEntry,
   memberNameEntryMissing,
   memberNameBackfillEntries,

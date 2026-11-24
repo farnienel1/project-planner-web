@@ -25,6 +25,7 @@ import { invitationUsedWriteFields } from '@/lib/canonical/createDocuments'
 import { sharedDocumentPayWrite } from '@/lib/canonical/payProfile'
 import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
 import { MEMBER_NAMES_COLLECTION, memberNameJoinEntry, memberNameWriteFields, type NamedPerson } from '@/lib/canonical/memberNames'
+import { clearPendingJoinName, savePendingJoinName } from '@/lib/staff/pendingJoinName'
 
 /**
  * Rulebook 1.82.0 §11 (owner 24 Nov, item 3): joining an organisation gives the person their own name there —
@@ -37,6 +38,9 @@ async function ensureJoinMemberName(authUid: string, organizationId: string, can
   const name = memberNameJoinEntry(candidates)
   const fields = name ? memberNameWriteFields({ ...name, writerUserId: authUid, platform: 'web' }) : null
   if (!fields) return
+  // Kept on this device first, so a refusal (claims not on the token yet) or a lost connection still names the
+  // person with the inviting company's name when they first open it (`memberNamesLive`), never the account's.
+  savePendingJoinName(authUid, organizationId, name)
   const db = getFirebaseDb()
   const ref = doc(db, 'organizations', organizationId, MEMBER_NAMES_COLLECTION, authUid)
   try {
@@ -44,6 +48,7 @@ async function ensureJoinMemberName(authUid: string, organizationId: string, can
       const snap = await transaction.get(ref)
       if (!snap.exists()) transaction.set(ref, { ...fields, updatedAt: serverTimestamp() })
     })
+    clearPendingJoinName(authUid, organizationId)
   } catch (error) {
     console.warn('Organisation name not written on join; it is created when the organisation is first opened', error instanceof Error ? error.message : 'unknown')
   }

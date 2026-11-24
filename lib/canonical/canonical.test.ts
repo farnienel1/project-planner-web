@@ -7677,9 +7677,10 @@ test('1.10.0 userDeleteWrites: account batch first, then future bookings with to
     'users/U1/private/taxIds',
     'users/U1/orgMemberships/ORG',
     'organizations/ORG/userEmails/op@x.com',
+    'organizations/ORG/memberNames/U1',
     'organizations/ORG',
   ])
-  assert.deepEqual(steps[0].writes[4], { op: 'update', path: 'organizations/ORG', deleteFields: ['members.U1'] })
+  assert.deepEqual(steps[0].writes[5], { op: 'update', path: 'organizations/ORG', deleteFields: ['members.U1'] })
   const bookingPaths = steps[1].writes.map((w) => w.path)
   assert.deepEqual(bookingPaths, [
     'organizations/ORG/bookings/b1',
@@ -13194,10 +13195,10 @@ test('1.31.0 userDeleteWrites: an operatives manager runs the account step one w
     orgId: 'ORG', user: { id: 'OP', email: 'op@x', role }, actorUserId: 'M', platform: 'web', nowIso: '2026-11-04T10:00:00Z', actorManagesOperatives: true,
   })
   assert.deepEqual(steps.map((step) => step.writes.map((write) => write.path)), [
-    ['users/OP/private/taxIds'], ['users/OP/orgMemberships/ORG'], ['organizations/ORG/userEmails/op@x'], ['users/OP'], ['organizations/ORG'],
+    ['users/OP/private/taxIds'], ['users/OP/orgMemberships/ORG'], ['organizations/ORG/userEmails/op@x'], ['organizations/ORG/memberNames/OP'], ['users/OP'], ['organizations/ORG'],
   ])
   const admin = R112.userDeleteWrites({ orgId: 'ORG', user: { id: 'OP', email: 'op@x', role }, actorUserId: 'A', platform: 'web', nowIso: '2026-11-04T10:00:00Z' })
-  assert.equal(admin[0].writes.length, 5)
+  assert.equal(admin[0].writes.length, 6)
 })
 
 test('1.31.0 operativesManagerMayDeleteBooking: future bookings of a person with no account only; userDeleteWrites leaves today and the past', () => {

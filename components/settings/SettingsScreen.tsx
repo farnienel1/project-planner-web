@@ -190,11 +190,14 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
       // Rulebook 1.82.0 §11 `memberNameEditPlan`: the name is always saved as this company's own name for them (its
       // entry); in the person's home organisation the users document's name changes as well (account emails and
       // older builds read it). No other company reads this edit.
+      // Review of #442 (fail closed): before the users document has loaded its organisation is unknown, and then only
+      // this company's entry is written, never the account name.
       const homeOrganizationId = useAuthStore.getState().currentUserDocument?.organizationId
       const namePlan = memberNameEditPlan({ organizationId: organization?.id, homeOrganizationId })
       if (nameChanged) {
         const nameError = memberNameValidationError({ firstName, surname })
         if (nameError) throw new Error(nameError)
+        if (!namePlan.writeEntry) throw new Error('Open the company first, then change your name there.')
       }
       if (profileChanged) {
         const fields: Record<string, unknown> = {

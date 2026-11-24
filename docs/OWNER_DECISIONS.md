@@ -1507,15 +1507,19 @@ The owner's answers of 24 Nov (items 1, 2, 5, 9 of the list sent that day) and c
 | 24 Nov | Confirmations 7 and 8: ok. | recorded (owner 24 Nov) |
 | 24 Nov | Bucket soft delete (30-day file recovery) is set up (owner: "that was all setup before"). | confirmed |
 | 24 Nov | Accreditations: files up to 10 MB (yes); "View" opens the file directly like subcontractor documents (yes). | owner 24 Nov |
+| 24 Nov | **Owner correction: a name belongs to the organisation.** In company X its admins, the person, and X's Operatives managers (for any operative member of X, whatever either person's home company) change the name; it changes only X's copy. The account's name is changed only when X is known to be the person's home company (unknown = X's copy only). Supersedes the 1.82.0 judgement call "Operatives manager only when both are in the manager's home company". | done web + rulebook + rules (1.82.0, review of #442); iOS (ios-1.82-owner-fixes) |
+| 24 Nov | Review of #442: a person's name entries go with them — deleting a person, deleting one's own account (every company left) and erasing a company remove them; self-delete keeps no name. | done web + rulebook (1.82.0); iOS has no delete of its own beyond `userDeleteWrites` (syncs) |
 
 ## 1.82.0 judgement calls (owner to confirm)
 
 | Date | Choice | Status |
 |---|---|---|
 | 24 Nov | The app creates the signed-in person's own name in a company the first time they open it with none (the name shown today, create-only), so nothing they see changes; this is a device write nobody pressed Save for (like seeding a starter library). | done, owner to confirm |
-| 24 Nov | An Operatives manager names an operative only when both are in the manager's home company; a visiting operative is named by an admin or themselves. Another manager can no longer change anyone's name, even in the home company (before, a home edit went through the account). | done, owner to confirm |
+| 24 Nov | ~~An Operatives manager names an operative only when both are in the manager's home company.~~ **Superseded by the owner correction 24 Nov** (any operative member of the company, visiting managers through their membership). Another manager can no longer change anyone's name, even in the home company (before, a home edit went through the account). | superseded / done |
 | 24 Nov | Leak found, not fixed: a member whose account belongs to another company keeps the line managers stored on that account, so in the second company they read as having none (admins there cannot set them). Pay, role and access are already per company. | follow-up |
-| 24 Nov | Subcontractor documents rule: an expiry change may also rewrite that entry's name or content type (only `id` and `path` are pinned); staff only. | done, owner to confirm |
+| 24 Nov | Subcontractor documents rule: an expiry change may change only `expiresOn` (review of #442; before, the name and content type could change too). A stored `documents: null` reads as none. | done |
+| 24 Nov | An invitation's name kept on the device when the join write could not run (claims not yet on the token) is used when the person first opens that company; another browser falls back to the account's name (the device copy is not shared). | done web, owner to confirm |
+| 24 Nov | Operatives manager deleting a person before the 1.82 rules are published: the person is deleted, their name entry in the company is left in place (an admin can remove it). | done, owner to confirm |
 
 ## 24 Nov decisions (site map pins, w-sitemap-pins)
 

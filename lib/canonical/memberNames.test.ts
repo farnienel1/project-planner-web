@@ -62,7 +62,8 @@ test('1.81.0 where an edit is saved: the home organisation keeps the users docum
   assert.equal(memberNameEditTarget({ organizationId: 'orgA', homeOrganizationId: 'orgA' }), 'account')
   assert.equal(memberNameEditTarget({ organizationId: 'ORGA', homeOrganizationId: 'organizations/orgA' }), 'account')
   assert.equal(memberNameEditTarget({ organizationId: 'orgB', homeOrganizationId: 'orgA' }), 'organization')
-  assert.equal(memberNameEditTarget({ organizationId: 'orgB', homeOrganizationId: '' }), 'account')
+  // 1.82.0 (review of #442, fail closed): an unknown or blank home is never the account.
+  assert.equal(memberNameEditTarget({ organizationId: 'orgB', homeOrganizationId: '' }), 'organization')
 })
 
 test('1.81.0 write shape, checks and who may write', () => {
@@ -82,7 +83,20 @@ test('1.82.0 every edit writes the organisation entry; only the home organisatio
   assert.deepEqual(memberNameEditPlan({ organizationId: 'orgA', homeOrganizationId: 'orgA' }), { writeEntry: true, writeAccount: true })
   assert.deepEqual(memberNameEditPlan({ organizationId: 'ORGA', homeOrganizationId: 'organizations/orgA' }), { writeEntry: true, writeAccount: true })
   assert.deepEqual(memberNameEditPlan({ organizationId: 'orgB', homeOrganizationId: 'orgA' }), { writeEntry: true, writeAccount: false })
-  assert.deepEqual(memberNameEditPlan({ organizationId: '', homeOrganizationId: 'orgA' }), { writeEntry: false, writeAccount: true })
+  assert.deepEqual(memberNameEditPlan({ organizationId: '', homeOrganizationId: 'orgA' }), { writeEntry: false, writeAccount: false })
+  // Review of #442: fail closed — an unknown or blank home never writes the account name.
+  assert.deepEqual(memberNameEditPlan({ organizationId: 'orgA', homeOrganizationId: '' }), { writeEntry: true, writeAccount: false })
+  assert.deepEqual(memberNameEditPlan({ organizationId: 'orgA', homeOrganizationId: undefined }), { writeEntry: true, writeAccount: false })
+  assert.equal(memberNameEditTarget({ organizationId: 'orgA', homeOrganizationId: null }), 'organization')
+})
+
+test('1.82.0 Operatives managers of the organisation rename any operative member of it', async () => {
+  const { memberNameWriterManagesOperative } = await import('./memberNames')
+  const opsManager = { role: 'manager', manager: true, operatives: true }
+  assert.equal(memberNameWriterManagesOperative({ writer: opsManager, subject: { role: 'operative', operativeMode: true, organizationId: 'elsewhere' } }), true)
+  assert.equal(memberNameWriterManagesOperative({ writer: opsManager, subject: { role: 'manager', manager: true } }), false)
+  assert.equal(memberNameWriterManagesOperative({ writer: { role: 'manager', manager: true }, subject: { role: 'operative', operativeMode: true } }), false)
+  assert.equal(memberNameWriterManagesOperative({ writer: null, subject: null }), false)
 })
 
 test('1.82.0 Operatives managers write an operative entry; managers do not', () => {

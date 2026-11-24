@@ -24,6 +24,7 @@ import {
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { accountNameOf, overlayMemberNames, overlayOne, type NamedUser } from '@/lib/staff/memberNameOverlay'
+import { clearPendingJoinName, readPendingJoinName } from '@/lib/staff/pendingJoinName'
 export { accountNameOf, hasOrganizationName, overlayMemberName, overlayMemberNames } from '@/lib/staff/memberNameOverlay'
 
 let organizationId = ''
@@ -46,8 +47,13 @@ function seedOwnEntry(forOrganizationId: string, entries: MemberNames, serverRea
   if (!user || state.organization?.id !== forOrganizationId) return
   const pair = `${forOrganizationId}/${user.id}`.toLowerCase()
   if (seeded.has(pair)) return
-  if (!memberNameEntryMissing({ person: user, names: entries, serverRead })) return
-  const name = memberNameJoinEntry([accountNameOf(user)])
+  const pending = readPendingJoinName(user.id, forOrganizationId)
+  if (!memberNameEntryMissing({ person: user, names: entries, serverRead })) {
+    if (serverRead && pending) clearPendingJoinName(user.id, forOrganizationId)
+    return
+  }
+  // Review of #442 (item 8): the name the inviting company typed, kept when the join write could not run, first.
+  const name = memberNameJoinEntry([pending, accountNameOf(user)])
   const fields = name ? memberNameWriteFields({ ...name, writerUserId: user.id, platform: 'web' }) : null
   if (!fields) return
   seeded.add(pair)
@@ -57,7 +63,7 @@ function seedOwnEntry(forOrganizationId: string, entries: MemberNames, serverRea
     const snap = await transaction.get(ref)
     if (snap.exists()) return
     transaction.set(ref, { ...fields, updatedAt: serverTimestamp() })
-  }).catch((error) => console.warn('[memberNames] own entry not created', error instanceof Error ? error.message : 'unknown'))
+  }).then(() => clearPendingJoinName(user.id, forOrganizationId)).catch((error) => console.warn('[memberNames] own entry not created', error instanceof Error ? error.message : 'unknown'))
 }
 
 /** The entries of the open organisation (lower-case users id → entry), for code that needs them directly. */
