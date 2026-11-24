@@ -17,6 +17,11 @@ import {
   type RevisedPayrollLineAmounts,
 } from '@/lib/canonical/timesheetLineEdit'
 import type { EmploymentTypeUser } from '@/lib/canonical/userProfile'
+import { signedTimesheetLineBooking } from '@/lib/canonical/timesheetBookingChanges'
+import {
+  isTimesheetReviewBookingCollection,
+  type TimesheetReviewBookingCollection,
+} from '@/lib/canonical/timesheetReviewBookingWrites'
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { TIMESHEET_OVERTIME_LINE_MIN_HOURS, type TimesheetPayrollLineItem } from '@/lib/timesheets/timesheetPayrollCollector'
 
@@ -30,6 +35,21 @@ export type PayrollHoursChoice = {
 export function bookingIdFromLineId(lineId: string): string | null {
   const match = lineId.match(/^(?:op|mgr)-(.+)-(?:normal|ot)$/)
   return match?.[1] ?? null
+}
+
+/**
+ * The booking a timesheet line comes from: its collection and stored document id. Owner report 24 Nov: the collector
+ * keeps a live line's `bookingId` as `op-{id}` / `mgr-{id}`, and the review page used that as the document id, so ⚙ / ✕
+ * read `bookings/op-{id}` ("This was deleted on another device."). Rulebook 1.87.0: the id is the one the 1.47.0 rule
+ * reads (`signedTimesheetLineBooking`); null for a line that names no labour or manager site booking.
+ */
+export function timesheetLineBooking(line: { id: string; bookingId?: string; bookingCollection?: string }): {
+  bookingId: string
+  collection: TimesheetReviewBookingCollection
+} | null {
+  const booking = signedTimesheetLineBooking({ id: line.id, bookingId: line.bookingId, bookingCollection: line.bookingCollection })
+  if (!booking || !isTimesheetReviewBookingCollection(booking.collection)) return null
+  return { bookingId: booking.bookingId, collection: booking.collection }
 }
 
 export function timesFromPayrollLineDetails(
