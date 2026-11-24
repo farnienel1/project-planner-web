@@ -96,6 +96,16 @@ export function TaskPopup({
       </TaskDialog>
     )
   }
+  // Review of #452: a `?task=` link opens only a task the person can see in the list (operatives: their own).
+  if (!ws.access.seesEveryone && !ws.assignedIds.has(task.id)) {
+    return (
+      <TaskDialog open title={ws.rostersLoaded ? 'Task' : 'Loading…'} onClose={onClose} narrow>
+        <p className="tk-text" style={{ margin: 0 }}>
+          {ws.rostersLoaded ? TASK_COPY.errors.noAccess : 'Loading the task…'}
+        </p>
+      </TaskDialog>
+    )
+  }
   const access = ws.accessFor(task)
   const location = ws.locationOf(task)
 
@@ -212,7 +222,7 @@ function TaskView({
   const step = taskCompleteStep({ items: task.items, completedItemIds: task.completedItemIds })
   const people = taskAssigneeNames(
     { managerIds: allAssignedManagerIds(task), operativeIds: allAssignedOperativeIds(task) },
-    { managers: ws.managers, operatives: ws.operatives, index: ws.personIndex }
+    ws.nameRows
   )
   const removedSomeone = people.some((entry) => entry.removed)
   const files: ViewerFile[] = [

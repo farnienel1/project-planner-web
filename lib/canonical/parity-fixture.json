@@ -26787,6 +26787,38 @@
         "overdue": 2,
         "completed": 0
       }
+    },
+    {
+      "name": "Tasks 1.89.0: viewer role — a legacy user with no level flag is a manager",
+      "function": "taskViewerRole",
+      "args": [
+        {
+          "id": "u1",
+          "email": "old@x.co"
+        }
+      ],
+      "expected": {
+        "isSuperAdmin": false,
+        "isAdmin": false,
+        "isManager": true,
+        "isOperativeMode": false
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: viewer role — an admin with a stray operative-mode flag stays an admin",
+      "function": "taskViewerRole",
+      "args": [
+        {
+          "adminAccess": true,
+          "operativeMode": true
+        }
+      ],
+      "expected": {
+        "isSuperAdmin": false,
+        "isAdmin": true,
+        "isManager": false,
+        "isOperativeMode": false
+      }
     }
   ]
 }

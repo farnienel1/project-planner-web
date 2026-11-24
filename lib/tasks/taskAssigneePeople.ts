@@ -132,8 +132,15 @@ export function foldTaskFilterPeople<T extends { id: string; email?: string; isA
  */
 export function taskAssigneeNames(
   ids: { managerIds: ReadonlyArray<string>; operativeIds: ReadonlyArray<string> },
-  people: { managers: ReadonlyArray<Manager>; operatives: ReadonlyArray<Operative>; index: TaskPersonIndex }
+  people: {
+    managers: ReadonlyArray<Manager>
+    operatives: ReadonlyArray<Operative>
+    index: TaskPersonIndex
+    /** Review of #452: false while the rosters are still loading — nobody is shown (never a false "Removed user"). */
+    loaded?: boolean
+  }
 ): Array<{ kind: TaskPersonKind; name: string; removed: boolean; id: string }> {
+  if (people.loaded === false) return []
   const seen = new Set<string>()
   const names: Array<{ kind: TaskPersonKind; name: string; removed: boolean; id: string }> = []
   const add = (kind: TaskPersonKind, id: string) => {

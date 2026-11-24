@@ -79,6 +79,8 @@ interface OperativeState {
   error: string | null
   operativesLoadedOrgId: string | null
   managersLoadedOrgId: string | null
+  /** Every managers row as stored, placeholders included (names on tasks assigned to one; never offered in pickers). */
+  allManagerRows: Manager[]
   loadOperatives: (organizationId: string, options?: { force?: boolean }) => Promise<void>
   loadManagers: (organizationId: string) => Promise<void>
   loadSkills: (organizationId: string) => Promise<void>
@@ -137,6 +139,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
   error: null,
   operativesLoadedOrgId: null,
   managersLoadedOrgId: null,
+  allManagerRows: [],
   
   // Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): operatives, managers, skills and qualifications are live listeners. The
   // load resolves on the first snapshot; edits on any platform arrive through it, so there is no time-to-live cache.
@@ -191,6 +194,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
           managers,
           placeholderManagerCount: allManagers.filter(isPlaceholderManager).length,
           managersLoadedOrgId: organizationId,
+          allManagerRows: allManagers,
         })
       })
     } catch (error: unknown) {

@@ -186,7 +186,7 @@ function TaskListInner({ mode, location, approvals }: TaskListProps) {
       const loc = ws.locationOf(task)
       const names = taskAssigneeNames(
         { managerIds: allAssignedManagerIds(task), operativeIds: allAssignedOperativeIds(task) },
-        { managers: ws.managers, operatives: ws.operatives, index: ws.personIndex }
+        ws.nameRows
       )
       return [task.title, task.details ?? '', loc?.name ?? '', loc?.code ?? '', ...names.map((entry) => entry.name)].some((text) =>
         text.toLowerCase().includes(q)
@@ -408,7 +408,7 @@ function TaskRow({
   const files = (task.attachedImageURLs?.length ?? 0) + (task.attachedFileURL ? 1 : 0)
   const people = taskAssigneeNames(
     { managerIds: allAssignedManagerIds(task), operativeIds: allAssignedOperativeIds(task) },
-    { managers: ws.managers, operatives: ws.operatives, index: ws.personIndex }
+    ws.nameRows
   )
   const location = ws.locationOf(task)
   const edge = due.overdue ? 'red' : due.tone === 'amber' ? 'amber' : undefined
@@ -476,7 +476,7 @@ function TaskRow({
           {step.total > 0 ? <span>Checklist {step.done}/{step.total}</span> : null}
           {files > 0 ? <span>{files} file{files === 1 ? '' : 's'}</span> : null}
           <span>{taskStatusLabel(task.status)}</span>
-          {people.some((entry) => entry.removed) ? <span style={{ color: 'var(--pu-c-red-ink)' }}>Removed user · reassign</span> : null}
+          {access.canEdit && people.some((entry) => entry.removed) ? <span style={{ color: 'var(--pu-c-red-ink)' }}>Removed user · reassign</span> : null}
         </div>
         {error ? (
           <div className="tk-error" role="alert" style={{ marginTop: 4 }}>

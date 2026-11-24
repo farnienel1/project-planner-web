@@ -1,7 +1,7 @@
 {
   "rulebookVersion": "1.89.0",
-  "rulebookSha256": "5b46e0ecfdc529973b7fd6602eddc51ba2f6e6feebef27ed7a3bd97aa4b4113d",
-  "bundleSha256": "78eb6111e482e53ab97f6c8308e4d894d97f16d8d61424d6cafd5abc97f08081",
+  "rulebookSha256": "d4d650e8ad5d36ba7de48d0a9d106c8db2f39d61271b511636dd99d654e312d9",
+  "bundleSha256": "ed71cbf0c601df3e145d167515660908f6c060df7113364c91c5879b8fe1e8a7",
   "crossPlatformContractSha256": "d2d465abcf0ab7c7747385346b87d2b47226412b1014602c5a26bff8e951c0ca",
   "dataParityFixtureSha256": "c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f",
   "exports": [
@@ -2050,6 +2050,7 @@
     "taskTabKeys",
     "taskToggleChecklistItem",
     "taskUploadProgressText",
+    "taskViewerRole",
     "taskWriteFields",
     "tasksAssignedToViewer",
     "taxIdsDocumentFields",

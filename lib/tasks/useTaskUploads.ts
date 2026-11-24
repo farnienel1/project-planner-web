@@ -7,7 +7,9 @@
  * at a time with progress, and a file that sends nothing for `stallTimeoutSeconds` stops with Retry / Remove. Nothing
  * hangs: `uploadAll` always settles. Uploads start only on Save, after the task id exists, so the paths are final; the
  * task is written once, after every file is up (the caller). Cancel stops uploads and deletes what this person just
- * uploaded (the rules allow the uploader 15 minutes, §24).
+ * uploaded (the rules allow the uploader 15 minutes, §24). Cancel is final for that save: every worker stops, a file
+ * that finishes after Cancel is deleted at once, `uploadAll` returns `{ ok: false, cancelled: true }`, and the caller
+ * checks `isCurrent(run)` again right before it writes (review of #452).
  */
 
 import { useCallback, useRef, useState } from 'react'
@@ -40,7 +42,9 @@ export type TaskUploadItem = {
   preview: string | null
 }
 
-export type TaskUploadResult = { ok: true; images: string[]; documents: Array<{ url: string; name: string }> } | { ok: false }
+export type TaskUploadResult =
+  | { ok: true; run: number; images: string[]; documents: Array<{ url: string; name: string }> }
+  | { ok: false; run: number; cancelled: boolean }
 
 function isPdf(file: File): boolean {
   return file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
@@ -62,6 +66,9 @@ export function useTaskUploads() {
   const [items, setItems] = useState<TaskUploadItem[]>([])
   const itemsRef = useRef<TaskUploadItem[]>([])
   const running = useRef(new Map<string, TrackedUpload>())
+  /** Bumped by Cancel: a save started before it is cancelled (never writes, never keeps a file). */
+  const generation = useRef(0)
+  const isCurrent = useCallback((run: number) => run === generation.current, [])
 
   const commit = useCallback((next: TaskUploadItem[]) => {
     itemsRef.current = next
@@ -136,10 +143,12 @@ export function useTaskUploads() {
   )
 
   const uploadOne = useCallback(
-    async (item: TaskUploadItem, organizationId: string, taskId: string) => {
+    async (item: TaskUploadItem, organizationId: string, taskId: string, run: number) => {
+      if (run !== generation.current) return
       patch(item.key, { state: 'preparing', error: null })
       try {
         const prepared = await prepareClientUpload(item.file, 'work')
+        if (run !== generation.current) return
         if (prepared.error) throw new Error(prepared.error)
         const check = taskAttachmentCheck({ name: item.name, mime: prepared.file.type || mimeOf(item.file), sizeBytes: prepared.file.size })
         if (check.result === 'tooBig' || check.result === 'wrongType') throw new Error(check.message ?? 'File refused.')
@@ -157,10 +166,15 @@ export function useTaskUploads() {
         running.current.set(item.key, upload)
         const url = await upload.done
         running.current.delete(item.key)
+        if (run !== generation.current) {
+          // Finished after Cancel: this person's own just-uploaded file, deleted at once (§24 undo window).
+          void deleteJustUploadedFile(url)
+          return
+        }
         patch(item.key, { state: 'uploaded', url, sent: prepared.file.size })
       } catch (error) {
         running.current.delete(item.key)
-        if (error instanceof UploadCancelledError) return
+        if (error instanceof UploadCancelledError || run !== generation.current) return
         const message = isTimeoutError(error)
           ? taskCopyText(TASK_COPY.errors.uploadStalled, { name: item.name })
           : error instanceof Error && error.message
@@ -175,19 +189,22 @@ export function useTaskUploads() {
   /** Upload every file not yet up (parallel, never hangs). Resolves with the URLs when every file is up. */
   const uploadAll = useCallback(
     async (organizationId: string, taskId: string): Promise<TaskUploadResult> => {
+      const run = generation.current
       const pending = itemsRef.current.filter((item) => item.state === 'waiting' || item.state === 'failed')
       const queue = [...pending]
       const workers = Array.from({ length: Math.min(TASK_ATTACHMENT_RULES.upload.parallel, queue.length) }, async () => {
-        while (queue.length > 0) {
+        while (queue.length > 0 && run === generation.current) {
           const next = queue.shift()
-          if (next) await uploadOne(next, organizationId, taskId)
+          if (next) await uploadOne(next, organizationId, taskId, run)
         }
       })
       await Promise.all(workers)
+      if (run !== generation.current) return { ok: false, run, cancelled: true }
       const all = itemsRef.current
-      if (all.some((item) => item.state !== 'uploaded' || !item.url)) return { ok: false }
+      if (all.some((item) => item.state !== 'uploaded' || !item.url)) return { ok: false, run, cancelled: false }
       return {
         ok: true,
+        run,
         images: all.filter((item) => item.isImage).map((item) => item.url as string),
         documents: all.filter((item) => !item.isImage).map((item) => ({ url: item.url as string, name: item.name })),
       }
@@ -197,6 +214,7 @@ export function useTaskUploads() {
 
   /** Stop every upload and delete what was uploaded (Cancel on the form). */
   const cancelAll = useCallback(() => {
+    generation.current += 1
     for (const upload of running.current.values()) upload.cancel()
     running.current.clear()
     for (const item of itemsRef.current) {
@@ -219,5 +237,5 @@ export function useTaskUploads() {
     return { total: items.length, done, percent: total > 0 ? (sent / total) * 100 : 0 }
   })()
 
-  return { items, add, remove, retry, uploadAll, cancelAll, clear, progress }
+  return { items, add, remove, retry, uploadAll, cancelAll, clear, progress, isCurrent }
 }

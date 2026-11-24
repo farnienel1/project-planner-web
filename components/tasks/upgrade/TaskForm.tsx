@@ -100,6 +100,8 @@ export function TaskForm({
   const [saveError, setSaveError] = useState<string | null>(null)
   const [pickError, setPickError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  /** The task write has started: Cancel can no longer stop it (review of #452). */
+  const [writing, setWriting] = useState(false)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
   const [viewing, setViewing] = useState<ViewerFile | null>(null)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
@@ -151,7 +153,8 @@ export function TaskForm({
     const cleanRows = rows.map((row) => ({ ...row, title: row.title.trim() })).filter((row) => row.title)
     const nextErrors = taskFormErrors({
       title,
-      locationId: location?.id ?? '',
+      // A task whose job has since been deleted keeps its stored job, so it can still be edited (review of #452).
+      locationId: location?.id ?? (task ? task.projectId || '' : ''),
       assigneeCount: managers.size + operatives.size,
       dueDate: due,
       checklistCount: cleanRows.length,
@@ -162,10 +165,13 @@ export function TaskForm({
     setSaveError(null)
     try {
       const up = await uploads.uploadAll(ws.organization.id, taskIdValue)
+      // Cancel during the uploads: nothing is written and the form is already closed.
+      if (!up.ok && up.cancelled) return
       if (!up.ok) {
         setSaveError('A file didn’t upload. Retry it or remove it. The task is saved once every file is up.')
         return
       }
+      if (!uploads.isCurrent(up.run)) return
       const document = up.documents[0]
       const nextTicks = taskChecklistAfterEdit({ items: cleanRows, completedItemIds: ticks })
       const managerIds = [...managers]
@@ -183,6 +189,7 @@ export function TaskForm({
         createdAt: now,
         updatedAt: now,
       }
+      setWriting(true)
       await useTaskStore.getState().saveTask({
         ...base,
         id: taskIdValue,
@@ -212,6 +219,7 @@ export function TaskForm({
       setSaveError(errorText(error))
     } finally {
       setSaving(false)
+      setWriting(false)
     }
   }
 
@@ -232,7 +240,9 @@ export function TaskForm({
       <button
         type="button"
         className="tk-btn"
+        disabled={writing}
         onClick={() => {
+          if (writing) return
           if (saving) {
             uploads.cancelAll()
             setSaving(false)
@@ -302,7 +312,7 @@ export function TaskForm({
           {lockedLocation || editing ? (
             <div className="tk-input" style={{ display: 'flex', alignItems: 'center', gap: 8 }} id="tk-location">
               <LockClosedIcon width={16} height={16} aria-hidden />
-              <span>{location ? [location.code, location.name].filter(Boolean).join(' ') : task?.projectId || '—'}</span>
+              <span>{location ? [location.code, location.name].filter(Boolean).join(' ') : task ? 'Project or small works no longer listed' : '—'}</span>
               <span className="tk-muted" style={{ marginLeft: 'auto' }}>
                 {editing ? 'Set when the task was created' : 'Set by this page'}
               </span>
@@ -322,9 +332,10 @@ export function TaskForm({
 
         <TaskPeopleField
           managers={ws.assignableManagers}
-          allManagers={ws.managers}
+          allManagers={ws.nameRows.managers}
           operatives={ws.operatives}
           index={ws.personIndex}
+          loaded={ws.rostersLoaded}
           selectedManagers={managers}
           selectedOperatives={operatives}
           onChange={(next) => {

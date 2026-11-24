@@ -40,6 +40,7 @@ export function TaskPeopleField({
   onChange,
   me,
   error,
+  loaded = true,
 }: {
   /** Managers offered for a new assignment. */
   managers: Manager[]
@@ -52,6 +53,8 @@ export function TaskPeopleField({
   onChange: (next: { managers: Set<string>; operatives: Set<string> }) => void
   me: { kind: 'manager' | 'operative'; id: string } | null
   error?: string
+  /** False while the rosters load: chosen people are not shown yet (never a false "Removed user"). */
+  loaded?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [route, setRoute] = useState<'managers' | 'operatives'>('operatives')
@@ -60,7 +63,7 @@ export function TaskPeopleField({
 
   const chosen = taskAssigneeNames(
     { managerIds: [...selectedManagers], operativeIds: [...selectedOperatives] },
-    { managers: allManagers, operatives, index }
+    { managers: allManagers, operatives, index, loaded }
   )
   const meSelected = me ? isTaskPersonSelected(index, me.kind, me.id, selectedManagers, selectedOperatives) : false
 

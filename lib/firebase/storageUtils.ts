@@ -158,9 +158,8 @@ export function startTrackedUpload(
     const contentType = await assertUploadAllowed(storagePath, file, claimedContentType)
     await ensureStorageAuth()
     if (cancelled) throw new UploadCancelledError()
-    // The SDK property is per Storage instance; every task upload asks for the same short retry.
-    storage.maxUploadRetryTime = options.sdkRetryMs
     const storageRef = ref(storage, storagePath)
+    const sharedStorage = storage
     return await new Promise<string>((resolve, reject) => {
       let settled = false
       let stall: ReturnType<typeof setTimeout> | null = null
@@ -171,7 +170,17 @@ export function startTrackedUpload(
         outcome()
       }
       rejectNow = (error) => finish(() => reject(error))
-      task = uploadBytesResumable(storageRef, file, { contentType })
+      // The upload task copies `maxUploadRetryTime` (its retry back-off limit) from the shared Storage instance when it
+      // is made; set it for this one task and put it straight back, so no other upload in the session gets the short
+      // retry (review of #452). Each request's own timeout keeps the default; the stall watchdog below stops a hung
+      // task either way.
+      const previousRetry = sharedStorage.maxUploadRetryTime
+      sharedStorage.maxUploadRetryTime = options.sdkRetryMs
+      try {
+        task = uploadBytesResumable(storageRef, file, { contentType })
+      } finally {
+        sharedStorage.maxUploadRetryTime = previousRetry
+      }
       const arm = () => {
         if (stall) clearTimeout(stall)
         stall = setTimeout(() => {

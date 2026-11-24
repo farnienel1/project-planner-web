@@ -20144,6 +20144,8 @@ test('1.89.0 §34: tasks — Done reads Completed, Medium reads Normal, Edit nev
   for (const fn of ['taskDueLabel', 'taskTabKeys', 'taskActions', 'taskCompleteStep', 'taskAttachmentCheck', 'sortTasksForTab', 'taskDefaultScope', 'taskAccess', 'taskChecklistAfterEdit']) {
     assert.ok(names.has(fn), `${fn} has a parity case`)
   }
+})
+
 test('1.86.0 offlineReplaceReplayDecision: one outcome for each owner case', () => {
   const zone = 'Europe/London'
   const old = { operativeId: 'OP-1', projectId: 'JOB-1', dayKey: '2026-11-09', timeSlot: 'FULL_DAY', status: 'Confirmed' }

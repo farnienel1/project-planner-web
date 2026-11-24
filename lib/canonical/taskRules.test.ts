@@ -13,6 +13,7 @@ import {
   jobTileBadges,
   sortTasksForTab,
   taskAccess,
+  taskViewerRole,
   taskActions,
   taskAssigneeDisplay,
   taskAttachmentCheck,
@@ -197,4 +198,20 @@ test('one definition: tab counts equal Home and the job tile counts', () => {
   const tile = jobTileBadges({ jobId: 'job-1', tasks } as never)
   assert.equal(tile.openTasks, counts.active)
   assert.equal(tasks.filter(isTaskActive).length, counts.active)
+})
+
+test('1.89.0 §34 review of #452: the task role comes from the person\'s level (a legacy user with no flag is a manager)', () => {
+  const legacy = taskViewerRole({ id: 'u1', email: 'old@x.co' })
+  assert.deepEqual(legacy, { isSuperAdmin: false, isAdmin: false, isManager: true, isOperativeMode: false })
+  assert.equal(taskAccess(legacy).seesEveryone, true)
+  assert.equal(taskAccess(legacy).canDelete, false)
+  const strayAdmin = taskViewerRole({ adminAccess: true, operativeMode: true })
+  assert.equal(strayAdmin?.isAdmin, true)
+  assert.equal(strayAdmin?.isOperativeMode, false)
+  assert.equal(taskAccess(strayAdmin).canDelete, true)
+  const operative = taskViewerRole({ role: 'operative' })
+  assert.equal(taskAccess(operative).seesEveryone, false)
+  assert.equal(taskViewerRole({ isSuperAdmin: true })?.isSuperAdmin, true)
+  assert.equal(taskViewerRole({ isSuperAdmin: true, organizationSuperAdmin: false })?.isSuperAdmin, false)
+  assert.equal(taskViewerRole(null), null)
 })

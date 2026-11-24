@@ -25,6 +25,7 @@ import {
   type ProjectTaskStatusToken,
 } from './operationsDocuments'
 import { isStaffAccount, type StaffAccountRole } from './staffAccess'
+import { permissionLevelOf } from './permissionLevels'
 
 /** The version of the pack's `tasks.rules.json` these rules carry (its `rulebookVersion`). */
 export const TASK_RULES_PACK_VERSION = 1
@@ -462,6 +463,25 @@ export function taskAccess(role: StaffAccountRole | null | undefined, input?: { 
   }
 }
 
+/**
+ * Rulebook 1.89.0 §34 (review of #452, guardrail 3): the role every task rule reads, from the person's level
+ * (`permissionLevelOf`, §11) — so a legacy user with no level flag is manager level and keeps seeing every task, and
+ * an admin with a stray operative-mode flag stays an admin. `user` is the users document (or the same fields).
+ */
+export function taskViewerRole(user: unknown): StaffAccountRole | null {
+  if (!user || typeof user !== 'object') return null
+  const level = permissionLevelOf(user)
+  const row = user as { isSuperAdmin?: unknown; organizationSuperAdmin?: unknown }
+  const superAdmin =
+    level === 'admin' && (row.organizationSuperAdmin === true || (row.organizationSuperAdmin !== false && row.isSuperAdmin === true))
+  return {
+    isSuperAdmin: superAdmin,
+    isAdmin: level === 'admin',
+    isManager: level === 'manager',
+    isOperativeMode: level === 'operative',
+  }
+}
+
 export type TaskScopeKey = 'mine' | 'everyone'
 
 export const TASK_SCOPES: ReadonlyArray<{ key: TaskScopeKey; label: string }> = [
@@ -540,6 +560,8 @@ export const TASK_ATTACHMENT_RULES = {
     { mime: 'image/jpeg', extensions: ['jpg', 'jpeg'], label: 'JPG' },
     { mime: 'image/png', extensions: ['png'], label: 'PNG' },
     { mime: 'image/webp', extensions: ['webp'], label: 'WebP' },
+    // HEIC is stored as JPEG when the device can redraw it (iPhone always; a browser that can read HEIC); a browser
+    // that cannot read HEIC uploads it as it is (§24 allows HEIC), so `storeAs` is the preferred type, not a promise.
     { mime: 'image/heic', extensions: ['heic', 'heif'], label: 'HEIC', storeAs: 'image/jpeg' },
     { mime: 'application/pdf', extensions: ['pdf'], label: 'PDF' },
   ],
@@ -548,7 +570,7 @@ export const TASK_ATTACHMENT_RULES = {
 
 export type TaskAttachmentCheck = {
   result: 'ok' | 'tooBig' | 'wrongType' | 'tooMany'
-  /** The type the file is stored as (HEIC is stored as JPEG once converted). */
+  /** The preferred stored type: JPEG for HEIC when the device can convert it, else the file is kept as HEIC. */
   storedMime: string | null
   message: string | null
 }
@@ -706,7 +728,7 @@ export const TASK_COPY = {
   },
   delete: {
     title: 'Delete {title}?',
-    body: 'This removes the task, its checklist and attachments for everyone on iOS and web.',
+    body: 'This removes the task and its checklist for everyone on iOS and web. Its files are kept for recovery for 30 days.',
     confirm: 'Delete',
   },
   toasts: {

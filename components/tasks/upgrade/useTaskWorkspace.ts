@@ -13,11 +13,10 @@ import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore, useRosterDocuments } from '@/lib/stores/siteAuditStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { assignableProjectManagers } from '@/lib/projects/projectManagerChoices'
-import { staffAccountRole } from '@/lib/permissions'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { tasksAssignedToUser } from '@/lib/tasks/taskUtils'
 import { taskPersonIndex } from '@/lib/tasks/taskAssigneePeople'
-import { taskAccess } from '@/lib/canonical'
+import { taskAccess, taskViewerRole } from '@/lib/canonical'
 import type { Project, ProjectTask } from '@/types'
 
 export type TaskLocation = {
@@ -43,7 +42,8 @@ export function taskLocationOf(project: Project, kind: 'project' | 'smallWorks')
 export function useTaskWorkspace() {
   const { user, organization } = useAuthStore()
   const { tasks, loading, error, loadTasks } = useTaskStore()
-  const { operatives, managers, loadOperatives, loadManagers } = useOperativeStore()
+  const { operatives, managers, allManagerRows, operativesLoadedOrgId, managersLoadedOrgId, loadOperatives, loadManagers } =
+    useOperativeStore()
   const { users, loadUsers } = useOrgUserStore()
   const roster = useRosterDocuments(organization?.id)
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
@@ -58,7 +58,9 @@ export function useTaskWorkspace() {
     loadSmallWorks(organization.id)
   }, [organization?.id, loadTasks, loadOperatives, loadManagers, loadUsers, loadProjects, loadSmallWorks])
 
-  const role = useMemo(() => staffAccountRole(user), [user])
+  // Review of #452 (guardrail 3): the level from `permissionLevelOf` (§11), so a legacy user with no level flag is a
+  // manager and keeps seeing every task.
+  const role = useMemo(() => taskViewerRole(user), [user])
   const access = useMemo(() => taskAccess(role), [role])
   const personIndex = useMemo(() => taskPersonIndex({ managers, operatives, roster }), [managers, operatives, roster])
   const assignableManagers = useMemo(
@@ -84,6 +86,18 @@ export function useTaskWorkspace() {
     const key = (task.projectId || '').trim().toLowerCase()
     return locations.find((row) => row.id.toLowerCase() === key) ?? null
   }
+
+  /** Names on tasks: every managers row as stored (a placeholder a task names still reads by name), once loaded. */
+  const rostersLoaded = Boolean(organization?.id) && operativesLoadedOrgId === organization?.id && managersLoadedOrgId === organization?.id
+  const nameRows = useMemo(
+    () => ({
+      managers: allManagerRows.length > 0 ? allManagerRows : managers,
+      operatives,
+      index: personIndex,
+      loaded: rostersLoaded,
+    }),
+    [allManagerRows, managers, operatives, personIndex, rostersLoaded]
+  )
 
   /** Each person's own access to one task: staff always, anyone else when assigned. */
   const accessFor = (task: ProjectTask | null) => taskAccess(role, { isAssignee: task ? assignedIds.has(task.id) : false })
@@ -111,6 +125,8 @@ export function useTaskWorkspace() {
     role,
     access,
     personIndex,
+    nameRows,
+    rostersLoaded,
     assignedIds,
     locations,
     liveLocations,

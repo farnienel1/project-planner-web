@@ -2465,6 +2465,7 @@ export {
   isTaskActive,
   sortTasksForTab,
   taskAccess,
+  taskViewerRole,
   taskActionStatus,
   taskActions,
   taskAssigneeDisplay,

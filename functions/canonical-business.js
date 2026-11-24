@@ -2066,6 +2066,7 @@ var ProjectPlannerCanonical = (() => {
     taskTabKeys: () => taskTabKeys,
     taskToggleChecklistItem: () => taskToggleChecklistItem,
     taskUploadProgressText: () => taskUploadProgressText,
+    taskViewerRole: () => taskViewerRole,
     taskWriteFields: () => taskWriteFields,
     tasksAssignedToViewer: () => tasksAssignedToViewer,
     taxIdsDocumentFields: () => taxIdsDocumentFields,
@@ -17486,7 +17487,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.89.0" : "",
-      sha256: true ? "5b46e0ecfdc529973b7fd6602eddc51ba2f6e6feebef27ed7a3bd97aa4b4113d" : ""
+      sha256: true ? "d4d650e8ad5d36ba7de48d0a9d106c8db2f39d61271b511636dd99d654e312d9" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -32221,6 +32222,18 @@ var ProjectPlannerCanonical = (() => {
       canAct: staff || input?.isAssignee === true
     };
   }
+  function taskViewerRole(user) {
+    if (!user || typeof user !== "object") return null;
+    const level = permissionLevelOf(user);
+    const row3 = user;
+    const superAdmin = level === "admin" && (row3.organizationSuperAdmin === true || row3.organizationSuperAdmin !== false && row3.isSuperAdmin === true);
+    return {
+      isSuperAdmin: superAdmin,
+      isAdmin: level === "admin",
+      isManager: level === "manager",
+      isOperativeMode: level === "operative"
+    };
+  }
   var TASK_SCOPES = [
     { key: "mine", label: "My tasks" },
     { key: "everyone", label: "Everyone" }
@@ -32264,6 +32277,8 @@ var ProjectPlannerCanonical = (() => {
       { mime: "image/jpeg", extensions: ["jpg", "jpeg"], label: "JPG" },
       { mime: "image/png", extensions: ["png"], label: "PNG" },
       { mime: "image/webp", extensions: ["webp"], label: "WebP" },
+      // HEIC is stored as JPEG when the device can redraw it (iPhone always; a browser that can read HEIC); a browser
+      // that cannot read HEIC uploads it as it is (§24 allows HEIC), so `storeAs` is the preferred type, not a promise.
       { mime: "image/heic", extensions: ["heic", "heif"], label: "HEIC", storeAs: "image/jpeg" },
       { mime: "application/pdf", extensions: ["pdf"], label: "PDF" }
     ],
@@ -32385,7 +32400,7 @@ var ProjectPlannerCanonical = (() => {
     },
     delete: {
       title: "Delete {title}?",
-      body: "This removes the task, its checklist and attachments for everyone on iOS and web.",
+      body: "This removes the task and its checklist for everyone on iOS and web. Its files are kept for recovery for 30 days.",
       confirm: "Delete"
     },
     toasts: {
