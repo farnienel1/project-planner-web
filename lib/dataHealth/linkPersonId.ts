@@ -14,6 +14,8 @@ import {
   type LinkBookingPersonFiledUnder,
   type LinkCandidateProfile,
 } from '@/lib/canonical'
+import { applyMemberNames } from '@/lib/canonical'
+import { currentMemberNames } from '@/lib/staff/memberNamesLive'
 
 /** A users document as the link rules read it (every document of the organisation, never the email fold). */
 export function linkProfile(id: string, data: Record<string, unknown>): LinkCandidateProfile {
@@ -38,7 +40,8 @@ export function linkProfile(id: string, data: Record<string, unknown>): LinkCand
 /** Every users document of the organisation, read from the server (the picker and the re-check). */
 export async function loadOrgRoster(organizationId: string): Promise<LinkCandidateProfile[]> {
   const snap = await getDocs(query(collection(getFirebaseDb(), 'users'), where('organizationId', '==', organizationId)))
-  return snap.docs.map((row) => linkProfile(row.id, row.data()))
+  // Rulebook 1.81.0 §11: names as this organisation shows them (`applyMemberNames`).
+  return applyMemberNames(snap.docs.map((row) => linkProfile(row.id, row.data())), currentMemberNames(organizationId))
 }
 
 /**

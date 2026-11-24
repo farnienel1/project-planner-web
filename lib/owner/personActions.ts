@@ -13,6 +13,7 @@ import {
 import { isAnonymisedDeletedProfile, type RosterSegmentProfile } from '@/lib/canonical/userRosterSegment'
 import type { RestUpdateWrite } from '@/lib/owner/firestoreRest'
 import type { PlainDoc } from '@/lib/owner/directory'
+import { MEMBER_NAMES_COLLECTION } from '@/lib/canonical/memberNames'
 
 /** PLAN §4: every action needs a reason of 3–500 characters (stored in the audit log, emails masked). */
 export const OWNER_REASON_MIN = 3
@@ -85,6 +86,8 @@ export type NameChangePlan = {
   /** What the preview shows: one line per document, never an email. */
   users: { id: string; organizationId: string }[]
   rows: { organizationId: string; collection: 'operatives' | 'managers'; id: string }[]
+  /** 1.81.0: the organisations whose own name for the person (`memberNames`) is set (`set`) or removed (`removed`). */
+  memberNames: { organizationId: string; action: 'set' | 'removed' }[]
   /** Nothing differs from what is stored. */
   unchanged: boolean
 }
@@ -109,11 +112,52 @@ export function ownerNameChangePlan(input: {
   surname: string
   userDocs: readonly ReadDoc[]
   rosterRows: readonly RosterRowDoc[]
+  /**
+   * 1.81.0 (rulebook §11 "Names per organisation"): `all` (default) — every users document and roster row, as before,
+   * and every organisation's own name for the person is removed (`memberNames` of `organizationIds` × the person's
+   * users ids), so the new name shows everywhere; `organization` — only `organizationId`: its own name for the person
+   * (`memberNames/{keptUserId}`) and its roster rows; users documents are not touched.
+   */
+  scope?: 'all' | 'organization'
+  organizationId?: string
+  organizationIds?: readonly string[]
+  keptUserId?: string
+  /** Lower-case `orgId/uid` keys of the `memberNames` entries that exist (only those are removed for `all`). */
+  existingMemberNames?: ReadonlySet<string>
 }): NameChangePlan {
   const next = ownerNameFields(input.firstName, input.surname)
   const writes: RestUpdateWrite[] = []
   const users: NameChangePlan['users'] = []
   const rows: NameChangePlan['rows'] = []
+  const memberNames: NameChangePlan['memberNames'] = []
+  if (input.scope === 'organization') {
+    const org = (input.organizationId || '').trim()
+    const kept = (input.keptUserId || '').trim()
+    if (org && kept) {
+      writes.push({
+        path: `organizations/${org}/${MEMBER_NAMES_COLLECTION}/${kept}`,
+        set: { firstName: input.firstName.trim(), surname: input.surname.trim() },
+        kind: 'upsert',
+      })
+      memberNames.push({ organizationId: org, action: 'set' })
+    }
+    for (const row of input.rosterRows) {
+      if (row.organizationId !== org) continue
+      const helper = row.collection === 'operatives' ? operativeRowWriteFields : managerRowWriteFields
+      const write = toWrite(`organizations/${row.organizationId}/${row.collection}/${row.id}`, helper(row.data || {}, next), row.updateTime)
+      if (!write) continue
+      writes.push(write)
+      rows.push({ organizationId: row.organizationId, collection: row.collection, id: row.id })
+    }
+    return { writes, users, rows, memberNames, unchanged: writes.length === 0 }
+  }
+  for (const org of input.organizationIds || []) {
+    for (const doc of input.userDocs) {
+      if (!input.existingMemberNames?.has(`${org}/${doc.id}`.toLowerCase())) continue
+      writes.push({ path: `organizations/${org}/${MEMBER_NAMES_COLLECTION}/${doc.id}`, set: {}, kind: 'delete' })
+      if (!memberNames.some((row) => row.organizationId === org)) memberNames.push({ organizationId: org, action: 'removed' })
+    }
+  }
   for (const doc of input.userDocs) {
     const write = toWrite(`users/${doc.id}`, userProfileWriteFields(doc.data || {}, next), doc.updateTime)
     if (!write) continue
@@ -128,7 +172,7 @@ export function ownerNameChangePlan(input: {
     writes.push(write)
     rows.push({ organizationId: row.organizationId, collection: row.collection, id: row.id })
   }
-  return { writes, users, rows, unchanged: writes.length === 0 }
+  return { writes, users, rows, memberNames, unchanged: writes.length === 0 }
 }
 
 /**

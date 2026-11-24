@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState, type ChangeEvent, type ReactNode } from 'react'
 import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth'
-import { doc, serverTimestamp, updateDoc } from 'firebase/firestore'
+import { deleteDoc, doc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { confirmChosenSignOut } from '@/lib/siteAudit/siteAuditSignOut'
@@ -28,6 +28,8 @@ import {
   writeMetadataFields,
 } from '@/lib/canonical'
 import { readStoredRates } from '@/lib/canonical/payRate'
+import { MEMBER_NAMES_COLLECTION, memberNameEditTarget, memberNameValidationError, memberNameWriteFields } from '@/lib/canonical'
+import { currentMemberNames } from '@/lib/staff/memberNamesLive'
 import { useOwnPayUser } from '@/lib/pay/useOwnPayUser'
 import { loadTaxIds, saveTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
 import { useOrganizationCurrency, useOrganizationDocument, useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
@@ -185,14 +187,35 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
       if (vatNumber.trim().length > SENSITIVE_VALUE_MAX || utrNumber.trim().length > SENSITIVE_VALUE_MAX) {
         throw new Error(`UTR and VAT numbers are ${SENSITIVE_VALUE_MAX} characters at most.`)
       }
+      const nameChanged = before.firstName !== firstName || before.surname !== surname
+      // Rulebook 1.81.0 §11 `memberNameEditTarget`: in the person's home organisation the name stays on their users
+      // document (as before) and this company's own entry, if any, is removed; in any other organisation it is saved
+      // as this company's name for them only.
+      const homeOrganizationId = useAuthStore.getState().currentUserDocument?.organizationId
+      const nameTarget = memberNameEditTarget({ organizationId: organization?.id, homeOrganizationId })
+      if (nameChanged) {
+        const nameError = memberNameValidationError({ firstName, surname })
+        if (nameError) throw new Error(nameError)
+      }
       if (profileChanged) {
-        await updateDoc(doc(db, 'users', user.id), {
-          firstName: firstName.trim(),
-          surname: surname.trim(),
+        const fields: Record<string, unknown> = {
           mobileNumber: mobile.trim(),
           updatedAt: serverTimestamp(),
           ...(writeMetadataFields(user.id, 'web') ?? {}),
-        })
+        }
+        if (nameTarget === 'account') Object.assign(fields, { firstName: firstName.trim(), surname: surname.trim() })
+        if (nameTarget === 'account' || before.mobile !== mobile) await updateDoc(doc(db, 'users', user.id), fields)
+      }
+      if (nameChanged && organization?.id) {
+        const nameRef = doc(db, 'organizations', organization.id, MEMBER_NAMES_COLLECTION, user.id)
+        if (nameTarget === 'organization') {
+          await setDoc(nameRef, {
+            ...memberNameWriteFields({ firstName, surname, writerUserId: user.id, platform: 'web' }),
+            updatedAt: serverTimestamp(),
+          })
+        } else if (currentMemberNames(organization.id)[user.id.toLowerCase()]) {
+          await deleteDoc(nameRef)
+        }
       }
       if (taxIdsChanged) {
         await saveTaxIds(user.id, { vatNumber: vatNumber.trim(), utrNumber: utrNumber.trim() }, user.id)
@@ -202,10 +225,10 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
       const current = useAuthStore.getState().user
       if (current) {
         useAuthStore.setState({
+          // 1.81.0: an organisation name reaches the session user through the live entries (`memberNamesLive`).
           user: {
             ...current,
-            firstName: firstName.trim(),
-            surname: surname.trim(),
+            ...(nameTarget === 'account' ? { firstName: firstName.trim(), surname: surname.trim() } : {}),
             mobileNumber: mobile.trim(),
           },
         })
@@ -334,7 +357,14 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
       <MyProfileFigures />
 
       <div className="space-y-3 card pad">
-        <FormField label="First name"><Input value={firstName} onChange={e => setFirstName(e.target.value)} /></FormField>
+        <FormField
+          label="First name"
+          hint={
+            memberNameEditTarget({ organizationId: organization?.id, homeOrganizationId: useAuthStore.getState().currentUserDocument?.organizationId }) === 'organization'
+              ? `Your name in ${orgName || 'this company'} only. Your other companies keep theirs.`
+              : undefined
+          }
+        ><Input value={firstName} onChange={e => setFirstName(e.target.value)} /></FormField>
         <FormField label="Surname"><Input value={surname} onChange={e => setSurname(e.target.value)} /></FormField>
         <FormField label="Mobile number"><Input value={mobile} onChange={e => setMobile(e.target.value)} type="tel" /></FormField>
       </div>

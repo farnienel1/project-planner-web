@@ -281,10 +281,11 @@ function createSendEmailHandler(deps) {
     // The organisation, the caller's users document and their membership are independent reads: fetched together
     // (one round trip instead of three), then checked in the same order as before — a missing organisation is still
     // refused before membership, and nothing has been sent or counted yet.
-    const [orgSettled, userSettled, membershipSettled] = await Promise.allSettled([
+    const [orgSettled, userSettled, membershipSettled, memberNameSettled] = await Promise.allSettled([
       orgId ? deps.reader.getOrganization(orgId) : null,
       decoded ? deps.reader.getUser(decoded.uid) : null,
       decoded && !serverMode ? deps.reader.getMembership(decoded.uid, orgId) : null,
+      decoded && orgId && typeof deps.reader.getMemberName === 'function' ? deps.reader.getMemberName(orgId, decoded.uid).catch(() => null) : null,
     ])
     const settledValue = (row) => {
       if (row.status === 'rejected') throw row.reason
@@ -301,7 +302,12 @@ function createSendEmailHandler(deps) {
     let callerJob = null
     if (decoded) {
       const user = userRead
-      caller = callerProfile(decoded, user)
+      // Rulebook 1.81.0 §11: the caller's name in this organisation (`parseMemberNameDocument`), else their users name.
+      const memberName =
+        memberNameSettled && memberNameSettled.status === 'fulfilled' && memberNameSettled.value
+          ? canonical.parseMemberNameDocument(decoded.uid, memberNameSettled.value)
+          : null
+      caller = callerProfile(decoded, memberName && user ? { ...user, firstName: memberName.firstName, surname: memberName.surname } : user)
       if (!serverMode) {
         const membership = membershipRead
         const active = canonical.organizationMemberActive({ organizationId: orgId, userId: decoded.uid, organization: org, user, membership })

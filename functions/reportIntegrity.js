@@ -84,9 +84,10 @@ function plain(data) {
 }
 
 /** A person's name as both apps show it (web `personName`): the reader's first name and surname, else the email. */
-function displayNameOf(canonical, id, data) {
+function displayNameOf(canonical, id, data, memberName) {
   if (!data) return null
-  const user = canonical.parseUserDocument(id, data, {})
+  // Rulebook 1.81.0 §11: the person's name in this organisation (`memberNames/{uid}`), as both apps show it there.
+  const user = canonical.parseUserDocument(id, data, memberName ? { memberName } : {})
   if (!user) return null
   return [trimmed(user.firstName), trimmed(user.surname)].filter(Boolean).join(' ') || trimmed(user.email)
 }
@@ -105,8 +106,17 @@ function createReportIntegrityCheck({ store, canonical, logger, serverTimestamp 
    *     the organisation's Super Admin (`isOrganizationSuperAdmin`), who changes their own overtime directly (§25);
    *   - their name is `parseUserDocument`'s first name and surname, else email.
    */
+  /** This organisation's own name for a person (`memberNames/{uid}`), else null (1.81.0). */
+  function memberNameOf(orgId, userId) {
+    return store
+      .getDoc(`organizations/${orgId}/memberNames/${userId}`)
+      .then((data) => (data ? canonical.parseMemberNameDocument(userId, data) : null))
+      .catch(() => null)
+  }
+
   async function personOf(orgId, userId, orgPromise) {
     const none = { raw: null, ids: [userId], hasLineManager: null, name: null }
+    const nameRead = memberNameOf(orgId, userId)
     const raw = await store.getDoc(`users/${userId}`).catch(() => null)
     if (!raw) return none
     const user = canonical.parseUserDocument(userId, raw, {})
@@ -149,7 +159,7 @@ function createReportIntegrityCheck({ store, canonical, logger, serverTimestamp 
         { id: orgId, creatorUserId: trimmed(((await orgPromise) || {}).org?.creatorUserId) }
       ) === true
     const hasLineManager = superAdmin ? false : canonical.hasActiveLineManager(user, [user, ...managers.filter(Boolean)])
-    return { raw, ids: ids.length ? ids : [userId], hasLineManager, name: displayNameOf(canonical, userId, raw) }
+    return { raw, ids: ids.length ? ids : [userId], hasLineManager, name: displayNameOf(canonical, userId, raw, await nameRead) }
   }
 
   /** Every document of a collection (`store.list`, with a field mask), else none. */
@@ -187,8 +197,8 @@ function createReportIntegrityCheck({ store, canonical, logger, serverTimestamp 
         let decider = null
         const deciderId = review && review.decision === 'declined' ? trimmed(review.reviewedBy) : ''
         if (DOC_ID.test(deciderId)) {
-          const doc = await store.getDoc(`users/${deciderId}`).catch(() => null)
-          const name = displayNameOf(canonical, deciderId, doc)
+          const [doc, memberName] = await Promise.all([store.getDoc(`users/${deciderId}`).catch(() => null), memberNameOf(orgId, deciderId)])
+          const name = displayNameOf(canonical, deciderId, doc, memberName)
           // An unreadable decider is left out: the rule then leaves the name unchecked (with a note).
           if (name != null) decider = [deciderId, name]
         }

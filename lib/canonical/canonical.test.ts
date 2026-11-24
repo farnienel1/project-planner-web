@@ -20046,3 +20046,11 @@ test('1.78.0 sign-off reminder is in the packed rulebook (functions and iOS call
   assert.deepEqual(due.runs.map((row) => row.paymentDayKey), ['2026-12-05'])
   assert.equal(R112.notificationDeliversDevicePush(R112.TIMESHEET_SIGNOFF_REMINDER_NOTICE_TYPE), true)
 })
+
+test('1.81.0 names per organisation are in the packed rulebook (full cases in memberNames.test.ts)', () => {
+  const names = R112.parseMemberNameDocuments([{ id: 'U1', data: { firstName: 'Farns', surname: 'Nel' } }])
+  assert.equal(R112.displayNameInOrganization({ person: { id: 'u1', firstName: 'Farnie', surname: 'Nel' }, names }).displayName, 'Farns Nel')
+  assert.equal(R112.displayNameInOrganization({ person: { id: 'u2', firstName: 'Farnie', surname: 'Nel' }, names }).displayName, 'Farnie Nel')
+  assert.equal(R112.memberNameEditTarget({ organizationId: 'B', homeOrganizationId: 'A' }), 'organization')
+  assert.equal(R112.MEMBER_NAMES_COLLECTION, 'memberNames')
+})

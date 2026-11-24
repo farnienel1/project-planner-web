@@ -274,7 +274,7 @@ export function DeveloperPersonScreen({ uid }: { uid: string }) {
         <ResetDialog uid={uid} name={person.name} onClose={() => setAction(null)} onDone={done} run={run} />
       ) : null}
       {action === 'name' ? (
-        <NameDialog uid={uid} person={person} documents={data.documents} onClose={() => setAction(null)} onDone={done} run={run} />
+        <NameDialog uid={uid} person={person} documents={data.documents} organisations={data.organisations} onClose={() => setAction(null)} onDone={done} run={run} />
       ) : null}
       {action === 'email' ? <EmailDialog uid={uid} name={person.name} onClose={() => setAction(null)} onDone={done} run={run} /> : null}
       {action === 'revoke' ? <RevokeDialog uid={uid} name={person.name} onClose={() => setAction(null)} onDone={done} run={run} /> : null}
@@ -414,39 +414,85 @@ function ResetDialog({ uid, name, onClose, onDone, run }: DialogProps) {
   )
 }
 
-function NameDialog({ uid, person, documents, onClose, onDone, run }: Omit<DialogProps, 'name'> & { person: OwnerPersonRow; documents: OwnerPersonDocument[] }) {
+function NameDialog({
+  uid,
+  person,
+  documents,
+  organisations,
+  onClose,
+  onDone,
+  run,
+}: Omit<DialogProps, 'name'> & { person: OwnerPersonRow; documents: OwnerPersonDocument[]; organisations: OwnerPersonOrganisation[] }) {
   const kept = documents.find((doc) => doc.id === person.id) || documents[0]
   const parts = (kept?.name || person.name).split(' ')
   const [firstName, setFirstName] = useState(parts[0] || '')
   const [surname, setSurname] = useState(parts.slice(1).join(' '))
   const [reason, setReason] = useState('')
+  // Rulebook 1.81.0 §11 "Names per organisation": every organisation (default) or one organisation only.
+  const [scope, setScope] = useState<'all' | 'organization'>('all')
+  const [organizationId, setOrganizationId] = useState(organisations[0]?.id || '')
   const [preview, setPreview] = useState<NameChangeSummary | null>(null)
   const [previewError, setPreviewError] = useState('')
+  const scoped = scope === 'organization' ? { scope, organizationId } : { scope }
   useEffect(() => {
     setPreview(null)
     setPreviewError('')
     if (!firstName.trim() || !surname.trim()) return
+    if (scope === 'organization' && !organizationId) return
     const timer = window.setTimeout(() => {
-      ownerChangeUserName({ uid, firstName, surname, preview: true })
+      ownerChangeUserName({ uid, firstName, surname, preview: true, ...(scope === 'organization' ? { scope, organizationId } : { scope }) })
         .then(setPreview)
         .catch((err: unknown) => setPreviewError(err instanceof Error ? err.message : 'Could not check this change.'))
     }, 400)
     return () => window.clearTimeout(timer)
-  }, [uid, firstName, surname])
+  }, [uid, firstName, surname, scope, organizationId])
+  const orgLabel = organisations.find((org) => org.id === organizationId)?.name || organizationId
   return (
     <ActionDialog
       title="Change name"
-      consequence={<p>Changes the first name and surname everywhere {person.name} appears: each of their user records and the Operatives / Managers list rows on their email, in every organisation. It happens all at once or not at all.</p>}
+      consequence={
+        scope === 'organization' ? (
+          <p>Changes the name {person.name} has in {orgLabel || 'this organisation'} only: that company&apos;s own name for them and its Operatives / Managers list rows. Their other organisations keep their name.</p>
+        ) : (
+          <p>Changes the first name and surname everywhere {person.name} appears: each of their user records and the Operatives / Managers list rows on their email, in every organisation, and removes any name an organisation set for them. It happens all at once or not at all.</p>
+        )
+      }
       reason={reason}
       setReason={setReason}
       confirmLabel="Change name"
       canConfirm={Boolean(preview && !preview.unchanged)}
       onClose={onClose}
       onConfirm={async () => {
-        await run(() => ownerChangeUserName({ uid, firstName, surname, reason }))
+        await run(() => ownerChangeUserName({ uid, firstName, surname, reason, ...scoped }))
         onDone(`Name changed to ${firstName.trim()} ${surname.trim()}.`)
       }}
     >
+      <fieldset className="mt-3 text-sm" data-testid="person-name-scope">
+        <legend className="font-semibold">Where</legend>
+        <label className="mt-1 flex items-center gap-2">
+          <input type="radio" name="person-name-scope" checked={scope === 'all'} onChange={() => setScope('all')} />
+          Every organisation
+        </label>
+        <label className="mt-1 flex items-center gap-2">
+          <input
+            type="radio"
+            name="person-name-scope"
+            checked={scope === 'organization'}
+            disabled={organisations.length === 0}
+            onChange={() => setScope('organization')}
+          />
+          This organisation only
+        </label>
+        {scope === 'organization' ? (
+          <select className="pp-in mt-1" value={organizationId} onChange={(event) => setOrganizationId(event.target.value)} data-testid="person-name-organisation">
+            {organisations.map((org) => (
+              <option key={org.id} value={org.id}>
+                {org.name || org.id}
+              </option>
+            ))}
+          </select>
+        ) : null}
+      </fieldset>
       <div className="mt-3 grid grid-cols-2 gap-2">
         <label className="f block text-sm font-semibold">
           First name
@@ -465,8 +511,9 @@ function NameDialog({ uid, person, documents, onClose, onDone, run }: Omit<Dialo
           ) : (
             <p>
               Will change {preview.users.length} user record{preview.users.length === 1 ? '' : 's'}
-              {preview.rows.length ? ` and ${preview.rows.length} list row${preview.rows.length === 1 ? '' : 's'}` : ''}:{' '}
-              {[...new Set([...preview.users, ...preview.rows].map((row) => row.organisation))].join(', ')}.
+              {preview.rows.length ? ` and ${preview.rows.length} list row${preview.rows.length === 1 ? '' : 's'}` : ''}
+              {preview.memberNames?.length ? `, and ${preview.memberNames.filter((row) => row.action === 'set').length ? 'set' : 'remove'} the organisation name in ${preview.memberNames.length} organisation${preview.memberNames.length === 1 ? '' : 's'}` : ''}:{' '}
+              {[...new Set([...preview.users, ...preview.rows, ...(preview.memberNames ?? [])].map((row) => row.organisation))].join(', ')}.
             </p>
           )
         ) : !previewError ? (

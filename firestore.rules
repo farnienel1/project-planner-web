@@ -1262,7 +1262,6 @@ service cloud.firestore {
       }
 
       match /operatives/{operativeId} {
-        allow read: if canAccessOrganization(organizationId);
 
         allow create, update: if rosterRowPrivilegeTyped(request.resource.data) &&
           ((rosterRowLinkChanged() || (resource == null
@@ -1399,7 +1398,6 @@ service cloud.firestore {
       }
 
       match /deletedBookings/{bookingId} {
-        allow read: if canAccessOrganization(organizationId);
         allow create: if request.auth != null &&
           request.resource.data.keys().hasAll(['bookingId', 'collection', 'deletedAt', 'deletedBy', 'deletedFrom']) &&
           request.resource.data.keys().hasOnly(['bookingId', 'collection', 'deletedAt', 'deletedBy', 'deletedFrom', 'overtimeRequestId']) &&
@@ -1733,12 +1731,10 @@ service cloud.firestore {
       }
 
       match /qualifications/{qualificationId} {
-        allow read: if canAccessOrganization(organizationId);
         allow write: if isOrgManagerOrAdmin(organizationId) || isPlatformOwner();
       }
 
       match /skills/{skillId} {
-        allow read: if canAccessOrganization(organizationId);
         allow write: if isOrgManagerOrAdmin(organizationId) || isPlatformOwner();
       }
 
@@ -1889,7 +1885,6 @@ service cloud.firestore {
               n.get('items', null) is list && p.get('items', null) is list && p.items.size() > 0 &&
               n.items.size() == p.items.size() && !('id' in p.items[0]) && !('id' in p.items[p.items.size() - 1]));
         }
-        allow read: if canAccessOrganization(organizationId);
         allow create, update: if canAccessOrganization(organizationId) && (resource == null ?
           request.resource.data.get('createdByUserId', request.auth.uid) == request.auth.uid :
           !affected().hasAny(['createdByUserId', 'createdBy', 'createdAt', 'organizationId']) &&
@@ -1901,7 +1896,6 @@ service cloud.firestore {
       }
 
       match /managers/{managerId} {
-        allow read: if canAccessOrganization(organizationId);
         allow create, update: if (rosterRowPrivilegeTyped(request.resource.data) && (rosterRowLinkChanged() ? (orgAdminEither(organizationId) || isPlatformOwner()) : true)) ? (
           (isOrgManagerOrAdmin(organizationId) || isPlatformOwner()) &&
           (!((resource == null
@@ -1947,7 +1941,6 @@ service cloud.firestore {
       }
 
       match /materials/{materialId} {
-        allow read: if canAccessOrganization(organizationId);
         allow create: if isOrgManagerOrAdmin(organizationId) || canAccessOrganization(organizationId) &&
            request.resource.data.addedByUserId is string &&
            request.resource.data.addedByUserId.size() > 0 &&
@@ -1994,7 +1987,6 @@ service cloud.firestore {
       }
 
       match /materialCatalogue/{catalogueItemId} {
-        allow read: if canAccessOrganization(organizationId);
         allow create, update, delete: if isOrgAdminOrOwner(organizationId);
       }
 
@@ -2012,7 +2004,6 @@ service cloud.firestore {
       }
 
       match /wholesalers/{wholesalerId} {
-        allow read: if canAccessOrganization(organizationId);
         allow create, update, delete: if isOrgManagerOrAdmin(organizationId);
       }
 
@@ -2338,13 +2329,11 @@ service cloud.firestore {
       }
 
       match /acceptedBookingClashes/{clashId} {
-        allow read: if canAccessOrganization(organizationId);
         allow create, update: if canAccessVariationsStaff(organizationId) && writeMetadataValidWhenPresent();
         allow delete: if canAccessVariationsStaff(organizationId);
       }
 
       match /warningResolutions/{resolutionKey} {
-        allow read: if canAccessOrganization(organizationId);
         allow create, update: if canAccessVariationsStaff(organizationId) &&
           request.resource.data.keys().hasOnly(['resolutionKey', 'status', 'resolvedByUserId', 'resolvedAt', 'updatedBy', 'updatedFrom', 'updatedAt']) &&
           writeMetadataValidWhenPresent() &&
@@ -2357,7 +2346,6 @@ service cloud.firestore {
       }
 
       match /dismissedWarnings/{dismissKey} {
-        allow read: if canAccessOrganization(organizationId);
         allow create, update: if canAccessVariationsStaff(organizationId) && writeMetadataValidWhenPresent();
         allow delete: if isOrganizationAdmin(organizationId);
       }
@@ -2432,8 +2420,18 @@ service cloud.firestore {
           request.resource.data.keys().hasOnly(['firstSentAt']) && request.resource.data.firstSentAt == request.time;
       }
 
+      match /memberNames/{nameUid} {
+        function nameWriter(d) {
+          let c = callerOrg(organizationId);
+          return (isPlatformOwner() || request.auth != null && orgBillingOpen(organizationId) && ('H' in c || request.auth.uid == nameUid && 'c' in c)) &&
+            (d == null || d.data.keys().hasOnly(['firstName', 'surname', 'updatedAt', 'updatedBy', 'updatedFrom']) && d.data.firstName is string &&
+              d.data.firstName.trim() != '' && d.data.firstName.size() <= 100 && d.data.get('surname', '') is string &&
+              d.data.get('surname', '').size() <= 100 && d.data.get('updatedBy', request.auth.uid) == request.auth.uid);
+        }
+        allow write: if nameWriter(request.resource);
+      }
+
       match /dashboardLayouts/{layoutUserId} {
-        allow read: if canAccessOrganization(organizationId);
         allow create, update, delete: if canAccessOrganization(organizationId) &&
           (request.auth.uid == layoutUserId || isOrganizationAdmin(organizationId));
       }

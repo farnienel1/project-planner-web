@@ -21,6 +21,7 @@ import { hasAdminAccess } from '@/lib/navigation/menuPermissions'
 import { LAPSED_BILLING_PATH, LapsedBillingOnly, SubscriptionLapsedScreen } from '@/components/billing/SubscriptionLapsedScreen'
 import { LEGAL_ENTITY } from '@/lib/legal/customerLegalPack'
 import { WebUpdateGate } from '@/components/client/WebUpdateGate'
+import { installMemberNames } from '@/lib/staff/memberNamesLive'
 
 export default function DashboardLayout({
   children,
@@ -32,6 +33,8 @@ export default function DashboardLayout({
   const { user, firebaseUser, organization, loading, error, mfaPending, mfaVerified, mfaStatusKnown, ensureSignedInProfile } =
     useAuthStore()
   const profileRetryStarted = useRef(false)
+  // Rulebook 1.81.0 §11: the open organisation's names for people, laid over the roster and the signed-in user.
+  useEffect(() => installMemberNames(), [])
   const needsMfa =
     mfaPending ||
     isMfaGateOpen(user?.id || firebaseUser?.uid) ||

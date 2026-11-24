@@ -25,7 +25,10 @@ import { rosterPersonName, type RosterSegmentProfile } from '@/lib/canonical/use
 export const runtime = 'nodejs'
 
 /**
- * POST /api/owner/actions/change-name `{ uid, firstName, surname, reason, preview? }` — owner console PR 5.
+ * POST /api/owner/actions/change-name `{ uid, firstName, surname, reason, preview?, scope?, organizationId? }` — owner console PR 5.
+ * 1.81.0: `scope: 'organization'` with `organizationId` changes the person's name in that organisation only (its
+ * `memberNames` entry and its roster rows; users documents untouched); the default `all` also removes every
+ * organisation's own name for them so the new name shows everywhere (rulebook §11 "Names per organisation").
  * Changes a person's first name and surname on every users document of theirs (the directory's one-per-email fold,
  * every organisation) and on the `operatives` / `managers` rows on their email in their organisations, as the apps
  * do when a person's name is saved. Partial updates only (`userProfileWriteFields`, `operativeRowWriteFields`,
@@ -43,10 +46,22 @@ export async function POST(request: NextRequest) {
   if (perOwner) return perOwner
   const body = await readApiBody(
     request,
-    apiObject({ uid: apiText(128), firstName: apiText(200), surname: apiText(200), reason: apiText(1000), preview: apiFlag() })
+    apiObject({
+      uid: apiText(128),
+      firstName: apiText(200),
+      surname: apiText(200),
+      reason: apiText(1000),
+      preview: apiFlag(),
+      scope: apiText(20),
+      organizationId: apiText(128),
+    })
   )
   if (!body.ok) return body.response
   const preview = body.value.preview === true
+  // 1.81.0 (rulebook §11 "Names per organisation"): `organization` changes the name in one organisation only.
+  const scope = body.value.scope === 'organization' ? 'organization' : 'all'
+  const scopedOrgId = (body.value.organizationId || '').trim()
+  if (scope === 'organization' && !isValidDocumentId(scopedOrgId)) return jsonError('Choose the organisation first.', 400)
   const uid = (body.value.uid || '').trim()
   if (!isValidDocumentId(uid)) return jsonError('Choose a person first.', 400)
   const firstName = (body.value.firstName || '').trim()
@@ -86,7 +101,11 @@ export async function POST(request: NextRequest) {
   )
   const personIds = ownerPersonIds(person.row, userDocs)
 
+  if (scope === 'organization' && !person.row.organizationIds.includes(scopedOrgId)) {
+    return jsonError('This person is not in that organisation.', 400)
+  }
   const rosterRows: RosterRowDoc[] = []
+  const existingMemberNames = new Set<string>()
   const unread: string[] = []
   for (const organizationId of person.row.organizationIds) {
     for (const collection of ['operatives', 'managers'] as const) {
@@ -104,15 +123,34 @@ export async function POST(request: NextRequest) {
         unread.push(path)
       }
     }
+    if (scope === 'all') {
+      const path = `organizations/${organizationId}/memberNames`
+      try {
+        for (const row of await firestoreListCollection(token, path, 5000)) existingMemberNames.add(`${organizationId}/${row.id}`.toLowerCase())
+      } catch {
+        unread.push(path)
+      }
+    }
   }
   // A list the owner could not read would leave that company's copy of the name behind: refuse instead.
   if (unread.length) return jsonError('Could not read every list this person is on, so nothing was changed. Try again.', 503)
 
-  const plan = ownerNameChangePlan({ firstName, surname, userDocs, rosterRows })
+  const plan = ownerNameChangePlan({
+    firstName,
+    surname,
+    userDocs,
+    rosterRows,
+    scope,
+    organizationId: scopedOrgId,
+    organizationIds: person.row.organizationIds,
+    keptUserId: kept.id,
+    existingMemberNames,
+  })
   const orgName = new Map(person.orgRows.map((org) => [org.id, org.name]))
   const summary = {
     users: plan.users.map((row) => ({ id: row.id, organisation: orgName.get(row.organizationId) || 'No organisation' })),
     rows: plan.rows.map((row) => ({ id: row.id, collection: row.collection, organisation: orgName.get(row.organizationId) || 'Unknown organisation' })),
+    memberNames: plan.memberNames.map((row) => ({ action: row.action, organisation: orgName.get(row.organizationId) || 'Unknown organisation' })),
     unchanged: plan.unchanged,
   }
   if (preview) return ownerJson({ preview: true, ...summary })
@@ -123,10 +161,10 @@ export async function POST(request: NextRequest) {
     audit = await beginOwnerAudit(request, owner.uid, {
       action: 'ownerChangeUserName',
       targetUserId: kept.id,
-      targetOrgId: person.row.organizationIds[0] || undefined,
+      targetOrgId: (scope === 'organization' ? scopedOrgId : person.row.organizationIds[0]) || undefined,
       reason: body.value.reason,
       before: { name: rosterPersonName(kept.data as RosterSegmentProfile) },
-      after: { name: ownerNameFields(firstName, surname).name, documents: plan.writes.length },
+      after: { name: ownerNameFields(firstName, surname).name, documents: plan.writes.length, scope, organizationId: scope === 'organization' ? scopedOrgId : null },
     })
   } catch {
     return jsonError(OWNER_AUDIT_UNAVAILABLE_MESSAGE, 502)

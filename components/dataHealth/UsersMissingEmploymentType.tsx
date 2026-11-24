@@ -8,6 +8,8 @@
  * Admin only. Never writes.
  */
 
+import { applyMemberNames } from '@/lib/canonical'
+import { currentMemberNames } from '@/lib/staff/memberNamesLive'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { collection, getDocs, query, where } from 'firebase/firestore'
@@ -43,7 +45,8 @@ export function UsersMissingEmploymentType({ organizationId }: { organizationId:
           ...overlayRosterPay(organizationId, row.id, row.data() as Record<string, unknown>),
           id: row.id,
         }))
-        setMissing(missingEmploymentTypeRows(docs))
+        // Rulebook 1.81.0 §11: names as this organisation shows them.
+        setMissing(missingEmploymentTypeRows(applyMemberNames(docs, currentMemberNames(organizationId))))
       })
       .catch(() => {
         if (!cancelled) setError('Could not read the people list for this check.')

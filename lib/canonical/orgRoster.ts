@@ -17,6 +17,7 @@ import { parseOrgMembershipDocument } from './orgMembership'
 import { permissionLevelOf, storedPermissionFlag, type PermissionLevel } from './permissionLevels'
 import { rosterPeople, type RosterDocument } from './scheduleSources'
 import { selfManageToggles } from './leaveRequests'
+import { applyMemberNames, type MemberNames } from './memberNames'
 
 export type OrgRosterLevel = {
   level: PermissionLevel
@@ -186,6 +187,8 @@ export function rosterMembersForOrganization<T extends RosterDocument & Record<s
   signedInUserId?: string | null
   memberships?: Record<string, Record<string, unknown> | null | undefined> | null
   missingIds?: ReadonlyArray<string> | null
+  /** 1.81.0: this organisation's `memberNames` entries (`parseMemberNameDocuments`); each is laid over its person. */
+  memberNames?: MemberNames | null
 }): {
   people: Array<T & { sameEmailUserIds: string[]; formerUserIds: string[]; organizationLevel: OrgRosterLevel }>
   userIdAliases: Record<string, string>
@@ -211,7 +214,7 @@ export function rosterMembersForOrganization<T extends RosterDocument & Record<s
     return orgIdOf(row.organizationId).toLowerCase() === org.toLowerCase() || anchoredKeys.has(id)
   })
   const folded = rosterPeople(docs)
-  const people = folded.people.map((person) => {
+  const people = applyMemberNames(folded.people, input?.memberNames).map((person) => {
     const id = text(person.id)
     const membersRole = Object.entries(members).find(([key]) => key.toLowerCase() === id.toLowerCase())?.[1]
     return {

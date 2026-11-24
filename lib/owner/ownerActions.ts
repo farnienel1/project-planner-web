@@ -38,10 +38,21 @@ export async function ownerRequestReverify(): Promise<{ retryAfterSec?: number }
 export type NameChangeSummary = {
   users: { id: string; organisation: string }[]
   rows: { id: string; collection: 'operatives' | 'managers'; organisation: string }[]
+  /** 1.81.0: organisations whose own name for the person is set or removed (rulebook §11 "Names per organisation"). */
+  memberNames?: { action: 'set' | 'removed'; organisation: string }[]
   unchanged: boolean
 }
 
-export async function ownerChangeUserName(input: { uid: string; firstName: string; surname: string; reason?: string; preview?: boolean }) {
+export async function ownerChangeUserName(input: {
+  uid: string
+  firstName: string
+  surname: string
+  reason?: string
+  preview?: boolean
+  /** 1.81.0: `organization` (with `organizationId`) changes the name in that organisation only; default every one. */
+  scope?: 'all' | 'organization'
+  organizationId?: string
+}) {
   const data = await ownerPost<NameChangeSummary>('/api/owner/actions/change-name', input, 'Could not change the name.')
   if (!input.preview) markOwnerDirectoryStale()
   return data
