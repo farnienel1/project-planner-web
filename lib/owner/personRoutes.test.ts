@@ -19,6 +19,7 @@ import { POST as revealEmail } from '../../app/api/owner/people/[uid]/reveal-ema
 import { GET as personGet } from '../../app/api/owner/people/[uid]/route.ts'
 import { POST as changeEmail } from '../../app/api/owner/change-email/route.ts'
 import { POST as reverify } from '../../app/api/owner/reverify/route.ts'
+import { POST as sendReset } from '../../app/api/owner/send-password-reset/route.ts'
 
 const ENV = ['NEXT_PUBLIC_FIREBASE_API_KEY', 'NEXT_PUBLIC_FIREBASE_PROJECT_ID', 'FIREBASE_SERVICE_ACCOUNT_JSON', 'GOOGLE_APPLICATION_CREDENTIALS', 'EMAIL_SERVER_KEY', 'EMAIL_FUNCTION_URL'] as const
 const realEnv = Object.fromEntries(ENV.map((name) => [name, process.env[name]]))
@@ -86,6 +87,7 @@ function stub(options: { serverKey?: boolean; auditOk?: boolean; commitOk?: bool
       return new Response(JSON.stringify({ users: [{ localId: 'sam-uid', email: 'sam@acme.co', createdAt: '1000', lastLoginAt: '2000' }] }))
     }
     if (url.includes('accounts:revokeRefreshTokens')) return new Response('{}')
+    if (url.includes('accounts:sendOobCode')) return new Response('{}')
     if (url.includes('/adminAuditLog') && method === 'POST') return new Response('{}', { status: options.auditOk === false ? 403 : 200 })
     if (url.includes(':runQuery')) return new Response('[]')
     if (url.endsWith(':commit')) {
@@ -335,4 +337,42 @@ test('review of #434: the commit carries each read updateTime; a change made mea
   assert.match(((await stale.json()) as { error: string }).error, /changed this record/i)
   const audits = calls.filter((call) => call.url.includes('/adminAuditLog') && call.method === 'POST')
   assert.match(audits[audits.length - 1].body, /"failed"/)
+})
+
+// Owner decision 24 Nov: Send password reset needs a reason and a recent code on every way in.
+const sendOobIndex = (calls: Call[]) => calls.findIndex((call) => call.url.includes('accounts:sendOobCode'))
+
+test('send password reset: without a reason it is refused and nothing is sent or audited', async () => {
+  const calls = stub()
+  for (const reason of [undefined, '', 'x']) {
+    const response = await sendReset(req('/api/owner/send-password-reset', { uid: 'sam-uid', reason }))
+    assert.equal(response.status, 400)
+  }
+  assert.equal(sendOobIndex(calls), -1)
+  assert.equal(auditIndex(calls), -1)
+})
+
+test('send password reset: an old code is refused with the re-verify code', async () => {
+  const calls = stub()
+  const response = await sendReset(req('/api/owner/send-password-reset', { uid: 'sam-uid', reason: 'Locked out (ticket 7)' }, { fresh: false }))
+  assert.equal(response.status, 403)
+  assert.equal(((await response.json()) as { code?: string }).code, OWNER_MFA_REVERIFY_CODE)
+  assert.equal(sendOobIndex(calls), -1)
+})
+
+test('send password reset: without the MFA cookie or a person it is refused', async () => {
+  const calls = stub()
+  assert.equal((await sendReset(req('/api/owner/send-password-reset', { uid: 'sam-uid', reason: 'Locked out (ticket 7)' }, { mfa: false }))).status, 403)
+  assert.equal((await sendReset(req('/api/owner/send-password-reset', { reason: 'Locked out (ticket 7)', email: 'x@y.co' }))).status, 400)
+  assert.equal(sendOobIndex(calls), -1)
+})
+
+test('send password reset: audit (with the reason) is written before the email, to the stored address only', async () => {
+  const calls = stub()
+  const response = await sendReset(req('/api/owner/send-password-reset', { uid: 'sam-uid', reason: 'Locked out (ticket 8)', email: 'attacker@evil.co' }))
+  assert.equal(response.status, 200)
+  assert.ok(auditIndex(calls) >= 0 && sendOobIndex(calls) > auditIndex(calls))
+  assert.match(calls[auditIndex(calls)].body, /Locked out \(ticket 8\)/)
+  assert.match(calls[sendOobIndex(calls)].body, /sam@acme\.co/)
+  assert.doesNotMatch(calls[sendOobIndex(calls)].body, /attacker/)
 })
