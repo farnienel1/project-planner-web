@@ -1094,6 +1094,20 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 | 21 Nov | Web #380 (Warnings Dismiss on every type) carried no rulebook change once main had 1.60, so it took no version number; web #379 (hours breakdown) took **1.69.0** (drafted 1.62.0). Review of #380: a cluster Dismiss leaves an already-approved pair as stored (no approval turned into a dismissal). | done (#380, #379 merged 19 Nov) |
 | 21 Nov | **Major dependency upgrades held for the owner** (Tailwind 4 #396, TypeScript 7 #397, React DOM 19 #398): each fails the build and needs code changes, four days before launch. Minor and patch updates merged (#394, #395). | question |
 
+## 24 Nov decisions (for 1.80, subcontractor documents)
+
+| Date | Decision | Status |
+|---|---|---|
+| 24 Nov | **Subcontractor documents, option (a):** staff (admins, and managers with the Sub Contractors permission — the people who may edit subcontractors today, `canManageSubcontractors`) upload a subcontractor's **insurance** and **RAMS** documents on the subcontractor's page, each with an optional expiry date, on web and iPhone. Subcontractors have no login and upload nothing. Rulebook §30 (`lib/canonical/subcontractorDocuments.ts`). | done web + rulebook (1.80.0, w180-sub-docs, draft); iOS (ios-1.80-sub-docs, draft); Storage rules publish pending |
+
+## 1.80.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 24 Nov | Photos or PDF, 10 MB, at most 20 files of each kind per subcontractor; the expiry is a date only (no time), shown "Expired" / "Expires today" / "Expires in N days" (amber within 30 days) / "Expires 1 Mar 2027". | done, owner to confirm |
+| 24 Nov | Only staff can open the files (Storage, as variation evidence); an operative never sees them. The list itself is on the firm document every member can read, but operatives have no Sub Contractors page. | done, owner to confirm |
+| 24 Nov | Not built (follow-ups): expiring / expired subcontractor documents on the Warnings page; narrowing the Firestore rule so only staff write `documents` (today any member of the company may write a subcontractor record, as before — `firestore.rules` has 65 bytes of budget left). | follow-up |
+
 ## Open questions for the owner
 
 | Date | Question |

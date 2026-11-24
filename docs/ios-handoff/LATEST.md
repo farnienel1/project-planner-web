@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.78.0
+# iOS follow-on — rulebook 1.80.0
 
 Generated 2026-11-24 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.78.0 → 1.78.0
-Packed hash: c75fdba2eeb4f170d099c14a84bad67ddcf721d6fb922212dd3922c7e9fa9a44
-Rulebook sha256: fe36f5ad4d10bd10d2a87eedc9067fc870ed4d2b7588fb14f4548b337b0558e9
+Rulebook version: 1.78.0 → 1.80.0
+Packed hash: 446d583a3a70a9bda81236bec407dc2704a5129155c7396f514ac9a937bee914
+Rulebook sha256: b57845332d7407311ff54f18ae187abb13faa6f3b59ae637a3b1548d610a4f85
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,28 +22,26 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 926b910948b674b1fa259e8f933ddd15f14bad00b8e0b050ccbd88c723bf64aa
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: TIMESHEET_CHANGE_DETAILS_COLLAPSED_ROWS, TIMESHEET_CHANGE_DETAILS_HEADING, TIMESHEET_CHANGE_DETAILS_REVIEWER_HEADING, TIMESHEET_CHANGE_NOT_IN_SIGNED_COPY_LABEL, TIMESHEET_CORRECTION_LABEL, TIMESHEET_CORRECTION_REVISION_BOOKINGS_HELP, TIMESHEET_GENERATE_INVOICE_PROMPT, TIMESHEET_NEXT_STEP_ADMIN_SIGNER, TIMESHEET_NEXT_STEP_EXPORTED_TEXT, TIMESHEET_NEXT_STEP_INVOICE_TEXT, TIMESHEET_REPORT_AWAITING_APPROVAL_LABEL, TIMESHEET_REPORT_AWAITING_RESIGN_LABEL, TIMESHEET_SIGNED_NOTICE_INVOICE_NEXT, TIMESHEET_SNAPSHOT_AWAITING_APPROVAL_LABEL, parseTimesheetBookingFingerprint, qualificationsMissingOwnExpiry, signedTimesheetChangeDetails, timesheetChangeDayLabel, timesheetCorrectionOption, timesheetNextStep, timesheetReportKeepsSignedFigures, timesheetReportWaiting, timesheetSignedEntryChanges
+Exports added: SUBCONTRACTOR_DOCUMENTS_EMPTY_TEXT, SUBCONTRACTOR_DOCUMENTS_FULL_MESSAGE, SUBCONTRACTOR_DOCUMENTS_MAX_PER_KIND, SUBCONTRACTOR_DOCUMENT_EXPIRING_SOON_DAYS, SUBCONTRACTOR_DOCUMENT_EXPIRY_INVALID_MESSAGE, SUBCONTRACTOR_DOCUMENT_EXPIRY_LABEL, SUBCONTRACTOR_DOCUMENT_KINDS, SUBCONTRACTOR_DOCUMENT_LABELS, canManageSubcontractors, isSubcontractorDocumentKind, normalizeSubcontractorDocumentExpiry, parseSubcontractorDocuments, subcontractorDocumentAddWriteFields, subcontractorDocumentExpiryDateText, subcontractorDocumentExpiryError, subcontractorDocumentExpiryState, subcontractorDocumentExpiryWriteFields, subcontractorDocumentPathBelongsTo, subcontractorDocumentRemoveWriteFields, subcontractorDocumentStoragePath, subcontractorDocumentsFieldPath, subcontractorDocumentsFolder
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/operativeQualifications.ts, lib/canonical/payrunSnapshot.ts, lib/canonical/staffAccess.ts, lib/canonical/timesheetBookingChanges.ts, lib/canonical/timesheetClarity.ts, lib/canonical/timesheetLateExtras.ts, lib/canonical/weeklyReportPay.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/storedFiles.ts, lib/canonical/uploadPolicy.ts, storage.rules, lib/canonical/subcontractorDocuments.test.ts, lib/canonical/subcontractorDocuments.ts
 Done when:
-- [ ] Packed hash in iOS equals c75fdba2eeb4f170d099c14a84bad67ddcf721d6fb922212dd3922c7e9fa9a44
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 fe36f5ad4d10bd10d2a87eedc9067fc870ed4d2b7588fb14f4548b337b0558e9)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.78.0)
+- [ ] Packed hash in iOS equals 446d583a3a70a9bda81236bec407dc2704a5129155c7396f514ac9a937bee914
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 b57845332d7407311ff54f18ae187abb13faa6f3b59ae637a3b1548d610a4f85)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.80.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.78.0
+## What changed in 1.80.0
 
-- **Sign-off reminder before payday** (§4.5, §8, §13, owner decision 23 Nov, point 4, before launch; refined the same day): an organisation setting, item 5 "Line manager sign-off reminder" on Settings → Payment runs and timesheets (note → 6, PAYE payday → 7) and in organisation setup — 1, 2 or 3 days before payday (default 2) at 08:00, `invoicing.lineManagerReminderDaysBeforePayday` (`parseLineManagerReminderDays`, `lineManagerReminderDaysValidationError`, `lineManagerReminderWriteFields`, `lineManagerReminderSummary`, `LINE_MANAGER_REMINDER_*`, `parseInvoicing` / `invoicingToFirestore` / `validateInvoicingSettings`). Admin escalation (owner decision 23 Nov, b): `timesheetSignOffEscalationDue` (08:00 the day before payday), `timesheetSignOffEscalationRecipients` (every active admin, every awaiting sheet), `timesheetSignOffEscalationNotice`, `timesheetSignOffEscalationNoticeId`, `TIMESHEET_SIGNOFF_ESCALATION_*`, the note `LINE_MANAGER_REMINDER_ADMIN_NOTE` under item 5; same notification type. New `timesheetSignOffReminderDue`, `timesheetSignOffReminderRecipients`, `timesheetSignOffReminderRosterMember`, `timesheetSignOffReminderNotice`, `timesheetSignOffReminderNoticeId`, `TIMESHEET_SIGNOFF_REMINDER_*` (`lib/canonical/timesheetSignOffReminder.ts`); new notification type `timesheet_signoff_reminder` (push, toggle `timesheetSignOff`, destination `timesheetTeamAwaiting` with the pay run's first day, `relatedId` the payday; in `KNOWN_NOTIFICATION_TYPES`, `DEVICE_PUSH_NOTIFICATION_TYPES`, `NOTIFICATION_CATALOG`, `NOTIFICATION_RELATED_ID`; not a scheduled type — written when due, so it pushes). Written by the new scheduled Cloud Function `timesheetSignOffReminders` (functions/timesheetSignOffReminder.js). Judgement calls: due until payday; admins are reminded only for people with no active line manager; names in the inbox-only detail.
-- **Review of #429 (same version; owner 23 Nov answered judgement calls 2 and 4 "fix"):** 08:00 is the wall-clock time on the day in the organisation zone (new `wallTimeInZone`), never midnight + 8 hours, which a clock change that night moved to 07:00 or 09:00 — the same fix in the timesheet submission reminder's notify time (`dueTimesheetSubmissionNotices`, 08:00 on clock-change days only). A sheet a booking change sent back to the person is not counted: the function reads the run's bookings and the rule judges each sheet with `signedTimesheetBookingChanges` over lines from the new `timesheetLiveLinesFromBookings` (the booking-on-the-sheet test `timesheetBookingSheetTest` is now shared with `timesheetBookingChangeNotice`, same behaviour); new `TimesheetSignOffReminderRecipientsInput` fields `bookings`, `bookingsLoaded`, `tombstonedBookingIds`, `operatives`, and `endExclusiveMs` on each run. Members through the `members` map (and the creator) are read by id and take their level and self-manage toggles here (`timesheetSignOffReminderRosterMember` takes `membersRole` / `membership`; `organizationLevelFor`, `organizationSelfManageFlags`; organisation read with `documentOrganizationId`). The notice ids drop the payday (moving the payday never re-sends). The function processes four organisations at a time, logs when a limit is reached, and also finds sheets whose `weekStart` is stored as text.
+- **Subcontractor documents** (new §30, owner decision 24 Nov, option (a)): staff upload a subcontractor's insurance and RAMS documents, each with an optional expiry date, on web and iPhone. New `lib/canonical/subcontractorDocuments.ts`: `SUBCONTRACTOR_DOCUMENT_KINDS`, `SUBCONTRACTOR_DOCUMENT_LABELS`, `canManageSubcontractors`, `subcontractorDocumentsFolder`, `subcontractorDocumentStoragePath`, `subcontractorDocumentPathBelongsTo`, `parseSubcontractorDocuments`, `subcontractorDocumentsFieldPath`, `subcontractorDocumentAddWriteFields`, `subcontractorDocumentRemoveWriteFields`, `subcontractorDocumentExpiryWriteFields`, `normalizeSubcontractorDocumentExpiry`, `subcontractorDocumentExpiryError`, `subcontractorDocumentExpiryState`, `subcontractorDocumentExpiryDateText` and their copy constants. Stored-file / upload kind `subcontractor_document` (`storedFileKind`, `UPLOAD_ALLOWED_TYPES`: photos or PDF, 10 MB). `storage.rules`: the staff-only documents path. Web `canManageSubcontractors` now calls the rulebook (same result). Version drafted as 1.80.0 (1.79.0 is built separately); renumbered at merge if needed.
 
 ## New rulebook sections
 
-- 1.77.0 — 2026-11-23
-- 1.75.0 — 2026-11-23
-- 1.73.2 — 2026-11-23
+- 30. Subcontractor documents (1.80.0)
+- 1.80.0 — 2026-11-24
 
 ## Workflow for the iOS agent
 

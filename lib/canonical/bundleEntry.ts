@@ -1984,3 +1984,6 @@ export {
   lineManagerReminderWriteFields,
   parseLineManagerReminderDays,
 } from './organizationSettings'
+
+// 1.80.0: subcontractor insurance and RAMS documents.
+export * from './subcontractorDocuments'

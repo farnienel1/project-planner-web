@@ -21,6 +21,7 @@ import {
 import { parseAppUserDocument } from '@/lib/ios-parity/converters'
 import { effectivePermissions, permissionLevelOf } from '@/lib/canonical/permissionLevels'
 import type { UserPermissionField } from '@/lib/canonical/userProfile'
+import { canManageSubcontractors as rulebookCanManageSubcontractors } from '@/lib/canonical/subcontractorDocuments'
 import { normalizeEmploymentType } from '@/lib/ios-parity/enums'
 import { isPlatformOwnerEmail } from '@/lib/platform/owner'
 
@@ -258,8 +259,8 @@ export function canOpenJobScheduling(user: PermissionUser): boolean {
 export function canManageSubcontractors(user: PermissionUser, profileLoading = false): boolean {
   if (isOperativeMode(user)) return false
   if (profileLoading || !user) return true
-  if (hasAdminAccess(user)) return true
-  return flag(user, 'manager') && flag(user, 'subContractors')
+  // Rulebook 1.80.0: one rule for both apps (also who uploads subcontractor insurance and RAMS documents).
+  return rulebookCanManageSubcontractors(user)
 }
 
 /** Create project: super admin, or admin/manager who also have the Projects toggle. */

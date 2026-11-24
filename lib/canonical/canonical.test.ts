@@ -20046,3 +20046,12 @@ test('1.78.0 sign-off reminder is in the packed rulebook (functions and iOS call
   assert.deepEqual(due.runs.map((row) => row.paymentDayKey), ['2026-12-05'])
   assert.equal(R112.notificationDeliversDevicePush(R112.TIMESHEET_SIGNOFF_REMINDER_NOTICE_TYPE), true)
 })
+
+test('1.80.0 subcontractor documents are in the packed rulebook (full cases in subcontractorDocuments.test.ts)', () => {
+  const path = R112.subcontractorDocumentStoragePath({ organizationId: 'o1', subcontractorId: 's1', uid: 'u1', unixMs: 5, extension: 'pdf' })
+  assert.equal(path, 'organizations/o1/subcontractors/s1/documents/u1_5.pdf')
+  assert.equal(R112.storedFileKind(path)?.kind, 'subcontractor_document')
+  assert.deepEqual(R112.parseSubcontractorDocuments('s1', { name: 'A', subcontractorType: 'B' }), { insurance: [], rams: [] })
+  const storageRules = readFileSync(new URL('../../storage.rules', import.meta.url), 'utf8')
+  assert.match(storageRules, /match \/organizations\/\{orgId\}\/subcontractors\/\{subcontractorId\}\/documents\/\{fileName\} \{\n\s+allow read: if staffLike\(orgId\);/)
+})

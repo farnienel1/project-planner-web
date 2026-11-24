@@ -2537,3 +2537,6 @@ export type {
   TimesheetSignOffReminderRun,
   TimesheetSignOffReminderSheet,
 } from './timesheetSignOffReminder'
+
+// 1.80.0: subcontractor insurance and RAMS documents.
+export * from './subcontractorDocuments'

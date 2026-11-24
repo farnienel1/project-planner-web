@@ -50,6 +50,8 @@ export const STORED_FILE_KINDS = [
   // 1.30.0 (§26): PAYE price work / expense evidence, and personal site audit photos (owner only).
   'paye_claim_evidence',
   'personal_site_audit',
+  // 1.80.0: subcontractor insurance and RAMS documents (staff only).
+  'subcontractor_document',
 ] as const
 export type StoredFileKind = (typeof STORED_FILE_KINDS)[number]
 
@@ -96,6 +98,9 @@ export function storedFileKind(storagePath: string | null | undefined): StoredFi
     return { ...base, kind: 'variation_evidence' }
   }
   if (rest.length === 3 && rest[0] === 'variations') return { ...base, kind: 'variation_evidence' }
+  if (rest.length === 4 && rest[0] === 'subcontractors' && rest[1] && rest[2] === 'documents') {
+    return { ...base, kind: 'subcontractor_document' }
+  }
   if (rest.length >= 2 && rest[0] === 'siteAudits') return { ...base, kind: 'site_audit_photo' }
   if (rest.length >= 2 && rest[0] === 'tasks') return { ...base, kind: 'task_attachment' }
   if (rest.length >= 2 && rest[0] === 'healthSafety') return { ...base, kind: 'health_safety' }

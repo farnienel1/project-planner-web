@@ -554,6 +554,14 @@ var ProjectPlannerCanonical = (() => {
     STORED_FILE_KINDS: () => STORED_FILE_KINDS,
     SUBCONTRACTOR_BOOKING_DOCUMENT_KEYS: () => SUBCONTRACTOR_BOOKING_DOCUMENT_KEYS,
     SUBCONTRACTOR_BOOKING_PEOPLE_WRITE_GROUP: () => SUBCONTRACTOR_BOOKING_PEOPLE_WRITE_GROUP,
+    SUBCONTRACTOR_DOCUMENTS_EMPTY_TEXT: () => SUBCONTRACTOR_DOCUMENTS_EMPTY_TEXT,
+    SUBCONTRACTOR_DOCUMENTS_FULL_MESSAGE: () => SUBCONTRACTOR_DOCUMENTS_FULL_MESSAGE,
+    SUBCONTRACTOR_DOCUMENTS_MAX_PER_KIND: () => SUBCONTRACTOR_DOCUMENTS_MAX_PER_KIND,
+    SUBCONTRACTOR_DOCUMENT_EXPIRING_SOON_DAYS: () => SUBCONTRACTOR_DOCUMENT_EXPIRING_SOON_DAYS,
+    SUBCONTRACTOR_DOCUMENT_EXPIRY_INVALID_MESSAGE: () => SUBCONTRACTOR_DOCUMENT_EXPIRY_INVALID_MESSAGE,
+    SUBCONTRACTOR_DOCUMENT_EXPIRY_LABEL: () => SUBCONTRACTOR_DOCUMENT_EXPIRY_LABEL,
+    SUBCONTRACTOR_DOCUMENT_KINDS: () => SUBCONTRACTOR_DOCUMENT_KINDS,
+    SUBCONTRACTOR_DOCUMENT_LABELS: () => SUBCONTRACTOR_DOCUMENT_LABELS,
     SUBSCRIPTION_LAPSED_ADMIN_NOTE: () => SUBSCRIPTION_LAPSED_ADMIN_NOTE,
     SUBSCRIPTION_LAPSED_ADMIN_WEB_NOTE: () => SUBSCRIPTION_LAPSED_ADMIN_WEB_NOTE,
     SUBSCRIPTION_LAPSED_MESSAGE: () => SUBSCRIPTION_LAPSED_MESSAGE,
@@ -886,6 +894,7 @@ var ProjectPlannerCanonical = (() => {
     canGenerateOvertimeReport: () => canGenerateOvertimeReport,
     canManageMaterialCatalogue: () => canManageMaterialCatalogue,
     canManageOperatives: () => canManageOperatives,
+    canManageSubcontractors: () => canManageSubcontractors,
     canManageVariationTracker: () => canManageVariationTracker,
     canOpenUserTimesheets: () => canOpenUserTimesheets,
     canOpenWeeklyReport: () => canOpenWeeklyReport,
@@ -1130,6 +1139,7 @@ var ProjectPlannerCanonical = (() => {
     isSiteLocationType: () => isSiteLocationType,
     isStaffAccount: () => isStaffAccount,
     isStandardWorkingWeekday: () => isStandardWorkingWeekday,
+    isSubcontractorDocumentKind: () => isSubcontractorDocumentKind,
     isSuperAdminAccount: () => isSuperAdminAccount,
     isTaskCompleted: () => isTaskCompleted,
     isTaskOverdue: () => isTaskOverdue,
@@ -1344,6 +1354,7 @@ var ProjectPlannerCanonical = (() => {
     normalizePersonNamePart: () => normalizePersonNamePart,
     normalizeProjectTaskPriority: () => normalizeProjectTaskPriority,
     normalizeProjectTaskStatus: () => normalizeProjectTaskStatus,
+    normalizeSubcontractorDocumentExpiry: () => normalizeSubcontractorDocumentExpiry,
     normalizeTimesheetWeekday: () => normalizeTimesheetWeekday,
     normalizeUploadContentType: () => normalizeUploadContentType,
     normalizeUserRoleToken: () => normalizeUserRoleToken,
@@ -1538,6 +1549,7 @@ var ProjectPlannerCanonical = (() => {
     parseSmallWorkDocument: () => parseSmallWorkDocument,
     parseSubcontractorBookingDocument: () => parseSubcontractorBookingDocument,
     parseSubcontractorDocument: () => parseSubcontractorDocument,
+    parseSubcontractorDocuments: () => parseSubcontractorDocuments,
     parseTaskDocument: () => parseTaskDocument,
     parseTimesheetBookingFingerprint: () => parseTimesheetBookingFingerprint,
     parseTimesheetEntries: () => parseTimesheetEntries,
@@ -1814,6 +1826,16 @@ var ProjectPlannerCanonical = (() => {
     subcontractorBookingWriteFields: () => subcontractorBookingWriteFields,
     subcontractorContactId: () => subcontractorContactId,
     subcontractorDayValue: () => subcontractorDayValue,
+    subcontractorDocumentAddWriteFields: () => subcontractorDocumentAddWriteFields,
+    subcontractorDocumentExpiryDateText: () => subcontractorDocumentExpiryDateText,
+    subcontractorDocumentExpiryError: () => subcontractorDocumentExpiryError,
+    subcontractorDocumentExpiryState: () => subcontractorDocumentExpiryState,
+    subcontractorDocumentExpiryWriteFields: () => subcontractorDocumentExpiryWriteFields,
+    subcontractorDocumentPathBelongsTo: () => subcontractorDocumentPathBelongsTo,
+    subcontractorDocumentRemoveWriteFields: () => subcontractorDocumentRemoveWriteFields,
+    subcontractorDocumentStoragePath: () => subcontractorDocumentStoragePath,
+    subcontractorDocumentsFieldPath: () => subcontractorDocumentsFieldPath,
+    subcontractorDocumentsFolder: () => subcontractorDocumentsFolder,
     subcontractorScheduleCell: () => subcontractorScheduleCell,
     subcontractorWriteFields: () => subcontractorWriteFields,
     subscriptionAccess: () => subscriptionAccess,
@@ -2388,8 +2410,8 @@ var ProjectPlannerCanonical = (() => {
     if (typeof value === "number") {
       return Number.isFinite(value) && value >= 0 && value <= 24 * 60 ? Math.round(value) : null;
     }
-    const text55 = String(value ?? "").trim();
-    const match = /^(\d{1,2}):(\d{2})$/.exec(text55);
+    const text56 = String(value ?? "").trim();
+    const match = /^(\d{1,2}):(\d{2})$/.exec(text56);
     if (!match) return null;
     const hours2 = Number(match[1]);
     const minutes = Number(match[2]);
@@ -3483,11 +3505,11 @@ var ProjectPlannerCanonical = (() => {
     const note = text(value);
     return note ? note : null;
   }
-  function leaveRecordDayKeys(record18, timeZone, nonWorkingDayKeys) {
+  function leaveRecordDayKeys(record19, timeZone, nonWorkingDayKeys) {
     const zone3 = zoneOrLondon(timeZone);
-    const start = text(record18.startDayKey);
+    const start = text(record19.startDayKey);
     if (!DAY_KEY.test(start)) return [];
-    const endRaw = text(record18.endDayKey);
+    const endRaw = text(record19.endDayKey);
     const end = DAY_KEY.test(endRaw) && endRaw >= start ? endRaw : start;
     if (end === start) return [start];
     const skip = new Set((nonWorkingDayKeys || []).map(text));
@@ -3496,12 +3518,12 @@ var ProjectPlannerCanonical = (() => {
       return iso !== 6 && iso !== 7 && !skip.has(key7);
     });
   }
-  function leaveDaysInRange(record18, range, timeZone, nonWorkingDayKeys) {
+  function leaveDaysInRange(record19, range, timeZone, nonWorkingDayKeys) {
     const from = text(range?.startDayKey);
     const to = text(range?.endDayKey);
     if (!DAY_KEY.test(from) || !DAY_KEY.test(to) || to < from) return 0;
-    const each = normalizeHolidayTimeSlot(record18?.timeSlot) === "FULL DAY" ? 1 : 0.5;
-    const days = leaveRecordDayKeys(record18, timeZone, nonWorkingDayKeys).filter((key7) => key7 >= from && key7 <= to);
+    const each = normalizeHolidayTimeSlot(record19?.timeSlot) === "FULL DAY" ? 1 : 0.5;
+    const days = leaveRecordDayKeys(record19, timeZone, nonWorkingDayKeys).filter((key7) => key7 >= from && key7 <= to);
     return Math.round(days.length * each * 100) / 100;
   }
   function holidayRequestRanges(picks, timeZone) {
@@ -5584,46 +5606,46 @@ var ProjectPlannerCanonical = (() => {
     if (mode === "endOfWorkingWeek" || mode === "week") return "endOfWorkingWeek";
     return DEFAULT_WARNING_DETECTION.clashLookaheadMode;
   }
-  function excludedUnbookedUserIds(record18) {
-    if (Array.isArray(record18.excludedUserIdsFromUnbookedWarnings)) {
-      return stringIdList(record18.excludedUserIdsFromUnbookedWarnings);
+  function excludedUnbookedUserIds(record19) {
+    if (Array.isArray(record19.excludedUserIdsFromUnbookedWarnings)) {
+      return stringIdList(record19.excludedUserIdsFromUnbookedWarnings);
     }
     for (const key7 of ["excludedUserIds", "excludedUsers", "excludedUserIdsFromWarnings", "unbookedWarningExcludedUserIds"]) {
-      if (Array.isArray(record18[key7])) return stringIdList(record18[key7]);
+      if (Array.isArray(record19[key7])) return stringIdList(record19[key7]);
     }
     return [];
   }
   function parseWarningDetection(data) {
-    const record18 = asSettingsRecord(data);
-    if (!record18) return { ...DEFAULT_WARNING_DETECTION, excludedUserIdsFromUnbookedWarnings: [] };
-    const daysRaw = record18.clashLookaheadDays ?? record18.lookaheadDays ?? record18.lookAheadDays ?? record18.numberOfDays ?? record18.daysAhead;
+    const record19 = asSettingsRecord(data);
+    if (!record19) return { ...DEFAULT_WARNING_DETECTION, excludedUserIdsFromUnbookedWarnings: [] };
+    const daysRaw = record19.clashLookaheadDays ?? record19.lookaheadDays ?? record19.lookAheadDays ?? record19.numberOfDays ?? record19.daysAhead;
     const days = daysRaw === void 0 || daysRaw === null ? DEFAULT_WARNING_DETECTION.clashLookaheadDays : daysRaw;
     const clashLookaheadMode = parseClashLookaheadMode(
-      record18.clashLookaheadMode ?? record18.lookAheadMode ?? record18.lookaheadMode
+      record19.clashLookaheadMode ?? record19.lookAheadMode ?? record19.lookaheadMode
     );
     const fallback = lookaheadDaysFallback(daysRaw);
     const parsed = {
-      detectClashes: record18.detectClashes !== false,
+      detectClashes: record19.detectClashes !== false,
       clashLookaheadMode,
       clashLookaheadDays: fallback ? DEFAULT_WARNING_DETECTION.clashLookaheadDays : clampClashLookaheadDays(days),
-      includeWeekendsForUnbookedLabour: Boolean(record18.includeWeekendsForUnbookedLabour),
-      excludedUserIdsFromUnbookedWarnings: excludedUnbookedUserIds(record18),
-      weekendCoverage: parseWeekendCoverage(record18.weekendCoverage, Boolean(record18.includeWeekendsForUnbookedLabour))
+      includeWeekendsForUnbookedLabour: Boolean(record19.includeWeekendsForUnbookedLabour),
+      excludedUserIdsFromUnbookedWarnings: excludedUnbookedUserIds(record19),
+      weekendCoverage: parseWeekendCoverage(record19.weekendCoverage, Boolean(record19.includeWeekendsForUnbookedLabour))
     };
     if (fallback && clashLookaheadMode === "numberOfDays") parsed.clashLookaheadDaysFallback = fallback;
     return parsed;
   }
   var COVERAGE_CLOCK_RE = /^\d{1,2}:\d{2}$/;
   function clockMinutesOf(value) {
-    const text55 = coverageClock(value);
-    if (!text55) return null;
-    const [h4, m] = text55.split(":").map(Number);
+    const text56 = coverageClock(value);
+    if (!text56) return null;
+    const [h4, m] = text56.split(":").map(Number);
     return h4 * 60 + m;
   }
   function coverageClock(value) {
-    const text55 = typeof value === "string" ? value.trim() : "";
-    if (!COVERAGE_CLOCK_RE.test(text55)) return null;
-    const [h4, m] = text55.split(":").map(Number);
+    const text56 = typeof value === "string" ? value.trim() : "";
+    if (!COVERAGE_CLOCK_RE.test(text56)) return null;
+    const [h4, m] = text56.split(":").map(Number);
     return h4 >= 0 && h4 < 24 && m >= 0 && m < 60 ? `${String(h4).padStart(2, "0")}:${String(m).padStart(2, "0")}` : null;
   }
   function parseWeekendCoverage(value, includeWeekends) {
@@ -5963,8 +5985,8 @@ var ProjectPlannerCanonical = (() => {
     const total = plainHoursText(Math.max(0, clock5 * n - brk));
     return roundHundredths(brk) > 0 ? `${multiplied} \u2212 ${plainHoursText(brk)} break = ${total}` : `${multiplied} = ${total}`;
   }
-  function parseMultipliedHoursText(text55) {
-    const match = /(\d+(?:\.\d+)?)h × (\d+(?:\.\d+)?)(?: − (\d+(?:\.\d+)?)h break)? = \d+(?:\.\d+)?h/.exec(String(text55 ?? ""));
+  function parseMultipliedHoursText(text56) {
+    const match = /(\d+(?:\.\d+)?)h × (\d+(?:\.\d+)?)(?: − (\d+(?:\.\d+)?)h break)? = \d+(?:\.\d+)?h/.exec(String(text56 ?? ""));
     if (!match) return null;
     const clockHours = Number(match[1]);
     const multiplier = Number(match[2]);
@@ -6010,9 +6032,9 @@ var ProjectPlannerCanonical = (() => {
     return { standard, overtime, standardText: standard.join(" + "), overtimeText: overtime.join(" + ") };
   }
   function timesheetLineClockText(details) {
-    const text55 = String(details ?? "").trim();
-    const cut = text55.indexOf(" \xB7 OT ");
-    return cut >= 0 ? text55.slice(0, cut).trim() : text55;
+    const text56 = String(details ?? "").trim();
+    const cut = text56.indexOf(" \xB7 OT ");
+    return cut >= 0 ? text56.slice(0, cut).trim() : text56;
   }
   function result(segments, outsideMultiplier) {
     let total = 0;
@@ -7224,8 +7246,8 @@ var ProjectPlannerCanonical = (() => {
   }
   function formatHours(hours2) {
     const rounded = Math.round(hours2 * 4) / 4;
-    const text55 = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, "");
-    return `${text55} hour${rounded === 1 ? "" : "s"}`;
+    const text56 = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, "");
+    return `${text56} hour${rounded === 1 ? "" : "s"}`;
   }
   function joinRanges(intervals) {
     const labels = intervals.map(rangeLabel);
@@ -7235,7 +7257,7 @@ var ProjectPlannerCanonical = (() => {
   function leaveCoverageRows(input) {
     const timeZone = zoneOrLondon(input.timeZone);
     const excluded = new Set((input.excludedUserIds || []).map(idKey).filter(Boolean));
-    const approvedLeave = input.leave.filter((record18) => record18.approved && record18.startDayKey && record18.endDayKey);
+    const approvedLeave = input.leave.filter((record19) => record19.approved && record19.startDayKey && record19.endDayKey);
     if (approvedLeave.length === 0) return [];
     const peopleByUserId = /* @__PURE__ */ new Map();
     const peopleByOperativeId = /* @__PURE__ */ new Map();
@@ -7252,10 +7274,10 @@ var ProjectPlannerCanonical = (() => {
         if (key7 && !peopleByOperativeId.has(key7)) peopleByOperativeId.set(key7, person);
       }
     }
-    const personForLeave = (record18) => {
-      const userId = idKey(record18.userId);
+    const personForLeave = (record19) => {
+      const userId = idKey(record19.userId);
       if (userId && peopleByUserId.has(userId)) return peopleByUserId.get(userId);
-      const operativeId = idKey(record18.operativeId);
+      const operativeId = idKey(record19.operativeId);
       if (operativeId && peopleByOperativeId.has(operativeId)) return peopleByOperativeId.get(operativeId);
       return void 0;
     };
@@ -7281,20 +7303,20 @@ var ProjectPlannerCanonical = (() => {
       const day = bookingStandardDayOn(input.day, dayKey);
       const windows = leaveHalfDayWindows(day);
       const lunch = standardBreakWindow(day);
-      for (const record18 of approvedLeave) {
-        if (dayKey < record18.startDayKey || dayKey > record18.endDayKey) continue;
-        const person = personForLeave(record18);
+      for (const record19 of approvedLeave) {
+        if (dayKey < record19.startDayKey || dayKey > record19.endDayKey) continue;
+        const person = personForLeave(record19);
         if (!person) continue;
-        const dedupe = `${person.personKey}|${dayKey}|${record18.id}`;
+        const dedupe = `${person.personKey}|${dayKey}|${record19.id}`;
         if (seen.has(dedupe)) continue;
         seen.add(dedupe);
-        const leaveSlot2 = leaveSlotKind(record18.timeSlot);
+        const leaveSlot2 = leaveSlotKind(record19.timeSlot);
         const leaveWindow = leaveSlot2 === "AM" ? windows.am : leaveSlot2 === "PM" ? windows.pm : windows.day;
         const dayBookings = bookingsByPersonDay.get(`${person.personKey}|${dayKey}`) || [];
         const intervals = dayBookings.map((booking) => ({ booking, interval: leaveComparableInterval(booking, day) })).filter((entry) => entry.interval !== null);
         const personName = String(person.name || "").trim() || person.personKey;
         const userId = String(person.userId || "").trim() || void 0;
-        const operativeId = String(record18.operativeId || person.operativeIds?.[0] || "").trim() || void 0;
+        const operativeId = String(record19.operativeId || person.operativeIds?.[0] || "").trim() || void 0;
         const longDay = formatLongDayKey(dayKey, timeZone);
         const leaveLabel = leaveLabelFor(leaveSlot2);
         const clashes = intervals.filter(({ interval: interval2 }) => intervalsOverlap(interval2, leaveWindow)).map(({ booking, interval: interval2 }) => ({
@@ -7310,14 +7332,14 @@ var ProjectPlannerCanonical = (() => {
           const bookedText = clashes.map((clash) => `${clash.label} ${formatClockMinutes(clash.start)}\u2013${formatClockMinutes(clash.end)}`).join(", ");
           const leaveText = leaveSlot2 === "FULL_DAY" ? "full-day annual leave" : `${leaveLabel} annual leave (${rangeLabel(leaveWindow)})`;
           rows3.push({
-            id: `leave-clash-${dayKey}-${person.personKey}-${record18.id}`,
+            id: `leave-clash-${dayKey}-${person.personKey}-${record19.id}`,
             kind: "leave_clash",
             personKey: person.personKey,
             personName,
             userId,
             operativeId,
             dayKey,
-            leaveId: record18.id,
+            leaveId: record19.id,
             leaveSlot: leaveSlot2,
             leaveLabel,
             leaveWindow: { ...leaveWindow },
@@ -7350,14 +7372,14 @@ var ProjectPlannerCanonical = (() => {
         const bookedHours = hoursOf(bookedInWorking);
         const message = bookedHours > 0 ? `${personName} has ${leaveLabel} annual leave on ${longDay}. The ${workingLabel} (${rangeLabel(workingWindow)}) is only booked ${joinRanges(bookedInWorking)}; ${joinRanges(missing)} (${formatHours(missingHours)}) is not booked.` : `${personName} has ${leaveLabel} annual leave on ${longDay} but is not booked for the ${workingLabel} (${rangeLabel(workingWindow)}, ${formatHours(missingHours)}).`;
         rows3.push({
-          id: `leave-cover-${dayKey}-${person.personKey}-${record18.id}`,
+          id: `leave-cover-${dayKey}-${person.personKey}-${record19.id}`,
           kind: "leave_cover",
           personKey: person.personKey,
           personName,
           userId,
           operativeId,
           dayKey,
-          leaveId: record18.id,
+          leaveId: record19.id,
           leaveSlot: leaveSlot2,
           leaveLabel,
           leaveWindow: { ...leaveWindow },
@@ -8165,16 +8187,16 @@ var ProjectPlannerCanonical = (() => {
   }
   function annualLeaveEmploymentInput(input) {
     const person = input.person ?? {};
-    let record18 = person;
+    let record19 = person;
     if (input.privatePay) {
       if (!input.payProfileRead) return null;
-      if (input.payProfile) record18 = { ...person, ...input.payProfile.fields };
+      if (input.payProfile) record19 = { ...person, ...input.payProfile.fields };
     }
     const str2 = (value) => typeof value === "string" && value.trim() ? value : null;
-    const at = record18.employmentTypeEffectiveAt;
+    const at = record19.employmentTypeEffectiveAt;
     return {
-      employmentType: str2(record18.employmentType),
-      employmentTypeTransitionFrom: str2(record18.employmentTypeTransitionFrom),
+      employmentType: str2(record19.employmentType),
+      employmentTypeTransitionFrom: str2(record19.employmentTypeTransitionFrom),
       employmentTypeEffectiveAt: at instanceof Date || typeof at === "string" || typeof at === "number" ? at : documentInstant(at)
     };
   }
@@ -8278,22 +8300,22 @@ var ProjectPlannerCanonical = (() => {
     }
     return null;
   }
-  function recordFields(record18) {
+  function recordFields(record19) {
     return {
-      name: fieldTokens(record18.name),
-      brand: fieldTokens(record18.brand),
-      code: fieldTokens(record18.productCode),
+      name: fieldTokens(record19.name),
+      brand: fieldTokens(record19.brand),
+      code: fieldTokens(record19.productCode),
       extra: [
-        ...fieldTokens(record18.category),
-        ...fieldTokens(record18.size),
-        ...fieldTokens(record18.length)
+        ...fieldTokens(record19.category),
+        ...fieldTokens(record19.size),
+        ...fieldTokens(record19.length)
       ]
     };
   }
-  function materialSearchScore(query, record18) {
+  function materialSearchScore(query, record19) {
     const tokens = tokenizeMaterialSearch(query);
     if (tokens.length === 0) return 1;
-    const fields = recordFields(record18);
+    const fields = recordFields(record19);
     const all = [...fields.name, ...fields.brand, ...fields.code, ...fields.extra];
     let score = 0;
     for (const token of tokens) {
@@ -8309,7 +8331,7 @@ var ProjectPlannerCanonical = (() => {
       if (coded) score += 18;
       if (named) score += 8;
     }
-    const name = normalizeMaterialSearchText(record18.name);
+    const name = normalizeMaterialSearchText(record19.name);
     const joined = tokens.join(" ");
     if (name.startsWith(joined)) score += 24;
     else if (name.includes(joined)) score += 10;
@@ -8317,8 +8339,8 @@ var ProjectPlannerCanonical = (() => {
     if (nameLength > 0) score += Math.max(0, 20 - Math.floor(nameLength / 8));
     return score;
   }
-  function materialRecordMatches(query, record18) {
-    return materialSearchScore(query, record18) > 0;
+  function materialRecordMatches(query, record19) {
+    return materialSearchScore(query, record19) > 0;
   }
   function rankMaterialRecords(query, records, limit) {
     const tokens = tokenizeMaterialSearch(query);
@@ -8404,22 +8426,22 @@ var ProjectPlannerCanonical = (() => {
     }
     return null;
   }
-  function recordFields2(record18) {
+  function recordFields2(record19) {
     return {
-      name: fieldTokens2(record18.name),
-      code: fieldTokens2(record18.code),
-      body: fieldTokens2(record18.awardingBody),
+      name: fieldTokens2(record19.name),
+      code: fieldTokens2(record19.code),
+      body: fieldTokens2(record19.awardingBody),
       extra: [
-        ...fieldTokens2(record18.section),
-        ...fieldTokens2(record18.subsection),
-        ...fieldTokens2(record18.notes)
+        ...fieldTokens2(record19.section),
+        ...fieldTokens2(record19.subsection),
+        ...fieldTokens2(record19.notes)
       ]
     };
   }
-  function qualificationSearchScore(query, record18) {
+  function qualificationSearchScore(query, record19) {
     const tokens = tokenizeQualificationSearch(query);
     if (tokens.length === 0) return 1;
-    const fields = recordFields2(record18);
+    const fields = recordFields2(record19);
     const all = [...fields.name, ...fields.code, ...fields.body, ...fields.extra];
     let score = 0;
     for (const token of tokens) {
@@ -8435,20 +8457,20 @@ var ProjectPlannerCanonical = (() => {
       if (coded) score += 18;
       if (named) score += 8;
     }
-    const name = normalizeQualificationSearchText(record18.name);
+    const name = normalizeQualificationSearchText(record19.name);
     const joined = tokens.join(" ");
     if (name.startsWith(joined)) score += 24;
     else if (name.includes(joined)) score += 10;
     if (name.length > 0) score += Math.max(0, 20 - Math.floor(name.length / 8));
     return score;
   }
-  function qualificationRecordMatches(query, record18) {
-    return qualificationSearchScore(query, record18) > 0;
+  function qualificationRecordMatches(query, record19) {
+    return qualificationSearchScore(query, record19) > 0;
   }
-  function qualificationMatchesSection(record18, section) {
+  function qualificationMatchesSection(record19, section) {
     const wanted = String(section || "").trim();
     if (!wanted || wanted === QUALIFICATION_FILTER_ALL) return true;
-    const value = String(record18.section || "").trim();
+    const value = String(record19.section || "").trim();
     if (wanted === QUALIFICATION_FILTER_OTHER) return value.length === 0;
     return value === wanted;
   }
@@ -8459,8 +8481,8 @@ var ProjectPlannerCanonical = (() => {
   function qualificationLibraryFilterChips(records) {
     const counts = /* @__PURE__ */ new Map();
     let other = 0;
-    for (const record18 of records) {
-      const section = String(record18.section || "").trim();
+    for (const record19 of records) {
+      const section = String(record19.section || "").trim();
       if (!section) {
         other += 1;
         continue;
@@ -10705,16 +10727,16 @@ var ProjectPlannerCanonical = (() => {
       return Number.isNaN(parsed) ? null : parsed;
     }
     if (typeof value === "object") {
-      const record18 = value;
-      if (typeof record18.toDate === "function") {
+      const record19 = value;
+      if (typeof record19.toDate === "function") {
         try {
-          const parsed = record18.toDate();
+          const parsed = record19.toDate();
           const ms = timestampMs(parsed);
           if (ms != null) return ms;
         } catch {
         }
       }
-      const seconds = typeof record18.seconds === "number" ? record18.seconds : record18._seconds;
+      const seconds = typeof record19.seconds === "number" ? record19.seconds : record19._seconds;
       if (typeof seconds === "number" && Number.isFinite(seconds)) return Math.round(seconds * 1e3);
     }
     return null;
@@ -11591,7 +11613,7 @@ var ProjectPlannerCanonical = (() => {
     const email = emailKey2(account?.email);
     if (email) ids.add(email);
     const has2 = (value) => typeof value === "string" && value.trim() !== "" && ids.has(value.trim().toLowerCase());
-    return (records || []).filter((record18) => has2(record18?.userId) || has2(record18?.operativeId));
+    return (records || []).filter((record19) => has2(record19?.userId) || has2(record19?.operativeId));
   }
 
   // lib/canonical/lineManagers.ts
@@ -11950,8 +11972,8 @@ var ProjectPlannerCanonical = (() => {
     return typeof value === "string" ? value.trim().toLowerCase() : "";
   }
   function dayKeyText(value) {
-    const text55 = typeof value === "string" ? value.trim() : "";
-    return DAY_KEY2.test(text55) ? text55 : null;
+    const text56 = typeof value === "string" ? value.trim() : "";
+    return DAY_KEY2.test(text56) ? text56 : null;
   }
   function compareText(a, b) {
     if (a === b) return 0;
@@ -12079,8 +12101,8 @@ var ProjectPlannerCanonical = (() => {
   function personDayItems(input) {
     const managerIdByKey = /* @__PURE__ */ new Map();
     for (const id2 of input?.managerIds || []) {
-      const text55 = idText2(id2);
-      if (text55) managerIdByKey.set(text55.toLowerCase(), text55);
+      const text56 = idText2(id2);
+      if (text56) managerIdByKey.set(text56.toLowerCase(), text56);
     }
     const people = input?.people || { accounts: [], operatives: [] };
     const managerIdByEmail = /* @__PURE__ */ new Map();
@@ -12181,9 +12203,9 @@ var ProjectPlannerCanonical = (() => {
     return [idText2(bookingAId), idText2(bookingBId)].sort(compareText).join("|");
   }
   function comparableKey(key7) {
-    const text55 = normalizeDocumentId(key7);
-    const parts3 = text55.split("|");
-    return parts3.length === 2 && parts3[0] && parts3[1] ? [...parts3].sort(compareText).join("|") : text55;
+    const text56 = normalizeDocumentId(key7);
+    const parts3 = text56.split("|");
+    return parts3.length === 2 && parts3[0] && parts3[1] ? [...parts3].sort(compareText).join("|") : text56;
   }
   function isClashAccepted(bookingAId, bookingBId, accepted) {
     const a = idKey7(bookingAId);
@@ -12232,11 +12254,11 @@ var ProjectPlannerCanonical = (() => {
   }
   function warningResolutionKeys(records, statuses) {
     const keys = /* @__PURE__ */ new Map();
-    for (const record18 of records || []) {
-      if (!record18) continue;
-      const status = typeof record18.status === "string" ? record18.status.trim().toLowerCase() : "";
+    for (const record19 of records || []) {
+      if (!record19) continue;
+      const status = typeof record19.status === "string" ? record19.status.trim().toLowerCase() : "";
       if (!statuses.includes(status)) continue;
-      const key7 = idText2(record18.resolutionKey) || idText2(record18.id);
+      const key7 = idText2(record19.resolutionKey) || idText2(record19.id);
       if (key7 && !keys.has(normalizeDocumentId(key7))) keys.set(normalizeDocumentId(key7), key7);
     }
     return [...keys.values()].sort(compareText);
@@ -12487,7 +12509,9 @@ var ProjectPlannerCanonical = (() => {
     "health_safety",
     // 1.30.0 (§26): PAYE price work / expense evidence, and personal site audit photos (owner only).
     "paye_claim_evidence",
-    "personal_site_audit"
+    "personal_site_audit",
+    // 1.80.0: subcontractor insurance and RAMS documents (staff only).
+    "subcontractor_document"
   ];
   function text11(value) {
     return typeof value === "string" ? value.trim() : "";
@@ -12514,6 +12538,9 @@ var ProjectPlannerCanonical = (() => {
       return { ...base, kind: "variation_evidence" };
     }
     if (rest.length === 3 && rest[0] === "variations") return { ...base, kind: "variation_evidence" };
+    if (rest.length === 4 && rest[0] === "subcontractors" && rest[1] && rest[2] === "documents") {
+      return { ...base, kind: "subcontractor_document" };
+    }
     if (rest.length >= 2 && rest[0] === "siteAudits") return { ...base, kind: "site_audit_photo" };
     if (rest.length >= 2 && rest[0] === "tasks") return { ...base, kind: "task_attachment" };
     if (rest.length >= 2 && rest[0] === "healthSafety") return { ...base, kind: "health_safety" };
@@ -12741,8 +12768,8 @@ var ProjectPlannerCanonical = (() => {
       let id2 = "";
       if (typeof item === "string") id2 = item.trim();
       else if (item && typeof item === "object") {
-        const record18 = item;
-        id2 = text13(record18.id) || text13(record18.contactId);
+        const record19 = item;
+        id2 = text13(record19.id) || text13(record19.contactId);
       }
       const key7 = normalizeDocumentId(id2);
       if (!id2 || seen.has(key7)) continue;
@@ -14022,9 +14049,9 @@ var ProjectPlannerCanonical = (() => {
     return "apply";
   }
   function offlineDeleteRefusalDecision(code) {
-    const text55 = errorCodeText(code);
-    if (text55 === "not-found" || text55 === "5") return "alreadyGone";
-    if (text55 === "permission-denied" || text55 === "7") return "refusePermission";
+    const text56 = errorCodeText(code);
+    if (text56 === "not-found" || text56 === "5") return "alreadyGone";
+    if (text56 === "permission-denied" || text56 === "7") return "refusePermission";
     return "retry";
   }
   function bookingDeleteSignedTimesheetWarning(dayKey, sheets) {
@@ -16360,12 +16387,12 @@ var ProjectPlannerCanonical = (() => {
     const recordAtMs = realMs(sheet.operativeSignedBookingsAt);
     const recordSignedAtMs = realMs(sheet.operativeSignedBookingsSignedAt);
     const recordCurrent = operativeSignedMs != null && (recordSignedAtMs != null ? Math.abs(operativeSignedMs - recordSignedAtMs) <= RECORD_SIGNED_AT_MATCH_MS : recordAtMs != null && operativeSignedMs <= recordAtMs + RECORD_SIGNATURE_TOLERANCE_MS);
-    const record18 = recordCurrent ? recordSide(sheet.operativeSignedBookings) : null;
+    const record19 = recordCurrent ? recordSide(sheet.operativeSignedBookings) : null;
     const recordReferenceMs = recordAtMs ?? operativeSignedMs;
     const recordAddedAfter = recordReferenceMs == null ? null : recordReferenceMs - SIGNED_TIMESHEET_ADDITION_WINDOW_MS;
     const reviewerEdits = currentReviewerEdits(sheet.reviewerBookingEdits, operativeSignedMs);
     let personDiff;
-    if (record18) personDiff = diffSides(record18, live, documents, recordAddedAfter, reviewerEdits);
+    if (record19) personDiff = diffSides(record19, live, documents, recordAddedAfter, reviewerEdits);
     else if (snapshotDiff && reviewerEdits && override) {
       const snapshotAtMs = realMs(override.approvedAt) ?? realMs(sheet.managerSignedAt) ?? realMs(sheet.approvedAt) ?? operativeSignedMs;
       personDiff = diffSides(
@@ -16378,13 +16405,13 @@ var ProjectPlannerCanonical = (() => {
     } else personDiff = snapshotDiff;
     const gap = [];
     const gapAllowed = SNAPSHOT_GAP_FROM_MS == null || operativeSignedMs != null && operativeSignedMs >= SNAPSHOT_GAP_FROM_MS;
-    if (record18 && snapshotDiff && gapAllowed) {
+    if (record19 && snapshotDiff && gapAllowed) {
       const snapshotKeys = groupLines(Array.isArray(override?.lines) ? override.lines : []).byKey;
       const optionPlace = new Set(
         (input.liveLines ?? []).filter((line) => line && line.scheduleOptionPlace === true).map((line) => signedTimesheetLineBookingKey(line)).filter(Boolean)
       );
       const already = new Set([...snapshotDiff.added, ...personDiff?.added ?? []].map((id2) => normalizeDocumentId(id2)));
-      for (const [key7, row3] of record18) {
+      for (const [key7, row3] of record19) {
         if (!live.has(key7) || snapshotKeys.has(key7) || optionPlace.has(key7)) continue;
         const id2 = normalizeDocumentId(row3.bookingId);
         if (already.has(id2)) continue;
@@ -16398,7 +16425,7 @@ var ProjectPlannerCanonical = (() => {
     if (!personChanged && !snapshotChanged && !gapChanged) return base;
     const gapFields = { snapshotGapBookingIds: gap, snapshotGapOnly: gapChanged && !personChanged && !snapshotChanged };
     if (!personChanged && !snapshotChanged) {
-      const ids2 = { basis: record18 ? "fingerprint" : "bookingIds", changedBookingIds: [], addedBookingIds: [], removedBookingIds: [] };
+      const ids2 = { basis: record19 ? "fingerprint" : "bookingIds", changedBookingIds: [], addedBookingIds: [], removedBookingIds: [] };
       if (exported) return { ...base, ...ids2, ...gapFields, changed: true, reviewerMessage: SIGNED_TIMESHEET_EXPORTED_CHANGED_MESSAGE };
       const waitingFor2 = input.selfSigned === true ? "person" : "lineManager";
       return {
@@ -16460,12 +16487,12 @@ var ProjectPlannerCanonical = (() => {
     const recordAtMs = realMs(sheet.operativeSignedBookingsAt);
     const recordSignedAtMs = realMs(sheet.operativeSignedBookingsSignedAt);
     const recordCurrent = operativeSignedMs != null && (recordSignedAtMs != null ? Math.abs(operativeSignedMs - recordSignedAtMs) <= RECORD_SIGNED_AT_MATCH_MS : recordAtMs != null && operativeSignedMs <= recordAtMs + RECORD_SIGNATURE_TOLERANCE_MS);
-    const record18 = recordCurrent ? recordSide(sheet.operativeSignedBookings) : null;
+    const record19 = recordCurrent ? recordSide(sheet.operativeSignedBookings) : null;
     let reference = null;
     let addedAfter = null;
     let used = "none";
-    if (record18) {
-      reference = record18;
+    if (record19) {
+      reference = record19;
       used = "record";
       const referenceMs = recordAtMs ?? operativeSignedMs;
       addedAfter = referenceMs == null ? null : referenceMs - SIGNED_TIMESHEET_ADDITION_WINDOW_MS;
@@ -16763,11 +16790,11 @@ var ProjectPlannerCanonical = (() => {
   }
   function payEditorStartingValues(person, profile, options) {
     const overlaid = options?.privatePay === true && profile ? overlayPayProfile(person, profile) : person;
-    const record18 = overlaid || {};
-    const pay = readStoredRates(record18);
+    const record19 = overlaid || {};
+    const pay = readStoredRates(record19);
     const rate = pay.payBasis === "hourly" ? pay.hourlyRate : pay.dayRate;
-    const employmentType = Object.prototype.hasOwnProperty.call(record18, "employmentType") ? record18.employmentType ?? null : null;
-    return { record: record18, pay, rate, employmentType, source: overlaid !== person ? "payProfile" : "users" };
+    const employmentType = Object.prototype.hasOwnProperty.call(record19, "employmentType") ? record19.employmentType ?? null : null;
+    return { record: record19, pay, rate, employmentType, source: overlaid !== person ? "payProfile" : "users" };
   }
 
   // lib/canonical/reportPay.ts
@@ -17213,8 +17240,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.78.0" : "",
-      sha256: true ? "fe36f5ad4d10bd10d2a87eedc9067fc870ed4d2b7588fb14f4548b337b0558e9" : ""
+      version: true ? "1.80.0" : "",
+      sha256: true ? "b57845332d7407311ff54f18ae187abb13faa6f3b59ae637a3b1548d610a4f85" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -17345,15 +17372,15 @@ var ProjectPlannerCanonical = (() => {
     }
     return out;
   }
-  function labourHolidayInput(record18) {
+  function labourHolidayInput(record19) {
     return {
-      id: record18.id,
-      userId: record18.userId,
-      operativeId: record18.operativeId,
-      startDayKey: record18.startDayKey,
-      endDayKey: record18.endDayKey,
-      timeSlot: record18.timeSlot,
-      approved: record18.approved
+      id: record19.id,
+      userId: record19.userId,
+      operativeId: record19.operativeId,
+      startDayKey: record19.startDayKey,
+      endDayKey: record19.endDayKey,
+      timeSlot: record19.timeSlot,
+      approved: record19.approved
     };
   }
 
@@ -17416,18 +17443,18 @@ var ProjectPlannerCanonical = (() => {
     const end = String(period?.endDayKey || "").trim();
     if (!start || !end || start > end) return [];
     const byDay = /* @__PURE__ */ new Map();
-    for (const record18 of leaveRecords || []) {
-      if (!record18) continue;
-      const approved = record18.approved === true || record18.approved == null && normalizeHolidayStatus(record18.status) === "approved";
+    for (const record19 of leaveRecords || []) {
+      if (!record19) continue;
+      const approved = record19.approved === true || record19.approved == null && normalizeHolidayStatus(record19.status) === "approved";
       if (!approved) continue;
-      const slot = normalizeHolidayTimeSlot(record18.timeSlot);
-      for (const dayKey of leaveRecordDayKeys(record18, timeZone, nonWorkingDayKeys)) {
+      const slot = normalizeHolidayTimeSlot(record19.timeSlot);
+      for (const dayKey of leaveRecordDayKeys(record19, timeZone, nonWorkingDayKeys)) {
         if (dayKey < start || dayKey > end) continue;
         const list = byDay.get(dayKey) || [];
         if (list.some((line2) => line2.timeSlot === slot || line2.timeSlot === "FULL DAY")) continue;
         const line = {
-          id: `leave-${String(record18.id)}-${dayKey}`,
-          leaveId: String(record18.id),
+          id: `leave-${String(record19.id)}-${dayKey}`,
+          leaveId: String(record19.id),
           dayKey,
           timeSlot: slot,
           label: timesheetLeaveLabel(slot)
@@ -17523,8 +17550,8 @@ var ProjectPlannerCanonical = (() => {
     return Math.round(value * 1e4) / 1e4;
   }
   function basisOf(value) {
-    const text55 = String(value ?? "").trim().toLowerCase();
-    return text55 === "hourly" || text55 === "hour" ? "hourly" : "day";
+    const text56 = String(value ?? "").trim().toLowerCase();
+    return text56 === "hourly" || text56 === "hour" ? "hourly" : "day";
   }
   var PAYROLL_LINE_EDIT_TIMES_MESSAGE = "Enter a start and a finish time that are different.";
   function clockMinutes2(value) {
@@ -19002,13 +19029,13 @@ var ProjectPlannerCanonical = (() => {
   }
   function orderedMaterialIds(records) {
     const ids = /* @__PURE__ */ new Set();
-    for (const record18 of records || []) {
-      if (!record18 || normalizeMaterialRequestType(record18.requestType) !== "Order") continue;
-      for (const id2 of record18.materialIds || []) {
+    for (const record19 of records || []) {
+      if (!record19 || normalizeMaterialRequestType(record19.requestType) !== "Order") continue;
+      for (const id2 of record19.materialIds || []) {
         const value = normalizeDocumentId(id2);
         if (value) ids.add(value);
       }
-      for (const line of record18.lines || []) {
+      for (const line of record19.lines || []) {
         const value = normalizeDocumentId(line?.materialId);
         if (value) ids.add(value);
       }
@@ -21023,13 +21050,13 @@ var ProjectPlannerCanonical = (() => {
     for (const writes of bookingWrites) steps.push({ step: "bookings", writes });
     if (rosterRows.length > 0) {
       const rowRecord = (row3) => {
-        const record18 = input.formerRows?.[`${row3.collection}/${row3.id}`];
-        if (!record18 || key4(row3.id) === key4(uid)) return null;
+        const record19 = input.formerRows?.[`${row3.collection}/${row3.id}`];
+        if (!record19 || key4(row3.id) === key4(uid)) return null;
         return {
           op: "set",
           path: `organizations/${org}/deletedPeople/${row3.id}`,
-          fields: { ...record18.fields },
-          serverTimestampFields: [...record18.serverTimestampFields],
+          fields: { ...record19.fields },
+          serverTimestampFields: [...record19.serverTimestampFields],
           optional: true
         };
       };
@@ -21041,11 +21068,11 @@ var ProjectPlannerCanonical = (() => {
         });
       }
       for (const row3 of rosterRows) {
-        const record18 = rowRecord(row3);
-        if (!record18) continue;
+        const record19 = rowRecord(row3);
+        if (!record19) continue;
         steps.push({
           step: "rosterRows",
-          writes: [{ op: "delete", path: `organizations/${org}/${row3.collection}/${row3.id}` }, record18]
+          writes: [{ op: "delete", path: `organizations/${org}/${row3.collection}/${row3.id}` }, record19]
         });
       }
     }
@@ -22052,10 +22079,10 @@ var ProjectPlannerCanonical = (() => {
   var WEEKEND_TIME_SLOTS = ["CUSTOM"];
   function isoWeekdayOf(day, timeZone) {
     if (typeof day === "number") return day;
-    const text55 = String(day || "").trim().toLowerCase();
-    if (text55 === "saturday") return 6;
-    if (text55 === "sunday") return 7;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(text55)) return isoWeekdayOfDayKey(text55, zoneOrLondon(timeZone));
+    const text56 = String(day || "").trim().toLowerCase();
+    if (text56 === "saturday") return 6;
+    if (text56 === "sunday") return 7;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text56)) return isoWeekdayOfDayKey(text56, zoneOrLondon(timeZone));
     return 0;
   }
   function isWeekendDayKey(dayKey, timeZone) {
@@ -22447,8 +22474,8 @@ var ProjectPlannerCanonical = (() => {
         return "Full day";
     }
   }
-  function spoken(text55) {
-    return text55.replace(/–/g, " to ").replace(/ − /g, " less ").replace(/×(\d+(?:\.\d+)?)/g, "$1 times").replace(/(\d+(?:\.\d+)?)h\b/g, (_, n) => `${n} ${n === "1" ? "hour" : "hours"}`);
+  function spoken(text56) {
+    return text56.replace(/–/g, " to ").replace(/ − /g, " less ").replace(/×(\d+(?:\.\d+)?)/g, "$1 times").replace(/(\d+(?:\.\d+)?)h\b/g, (_, n) => `${n} ${n === "1" ? "hour" : "hours"}`);
   }
   function row2(kind, label, details, hours2) {
     const value = h2(hours2);
@@ -22615,8 +22642,8 @@ var ProjectPlannerCanonical = (() => {
     return round5(brk) > 0 ? `${h3(clock5)} OT \xD7 ${round5(n)} \u2212 ${h3(brk)} break = ${total}` : `${h3(clock5)} OT \xD7 ${round5(n)} = ${total}`;
   }
   function overtimeIncludedText(input) {
-    const text55 = overtimeTotalText(input);
-    return text55 ? `incl. ${text55}` : "";
+    const text56 = overtimeTotalText(input);
+    return text56 ? `incl. ${text56}` : "";
   }
   function bookedWithOvertimeText(input) {
     const booked = `${h3(Math.max(0, Number(input?.bookedHours) || 0))} booked`;
@@ -23730,8 +23757,8 @@ var ProjectPlannerCanonical = (() => {
   }
 
   // lib/canonical/leaveReport.ts
-  function leaveReportDayCount(record18, range, timeZone, nonWorkingDayKeys) {
-    return snapLeaveDays(leaveDaysInRange(record18, range, timeZone, nonWorkingDayKeys));
+  function leaveReportDayCount(record19, range, timeZone, nonWorkingDayKeys) {
+    return snapLeaveDays(leaveDaysInRange(record19, range, timeZone, nonWorkingDayKeys));
   }
   function leaveReportRows(input) {
     const zone3 = zoneOrLondon(input.timeZone);
@@ -23741,18 +23768,18 @@ var ProjectPlannerCanonical = (() => {
     const nonWorking = input.nonWorkingDayKeys ?? [];
     const range = { startDayKey: year.startDayKey, endDayKey: year.endDayKey };
     const rows3 = [];
-    for (const record18 of input.records || []) {
-      if (!record18) continue;
-      const mine = record18.userId != null && ids.has(normalizeDocumentId(record18.userId)) || record18.operativeId != null && ids.has(normalizeDocumentId(record18.operativeId));
+    for (const record19 of input.records || []) {
+      if (!record19) continue;
+      const mine = record19.userId != null && ids.has(normalizeDocumentId(record19.userId)) || record19.operativeId != null && ids.has(normalizeDocumentId(record19.operativeId));
       if (!mine) continue;
-      const status = normalizeHolidayStatus(record18.status);
+      const status = normalizeHolidayStatus(record19.status);
       if (!statuses.has(status)) continue;
-      const start = String(record18.startDayKey || "").trim();
-      const endRaw = String(record18.endDayKey || "").trim();
+      const start = String(record19.startDayKey || "").trim();
+      const endRaw = String(record19.endDayKey || "").trim();
       const end = endRaw && endRaw >= start ? endRaw : start;
       if (!start || end < range.startDayKey || start > range.endDayKey) continue;
-      const days = leaveReportDayCount({ startDayKey: start, endDayKey: end, timeSlot: record18.timeSlot }, range, zone3, nonWorking);
-      rows3.push({ id: String(record18.id ?? ""), startDayKey: start, endDayKey: end, timeSlot: normalizeHolidayTimeSlot(record18.timeSlot), status, days });
+      const days = leaveReportDayCount({ startDayKey: start, endDayKey: end, timeSlot: record19.timeSlot }, range, zone3, nonWorking);
+      rows3.push({ id: String(record19.id ?? ""), startDayKey: start, endDayKey: end, timeSlot: normalizeHolidayTimeSlot(record19.timeSlot), status, days });
     }
     rows3.sort((a, b) => a.startDayKey === b.startDayKey ? a.id.localeCompare(b.id) : a.startDayKey < b.startDayKey ? 1 : -1);
     return {
@@ -24324,24 +24351,24 @@ var ProjectPlannerCanonical = (() => {
   function leaveDayKind(records, dayKey, timeZone, nonWorkingDayKeys) {
     let best = "none";
     let recordId = null;
-    for (const record18 of records || []) {
-      if (!record18) continue;
-      const status = normalizeHolidayStatus(record18.status);
+    for (const record19 of records || []) {
+      if (!record19) continue;
+      const status = normalizeHolidayStatus(record19.status);
       if (status !== "approved" && status !== "pending") continue;
-      if (!leaveRecordDayKeys(record18, timeZone, nonWorkingDayKeys).includes(dayKey)) continue;
-      const slot = normalizeHolidayTimeSlot(record18.timeSlot);
+      if (!leaveRecordDayKeys(record19, timeZone, nonWorkingDayKeys).includes(dayKey)) continue;
+      const slot = normalizeHolidayTimeSlot(record19.timeSlot);
       const half = slot === "AM" || slot === "PM";
       const kind = status === "pending" ? half ? "pendingHalf" : "pendingFull" : half ? "approvedHalf" : "approvedFull";
       if (RANK[kind] > RANK[best]) {
         best = kind;
-        recordId = String(record18.id ?? "").trim() || null;
+        recordId = String(record19.id ?? "").trim() || null;
       }
     }
     return { kind: best, recordId, isLocked: best === "approvedFull" || best === "pendingFull" };
   }
   function dailyOverviewLeaveRows(records, dayKey, timeZone, nonWorkingDayKeys) {
     return (records || []).filter(
-      (record18) => Boolean(record18) && normalizeHolidayStatus(record18.status) === "approved" && leaveRecordDayKeys(record18, timeZone, nonWorkingDayKeys).includes(dayKey)
+      (record19) => Boolean(record19) && normalizeHolidayStatus(record19.status) === "approved" && leaveRecordDayKeys(record19, timeZone, nonWorkingDayKeys).includes(dayKey)
     );
   }
 
@@ -24430,11 +24457,11 @@ var ProjectPlannerCanonical = (() => {
         }
         const pending = kind === "pendingFull" || kind === "pendingHalf";
         const half = kind === "approvedHalf" || kind === "pendingHalf";
-        const record18 = (result2.recordId ? mine.find((h4) => String(h4.id ?? "").trim() === result2.recordId) : void 0) ?? mine.find((h4) => {
+        const record19 = (result2.recordId ? mine.find((h4) => String(h4.id ?? "").trim() === result2.recordId) : void 0) ?? mine.find((h4) => {
           const slot2 = normalizeHolidayTimeSlot(h4.timeSlot);
           return half ? slot2 !== "FULL DAY" : slot2 === "FULL DAY";
         });
-        const slot = mixedSlot ?? (half ? normalizeHolidayTimeSlot(record18?.timeSlot) === "PM" ? "PM" : "AM" : "FULL DAY");
+        const slot = mixedSlot ?? (half ? normalizeHolidayTimeSlot(record19?.timeSlot) === "PM" ? "PM" : "AM" : "FULL DAY");
         const base = pending ? JOB_SCHEDULE_LEAVE_PENDING_LABEL : JOB_SCHEDULE_LEAVE_LABEL;
         const dayInput2 = standardDayOn(input?.day, dayKey);
         const state = pending ? "pending" : "approved";
@@ -24701,7 +24728,7 @@ var ProjectPlannerCanonical = (() => {
   function splitCsvRecords(textValue) {
     const records = [];
     let field = "";
-    let record18 = [];
+    let record19 = [];
     let quoted = false;
     const value = textValue.replace(/^﻿/, "");
     for (let i = 0; i < value.length; i += 1) {
@@ -24722,21 +24749,21 @@ var ProjectPlannerCanonical = (() => {
       if (char === '"') {
         quoted = true;
       } else if (char === ",") {
-        record18.push(field);
+        record19.push(field);
         field = "";
       } else if (char === "\n" || char === "\r") {
         if (char === "\r" && value[i + 1] === "\n") i += 1;
-        record18.push(field);
-        records.push(record18);
-        record18 = [];
+        record19.push(field);
+        records.push(record19);
+        record19 = [];
         field = "";
       } else {
         field += char;
       }
     }
-    if (field !== "" || record18.length > 0) {
-      record18.push(field);
-      records.push(record18);
+    if (field !== "" || record19.length > 0) {
+      record19.push(field);
+      records.push(record19);
     }
     return records;
   }
@@ -24962,6 +24989,8 @@ var ProjectPlannerCanonical = (() => {
     health_safety: photosAndPdf(10 * MB),
     paye_claim_evidence: photosAndPdf(10 * MB),
     personal_site_audit: photosOnly(10 * MB),
+    // 1.80.0: subcontractor insurance and RAMS documents.
+    subcontractor_document: photosAndPdf(10 * MB),
     // The 1.48.0 §28 catalogue import (`materialCatalogueCsvFileError` / `materialCatalogueCsvTextError` keep their own
     // messages on the import screens); listed here so the one table names every upload.
     material_catalogue_import: {
@@ -25095,13 +25124,13 @@ var ProjectPlannerCanonical = (() => {
     if (startsWith(bytes, [208, 207, 17, 224, 161, 177, 26, 225])) return "application/x-ole-storage";
     if (startsWith(bytes, [66, 77])) return "image/bmp";
     if (startsWith(bytes, [73, 73, 42, 0]) || startsWith(bytes, [77, 77, 0, 42])) return "image/tiff";
-    const text55 = ascii(bytes, 0, bytes.length);
-    const lead = text55.replace(/^(\uFEFF|\xEF\xBB\xBF)/, "").trimStart().toLowerCase();
+    const text56 = ascii(bytes, 0, bytes.length);
+    const lead = text56.replace(/^(\uFEFF|\xEF\xBB\xBF)/, "").trimStart().toLowerCase();
     if (lead.startsWith("<")) {
       return lead.includes("<svg") ? "image/svg+xml" : "text/html";
     }
-    const pdfAt = text55.indexOf("%PDF-");
-    if (pdfAt >= 0 && !text55.slice(0, pdfAt).includes("<")) return "application/pdf";
+    const pdfAt = text56.indexOf("%PDF-");
+    if (pdfAt >= 0 && !text56.slice(0, pdfAt).includes("<")) return "application/pdf";
     if (!bytes.includes(0)) {
       if (lead.includes("<svg")) return "image/svg+xml";
       if (lead.includes("<html") || lead.includes("<script")) return "text/html";
@@ -26885,9 +26914,9 @@ var ProjectPlannerCanonical = (() => {
   var SQUARE = { width: 1280, height: 1280 };
   var PANORAMA = { width: 4e3, height: 600 };
   var AT = Date.UTC(2026, 10, 17, 9, 30);
-  var repeat = (text55, length) => {
+  var repeat = (text56, length) => {
     let out = "";
-    while (out.length < length) out += text55;
+    while (out.length < length) out += text56;
     return out.slice(0, length);
   };
   var SITE_AUDIT_REPORT_FIXTURE_INPUTS = [
@@ -27118,7 +27147,7 @@ var ProjectPlannerCanonical = (() => {
   var EXTRA_LATIN = { \u0142: "l", \u0141: "L", \u0111: "d", \u0110: "D", \u0127: "h", \u0126: "H", \u0131: "i", \u00F8: "\xF8", \u00D8: "\xD8" };
   function siteAuditReportText(value) {
     const table = widthTable(false);
-    const drawable = (text55) => text55.length > 0 && Array.from(text55).every((c) => table.has(c.codePointAt(0) ?? 0));
+    const drawable = (text56) => text56.length > 0 && Array.from(text56).every((c) => table.has(c.codePointAt(0) ?? 0));
     const source = String(value ?? "").normalize("NFC").replace(/\r\n?/g, "\n").replace(/\t/g, " ");
     let out = "";
     for (const cluster of siteAuditGraphemes(source)) {
@@ -27161,23 +27190,23 @@ var ProjectPlannerCanonical = (() => {
     return out;
   }
   function siteAuditReportFitLine(value, size, maxWidth, bold = false) {
-    const text55 = siteAuditReportText(value).replace(/\n/g, " ");
-    if (siteAuditReportTextWidth(text55, size, bold) <= maxWidth + 0.01) return text55;
-    const chars = Array.from(text55);
+    const text56 = siteAuditReportText(value).replace(/\n/g, " ");
+    if (siteAuditReportTextWidth(text56, size, bold) <= maxWidth + 0.01) return text56;
+    const chars = Array.from(text56);
     while (chars.length > 0 && siteAuditReportTextWidth(chars.join("") + "\u2026", size, bold) > maxWidth + 0.01) chars.pop();
     return chars.join("").trimEnd() + "\u2026";
   }
-  function siteAuditReportTextWidth(text55, size, bold = false) {
+  function siteAuditReportTextWidth(text56, size, bold = false) {
     const table = widthTable(bold);
     let units = 0;
-    for (const ch of Array.from(text55)) units += table.get(ch.codePointAt(0) ?? 0) ?? 556;
+    for (const ch of Array.from(text56)) units += table.get(ch.codePointAt(0) ?? 0) ?? 556;
     return units * size / 1e3;
   }
   function wrapSiteAuditReportText(value, size, maxWidth, bold = false) {
-    const text55 = siteAuditReportText(value);
+    const text56 = siteAuditReportText(value);
     const fits = (line) => siteAuditReportTextWidth(line, size, bold) <= maxWidth + 0.01;
     const lines = [];
-    for (const paragraph of text55.split("\n")) {
+    for (const paragraph of text56.split("\n")) {
       const words = paragraph.split(" ");
       let line = "";
       for (const word of words) {
@@ -27282,9 +27311,9 @@ var ProjectPlannerCanonical = (() => {
     });
     return top + lines.length * lineHeight;
   }
-  function flowLine(b, text55, x, size, lineHeight, bold, color) {
+  function flowLine(b, text56, x, size, lineHeight, bold, color) {
     if (b.y + lineHeight > BODY_BOTTOM) b.newPage();
-    textOps(b.ops, [text55], x, b.y, size, lineHeight, bold, color);
+    textOps(b.ops, [text56], x, b.y, size, lineHeight, bold, color);
     b.y += lineHeight;
   }
   var SITE_AUDIT_REPORT_LOGO_BOX = Object.freeze({
@@ -27333,10 +27362,10 @@ var ProjectPlannerCanonical = (() => {
     const headerTextW = W - MARGIN - 150;
     const subtitle = `${jobNumber} \xB7 ${str(input.siteAddress) || str(audit.projectName)}`;
     const leftLines = [{ text: "SITE AUDIT REPORT", size: 9, lh: 14, bold: true, color: C.whiteSoft, gap: 0 }];
-    wrapSiteAuditReportText(type, 22, headerTextW, true).forEach((text55, i) => leftLines.push({ text: text55, size: 22, lh: 26, bold: true, color: C.white, gap: i === 0 ? 2 : 0 }));
-    wrapSiteAuditReportText(subtitle, 12, headerTextW).forEach((text55, i) => leftLines.push({ text: text55, size: 12, lh: 15, bold: false, color: C.whiteSoft, gap: i === 0 ? 4 : 0 }));
+    wrapSiteAuditReportText(type, 22, headerTextW, true).forEach((text56, i) => leftLines.push({ text: text56, size: 22, lh: 26, bold: true, color: C.white, gap: i === 0 ? 2 : 0 }));
+    wrapSiteAuditReportText(subtitle, 12, headerTextW).forEach((text56, i) => leftLines.push({ text: text56, size: 12, lh: 15, bold: false, color: C.whiteSoft, gap: i === 0 ? 4 : 0 }));
     if (str(audit.customTitle)) {
-      wrapSiteAuditReportText(str(audit.customTitle), 10.5, headerTextW).forEach((text55) => leftLines.push({ text: text55, size: 10.5, lh: 13, bold: false, color: C.whiteSoft, gap: 0 }));
+      wrapSiteAuditReportText(str(audit.customTitle), 10.5, headerTextW).forEach((text56) => leftLines.push({ text: text56, size: 10.5, lh: 13, bold: false, color: C.whiteSoft, gap: 0 }));
     }
     const orgLines = wrapSiteAuditReportText(orgName, 10, 110, true);
     const leftHeight = 24 + leftLines.reduce((sum, line) => sum + line.gap + line.lh, 0) + 20;
@@ -28479,12 +28508,12 @@ var ProjectPlannerCanonical = (() => {
       tombstonedBookingIds: input.tombstonedBookingIds,
       personIds: input.personIds
     });
-    const record18 = /* @__PURE__ */ new Map();
+    const record19 = /* @__PURE__ */ new Map();
     for (const raw of Array.isArray(sheet?.operativeSignedBookings) ? sheet?.operativeSignedBookings : []) {
       if (!raw || typeof raw !== "object") continue;
       const row3 = raw;
       const id2 = normalizeDocumentId(text48(row3.bookingId));
-      if (id2 && !record18.has(id2)) record18.set(id2, { fingerprint: text48(row3.fingerprint), place: text48(row3.place), storedText: null, dayKey: "", storedJob: "" });
+      if (id2 && !record19.has(id2)) record19.set(id2, { fingerprint: text48(row3.fingerprint), place: text48(row3.place), storedText: null, dayKey: "", storedJob: "" });
     }
     const snapshot = /* @__PURE__ */ new Map();
     const override = sheet?.weeklyReportOverride;
@@ -28521,7 +28550,7 @@ var ProjectPlannerCanonical = (() => {
     }
     const preferSnapshot = change.waitingFor === "lineManager";
     const beforeOf = (id2) => {
-      const fromRecord = record18.get(id2);
+      const fromRecord = record19.get(id2);
       const fromSnapshot = snapshot.get(id2);
       const first = preferSnapshot ? fromSnapshot ?? fromRecord : fromRecord ?? fromSnapshot;
       if (!first) return null;
@@ -29161,10 +29190,10 @@ var ProjectPlannerCanonical = (() => {
     if (!isPlainMap(perms)) return false;
     return truthy(get(perms, kind, get(m, kind, false)));
   }
-  function utf8Bytes2(text55) {
+  function utf8Bytes2(text56) {
     let bytes = 0;
-    for (let i = 0; i < text55.length; i += 1) {
-      const code = text55.charCodeAt(i);
+    for (let i = 0; i < text56.length; i += 1) {
+      const code = text56.charCodeAt(i);
       if (code < 128) bytes += 1;
       else if (code < 2048) bytes += 2;
       else if (code >= 55296 && code <= 56319) {
@@ -30853,26 +30882,26 @@ var ProjectPlannerCanonical = (() => {
     const personFor = leavePersonMatcher(input.people);
     const rows3 = /* @__PURE__ */ new Map();
     const unmatched = [];
-    for (const record18 of input.records || []) {
-      if (!record18 || String(record18.status ?? "approved").toLowerCase() !== "approved") continue;
+    for (const record19 of input.records || []) {
+      if (!record19 || String(record19.status ?? "approved").toLowerCase() !== "approved") continue;
       const days = leaveDaysInRange(
-        { startDayKey: record18.startDayKey, endDayKey: record18.endDayKey, timeSlot: record18.timeSlot ?? "FULL DAY" },
+        { startDayKey: record19.startDayKey, endDayKey: record19.endDayKey, timeSlot: record19.timeSlot ?? "FULL DAY" },
         { startDayKey: input.range.start, endDayKey: input.range.end },
         zone3,
         input.nonWorkingDayKeys ?? null
       );
       if (!(days > 0)) continue;
-      const person = personFor(record18);
+      const person = personFor(record19);
       if (!person) {
-        const missingId = String(record18.userId || record18.operativeId || record18.id || "").trim();
-        const former = leaveRecordFormerPerson(record18, input.formerPeople);
+        const missingId = String(record19.userId || record19.operativeId || record19.id || "").trim();
+        const former = leaveRecordFormerPerson(record19, input.formerPeople);
         unmatched.push({
-          recordId: record18.id,
-          userId: record18.userId ?? null,
-          operativeId: record18.operativeId ?? null,
+          recordId: record19.id,
+          userId: record19.userId ?? null,
+          operativeId: record19.operativeId ?? null,
           ...former ? { formerPersonId: former.id } : {}
         });
-        const stored = String(record18.userName ?? "").trim();
+        const stored = String(record19.userName ?? "").trim();
         const name = former ? formerPersonLabel(former.displayName) : stored || `${WEEKLY_REPORT_PERSON_NOT_FOUND} (id ${missingId})`;
         const key7 = former ? `former:${idKey9(former.id)}` : `missing:${idKey9(missingId)}`;
         const row4 = rows3.get(key7) ?? { personId: null, person: name, role: "\u2014", days: 0, type: "Approved", found: false };
@@ -30896,13 +30925,13 @@ var ProjectPlannerCanonical = (() => {
         if (key7 && !byId.has(key7)) byId.set(key7, person);
       }
     }
-    return (record18) => byId.get(idKey9(record18.userId)) ?? byId.get(idKey9(record18.operativeId)) ?? null;
+    return (record19) => byId.get(idKey9(record19.userId)) ?? byId.get(idKey9(record19.operativeId)) ?? null;
   }
-  function leaveRecordFormerPerson(record18, formerPeople) {
-    if (!record18 || !formerPeople?.length) return null;
-    const byId = formerPersonForId(record18.userId, formerPeople) ?? formerPersonForId(record18.operativeId, formerPeople);
+  function leaveRecordFormerPerson(record19, formerPeople) {
+    if (!record19 || !formerPeople?.length) return null;
+    const byId = formerPersonForId(record19.userId, formerPeople) ?? formerPersonForId(record19.operativeId, formerPeople);
     if (byId) return byId;
-    const email = String(record18.userId ?? "").trim().toLowerCase();
+    const email = String(record19.userId ?? "").trim().toLowerCase();
     if (!email.includes("@")) return null;
     let found = null;
     for (const person of formerPeople) {
@@ -30913,7 +30942,7 @@ var ProjectPlannerCanonical = (() => {
   }
   function leaveRecordsWithoutPerson(input) {
     const personFor = leavePersonMatcher(input.people);
-    return (input.records || []).filter((record18) => record18 && !personFor(record18));
+    return (input.records || []).filter((record19) => record19 && !personFor(record19));
   }
   var WEEKLY_REPORT_WARNING_OPEN = "Open";
   function weeklyReportClashDetail(input) {
@@ -31189,8 +31218,8 @@ var ProjectPlannerCanonical = (() => {
       };
     });
     const findings = [];
-    for (const { entry, record: record18 } of parsed) {
-      const owners = plans.filter((plan) => leaveRecordsForAccount([record18], plan.account, operatives).length > 0);
+    for (const { entry, record: record19 } of parsed) {
+      const owners = plans.filter((plan) => leaveRecordsForAccount([record19], plan.account, operatives).length > 0);
       if (owners.length === 0) continue;
       const storedUserId = storedText(entry.data?.userId);
       const storedOperativeId = storedText(entry.data?.operativeId);
@@ -31203,8 +31232,8 @@ var ProjectPlannerCanonical = (() => {
           personEmail: owners[0].email,
           storedUserId,
           storedOperativeId,
-          readerUserId: record18.userId,
-          readerOperativeId: record18.operativeId,
+          readerUserId: record19.userId,
+          readerOperativeId: record19.operativeId,
           reason: "conflict",
           otherPersonIds: owners.slice(1).map((plan) => plan.person.id),
           fix: `Decide whose leave organizations/{orgId}/holidayBookings/${entry.id} is (${owners.map((plan) => plan.person.id).join(", ")}) and set its userId to that person's users id.`
@@ -31214,7 +31243,7 @@ var ProjectPlannerCanonical = (() => {
       const owner = owners[0];
       if (queriedBy(owner)) continue;
       const spelling = owner.userKeys.has(key6(storedUserId)) || owner.operativeKeys.has(key6(storedOperativeId));
-      const sameEmail = owner.sameEmailKeys.has(key6(record18.userId)) || owner.sameEmailKeys.has(key6(record18.operativeId));
+      const sameEmail = owner.sameEmailKeys.has(key6(record19.userId)) || owner.sameEmailKeys.has(key6(record19.operativeId));
       const reason = spelling ? "letterCase" : sameEmail ? "sameEmailAccount" : "legacyKey";
       findings.push({
         leaveId: entry.id,
@@ -31222,8 +31251,8 @@ var ProjectPlannerCanonical = (() => {
         personEmail: owner.email,
         storedUserId,
         storedOperativeId,
-        readerUserId: record18.userId,
-        readerOperativeId: record18.operativeId,
+        readerUserId: record19.userId,
+        readerOperativeId: record19.operativeId,
         reason,
         otherPersonIds: [],
         fix: `Set userId to "${owner.person.id}" on organizations/{orgId}/holidayBookings/${entry.id} (keep every other field).`
@@ -31290,8 +31319,8 @@ var ProjectPlannerCanonical = (() => {
   }
   function materialSendRecordRecipientEmails(records) {
     const out = /* @__PURE__ */ new Set();
-    for (const record18 of records || []) {
-      for (const recipient of record18 && Array.isArray(record18.recipients) ? record18.recipients : []) {
+    for (const record19 of records || []) {
+      for (const recipient of record19 && Array.isArray(record19.recipients) ? record19.recipients : []) {
         const email = emailKey6(recipient?.email);
         if (email) out.add(email);
       }
@@ -31851,6 +31880,198 @@ var ProjectPlannerCanonical = (() => {
     const end = text54(input?.endDayKey);
     if (!org || !recipient || !DAY_KEY13.test(start) || !DAY_KEY13.test(end)) return null;
     return derivedDocumentId(`timesheetSignOffReminder|${org}|${recipient}|${start}|${end}`);
+  }
+
+  // lib/canonical/subcontractorDocuments.ts
+  var SUBCONTRACTOR_DOCUMENT_KINDS = ["insurance", "rams"];
+  var SUBCONTRACTOR_DOCUMENT_LABELS = {
+    insurance: "Insurance",
+    rams: "RAMS"
+  };
+  var SUBCONTRACTOR_DOCUMENTS_MAX_PER_KIND = 20;
+  var SUBCONTRACTOR_DOCUMENT_EXPIRING_SOON_DAYS = 30;
+  var SUBCONTRACTOR_DOCUMENTS_EMPTY_TEXT = "No documents uploaded yet.";
+  var SUBCONTRACTOR_DOCUMENT_EXPIRY_LABEL = "Expiry date (optional)";
+  var SUBCONTRACTOR_DOCUMENT_EXPIRY_INVALID_MESSAGE = "Enter the expiry date as a date, or leave it empty.";
+  var SUBCONTRACTOR_DOCUMENTS_FULL_MESSAGE = `A subcontractor can hold up to ${SUBCONTRACTOR_DOCUMENTS_MAX_PER_KIND} documents of each kind. Remove an old one first.`;
+  function text55(value) {
+    return typeof value === "string" ? value.trim() : "";
+  }
+  function record18(value) {
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  }
+  var DAY_KEY14 = /^\d{4}-\d{2}-\d{2}$/;
+  function validDayKey3(value) {
+    if (!DAY_KEY14.test(value)) return false;
+    const [y, m, d] = value.split("-").map(Number);
+    const date = new Date(Date.UTC(y, m - 1, d));
+    return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
+  }
+  function isSubcontractorDocumentKind(value) {
+    return typeof value === "string" && SUBCONTRACTOR_DOCUMENT_KINDS.includes(value);
+  }
+  function canManageSubcontractors(user) {
+    if (!user || typeof user !== "object") return false;
+    const level = permissionLevelOf(user);
+    if (level === "operative") return false;
+    if (level === "admin") return true;
+    const flags2 = effectivePermissions(user, level);
+    return flags2.manager === true && flags2.subContractors === true;
+  }
+  function subcontractorDocumentsFolder(organizationId, subcontractorId) {
+    const org = text55(organizationId);
+    const sub = text55(subcontractorId);
+    if (!org || !sub || org.includes("/") || sub.includes("/")) return null;
+    return `organizations/${org}/subcontractors/${sub}/documents`;
+  }
+  function subcontractorDocumentStoragePath(input) {
+    const folder = subcontractorDocumentsFolder(input.organizationId, input.subcontractorId);
+    const uid = text55(input.uid);
+    if (!folder || !uid || !/^[A-Za-z0-9-]+$/.test(uid)) return null;
+    const ms = Math.floor(Number(input.unixMs));
+    if (!Number.isFinite(ms) || ms < 0) return null;
+    const ext = text55(input.extension).toLowerCase().replace(/^\.+/, "").replace(/[^a-z0-9]/g, "");
+    return ext ? `${folder}/${uid}_${ms}.${ext}` : `${folder}/${uid}_${ms}`;
+  }
+  function subcontractorDocumentPathBelongsTo(path, organizationId, subcontractorId) {
+    const value = text55(path);
+    if (!value || value.includes("..") || value.includes("//")) return false;
+    const parts3 = value.split("/");
+    if (parts3.length !== 6) return false;
+    if (parts3[0] !== "organizations" || parts3[2] !== "subcontractors" || parts3[4] !== "documents" || !parts3[5]) return false;
+    const org = text55(organizationId);
+    if (org && normalizeDocumentId(parts3[1]) !== normalizeDocumentId(org)) return false;
+    return normalizeDocumentId(parts3[3]) === normalizeDocumentId(subcontractorId);
+  }
+  function normalizeSubcontractorDocumentExpiry(value) {
+    if (value === null || value === void 0) return null;
+    const raw = text55(value);
+    if (!raw) return null;
+    return validDayKey3(raw) ? raw : void 0;
+  }
+  function subcontractorDocumentExpiryError(value) {
+    return normalizeSubcontractorDocumentExpiry(value) === void 0 ? SUBCONTRACTOR_DOCUMENT_EXPIRY_INVALID_MESSAGE : null;
+  }
+  function parseEntry(entry, index, kind, subcontractorId, organizationId) {
+    const row3 = record18(entry);
+    const path = text55(row3.path) || text55(row3.storagePath);
+    if (!subcontractorDocumentPathBelongsTo(path, organizationId, subcontractorId)) return null;
+    const name = text55(row3.name) || path.split("/").pop() || "Document";
+    const size = Number(row3.sizeBytes);
+    const expiry = normalizeSubcontractorDocumentExpiry(row3.expiresOn);
+    return {
+      id: text55(row3.id) || derivedRowId(subcontractorId, `documents.${kind}`, index, [path]),
+      path,
+      name,
+      contentType: text55(row3.contentType),
+      sizeBytes: Number.isFinite(size) && size >= 0 ? size : null,
+      uploadedAtMs: documentInstantMs(row3.uploadedAtMs ?? row3.uploadedAt),
+      uploadedBy: text55(row3.uploadedBy),
+      // A stored expiry that is not a date reads as none (never drops the row).
+      expiresOn: expiry ?? null
+    };
+  }
+  function parseSubcontractorDocuments(subcontractorId, data, options) {
+    const id2 = text55(subcontractorId);
+    const out = { insurance: [], rams: [] };
+    if (!id2) return out;
+    const documents = record18(record18(data).documents);
+    const org = text55(options?.organizationId) || text55(record18(data).organizationId) || null;
+    for (const kind of SUBCONTRACTOR_DOCUMENT_KINDS) {
+      const list = Array.isArray(documents[kind]) ? documents[kind] : [];
+      const seen = /* @__PURE__ */ new Set();
+      list.forEach((entry, index) => {
+        const parsed = parseEntry(entry, index, kind, id2, org);
+        if (!parsed || seen.has(parsed.path)) return;
+        seen.add(parsed.path);
+        out[kind].push(parsed);
+      });
+    }
+    return out;
+  }
+  function storedList(stored, kind) {
+    const list = record18(record18(stored).documents)[kind];
+    return Array.isArray(list) ? [...list] : [];
+  }
+  function subcontractorDocumentsFieldPath(kind) {
+    return `documents.${kind}`;
+  }
+  function subcontractorDocumentAddWriteFields(stored, input) {
+    if (!isSubcontractorDocumentKind(input.kind)) return { set: null, outcome: "invalid" };
+    const path = text55(input.entry?.path);
+    if (!subcontractorDocumentPathBelongsTo(path, input.organizationId, input.subcontractorId)) return { set: null, outcome: "invalid" };
+    const expiry = normalizeSubcontractorDocumentExpiry(input.entry.expiresOn);
+    if (expiry === void 0) return { set: null, outcome: "invalid" };
+    const uploadedBy = text55(input.entry.uploadedBy);
+    if (!uploadedBy) return { set: null, outcome: "invalid" };
+    const list = storedList(stored, input.kind);
+    if (list.some((row3) => (text55(record18(row3).path) || text55(record18(row3).storagePath)) === path)) {
+      return { set: null, outcome: "alreadyLinked" };
+    }
+    if (list.length >= SUBCONTRACTOR_DOCUMENTS_MAX_PER_KIND) return { set: null, outcome: "refused" };
+    const size = Number(input.entry.sizeBytes);
+    const uploadedAtMs = Math.floor(Number(input.entry.uploadedAtMs));
+    const entry = {
+      id: text55(input.entry.id) || derivedRowId(input.subcontractorId, `documents.${input.kind}`, list.length, [path]),
+      path,
+      name: text55(input.entry.name) || path.split("/").pop() || "Document",
+      contentType: text55(input.entry.contentType),
+      sizeBytes: Number.isFinite(size) && size >= 0 ? size : null,
+      uploadedAtMs: Number.isFinite(uploadedAtMs) ? uploadedAtMs : null,
+      uploadedBy,
+      expiresOn: expiry
+    };
+    return { set: { fieldPath: subcontractorDocumentsFieldPath(input.kind), value: [...list, entry] }, outcome: "added" };
+  }
+  function entryMatches(row3, kind, subcontractorId, index, entryId) {
+    const line = record18(row3);
+    const stored = text55(line.id);
+    const path = text55(line.path) || text55(line.storagePath);
+    const id2 = stored || derivedRowId(subcontractorId, `documents.${kind}`, index, [path]);
+    return normalizeDocumentId(id2) === normalizeDocumentId(entryId);
+  }
+  function subcontractorDocumentRemoveWriteFields(stored, input) {
+    if (!isSubcontractorDocumentKind(input.kind)) return { set: null, removedPath: null };
+    const list = storedList(stored, input.kind);
+    const index = list.findIndex((row3, i) => entryMatches(row3, input.kind, text55(input.subcontractorId), i, text55(input.entryId)));
+    if (index < 0) return { set: null, removedPath: null };
+    const line = record18(list[index]);
+    const removedPath = text55(line.path) || text55(line.storagePath) || null;
+    const next = list.filter((_, i) => i !== index);
+    return { set: { fieldPath: subcontractorDocumentsFieldPath(input.kind), value: next }, removedPath };
+  }
+  function subcontractorDocumentExpiryWriteFields(stored, input) {
+    if (!isSubcontractorDocumentKind(input.kind)) return { set: null, outcome: "invalid" };
+    const expiry = normalizeSubcontractorDocumentExpiry(input.expiresOn);
+    if (expiry === void 0) return { set: null, outcome: "invalid" };
+    const list = storedList(stored, input.kind);
+    const index = list.findIndex((row3, i) => entryMatches(row3, input.kind, text55(input.subcontractorId), i, text55(input.entryId)));
+    if (index < 0) return { set: null, outcome: "missing" };
+    const line = record18(list[index]);
+    const current = normalizeSubcontractorDocumentExpiry(line.expiresOn) ?? null;
+    if (current === expiry) return { set: null, outcome: "unchanged" };
+    const next = [...list];
+    next[index] = { ...line, expiresOn: expiry };
+    return { set: { fieldPath: subcontractorDocumentsFieldPath(input.kind), value: next }, outcome: "changed" };
+  }
+  function subcontractorDocumentExpiryDateText(dayKey) {
+    if (!validDayKey3(dayKey)) return "";
+    const [y, m, d] = dayKey.split("-").map(Number);
+    return new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" }).format(
+      new Date(Date.UTC(y, m - 1, d))
+    );
+  }
+  function subcontractorDocumentExpiryState(expiresOn, nowMs2, timeZone) {
+    const expiry = normalizeSubcontractorDocumentExpiry(expiresOn);
+    if (!expiry) return { state: "none", daysLeft: null, label: "No expiry" };
+    const today = holidayDocumentDayKey(Number.isFinite(nowMs2) ? nowMs2 : Date.now(), timeZone);
+    const daysLeft = calendarDaysBetween(today, expiry);
+    if (daysLeft < 0) return { state: "expired", daysLeft, label: "Expired" };
+    if (daysLeft === 0) return { state: "expiresToday", daysLeft, label: "Expires today" };
+    if (daysLeft <= SUBCONTRACTOR_DOCUMENT_EXPIRING_SOON_DAYS) {
+      return { state: "expiringSoon", daysLeft, label: `Expires in ${daysLeft} day${daysLeft === 1 ? "" : "s"}` };
+    }
+    return { state: "valid", daysLeft, label: `Expires ${subcontractorDocumentExpiryDateText(expiry)}` };
   }
   return __toCommonJS(bundleEntry_exports);
 })();
