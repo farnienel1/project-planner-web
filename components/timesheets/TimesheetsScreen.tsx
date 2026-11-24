@@ -90,7 +90,7 @@ import { formatStampInZone } from '@/lib/orgTime/zoneTime'
 import { PayInputsBanner } from '@/components/timesheets/PayInputsBanner'
 import { ArrowDownTrayIcon, ChevronRightIcon, ClockIcon, MagnifyingGlassIcon } from '@heroicons/react/24/solid'
 import { expandedVersionRowsForSession, formatCompactPayRun, formatExportedStamp, toggleVersionRow } from '@/lib/timesheets/exportedListFormat'
-import { lineManagerRosterRows, memberLineManagerLabel } from '@/lib/timesheets/memberLineManagerLabel'
+import { lineManagerLabelResolver, lineManagerRosterRows } from '@/lib/timesheets/memberLineManagerLabel'
 import {
   Card,
   Chip,
@@ -287,6 +287,17 @@ export function TimesheetsScreen({
   }, [user, users, teamTab])
 
   const roster = useMemo(() => groups.flat(), [groups])
+
+  // Review of #451: the line-manager labels (rulebook `lineManagerSummary` over every users document of this
+  // organisation) are built once per roster, never per row per render. Admins only (the column is admin-only).
+  const rosterDocuments = useOrgUserStore((state) => state.rosterDocuments)
+  const rosterDocumentsOrgId = useOrgUserStore((state) => state.rosterDocumentsOrgId)
+  const openOrganizationId = organization?.id
+  const lineManagerLabelOf = useMemo(() => {
+    if (!hasAdminAccess(user)) return undefined
+    const documents = openOrganizationId && rosterDocumentsOrgId === openOrganizationId ? rosterDocuments : []
+    return lineManagerLabelResolver(lineManagerRosterRows(documents, users))
+  }, [user, openOrganizationId, rosterDocuments, rosterDocumentsOrgId, users])
 
   const reload = useCallback(async () => {
     if (!organization?.id) return
@@ -968,6 +979,7 @@ export function TimesheetsScreen({
         onRunKey={setExportedRunKey}
         emptyTitle={emptyTitle}
         emptyDescription={emptyDescription}
+        lineManagerLabelOf={lineManagerLabelOf}
         summaryFor={summaryFor}
         users={users}
         viewer={user}
@@ -1015,6 +1027,7 @@ export function TimesheetsScreen({
               member={member}
               users={users}
               viewer={user}
+              lineManagerLabelOf={lineManagerLabelOf}
               pill={teamTab === 'signed' ? 'Signed off' : 'Pending'}
               pillHue={teamTab === 'signed' ? 'green' : 'warn'}
               revisionLabel={timesheetRevisionLabel(draft?.revision ?? 0)}
@@ -1088,7 +1101,6 @@ function MemberTable({ viewer, exported, payRun, children }: { viewer: User | nu
 
 function MemberRow({
   member,
-  users,
   viewer,
   pill,
   pillHue,
@@ -1103,9 +1115,12 @@ function MemberRow({
   payRunLine,
   unresolved = false,
   versionsToggle,
+  lineManagerLabelOf,
 }: {
   /** 24 Nov (owner): the exported row's "Versions · N" toggle, shown under the name. */
   versionsToggle?: ReactNode
+  /** Review of #451: the line-manager label, built once per roster by the parent (admins only). */
+  lineManagerLabelOf?: (member: User) => string
   /** 17 Nov follow-up: the row's own pay run (Awaiting / Signed off). */
   payRunLine?: string
   /** 17 Nov follow-up: an exported sheet whose person is nobody in the organisation — no profile to open. */
@@ -1131,15 +1146,11 @@ function MemberRow({
   const role = unresolved ? '—' : member.permissions?.operativeMode ? 'Operative' : hasAdminAccess(member) ? 'Admin' : 'Manager'
   // 24 Nov: the rulebook's `lineManagerSummary` over every users document of the organisation (the unfolded roster),
   // so an id stored under a same-email document, a former invite id or another letter case is named. Display only.
-  const rosterDocuments = useOrgUserStore((state) => state.rosterDocuments)
-  const rosterDocumentsOrgId = useOrgUserStore((state) => state.rosterDocumentsOrgId)
-  const openOrgId = useAuthStore((state) => state.organization?.id)
+  // The labels are built once in the parent (`lineManagerLabelOf`, review of #451).
   const lineManager = (() => {
     if (!hasAdminAccess(viewer)) return null
     if (unresolved) return '—'
-    // Only this organisation's documents (never another company's after a switch).
-    const documents = openOrgId && rosterDocumentsOrgId === openOrgId ? rosterDocuments : []
-    return memberLineManagerLabel(member, lineManagerRosterRows(documents, users))
+    return lineManagerLabelOf ? lineManagerLabelOf(member) : '—'
   })()
   const name = displayName(member)
   const exportedColumns = periodLine !== undefined
@@ -1203,7 +1214,7 @@ function MemberRow({
             <button
               type="button"
               className="pu-x-pdf"
-              aria-label={`Download PDF${revisionLabel ? ` of ${revisionLabel}` : ''}`}
+              aria-label={`Download PDF of ${[displayName(member), periodLine, revisionLabel].filter(Boolean).join(', ')}`}
               title="Download PDF"
               onClick={(event) => {
                 event.stopPropagation()
@@ -1255,7 +1266,10 @@ function ExportedTimesheetsList({
   onOpen,
   onDownload,
   payStatusOf,
+  lineManagerLabelOf,
 }: {
+  /** Review of #451: the line-manager label, built once per roster by the parent. */
+  lineManagerLabelOf?: (member: User) => string
   rows: ExportedTimesheetHistoryRow[]
   invoicing: OrgInvoicingSettings
   timeZone: string
@@ -1403,6 +1417,7 @@ function ExportedTimesheetsList({
                 member={row.user}
                 users={users}
                 viewer={viewer}
+                lineManagerLabelOf={lineManagerLabelOf}
                 pill="Exported"
                 pillHue="lib"
                 summary={summary}
@@ -1469,7 +1484,7 @@ function ExportedTimesheetsList({
                             <button
                               type="button"
                               className="pu-x-pdf"
-                              aria-label={`Download PDF of ${version.label}`}
+                              aria-label={`Download PDF of ${displayName(row.user)}, ${formatCompactPayRun(period.start, period.end, timeZone)}, ${version.label}`}
                               title="Download PDF"
                               onClick={() => downloadVersion(version.documentId, version.revision)}
                             >

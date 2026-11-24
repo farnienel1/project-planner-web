@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { User } from '../../types/index.ts'
-import { lineManagerRosterRows, memberLineManagerLabel } from './memberLineManagerLabel.ts'
+import { lineManagerLabelResolver, lineManagerRosterRows, memberLineManagerLabel } from './memberLineManagerLabel.ts'
 
 function person(id: string, partial: Partial<User> = {}): User {
   return {
@@ -24,7 +24,7 @@ function person(id: string, partial: Partial<User> = {}): User {
 
 test('a line manager stored under a folded-away same-email document is named (was "Unknown")', () => {
   const live = person('mgr-live', { email: 'jo@test.com', firstName: 'Jo' })
-  const old = person('mgr-old', { email: 'JO@test.com', firstName: 'Jo', passwordSet: false })
+  const old = person('mgr-old', { email: 'JO@test.com', firstName: 'Stale', passwordSet: false })
   const luke = person('luke', { firstName: 'Luke', assignedManagerUserIds: ['mgr-old'], permissions: { operativeMode: true } as User['permissions'] })
   // The folded roster (`users`) keeps only the live document; the unfolded documents hold both.
   const folded = [live, luke]
@@ -59,4 +59,20 @@ test('roster rows: unfolded documents first, each id once', () => {
   const rows = lineManagerRosterRows([a], [aFolded, person('b')])
   assert.deepEqual(rows.map((row) => row.id), ['a', 'b'])
   assert.equal(rows[0].firstName, 'Doc')
+})
+
+test('resolver: one roster build, labels cached per stored line manager, same answers', () => {
+  const managers = Array.from({ length: 20 }, (_, i) => person(`m${i}`, { firstName: `M${i}` }))
+  const ops = Array.from({ length: 300 }, (_, i) =>
+    person(`op${i}`, { assignedManagerUserIds: [`m${i % 20}`], permissions: { operativeMode: true } as User['permissions'] })
+  )
+  const roster = [...managers, ...ops]
+  const started = Date.now()
+  const label = lineManagerLabelResolver(roster)
+  const labels = ops.slice(0, 100).map(label)
+  const elapsed = Date.now() - started
+  assert.equal(labels[0], 'M0 Test')
+  assert.equal(labels[21], 'M1 Test')
+  assert.equal(label(ops[5]), memberLineManagerLabel(ops[5], roster))
+  assert.ok(elapsed < 1500, `100 rows over 320 users took ${elapsed} ms`)
 })
