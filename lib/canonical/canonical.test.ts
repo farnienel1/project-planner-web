@@ -18950,3 +18950,316 @@ test('1.73.0 review of #418: the weekend label reads the working-hours history f
   const screen = readFileSync(new URL('../../components/daily-overview/DailyOverviewScreen.tsx', import.meta.url), 'utf8')
   assert.match(screen, /policyOrState: settings\.payrollPolicyState \?\? payrollPolicy/)
 })
+
+// MARK: - 1.74.0 the reviewer's own booking edits from a review never send the sheet back (owner decision 23 Nov)
+
+const R174_SIGNED = '2026-11-20T08:00:00Z'
+const R174_SIGNED_MS = Date.parse(R174_SIGNED)
+
+/** A sheet the person signed (record of b1 as signed), not yet counter-signed. */
+function r174Sheet(over: Record<string, unknown> = {}) {
+  return {
+    operativeSignedAt: R174_SIGNED,
+    operativeSignedBookingsSignedAt: R174_SIGNED,
+    operativeSignedBookingsAt: R174_SIGNED,
+    operativeSignedBookings: [{ bookingId: 'b1', collection: 'bookings', fingerprint: reopen147Fp(), personId: 'op1', place: 'job|j1' }],
+    ...over,
+  }
+}
+function r174Record(after: Record<string, unknown> | null, sheet = r174Sheet()) {
+  const rec = R112.timesheetReviewerBookingEditRecord({ sheet, booking: { collection: 'bookings', bookingId: 'b1' }, after: after as never, deleted: after == null, editedBy: 'lm1' })
+  assert.ok(rec)
+  return rec!
+}
+function r174Changes(sheet: Record<string, unknown>, liveLines: Array<Record<string, unknown>>, docs: Array<Record<string, unknown>>, extra: Record<string, unknown> = {}) {
+  return R112.signedTimesheetBookingChanges({ sheet, liveLines, liveLoaded: true, liveBookings: docs, ...extra } as Parameters<typeof R112.signedTimesheetBookingChanges>[0])
+}
+
+test('1.74.0: a reviewer ⚙ recorded on the sheet does not send it back to the person; the counter-signature covers it', () => {
+  const storedDoc = reopen147Doc('b1', { projectId: 'j1' })
+  const edit = R112.timesheetReviewBookingEditWrites({
+    booking: { ...storedDoc, id: 'b1', collection: 'bookings' } as never,
+    startTime: '07:00', endTime: '19:00', isBreakRemoved: false, otMultiplierOverride: 2,
+  })
+  assert.ok(edit.ok && edit.changed)
+  const afterDoc = R112.timesheetReviewBookingAfterEdit(storedDoc, edit as never)
+  const rec = r174Record(afterDoc)
+  assert.equal(rec.key, 'bookings__b1')
+  assert.equal(rec.value.forSignedAtMs, R174_SIGNED_MS)
+  const liveFp = reopen147Fp({ workEndTime: '19:00', otMultiplierOverride: 2 })
+  const live = [reopen147Live(liveFp, 'b1', { bookingUpdatedAt: R147_AFTER })]
+  // Without the record (1.72.0): back to the person.
+  const before = r174Changes(r174Sheet(), live, [afterDoc])
+  assert.equal(before.reopened, true)
+  assert.equal(before.waitingFor, 'person')
+  // With it: nothing for the person to do; the reviewer keeps reviewing and counter-signs.
+  const after = r174Changes(r174Sheet({ reviewerBookingEdits: { [rec.key]: rec.value } }), live, [afterDoc])
+  assert.equal(after.changed, false)
+  assert.equal(after.reopened, false)
+  assert.equal(R112.signedTimesheetActions(after).lineManagerMayCounterSign, true)
+  // As many changes as they like: a second edit replaces the record and still does not reopen.
+  const afterDoc2 = { ...afterDoc, workEndTime: '18:00' }
+  const rec2 = r174Record(afterDoc2)
+  const live2 = [reopen147Live(reopen147Fp({ workEndTime: '18:00', otMultiplierOverride: 2 }), 'b1', { bookingUpdatedAt: R147_AFTER })]
+  assert.equal(r174Changes(r174Sheet({ reviewerBookingEdits: { [rec2.key]: rec2.value } }), live2, [afterDoc2]).reopened, false)
+})
+
+test('1.74.0: a change by anyone else after the reviewer edit still reopens the sheet for the person (1.47.0)', () => {
+  const afterDoc = reopen147Doc('b1', { projectId: 'j1', workEndTime: '19:00' })
+  const rec = r174Record(afterDoc)
+  const sheet = r174Sheet({ reviewerBookingEdits: { [rec.key]: rec.value } })
+  // Someone moved it to 20:00 afterwards.
+  const live = [reopen147Live(reopen147Fp({ workEndTime: '20:00' }), 'b1', { bookingUpdatedAt: R147_AFTER })]
+  const r = r174Changes(sheet, live, [{ ...afterDoc, workEndTime: '20:00' }])
+  assert.equal(r.reopened, true)
+  assert.equal(r.waitingFor, 'person')
+  assert.deepEqual(r.changedBookingIds, ['b1'])
+  // Moved to another job: a place change reopens even at the reviewer's times.
+  const moved = r174Changes(sheet, [reopen147Live(reopen147Fp({ workEndTime: '19:00' }), 'b1')], [{ ...afterDoc, projectId: 'j2' }])
+  assert.equal(moved.reopened, true)
+})
+
+test('1.74.0: a reviewer ✕ (delete) recorded on the sheet does not reopen it; a record of an edit never hides a delete', () => {
+  const rec = r174Record(null)
+  assert.equal(rec.value.deleted, true)
+  const sheet = r174Sheet({ reviewerBookingEdits: { [rec.key]: rec.value } })
+  const gone = r174Changes(sheet, [], [], { tombstonedBookingIds: [{ collection: 'bookings', bookingId: 'b1' }] })
+  assert.equal(gone.changed, false)
+  // An edit record, then someone else deleted it: reopened.
+  const edited = r174Record(reopen147Doc('b1', { projectId: 'j1', workEndTime: '19:00' }))
+  const r = r174Changes(r174Sheet({ reviewerBookingEdits: { [edited.key]: edited.value } }), [], [], { tombstonedBookingIds: [{ collection: 'bookings', bookingId: 'b1' }] })
+  assert.equal(r.reopened, true)
+  assert.deepEqual(r.removedBookingIds, ['b1'])
+})
+
+test('1.74.0: a record belongs to one signature — the person signing again supersedes it', () => {
+  const afterDoc = reopen147Doc('b1', { projectId: 'j1', workEndTime: '19:00' })
+  const rec = r174Record(afterDoc)
+  // A later signature of the person whose record still holds the old fingerprint (an old record): the edit no longer counts.
+  const later = '2026-11-21T08:00:00Z'
+  const sheet = r174Sheet({ operativeSignedAt: later, operativeSignedBookingsSignedAt: later, operativeSignedBookingsAt: later, reviewerBookingEdits: { [rec.key]: rec.value } })
+  const r = r174Changes(sheet, [reopen147Live(reopen147Fp({ workEndTime: '19:00' }), 'b1')], [afterDoc])
+  assert.equal(r.reopened, true)
+  // Nothing to record on a sheet the person has not signed, or an exported one.
+  assert.equal(R112.timesheetReviewerBookingEditRecord({ sheet: {}, booking: { collection: 'bookings', bookingId: 'b1' }, after: afterDoc as never, editedBy: 'lm1' }), null)
+  assert.equal(R112.timesheetReviewerBookingEditRecord({ sheet: r174Sheet({ exportedAt: '2026-11-22T08:00:00Z' }), booking: { collection: 'bookings', bookingId: 'b1' }, after: afterDoc as never, editedBy: 'lm1' }), null)
+})
+
+test('1.74.0: with a counter-signed snapshot, a reviewer edit asks the line manager to counter-sign again, never the person', () => {
+  const afterDoc = reopen147Doc('b1', { projectId: 'j1', workEndTime: '19:00' })
+  const rec = r174Record(afterDoc)
+  const sheet = r174Sheet({
+    managerSignedAt: '2026-11-20T09:00:00Z',
+    weeklyReportOverride: { approvedAt: '2026-11-20T09:00:00Z', lines: [reopen147SnapshotLine(reopen147Fp())] },
+    reviewerBookingEdits: { [rec.key]: rec.value },
+  })
+  const r = r174Changes(sheet, [reopen147Live(reopen147Fp({ workEndTime: '19:00' }), 'b1', { bookingUpdatedAt: R147_AFTER })], [afterDoc])
+  assert.equal(r.reopened, true)
+  assert.equal(r.waitingFor, 'lineManager')
+  assert.equal(r.message, null)
+})
+
+test('1.74.0: the notice function never tells the person about a reviewer edit recorded on the sheet', () => {
+  const afterDoc = reopen147Doc('b1', { projectId: 'j1', workEndTime: '19:00' })
+  const rec = r174Record(afterDoc)
+  const base = { booking: { collection: 'bookings', bookingId: 'b1' }, after: afterDoc, afterOnSheet: true, personIds: ['op1'], nowMs: Date.parse(R147_AFTER) }
+  assert.equal(R112.signedTimesheetBookingWriteReopens({ ...base, sheet: r174Sheet() } as never).reopens, true)
+  assert.equal(R112.signedTimesheetBookingWriteReopens({ ...base, sheet: r174Sheet({ reviewerBookingEdits: { [rec.key]: rec.value } }) } as never).reopens, false)
+  const del = r174Record(null)
+  assert.equal(
+    R112.signedTimesheetBookingWriteReopens({ ...base, after: null, afterOnSheet: false, sheet: r174Sheet({ reviewerBookingEdits: { [del.key]: del.value } }) } as never).reopens,
+    false
+  )
+})
+
+test('1.74.0: the person never writes reviewerBookingEdits (an owner save drops it)', () => {
+  assert.ok((R112.TIMESHEET_REVIEWER_ONLY_FIELDS as readonly string[]).includes('reviewerBookingEdits'))
+  const out = R112.timesheetOwnerWriteFields({ managerNote: 'x', reviewerBookingEdits: {}, 'reviewerBookingEdits.bookings__b1': {} }, { subjectHasLineManager: true, managerSigned: false })
+  assert.deepEqual(Object.keys(out), ['managerNote'])
+  assert.equal(R112.timesheetReviewerBookingEditKey('bookings', 'AB.C/1'), 'bookings__ab_c_1')
+})
+
+test('1.74.0: timesheetReviewBookingDocument reads a stored booking in the rulebook shape (organisation-zone day)', () => {
+  const doc = R112.timesheetReviewBookingDocument({
+    collection: 'bookings', id: 'b1', timeZone: 'Europe/London',
+    data: { operativeId: 'op1', projectId: 'j1', date: { seconds: Date.parse('2026-11-18T00:00:00Z') / 1000, nanoseconds: 0 }, timeSlot: 'CUSTOM', workStartTime: '7:00', workEndTime: '16:00', status: 'Confirmed' },
+  })
+  assert.ok(doc)
+  assert.equal(doc!.dayKey, '2026-11-18')
+  assert.equal(doc!.workStartTime, '07:00')
+  assert.equal(R112.timesheetReviewBookingDocument({ collection: 'other', id: 'b1', data: {} }), null)
+})
+
+// MARK: - 1.74.0 line order and the empty standard line of an all-overtime booking (owner report 23 Nov)
+
+function r174Line(id: string, booking: string, over: Record<string, unknown> = {}) {
+  return { id, bookingId: `op-${booking}`, bookingCollection: 'bookings', dayKey: '2026-11-11', isOvertimeLine: id.endsWith('-ot'), paidHours: 8.5, amount: 250, ...over }
+}
+
+test('1.74.0: lines run booking by booking — A, A overtime, B, B overtime — by start, then finish, then id', () => {
+  // Owner's 11 Nov: two bookings at the same job, 07:00–22:00 and 07:30–17:00, as the collector sorted them.
+  const lines = [
+    r174Line('op-b-normal', 'b', { bookingStartTime: '07:30', bookingEndTime: '17:00' }),
+    r174Line('op-a-normal', 'a', { bookingStartTime: '07:00', bookingEndTime: '22:00' }),
+    r174Line('op-b-ot', 'b', { bookingStartTime: '07:30', bookingEndTime: '17:00', paidHours: 1, amount: 40 }),
+    r174Line('op-a-ot', 'a', { bookingStartTime: '07:00', bookingEndTime: '22:00', paidHours: 6, amount: 260 }),
+    r174Line('op-c-normal', 'c', { dayKey: '2026-11-10', bookingStartTime: '09:00', bookingEndTime: '17:00' }),
+  ]
+  const order = R112.timesheetLineDisplayOrder(lines).map((line) => line.id)
+  assert.deepEqual(order, ['op-c-normal', 'op-a-normal', 'op-a-ot', 'op-b-normal', 'op-b-ot'])
+  // Same start: the earlier finish first; same times: by booking id.
+  const tie = [
+    r174Line('op-z-normal', 'z', { bookingStartTime: '07:00', bookingEndTime: '16:00' }),
+    r174Line('op-y-normal', 'y', { bookingStartTime: '07:00', bookingEndTime: '18:00' }),
+    r174Line('op-x-normal', 'x', { bookingStartTime: '07:00', bookingEndTime: '16:00' }),
+  ]
+  assert.deepEqual(R112.timesheetLineDisplayOrder(tie).map((line) => line.id), ['op-x-normal', 'op-z-normal', 'op-y-normal'])
+})
+
+test('1.74.0: the 0h / £0 standard line of a booking with no standard part is not shown; figures unchanged', () => {
+  // Owner's Sunday 8 Nov: 07:30–11:45, every hour at the multiplier.
+  const lines = [
+    r174Line('op-s-normal', 's', { dayKey: '2026-11-08', paidHours: 0, amount: 0, bookingStartTime: '07:30', bookingEndTime: '11:45' }),
+    r174Line('op-s-ot', 's', { dayKey: '2026-11-08', paidHours: 8.5, amount: 239.06, bookingStartTime: '07:30', bookingEndTime: '11:45' }),
+    r174Line('op-w-normal', 'w', { dayKey: '2026-11-09', paidHours: 8.5, amount: 250 }),
+  ]
+  const shown = R112.timesheetLineDisplayOrder(lines)
+  assert.deepEqual(shown.map((line) => line.id), ['op-s-ot', 'op-w-normal'])
+  const sum = (rows: Array<{ amount: number }>) => R112.roundPennies(rows.reduce((total, row) => total + row.amount, 0))
+  assert.equal(sum(shown), sum(lines))
+  // A £0 standard line with no overtime sibling stays; one a review would pay stays; option off keeps it.
+  assert.equal(R112.timesheetLineIsEmptyStandardPart(lines[2], lines), false)
+  assert.equal(R112.timesheetLineIsEmptyStandardPart(r174Line('op-q-normal', 'q', { paidHours: 0, amount: 0 }), [r174Line('op-q-normal', 'q', { paidHours: 0, amount: 0 })]), false)
+  assert.equal(R112.timesheetLineDisplayOrder(lines, { effectiveAmount: (line) => (line.id === 'op-s-normal' ? 50 : line.amount ?? 0) }).length, 3)
+  assert.equal(R112.timesheetLineDisplayOrder(lines, { hideEmptyStandardParts: false }).length, 3)
+  // The totals read every line (the hidden one included): unchanged by the display.
+  const sheet = { operativeSignedAt: R174_SIGNED }
+  const payrollLines = lines.map((line) => ({ ...line, isPayeDay: false, bookingPaidHours: line.paidHours }))
+  const all = R112.timesheetTotals({ sheet, payrollLines, extrasMode: 'decided' } as never)
+  const shownTotals = R112.timesheetTotals({ sheet, payrollLines: payrollLines.filter((line) => shown.some((s) => s.id === line.id)), extrasMode: 'decided' } as never)
+  assert.equal(all.labour, shownTotals.labour)
+  assert.equal(all.total, shownTotals.total)
+})
+
+// MARK: - 1.74.0 review of #425: a reviewer record never hides a later cancel, reassignment, delete or move
+
+test('1.74.0 (review of #425): a booking cancelled after the reviewer edit reopens the sheet and tells the person', () => {
+  const afterDoc = reopen147Doc('b1', { projectId: 'j1', workEndTime: '19:00' })
+  const rec = r174Record(afterDoc)
+  const sheet = r174Sheet({ reviewerBookingEdits: { [rec.key]: rec.value } })
+  const cancelled = { ...afterDoc, status: 'Cancelled' }
+  // The collector drops a cancelled booking, so it is not on the lines; the document says Cancelled.
+  const r = r174Changes(sheet, [], [cancelled], { personIds: ['op1'] })
+  assert.equal(r.reopened, true)
+  assert.deepEqual(r.removedBookingIds, ['b1'])
+  const notice = R112.signedTimesheetBookingWriteReopens({
+    sheet, booking: { collection: 'bookings', bookingId: 'b1' }, after: cancelled, afterOnSheet: false, personIds: ['op1'], nowMs: Date.parse(R147_AFTER),
+  } as never)
+  assert.equal(notice.reopens, true)
+  assert.equal(notice.kind, 'removed')
+})
+
+test('1.74.0 (review of #425): a booking given to another operative (same times) after the reviewer edit reopens the sheet', () => {
+  const afterDoc = reopen147Doc('b1', { projectId: 'j1', workEndTime: '19:00' })
+  const rec = r174Record(afterDoc)
+  const sheet = r174Sheet({ reviewerBookingEdits: { [rec.key]: rec.value } })
+  const reassigned = { ...afterDoc, personId: 'op2' }
+  const r = r174Changes(sheet, [], [reassigned], { personIds: ['op1'] })
+  assert.equal(r.reopened, true)
+  assert.deepEqual(r.removedBookingIds, ['b1'])
+  const notice = R112.signedTimesheetBookingWriteReopens({
+    sheet, booking: { collection: 'bookings', bookingId: 'b1' }, after: reassigned, afterOnSheet: false, personIds: ['op1'], nowMs: Date.parse(R147_AFTER),
+  } as never)
+  assert.equal(notice.reopens, true)
+  // Still the person's and occupying its day, exactly as left, only filtered off the lines: no change.
+  assert.equal(r174Changes(sheet, [], [afterDoc], { personIds: ['op1'] }).reopened, false)
+})
+
+test('1.74.0 (review of #425): a booking deleted (tombstoned) after the reviewer edit reopens the sheet', () => {
+  const afterDoc = reopen147Doc('b1', { projectId: 'j1', workEndTime: '19:00' })
+  const rec = r174Record(afterDoc)
+  const r = r174Changes(r174Sheet({ reviewerBookingEdits: { [rec.key]: rec.value } }), [], [afterDoc], {
+    tombstonedBookingIds: [{ collection: 'bookings', bookingId: 'b1' }], personIds: ['op1'],
+  })
+  assert.equal(r.reopened, true)
+  assert.deepEqual(r.removedBookingIds, ['b1'])
+})
+
+test('1.74.0 (review of #425): a recorded empty place against a known place is a move (reopens)', () => {
+  // The reviewer edited a booking stored with no job; it was then put on a job at the same times.
+  const noJob = reopen147Doc('b1', { workEndTime: '19:00' })
+  const rec = r174Record(noJob)
+  assert.equal(rec.value.place, '')
+  const sheet = r174Sheet({
+    operativeSignedBookings: [{ bookingId: 'b1', collection: 'bookings', fingerprint: reopen147Fp(), personId: 'op1', place: '' }],
+    reviewerBookingEdits: { [rec.key]: rec.value },
+  })
+  const live = [reopen147Live(reopen147Fp({ workEndTime: '19:00' }), 'b1', { bookingUpdatedAt: R147_AFTER })]
+  assert.equal(r174Changes(sheet, live, [noJob]).reopened, false)
+  assert.equal(r174Changes(sheet, live, [{ ...noJob, projectId: 'j9' }]).reopened, true)
+})
+
+test('1.74.0 (review of #425): an all-overtime booking with no standard row sorts by its overtime line\'s own times', () => {
+  // Signed snapshot / invoice rows: no booking clock fields; the late booking has only an overtime row.
+  const rows = [
+    { id: 'op-late-ot', bookingId: 'late', dayKey: '2026-11-15', isOvertimeLine: true, paidHours: 8, amount: 200, details: '18:00–22:00 · OT 4h × 2 = 8h' },
+    { id: 'op-early-ot', bookingId: 'early', dayKey: '2026-11-15', isOvertimeLine: true, paidHours: 6, amount: 150, details: '05:00–08:00' },
+    { id: 'op-mid-normal', bookingId: 'mid', dayKey: '2026-11-15', isOvertimeLine: false, paidHours: 8, amount: 250, details: '07:30–16:00' },
+  ]
+  assert.deepEqual(R112.timesheetLineDisplayOrder(rows).map((row) => row.id), ['op-early-ot', 'op-mid-normal', 'op-late-ot'])
+})
+
+// MARK: - 1.74.0 owner answer 23 Nov: the person is told when the line manager changed their sheet and signed it off
+
+test('1.74.0: the counter-signature notice says the timesheet was updated when the line manager changed it', () => {
+  assert.deepEqual(R112.timesheetSignedNoticeText({ signedByName: 'Pat Lee' }), { title: 'Timesheet signed', message: 'Pat Lee signed your timesheet.' })
+  assert.deepEqual(R112.timesheetSignedNoticeText({ signedByName: 'Pat Lee', changedByReviewer: true }), {
+    title: 'Your timesheet was updated and signed off',
+    message: 'Pat Lee changed your timesheet and signed it off. Open it to check the changes.',
+  })
+  // The signer may be an admin, so the wording never assumes "line manager"; without a name it names nobody.
+  assert.deepEqual(R112.timesheetSignedNoticeText({ changedByReviewer: true }), {
+    title: 'Your timesheet was updated and signed off',
+    message: 'Your timesheet was changed and signed off. Open it to check the changes.',
+  })
+  const rec = r174Record(reopen147Doc('b1', { projectId: 'j1', workEndTime: '19:00' }))
+  assert.equal(R112.timesheetSheetChangedByReviewer(r174Sheet({ reviewerBookingEdits: { [rec.key]: rec.value } })), true)
+  assert.equal(R112.timesheetSheetChangedByReviewer(r174Sheet()), false)
+  // A record from an earlier signature does not count (the person signed the changes since).
+  const later = '2026-11-21T08:00:00Z'
+  assert.equal(R112.timesheetSheetChangedByReviewer(r174Sheet({ operativeSignedAt: later, reviewerBookingEdits: { [rec.key]: rec.value } })), false)
+})
+
+test('1.74.0 (owner answer 23 Nov, choice 6): with the overtime line declined, the £0 standard line stays and is drawn declined', () => {
+  const lines = [
+    r174Line('op-s-normal', 's', { dayKey: '2026-11-08', paidHours: 0, amount: 0, bookingStartTime: '07:30', bookingEndTime: '11:45' }),
+    r174Line('op-s-ot', 's', { dayKey: '2026-11-08', paidHours: 8.5, amount: 239.06, bookingStartTime: '07:30', bookingEndTime: '11:45' }),
+  ]
+  const declined = (line: { id?: unknown }) => line.id === 'op-s-ot'
+  assert.deepEqual(R112.timesheetLineDisplayOrder(lines, { isDeclined: declined }).map((line) => line.id), ['op-s-normal', 'op-s-ot'])
+  assert.equal(R112.timesheetLineShownDeclined(lines[0], lines, declined), true)
+  // Not declined: hidden, and never "shown declined".
+  assert.equal(R112.timesheetLineShownDeclined(lines[0], lines, () => false), false)
+  assert.equal(R112.timesheetLineShownDeclined(lines[1], lines, declined), false)
+})
+
+test('1.74.0 (choice 6): timesheetInvoiceRows omitEmptyStandardParts leaves off the £0 standard row beside an overtime line, declined or not', () => {
+  const line = (id: string, over: Record<string, unknown>) => ({
+    id, bookingId: `op-${id.split('-')[1]}`, bookingCollection: 'bookings', dayKey: '2026-11-08', isPayeDay: false, paidHours: 8.5, amount: 250, ...over,
+  })
+  const payrollLines = [
+    line('op-s-normal', { paidHours: 0, amount: 0, isOvertimeLine: false }),
+    line('op-s-ot', { amount: 239.06, isOvertimeLine: true }),
+    line('op-m-normal', { dayKey: '2026-11-09', isOvertimeLine: false }),
+  ]
+  const ids = (input: Record<string, unknown>) => R112.timesheetInvoiceRows({ payrollLines, extrasMode: 'decided', ...input } as never).map((row) => row.id)
+  const sheet = { managerSignedAt: '2026-11-20T09:00:00Z' }
+  assert.deepEqual(ids({ sheet }), ['op-s-normal', 'op-s-ot', 'op-m-normal'])
+  assert.deepEqual(ids({ sheet, omitEmptyStandardParts: true }), ['op-s-ot', 'op-m-normal'])
+  const declined = { ...sheet, payrollLineReviews: { 'op-s-ot': { decision: 'declined' } } }
+  assert.deepEqual(ids({ sheet: declined, omitEmptyStandardParts: true }), ['op-m-normal'])
+  // Totals unchanged by the option (the row is £0).
+  const total = (input: Record<string, unknown>) =>
+    R112.roundPennies(R112.timesheetInvoiceRows({ payrollLines, extrasMode: 'decided', ...input } as never).reduce((sum, row) => sum + row.amount, 0))
+  assert.equal(total({ sheet: declined }), total({ sheet: declined, omitEmptyStandardParts: true }))
+})

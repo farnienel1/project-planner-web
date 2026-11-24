@@ -39,6 +39,7 @@ import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride
 import {
   clearSignedBookingsPending,
   draftBookingChanges,
+  signedTimesheetSheetFromDraft,
   draftForFigures,
   draftForFiguresWithRebuild,
   draftSignedBookingRecord,
@@ -102,7 +103,8 @@ import {
   timesheetLabourLineReviewActions,
   timesheetReviewDeleteBookingWarning,
   TIMESHEET_REVIEW_BOOKING_REFUSED_MESSAGE,
-  TIMESHEET_REVIEW_BOOKING_SENT_BACK_MESSAGE,
+  TIMESHEET_REVIEW_BOOKING_NOT_RECORDED_MESSAGE,
+  TIMESHEET_REVIEW_BOOKING_UPDATED_MESSAGE,
   TIMESHEET_REVIEW_EDIT_BOOKING_NOTE,
   TIMESHEET_CREATE_REVISION_LABEL,
   TIMESHEET_EARLIER_VERSIONS_LABEL,
@@ -177,6 +179,9 @@ import {
   type PayeClaimEvidence,
   overlappingBookingNote,
   timesheetLineDisplay,
+  timesheetLineDisplayOrder,
+  timesheetLineShownDeclined,
+  timesheetSheetChangedByReviewer,
   agreedManagerSuggestions,
   currencySymbol,
   formatMoney,
@@ -238,6 +243,8 @@ import {
   planTimesheetReviewOvertimeStrike,
   saveTimesheetReviewBookingEdit,
   timesheetLineBooking,
+  type RecordedReviewerEdit,
+  type TimesheetReviewSheetRecord,
 } from '@/lib/timesheets/timesheetReviewBookingWrite'
 
 function money(value: number, currency: string): string {
@@ -451,11 +458,25 @@ export function TimesheetPeriodPage({
   )
   const sheetRows = useMemo(() => {
     const rows: Array<{ kind: 'pay'; key: string; dayKey: string; line: TimesheetPayrollLineItem } | { kind: 'leave'; key: string; dayKey: string; leave: TimesheetLeaveLine }> = [
-      ...payroll.lineItems.map((line) => ({ kind: 'pay' as const, key: line.id, dayKey: line.dayKey || dayKey(line.date, timeZone), line })),
+      // Rulebook 1.74.0 §8 (`timesheetLineDisplayOrder`): booking by booking within a day (start, finish, id), each
+      // booking's standard line then its overtime line; the 0h / £0 standard line of a booking with no standard part is
+      // not shown (a line any review would pay is never hidden). Display only — every figure still reads every line.
+      ...timesheetLineDisplayOrder(
+        payroll.lineItems.map((line) => ({ ...line, dayKey: line.dayKey || dayKey(line.date, timeZone) })),
+        {
+          effectiveAmount: (line) => {
+            const review = draftPayrollLineReview(draft, line.id, line)
+            return Math.max(line.amount, review?.decision === 'edited' && typeof review.revisedAmount === 'number' ? review.revisedAmount : 0)
+          },
+          // Owner answer 23 Nov (choice 6): with the booking's overtime line declined, its £0 standard line stays.
+          isDeclined: (line) => draftPayrollLineReview(draft, line.id, line)?.decision === 'declined',
+          day: (key) => orgPayrollPolicyForDay(dateFromDayKey(key, timeZone), payrollPolicy, payrollPolicyPrior, payrollPolicyEffectiveFrom, timeZone, null, payrollPolicyState),
+        }
+      ).map((line) => ({ kind: 'pay' as const, key: line.id, dayKey: line.dayKey, line })),
       ...leaveLines.map((leave) => ({ kind: 'leave' as const, key: leave.id, dayKey: leave.dayKey, leave })),
     ]
     return rows.sort((a, b) => (a.dayKey < b.dayKey ? -1 : a.dayKey > b.dayKey ? 1 : 0))
-  }, [payroll.lineItems, leaveLines, timeZone])
+  }, [payroll.lineItems, leaveLines, timeZone, draft, payrollPolicy, payrollPolicyPrior, payrollPolicyEffectiveFrom, payrollPolicyState])
 
   // `timesheetSelfSigned(user, roster)`: only a self-signed admin skips the counter-signature.
   const needsCounterSign = requiresLineManagerCounterSign(subjectUser, users)
@@ -996,6 +1017,29 @@ export function TimesheetPeriodPage({
     setEditingLineId(line.id)
   }
 
+  // Rulebook 1.74.0 §8 (owner decision 23 Nov): the reviewer's ⚙ / ✕ is recorded on this sheet in the same batch as
+  // the booking write (`timesheetReviewerBookingEditRecord`), so the sheet stays with the reviewer — as many changes as
+  // they like before counter-signing. Without a stored sheet nothing can be recorded (the 1.47.0 rule then applies).
+  const reviewSheetRecord = (): TimesheetReviewSheetRecord | null =>
+    sourceDocumentId.current ? { documentId: sourceDocumentId.current, sheet: signedTimesheetSheetFromDraft(draft) } : null
+  const afterReviewBookingWrite = (recorded: RecordedReviewerEdit) => {
+    if (!recorded) {
+      // Review of #425: "gone back to the person" only when the sheet really reopens — the person has signed, the sheet
+      // is stored and not exported, yet no record could be made. Otherwise nothing goes back to anyone.
+      const reopens = Boolean(sourceDocumentId.current) && draft.operativeSignedAt != null && !draft.exportedAt
+      setReviewNotice(reopens ? TIMESHEET_REVIEW_BOOKING_NOT_RECORDED_MESSAGE : TIMESHEET_REVIEW_BOOKING_UPDATED_MESSAGE)
+      return
+    }
+    // The page's copy carries the record at once (the listener may treat the server's echo as this screen's own write).
+    const apply = (current: TimesheetDraft): TimesheetDraft => ({
+      ...current,
+      reviewerBookingEdits: { ...(current.reviewerBookingEdits ?? {}), [recorded.key]: { ...recorded.value } },
+    })
+    setDraft((current) => apply(current))
+    if (baseDraft.current) baseDraft.current = apply(baseDraft.current)
+    setReviewNotice(TIMESHEET_REVIEW_BOOKING_UPDATED_MESSAGE)
+  }
+
   const savePayrollHours = () => {
     if (!editingLineId) return
     const row = payroll.lineItems.find((item) => item.id === editingLineId)
@@ -1046,10 +1090,11 @@ export function TimesheetPeriodPage({
         : null,
       slotWindow: hoursInitial,
       timeZone,
+      sheetRecord: reviewSheetRecord(),
     })
-      .then((changed) => {
+      .then(({ changed, recorded }) => {
         setEditingLineId(null)
-        if (changed) setReviewNotice(TIMESHEET_REVIEW_BOOKING_SENT_BACK_MESSAGE)
+        if (changed) afterReviewBookingWrite(recorded)
       })
       .catch((err: unknown) => setError(reviewBookingErrorMessage(err)))
       .finally(() => setBusy(false))
@@ -1095,10 +1140,16 @@ export function TimesheetPeriodPage({
     if (!strike || !organization?.id || !viewer?.id) return
     setBusy(true)
     setError(null)
-    void applyTimesheetReviewOvertimeTrim(firestoreDb, { organizationId: organization.id, userId: viewer.id, strike })
-      .then(() => {
+    void applyTimesheetReviewOvertimeTrim(firestoreDb, {
+      organizationId: organization.id,
+      userId: viewer.id,
+      strike,
+      sheetRecord: reviewSheetRecord(),
+      timeZone,
+    })
+      .then(({ recorded }) => {
         setTrimmingOvertime(null)
-        setReviewNotice(TIMESHEET_REVIEW_BOOKING_SENT_BACK_MESSAGE)
+        afterReviewBookingWrite(recorded)
       })
       .catch((err: unknown) => {
         setTrimmingOvertime(null)
@@ -1114,10 +1165,16 @@ export function TimesheetPeriodPage({
     if (!row || !booking || !organization?.id || !viewer?.id) return
     setBusy(true)
     setError(null)
-    void deleteTimesheetReviewBooking(firestoreDb, { organizationId: organization.id, userId: viewer.id, booking })
-      .then(() => {
+    void deleteTimesheetReviewBooking(firestoreDb, {
+      organizationId: organization.id,
+      userId: viewer.id,
+      booking,
+      sheetRecord: reviewSheetRecord(),
+    })
+      .then(({ result, recorded }) => {
         setRemovingLine(null)
-        setReviewNotice(TIMESHEET_REVIEW_BOOKING_SENT_BACK_MESSAGE)
+        // Already deleted on another device: not this reviewer's change, nothing to record.
+        if (result === 'deleted') afterReviewBookingWrite(recorded)
       })
       .catch((err: unknown) => {
         setRemovingLine(null)
@@ -1152,8 +1209,12 @@ export function TimesheetPeriodPage({
     setEditingExtra(null)
   }
 
+  // Rulebook 1.74.0 §13 (owner report 23 Nov: two "needs sign-off" pushes): one signature per press — a second click
+  // before the first save finished would write a second signature (its own notice id, 1.60.1) and a second push.
+  const signingRef = useRef(false)
   const handleOperativeSign = async () => {
     if (!viewer || !signature) return
+    if (signingRef.current) return
     if (!payInputs.ready) {
       setError(payInputs.message)
       return
@@ -1165,6 +1226,7 @@ export function TimesheetPeriodPage({
       setError(TIMESHEET_SIGN_INPUTS_LOADING_MESSAGE)
       return
     }
+    signingRef.current = true
     setBusy(true)
     setError(null)
     try {
@@ -1209,6 +1271,7 @@ export function TimesheetPeriodPage({
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to sign timesheet')
     } finally {
+      signingRef.current = false
       setBusy(false)
     }
   }
@@ -1256,6 +1319,9 @@ export function TimesheetPeriodPage({
           timeZone,
           revision: draft.revision ?? null,
           signedAt: managerSignedAt,
+          // Rulebook 1.74.0 (owner answer 23 Nov): the person is told their timesheet was updated when this line
+          // manager changed bookings from the review under the person's current signature.
+          changedByReviewer: timesheetSheetChangedByReviewer(signedTimesheetSheetFromDraft(draft)),
         }))
       }
       setManagerSignOpen(false)
@@ -1521,6 +1587,7 @@ export function TimesheetPeriodPage({
             <PayrollLine
               key={row.key}
               line={row.line}
+              allLines={payroll.lineItems}
               draft={draft}
               managerHasSigned={managerHasSigned}
               canReview={false}
@@ -1624,7 +1691,7 @@ export function TimesheetPeriodPage({
             title={mode === 'review' ? 'Breakdown' : 'This period'}
             subtitle={
               canManagerReview
-                ? 'Review each day, expense and price-work line. On a day, ✓ approves it, ✕ removes the booking and ⚙ changes the booking — the timesheet then goes back to the person to sign again. On price work and expenses, ✓ approve, ✕ decline, or edit.'
+                ? 'Review each day, expense and price-work line. On a day, ✓ approves it, ✕ removes the booking and ⚙ changes the booking — make as many changes as you need; the person sees them when you counter-sign. On price work and expenses, ✓ approve, ✕ decline, or edit.'
                 : undefined
             }
           >
@@ -1652,6 +1719,7 @@ export function TimesheetPeriodPage({
                     <PayrollLine
                       key={row.key}
                       line={row.line}
+                      allLines={payroll.lineItems}
                       draft={draft}
                       managerHasSigned={managerHasSigned}
                       canReview={canManagerReview}
@@ -2354,6 +2422,7 @@ function Row({ label, value, strong }: { label: string; value: string; strong?: 
 
 function PayrollLine({
   line,
+  allLines,
   draft,
   managerHasSigned,
   canReview,
@@ -2367,6 +2436,8 @@ function PayrollLine({
 }: {
   line: TimesheetPayrollLineItem
   draft: TimesheetDraft
+  /** The sheet's lines (choice 6: a £0 standard line beside a declined overtime line is drawn declined). */
+  allLines?: ReadonlyArray<TimesheetPayrollLineItem>
   managerHasSigned: boolean
   canReview: boolean
   /** Rulebook 1.72.0 `timesheetLabourLineReviewActions`: ✕ and ⚙ only on a line that names a booking. */
@@ -2381,7 +2452,14 @@ function PayrollLine({
   onEdit: () => void
 }) {
   const currency = useOrganizationCurrency()
-  const removed = isPayrollLineRemoved(line, draft, managerHasSigned, canReview)
+  // Owner answer 23 Nov (choice 6, `timesheetLineShownDeclined`): the £0 standard line of a booking whose overtime line
+  // is declined is drawn declined too.
+  const removed =
+    isPayrollLineRemoved(line, draft, managerHasSigned, canReview) ||
+    (allLines != null &&
+      timesheetLineShownDeclined(line, allLines, (other) =>
+        isPayrollLineRemoved(other as TimesheetPayrollLineItem, draft, managerHasSigned, canReview)
+      ))
   const effective = effectivePayrollAmount(line, draft, managerHasSigned, canReview)
   const decision = draftPayrollLineReview(draft, line.id, line)?.decision || 'approved'
   const orange = line.isPayeDay || (line.dayRate <= 0 && !line.hourlyRate)

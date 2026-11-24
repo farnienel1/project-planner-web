@@ -4,12 +4,14 @@
  *
  * - ⚙ Edit hours writes the booking's times, slot, unpaid-break toggle and overtime rate as a partial update
  *   (`timesheetReviewBookingEditWrites`, on `bookingUpdateWriteFields` / `managerSiteBookingUpdateWriteFields`). No
- *   `payrollLineReviews` entry is written. The 1.47.0 rule (`signedTimesheetBookingChanges`) then reads the signed
- *   sheet as changed: it goes back to the person ("Your signed timesheet has changed", the 1.54.0 notice), they sign
- *   again and the line manager counter-signs again.
+ *   `payrollLineReviews` entry is written.
  * - ✕ deletes the booking with its tombstone in the same batch (`timesheetReviewBookingDelete`, on
- *   `bookingTombstoneWriteFields`, §2), after `timesheetReviewDeleteBookingWarning`. The sheet then reads the booking as
- *   removed (1.47.0) and goes back to the person the same way.
+ *   `bookingTombstoneWriteFields`, §2), after `timesheetReviewDeleteBookingWarning`.
+ * - 1.74.0 (owner decision 23 Nov, reverses the 1.72.0 "goes back to the person"): the same batch records the edit on the
+ *   sheet (`timesheetReviewerBookingEditRecord`, `reviewerBookingEdits.{key}`; the booking as left is
+ *   `timesheetReviewBookingAfterEdit`), so the sheet is NOT sent back to the person: the reviewer keeps reviewing, makes
+ *   as many changes as they like, and their counter-signature builds the snapshot from the live bookings. A booking
+ *   change made anywhere else still reopens the sheet (1.47.0).
  * - ✓ stays what it was: the line is approved as it is (`payrollLineReviews[lineId] = { decision: 'approved' }`).
  *
  * Stored `payrollLineReviews` entries written before 1.72.0 (edited, declined) are read as before (guardrail 3): an old
@@ -28,7 +30,10 @@ import {
   OVERTIME_MULTIPLIER_MESSAGE,
   type OvertimeOrganization,
 } from './payeOvertime'
-import { bookingClock } from './bookings'
+import { bookingClock, parseBookingDocument, parseManagerSiteBookingDocument } from './bookings'
+import { dayKeyInZone } from '../orgTime/zoneTime'
+import { zoneOrLondon } from './dayKeys'
+import type { SignedTimesheetBookingDocument } from './timesheetBookingChanges'
 import { revisedPayrollLineTimesError } from './timesheetLineEdit'
 import { timesheetLineReviewActionsAllowed } from './timesheetPeriod'
 
@@ -44,24 +49,37 @@ export const TIMESHEET_REVIEW_BOOKING_FIELDS = [
 ] as const
 
 export const TIMESHEET_REVIEW_EDIT_BOOKING_NOTE =
-  'Saving changes the booking itself, so scheduling, Daily Overview and the weekly report show the new hours. The timesheet then goes back to the person to review and sign again.'
+  'Saving changes the booking itself, so scheduling, Daily Overview and the weekly report show the new hours. You can keep reviewing; the person sees the change when you counter-sign.'
 export const TIMESHEET_REVIEW_DELETE_BOOKING_TITLE = 'Remove this booking?'
 export const TIMESHEET_REVIEW_DELETE_BOOKING_CONFIRM_LABEL = 'Remove booking'
 export const TIMESHEET_REVIEW_DELETE_BOOKING_CANCEL_LABEL = 'Go back'
 export const TIMESHEET_REVIEW_DELETE_BOOKING_MESSAGE =
-  'This deletes the booking from the schedule, not just from this timesheet. Scheduling, Daily Overview and the weekly report will no longer show it, and the timesheet goes back to the person to review and sign again.'
+  'This deletes the booking from the schedule, not just from this timesheet. Scheduling, Daily Overview and the weekly report will no longer show it. You can keep reviewing; the person sees the change when you counter-sign.'
 export const TIMESHEET_REVIEW_DELETE_OVERTIME_NOTE =
   'This booking is all overtime (it has no hours inside the working day), so removing the overtime removes the whole booking.'
 export const TIMESHEET_REVIEW_REMOVE_OVERTIME_TITLE = 'Remove the overtime from this booking?'
 export const TIMESHEET_REVIEW_REMOVE_OVERTIME_CONFIRM_LABEL = 'Remove overtime'
 export const TIMESHEET_REVIEW_REMOVE_OVERTIME_MESSAGE =
-  'This changes the booking itself, so scheduling, Daily Overview and the weekly report show the new hours. The standard hours stay; the timesheet then goes back to the person to review and sign again.'
+  'This changes the booking itself, so scheduling, Daily Overview and the weekly report show the new hours. The standard hours stay. You can keep reviewing; the person sees the change when you counter-sign.'
 export const TIMESHEET_REVIEW_DELETE_BOOKING_UNDO_NOTE = 'This cannot be undone. A manager can book it again.'
 export const TIMESHEET_REVIEW_BOOKING_REFUSED_MESSAGE =
   "You can't change this booking from the timesheet. Ask an admin or the job's manager to change it in projects or small works."
 export const TIMESHEET_REVIEW_BOOKING_MISSING_MESSAGE = 'This booking was deleted on another device.'
+/**
+ * 1.72.0 copy, kept for older builds only (1.74.0: a reviewer edit no longer sends the sheet back). New screens show
+ * `TIMESHEET_REVIEW_BOOKING_UPDATED_MESSAGE`.
+ */
 export const TIMESHEET_REVIEW_BOOKING_SENT_BACK_MESSAGE =
   'Booking updated. The timesheet has gone back to the person to review and sign again.'
+/** 1.74.0: after a reviewer's ⚙ / ✕ from the review (the sheet stays with the reviewer). */
+export const TIMESHEET_REVIEW_BOOKING_UPDATED_MESSAGE =
+  'Booking updated. Keep reviewing — the person sees the changes when you counter-sign.'
+/**
+ * 1.74.0: the reviewer's edit was saved to the booking but could not be recorded on a timesheet the person has signed
+ * (stored, not exported), so it has really gone back to them. Shown only then; otherwise `TIMESHEET_REVIEW_BOOKING_UPDATED_MESSAGE`.
+ */
+export const TIMESHEET_REVIEW_BOOKING_NOT_RECORDED_MESSAGE =
+  'Booking updated, but the timesheet could not record it, so it has gone back to the person to sign again.'
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
@@ -210,6 +228,77 @@ export function timesheetReviewBookingEditWrites(input: {
   }
   const remove = write.remove.filter((key) => (TIMESHEET_REVIEW_BOOKING_FIELDS as readonly string[]).includes(key))
   return { ok: true, collection, bookingId, set, remove, changed: Object.keys(set).length > 0 || remove.length > 0 }
+}
+
+/**
+ * 1.74.0: a stored booking (`bookings` or `managerSiteBookings`, read fresh) in the rulebook's document shape
+ * (`SignedTimesheetBookingDocument`: organisation-zone `dayKey`, slot, clock times, rate, break, status, person and place),
+ * read with `parseBookingDocument` / `parseManagerSiteBookingDocument`. Null when it cannot be read.
+ */
+export function timesheetReviewBookingDocument(input: {
+  collection: unknown
+  id: unknown
+  data: Record<string, unknown> | null | undefined
+  timeZone?: string | null
+}): SignedTimesheetBookingDocument | null {
+  const id = documentId(input.id)
+  if (!id || !isTimesheetReviewBookingCollection(input.collection)) return null
+  const zone = zoneOrLondon(input.timeZone)
+  if (input.collection === 'bookings') {
+    const parsed = parseBookingDocument(id, input.data, { timeZone: zone })
+    if (!parsed.ok) return null
+    const b = parsed.booking
+    return {
+      bookingId: id,
+      collection: 'bookings',
+      dayKey: dayKeyInZone(new Date(b.dateMs), zone),
+      timeSlot: b.timeSlot,
+      workStartTime: b.workStartTime,
+      workEndTime: b.workEndTime,
+      isBreakRemoved: b.isBreakRemoved === true,
+      otMultiplierOverride: b.otMultiplierOverride ?? null,
+      status: b.status,
+      personId: b.operativeId,
+      projectId: b.projectId,
+    }
+  }
+  const parsed = parseManagerSiteBookingDocument(id, input.data, { timeZone: zone })
+  if (!parsed.ok) return null
+  const b = parsed.booking
+  return {
+    bookingId: id,
+    collection: 'managerSiteBookings',
+    dayKey: dayKeyInZone(new Date(b.dateMs), zone),
+    timeSlot: b.timeSlot,
+    workStartTime: b.workStartTime,
+    workEndTime: b.workEndTime,
+    isBreakRemoved: b.isBreakRemoved === true,
+    otMultiplierOverride: b.otMultiplierOverride ?? null,
+    personId: b.userId,
+    locationType: b.locationType,
+    locationId: b.locationId ?? '',
+    customLocationName: b.customLocationName ?? '',
+  }
+}
+
+/**
+ * 1.74.0: the booking as a reviewer's write leaves it — `before` (the stored booking in the rulebook's document shape,
+ * `SignedTimesheetBookingDocument`, organisation-zone `dayKey`) with the write's `set` applied and `remove` cleared.
+ * Only `TIMESHEET_REVIEW_BOOKING_FIELDS` ever change; the day, place, person and status stay as stored. Input for
+ * `timesheetReviewerBookingEditRecord`.
+ */
+export function timesheetReviewBookingAfterEdit<T extends Record<string, unknown>>(
+  before: T,
+  write: { set?: Record<string, unknown> | null; remove?: ReadonlyArray<string> | null }
+): T {
+  const after: Record<string, unknown> = { ...before }
+  for (const [key, value] of Object.entries(write.set ?? {})) {
+    if ((TIMESHEET_REVIEW_BOOKING_FIELDS as readonly string[]).includes(key)) after[key] = value
+  }
+  for (const key of write.remove ?? []) {
+    if ((TIMESHEET_REVIEW_BOOKING_FIELDS as readonly string[]).includes(key)) delete after[key]
+  }
+  return after as T
 }
 
 export type TimesheetReviewBookingDelete = {

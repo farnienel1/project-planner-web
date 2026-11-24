@@ -182,6 +182,11 @@ export type TimesheetDraft = {
   operativeSignedBookingsAt?: Date | null
   /** The `operativeSignedAt` the record belongs to (same value; ties the record to its signature). */
   operativeSignedBookingsSignedAt?: Date | null
+  /**
+   * Rulebook 1.74.0 §8: the reviewer's own booking edits from this sheet's review (`reviewerBookingEdits` as stored; the
+   * rulebook reads it). Read only here — written by the review's booking batch, never by a draft save.
+   */
+  reviewerBookingEdits?: Record<string, unknown> | null
   /** Local only: write `operativeSignedBookingsAt` as the server time on the next save. Never stored. */
   operativeSignedBookingsAtPending?: boolean
   /**

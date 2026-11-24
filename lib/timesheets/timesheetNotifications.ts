@@ -18,6 +18,7 @@ import {
   timesheetNotificationDedupeKey,
   timesheetSignedRecipients,
   timesheetSubmittedRecipients,
+  timesheetSignedNoticeText,
 } from '@/lib/canonical'
 import { syntheticUuidFromKey } from '@/lib/ios-parity/uuid'
 import { dayKey } from '@/lib/ios-parity/londonTime'
@@ -130,6 +131,7 @@ export async function notifyTimesheetSignedByManager({
   timeZone,
   revision,
   signedAt,
+  changedByReviewer,
   save = saveInboxNotification,
 }: {
   organizationId: string
@@ -149,10 +151,16 @@ export async function notifyTimesheetSignedByManager({
    * that drops it does not compile.
    */
   signedAt: Date | null
+  /**
+   * Rulebook 1.74.0 (owner answer 23 Nov): the line manager changed bookings from this sheet's review
+   * (`timesheetSheetChangedByReviewer`) — the person is told their timesheet was updated (`timesheetSignedNoticeText`).
+   */
+  changedByReviewer?: boolean
   save?: InboxSave
 }): Promise<void> {
   const roster = rulebookRoster(users)
   const subject = rulebookPerson(subjectUser, users)
+  const text = timesheetSignedNoticeText({ signedByName, changedByReviewer })
   const signerUser = users.find((member) => member.id === signedByUserId)
   const signer = signerUser ? rulebookPerson(signerUser, users) : signedByUserId
   for (const recipientId of timesheetSignedRecipients(subject, signer, roster)) {
@@ -169,8 +177,8 @@ export async function notifyTimesheetSignedByManager({
       id: signedId,
       organizationId,
       type: TIMESHEET_SIGNED_NOTICE_TYPE,
-      title: 'Timesheet signed',
-      message: `${signedByName} signed your timesheet.`,
+      title: text.title,
+      message: text.message,
       userId: recipientId,
       deepLinkUserId: subjectUser.id,
       deepLinkWeekStart: weekStart,

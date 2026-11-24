@@ -48,8 +48,8 @@ export const TIMESHEET_ENTRY_DECISIONS: readonly TimesheetEntryDecision[] = ['pe
 /** Manager-only map: entry id → review. */
 export const TIMESHEET_ENTRY_REVIEWS_FIELD = 'extraEntryReviews'
 
-/** Written only by the line manager or an admin. */
-export const TIMESHEET_REVIEWER_ONLY_FIELDS = ['payrollLineReviews', 'extraEntryReviews'] as const
+/** Reviewer-only fields (line manager or admin): the review maps and, from 1.74.0, the reviewer's own booking edits. */
+export const TIMESHEET_REVIEWER_ONLY_FIELDS = ['payrollLineReviews', 'extraEntryReviews', 'reviewerBookingEdits'] as const
 
 /** The owner writes it only when they have no line manager (self-signed). */
 export const TIMESHEET_SELF_SIGNED_OWNER_FIELDS = ['weeklyReportOverride'] as const
