@@ -20284,11 +20284,15 @@ test('1.84.0 client error reports are in the packed rulebook (full cases in clie
   assert.match(firestoreRules, /hashing\.sha256\(request\.auth\.uid \+ '\|' \+ string\(d\.dayIndex\)\)\.toHexString\(\)\.lower\(\) \+ '_1\?\[0-9\]\$'/)
 })
 
-test('1.87.0: the reviewer edit-booking note reads "daily Overview" (owner wording 24 Nov)', () => {
+test('1.90.0: the reviewer booking notes read "daily overview" in lower case (owner wording 24 Nov)', () => {
   assert.equal(
     R112.TIMESHEET_REVIEW_EDIT_BOOKING_NOTE,
-    'Saving changes the booking itself, so scheduling, daily Overview and the weekly report show the new hours. You can keep reviewing; the person sees the change when you counter-sign.'
+    'Saving changes the booking itself, so scheduling, daily overview and the weekly report show the new hours. You can keep reviewing; the person sees the change when you counter-sign.'
   )
+  for (const note of [R112.TIMESHEET_REVIEW_DELETE_BOOKING_MESSAGE, R112.TIMESHEET_REVIEW_REMOVE_OVERTIME_MESSAGE]) {
+    assert.ok(note.includes('daily overview'), note)
+    assert.ok(!/Daily Overview|daily Overview/.test(note), note)
+  }
 })
 
 test('1.87.0: signedTimesheetLineBooking gives the stored booking id of a live line (owner report 24 Nov)', () => {
@@ -20296,4 +20300,93 @@ test('1.87.0: signedTimesheetLineBooking gives the stored booking id of a live l
   assert.deepEqual(R112.signedTimesheetLineBooking({ id: 'MGR-M1-ot', bookingId: 'mgr-M1' }), { collection: 'managerSiteBookings', bookingId: 'M1' })
   assert.deepEqual(R112.signedTimesheetLineBooking({ id: 'op-B1-normal', bookingId: 'B1', bookingCollection: 'bookings' }), { collection: 'bookings', bookingId: 'B1' })
   assert.equal(R112.signedTimesheetLineBooking({ id: 'leave-1' }), null)
+})
+
+
+// MARK: - 1.90.0 draft revisions (owner 24 Nov, point 4)
+
+test('1.90.0 draft revisions: a reviewer revision is a draft only when asked; the person\'s never is', () => {
+  const ORIGINAL = 'timesheet_op1_1761955200'
+  const exportedAt = { seconds: 1763300000, nanoseconds: 0 }
+  const previous = { userId: 'op1', weekStart: { seconds: 1761955200, nanoseconds: 0 }, exportedAt, payrollLineReviews: { a: { decision: 'approved' } }, extraEntryReviews: { e1: { decision: 'declined' } } }
+  const reviewer = R112.timesheetRevisionCreateFields({ previous: { documentId: ORIGINAL, data: previous }, writerUserId: 'lm', draft: true })!
+  assert.equal(reviewer.fields.revisionDraft, true)
+  const person = R112.timesheetRevisionCreateFields({ previous: { documentId: ORIGINAL, data: previous }, writerUserId: 'op1', writerIsSubject: true, draft: true })!
+  assert.equal('revisionDraft' in person.fields, false, 'the person\'s own revision is never a draft')
+  const legacy = R112.timesheetRevisionCreateFields({ previous: { documentId: ORIGINAL, data: previous }, writerUserId: 'lm' })!
+  assert.equal('revisionDraft' in legacy.fields, false, 'without draft: as before 1.90.0')
+
+  const draftSheet = { ...reviewer.fields }
+  assert.equal(R112.timesheetRevisionIsDraft(draftSheet), true)
+  assert.equal(R112.timesheetRevisionIsDraft({ ...draftSheet, exportedAt }), false, 'an exported revision is never a draft')
+  assert.equal(R112.timesheetRevisionIsDraft({ revisionDraft: true }), false, 'only a revision can be a draft')
+  assert.equal(R112.timesheetRevisionIsDraft(legacy.fields), false, 'revisions stored before 1.90.0 behave as before')
+})
+
+test('1.90.0 draft revisions: Send is grey until the draft holds a change, derived from stored data', () => {
+  const previous = { payrollLineReviews: { a: { decision: 'approved' }, b: { decision: 'declined' } }, extraEntryReviews: { e1: { decision: 'declined' } } }
+  const draft = { revision: 1, revisionOf: 'timesheet_op1_1', revisionDraft: true, payrollLineReviews: { a: { decision: 'approved' } }, extraEntryReviews: { E1: { decision: 'declined' } } }
+  const base = { previous, viewerIsReviewer: true, viewerIsSubject: false, personName: 'Sam Jones', revisionLabel: 'REV 1' }
+  const before = R112.timesheetRevisionDraftState({ sheet: draft, ...base })
+  assert.equal(before.draft, true)
+  assert.equal(before.changes.changed, false, 'decisions dropped or copied at create are not changes')
+  assert.equal(before.canSend, false)
+  assert.equal(before.canCancel, true)
+  assert.equal(before.sendLabel, 'Save changes and send timesheet to Sam')
+  assert.equal(before.help, R112.TIMESHEET_REVISION_DRAFT_SEND_WAITING_HELP)
+  assert.equal(before.personMaySign, false)
+
+  const edited = { ...draft, reviewerBookingEdits: { bookings__b1: { bookingId: 'b1', collection: 'bookings', fingerprint: 'x', deleted: false, forSignedAtMs: 0, forRevisionDraft: true } } }
+  const after = R112.timesheetRevisionDraftState({ sheet: edited, ...base })
+  assert.equal(after.changes.bookingEdits, 1)
+  assert.equal(after.canSend, true)
+  assert.equal(after.help, 'Sends REV 1 to Sam to review and sign. You sign it off after.')
+
+  const decided = R112.timesheetRevisionDraftState({ sheet: { ...draft, payrollLineReviews: { a: { decision: 'edited', revisedAmount: 10 } } }, ...base })
+  assert.equal(decided.changes.reviewChanges, 1, 'a changed decision is a change')
+
+  const forPerson = R112.timesheetRevisionDraftState({ sheet: edited, previous, viewerIsReviewer: false, viewerIsSubject: true })
+  assert.equal(forPerson.canSend, false)
+  assert.equal(forPerson.canCancel, false)
+  assert.equal(forPerson.personMaySign, false)
+  assert.equal(forPerson.personMessage, R112.TIMESHEET_REVISION_DRAFT_PERSON_MESSAGE)
+
+  assert.deepEqual(R112.timesheetRevisionDraftSendWriteFields(draft), { set: {}, remove: ['revisionDraft'] })
+  assert.equal(R112.timesheetRevisionDraftSendWriteFields({ ...draft, revisionDraft: undefined }), null)
+  const notDraft = R112.timesheetRevisionDraftState({ sheet: { ...draft, revisionDraft: undefined }, ...base })
+  assert.equal(notDraft.draft, false)
+  assert.equal(notDraft.personMaySign, true)
+})
+
+test('1.90.0 draft revisions: reviewer booking edits are recorded on a draft and never stop a later reopen', () => {
+  const draft = { revision: 1, revisionOf: 'timesheet_op1_1', revisionDraft: true }
+  const recorded = R112.timesheetReviewerBookingEditRecord({ sheet: draft, booking: { collection: 'bookings', bookingId: 'B1' }, after: null, deleted: true, editedBy: 'lm' })
+  assert.ok(recorded)
+  assert.equal(recorded!.value.forSignedAtMs, 0)
+  assert.equal(recorded!.value.forRevisionDraft, true)
+  assert.equal(
+    R112.timesheetReviewerBookingEditRecord({ sheet: { revision: 1, revisionOf: 'timesheet_op1_1' }, booking: { collection: 'bookings', bookingId: 'B1' }, after: null, deleted: true, editedBy: 'lm' }),
+    null,
+    'an unsigned revision that is not a draft records nothing (as 1.76.0 B1)'
+  )
+  // Once the person signs, a draft-era record is tied to no signature.
+  const signed = { ...draft, revisionDraft: undefined, operativeSignedAt: { seconds: 1763400000, nanoseconds: 0 }, reviewerBookingEdits: { [recorded!.key]: recorded!.value } }
+  assert.equal(R112.timesheetSheetChangedByReviewer(signed), false)
+})
+
+test('1.90.0 draft revisions: whose turn, correction help and reports say the draft is with the line manager', () => {
+  const draft = { revision: 1, revisionOf: 'timesheet_op1_1', revisionDraft: true }
+  const person = R112.timesheetNextStep({ sheet: draft, viewerRole: 'person', revisionLabel: 'REV 1', lineManagerName: 'Pat Lee' })
+  assert.equal(person.whoseTurn, 'lineManager')
+  assert.equal(person.viewerActs, false)
+  assert.equal(person.text, 'Pat Lee is making changes to REV 1 — you can sign it once it is sent to you')
+  const reviewer = R112.timesheetNextStep({ sheet: draft, viewerRole: 'reviewer', revisionLabel: 'REV 1', personName: 'Sam Jones' })
+  assert.equal(reviewer.viewerActs, true)
+  assert.equal(reviewer.text, 'Your turn: make your changes to REV 1, then send it to Sam Jones')
+  const sent = R112.timesheetNextStep({ sheet: { revision: 1, revisionOf: 'timesheet_op1_1' }, viewerRole: 'person', revisionLabel: 'REV 1' })
+  assert.equal(sent.text, 'Your turn: sign REV 1')
+  assert.equal(R112.timesheetReportWaiting(null, { state: 'open', personSigned: false, draft: true }), 'lineManager')
+  assert.equal(R112.timesheetReportWaiting(null, { state: 'open', personSigned: false }), 'person')
+  const snap = R112.parsePayrunSnapshotSheet('timesheet_op1_1_rev1', { userId: 'op1', weekStartKey: '2026-11-01', weekEndKey: '2026-11-15', revision: 1, revisionOf: 'timesheet_op1_1', revisionDraft: true })
+  assert.equal(snap?.revisionDraft, true)
 })

@@ -1649,3 +1649,23 @@ The owner's answers of 24 Nov (items 1, 2, 5, 9 of the list sent that day) and c
 |---|---|---|
 | 24 Nov | **Bug: the line manager's ✕ / ⚙ on a timesheet line did nothing and showed "This was deleted on another device."** (owner testing a REV 1 in Awaiting sign-off, and a Signed-off sheet in Make changes). Cause: web used the timesheet line's prefixed booking id (`op-{id}`) as the booking's document id, so ⚙ / overtime ✕ read a booking that never exists and a standard ✕ tried to delete it. Every sheet since 1.72.0 (23 Nov): plain, revision, Make changes. Fixed (`timesheetLineBooking` gives the stored id). No rules change: the rules already allow the batch on an unexported REV 1 and refuse it once exported (emulator test). iOS checked: uses the bare booking id (not affected). | done web (1.87.0, w-ts-review-revision-fix) |
 | 24 Nov | **Wording:** the ⚙ dialog note reads "… scheduling, daily Overview and the weekly report …" ("Daily" → "daily"), on both apps (`TIMESHEET_REVIEW_EDIT_BOOKING_NOTE`). | done web + rulebook (1.87.0); iOS (sync + fallback text, ios-ts-review-revision-fix) |
+| 24 Nov | **Wording (correction):** "daily overview" all in lower case — "… scheduling, daily overview and the weekly report …" — in the ⚙ note and the two related notes (`TIMESHEET_REVIEW_EDIT_BOOKING_NOTE`, `TIMESHEET_REVIEW_DELETE_BOOKING_MESSAGE`, `TIMESHEET_REVIEW_REMOVE_OVERTIME_MESSAGE`). Supersedes the 1.87.0 "daily Overview". | done web + rulebook (1.90.0, w190-draft-revisions); iOS (ios-1.90-draft-revisions) |
+
+## 24 Nov owner requests (timesheet page, 1.90)
+
+| Date | Decision / finding | Status |
+|---|---|---|
+| 24 Nov | **(4) Draft revisions:** on an exported timesheet, Make changes creates the revision as a draft held with the line manager — a grey "Save changes and send timesheet to [name]" that turns blue only once a change is made, and a red "Cancel revision" beside it — so the person cannot sign while the line manager is still making changes. The person is told only on Send. Derived from stored data (`timesheetRevisionDraftState`); the security rules refuse the person's write while the draft is set. Existing revisions (no field) behave as before. | done web + rulebook + rules (1.90.0, w190-draft-revisions); iOS (ios-1.90-draft-revisions); rules publish pending |
+| 24 Nov | **(3) One card for the line warnings:** overlapping bookings and the Make changes / revision notices sit in one notes card, not one coloured tile per line; the lines carry a small chip. | done web (1.90.0); iOS (ios-1.90-draft-revisions) |
+| 24 Nov | **(5) Top of the timesheet page:** band, then one status card (whose turn, errors in red inside it, the action buttons, one help line), then at most one notes card (Earlier versions at its foot). Display only. | done web (1.90.0); iOS (ios-1.90-draft-revisions) |
+
+## 1.90.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 24 Nov | Every revision a line manager or admin creates is a draft, including one made while reviewing a self-signed person. The person's own "Review and sign again" never is. | done, owner to confirm |
+| 24 Nov | "A change" that turns Send blue is a booking ⚙ / ✕ made on the draft, or a line / price work / expense decision the draft holds that the exported version did not. A change undone by hand still counts (the record stays). | done, owner to confirm |
+| 24 Nov | Cancel revision deletes the draft only; booking changes already made stay in scheduling (they are booking writes). The exported timesheet then reads "Revision due" and the person can review and sign the update themselves; no notice is sent at cancel. | done, owner to confirm |
+| 24 Nov | Lists and counts (My Timesheets, User Timesheets) still read an unsigned draft as "not signed" (no new list status); the page and the reports say it is with the line manager. | done, owner to confirm |
+| 24 Nov | An older iPhone (before 1.90) shows a draft as ready to sign; its signature is refused by the rules. `minimumIosBuild` recommended, not required. | done, owner to confirm |
+| 24 Nov | The cancel confirm uses the browser's confirm box (as the rest of the timesheet page does). | done, owner to confirm |

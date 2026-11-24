@@ -1739,11 +1739,12 @@ service cloud.firestore {
         return id == request.auth.uid || f is list && id in f || s is list && id in s;
       }
       function tsIsSubject() {
+        let u = tsUid();
         return request.auth != null && (
           (resource != null && resource.data.get('userId', null) == request.auth.uid) ||
           request.method == 'create' && request.resource.data.get('userId', null) == request.auth.uid ||
           tsOwn()
-        ) || tsUid() is string && tsIdIsCallers(tsUid());
+        ) || u is string && tsIdIsCallers(u);
       }
       function timesheetSubjectFiled() {
         let next = request.resource.data.get('userId', null);
@@ -1804,11 +1805,11 @@ service cloud.firestore {
         let copied = ['userId','weekStart','weekEnd','weekStartKey','weekEndKey','priceWorkEntries','expenseEntries','lateExtras','extraEntryReviews'];
         let nr = d.get('payrollLineReviews', null);
         let pr = prev.get('payrollLineReviews', null);
-        return (d.keys().hasOnly(copied.concat(['payrollLineReviews','updatedAt','updatedBy','updatedFrom','revisionOf','revision','previousVersionId','revisionCreatedBy','revisionCreatedAt'])) && n is int && n > 0 && n < 100 &&
+        return (d.keys().hasOnly(copied.concat(['payrollLineReviews','updatedAt','updatedBy','updatedFrom','revisionOf','revision','previousVersionId','revisionCreatedBy','revisionCreatedAt','revisionDraft'])) && n is int && n > 0 && n < 100 &&
           base.matches('^timesheet_.+') && !base.matches('.*_rev[0-9]+$') && settingId == base + '_rev' + string(n) && d.get('previousVersionId', '') == prevId &&
           d.get('revisionCreatedBy', '') == request.auth.uid && d.get('revisionCreatedAt', null) == request.time && d.get('userId', null) is string)
           ? (writeMetadataKeysValid(d.keys().toSet()) && timesheetIdNames(d.userId) && tsExportedIn(prev) && !d.diff(prev).affectedKeys().hasAny(copied)
-            ? (tsIdIsCallers(d.userId) ? nr == pr : (nr == pr || nr is map && pr is map && nr.diff(pr).addedKeys().union(nr.diff(pr).changedKeys()).size() == 0) && tsReviewer())
+            ? (tsIdIsCallers(d.userId) ? nr == pr && !('revisionDraft' in d) : (nr == pr || nr is map && pr is map && nr.diff(pr).addedKeys().union(nr.diff(pr).changedKeys()).size() == 0) && tsReviewer() && d.get('revisionDraft', true) == true)
             : false) : false;
       }
 
@@ -1844,8 +1845,8 @@ service cloud.firestore {
         ) : (tsReviewer() && !tsExportedIn(resource.data))))
           : (settingId.matches('(deadlines_|healthSafety_).*|deadlineAssignments') || !settingId.matches('^variation(s|Item)_.*') && canAccessVariationsStaff(orgId))
       ))) ? (!tsId() || (settingId.matches('.*_rev[0-9]+$') ? (settingId.matches('.*_rev[1-9][0-9]?$') && (request.method == 'delete' ? !tsIdIsCallers(resource.data.userId)
-          : !affected().hasAny(['revisionOf', 'revision', 'previousVersionId', 'revisionCreatedBy', 'revisionCreatedAt'].concat(tsIdIsCallers(resource.data.userId) ? ['priceWorkEntries', 'expenseEntries', 'lateExtras'] : []))))
-          : request.method == 'delete' || !request.resource.data.keys().hasAny(['revisionOf', 'revision', 'previousVersionId', 'revisionCreatedBy', 'revisionCreatedAt']))) : false));
+          : request.resource.data.get('revisionDraft', null) in [null, resource.data.get('revisionDraft', null)] && !affected().hasAny(['revisionOf', 'revision', 'previousVersionId', 'revisionCreatedBy', 'revisionCreatedAt'].concat(tsIdIsCallers(resource.data.userId) ? ['priceWorkEntries', 'expenseEntries', 'lateExtras'].concat(resource.data.get('revisionDraft', null) == true ? request.resource.data.keys().concat(resource.data.keys()) : []) : []))))
+          : request.method == 'delete' || !request.resource.data.keys().hasAny(['revisionOf', 'revision', 'previousVersionId', 'revisionCreatedBy', 'revisionCreatedAt', 'revisionDraft']))) : false));
     }
 
     match /tasks/{taskId} {

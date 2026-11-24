@@ -42,6 +42,9 @@ export function signedTimesheetSheetFromDraft(draft: TimesheetDraft): SignedTime
     // Rulebook 1.74.0: the reviewer's own edits from this sheet's review never send it back to the person.
     reviewerBookingEdits: draft.reviewerBookingEdits ?? null,
     exportedAt: draft.exportedAt ?? null,
+    // Rulebook 1.90.0: a draft revision records the reviewer's booking edits too (`timesheetReviewerBookingEditRecord`).
+    revision: draft.revision ?? null,
+    revisionDraft: draft.revisionDraft === true,
     weeklyReportOverride: draft.weeklyReportOverride
       ? {
           approvedAt: draft.weeklyReportOverride.approvedAt,

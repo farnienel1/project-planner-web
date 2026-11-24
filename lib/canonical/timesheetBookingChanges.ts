@@ -38,6 +38,7 @@ import { documentInstantMs } from './peopleDocuments'
 import { normalizeDocumentId } from './scheduleSources'
 import { resolveTimesheetExportedAtMs, timesheetTimestampMs, TIMESHEET_SIGNED_AFTER_MS } from './timesheetPeriod'
 import { timesheetSnapshotNeedsRebuild } from './timesheetSnapshot'
+import { timesheetRevisionIsDraft } from './timesheetRevisionDraft'
 import { bookingOccupiesDay } from './warningRows'
 
 /** The popup on My Timesheets (owner's words, 15 Nov). */
@@ -167,6 +168,11 @@ export type SignedTimesheetSheet = {
    * admin only (in the same batch as the booking write), never by the person.
    */
   reviewerBookingEdits?: unknown
+  /** Rulebook 1.90.0: a revision's number and the original it corrects (a draft records the reviewer's edits). */
+  revision?: unknown
+  revisionOf?: unknown
+  /** Rulebook 1.90.0: `true` while a reviewer's revision is a draft (`timesheetRevisionIsDraft`). */
+  revisionDraft?: unknown
 }
 
 export type SignedTimesheetWaitingFor = 'person' | 'lineManager'
@@ -445,8 +451,14 @@ export type TimesheetReviewerBookingEdit = {
   deleted: boolean
   /** The reviewer (line manager or admin) who made it. */
   editedBy: string
-  /** The person's signature (`operativeSignedAt`, epoch ms) the edit applies to; a new signature supersedes it. */
+  /**
+   * The person's signature (`operativeSignedAt`, epoch ms) the edit applies to; a new signature supersedes it. 0 on a
+   * draft revision (1.90.0, no signature yet): such a record never matches a signature, so it never stops a change
+   * reopening the sheet — it only shows the reviewer changed the draft (`timesheetRevisionDraftChanges`).
+   */
   forSignedAtMs: number
+  /** Rulebook 1.90.0: made on a draft revision before the person signed (`forSignedAtMs` 0). */
+  forRevisionDraft?: boolean
 }
 
 type ReviewerEdits = Map<string, TimesheetReviewerBookingEdit>
@@ -561,7 +573,9 @@ export function timesheetReviewerBookingEditRecord(input: {
   if (!sheet) return null
   if (resolveTimesheetExportedAtMs(sheet as Record<string, unknown>) != null || realMs(sheet.exportedAtMs) != null) return null
   const signedMs = realMs(sheet.operativeSignedAt) ?? realMs(sheet.operativeSignedAtMs)
-  if (signedMs == null) return null
+  // 1.90.0: on a draft revision (the person cannot have signed it) the edit is recorded too, tied to no signature.
+  const draftRevision = signedMs == null && timesheetRevisionIsDraft(sheet as Record<string, unknown>)
+  if (signedMs == null && !draftRevision) return null
   const booking = lineBooking({ bookingId: input.booking?.bookingId, bookingCollection: input.booking?.collection })
   if (!booking) return null
   const key = timesheetReviewerBookingEditKey(booking.collection, booking.bookingId)
@@ -577,7 +591,8 @@ export function timesheetReviewerBookingEditRecord(input: {
       place: after ? signedTimesheetBookingPlace({ ...after, collection: booking.collection }) : '',
       deleted,
       editedBy: text(input.editedBy),
-      forSignedAtMs: signedMs,
+      forSignedAtMs: signedMs ?? 0,
+      ...(draftRevision ? { forRevisionDraft: true } : {}),
     },
   }
 }

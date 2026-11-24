@@ -2617,3 +2617,6 @@ export * from './clientErrors'
 // 1.85.0: insurance & accreditation expiry reminders (§31) and the onboarding checklist (§32).
 export * from './orgComplianceReminders'
 export * from './onboardingChecklist'
+
+// 1.90.0: draft revisions (§8, owner 24 Nov point 4).
+export * from './timesheetRevisionDraft'
