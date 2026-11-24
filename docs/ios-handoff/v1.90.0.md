@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.87.0 → 1.90.0
-Packed hash: e2eb13fd8b42a1299f9eac02eef27d005412ec611e59941f415cb0c81c309c0b
-Rulebook sha256: fcb703d0f221afd6c8f257908cc1fa950b38f4318136180ff7748a7b6c6abb93
+Rulebook version: 1.90.0 → 1.90.0
+Packed hash: a9dc890055527d6248c51afc5ecdca1cd991121fd4eb5442818dfe60ec0a0417
+Rulebook sha256: c9ddb4985d38fe3b00e7f32bf3dba866559fa158506a91d1992a95c50b63e4fd
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,12 +22,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: d2d465abcf0ab7c7747385346b87d2b47226412b1014602c5a26bff8e951c0ca
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: TIMESHEET_REVISION_CANCEL_LABEL, TIMESHEET_REVISION_DRAFT_CANCELLED_MESSAGE, TIMESHEET_REVISION_DRAFT_FIELD, TIMESHEET_REVISION_DRAFT_PERSON_MESSAGE, TIMESHEET_REVISION_DRAFT_REFUSED_MESSAGE, TIMESHEET_REVISION_DRAFT_SEND_WAITING_HELP, TIMESHEET_REVISION_DRAFT_SENT_MESSAGE, timesheetRevisionCancelConfirmMessage, timesheetRevisionDraftChanges, timesheetRevisionDraftSendWriteFields, timesheetRevisionDraftState, timesheetRevisionIsDraft, timesheetRevisionSendLabel, timesheetRevisionSendReadyHelp
+Exports added: none
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/payrunSnapshot.ts, lib/canonical/timesheetBookingChanges.ts, lib/canonical/timesheetClarity.ts, lib/canonical/timesheetReviewBookingWrites.ts, lib/canonical/timesheetRevisions.ts, lib/canonical/weeklyReportPay.ts, lib/canonical/timesheetRevisionDraft.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/canonical.test.ts, lib/canonical/timesheetRevisionDraft.ts
 Done when:
-- [ ] Packed hash in iOS equals e2eb13fd8b42a1299f9eac02eef27d005412ec611e59941f415cb0c81c309c0b
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 fcb703d0f221afd6c8f257908cc1fa950b38f4318136180ff7748a7b6c6abb93)
+- [ ] Packed hash in iOS equals a9dc890055527d6248c51afc5ecdca1cd991121fd4eb5442818dfe60ec0a0417
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 c9ddb4985d38fe3b00e7f32bf3dba866559fa158506a91d1992a95c50b63e4fd)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.90.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -56,9 +56,6 @@ Done when:
 
 How a draft looks: the band shows "REV 2"; the status card reads "Your turn: make your changes to REV 2, then send it to Sam" with the grey Send and red Cancel; after the first ⚙ / ✕ the Send button turns blue. For the person: "Pat Lee is making changes to REV 2 — you can sign it once it is sent to you", no Sign button.
 
-## New rulebook sections
-
-- 1.90.0 — 2026-11-24
 
 ## Workflow for the iOS agent
 

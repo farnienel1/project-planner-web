@@ -114,20 +114,24 @@ export type TimesheetRevisionDraftChanges = {
  * the draft (`reviewerBookingEdits`, one per booking), and the review decisions (`payrollLineReviews`,
  * `extraEntryReviews`) the draft holds that the version it corrects did not hold the same way (decision and revised
  * amount; a decision the create dropped is not a change). An edit undone by hand still counts (the record stays).
+ * Without `previous` only the booking edits count (decisions are compared only against the version they were copied from).
  */
 export function timesheetRevisionDraftChanges(input: {
   draft: Record<string, unknown> | null | undefined
   previous?: Record<string, unknown> | null
 }): TimesheetRevisionDraftChanges {
   const draft = record(input?.draft)
+  // Without the version it corrects, review decisions are not compared (a copied decision would read as a change):
+  // only the booking edits count (an app that does not hold the previous version, e.g. iOS before it reads one).
+  const hasPrevious = input?.previous != null && typeof input.previous === 'object'
   const previous = record(input?.previous)
   let bookingEdits = 0
   for (const value of Object.values(record(draft.reviewerBookingEdits))) {
     if (text(record(value).bookingId)) bookingEdits += 1
   }
-  const reviewChanges =
-    reviewMapChanges(draft.payrollLineReviews, previous.payrollLineReviews) +
-    reviewMapChanges(draft.extraEntryReviews, previous.extraEntryReviews)
+  const reviewChanges = hasPrevious
+    ? reviewMapChanges(draft.payrollLineReviews, previous.payrollLineReviews) + reviewMapChanges(draft.extraEntryReviews, previous.extraEntryReviews)
+    : 0
   const count = bookingEdits + reviewChanges
   return { bookingEdits, reviewChanges, count, changed: count > 0 }
 }

@@ -20344,6 +20344,8 @@ test('1.90.0 draft revisions: Send is grey until the draft holds a change, deriv
 
   const decided = R112.timesheetRevisionDraftState({ sheet: { ...draft, payrollLineReviews: { a: { decision: 'edited', revisedAmount: 10 } } }, ...base })
   assert.equal(decided.changes.reviewChanges, 1, 'a changed decision is a change')
+  const noPrevious = R112.timesheetRevisionDraftState({ ...base, previous: null, sheet: draft })
+  assert.equal(noPrevious.changes.changed, false, 'without the previous version only booking edits count')
 
   const forPerson = R112.timesheetRevisionDraftState({ sheet: edited, previous, viewerIsReviewer: false, viewerIsSubject: true })
   assert.equal(forPerson.canSend, false)
