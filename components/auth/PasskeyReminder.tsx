@@ -151,15 +151,15 @@ export function PasskeyReminder() {
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-100" data-testid="passkey-reminder">
-      <div className="absolute inset-0 bg-[rgba(10,20,40,.4)] backdrop-blur-[3px]" aria-hidden="true" onClick={close} />
+    <div className="fixed inset-0 z-100 grid place-items-center p-4" data-testid="passkey-reminder">
+      <div className="absolute inset-0 bg-[rgba(10,20,40,.4)]" aria-hidden="true" onClick={close} />
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={bodyId}
-        className="absolute left-1/2 top-1/2 w-[min(440px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-3xl bg-(--card) p-6 shadow-(--sh-pop)"
+        className="relative w-[min(440px,calc(100vw-32px))] rounded-3xl bg-(--card) p-6 shadow-(--sh-pop)"
       >
         <div className="flex items-start gap-3">
           <h2 id={titleId} className="min-w-0 flex-1 text-xl font-extrabold text-(--ink)">

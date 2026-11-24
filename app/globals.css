@@ -2317,7 +2317,7 @@
   .wd-quiet .wd-quiet-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 }
 .card-h .wd-head-end { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
-.wd-backdrop { position: fixed; inset: 0; z-index: 100; background: rgba(10, 20, 40, 0.45); backdrop-filter: blur(3px); border: 0; }
+.wd-backdrop { position: fixed; inset: 0; z-index: 100; background: rgba(10, 20, 40, 0.45); border: 0; }
 .wd-sheet {
   position: fixed; z-index: 101; left: 50%; top: 50%; transform: translate(-50%, -50%);
   width: min(460px, calc(100vw - 32px)); max-height: 90vh; overflow-y: auto;

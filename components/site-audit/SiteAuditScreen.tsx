@@ -130,7 +130,7 @@ function AuditDetail({ audit, onClose }: { audit: SiteAudit; onClose: () => void
   const handlePdf = () => openSiteAuditPdf(audit, pdfContext)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-xs sm:items-center">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center">
       <div className="flex max-h-[92vh] w-full max-w-2xl flex-col rounded-t-3xl bg-slate-50 sm:rounded-3xl sm:shadow-2xl">
         <div className="flex shrink-0 items-center justify-between rounded-t-3xl border-b border-slate-200 bg-white px-5 py-4">
           <button
