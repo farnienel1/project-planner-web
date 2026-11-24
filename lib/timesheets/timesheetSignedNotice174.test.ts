@@ -23,7 +23,7 @@ test('1.74.0: the counter-sign notice to the person uses the "updated" wording w
   const changed = await rows(true)
   assert.equal(changed.length, 1)
   assert.equal(changed[0].title, 'Your timesheet was updated and signed off')
-  assert.equal(changed[0].message, 'Pat Lee changed your timesheet and signed it off. Open it to check the changes.')
+  assert.equal(changed[0].message, 'Pat Lee changed your timesheet and signed it off. Open it to check the changes. Next: generate your invoice.')
   // Same type, id and deep link: it opens the person's timesheet for that pay run.
   assert.equal(changed[0].id, plain[0].id)
   assert.equal(changed[0].deepLinkUserId, 'op1')
