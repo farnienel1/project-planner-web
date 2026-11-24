@@ -303,8 +303,8 @@ function anchoredMember(
   const level = here.level
   // §14: deactivated here only by their membership here; their home company's `isActive` never counts.
   const membershipActive = flags.source === 'membership' ? flags.active : true
-  // 1.88.0: their line manager here is this organisation's `memberLineManagers` record when there is one, else the
-  // users document.
+  // 1.88.0: their line manager here is this organisation's `memberLineManagers` record; with none they have no line
+  // manager here (their home company's never counts), so this organisation's admins are reminded.
   const shared = withOrganizationLineManager(sharedMemberFields(docId, data), {
     organizationId: org.organizationId,
     record: org.lineManagerRecord ?? null,

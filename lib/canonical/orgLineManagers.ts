@@ -14,8 +14,11 @@
  *     (`MEMBER_LINE_MANAGERS_COLLECTION`), which holds ONLY the three line-manager keys and write metadata, is read by
  *     every active member of the organisation and is written only by its admins — never by the person — or created
  *     once by the invitee from the invitation they accept (exactly as the inviter set it, under the 1.33.0 lock);
- *   - with no record, the users document is shown (display, as before 1.88.0: nobody loses a line manager they see
- *     today, guardrail 3), but the security rules give that home-company line manager no rights in this organisation.
+ *   - with no record, there is NO line manager here (owner answer 24 Nov: a line manager belongs to each company):
+ *     this organisation's admins decide, its notices go to them, Edit user asks for one (`lineManagerRequiredError`),
+ *     Data health lists the person, the screens read "Not set", and the security rules give the home company's line
+ *     manager no rights here;
+ *   - a users document that stores no organisation at all reads its own fields, as before 1.88.0.
  * Owner decision 24 Nov (review of #455, fix (a)): the record is its own document, never a field on the membership,
  * because memberships written by iPhone builds before 1.10.0 hold a copy of the whole users document (pay, phone) and
  * stay readable to the person and the organisation's admins only. The security rules read the same record
@@ -47,7 +50,12 @@ export type OrgLineManagerFields = {
   hasNoLineManager: boolean
 }
 
-export type OrgLineManagerSource = 'users' | 'record'
+/**
+ * Where a person's line manager in an organisation comes from: `users` (their users document: the home organisation, or
+ * a users document with no organisation stored), `record` (this organisation's `memberLineManagers` record), or `none`
+ * (a member whose home is another company and who has no record here: no line manager here).
+ */
+export type OrgLineManagerSource = 'users' | 'record' | 'none'
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
@@ -115,11 +123,16 @@ export function parseMemberLineManagerDocuments(
   return out
 }
 
+const NO_LINE_MANAGER_HERE: OrgLineManagerFields = { assignedManagerUserIds: [], assignedManagerUserId: null, hasNoLineManager: false }
+
 /**
- * The person's line-manager fields in `organizationId` (see file header): the users document's in their home
- * organisation, or when this organisation holds no record for them; otherwise the record's. `user` is the person's
- * users document (its `organizationId` decides home), `record` the data of `organizations/{orgId}/memberLineManagers/{uid}`
- * when read (null / missing: the users document, for display only — the security rules give it no rights here). The
+ * The person's line-manager fields in `organizationId` for every DECISION (see file header): the users document's in
+ * their home organisation (and, as before 1.88.0, when the users document stores no organisation at all); the record's
+ * when this organisation holds one; otherwise NONE (`source: 'none'`, no ids) — a member whose home is another company
+ * has no line manager here until this organisation's admin sets one, so this organisation's admins decide, notices go
+ * to them and Data health lists the person (`lineManagerRequiredError`). Their home company's line manager is never a
+ * decision-maker here and is not shown here either (owner answer 24 Nov: a line manager belongs to each company). `user` is the person's users document (its
+ * `organizationId` decides home), `record` the data of `organizations/{orgId}/memberLineManagers/{uid}` when read. The
  * users document's fields are returned as stored.
  */
 export function organizationLineManagerFields(input: {
@@ -129,9 +142,12 @@ export function organizationLineManagerFields(input: {
 }): OrgLineManagerFields & { source: OrgLineManagerSource } {
   const user = input?.user && typeof input.user === 'object' ? input.user : null
   const fromUsers = { ...storedFields(user), source: 'users' as const }
+  if (!documentOrganizationId(user?.organizationId)) return fromUsers
   if (isHomeOrganization(user, input?.organizationId)) return fromUsers
   const parsed = parseOrgLineManager(input?.record)
-  return parsed ? { ...parsed, source: 'record' } : fromUsers
+  return parsed
+    ? { ...parsed, source: 'record' }
+    : { ...NO_LINE_MANAGER_HERE, assignedManagerUserIds: [], source: 'none' }
 }
 
 /**
@@ -151,6 +167,7 @@ export function withOrganizationLineManager<T extends object>(
   const user = input?.homeOrganizationId !== undefined ? { ...row, organizationId: input.homeOrganizationId } : row
   const fields = organizationLineManagerFields({ organizationId: input?.organizationId, user, record: input?.record })
   if (fields.source === 'users') return person
+  // `none`: no line manager here (the home company's is not a decision-maker in this organisation).
   const same =
     row.hasNoLineManager === fields.hasNoLineManager &&
     text(row.assignedManagerUserId) === (fields.assignedManagerUserId ?? '') &&
@@ -166,13 +183,16 @@ export function withOrganizationLineManager<T extends object>(
   } as T
 }
 
+/** Where a line-manager change is saved (`orgLineManagerEditTarget`). */
+export type OrgLineManagerEditTarget = 'users' | 'record'
+
 /**
  * Where a line-manager change made in `organizationId` is saved: `users` in the person's home organisation (their
  * users document, as before 1.88.0), `record` in any other (`memberLineManagers/{uid}` here). Null when the
  * open organisation is blank or the home organisation is unknown (a failed read): the save is refused
  * (`ORG_LINE_MANAGER_HOME_UNKNOWN_MESSAGE`), never written to the wrong company.
  */
-export function orgLineManagerEditTarget(input: { organizationId: unknown; homeOrganizationId: unknown }): OrgLineManagerSource | null {
+export function orgLineManagerEditTarget(input: { organizationId: unknown; homeOrganizationId: unknown }): OrgLineManagerEditTarget | null {
   const org = text(input?.organizationId)
   const home = documentOrganizationId(input?.homeOrganizationId)
   if (!org || !home) return null

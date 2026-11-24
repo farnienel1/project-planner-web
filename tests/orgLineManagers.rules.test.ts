@@ -19,7 +19,7 @@ import { assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } 
 import { assertFails } from './rulesAssert.ts'
 import { claimsContext } from './authClaimsContext.ts'
 import { inviteMembershipWrites } from '../lib/canonical/inviteAccept.ts'
-import { deleteDoc, deleteField, doc, getDoc, setDoc, Timestamp, updateDoc, writeBatch, type Firestore } from 'firebase/firestore'
+import { collection, deleteDoc, deleteField, doc, getDoc, getDocs, query, setDoc, Timestamp, updateDoc, where, writeBatch, type Firestore } from 'firebase/firestore'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const rules = readFileSync(path.join(root, 'firestore.rules'), 'utf8')
@@ -255,6 +255,51 @@ test('accepting an invitation into B creates the record exactly as the invitatio
   // A different line manager than the invitation's: the whole batch is refused.
   await assertFails(accept(lineManager([DAVE_B])))
   await assertSucceeds(accept(write.lineManagerRecord))
-  // Afterwards Jane cannot change it.
+  // Afterwards Jane cannot change it, and Carol (B's line manager for her) decides her leave in B.
   await assertFails(setDoc(doc(jane, 'organizations', B, 'memberLineManagers', JANE), lineManager([DAVE_B])))
+  await assertSucceeds(updateDoc(await leaveRef(CAROL_B, B, 'H-JANE-B'), approve(CAROL_B)))
+})
+
+test('a users document with no organisation reads its own line manager, as before 1.88.0 (re-check of #455)', async () => {
+  await env.clearFirestore()
+  await seed(false)
+  // OP_B's users document stores no organisationId (legacy data); she is a member of B.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'users', OP_B), { organizationId: deleteField() })
+  })
+  await assertSucceeds(updateDoc(await leaveRef(CAROL_B, B, 'H-OP-B'), approve(CAROL_B)))
+  await env.clearFirestore()
+  await seed(false)
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'users', OP_B), { organizationId: '' })
+  })
+  await assertFails(updateDoc(await leaveRef(DAVE_B, B, 'H-OP-B'), approve(DAVE_B)))
+  await assertSucceeds(updateDoc(await leaveRef(CAROL_B, B, 'H-OP-B'), approve(CAROL_B)))
+})
+
+test('timesheet and pay reads in B: line manager, admin and the person keep their reads (re-check of #455)', async () => {
+  await env.clearFirestore()
+  await seed(true)
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', B, 'payProfiles', JANE), { userId: JANE, payBasis: 'day', dayRate: 250 })
+  })
+  const settings = (d: Firestore) => collection(d, 'organizations', B, 'settings')
+  // B's line manager: the sheet, the list queries, a missing timesheet id and the pay profile.
+  const carol = await db(CAROL_B)
+  await assertSucceeds(getDoc(await sheet(CAROL_B, B)))
+  await assertSucceeds(getDocs(query(settings(carol), where('userId', '==', JANE))))
+  await assertSucceeds(getDocs(query(settings(carol), where('userId', 'in', [JANE]))))
+  await assertSucceeds(getDoc(doc(carol, 'organizations', B, 'settings', `timesheet_${JANE}_1762992000`)))
+  await assertSucceeds(getDoc(doc(carol, 'organizations', B, 'payProfiles', JANE)))
+  // B's admin.
+  await assertSucceeds(getDoc(await sheet(ADMIN_B, B)))
+  await assertSucceeds(getDoc(doc(await db(ADMIN_B), 'organizations', B, 'payProfiles', JANE)))
+  // The person's own list query.
+  const jane = await db(JANE)
+  await assertSucceeds(getDocs(query(settings(jane), where('userId', '==', JANE))))
+  // Someone else: refused.
+  const dave = await db(DAVE_B)
+  // (A non-line-manager's list query is refused by the expression limit, as on main for a home person; not asserted.)
+  await assertFails(getDoc(doc(dave, 'organizations', B, 'settings', `timesheet_${JANE}_1762992000`)))
+  await assertFails(getDoc(doc(dave, 'organizations', B, 'payProfiles', JANE)))
 })

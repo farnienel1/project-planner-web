@@ -2072,4 +2072,4 @@ export {
   parseOrgLineManager,
   withOrganizationLineManager,
 } from './orgLineManagers'
-export type { OrgLineManagerFields, OrgLineManagerSource } from './orgLineManagers'
+export type { OrgLineManagerEditTarget, OrgLineManagerFields, OrgLineManagerSource } from './orgLineManagers'

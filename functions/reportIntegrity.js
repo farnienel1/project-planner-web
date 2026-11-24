@@ -137,8 +137,9 @@ function createReportIntegrityCheck({ store, canonical, logger, serverTimestamp 
     const user = canonical.parseUserDocument(userId, raw, {})
     if (!user) return { ...none, raw }
     const listOf = (value) => (Array.isArray(value) ? value.map(trimmed).filter(Boolean) : [])
-    // Rulebook 1.88.0 §8: the person's line manager in THIS organisation — their users document at home, else this
-    // organisation's `memberLineManagers/{uid}` record when there is one (`organizationLineManagerFields`).
+    // Rulebook 1.88.0 §8: the person's line manager in THIS organisation for decisions — their users document at home,
+    // else this organisation's `memberLineManagers/{uid}` record, else none (their home company's line manager never
+    // counts here; `organizationLineManagerFields`).
     const record = canonical.isHomeOrganization(raw, orgId)
       ? null
       : await store.getDoc(`organizations/${orgId}/memberLineManagers/${userId}`).catch(() => null)
