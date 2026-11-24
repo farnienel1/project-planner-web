@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.86.0 → 1.86.0
-Packed hash: ce4d1fa7b2a744de0da5f22706ce5929fb0b77de48632d6fc25031471ecbba9d
-Rulebook sha256: 4cdab0b48c7be52601d42bce6f57472b58737b9538b454a1c40701651defbc27
+Packed hash: 91322cf96dd2eebdc1fc3e773a34d6e54bb9553b6e2b09a28f97425bf2fc32f8
+Rulebook sha256: 8c3f50d38da1afe081f2743e71963e563038f7c6e82a3e8828ad3e7bda583b3d
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,12 +22,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: d2d465abcf0ab7c7747385346b87d2b47226412b1014602c5a26bff8e951c0ca
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: none
+Exports added: OFFLINE_SYNC_RESULT_BANNER, OFFLINE_SYNC_RESULT_DETAIL_CHANGED, OFFLINE_SYNC_RESULT_DETAIL_DELETED, OFFLINE_SYNC_RESULT_DETAIL_PERMISSION, OFFLINE_SYNC_RESULT_DISMISS_LABEL, OFFLINE_SYNC_RESULT_EMPTY, OFFLINE_SYNC_RESULT_KINDS, OFFLINE_SYNC_RESULT_NOTIFICATION_TITLE, OFFLINE_SYNC_RESULT_OPEN_DAY_LABEL, OFFLINE_SYNC_RESULT_REASONS, OFFLINE_SYNC_RESULT_TITLE, offlineReplaceOrganizationReadDecision, offlineSyncBookingText, offlineSyncResultNotificationText, offlineSyncResultRows, offlineSyncTimesText
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/canonical.test.ts, lib/canonical/offlineReplace.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/offlineSyncResults.ts
 Done when:
-- [ ] Packed hash in iOS equals ce4d1fa7b2a744de0da5f22706ce5929fb0b77de48632d6fc25031471ecbba9d
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 4cdab0b48c7be52601d42bce6f57472b58737b9538b454a1c40701651defbc27)
+- [ ] Packed hash in iOS equals 91322cf96dd2eebdc1fc3e773a34d6e54bb9553b6e2b09a28f97425bf2fc32f8
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 8c3f50d38da1afe081f2743e71963e563038f7c6e82a3e8828ad3e7bda583b3d)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.86.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -37,6 +37,7 @@ Done when:
 ## What changed in 1.86.0
 
 - **Offline Replace on iPhone** (§2, §5, owner decision 24 Nov "Replace works offline, is queued, and is applied when signal returns"): `booking.replace` is `allowedOffline` in `OFFLINE_ACTIONS` (was `onlineOnly` from 1.41.0). New `lib/canonical/offlineReplace.ts`: `offlineReplaceReplayDecision` (`apply`, `createOnly`, `alreadyApplied`, `dropLocal`, `refuseChanged`, `refusePermission`, per-target outcomes), `offlineReplaceRefusalDecision` (the `offlineDeleteRefusalDecision` mapping), `OFFLINE_REPLACE_REPLAY_DECISIONS`, `OFFLINE_REPLACE_TARGET_OUTCOMES`, `OFFLINE_REPLACE_CHANGED_MESSAGE`, `OFFLINE_REPLACE_REFUSED_MESSAGE`. A replaced booking changed on another device refuses the whole Replace (nothing written, both bookings as the server has them). Web unchanged (online only). No rules change.
+- Owner decisions 24 Nov (same version): the "Not synced" summary — `offlineSyncResultRows`, `offlineSyncResultNotificationText`, `offlineSyncBookingText`, `offlineSyncTimesText`, `OFFLINE_SYNC_RESULT_*` (`lib/canonical/offlineSyncResults.ts`), a local notification and a page on the phone for refused queued Replaces, deletes and edits; `offlineReplaceOrganizationReadDecision` (a queued Replace waits for another company's settings only on a network failure; access lost or the company gone → `refusePermission`).
 - Review of #446 (same version): a replaced booking with no read row, or a read with no answer, refuses instead of reading as gone; a read row without a collection is matched to its target by id. iOS keeps an item queued when the script does not answer, restores replaced bookings on `dropLocal`, and never merges into or replaces around an item being sent. Emulator test of the replay transaction reading the missing new booking and its tombstone.
 
 ## iOS work for 1.86.0
@@ -45,6 +46,8 @@ Done when:
 - iOS never passes `mayCreate` to `offlineReplaceReplayDecision`: the new booking's write permission was checked when the Replace was queued (`writeRefusal`), and on replay the security rules decide (a refusal is read with `offlineReplaceRefusalDecision`).
 - Every replaced booking is read in the transaction and passed with its collection; a read with no answer is never passed as missing (`live: null` only for a document the read found missing).
 - When the script does not answer, or `bookingReplaceWrites` returns nil, the item stays queued (retry), never removed.
+- "Not synced" (owner 24 Nov): record each refused queued Replace / delete (changed or permission) and refused queued edit (not-found or permission) on the phone; schedule one local notification (`offlineSyncResultNotificationText`), or show `OFFLINE_SYNC_RESULT_BANNER` when notifications are off; the page renders `offlineSyncResultRows` and opens Daily Overview on the row's `dayKey`; "Got it" removes the row. iOS: `Core/OfflineSyncResultStore.swift`, `Views/NotSyncedView.swift`.
+- Another company's settings read before a queued Replace: `offlineReplaceOrganizationReadDecision` — refused / not-found / missing → `refusePermission` at once; network failure → wait.
 
 
 ## Workflow for the iOS agent

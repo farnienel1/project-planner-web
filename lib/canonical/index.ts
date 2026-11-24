@@ -2591,3 +2591,23 @@ export type {
   QueuedOfflineReplace,
   QueuedOfflineReplaceTarget,
 } from './offlineReplace'
+// Rulebook 1.86.0 §2: the "Not synced" summary of refused queued actions (iOS and Android).
+export {
+  OFFLINE_SYNC_RESULT_BANNER,
+  OFFLINE_SYNC_RESULT_DETAIL_CHANGED,
+  OFFLINE_SYNC_RESULT_DETAIL_DELETED,
+  OFFLINE_SYNC_RESULT_DETAIL_PERMISSION,
+  OFFLINE_SYNC_RESULT_DISMISS_LABEL,
+  OFFLINE_SYNC_RESULT_EMPTY,
+  OFFLINE_SYNC_RESULT_KINDS,
+  OFFLINE_SYNC_RESULT_NOTIFICATION_TITLE,
+  OFFLINE_SYNC_RESULT_OPEN_DAY_LABEL,
+  OFFLINE_SYNC_RESULT_REASONS,
+  OFFLINE_SYNC_RESULT_TITLE,
+  offlineReplaceOrganizationReadDecision,
+  offlineSyncBookingText,
+  offlineSyncResultNotificationText,
+  offlineSyncResultRows,
+  offlineSyncTimesText,
+} from './offlineSyncResults'
+export type { OfflineSyncBooking, OfflineSyncResult, OfflineSyncResultKind, OfflineSyncResultReason, OfflineSyncResultRow } from './offlineSyncResults'

@@ -20219,3 +20219,53 @@ test('1.86.0 offlineReplaceRefusalDecision matches offlineDeleteRefusalDecision;
   assert.equal(R112.offlineAvailability('booking.replace'), 'allowedOffline')
   assert.equal(R112.offlineAvailability('booking.delete_subcontractor'), 'onlineOnly')
 })
+
+test('1.86.0 offlineSyncResultRows: one row per refused queued action, the owner\'s words', () => {
+  const zone = 'Europe/London'
+  const at = Date.parse('2026-11-24T14:05:00Z')
+  const old = { dayKey: '2026-11-24', place: 'J-1042 · Station Road', startTime: '07:00', endTime: '16:00' }
+  const next = { dayKey: '2026-11-24', place: 'Office', timeSlot: 'FULL_DAY' }
+  const rows = R112.offlineSyncResultRows(
+    [
+      { id: 'r1', kind: 'replace', reason: 'changed', attempted: next, replaced: [old], live: { ...old, startTime: '08:00', endTime: '17:00' }, atMs: at },
+      { id: 'd1', kind: 'delete', reason: 'changed', attempted: old, live: null, atMs: at - 60_000 },
+      { id: 'e1', kind: 'edit', reason: 'permission', attempted: old, atMs: at + 60_000 },
+      { id: 'e2', kind: 'edit', reason: 'missing', attempted: old, atMs: at - 120_000 },
+      { id: '', kind: 'edit', reason: 'missing' },
+    ],
+    zone
+  )
+  assert.deepEqual(rows.map((r) => r.id), ['e1', 'r1', 'd1', 'e2'], 'newest first; a row with no id is left out')
+  const replace = rows[1]
+  assert.equal(replace.title, 'You tried to replace Tue 24 Nov · J-1042 · Station Road · 07:00–16:00 with Tue 24 Nov · Office · Full day')
+  assert.equal(replace.detail, 'Now 08:00–17:00')
+  assert.equal(replace.whenText, '24 Nov, 14:05')
+  assert.equal(replace.dayKey, '2026-11-24')
+  assert.equal(replace.openDayLabel, 'Open day')
+  assert.equal(replace.dismissLabel, 'Got it')
+  assert.equal(rows[2].title, 'You tried to delete Tue 24 Nov · J-1042 · Station Road · 07:00–16:00')
+  assert.equal(rows[2].detail, 'Deleted on another device')
+  assert.equal(rows[0].title, 'You tried to change Tue 24 Nov · J-1042 · Station Road · 07:00–16:00')
+  assert.equal(rows[0].detail, 'You no longer have permission')
+  assert.equal(rows[3].detail, 'Deleted on another device')
+  // Moved to another day and place: both said, and Open day goes to the new day.
+  const moved = R112.offlineSyncResultRows([{ id: 'm', kind: 'delete', reason: 'changed', attempted: old, live: { ...old, dayKey: '2026-11-25', place: 'Office' } }], zone)[0]
+  assert.equal(moved.detail, 'Now Wed 25 Nov, now at Office')
+  assert.equal(moved.dayKey, '2026-11-25')
+  // Changed but not read: the plain words.
+  assert.equal(R112.offlineSyncResultRows([{ id: 'x', kind: 'delete', reason: 'changed', attempted: old }], zone)[0].detail, 'Changed on another device')
+  assert.deepEqual(R112.offlineSyncResultNotificationText(1), { title: 'Some changes were not synced', body: '1 change from this phone was not saved. Tap to see what happened.' })
+  assert.equal(R112.offlineSyncResultNotificationText(3).body, '3 changes from this phone were not saved. Tap to see what happened.')
+  assert.equal(R112.OFFLINE_SYNC_RESULT_TITLE, 'Not synced')
+})
+
+test('1.86.0 offlineReplaceOrganizationReadDecision: wait only on a network failure', () => {
+  assert.equal(R112.offlineReplaceOrganizationReadDecision({ code: 'unavailable' }), 'wait')
+  assert.equal(R112.offlineReplaceOrganizationReadDecision({ code: 14 }), 'wait')
+  assert.equal(R112.offlineReplaceOrganizationReadDecision({ code: 4 }), 'wait', 'deadline exceeded')
+  assert.equal(R112.offlineReplaceOrganizationReadDecision({ code: 'permission-denied' }), 'refusePermission')
+  assert.equal(R112.offlineReplaceOrganizationReadDecision({ code: 7 }), 'refusePermission')
+  assert.equal(R112.offlineReplaceOrganizationReadDecision({ code: 5 }), 'refusePermission')
+  assert.equal(R112.offlineReplaceOrganizationReadDecision({ exists: false }), 'refusePermission', 'the company is gone')
+  assert.equal(R112.offlineReplaceOrganizationReadDecision({ exists: true }), 'wait')
+})
