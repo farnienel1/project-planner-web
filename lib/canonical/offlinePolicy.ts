@@ -13,6 +13,7 @@
  * booking are queued (1.33.0, owner decision 4 Nov "Offline delete on iOS"): the delete is queued with its tombstone
  * (`bookingTombstoneWriteFields`) and replayed through `offlineDeleteReplayDecision`. Deleting a subcontractor
  * booking stays online only (`booking.delete_subcontractor`; `bookingDeleteOfflineAction` picks the id). There is no
+ * 1.86.0: Replace (`booking.replace`) is queued too (`offlineReplaceReplayDecision`). There is no
  * cancel action (1.33.0, owner decision 4 Nov "Cancel is removed as a user action"): an old build asking for
  * `booking.cancel` gets `onlineOnly`, the answer for an unknown id.
  */
@@ -30,13 +31,14 @@ export const OFFLINE_ACTIONS = {
   'booking.edit': 'allowedOffline',
   // 1.33.0: labour (`bookings`) and manager schedule (`managerSiteBookings`) deletes, iOS and Android.
   'booking.delete': 'allowedOffline',
+  // 1.86.0 (owner decision 24 Nov): Replace on a double-booking row (create + delete + tombstone in one batch) is
+  // queued as one item and replayed through `offlineReplaceReplayDecision`. Online only from 1.41.0 to 1.85.
+  'booking.replace': 'allowedOffline',
   'annual_leave.request': 'allowedOffline',
   'profile.own_fields': 'allowedOffline',
   'notifications.own_toggles': 'allowedOffline',
   // Online only: bookings (1.33.0: subcontractor bookings are deleted online only)
   'booking.delete_subcontractor': 'onlineOnly',
-  // 1.41.0 (owner decision 11 Nov): Replace on a double-booking row (create + delete + tombstone in one batch).
-  'booking.replace': 'onlineOnly',
   // Online only: organisation settings
   'settings.company_details': 'onlineOnly',
   'settings.currency': 'onlineOnly',

@@ -143,8 +143,8 @@ test('1.41.0 bookingReplaceWrites: refuses anything that would half apply or del
   assert.ok(bookingReplaceWrites({ ...base, booking: { collection: 'managerSiteBookings', bookingId: 'M' }, replaced: [{ collection: 'bookings', bookingId: 'X' }] }))
 })
 
-test('1.41.0 Replace is online only on iOS and Android', () => {
-  assert.equal(offlineAvailability('booking.replace'), 'onlineOnly')
+test('1.41.0 Replace on iOS and Android (1.86.0: queued offline, was online only)', () => {
+  assert.equal(offlineAvailability('booking.replace'), 'allowedOffline')
   assert.equal(offlineAvailability('booking.create'), 'allowedOffline', 'book both / drop still work offline')
 })
 
