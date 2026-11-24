@@ -80,3 +80,16 @@ export function openMapsForProject(project: Parameters<typeof formatSiteAddress>
   if (!isMappableSiteAddress(address)) return null
   return googleMapsSearchUrl(address)
 }
+
+/**
+ * Town and postcode under a job in Book labour (iOS `projectLocalitySubtitle`). Display only: a UK postcode reads
+ * "SW1X 9HR" (an x look-alike read as x); stored text is never rewritten. Falls back to the stored address, tidied.
+ */
+export function projectLocalityText(
+  project: Partial<Pick<Project, 'townCity' | 'postcode' | 'addressLine1'>> & { siteAddress?: string }
+): string {
+  const line = [project.townCity?.trim(), formatPostcodeForDisplay(project.postcode)].filter(Boolean).join(' ')
+  if (line) return line
+  const fallback = project.siteAddress?.trim() || project.addressLine1?.trim()
+  return fallback ? tidyUkPostcodesInText(fallback) : ' '
+}

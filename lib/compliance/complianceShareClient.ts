@@ -7,6 +7,7 @@
  */
 
 import { zipSync } from 'fflate'
+export { COMPLIANCE_SHARE_CREATOR_STOPPED_TEXT, complianceShareLinkStatusText } from '@/lib/compliance/complianceShareStatus'
 import { getDownloadURL, ref } from 'firebase/storage'
 import { storage } from '@/lib/firebase/config'
 import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
@@ -28,7 +29,10 @@ export type ComplianceShareLinkRow = {
   openCount: number
   lastOpenedAtMs: number | null
   state: 'active' | 'expired' | 'revoked'
+  /** Active, but its creator is no longer an active admin here, so the share page refuses it (`orgComplianceShareCreatorActive`). */
+  creatorStopped?: boolean
 }
+
 
 async function api<T>(url: string, init: RequestInit): Promise<T> {
   const response = await fetch(url, { ...init, headers: { ...(await jsonAuthHeaders()), ...(init.headers ?? {}) }, cache: 'no-store' })
