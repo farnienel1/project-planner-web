@@ -4,6 +4,7 @@
 
 'use client'
 
+import { projectLocalityText as projectLocality } from '@/lib/maps/siteAddress'
 import { jobKind } from '@/lib/canonical/staffAccess'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -101,11 +102,6 @@ function operativeSlotFromManager(slot: ManagerSlot): OperativeSlot {
   return slot
 }
 
-function projectLocality(project: Project): string {
-  const line = [project.townCity, project.postcode].map((s) => s?.trim()).filter(Boolean).join(' ')
-  if (line) return line
-  return project.siteAddress?.trim() || project.addressLine1?.trim() || ' '
-}
 
 type BookLabourFlowScreenProps = {
   date?: string

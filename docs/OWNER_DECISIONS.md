@@ -1567,3 +1567,20 @@ The owner's answers of 24 Nov (items 1, 2, 5, 9 of the list sent that day) and c
 | 24 Nov | Review of #440: with the switch off, a job past its end date that has people booked that day is still shown (it is being worked on). | done |
 | 24 Nov | Review of #440: the Home card (admins, loaded after the rest of Home) now calls postcodes.io for jobs not yet cached in that browser, so a pin shows without opening the full map. A lookup that cannot be reached is shown as "Couldn’t reach the postcode lookup — retry" (counted apart on Home), retried on Retry, back online or back on the tab; never treated as "not found". | done, owner to confirm |
 | 24 Nov | The site map's people count now also folds `managers` rows (rulebook §21 `siteMapPins` asks for them; the page did not pass them), so a person under a users id and a managers row counts once. | done |
+
+## 24 Nov small fixes (w-small-fixes-24nov / ios-small-fixes-24nov)
+
+| Date | Decision | Status |
+|---|---|---|
+| 24 Nov | **iPhone site map exactly like web (#440):** "Show completed jobs" off by default (Active and Upcoming only; a job with people booked that day always shows); placement saved pin → "lat, lng" address → UK postcode (postcodes.io, else Apple geocoding of the postcode alone); "Jobs without an address" list where admins and the job's managers set the pin (existing job write); opens on the office about 10 miles; projects blue, small works red. Guardrail 3: a job whose address has no UK postcode (Apple used to geocode the whole address) now appears in that list instead of on the map. | done iOS (ios-small-fixes-24nov) |
+| 24 Nov | **iPhone Home "Site map" card for admins** (web has one): a card that opens the full map (web's card embeds a small map; the iPhone card does not). | done iOS, owner to confirm |
+| 24 Nov | **Postcodes shown as "SW1X 9HR" everywhere a stored address is printed** (display only): web Book labour locality line, clients, subcontractors, wholesalers; iPhone Projects, Home, works dashboard, materials send list, Book labour, scheduling headers, clients, subcontractors, wholesalers. Stored text and sent payloads (emails, WhatsApp) unchanged. | done web + iOS |
+| 24 Nov | **Web booking delete warning on signed timesheets** (§2 `bookingDeleteSignedTimesheetWarning`): checked every web delete path. Edit Booking (scheduling week, My Schedule), the Daily Overview move, Warnings clash rows and Replace already show it (store-level `announceSignedTimesheetDelete`). Not shown, by design: overtime Return / direct deletes (PAYE days have no timesheet), Data health placeholder removal (no person), person / job deletes (owner 13 Nov item 36). | checked web, no change needed |
+| 24 Nov | **Accreditation share links list:** an active link whose creator is no longer an active admin reads "Stopped — creator is no longer an admin" (the server list works it out with `orgComplianceShareCreatorActive`, as the share page does). Turn off still offered. | done web + iOS |
+
+## Small fixes judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 24 Nov | The timesheet review ✕ (a line manager deleting a booking from the timesheet they are reviewing) shows no signed-timesheet warning: the 1.74.0 rule keeps the sheet with the reviewer, so the warning's "goes back to the person to sign again" would be wrong there. | question |
+| 24 Nov | A creator whose users document cannot be read counts as stopped in the list (the share page refuses such a link too). | done, owner to confirm |

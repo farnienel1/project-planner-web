@@ -32,6 +32,7 @@ import { notifyClientCreated } from '@/lib/firebase/notifyInbox'
 import { EmptyState, IosFormModal, PageHeader } from '@/components/ios/primitives'
 import { WorkCard } from '@/components/projects/WorkCard'
 import { afterPrimaryWrite } from '@/lib/client/afterPrimaryWrite'
+import { tidyUkPostcodesInText } from '@/lib/maps/ukPostcode'
 
 function creatorName(): string {
   const { user } = useAuthStore.getState()
@@ -102,7 +103,7 @@ function ClientCard({
       </span>
       <span className="grow">
         <span className="t">{client.name}</span>
-        <span className="s">{client.email || client.phone || client.address || 'No contact details'}</span>
+        <span className="s">{client.email || client.phone || (client.address ? tidyUkPostcodesInText(client.address) : '') || 'No contact details'}</span>
       </span>
       {pending ? <PendingSpinner /> : null}
     </button>
@@ -129,7 +130,7 @@ function ClientInfo({ client }: { client: Client }) {
         {client.address ? (
           <p className="row" style={{ alignItems: 'flex-start' }}>
             <MapPinIcon className="mt-0.5 h-4 w-4 shrink-0 text-(--sw)" />
-            {client.address}
+            {tidyUkPostcodesInText(client.address)}
           </p>
         ) : null}
       </div>
