@@ -1,3 +1,62 @@
+# Handover — 24 Nov 2026 (night) — READ THIS FIRST
+
+> Launch is **25 Nov**. Read this section, then `docs/OWNER_DECISIONS.md` (from "24 Nov" down, especially "24 Nov evening decisions"), then `docs/agent-rules/owner-working-style.md`. Launch checklist (single status page): https://claude.ai/artifact/7Q7erHuNW9RBFFK4VuiAcR (collection `items`; rows 1.148–1.160 are tonight's work).
+
+## The one rule the owner is most worried about
+**Every change is done on web AND iPhone AND checked against the rulebook, in the same piece of work.** Every builder brief must name the web files, the iOS files and the rulebook functions. Every change gets its own iOS PR, or a written "iPhone checked, not affected" with file:line evidence. Every independent review reads the iOS code and the rulebook too. The iPhone gets native iPhone UI with the same capability and the same rulebook words. On 24 Nov this was not followed consistently and the owner noticed. Do not repeat that.
+
+## Where things stand [Certain at 21:15 UTC 24 Nov]
+- **Web main:** rulebook **1.87.0**. Merged tonight: #450 (1.87 timesheet ✕/⚙ fix — owner tested: "sorts the timesheet issue"), #451 (Exported list: versions collapsed, compact, line manager named), #453 (no blur on any pop-up).
+- **iOS main:** `0980b043` = #297 (rulebook mirror **1.83.0**: 1.82, 1.83, small fixes, PAYE payday grid, CI speed-up). #289 #288 #292 #296 #291 #284 #290 were closed as included.
+- **Owner's TestFlight:** rulebook 1.73. None of the last two days' timesheet work is on the owner's phone until **build 16**.
+- **Parity audit** (58 web PRs since 21 Nov 04:00): the timesheet review / sign-off / revision flow is on iOS main. The only 2 iOS gaps (invoice PDF Full day line times; "Former: name" on Exported) are now iOS #301. Everything else is merged on iOS or in an open iOS PR.
+
+## Open PRs and merge order (version order matters — owner rule 2)
+| Order | PR | What | State |
+|---|---|---|---|
+| 1 | iOS **#302** `ios-integration-24nov-2` (37fdf469) | Stacks #295 (1.84), #294 (1.85), #293 (1.86), #298 (1.87 wording), #300 (Exported list), #301 (parity gaps) + mirror sync to web 1.87.0 (last commit marked WIP) | Mac checks just started (label `screen-checks`). Watch parity-tests + 16e/SE/Pro Max; fix any test broken by the 1.84–1.87 jump at its root cause. When green: squash-merge #302, close #295 #294 #293 #298 #300 #301 as included (comment + close, as done for #297). #295/#294/#293 were applied as their own commits on top (they were built on old 1.83 commits) — note for review. |
+| 2 | web **#455** `w187-org-line-managers` + iOS **#303** `ios-1.87-org-line-managers` | Rulebook **1.88.0**: line managers per organisation (+ rules), **plus** Luke's profile bug (profile says "No line manager" while Edit user shows Farnie Nel) — both apps must use one rulebook answer | Built (web c9cd84e5, iOS 3a675820). Membership `lineManager` per org; rules: members of an org read its memberships, only that org's admins write the line manager. Rules bar passed pre-merge (cost 219,500 vs main 220,205; 533 rules tests; 0 type errors). Luke's bug: profile page read only the old single field + email-folded list — both screens now use `lineManagerSummary`/`lineManagerSelectedIds` over all users docs; "No line manager" wins on contradicting data and the next save tidies it. **Left:** independent review (web + iOS + rules), iOS Mac build/tests, merge, publish rules (Firestore + Storage) via workflow, owner deploys 3 functions (command in PR). Follow-ups: owner console person page, iOS Add User list, Data health for contradicting fields. **4 owner questions in the PR / below.** |
+| 3 | web **#452** `w189-tasks` (a95b021b) + iOS **#299** `ios-1.89-tasks` (92eaeb19) | Rulebook **1.89.0**: Tasks upgrade (owner's Tasks pack) | Reviewed; all findings fixed on both. Needs main merged in after 1.88 (renumber section; rebuild; handoff; check `--base origin/main`) then iOS re-sync; one quick re-check; iOS Mac checks. One iOS test (`Rulebook1290Tests` orgCompliance) clears once 1.83 is on iOS main (it is now). |
+| 4 | web **#454** `w190-draft-revisions` (10dbb485) + iOS **#304** `ios-1.90-draft-revisions` (fe014854) | Rulebook **1.90.0**: draft revisions (Make changes → grey "Save changes and send timesheet to [name]", blue after a change; red "Cancel revision"; person can't sign a draft; rules), **Cancel changes** (undo the line manager's session: restore edited/deleted bookings from stored before-values, remove session line reviews; refuse if changed elsewhere), **one card at the top** of the timesheet from "YOUR TURN" to the REV line (Earlier versions separate), "daily overview" all lower case | Web done (10dbb485, merged main 1.87; npm test 3361/1 xlsx; rules bar NOT re-run after the merge — re-run it). iOS **#304** `ios-1.90-draft-revisions` (fe014854, WIP): draft revision + Sign blocked done; **left on iOS:** Cancel changes (store before-values, undo, Cancel revision restores first — hand-off items 8–10), move "Changed since it was signed" into the one top card, swap `TimesheetPayrollLineBookingLookup` to rulebook `signedTimesheetLineBooking`, Mac build/tests. Then independent review (web + iOS + rules), merge after 1.89, publish rules before web deploys, owner redeploys `timesheetBookingsChangedNotice` + `timesheetManagerBookingsChangedNotice`. **4 owner questions below.** |
+| — | web #397 | Dependabot TypeScript 7 | Hold (owner: after typescript-eslint supports it). |
+
+## Owner questions waiting (ask in one list, plain English)
+1.88 line managers per organisation:
+1. Can every member of a company read the memberships in it? (Needed so screens show that company's line manager.)
+2. A visiting member with no line manager set in company B still shows their home-company line manager on B's screens (no rights in B) — OK?
+3. A member only in the members map with no membership record can't be given a B line manager until they open B once (clear message) — OK?
+4. Contradicting stored data ("No line manager" + ids): "No line manager" wins, next save tidies — OK?
+1.90 Cancel changes:
+5. A removed booking comes back under a new id (old id stays deleted); things tied to the old id (approved overtime line, clash approval) don't follow; a cancelled draft leaves "Revision due" on the exported sheet — OK?
+6. Only an admin, or a line manager who manages that job, can put a removed booking back; others get times restored but the removed booking stays removed with a message — OK?
+7. Cancel changes covers Make changes on a signed-off sheet and draft revisions, not the first review before any counter-signature — OK?
+8. Edits made before 1.90 (or from an older iPhone) can't be undone (no stored old values) and are named "not undone" — OK?
+
+## Then build 16
+When the iPhone stack has everything (1.84–1.90 + Exported + parity gaps + Tasks): tell the owner "ready to archive build 16" with the commit and a short test list. After the owner tests it, raise `minimumIosBuild` to 16 (owner step, Firebase console → Firestore → platformConfig/app).
+
+## Owner steps still owed (send exact beginner commands when due)
+1. After 1.85 is live: deploy the reminder-email function and switch reminders on: `firebase deploy --only functions:inbox-push:orgComplianceExpiryReminders --project project-planner-f986c`, then set `orgComplianceRemindersEnabled` (see 1.85 PR / rulebook Deploy notes).
+2. Error log 30-day clean-up: `gcloud firestore fields ttls update expireAt --collection-group=clientErrors --enable-ttl --project=project-planner-f986c`.
+3. Push-token clean-up script (`docs/scripts/dedupe-push-tokens.md`).
+4. Private pay switch-on and strip (5 Nov row; after `minimumIosBuild`).
+5. Raise `minimumIosBuild` after testing build 16.
+6. Rules publishes for 1.88 and 1.90 are done by Claude via the "Firebase rules deploy" workflow after the rules bar passes; functions stay owner-deployed.
+
+## Launch checklist rows still open (not tonight's)
+1.128 line-manager changes reach bookings (triple-check), 1.136 double push, 1.137 VO tracker wording into rulebook, 1.138 web dashboard map, 1.139 subcontractor documents, 1.140 company details mismatch, 1.141 Payrun Snapshot, 1.143 iPhone weak-signal notice, 1.144 "Last active", 1.145 login sound, 1.147 certificates, 1.156 owner steps. Read each row's `who` text.
+
+## Small open items from tonight
+- iOS Exported row: "Former person" chip only on former rows (by design).
+- `SiteMapCoordinate` enum on iOS now only used by a test — move tests to `SiteMapPlacementRules`, delete enum.
+- Web follow-up: `timesheetLineDisplay` doesn't give a window for "FULL DAY · no break" (rulebook follow-up, noted 23 Nov).
+- Passkey reminder "Don't remind me again" is per browser (owner OK'd per device).
+
+## How to work (unchanged)
+Owner rules 1–4 in `owner-working-style.md`: squash-merge via REST with `sha=` head and trailers; rulebook PRs merge in version order; lean mode (one review + one quick re-check, small fixes yourself, limited background agents — tonight hit the 5-hour usage limit at 21:07 UTC with 6 agents running); security review rules. GraphQL is blocked: use `gh api` REST. iOS Mac CI is slow: stack iOS PRs on one integration branch and run CI once.
+
+---
+
 # Handover — 23 Nov 2026 (evening)
 
 > Read this first; the 21 Nov section below is older. Then `docs/OWNER_DECISIONS.md` and the rule files. Launch checklist (now the single status page): https://claude.ai/artifact/7Q7erHuNW9RBFFK4VuiAcR — rows 1.122–1.137 are today's work. The old "All fixes progress" page is retired.

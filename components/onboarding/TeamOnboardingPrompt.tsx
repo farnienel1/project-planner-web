@@ -56,7 +56,7 @@ export function TeamOnboardingPrompt() {
   }
 
   return (
-    <div className="fixed inset-0 z-100 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs">
+    <div className="fixed inset-0 z-100 flex items-center justify-center bg-slate-900/50 p-4">
       <div
         role="dialog"
         aria-modal="true"
