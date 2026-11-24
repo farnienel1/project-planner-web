@@ -1081,6 +1081,11 @@ button.tb-new:hover {
 /* Site map (owner 24 Nov): the map canvas, the job dots legend and the summary card under the map.
    Colours are tokens only; --dash-* inside Home, the app tokens elsewhere. */
 .sitemap-canvas {
+  /* Leaflet's panes and controls use z-index 400–1000: keep them inside the map, under app menus, dropdowns,
+     dialogs, toasts and the mobile nav (owner bug 24 Nov: the map drew over the account menu). */
+  position: relative;
+  z-index: 0;
+  isolation: isolate;
   border-radius: 12px;
   border: 1px solid var(--dash-line, var(--line));
   background: var(--dash-soft, var(--soft));
@@ -1109,6 +1114,55 @@ button.tb-new:hover {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+.sitemap-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+}
+.sitemap-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dash-ink, var(--ink));
+  cursor: pointer;
+}
+.sitemap-toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--dash-blue, var(--blue, #2563eb));
+}
+.sitemap-job-buttons ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+.sitemap-job-buttons button {
+  min-height: 32px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--dash-line, var(--line));
+  background: var(--dash-card, var(--card));
+  color: var(--dash-ink, var(--ink));
+  font-size: 13px;
+}
+.sitemap-job-buttons button[aria-pressed='true'] {
+  border-color: var(--dash-blue, #2563eb);
+}
+.sitemap-unplaced h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+.sitemap-unplaced .rows {
+  margin-top: 10px;
 }
 .sitemap-dot {
   display: inline-block;
