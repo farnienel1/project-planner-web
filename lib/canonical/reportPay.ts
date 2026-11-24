@@ -9,6 +9,7 @@
  */
 
 import { timesheetLateExtraRows } from './timesheetLateExtras'
+import { timesheetLineIsEmptyStandardPart, type TimesheetLineOrderInput } from './timesheetLineDisplay'
 import { normalizeEmploymentType } from './userProfile'
 import { canViewPersonPay } from './payProfile'
 import { permissionLevelOf } from './permissionLevels'
@@ -191,6 +192,14 @@ export type TimesheetInvoiceRowsInput<L extends InvoiceLineInput & { id: string;
    * row is fingerprinted as stored. A `reviewFingerprint` on a row is never read.
    */
   entryFingerprints?: Record<string, string> | null
+  /**
+   * Rulebook 1.74.0 §8 (owner answer 23 Nov, choice 6): leave off a live labour row that pays nothing (after its review)
+   * and is the 0h standard line of a booking with an overtime line on the sheet (`timesheetLineIsEmptyStandardPart`
+   * over every payroll line, whatever that overtime line's decision) — the printed invoice, so no lone £0 row. Missing
+   * = kept, as before (totals and counts). Amounts and totals never change (the row is £0). A signed snapshot never
+   * holds a £0 row anyway.
+   */
+  omitEmptyStandardParts?: boolean | null
 }
 
 function rowsOf(value: unknown): Record<string, unknown>[] {
@@ -288,6 +297,13 @@ export function timesheetInvoiceRows<L extends InvoiceLineInput & { id: string; 
         amount = roundPennies(review.revisedAmount)
         applied = review
       }
+    }
+    if (
+      input.omitEmptyStandardParts === true &&
+      Math.abs(amount) <= INVOICE_AMOUNT_EPSILON &&
+      timesheetLineIsEmptyStandardPart({ ...(line as TimesheetLineOrderInput), id: line.id, amount }, lines as ReadonlyArray<TimesheetLineOrderInput>)
+    ) {
+      continue
     }
     rows.push({ kind: 'labour', id: line.id, amount, source: 'live', line, stored: null, jobNumber: jobNumberOf((line as unknown as Record<string, unknown>).jobNumber), review: applied })
   }

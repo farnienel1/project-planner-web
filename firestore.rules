@@ -225,6 +225,13 @@ service cloud.firestore {
       data.get('enforcedReadsOrganizationIds', []) is list && organizationId in data.get('enforcedReadsOrganizationIds', []);
   }
 
+  function operativeOwnLeaveOn(organizationId) {
+    let config = /databases/(default)/documents/platformConfig/app;
+    let data = exists(config) ? get(config).data : {};
+    return data.get('operativeOwnLeave', false) == true ||
+      data.get('operativeOwnLeaveOrganizationIds', []) is list && organizationId in data.get('operativeOwnLeaveOrganizationIds', []);
+  }
+
   function privatePayOn(organizationId) {
     let config = /databases/(default)/documents/platformConfig/app;
     let data = exists(config) ? get(config).data : {};
@@ -699,17 +706,15 @@ service cloud.firestore {
       function invitationOpsManagerWrite() {
         let next = request.resource.data;
         return request.method == 'list' ? invitationSentByCaller(resource.data) : (
-          request.method == 'delete' ? (invitationSentByCaller(resource.data) && invitationIsOperativeOnly(resource.data)) : (
-            (request.method == 'update' && !next.diff(resource.data).affectedKeys().hasAny(['role', 'permissions',
-                'adminAccess', 'isSuperAdmin', 'manager', 'operatives', 'operativeMode']))
-              ? (invitationSentByCaller(resource.data) && invitationSentByCaller(next) && invitationIsOperativeOnly(resource.data) &&
-                (resource.data.get('isUsed', false) != true ||
+          request.method == 'delete' || request.method == 'update' && !next.diff(resource.data).affectedKeys().hasAny(['role', 'permissions',
+                'adminAccess', 'isSuperAdmin', 'manager', 'operatives', 'operativeMode'])
+            ? invitationSentByCaller(resource.data) && invitationIsOperativeOnly(resource.data) && (request.method == 'delete' ||
+                invitationSentByCaller(next) && (resource.data.get('isUsed', false) != true ||
                  !next.diff(resource.data).affectedKeys().hasAny(['assignedManagerUserId', 'assignedManagerUserIds', 'hasNoLineManager'])))
-              : ((invitationIsOperativeOnly(next) && invitationSentByCaller(next)) ? (
+            : invitationIsOperativeOnly(next) && invitationSentByCaller(next) && (
                 request.method == 'create'
                   ? opsManagerEmailFree(invitationOrgId(), next.get('email', null))
-                  : (invitationSentByCaller(resource.data) && invitationIsOperativeOnly(resource.data))
-              ) : false)));
+                  : invitationSentByCaller(resource.data) && invitationIsOperativeOnly(resource.data)));
       }
 
       allow get: if true;
@@ -1442,10 +1447,12 @@ service cloud.firestore {
             'workStartTime', 'workEndTime', 'timeSlot', 'isBreakRemoved', 'otMultiplierOverride', 'status', 'overtimeReturnRequestId', 'updatedAt', 'updatedBy', 'updatedFrom'
           ]) ? (('overtimeReturnRequestId' in affected
             ? overtimeReturnFor(bookingId, request.resource.data.overtimeReturnRequestId, 'appliedBookingIds', person, false)
-            : (collection == 'bookings' ? ((person is string && person.size() > 0 && !person.matches('.*/.*')) ? (
-              exists(/databases/(default)/documents/users/$(person)) ? (callerLineManagesUser(person) &&
-                get(/databases/(default)/documents/users/$(person)).data.get('ghost', false) != true) : callerLineManagesRowPerson(person)
-            ) : false) : callerLineManagesUser(person))) ? (
+            : collection != 'bookings' || person is string && person.size() > 0 && !person.matches('.*/.*') &&
+              exists(/databases/(default)/documents/users/$(person))
+              ? callerLineManagesUser(person) && (collection != 'bookings' ||
+                get(/databases/(default)/documents/users/$(person)).data.get('ghost', false) != true)
+              : collection == 'bookings' && person is string && person.size() > 0 && !person.matches('.*/.*') &&
+                callerLineManagesRowPerson(person)) ? (
           (!('workStartTime' in affected) || request.resource.data['workStartTime'] is string && request.resource.data['workStartTime'].size() <= 8) &&
           (!('workEndTime' in affected) || request.resource.data['workEndTime'] is string && request.resource.data['workEndTime'].size() <= 8) &&
           (!('timeSlot' in affected) || request.resource.data.timeSlot in ['CUSTOM_HOURS', 'CUSTOM', 'FULL DAY', 'FULL_DAY', 'AM', 'PM']) &&
@@ -1757,8 +1764,8 @@ service cloud.firestore {
         }
         function tsIsSubject() {
           return request.auth != null && (
-            (resource != null && 'userId' in resource.data && resource.data.userId == request.auth.uid) ||
-            request.method == 'create' && 'userId' in request.resource.data && request.resource.data.userId == request.auth.uid ||
+            (resource != null && resource.data.get('userId', null) == request.auth.uid) ||
+            request.method == 'create' && request.resource.data.get('userId', null) == request.auth.uid ||
             tsOwn()
           ) || tsUid() is string && tsIdIsCallers(tsUid());
         }
@@ -1775,8 +1782,9 @@ service cloud.firestore {
           return p.size() > q.size() + 1 && p[0] == 'timesheet' && p[1:q.size() + 1] == q;
         }
         function tsReviewer() {
-          let hp0 = /databases/(default)/documents/users/$(tsUid());
-          return orgAdminEither(organizationId) || !callerHomeIsOperative() && tsUid() is string && exists(hp0) &&
+          let u = tsUid();
+          let hp0 = /databases/(default)/documents/users/$(u);
+          return orgAdminEither(organizationId) || !callerHomeIsOperative() && u is string && exists(hp0) &&
             lineManagerIdList(get(hp0).data).hasAny([request.auth.uid].concat(
               callerHomeData().get('formerUserIds', []) is list && homeOrgIs(callerHomeData(), organizationId) ? callerHomeData().get('formerUserIds', []) : []));
         }
@@ -1792,7 +1800,7 @@ service cloud.firestore {
         function tsOwnerReviewFieldsUnchanged() {
           let written = writtenKeys();
           return tsOwnerLeaves('payrollLineReviews', written) && tsOwnerLeaves('extraEntryReviews', written) &&
-            tsOwnerLeaves('weeklyReportOverride', written) &&
+            tsOwnerLeaves('weeklyReportOverride', written) && !('reviewerBookingEdits' in written) &&
             ((resource != null && (resource.data.get('managerSignedAt', null) is timestamp || resource.data.get('managerSignedAt', null) is number || resource.data.get('approvedAt', null) is timestamp || resource.data.get('approvedAt', null) is number)) ? (
               (!('expenseEntries' in written) || request.resource.data.get('expenseEntries', null) in [null, []] && resource.data.get('expenseEntries', null) in [null, []]) && (!('priceWorkEntries' in written) || request.resource.data.get('priceWorkEntries', null) in [null, []] && resource.data.get('priceWorkEntries', null) in [null, []]) &&
               (!('lateExtras' in written) || !tsExportedIn(resource.data) &&
@@ -2093,7 +2101,12 @@ service cloud.firestore {
           );
         }
 
-        allow read: if canAccessOrganization(organizationId);
+        allow read: if canAccessOrganization(organizationId) && (
+          callerOrgRoleAnyBilling(organizationId) != 'operative' || !operativeOwnLeaveOn(organizationId) ||
+          resource.data.get('userId', null) is string && request.auth.token.get('email', null) is string &&
+            resource.data.get('userId', null).lower() == request.auth.token.email.lower() ||
+          callerOwnsBookingId(resource.data.get('userId', null)) ||
+          callerOwnsBookingId(resource.data.get('operativeId', null)));
         allow create, update, delete: if canAccessOrganization(organizationId) && (
           (request.method == 'create') ? ((
           ((request.resource.data.get('userId', '') == request.auth.uid || request.resource.data.get('userId', '') in [null, ''] &&
@@ -2464,7 +2477,7 @@ service cloud.firestore {
             'payProfiles', 'operativeDayRateHistory', 'operativeProfiles', 'settings',
             'overtimeRequests', 'overtimeReviews', 'overtimeReports', 'priceWorkItems', 'expenseItems',
             'payeClaimReports', 'payeClaimReviews', 'personalSiteAudits', 'worksListPicks', 'annualLeaveAdjustments', 'deletedPeople', 'materialContacts',
-            'reportChecks']);
+            'reportChecks', 'holidayBookings']);
       }
     }
 

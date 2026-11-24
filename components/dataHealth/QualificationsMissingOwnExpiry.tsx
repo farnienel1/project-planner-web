@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Rulebook 1.76.0 §5 (owner 23 Nov, C12): Settings → Data health "Qualifications with no expiry date of their own"
+ * Rulebook 1.75.0 §5 (owner 23 Nov, C12): Settings → Data health "Qualifications with no expiry date of their own"
  * (`qualificationsMissingOwnExpiry`). People who hold a qualification whose library entry has an end date but who
  * have no expiry of their own for it, so they get no expiry warning or reminder. One row per person + qualification,
  * each linked to the person's qualifications editor. Admin only (the page's gate). Never writes.

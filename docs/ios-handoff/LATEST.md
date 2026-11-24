@@ -1,6 +1,6 @@
-# iOS follow-on — rulebook 1.76.0
+# iOS follow-on — rulebook 1.75.0
 
-Generated 2026-11-23 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
+Generated 2026-11-24 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
 
 ```
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.76.0 → 1.76.0
-Packed hash: 1a9755c869c596238ee948c427df287d848ac5fd5990b140a103e538949a159c
-Rulebook sha256: a1e46f4dac74697f966a277570ff09bc1544c190651ccf8cc0b429ecc31f58c0
+Rulebook version: 1.76.0 → 1.75.0
+Packed hash: afd3f5308d8a18e13d2eaf5bc705b4021030f946824e26d633ecd3726fec7f00
+Rulebook sha256: cda126e811bb5a9fdb0d5d8c2a83fb6eb8624160501ad7b8e24351c25b9312be
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,22 +22,27 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 926b910948b674b1fa259e8f933ddd15f14bad00b8e0b050ccbd88c723bf64aa
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: none
+Exports added: TIMESHEET_REVIEWER_BOOKING_EDITS_FIELD, TIMESHEET_REVIEW_BOOKING_NOT_RECORDED_MESSAGE, TIMESHEET_REVIEW_BOOKING_UPDATED_MESSAGE, TIMESHEET_SIGNED_NOTICE_TITLE, TIMESHEET_SIGNED_UPDATED_NOTICE_MESSAGE, TIMESHEET_SIGNED_UPDATED_NOTICE_TITLE, timesheetLineDisplayOrder, timesheetLineIsEmptyStandardPart, timesheetLineShownDeclined, timesheetReviewBookingAfterEdit, timesheetReviewBookingDocument, timesheetReviewerBookingEditKey, timesheetReviewerBookingEditRecord, timesheetSheetChangedByReviewer, timesheetSignedNoticeText
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/canonical.test.ts, lib/canonical/operativeQualifications.ts
+Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/operativeQualifications.ts, lib/canonical/reportPay.ts, lib/canonical/staffAccess.ts, lib/canonical/timesheetBookingChanges.ts, lib/canonical/timesheetEntryReviews.ts, lib/canonical/timesheetLineDisplay.ts, lib/canonical/timesheetReviewBookingWrites.ts
 Done when:
-- [ ] Packed hash in iOS equals 1a9755c869c596238ee948c427df287d848ac5fd5990b140a103e538949a159c
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 a1e46f4dac74697f966a277570ff09bc1544c190651ccf8cc0b429ecc31f58c0)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.76.0)
+- [ ] Packed hash in iOS equals afd3f5308d8a18e13d2eaf5bc705b4021030f946824e26d633ecd3726fec7f00
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 cda126e811bb5a9fdb0d5d8c2a83fb6eb8624160501ad7b8e24351c25b9312be)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.75.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.76.0
+## What changed in 1.75.0
 
 - **Qualifications with no expiry date of their own** (§5, owner 23 Nov, C12): new `qualificationsMissingOwnExpiry` (types `QualificationLibraryEntry`, `QualificationMissingOwnExpiryOperativeRow`, `QualificationMissingOwnExpiryRow`) in `lib/canonical/operativeQualifications.ts`. People who hold a qualification whose library entry has an end date (a stored `hasEndDate` decides, else `endDate`) but whose own `qualificationExpiryDates` has none (`qualificationExpiryDate`, on their active rows — all rows for a fully inactive person — as the warnings and reminders read them); named by their live users document; anonymised profiles and blank-named qualifications skipped — they get no expiry warning or reminder. Web Settings → Data health lists them (admins, read only), each linked to the person's qualifications editor. Nothing stored changes; warnings and reminders are unchanged. iOS has no Data health screen; no iOS change needed (C13, organisation-zone reminders, is iOS-only).
 
+## New rulebook sections
+
+- 1.75.0 — 2026-11-23
+- 1.74.0 — 2026-11-23
+- 1.73.2 — 2026-11-23
 
 ## Workflow for the iOS agent
 

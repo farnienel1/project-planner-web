@@ -18,7 +18,7 @@ import { unfinishedSetupLabel } from '@/lib/owner/unfinishedSetup'
 import { auditOwnerAction, ownerDeleteOrganisation } from '@/lib/owner/ownerActions'
 import { OwnerUserAccountMenu } from '@/components/developer/OwnerUserAccountMenu'
 import { OwnerRestoreOrganisation } from '@/components/developer/OwnerRestoreOrganisation'
-import { collapseDirectoryUsers } from '@/lib/owner/collapseDirectoryUsers'
+import { dedupeUsersByEmail } from '@/lib/staff/userRosterUtils'
 import { useConsolePrefs } from '@/lib/analytics/consolePrefs'
 
 export function DeveloperOrganisationDetailScreen({ organisationId }: { organisationId: string }) {
@@ -41,7 +41,8 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
   }, [loadBoard])
 
   const orgUsers = useMemo(
-    () => collapseDirectoryUsers(users.filter((user) => user.organizationId === organisationId)).users,
+    // One profile per email, chosen by the rulebook's `rosterPeople` (guardrail 1; owner console PR 5).
+    () => dedupeUsersByEmail(users.filter((user) => user.organizationId === organisationId)),
     [users, organisationId]
   )
   const org = organisations.find((row) => row.id === organisationId)

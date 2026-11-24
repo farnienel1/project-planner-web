@@ -725,14 +725,16 @@ export function bookingQueryPlan(
 // MARK: - Annual leave reads (rulebook §9, §16, §17; 1.56.0, owner answers 17 Nov)
 
 /**
- * Own ids per leave query. One query is `userId in (ids + emails) OR operativeId in ids`; Firestore allows 30
- * disjuncts in one query, so 14 ids (2 × 14 = 28) leave room for the account email as stored and lower-cased (only
- * on `userId`: an `operativeId` is never an email). An operative normally has 2–5 ids (their uid, a former invite id,
- * an `operatives` row on their email), so one query holds them all and the data check (§27) counts it exactly. With
- * more than 14 ids the plan has several queries and a record matched by two of them is counted twice by the data
- * check (it re-reads and logs; nothing is lost).
+ * Own ids per leave query (1.73.2: 6, was 14). One query is `userId in (ids + emails) OR operativeId in ids`. The cap is
+ * the security rules' budget, not Firestore's 30 disjuncts: the Phase B read rule (§16) proves an id that is an
+ * `operatives` row by looking the row up, and one query may look up 10 documents in all, of which the rule's own
+ * reads take 3 (emulator probe 23 Nov: 7 row ids in one query pass, 8 are refused). 6 ids leave one lookup spare
+ * whatever the ids are, so no operative's own query is refused however many rows they have. The two email spellings
+ * go on the first query's `userId` part only (an `operativeId` is never an email; they need no lookup). An operative
+ * with more than 6 ids gets several queries; a record whose `userId` and `operativeId` fall in two different queries
+ * is counted twice by the data check (§27: it re-reads and logs; nothing is lost).
  */
-export const OWN_LEAVE_IDS_PER_QUERY = 14
+export const OWN_LEAVE_IDS_PER_QUERY = 6
 
 /**
  * One annual-leave query: the whole `holidayBookings` collection, or the viewer's own leave — the records whose

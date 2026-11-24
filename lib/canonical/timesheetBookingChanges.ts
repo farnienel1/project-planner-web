@@ -161,6 +161,12 @@ export type SignedTimesheetSheet = {
   exportedAtMs?: unknown
   invoiceGeneratedAt?: unknown
   weeklyReportOverride?: { lines?: ReadonlyArray<SignedTimesheetLine> | null; approvedAt?: unknown } | null
+  /**
+   * Rulebook 1.74.0 §8: the reviewer's own booking edits made from this sheet's review, keyed by
+   * `timesheetReviewerBookingEditKey` (`TIMESHEET_REVIEWER_BOOKING_EDITS_FIELD`). Written by the line manager or an
+   * admin only (in the same batch as the booking write), never by the person.
+   */
+  reviewerBookingEdits?: unknown
 }
 
 export type SignedTimesheetWaitingFor = 'person' | 'lineManager'
@@ -346,7 +352,13 @@ function statusTakesItOff(status: unknown): boolean {
 
 type Diff = { changed: string[]; added: string[]; removed: string[]; basis: 'fingerprint' | 'bookingIds' }
 
-function diffSides(signed: Side, live: Side, documents: Documents, addedAfterMs: number | null): Diff {
+function diffSides(
+  signed: Side,
+  live: Side,
+  documents: Documents,
+  addedAfterMs: number | null,
+  reviewerEdits: ReviewerEdits | null = null
+): Diff {
   const fingerprinted = Array.from(signed.values()).some((row) => row.fingerprint !== '')
   const changed: string[] = []
   const added: string[] = []
@@ -357,6 +369,15 @@ function diffSides(signed: Side, live: Side, documents: Documents, addedAfterMs:
     // Second review #325 item 4: a job or place change (the record holds it; the snapshot does not).
     const placeNow = signedTimesheetBookingPlace(doc)
     const placeChanged = Boolean(row.place && placeNow && row.place !== placeNow)
+    // 1.74.0 §8: the reviewer changed this booking from this sheet's review and it is still exactly as they left it —
+    // not a change the person must sign again (the counter-signature covers it). Any later change by anyone else still
+    // counts: another fingerprint or place (a recorded '' place against a known place is a move), and — when the
+    // booking is no longer on the sheet — a tombstone, a status that takes it off the day or another person (below).
+    const edit = reviewerEdits?.get(key)
+    const editMatches = (fingerprint: string): boolean =>
+      Boolean(edit && !edit.deleted && edit.fingerprint && fingerprint && sameBooking(edit.fingerprint, fingerprint) && (!placeNow || edit.place === placeNow))
+    if (edit?.deleted && !now && (!doc || documents?.tombstoned.has(key) === true || statusTakesItOff(doc.status))) continue
+    if (now && editMatches(now.fingerprint)) continue
     if (now) {
       // Before 1.46.0 there is no fingerprint: only additions and removals count (hours are never compared).
       if ((row.fingerprint && now.fingerprint && !sameBooking(row.fingerprint, now.fingerprint)) || placeChanged) changed.push(row.bookingId)
@@ -380,6 +401,8 @@ function diffSides(signed: Side, live: Side, documents: Documents, addedAfterMs:
       removed.push(row.bookingId)
       continue
     }
+    // 1.74.0: still the person's and occupying its day, exactly as the reviewer left it — only a filter left it off.
+    if (editMatches(documentFingerprint(doc))) continue
     if ((row.fingerprint && !sameBooking(row.fingerprint, documentFingerprint(doc))) || placeChanged) changed.push(row.bookingId)
     // Otherwise the booking is as signed and only a filter left it off the lines: no change.
   }
@@ -396,6 +419,148 @@ function diffSides(signed: Side, live: Side, documents: Documents, addedAfterMs:
 
 function isEmptyDiff(diff: Diff | null): boolean {
   return !diff || (diff.changed.length === 0 && diff.added.length === 0 && diff.removed.length === 0)
+}
+
+/** Rulebook 1.74.0 §8: the sheet field that holds the reviewer's own booking edits (reviewer-only, §16). */
+export const TIMESHEET_REVIEWER_BOOKING_EDITS_FIELD = 'reviewerBookingEdits'
+
+/** One reviewer edit as stored on the sheet (`reviewerBookingEdits[key]`). `editedAt` is the server time (app). */
+export type TimesheetReviewerBookingEdit = {
+  bookingId: string
+  collection: string
+  /** `overtimeBookingFingerprint` of the booking as the reviewer left it; '' when deleted. */
+  fingerprint: string
+  /** `signedTimesheetBookingPlace` of the booking as the reviewer left it ('' when unknown or deleted). */
+  place: string
+  /** The reviewer deleted the booking (✕). */
+  deleted: boolean
+  /** The reviewer (line manager or admin) who made it. */
+  editedBy: string
+  /** The person's signature (`operativeSignedAt`, epoch ms) the edit applies to; a new signature supersedes it. */
+  forSignedAtMs: number
+}
+
+type ReviewerEdits = Map<string, TimesheetReviewerBookingEdit>
+
+/**
+ * The map key of one booking in `reviewerBookingEdits`: `{collection}__{bookingId lower case}`, with every character
+ * that is not a letter, digit, `_` or `-` written as `_` (safe as a Firestore field-path segment on every SDK).
+ */
+export function timesheetReviewerBookingEditKey(collection: unknown, bookingId: unknown): string {
+  const id = normalizeDocumentId(text(bookingId))
+  if (!id) return ''
+  const kind = text(collection) || 'bookings'
+  return `${kind}__${id}`.replace(/[^A-Za-z0-9_-]/g, '_')
+}
+
+/** The stored edits that belong to the current person signature (`forSignedAtMs` = `operativeSignedAt`), by booking. */
+function currentReviewerEdits(raw: unknown, operativeSignedMs: number | null): ReviewerEdits | null {
+  if (operativeSignedMs == null || !raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const out: ReviewerEdits = new Map()
+  for (const value of Object.values(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object') continue
+    const row = value as Record<string, unknown>
+    const forMs = typeof row.forSignedAtMs === 'number' ? row.forSignedAtMs : realMs(row.forSignedAtMs)
+    if (forMs == null || Math.abs(forMs - operativeSignedMs) > RECORD_SIGNED_AT_MATCH_MS) continue
+    const booking = lineBooking({ bookingId: row.bookingId, bookingCollection: row.collection })
+    if (!booking) continue
+    out.set(keyOf(booking.collection, booking.bookingId), {
+      bookingId: booking.bookingId,
+      collection: booking.collection,
+      fingerprint: text(row.fingerprint),
+      place: text(row.place),
+      deleted: row.deleted === true,
+      editedBy: text(row.editedBy),
+      forSignedAtMs: forMs,
+    })
+  }
+  return out.size > 0 ? out : null
+}
+
+/**
+ * Rulebook 1.74.0 §8 / §13 (owner answer 23 Nov): whether the line manager (or an admin) changed bookings from this
+ * sheet's review under the person's current signature — the sheet carries a `reviewerBookingEdits` record for it. Then
+ * the counter-signature notice tells the person their timesheet was updated (`timesheetSignedNoticeText`).
+ */
+export function timesheetSheetChangedByReviewer(sheet: SignedTimesheetSheet | null | undefined): boolean {
+  if (!sheet) return false
+  const signedMs = realMs(sheet.operativeSignedAt) ?? realMs(sheet.operativeSignedAtMs)
+  return currentReviewerEdits(sheet.reviewerBookingEdits, signedMs) != null
+}
+
+/**
+ * 1.74.0 §13: the counter-signature notice when the reviewer (the line manager, or an admin) changed the sheet before
+ * signing it off. The message names the signer when known; this is the wording without a name.
+ */
+export const TIMESHEET_SIGNED_UPDATED_NOTICE_TITLE = 'Your timesheet was updated and signed off'
+export const TIMESHEET_SIGNED_UPDATED_NOTICE_MESSAGE = 'Your timesheet was changed and signed off. Open it to check the changes.'
+/** The counter-signature notice as both apps have always written it. */
+export const TIMESHEET_SIGNED_NOTICE_TITLE = 'Timesheet signed'
+
+/**
+ * Rulebook 1.74.0 §13 (owner answer 23 Nov): the text of the `timesheet_signed_by_manager` row (same type, recipients
+ * `timesheetSignedRecipients`, same id and deep link — it opens the person's timesheet for that pay run, where they can
+ * generate the invoice). With `changedByReviewer` (`timesheetSheetChangedByReviewer` on the sheet as counter-signed):
+ * "Your timesheet was updated and signed off" / "{signedByName} changed your timesheet and signed it off. Open it to
+ * check the changes." — the signer may be the line manager or an admin, so it names them (without a name,
+ * `TIMESHEET_SIGNED_UPDATED_NOTICE_MESSAGE`); otherwise "Timesheet signed" / "{signedByName} signed your timesheet." as
+ * before. One notice at the counter-signature — never one per edit.
+ */
+export function timesheetSignedNoticeText(input: { signedByName?: string | null; changedByReviewer?: boolean | null }): {
+  title: string
+  message: string
+} {
+  const name = text(input.signedByName)
+  if (input.changedByReviewer === true) {
+    return {
+      title: TIMESHEET_SIGNED_UPDATED_NOTICE_TITLE,
+      message: name ? `${name} changed your timesheet and signed it off. Open it to check the changes.` : TIMESHEET_SIGNED_UPDATED_NOTICE_MESSAGE,
+    }
+  }
+  return { title: TIMESHEET_SIGNED_NOTICE_TITLE, message: `${name || 'Your line manager'} signed your timesheet.` }
+}
+
+/**
+ * Rulebook 1.74.0 §8 (owner decision 23 Nov, reverses part of 1.72.0): what a reviewer's ⚙ / ✕ from THIS sheet's review
+ * records on the sheet, in the same batch as the booking write, so the line manager can make as many changes as they
+ * like before counter-signing. `after` is the booking as the write leaves it (`timesheetReviewBookingAfterEdit`; null
+ * with `deleted`). Returns `{ key, value }` for `reviewerBookingEdits.{key}` (the app adds `editedAt`, server time), or
+ * null when there is nothing to record: the sheet is not signed by the person, or it is exported (frozen, §16), or the
+ * booking id is unusable. While the person's signature is the one recorded (`forSignedAtMs`), a booking that is still
+ * exactly as the reviewer left it (same fingerprint and place, or deleted when recorded deleted) is not a change the
+ * person must sign again (`signedTimesheetBookingChanges`, `signedTimesheetBookingWriteReopens`); anyone else's later
+ * change still reopens the sheet as 1.47.0.
+ */
+export function timesheetReviewerBookingEditRecord(input: {
+  sheet: SignedTimesheetSheet | null | undefined
+  booking: { collection: unknown; bookingId: unknown }
+  after: SignedTimesheetBookingDocument | null | undefined
+  deleted?: boolean | null
+  editedBy: unknown
+}): { key: string; value: TimesheetReviewerBookingEdit } | null {
+  const sheet = input.sheet
+  if (!sheet) return null
+  if (resolveTimesheetExportedAtMs(sheet as Record<string, unknown>) != null || realMs(sheet.exportedAtMs) != null) return null
+  const signedMs = realMs(sheet.operativeSignedAt) ?? realMs(sheet.operativeSignedAtMs)
+  if (signedMs == null) return null
+  const booking = lineBooking({ bookingId: input.booking?.bookingId, bookingCollection: input.booking?.collection })
+  if (!booking) return null
+  const key = timesheetReviewerBookingEditKey(booking.collection, booking.bookingId)
+  if (!key) return null
+  const deleted = input.deleted === true || !input.after
+  const after = deleted ? null : (input.after as SignedTimesheetBookingDocument)
+  return {
+    key,
+    value: {
+      bookingId: booking.bookingId,
+      collection: booking.collection,
+      fingerprint: after ? documentFingerprint({ ...after, bookingId: booking.bookingId, collection: booking.collection }) : '',
+      place: after ? signedTimesheetBookingPlace({ ...after, collection: booking.collection }) : '',
+      deleted,
+      editedBy: text(input.editedBy),
+      forSignedAtMs: signedMs,
+    },
+  }
 }
 
 /**
@@ -530,7 +695,21 @@ export function signedTimesheetBookingChanges(input: {
   // less the addition window.
   const recordReferenceMs = recordAtMs ?? operativeSignedMs
   const recordAddedAfter = recordReferenceMs == null ? null : recordReferenceMs - SIGNED_TIMESHEET_ADDITION_WINDOW_MS
-  const personDiff = record ? diffSides(record, live, documents, recordAddedAfter) : snapshotDiff
+  // 1.74.0 §8: the reviewer's own edits from this sheet's review never send it back to the person (they are judged
+  // against the person's reference only; the snapshot still reads them, so the line manager counter-signs again).
+  const reviewerEdits = currentReviewerEdits(sheet.reviewerBookingEdits, operativeSignedMs)
+  let personDiff: Diff | null
+  if (record) personDiff = diffSides(record, live, documents, recordAddedAfter, reviewerEdits)
+  else if (snapshotDiff && reviewerEdits && override) {
+    const snapshotAtMs = realMs(override.approvedAt) ?? realMs(sheet.managerSignedAt) ?? realMs(sheet.approvedAt) ?? operativeSignedMs
+    personDiff = diffSides(
+      groupLines(Array.isArray(override.lines) ? override.lines : []).byKey,
+      live,
+      documents,
+      snapshotAtMs == null ? null : snapshotAtMs - SIGNED_TIMESHEET_ADDITION_WINDOW_MS,
+      reviewerEdits
+    )
+  } else personDiff = snapshotDiff
 
   // 1.57.0 (17 Nov owner test): a snapshot that lacks a booking the person signed (their current record) and that is
   // still on the sheet was never counter-signed for that booking — e.g. web built it without the person's same-email
@@ -708,7 +887,9 @@ export function signedTimesheetBookingWriteReopens(input: {
   const personIds = Array.isArray(input.personIds)
     ? new Set(input.personIds.map((id) => normalizeDocumentId(text(id))).filter(Boolean))
     : null
-  const found = diffSides(signed, live, { byKey, tombstoned: new Set(), personIds }, addedAfter)
+  // 1.74.0 §8: a reviewer edit from this sheet's review (recorded in the same batch) is never a notice for the person.
+  const reviewerEdits = currentReviewerEdits(sheet.reviewerBookingEdits, operativeSignedMs)
+  const found = diffSides(signed, live, { byKey, tombstoned: new Set(), personIds }, addedAfter, reviewerEdits)
   const kind = found.changed.length > 0 ? 'changed' : found.removed.length > 0 ? 'removed' : found.added.length > 0 ? 'added' : null
   return { reopens: kind != null, kind, reference: used }
 }

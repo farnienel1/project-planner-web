@@ -465,7 +465,7 @@ function nameText(first: unknown, last: unknown): string {
 }
 
 /**
- * Rulebook 1.76.0 §5 (owner 23 Nov, C12): people who hold a qualification whose library entry has an end date
+ * Rulebook 1.75.0 §5 (owner 23 Nov, C12): people who hold a qualification whose library entry has an end date
  * (`hasEndDate` true or an `endDate`) but who have no expiry of their own for it (`qualificationExpiryDate` gives none
  * on every `operatives` row of theirs). The library entry's own end date is a template and never an expiry (1.73.0),
  * so these people get no qualification-expiry warning or reminder until their own date is set.

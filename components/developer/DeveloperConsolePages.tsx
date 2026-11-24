@@ -10,6 +10,7 @@ import { inRange } from '@/lib/analytics/aggregations'
 import { consoleEventsSince, resolveConsolePeriod } from '@/lib/analytics/consolePeriod'
 import { useConsolePrefs } from '@/lib/analytics/consolePrefs'
 import { MetricCard } from '@/components/developer/DeveloperShell'
+import { PlatformScoreboardSection } from '@/components/developer/PlatformScoreboard'
 
 export function DeveloperPlaceholderScreen({
   title,
@@ -54,6 +55,8 @@ export function DeveloperGrowthScreen() {
         <MetricCard label="First project" value={counts.firstProject} hint="project_created events" />
         <MetricCard label="Timesheet signed" value={counts.firstTimesheet} hint="timesheet_signed / approved events" />
       </div>
+      {/* Spec §4.1: the platform scoreboard moves here from the Overview (owner console PR 2); rebuilt in PR 8. */}
+      <PlatformScoreboardSection />
     </DeveloperShell>
   )
 }

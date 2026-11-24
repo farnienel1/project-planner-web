@@ -142,7 +142,7 @@ export default function DataHealthPage() {
         <UsersMissingLineManager organizationId={organization.id} />
         {/* Rulebook 1.34.0 §11: ghost operatives to check (`ghostsToCheck`). */}
         <GhostsToCheck organizationId={organization.id} />
-        {/* Rulebook 1.76.0 §5 (owner 23 Nov, C12): a library end date but no expiry of their own (`qualificationsMissingOwnExpiry`). */}
+        {/* Rulebook 1.75.0 §5 (owner 23 Nov, C12): a library end date but no expiry of their own (`qualificationsMissingOwnExpiry`). */}
         <QualificationsMissingOwnExpiry organizationId={organization.id} />
         {/* Rulebook 1.51.0 §7 (Q4b): annual leave whose person matches nobody (`leaveRecordsWithoutPerson`). */}
         <LeaveNotLinkedToPerson organizationId={organization.id} />

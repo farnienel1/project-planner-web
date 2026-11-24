@@ -37,6 +37,8 @@ export function signedTimesheetSheetFromDraft(draft: TimesheetDraft): SignedTime
     operativeSignedBookingsAt: draft.operativeSignedBookingsAt ?? null,
     operativeSignedBookingsSignedAt: draft.operativeSignedBookingsSignedAt ?? null,
     managerSignedAt: draft.managerSignedAt ?? null,
+    // Rulebook 1.74.0: the reviewer's own edits from this sheet's review never send it back to the person.
+    reviewerBookingEdits: draft.reviewerBookingEdits ?? null,
     exportedAt: draft.exportedAt ?? null,
     weeklyReportOverride: draft.weeklyReportOverride
       ? {

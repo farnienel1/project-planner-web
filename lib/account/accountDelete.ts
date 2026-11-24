@@ -1,5 +1,5 @@
 import { parseTimesheetStatusFields } from '@/lib/canonical'
-import { isInvitePlaceholderId } from '@/lib/owner/collapseDirectoryUsers'
+import { isValidUuid } from '@/lib/security/validation'
 import { isPlatformOwnerEmail } from '@/lib/platform/owner'
 import {
   accountDeletionPath,
@@ -295,7 +295,7 @@ export function isUnusedInvitePlaceholder(input: {
   const userId = String(input.userId || '').trim()
   const deletingUid = String(input.deletingUid || '').trim()
   if (!userId || !deletingUid || userId === deletingUid) return false
-  if (!isInvitePlaceholderId(userId)) return false
+  if (!isValidUuid(userId)) return false
   if (input.passwordSet !== false) return false
   const target = input.email.trim().toLowerCase()
   if (!target) return false
