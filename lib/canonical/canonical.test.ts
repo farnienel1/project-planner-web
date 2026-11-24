@@ -20134,12 +20134,15 @@ test('1.83.0 insurance & accreditations are in the packed rulebook (full cases i
 })
 
 test('1.84.0 client error reports are in the packed rulebook (full cases in clientErrors.test.ts)', () => {
-  const f = R112.clientErrorCreateFields({ platform: 'web', source: 'window', message: 'x for a@b.co', route: '/a?b', build: '1', nowMs: 86_400_000 * 3 })
-  assert.equal(f?.message, 'x for <email>')
+  const f = R112.clientErrorCreateFields({ platform: 'web', source: 'window', name: 'Error', message: 'Locked by Jane', messageHash: 'a'.repeat(64), route: '/a?b', build: '1', nowMs: 86_400_000 * 3 })
+  assert.equal(f?.messageKey, 'other')
+  assert.doesNotMatch(JSON.stringify(f), /Jane/)
+  assert.equal(f?.route, '/a')
   assert.equal(f?.dayIndex, 3)
   assert.equal(R112.clientErrorDocId('a'.repeat(64), 19), `${'a'.repeat(64)}_19`)
   assert.equal(R112.liveCollection('clientErrors')?.scope, 'platform')
   const firestoreRules = readFileSync(new URL('../../firestore.rules', import.meta.url), 'utf8')
   assert.match(firestoreRules, /match \/clientErrors\/\{errorId\} \{\n\s+allow read: if isPlatformOwner\(\);\n\s+allow create: if request\.auth != null && clientErrorValid\(request\.resource\.data\);/)
+  assert.match(firestoreRules, /d\.keys\(\)\.hasOnly\(\['platform', 'source', 'kind', 'where', 'route', 'build', 'messageKey', 'messageHash',/)
   assert.match(firestoreRules, /hashing\.sha256\(request\.auth\.uid \+ '\|' \+ string\(d\.dayIndex\)\)\.toHexString\(\)\.lower\(\) \+ '_1\?\[0-9\]\$'/)
 })

@@ -2509,13 +2509,17 @@ service cloud.firestore {
     function clientErrorValid(d) {
       let day = math.floor(request.time.toMillis() / 86400000);
       let o = d.get('organizationId', null);
-      return d.keys().hasOnly(['platform', 'source', 'message', 'route', 'build', 'organizationId', 'dayIndex', 'createdAt', 'expireAt']) &&
+      return d.keys().hasOnly(['platform', 'source', 'kind', 'where', 'route', 'build', 'messageKey', 'messageHash',
+          'organizationId', 'dayIndex', 'createdAt', 'expireAt']) &&
         d.dayIndex is int && (d.dayIndex == day || d.dayIndex == day - 1) &&
         errorId.matches('^' + hashing.sha256(request.auth.uid + '|' + string(d.dayIndex)).toHexString().lower() + '_1?[0-9]$') &&
         d.get('platform', '') in ['web', 'ios'] && d.get('source', '') in ['window', 'promise', 'boundary', 'caught', 'uncaught'] &&
-        d.message is string && d.message.size() > 0 && d.message.size() <= 600 && !d.message.matches('(?s).*@.*') &&
-        d.route is string && d.route.size() <= 240 && !d.route.matches('(?s).*[?#@].*') &&
-        d.build is string && d.build.size() <= 80 &&
+        d.kind is string && d.kind.matches('[A-Za-z0-9_./* -]{1,80}') &&
+        d.where is string && d.where.matches('[A-Za-z0-9_.$<>* -]{0,120}') &&
+        d.route is string && d.route.matches('/[a-z0-9:/_-]{0,119}') &&
+        d.build is string && d.build.matches('[A-Za-z0-9 .()+_*-]{0,40}') &&
+        d.messageKey is string && d.messageKey.matches('[a-z0-9-]{1,40}') &&
+        d.messageHash is string && d.messageHash.matches('[0-9a-f]{64}') &&
         o is string && (o == '' || o.matches('[A-Za-z0-9_-]{1,128}') && 'c' in callerOrg(o)) &&
         d.createdAt == request.time && d.expireAt is timestamp &&
         d.expireAt > request.time + duration.value(29, 'd') && d.expireAt < request.time + duration.value(31, 'd');

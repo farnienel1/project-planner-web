@@ -67,8 +67,14 @@ export const CONSOLE_NAV: ConsoleNavGroup[] = [
     id: 'platform',
     label: 'Platform',
     items: [
+      {
+        label: 'Status',
+        href: '/developer/status',
+        shown: true,
+        note: 'The running web deploy and rulebook, live rules against this build, Cloud Functions errors, email failures and platformConfig/app (read-only); a source the server cannot read is listed as Not connected.',
+      },
       { label: 'Health & data', href: '/developer/data-quality', shown: true, note: 'Today the Data quality page; rebuilt as Health & data in PR 9.', plannedIn: 'PR 9' },
-      { label: 'Errors', href: '/developer/errors', shown: true, note: 'clientErrors (D7, rulebook 1.84.0): anonymous web and iPhone error reports grouped by message, route and build, through the owner-only /api/owner/errors.' },
+      { label: 'Errors', href: '/developer/errors', shown: true, note: 'clientErrors (D7, rulebook 1.84.0): pseudonymous web and iPhone error reports (no message text) grouped by kind, where and message key / hash, through the owner-only /api/owner/errors.' },
       { label: 'Emails & notifications', href: null, shown: false, note: 'No email or push log is written yet (PR 11).', plannedIn: 'PR 11' },
       { label: 'Releases & switches', href: null, shown: false, note: 'Not built yet (PR 9, read-only, D17).', plannedIn: 'PR 9' },
     ],

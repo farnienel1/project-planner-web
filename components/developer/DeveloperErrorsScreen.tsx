@@ -17,8 +17,8 @@ function when(ms: number | null): string {
 }
 
 /**
- * Errors (owner console, D7, rulebook §32): the newest anonymous error reports from web and iPhone, grouped by
- * message, route and build with a count, newest first. Filters: platform and organisation. Read through the
+ * Errors (owner console, D7, rulebook §32): the newest pseudonymous error reports from web and iPhone, grouped by
+ * kind, where and message key / hash with a count, newest first. Filters: platform and organisation. Read through the
  * owner-only route `/api/owner/errors`; nothing here is written.
  */
 export function DeveloperErrorsScreen() {
@@ -67,8 +67,10 @@ export function DeveloperErrorsScreen() {
       }
     >
       <p className="text-sm text-(--ink2)">
-        Anonymous error reports from web and iPhone: a message, the screen&apos;s route and the build — no names, emails or
-        ids. At most 20 per person a day, each error once per session. Kept for 30 days.
+        Pseudonymous error reports from web and iPhone: the error type, where in the code, the route pattern and the
+        build. No message text is kept (only a known fixed message, else a hash), and no name or email; each report is
+        filed under a daily hash of the account, so it could be traced to a person only by someone who already knows who
+        to look for. At most 20 per person a day, each error once per session. Kept for 30 days.
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-1 text-sm">
@@ -109,9 +111,10 @@ export function DeveloperErrorsScreen() {
             <table className="w-full text-left text-sm">
               <thead className="bg-(--soft) text-xs uppercase text-(--ink3)">
                 <tr>
+                  <th className="px-4 py-2">Error</th>
                   <th className="px-4 py-2">Message</th>
-                  <th className="px-4 py-2">Route</th>
-                  <th className="px-4 py-2">Build</th>
+                  <th className="px-4 py-2">Routes</th>
+                  <th className="px-4 py-2">Builds</th>
                   <th className="px-4 py-2">Platform</th>
                   <th className="px-4 py-2">Count</th>
                   <th className="px-4 py-2">Last seen</th>
@@ -121,12 +124,16 @@ export function DeveloperErrorsScreen() {
               <tbody>
                 {groups.map((group) => (
                   <tr key={group.key} className="border-t border-(--line) align-top">
-                    <td className="px-4 py-3 break-words" style={{ maxWidth: 420 }}>
-                      {group.message}
+                    <td className="px-4 py-3 break-words" style={{ maxWidth: 320 }}>
+                      <span className="font-semibold">{group.kind}</span>
+                      <div className="font-mono text-xs text-(--ink2)">{group.where || '—'}</div>
                       <div className="text-xs text-(--ink3)">{group.sources.join(', ')}</div>
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs">{group.route}</td>
-                    <td className="px-4 py-3">{group.build || '—'}</td>
+                    <td className="px-4 py-3 break-words" style={{ maxWidth: 320 }}>
+                      {group.messageText || <span className="font-mono text-xs text-(--ink3)">other · {group.messageHashShort}</span>}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs">{group.routes.join(', ')}</td>
+                    <td className="px-4 py-3">{group.builds.filter(Boolean).join(', ') || '—'}</td>
                     <td className="px-4 py-3">{group.platform === 'ios' ? 'iPhone' : 'Web'}</td>
                     <td className="px-4 py-3 font-semibold">{group.count}</td>
                     <td className="px-4 py-3 whitespace-nowrap text-(--ink2)">

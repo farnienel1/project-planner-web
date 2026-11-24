@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { scheduleBookingClientLine } from './siteAddress.ts'
+import { projectLocalityText, scheduleBookingClientLine } from './siteAddress.ts'
 
 test('schedule booking card joins the client and site without a dangling separator', () => {
   assert.equal(
@@ -22,4 +22,11 @@ test('schedule booking card joins the client and site without a dangling separat
     'Scott Osborn · 51.51278, -0.13805'
   )
   assert.equal(scheduleBookingClientLine({ client: { name: 'Scott Osborn' } }), 'Scott Osborn')
+})
+
+test('Book labour locality shows a stored UK postcode as "SW1X 9HR"', () => {
+  assert.equal(projectLocalityText({ townCity: 'London', postcode: 'Sw1× 9Hr' }), 'London SW1X 9HR')
+  assert.equal(projectLocalityText({ townCity: ' ', postcode: 'ec4m7ju' }), 'EC4M 7JU')
+  assert.equal(projectLocalityText({ siteAddress: '1 High St, sw1x9hr' }), '1 High St, SW1X 9HR')
+  assert.equal(projectLocalityText({}), ' ')
 })

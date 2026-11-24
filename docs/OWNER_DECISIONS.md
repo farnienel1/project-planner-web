@@ -937,6 +937,17 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 |---|---|---|
 | 23 Nov | **Build owner console PR 5 (People 360 + person actions) next**, ahead of PR 3 (Needs you) and PR 4 (Organisations 360): resetting logins and changing people's names and emails is what is needed most before launch. | in progress (draft PR, branch `w-console-pr5`) |
 | 23 Nov | **Overview choices (PR 2, #433), owner answers:** (1) "Trial ending" means within **7 days** — yes; (2) "Quiet" stays **14 days** — keep; (3) MRR counts only the stored `billing.mrrPence` (never filled in from the list price) — ok; (4) email reveals are left out of the live feed — ok; (5) the extra attention reasons (payment failed, cancelling, unfinished) — ok. | done (PR 2, #433, merged 23 Nov) |
+| 24 Nov | **People directory grouped by account (email)**: one row per email; opening a row shows each organisation the person belongs to with that organisation's name for them (`memberNames`, 1.82), their level (`organizationLevelFor`), active state and line manager there (`lineManagerSummary` on that organisation's users documents). An organisation picker browses one organisation's people. Reveal email, audit and every action stay on the person page; "Change name here" opens the person page with that organisation's name change ready. | done web (draft PR, branch `w-console-status`) |
+| 24 Nov | **Status page** (owner console, Platform group): the running web deploy (Netlify commit / deploy id, else the build's own record), the rulebook it runs, the live Firestore and Storage rules against the files the build holds (server key, Firebase Rules API), Cloud Functions errors (Cloud Logging, server key), email failures (`emailLog`, D9), client errors (link once the 1.84 Errors page is in the menu) and `platformConfig/app` (minimum builds and switches, read-only). Each tile links somewhere useful; a source the server cannot read is listed as "Not connected" with the reason. No new credential added. | done web (draft PR, branch `w-console-status`) |
+
+## Status and People judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 24 Nov | A person's line manager in an organisation is read from their users document there and resolved on that organisation's roster, anchored members included (`rosterMembersForOrganization`), named with that organisation's own name for them (1.82.0). A member who belongs to an organisation only through a membership (their users document names another company) shows "Not recorded here". When the directory read was cut short, an unresolved line manager says the list is incomplete. | done (draft PR), owner to confirm |
+| 24 Nov | Opening a row on the People list writes no audit entry (no email is revealed; the reveal stays the logged one on the person page). | done (draft PR), owner to confirm |
+| 24 Nov | Email failures show "Not connected" until something writes `emailLog` (nothing does on main yet: owner console PR 11), rather than "0 failed". Cloud Functions and Cloud Run errors (2nd-gen functions run on Cloud Run) show "Not connected" unless the server key has the Logs Viewer role; no log message text is shown, only function names, counts and times. | done (draft PR), owner to confirm |
+| 24 Nov | The rules tile compares the live rules with the rules files the running web build was made from (main, for a production deploy), by sha256, as the rules publish workflow does; it does not call GitHub. | done (draft PR), owner to confirm |
 
 ## PR 5 judgement calls (owner to confirm)
 
@@ -1580,7 +1591,26 @@ The owner's answers of 24 Nov (items 1, 2, 5, 9 of the list sent that day) and c
 | Date | Choice | Status |
 |---|---|---|
 | 24 Nov | Reports need a signed-in account (errors on the sign-in page and signed-out screens are not reported), so nobody can write reports anonymously. | done, owner to confirm |
-| 24 Nov | Error reports are sent without asking for analytics consent: they carry no personal data and no cookie (D7 "no personal data"). The document id holds a hash of the account id and the day, needed for the 20-a-day cap; the day salt stops linking reports across days. | done, owner to confirm |
+| 24 Nov | Error reports are sent without asking for analytics consent: they carry no message text, name or email and no cookie. They are **pseudonymous**: the document id is a hash of the account id and the day (needed for the 20-a-day cap), which the owner could recompute for a known person and day; the day salt stops linking reports across days. | done, owner to confirm |
+| 24 Nov | **Review of #448: what an error report stores** — the error class and code (`kind`), the top app frame file and function (`where`), the route pattern, the build, the platform, a known-message key (only when the message exactly equals a fixed constant in `CLIENT_ERROR_KNOWN_MESSAGES`, else `other`) and a SHA-256 of the message. **Never the message text**, because messages are built from names at their throw sites. | done web + rulebook + rules (1.84.0); iOS (ios-1.84-rules-errors) |
+| 24 Nov | **Review of #448: wording** — reports are called *pseudonymous*, never anonymous or "no ids", in the rulebook (§32) and on the Errors page. | done |
 | 24 Nov | iPhone reports the error lines it already printed (`❌ …`, `Error …`, and `⚠️ …` lines that say failed / refused / could not) through `logAndReportError`, plus uncaught Objective-C exceptions on the next launch; Swift crashes (traps) are not caught. | done, owner to confirm |
 | 24 Nov | **Question: headroom target.** 10% off the compile cost is reachable (measured 200,137, −11.0%) only by binding more `let`s in the users, invitations, memberships, organisation and timesheet rules, which pushes 17 tested requests over Google's 1,000-expression limit. Shipped instead: the run-time-neutral cut (−2.4% cost, −2.7% bytes; 4 KB bytes and 24,800 compile-cost headroom under the unchanged budgets). Note: the CI cost cap is 245,000 (`scripts/rules-budget.json`), not 225,000. | question |
 | 24 Nov | The rules match variable `{organizationId}` is now `{orgId}` (2.7 KB of the byte saving); the rulebook and docs already say `organizations/{orgId}`. Helpers referred to by name in older notes may now be written out inside their callers (table in `docs/firestore-rules-notes.md`, "1.84.0 headroom"). | done, owner to confirm |
+
+## 24 Nov small fixes (w-small-fixes-24nov / ios-small-fixes-24nov)
+
+| Date | Decision | Status |
+|---|---|---|
+| 24 Nov | **iPhone site map exactly like web (#440):** "Show completed jobs" off by default (Active and Upcoming only; a job with people booked that day always shows); placement saved pin → "lat, lng" address → UK postcode (postcodes.io, else Apple geocoding of the postcode alone); "Jobs without an address" list where admins and the job's managers set the pin (existing job write); opens on the office about 10 miles; projects blue, small works red. Guardrail 3: a job whose address has no UK postcode (Apple used to geocode the whole address) now appears in that list instead of on the map. | done iOS (ios-small-fixes-24nov) |
+| 24 Nov | **iPhone Home "Site map" card for admins** (web has one): a card that opens the full map (web's card embeds a small map; the iPhone card does not). | done iOS, owner to confirm |
+| 24 Nov | **Postcodes shown as "SW1X 9HR" everywhere a stored address is printed** (display only): web Book labour locality line, clients, subcontractors, wholesalers; iPhone Projects, Home, works dashboard, materials send list, Book labour, scheduling headers, clients, subcontractors, wholesalers. Stored text and sent payloads (emails, WhatsApp) unchanged. | done web + iOS |
+| 24 Nov | **Web booking delete warning on signed timesheets** (§2 `bookingDeleteSignedTimesheetWarning`): checked every web delete path. Edit Booking (scheduling week, My Schedule), the Daily Overview move, Warnings clash rows and Replace already show it (store-level `announceSignedTimesheetDelete`). Not shown, by design: overtime Return / direct deletes (PAYE days have no timesheet), Data health placeholder removal (no person), person / job deletes (owner 13 Nov item 36). | checked web, no change needed |
+| 24 Nov | **Accreditation share links list:** an active link whose creator is no longer an active admin reads "Stopped — creator is no longer an admin" (the server list works it out with `orgComplianceShareCreatorActive`, as the share page does). Turn off still offered. | done web + iOS |
+
+## Small fixes judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 24 Nov | The timesheet review ✕ (a line manager deleting a booking from the timesheet they are reviewing) shows no signed-timesheet warning: the 1.74.0 rule keeps the sheet with the reviewer, so the warning's "goes back to the person to sign again" would be wrong there. | question |
+| 24 Nov | A creator whose users document cannot be read counts as stopped in the list (the share page refuses such a link too). | done, owner to confirm |

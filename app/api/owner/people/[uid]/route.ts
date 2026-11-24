@@ -1,27 +1,15 @@
-import { MEMBER_NAMES_COLLECTION, parseMemberNameDocuments, type MemberNames } from '@/lib/canonical/memberNames'
 import { NextRequest } from 'next/server'
 import { isFirebaseUser, jsonError } from '@/lib/security/apiGuard'
 import { isValidDocumentId } from '@/lib/security/validation'
-import { bearerToken, firestoreGet, firestoreRunQuery, restFieldsToPlain, restIn, structuredQuery } from '@/lib/owner/firestoreRest'
+import { bearerToken, firestoreRunQuery, restFieldsToPlain, restIn, structuredQuery } from '@/lib/owner/firestoreRest'
 import { OWNER_READ_FAILED_MESSAGE, ownerJson, ownerReadGuard, refreshParam } from '@/lib/owner/ownerReadRoute'
-import { OwnerPersonNotFoundError, loadOwnerPerson } from '@/lib/owner/personServer'
-import {
-  PERSON_AUDIT_READ_MAX,
-  PERSON_ORGANISATIONS_MAX,
-  ownerPersonAudit,
-  ownerPersonAuth,
-  ownerPersonDocument,
-  ownerPersonIds,
-  ownerPersonOrganisations,
-} from '@/lib/owner/person360'
-import { adminGetDocumentFields, adminListDocumentIds, adminLookupAuthRecords, firebaseAdminConfigured } from '@/lib/owner/identityToolkitAdmin'
+import { OwnerPersonNotFoundError, loadOwnerPerson, readOwnerPersonOrganisations } from '@/lib/owner/personServer'
+import { PERSON_AUDIT_READ_MAX, ownerPersonAudit, ownerPersonAuth, ownerPersonDocument, ownerPersonIds } from '@/lib/owner/person360'
+import { adminLookupAuthRecords } from '@/lib/owner/identityToolkitAdmin'
 import { isPlatformOwnerEmail } from '@/lib/platform/owner'
 import { stripPersonSearchKey, type PlainDoc } from '@/lib/owner/directory'
 
 export const runtime = 'nodejs'
-
-const PERSON_SERVER_KEY_NOTE =
-  'Sign-in facts and memberships in other companies need the server key (FIREBASE_SERVICE_ACCOUNT_JSON) on Netlify.'
 
 /**
  * GET /api/owner/people/[uid]?refresh= — the person page (spec §4.4): every users document of the person (the
@@ -38,53 +26,18 @@ export async function GET(request: NextRequest, context: { params: Promise<{ uid
   try {
     const person = await loadOwnerPerson(token, uid, { refresh: refreshParam(request) })
     const personIds = ownerPersonIds(person.row, person.userDocs)
-    const organizationIds = person.row.organizationIds.slice(0, PERSON_ORGANISATIONS_MAX)
-    const orgDocs = (
-      await Promise.all(
-        organizationIds.map(async (id) => {
-          const doc = await firestoreGet(token, `organizations/${id}`).catch(() => null)
-          return doc ? ({ id, data: restFieldsToPlain(doc.fields) } as PlainDoc) : null
-        })
-      )
-    ).filter((doc): doc is PlainDoc => Boolean(doc))
-
-    const serverKey = firebaseAdminConfigured()
-    const memberships = new Map<string, Record<string, unknown>>()
-    let membershipsRead = false
+    const orgRead = await readOwnerPersonOrganisations(token, person, personIds)
+    const serverKey = orgRead.serverKey
     let auth: ReturnType<typeof ownerPersonAuth>[] | null = null
-    let serverKeyError: string | null = serverKey ? null : PERSON_SERVER_KEY_NOTE
-    if (serverKey) {
+    let serverKeyError: string | null = orgRead.membershipsError
+    if (serverKey && !serverKeyError) {
       try {
-        for (const doc of person.userDocs) {
-          const ids = await adminListDocumentIds(`users/${doc.id}/orgMemberships`, 100)
-          for (const orgId of ids) {
-            if (memberships.has(orgId)) continue
-            const fields = await adminGetDocumentFields(`users/${doc.id}/orgMemberships/${orgId}`)
-            if (fields) memberships.set(orgId, restFieldsToPlain(fields))
-          }
-        }
-        membershipsRead = true
         auth = (await adminLookupAuthRecords(person.userDocs.map((doc) => doc.id))).map(ownerPersonAuth)
       } catch (error) {
         console.error('[owner/people] server key read', error instanceof Error ? error.name : 'error')
         serverKeyError = 'Sign-in facts could not be read with the server key just now. Try Refresh.'
       }
     }
-    const allOrgIds = [...new Set([...organizationIds, ...memberships.keys()])].slice(0, PERSON_ORGANISATIONS_MAX)
-    // Rulebook 1.82.0 §11: the person's name in each organisation — its `memberNames` entries for their ids, read by id
-    // (a refused or failed read shows the account name, never a blank).
-    const memberNames = new Map<string, MemberNames>()
-    await Promise.all(
-      allOrgIds.map(async (orgId) => {
-        const docs = await Promise.all(
-          person.userDocs.map(async (userDoc) => {
-            const found = await firestoreGet(token, `organizations/${orgId}/${MEMBER_NAMES_COLLECTION}/${userDoc.id}`).catch(() => null)
-            return found ? { id: userDoc.id, data: restFieldsToPlain(found.fields) } : null
-          })
-        )
-        memberNames.set(orgId, parseMemberNameDocuments(docs.filter((row): row is { id: string; data: Record<string, unknown> } => Boolean(row))))
-      })
-    )
 
     let auditError: string | null = null
     let auditEntries: PlainDoc[] = []
@@ -112,16 +65,8 @@ export async function GET(request: NextRequest, context: { params: Promise<{ uid
       person: stripPersonSearchKey(person.row),
       documents: person.userDocs.map(ownerPersonDocument),
       personIds,
-      organisations: ownerPersonOrganisations({
-        organizationIds: allOrgIds,
-        userDocs: person.userDocs,
-        personIds,
-        orgRows: person.orgRows,
-        orgDocs,
-        memberships,
-        memberNames,
-      }),
-      membershipsRead,
+      organisations: orgRead.organisations,
+      membershipsRead: orgRead.membershipsRead,
       auth,
       serverKey,
       serverKeyError,

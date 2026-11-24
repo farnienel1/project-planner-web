@@ -1,5 +1,5 @@
 /**
- * Rulebook 1.84.0 §32 (owner decision D7): `clientErrors/{id}` — anonymous error reports. Create only, by a signed-in
+ * Rulebook 1.84.0 §32 (owner decision D7): `clientErrors/{id}` — pseudonymous error reports with no message text. Create only, by a signed-in
  * account, in the exact shape (`clientErrorCreateFields`), with the document id the rules recompute from the caller's
  * uid and the day (`clientErrorDocId`: at most 20 a person a day); read only by the platform owner; never updated or
  * deleted by anyone.
@@ -31,13 +31,20 @@ async function db(uid: string, email = `${uid}@test.com`, verified = false): Pro
   return (await claimsContext(env, uid, { email, email_verified: verified })).firestore()
 }
 
+function hexFor(uid: string, day = Math.floor(Date.now() / 86_400_000)): string {
+  return createHash('sha256').update(clientErrorHashInput(uid, day)).digest('hex')
+}
+
 function idFor(uid: string, slot: number, nowMs = Date.now()): string {
-  const day = Math.floor(nowMs / 86_400_000)
-  return clientErrorDocId(createHash('sha256').update(clientErrorHashInput(uid, day)).digest('hex'), slot)!
+  return clientErrorDocId(hexFor(uid, Math.floor(nowMs / 86_400_000)), slot)!
 }
 
 function report(overrides: Record<string, unknown> = {}, nowMs = Date.now()) {
-  const f = clientErrorCreateFields({ platform: 'web', source: 'window', message: 'TypeError: x is undefined', route: '/dashboard', build: '1.84.0', organizationId: ORG, nowMs })!
+  const f = clientErrorCreateFields({
+    platform: 'web', source: 'window', name: 'TypeError', message: 'x is undefined',
+    messageHash: createHash('sha256').update('x is undefined').digest('hex'),
+    stack: '    at save (https://x/_next/static/chunks/page-1a.js:1:2)', route: '/dashboard', build: '1.84.0', organizationId: ORG, nowMs,
+  })!
   const { expireAtMs, ...rest } = f
   return { ...rest, createdAt: serverTimestamp(), expireAt: Timestamp.fromMillis(expireAtMs), ...overrides }
 }
@@ -73,9 +80,21 @@ test('1.84.0 a signed-in member creates a report in the exact shape under their 
 test('1.84.0 the id must be the caller\'s own hash and a slot below 20 (at most 20 a day)', async () => {
   const fs = await db(MEMBER)
   await assertFails(setDoc(doc(fs, 'clientErrors', idFor('someone-else', 0)), report()))
-  const hex = createHash('sha256').update(clientErrorHashInput(MEMBER, Math.floor(Date.now() / 86_400_000))).digest('hex')
-  await assertFails(setDoc(doc(fs, 'clientErrors', `${hex}_20`), report()))
+  const hex = hexFor(MEMBER)
+  for (const suffix of ['_20', '_01', '_-1', '_1a', '_', '_0_0', '']) {
+    await assertFails(setDoc(doc(fs, 'clientErrors', `${hex}${suffix}`), report()))
+  }
+  await assertFails(setDoc(doc(fs, 'clientErrors', `${hex.toUpperCase()}_0`), report()))
   await assertFails(setDoc(doc(fs, 'clientErrors', 'random-id'), report()))
+})
+
+test('1.84.0 yesterday\'s day index (a report made just before midnight UTC) is accepted under yesterday\'s hash; older days are not', async () => {
+  const fs = await db(MEMBER)
+  const today = Math.floor(Date.now() / 86_400_000)
+  await assertSucceeds(setDoc(doc(fs, 'clientErrors', `${hexFor(MEMBER, today - 1)}_0`), report({ dayIndex: today - 1 })))
+  await assertFails(setDoc(doc(fs, 'clientErrors', `${hexFor(MEMBER, today - 2)}_0`), report({ dayIndex: today - 2 })))
+  // The day in the hash must be the stored day.
+  await assertFails(setDoc(doc(fs, 'clientErrors', `${hexFor(MEMBER, today)}_5`), report({ dayIndex: today - 1 })))
 })
 
 test('1.84.0 a slot already used cannot be written again (create only, never update or delete)', async () => {
@@ -87,15 +106,20 @@ test('1.84.0 a slot already used cannot be written again (create only, never upd
   await assertFails(deleteDoc(doc(fs, 'clientErrors', id)))
 })
 
-test('1.84.0 the shape is exact: no extra key, no personal data, known platform and source, server time, 30-day expiry', async () => {
+test('1.84.0 the shape is exact: no message text, no extra key, typed and capped fields, server time, 30-day expiry', async () => {
   const fs = await db(MEMBER)
   const id = idFor(MEMBER, 1)
   await assertFails(setDoc(doc(fs, 'clientErrors', id), report({ userId: MEMBER })))
-  await assertFails(setDoc(doc(fs, 'clientErrors', id), report({ message: 'mail me at a@b.co' })))
+  await assertFails(setDoc(doc(fs, 'clientErrors', id), report({ message: 'Order is locked by Jane Smith' })))
+  await assertFails(setDoc(doc(fs, 'clientErrors', id), report({ kind: 'Locked by Jane, a@b.co' })))
+  await assertFails(setDoc(doc(fs, 'clientErrors', id), report({ where: 'page.js:12 save(Jane)' })))
   await assertFails(setDoc(doc(fs, 'clientErrors', id), report({ route: '/x?token=1' })))
+  await assertFails(setDoc(doc(fs, 'clientErrors', id), report({ route: '/users/Jane' })))
+  await assertFails(setDoc(doc(fs, 'clientErrors', id), report({ messageKey: 'Jane Smith' })))
+  await assertFails(setDoc(doc(fs, 'clientErrors', id), report({ messageHash: 'abc' })))
+  await assertFails(setDoc(doc(fs, 'clientErrors', id), report({ kind: 'x'.repeat(81) })))
   await assertFails(setDoc(doc(fs, 'clientErrors', id), report({ platform: 'android' })))
   await assertFails(setDoc(doc(fs, 'clientErrors', id), report({ source: 'other' })))
-  await assertFails(setDoc(doc(fs, 'clientErrors', id), report({ message: '' })))
   await assertFails(setDoc(doc(fs, 'clientErrors', id), report({ createdAt: Timestamp.fromMillis(Date.now() - 60_000) })))
   await assertFails(setDoc(doc(fs, 'clientErrors', id), report({ expireAt: Timestamp.fromMillis(Date.now() + 400 * 86_400_000) })))
   await assertFails(setDoc(doc(fs, 'clientErrors', id), report({ dayIndex: Math.floor(Date.now() / 86_400_000) + 5 })))

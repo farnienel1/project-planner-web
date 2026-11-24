@@ -90,12 +90,15 @@ var ProjectPlannerCanonical = (() => {
     CLIENT_ERROR_BUILD_MAX: () => CLIENT_ERROR_BUILD_MAX,
     CLIENT_ERROR_DAY_MS: () => CLIENT_ERROR_DAY_MS,
     CLIENT_ERROR_FIELDS: () => CLIENT_ERROR_FIELDS,
-    CLIENT_ERROR_MESSAGE_MAX: () => CLIENT_ERROR_MESSAGE_MAX,
+    CLIENT_ERROR_KIND_MAX: () => CLIENT_ERROR_KIND_MAX,
+    CLIENT_ERROR_KNOWN_MESSAGES: () => CLIENT_ERROR_KNOWN_MESSAGES,
     CLIENT_ERROR_ORGANIZATION_ID_MAX: () => CLIENT_ERROR_ORGANIZATION_ID_MAX,
+    CLIENT_ERROR_OTHER_MESSAGE_KEY: () => CLIENT_ERROR_OTHER_MESSAGE_KEY,
     CLIENT_ERROR_PLATFORMS: () => CLIENT_ERROR_PLATFORMS,
     CLIENT_ERROR_ROUTE_MAX: () => CLIENT_ERROR_ROUTE_MAX,
     CLIENT_ERROR_SOURCES: () => CLIENT_ERROR_SOURCES,
     CLIENT_ERROR_TTL_DAYS: () => CLIENT_ERROR_TTL_DAYS,
+    CLIENT_ERROR_WHERE_MAX: () => CLIENT_ERROR_WHERE_MAX,
     COMPANY_ACTIVITY_NOTICE_TYPES: () => COMPANY_ACTIVITY_NOTICE_TYPES,
     COMPANY_EXPORT_REFUSED_MESSAGE: () => COMPANY_EXPORT_REFUSED_MESSAGE,
     CROSS_PLATFORM_CONTRACT_READERS: () => CROSS_PLATFORM_CONTRACT_READERS,
@@ -984,13 +987,19 @@ var ProjectPlannerCanonical = (() => {
     clashPairKey: () => clashPairKey,
     clashResolutionKey: () => clashResolutionKey,
     clashScanDays: () => clashScanDays,
+    clientErrorBuild: () => clientErrorBuild,
     clientErrorCreateFields: () => clientErrorCreateFields,
     clientErrorDayIndex: () => clientErrorDayIndex,
     clientErrorDocId: () => clientErrorDocId,
     clientErrorGroups: () => clientErrorGroups,
     clientErrorHashInput: () => clientErrorHashInput,
+    clientErrorKind: () => clientErrorKind,
+    clientErrorMessageKey: () => clientErrorMessageKey,
+    clientErrorNextSlot: () => clientErrorNextSlot,
+    clientErrorRoute: () => clientErrorRoute,
     clientErrorSignature: () => clientErrorSignature,
     clientErrorThrottle: () => clientErrorThrottle,
+    clientErrorWhere: () => clientErrorWhere,
     clientWriteFields: () => clientWriteFields,
     clockMinutesFromDeliveryInstant: () => clockMinutesFromDeliveryInstant,
     coalesceOrganizationName: () => coalesceOrganizationName,
@@ -1821,6 +1830,7 @@ var ProjectPlannerCanonical = (() => {
     readsOnlyOwnLeave: () => readsOnlyOwnLeave,
     receivesJobNotification: () => receivesJobNotification,
     recordsToSave: () => recordsToSave,
+    redactClientErrorTokens: () => redactClientErrorTokens,
     rememberedOrganizationSurvivesSignOut: () => rememberedOrganizationSurvivesSignOut,
     removedEvidenceHeading: () => removedEvidenceHeading,
     removedQualificationCertificateIds: () => removedQualificationCertificateIds,
@@ -1859,8 +1869,6 @@ var ProjectPlannerCanonical = (() => {
     rulebookVersionLabel: () => rulebookVersionLabel,
     safeExternalUrl: () => safeExternalUrl,
     sameNamePersonContactLabel: () => sameNamePersonContactLabel,
-    sanitizeClientErrorRoute: () => sanitizeClientErrorRoute,
-    sanitizeClientErrorText: () => sanitizeClientErrorText,
     saveHoursLabel: () => saveHoursLabel,
     scheduleCellHours: () => scheduleCellHours,
     scheduleCellKind: () => scheduleCellKind,
@@ -17372,7 +17380,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.84.0" : "",
-      sha256: true ? "c6a93907c39554db96676d2fb5287b4cc0a19128c16120007a66fdd167cbc05f" : ""
+      sha256: true ? "d63be3c1c90bba0d8abbc9d6c5ced4e0ff9ff4c2c3eac6e0bc40b12b6ceb1d09" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -33047,62 +33055,113 @@ var ProjectPlannerCanonical = (() => {
   var CLIENT_ERROR_SOURCES = ["window", "promise", "boundary", "caught", "uncaught"];
   var CLIENT_ERRORS_PER_DAY = 20;
   var CLIENT_ERROR_TTL_DAYS = 30;
-  var CLIENT_ERROR_MESSAGE_MAX = 300;
+  var CLIENT_ERROR_KIND_MAX = 80;
+  var CLIENT_ERROR_WHERE_MAX = 120;
   var CLIENT_ERROR_ROUTE_MAX = 120;
   var CLIENT_ERROR_BUILD_MAX = 40;
   var CLIENT_ERROR_ORGANIZATION_ID_MAX = 128;
   var CLIENT_ERROR_DAY_MS = 864e5;
+  var CLIENT_ERROR_OTHER_MESSAGE_KEY = "other";
   var CLIENT_ERROR_FIELDS = [
     "platform",
     "source",
-    "message",
+    "kind",
+    "where",
     "route",
     "build",
+    "messageKey",
+    "messageHash",
     "organizationId",
     "dayIndex",
     "createdAt",
     "expireAt"
   ];
-  var EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
-  var URL_WITH_PARTS = /\b(?:https?|wss?|ftp|file|gs):\/\/[^\s'"<>()]+/gi;
-  var UUID = /\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b/g;
-  var LONG_HEX = /\b[0-9a-fA-F]{16,}\b/g;
-  var LONG_DIGITS = /\b\d{6,}\b/g;
-  var ID_TOKEN = /\b(?=[A-Za-z0-9_-]*\d)(?=[A-Za-z0-9_-]*[A-Za-z])[A-Za-z0-9_-]{16,}\b/g;
-  var JWT = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?/g;
+  var CLIENT_ERROR_KNOWN_MESSAGES = {
+    "edit-of-missing-document": EDIT_OF_MISSING_DOCUMENT_MESSAGE,
+    "offline-online-only": OFFLINE_ONLINE_ONLY_MESSAGE,
+    "booking-replay-refused": BOOKING_REPLAY_REFUSED_MESSAGE,
+    "offline-delete-changed": OFFLINE_DELETE_CHANGED_MESSAGE,
+    "pay-history-not-loaded": PAY_HISTORY_NOT_LOADED_MESSAGE,
+    "payroll-policy-stale-save": PAYROLL_POLICY_STALE_SAVE_MESSAGE,
+    "timesheet-snapshot-failed": TIMESHEET_SNAPSHOT_FAILED_MESSAGE,
+    "variation-renumber-stale": VARIATION_RENUMBER_STALE_MESSAGE,
+    "firestore-permission-denied": "Missing or insufficient permissions.",
+    "firestore-client-offline": "Failed to get document because the client is offline.",
+    "firestore-unavailable": "The service is currently unavailable. This is a most likely a transient condition and may be corrected by retrying with a backoff.",
+    "fetch-failed": "Failed to fetch",
+    "fetch-load-failed": "Load failed",
+    "network-error": "NetworkError when attempting to fetch resource.",
+    "network-request-failed": "Firebase: Error (auth/network-request-failed).",
+    "resize-observer-loop": "ResizeObserver loop completed with undelivered notifications.",
+    "resize-observer-limit": "ResizeObserver loop limit exceeded",
+    "script-error": "Script error.",
+    "aborted": "The user aborted a request.",
+    "quota-exceeded": "QuotaExceededError"
+  };
+  function clientErrorMessageKey(message) {
+    if (typeof message !== "string") return CLIENT_ERROR_OTHER_MESSAGE_KEY;
+    const text58 = message.trim();
+    for (const [key8, known] of Object.entries(CLIENT_ERROR_KNOWN_MESSAGES)) if (known === text58) return key8;
+    return CLIENT_ERROR_OTHER_MESSAGE_KEY;
+  }
+  function redactClientErrorTokens(text58) {
+    return text58.replace(/[A-Za-z0-9]{16,}/g, "*");
+  }
   function cap(text58, max) {
-    const chars = Array.from(text58);
-    return chars.length <= max ? text58 : chars.slice(0, Math.max(0, max - 1)).join("") + "\u2026";
+    return text58.length <= max ? text58 : text58.slice(0, max);
   }
-  function stripUrl(url) {
-    const cut = url.search(/[?#]/);
-    const bare = cut >= 0 ? url.slice(0, cut) : url;
-    return bare.replace(/\/[^/]*$/, (last) => /\d/.test(last) && last.length > 12 ? "/:id" : last);
+  function clientErrorKind(name, code) {
+    const t = typeof name === "string" ? name.trim() : "";
+    const n = /^[A-Za-z][A-Za-z_.]{0,59}$/.test(t) || /^[A-Za-z][A-Za-z0-9_.]{0,14}$/.test(t) ? t : "Error";
+    const raw = typeof code === "number" && Number.isInteger(code) ? String(code) : typeof code === "string" ? code.trim() : "";
+    const c = /^-?[A-Za-z0-9/_.-]{1,40}$/.test(raw) ? redactClientErrorTokens(raw) : "";
+    return cap(c ? `${n} ${c}` : n, CLIENT_ERROR_KIND_MAX);
   }
-  function sanitizeClientErrorText(value, max = CLIENT_ERROR_MESSAGE_MAX) {
-    if (typeof value !== "string") return "";
-    let text58 = value.replace(JWT, "<id>").replace(EMAIL, "<email>").replace(URL_WITH_PARTS, (url) => stripUrl(url)).replace(UUID, "<id>").replace(LONG_HEX, "<id>").replace(ID_TOKEN, "<id>").replace(LONG_DIGITS, "<id>");
-    text58 = text58.replace(/@/g, " at ");
-    text58 = text58.replace(/\s+/g, " ").trim();
-    return cap(text58, max);
+  function frameName(file, fn) {
+    const base = file.replace(/[?#].*$/, "").split("/").pop() || "";
+    const f = base.replace(/[^A-Za-z0-9_.-]/g, "");
+    const g = fn.replace(/[^A-Za-z0-9_.$<>]/g, "");
+    return cap(redactClientErrorTokens([f, g].filter(Boolean).join(" ")), CLIENT_ERROR_WHERE_MAX);
   }
-  function sanitizeClientErrorRoute(value) {
-    if (typeof value !== "string" || !value.trim()) return "/";
-    let path = value.trim();
+  function clientErrorWhere(input) {
+    if (typeof input.file === "string" || typeof input.function === "string") {
+      const fn = typeof input.function === "string" ? input.function.replace(/\(.*$/, "") : "";
+      return frameName(typeof input.file === "string" ? input.file : "", fn);
+    }
+    if (typeof input.stack !== "string") return "";
+    const skip = /node_modules|\/framework[-.]|\/main-app[-.]|\/webpack[-.]|\/polyfills[-.]|react-dom|next\/dist|<anonymous>|native code/;
+    for (const line of input.stack.split("\n").slice(0, 30)) {
+      const chrome = line.match(/^\s*at\s+(?:(?:async\s+)?([^\s(]+)\s+\()?([^()\s]+?):\d+(?::\d+)?\)?\s*$/);
+      const gecko = line.match(/^\s*([^@\s]*)@(.+?):\d+(?::\d+)?\s*$/);
+      const m = chrome ? { fn: chrome[1] || "", file: chrome[2] } : gecko ? { fn: gecko[1] || "", file: gecko[2] } : null;
+      if (!m || skip.test(m.file)) continue;
+      const where = frameName(m.file, m.fn.split(".").pop() || "");
+      if (where) return where;
+    }
+    return "";
+  }
+  function clientErrorRoute(value) {
+    if (typeof value !== "string") return "/";
+    let path = value.normalize("NFKC").trim();
+    path = path.replace(/[?#].*$/s, "");
     path = path.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, "");
-    const cut = path.search(/[?#]/);
-    if (cut >= 0) path = path.slice(0, cut);
-    if (!path.startsWith("/")) path = "/" + path;
+    if (!path.startsWith("/")) path = path.includes("/") && /^[^/]*\./.test(path) ? path.replace(/^[^/]*/, "") : "/" + path;
     const parts3 = path.split("/").map((segment2) => {
       if (!segment2) return segment2;
-      if (segment2.includes("@")) return ":id";
-      if (/^[0-9a-fA-F-]{8,}$/.test(segment2) && /\d/.test(segment2)) return ":id";
-      if (/^\d+$/.test(segment2)) return ":id";
-      if (/^[A-Za-z0-9_-]{16,}$/.test(segment2) && /\d/.test(segment2)) return ":id";
-      return segment2.replace(/[^A-Za-z0-9_.\-[\]:]/g, "");
+      let s = segment2;
+      try {
+        s = decodeURIComponent(segment2).normalize("NFKC");
+      } catch {
+        return ":id";
+      }
+      return /^[a-z][a-z0-9_-]{0,39}$/.test(s) && !/[0-9]{3,}/.test(s) && s.length < 16 ? s : ":id";
     });
     const out = parts3.join("/").replace(/\/{2,}/g, "/") || "/";
     return cap(out, CLIENT_ERROR_ROUTE_MAX);
+  }
+  function clientErrorBuild(value) {
+    const raw = typeof value === "string" ? value.trim() : "";
+    return cap(redactClientErrorTokens(raw.replace(/[^A-Za-z0-9 .()+_-]/g, "")), CLIENT_ERROR_BUILD_MAX);
   }
   function clientErrorDayIndex(nowMs2) {
     return Math.floor(nowMs2 / CLIENT_ERROR_DAY_MS);
@@ -33116,7 +33175,7 @@ var ProjectPlannerCanonical = (() => {
     return `${hashHex}_${slot}`;
   }
   function clientErrorSignature(input) {
-    return [input.platform, input.source, input.message, input.route, input.build].join("");
+    return [input.platform, input.source, input.kind, input.where, input.route, input.build, input.messageHash].join("");
   }
   function clientErrorThrottle(state, input) {
     const sameDay = state && state.dayIndex === input.dayIndex;
@@ -33133,21 +33192,24 @@ var ProjectPlannerCanonical = (() => {
       state: { dayIndex: input.dayIndex, used: current.used + 1, sent: [...current.sent, input.signature] }
     };
   }
+  function clientErrorNextSlot(slot) {
+    return Number.isInteger(slot) && slot + 1 < CLIENT_ERRORS_PER_DAY ? slot + 1 : null;
+  }
   function clientErrorCreateFields(input) {
     if (!CLIENT_ERROR_PLATFORMS.includes(input.platform)) return null;
     if (!CLIENT_ERROR_SOURCES.includes(input.source)) return null;
-    const message = sanitizeClientErrorText(input.message, CLIENT_ERROR_MESSAGE_MAX);
-    if (!message) return null;
-    const build = sanitizeClientErrorText(typeof input.build === "string" ? input.build : "", CLIENT_ERROR_BUILD_MAX);
+    if (typeof input.messageHash !== "string" || !/^[0-9a-f]{64}$/.test(input.messageHash)) return null;
     const org = typeof input.organizationId === "string" ? input.organizationId.trim() : "";
-    const organizationId = org && org.length <= CLIENT_ERROR_ORGANIZATION_ID_MAX && /^[A-Za-z0-9_-]+$/.test(org) ? org : "";
     return {
       platform: input.platform,
       source: input.source,
-      message,
-      route: sanitizeClientErrorRoute(input.route),
-      build,
-      organizationId,
+      kind: clientErrorKind(input.name, input.code),
+      where: clientErrorWhere({ stack: input.stack, file: input.file, function: input.function }),
+      route: clientErrorRoute(input.route),
+      build: clientErrorBuild(input.build),
+      messageKey: clientErrorMessageKey(input.message),
+      messageHash: input.messageHash,
+      organizationId: org.length <= CLIENT_ERROR_ORGANIZATION_ID_MAX && /^[A-Za-z0-9_-]+$/.test(org) ? org : "",
       dayIndex: clientErrorDayIndex(input.nowMs),
       expireAtMs: input.nowMs + CLIENT_ERROR_TTL_DAYS * CLIENT_ERROR_DAY_MS
     };
@@ -33175,22 +33237,45 @@ var ProjectPlannerCanonical = (() => {
       id: id2,
       platform: text58("platform"),
       source: text58("source"),
-      message: text58("message"),
+      kind: text58("kind"),
+      where: text58("where"),
       route: text58("route"),
       build: text58("build"),
+      messageKey: text58("messageKey") || CLIENT_ERROR_OTHER_MESSAGE_KEY,
+      messageHash: text58("messageHash"),
       organizationId: text58("organizationId"),
       createdAtMs: instantMs5(d.createdAt)
     };
   }
   function clientErrorGroups(records, filter = {}) {
     const groups = /* @__PURE__ */ new Map();
+    const add = (list, value) => {
+      if (!list.includes(value)) list.push(value);
+    };
     for (const r of records) {
       if (filter.platform && r.platform !== filter.platform) continue;
-      if (filter.organizationId != null && filter.organizationId !== "__all__" && r.organizationId !== filter.organizationId) continue;
-      const key8 = [r.platform, r.message, r.route, r.build].join("");
+      if (filter.organizationId != null && r.organizationId !== filter.organizationId) continue;
+      const message = r.messageKey && r.messageKey !== CLIENT_ERROR_OTHER_MESSAGE_KEY ? r.messageKey : `#${r.messageHash}`;
+      const key8 = [r.platform, r.kind, r.where, message].join("");
       let g = groups.get(key8);
       if (!g) {
-        g = { key: key8, platform: r.platform, message: r.message, route: r.route, build: r.build, count: 0, firstMs: null, lastMs: null, organizationIds: [], sources: [] };
+        const known = r.messageKey !== CLIENT_ERROR_OTHER_MESSAGE_KEY;
+        g = {
+          key: key8,
+          platform: r.platform,
+          kind: r.kind,
+          where: r.where,
+          messageKey: known ? r.messageKey : CLIENT_ERROR_OTHER_MESSAGE_KEY,
+          messageText: known ? CLIENT_ERROR_KNOWN_MESSAGES[r.messageKey] || "" : "",
+          messageHashShort: r.messageHash.slice(0, 12),
+          routes: [],
+          builds: [],
+          count: 0,
+          firstMs: null,
+          lastMs: null,
+          organizationIds: [],
+          sources: []
+        };
         groups.set(key8, g);
       }
       g.count += 1;
@@ -33198,8 +33283,10 @@ var ProjectPlannerCanonical = (() => {
         g.firstMs = g.firstMs == null ? r.createdAtMs : Math.min(g.firstMs, r.createdAtMs);
         g.lastMs = g.lastMs == null ? r.createdAtMs : Math.max(g.lastMs, r.createdAtMs);
       }
-      if (!g.organizationIds.includes(r.organizationId)) g.organizationIds.push(r.organizationId);
-      if (!g.sources.includes(r.source)) g.sources.push(r.source);
+      add(g.routes, r.route);
+      add(g.builds, r.build);
+      add(g.organizationIds, r.organizationId);
+      add(g.sources, r.source);
     }
     return [...groups.values()].sort((a, b) => (b.lastMs ?? -1) - (a.lastMs ?? -1) || b.count - a.count || a.key.localeCompare(b.key));
   }

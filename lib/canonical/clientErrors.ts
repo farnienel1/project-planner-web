@@ -1,117 +1,185 @@
 /**
  * Client error reports (rulebook §32, 1.84.0; owner decision D7, 16 Nov): a small, sampled `clientErrors`
- * collection written by web and iOS — at most 20 reports per person per day, each a message, a route and a build,
- * with no personal data — read only by the platform owner (owner console → Errors). No third-party tool.
+ * collection written by web and iOS — at most 20 reports per person per day — read only by the platform owner
+ * (owner console → Errors). No third-party tool.
  *
- * `clientErrors/{id}` (root collection) holds exactly `CLIENT_ERROR_FIELDS`:
+ * A report never holds free text: error messages are built from names and other personal data at their throw
+ * sites ("Order is locked by Jane Smith"), and no pattern can strip that reliably. `clientErrors/{id}` (root)
+ * holds exactly `CLIENT_ERROR_FIELDS`:
  * - `platform` `web` | `ios`; `source` one of `CLIENT_ERROR_SOURCES`;
- * - `message` (1–300 characters) and `route` (0–120) after `sanitizeClientErrorText` / `sanitizeClientErrorRoute`:
- *   no email address, no URL query string or fragment, no id-like token (UUIDs, long hex, long digit runs,
- *   Firebase-style ids), whitespace collapsed, capped;
- * - `build` (0–40): the app version / build number;
- * - `organizationId`: the open organisation, or '' (an error before one is open — the person must still be signed in);
- * - `dayIndex`: the UTC day number (`floor(ms / 86,400,000)`), the throttle's day;
- * - `createdAt` (server time) and `expireAt` (30 days later, `CLIENT_ERROR_TTL_DAYS`; Firestore TTL deletes it).
+ * - `kind`: the error class and code only (`clientErrorKind`: "FirebaseError permission-denied", "TypeError",
+ *   "NSCocoaErrorDomain 4");
+ * - `where`: the top app stack frame, file and function only (`clientErrorWhere`), never arguments or line text;
+ * - `route`: the route pattern (`clientErrorRoute`: every segment that is not a plain lower-case word is `:id`);
+ * - `build`: the app version / build;
+ * - `messageKey`: the key of the message when it is exactly one of `CLIENT_ERROR_KNOWN_MESSAGES` (fixed constants),
+ *   else `other` (`clientErrorMessageKey`);
+ * - `messageHash`: the lower-case hex SHA-256 of the raw message (computed by the app), so identical errors group
+ *   together without their text;
+ * - `organizationId` ('' when none is open), `dayIndex` (UTC day), `createdAt` (server time), `expireAt` (+30 days).
  *
- * No user id is stored. The document id is `<sha256(uid + '|' + dayIndex), hex>_<slot>` with a slot 0–19
- * (`clientErrorDocId`, `clientErrorHashInput`): the security rules recompute the hash from the signed-in account and
- * only accept a create (never an update), so one person can write at most 20 reports per UTC day whatever their
- * device does, and the day salt stops a report being linked to the same person on another day. The apps hash
- * (web SubtleCrypto, iOS CryptoKit); the packed script has no hash function.
- *
- * The device throttles first (`clientErrorThrottle`): the same error is sent once per session (`clientErrorSignature`),
- * and the slot counter for the day is kept on the device; when it runs out nothing is sent.
+ * Pseudonymous, not anonymous: the document id is `<sha256(uid + '|' + dayIndex), hex>_<slot>` (`clientErrorDocId`)
+ * — the security rules recompute the hash from the signed-in account and allow a create only, so one person writes at
+ * most 20 a day; the owner could recompute it for a known uid and day, so a report can be linked to a person by
+ * someone who already knows who to look for. The day salt stops linking one person's reports across days.
  */
+import { BOOKING_REPLAY_REFUSED_MESSAGE, OFFLINE_DELETE_CHANGED_MESSAGE } from './bookingTombstones'
+import { EDIT_OF_MISSING_DOCUMENT_MESSAGE } from './liveSources'
+import { OFFLINE_ONLINE_ONLY_MESSAGE } from './offlinePolicy'
+import { PAY_HISTORY_NOT_LOADED_MESSAGE } from './payRate'
+import { PAYROLL_POLICY_STALE_SAVE_MESSAGE } from './payrollPolicySchedule'
+import { TIMESHEET_SNAPSHOT_FAILED_MESSAGE } from './timesheetSnapshot'
+import { VARIATION_RENUMBER_STALE_MESSAGE } from './variations'
 
 export const CLIENT_ERRORS_COLLECTION = 'clientErrors'
 export const CLIENT_ERROR_PLATFORMS = ['web', 'ios'] as const
 export type ClientErrorPlatform = (typeof CLIENT_ERROR_PLATFORMS)[number]
 /** window = window.onerror; promise = an unhandled promise rejection; boundary = a React error boundary;
- * caught = an error the app caught and logged; uncaught = an uncaught exception / crash signal (iOS). */
+ * caught = an error the app caught and logged; uncaught = an uncaught exception (iOS, sent on the next launch). */
 export const CLIENT_ERROR_SOURCES = ['window', 'promise', 'boundary', 'caught', 'uncaught'] as const
 export type ClientErrorSource = (typeof CLIENT_ERROR_SOURCES)[number]
 export const CLIENT_ERRORS_PER_DAY = 20
 export const CLIENT_ERROR_TTL_DAYS = 30
-export const CLIENT_ERROR_MESSAGE_MAX = 300
+export const CLIENT_ERROR_KIND_MAX = 80
+export const CLIENT_ERROR_WHERE_MAX = 120
 export const CLIENT_ERROR_ROUTE_MAX = 120
 export const CLIENT_ERROR_BUILD_MAX = 40
 export const CLIENT_ERROR_ORGANIZATION_ID_MAX = 128
 export const CLIENT_ERROR_DAY_MS = 86_400_000
+export const CLIENT_ERROR_OTHER_MESSAGE_KEY = 'other'
 export const CLIENT_ERROR_FIELDS = [
   'platform',
   'source',
-  'message',
+  'kind',
+  'where',
   'route',
   'build',
+  'messageKey',
+  'messageHash',
   'organizationId',
   'dayIndex',
   'createdAt',
   'expireAt',
 ] as const
 
-const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g
-const URL_WITH_PARTS = /\b(?:https?|wss?|ftp|file|gs):\/\/[^\s'"<>()]+/gi
-const UUID = /\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b/g
-const LONG_HEX = /\b[0-9a-fA-F]{16,}\b/g
-const LONG_DIGITS = /\b\d{6,}\b/g
-/** Firebase uids / auto ids, tokens, keys: 16+ characters of letters, digits, - or _ with at least one digit and one
- * letter. Plain long words ("permission-denied", "organizationId") have no digit and stay. */
-const ID_TOKEN = /\b(?=[A-Za-z0-9_-]*\d)(?=[A-Za-z0-9_-]*[A-Za-z])[A-Za-z0-9_-]{16,}\b/g
-const JWT = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?/g
+/**
+ * The only message texts ever named in a report: fixed constants that contain no personal data. A message is stored
+ * as its key only when it is exactly one of these (after trimming); anything else is `other`.
+ */
+export const CLIENT_ERROR_KNOWN_MESSAGES: Readonly<Record<string, string>> = {
+  'edit-of-missing-document': EDIT_OF_MISSING_DOCUMENT_MESSAGE,
+  'offline-online-only': OFFLINE_ONLINE_ONLY_MESSAGE,
+  'booking-replay-refused': BOOKING_REPLAY_REFUSED_MESSAGE,
+  'offline-delete-changed': OFFLINE_DELETE_CHANGED_MESSAGE,
+  'pay-history-not-loaded': PAY_HISTORY_NOT_LOADED_MESSAGE,
+  'payroll-policy-stale-save': PAYROLL_POLICY_STALE_SAVE_MESSAGE,
+  'timesheet-snapshot-failed': TIMESHEET_SNAPSHOT_FAILED_MESSAGE,
+  'variation-renumber-stale': VARIATION_RENUMBER_STALE_MESSAGE,
+  'firestore-permission-denied': 'Missing or insufficient permissions.',
+  'firestore-client-offline': 'Failed to get document because the client is offline.',
+  'firestore-unavailable': 'The service is currently unavailable. This is a most likely a transient condition and may be corrected by retrying with a backoff.',
+  'fetch-failed': 'Failed to fetch',
+  'fetch-load-failed': 'Load failed',
+  'network-error': 'NetworkError when attempting to fetch resource.',
+  'network-request-failed': 'Firebase: Error (auth/network-request-failed).',
+  'resize-observer-loop': 'ResizeObserver loop completed with undelivered notifications.',
+  'resize-observer-limit': 'ResizeObserver loop limit exceeded',
+  'script-error': 'Script error.',
+  'aborted': 'The user aborted a request.',
+  'quota-exceeded': 'QuotaExceededError',
+}
+
+/** `messageKey`: the key of an exactly known constant message, else `other`. */
+export function clientErrorMessageKey(message: unknown): string {
+  if (typeof message !== 'string') return CLIENT_ERROR_OTHER_MESSAGE_KEY
+  const text = message.trim()
+  for (const [key, known] of Object.entries(CLIENT_ERROR_KNOWN_MESSAGES)) if (known === text) return key
+  return CLIENT_ERROR_OTHER_MESSAGE_KEY
+}
+
+/** Any run of 16 or more letters and digits (with or without digits) becomes `*`: ids, tokens, keys, hashes. */
+export function redactClientErrorTokens(text: string): string {
+  return text.replace(/[A-Za-z0-9]{16,}/g, '*')
+}
 
 function cap(text: string, max: number): string {
-  const chars = Array.from(text)
-  return chars.length <= max ? text : chars.slice(0, Math.max(0, max - 1)).join('') + '…'
-}
-
-function stripUrl(url: string): string {
-  const cut = url.search(/[?#]/)
-  const bare = cut >= 0 ? url.slice(0, cut) : url
-  return bare.replace(/\/[^/]*$/, (last) => (/\d/.test(last) && last.length > 12 ? '/:id' : last))
+  return text.length <= max ? text : text.slice(0, max)
 }
 
 /**
- * The text of an error, safe to store: emails → `<email>`, URLs without their query string or fragment (and a
- * trailing id-like path part as `:id`), UUIDs / long hex / 6+ digit runs / id-like tokens / JWTs → `<id>`,
- * whitespace collapsed, at most `max` characters. Never throws; a non-string gives ''.
+ * `kind`: the error class (an identifier, else `Error`) and, when it is code-shaped, its code — "FirebaseError
+ * permission-denied", "TypeError", "NSCocoaErrorDomain 4". Never message text.
  */
-export function sanitizeClientErrorText(value: unknown, max: number = CLIENT_ERROR_MESSAGE_MAX): string {
-  if (typeof value !== 'string') return ''
-  let text = value
-    .replace(JWT, '<id>')
-    .replace(EMAIL, '<email>')
-    .replace(URL_WITH_PARTS, (url) => stripUrl(url))
-    .replace(UUID, '<id>')
-    .replace(LONG_HEX, '<id>')
-    .replace(ID_TOKEN, '<id>')
-    .replace(LONG_DIGITS, '<id>')
-  // Any '@' left could still be part of an address the patterns missed (no TLD): never store one.
-  text = text.replace(/@/g, ' at ')
-  text = text.replace(/\s+/g, ' ').trim()
-  return cap(text, max)
+export function clientErrorKind(name: unknown, code?: unknown): string {
+  // A class name: letters (dots and _ allowed) of any length, or a short identifier with digits; a long run with
+  // digits (an id passed as a name) is never a class.
+  const t = typeof name === 'string' ? name.trim() : ''
+  const n = /^[A-Za-z][A-Za-z_.]{0,59}$/.test(t) || /^[A-Za-z][A-Za-z0-9_.]{0,14}$/.test(t) ? t : 'Error'
+  const raw = typeof code === 'number' && Number.isInteger(code) ? String(code) : typeof code === 'string' ? code.trim() : ''
+  const c = /^-?[A-Za-z0-9/_.-]{1,40}$/.test(raw) ? redactClientErrorTokens(raw) : ''
+  return cap(c ? `${n} ${c}` : n, CLIENT_ERROR_KIND_MAX)
+}
+
+function frameName(file: string, fn: string): string {
+  const base = file.replace(/[?#].*$/, '').split('/').pop() || ''
+  const f = base.replace(/[^A-Za-z0-9_.-]/g, '')
+  const g = fn.replace(/[^A-Za-z0-9_.$<>]/g, '')
+  return cap(redactClientErrorTokens([f, g].filter(Boolean).join(' ')), CLIENT_ERROR_WHERE_MAX)
 }
 
 /**
- * A route safe to store: the path only (no scheme, host, query or fragment), each id-like segment (a UUID, a run of
- * digits, a long hex or mixed id, an email) as `:id`, at most `CLIENT_ERROR_ROUTE_MAX` characters. `/` when empty.
+ * `where`: the top app frame as "file function" — from a JS stack (Chrome "at fn (url:line:col)", Safari / Firefox
+ * "fn@url:line:col"; library and framework frames are skipped), or from a native file and function (iOS
+ * `#fileID` / `#function`, parameters dropped). Line and column numbers, arguments and query strings are never kept.
+ * '' when nothing usable.
  */
-export function sanitizeClientErrorRoute(value: unknown): string {
-  if (typeof value !== 'string' || !value.trim()) return '/'
-  let path = value.trim()
+export function clientErrorWhere(input: { stack?: unknown; file?: unknown; function?: unknown }): string {
+  if (typeof input.file === 'string' || typeof input.function === 'string') {
+    const fn = typeof input.function === 'string' ? input.function.replace(/\(.*$/, '') : ''
+    return frameName(typeof input.file === 'string' ? input.file : '', fn)
+  }
+  if (typeof input.stack !== 'string') return ''
+  const skip = /node_modules|\/framework[-.]|\/main-app[-.]|\/webpack[-.]|\/polyfills[-.]|react-dom|next\/dist|<anonymous>|native code/
+  for (const line of input.stack.split('\n').slice(0, 30)) {
+    const chrome = line.match(/^\s*at\s+(?:(?:async\s+)?([^\s(]+)\s+\()?([^()\s]+?):\d+(?::\d+)?\)?\s*$/)
+    const gecko = line.match(/^\s*([^@\s]*)@(.+?):\d+(?::\d+)?\s*$/)
+    const m = chrome ? { fn: chrome[1] || '', file: chrome[2] } : gecko ? { fn: gecko[1] || '', file: gecko[2] } : null
+    if (!m || skip.test(m.file)) continue
+    const where = frameName(m.file, m.fn.split('.').pop() || '')
+    if (where) return where
+  }
+  return ''
+}
+
+/**
+ * `route`: the path pattern only. A scheme and host (also a host with no scheme, "example.com/…"), query and
+ * fragment are removed; percent escapes decoded; each segment that is not a plain lower-case word (letters,
+ * digits after a letter, `-`, `_`) is `:id` — ids, emails (`@`, `%40`, `＠`), `(default)`, names. `/` when empty.
+ */
+export function clientErrorRoute(value: unknown): string {
+  if (typeof value !== 'string') return '/'
+  let path = value.normalize('NFKC').trim()
+  path = path.replace(/[?#].*$/s, '')
   path = path.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, '')
-  const cut = path.search(/[?#]/)
-  if (cut >= 0) path = path.slice(0, cut)
-  if (!path.startsWith('/')) path = '/' + path
+  if (!path.startsWith('/')) path = path.includes('/') && /^[^/]*\./.test(path) ? path.replace(/^[^/]*/, '') : '/' + path
   const parts = path.split('/').map((segment) => {
     if (!segment) return segment
-    if (segment.includes('@')) return ':id'
-    if (/^[0-9a-fA-F-]{8,}$/.test(segment) && /\d/.test(segment)) return ':id'
-    if (/^\d+$/.test(segment)) return ':id'
-    if (/^[A-Za-z0-9_-]{16,}$/.test(segment) && /\d/.test(segment)) return ':id'
-    return segment.replace(/[^A-Za-z0-9_.\-[\]:]/g, '')
+    let s = segment
+    try {
+      s = decodeURIComponent(segment).normalize('NFKC')
+    } catch {
+      return ':id'
+    }
+    return /^[a-z][a-z0-9_-]{0,39}$/.test(s) && !/[0-9]{3,}/.test(s) && s.length < 16 ? s : ':id'
   })
   const out = parts.join('/').replace(/\/{2,}/g, '/') || '/'
   return cap(out, CLIENT_ERROR_ROUTE_MAX)
+}
+
+/** `build`: the app version / build; letters, digits, space, `.`, `(`, `)`, `+`, `-` only. */
+export function clientErrorBuild(value: unknown): string {
+  const raw = typeof value === 'string' ? value.trim() : ''
+  return cap(redactClientErrorTokens(raw.replace(/[^A-Za-z0-9 .()+_-]/g, '')), CLIENT_ERROR_BUILD_MAX)
 }
 
 /** The UTC day number a report belongs to: `floor(ms / 86,400,000)`. */
@@ -131,15 +199,17 @@ export function clientErrorDocId(hashHex: string, slot: number): string | null {
   return `${hashHex}_${slot}`
 }
 
-/** One session's de-duplication key for an error: platform, source, sanitised message and route, build. */
+/** One session's de-duplication key: platform, source, kind, where, route, build and the message hash. */
 export function clientErrorSignature(input: {
   platform: string
   source: string
-  message: string
+  kind: string
+  where: string
   route: string
   build: string
+  messageHash: string
 }): string {
-  return [input.platform, input.source, input.message, input.route, input.build].join('\u0001')
+  return [input.platform, input.source, input.kind, input.where, input.route, input.build, input.messageHash].join('\u0001')
 }
 
 export type ClientErrorThrottleState = {
@@ -174,45 +244,68 @@ export function clientErrorThrottle(
   }
 }
 
+/**
+ * The next slot to try when a create at `slot` was refused because that slot is already used (a counter lost on the
+ * device). Null when no slot is left.
+ */
+export function clientErrorNextSlot(slot: number): number | null {
+  return Number.isInteger(slot) && slot + 1 < CLIENT_ERRORS_PER_DAY ? slot + 1 : null
+}
+
 export type ClientErrorCreateInput = {
   platform: ClientErrorPlatform
   source: ClientErrorSource
-  message: unknown
+  /** The error's class / domain (JS `error.name`, NSError domain, NSException name). */
+  name?: unknown
+  /** The error's code (Firebase `code`, NSError code). */
+  code?: unknown
+  /** The raw message: used only to pick `messageKey`; never stored. */
+  message?: unknown
+  /** Lower-case hex SHA-256 of the raw message (computed by the app). */
+  messageHash: unknown
+  /** JS stack, or a native file and function. */
+  stack?: unknown
+  file?: unknown
+  function?: unknown
   route: unknown
   build: unknown
   organizationId?: unknown
   nowMs: number
 }
 
-/**
- * The document a device creates (the app sets `createdAt` to its SDK server timestamp). Null when the platform or
- * source is unknown or the message is empty after sanitising (nothing worth storing).
- */
-export function clientErrorCreateFields(input: ClientErrorCreateInput): {
+export type ClientErrorFields = {
   platform: ClientErrorPlatform
   source: ClientErrorSource
-  message: string
+  kind: string
+  where: string
   route: string
   build: string
+  messageKey: string
+  messageHash: string
   organizationId: string
   dayIndex: number
   expireAtMs: number
-} | null {
+}
+
+/**
+ * The document a device creates (the app sets `createdAt` to its SDK server timestamp and `expireAt` from
+ * `expireAtMs`). Null when the platform or source is unknown or the message hash is not a SHA-256 hex.
+ */
+export function clientErrorCreateFields(input: ClientErrorCreateInput): ClientErrorFields | null {
   if (!(CLIENT_ERROR_PLATFORMS as readonly string[]).includes(input.platform)) return null
   if (!(CLIENT_ERROR_SOURCES as readonly string[]).includes(input.source)) return null
-  const message = sanitizeClientErrorText(input.message, CLIENT_ERROR_MESSAGE_MAX)
-  if (!message) return null
-  const build = sanitizeClientErrorText(typeof input.build === 'string' ? input.build : '', CLIENT_ERROR_BUILD_MAX)
+  if (typeof input.messageHash !== 'string' || !/^[0-9a-f]{64}$/.test(input.messageHash)) return null
   const org = typeof input.organizationId === 'string' ? input.organizationId.trim() : ''
-  const organizationId =
-    org && org.length <= CLIENT_ERROR_ORGANIZATION_ID_MAX && /^[A-Za-z0-9_-]+$/.test(org) ? org : ''
   return {
     platform: input.platform,
     source: input.source,
-    message,
-    route: sanitizeClientErrorRoute(input.route),
-    build,
-    organizationId,
+    kind: clientErrorKind(input.name, input.code),
+    where: clientErrorWhere({ stack: input.stack, file: input.file, function: input.function }),
+    route: clientErrorRoute(input.route),
+    build: clientErrorBuild(input.build),
+    messageKey: clientErrorMessageKey(input.message),
+    messageHash: input.messageHash,
+    organizationId: org.length <= CLIENT_ERROR_ORGANIZATION_ID_MAX && /^[A-Za-z0-9_-]+$/.test(org) ? org : '',
     dayIndex: clientErrorDayIndex(input.nowMs),
     expireAtMs: input.nowMs + CLIENT_ERROR_TTL_DAYS * CLIENT_ERROR_DAY_MS,
   }
@@ -222,9 +315,12 @@ export type ClientErrorRecord = {
   id: string
   platform: string
   source: string
-  message: string
+  kind: string
+  where: string
   route: string
   build: string
+  messageKey: string
+  messageHash: string
   organizationId: string
   createdAtMs: number | null
 }
@@ -254,9 +350,12 @@ export function parseClientErrorDocument(id: string, data: Record<string, unknow
     id,
     platform: text('platform'),
     source: text('source'),
-    message: text('message'),
+    kind: text('kind'),
+    where: text('where'),
     route: text('route'),
     build: text('build'),
+    messageKey: text('messageKey') || CLIENT_ERROR_OTHER_MESSAGE_KEY,
+    messageHash: text('messageHash'),
     organizationId: text('organizationId'),
     createdAtMs: instantMs(d.createdAt),
   }
@@ -265,9 +364,16 @@ export function parseClientErrorDocument(id: string, data: Record<string, unknow
 export type ClientErrorGroup = {
   key: string
   platform: string
-  message: string
-  route: string
-  build: string
+  kind: string
+  where: string
+  /** A known message's key, or `other`. */
+  messageKey: string
+  /** The message text for a known key (`CLIENT_ERROR_KNOWN_MESSAGES`), else ''. */
+  messageText: string
+  /** The first 12 characters of the message hash, for `other`. */
+  messageHashShort: string
+  routes: string[]
+  builds: string[]
   count: number
   firstMs: number | null
   lastMs: number | null
@@ -276,21 +382,42 @@ export type ClientErrorGroup = {
 }
 
 /**
- * The owner console's list: reports grouped by platform, message, route and build, with a count, the first and last
- * time and the organisations; newest first. Optional filters: platform and organisation ('' = reports with none).
+ * The owner console's list: reports grouped by platform, kind, where and the message (its known key, else its hash),
+ * with a count, the routes, builds, first and last time and the organisations; newest first. Optional filters:
+ * platform and organisation ('' = reports with none).
  */
 export function clientErrorGroups(
   records: readonly ClientErrorRecord[],
   filter: { platform?: string | null; organizationId?: string | null } = {}
 ): ClientErrorGroup[] {
   const groups = new Map<string, ClientErrorGroup>()
+  const add = (list: string[], value: string) => {
+    if (!list.includes(value)) list.push(value)
+  }
   for (const r of records) {
     if (filter.platform && r.platform !== filter.platform) continue
-    if (filter.organizationId != null && filter.organizationId !== '__all__' && r.organizationId !== filter.organizationId) continue
-    const key = [r.platform, r.message, r.route, r.build].join('\u0001')
+    if (filter.organizationId != null && r.organizationId !== filter.organizationId) continue
+    const message = r.messageKey && r.messageKey !== CLIENT_ERROR_OTHER_MESSAGE_KEY ? r.messageKey : `#${r.messageHash}`
+    const key = [r.platform, r.kind, r.where, message].join('\u0001')
     let g = groups.get(key)
     if (!g) {
-      g = { key, platform: r.platform, message: r.message, route: r.route, build: r.build, count: 0, firstMs: null, lastMs: null, organizationIds: [], sources: [] }
+      const known = r.messageKey !== CLIENT_ERROR_OTHER_MESSAGE_KEY
+      g = {
+        key,
+        platform: r.platform,
+        kind: r.kind,
+        where: r.where,
+        messageKey: known ? r.messageKey : CLIENT_ERROR_OTHER_MESSAGE_KEY,
+        messageText: known ? CLIENT_ERROR_KNOWN_MESSAGES[r.messageKey] || '' : '',
+        messageHashShort: r.messageHash.slice(0, 12),
+        routes: [],
+        builds: [],
+        count: 0,
+        firstMs: null,
+        lastMs: null,
+        organizationIds: [],
+        sources: [],
+      }
       groups.set(key, g)
     }
     g.count += 1
@@ -298,8 +425,10 @@ export function clientErrorGroups(
       g.firstMs = g.firstMs == null ? r.createdAtMs : Math.min(g.firstMs, r.createdAtMs)
       g.lastMs = g.lastMs == null ? r.createdAtMs : Math.max(g.lastMs, r.createdAtMs)
     }
-    if (!g.organizationIds.includes(r.organizationId)) g.organizationIds.push(r.organizationId)
-    if (!g.sources.includes(r.source)) g.sources.push(r.source)
+    add(g.routes, r.route)
+    add(g.builds, r.build)
+    add(g.organizationIds, r.organizationId)
+    add(g.sources, r.source)
   }
   return [...groups.values()].sort((a, b) => (b.lastMs ?? -1) - (a.lastMs ?? -1) || b.count - a.count || a.key.localeCompare(b.key))
 }

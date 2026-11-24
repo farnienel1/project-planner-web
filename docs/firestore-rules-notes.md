@@ -1503,7 +1503,7 @@ No allow / deny change. Before → after (`scripts/rules-cost/metric.py` `total2
 |---|---|---|
 | main 1.83.0 | 155,533 | 224,751 |
 | 1.84.0 refactor only | 151,286 (−2.7%) | 219,452 (−2.4%) |
-| 1.84.0 with the `clientErrors` rules | 152,619 (−1.9%) | 220,169 (−2.0%) |
+| 1.84.0 with the `clientErrors` rules | 152,856 (−1.7%) | 220,205 (−2.0%) |
 | (not shipped) every function refactored | 151,686 (−2.5%) | 200,137 (−11.0%) — refused 17 requests by the 1,000-expression limit |
 
 What changed, in this order (tools in `scripts/rules-cost/headroom_*.py`, run by hand; each step checked with `equiv.py`):
@@ -1524,4 +1524,4 @@ Comments moved here from `firestore.rules`:
 
 ## 1.84.0 clientErrors (24 Nov)
 
-`match /clientErrors/{errorId}` (root): read `isPlatformOwner()`; create only through `clientErrorValid`: the exact keys, `dayIndex` today or yesterday (`math.floor(request.time.toMillis() / 86400000)`), the id `hashing.sha256(request.auth.uid + '|' + string(dayIndex)).toHexString().lower() + '_' + slot 0–19` (so at most 20 creates per account per day; no update rule, so a used slot is never rewritten), platform / source from the lists, message 1–600 with no `@`, route ≤ 240 with no `?`, `#`, `@`, build ≤ 80, `organizationId` '' or `[A-Za-z0-9_-]{1,128}` with `'c' in callerOrg(o)`, `createdAt == request.time`, `expireAt` 29–31 days later. `hashing.sha256` works on the emulator (measured). Suite `tests/clientErrors.rules.test.ts`.
+`match /clientErrors/{errorId}` (root): read `isPlatformOwner()`; create only through `clientErrorValid`: exactly the keys `platform`, `source`, `kind`, `where`, `route`, `build`, `messageKey`, `messageHash`, `organizationId`, `dayIndex`, `createdAt`, `expireAt` (review of #448: no message text — every free-text field is a fixed character class with a length cap, so no sentence, `@` or query fits); `dayIndex` today or yesterday (`math.floor(request.time.toMillis() / 86400000)`); the id `hashing.sha256(request.auth.uid + '|' + string(dayIndex)).toHexString().lower() + '_' + slot 0–19` (at most 20 creates per account per day; no update rule, so a used slot is never rewritten; `_01`, `_-1`, `_20`, upper-case hex refused — tested); `organizationId` '' or `[A-Za-z0-9_-]{1,128}` with `'c' in callerOrg(o)`; `createdAt == request.time`; `expireAt` 29–31 days later. `hashing.sha256` works on the emulator (measured). Suite `tests/clientErrors.rules.test.ts`.

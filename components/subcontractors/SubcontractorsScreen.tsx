@@ -15,6 +15,7 @@ import { consumeCreateQuery } from '@/lib/navigation/createMenu'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { IosFormModal } from '@/components/ios/primitives'
 import { SubcontractorDocumentsSection } from '@/components/subcontractors/SubcontractorDocumentsSection'
+import { tidyUkPostcodesInText } from '@/lib/maps/ukPostcode'
 
 const POSITIONS = ['Finance', 'Contract Manager', 'Project Manager', 'Site Manager', 'Supervisor', 'Installer']
 
@@ -179,7 +180,7 @@ function SubcontractorsScreenInner({ selectedId }: { selectedId?: string }) {
             {selected.subcontractorType}
           </span>
           {selected.website ? <p className="small" style={{ marginTop: 6 }}>{selected.website}</p> : null}
-          {selected.address ? <p className="muted small">{selected.address}</p> : null}
+          {selected.address ? <p className="muted small">{tidyUkPostcodesInText(selected.address)}</p> : null}
         </div>
         <button type="button" onClick={() => setEditor(selected)} className="btn">
           Edit
