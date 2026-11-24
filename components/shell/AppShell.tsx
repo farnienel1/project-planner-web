@@ -83,7 +83,7 @@ import { FeedbackSoundsUnlock } from '@/components/client/FeedbackSoundsUnlock'
 import { confirmChosenSignOut } from '@/lib/siteAudit/siteAuditSignOut'
 
 /** While the tab is visible, `lastSeenAt` is refreshed this often (owner 24 Nov). */
-const LAST_SEEN_VISIBLE_INTERVAL_MS = 5 * 60_000
+const LAST_SEEN_VISIBLE_INTERVAL_MS = 15 * 60_000
 
 function NavGlyph({ path, className }: { path: string; className?: string }) {
   return (

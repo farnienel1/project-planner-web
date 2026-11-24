@@ -13,7 +13,7 @@ import {
   passkeySignIn,
   passkeysAvailableHere,
 } from '@/lib/auth/passkeys/passkeyClient'
-import { markWelcomeSoundPending, primeWelcomeSound } from '@/lib/feedbackSounds/feedback'
+import { primeWelcomeSound } from '@/lib/feedbackSounds/feedback'
 
 /**
  * "Sign in with a passkey" (Touch ID, Face ID, Windows Hello or a phone). Renders nothing while the passkeys switch
@@ -47,8 +47,6 @@ export function PasskeySignIn({
     const destination = safePostMfaPath(result.next || next, fallback)
     try {
       await signInWithPasskey(result.customToken, { next: destination })
-      // Owner 24 Nov: signed in; the app shell plays the welcome chord once when it opens.
-      markWelcomeSoundPending()
     } catch (error) {
       if (isMfaRequiredError(error)) {
         router.replace(mfaVerifyHref(destination))
@@ -85,7 +83,8 @@ export function PasskeySignIn({
     if (busy) return
     setBusy(true)
     onError('')
-    // Inside the button press, so audio may start later (sounds on only).
+    // Inside the button press: arms the sign-in chord and starts audio (sounds on only). The code screen this hands over
+    // to plays it once the passkey sign-in is confirmed, before it navigates.
     primeWelcomeSound()
     try {
       const result = await passkeySignIn({ next, ownerOnly })

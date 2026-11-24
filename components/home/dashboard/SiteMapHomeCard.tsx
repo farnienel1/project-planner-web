@@ -4,7 +4,8 @@
  * Home: a small site map for admins (owner 24 Nov, "a really basic interactive map … not too much detail"). The same
  * map as the Site map page, on today, with the same summary under it when a dot is clicked. Lazy-loaded by Home so
  * the map code and its tiles never slow Home's first paint. Reads only the stores and the Daily Overview model Home
- * has already loaded; it loads nothing itself.
+ * has already loaded; it loads nothing itself and never looks up addresses (only jobs with a stored pin are shown; the
+ * full map finds the rest).
  */
 
 import { useCallback, useMemo, useState } from 'react'
@@ -31,7 +32,8 @@ export default function SiteMapHomeCard({
   const organizationId = useAuthStore((state) => state.organization?.id)
   const liveOrganization = useOrganizationDocument()
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const { jobs, markers } = useSiteMapJobs({ organizationId, dayKey, timeZone })
+  const { jobs, markers } = useSiteMapJobs({ organizationId, dayKey, timeZone, geocode: false })
+  const unpinned = jobs.length - markers.length
   const officeCentre = useMemo(
     () => (liveOrganization.organizationId === organizationId ? officeCentreFromOrganization(liveOrganization.data) : null),
     [liveOrganization.organizationId, liveOrganization.data, organizationId]
@@ -52,6 +54,14 @@ export default function SiteMapHomeCard({
           Open full map
         </Link>
       </div>
+      {unpinned > 0 ? (
+        <p className="dash-muted" style={{ margin: '0 0 8px' }}>
+          {unpinned === 1 ? '1 job has' : `${unpinned} jobs have`} no map pin yet.{' '}
+          <Link href="/dashboard/site-map" className="dash-link">
+            Find them on the full map
+          </Link>
+        </p>
+      ) : null}
       <SiteMapBoard markers={markers} selectedMarkerId={selectedId} onSelectMarker={select} officeCentre={officeCentre} compact />
       <div style={{ marginTop: 10 }}>
         <SiteMapJobSummaryCard

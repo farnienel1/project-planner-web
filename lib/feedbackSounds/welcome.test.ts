@@ -1,6 +1,6 @@
 /**
  * The sign-in chord (guide §2.1, owner 24 Nov): the notes match the guide, it is made in code, it plays once after a
- * sign-in mark and never on a reload, and only while audio is running and sounds are on.
+ * sign-in press and never on a reload, and only while audio is running and sounds are on.
  */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -10,11 +10,9 @@ import { fileURLToPath } from 'node:url'
 import {
   FEEDBACK_EVENT_SOUNDS,
   WELCOME_CHORD,
-  WELCOME_PENDING_MAX_AGE_MS,
-  WELCOME_PENDING_STORAGE_KEY,
-  consumeWelcomeSoundPending,
+  WELCOME_PRIMED_MAX_AGE_MS,
   createFeedbackPlayer,
-  markWelcomeSoundPending,
+  createWelcomeGate,
   scheduleWelcomeChord,
   type FeedbackAudioContext,
   type WelcomeAudioContext,
@@ -92,27 +90,15 @@ test('the chord schedules two sines per note, staggered, all stopped after the f
   for (const fade of fades) assert.ok(fade.value <= 0.0001 && Math.abs(fade.when - (1 + WELCOME_CHORD.totalSec)) < 1e-9)
 })
 
-function memoryStorage() {
-  const map = new Map<string, string>()
-  return {
-    getItem: (k: string) => map.get(k) ?? null,
-    setItem: (k: string, v: string) => void map.set(k, v),
-    removeItem: (k: string) => void map.delete(k),
-    map,
-  }
-}
-
-test('a sign-in mark plays once; a reload (no mark) and an old mark play nothing', () => {
-  const storage = memoryStorage()
-  assert.equal(consumeWelcomeSoundPending(storage, 1_000), false)
-  markWelcomeSoundPending(storage, 1_000)
-  assert.equal(storage.map.has(WELCOME_PENDING_STORAGE_KEY), true)
-  assert.equal(consumeWelcomeSoundPending(storage, 2_000), true)
-  assert.equal(consumeWelcomeSoundPending(storage, 2_001), false)
-  markWelcomeSoundPending(storage, 1_000)
-  assert.equal(consumeWelcomeSoundPending(storage, 1_000 + WELCOME_PENDING_MAX_AGE_MS + 1), false)
-  assert.equal(storage.map.has(WELCOME_PENDING_STORAGE_KEY), false)
-  assert.equal(consumeWelcomeSoundPending(null), false)
+test('a press arms the chord once; no press (a reload) or an old press plays nothing', () => {
+  const gate = createWelcomeGate()
+  assert.equal(gate.take(1_000), false)
+  gate.arm(1_000)
+  assert.equal(gate.take(2_000), true)
+  assert.equal(gate.take(2_001), false)
+  gate.arm(1_000)
+  assert.equal(gate.take(1_000 + WELCOME_PRIMED_MAX_AGE_MS + 1), false)
+  assert.equal(gate.take(1_000 + WELCOME_PRIMED_MAX_AGE_MS + 2), false)
 })
 
 function player(ctx: FeedbackAudioContext, enabled = true) {

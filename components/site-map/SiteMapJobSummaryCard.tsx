@@ -54,7 +54,7 @@ export function SiteMapJobSummaryCard({
           <dd>{figure(String(summary?.peopleOnSite ?? 0))}</dd>
         </div>
         <div>
-          <dt>Hours on site</dt>
+          <dt>Paid hours</dt>
           <dd>{figure(`${overviewFormatHours(summary?.hoursOnSite ?? 0)}h`)}</dd>
         </div>
         <div>

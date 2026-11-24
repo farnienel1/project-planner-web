@@ -25,7 +25,11 @@ import {
   startEmailMfa,
   verifyEmailMfa,
 } from '@/lib/auth/mfa/mfaClient'
-import { markWelcomeSoundPending, primeWelcomeSound } from '@/lib/feedbackSounds/feedback'
+import {
+  WELCOME_NAVIGATION_HOLD_MS,
+  playPrimedWelcomeSound,
+  primeWelcomeSound,
+} from '@/lib/feedbackSounds/feedback'
 
 export function MfaVerifyScreen() {
   const router = useRouter()
@@ -87,6 +91,12 @@ export function MfaVerifyScreen() {
         if (!isMfaStatusUnavailable(statusError)) break
       }
       await new Promise((resolve) => setTimeout(resolve, 200))
+    }
+    // Owner 24 Nov: the sign-in chord plays here, on the page the person pressed on (the full page load below would
+    // stop it and lose the audio the press unlocked). Only an arm from a press in this page plays (the code button,
+    // or the sign-in / passkey button that led here); after a reload nothing plays.
+    if (playPrimedWelcomeSound()) {
+      await new Promise((resolve) => setTimeout(resolve, WELCOME_NAVIGATION_HOLD_MS))
     }
     window.location.assign(destination)
   }
@@ -159,12 +169,10 @@ export function MfaVerifyScreen() {
     setCode(digits)
     setError('')
     setSubmitting(true)
-    // Owner 24 Nov: the code is the last sign-in step; audio is primed in this gesture (sounds on only) and the app
-    // shell plays the welcome chord once when it opens.
+    // Owner 24 Nov: the code is the last sign-in step; this press arms the chord and starts audio (sounds on only).
     primeWelcomeSound()
     try {
       const result = await verifyEmailMfa(digits)
-      markWelcomeSoundPending()
       goToApp(result.next || fallback)
     } catch (err) {
       submittingRef.current = false

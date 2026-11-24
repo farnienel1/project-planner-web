@@ -621,66 +621,61 @@ export function unlockFeedbackSounds(): void {
 // ─── The sign-in chord ─────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * Owner 24 Nov: the welcome chord plays once after the person signs in (password, passkey or the emailed code), never
- * on a reload. The sign-in screen marks it pending in this tab (`sessionStorage`, this tab only); the app shell plays it
- * once when it opens and clears the mark, so a later reload plays nothing. A mark older than this is dropped.
+ * Owner 24 Nov: the welcome chord plays once when the person finishes signing in on this device, never on a reload.
+ * Browsers let audio start only inside the person's own press, and the code screen leaves with a full page load
+ * (which stops any sound), so the chord is played on the sign-in page itself: the press arms it (`primeWelcomeSound`,
+ * which also starts audio), and once the server confirms the sign-in the screen plays it (`playPrimedWelcomeSound`)
+ * and holds the page for `WELCOME_NAVIGATION_HOLD_MS` before moving on. The arm lives in this page's memory only, so
+ * a reload (or a sign-in that finishes without a press in this page) plays nothing; an arm older than
+ * `WELCOME_PRIMED_MAX_AGE_MS` is dropped rather than played late.
  */
-export const WELCOME_PENDING_STORAGE_KEY = 'pp.feedback.welcomePending'
-export const WELCOME_PENDING_MAX_AGE_MS = 60_000
+export const WELCOME_PRIMED_MAX_AGE_MS = 30_000
+/** How long the sign-in page waits after starting the chord before it navigates (the chord is cut by the page load). */
+export const WELCOME_NAVIGATION_HOLD_MS = 1_200
 
-type SessionLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
-
-function browserSession(): SessionLike | null {
-  try {
-    return typeof window !== 'undefined' && window.sessionStorage ? window.sessionStorage : null
-  } catch {
-    return null
+/** A press arms the chord; one success plays it at most once. Pure, so tests can drive it. */
+export function createWelcomeGate() {
+  let armedAt: number | null = null
+  return {
+    arm(now: number) {
+      armedAt = now
+    },
+    /** True once for an arm made within the limit; always clears it. */
+    take(now: number): boolean {
+      const at = armedAt
+      armedAt = null
+      return at != null && now - at >= 0 && now - at <= WELCOME_PRIMED_MAX_AGE_MS
+    },
   }
 }
 
+const welcomeGate = createWelcomeGate()
+
 /**
- * Call inside the person's sign-in gesture (the submit or passkey button): creates / resumes audio while the browser
- * allows it, only when sounds are on in this browser. Never throws.
+ * Call inside the person's sign-in press (the submit, passkey or code button): arms the chord and creates / resumes
+ * audio while the browser allows it, only when sounds are on in this browser. Never throws.
  */
 export function primeWelcomeSound(): void {
   try {
-    if (feedbackSoundsEnabled()) player()?.unlock()
+    if (!feedbackSoundsEnabled()) return
+    welcomeGate.arm(Date.now())
+    player()?.unlock()
   } catch {
     // never throw
-  }
-}
-
-/** The sign-in succeeded: the app shell plays the welcome chord once when it opens. Never throws. */
-export function markWelcomeSoundPending(storage: SessionLike | null = browserSession(), now = Date.now()): void {
-  try {
-    storage?.setItem(WELCOME_PENDING_STORAGE_KEY, String(now))
-  } catch {
-    // never throw
-  }
-}
-
-/** True once for a fresh mark; always clears it. */
-export function consumeWelcomeSoundPending(storage: SessionLike | null = browserSession(), now = Date.now()): boolean {
-  try {
-    const raw = storage?.getItem(WELCOME_PENDING_STORAGE_KEY)
-    if (raw == null) return false
-    storage?.removeItem(WELCOME_PENDING_STORAGE_KEY)
-    const at = Number(raw)
-    return Number.isFinite(at) && now - at >= 0 && now - at <= WELCOME_PENDING_MAX_AGE_MS
-  } catch {
-    return false
   }
 }
 
 /**
- * The app shell, once when it opens: plays the welcome chord if this tab just signed in (and sounds are on). After a
- * full page load the browser may not let audio start without a new tap; then nothing plays and nothing is queued.
+ * The server confirmed the sign-in: plays the chord now if a press in this page armed it (and sounds are on).
+ * Returns true when it played, so the caller can hold the page briefly before it navigates. Never throws.
  */
-export function playPendingWelcomeSound(): void {
+export function playPrimedWelcomeSound(): boolean {
   try {
-    if (!consumeWelcomeSoundPending()) return
+    if (!welcomeGate.take(Date.now())) return false
+    if (!feedbackSoundsEnabled()) return false
     player()?.play('signedIn')
+    return true
   } catch {
-    // never throw
+    return false
   }
 }

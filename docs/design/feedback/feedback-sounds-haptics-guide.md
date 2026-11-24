@@ -63,7 +63,7 @@ Owner 24 Nov: "a nice slow harmony when you first log in — unique, generated, 
 | Master | web gain 0.35 × 0.75 (iOS: the same relative level under the `.ambient` session) |
 | Length | 2.6 s |
 
-When: once, after a successful sign-in made on this device — the password form (no code step), a passkey, or the emailed code — never on a reload or when the app reopens an existing session. Web marks it in this tab's `sessionStorage` (`pp.feedback.welcomePending`, dropped after 60 s) and the app shell plays it once and clears the mark. It follows the **Sounds** setting. Audio is primed inside the sign-in tap; if the browser still will not let audio start (for example Safari after the full page load that follows the code), nothing plays and nothing is queued. No haptic.
+When: once, when the person finishes signing in on this device (the emailed code, or a password or passkey sign-in that the code screen confirms) — never on a reload or when the app reopens an existing session. Browsers let audio start only inside the person's own press, and web leaves the code screen with a full page load that stops any sound, so web plays the chord on the sign-in page itself: the press (sign-in, passkey or code button) arms it and starts audio, and once the server confirms the sign-in the code screen plays it and waits 1.2 s before it navigates (`primeWelcomeSound`, `playPrimedWelcomeSound`, `WELCOME_NAVIGATION_HOLD_MS`). The arm is kept in that page's memory only, so a reload, or a sign-in that finishes with no press in that page, plays nothing; an arm older than 30 s is dropped rather than played late. It follows the **Sounds** setting. No haptic.
 
 Web source: `lib/feedbackSounds/feedback.ts` (`WELCOME_CHORD`, `scheduleWelcomeChord`).
 
