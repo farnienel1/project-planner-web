@@ -34,7 +34,7 @@ if (typeof canonical.timesheetSignOffReminderDue !== 'function' || typeof canoni
 }
 
 // Rulebook 1.85.0: the insurance & accreditation expiry reminders (orgComplianceReminders.js) need their rule.
-if (typeof canonical.orgComplianceRemindersDue !== 'function' || typeof canonical.orgComplianceReminderRecipients !== 'function') {
+if (typeof canonical.orgComplianceRemindersDue !== 'function' || typeof canonical.orgComplianceReminderRecipients !== 'function' || typeof canonical.orgComplianceReminderBatchTag !== 'function') {
   throw new Error('packed rulebook missing org compliance reminder helpers (run npm run build:canonical)')
 }
 

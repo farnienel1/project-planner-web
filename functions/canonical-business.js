@@ -1473,6 +1473,7 @@ var ProjectPlannerCanonical = (() => {
     orgCompliancePathLinked: () => orgCompliancePathLinked,
     orgCompliancePublicDocuments: () => orgCompliancePublicDocuments,
     orgComplianceReminder: () => orgComplianceReminder,
+    orgComplianceReminderBatchTag: () => orgComplianceReminderBatchTag,
     orgComplianceReminderDayKey: () => orgComplianceReminderDayKey,
     orgComplianceReminderEmail: () => orgComplianceReminderEmail,
     orgComplianceReminderLedgerAfter: () => orgComplianceReminderLedgerAfter,
@@ -17379,7 +17380,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.85.0" : "",
-      sha256: true ? "eebb2f3064cdd64a503d36c95fa663c4b49db40d61e2efef56ebf95b16e57f79" : ""
+      sha256: true ? "85704b888b31b3da18b8eec07f3e61879a45ac216dbe5246eaf830bfee793c8e" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -33131,6 +33132,7 @@ var ProjectPlannerCanonical = (() => {
       for (const entry of documents?.[section] ?? []) {
         if (!entry || !validDayKey5(entry.expiresOn) || !text58(entry.id)) continue;
         const key8 = ledgerKey(section, entry.id);
+        if (ledger.entries[key8]) continue;
         const before = prior.entries[key8];
         const known = before && before.expiresOn === entry.expiresOn ? before : null;
         const setDayKey = orgComplianceReminderSetDayKey({ entry, prior: known, todayKey: todayKey4, timeZone });
@@ -33184,6 +33186,18 @@ var ProjectPlannerCanonical = (() => {
     }
     return { entries };
   }
+  function orgComplianceReminderBatchTag(reminders) {
+    const parts3 = reminders.map((r) => `${r.section}:${normalizeDocumentId(r.entryId)}:${r.expiresOn}:${r.threshold}`).sort();
+    const hash = (seed) => {
+      let h4 = seed >>> 0;
+      for (const ch of parts3.join("|")) {
+        h4 ^= ch.codePointAt(0) ?? 0;
+        h4 = Math.imul(h4, 16777619) >>> 0;
+      }
+      return h4.toString(16).padStart(8, "0");
+    };
+    return `${hash(2166136261)}${hash(2538058380)}`;
+  }
   function orgComplianceReminderRecipients(roster) {
     const members = (roster || []).filter((m) => m && typeof m === "object");
     const ids = companyActivityRecipients(null, members);
@@ -33196,7 +33210,7 @@ var ProjectPlannerCanonical = (() => {
       const extra = member;
       if (extra.passwordSet === false || extra.ghost === true) continue;
       seen.add(email);
-      const first = text58(member.firstName) || text58(member.displayName).split(/\s+/)[0] || "";
+      const first = text58(member.firstName);
       out.push({ userId: id2, email, firstName: first });
     }
     return out;

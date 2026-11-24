@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.83.0 → 1.85.0
-Packed hash: 6af524904e4038af473fdc752072954724eed0341c952bfd773dc199d7202738
-Rulebook sha256: eebb2f3064cdd64a503d36c95fa663c4b49db40d61e2efef56ebf95b16e57f79
+Packed hash: 78053333b864295e8ad25b79a1fbf3e2f602f3392a3af8e544bb89a7855c803e
+Rulebook sha256: 85704b888b31b3da18b8eec07f3e61879a45ac216dbe5246eaf830bfee793c8e
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,12 +22,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: d2d465abcf0ab7c7747385346b87d2b47226412b1014602c5a26bff8e951c0ca
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: ONBOARDING_DISMISSED_AT_FIELD, ONBOARDING_DISMISSED_BY_FIELD, ONBOARDING_DISMISS_CONFIRM, ONBOARDING_DISMISS_LABEL, ONBOARDING_OPTIONAL_LABEL, ONBOARDING_SUBTITLE, ONBOARDING_TITLE, ORG_COMPLIANCE_PAGE_PATH, ORG_COMPLIANCE_REMINDERS_SWITCH_FIELD, ORG_COMPLIANCE_REMINDER_LEDGER_ID, ORG_COMPLIANCE_REMINDER_THRESHOLDS, onboardingCardVisible, onboardingChecklist, onboardingDismissWriteFields, onboardingDismissed, orgComplianceReminderDayKey, orgComplianceReminderEmail, orgComplianceReminderLedgerAfter, orgComplianceReminderLedgerFields, orgComplianceReminderLedgerPath, orgComplianceReminderRecipients, orgComplianceReminderSetDayKey, orgComplianceRemindersDue, orgComplianceRemindersEnabled, parseOrgComplianceReminderLedger
+Exports added: ONBOARDING_DISMISSED_AT_FIELD, ONBOARDING_DISMISSED_BY_FIELD, ONBOARDING_DISMISS_CONFIRM, ONBOARDING_DISMISS_LABEL, ONBOARDING_OPTIONAL_LABEL, ONBOARDING_SUBTITLE, ONBOARDING_TITLE, ORG_COMPLIANCE_PAGE_PATH, ORG_COMPLIANCE_REMINDERS_SWITCH_FIELD, ORG_COMPLIANCE_REMINDER_LEDGER_ID, ORG_COMPLIANCE_REMINDER_THRESHOLDS, onboardingCardVisible, onboardingChecklist, onboardingDismissWriteFields, onboardingDismissed, orgComplianceReminderBatchTag, orgComplianceReminderDayKey, orgComplianceReminderEmail, orgComplianceReminderLedgerAfter, orgComplianceReminderLedgerFields, orgComplianceReminderLedgerPath, orgComplianceReminderRecipients, orgComplianceReminderSetDayKey, orgComplianceRemindersDue, orgComplianceRemindersEnabled, parseOrgComplianceReminderLedger
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/index.ts, lib/canonical/organizationSettings.ts, lib/canonical/onboardingChecklist.test.ts, lib/canonical/onboardingChecklist.ts, lib/canonical/orgComplianceReminders.test.ts, lib/canonical/orgComplianceReminders.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/index.ts, lib/canonical/onboardingChecklist.test.ts, lib/canonical/onboardingChecklist.ts, lib/canonical/orgComplianceReminders.test.ts, lib/canonical/orgComplianceReminders.ts, lib/canonical/organizationSettings.ts
 Done when:
-- [ ] Packed hash in iOS equals 6af524904e4038af473fdc752072954724eed0341c952bfd773dc199d7202738
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 eebb2f3064cdd64a503d36c95fa663c4b49db40d61e2efef56ebf95b16e57f79)
+- [ ] Packed hash in iOS equals 78053333b864295e8ad25b79a1fbf3e2f602f3392a3af8e544bb89a7855c803e
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 85704b888b31b3da18b8eec07f3e61879a45ac216dbe5246eaf830bfee793c8e)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.85.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -36,8 +36,9 @@ Done when:
 
 ## What changed in 1.85.0
 
-- **Insurance & accreditation expiry emails** (§31, owner decision 24 Nov: 2 months, 1 month and 7 days, never twice; only thresholds still ahead when the expiry was set). New `lib/canonical/orgComplianceReminders.ts`: `ORG_COMPLIANCE_REMINDER_THRESHOLDS`, `orgComplianceReminderDayKey`, `orgComplianceReminderSetDayKey`, `orgComplianceRemindersDue`, `parseOrgComplianceReminderLedger`, `orgComplianceReminderLedgerAfter`, `orgComplianceReminderLedgerFields`, `orgComplianceReminderLedgerPath`, `orgComplianceReminderRecipients`, `orgComplianceReminderEmail`, `ORG_COMPLIANCE_PAGE_PATH`, `orgComplianceRemindersEnabled`, `ORG_COMPLIANCE_REMINDERS_SWITCH_FIELD`. Daily Cloud Function `orgComplianceExpiryReminders` (`functions/orgComplianceReminders.js`), off until `platformConfig/app.orgComplianceRemindersEnabled` (§18).
+- **Insurance & accreditation expiry emails** (§31, owner decision 24 Nov: 2 months, 1 month and 7 days, never twice; only thresholds still ahead when the expiry was set). New `lib/canonical/orgComplianceReminders.ts`: `ORG_COMPLIANCE_REMINDER_THRESHOLDS`, `orgComplianceReminderDayKey`, `orgComplianceReminderSetDayKey`, `orgComplianceRemindersDue`, `parseOrgComplianceReminderLedger`, `orgComplianceReminderLedgerAfter`, `orgComplianceReminderLedgerFields`, `orgComplianceReminderLedgerPath`, `orgComplianceReminderRecipients`, `orgComplianceReminderEmail`, `orgComplianceReminderBatchTag`, `ORG_COMPLIANCE_PAGE_PATH`, `orgComplianceRemindersEnabled`, `ORG_COMPLIANCE_REMINDERS_SWITCH_FIELD`. Daily Cloud Function `orgComplianceExpiryReminders` (`functions/orgComplianceReminders.js`), off until `platformConfig/app.orgComplianceRemindersEnabled` (§18).
 - **Getting started checklist** (new §32, owner 24 Nov): `lib/canonical/onboardingChecklist.ts` — `onboardingChecklist`, `onboardingCardVisible`, `onboardingDismissed`, `onboardingDismissWriteFields`, `ONBOARDING_*` copy. `ORGANIZATION_DOCUMENT_FIELDS` lists `onboardingDismissedAt`, `onboardingDismissedBy`. Web: the card at the top of Home (admins) and on the setup wizard's last screen.
+- Review of #447 / #294 (same version): the reminder ledger is claimed before sending and released only when nothing was accepted (at most once); the idempotency key carries the documents and thresholds (`orgComplianceReminderBatchTag`); the dry run records set days; duplicate entry ids skipped; greeting from the stored first name only; failures logged by status only. Web Home asks `canManageOrganizationCompliance`; Hide never waits for the server.
 
 ## iOS work for 1.85.0
 

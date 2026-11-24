@@ -60,7 +60,7 @@ test('1.85.0 sends one branded email per admin, then never again for that thresh
   assert.deepEqual(sent.map((s) => s.m.to[0]).sort(), ['boss@acme.test', 'two@acme.test'])
   assert.match(sent[0].m.subject, /Public liability a expires 31 Mar 2027 — Acme Ltd/)
   assert.match(sent[0].m.html, /Open Insurance &amp; accreditations/)
-  assert.match(sent[0].o.idempotencyKey, /^orgComplianceReminder:org-1:admin2?:2027-01-31$/)
+  assert.match(sent[0].o.idempotencyKey, /^orgComplianceReminder:org-1:admin2?:2027-01-31:[0-9a-f]{16}$/)
   assert.equal(state.ledger.entries['insurance:a'].sent.twoMonths, '2027-01-31')
   // Second run the same day: nothing sent, nothing written.
   sent.length = 0
@@ -76,8 +76,11 @@ test('1.85.0 switch off: a dry run that sends and writes nothing', async () => {
   const logger = { info: (...a) => logs.push(a), warn() {}, error() {} }
   const report = await createOrgComplianceReminders({ store, canonical, sendEmail: async (m) => sent.push(m), logger, now: () => NOW }).run()
   assert.equal(sent.length, 0)
-  assert.equal(state.writes, 0)
   assert.equal(report[0].dryRun, true)
+  // Review of #447: the dry run records the set day (never a send), so an edit before switch-on cannot move it.
+  assert.equal(state.writes, 1)
+  assert.equal(state.ledger.entries['insurance:a'].setDayKey, '2026-06-01')
+  assert.equal(JSON.stringify(state.ledger.entries['insurance:a'].sent), '{}')
   assert.ok(logs.some(([msg]) => /dry run, switch off/.test(msg)))
 })
 
@@ -115,4 +118,48 @@ test('1.85.0 the rendered email escapes document titles', () => {
   assert.ok(!out.html.includes('<b>x</b>'))
   assert.match(out.html, /&lt;b&gt;x&lt;\/b&gt;/)
   assert.match(out.text, /Expires in 7 days/)
+})
+
+test('1.85.0 review: the ledger is claimed before any email; a failed write sends nothing', async () => {
+  const { store, state } = storeWith({ documents: { documents: { insurance: [entry('a', '2027-03-31')] } } })
+  const order = []
+  store.writeLedger = async (_orgId, fields) => {
+    order.push(`write:${JSON.stringify(fields.entries['insurance:a'].sent)}`)
+    state.ledger = fields
+  }
+  await createOrgComplianceReminders({ store, canonical, sendEmail: async () => order.push('send'), logger: quiet, now: () => NOW }).run()
+  assert.deepEqual(order, ['write:{"twoMonths":"2027-01-31"}', 'send', 'send'])
+  const failing = storeWith({ documents: { documents: { insurance: [entry('a', '2027-03-31')] } } })
+  failing.store.writeLedger = async () => {
+    throw new Error('write refused')
+  }
+  const sent = []
+  const report = await createOrgComplianceReminders({ store: failing.store, canonical, sendEmail: async (m) => sent.push(m), logger: quiet, now: () => NOW }).run()
+  assert.equal(sent.length, 0)
+  assert.ok(report[0].error)
+})
+
+test('1.85.0 review: failures are logged by status only, never the provider body', async () => {
+  const { store } = storeWith({ documents: { documents: { insurance: [entry('a', '2027-03-31')] } } })
+  const warns = []
+  const logger = { info() {}, warn: (...a) => warns.push(JSON.stringify(a)), error() {} }
+  await createOrgComplianceReminders({
+    store,
+    canonical,
+    sendEmail: async () => {
+      throw new Error('Resend 422: {"secret":"body text"}')
+    },
+    logger,
+    now: () => NOW,
+  }).run()
+  assert.ok(warns.some((w) => w.includes('422')))
+  assert.ok(!warns.some((w) => w.includes('body text')))
+})
+
+test('1.85.0 review: no first name greets with "Hello,"', () => {
+  const words = canonical.orgComplianceReminderEmail({
+    organizationName: 'Acme',
+    reminders: [{ section: 'insurance', sectionTitle: 'PI', entryId: 'x', title: 'PL', docTypeLabel: 'PL', expiresOn: '2027-03-31', threshold: 'sevenDays', thresholdLabel: '7 days', daysLeft: 7 }],
+  })
+  assert.match(renderOrgComplianceReminderEmail(words, { firstName: '' }).text, /^Hello,\n/)
 })

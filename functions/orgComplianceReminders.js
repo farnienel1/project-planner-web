@@ -27,15 +27,17 @@ const { escapeHtml } = require('./email/text')
  * the email function's Resend sender and writes the ledger `organizations/{orgId}/orgCompliance/reminders` (server
  * only; the security rules match only `orgCompliance/documents`).
  *
- * Kill switch: nothing is sent or written unless `platformConfig/app.orgComplianceRemindersEnabled` is true
- * (`orgComplianceRemindersEnabled`). Off: a dry run that logs, per organisation, what would be sent and to how many.
+ * Kill switch: no email is sent unless `platformConfig/app.orgComplianceRemindersEnabled` is true
+ * (`orgComplianceRemindersEnabled`). Off: a dry run that logs, per organisation, what would be sent and to how many, and
+ * records only the set-day facts in the ledger (never a send).
  *
  * Reads per run: one collection-group query of every `orgCompliance` document (the documents and the ledgers); for an
  * organisation with something due, its organisation document, its users (one query) and the anchored members' users
  * documents and memberships. Organisations with no compliance documents cost nothing.
  *
- * A reminder is marked sent once at least one admin's email was accepted; the admins whose email failed are logged
- * (Resend's idempotency key — organisation, person, day — stops a retry the same day from sending twice).
+ * At most once: the reminders are claimed in the ledger before any email goes, and released only when no admin's email
+ * was accepted. Failures are logged by HTTP status only. Resend's idempotency key (organisation, person, day and the
+ * documents and thresholds listed) stops a retry of the same email the same day from sending twice.
  */
 
 const APP_BASE_URL = 'https://www.projectplanner.us'
@@ -54,6 +56,12 @@ function plain(data) {
   const out = {}
   for (const [key, value] of Object.entries(data)) out[key] = plain(value)
   return out
+}
+
+/** The provider's HTTP status from a send error ("Resend 500: …" → 500); never the response body. */
+function providerStatus(error) {
+  const match = /Resend (\d{3})/.exec(String((error && error.message) || ''))
+  return match ? Number(match[1]) : (error && error.status) || 'error'
 }
 
 /** The branded HTML and plain text of the rulebook's email words. */
@@ -145,11 +153,23 @@ function createOrgComplianceReminders({ store, canonical, sendEmail, logger = co
     const timeZone = canonical.organizationTimeZone(org.countryCode)
     const todayKey = canonical.orgComplianceTodayKey(nowMs, timeZone)
     const documents = canonical.parseOrgComplianceDocuments(plain(row.documents || null), { organizationId: orgId })
-    const result = canonical.orgComplianceRemindersDue({ documents, todayKey, timeZone, sent: canonical.parseOrgComplianceReminderLedger(plain(row.ledger || null)) })
+    const stored = canonical.parseOrgComplianceReminderLedger(plain(row.ledger || null))
+    const storedJSON = JSON.stringify(canonical.orgComplianceReminderLedgerFields(stored))
+    const result = canonical.orgComplianceRemindersDue({ documents, todayKey, timeZone, sent: stored })
     const due = result.due
+    // Write the ledger only when it changed (a quiet day writes nothing).
+    const writeIfChanged = async (ledger) => {
+      const fields = canonical.orgComplianceReminderLedgerFields(ledger)
+      if (JSON.stringify(fields) === storedJSON) return false
+      await store.writeLedger(orgId, fields)
+      return true
+    }
     const recipients = due.length ? canonical.orgComplianceReminderRecipients(await rosterOf(orgId, org)) : []
     const words = canonical.orgComplianceReminderEmail({ organizationName: trimmed(org.name), reminders: due })
     if (!enabled) {
+      // Switch off: no email, but the set-day facts are recorded (review of #447), so an edit of another field between
+      // the deploy and switching on never moves the day an expiry was set.
+      await writeIfChanged(result.ledger)
       if (due.length) {
         logger.info('org compliance reminders (dry run, switch off): would send', {
           orgId,
@@ -160,30 +180,38 @@ function createOrgComplianceReminders({ store, canonical, sendEmail, logger = co
       }
       return { orgId, dryRun: true, due: due.length, recipients: recipients.length }
     }
+    if (!words || recipients.length === 0) {
+      await writeIfChanged(result.ledger)
+      if (due.length) logger.warn('org compliance reminders: due but no admin with an email', { orgId, due: due.length })
+      return { orgId, due: due.length, recipients: 0, delivered: 0, failed: 0 }
+    }
+    // At most once: claim the reminders in the ledger BEFORE sending (a failed write sends nothing; a crash after it
+    // loses that day's email rather than sending it twice), then release the claim only when no email was accepted.
+    const claimed = canonical.orgComplianceReminderLedgerAfter({ ledger: result.ledger, sent: due, todayKey })
+    await store.writeLedger(orgId, canonical.orgComplianceReminderLedgerFields(claimed))
+    const tag = canonical.orgComplianceReminderBatchTag(due)
     let delivered = 0
     const failed = []
-    if (words) {
-      for (const recipient of recipients) {
-        const rendered = renderOrgComplianceReminderEmail(words, recipient)
-        try {
-          await sendEmail(
-            { from: FROM, to: [recipient.email], subject: rendered.subject, html: rendered.html, text: rendered.text },
-            { idempotencyKey: `orgComplianceReminder:${orgId}:${recipient.userId}:${todayKey}` }
-          )
-          delivered += 1
-        } catch (error) {
-          if (error && error.alreadyAccepted) delivered += 1
-          else failed.push({ userId: recipient.userId, message: (error && error.message) || String(error) })
-        }
+    for (const recipient of recipients) {
+      const rendered = renderOrgComplianceReminderEmail(words, recipient)
+      try {
+        // The key names what this email lists: a same-day re-run with other documents is a new email, so a 409
+        // "already used" can only be this exact email, already accepted.
+        await sendEmail(
+          { from: FROM, to: [recipient.email], subject: rendered.subject, html: rendered.html, text: rendered.text },
+          { idempotencyKey: `orgComplianceReminder:${orgId}:${recipient.userId}:${todayKey}:${tag}` }
+        )
+        delivered += 1
+      } catch (error) {
+        if (error && error.alreadyAccepted) delivered += 1
+        else failed.push({ userId: recipient.userId, status: providerStatus(error) })
       }
     }
     if (failed.length) logger.warn('org compliance reminders: some emails failed', { orgId, failed })
-    // Marked sent once at least one admin got it (never twice); otherwise only the ledger's set days are kept.
-    const ledger =
-      delivered > 0 ? canonical.orgComplianceReminderLedgerAfter({ ledger: result.ledger, sent: due, todayKey }) : result.ledger
-    const before = JSON.stringify(canonical.orgComplianceReminderLedgerFields(canonical.parseOrgComplianceReminderLedger(plain(row.ledger || null))))
-    const after = canonical.orgComplianceReminderLedgerFields(ledger)
-    if (JSON.stringify(after) !== before) await store.writeLedger(orgId, after)
+    if (delivered === 0) {
+      // Nothing went out: release the claim so the next run tries again (same band only).
+      await store.writeLedger(orgId, canonical.orgComplianceReminderLedgerFields(result.ledger))
+    }
     return { orgId, due: due.length, recipients: recipients.length, delivered, failed: failed.length }
   }
 

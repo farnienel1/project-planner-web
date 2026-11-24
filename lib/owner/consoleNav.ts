@@ -67,6 +67,12 @@ export const CONSOLE_NAV: ConsoleNavGroup[] = [
     id: 'platform',
     label: 'Platform',
     items: [
+      {
+        label: 'Status',
+        href: '/developer/status',
+        shown: true,
+        note: 'The running web deploy and rulebook, live rules against this build, Cloud Functions errors, email failures and platformConfig/app (read-only); a source the server cannot read is listed as Not connected.',
+      },
       { label: 'Health & data', href: '/developer/data-quality', shown: true, note: 'Today the Data quality page; rebuilt as Health & data in PR 9.', plannedIn: 'PR 9' },
       { label: 'Errors', href: '/developer/pages', shown: false, note: 'No error source is connected (D7: clientErrors not built yet). The old "Pages & errors" page stays at its address.', plannedIn: 'PR 11' },
       { label: 'Emails & notifications', href: null, shown: false, note: 'No email or push log is written yet (PR 11).', plannedIn: 'PR 11' },

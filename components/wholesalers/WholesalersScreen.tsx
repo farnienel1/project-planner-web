@@ -19,6 +19,7 @@ import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { EmptyState, IosFormModal, PageHeader } from '@/components/ios/primitives'
 import { lineMatchesMaterialQuery } from '@/lib/materials/materialCatalogSearch'
 import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
+import { tidyUkPostcodesInText } from '@/lib/maps/ukPostcode'
 
 function cityFromAddress(address?: string) {
   if (!address) return ''
@@ -221,7 +222,7 @@ export function WholesalersScreen({ selectedId }: { selectedId?: string }) {
               <span className="font-semibold">Account number</span> {selected.accountNumber}
             </p>
           ) : null}
-          {selected.address ? <p className="mt-2">{selected.address}</p> : null}
+          {selected.address ? <p className="mt-2">{tidyUkPostcodesInText(selected.address)}</p> : null}
           {!selected.accountNumber && !selected.address ? <p className="text-(--ink3)">No extra details.</p> : null}
         </div>
       </section>

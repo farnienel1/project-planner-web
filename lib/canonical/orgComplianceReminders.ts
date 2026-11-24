@@ -208,6 +208,8 @@ export function orgComplianceRemindersDue(input: {
     for (const entry of documents?.[section] ?? []) {
       if (!entry || !validDayKey(entry.expiresOn) || !text(entry.id)) continue
       const key = ledgerKey(section, entry.id)
+      // Two stored entries with one id (any letter case): the first counts, as the reader keeps it.
+      if (ledger.entries[key]) continue
       const before = prior.entries[key]
       const known = before && before.expiresOn === entry.expiresOn ? before : null
       const setDayKey = orgComplianceReminderSetDayKey({ entry, prior: known, todayKey, timeZone })
@@ -275,6 +277,24 @@ export function orgComplianceReminderLedgerFields(ledger: OrgComplianceReminderL
 export type OrgComplianceReminderRecipient = { userId: string; email: string; firstName: string }
 
 /**
+ * A short, stable tag of what one email lists (each document and threshold, sorted), for the sender's idempotency key:
+ * a same-day re-run that lists other documents is a different email and never reads as "already sent".
+ */
+export function orgComplianceReminderBatchTag(reminders: readonly Pick<OrgComplianceReminderDue, 'section' | 'entryId' | 'threshold' | 'expiresOn'>[]): string {
+  const parts = reminders.map((r) => `${r.section}:${normalizeDocumentId(r.entryId)}:${r.expiresOn}:${r.threshold}`).sort()
+  // FNV-1a 32-bit, twice with different seeds: 16 hex characters.
+  const hash = (seed: number) => {
+    let h = seed >>> 0
+    for (const ch of parts.join('|')) {
+      h ^= ch.codePointAt(0) ?? 0
+      h = Math.imul(h, 0x01000193) >>> 0
+    }
+    return h.toString(16).padStart(8, '0')
+  }
+  return `${hash(0x811c9dc5)}${hash(0x9747b28c)}`
+}
+
+/**
  * The organisation's active admins and super admins outside operative mode (`companyActivityRecipients`, signed-in
  * accounts), never a ghost or a pending invite (`passwordSet` false), one per email address (without case), with an email.
  */
@@ -292,7 +312,8 @@ export function orgComplianceReminderRecipients(
     const extra = member as { passwordSet?: unknown; ghost?: unknown }
     if (extra.passwordSet === false || extra.ghost === true) continue
     seen.add(email)
-    const first = text(member.firstName) || text(member.displayName).split(/\s+/)[0] || ''
+    // Only a stored first name; none → the email greets with "Hello," (never an email address or a guess).
+    const first = text(member.firstName)
     out.push({ userId: id, email, firstName: first })
   }
   return out

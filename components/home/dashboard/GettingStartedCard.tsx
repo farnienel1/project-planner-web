@@ -67,39 +67,36 @@ export function OnboardingChecklistList({ checklist, linkClassName = 'dash-li' }
 }
 
 export function GettingStartedCard({ checklist, organizationId, userId }: { checklist: OnboardingChecklist; organizationId: string; userId: string }) {
-  const [hiding, setHiding] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hidden, setHidden] = useState(false)
   if (hidden) return null
 
-  async function hide() {
-    if (hiding || !organizationId) return
+  function hide() {
+    if (!organizationId) return
     if (typeof window !== 'undefined' && !window.confirm(ONBOARDING_DISMISS_CONFIRM)) return
     const fields = onboardingDismissWriteFields(userId)
     if (!fields) return
-    setHiding(true)
     setError(null)
-    try {
-      await updateDoc(doc(db, 'organizations', organizationId), {
-        ...fields,
-        [ONBOARDING_DISMISSED_AT_FIELD]: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        ...(writeMetadataFields(userId, 'web') ?? {}),
-      })
-      setHidden(true)
-    } catch (e) {
+    // Hidden at once; never waits for the server (offline the write is queued and sent when back online). The
+    // organisation listener brings the stored value back; a refusal shows the card again with the message.
+    setHidden(true)
+    updateDoc(doc(db, 'organizations', organizationId), {
+      ...fields,
+      [ONBOARDING_DISMISSED_AT_FIELD]: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      ...(writeMetadataFields(userId, 'web') ?? {}),
+    }).catch((e: unknown) => {
+      setHidden(false)
       setError(e instanceof Error ? e.message : 'Could not hide the card. Try again.')
-    } finally {
-      setHiding(false)
-    }
+    })
   }
 
   return (
     <section className="dash-card" aria-labelledby="getting-started-title">
       <div className="dash-ch">
         <h2 id="getting-started-title">{checklist.title}</h2>
-        <button type="button" className="dash-link" onClick={hide} disabled={hiding} style={{ background: 'none', border: 0, cursor: 'pointer', color: 'var(--dash-blue, #3E4FD8)', fontWeight: 600 }}>
-          {hiding ? 'Hiding…' : ONBOARDING_DISMISS_LABEL}
+        <button type="button" className="dash-link" onClick={hide} style={{ background: 'none', border: 0, cursor: 'pointer', color: 'var(--dash-blue, #3E4FD8)', fontWeight: 600 }}>
+          {ONBOARDING_DISMISS_LABEL}
         </button>
       </div>
       <p style={{ margin: '0 0 8px', color: 'var(--dash-ink-2, #344054)', fontSize: 14 }}>{checklist.subtitle}</p>

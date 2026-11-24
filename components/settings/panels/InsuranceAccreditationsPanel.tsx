@@ -46,6 +46,7 @@ import { PanelHeader, SectionLabel, SettingsCard, ErrorBanner } from '@/componen
 import {
   createComplianceShareLink,
   downloadComplianceZip,
+  complianceShareLinkStatusText,
   listComplianceShareLinks,
   revokeComplianceShareLink,
   type ComplianceShareLinkRow,
@@ -551,6 +552,12 @@ function ShareAndZipBar({
               <div key={link.id} className="row wrap" style={{ gap: 8, alignItems: 'center' }}>
                 <span className="small grow">
                   {link.documents.length} document{link.documents.length === 1 ? '' : 's'} · until {dateText(link.expiresAtMs)} · opened {link.openCount} time{link.openCount === 1 ? '' : 's'}
+                  {complianceShareLinkStatusText(link) ? (
+                    <>
+                      {' · '}
+                      <strong style={{ color: 'var(--red)' }}>{complianceShareLinkStatusText(link)}</strong>
+                    </>
+                  ) : null}
                 </span>
                 <button type="button" className="btn sm" onClick={() => void onRevoke(link.id)}>Turn off</button>
               </div>

@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  orgComplianceReminderBatchTag,
   orgComplianceReminderDayKey,
   orgComplianceReminderEmail,
   orgComplianceReminderLedgerAfter,
@@ -149,7 +150,10 @@ test('1.85.0 recipients: active admins with an email, one per address, never a g
   ]
   const out = orgComplianceReminderRecipients(roster as never)
   assert.deepEqual(out.map((r) => r.email).sort(), ['admin@x.com', 'super@x.com'])
-  assert.equal(out.find((r) => r.userId === 'A')?.firstName, 'Ann')
+  // Only a stored first name; a display name is never split into a greeting.
+  assert.equal(out.find((r) => r.userId === 'A')?.firstName, '')
+  const named = orgComplianceReminderRecipients([{ ...roster[0], firstName: 'Ann' }] as never)
+  assert.equal(named[0].firstName, 'Ann')
 })
 
 test('1.85.0 email words, switch and ledger path', () => {
@@ -164,4 +168,18 @@ test('1.85.0 email words, switch and ledger path', () => {
   assert.equal(orgComplianceRemindersEnabled(null), false)
   assert.equal(orgComplianceReminderLedgerPath('org1'), 'organizations/org1/orgCompliance/reminders')
   assert.equal(orgComplianceReminderLedgerPath('../x'), null)
+})
+
+test('1.85.0 review: a second entry with the same id is skipped; the batch tag follows what the email lists', () => {
+  const a = entry('a', '2027-03-31', '2026-06-01')
+  const twin = { ...entry('A', '2027-03-31', '2026-06-01'), path: 'organizations/o/compliance/u_twin.pdf' }
+  const r = orgComplianceRemindersDue({ documents: docs(a, twin), todayKey: '2027-01-31', timeZone: TZ })
+  assert.equal(r.due.length, 1)
+  assert.equal(r.due[0].entryId, 'a')
+  const b = { section: 'insurance' as const, entryId: 'b', threshold: 'sevenDays' as const, expiresOn: '2027-02-07' }
+  const one = orgComplianceReminderBatchTag(r.due)
+  assert.match(one, /^[0-9a-f]{16}$/)
+  assert.equal(one, orgComplianceReminderBatchTag([...r.due]))
+  assert.notEqual(one, orgComplianceReminderBatchTag([...r.due, b]))
+  assert.equal(orgComplianceReminderBatchTag([b, ...r.due]), orgComplianceReminderBatchTag([...r.due, b]))
 })

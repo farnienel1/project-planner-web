@@ -1,7 +1,7 @@
 {
   "rulebookVersion": "1.85.0",
-  "rulebookSha256": "eebb2f3064cdd64a503d36c95fa663c4b49db40d61e2efef56ebf95b16e57f79",
-  "bundleSha256": "6af524904e4038af473fdc752072954724eed0341c952bfd773dc199d7202738",
+  "rulebookSha256": "85704b888b31b3da18b8eec07f3e61879a45ac216dbe5246eaf830bfee793c8e",
+  "bundleSha256": "78053333b864295e8ad25b79a1fbf3e2f602f3392a3af8e544bb89a7855c803e",
   "crossPlatformContractSha256": "d2d465abcf0ab7c7747385346b87d2b47226412b1014602c5a26bff8e951c0ca",
   "dataParityFixtureSha256": "c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f",
   "exports": [
@@ -1457,6 +1457,7 @@
     "orgCompliancePathLinked",
     "orgCompliancePublicDocuments",
     "orgComplianceReminder",
+    "orgComplianceReminderBatchTag",
     "orgComplianceReminderDayKey",
     "orgComplianceReminderEmail",
     "orgComplianceReminderLedgerAfter",

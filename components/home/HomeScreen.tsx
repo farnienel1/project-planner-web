@@ -663,7 +663,8 @@ export function HomeScreen() {
   // Rulebook 1.85.0 §32: the Getting started card (admins; `onboardingChecklist` over what Home already loads).
   const onboarding = useMemo(() => {
     if (!displayUser || pauseHomeLoads || !orgId) return null
-    const viewerIsAdmin = hasAdminAccess(displayUser) && !isOperativeMode(displayUser)
+    // The same admin rule as iOS (`canManageOrganizationCompliance`: admin level, a stray operative flag ignored).
+    const viewerIsAdmin = canManageOrganizationCompliance(displayUser)
     if (!viewerIsAdmin) return null
     const orgData = liveOrganization.organizationId === orgId && liveOrganization.loaded && !liveOrganization.error ? liveOrganization.data : null
     if (!orgData) return null

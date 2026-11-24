@@ -127,6 +127,11 @@ export async function readComplianceAsServer(organizationId: string): Promise<Or
   return parseOrgComplianceDocuments(await adminGet(path), { organizationId })
 }
 
+/** The organisation document read with the service account (the share links list), or null. */
+export async function readOrganizationAsServer(organizationId: string): Promise<Record<string, unknown> | null> {
+  return adminGet(`organizations/${encodeURIComponent(organizationId)}`).catch(() => null)
+}
+
 export async function readOrganizationPublicName(organizationId: string): Promise<string> {
   const org = await adminGet(`organizations/${encodeURIComponent(organizationId)}`).catch(() => null)
   const name = org && typeof org.name === 'string' ? org.name.trim() : ''

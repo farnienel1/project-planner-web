@@ -16,6 +16,8 @@ import {
   listShareLinks,
   newShareToken,
   readComplianceAsCaller,
+  readOrganizationAsServer,
+  shareLinkCreatorStillAdmin,
   shareLinkIdForToken,
   writeComplianceAudit,
 } from '@/lib/compliance/server/complianceShare'
@@ -78,15 +80,36 @@ export async function GET(request: NextRequest) {
   if (!read.ok) return jsonError(read.status === 403 ? 'Only an admin can see these links.' : 'Try again.', read.status)
   try {
     const nowMs = Date.now()
-    const links = (await listShareLinks(organizationId)).map((link) => ({
-      id: link.id,
-      documents: link.documents.map((ref) => `${ref.section}:${ref.id}`),
-      createdAtMs: link.createdAtMs,
-      expiresAtMs: link.expiresAtMs,
-      openCount: link.openCount,
-      lastOpenedAtMs: link.lastOpenedAtMs,
-      state: orgComplianceShareLinkState(link, nowMs),
-    }))
+    const stored = await listShareLinks(organizationId)
+    // An active link whose creator is no longer an active admin here is refused by the share page
+    // (`orgComplianceShareCreatorActive`): the list says so. One read per creator; a failed read reads as stopped,
+    // as on the share page.
+    const organization = stored.some((link) => orgComplianceShareLinkState(link, nowMs) === 'active')
+      ? await readOrganizationAsServer(organizationId)
+      : null
+    const creatorActive = new Map<string, Promise<boolean>>()
+    const links = await Promise.all(
+      stored.map(async (link) => {
+        const state = orgComplianceShareLinkState(link, nowMs)
+        let creatorStopped = false
+        if (state === 'active') {
+          if (!creatorActive.has(link.createdBy)) {
+            creatorActive.set(link.createdBy, organization ? shareLinkCreatorStillAdmin(link, organization) : Promise.resolve(false))
+          }
+          creatorStopped = !(await creatorActive.get(link.createdBy))
+        }
+        return {
+          id: link.id,
+          documents: link.documents.map((ref) => `${ref.section}:${ref.id}`),
+          createdAtMs: link.createdAtMs,
+          expiresAtMs: link.expiresAtMs,
+          openCount: link.openCount,
+          lastOpenedAtMs: link.lastOpenedAtMs,
+          state,
+          creatorStopped,
+        }
+      })
+    )
     return NextResponse.json({ links }, { headers: { 'Cache-Control': 'no-store' } })
   } catch {
     return jsonError('The links could not be loaded. Try again.', 503)

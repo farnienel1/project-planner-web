@@ -937,6 +937,17 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 |---|---|---|
 | 23 Nov | **Build owner console PR 5 (People 360 + person actions) next**, ahead of PR 3 (Needs you) and PR 4 (Organisations 360): resetting logins and changing people's names and emails is what is needed most before launch. | in progress (draft PR, branch `w-console-pr5`) |
 | 23 Nov | **Overview choices (PR 2, #433), owner answers:** (1) "Trial ending" means within **7 days** — yes; (2) "Quiet" stays **14 days** — keep; (3) MRR counts only the stored `billing.mrrPence` (never filled in from the list price) — ok; (4) email reveals are left out of the live feed — ok; (5) the extra attention reasons (payment failed, cancelling, unfinished) — ok. | done (PR 2, #433, merged 23 Nov) |
+| 24 Nov | **People directory grouped by account (email)**: one row per email; opening a row shows each organisation the person belongs to with that organisation's name for them (`memberNames`, 1.82), their level (`organizationLevelFor`), active state and line manager there (`lineManagerSummary` on that organisation's users documents). An organisation picker browses one organisation's people. Reveal email, audit and every action stay on the person page; "Change name here" opens the person page with that organisation's name change ready. | done web (draft PR, branch `w-console-status`) |
+| 24 Nov | **Status page** (owner console, Platform group): the running web deploy (Netlify commit / deploy id, else the build's own record), the rulebook it runs, the live Firestore and Storage rules against the files the build holds (server key, Firebase Rules API), Cloud Functions errors (Cloud Logging, server key), email failures (`emailLog`, D9), client errors (link once the 1.84 Errors page is in the menu) and `platformConfig/app` (minimum builds and switches, read-only). Each tile links somewhere useful; a source the server cannot read is listed as "Not connected" with the reason. No new credential added. | done web (draft PR, branch `w-console-status`) |
+
+## Status and People judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 24 Nov | A person's line manager in an organisation is read from their users document there and resolved on that organisation's roster, anchored members included (`rosterMembersForOrganization`), named with that organisation's own name for them (1.82.0). A member who belongs to an organisation only through a membership (their users document names another company) shows "Not recorded here". When the directory read was cut short, an unresolved line manager says the list is incomplete. | done (draft PR), owner to confirm |
+| 24 Nov | Opening a row on the People list writes no audit entry (no email is revealed; the reveal stays the logged one on the person page). | done (draft PR), owner to confirm |
+| 24 Nov | Email failures show "Not connected" until something writes `emailLog` (nothing does on main yet: owner console PR 11), rather than "0 failed". Cloud Functions and Cloud Run errors (2nd-gen functions run on Cloud Run) show "Not connected" unless the server key has the Logs Viewer role; no log message text is shown, only function names, counts and times. | done (draft PR), owner to confirm |
+| 24 Nov | The rules tile compares the live rules with the rules files the running web build was made from (main, for a production deploy), by sha256, as the rules publish workflow does; it does not call GitHub. | done (draft PR), owner to confirm |
 
 ## PR 5 judgement calls (owner to confirm)
 
@@ -1568,6 +1579,23 @@ The owner's answers of 24 Nov (items 1, 2, 5, 9 of the list sent that day) and c
 | 24 Nov | Review of #440: the Home card (admins, loaded after the rest of Home) now calls postcodes.io for jobs not yet cached in that browser, so a pin shows without opening the full map. A lookup that cannot be reached is shown as "Couldn’t reach the postcode lookup — retry" (counted apart on Home), retried on Retry, back online or back on the tab; never treated as "not found". | done, owner to confirm |
 | 24 Nov | The site map's people count now also folds `managers` rows (rulebook §21 `siteMapPins` asks for them; the page did not pass them), so a person under a users id and a managers row counts once. | done |
 
+## 24 Nov small fixes (w-small-fixes-24nov / ios-small-fixes-24nov)
+
+| Date | Decision | Status |
+|---|---|---|
+| 24 Nov | **iPhone site map exactly like web (#440):** "Show completed jobs" off by default (Active and Upcoming only; a job with people booked that day always shows); placement saved pin → "lat, lng" address → UK postcode (postcodes.io, else Apple geocoding of the postcode alone); "Jobs without an address" list where admins and the job's managers set the pin (existing job write); opens on the office about 10 miles; projects blue, small works red. Guardrail 3: a job whose address has no UK postcode (Apple used to geocode the whole address) now appears in that list instead of on the map. | done iOS (ios-small-fixes-24nov) |
+| 24 Nov | **iPhone Home "Site map" card for admins** (web has one): a card that opens the full map (web's card embeds a small map; the iPhone card does not). | done iOS, owner to confirm |
+| 24 Nov | **Postcodes shown as "SW1X 9HR" everywhere a stored address is printed** (display only): web Book labour locality line, clients, subcontractors, wholesalers; iPhone Projects, Home, works dashboard, materials send list, Book labour, scheduling headers, clients, subcontractors, wholesalers. Stored text and sent payloads (emails, WhatsApp) unchanged. | done web + iOS |
+| 24 Nov | **Web booking delete warning on signed timesheets** (§2 `bookingDeleteSignedTimesheetWarning`): checked every web delete path. Edit Booking (scheduling week, My Schedule), the Daily Overview move, Warnings clash rows and Replace already show it (store-level `announceSignedTimesheetDelete`). Not shown, by design: overtime Return / direct deletes (PAYE days have no timesheet), Data health placeholder removal (no person), person / job deletes (owner 13 Nov item 36). | checked web, no change needed |
+| 24 Nov | **Accreditation share links list:** an active link whose creator is no longer an active admin reads "Stopped — creator is no longer an admin" (the server list works it out with `orgComplianceShareCreatorActive`, as the share page does). Turn off still offered. | done web + iOS |
+
+## Small fixes judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 24 Nov | The timesheet review ✕ (a line manager deleting a booking from the timesheet they are reviewing) shows no signed-timesheet warning: the 1.74.0 rule keeps the sheet with the reviewer, so the warning's "goes back to the person to sign again" would be wrong there. | question |
+| 24 Nov | A creator whose users document cannot be read counts as stopped in the list (the share page refuses such a link too). | done, owner to confirm |
+
 ## 24 Nov decisions (for 1.85, expiry emails and Getting started)
 
 | Date | Decision | Status |
@@ -1581,9 +1609,9 @@ The owner's answers of 24 Nov (items 1, 2, 5, 9 of the list sent that day) and c
 |---|---|---|
 | 24 Nov | Only the current band is sent: when the emails were off (or missed) for a while, the most urgent due threshold is sent, never a stale 2-month one beside a 7-day one; an expiry day itself still gets the 7-day email if it was missed. | done, owner to confirm |
 | 24 Nov | One email per admin per day listing every document due that day (not one email per document). Admins = active admins and super admins outside operative mode, signed up, never a ghost or pending invite, one per address. Managers never get it. | done, owner to confirm |
-| 24 Nov | A reminder counts as sent once at least one admin's email was accepted; an admin whose email failed that day is logged, not retried on a later day. | done, owner to confirm |
+| 24 Nov | Each reminder goes at most once: it is recorded as sent before the emails go out (released only if no admin's email was accepted), so a crash at the wrong moment loses that day's email rather than sending it twice; an admin whose email failed that day is logged, not retried on a later day. | done, owner to confirm |
 | 24 Nov | No inbox row or push with the email: a new notification type needs both apps' type lists (follow-up if wanted). | done, owner to confirm |
-| 24 Nov | Known limit: a document added before 1.85.0 whose name or other details were edited after a threshold day reads that edit day as the day its expiry was set, so that one threshold is not sent. | known limit |
-| 24 Nov | Getting started: "3 of 6 done" counts the optional item; the card hides when the five required items are done even if accreditations are not. "Invite your team" is done as soon as one person besides the creator is on the roster (signed up or invited). Hiding is for the whole company, by any admin, with no way to show it again yet (every step stays in Settings). | done, owner to confirm |
+| 24 Nov | Known limit: a document whose details were edited after a threshold day but before the function first runs reads that edit day as the day its expiry was set, so that one threshold is not sent. From the first run (even switched off — it then records only the set days) the day is kept. | known limit |
+| 24 Nov | Getting started: "3 of 6 done" counts the optional item; the card hides when the five required items are done even if accreditations are not. "Invite your team" is done as soon as one person besides the creator is on the roster (signed up or invited). Hiding is for the whole company, by any admin, with no way to show it again yet (every step stays in Settings); it hides at once, offline too (the write is sent when back online). | done, owner to confirm |
 | 24 Nov | The card is not limited by the company's age: an existing company with a required item still open (most likely a missing logo or office address) also sees it once, until an admin hides it or finishes the step. | done, owner to confirm |
 | 24 Nov | The setup wizard's "last screen" is Review & Pay (the screen after payment only redirects); the list there is read-only (no links: the person is not signed in to the app yet). | done, owner to confirm |
