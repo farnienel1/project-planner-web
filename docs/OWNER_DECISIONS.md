@@ -937,6 +937,17 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 |---|---|---|
 | 23 Nov | **Build owner console PR 5 (People 360 + person actions) next**, ahead of PR 3 (Needs you) and PR 4 (Organisations 360): resetting logins and changing people's names and emails is what is needed most before launch. | in progress (draft PR, branch `w-console-pr5`) |
 | 23 Nov | **Overview choices (PR 2, #433), owner answers:** (1) "Trial ending" means within **7 days** — yes; (2) "Quiet" stays **14 days** — keep; (3) MRR counts only the stored `billing.mrrPence` (never filled in from the list price) — ok; (4) email reveals are left out of the live feed — ok; (5) the extra attention reasons (payment failed, cancelling, unfinished) — ok. | done (PR 2, #433, merged 23 Nov) |
+| 24 Nov | **People directory grouped by account (email)**: one row per email; opening a row shows each organisation the person belongs to with that organisation's name for them (`memberNames`, 1.82), their level (`organizationLevelFor`), active state and line manager there (`lineManagerSummary` on that organisation's users documents). An organisation picker browses one organisation's people. Reveal email, audit and every action stay on the person page; "Change name here" opens the person page with that organisation's name change ready. | done web (draft PR, branch `w-console-status`) |
+| 24 Nov | **Status page** (owner console, Platform group): the running web deploy (Netlify commit / deploy id, else the build's own record), the rulebook it runs, the live Firestore and Storage rules against the files the build holds (server key, Firebase Rules API), Cloud Functions errors (Cloud Logging, server key), email failures (`emailLog`, D9), client errors (link once the 1.84 Errors page is in the menu) and `platformConfig/app` (minimum builds and switches, read-only). Each tile links somewhere useful; a source the server cannot read is listed as "Not connected" with the reason. No new credential added. | done web (draft PR, branch `w-console-status`) |
+
+## Status and People judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 24 Nov | A person's line manager in an organisation is read from their users document there and resolved on that organisation's roster, anchored members included (`rosterMembersForOrganization`), named with that organisation's own name for them (1.82.0). A member who belongs to an organisation only through a membership (their users document names another company) shows "Not recorded here". When the directory read was cut short, an unresolved line manager says the list is incomplete. | done (draft PR), owner to confirm |
+| 24 Nov | Opening a row on the People list writes no audit entry (no email is revealed; the reveal stays the logged one on the person page). | done (draft PR), owner to confirm |
+| 24 Nov | Email failures show "Not connected" until something writes `emailLog` (nothing does on main yet: owner console PR 11), rather than "0 failed". Cloud Functions and Cloud Run errors (2nd-gen functions run on Cloud Run) show "Not connected" unless the server key has the Logs Viewer role; no log message text is shown, only function names, counts and times. | done (draft PR), owner to confirm |
+| 24 Nov | The rules tile compares the live rules with the rules files the running web build was made from (main, for a production deploy), by sha256, as the rules publish workflow does; it does not call GitHub. | done (draft PR), owner to confirm |
 
 ## PR 5 judgement calls (owner to confirm)
 

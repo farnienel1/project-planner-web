@@ -322,5 +322,11 @@
     "pattern": "london-zone-constant",
     "count": 2,
     "reason": "Platform-owner console (all organisations): times are shown in the platform's reporting zone (PLAN §2), not an organisation business day."
+  },
+  {
+    "path": "components/developer/DeveloperStatus.tsx",
+    "pattern": "london-zone-constant",
+    "count": 2,
+    "reason": "Platform-owner console (all organisations): deploy, rules and error times are shown in the platform's reporting zone (PLAN §2), not an organisation business day."
   }
 ]

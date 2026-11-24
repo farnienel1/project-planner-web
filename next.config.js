@@ -46,6 +46,24 @@ const securityHeaders = [
 
 const deploymentId = process.env.COMMIT_REF || process.env.NEXT_DEPLOYMENT_ID || ''
 
+// Owner console Status page: what this build was made from, read by the server route only (never secret: a commit,
+// Netlify's deploy id, the build time and the sha256 of the rules files the build holds, compared with the live rules).
+function buildCommit() {
+  if (process.env.COMMIT_REF) return process.env.COMMIT_REF
+  try {
+    return require('child_process').execSync('git rev-parse HEAD', { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
+  } catch {
+    return ''
+  }
+}
+function fileSha256(name) {
+  try {
+    return require('crypto').createHash('sha256').update(fs.readFileSync(path.join(__dirname, name), 'utf8'), 'utf8').digest('hex')
+  } catch {
+    return ''
+  }
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -55,6 +73,13 @@ const nextConfig = {
     NEXT_PUBLIC_APP_VERSION: require('./package.json').version,
     // Rulebook 1.32.0 §15: "Rules 1.32.0" at the bottom of Settings, from docs/RULEBOOK.md's Version line.
     NEXT_PUBLIC_RULEBOOK_VERSION: ((fs.readFileSync(path.join(__dirname, 'docs/RULEBOOK.md'), 'utf8').match(/^Version: (\S+)/m) || [])[1] || ''),
+    OWNER_BUILD_COMMIT: buildCommit(),
+    OWNER_BUILD_DEPLOY_ID: process.env.DEPLOY_ID || '',
+    OWNER_BUILD_CONTEXT: process.env.CONTEXT || '',
+    OWNER_BUILD_BRANCH: process.env.BRANCH || process.env.HEAD || '',
+    OWNER_BUILD_TIME: new Date().toISOString(),
+    OWNER_FIRESTORE_RULES_SHA256: fileSha256('firestore.rules'),
+    OWNER_STORAGE_RULES_SHA256: fileSha256('storage.rules'),
   },
   ...(deploymentId ? { deploymentId } : {}),
   experimental: {
