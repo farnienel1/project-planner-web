@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Rulebook 1.88.0 §32 (tasks, issue 1): the web side of the one upload pipeline for task attachments and proof of
+ * Rulebook 1.89.0 §32 (tasks, issue 1): the web side of the one upload pipeline for task attachments and proof of
  * work. Files are checked against the task limits when picked (`taskAttachmentCheck`), prepared with the §24 photo
  * pipeline (`prepareClientUpload`: location dropped, at most 2560 px), uploaded `TASK_ATTACHMENT_RULES.upload.parallel`
  * at a time with progress, and a file that sends nothing for `stallTimeoutSeconds` stops with Retry / Remove. Nothing

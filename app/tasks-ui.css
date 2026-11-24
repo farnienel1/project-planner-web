@@ -1,5 +1,5 @@
 /*
- * Tasks upgrade (docs/features/tasks-upgrade/, rulebook 1.88.0 §32): the main Tasks page, the Tasks tab of Projects
+ * Tasks upgrade (docs/features/tasks-upgrade/, rulebook 1.89.0 §32): the main Tasks page, the Tasks tab of Projects
  * and Small works, and the one task popup. Visual only. Colours are the app's own tokens — the Home pack's `--dash-*`
  * (app/brand-shell.css) and the page pack's `--pu-*` (app/pages-ui.css), both with dark values — mapped from the
  * pack's theme.tokens.json (primary.bg → --pu-primary, tone.* → --pu-c-*, border.default → --pu-line, …). No second

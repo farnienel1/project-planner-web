@@ -1596,9 +1596,9 @@ The owner's answers of 24 Nov (items 1, 2, 5, 9 of the list sent that day) and c
 | 24 Nov | The timesheet review ✕ (a line manager deleting a booking from the timesheet they are reviewing) shows no signed-timesheet warning: the 1.74.0 rule keeps the sheet with the reviewer, so the warning's "goes back to the person to sign again" would be wrong there. | question |
 | 24 Nov | A creator whose users document cannot be read counts as stopped in the list (the share page refuses such a link too). | done, owner to confirm |
 
-## 24 Nov, Tasks pack (1.88.0; owner to confirm)
+## 24 Nov, Tasks pack (1.89.0; owner to confirm)
 
-The owner's Tasks pack (`docs/features/tasks-upgrade/`) was built on web and iOS in one sweep (branches `w188-tasks`, `ios-1.88-tasks`). Where the pack and the repo rules disagreed, the repo rules were followed; each choice is below.
+The owner's Tasks pack (`docs/features/tasks-upgrade/`) was built on web and iOS in one sweep (branches `w188-tasks`, `ios-1.89-tasks`). Where the pack and the repo rules disagreed, the repo rules were followed; each choice is below.
 
 | Date | Choice | Status |
 |---|---|---|

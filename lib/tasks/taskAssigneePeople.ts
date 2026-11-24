@@ -125,7 +125,7 @@ export function foldTaskFilterPeople<T extends { id: string; email?: string; isA
 
 /**
  * The names of a task's assignees (with the kind of row that named them), one per person (two stored ids of one person
- * show one name), managers first. Ids match their row without case. 1.88.0 bug B11: an id whose row is gone, or an
+ * show one name), managers first. Ids match their row without case. 1.89.0 bug B11: an id whose row is gone, or an
  * anonymised deleted profile, is listed as "Removed user" (`taskAssigneeDisplay`, `removed: true`) so a manager can
  * reassign the task — before, it was left out (or read "Deleted user") with no way forward. One "Removed user" entry per
  * missing id.

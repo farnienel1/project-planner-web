@@ -1912,7 +1912,7 @@ export {
   parseFormerPersonDocument,
 } from './formerPeople'
 export { isTaskPersonSelected, taskPersonIndex, taskPersonKeys, toggleTaskPerson } from './taskPeople'
-// Rulebook 1.88.0 §32: tasks upgrade.
+// Rulebook 1.89.0 §32: tasks upgrade.
 export {
   TASK_ACTION_LABELS,
   TASK_ATTACHMENT_HELP,

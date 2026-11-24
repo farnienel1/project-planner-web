@@ -20133,7 +20133,7 @@ test('1.83.0 insurance & accreditations are in the packed rulebook (full cases i
   assert.match(storageRules, /match \/organizations\/\{orgId\}\/compliance\/\{fileName\} \{\n(?:\s*\/\/[^\n]*\n)?\s+allow read, delete: if orgMember\(orgId\) && adminLike\(orgId\);/)
 })
 
-test('1.88.0 §32: tasks — Done reads Completed, Medium reads Normal, Edit never completes, the pack cases are in the parity fixture', () => {
+test('1.89.0 §32: tasks — Done reads Completed, Medium reads Normal, Edit never completes, the pack cases are in the parity fixture', () => {
   assert.equal(R112.taskStatusLabel('done'), 'Completed')
   assert.equal(R112.taskPriorityLabel('Medium'), 'Normal')
   assert.equal(R112.taskEditStatus('To Do', 'Completed'), 'To Do')
