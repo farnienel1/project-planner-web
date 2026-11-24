@@ -1,5 +1,6 @@
 'use client'
 
+import { postcodeInputValue } from '@/lib/maps/ukPostcode'
 import { launchCountryOptions } from '@/lib/canonical'
 import { useMemo, useRef, useState } from 'react'
 import { FormInput, FormLabel, FormSelect } from '@/components/forms/FormShell'
@@ -140,7 +141,11 @@ export function OrganisationDetailsStep({
               <FormLabel required>Postcode</FormLabel>
               <FormInput
                 value={value.officeAddress.postcode}
-                onChange={(e) => patchAddress({ postcode: e.target.value })}
+                onChange={(e) => patchAddress({ postcode: postcodeInputValue(e.target.value) })}
+                autoCapitalize="characters"
+                autoCorrect="off"
+                spellCheck={false}
+                autoComplete="postal-code"
               />
             </div>
             <div>
