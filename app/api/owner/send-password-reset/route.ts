@@ -39,12 +39,16 @@ export async function POST(request: NextRequest) {
 
   const token = bearerToken(request)
   let email = ''
-  const userDoc = await firestoreGet(token, `users/${uid}`).catch(() => null)
-  const fromDoc = userDoc ? readString(userDoc.fields, 'email').toLowerCase() : ''
-  if (fromDoc) email = fromDoc
   if (firebaseAdminConfigured()) {
+    // With the server key, the login email is the Firebase Auth account's own address and nothing else: a users
+    // document's `email` can be stale and could name another account (review of #435). No Auth email (no login,
+    // or the lookup failed) → refuse rather than guess.
     const fromAuth = await adminLookupAuthEmail(uid).catch(() => null)
-    if (fromAuth) email = fromAuth
+    if (!fromAuth) return jsonError('This person has no app login, or their login could not be read. Nothing was sent.', 404)
+    email = fromAuth
+  } else {
+    const userDoc = await firestoreGet(token, `users/${uid}`).catch(() => null)
+    email = userDoc ? readString(userDoc.fields, 'email').toLowerCase() : ''
   }
 
   if (!isValidEmail(email)) return jsonError('A valid login email is required to send a reset.', 400)
@@ -89,6 +93,6 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('[owner/send-password-reset]', error)
     await audit.fail(error)
-    return jsonError(error instanceof Error ? error.message : 'Could not send a password reset email.', 502)
+    return jsonError('Could not send a password reset email. Try again in a minute.', 502)
   }
 }

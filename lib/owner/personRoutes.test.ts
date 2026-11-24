@@ -64,7 +64,7 @@ const BASE_DOCS: Docs = {
   'users/owner-uid': { email: PLATFORM_OWNER_EMAIL, firstName: 'Owner', surname: 'P', passwordSet: true, isActive: true },
 }
 
-function stub(options: { serverKey?: boolean; auditOk?: boolean; commitOk?: boolean; commitStatus?: number; commitText?: string; docs?: Docs } = {}) {
+function stub(options: { serverKey?: boolean; authEmpty?: boolean; auditOk?: boolean; commitOk?: boolean; commitStatus?: number; commitText?: string; docs?: Docs } = {}) {
   process.env.NEXT_PUBLIC_FIREBASE_API_KEY = 'test-key'
   process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID = 'demo'
   delete process.env.GOOGLE_APPLICATION_CREDENTIALS
@@ -84,6 +84,7 @@ function stub(options: { serverKey?: boolean; auditOk?: boolean; commitOk?: bool
       return new Response(JSON.stringify({ users: [{ localId: 'owner-uid', email: PLATFORM_OWNER_EMAIL, emailVerified: true, createdAt: '1000' }] }))
     }
     if (url.includes('accounts:lookup')) {
+      if (options.authEmpty) return new Response(JSON.stringify({}))
       return new Response(JSON.stringify({ users: [{ localId: 'sam-uid', email: 'sam@acme.co', createdAt: '1000', lastLoginAt: '2000' }] }))
     }
     if (url.includes('accounts:revokeRefreshTokens')) return new Response('{}')
@@ -375,4 +376,12 @@ test('send password reset: audit (with the reason) is written before the email, 
   assert.match(calls[auditIndex(calls)].body, /Locked out \(ticket 8\)/)
   assert.match(calls[sendOobIndex(calls)].body, /sam@acme\.co/)
   assert.doesNotMatch(calls[sendOobIndex(calls)].body, /attacker/)
+})
+
+test('send password reset: with the server key, a person with no Auth login gets nothing (never the users-document email)', async () => {
+  const calls = stub({ serverKey: true, authEmpty: true })
+  const response = await sendReset(req('/api/owner/send-password-reset', { uid: 'sam-uid', reason: 'Locked out (ticket 9)' }))
+  assert.equal(response.status, 404)
+  assert.equal(sendOobIndex(calls), -1)
+  assert.equal(auditIndex(calls), -1)
 })
