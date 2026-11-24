@@ -78,7 +78,7 @@ service cloud.firestore {
   }
 
   function staffFlag(data, key) {
-    return data.get(key, null) == null ? truthyBool((data.get('permissions', {}) is map ? data.get('permissions', {}).get(key, null) : null)) : truthyBool(data.get(key, false));
+    return data.get(key, null) == null ? truthyBool(data.get('permissions', {}) is map ? data.get('permissions', {}).get(key, null) : null) : truthyBool(data.get(key, false));
   }
 
   function privilegeKeysTyped(next, prev) {
@@ -434,7 +434,7 @@ service cloud.firestore {
     let p = t.get('permissions', {}) is map ? t.get('permissions', {}) : {};
     let v = [t.get('isSuperAdmin', false), t.get('adminAccess', false), t.get('manager', false),
       p.get('isSuperAdmin', false), p.get('adminAccess', false), p.get('manager', false)];
-    return (('operativeMode' in t && truthyBool(t.operativeMode)) ||
+    return ('operativeMode' in t && truthyBool(t.operativeMode) ||
            'permissions' in t && t.permissions is map && 'operativeMode' in t.permissions && truthyBool(t.permissions.operativeMode) ||
            'role' in t && t.role == 'operative') && !(t.get('role', '') in ['admin', 'manager']) && !(true in v) && !(1 in v) && !(1.0 in v);
   }
@@ -1509,7 +1509,7 @@ service cloud.firestore {
       match /overtimeRequests/{requestId} {
         allow read: if overtimeViewer(resource.data.get('userId', ''));
         allow create, update: if canAccessOrganization(organizationId) && (
-          (request.method == 'create') ? (callerOrgRole(organizationId) != '' &&
+          request.method == 'create' ? (callerOrgRole(organizationId) != '' &&
           request.resource.data.keys().hasOnly(['userId', 'rangeStart', 'rangeEnd', 'status', 'lines', 'createdAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
           request.resource.data.keys().hasAll(['userId', 'rangeStart', 'rangeEnd', 'status', 'lines']) &&
           request.resource.data.userId == request.auth.uid &&
@@ -2099,22 +2099,22 @@ service cloud.firestore {
           callerOwnsBookingId(resource.data.get('userId', null)) ||
           callerOwnsBookingId(resource.data.get('operativeId', null)));
         allow create, update, delete: if canAccessOrganization(organizationId) && (
-          (request.method == 'create') ? ((
+          request.method == 'create' ? (
           ((request.resource.data.get('userId', '') == request.auth.uid || request.resource.data.get('userId', '') in [null, ''] &&
             request.resource.data.get('operativeId', null) == request.auth.uid) && hbOwnerShapeAllowed(request.resource.data)) ||
           hbCanDecide(request.resource.data) ||
           hbIsRequestShape(request.resource.data) && (callerOrgRoleAnyBilling(organizationId) in ['admin', 'manager'] || hbIsAdmin())
-        )) : (request.method == 'update') ? ((
+        ) : request.method == 'update' ? (
           hbIsOwner(resource.data) ? hbOwnerEditAllowed(affected())
-          : (!hbIsOwner(request.resource.data) && (hbIsAdmin() ||
-            !affected().hasAny(['userId', 'operativeId'])) && hbCanDecide(resource.data))
-        )) : ((
-          (hbIsOwner(resource.data) && (
+          : !hbIsOwner(request.resource.data) && (hbIsAdmin() ||
+            !affected().hasAny(['userId', 'operativeId'])) && hbCanDecide(resource.data)
+        ) : (
+          hbIsOwner(resource.data) && (
             resource.data.get('status', null) in ['pending', 'rejected'] ||
             'B' in callerOrg(organizationId)
-          )) ||
+          ) ||
           hbCanDecide(resource.data)
-        )));
+        ));
       }
 
       match /annualLeaveAdjustments/{adjustmentId} {
@@ -2463,6 +2463,10 @@ service cloud.firestore {
             callerManagesJobIn(request.resource.data.get('parentType', '') == 'smallWork' ? 'smallWorks' : 'projects', parentId);
       }
 
+      match /orgCompliance/{docId} {
+        allow read, write: if orgAdminEither(organizationId);
+      }
+
       match /reportChecks/{reportId} {
         allow read: if isOrganizationAdmin(organizationId);
         allow write: if false;
@@ -2475,7 +2479,7 @@ service cloud.firestore {
             'payProfiles', 'operativeDayRateHistory', 'operativeProfiles', 'settings',
             'overtimeRequests', 'overtimeReviews', 'overtimeReports', 'priceWorkItems', 'expenseItems',
             'payeClaimReports', 'payeClaimReviews', 'personalSiteAudits', 'worksListPicks', 'annualLeaveAdjustments', 'deletedPeople', 'materialContacts',
-            'reportChecks', 'holidayBookings']);
+            'reportChecks', 'holidayBookings', 'orgCompliance']);
       }
     }
 

@@ -61,6 +61,7 @@ import { WorkingHoursPanel } from '@/components/settings/panels/WorkingHoursPane
 import { AnnualLeaveDefaultsPanel } from '@/components/settings/panels/AnnualLeaveDefaultsPanel'
 import { ScheduleOptionsPanel } from '@/components/settings/panels/ScheduleOptionsPanel'
 import { CompanyDetailsPanel } from '@/components/settings/panels/CompanyDetailsPanel'
+import { InsuranceAccreditationsPanel } from '@/components/settings/panels/InsuranceAccreditationsPanel'
 import { BillingPanel } from '@/components/settings/panels/BillingPanel'
 import { MyNotificationsPanel } from '@/components/settings/panels/MyNotificationsPanel'
 import { ReportedFilesPanel } from '@/components/settings/panels/ReportedFilesPanel'
@@ -86,6 +87,7 @@ type Panel = SettingsPanel
 const ORGANISATION_HUB_PANELS: Panel[] = [
   'organisation',
   'company-details',
+  'insurance-accreditations',
   'working-hours',
   'annual-leave-defaults',
   'schedule-options',
@@ -578,6 +580,9 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
   }
   if (panel === 'company-details' && canAccessOrgHub) {
     return wrap('company-details', <CompanyDetailsPanel onBack={goHub} />)
+  }
+  if (panel === 'insurance-accreditations' && canAccessOrgHub) {
+    return wrap('insurance-accreditations', <InsuranceAccreditationsPanel onBack={() => router.push('/dashboard/settings/organisation')} />)
   }
   if (panel === 'working-hours' && canAccessOrgHub) {
     return wrap('working-hours', <WorkingHoursPanel onBack={goHub} />)

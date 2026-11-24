@@ -1113,6 +1113,23 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 | 24 Nov | With an office pin the map opens on it and does not jump back when the day changes; without one it fits all jobs as before. Maintenance jobs are blue (projects); the old orange pin is gone. | done, owner to confirm |
 | 24 Nov | The sign-in chord is D major 9, about 2.6 s. After the emailed code the page fully reloads; browsers that need a new tap before audio (Safari) then play nothing rather than later. | done, owner to confirm |
 
+## 24 Nov decisions (for 1.83, insurance & accreditations)
+
+| Date | Decision | Status |
+|---|---|---|
+| 24 Nov | **Build Insurance & accreditations now, before launch, lean** (owner rejected the 12–16 day plan as far too big): Settings › Organisation › Compliance › Insurance & accreditations on web and iPhone, reusing the 1.80.0 subcontractor-documents pattern — three sections (PI & PL insurance, trade accreditations, quality / ISO), each document with a type, name, optional insurer / reference / cover and an optional expiry, a file (photo or PDF); upload, view, edit details, replace file, remove; status worked out once (`orgComplianceExpiryStatus`). Rulebook §31 (`lib/canonical/orgCompliance.ts`). | done web + rulebook (1.83.0, w183-accreditations, draft); iOS (ios-1.83-accreditations, draft); Firestore + Storage rules publish pending |
+| 24 Nov | **Only admins** see and change it (row, page, document and files); managers and operatives never. `canManageOrganizationCompliance`; firestore.rules `orgAdminEither`; storage.rules `orgFileAdmin`. | done (1.83.0) |
+| 24 Nov | **Removed or replaced files are recoverable for 30 days** (the bucket's soft delete, §24). | done (1.83.0); owner to confirm soft delete is on with 30-day retention |
+
+## 1.83.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 24 Nov | Stored as one document `organizations/{orgId}/orgCompliance/documents` (three lists), not a list on the organisation document (every member reads that) and not one document per certificate (more rules). Adds one small admin-only rule. | done, owner to confirm |
+| 24 Nov | Files are photos or PDF up to **10 MB** (the brief said 20 MB; every other upload is 10 MB since 15 Nov), at most 50 per section. | done, owner to confirm |
+| 24 Nov | Viewing opens the file's Storage download link (as subcontractor documents), not a 5-minute signed link — only admins can read the object, but a link once opened works until the file is replaced or removed. iPhone shares the downloaded file through the share sheet. | done, owner to confirm |
+| 24 Nov | Not built (follow-ups): 7-day share links and a public page, zip download, server-signed short-lived links, a server check of each entry's fields (the rules check who writes, not the shape), expiry reminders on Home / Warnings, a fourth section (CHAS, SafeContractor). | follow-up |
+
 ## 24 Nov decisions (for 1.80, subcontractor documents)
 
 | Date | Decision | Status |

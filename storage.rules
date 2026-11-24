@@ -272,6 +272,12 @@ service firebase.storage {
       allow update: if staffLike(orgId) && canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
     }
 
+    // Rulebook 1.83.0 §31: organisation insurance & accreditations. Admins of this organisation only.
+    match /organizations/{orgId}/compliance/{fileName} {
+      allow read, delete: if orgMember(orgId) && orgFileAdmin(orgId);
+      allow create: if isNewObject() && orgFileAdmin(orgId) && memberSizedWrite(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
+    }
+
     // Site audit images. Member + size/type only — do not staff-lock.
     match /organizations/{orgId}/siteAudits/{allPaths=**} {
       allow read: if orgMember(orgId);

@@ -52,6 +52,8 @@ export const STORED_FILE_KINDS = [
   'personal_site_audit',
   // 1.80.0: subcontractor insurance and RAMS documents (staff only).
   'subcontractor_document',
+  // 1.83.0 (§31): organisation insurance and accreditation certificates (admins only).
+  'org_compliance_document',
 ] as const
 export type StoredFileKind = (typeof STORED_FILE_KINDS)[number]
 
@@ -101,6 +103,7 @@ export function storedFileKind(storagePath: string | null | undefined): StoredFi
   if (rest.length === 4 && rest[0] === 'subcontractors' && rest[1] && rest[2] === 'documents') {
     return { ...base, kind: 'subcontractor_document' }
   }
+  if (rest.length === 2 && rest[0] === 'compliance' && rest[1]) return { ...base, kind: 'org_compliance_document' }
   if (rest.length >= 2 && rest[0] === 'siteAudits') return { ...base, kind: 'site_audit_photo' }
   if (rest.length >= 2 && rest[0] === 'tasks') return { ...base, kind: 'task_attachment' }
   if (rest.length >= 2 && rest[0] === 'healthSafety') return { ...base, kind: 'health_safety' }
@@ -211,7 +214,9 @@ export function fileDeletePermission(input: FileDeleteInput): FileDeletePermissi
   if (parsed.kind === 'profile_photo') {
     return parsed.ownerUserId === viewer ? { allowed: true, reason: 'own_profile_photo', undoEndsAtMs: null } : deny('not_uploader')
   }
-  if (parsed.kind === 'company_logo' || parsed.kind === 'timesheet_export') return deny('admin_only')
+  if (parsed.kind === 'company_logo' || parsed.kind === 'timesheet_export' || parsed.kind === 'org_compliance_document') {
+    return deny('admin_only')
+  }
   const uploader = storedFileUploader(input.storagePath)
   if (!uploader || uploader.uploaderUserId !== viewer) return deny('not_uploader')
   const given = Number(input.uploadedAtMs)

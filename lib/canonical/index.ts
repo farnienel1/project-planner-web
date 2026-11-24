@@ -2563,3 +2563,6 @@ export {
   parseMemberNameDocuments,
 } from './memberNames'
 export type { MemberName, MemberNames, NameInOrganization, NamedPerson } from './memberNames'
+
+// 1.83.0: organisation insurance & accreditations (§31).
+export * from './orgCompliance'

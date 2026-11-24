@@ -1,0 +1,605 @@
+/**
+ * Rulebook 1.83.0 §31 (owner decisions 24 Nov: build now, lean; admins only; removed files recoverable for 30 days):
+ * the organisation's **insurance & accreditations** — Settings › Organisation › Compliance › Insurance & accreditations.
+ *
+ * One document per organisation, `organizations/{orgId}/orgCompliance/documents` (`orgComplianceDocumentPath`), read
+ * and written by admins of that organisation only (firestore.rules; never through the organisation catch-all read):
+ *   `documents: { insurance: Entry[], trade: Entry[], quality: Entry[] }`, each entry
+ *   `{ id, docType, title, issuer, reference, coverAmount, expiresOn, path, fileName, contentType, sizeBytes,
+ *      uploadedAtMs, uploadedBy, updatedAtMs, updatedBy }`.
+ * Files live at `organizations/{orgId}/compliance/{uid}_{ms}.{ext}` (§24 object names; Storage: admins only).
+ *
+ * Writes are one section's list, built from the STORED document in a transaction (the pattern of the 1.80.0
+ * subcontractor documents), so an entry added on another device meanwhile is kept. Pure, JSON in / JSON out.
+ */
+
+import { derivedRowId } from './derivedIds'
+import { calendarDaysBetween } from './dueDates'
+import { holidayDocumentDayKey } from './holidayDocument'
+import { formatMoney } from './money'
+import { documentInstantMs } from './peopleDocuments'
+import { permissionLevelOf } from './permissionLevels'
+import { normalizeDocumentId } from './scheduleSources'
+import { subcontractorDocumentExpiryDateText } from './subcontractorDocuments'
+
+export const ORG_COMPLIANCE_COLLECTION = 'orgCompliance'
+export const ORG_COMPLIANCE_DOCUMENT_ID = 'documents'
+
+export const ORG_COMPLIANCE_SECTION_KEYS = ['insurance', 'trade', 'quality'] as const
+export type OrgComplianceSectionKey = (typeof ORG_COMPLIANCE_SECTION_KEYS)[number]
+
+export type OrgComplianceDocumentType = { key: string; label: string; short: string }
+
+export type OrgComplianceSection = {
+  key: OrgComplianceSectionKey
+  title: string
+  helper: string
+  issuerLabel: string
+  referenceLabel: string
+  /** Only insurance has a cover amount (limit of indemnity). */
+  coverLabel: string | null
+  emptyTitle: string
+  emptyBody: string
+  documentTypes: readonly OrgComplianceDocumentType[]
+}
+
+/** The three sections, in page order (owner brief §6, lean subset). */
+export const ORG_COMPLIANCE_SECTIONS: readonly OrgComplianceSection[] = [
+  {
+    key: 'insurance',
+    title: 'PI & PL insurance',
+    helper: 'Public liability, professional indemnity and employer’s liability',
+    issuerLabel: 'Insurer',
+    referenceLabel: 'Policy number',
+    coverLabel: 'Limit of indemnity',
+    emptyTitle: 'No insurance certificates yet',
+    emptyBody: 'Upload your PL and PI certificates so they’re ready to send.',
+    documentTypes: [
+      { key: 'public_liability', label: 'Public liability', short: 'PL' },
+      { key: 'professional_indemnity', label: 'Professional indemnity', short: 'PI' },
+      { key: 'employers_liability', label: 'Employer’s liability', short: 'EL' },
+      { key: 'contractors_all_risks', label: 'Contractor’s all risks', short: 'CAR' },
+      { key: 'other_insurance', label: 'Other insurance', short: 'Other' },
+    ],
+  },
+  {
+    key: 'trade',
+    title: 'Trade-specific accreditations',
+    helper: 'e.g. NICEIC, NAPIT, ECA, Gas Safe, F-Gas, BESA',
+    issuerLabel: 'Scheme or body',
+    referenceLabel: 'Registration number',
+    coverLabel: null,
+    emptyTitle: 'No trade accreditations yet',
+    emptyBody: 'Upload scheme certificates such as NICEIC, Gas Safe or F-Gas.',
+    documentTypes: [
+      { key: 'niceic', label: 'NICEIC Approved Contractor', short: 'NICEIC' },
+      { key: 'napit', label: 'NAPIT registration', short: 'NAPIT' },
+      { key: 'eca', label: 'ECA membership', short: 'ECA' },
+      { key: 'gas_safe', label: 'Gas Safe registration', short: 'Gas Safe' },
+      { key: 'f_gas', label: 'F-Gas company certificate', short: 'F-Gas' },
+      { key: 'besa', label: 'BESA membership', short: 'BESA' },
+      { key: 'other_trade', label: 'Other accreditation', short: 'Other' },
+    ],
+  },
+  {
+    key: 'quality',
+    title: 'Quality, information & process management',
+    helper: 'ISO 9001, ISO 14001, ISO 27001, ISO 45001',
+    issuerLabel: 'Certification body',
+    referenceLabel: 'Certificate number',
+    coverLabel: null,
+    emptyTitle: 'No quality certificates yet',
+    emptyBody: 'Upload ISO 9001, ISO 27001 or similar certificates.',
+    documentTypes: [
+      { key: 'iso_9001', label: 'ISO 9001 – Quality management', short: 'ISO 9001' },
+      { key: 'iso_14001', label: 'ISO 14001 – Environmental management', short: 'ISO 14001' },
+      { key: 'iso_27001', label: 'ISO 27001 – Information security', short: 'ISO 27001' },
+      { key: 'iso_45001', label: 'ISO 45001 – Health & safety management', short: 'ISO 45001' },
+      { key: 'other_quality', label: 'Other certificate', short: 'Other' },
+    ],
+  },
+]
+
+export const ORG_COMPLIANCE_PAGE_TITLE = 'Insurance & accreditations'
+export const ORG_COMPLIANCE_PAGE_SUBTITLE = 'Your organisation’s certificates, ready to view and share.'
+export const ORG_COMPLIANCE_HUB_GROUP = 'Compliance'
+export const ORG_COMPLIANCE_EXPIRING_SOON_DAYS = 30
+export const ORG_COMPLIANCE_MAX_YEARS_AHEAD = 10
+export const ORG_COMPLIANCE_MAX_PER_SECTION = 50
+export const ORG_COMPLIANCE_FIELD_LIMITS = { title: 120, issuer: 120, reference: 60 } as const
+export const ORG_COMPLIANCE_COVER_MAX = 1_000_000_000
+
+export const ORG_COMPLIANCE_LABELS = {
+  docType: 'Document type',
+  title: 'Name',
+  titlePlaceholder: 'e.g. Public liability 2026–27',
+  expiryToggle: 'Has an expiry date',
+  expiry: 'Expiry date',
+  expiryHelper: `Optional. Shows as expiring ${ORG_COMPLIANCE_EXPIRING_SOON_DAYS} days before.`,
+  upload: 'Upload',
+  view: 'View',
+  replace: 'Replace file',
+  edit: 'Edit details',
+  remove: 'Remove',
+  save: 'Save',
+  cancel: 'Cancel',
+  replaceHelper:
+    'The new file replaces the current one. Update the expiry date if it’s changed. The old file can be recovered for 30 days.',
+  removeConfirm: 'Remove this document? The file can be recovered for 30 days by asking support.',
+} as const
+
+export const ORG_COMPLIANCE_MESSAGES = {
+  noAccess: 'Only an admin can open insurance & accreditations.',
+  sectionFull: `A section can hold up to ${ORG_COMPLIANCE_MAX_PER_SECTION} documents. Remove an old one first.`,
+  missing: 'This document was removed on another device.',
+  docType: 'Choose a document type.',
+  title: 'Enter a name.',
+  titleLong: `Name can be up to ${ORG_COMPLIANCE_FIELD_LIMITS.title} characters.`,
+  issuerLong: `This can be up to ${ORG_COMPLIANCE_FIELD_LIMITS.issuer} characters.`,
+  referenceLong: `This can be up to ${ORG_COMPLIANCE_FIELD_LIMITS.reference} characters.`,
+  cover: 'Enter the cover as a whole amount, or leave it empty.',
+  expiry: 'Enter the expiry date as a date, or turn off “Has an expiry date”.',
+  expiryFar: `The expiry date can be at most ${ORG_COMPLIANCE_MAX_YEARS_AHEAD} years ahead.`,
+} as const
+
+export type OrgComplianceStatus = 'valid' | 'expiring_soon' | 'expired' | 'no_expiry'
+export type OrgComplianceTone = 'green' | 'amber' | 'red' | 'grey'
+
+/** Display order inside a section: things needing action first. */
+export const ORG_COMPLIANCE_STATUS_ORDER: readonly OrgComplianceStatus[] = ['expired', 'expiring_soon', 'valid', 'no_expiry']
+
+export type OrgComplianceEntry = {
+  id: string
+  section: OrgComplianceSectionKey
+  docType: string
+  title: string
+  issuer: string
+  reference: string
+  /** Whole units of the organisation currency; insurance only; null when not given. */
+  coverAmount: number | null
+  /** `YYYY-MM-DD` organisation-zone day key (the last valid day), or null. */
+  expiresOn: string | null
+  path: string
+  fileName: string
+  contentType: string
+  sizeBytes: number | null
+  uploadedAtMs: number | null
+  uploadedBy: string
+  updatedAtMs: number | null
+  updatedBy: string
+}
+
+export type OrgComplianceDocuments = Record<OrgComplianceSectionKey, OrgComplianceEntry[]>
+
+export type OrgComplianceDetails = {
+  docType: unknown
+  title: unknown
+  issuer?: unknown
+  reference?: unknown
+  coverAmount?: unknown
+  expiresOn?: unknown
+}
+
+function text(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
+}
+
+const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/
+
+function validDayKey(value: string): boolean {
+  if (!DAY_KEY.test(value)) return false
+  const [y, m, d] = value.split('-').map(Number)
+  const date = new Date(Date.UTC(y, m - 1, d))
+  return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d
+}
+
+function graphemeLength(value: string): number {
+  return Array.from(value).length
+}
+
+export function isOrgComplianceSectionKey(value: unknown): value is OrgComplianceSectionKey {
+  return typeof value === 'string' && (ORG_COMPLIANCE_SECTION_KEYS as readonly string[]).includes(value)
+}
+
+export function orgComplianceSection(key: unknown): OrgComplianceSection | null {
+  return ORG_COMPLIANCE_SECTIONS.find((section) => section.key === key) ?? null
+}
+
+/** The type's label ("Public liability"), else the stored key, else "Document". */
+export function orgComplianceDocTypeLabel(section: unknown, docType: unknown): string {
+  const type = orgComplianceSection(section)?.documentTypes.find((t) => t.key === docType)
+  return type?.label ?? (text(docType) || 'Document')
+}
+
+/**
+ * Who sees and changes the organisation's insurance & accreditations: admins and super admins of the organisation
+ * (`permissionLevelOf` = admin; an admin has no operative mode). Managers and operatives never. The same people the
+ * security rules let read and write the document (`orgAdminEither`) and the Storage folder (`orgFileAdmin`).
+ */
+export function canManageOrganizationCompliance(user: unknown): boolean {
+  if (!user || typeof user !== 'object') return false
+  return permissionLevelOf(user) === 'admin'
+}
+
+/** `organizations/{orgId}/orgCompliance/documents`, or null for an unusable id. */
+export function orgComplianceDocumentPath(organizationId: unknown): string | null {
+  const org = text(organizationId)
+  if (!org || org.includes('/')) return null
+  return `organizations/${org}/${ORG_COMPLIANCE_COLLECTION}/${ORG_COMPLIANCE_DOCUMENT_ID}`
+}
+
+/** The Storage folder `organizations/{orgId}/compliance`, or null. */
+export function orgComplianceFolder(organizationId: unknown): string | null {
+  const org = text(organizationId)
+  if (!org || org.includes('/')) return null
+  return `organizations/${org}/compliance`
+}
+
+/** A new upload's Storage path `{folder}/{uid}_{unixMs}.{ext}` (§24). Null when a part cannot be a path. */
+export function orgComplianceStoragePath(input: {
+  organizationId: unknown
+  uid: unknown
+  unixMs: number
+  extension?: string | null
+}): string | null {
+  const folder = orgComplianceFolder(input.organizationId)
+  const uid = text(input.uid)
+  if (!folder || !uid || !/^[A-Za-z0-9-]+$/.test(uid)) return null
+  const ms = Math.floor(Number(input.unixMs))
+  if (!Number.isFinite(ms) || ms < 0) return null
+  const ext = text(input.extension).toLowerCase().replace(/^\.+/, '').replace(/[^a-z0-9]/g, '')
+  return ext ? `${folder}/${uid}_${ms}.${ext}` : `${folder}/${uid}_${ms}`
+}
+
+/** Whether a stored path is a file directly in this organisation's compliance folder (org id without case). */
+export function orgCompliancePathBelongsTo(path: unknown, organizationId: unknown): boolean {
+  const value = text(path)
+  if (!value || value.includes('..') || value.includes('//')) return false
+  const parts = value.split('/')
+  if (parts.length !== 4 || parts[0] !== 'organizations' || parts[2] !== 'compliance' || !parts[3]) return false
+  const org = text(organizationId)
+  return !org || normalizeDocumentId(parts[1]) === normalizeDocumentId(org)
+}
+
+/** An expiry as typed or stored: '' / null → null; a valid `YYYY-MM-DD` → itself; anything else → undefined. */
+export function normalizeOrgComplianceExpiry(value: unknown): string | null | undefined {
+  if (value === null || value === undefined) return null
+  const raw = text(value)
+  if (!raw) return null
+  return validDayKey(raw) ? raw : undefined
+}
+
+/** A cover as typed or stored: '' / null → null; a whole number 0…1,000,000,000 → itself; anything else → undefined. */
+export function normalizeOrgComplianceCover(value: unknown): number | null | undefined {
+  if (value === null || value === undefined) return null
+  if (typeof value === 'string') {
+    const raw = value.replace(/[£$€,\s]/g, '')
+    if (!raw) return null
+    if (!/^\d+$/.test(raw)) return undefined
+    value = Number(raw)
+  }
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > ORG_COMPLIANCE_COVER_MAX) return undefined
+  return value
+}
+
+/**
+ * The first problem with a document's details (in form order), else null. `todayKey` is today in the organisation
+ * zone; past expiry dates are allowed, at most `ORG_COMPLIANCE_MAX_YEARS_AHEAD` years ahead. Only insurance takes a
+ * cover. Lengths are counted in characters.
+ */
+export function orgComplianceDetailsError(section: unknown, details: OrgComplianceDetails, todayKey: string): string | null {
+  const sec = orgComplianceSection(section)
+  if (!sec) return ORG_COMPLIANCE_MESSAGES.docType
+  if (!sec.documentTypes.some((t) => t.key === details.docType)) return ORG_COMPLIANCE_MESSAGES.docType
+  const title = text(details.title)
+  if (!title) return ORG_COMPLIANCE_MESSAGES.title
+  if (graphemeLength(title) > ORG_COMPLIANCE_FIELD_LIMITS.title) return ORG_COMPLIANCE_MESSAGES.titleLong
+  if (graphemeLength(text(details.issuer)) > ORG_COMPLIANCE_FIELD_LIMITS.issuer) return ORG_COMPLIANCE_MESSAGES.issuerLong
+  if (graphemeLength(text(details.reference)) > ORG_COMPLIANCE_FIELD_LIMITS.reference) return ORG_COMPLIANCE_MESSAGES.referenceLong
+  if (sec.coverLabel && normalizeOrgComplianceCover(details.coverAmount) === undefined) return ORG_COMPLIANCE_MESSAGES.cover
+  const expiry = normalizeOrgComplianceExpiry(details.expiresOn)
+  if (expiry === undefined) return ORG_COMPLIANCE_MESSAGES.expiry
+  if (expiry && validDayKey(todayKey)) {
+    const limit = `${Number(todayKey.slice(0, 4)) + ORG_COMPLIANCE_MAX_YEARS_AHEAD}${todayKey.slice(4)}`
+    if (expiry > limit) return ORG_COMPLIANCE_MESSAGES.expiryFar
+  }
+  return null
+}
+
+function cleanDetails(section: OrgComplianceSection, details: OrgComplianceDetails) {
+  return {
+    docType: text(details.docType),
+    title: text(details.title),
+    issuer: text(details.issuer),
+    reference: text(details.reference),
+    coverAmount: section.coverLabel ? (normalizeOrgComplianceCover(details.coverAmount) ?? null) : null,
+    expiresOn: normalizeOrgComplianceExpiry(details.expiresOn) ?? null,
+  }
+}
+
+function parseEntry(entry: unknown, index: number, section: OrgComplianceSection, organizationId: string | null): OrgComplianceEntry | null {
+  const row = record(entry)
+  const path = text(row.path)
+  if (!orgCompliancePathBelongsTo(path, organizationId)) return null
+  const size = Number(row.sizeBytes)
+  const cover = section.coverLabel ? normalizeOrgComplianceCover(row.coverAmount) : null
+  const docType = text(row.docType) || section.documentTypes[section.documentTypes.length - 1].key
+  return {
+    id: text(row.id) || derivedRowId(organizationId ?? '', `documents.${section.key}`, index, [path]),
+    section: section.key,
+    docType,
+    title: text(row.title) || orgComplianceDocTypeLabel(section.key, docType),
+    issuer: text(row.issuer),
+    reference: text(row.reference),
+    coverAmount: cover ?? null,
+    // A stored expiry that is not a date reads as none (never drops the row).
+    expiresOn: normalizeOrgComplianceExpiry(row.expiresOn) ?? null,
+    path,
+    fileName: text(row.fileName) || path.split('/').pop() || 'Document',
+    contentType: text(row.contentType),
+    sizeBytes: Number.isFinite(size) && size >= 0 ? size : null,
+    uploadedAtMs: documentInstantMs(row.uploadedAtMs),
+    uploadedBy: text(row.uploadedBy),
+    updatedAtMs: documentInstantMs(row.updatedAtMs),
+    updatedBy: text(row.updatedBy),
+  }
+}
+
+/**
+ * Read the organisation's documents. Every entry must point at a file in this organisation's compliance folder (a
+ * URL, another organisation's file or junk is dropped; a duplicate path once); an unknown type or a missing name is
+ * read as the section's "Other" / the type's label, never dropped. A missing document reads as three empty lists.
+ */
+export function parseOrgComplianceDocuments(
+  data: Record<string, unknown> | null | undefined,
+  options?: { organizationId?: string | null } | null
+): OrgComplianceDocuments {
+  const out: OrgComplianceDocuments = { insurance: [], trade: [], quality: [] }
+  const documents = record(record(data).documents)
+  const org = text(options?.organizationId) || null
+  for (const section of ORG_COMPLIANCE_SECTIONS) {
+    const list = Array.isArray(documents[section.key]) ? (documents[section.key] as unknown[]) : []
+    const seen = new Set<string>()
+    list.forEach((entry, index) => {
+      const parsed = parseEntry(entry, index, section, org)
+      if (!parsed || seen.has(parsed.path)) return
+      seen.add(parsed.path)
+      out[section.key].push(parsed)
+    })
+  }
+  return out
+}
+
+export type OrgComplianceWrite = { section: OrgComplianceSectionKey; value: Record<string, unknown>[] }
+
+function storedList(stored: Record<string, unknown> | null | undefined, section: OrgComplianceSectionKey): Record<string, unknown>[] {
+  const list = record(record(stored).documents)[section]
+  return Array.isArray(list) ? list.map((row) => record(row)) : []
+}
+
+function indexOfEntry(list: Record<string, unknown>[], section: OrgComplianceSectionKey, organizationId: string, entryId: string): number {
+  return list.findIndex((row, i) => {
+    const id = text(row.id) || derivedRowId(organizationId, `documents.${section}`, i, [text(row.path)])
+    return normalizeDocumentId(id) === normalizeDocumentId(entryId)
+  })
+}
+
+export type OrgComplianceFileInput = {
+  path: string
+  fileName: string
+  contentType?: string | null
+  sizeBytes?: number | null
+  uploadedAtMs: number
+  uploadedBy: string
+}
+
+function fileFields(file: OrgComplianceFileInput) {
+  const size = Number(file.sizeBytes)
+  const at = Math.floor(Number(file.uploadedAtMs))
+  return {
+    path: text(file.path),
+    fileName: text(file.fileName) || text(file.path).split('/').pop() || 'Document',
+    contentType: text(file.contentType),
+    sizeBytes: Number.isFinite(size) && size >= 0 ? size : null,
+    uploadedAtMs: Number.isFinite(at) ? at : null,
+    uploadedBy: text(file.uploadedBy),
+  }
+}
+
+/**
+ * Add an uploaded document (from the STORED document, in a transaction). `alreadyLinked`: a first attempt committed —
+ * never delete that file; `refused`: the section is full (the uploader deletes the file again); `invalid`: the
+ * details, path or uploader are not valid (`error` says which detail).
+ */
+export function orgComplianceAddWriteFields(
+  stored: Record<string, unknown> | null | undefined,
+  input: {
+    section: OrgComplianceSectionKey
+    organizationId: string
+    todayKey: string
+    details: OrgComplianceDetails
+    file: OrgComplianceFileInput
+    id?: string | null
+  }
+): { set: OrgComplianceWrite | null; outcome: 'added' | 'alreadyLinked' | 'refused' | 'invalid'; error: string | null } {
+  const section = orgComplianceSection(input.section)
+  if (!section) return { set: null, outcome: 'invalid', error: ORG_COMPLIANCE_MESSAGES.docType }
+  const error = orgComplianceDetailsError(section.key, input.details, input.todayKey)
+  if (error) return { set: null, outcome: 'invalid', error }
+  const file = fileFields(input.file)
+  if (!orgCompliancePathBelongsTo(file.path, input.organizationId) || !file.uploadedBy) return { set: null, outcome: 'invalid', error: null }
+  const list = storedList(stored, section.key)
+  if (list.some((row) => text(row.path) === file.path)) return { set: null, outcome: 'alreadyLinked', error: null }
+  if (list.length >= ORG_COMPLIANCE_MAX_PER_SECTION) return { set: null, outcome: 'refused', error: ORG_COMPLIANCE_MESSAGES.sectionFull }
+  const entry = {
+    id: text(input.id) || derivedRowId(input.organizationId, `documents.${section.key}`, list.length, [file.path]),
+    ...cleanDetails(section, input.details),
+    ...file,
+    updatedAtMs: file.uploadedAtMs,
+    updatedBy: file.uploadedBy,
+  }
+  return { set: { section: section.key, value: [...list, entry] }, outcome: 'added', error: null }
+}
+
+/** Edit one document's details (stored fields kept). `set` null when unchanged, missing or invalid. */
+export function orgComplianceUpdateWriteFields(
+  stored: Record<string, unknown> | null | undefined,
+  input: {
+    section: OrgComplianceSectionKey
+    organizationId: string
+    entryId: string
+    todayKey: string
+    details: OrgComplianceDetails
+    updatedAtMs: number
+    updatedBy: string
+  }
+): { set: OrgComplianceWrite | null; outcome: 'changed' | 'unchanged' | 'missing' | 'invalid'; error: string | null } {
+  const section = orgComplianceSection(input.section)
+  if (!section) return { set: null, outcome: 'invalid', error: ORG_COMPLIANCE_MESSAGES.docType }
+  const error = orgComplianceDetailsError(section.key, input.details, input.todayKey)
+  if (error) return { set: null, outcome: 'invalid', error }
+  const list = storedList(stored, section.key)
+  const index = indexOfEntry(list, section.key, input.organizationId, input.entryId)
+  if (index < 0) return { set: null, outcome: 'missing', error: ORG_COMPLIANCE_MESSAGES.missing }
+  const line = list[index]
+  const next = cleanDetails(section, input.details)
+  const current = cleanDetails(section, line as OrgComplianceDetails)
+  if (JSON.stringify(current) === JSON.stringify(next)) return { set: null, outcome: 'unchanged', error: null }
+  const value = [...list]
+  value[index] = { ...line, ...next, updatedAtMs: Math.floor(Number(input.updatedAtMs)) || null, updatedBy: text(input.updatedBy) }
+  return { set: { section: section.key, value }, outcome: 'changed', error: null }
+}
+
+/**
+ * Replace one document's file (a renewal), with its details as edited in the same form. The entry keeps its id;
+ * `replacedPath` is the old file, which the app deletes (admins: kept 30 days by the bucket's soft delete, §24).
+ */
+export function orgComplianceReplaceWriteFields(
+  stored: Record<string, unknown> | null | undefined,
+  input: {
+    section: OrgComplianceSectionKey
+    organizationId: string
+    entryId: string
+    todayKey: string
+    details: OrgComplianceDetails
+    file: OrgComplianceFileInput
+  }
+): { set: OrgComplianceWrite | null; outcome: 'replaced' | 'alreadyLinked' | 'missing' | 'invalid'; replacedPath: string | null; error: string | null } {
+  const section = orgComplianceSection(input.section)
+  if (!section) return { set: null, outcome: 'invalid', replacedPath: null, error: ORG_COMPLIANCE_MESSAGES.docType }
+  const error = orgComplianceDetailsError(section.key, input.details, input.todayKey)
+  if (error) return { set: null, outcome: 'invalid', replacedPath: null, error }
+  const file = fileFields(input.file)
+  if (!orgCompliancePathBelongsTo(file.path, input.organizationId) || !file.uploadedBy) {
+    return { set: null, outcome: 'invalid', replacedPath: null, error: null }
+  }
+  const list = storedList(stored, section.key)
+  const index = indexOfEntry(list, section.key, input.organizationId, input.entryId)
+  if (index < 0) return { set: null, outcome: 'missing', replacedPath: null, error: ORG_COMPLIANCE_MESSAGES.missing }
+  const line = list[index]
+  if (text(line.path) === file.path) return { set: null, outcome: 'alreadyLinked', replacedPath: null, error: null }
+  const value = [...list]
+  // A stored entry without an id keeps its derived id from now on (written onto it).
+  const id = text(line.id) || derivedRowId(input.organizationId, `documents.${section.key}`, index, [text(line.path)])
+  value[index] = { ...line, id, ...cleanDetails(section, input.details), ...file, updatedAtMs: file.uploadedAtMs, updatedBy: file.uploadedBy }
+  return { set: { section: section.key, value }, outcome: 'replaced', replacedPath: text(line.path) || null, error: null }
+}
+
+/** Remove one document from its section. `removedPath` is its file (null when already gone; then `set` is null). */
+export function orgComplianceRemoveWriteFields(
+  stored: Record<string, unknown> | null | undefined,
+  input: { section: OrgComplianceSectionKey; organizationId: string; entryId: string }
+): { set: OrgComplianceWrite | null; removedPath: string | null } {
+  if (!isOrgComplianceSectionKey(input.section)) return { set: null, removedPath: null }
+  const list = storedList(stored, input.section)
+  const index = indexOfEntry(list, input.section, input.organizationId, input.entryId)
+  if (index < 0) return { set: null, removedPath: null }
+  return {
+    set: { section: input.section, value: list.filter((_, i) => i !== index) },
+    removedPath: text(list[index].path) || null,
+  }
+}
+
+/**
+ * The merge-set payload of one write: `{ documents: { [section]: list } }` (a nested map, never a dotted key, so it
+ * works whether or not the document exists yet). The app adds `updatedAt` and write metadata.
+ */
+export function orgComplianceMergePayload(write: OrgComplianceWrite): Record<string, unknown> {
+  return { documents: { [write.section]: write.value } }
+}
+
+export type OrgComplianceExpiryStatus = {
+  status: OrgComplianceStatus
+  tone: OrgComplianceTone
+  /** Days from today (organisation zone) to the expiry day; negative once expired; null with no expiry. */
+  daysToExpiry: number | null
+  label: string
+}
+
+/** Today's organisation-zone day key. */
+export function orgComplianceTodayKey(nowMs: number, timeZone?: string | null): string {
+  return holidayDocumentDayKey(Number.isFinite(nowMs) ? nowMs : Date.now(), timeZone)
+}
+
+/**
+ * The one status rule (brief §5): no expiry → "No expiry date" (grey); before today → "Expired 3 Oct 2026" (red);
+ * within `ORG_COMPLIANCE_EXPIRING_SOON_DAYS` → "20 days left · 14 Dec 2026" / "1 day left · …" / "Expires today"
+ * (amber); later → "Valid to 31 Mar 2027" (green). The expiry date is the last valid day.
+ */
+export function orgComplianceExpiryStatus(expiresOn: unknown, todayKey: string): OrgComplianceExpiryStatus {
+  const expiry = normalizeOrgComplianceExpiry(expiresOn)
+  if (!expiry || !validDayKey(todayKey)) return { status: 'no_expiry', tone: 'grey', daysToExpiry: null, label: 'No expiry date' }
+  const days = calendarDaysBetween(todayKey, expiry)
+  const date = subcontractorDocumentExpiryDateText(expiry)
+  if (days < 0) return { status: 'expired', tone: 'red', daysToExpiry: days, label: `Expired ${date}` }
+  if (days <= ORG_COMPLIANCE_EXPIRING_SOON_DAYS) {
+    const label = days === 0 ? 'Expires today' : days === 1 ? `1 day left · ${date}` : `${days} days left · ${date}`
+    return { status: 'expiring_soon', tone: 'amber', daysToExpiry: days, label }
+  }
+  return { status: 'valid', tone: 'green', daysToExpiry: days, label: `Valid to ${date}` }
+}
+
+/** A section's entries in display order: expired, expiring soon, valid, no expiry; then expiry date; then name. */
+export function orgComplianceSortedEntries(entries: readonly OrgComplianceEntry[], todayKey: string): OrgComplianceEntry[] {
+  const rank = (entry: OrgComplianceEntry) => ORG_COMPLIANCE_STATUS_ORDER.indexOf(orgComplianceExpiryStatus(entry.expiresOn, todayKey).status)
+  return [...entries].sort(
+    (a, b) =>
+      rank(a) - rank(b) ||
+      (a.expiresOn ?? '').localeCompare(b.expiresOn ?? '') ||
+      a.title.localeCompare(b.title, 'en-GB', { sensitivity: 'base' })
+  )
+}
+
+export type OrgComplianceCounts = { total: number; expiringSoon: number; expired: number; attention: number }
+
+export function orgComplianceCounts(documents: OrgComplianceDocuments | null | undefined, todayKey: string): OrgComplianceCounts {
+  const counts: OrgComplianceCounts = { total: 0, expiringSoon: 0, expired: 0, attention: 0 }
+  for (const key of ORG_COMPLIANCE_SECTION_KEYS) {
+    for (const entry of documents?.[key] ?? []) {
+      counts.total += 1
+      const status = orgComplianceExpiryStatus(entry.expiresOn, todayKey).status
+      if (status === 'expiring_soon') counts.expiringSoon += 1
+      if (status === 'expired') counts.expired += 1
+    }
+  }
+  counts.attention = counts.expiringSoon + counts.expired
+  return counts
+}
+
+/** The hub row's subtitle: "PI, PL, trade and ISO certificates" / "6 documents" / "6 documents · 2 need attention". */
+export function orgComplianceHubSubtitle(counts: OrgComplianceCounts | null | undefined): string {
+  const total = counts?.total ?? 0
+  if (!total) return 'PI, PL, trade and ISO certificates'
+  const docs = `${total} document${total === 1 ? '' : 's'}`
+  const attention = counts?.attention ?? 0
+  return attention ? `${docs} · ${attention} need${attention === 1 ? 's' : ''} attention` : docs
+}
+
+/** Cover in the organisation currency, whole units ("£10,000,000"); '' when none. */
+export function orgComplianceCoverText(amount: number | null | undefined, currency: unknown): string {
+  return typeof amount === 'number' && Number.isFinite(amount) ? formatMoney(amount, currency, { decimals: 0 }) : ''
+}

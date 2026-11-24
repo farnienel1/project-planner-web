@@ -20102,3 +20102,16 @@ test('1.81.0 names per organisation are in the packed rulebook (full cases in me
   assert.equal(R112.memberNameEditTarget({ organizationId: 'B', homeOrganizationId: 'A' }), 'organization')
   assert.equal(R112.MEMBER_NAMES_COLLECTION, 'memberNames')
 })
+
+test('1.83.0 insurance & accreditations are in the packed rulebook (full cases in orgCompliance.test.ts)', () => {
+  const path = R112.orgComplianceStoragePath({ organizationId: 'o1', uid: 'u1', unixMs: 5, extension: 'pdf' })
+  assert.equal(path, 'organizations/o1/compliance/u1_5.pdf')
+  assert.equal(R112.storedFileKind(path)?.kind, 'org_compliance_document')
+  assert.equal(R112.orgComplianceExpiryStatus('2026-12-14', '2026-11-24').label, '20 days left · 14 Dec 2026')
+  assert.deepEqual(R112.parseOrgComplianceDocuments(null), { insurance: [], trade: [], quality: [] })
+  const firestoreRules = readFileSync(new URL('../../firestore.rules', import.meta.url), 'utf8')
+  assert.match(firestoreRules, /match \/orgCompliance\/\{docId\} \{\n\s+allow read, write: if orgAdminEither\(organizationId\);/)
+  assert.match(firestoreRules, /'reportChecks', 'holidayBookings', 'orgCompliance'\]\);/)
+  const storageRules = readFileSync(new URL('../../storage.rules', import.meta.url), 'utf8')
+  assert.match(storageRules, /match \/organizations\/\{orgId\}\/compliance\/\{fileName\} \{\n\s+allow read, delete: if orgMember\(orgId\) && orgFileAdmin\(orgId\);/)
+})
