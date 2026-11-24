@@ -1494,3 +1494,34 @@ paren whose removal could change precedence; every rules suite passes unchanged.
 Merged onto 1.82.0 (24 Nov): main's rewritten `firestore.rules` taken as is, with only the `orgCompliance` match and
 the catch-all exclusion added (+220 static cost). To keep below main (225,001), the first 18 redundant parenthesis pairs
 the same script finds were removed (no allow / deny change; every rules suite passes): 224,751, 155,533 bytes.
+
+## 1.84.0 headroom (24 Nov)
+
+No allow / deny change. Before → after (`scripts/rules-cost/metric.py` `total2`; bytes of `firestore.rules`):
+
+| | Bytes | Static compile cost |
+|---|---|---|
+| main 1.83.0 | 155,533 | 224,751 |
+| 1.84.0 refactor only | 151,286 (−2.7%) | 219,452 (−2.4%) |
+| 1.84.0 with the `clientErrors` rules | 152,619 (−1.9%) | 220,169 (−2.0%) |
+| (not shipped) every function refactored | 151,686 (−2.5%) | 200,137 (−11.0%) — refused 17 requests by the 1,000-expression limit |
+
+What changed, in this order (tools in `scripts/rules-cost/headroom_*.py`, run by hand; each step checked with `equiv.py`):
+1. `request.resource.data`, `request.auth.uid`, `request.auth.token` and `resource.data` used three or more times in a function are bound once with `let`.
+2. A call or member chain written twice or more in a function's return is bound once with `let` (at most 10 lets per function, the compiler's limit).
+3. A function with exactly one call site, in another function, is written out in its caller (its lets renamed with the function's initials, e.g. `sccpPlaceholder` from `selfCreateCopiesPlaceholder`); a function with one call site in an allow is written out there when the compile cost falls and the file grows by at most 500 bytes. `orgCreateShape` is kept by name (a test reads it). This removes each helper's own type check as a root (the compiler checks every function on its own as well as at each call).
+4. The `{organizationId}` match variable is `{orgId}` (the rulebook already writes `organizations/{orgId}`); the last three comments are below.
+
+**Lets are not free at run time (measured).** An unused `let` that would error does not deny the request (tested on the emulator), but `let` bindings count towards the 1,000-expression limit whether or not the return reaches them: a first build that applied steps 1–3 everywhere (static cost 200,137, −11.0%) refused the admin type-change batch and an own-timesheet write with "maximum of 1000 expressions" (tests 1.12.2 and 1.30.2 cells), and a duplicating variant added 17 strict-suite refusals (invitation accept, ghosts, roster rows, self-update). So steps 1–3 skip every function reachable from the allows of `users/{userId}`, `orgMemberships`, `organizations/{orgId}`, `settings/{settingId}` and `invitations` (123 functions, `scripts/rules-cost/headroom_protected.txt`: the requests closest to the limit), and step 3 never copies a `let` that is used more than once; the strict suite (`RULES_STRICT_BUDGET=1`) is the check. Do not hoist into those without measuring.
+
+**Proof.** `python3 scripts/rules-cost/equiv.py OLD > a; python3 scripts/rules-cost/equiv.py NEW > b; cmp a b` — every allow condition fully inlined (functions and lets substituted, parentheses normalised) is token-for-token identical between main (with `organizationId` renamed) and 1.84.0 without the new `clientErrors` match. A one-token change in either file is reported (checked). Plus: every rules suite on the emulator, `RULES_STRICT_BUDGET=1` (no new 1,000-expression refusal), and the emulator type check (0 issues).
+
+Helpers no longer defined by name (written out in their only caller): `bookingJobCollectionValid`, `copiesInvitedPay`, `hbCallerIsOperative`, `hbRequester`, `hbRequesterExists`, `isStaffMaterialStatusWrite`, `managerMayRecordOperativeRow`, `orgRootSuperAdminRestore`, `overtimeMultiplierWriteValid`, `overtimeReturnPersonOk`, `priceWorkApproverData`, `priceWorkApproverValid`, `rateRowOperativeIsCaller`, `rowPersonLineManaged`.
+
+Comments moved here from `firestore.rules`:
+- `tsRevCreate`: 1.55.0 §8 revisions — see "1.55.0 revisions" above.
+- `memberNames` write: 1.82.0 (owner correction 24 Nov): a name belongs to this organisation. Its admins, the person, and its Operatives managers (home here: the claims' 'q'; visiting: their membership here) for any operative member of it (home here: an operative users document; homed elsewhere: listed `operative` in `members`).
+
+## 1.84.0 clientErrors (24 Nov)
+
+`match /clientErrors/{errorId}` (root): read `isPlatformOwner()`; create only through `clientErrorValid`: the exact keys, `dayIndex` today or yesterday (`math.floor(request.time.toMillis() / 86400000)`), the id `hashing.sha256(request.auth.uid + '|' + string(dayIndex)).toHexString().lower() + '_' + slot 0–19` (so at most 20 creates per account per day; no update rule, so a used slot is never rewritten), platform / source from the lists, message 1–600 with no `@`, route ≤ 240 with no `?`, `#`, `@`, build ≤ 80, `organizationId` '' or `[A-Za-z0-9_-]{1,128}` with `'c' in callerOrg(o)`, `createdAt == request.time`, `expireAt` 29–31 days later. `hashing.sha256` works on the emulator (measured). Suite `tests/clientErrors.rules.test.ts`.

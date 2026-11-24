@@ -1567,3 +1567,20 @@ The owner's answers of 24 Nov (items 1, 2, 5, 9 of the list sent that day) and c
 | 24 Nov | Review of #440: with the switch off, a job past its end date that has people booked that day is still shown (it is being worked on). | done |
 | 24 Nov | Review of #440: the Home card (admins, loaded after the rest of Home) now calls postcodes.io for jobs not yet cached in that browser, so a pin shows without opening the full map. A lookup that cannot be reached is shown as "Couldn’t reach the postcode lookup — retry" (counted apart on Home), retried on Retry, back online or back on the tab; never treated as "not found". | done, owner to confirm |
 | 24 Nov | The site map's people count now also folds `managers` rows (rulebook §21 `siteMapPins` asks for them; the page did not pass them), so a person under a users id and a managers row counts once. | done |
+
+## 24 Nov decisions (1.84.0: rules headroom, error reports)
+
+| Date | Decision | Status |
+|---|---|---|
+| 24 Nov | **Security rules headroom without changing any decision** (do not raise the budgets): one-use helpers written out in their callers, repeated expressions bound once with `let`, the `organizationId` match variable renamed `orgId`, the last comments moved to `docs/firestore-rules-notes.md`. Proved by the inlined-expansion comparison (`scripts/rules-cost/equiv.py`: every allow fully inlined is identical before and after), every rules suite, `RULES_STRICT_BUDGET=1` and the emulator type check. | done web (1.84.0, w184-rules-errors); owner rules publish pending |
+| 16 Nov / 24 Nov | **D7 error reports built**: `clientErrors` (root), web + iPhone, at most 20 per person per day (enforced by the rules from a per-day hash of the account in the document id), message + route + build only, sanitised; read only by the platform owner (console → Errors); 30-day TTL on `expireAt`. | done web + rulebook (1.84.0); iOS (ios-1.84-rules-errors); owner: rules publish + TTL policy |
+
+## 1.84.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 24 Nov | Reports need a signed-in account (errors on the sign-in page and signed-out screens are not reported), so nobody can write reports anonymously. | done, owner to confirm |
+| 24 Nov | Error reports are sent without asking for analytics consent: they carry no personal data and no cookie (D7 "no personal data"). The document id holds a hash of the account id and the day, needed for the 20-a-day cap; the day salt stops linking reports across days. | done, owner to confirm |
+| 24 Nov | iPhone reports the error lines it already printed (`❌ …`, `Error …`, and `⚠️ …` lines that say failed / refused / could not) through `logAndReportError`, plus uncaught Objective-C exceptions on the next launch; Swift crashes (traps) are not caught. | done, owner to confirm |
+| 24 Nov | **Question: headroom target.** 10% off the compile cost is reachable (measured 200,137, −11.0%) only by binding more `let`s in the users, invitations, memberships, organisation and timesheet rules, which pushes 17 tested requests over Google's 1,000-expression limit. Shipped instead: the run-time-neutral cut (−2.4% cost, −2.7% bytes; 4 KB bytes and 24,800 compile-cost headroom under the unchanged budgets). Note: the CI cost cap is 245,000 (`scripts/rules-budget.json`), not 225,000. | question |
+| 24 Nov | The rules match variable `{organizationId}` is now `{orgId}` (2.7 KB of the byte saving); the rulebook and docs already say `organizations/{orgId}`. Helpers referred to by name in older notes may now be written out inside their callers (table in `docs/firestore-rules-notes.md`, "1.84.0 headroom"). | done, owner to confirm |

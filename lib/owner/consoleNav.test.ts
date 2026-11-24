@@ -22,10 +22,12 @@ test('useful-only: every menu entry has a page; nothing planned or unconnected i
     }
   }
   const shownLabels = visibleConsoleNav().flatMap((group) => group.items.map((item) => item.label))
-  for (const hidden of ['Needs you', 'Timesheet value', 'Errors', 'Emails & notifications', 'Releases & switches', 'Audit log']) {
+  for (const hidden of ['Needs you', 'Timesheet value', 'Emails & notifications', 'Releases & switches', 'Audit log']) {
     assert.equal(shownLabels.includes(hidden), false, hidden)
   }
   assert.equal(shownLabels.includes('Website stats'), false)
+  // 1.84.0 (D7): Errors reads clientErrors.
+  assert.equal(shownLabels.includes('Errors'), true)
 })
 
 test('spec §6.6: every old console page is still a route, listed or not', () => {

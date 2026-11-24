@@ -85,6 +85,17 @@ var ProjectPlannerCanonical = (() => {
     CLAIM_EVIDENCE_NONE_TEXT: () => CLAIM_EVIDENCE_NONE_TEXT,
     CLAIM_EVIDENCE_SITE_AUDIT_NOTE: () => CLAIM_EVIDENCE_SITE_AUDIT_NOTE,
     CLAIM_EVIDENCE_TAKE_PHOTO_LABEL: () => CLAIM_EVIDENCE_TAKE_PHOTO_LABEL,
+    CLIENT_ERRORS_COLLECTION: () => CLIENT_ERRORS_COLLECTION,
+    CLIENT_ERRORS_PER_DAY: () => CLIENT_ERRORS_PER_DAY,
+    CLIENT_ERROR_BUILD_MAX: () => CLIENT_ERROR_BUILD_MAX,
+    CLIENT_ERROR_DAY_MS: () => CLIENT_ERROR_DAY_MS,
+    CLIENT_ERROR_FIELDS: () => CLIENT_ERROR_FIELDS,
+    CLIENT_ERROR_MESSAGE_MAX: () => CLIENT_ERROR_MESSAGE_MAX,
+    CLIENT_ERROR_ORGANIZATION_ID_MAX: () => CLIENT_ERROR_ORGANIZATION_ID_MAX,
+    CLIENT_ERROR_PLATFORMS: () => CLIENT_ERROR_PLATFORMS,
+    CLIENT_ERROR_ROUTE_MAX: () => CLIENT_ERROR_ROUTE_MAX,
+    CLIENT_ERROR_SOURCES: () => CLIENT_ERROR_SOURCES,
+    CLIENT_ERROR_TTL_DAYS: () => CLIENT_ERROR_TTL_DAYS,
     COMPANY_ACTIVITY_NOTICE_TYPES: () => COMPANY_ACTIVITY_NOTICE_TYPES,
     COMPANY_EXPORT_REFUSED_MESSAGE: () => COMPANY_EXPORT_REFUSED_MESSAGE,
     CROSS_PLATFORM_CONTRACT_READERS: () => CROSS_PLATFORM_CONTRACT_READERS,
@@ -973,6 +984,13 @@ var ProjectPlannerCanonical = (() => {
     clashPairKey: () => clashPairKey,
     clashResolutionKey: () => clashResolutionKey,
     clashScanDays: () => clashScanDays,
+    clientErrorCreateFields: () => clientErrorCreateFields,
+    clientErrorDayIndex: () => clientErrorDayIndex,
+    clientErrorDocId: () => clientErrorDocId,
+    clientErrorGroups: () => clientErrorGroups,
+    clientErrorHashInput: () => clientErrorHashInput,
+    clientErrorSignature: () => clientErrorSignature,
+    clientErrorThrottle: () => clientErrorThrottle,
     clientWriteFields: () => clientWriteFields,
     clockMinutesFromDeliveryInstant: () => clockMinutesFromDeliveryInstant,
     coalesceOrganizationName: () => coalesceOrganizationName,
@@ -1574,6 +1592,7 @@ var ProjectPlannerCanonical = (() => {
     parseAuthClaims: () => parseAuthClaims,
     parseBookingDocument: () => parseBookingDocument,
     parseClientDocument: () => parseClientDocument,
+    parseClientErrorDocument: () => parseClientErrorDocument,
     parseClockMinutes: () => parseClockMinutes,
     parseCompanyDetails: () => parseCompanyDetails,
     parseDeadlineAssignments: () => parseDeadlineAssignments,
@@ -1840,6 +1859,8 @@ var ProjectPlannerCanonical = (() => {
     rulebookVersionLabel: () => rulebookVersionLabel,
     safeExternalUrl: () => safeExternalUrl,
     sameNamePersonContactLabel: () => sameNamePersonContactLabel,
+    sanitizeClientErrorRoute: () => sanitizeClientErrorRoute,
+    sanitizeClientErrorText: () => sanitizeClientErrorText,
     saveHoursLabel: () => saveHoursLabel,
     scheduleCellHours: () => scheduleCellHours,
     scheduleCellKind: () => scheduleCellKind,
@@ -2271,8 +2292,8 @@ var ProjectPlannerCanonical = (() => {
     const { y, m, d } = partsInZone(date, timeZone);
     return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
   }
-  function zoneOffsetMs(instantMs5, timeZone) {
-    const floored = Math.floor(instantMs5 / 6e4) * 6e4;
+  function zoneOffsetMs(instantMs6, timeZone) {
+    const floored = Math.floor(instantMs6 / 6e4) * 6e4;
     const p = partsInZone(new Date(floored), timeZone);
     return Date.UTC(p.y, p.m - 1, p.d, p.h, p.min) - floored;
   }
@@ -2937,14 +2958,14 @@ var ProjectPlannerCanonical = (() => {
     const value = String(timeZone || "").trim();
     return value || LONDON_TIME_ZONE;
   }
-  function eachDayKey(startKey, endKey, timeZone, cap = 400) {
+  function eachDayKey(startKey, endKey, timeZone, cap2 = 400) {
     if (!startKey || !endKey || startKey > endKey) return [];
     const keys = [];
     let cursor = dateFromDayKeyInZone(startKey, timeZone);
     while (dayKeyInZone(cursor, timeZone) <= endKey) {
       keys.push(dayKeyInZone(cursor, timeZone));
       cursor = addDaysInZone(cursor, 1, timeZone);
-      if (keys.length > cap) break;
+      if (keys.length > cap2) break;
     }
     return keys;
   }
@@ -6755,9 +6776,9 @@ var ProjectPlannerCanonical = (() => {
   }
   var WEEKEND_COUNTS_AS_STEP_HOURS = 0.5;
   function weekendCountsAsError(policy, previous) {
-    const cap = weekdayPaidHours(policy);
-    const capText = `${Math.round(cap * 100) / 100}h`;
-    const weekdayChanged = previous != null && Math.abs(weekdayPaidHours(previous) - cap) > 1e-9;
+    const cap2 = weekdayPaidHours(policy);
+    const capText = `${Math.round(cap2 * 100) / 100}h`;
+    const weekdayChanged = previous != null && Math.abs(weekdayPaidHours(previous) - cap2) > 1e-9;
     const days = [["Saturday", "saturday"]];
     if (!policy.sunday?.sameAsSaturday) days.push(["Sunday", "sunday"]);
     for (const [name, key8] of days) {
@@ -6767,14 +6788,14 @@ var ProjectPlannerCanonical = (() => {
       const before = previous?.[key8];
       const unchanged = before != null && before.countsAsFollowsWeekday !== true && Math.abs(weekendCountsAsHours(before) - value) < 1e-9;
       if (unchanged) {
-        if (weekdayChanged && value > cap + 1e-9) {
+        if (weekdayChanged && value > cap2 + 1e-9) {
           return `${name} counts as ${Math.round(value * 100) / 100}h, more than the new Monday\u2013Friday day of ${capText}. Lower ${name}'s Counts as or turn on Same as Monday\u2013Friday.`;
         }
         continue;
       }
       const steps = value / WEEKEND_COUNTS_AS_STEP_HOURS;
       if (Math.abs(steps - Math.round(steps)) > 1e-9) return `${name} counts-as hours use half-hour steps (e.g. 7.5).`;
-      if (value > cap + 1e-9) {
+      if (value > cap2 + 1e-9) {
         return `${name} counts-as hours can't be more than the Monday\u2013Friday paid day (${capText}).`;
       }
     }
@@ -8240,9 +8261,9 @@ var ProjectPlannerCanonical = (() => {
         employment ? inWindow(prior.window) : void 0
       );
       carriedForward = prior.window ? Math.max(0, snapLeaveDays(prior.allowance - prevTaken)) : 0;
-      const cap = input.maxCarryOverDays;
-      if (cap != null && Number.isFinite(Number(cap)) && Number(cap) >= 0) {
-        carriedForward = Math.min(carriedForward, snapLeaveDays(Number(cap)));
+      const cap2 = input.maxCarryOverDays;
+      if (cap2 != null && Number.isFinite(Number(cap2)) && Number(cap2) >= 0) {
+        carriedForward = Math.min(carriedForward, snapLeaveDays(Number(cap2)));
       }
     }
     const yearAllowance = overrideApplies ? snapLeaveDays(input.yearAllowance) : null;
@@ -8455,8 +8476,8 @@ var ProjectPlannerCanonical = (() => {
         return left.localeCompare(right);
       });
     }
-    const cap = Number(limit);
-    if (Number.isFinite(cap) && cap > 0) return hits.slice(0, cap);
+    const cap2 = Number(limit);
+    if (Number.isFinite(cap2) && cap2 > 0) return hits.slice(0, cap2);
     return hits;
   }
   function catalogueRecordFromItem(item) {
@@ -8620,8 +8641,8 @@ var ProjectPlannerCanonical = (() => {
         return left.localeCompare(right);
       });
     }
-    const cap = Number(limit);
-    if (Number.isFinite(cap) && cap > 0) return hits.slice(0, cap);
+    const cap2 = Number(limit);
+    if (Number.isFinite(cap2) && cap2 > 0) return hits.slice(0, cap2);
     return hits;
   }
   function qualificationSearchRecordFromItem(item) {
@@ -17350,8 +17371,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.83.0" : "",
-      sha256: true ? "628c13c24d92d052247d59b201d79c885510f023075d7bd431ae8093d7952c1a" : ""
+      version: true ? "1.84.0" : "",
+      sha256: true ? "c6a93907c39554db96676d2fb5287b4cc0a19128c16120007a66fdd167cbc05f" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -20894,7 +20915,8 @@ var ProjectPlannerCanonical = (() => {
     { id: "orgCompliance", path: "organizations/{orgId}/orgCompliance/documents", scope: "organization", listen: true, note: "1.83.0 \xA731: insurance & accreditations (parseOrgComplianceDocuments); admins only, while Settings \u203A Organisation or its Compliance page is open." },
     { id: "reportChecks", path: "organizations/{orgId}/reportChecks", scope: "organization", listen: false, note: "1.65.0: one server check per saved overtime / price work / expenses report (parseReportCheckDocument); written by the server only, admins read them when Data health opens." },
     { id: "materialContacts", path: "organizations/{orgId}/materialContacts", scope: "organization", listen: false, note: "1.59.0: addresses the organisation has emailed a quote or order to (the safe-sender box); read by id and written once by the send route and the email function, never shown." },
-    { id: "deletedBookings", path: "organizations/{orgId}/deletedBookings", scope: "organization", listen: false, note: "Write-only tombstones; never shown." }
+    { id: "deletedBookings", path: "organizations/{orgId}/deletedBookings", scope: "organization", listen: false, note: "Write-only tombstones; never shown." },
+    { id: "clientErrors", path: "clientErrors", scope: "platform", listen: false, note: "1.84.0 \xA732 (D7): anonymous error reports, created by a signed-in device (clientErrorCreateFields), read only by the platform owner (owner console Errors, parseClientErrorDocument); 30-day TTL." }
   ];
   function liveCollection(id2) {
     const key8 = typeof id2 === "string" ? id2.trim() : "";
@@ -30754,8 +30776,8 @@ var ProjectPlannerCanonical = (() => {
   function dataParityLogAppend(log, entry, limit = DATA_PARITY_LOG_LIMIT) {
     const kept = Array.isArray(log) ? log.filter((row3) => row3 && typeof row3.atMs === "number") : [];
     const next = [...kept, entry];
-    const cap = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : DATA_PARITY_LOG_LIMIT;
-    return next.slice(Math.max(0, next.length - cap));
+    const cap2 = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : DATA_PARITY_LOG_LIMIT;
+    return next.slice(Math.max(0, next.length - cap2));
   }
   function clock4(atMs, timeZone) {
     const parts3 = partsInZone(new Date(atMs), zoneOrLondon(timeZone));
@@ -33017,6 +33039,169 @@ var ProjectPlannerCanonical = (() => {
       if (active === false) return false;
     }
     return true;
+  }
+
+  // lib/canonical/clientErrors.ts
+  var CLIENT_ERRORS_COLLECTION = "clientErrors";
+  var CLIENT_ERROR_PLATFORMS = ["web", "ios"];
+  var CLIENT_ERROR_SOURCES = ["window", "promise", "boundary", "caught", "uncaught"];
+  var CLIENT_ERRORS_PER_DAY = 20;
+  var CLIENT_ERROR_TTL_DAYS = 30;
+  var CLIENT_ERROR_MESSAGE_MAX = 300;
+  var CLIENT_ERROR_ROUTE_MAX = 120;
+  var CLIENT_ERROR_BUILD_MAX = 40;
+  var CLIENT_ERROR_ORGANIZATION_ID_MAX = 128;
+  var CLIENT_ERROR_DAY_MS = 864e5;
+  var CLIENT_ERROR_FIELDS = [
+    "platform",
+    "source",
+    "message",
+    "route",
+    "build",
+    "organizationId",
+    "dayIndex",
+    "createdAt",
+    "expireAt"
+  ];
+  var EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+  var URL_WITH_PARTS = /\b(?:https?|wss?|ftp|file|gs):\/\/[^\s'"<>()]+/gi;
+  var UUID = /\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b/g;
+  var LONG_HEX = /\b[0-9a-fA-F]{16,}\b/g;
+  var LONG_DIGITS = /\b\d{6,}\b/g;
+  var ID_TOKEN = /\b(?=[A-Za-z0-9_-]*\d)(?=[A-Za-z0-9_-]*[A-Za-z])[A-Za-z0-9_-]{16,}\b/g;
+  var JWT = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?/g;
+  function cap(text58, max) {
+    const chars = Array.from(text58);
+    return chars.length <= max ? text58 : chars.slice(0, Math.max(0, max - 1)).join("") + "\u2026";
+  }
+  function stripUrl(url) {
+    const cut = url.search(/[?#]/);
+    const bare = cut >= 0 ? url.slice(0, cut) : url;
+    return bare.replace(/\/[^/]*$/, (last) => /\d/.test(last) && last.length > 12 ? "/:id" : last);
+  }
+  function sanitizeClientErrorText(value, max = CLIENT_ERROR_MESSAGE_MAX) {
+    if (typeof value !== "string") return "";
+    let text58 = value.replace(JWT, "<id>").replace(EMAIL, "<email>").replace(URL_WITH_PARTS, (url) => stripUrl(url)).replace(UUID, "<id>").replace(LONG_HEX, "<id>").replace(ID_TOKEN, "<id>").replace(LONG_DIGITS, "<id>");
+    text58 = text58.replace(/@/g, " at ");
+    text58 = text58.replace(/\s+/g, " ").trim();
+    return cap(text58, max);
+  }
+  function sanitizeClientErrorRoute(value) {
+    if (typeof value !== "string" || !value.trim()) return "/";
+    let path = value.trim();
+    path = path.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, "");
+    const cut = path.search(/[?#]/);
+    if (cut >= 0) path = path.slice(0, cut);
+    if (!path.startsWith("/")) path = "/" + path;
+    const parts3 = path.split("/").map((segment2) => {
+      if (!segment2) return segment2;
+      if (segment2.includes("@")) return ":id";
+      if (/^[0-9a-fA-F-]{8,}$/.test(segment2) && /\d/.test(segment2)) return ":id";
+      if (/^\d+$/.test(segment2)) return ":id";
+      if (/^[A-Za-z0-9_-]{16,}$/.test(segment2) && /\d/.test(segment2)) return ":id";
+      return segment2.replace(/[^A-Za-z0-9_.\-[\]:]/g, "");
+    });
+    const out = parts3.join("/").replace(/\/{2,}/g, "/") || "/";
+    return cap(out, CLIENT_ERROR_ROUTE_MAX);
+  }
+  function clientErrorDayIndex(nowMs2) {
+    return Math.floor(nowMs2 / CLIENT_ERROR_DAY_MS);
+  }
+  function clientErrorHashInput(uid, dayIndex) {
+    return `${uid}|${dayIndex}`;
+  }
+  function clientErrorDocId(hashHex, slot) {
+    if (typeof hashHex !== "string" || !/^[0-9a-f]{64}$/.test(hashHex)) return null;
+    if (!Number.isInteger(slot) || slot < 0 || slot >= CLIENT_ERRORS_PER_DAY) return null;
+    return `${hashHex}_${slot}`;
+  }
+  function clientErrorSignature(input) {
+    return [input.platform, input.source, input.message, input.route, input.build].join("");
+  }
+  function clientErrorThrottle(state, input) {
+    const sameDay = state && state.dayIndex === input.dayIndex;
+    const current = {
+      dayIndex: input.dayIndex,
+      used: sameDay ? Math.max(0, Math.floor(Number(state.used) || 0)) : 0,
+      sent: Array.isArray(state?.sent) ? state.sent.slice(-200) : []
+    };
+    if (current.sent.includes(input.signature)) return { send: false, slot: null, state: current };
+    if (current.used >= CLIENT_ERRORS_PER_DAY) return { send: false, slot: null, state: current };
+    return {
+      send: true,
+      slot: current.used,
+      state: { dayIndex: input.dayIndex, used: current.used + 1, sent: [...current.sent, input.signature] }
+    };
+  }
+  function clientErrorCreateFields(input) {
+    if (!CLIENT_ERROR_PLATFORMS.includes(input.platform)) return null;
+    if (!CLIENT_ERROR_SOURCES.includes(input.source)) return null;
+    const message = sanitizeClientErrorText(input.message, CLIENT_ERROR_MESSAGE_MAX);
+    if (!message) return null;
+    const build = sanitizeClientErrorText(typeof input.build === "string" ? input.build : "", CLIENT_ERROR_BUILD_MAX);
+    const org = typeof input.organizationId === "string" ? input.organizationId.trim() : "";
+    const organizationId = org && org.length <= CLIENT_ERROR_ORGANIZATION_ID_MAX && /^[A-Za-z0-9_-]+$/.test(org) ? org : "";
+    return {
+      platform: input.platform,
+      source: input.source,
+      message,
+      route: sanitizeClientErrorRoute(input.route),
+      build,
+      organizationId,
+      dayIndex: clientErrorDayIndex(input.nowMs),
+      expireAtMs: input.nowMs + CLIENT_ERROR_TTL_DAYS * CLIENT_ERROR_DAY_MS
+    };
+  }
+  function instantMs5(value) {
+    if (value == null) return null;
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (value instanceof Date) return Number.isFinite(value.getTime()) ? value.getTime() : null;
+    if (typeof value === "string") {
+      const ms = Date.parse(value);
+      return Number.isFinite(ms) ? ms : null;
+    }
+    if (typeof value === "object") {
+      const v = value;
+      if (typeof v.toMillis === "function") return v.toMillis();
+      const seconds = typeof v.seconds === "number" ? v.seconds : typeof v._seconds === "number" ? v._seconds : null;
+      if (seconds != null) return seconds * 1e3 + Math.floor((typeof v.nanoseconds === "number" ? v.nanoseconds : 0) / 1e6);
+    }
+    return null;
+  }
+  function parseClientErrorDocument(id2, data) {
+    const d = data || {};
+    const text58 = (key8) => typeof d[key8] === "string" ? d[key8] : "";
+    return {
+      id: id2,
+      platform: text58("platform"),
+      source: text58("source"),
+      message: text58("message"),
+      route: text58("route"),
+      build: text58("build"),
+      organizationId: text58("organizationId"),
+      createdAtMs: instantMs5(d.createdAt)
+    };
+  }
+  function clientErrorGroups(records, filter = {}) {
+    const groups = /* @__PURE__ */ new Map();
+    for (const r of records) {
+      if (filter.platform && r.platform !== filter.platform) continue;
+      if (filter.organizationId != null && filter.organizationId !== "__all__" && r.organizationId !== filter.organizationId) continue;
+      const key8 = [r.platform, r.message, r.route, r.build].join("");
+      let g = groups.get(key8);
+      if (!g) {
+        g = { key: key8, platform: r.platform, message: r.message, route: r.route, build: r.build, count: 0, firstMs: null, lastMs: null, organizationIds: [], sources: [] };
+        groups.set(key8, g);
+      }
+      g.count += 1;
+      if (r.createdAtMs != null) {
+        g.firstMs = g.firstMs == null ? r.createdAtMs : Math.min(g.firstMs, r.createdAtMs);
+        g.lastMs = g.lastMs == null ? r.createdAtMs : Math.max(g.lastMs, r.createdAtMs);
+      }
+      if (!g.organizationIds.includes(r.organizationId)) g.organizationIds.push(r.organizationId);
+      if (!g.sources.includes(r.source)) g.sources.push(r.source);
+    }
+    return [...groups.values()].sort((a, b) => (b.lastMs ?? -1) - (a.lastMs ?? -1) || b.count - a.count || a.key.localeCompare(b.key));
   }
   return __toCommonJS(bundleEntry_exports);
 })();

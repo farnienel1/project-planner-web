@@ -68,7 +68,7 @@ export const CONSOLE_NAV: ConsoleNavGroup[] = [
     label: 'Platform',
     items: [
       { label: 'Health & data', href: '/developer/data-quality', shown: true, note: 'Today the Data quality page; rebuilt as Health & data in PR 9.', plannedIn: 'PR 9' },
-      { label: 'Errors', href: '/developer/pages', shown: false, note: 'No error source is connected (D7: clientErrors not built yet). The old "Pages & errors" page stays at its address.', plannedIn: 'PR 11' },
+      { label: 'Errors', href: '/developer/errors', shown: true, note: 'clientErrors (D7, rulebook 1.84.0): anonymous web and iPhone error reports grouped by message, route and build, through the owner-only /api/owner/errors.' },
       { label: 'Emails & notifications', href: null, shown: false, note: 'No email or push log is written yet (PR 11).', plannedIn: 'PR 11' },
       { label: 'Releases & switches', href: null, shown: false, note: 'Not built yet (PR 9, read-only, D17).', plannedIn: 'PR 9' },
     ],
@@ -88,7 +88,7 @@ export const CONSOLE_NAV: ConsoleNavGroup[] = [
 /** Pages kept at their address but never in the menu (owner decision D8: no website stats source). */
 export const CONSOLE_UNLISTED_ROUTES: { href: string; note: string }[] = [
   { href: '/developer/website-stats', note: 'D8: no website stats source — left out of the menu.' },
-  { href: '/developer/pages', note: 'No error source connected (D7) — left out of the menu until clientErrors is built.' },
+  { href: '/developer/pages', note: 'Old page events view; replaced in the menu by Errors (clientErrors, D7, 1.84.0).' },
 ]
 
 /** The groups as the sidebar shows them: shown items only, empty groups dropped. */
