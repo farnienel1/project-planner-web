@@ -2611,3 +2611,8 @@ export {
   offlineSyncTimesText,
 } from './offlineSyncResults'
 export type { OfflineSyncBooking, OfflineSyncResult, OfflineSyncResultKind, OfflineSyncResultReason, OfflineSyncResultRow } from './offlineSyncResults'
+export * from './clientErrors'
+
+// 1.85.0: insurance & accreditation expiry reminders (§31) and the onboarding checklist (§32).
+export * from './orgComplianceReminders'
+export * from './onboardingChecklist'

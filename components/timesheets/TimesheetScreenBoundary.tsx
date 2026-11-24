@@ -2,6 +2,7 @@
 
 import { Component, type ReactNode } from 'react'
 import { Card, Note, PuButton } from '@/components/ui/page'
+import { reportClientError } from '@/lib/clientErrors/reportClientError'
 
 /** Shown when one timesheet screen throws (17 Nov): the rest of Timesheets keeps working. */
 export const TIMESHEET_SCREEN_ERROR_MESSAGE =
@@ -32,6 +33,7 @@ export class TimesheetScreenBoundary extends Component<
 
   componentDidCatch(error: Error) {
     console.error('[timesheets] screen failed', error)
+    void reportClientError('boundary', error)
   }
 
   render() {

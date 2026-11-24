@@ -130,6 +130,8 @@ export type DirectoryQuery<F, S> = {
   seenIn?: { start: Date; end: Date } | null
   /** People only: created inside this window (the Overview's "New people" tile). */
   joinedIn?: { start: Date; end: Date } | null
+  /** People only: members of this organisation (its id exactly as stored), for browsing one organisation's people. */
+  organizationId?: string | null
 }
 
 export type DirectoryPage<T> = {
@@ -364,7 +366,8 @@ export function selectOwnerPeople(
       personMatchesFilter(row, filter) &&
       personMatchesQuery(row, needle) &&
       inWindow(row.lastSeenAtMs, query.seenIn) &&
-      inWindow(row.createdAtMs, query.joinedIn)
+      inWindow(row.createdAtMs, query.joinedIn) &&
+      (!query.organizationId || row.organizationIds.includes(query.organizationId))
   )
   const sorted = [...kept].sort((a, b) => {
     if (query.sort === 'lastSeen') return (b.lastSeenAtMs ?? 0) - (a.lastSeenAtMs ?? 0) || compareText(a.name, b.name)

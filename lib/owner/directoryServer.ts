@@ -9,6 +9,11 @@ import { DIRECTORY_SCAN_CAP, ownerOrgRows, ownerPeopleRows, type OwnerOrgRow, ty
 export type OwnerDirectoryData = {
   orgRows: OwnerOrgRow[]
   peopleRows: OwnerPersonRow[]
+  /**
+   * Every users document read, kept on the server only (never put in a response): the owner People list resolves a
+   * person's line manager in each organisation on it without reading the collection again.
+   */
+  userDocs: PlainDoc[]
   /** True when a collection reached DIRECTORY_SCAN_CAP: the page says so instead of hiding the rest. */
   truncated: boolean
   /** Documents read on the server for this request (shown in the PR's before/after read counts). */
@@ -34,7 +39,7 @@ async function readAll(token: string, collection: string): Promise<PlainDoc[]> {
 export const OWNER_DIRECTORY_CACHE_MS = 200_000
 
 type CacheEntry<T> = { at: number; value: Promise<T> }
-let orgCache: CacheEntry<Omit<OwnerDirectoryData, 'peopleRows'>> | null = null
+let orgCache: CacheEntry<Omit<OwnerDirectoryData, 'peopleRows' | 'userDocs'>> | null = null
 let directoryCache: CacheEntry<OwnerDirectoryData> | null = null
 
 export function clearOwnerDirectoryCache(): void {
@@ -97,6 +102,7 @@ export async function loadOwnerDirectory(token: string, options: { refresh?: boo
       return {
         orgRows,
         peopleRows: ownerPeopleRows(userDocs, orgRows, orgDocs),
+        userDocs,
         truncated: orgDocs.length >= DIRECTORY_SCAN_CAP || userDocs.length >= DIRECTORY_SCAN_CAP,
         documentsRead: orgDocs.length + userDocs.length,
       }

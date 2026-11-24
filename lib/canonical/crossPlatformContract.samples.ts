@@ -522,6 +522,7 @@ export const CONTRACT_NO_READER: Readonly<Record<string, string>> = {
   payeClaimReports: '1.30.0: parsePayeClaimReportDocument (payeClaimReportSnapshot); samples follow once iOS writes it.',
   personalSiteAudits: '1.30.0: parsePersonalSiteAuditDocument (personalSiteAuditWriteFields); samples follow once iOS writes it.',
   deletedBookings: 'Write-only tombstones (bookingTombstoneWriteFields); never read by a screen.',
+  clientErrors: '1.84.0: parseClientErrorDocument; anonymous error reports, read only by the platform owner console.',
 }
 
 export function buildCrossPlatformContract(): {

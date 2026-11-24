@@ -63,6 +63,11 @@ export function DeveloperPersonScreen({ uid }: { uid: string }) {
   const [notice, setNotice] = useState('')
   const [emails, setEmails] = useState<string[] | null>(null)
   const [action, setAction] = useState<ActionKind | null>(null)
+  // `?changeName=<orgId>` (the People list's "Change name here"): open the name change for that organisation once.
+  const [nameOrgId, setNameOrgId] = useState<string | null>(null)
+  const [changeNameAsked, setChangeNameAsked] = useState<string | null>(() =>
+    typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('changeName')
+  )
   const { run, dialog } = useOwnerFreshAction()
 
   const load = useCallback(
@@ -82,6 +87,18 @@ export function DeveloperPersonScreen({ uid }: { uid: string }) {
   useEffect(() => {
     void load()
   }, [load])
+  useEffect(() => {
+    if (!data || !changeNameAsked) return
+    setChangeNameAsked(null)
+    if (data.isPlatformOwner) return
+    if (!data.organisations.some((org) => org.id === changeNameAsked)) {
+      setNotice('')
+      setError(`Organisation ${changeNameAsked} is not one of their organisations, so no name change was opened. Use Change name to pick one.`)
+      return
+    }
+    setNameOrgId(changeNameAsked)
+    setAction('name')
+  }, [data, changeNameAsked])
 
   if (loading && !data && !error) return <LoadingSpinner label="Loading person…" />
   if (!data) {
@@ -153,7 +170,14 @@ export function DeveloperPersonScreen({ uid }: { uid: string }) {
             <button type="button" className="btn sm" onClick={() => setAction('reset')}>
               Send password reset
             </button>
-            <button type="button" className="btn sm" onClick={() => setAction('name')}>
+            <button
+              type="button"
+              className="btn sm"
+              onClick={() => {
+                setNameOrgId(null)
+                setAction('name')
+              }}
+            >
               Change name
             </button>
             <button type="button" className="btn sm" onClick={() => setAction('email')}>
@@ -196,6 +220,12 @@ export function DeveloperPersonScreen({ uid }: { uid: string }) {
                   {org.isSuperAdmin ? ' · Super Admin' : ''}
                 </span>
                 <span className="text-xs text-(--ink3)">from {SOURCE_LABEL[org.source] || org.source}</span>
+                {org.lineManager ? (
+                  <span className="text-xs" data-testid="person-organisation-line-manager">
+                    Line manager: {org.lineManager.label}
+                    {org.lineManager.incomplete ? ' (not everyone was read; this may be someone the directory did not reach)' : ''}
+                  </span>
+                ) : null}
                 {org.deletion === 'scheduled' ? <span className="chip">Scheduled for deletion</span> : null}
                 {org.lapsed ? <span className="chip">Subscription lapsed</span> : null}
                 {org.isTest ? <span className="chip">Test</span> : null}
@@ -278,7 +308,16 @@ export function DeveloperPersonScreen({ uid }: { uid: string }) {
         <ResetDialog uid={uid} name={person.name} onClose={() => setAction(null)} onDone={done} run={run} />
       ) : null}
       {action === 'name' ? (
-        <NameDialog uid={uid} person={person} documents={data.documents} organisations={data.organisations} onClose={() => setAction(null)} onDone={done} run={run} />
+        <NameDialog
+          uid={uid}
+          person={person}
+          documents={data.documents}
+          organisations={data.organisations}
+          initialOrganizationId={nameOrgId}
+          onClose={() => setAction(null)}
+          onDone={done}
+          run={run}
+        />
       ) : null}
       {action === 'email' ? <EmailDialog uid={uid} name={person.name} onClose={() => setAction(null)} onDone={done} run={run} /> : null}
       {action === 'revoke' ? <RevokeDialog uid={uid} name={person.name} onClose={() => setAction(null)} onDone={done} run={run} /> : null}
@@ -423,17 +462,26 @@ function NameDialog({
   person,
   documents,
   organisations,
+  initialOrganizationId,
   onClose,
   onDone,
   run,
-}: Omit<DialogProps, 'name'> & { person: OwnerPersonRow; documents: OwnerPersonDocument[]; organisations: OwnerPersonOrganisation[] }) {
+}: Omit<DialogProps, 'name'> & {
+  person: OwnerPersonRow
+  documents: OwnerPersonDocument[]
+  organisations: OwnerPersonOrganisation[]
+  /** The organisation to start on (the People list's "Change name here"); else the first. */
+  initialOrganizationId?: string | null
+}) {
   const kept = documents.find((doc) => doc.id === person.id) || documents[0]
   // Rulebook 1.82.0 §11 "Names per organisation" (owner 24 Nov): a name belongs to one organisation; the change acts on
   // one organisation at a time and starts from the name that organisation shows today.
-  const [organizationId, setOrganizationIdState] = useState(organisations[0]?.id || '')
+  const startOrgId =
+    (initialOrganizationId && organisations.some((org) => org.id === initialOrganizationId) ? initialOrganizationId : organisations[0]?.id) || ''
+  const [organizationId, setOrganizationIdState] = useState(startOrgId)
   const nameIn = (orgId: string) => (organisations.find((org) => org.id === orgId)?.nameHere || kept?.name || person.name).split(' ')
-  const [firstName, setFirstName] = useState(nameIn(organisations[0]?.id || '')[0] || '')
-  const [surname, setSurname] = useState(nameIn(organisations[0]?.id || '').slice(1).join(' '))
+  const [firstName, setFirstName] = useState(nameIn(startOrgId)[0] || '')
+  const [surname, setSurname] = useState(nameIn(startOrgId).slice(1).join(' '))
   const setOrganizationId = (orgId: string) => {
     setOrganizationIdState(orgId)
     const parts = nameIn(orgId)

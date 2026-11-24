@@ -87,6 +87,7 @@ export const LIVE_COLLECTIONS: ReadonlyArray<LiveCollection> = [
   { id: 'reportChecks', path: 'organizations/{orgId}/reportChecks', scope: 'organization', listen: false, note: '1.65.0: one server check per saved overtime / price work / expenses report (parseReportCheckDocument); written by the server only, admins read them when Data health opens.' },
   { id: 'materialContacts', path: 'organizations/{orgId}/materialContacts', scope: 'organization', listen: false, note: '1.59.0: addresses the organisation has emailed a quote or order to (the safe-sender box); read by id and written once by the send route and the email function, never shown.' },
   { id: 'deletedBookings', path: 'organizations/{orgId}/deletedBookings', scope: 'organization', listen: false, note: 'Write-only tombstones; never shown.' },
+  { id: 'clientErrors', path: 'clientErrors', scope: 'platform', listen: false, note: '1.84.0 §32 (D7): anonymous error reports, created by a signed-in device (clientErrorCreateFields), read only by the platform owner (owner console Errors, parseClientErrorDocument); 30-day TTL.' },
 ]
 
 /** The `LIVE_COLLECTIONS` row for an id (exact, then without case). Null when unknown. */

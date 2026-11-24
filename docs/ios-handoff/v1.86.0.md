@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.86.0 → 1.86.0
-Packed hash: 91322cf96dd2eebdc1fc3e773a34d6e54bb9553b6e2b09a28f97425bf2fc32f8
-Rulebook sha256: 8c3f50d38da1afe081f2743e71963e563038f7c6e82a3e8828ad3e7bda583b3d
+Rulebook version: 1.85.0 → 1.86.0
+Packed hash: 27b500a23ea1d453e970bbccb16153c43f43a9ce5aed94a4878b7c51ee966351
+Rulebook sha256: e9ea201a3187a84aa7db612c73c3aa7f2dc16b6487b6ed5b91478ac30d7f2c8c
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,12 +22,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: d2d465abcf0ab7c7747385346b87d2b47226412b1014602c5a26bff8e951c0ca
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: OFFLINE_SYNC_RESULT_BANNER, OFFLINE_SYNC_RESULT_DETAIL_CHANGED, OFFLINE_SYNC_RESULT_DETAIL_DELETED, OFFLINE_SYNC_RESULT_DETAIL_PERMISSION, OFFLINE_SYNC_RESULT_DISMISS_LABEL, OFFLINE_SYNC_RESULT_EMPTY, OFFLINE_SYNC_RESULT_KINDS, OFFLINE_SYNC_RESULT_NOTIFICATION_TITLE, OFFLINE_SYNC_RESULT_OPEN_DAY_LABEL, OFFLINE_SYNC_RESULT_REASONS, OFFLINE_SYNC_RESULT_TITLE, offlineReplaceOrganizationReadDecision, offlineSyncBookingText, offlineSyncResultNotificationText, offlineSyncResultRows, offlineSyncTimesText
+Exports added: OFFLINE_REPLACE_CHANGED_MESSAGE, OFFLINE_REPLACE_REFUSED_MESSAGE, OFFLINE_REPLACE_REPLAY_DECISIONS, OFFLINE_REPLACE_TARGET_OUTCOMES, OFFLINE_SYNC_RESULT_BANNER, OFFLINE_SYNC_RESULT_DETAIL_CHANGED, OFFLINE_SYNC_RESULT_DETAIL_DELETED, OFFLINE_SYNC_RESULT_DETAIL_PERMISSION, OFFLINE_SYNC_RESULT_DISMISS_LABEL, OFFLINE_SYNC_RESULT_EMPTY, OFFLINE_SYNC_RESULT_KINDS, OFFLINE_SYNC_RESULT_NOTIFICATION_TITLE, OFFLINE_SYNC_RESULT_OPEN_DAY_LABEL, OFFLINE_SYNC_RESULT_REASONS, OFFLINE_SYNC_RESULT_TITLE, offlineReplaceOrganizationReadDecision, offlineReplaceRefusalDecision, offlineReplaceReplayDecision, offlineSyncBookingText, offlineSyncResultNotificationText, offlineSyncResultRows, offlineSyncTimesText
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/offlineSyncResults.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bookingReplace.ts, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/offlinePolicy.ts, lib/canonical/offlineReplace.ts, lib/canonical/offlineSyncResults.ts, lib/canonical/scheduleReplace141.test.ts
 Done when:
-- [ ] Packed hash in iOS equals 91322cf96dd2eebdc1fc3e773a34d6e54bb9553b6e2b09a28f97425bf2fc32f8
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 8c3f50d38da1afe081f2743e71963e563038f7c6e82a3e8828ad3e7bda583b3d)
+- [ ] Packed hash in iOS equals 27b500a23ea1d453e970bbccb16153c43f43a9ce5aed94a4878b7c51ee966351
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 e9ea201a3187a84aa7db612c73c3aa7f2dc16b6487b6ed5b91478ac30d7f2c8c)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.86.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -49,6 +49,9 @@ Done when:
 - "Not synced" (owner 24 Nov): record each refused queued Replace / delete (changed or permission) and refused queued edit (not-found or permission) on the phone; schedule one local notification (`offlineSyncResultNotificationText`), or show `OFFLINE_SYNC_RESULT_BANNER` when notifications are off; the page renders `offlineSyncResultRows` and opens Daily Overview on the row's `dayKey`; "Got it" removes the row. iOS: `Core/OfflineSyncResultStore.swift`, `Views/NotSyncedView.swift`.
 - Another company's settings read before a queued Replace: `offlineReplaceOrganizationReadDecision` — refused / not-found / missing → `refusePermission` at once; network failure → wait.
 
+## New rulebook sections
+
+- 1.86.0 — 2026-11-24
 
 ## Workflow for the iOS agent
 

@@ -312,6 +312,12 @@
     "reason": "showPayrollFields now gates only the legacy 'Timesheets enabled' toggle (timesheetsEnabled decides nothing since rulebook 1.11.0, §8), hidden for every admin and the Super Admin alike. Before review of #385 it also held the VAT/UTR fields; those now follow canViewSensitiveProfile (editUserTaxIdsSectionShown). Follow-up: remove the toggle."
   },
   {
+    "path": "components/developer/DeveloperErrorsScreen.tsx",
+    "pattern": "london-zone-constant",
+    "count": 2,
+    "reason": "Platform-owner console (all organisations): report times are shown in the platform's reporting zone (PLAN §2), not an organisation business day."
+  },
+  {
     "path": "components/developer/DeveloperUsers.tsx",
     "pattern": "london-zone-constant",
     "count": 2,
@@ -322,5 +328,11 @@
     "pattern": "london-zone-constant",
     "count": 2,
     "reason": "Platform-owner console (all organisations): times are shown in the platform's reporting zone (PLAN §2), not an organisation business day."
+  },
+  {
+    "path": "components/developer/DeveloperStatus.tsx",
+    "pattern": "london-zone-constant",
+    "count": 2,
+    "reason": "Platform-owner console (all organisations): deploy, rules and error times are shown in the platform's reporting zone (PLAN §2), not an organisation business day."
   }
 ]
