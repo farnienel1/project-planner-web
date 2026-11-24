@@ -1491,3 +1491,22 @@ UI only, web only (`docs/design/projects-overview-ui/projects-overview-ui-spec.m
 | 24 Nov | The weekly report check line keeps "REV 1 waiting for signature" (only the Payrun Snapshot cell names whose turn, as asked). | done, owner to confirm |
 | 24 Nov | A person with no first name reads "REV 1 · waiting for the person". | done, owner to confirm |
 | 24 Nov | iPhone: the Payrun Snapshot link carries `documentId`, but the iPhone review screen still opens the pay run's latest version for that person (which is the same document unless it is filed under another id); passing it through to the review load is a follow-up. | follow-up |
+
+## 24 Nov decisions (site map pins, w-sitemap-pins)
+
+| Date | Decision | Status |
+|---|---|---|
+| 24 Nov | **Every job with an address appears on the site map** (owner: "9 jobs have no map pin yet" although they have addresses). Cause: the Home card showed only jobs with a stored map pin and never looked up addresses; the full map geocoded through the server per job. Now both place a job from (1) its stored pin (always wins), (2) an address saved as "lat, lng" text, (3) its UK postcode looked up on postcodes.io (any case or spacing, e.g. "Sw1x 9Hr"; only the postcode is sent), remembered in this browser; nothing is written on load (rulebook §1). | done web (w-sitemap-pins, draft PR); iOS open |
+| 24 Nov | **"Show completed jobs" toggle** on the Home card and the full map, off by default = Active jobs only; on = Active + Completed. Status is the rulebook's (`jobWorkStatus` / `worksTab`, organisation zone) on the day the map shows. | done web |
+| 24 Nov | **The list of every project and small works under the full map is removed.** Only when some job cannot be placed, a "Jobs without an address" section lists them (with the reason) and "Set pin on map" saves the pin (and address) to that job as a user action (existing job save, `userCanEditJob`). Home reads "N jobs could not be placed on the map" linking to it. | done web |
+| 24 Nov | **Bug: the map drew over the account menu** (top-right profile dropdown). Every Leaflet map (site map page, Home card, project details map) is now its own stacking context, so app menus, dropdowns, dialogs, toasts and the mobile nav sit above it. | done web |
+
+## Site map pins judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 24 Nov | Upcoming jobs (not started yet on the day shown) are shown with Active (toggle off and on). | done, owner to confirm |
+| 24 Nov | Inactive jobs (`isLive` false) are never on the map, toggle or not (rulebook `siteMapPins` counts no inactive job), although the job lists file them under Completed. | done, owner to confirm |
+| 24 Nov | Automatic placement needs a UK postcode postcodes.io knows (or stored / "lat, lng" coordinates). An address with no postcode is not looked up by street name any more (the full map used to try Google / Photon / Nominatim through the server, which can drop a pin in the wrong place for junk text such as "1, ccx, vvv, CCC"); it is listed under "Jobs without an address" for a manual pin. Guardrail 3: a job with a street address but no postcode that the old full-map lookup placed now shows in that list instead. A pin is the postcode's centre (good enough at a ~10 mile view). | done, owner to confirm |
+| 24 Nov | The "Show completed jobs" choice is not remembered (each visit starts with Active only). | done, owner to confirm |
+| 24 Nov | The site map's people count now also folds `managers` rows (rulebook §21 `siteMapPins` asks for them; the page did not pass them), so a person under a users id and a managers row counts once. | done |

@@ -56,5 +56,6 @@ export function SiteLocationMap({
     }
   }, [latitude, longitude, label])
 
-  return <div ref={containerRef} className="h-[200px] w-full rounded-xl bg-slate-100" />
+  // Its own stacking context: Leaflet panes (z-index 400–1000) never draw over app menus or dialogs.
+  return <div ref={containerRef} className="relative isolate z-0 h-[200px] w-full rounded-xl bg-slate-100" />
 }

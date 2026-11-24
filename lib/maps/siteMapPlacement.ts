@@ -1,0 +1,253 @@
+/**
+ * Where a job sits on the site map (display only, owner 24 Nov). Nothing here is written to Firestore: a job's
+ * stored pin always wins; otherwise an address that is itself "lat, lng" text is used as the pin; otherwise the job's
+ * UK postcode is looked up on postcodes.io (free, no key; only the postcode is sent, never a name or the rest of the
+ * address) and remembered in this browser. A job with no postcode, or a postcode postcodes.io does not know, is not
+ * placed: it is listed under "Jobs without an address" on the full map, where an admin sets its pin by hand.
+ *
+ * Which jobs are shown is the rulebook's job status (`jobWorkStatus` / `worksTab`, §21) on the day the map shows, in
+ * the organisation zone: Active and Upcoming always, Completed only when the toggle is on, inactive (`isLive` false)
+ * never (`siteMapPins` §21 counts no inactive job).
+ */
+
+import { jobWorkStatus, worksTab, type WorksListJob } from '@/lib/canonical'
+import { formatSiteAddress, isMappableSiteAddress, resolveStoredCoordinates } from '@/lib/maps/siteAddress'
+import { extractUkPostcode } from '@/lib/maps/ukPostcode'
+
+export type LatLng = { latitude: number; longitude: number }
+
+export type SiteMapPlacementSite = {
+  latitude?: number | null
+  longitude?: number | null
+  addressLine1?: string | null
+  addressLine2?: string | null
+  townCity?: string | null
+  postcode?: string | null
+  siteAddress?: string | null
+  usesMapPinForLocation?: boolean | null
+}
+
+/** How a job got (or did not get) its place on the map. */
+export type SiteMapPlacement =
+  | { kind: 'stored'; coordinates: LatLng }
+  | { kind: 'addressCoordinates'; coordinates: LatLng }
+  | { kind: 'postcode'; coordinates: LatLng; postcode: string }
+  | { kind: 'pending'; postcode: string }
+  | { kind: 'postcodeNotFound'; postcode: string }
+  | { kind: 'noPostcode' }
+  | { kind: 'noAddress' }
+
+/** Placements that are not on the map and are listed for a manual pin. */
+export function siteMapPlacementUnplaced(placement: SiteMapPlacement): boolean {
+  return placement.kind === 'postcodeNotFound' || placement.kind === 'noPostcode' || placement.kind === 'noAddress'
+}
+
+const COORDINATE_TEXT = /^\s*\(?\s*(-?\d{1,2}(?:\.\d+)?)\s*[,\s]\s*(-?\d{1,3}(?:\.\d+)?)\s*\)?\s*$/
+
+/** An address typed or saved as "51.51278, -0.13805": those coordinates (latitude first), else null. */
+export function coordinatesFromAddressText(text: string | null | undefined): LatLng | null {
+  const match = COORDINATE_TEXT.exec(String(text ?? ''))
+  if (!match) return null
+  const latitude = Number(match[1])
+  const longitude = Number(match[2])
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null
+  if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null
+  if (latitude === 0 && longitude === 0) return null
+  // Without a decimal point it is not a coordinate pair (e.g. "12 14").
+  if (!match[1].includes('.') || !match[2].includes('.')) return null
+  return { latitude, longitude }
+}
+
+/** The job's UK postcode in its stored form ("SW1X 9HR"), from the postcode field first, any case or spacing. */
+export function siteMapPostcode(site: SiteMapPlacementSite): string | null {
+  const sources = [site.postcode, site.siteAddress, formatSiteAddress(siteAddressInput(site))]
+  // The postcode field alone may be typed with odd spacing ("SW1 X9HR"): read it with its spaces taken out.
+  const field = String(site.postcode ?? '').replace(/\s+/g, '')
+  const fromField = field ? extractUkPostcode(field) : null
+  if (fromField) return formatUkPostcode(fromField)
+  for (const source of sources) {
+    const raw = String(source ?? '').trim()
+    if (!raw) continue
+    const found = extractUkPostcode(raw)
+    if (found) return formatUkPostcode(found)
+  }
+  return null
+}
+
+/** "sw1x9hr" / "Sw1x 9Hr" → "SW1X 9HR" (the inward code is always the last three characters). */
+export function formatUkPostcode(value: string): string {
+  const compact = value.replace(/\s+/g, '').toUpperCase()
+  if (compact.length < 5) return compact
+  return `${compact.slice(0, -3)} ${compact.slice(-3)}`
+}
+
+function siteAddressInput(site: SiteMapPlacementSite) {
+  return {
+    addressLine1: site.addressLine1 ?? undefined,
+    addressLine2: site.addressLine2 ?? undefined,
+    townCity: site.townCity ?? undefined,
+    postcode: site.postcode ?? undefined,
+    siteAddress: site.siteAddress ?? undefined,
+  }
+}
+
+/**
+ * Where one job goes. `postcodes` holds the lookups done so far: a point, null for a postcode postcodes.io does not
+ * know, missing for one not looked up yet (`pending`).
+ */
+export function siteMapPlacement(
+  site: SiteMapPlacementSite,
+  postcodes: ReadonlyMap<string, LatLng | null>
+): SiteMapPlacement {
+  const stored = resolveStoredCoordinates({
+    latitude: site.latitude ?? undefined,
+    longitude: site.longitude ?? undefined,
+  })
+  if (stored) return { kind: 'stored', coordinates: stored }
+  const input = siteAddressInput(site)
+  for (const text of [site.siteAddress, site.addressLine1, formatSiteAddress(input)]) {
+    const fromText = coordinatesFromAddressText(text)
+    if (fromText) return { kind: 'addressCoordinates', coordinates: fromText }
+  }
+  const postcode = siteMapPostcode(site)
+  if (postcode) {
+    if (!postcodes.has(postcode)) return { kind: 'pending', postcode }
+    const point = postcodes.get(postcode)
+    return point ? { kind: 'postcode', coordinates: point, postcode } : { kind: 'postcodeNotFound', postcode }
+  }
+  return isMappableSiteAddress(formatSiteAddress(input)) ? { kind: 'noPostcode' } : { kind: 'noAddress' }
+}
+
+/** The reason shown beside a job that could not be placed. */
+export function siteMapUnplacedReason(placement: SiteMapPlacement): string {
+  if (placement.kind === 'noAddress') return 'No address'
+  if (placement.kind === 'noPostcode') return 'No postcode in the address'
+  if (placement.kind === 'postcodeNotFound') return `Postcode ${placement.postcode} not found`
+  return ''
+}
+
+/**
+ * Whether a job is on the map on `dayKey`: Active and Upcoming always, Completed only with `includeCompleted`,
+ * inactive never. Status is the rulebook's (`jobWorkStatus`, `worksTab`) in the organisation zone.
+ */
+export function siteMapJobShown(
+  job: WorksListJob,
+  options: { includeCompleted: boolean; dayKey: string; timeZone: string }
+): boolean {
+  if (job.isLive === false) return false
+  const tab = worksTab(jobWorkStatus(job, options.dayKey, options.timeZone))
+  return tab === 'completed' ? options.includeCompleted : true
+}
+
+/** The Home card line for jobs that could not be placed, or null when every job is placed. */
+export function siteMapUnplacedText(count: number): string | null {
+  if (!Number.isFinite(count) || count <= 0) return null
+  return count === 1 ? '1 job could not be placed on the map.' : `${count} jobs could not be placed on the map.`
+}
+
+// MARK: - postcodes.io lookups (browser)
+
+export const POSTCODES_IO_BULK_URL = 'https://api.postcodes.io/postcodes'
+/** postcodes.io takes at most 100 postcodes per bulk request. */
+export const POSTCODES_IO_BULK_LIMIT = 100
+const POSTCODE_CACHE_KEY = 'pp.siteMap.postcodes.v1'
+const POSTCODE_MISS_KEY = 'pp.siteMap.postcodeMisses.v1'
+
+type PostcodesIoBulkResponse = {
+  result?: Array<{ query?: string; result?: { latitude?: number; longitude?: number } | null }>
+}
+
+/** Reads a postcodes.io bulk answer: each queried postcode to its point, or null when unknown. */
+export function parsePostcodesIoBulk(data: unknown): Map<string, LatLng | null> {
+  const out = new Map<string, LatLng | null>()
+  const rows = (data as PostcodesIoBulkResponse | null)?.result
+  if (!Array.isArray(rows)) return out
+  for (const row of rows) {
+    if (!row || typeof row.query !== 'string') continue
+    const key = formatUkPostcode(row.query)
+    const lat = row.result?.latitude
+    const lng = row.result?.longitude
+    out.set(
+      key,
+      typeof lat === 'number' && typeof lng === 'number' && Number.isFinite(lat) && Number.isFinite(lng)
+        ? { latitude: lat, longitude: lng }
+        : null
+    )
+  }
+  return out
+}
+
+function readStorage(storage: 'local' | 'session', key: string): Record<string, unknown> {
+  try {
+    const store = storage === 'local' ? window.localStorage : window.sessionStorage
+    const raw = store.getItem(key)
+    const parsed: unknown = raw ? JSON.parse(raw) : {}
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeStorage(storage: 'local' | 'session', key: string, value: Record<string, unknown>): void {
+  try {
+    const store = storage === 'local' ? window.localStorage : window.sessionStorage
+    store.setItem(key, JSON.stringify(value))
+  } catch {
+    // storage blocked or full: looked up again next time
+  }
+}
+
+/** This browser's remembered lookups: found postcodes (kept) and unknown ones (this tab only, so a fix is retried). */
+export function readCachedPostcodes(): Map<string, LatLng | null> {
+  const out = new Map<string, LatLng | null>()
+  if (typeof window === 'undefined') return out
+  for (const [key, value] of Object.entries(readStorage('local', POSTCODE_CACHE_KEY))) {
+    const point = value as Partial<LatLng> | null
+    if (point && typeof point.latitude === 'number' && typeof point.longitude === 'number') {
+      out.set(key, { latitude: point.latitude, longitude: point.longitude })
+    }
+  }
+  for (const key of Object.keys(readStorage('session', POSTCODE_MISS_KEY))) {
+    if (!out.has(key)) out.set(key, null)
+  }
+  return out
+}
+
+function rememberPostcodes(found: Map<string, LatLng | null>): void {
+  if (typeof window === 'undefined') return
+  const hits = readStorage('local', POSTCODE_CACHE_KEY)
+  const misses = readStorage('session', POSTCODE_MISS_KEY)
+  for (const [key, point] of found) {
+    if (point) hits[key] = point
+    else misses[key] = true
+  }
+  writeStorage('local', POSTCODE_CACHE_KEY, hits)
+  writeStorage('session', POSTCODE_MISS_KEY, misses)
+}
+
+/**
+ * Looks up postcodes on postcodes.io (bulk, 100 at a time) and remembers the answers. A network failure throws, so
+ * the caller can show the jobs as not placed for now without remembering them as unknown.
+ */
+export async function lookupPostcodes(
+  postcodes: ReadonlyArray<string>,
+  fetchImpl: typeof fetch = fetch
+): Promise<Map<string, LatLng | null>> {
+  const unique = [...new Set(postcodes.map(formatUkPostcode))].filter(Boolean)
+  const out = new Map<string, LatLng | null>()
+  for (let i = 0; i < unique.length; i += POSTCODES_IO_BULK_LIMIT) {
+    const batch = unique.slice(i, i + POSTCODES_IO_BULK_LIMIT)
+    const response = await fetchImpl(POSTCODES_IO_BULK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ postcodes: batch }),
+      credentials: 'omit',
+      referrerPolicy: 'no-referrer',
+    })
+    if (!response.ok) throw new Error(`postcodes.io ${response.status}`)
+    const parsed = parsePostcodesIoBulk(await response.json())
+    for (const postcode of batch) out.set(postcode, parsed.get(postcode) ?? null)
+  }
+  rememberPostcodes(out)
+  return out
+}
