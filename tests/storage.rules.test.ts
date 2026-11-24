@@ -331,6 +331,22 @@ test('1.50.0 a task file as application/octet-stream is refused', async () => {
   )
 })
 
+// Rulebook 1.80.0: subcontractor insurance / RAMS documents are staff only (no subcontractor login), photos and PDF, 10MB.
+test('1.80.0 subcontractor documents: staff upload and read; operatives never; 10MB photos and PDF only', async () => {
+  const folder = `organizations/${ORG_A}/subcontractors/sub-1/documents`
+  await assertFails(put(OP_A, 'op-a@test.com', `${folder}/${OP_A}_${Date.now()}.pdf`, 64, 'application/pdf'))
+  const file = `${folder}/${MGR_A}_${Date.now()}.pdf`
+  await assertSucceeds(put(MGR_A, 'mgr-a@test.com', file, 64, 'application/pdf'))
+  await assertSucceeds(getBytes(ref(authStorage(MGR_A, 'mgr-a@test.com'), file)))
+  await assertSucceeds(getBytes(ref(authStorage(ADMIN_A, 'admin-a@test.com'), file)))
+  await assertFails(getBytes(ref(authStorage(OP_A, 'op-a@test.com'), file)))
+  await assertFails(getBytes(ref(authStorage(OPMODE_ADMIN_A, 'opmode-admin-a@test.com'), file)))
+  await assertFails(put(MGR_A, 'mgr-a@test.com', `${folder}/${MGR_A}_${Date.now()}_big.pdf`, 10 * MB + 1, 'application/pdf'))
+  await assertFails(put(MGR_A, 'mgr-a@test.com', `${folder}/${MGR_A}_${Date.now()}.svg`, 64, 'image/svg+xml'))
+  await assertFails(del(OP_A, file))
+  await assertSucceeds(del(MGR_A, file))
+})
+
 // Rulebook 1.50.0 §24 (owner decisions 15 Nov): photos (JPEG, PNG, HEIC/HEIF, WebP) and PDF only, per path.
 const PATHS_150 = {
   profile: { path: `organizations/${ORG_A}/userProfiles/${OP_A}/profile.jpg`, max: 2 * MB, pdf: false },

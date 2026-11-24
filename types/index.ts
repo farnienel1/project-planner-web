@@ -1,3 +1,4 @@
+import type { SubcontractorDocuments } from '@/lib/canonical/subcontractorDocuments'
 // Core Types - Mirrored from iOS App
 
 export interface Project {
@@ -327,6 +328,8 @@ export interface Subcontractor {
   website?: string;
   address?: string;
   contacts: SubcontractorContact[];
+  /** Rulebook 1.80.0: insurance and RAMS documents (`parseSubcontractorDocuments`). Never written by a firm save. */
+  documents?: SubcontractorDocuments;
   createdAt: Date;
   updatedAt: Date;
 }

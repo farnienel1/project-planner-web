@@ -1112,6 +1112,20 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 | 24 Nov | With an office pin the map opens on it and does not jump back when the day changes; without one it fits all jobs as before. Maintenance jobs are blue (projects); the old orange pin is gone. | done, owner to confirm |
 | 24 Nov | The sign-in chord is D major 9, about 2.6 s. After the emailed code the page fully reloads; browsers that need a new tap before audio (Safari) then play nothing rather than later. | done, owner to confirm |
 
+## 24 Nov decisions (for 1.80, subcontractor documents)
+
+| Date | Decision | Status |
+|---|---|---|
+| 24 Nov | **Subcontractor documents, option (a):** staff (admins, and managers with the Sub Contractors permission — the people who may edit subcontractors today, `canManageSubcontractors`) upload a subcontractor's **insurance** and **RAMS** documents on the subcontractor's page, each with an optional expiry date, on web and iPhone. Subcontractors have no login and upload nothing. Rulebook §30 (`lib/canonical/subcontractorDocuments.ts`). | done web + rulebook (1.80.0, w180-sub-docs, draft); iOS (ios-1.80-sub-docs, draft); Storage rules publish pending |
+
+## 1.80.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 24 Nov | Photos or PDF, 10 MB, at most 20 files of each kind per subcontractor; the expiry is a date only (no time), shown "Expired" / "Expires today" / "Expires in N days" (amber within 30 days) / "Expires 1 Mar 2027". | done, owner to confirm |
+| 24 Nov | Only staff can open the files (Storage, as variation evidence); an operative never sees them. The list itself is on the firm document every member can read, but operatives have no Sub Contractors page. | done, owner to confirm |
+| 24 Nov | Not built (follow-ups): expiring / expired subcontractor documents on the Warnings page; narrowing the Firestore rule so only staff write `documents` (today any member of the company may write a subcontractor record, as before — `firestore.rules` has 65 bytes of budget left). | follow-up |
+
 ## Open questions for the owner
 
 | Date | Question |

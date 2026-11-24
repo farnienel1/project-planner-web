@@ -20085,3 +20085,12 @@ test('1.79.0 notification destinations open the job section the notice is about 
   const row = parseNotificationDocument('n1', { type: 'toolbox_talk_issued', userId: 'u', relatedId: 'JOB-3', catalogue: 'smallWorks' }, { role: 'operative' })!
   assert.deepEqual(row.destination, { kind: 'healthSafety', relatedId: 'JOB-3', catalogue: 'smallWorks' })
 })
+
+test('1.80.0 subcontractor documents are in the packed rulebook (full cases in subcontractorDocuments.test.ts)', () => {
+  const path = R112.subcontractorDocumentStoragePath({ organizationId: 'o1', subcontractorId: 's1', uid: 'u1', unixMs: 5, extension: 'pdf' })
+  assert.equal(path, 'organizations/o1/subcontractors/s1/documents/u1_5.pdf')
+  assert.equal(R112.storedFileKind(path)?.kind, 'subcontractor_document')
+  assert.deepEqual(R112.parseSubcontractorDocuments('s1', { name: 'A', subcontractorType: 'B' }), { insurance: [], rams: [] })
+  const storageRules = readFileSync(new URL('../../storage.rules', import.meta.url), 'utf8')
+  assert.match(storageRules, /match \/organizations\/\{orgId\}\/subcontractors\/\{subcontractorId\}\/documents\/\{fileName\} \{\n\s+allow read: if staffLike\(orgId\);/)
+})

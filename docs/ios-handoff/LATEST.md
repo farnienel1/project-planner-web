@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.79.0
+# iOS follow-on — rulebook 1.80.0
 
 Generated 2026-11-24 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.79.0 → 1.79.0
-Packed hash: b99e3b2ceba01432bb0e980d23357f692d02ecc42e202e9726fe9f89564a702e
-Rulebook sha256: fc97b116875a13e740d28e3f60788603906e726dbccd57513dbc1902f3291d7c
+Rulebook version: 1.80.0 → 1.80.0
+Packed hash: 81c079409e6e9369e2027f4d84243aa01fb32a526821fa72efa9b71d14572751
+Rulebook sha256: 3b4df12ec0a177b9d9cefca5e83592568a488a9358589bc63179b376e4ddd903
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -19,26 +19,24 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web lib/canonical/parity-fixture.json             → iOS ProjectPlannerTests/CanonicalParityFixture.json
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
   web lib/canonical/data-parity-fixture.json        → iOS ProjectPlannerTests/DataParityFixture.json
-Contract sha256: 926b910948b674b1fa259e8f933ddd15f14bad00b8e0b050ccbd88c723bf64aa
+Contract sha256: d2d465abcf0ab7c7747385346b87d2b47226412b1014602c5a26bff8e951c0ca
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
 Exports added: none
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/canonical.test.ts, lib/canonical/payrunSnapshot.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/cross-platform-contract.json, lib/canonical/crossPlatformContract.samples.ts, lib/canonical/crossPlatformContract.ts
 Done when:
-- [ ] Packed hash in iOS equals b99e3b2ceba01432bb0e980d23357f692d02ecc42e202e9726fe9f89564a702e
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 fc97b116875a13e740d28e3f60788603906e726dbccd57513dbc1902f3291d7c)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.79.0)
+- [ ] Packed hash in iOS equals 81c079409e6e9369e2027f4d84243aa01fb32a526821fa72efa9b71d14572751
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 3b4df12ec0a177b9d9cefca5e83592568a488a9358589bc63179b376e4ddd903)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.80.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.79.0
+## What changed in 1.80.0
 
-- **App-icon number = unread inbox rows, always** (§13, owner decision 24 Nov): `NOTIFICATION_ICON_BADGE_CLEARS_ON_FOREGROUND` is false. Opening the iPhone app no longer clears the icon; it goes down only when rows are read (owner saw 16, opened the app, 0, force-closed, 16 again). iOS keeps the icon at the unread count once the inbox has loaded.
-- **Notification destinations** (§13, owner decision 24 Nov): toolbox talk notices (`toolbox_talk_issued`, `hs_toolbox_reminder`) carry the job id (`NOTIFICATION_RELATED_ID` `job`, was `healthSafetyIssue`) and open that job's Health & safety; material line notices open that job's Materials (new kind `jobMaterials`; `materialOrders` / Wholesalers only without a job id); variation notices open the variation on its job on web too (`/dashboard/variations?open=`). `NotificationDestination` gains `catalogue` (from the row). Web adds `/dashboard/notifications/open` to resolve a job with no catalogue. No new notification field.
-- **Payrun Snapshot whose turn** (§7, owner decision 24 Nov): an open revision reads "REV 1 · waiting for <first name>" or "REV 1 · waiting for line manager" (`timesheetRevisionWaitingForLabel`, `TIMESHEET_REVISION_WAITING_LINE_MANAGER`; never "line manager" for a self-signed person, `timesheetSelfSigned`); a Timesheet cell's link carries `documentId` and web opens that stored sheet (`timesheetsTeamHref` `doc`). The weekly report check line keeps "REV 1 waiting for signature".
+- **Subcontractor documents** (new §30, owner decision 24 Nov, option (a)): staff upload a subcontractor's insurance and RAMS documents, each with an optional expiry date, on web and iPhone. New `lib/canonical/subcontractorDocuments.ts`: `SUBCONTRACTOR_DOCUMENT_KINDS`, `SUBCONTRACTOR_DOCUMENT_LABELS`, `canManageSubcontractors`, `subcontractorDocumentsFolder`, `subcontractorDocumentStoragePath`, `subcontractorDocumentPathBelongsTo`, `parseSubcontractorDocuments`, `subcontractorDocumentsFieldPath`, `subcontractorDocumentAddWriteFields`, `subcontractorDocumentRemoveWriteFields`, `subcontractorDocumentExpiryWriteFields`, `normalizeSubcontractorDocumentExpiry`, `subcontractorDocumentExpiryError`, `subcontractorDocumentExpiryState`, `subcontractorDocumentExpiryDateText` and their copy constants. Stored-file / upload kind `subcontractor_document` (`storedFileKind`, `UPLOAD_ALLOWED_TYPES`: photos or PDF, 10 MB). `storage.rules`: the staff-only documents path. Web `canManageSubcontractors` now calls the rulebook (same result). Cross-platform contract: the `subcontractors` samples (web and iOS) carry one insurance entry each, read by the new contract reader `subcontractorDocument` (`parseSubcontractorDocument` and `parseSubcontractorDocuments` together). Web stores the content type the bytes were checked as (`assertUploadAllowed`), never the browser's guess.
 
 
 ## Workflow for the iOS agent
