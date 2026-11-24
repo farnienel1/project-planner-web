@@ -108,9 +108,15 @@ import {
   timesheetRevisionCancelConfirmMessage,
   timesheetRevisionDraftState,
   TIMESHEET_REVISION_DRAFT_CANCELLED_MESSAGE,
+  TIMESHEET_REVIEWER_CANCEL_CHANGES_DONE_MESSAGE,
+  TIMESHEET_REVIEWER_CANCEL_CHANGES_LABEL,
+  timesheetReviewerCancelChangesConfirmMessage,
+  timesheetReviewerCancelChangesOffered,
+  timesheetReviewerSessionRecords,
   TIMESHEET_REVISION_DRAFT_REFUSED_MESSAGE,
   TIMESHEET_REVISION_DRAFT_SENT_MESSAGE,
 } from '@/lib/canonical'
+import { cancelTimesheetReviewerChanges, type TimesheetReviewerUndoResult } from '@/lib/timesheets/timesheetReviewerUndoWrite'
 import { TimesheetChangesCard, TimesheetNoticesCard, TimesheetStatusCard, type TimesheetNotice } from '@/components/timesheets/TimesheetClarity'
 import {
   TIMESHEET_MAKE_CHANGES_ACTIVE_NOTE,
@@ -730,6 +736,17 @@ export function TimesheetPeriodPage({
     personName: subjectName,
     revisionLabel: revisionCopy.label,
   })
+  // Rulebook 1.90.0 (owner 24 Nov): Cancel changes undoes the reviewer's making-changes session (not on a draft
+  // revision, whose Cancel revision does the same restore and then deletes the draft).
+  const undoSheet = { ...makeChangesSheet, reviewerBookingEdits: draft.reviewerBookingEdits ?? null }
+  const undoRecordCount = timesheetReviewerSessionRecords(undoSheet).length
+  const cancelChangesOffered =
+    !revisionDraftState.draft &&
+    timesheetReviewerCancelChangesOffered({
+      sheet: undoSheet,
+      viewerIsReviewer: mode === 'review' && Boolean(viewer) && viewerIsReviewer,
+      viewerIsSubject: mode === 'mine',
+    })
   const addExtrasRef = useRef<HTMLDivElement | null>(null)
 
   const persist = useCallback(
@@ -1547,16 +1564,41 @@ export function TimesheetPeriodPage({
     }
   }
 
-  /** Rulebook 1.90.0: Cancel revision — delete the draft after a confirm. Booking changes already made stay. */
+  /** The undo's result as one line: done, or which bookings were left as they are and why. */
+  const undoResultText = (result: TimesheetReviewerUndoResult, done: string): string =>
+    result.refused.length === 0 ? done : [done, ...result.refused.map((row) => row.message)].join(' ')
+
+  /** Rulebook 1.90.0 (owner 24 Nov): Cancel changes — undo this making-changes session after a confirm. */
+  const handleCancelChanges = async () => {
+    const documentId = sourceDocumentId.current
+    if (!organization?.id || !documentId || !viewer || !cancelChangesOffered || busy) return
+    if (!window.confirm(timesheetReviewerCancelChangesConfirmMessage(undoRecordCount))) return
+    setBusy(true)
+    setError(null)
+    try {
+      const result = await cancelTimesheetReviewerChanges(firestoreDb, { organizationId: organization.id, userId: viewer.id, documentId, timeZone })
+      setMakingChanges(false)
+      setReviewNotice(undoResultText(result, TIMESHEET_REVIEWER_CANCEL_CHANGES_DONE_MESSAGE))
+      setLoadAttempt((attempt) => attempt + 1)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'The changes could not be cancelled.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** Rulebook 1.90.0: Cancel revision — after a confirm, undo the draft's changes, then delete the draft. */
   const handleCancelRevision = async () => {
     const documentId = sourceDocumentId.current
-    if (!organization?.id || !documentId || !revisionDraftState.canCancel || busy) return
+    if (!organization?.id || !documentId || !viewer || !revisionDraftState.canCancel || busy) return
     if (!window.confirm(timesheetRevisionCancelConfirmMessage(revisionCopy.label, revisionDraftState.changes.bookingEdits))) return
     setBusy(true)
     setError(null)
     try {
+      // Owner 24 Nov: the same restore as Cancel changes first; a booking that could not be put back stays as it is.
+      const undo = await cancelTimesheetReviewerChanges(firestoreDb, { organizationId: organization.id, userId: viewer.id, documentId, timeZone })
       const cancelled = await cancelTimesheetRevisionDraft({ organizationId: organization.id, documentId })
-      setReviewNotice(cancelled ? TIMESHEET_REVISION_DRAFT_CANCELLED_MESSAGE : null)
+      setReviewNotice(cancelled ? undoResultText(undo, TIMESHEET_REVISION_DRAFT_CANCELLED_MESSAGE) : null)
       setLoadAttempt((attempt) => attempt + 1)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'The revision could not be cancelled.')
@@ -1872,9 +1914,17 @@ export function TimesheetPeriodPage({
               </PuButton>
             </>
           ) : correction.action === 'makeChanges' && makingChanges ? (
-            <PuButton onClick={() => setMakingChanges(false)}>{TIMESHEET_MAKE_CHANGES_CANCEL_LABEL}</PuButton>
+            <>
+              <PuButton onClick={() => setMakingChanges(false)}>{TIMESHEET_MAKE_CHANGES_CANCEL_LABEL}</PuButton>
+              {cancelChangesOffered ? (
+                <PuButton variant="danger" disabled={busy} onClick={() => void handleCancelChanges()}>
+                  {TIMESHEET_REVIEWER_CANCEL_CHANGES_LABEL}
+                </PuButton>
+              ) : null}
+            </>
           ) : correction.action && correction.hasButton ? (
-            /* Point 1 (1.77.0): one "Correct this timesheet" entry over the existing paths. */
+            <>
+            {/* Point 1 (1.77.0): one "Correct this timesheet" entry over the existing paths. */}
             <PuButton
               variant="primary"
               disabled={
@@ -1895,6 +1945,16 @@ export function TimesheetPeriodPage({
             >
               {correction.label}
             </PuButton>
+              {cancelChangesOffered ? (
+                <PuButton variant="danger" disabled={busy} onClick={() => void handleCancelChanges()}>
+                  {TIMESHEET_REVIEWER_CANCEL_CHANGES_LABEL}
+                </PuButton>
+              ) : null}
+            </>
+          ) : cancelChangesOffered ? (
+            <PuButton variant="danger" disabled={busy} onClick={() => void handleCancelChanges()}>
+              {TIMESHEET_REVIEWER_CANCEL_CHANGES_LABEL}
+            </PuButton>
           ) : null
         }
         help={
@@ -1902,11 +1962,12 @@ export function TimesheetPeriodPage({
             ? revisionDraftState.help
             : revisionDraftState.personMessage ?? (correction.action ? (correction.hasButton ? correction.help : [correction.label, correction.help].filter(Boolean).join(' — ')) : null)
         }
-      />
-      {/* Point 3: what changed since it was signed, before → after. */}
-      {showChangeDetails ? <TimesheetChangesCard details={changeDetails} /> : null}
-      <TimesheetNoticesCard
-        notices={(() => {
+      >
+        {/* Owner 24 Nov: what changed since it was signed, then every notice, in this same card above the buttons. */}
+        {showChangeDetails ? <TimesheetChangesCard details={changeDetails} embedded /> : null}
+        <TimesheetNoticesCard
+          embedded
+          notices={(() => {
           const notices: TimesheetNotice[] = []
           if (snapshotBeingRebuilt) notices.push({ key: 'rebuilt', tone: 'info', content: snapshotRebuiltNote })
           if (reviewNotice) {
@@ -1953,8 +2014,11 @@ export function TimesheetPeriodPage({
           }
           return notices
         })()}
-        footer={
-          timesheetEarlierVersions(versionChain).length > 0 ? (
+        />
+      </TimesheetStatusCard>
+      {/* Rulebook 1.90.0 (owner 24 Nov): Earlier versions stays its own section, below the one top card. */}
+      {(() => {
+        const earlier = timesheetEarlierVersions(versionChain).length > 0 ? (
             <TimesheetRevisionPanel
               mode={mode}
               revisionLabel=""
@@ -1967,8 +2031,8 @@ export function TimesheetPeriodPage({
               currency={currency}
             />
           ) : null
-        }
-      />
+        return earlier ? <section className="pu-card pu-versions" aria-label="Earlier versions">{earlier}</section> : null
+      })()}
 
       {managerHasSigned && managerAdjustmentCount(draft) > 0 ? (
         <AdjustmentSummaryCard

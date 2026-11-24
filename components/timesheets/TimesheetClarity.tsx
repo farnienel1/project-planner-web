@@ -70,12 +70,13 @@ function ChangeRow({ row }: { row: TimesheetChangeRow }) {
 }
 
 /** Point 3: one tidy card, one compact row per change; three rows, then "Show all (N)". */
-export function TimesheetChangesCard({ details }: { details: SignedTimesheetChangeDetails }) {
+export function TimesheetChangesCard({ details, embedded }: { details: SignedTimesheetChangeDetails; embedded?: boolean }) {
   const [expanded, setExpanded] = useState(false)
   if (details.rows.length === 0) return null
   const rows = expanded ? details.rows : details.rows.slice(0, details.collapsedCount)
+  const Tag = embedded ? 'div' : 'section'
   return (
-    <section className="pu-card pu-changes" aria-label={details.heading}>
+    <Tag className={embedded ? 'pu-changes embedded' : 'pu-card pu-changes'} aria-label={details.heading} role={embedded ? 'group' : undefined}>
       <div className="pu-card-h">
         <h2>
           {details.heading}
@@ -95,7 +96,7 @@ export function TimesheetChangesCard({ details }: { details: SignedTimesheetChan
           </button>
         </div>
       ) : null}
-    </section>
+    </Tag>
   )
 }
 
@@ -139,12 +140,15 @@ export function TimesheetStatusCard({
   actions,
   help,
   invoiceButton,
+  children,
 }: {
   step: TimesheetNextStep
   error?: string | null
   actions?: ReactNode
   help?: string | null
   invoiceButton?: ReactNode
+  /** 1.90.0 (owner 24 Nov): what changed and every notice, inside the same card, above the actions. */
+  children?: ReactNode
 }) {
   const previous = useRef(step.text)
   const [announced, setAnnounced] = useState('')
@@ -171,6 +175,7 @@ export function TimesheetStatusCard({
           {error}
         </div>
       ) : null}
+      {children}
       {actions ? <div className="pu-status-actions">{actions}</div> : null}
       {help ? <p className="pu-status-help">{help}</p> : null}
     </section>
@@ -188,10 +193,20 @@ export type TimesheetNotice = {
  * what the reviewer may change, the revision and its difference, a revision due, overlapping bookings — one row each
  * with a small coloured marker, instead of a stack of coloured tiles. `footer` holds Earlier versions.
  */
-export function TimesheetNoticesCard({ notices, footer }: { notices: ReadonlyArray<TimesheetNotice>; footer?: ReactNode }) {
+export function TimesheetNoticesCard({
+  notices,
+  footer,
+  embedded,
+}: {
+  notices: ReadonlyArray<TimesheetNotice>
+  footer?: ReactNode
+  /** Inside the status card (no card of its own). */
+  embedded?: boolean
+}) {
   if (notices.length === 0 && !footer) return null
+  const Tag = embedded ? 'div' : 'section'
   return (
-    <section className="pu-card pu-notices" aria-label="Notes on this timesheet">
+    <Tag className={embedded ? 'pu-notices embedded' : 'pu-card pu-notices'} aria-label="Notes on this timesheet" role={embedded ? 'group' : undefined}>
       {notices.length > 0 ? (
         <ul className="pu-notices-list">
           {notices.map((notice) => (
@@ -203,6 +218,6 @@ export function TimesheetNoticesCard({ notices, footer }: { notices: ReadonlyArr
         </ul>
       ) : null}
       {footer ? <div className="pu-notices-foot">{footer}</div> : null}
-    </section>
+    </Tag>
   )
 }

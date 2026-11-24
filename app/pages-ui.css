@@ -469,5 +469,12 @@ button.pu-item:disabled { cursor: not-allowed; opacity: 0.55; }
 .pu-notice-row.amber .pu-notice-mark { background: var(--pu-c-amber-ink); }
 .pu-notice-row.green .pu-notice-mark { background: var(--pu-c-green-ink); }
 .pu-notice-text { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+/* 1.90.0 (owner 24 Nov): the changes list and notices inside the one status card. */
+.pu-changes.embedded, .pu-notices.embedded { margin: 0; border-top: 1px solid var(--pu-line-2); padding-top: 10px; }
+.pu-changes.embedded .pu-card-h { padding-left: 0; padding-right: 0; }
+.pu-notices.embedded .pu-notice-row { padding-left: 0; padding-right: 0; }
 .pu-notices-foot { padding: 4px 16px 12px; border-top: 1px solid var(--pu-line-2); }
 .pu-notices-list:empty + .pu-notices-foot, .pu-notices > .pu-notices-foot:first-child { border-top: 0; padding-top: 12px; }
+.pu-changes.embedded .pu-change { padding-left: 0; padding-right: 0; }
+.pu-changes.embedded .pu-change-more { padding-left: 0; padding-right: 0; }
+.pu-versions { margin: 0 0 12px; padding: 4px 16px 12px; }

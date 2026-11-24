@@ -1705,6 +1705,8 @@ export {
   signedTimesheetBookingPlace,
   signedTimesheetBookingRecord,
   timesheetReviewerBookingEditRecord,
+  timesheetReviewerBookingFingerprint,
+  timesheetReviewerEditStillAsLeft,
   timesheetReviewerBookingEditKey,
   timesheetSheetChangedByReviewer,
   timesheetSignedNoticeText,
@@ -2058,3 +2060,4 @@ export * from './onboardingChecklist'
 
 // 1.90.0: draft revisions (§8, owner 24 Nov point 4).
 export * from './timesheetRevisionDraft'
+export * from './timesheetReviewerUndo'

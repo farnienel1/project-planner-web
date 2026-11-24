@@ -21,7 +21,7 @@ import { weekStartKey } from '@/lib/timesheets/timesheetWeekUtils'
 import { periodStartKey } from '@/lib/timesheets/paymentRunCopy'
 import { queryIdsSkippingRefused, timesheetMemberIds, timesheetOwnerResolver } from '@/lib/timesheets/timesheetQueue'
 import { newestFirstOwnIdLast, personTimesheetDocs, timesheetLookupPlan, timesheetDocumentOwnerId } from '@/lib/timesheets/personTimesheetDocs'
-import { UNKNOWN_BOOKING_PERSON_LABEL, bookingPersonIdHint, formerPersonForId, formerPersonLabel, type FormerPerson } from '@/lib/canonical'
+import { TIMESHEET_REVIEWER_BOOKING_EDITS_FIELD, timesheetReviewerReviewRecord, UNKNOWN_BOOKING_PERSON_LABEL, bookingPersonIdHint, formerPersonForId, formerPersonLabel, type FormerPerson } from '@/lib/canonical'
 import {
   parseTimesheetEntries,
   parseTimesheetEntryReviews,
@@ -1471,6 +1471,25 @@ export async function saveTimesheetDraft({
         return fields
       }
       const payload = keepStoredUserId(sheetPayload(managerSigned, draft))
+      // Rulebook 1.90.0 (Cancel changes): a price work / expense decision changed while making changes records the
+      // stored review it replaced, once per session (`timesheetReviewerReviewRecord`), in the same write.
+      const undoRecords: Record<string, unknown> = {}
+      if (reviewer && hasReviewFields) {
+        const prefix = `${TIMESHEET_ENTRY_REVIEWS_FIELD}.`
+        const storedReviews = (stored[TIMESHEET_ENTRY_REVIEWS_FIELD] ?? {}) as Record<string, unknown>
+        for (const key of Object.keys(reviewFields)) {
+          if (!key.startsWith(prefix)) continue
+          const entryId = key.slice(prefix.length)
+          const prior = storedReviews[entryId]
+          const rec = timesheetReviewerReviewRecord({
+            sheet: stored,
+            entryId,
+            before: prior && typeof prior === 'object' ? (prior as Record<string, unknown>) : null,
+            editedBy: writerId,
+          })
+          if (rec) undoRecords[`${TIMESHEET_REVIEWER_BOOKING_EDITS_FIELD}.${rec.key}`] = rec.value
+        }
+      }
       if (base) {
         const write = timesheetChangedFields(
           keepStoredUserId(sanitizeForFirestore(sheetPayload(managerSigned, base)) as Record<string, unknown>),
@@ -1481,12 +1500,12 @@ export async function saveTimesheetDraft({
           if (payload[key] !== undefined && stored[key] === undefined) write.set[key] = payload[key]
         }
         if (Object.keys(write.set).length === 0 && write.remove.length === 0 && !hasReviewFields) return
-        await updateDoc(ref, { ...firestoreUpdateFields(write), ...reviewFields, ...metadata })
+        await updateDoc(ref, { ...firestoreUpdateFields(write), ...reviewFields, ...undoRecords, ...metadata })
         return
       }
       const changed = changedFirestoreFields(payload, stored)
       if (Object.keys(changed).length === 0 && !hasReviewFields) return
-      await updateDoc(ref, { ...changed, ...reviewFields, ...metadata })
+      await updateDoc(ref, { ...changed, ...reviewFields, ...undoRecords, ...metadata })
     })
   )
   if (!reviewer) return draft.extraEntryReviews ?? null
