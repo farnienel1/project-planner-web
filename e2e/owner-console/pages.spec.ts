@@ -26,7 +26,7 @@ const SIDEBAR = {
   Customers: ['Organisations', 'People', 'Register interest'],
   Money: ['Revenue'],
   Product: ['Growth & engagement', 'Feature usage', 'Analytics', 'Feedback', 'Roadmap'],
-  Platform: ['Health & data'],
+  Platform: ['Status', 'Health & data', 'Errors'],
 }
 
 test.describe('owner console pages', () => {
@@ -56,7 +56,7 @@ test.describe('owner console pages', () => {
       // A badge (triage count) can follow the label, so the name starts with it.
       for (const label of labels) await expect(nav.getByRole('link', { name: new RegExp(`^${label}`) })).toBeVisible()
     }
-    for (const missing of ['Needs you', 'Timesheet value', 'Errors', 'Website stats', 'Audit log', 'Pages & errors']) {
+    for (const missing of ['Needs you', 'Timesheet value', 'Website stats', 'Audit log', 'Pages & errors']) {
       await expect(nav.getByRole('link', { name: missing, exact: true })).toHaveCount(0)
     }
     const links = await nav.getByRole('link').all()
