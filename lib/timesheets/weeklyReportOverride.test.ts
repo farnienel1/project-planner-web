@@ -209,8 +209,19 @@ test('later schedule changes do not rebuild stored labour lines', () => {
   assert.equal(line?.projectName, 'Site One')
   assert.equal(line?.decision, 'edited')
   assert.equal(line?.amount, 50)
-  assert.equal(second.weeklyReportOverride?.priceWork[0].amount, 40)
-  assert.equal(second.weeklyReportOverride?.priceWork[0].decision, 'edited')
+  // Rulebook 1.76.0 (owner answer 23 Nov, b): a save after sign-off keeps the signed price work and expense rows, so
+  // the change waits for the line manager (`timesheetSignedEntriesChangedSinceSignOff`) ...
+  assert.equal(second.weeklyReportOverride?.priceWork[0].amount, 80)
+  assert.equal(second.weeklyReportOverride?.priceWork[0].decision, 'approved')
+  // ... and signing it off again takes them afresh from the decided entries.
+  const resigned = applyWeeklyReportOverride({
+    ...base,
+    refreshSignedMoney: true,
+    draft: { ...second, managerSignedAt: new Date(day.getTime() + 3_600_000) },
+  })
+  assert.equal(resigned.weeklyReportOverride?.priceWork[0].amount, 40)
+  assert.equal(resigned.weeklyReportOverride?.priceWork[0].decision, 'edited')
+  assert.equal(resigned.weeklyReportOverride?.expenses[0].amount, 0)
 })
 
 test('admin with Timesheet self-sign (1.28.0): own signature is full approval and selfSigned (timesheetSelfSigned)', () => {
@@ -529,6 +540,29 @@ test('1.43.0: an empty frozen snapshot is rebuilt from the live bookings; signat
     draft: rebuilt,
   })
   assert.deepEqual(later.weeklyReportOverride?.lines.map((line) => line.bookingId), ['b1'])
+})
+
+// Rulebook 1.76.0 (review of #427): the empty-snapshot repair rebuilds the labour only — a signed expense removed after
+// sign-off (Make changes) stays on the signed copy until the line manager signs it off again.
+test('1.76.0: the empty-snapshot repair keeps the signed price work and expense rows', () => {
+  const signed = {
+    ...emptyTimesheetDraft(),
+    operativeSignedAt: day,
+    operativeSignedByName: 'Ada Booked',
+    managerSignedAt: new Date('2026-09-18T09:00:00Z'),
+    managerSignedByUserId: 'mgr',
+    managerSignedByName: 'Morgan Manager',
+    expenseEntries: [{ id: 'ex1', title: 'Parking', details: '', jobNumber: 'J-1', date: day, amount: 12, managerDecision: 'approved' as const }],
+  }
+  const frozen = applyWeeklyReportOverride({ ...base, bookings: [], draft: signed })
+  assert.equal(frozen.weeklyReportOverride?.expenses[0].amount, 12)
+  const existed = booking({ createdAt: new Date('2026-09-10T09:00:00Z'), updatedAt: new Date('2026-09-11T09:00:00Z') })
+  const declined = { ...frozen, expenseEntries: frozen.expenseEntries.map((entry) => ({ ...entry, managerDecision: 'declined' as const })) }
+  const repaired = applyWeeklyReportOverride({ ...base, bookings: [existed], draft: declined })
+  assert.equal(repaired.weeklyReportOverride?.lines.length, 1)
+  assert.equal(repaired.weeklyReportOverride?.expenses[0].amount, 12)
+  const resigned = applyWeeklyReportOverride({ ...base, bookings: [existed], draft: declined, refreshSignedMoney: true })
+  assert.equal(resigned.weeklyReportOverride?.expenses[0].amount, 0)
 })
 
 // Review r318 (2nd): Export builds the snapshot BEFORE it stamps `exportedAt` (TimesheetsScreen `persistExportedFlag`),

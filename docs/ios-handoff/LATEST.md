@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.75.0
+# iOS follow-on — rulebook 1.76.0
 
 Generated 2026-11-24 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.76.0 → 1.75.0
-Packed hash: afd3f5308d8a18e13d2eaf5bc705b4021030f946824e26d633ecd3726fec7f00
-Rulebook sha256: cda126e811bb5a9fdb0d5d8c2a83fb6eb8624160501ad7b8e24351c25b9312be
+Rulebook version: 1.76.0 → 1.76.0
+Packed hash: 41f1b460062ab7925a581a1fe8f46d57625bee426414b322d1acede84145bc94
+Rulebook sha256: 355f20463958f3fdadda7f7ad24e23b3047d946e902a0554cf0fbc8e74c7fcbc
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,26 +22,53 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 926b910948b674b1fa259e8f933ddd15f14bad00b8e0b050ccbd88c723bf64aa
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: TIMESHEET_REVIEWER_BOOKING_EDITS_FIELD, TIMESHEET_REVIEW_BOOKING_NOT_RECORDED_MESSAGE, TIMESHEET_REVIEW_BOOKING_UPDATED_MESSAGE, TIMESHEET_SIGNED_NOTICE_TITLE, TIMESHEET_SIGNED_UPDATED_NOTICE_MESSAGE, TIMESHEET_SIGNED_UPDATED_NOTICE_TITLE, timesheetLineDisplayOrder, timesheetLineIsEmptyStandardPart, timesheetLineShownDeclined, timesheetReviewBookingAfterEdit, timesheetReviewBookingDocument, timesheetReviewerBookingEditKey, timesheetReviewerBookingEditRecord, timesheetSheetChangedByReviewer, timesheetSignedNoticeText
+Exports added: qualificationsMissingOwnExpiry
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/operativeQualifications.ts, lib/canonical/reportPay.ts, lib/canonical/staffAccess.ts, lib/canonical/timesheetBookingChanges.ts, lib/canonical/timesheetEntryReviews.ts, lib/canonical/timesheetLineDisplay.ts, lib/canonical/timesheetReviewBookingWrites.ts
+Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/operativeQualifications.ts, lib/canonical/staffAccess.ts
 Done when:
-- [ ] Packed hash in iOS equals afd3f5308d8a18e13d2eaf5bc705b4021030f946824e26d633ecd3726fec7f00
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 cda126e811bb5a9fdb0d5d8c2a83fb6eb8624160501ad7b8e24351c25b9312be)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.75.0)
+- [ ] Packed hash in iOS equals 41f1b460062ab7925a581a1fe8f46d57625bee426414b322d1acede84145bc94
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 355f20463958f3fdadda7f7ad24e23b3047d946e902a0554cf0fbc8e74c7fcbc)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.76.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.75.0
+## What changed in 1.76.0
 
-- **Qualifications with no expiry date of their own** (§5, owner 23 Nov, C12): new `qualificationsMissingOwnExpiry` (types `QualificationLibraryEntry`, `QualificationMissingOwnExpiryOperativeRow`, `QualificationMissingOwnExpiryRow`) in `lib/canonical/operativeQualifications.ts`. People who hold a qualification whose library entry has an end date (a stored `hasEndDate` decides, else `endDate`) but whose own `qualificationExpiryDates` has none (`qualificationExpiryDate`, on their active rows — all rows for a fully inactive person — as the warnings and reminders read them); named by their live users document; anonymised profiles and blank-named qualifications skipped — they get no expiry warning or reminder. Web Settings → Data health lists them (admins, read only), each linked to the person's qualifications editor. Nothing stored changes; warnings and reminders are unchanged. iOS has no Data health screen; no iOS change needed (C13, organisation-zone reminders, is iOS-only).
+- **"Make changes" on a timesheet** (§8, owner decisions 23 Nov, A1 and B1): new `timesheetMakeChangesAction`, `timesheetMakeChangesHelp`, `timesheetRevisionReviewerMayEditBookings`, types `TimesheetMakeChangesAction`, `TimesheetMakeChangesInput`, copy `TIMESHEET_MAKE_CHANGES_LABEL`, `TIMESHEET_MAKE_CHANGES_REOPEN_HELP`, `TIMESHEET_MAKE_CHANGES_REVISION_HELP`, `TIMESHEET_MAKE_CHANGES_ACTIVE_NOTE`, `TIMESHEET_MAKE_CHANGES_CANCEL_LABEL`, `TIMESHEET_REVISION_REVIEWER_EDIT_NOTE`, `timesheetSignedCopyTracksBookings`, `TIMESHEET_MAKE_CHANGES_OLD_SHEET_HELP` (`lib/canonical/timesheetMakeChanges.ts`). A1: on a signed-off, unexported sheet the reviewer reopens the review on the page (nothing written), changes bookings with ⚙ / ✕ (recorded in `reviewerBookingEdits`, 1.74.0), and signs it off again; the person never signs again and is told "changed and signed off". B1: on an exported sheet the button is the former "Create revision" (1.55.0, unchanged), and the reviewer may change an open revision's bookings before the person signs it. Web: the review page's Signed off panel and revision panel. No rule, data or figure changes otherwise; `TIMESHEET_CREATE_REVISION_LABEL` / `_HELP` kept for older builds. Review of #427: no button on a signed-off sheet whose signed copy has labour lines without `bookingFingerprint` (signed before 1.46.0) or no signed copy — a help line says to export and revise instead; the making-changes state ends with its counter-signature; the button waits for the bookings to load.
+- **Make changes on the signed price work and expenses** (§8, owner answer 23 Nov, b): new `timesheetSignedEntriesChangedSinceSignOff` (what an entry pays against its signed row; no clock test, review of #427), `TIMESHEET_SIGNED_ENTRIES_CHANGED_REVIEWER_MESSAGE`, `TIMESHEET_SIGNED_ENTRIES_CHANGED_PERSON_MESSAGE`, read-only `scripts/report-signed-money-mismatch.mjs`; `TimesheetLateExtrasSummary.signedEntriesChanged` (in `waitingForLineManager`), `TimesheetChanges.signedEntriesChanged`. A signed copy with only signed price work / expenses (no labour line) now offers Make changes. Web: ✕ / ⚙ on the signed entries while making changes; the signed copy's money rows are refreshed only when the sheet is signed off (`applyWeeklyReportOverride` `refreshSignedMoney`) — **before 1.76.0 every reviewer save re-priced them**, so a decision changed after sign-off went straight onto the signed copy (and the invoice) without a new sign-off; it now waits for one. The 1.43.0 empty-copy repair keeps the signed money rows. A signed copy that does not match its decisions on day one reads as waiting — count them first with the report script. The notice "changed and signed off" also covers these changes. No rules change (emulator tests: the line manager writes the review and the re-signed copy on an unexported sheet, late extras or not; never on an exported sheet; never the person).
+
+## iOS work for 1.76.0
+
+Built in the same change on iOS (branch `ios-1.76-make-changes`); this lists what that branch does, for checking.
+
+No new `minimumIosBuild` raise beyond 1.74.0's (an iPhone before 1.74 does not read `reviewerBookingEdits`, so a web Make changes edit would send the sheet back to the person there; raise to a build with 1.74 + 1.76).
+
+**A1. "Make changes" on a signed-off, unexported sheet (reviewer only).**
+- `Project Planner/Core/Rulebook+TimesheetMakeChanges.swift` (new): `timesheetMakeChangesAction`, `timesheetMakeChangesHelp`, `timesheetRevisionReviewerMayEditBookings` and the `TIMESHEET_MAKE_CHANGES_*` copy through `CanonicalBusinessEngine`.
+- `Project Planner/Views/InvoicingView.swift` `OperativeTimesheetReviewView`: under "Signed off", when `makeChangesAction == .reopenReview`, a "Make changes" button; pressed, it shows `TIMESHEET_MAKE_CHANGES_ACTIVE_NOTE` and "Stop making changes", and the labour lines show ⚙ and ✕ only (`TimesheetManagerReviewActionBar(canApprove: false)`). Nothing is written by the button. The ⚙ / ✕ / trim writes are the 1.74.0 ones (booking + `reviewerBookingEdits` in one batch); after the first change the sheet reads `waitingForLineManager` and the existing "Counter-sign again" button and `notifyTimesheetCounterSigned(changedByReviewer:)` apply (the notice id carries the new counter-signature's instant, 1.60.1).
+
+**B1. Exported sheet.** The reviewer's "Create revision" button reads `TIMESHEET_MAKE_CHANGES_LABEL` with `timesheetMakeChangesHelp(.createRevision)`; on the open revision, before the person signs, ⚙ / ✕ are offered (`timesheetRevisionReviewerMayEditBookings`) with `TIMESHEET_REVISION_REVIEWER_EDIT_NOTE`.
+
+**Review of #427 (built on iOS #278 too):**
+- Pass the signed copy to `timesheetMakeChangesAction` (`weeklyReportOverride.lines` with `bookingFingerprint`, `isLeave`, `isPayeDay`, `reviewPartOf`): a sheet signed before 1.46.0 (or with no signed copy) gets no button; show `timesheetMakeChangesHelp(nil, sheet, input)` (`TIMESHEET_MAKE_CHANGES_OLD_SHEET_HELP`) instead.
+- Clear "making changes" when the action is no longer `reopenReview` (keyed to the counter-signature it was opened on); hide the old "Signed off. Once exported…" caption while the action is `reopenReview` or the old-sheet help shows.
+- Pass `revisionOf` (the original's id) as well as `revision` to `timesheetRevisionReviewerMayEditBookings`.
+- A signed copy with no labour line and no signed price work / expenses gets neither the button nor the old-sheet line (owner answer b: a copy with signed price work or expenses gets the button).
+
+**Owner answer 23 Nov (b): Make changes on the signed price work and expenses (built on iOS #278).**
+- `OperativeTimesheetReviewView` entry rows: while making changes (before the first change), ✕ and ⚙ (no ✓) on the signed price work and expense entries; the save is the ordinary reviewer entry review (`timesheetEntryReviewWriteFields`, with `reviewFingerprint`).
+- `TimesheetWeeklyReportOverrideBuilder`: keep the stored signed price work / expense rows on every save except a signing (`refreshSignedMoney`, the counter-signature or a self-signed person's signature); late extra rows always refreshed.
+- `Rulebook+TimesheetLateExtras.swift`: pass `extraEntryReviews` and run the summary whenever the sheet is counter-signed (not only with late extras); read `signedEntriesChanged`.
+- `Rulebook+SignedTimesheetChanges.swift`: read `signedEntriesChanged`; `lateExtrasOnly` is false when signed entries changed (the reviewer sees `TIMESHEET_SIGNED_ENTRIES_CHANGED_REVIEWER_MESSAGE`; no "late extras" wording).
+- Counter-sign: `refreshSignedMoney: true`; `notifyTimesheetCounterSigned(changedByReviewer:)` also when `signedEntriesChanged`.
+- Tests (`Rulebook1760Tests`): remove an expense after sign-off → awaiting, export blocked, re-signed copy without it, total down; edit a price work amount → the same.
+- Review of #427 / #278: the rule has no time test (what the entry pays against its signed row decides); the person's note is `TIMESHEET_SIGNED_ENTRIES_CHANGED_PERSON_MESSAGE`; the owner path refreshes the signed money rows only when the person is signing (as web); the 1.43.0 empty-copy repair keeps the signed money rows (`signedMoneyRows(existing, fresh, refreshSignedMoney)`).
 
 ## New rulebook sections
 
 - 1.75.0 — 2026-11-23
-- 1.74.0 — 2026-11-23
 - 1.73.2 — 2026-11-23
 
 ## Workflow for the iOS agent

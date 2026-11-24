@@ -149,3 +149,58 @@ test('an exported sheet stays frozen: the batch is refused whole and the booking
   })
   assert.equal(booking?.workEndTime, '16:00')
 })
+
+/** 1.76.0 (owner answer 23 Nov, b): Make changes on the signed price work and expenses — the review map entry and the
+ * signed copy (re-signed) are written by the line manager on a signed-off, unexported sheet, late extras or not. */
+function entryReviewUpdate(d: Firestore, uid: string) {
+  return updateDoc(
+    doc(d, 'organizations', ORG, 'settings', SHEET),
+    new FieldPath('extraEntryReviews', 'ex1'),
+    { decision: 'declined', revisedAmount: null, reviewedAmount: 40, reviewedByUserId: uid, reviewedAtMs: Date.now() },
+    'managerSignedAt', serverTimestamp(),
+    'weeklyReportOverride', { lines: [], priceWork: [], expenses: [{ id: 'ex1', title: 'Parking', amount: 0, decision: 'declined' }] },
+    'updatedAt', serverTimestamp(), 'updatedBy', uid, 'updatedFrom', 'web'
+  )
+}
+const SIGNED_COPY = {
+  managerSignedAt: SIGNED, managerSignedByName: 'LM',
+  expenseEntries: [{ id: 'ex1', title: 'Parking', amount: 40, jobNumber: 'J1' }],
+  weeklyReportOverride: { lines: [], priceWork: [], expenses: [{ id: 'ex1', title: 'Parking', amount: 40, decision: 'approved' }] },
+}
+
+test('1.76.0 (b): the line manager changes a signed expense and signs off again on an unexported sheet', async () => {
+  await env.clearFirestore()
+  await seed(SIGNED_COPY)
+  await assertSucceeds(entryReviewUpdate(await db(LM), LM))
+})
+
+test('1.76.0 (b): the same on a signed-off sheet that has late extras, before export', async () => {
+  await env.clearFirestore()
+  await seed({ ...SIGNED_COPY, lateExtras: [{ id: 'l1', kind: 'expense', title: 'Fuel', amount: 10, jobNumber: 'J1' }] })
+  await assertSucceeds(entryReviewUpdate(await db(LM), LM))
+})
+
+test('1.76.0 (b): never on an exported sheet, and never by the person', async () => {
+  await env.clearFirestore()
+  await seed({ ...SIGNED_COPY, exportedAt: Timestamp.fromMillis(Date.parse('2026-11-20T09:00:00Z')) })
+  await assertFails(entryReviewUpdate(await db(LM), LM))
+  await env.clearFirestore()
+  await seed(SIGNED_COPY)
+  await assertFails(entryReviewUpdate(await db(OP), OP))
+})
+
+test('1.76.0 (b): only the review map entry (signed copy untouched) — the line manager may, the person may not', async () => {
+  await env.clearFirestore()
+  await seed(SIGNED_COPY)
+  const reviewOnly = (d: Firestore, uid: string) =>
+    updateDoc(
+      doc(d, 'organizations', ORG, 'settings', SHEET),
+      new FieldPath('extraEntryReviews', 'ex1'),
+      { decision: 'declined', revisedAmount: null, reviewedAmount: 40, reviewedByUserId: uid, reviewedAtMs: Date.now() },
+      'updatedAt', serverTimestamp(), 'updatedBy', uid, 'updatedFrom', 'web'
+    )
+  await assertSucceeds(reviewOnly(await db(LM), LM))
+  await env.clearFirestore()
+  await seed(SIGNED_COPY)
+  await assertFails(reviewOnly(await db(OP), OP))
+})

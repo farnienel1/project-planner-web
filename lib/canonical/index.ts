@@ -770,6 +770,20 @@ export {
 } from './timesheetLines'
 export { timesheetLineDisplay, timesheetLineDisplayOrder, timesheetLineIsEmptyStandardPart, timesheetLineShownDeclined } from './timesheetLineDisplay'
 export {
+  TIMESHEET_MAKE_CHANGES_LABEL,
+  TIMESHEET_MAKE_CHANGES_REOPEN_HELP,
+  TIMESHEET_MAKE_CHANGES_REVISION_HELP,
+  TIMESHEET_MAKE_CHANGES_ACTIVE_NOTE,
+  TIMESHEET_MAKE_CHANGES_CANCEL_LABEL,
+  TIMESHEET_MAKE_CHANGES_OLD_SHEET_HELP,
+  TIMESHEET_REVISION_REVIEWER_EDIT_NOTE,
+  timesheetMakeChangesAction,
+  timesheetMakeChangesHelp,
+  timesheetSignedCopyTracksBookings,
+  timesheetRevisionReviewerMayEditBookings,
+} from './timesheetMakeChanges'
+export type { TimesheetMakeChangesAction, TimesheetMakeChangesInput } from './timesheetMakeChanges'
+export {
   TIMESHEET_REVIEW_BOOKING_FIELDS,
   TIMESHEET_REVIEW_EDIT_BOOKING_NOTE,
   TIMESHEET_REVIEW_DELETE_BOOKING_TITLE,
@@ -2260,6 +2274,9 @@ export {
   TIMESHEET_LATE_EXTRAS_FIELD,
   TIMESHEET_LATE_EXTRAS_EXPORT_SKIPPED_MESSAGE,
   TIMESHEET_LATE_EXTRAS_REVIEWER_MESSAGE,
+  TIMESHEET_SIGNED_ENTRIES_CHANGED_REVIEWER_MESSAGE,
+  TIMESHEET_SIGNED_ENTRIES_CHANGED_PERSON_MESSAGE,
+  timesheetSignedEntriesChangedSinceSignOff,
   TIMESHEET_LATE_EXTRA_ADD_CONFIRM_MESSAGE,
   TIMESHEET_LATE_EXTRA_APPROVED_LABEL,
   TIMESHEET_LATE_EXTRA_DECLINED_LABEL,
