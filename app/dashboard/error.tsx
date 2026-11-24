@@ -2,11 +2,13 @@
 
 import { useEffect } from 'react'
 import Link from 'next/link'
+import { reportClientError } from '@/lib/clientErrors/reportClientError'
 
 /** Error boundary for every dashboard screen: shows Retry and a way home instead of a blank page. */
 export default function DashboardError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
     console.error('[dashboard]', error)
+    void reportClientError('boundary', error)
   }, [error])
   return (
     <div className="empty card pad" role="alert" style={{ maxWidth: 520, margin: '40px auto', textAlign: 'center' }}>

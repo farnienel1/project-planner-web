@@ -3,6 +3,7 @@ import { inter, jakarta } from '@/lib/fonts'
 import './globals.css'
 import './marketing.css'
 import { StaleChunkReload } from '@/components/client/StaleChunkReload'
+import { ClientErrorReporter } from '@/components/client/ClientErrorReporter'
 import { WebIdleSessionGuard } from '@/components/auth/WebIdleSessionGuard'
 import { ThemeBoot } from '@/components/shell/AccountMenu'
 import { THEME_BOOT_SCRIPT } from '@/lib/ui/theme'
@@ -28,6 +29,7 @@ export default function RootLayout({
       <body className={`${inter.variable} ${jakarta.variable} ${inter.className}`}>
         <ThemeBoot />
         <StaleChunkReload />
+        <ClientErrorReporter />
         <WebIdleSessionGuard />
         {children}
       </body>
