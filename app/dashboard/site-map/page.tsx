@@ -19,12 +19,14 @@ import { watchSubcontractorBookings } from '@/lib/weekly-report/loadSubcontracto
 import type { SubcontractorBookingRow } from '@/lib/weekly-report/weeklyReportData'
 import { useDailyOverviewModel } from '@/lib/daily-overview/useDailyOverviewModel'
 import { officeCentreFromOrganization, siteMapJobSummary } from '@/lib/maps/siteMapView'
-import { isMappableSiteAddress } from '@/lib/maps/siteAddress'
-import { EmptyState, LoadingSpinner } from '@/components/dashboard/PageShell'
+import { siteMapUnplacedReason } from '@/lib/maps/siteMapPlacement'
+import { userCanEditJob } from '@/lib/access/bookingAccess'
+import { LoadingSpinner } from '@/components/dashboard/PageShell'
 import { SiteMapBoard } from '@/components/site-map/SiteMapBoard'
 import { SetSitePinButton } from '@/components/site-map/SetSitePinButton'
 import { SiteMapJobSummaryCard } from '@/components/site-map/SiteMapJobSummaryCard'
-import { SiteMapLegend } from '@/components/site-map/SiteMapLegend'
+import { SiteMapCompletedToggle, SiteMapLegend } from '@/components/site-map/SiteMapLegend'
+import { SiteMapJobButtons } from '@/components/site-map/SiteMapJobButtons'
 import { useSiteMapJobs } from '@/components/site-map/useSiteMapJobs'
 
 export default function SiteMapPage() {
@@ -33,7 +35,7 @@ export default function SiteMapPage() {
   const { loadProjects, loadSmallWorks } = useProjectStore()
   const { loadBookings } = useBookingStore()
   const { loadManagerSiteBookings } = useManagerScheduleStore()
-  const { loadOperatives } = useOperativeStore()
+  const { managers, loadOperatives, loadManagers } = useOperativeStore()
   const { loadUsers } = useOrgUserStore()
   const { loadBookings: loadHolidays } = useHolidayStore()
   const { subcontractors, loadSubcontractors } = useSubcontractorStore()
@@ -43,6 +45,7 @@ export default function SiteMapPage() {
   const today = useMemo(() => new Date(), [todayKey]) // eslint-disable-line react-hooks/exhaustive-deps -- new instant per organisation day
   const [selectedDate, setSelectedDate] = useState(todayKey)
   const [selectedPinId, setSelectedPinId] = useState<string | null>(null)
+  const [includeCompleted, setIncludeCompleted] = useState(false)
   const [subcontractorBookings, setSubcontractorBookings] = useState<SubcontractorBookingRow[]>([])
   const day = useMemo(() => dateFromDayKey(selectedDate, timeZone), [selectedDate, timeZone])
   const allowed = Boolean(user && canViewSiteMap(user))
@@ -67,6 +70,7 @@ export default function SiteMapPage() {
     loadBookings(organization.id)
     loadManagerSiteBookings(organization.id)
     loadOperatives(organization.id)
+    loadManagers(organization.id)
     loadUsers(organization.id)
     loadHolidays(organization.id)
     loadSubcontractors(organization.id)
@@ -78,6 +82,7 @@ export default function SiteMapPage() {
     loadBookings,
     loadManagerSiteBookings,
     loadOperatives,
+    loadManagers,
     loadUsers,
     loadHolidays,
     loadSubcontractors,
@@ -93,10 +98,11 @@ export default function SiteMapPage() {
   // A past day reaches before the launch booking download.
   useBookingHistoryFrom(organization?.id, day)
 
-  const { jobs, markers, geocoding, setCoordinatesBySiteId } = useSiteMapJobs({
+  const { jobs, markers, unplaced, locating, retryLookups } = useSiteMapJobs({
     organizationId: organization?.id,
     dayKey: selectedDate,
     timeZone,
+    includeCompleted,
   })
 
   // The figures under the map are the Daily Overview model of the day shown (owner 24 Nov): hours, overtime and leave.
@@ -109,6 +115,15 @@ export default function SiteMapPage() {
     enabled: allowed,
   })
 
+  // Home's "See which on the full map" opens #unplaced: the section appears once the lookups finish, so scroll then.
+  const scrolledToUnplaced = useRef(false)
+  useEffect(() => {
+    if (scrolledToUnplaced.current || locating || unplaced.length === 0) return
+    if (typeof window === 'undefined' || window.location.hash !== '#unplaced') return
+    scrolledToUnplaced.current = true
+    document.getElementById('unplaced')?.scrollIntoView({ block: 'start' })
+  }, [locating, unplaced.length])
+
   const officeCentre = useMemo(
     () =>
       liveOrganization.organizationId === organization?.id ? officeCentreFromOrganization(liveOrganization.data) : null,
@@ -120,9 +135,6 @@ export default function SiteMapPage() {
     () => (selectedJob ? siteMapJobSummary({ jobId: selectedJob.id, peopleOnSite: selectedJob.peopleCount, model }) : null),
     [selectedJob, model]
   )
-
-  const withCoords = jobs.filter((p) => p.latitude != null && p.longitude != null)
-  const withAddress = jobs.filter((p) => isMappableSiteAddress(p.address))
 
   const handleSelectMarker = useCallback((id: string) => {
     setSelectedPinId(id)
@@ -152,9 +164,11 @@ export default function SiteMapPage() {
           />
         </div>
       </div>
-      {geocoding ? <p className="muted small">Locating sites on map…</p> : null}
-
-      <SiteMapLegend />
+      <div className="sitemap-bar">
+        <SiteMapLegend />
+        <SiteMapCompletedToggle checked={includeCompleted} onChange={setIncludeCompleted} />
+      </div>
+      {locating ? <p className="muted small">Locating sites on map…</p> : null}
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <SiteMapBoard
           markers={markers}
@@ -163,6 +177,12 @@ export default function SiteMapPage() {
           officeCentre={officeCentre}
         />
       </div>
+      <SiteMapJobButtons markers={markers} selectedId={selectedPinId} onSelect={handleSelectMarker} />
+      {!locating && jobs.length === 0 ? (
+        <p className="muted small">
+          {includeCompleted ? 'No jobs on this day.' : 'No active or upcoming jobs on this day.'}
+        </p>
+      ) : null}
 
       <SiteMapJobSummaryCard
         job={selectedJob}
@@ -173,68 +193,40 @@ export default function SiteMapPage() {
         onClose={() => setSelectedPinId(null)}
       />
 
-      {withCoords.length === 0 && withAddress.length > 0 && (
-        <div className="banner" data-hue="warn">
-          {geocoding
-            ? 'Finding map locations from site addresses…'
-            : 'Some addresses could not be located automatically. You can still open them in Google Maps from the cards below.'}
-        </div>
-      )}
-
-      {jobs.length === 0 ? (
-        <EmptyState title="No sites found" description="Projects and small works from Firebase will appear here." />
-      ) : (
-        <div className="rows">
-          {jobs.map((pin) => {
-            const isSelected = selectedPinId === pin.id
-            return (
-              <div
-                key={pin.id}
-                role="button"
-                tabIndex={0}
-                aria-pressed={isSelected}
-                onClick={() => setSelectedPinId(pin.id)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') setSelectedPinId(pin.id)
-                }}
-                className={`ritem ${isSelected ? 'sel' : ''}`}
-                data-hue={pin.source === 'smallWork' ? 'sw' : 'proj'}
-              >
-                <span className="ico-chip">{pin.source === 'smallWork' ? 'SW' : 'P'}</span>
+      {!locating && unplaced.length > 0 ? (
+        <section className="card sitemap-unplaced" id="unplaced" aria-labelledby="site-map-unplaced-title">
+          <h2 id="site-map-unplaced-title">Jobs without an address</h2>
+          <p className="muted small">
+            {unplaced.length === 1
+              ? 'This job could not be placed on the map from its address.'
+              : `These ${unplaced.length} jobs could not be placed on the map from their addresses.`}{' '}
+            Set the pin by hand and it is saved to the job.
+          </p>
+          <div className="rows">
+            {unplaced.map((job) => (
+              <div key={job.id} className="ritem" data-hue={job.source === 'smallWork' ? 'sw' : 'proj'}>
+                <span className="ico-chip">{job.source === 'smallWork' ? 'SW' : 'P'}</span>
                 <span className="grow">
-                  <span className="t">{pin.label}</span>
+                  <span className="t">{job.label}</span>
                   <span className="s">
-                    {pin.jobNumber} · {pin.source === 'project' ? 'Project' : 'Small works'} · {pin.address || 'No address'}
+                    {job.jobNumber} · {job.source === 'project' ? 'Project' : 'Small works'} ·{' '}
+                    {job.address || 'No address'} · {siteMapUnplacedReason(job.placement)}
                   </span>
                 </span>
-                <span className="pill">{pin.bookingCount} booked</span>
-                <span className="row" style={{ gap: 8 }} onClick={(event) => event.stopPropagation()}>
-                  <SetSitePinButton
-                    project={pin.project}
-                    collection={pin.collection}
-                    onUpdated={(updated) => {
-                      setCoordinatesBySiteId((current) => ({
-                        ...current,
-                        [updated.id]: {
-                          latitude: updated.latitude!,
-                          longitude: updated.longitude!,
-                        },
-                      }))
-                    }}
-                  />
-                  {pin.mapsUrl ? (
-                    <a href={pin.mapsUrl} target="_blank" rel="noreferrer" className="btn xs">
-                      Open map
-                    </a>
-                  ) : (
-                    <span className="muted xs">No address</span>
-                  )}
-                </span>
+                {job.placement.kind === 'lookupFailed' ? (
+                  <button type="button" className="btn xs" onClick={retryLookups}>
+                    Retry
+                  </button>
+                ) : userCanEditJob(user, job.project, job.collection, managers) ? (
+                  <SetSitePinButton project={job.project} collection={job.collection} />
+                ) : (
+                  <span className="muted xs">Ask an admin to set the pin</span>
+                )}
               </div>
-            )
-          })}
-        </div>
-      )}
+            ))}
+          </div>
+        </section>
+      ) : null}
     </div>
   )
 }

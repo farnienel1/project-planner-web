@@ -13,3 +13,13 @@ export function SiteMapLegend() {
     </div>
   )
 }
+
+/** Off by default: Active and Upcoming jobs only; on adds Completed jobs (owner 24 Nov). */
+export function SiteMapCompletedToggle({ checked, onChange }: { checked: boolean; onChange: (next: boolean) => void }) {
+  return (
+    <label className="sitemap-toggle">
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+      <span>Show completed jobs</span>
+    </label>
+  )
+}
