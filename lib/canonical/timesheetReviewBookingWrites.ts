@@ -49,7 +49,7 @@ export const TIMESHEET_REVIEW_BOOKING_FIELDS = [
 ] as const
 
 export const TIMESHEET_REVIEW_EDIT_BOOKING_NOTE =
-  'Saving changes the booking itself, so scheduling, Daily Overview and the weekly report show the new hours. You can keep reviewing; the person sees the change when you counter-sign.'
+  'Saving changes the booking itself, so scheduling, daily Overview and the weekly report show the new hours. You can keep reviewing; the person sees the change when you counter-sign.'
 export const TIMESHEET_REVIEW_DELETE_BOOKING_TITLE = 'Remove this booking?'
 export const TIMESHEET_REVIEW_DELETE_BOOKING_CONFIRM_LABEL = 'Remove booking'
 export const TIMESHEET_REVIEW_DELETE_BOOKING_CANCEL_LABEL = 'Go back'

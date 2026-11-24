@@ -1614,3 +1614,10 @@ The owner's answers of 24 Nov (items 1, 2, 5, 9 of the list sent that day) and c
 |---|---|---|
 | 24 Nov | The timesheet review ✕ (a line manager deleting a booking from the timesheet they are reviewing) shows no signed-timesheet warning: the 1.74.0 rule keeps the sheet with the reviewer, so the warning's "goes back to the person to sign again" would be wrong there. | question |
 | 24 Nov | A creator whose users document cannot be read counts as stopped in the list (the share page refuses such a link too). | done, owner to confirm |
+
+## 24 Nov owner report (timesheet review ✕ / ⚙, 1.89)
+
+| Date | Decision / finding | Status |
+|---|---|---|
+| 24 Nov | **Bug: the line manager's ✕ / ⚙ on a timesheet line did nothing and showed "This was deleted on another device."** (owner testing a REV 1 in Awaiting sign-off, and a Signed-off sheet in Make changes). Cause: web used the timesheet line's prefixed booking id (`op-{id}`) as the booking's document id, so ⚙ / overtime ✕ read a booking that never exists and a standard ✕ tried to delete it. Every sheet since 1.72.0 (23 Nov): plain, revision, Make changes. Fixed (`timesheetLineBooking` gives the stored id). No rules change: the rules already allow the batch on an unexported REV 1 and refuse it once exported (emulator test). iOS checked: uses the bare booking id (not affected). | done web (1.89.0, w-ts-review-revision-fix) |
+| 24 Nov | **Wording:** the ⚙ dialog note reads "… scheduling, daily Overview and the weekly report …" ("Daily" → "daily"), on both apps (`TIMESHEET_REVIEW_EDIT_BOOKING_NOTE`). | done web + rulebook (1.89.0); iOS (sync + fallback text, ios-ts-review-revision-fix) |

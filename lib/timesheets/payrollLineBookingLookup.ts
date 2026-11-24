@@ -32,6 +32,34 @@ export function bookingIdFromLineId(lineId: string): string | null {
   return match?.[1] ?? null
 }
 
+/**
+ * The booking a timesheet line comes from: its collection and stored document id (`op-{id}-normal|ot` /
+ * `mgr-{id}-normal|ot`).
+ *
+ * Owner report 24 Nov: the web collector stores a live line's `bookingId` as the line prefix plus the id (`op-{id}`,
+ * `mgr-{id}`; the 1.47.0 rule reads it the same way, `signedTimesheetLineBookingKey`). Before this fix the prefixed
+ * value was used as the document id, so ⚙ / ✕ read `bookings/op-{id}` — a document that never exists — and showed
+ * "This was deleted on another device.", and a standard line's ✕ tried to delete it. The bare id is taken from the line
+ * id when the line's `bookingId` is that prefix plus the same id; a bare `bookingId` is used as it is.
+ */
+export function timesheetLineBooking(line: { id: string; bookingId?: string; bookingCollection?: string }): {
+  bookingId: string
+  collection: 'bookings' | 'managerSiteBookings'
+} | null {
+  const fromLineId = bookingIdFromLineId(line.id) || ''
+  const linePrefix = line.id.startsWith('mgr-') ? 'mgr' : line.id.startsWith('op-') ? 'op' : ''
+  let bookingId = (line.bookingId || '').trim()
+  if (bookingId && fromLineId && linePrefix && bookingId.toLowerCase() === `${linePrefix}-${fromLineId}`.toLowerCase()) {
+    bookingId = fromLineId
+  }
+  if (!bookingId) bookingId = fromLineId
+  if (!bookingId) return null
+  const stated = line.bookingCollection
+  const collection: 'bookings' | 'managerSiteBookings' =
+    stated === 'managerSiteBookings' || (!stated && line.id.startsWith('mgr-')) ? 'managerSiteBookings' : 'bookings'
+  return { bookingId, collection }
+}
+
 export function timesFromPayrollLineDetails(
   details: string
 ): { startTime: string; endTime: string; breakRemoved: boolean } | null {

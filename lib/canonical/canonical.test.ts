@@ -20146,3 +20146,10 @@ test('1.84.0 client error reports are in the packed rulebook (full cases in clie
   assert.match(firestoreRules, /d\.keys\(\)\.hasOnly\(\['platform', 'source', 'kind', 'where', 'route', 'build', 'messageKey', 'messageHash',/)
   assert.match(firestoreRules, /hashing\.sha256\(request\.auth\.uid \+ '\|' \+ string\(d\.dayIndex\)\)\.toHexString\(\)\.lower\(\) \+ '_1\?\[0-9\]\$'/)
 })
+
+test('1.89.0: the reviewer edit-booking note reads "daily Overview" (owner wording 24 Nov)', () => {
+  assert.equal(
+    R112.TIMESHEET_REVIEW_EDIT_BOOKING_NOTE,
+    'Saving changes the booking itself, so scheduling, daily Overview and the weekly report show the new hours. You can keep reviewing; the person sees the change when you counter-sign.'
+  )
+})
