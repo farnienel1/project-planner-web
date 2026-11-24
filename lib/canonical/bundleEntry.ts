@@ -2021,3 +2021,12 @@ export type { MemberName, MemberNames, NameInOrganization, NamedPerson } from '.
 
 // 1.83.0: organisation insurance & accreditations (§31).
 export * from './orgCompliance'
+// Rulebook 1.86.0 §2 / §5: Replace queued offline on iOS and Android, and its replay.
+export {
+  OFFLINE_REPLACE_CHANGED_MESSAGE,
+  OFFLINE_REPLACE_REFUSED_MESSAGE,
+  OFFLINE_REPLACE_REPLAY_DECISIONS,
+  OFFLINE_REPLACE_TARGET_OUTCOMES,
+  offlineReplaceRefusalDecision,
+  offlineReplaceReplayDecision,
+} from './offlineReplace'

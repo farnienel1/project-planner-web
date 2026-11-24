@@ -5490,12 +5490,12 @@ test('1.2.0 D9: a not-found edit replay is final; the old call shape is unchange
 
 test('1.2.0 D1 + D7 + D8 + D10 (1.33.0): the offline table matches iOS OfflinePolicy ids; delete is queued, no cancel', () => {
   const ids = Object.keys(rulebook.OFFLINE_ACTIONS)
-  assert.equal(ids.length, 32) // 1.41.0: booking.replace (online only)
+  assert.equal(ids.length, 32) // 1.41.0: booking.replace (1.86.0: queued offline)
   const allowed = ids.filter((id) => rulebook.offlineAvailability(id) === 'allowedOffline')
-  assert.deepEqual(allowed, ['booking.create', 'booking.edit', 'booking.delete', 'annual_leave.request', 'profile.own_fields', 'notifications.own_toggles'])
+  assert.deepEqual(allowed, ['booking.create', 'booking.edit', 'booking.delete', 'booking.replace', 'annual_leave.request', 'profile.own_fields', 'notifications.own_toggles'])
   assert.equal(rulebook.offlineAvailability('booking.delete'), 'allowedOffline')
   assert.equal(rulebook.offlineAvailability('booking.delete_subcontractor'), 'onlineOnly')
-  assert.equal(rulebook.offlineAvailability('booking.replace'), 'onlineOnly')
+  assert.equal(rulebook.offlineAvailability('booking.replace'), 'allowedOffline')
   assert.equal(rulebook.offlineAvailability('booking.cancel'), 'onlineOnly')
   assert.deepEqual(
     ids.filter((id) => rulebook.offlineAvailability(id) === 'readOnlyOffline'),
@@ -20131,4 +20131,85 @@ test('1.83.0 insurance & accreditations are in the packed rulebook (full cases i
   assert.match(firestoreRules, /'reportChecks', 'holidayBookings', 'orgCompliance'\]\);/)
   const storageRules = readFileSync(new URL('../../storage.rules', import.meta.url), 'utf8')
   assert.match(storageRules, /match \/organizations\/\{orgId\}\/compliance\/\{fileName\} \{\n(?:\s*\/\/[^\n]*\n)?\s+allow read, delete: if orgMember\(orgId\) && adminLike\(orgId\);/)
+})
+
+test('1.86.0 offlineReplaceReplayDecision: one outcome for each owner case', () => {
+  const zone = 'Europe/London'
+  const old = { operativeId: 'OP-1', projectId: 'JOB-1', dayKey: '2026-11-09', timeSlot: 'FULL_DAY', status: 'Confirmed' }
+  const fingerprint = R112.bookingDeleteFingerprint({ ...old, collection: 'bookings' }, zone)
+  const queued = {
+    booking: { bookingId: 'NEW-1', collection: 'bookings' },
+    replaced: [{ bookingId: 'OLD-1', collection: 'bookings', fingerprint }],
+  }
+  const decide = (over: Record<string, unknown> = {}) =>
+    R112.offlineReplaceReplayDecision({
+      queued,
+      newBooking: { exists: false, tombstoned: false },
+      replaced: [{ bookingId: 'old-1', collection: 'bookings', live: old, tombstoned: false, mayDelete: true }],
+      timeZone: zone,
+      ...over,
+    })
+
+  assert.deepEqual([...R112.OFFLINE_REPLACE_REPLAY_DECISIONS], ['apply', 'createOnly', 'alreadyApplied', 'dropLocal', 'refuseChanged', 'refusePermission'])
+  // Unchanged and still deletable: the new booking and the delete + tombstone go in one write (stored spelling kept).
+  assert.deepEqual(decide(), {
+    decision: 'apply',
+    deletes: [{ collection: 'bookings', bookingId: 'OLD-1' }],
+    targets: [{ collection: 'bookings', bookingId: 'OLD-1', outcome: 'delete' }],
+    message: null,
+  })
+  // mayDelete missing: the rules decide.
+  assert.equal(decide({ replaced: [{ bookingId: 'OLD-1', collection: 'bookings', live: old }] }).decision, 'apply')
+  // Changed elsewhere: the whole replace is refused, nothing is written.
+  const changed = decide({ replaced: [{ bookingId: 'OLD-1', collection: 'bookings', live: { ...old, timeSlot: 'AM' } }] })
+  assert.equal(changed.decision, 'refuseChanged')
+  assert.deepEqual(changed.deletes, [])
+  assert.equal(changed.message, 'Changed on another device — not replaced')
+  assert.equal(R112.OFFLINE_REPLACE_CHANGED_MESSAGE, 'Changed on another device — not replaced')
+  // A blank queued fingerprint never counts as unchanged.
+  assert.equal(decide({ queued: { ...queued, replaced: [{ ...queued.replaced[0], fingerprint: ' ' }] } }).decision, 'refuseChanged')
+  // Already gone (missing or tombstoned): create the new booking only.
+  assert.equal(decide({ replaced: [{ bookingId: 'OLD-1', collection: 'bookings', live: null }] }).decision, 'createOnly')
+  assert.equal(decide({ replaced: [{ bookingId: 'OLD-1', collection: 'bookings', live: old, tombstoned: true }] }).decision, 'createOnly')
+  assert.equal(decide({ replaced: [] }).decision, 'createOnly')
+  // Permission lost: refused with a message (before the change check).
+  const refused = decide({ replaced: [{ bookingId: 'OLD-1', collection: 'bookings', live: { ...old, timeSlot: 'AM' }, mayDelete: false }] })
+  assert.equal(refused.decision, 'refusePermission')
+  assert.ok(refused.message?.startsWith('Not replaced'))
+  assert.equal(decide({ mayCreate: false }).decision, 'refusePermission')
+  // The new booking was deleted on this device before it was sent: drop the whole item.
+  assert.equal(decide({ queued: { ...queued, newBookingDeleted: true } }).decision, 'dropLocal')
+  assert.equal(decide({ queued: null }).decision, 'dropLocal')
+  // An earlier attempt committed (new booking there or tombstoned): nothing is sent again.
+  assert.equal(decide({ newBooking: { exists: true } }).decision, 'alreadyApplied')
+  assert.equal(decide({ newBooking: { tombstoned: true } }).decision, 'alreadyApplied')
+  // A replaced booking created offline was never sent: it is skipped.
+  const local = decide({ queued: { ...queued, replaced: [{ ...queued.replaced[0], createdOffline: true }] } })
+  assert.equal(local.decision, 'createOnly')
+  assert.equal(local.targets[0].outcome, 'dropLocal')
+  // Two replaced: one gone, one unchanged → apply with only the live one.
+  const office = { userId: 'U-1', locationType: 'office', dayKey: '2026-11-09', timeSlot: 'AM' }
+  const officeFp = R112.bookingDeleteFingerprint({ ...office, collection: 'managerSiteBookings' }, zone)
+  const mixed = R112.offlineReplaceReplayDecision({
+    queued: { ...queued, replaced: [...queued.replaced, { bookingId: 'm-1', collection: 'managerSiteBookings', fingerprint: officeFp }] },
+    newBooking: {},
+    replaced: [
+      { bookingId: 'OLD-1', collection: 'bookings', live: null },
+      { bookingId: 'm-1', collection: 'managerSiteBookings', live: office },
+    ],
+    timeZone: zone,
+  })
+  assert.equal(mixed.decision, 'apply')
+  assert.deepEqual(mixed.deletes, [{ collection: 'managerSiteBookings', bookingId: 'm-1' }])
+  // A subcontractor booking or the booking itself is never deleted by a replace.
+  assert.equal(decide({ queued: { ...queued, replaced: [{ ...queued.replaced[0], collection: 'subcontractorBookings' }] } }).decision, 'refusePermission')
+  assert.equal(decide({ queued: { ...queued, replaced: [{ ...queued.replaced[0], bookingId: 'new-1' }] } }).decision, 'refusePermission')
+})
+
+test('1.86.0 offlineReplaceRefusalDecision matches offlineDeleteRefusalDecision; Replace queues offline', () => {
+  for (const code of ['not-found', 5, 'permission-denied', 7, 'firestore/permission-denied', 'unavailable', 14, 'aborted', null]) {
+    assert.equal(R112.offlineReplaceRefusalDecision(code), R112.offlineDeleteRefusalDecision(code))
+  }
+  assert.equal(R112.offlineAvailability('booking.replace'), 'allowedOffline')
+  assert.equal(R112.offlineAvailability('booking.delete_subcontractor'), 'onlineOnly')
 })
