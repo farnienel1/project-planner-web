@@ -133,11 +133,39 @@ test('1.85.0 removed, expired and no-expiry documents get nothing; removed ones 
   assert.equal(orgComplianceRemindersDue({ documents: docs(entry('d', '2027-02-28', '2026-06-01')), todayKey: '2027-02-28', timeZone: TZ }).due[0].daysLeft, 0)
 })
 
-test('1.85.0 a threshold on the day the expiry was set is not sent (it was not ahead)', () => {
-  // Expiry set exactly 7 days away: no email at all.
-  const d = docs(entry('a', '2026-12-01', '2026-11-24'))
-  assert.equal(orgComplianceRemindersDue({ documents: d, todayKey: '2026-11-24', timeZone: TZ }).due.length, 0)
-  assert.equal(orgComplianceRemindersDue({ documents: d, todayKey: '2026-11-30', timeZone: TZ }).due.length, 0)
+// Owner answer 24 Nov: a threshold that falls on the very day the expiry is set is sent that day, once.
+function runDays(d: OrgComplianceDocuments, from: string, to: string): string[] {
+  let ledger: OrgComplianceReminderLedger = { entries: {} }
+  const log: string[] = []
+  for (let day = from; day <= to; day = new Date(Date.parse(day) + 86_400_000).toISOString().slice(0, 10)) {
+    const result = orgComplianceRemindersDue({ documents: d, todayKey: day, timeZone: TZ, sent: ledger })
+    for (const r of result.due) log.push(`${day}:${r.threshold}`)
+    ledger = parseOrgComplianceReminderLedger(orgComplianceReminderLedgerFields(orgComplianceReminderLedgerAfter({ ledger: result.ledger, sent: result.due, todayKey: day })))
+  }
+  return log
+}
+
+test('1.85.0 an expiry set exactly 7 days ahead gets the 7-day email that day, once', () => {
+  assert.deepEqual(runDays(docs(entry('a', '2026-12-01', '2026-11-24')), '2026-11-24', '2026-12-10'), ['2026-11-24:sevenDays'])
+})
+
+test('1.85.0 an expiry set exactly 1 month ahead gets the 1-month email that day, then 7 days; never 2 months', () => {
+  assert.deepEqual(runDays(docs(entry('a', '2026-12-24', '2026-11-24')), '2026-11-24', '2027-01-05'), ['2026-11-24:oneMonth', '2026-12-17:sevenDays'])
+})
+
+test('1.85.0 an expiry set exactly 2 months ahead gets all three, the 2-month one that day', () => {
+  assert.deepEqual(runDays(docs(entry('a', '2027-01-24', '2026-11-24')), '2026-11-24', '2027-02-05'), [
+    '2026-11-24:twoMonths',
+    '2026-12-24:oneMonth',
+    '2027-01-17:sevenDays',
+  ])
+})
+
+test('1.85.0 a threshold already passed when the expiry was set is never sent', () => {
+  // Set 6 days ahead (after the 7-day day): nothing at all.
+  assert.deepEqual(runDays(docs(entry('a', '2026-11-30', '2026-11-24')), '2026-11-24', '2026-12-05'), [])
+  // Set 1 month less a day ahead: only the 7-day email.
+  assert.deepEqual(runDays(docs(entry('b', '2026-12-23', '2026-11-24')), '2026-11-24', '2027-01-05'), ['2026-12-16:sevenDays'])
 })
 
 test('1.85.0 recipients: active admins with an email, one per address, never a ghost or pending invite', () => {

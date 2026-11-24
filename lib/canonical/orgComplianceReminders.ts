@@ -7,8 +7,9 @@
  *   days, counted back from the expiry day (`expiresOn`, the last valid day, an organisation-zone day key);
  *   `orgComplianceReminderDayKey`. "Today" is the organisation-zone day (`orgComplianceTodayKey`).
  * - A threshold is sent only when it was still ahead when the expiry date was set (or the document added): its day is
- *   after the day the expiry was set (`orgComplianceReminderSetDayKey`). Owner example: an expiry set 1 month and 2 days
- *   away gets no 2-month email, only the 1-month and the 7-day ones.
+ *   on or after the day the expiry was set (`orgComplianceReminderSetDayKey`; owner answer 24 Nov: a threshold falling on
+ *   that very day counts as ahead and is sent that day). Owner example: an expiry set 1 month and 2 days away gets no
+ *   2-month email, only the 1-month and the 7-day ones; an expiry set exactly 7 days away gets the 7-day email that day.
  * - One email per threshold per document per expiry, never twice: the server keeps a ledger
  *   (`organizations/{orgId}/orgCompliance/reminders`, server only — the security rules match only the `documents`
  *   document there and the organisation catch-all read leaves `orgCompliance` out). A changed expiry date starts again
@@ -190,7 +191,7 @@ export type OrgComplianceRemindersResult = {
  * The reminders due today for one organisation, and its ledger before sending.
  *
  * For each document with an expiry, the current band is the most urgent threshold whose day is on or before today,
- * while today is on or before the expiry day. It is due when its day is after the day the expiry was set and the
+ * while today is on or before the expiry day. It is due when its day is on or after the day the expiry was set and the
  * ledger has not sent it for this expiry. Documents with no expiry, already expired, or removed get nothing.
  */
 export function orgComplianceRemindersDue(input: {
@@ -229,7 +230,8 @@ export function orgComplianceRemindersDue(input: {
       }
       if (!current) continue
       const currentDay = orgComplianceReminderDayKey(entry.expiresOn, current)!
-      if (!(currentDay > setDayKey)) continue
+      // Owner answer 24 Nov: a threshold on the very day the expiry was set counts as still ahead.
+      if (currentDay < setDayKey) continue
       if (record.sent[current.key]) continue
       due.push({
         section,
