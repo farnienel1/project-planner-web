@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.81.0 → 1.81.0
-Packed hash: 6a0f0d61613ea38c14aeaf4f4c26bf856e6c9b667836b868466ad7200ece772c
-Rulebook sha256: 8742cce4fc0964368e65c2dc24011d082d26ed09410b9f44481b6bcb54d17a69
+Rulebook version: 1.80.0 → 1.81.0
+Packed hash: e6524d2b1b990f1f722971d81aa9de1b84a7911d2b451aecbe095179e9e64c70
+Rulebook sha256: 4a43cb3457c191f2ec4b9c2cf4d897c2e39063aee5ac45a024cd6781408435cf
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -19,15 +19,15 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web lib/canonical/parity-fixture.json             → iOS ProjectPlannerTests/CanonicalParityFixture.json
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
   web lib/canonical/data-parity-fixture.json        → iOS ProjectPlannerTests/DataParityFixture.json
-Contract sha256: 926b910948b674b1fa259e8f933ddd15f14bad00b8e0b050ccbd88c723bf64aa
+Contract sha256: d2d465abcf0ab7c7747385346b87d2b47226412b1014602c5a26bff8e951c0ca
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: none
+Exports added: MEMBER_NAMES_COLLECTION, MEMBER_NAME_FIELDS, MEMBER_NAME_MAX_LENGTH, MEMBER_NAME_REFUSED_MESSAGE, MEMBER_NAME_REQUIRED_MESSAGE, MEMBER_NAME_TOO_LONG_MESSAGE, accountName, applyMemberNames, canWriteMemberName, displayNameInOrganization, memberNameEditTarget, memberNameFor, memberNamePath, memberNameValidationError, memberNameWriteFields, parseMemberNameDocument, parseMemberNameDocuments
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, firestore.rules
+Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/crossPlatformContract.samples.ts, lib/canonical/index.ts, lib/canonical/liveSources.ts, lib/canonical/memberNames.test.ts, lib/canonical/memberNames.ts, lib/canonical/orgRoster.ts, lib/canonical/organizationSettings.ts, lib/canonical/peopleDocuments.ts
 Done when:
-- [ ] Packed hash in iOS equals 6a0f0d61613ea38c14aeaf4f4c26bf856e6c9b667836b868466ad7200ece772c
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 8742cce4fc0964368e65c2dc24011d082d26ed09410b9f44481b6bcb54d17a69)
+- [ ] Packed hash in iOS equals e6524d2b1b990f1f722971d81aa9de1b84a7911d2b451aecbe095179e9e64c70
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 4a43cb3457c191f2ec4b9c2cf4d897c2e39063aee5ac45a024cd6781408435cf)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.81.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -41,6 +41,9 @@ Done when:
 - Review of #439 (same version): members-list admins (the `E` claim) write entries; a name edit is compared with the editor's own copy; report checks accept either name; owner console "This organisation only" on the home organisation follows `memberNameEditTarget`; web `getUser` reads a stored organisation path or reference.
 - Security rules: the `memberNames` write rule; 13 redundant organisation read lines removed (the catch-all already allows the same reads), compile cost 225,015 (live 226,797).
 
+## New rulebook sections
+
+- 1.81.0 — 2026-11-24
 
 ## Workflow for the iOS agent
 

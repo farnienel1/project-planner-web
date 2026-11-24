@@ -172,12 +172,19 @@ export type NotificationDestinationKind =
   | 'overtimeUser'
   /** 1.40.0: one person's annual leave page (Annual leave → Team → that person); `userId` is the person. */
   | 'annualLeavePerson'
+  /** 1.79.0: one job's Materials (`relatedId` the job id; `catalogue` the job's collection when the row names it). */
+  | 'jobMaterials'
 
 export type NotificationDestination = {
   kind: NotificationDestinationKind
   relatedId?: string
   dayKey?: string
   userId?: string
+  /**
+   * 1.79.0: the job's collection (`projects` | `smallWorks`) for a destination that opens a job section (Health &
+   * safety, Materials, Variations), when the row names it. Missing: the app looks the job up in the jobs it has loaded.
+   */
+  catalogue?: NotificationWorkCatalogue
 }
 
 export type NotificationDestinationInput = {
@@ -474,8 +481,12 @@ export type DevicePushNotificationType = (typeof DEVICE_PUSH_NOTIFICATION_TYPES)
 
 const DEVICE_PUSH_TYPE_SET = new Set<string>(DEVICE_PUSH_NOTIFICATION_TYPES)
 
-/** Opening the iPhone app clears the red icon number. The in-app count stays. */
-export const NOTIFICATION_ICON_BADGE_CLEARS_ON_FOREGROUND = true
+/**
+ * 1.79.0 (owner decision 24 Nov): the iPhone app-icon number is the unread inbox count, always. Opening the app never
+ * clears it; it goes down only when rows are read (`unreadNotificationBadgeCount`). Before 1.79.0 opening the app set
+ * it to 0 and a force-close brought the count back.
+ */
+export const NOTIFICATION_ICON_BADGE_CLEARS_ON_FOREGROUND = false
 
 export function devicePushNotificationTypes(): readonly string[] {
   return DEVICE_PUSH_NOTIFICATION_TYPES
@@ -651,6 +662,7 @@ export function notificationDestination(input: NotificationDestinationInput): No
   const role: AccountKind =
     input.role === 'admin' || input.role === 'operative' || input.role === 'manager' ? input.role : 'manager'
   const userId = trimmed(input.deepLinkUserId) || undefined
+  const withCatalogue: { catalogue?: NotificationWorkCatalogue } = catalogue ? { catalogue } : {}
 
   switch (type) {
     case 'booking_created':
@@ -678,9 +690,11 @@ export function notificationDestination(input: NotificationDestinationInput): No
       return relatedId ? { kind: 'smallWorksDetail', relatedId } : { kind: 'smallWorksList' }
     case 'material_order_cut_off':
       return { kind: 'warnings' }
+    // 1.79.0 (owner decision 24 Nov): relatedId is the job id (`notificationRelatedId`: job) — open that job's
+    // Materials. With no job id, Wholesalers (`materialOrders`) as before.
     case 'material_order_placed':
     case 'material_order_created':
-      return { kind: 'materialOrders', relatedId }
+      return relatedId ? { kind: 'jobMaterials', relatedId, ...withCatalogue } : { kind: 'materialOrders' }
     case 'operative_created':
     case 'manager_created':
     case 'job_manager_removed':
@@ -703,19 +717,22 @@ export function notificationDestination(input: NotificationDestinationInput): No
       return { kind: 'tasks', relatedId }
     case 'toolbox_talk_issued':
     case 'hs_toolbox_reminder':
-      // relatedId is the toolbox talk issue id (`notificationRelatedId`: healthSafetyIssue).
-      return { kind: 'healthSafety', relatedId }
+      // 1.79.0 (owner decision 24 Nov): relatedId is the job id (`notificationRelatedId`: job) and `catalogue` its
+      // collection — open that job's Health & safety. A row written 1.10.0–1.78.0 carries the talk's issue id; the app
+      // opens the job when the id names a job it has loaded, else the job list.
+      return { kind: 'healthSafety', relatedId, ...withCatalogue }
     // Variations (1.10.0). relatedId follows `notificationRelatedId`: the variation id for a new or added variation,
     // the job id when a job's variations were renumbered. Operatives never see variations (`canSeeVariations`).
     case 'variation':
     case 'variation_added':
     case 'variation_from_tracker':
+      // 1.79.0: the variation itself (both apps read its job from the variation they load).
       if (role === 'operative') return { kind: 'notifications' }
-      return relatedId ? { kind: 'variationDetail', relatedId } : { kind: 'variations' }
+      return relatedId ? { kind: 'variationDetail', relatedId, ...withCatalogue } : { kind: 'variations', ...withCatalogue }
     case 'variation_renumbered':
     case 'variation_numbers_updated':
       if (role === 'operative') return { kind: 'notifications' }
-      return { kind: 'variations', relatedId }
+      return { kind: 'variations', relatedId, ...withCatalogue }
     case 'timesheet_pending_manager_signoff':
       return { kind: 'timesheetTeamAwaiting', userId, dayKey }
     case 'timesheet_signed_by_manager':

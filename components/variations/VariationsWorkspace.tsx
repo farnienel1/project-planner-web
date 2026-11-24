@@ -190,6 +190,19 @@ export function VariationsWorkspace({
     return () => window.removeEventListener('beforeunload', warn)
   }, [uploading])
 
+  // Rulebook 1.79.0 §13: a variation notice opens this page with ?open={id}: open that variation once it has loaded.
+  useEffect(() => {
+    if (loading || typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const wanted = params.get('open')?.trim().toLowerCase()
+    if (!wanted) return
+    const row = rows.find((item) => item.id.toLowerCase() === wanted && !item.isDeleted)
+    if (row) setOpenId(row.id)
+    params.delete('open')
+    const rest = params.toString()
+    window.history.replaceState(null, '', `${window.location.pathname}${rest ? `?${rest}` : ''}`)
+  }, [loading, rows])
+
   // The tracker's "Edit items" opens this page with ?edit={id}: open that variation's editor once it has loaded.
   useEffect(() => {
     if (loading || typeof window === 'undefined') return

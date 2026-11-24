@@ -284,7 +284,8 @@ export const useHealthSafetyStore = create<HealthSafetyState>((set, get) => ({
       signatures: [...signatures, ...current.signatures],
     })
     // Rulebook 1.10.0 §13 (`toolbox_talk_issued`, written by web too): the chosen people without the issuer
-    // (`toolboxTalkRecipients`); relatedId is the issue id (`notificationRelatedIdFor`).
+    // (`toolboxTalkRecipients`). 1.79.0: relatedId is the job id and `catalogue` its collection, so the notice opens
+    // that job's Health & safety (`notificationRelatedIdFor`).
     const audience = options?.audience
     if (audience) {
       const actor = audience.actor ? rulebookPerson(audience.actor, audience.users) : inboxActorUserId() || null
@@ -300,7 +301,8 @@ export const useHealthSafetyStore = create<HealthSafetyState>((set, get) => ({
             title: 'Toolbox talk issued',
             message: `${by} issued ${detail} on ${place}.`,
             userId,
-            relatedId: issueId,
+            relatedId: projectId,
+            catalogue: isSmallWorks ? 'smallWorks' : 'projects',
           }).catch(() => undefined)
         )
       )
@@ -402,7 +404,9 @@ export const useHealthSafetyStore = create<HealthSafetyState>((set, get) => ({
           title: 'Toolbox talk reminder',
           message: `Please sign “${talkTitle}”.`,
           userId,
-          relatedId: issueId,
+          // 1.79.0: the job (and its collection), so the reminder opens that job's Health & safety.
+          relatedId: projectId,
+          catalogue: isSmallWorks ? 'smallWorks' : 'projects',
         })
       )
     )

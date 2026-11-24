@@ -2264,7 +2264,7 @@ test('the iOS JavaScript bundle applies the same warning date order as this modu
     ),
     1
   )
-  assert.equal(bundle.NOTIFICATION_ICON_BADGE_CLEARS_ON_FOREGROUND, true)
+  assert.equal(bundle.NOTIFICATION_ICON_BADGE_CLEARS_ON_FOREGROUND, false)
   const operativeAudience = {
     role: { isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: true },
     catalogue: { projects: true, smallWorks: true },
@@ -2457,7 +2457,7 @@ test('device push uses existing inbox types and leaves on-device clocks local', 
   }
   assert.equal(notificationDeliversDevicePush('line_manager_peer_update'), false)
   assert.equal(notificationDeliversDevicePush('not_a_real_type'), false)
-  assert.equal(NOTIFICATION_ICON_BADGE_CLEARS_ON_FOREGROUND, true)
+  assert.equal(NOTIFICATION_ICON_BADGE_CLEARS_ON_FOREGROUND, false)
 })
 
 test('unread notification badge counts only that user and leaves read rows out', () => {
@@ -17202,7 +17202,17 @@ test('1.53.0 review: a new night shift clashes with the next morning\'s early bo
     assert.equal(run([{ ...exportedSheet, bookingsChange: { reopened: false, waitingFor: null, changed: true, exported: true, snapshotGapOnly: true } }]), run([exportedSheet]))
     assert.notEqual(run([exportedSheet]), 'Revision due')
     const openRev = R.parsePayrunSnapshotSheet(`${ORIGINAL}_rev1`, { userId: SUBJECT, weekStartKey: '2026-11-01', weekEndKey: '2026-11-15' })!
-    assert.equal(run([exportedSheet, openRev]), 'REV 1 waiting for signature · Awaiting re-sign')
+    // 1.79.0 (owner decision 24 Nov): the open revision names whose signature it waits for.
+    assert.equal(run([exportedSheet, openRev]), 'REV 1 · waiting for S')
+    const personSignedRev = R.parsePayrunSnapshotSheet(`${ORIGINAL}_rev1`, { userId: SUBJECT, weekStartKey: '2026-11-01', weekEndKey: '2026-11-15', operativeSignedAt: signedAt, operativeSignedByName: 'S P', operativeSignatureImageBase64: 'x' })!
+    assert.equal(run([exportedSheet, personSignedRev]), 'REV 1 · waiting for line manager')
+    // A self-signed person (Timesheet self-sign on) who has signed waits for nobody: the plain label stays.
+    const selfSignedRoster = roster.map((p) => (p.id === SUBJECT ? { ...p, adminAccess: true, role: 'admin', timesheetSelfSign: true } : p))
+    const runSelf = (sheets: unknown[]) =>
+      (R.payrunSnapshotRows({ roster: selfSignedRoster, organization: {}, period: { start: '2026-11-01', end: '2026-11-15' }, sheets, overtimeRequests: [], overtimeReports: [], payeClaimReports: [], priceWork: [], expenses: [], timeZone: 'Europe/London' } as never) as Array<{ personId: string; cells: { timesheet: { label: string } } }>)
+        .find((row) => row.personId === SUBJECT)?.cells.timesheet.label
+    assert.equal(runSelf([exportedSheet, personSignedRev]), 'REV 1 waiting for signature')
+    assert.equal(runSelf([exportedSheet, openRev]), 'REV 1 · waiting for S')
     const signedRev = R.parsePayrunSnapshotSheet(`${ORIGINAL}_rev1`, { userId: SUBJECT, weekStartKey: '2026-11-01', weekEndKey: '2026-11-15', operativeSignedAt: signedAt, operativeSignedByName: 'S P', operativeSignatureImageBase64: 'x', managerSignedAt: signedAt, managerSignedByName: 'L M', managerSignatureImageBase64: 'y', weeklyReportOverride: { lines: [] } })!
     assert.equal(run([exportedSheet, signedRev]), R.PAYRUN_SNAPSHOT_STATE_LABELS.signed)
   })
@@ -20045,6 +20055,44 @@ test('1.78.0 sign-off reminder is in the packed rulebook (functions and iOS call
   })
   assert.deepEqual(due.runs.map((row) => row.paymentDayKey), ['2026-12-05'])
   assert.equal(R112.notificationDeliversDevicePush(R112.TIMESHEET_SIGNOFF_REMINDER_NOTICE_TYPE), true)
+})
+
+test('1.79.0 notification destinations open the job section the notice is about (owner 24 Nov)', async () => {
+  const { notificationDestination: dest, NOTIFICATION_ICON_BADGE_CLEARS_ON_FOREGROUND: clears } = await import('./notificationPreferences.ts')
+  const { notificationRelatedIdFor, NOTIFICATION_RELATED_ID, parseNotificationDocument } = await import('./recordsDocuments.ts')
+  // (1) The app-icon number is the unread count; opening the app never clears it.
+  assert.equal(clears, false)
+  // (2a) A toolbox talk notice names the job (relatedId) and its collection; it opens that job's Health & safety.
+  assert.equal(NOTIFICATION_RELATED_ID.toolbox_talk_issued, 'job')
+  assert.equal(NOTIFICATION_RELATED_ID.hs_toolbox_reminder, 'job')
+  assert.equal(notificationRelatedIdFor('toolbox_talk_issued', ' JOB-1 '), 'JOB-1')
+  for (const type of ['toolbox_talk_issued', 'hs_toolbox_reminder']) {
+    assert.deepEqual(dest({ type, relatedId: 'JOB-1', catalogue: 'smallWorks', role: 'operative' }), { kind: 'healthSafety', relatedId: 'JOB-1', catalogue: 'smallWorks' })
+    // An older row (1.10.0–1.78.0) carries the issue id and no catalogue: kept as stored; the app checks its loaded jobs.
+    assert.deepEqual(dest({ type, relatedId: 'ISSUE', role: 'manager' }), { kind: 'healthSafety', relatedId: 'ISSUE' })
+  }
+  // (2b) A variation notice opens that variation; the collection rides along when the row names it.
+  assert.deepEqual(dest({ type: 'variation', relatedId: 'V1', catalogue: 'projects', role: 'manager' }), { kind: 'variationDetail', relatedId: 'V1', catalogue: 'projects' })
+  assert.deepEqual(dest({ type: 'variation_added', relatedId: 'V1', role: 'admin' }), { kind: 'variationDetail', relatedId: 'V1' })
+  assert.deepEqual(dest({ type: 'variation_from_tracker', relatedId: 'V1', role: 'operative' }), { kind: 'notifications' })
+  // (2c) A material notice names the job: it opens that job's Materials; with no job id, Wholesalers.
+  assert.deepEqual(dest({ type: 'material_order_placed', relatedId: 'JOB-2', catalogue: 'projects', role: 'manager' }), { kind: 'jobMaterials', relatedId: 'JOB-2', catalogue: 'projects' })
+  assert.deepEqual(dest({ type: 'material_order_created', relatedId: 'JOB-2', role: 'manager' }), { kind: 'jobMaterials', relatedId: 'JOB-2' })
+  assert.deepEqual(dest({ type: 'material_order_placed', role: 'manager' }), { kind: 'materialOrders' })
+  // An unknown catalogue word is never passed on.
+  assert.deepEqual(dest({ type: 'material_order_placed', relatedId: 'J', catalogue: 'jobs', role: 'manager' }), { kind: 'jobMaterials', relatedId: 'J' })
+  // The reader passes the row's catalogue to the destination.
+  const row = parseNotificationDocument('n1', { type: 'toolbox_talk_issued', userId: 'u', relatedId: 'JOB-3', catalogue: 'smallWorks' }, { role: 'operative' })!
+  assert.deepEqual(row.destination, { kind: 'healthSafety', relatedId: 'JOB-3', catalogue: 'smallWorks' })
+})
+
+test('1.80.0 subcontractor documents are in the packed rulebook (full cases in subcontractorDocuments.test.ts)', () => {
+  const path = R112.subcontractorDocumentStoragePath({ organizationId: 'o1', subcontractorId: 's1', uid: 'u1', unixMs: 5, extension: 'pdf' })
+  assert.equal(path, 'organizations/o1/subcontractors/s1/documents/u1_5.pdf')
+  assert.equal(R112.storedFileKind(path)?.kind, 'subcontractor_document')
+  assert.deepEqual(R112.parseSubcontractorDocuments('s1', { name: 'A', subcontractorType: 'B' }), { insurance: [], rams: [] })
+  const storageRules = readFileSync(new URL('../../storage.rules', import.meta.url), 'utf8')
+  assert.match(storageRules, /match \/organizations\/\{orgId\}\/subcontractors\/\{subcontractorId\}\/documents\/\{fileName\} \{\n\s+allow read: if staffLike\(orgId\);/)
 })
 
 test('1.81.0 names per organisation are in the packed rulebook (full cases in memberNames.test.ts)', () => {

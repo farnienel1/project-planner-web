@@ -263,6 +263,15 @@ service firebase.storage {
       allow update: if staffLike(orgId) && canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
     }
 
+    // Rulebook 1.80.0: subcontractor insurance and RAMS documents. Staff only (admins and managers outside operative
+    // mode), photos and PDFs, 10MB; delete as §24 (the uploader within the undo window, or an admin).
+    match /organizations/{orgId}/subcontractors/{subcontractorId}/documents/{fileName} {
+      allow read: if staffLike(orgId);
+      allow delete: if staffLike(orgId) && canDeleteStoredFile(orgId);
+      allow create: if newOrOwnRetry() && staffLike(orgId) && memberSizedWrite(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
+      allow update: if staffLike(orgId) && canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
+    }
+
     // Site audit images. Member + size/type only — do not staff-lock.
     match /organizations/{orgId}/siteAudits/{allPaths=**} {
       allow read: if orgMember(orgId);

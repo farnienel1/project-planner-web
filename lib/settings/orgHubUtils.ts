@@ -1,5 +1,5 @@
 import type { User } from '@/types'
-import { bankHolidayCountryTitle } from '@/lib/canonical'
+import { bankHolidayCountryTitle, normalizeDocumentAbbreviation } from '@/lib/canonical'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -9,6 +9,15 @@ export function orgInitials(name: string, maxLen = 2): string {
   const parts = trimmed.split(/\s+/)
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
   return trimmed.slice(0, maxLen).toUpperCase()
+}
+
+/**
+ * The organisation badge: the stored `documentAbbreviation` (Company details, §4.1; 1–3 characters) when one is
+ * saved, as iOS shows it; the name's initials only when none is stored (owner 24 Nov).
+ */
+export function orgBadgeText(documentAbbreviation: string | null | undefined, name: string): string {
+  const stored = normalizeDocumentAbbreviation(documentAbbreviation)
+  return stored || orgInitials(name)
 }
 
 export function personDisplayName(user: Pick<User, 'firstName' | 'surname' | 'email'>): string {

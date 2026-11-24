@@ -21,6 +21,7 @@ import { payRateHistoryWriteFields } from './payRate'
 import { notificationCreateFields, variationTradesWriteFields } from './recordsDocuments'
 import { warningResolutionWriteFields } from './scheduleSources'
 import { sensitiveProfileWriteFields } from './sensitiveProfile'
+import { subcontractorDocumentAddWriteFields, subcontractorDocumentStoragePath } from './subcontractorDocuments'
 import { subcontractorBookingCreateFields } from './workDocumentReaders'
 
 export const CONTRACT_TIME_ZONE = 'Europe/London'
@@ -73,6 +74,23 @@ function must<T>(value: T | null | undefined | { ok: false }): T {
     throw new Error('contract writer refused its sample')
   }
   return value as T
+}
+
+/**
+ * 1.80.0: a firm's `documents` map with one insurance entry, as both apps write it — through the rulebook writer
+ * `subcontractorDocumentAddWriteFields` (web `lib/subcontractors/subcontractorDocumentsWrites.ts`, iOS
+ * `FirebaseBackend.uploadSubcontractorDocument`) — so the contract carries the 1.80.0 shape too.
+ */
+function subcontractorDocumentsSample(subcontractorId: string, uid: string, expiresOn: string | null): Doc {
+  const uploadedAtMs = Date.parse(UPDATED)
+  const path = must(subcontractorDocumentStoragePath({ organizationId: ORG, subcontractorId, uid, unixMs: uploadedAtMs, extension: 'pdf' }))
+  const { set } = subcontractorDocumentAddWriteFields({}, {
+    kind: 'insurance',
+    subcontractorId,
+    organizationId: ORG,
+    entry: { path, name: 'Public liability.pdf', contentType: 'application/pdf', sizeBytes: 120000, uploadedAtMs, uploadedBy: uid, expiresOn },
+  })
+  return { insurance: must(set).value, rams: [] }
 }
 
 /** Web writes each `…Ms` / instant number as a Timestamp. */
@@ -230,7 +248,7 @@ const WEB_STORE_SAMPLES: Record<string, { docId: string; data: Doc; webWriter: s
   subcontractors: {
     docId: 'SUB-1',
     webWriter: 'subcontractorStore save → subcontractorWriteFields',
-    data: { id: 'SUB-1', name: 'Sparks Ltd', subcontractorType: 'Electrical', website: '', address: '', contacts: [{ id: 'c-1', name: 'Sam Sub', email: 'sam@sparks.test', contactNumber: '', position: 'Installer' }], organizationId: ORG, createdAt: ts(CREATED), updatedAt: ts(UPDATED) },
+    data: { id: 'SUB-1', name: 'Sparks Ltd', subcontractorType: 'Electrical', website: '', address: '', contacts: [{ id: 'c-1', name: 'Sam Sub', email: 'sam@sparks.test', contactNumber: '', position: 'Installer' }], organizationId: ORG, documents: subcontractorDocumentsSample('SUB-1', 'user-web-1', '2027-03-31'), createdAt: ts(CREATED), updatedAt: ts(UPDATED) },
   },
   materials: {
     docId: 'M-1',
@@ -430,7 +448,7 @@ const IOS_SAMPLES: Record<string, { docId: string; data: Doc; iosWriter: string 
   operatives: { docId: 'OP-IOS-1', iosWriter: 'FirebaseBackend.operativeDocumentPayload', data: { firstName: 'Olga', lastName: 'Op', name: 'Olga Op', email: 'olga@acme.test', phone: '', startDate: ts(CREATED), skills: ['IPAF'], qualifications: [], isActive: true, currencySymbol: '£', notes: '', tradeTypePreset: 'Labourer', tradeTypeCustom: '', qualificationExpiryDates: {}, qualificationCertificateURLs: {}, payBasis: 'hourly', hourlyRate: 18.5, organizationId: ORG, createdAt: ts(CREATED) } },
   managers: { docId: 'MGR-ROW-IOS-1', iosWriter: 'FirebaseBackend.managerDocumentPayload', data: { firstName: 'Max', lastName: 'Manager', email: 'max@acme.test', mobileNumber: '07000 111111', department: '', isActive: true, notes: '', tradeTypePreset: '', tradeTypeCustom: '', organizationId: ORG, createdAt: ts(CREATED) } },
   clients: { docId: 'CLIENT-IOS-1', iosWriter: 'FirebaseBackend.clientDocumentPayload', data: { id: 'CLIENT-IOS-1', name: 'Client Co', contactPerson: '', email: '', phone: '', address: '', organizationId: ORG, createdAt: ts(CREATED) } },
-  subcontractors: { docId: 'SUB-IOS-1', iosWriter: 'FirebaseBackend subcontractor save', data: { name: 'Pipes Ltd', subcontractorType: 'Plumbing', contacts: [{ name: 'Pat Pipe', email: '', contactNumber: '07000 222222', position: 'Supervisor', createdAt: ts(CREATED) }], organizationId: ORG, createdAt: ts(CREATED) } },
+  subcontractors: { docId: 'SUB-IOS-1', iosWriter: 'FirebaseBackend subcontractor save (documents: FirebaseBackend.uploadSubcontractorDocument → subcontractorDocumentAddWriteFields)', data: { name: 'Pipes Ltd', subcontractorType: 'Plumbing', contacts: [{ name: 'Pat Pipe', email: '', contactNumber: '07000 222222', position: 'Supervisor', createdAt: ts(CREATED) }], organizationId: ORG, documents: subcontractorDocumentsSample('SUB-IOS-1', 'USER-IOS-1', null), createdAt: ts(CREATED) } },
   operativeDayRateHistory: { docId: 'P1000000-0000-4000-8000-000000000002', iosWriter: 'FirebaseBackend.recordOperativeDayRateChange (payRateHistoryWriteFields)', data: { userId: 'USER-IOS-1', operativeId: 'OP-IOS-1', dayRate: null, payBasis: null, effectiveAt: ts('2026-11-04T00:00:00.000Z'), createdAt: ts(CREATED) } },
   materials: { docId: 'M1000000-0000-4000-8000-000000000002', iosWriter: 'FirebaseBackend.materialLinePayload', data: { projectId: IOS_JOB, material: 'Screws', quantity: 2, unit: 'Box', status: 'ordered', date: ts('2026-11-04T00:00:00.000Z'), addedBy: 'Ian Ios', addedByUserId: 'USER-IOS-1', addedAt: ts(CREATED), organizationId: ORG, createdAt: ts(CREATED) } },
   materialSendRecords: { docId: 'R1000000-0000-4000-8000-000000000002', iosWriter: 'FirebaseBackend.materialSendRecordPayload', data: { id: 'R1000000-0000-4000-8000-000000000002', projectId: IOS_JOB, requestType: 'Quote', sentAt: ts(UPDATED), sentBy: 'Ian Ios', recipients: [{ name: 'Pipes', email: 'quotes@pipes.test' }], lines: [{ materialId: 'M1000000-0000-4000-8000-000000000002', name: 'Screws', quantity: 2, unit: 'Box' }] } },
@@ -461,7 +479,7 @@ export const CONTRACT_READER_FOR: Readonly<Record<string, { reader: string; read
   operatives: { reader: 'parseOperativeDocument' },
   managers: { reader: 'parseManagerDocument' },
   clients: { reader: 'parseClientDocument' },
-  subcontractors: { reader: 'parseSubcontractorDocument' },
+  subcontractors: { reader: 'subcontractorDocument' },
   operativeDayRateHistory: { reader: 'parsePayRateHistoryDocument' },
   warningResolutions: { reader: 'parseWarningResolutionDocument' },
   materials: { reader: 'parseMaterialLineDocument' },

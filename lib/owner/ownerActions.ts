@@ -105,8 +105,9 @@ export async function ownerChangeUserEmail(input: {
   return { incomplete: Array.isArray(data.incomplete) ? data.incomplete : [] }
 }
 
-export async function ownerSendPasswordReset(uid: string, email?: string, reason?: string) {
-  await ownerPost('/api/owner/send-password-reset', { uid, email, reason }, 'Could not send a password reset email.')
+/** Owner decision 24 Nov: a reason is always required (and a recent code; the server refuses otherwise). */
+export async function ownerSendPasswordReset(uid: string, reason: string) {
+  await ownerPost('/api/owner/send-password-reset', { uid, reason }, 'Could not send a password reset email.')
 }
 
 export async function ownerDeleteOrganisation(orgId: string) {

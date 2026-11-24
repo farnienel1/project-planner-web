@@ -1860,6 +1860,8 @@ export {
   timesheetRevisionLabourReviews,
   timesheetRevisionReportState,
   timesheetRevisionWaitingLabel,
+  timesheetRevisionWaitingForLabel,
+  TIMESHEET_REVISION_WAITING_LINE_MANAGER,
   timesheetRevisionCreateFields,
   timesheetRevisionDifference,
   timesheetRevisionDocId,
@@ -1985,6 +1987,8 @@ export {
   parseLineManagerReminderDays,
 } from './organizationSettings'
 
+// 1.80.0: subcontractor insurance and RAMS documents.
+export * from './subcontractorDocuments'
 // 1.81.0 — a person's name per organisation (rulebook §11 "Names per organisation").
 export {
   MEMBER_NAMES_COLLECTION,

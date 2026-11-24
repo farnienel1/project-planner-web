@@ -38,12 +38,15 @@ export function timesheetsTeamHref(options?: {
   user?: string | null
   period?: string | null
   periodEnd?: string | null
+  /** Rulebook 1.79.0: the stored sheet to open (a Payrun Snapshot cell names the version it reports). */
+  doc?: string | null
 }): string {
   const params = new URLSearchParams()
   if (options?.tab) params.set('tab', options.tab)
   if (options?.user) params.set('user', options.user)
   if (options?.period) params.set('period', options.period)
   if (options?.periodEnd) params.set('periodEnd', options.periodEnd)
+  if (options?.doc) params.set('doc', options.doc)
   const query = params.toString()
   return query ? `${TIMESHEETS_TEAM_PATH}?${query}` : TIMESHEETS_TEAM_PATH
 }

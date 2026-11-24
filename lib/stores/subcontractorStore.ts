@@ -9,6 +9,7 @@ import {
 import { auth, db } from '@/lib/firebase/config'
 import { savePartialDocument } from '@/lib/firebase/partialWrite'
 import { parseSubcontractorDocument, subcontractorWriteFields } from '@/lib/canonical/peopleDocuments'
+import { parseSubcontractorDocuments } from '@/lib/canonical/subcontractorDocuments'
 import type { Subcontractor, SubcontractorContact } from '@/types'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
@@ -18,7 +19,7 @@ import { liveResultStillCurrent } from '@/lib/firebase/liveResult'
 const SUBCONTRACTOR_LOAD_KEY = 'subcontractorStore:subcontractors'
 
 /** `subcontractors/{id}` through the rulebook reader `parseSubcontractorDocument` (rulebook 1.6.0). */
-function mapSubcontractor(docId: string, data: Record<string, unknown>): Subcontractor | null {
+function mapSubcontractor(docId: string, data: Record<string, unknown>, organizationId?: string): Subcontractor | null {
   const parsed = parseSubcontractorDocument(docId, data)
   if (!parsed) return null
   const createdAt = parsed.createdAtMs != null ? new Date(parsed.createdAtMs) : new Date()
@@ -40,6 +41,8 @@ function mapSubcontractor(docId: string, data: Record<string, unknown>): Subcont
       if (contact.tradeType) row.tradeType = contact.tradeType
       return row
     }),
+    // Rulebook 1.80.0: insurance and RAMS documents, only files in this firm's own folder.
+    documents: parseSubcontractorDocuments(parsed.id, data, { organizationId }),
     createdAt,
     updatedAt: parsed.updatedAtMs != null ? new Date(parsed.updatedAtMs) : createdAt,
   }
@@ -91,7 +94,7 @@ export const useSubcontractorStore = create<SubcontractorState>((set, get) => ({
       await subscribeOrgCollectionLoaded(SUBCONTRACTOR_LOAD_KEY, organizationId, 'subcontractors', (docs, meta) => {
         if (!liveResultStillCurrent(organizationId)) return
         const subcontractors = docs
-          .map((entry) => mapSubcontractor(entry.id, entry.data))
+          .map((entry) => mapSubcontractor(entry.id, entry.data, organizationId))
           .filter((item): item is Subcontractor => item !== null)
           .sort((a, b) => a.name.localeCompare(b.name))
         const previous = subcontractorOrgId === organizationId ? get().subcontractors : []
@@ -117,9 +120,11 @@ export const useSubcontractorStore = create<SubcontractorState>((set, get) => ({
       // Rulebook 1.9.0: an edit of a subcontractor deleted elsewhere is refused, never re-created.
       { userId: auth?.currentUser?.uid, missing: get().subcontractors.some((row) => row.id === id) ? 'refuse' : 'create' }
     )
-    const mapped = mapSubcontractor(id, payload as unknown as Record<string, unknown>)
+    const mapped = mapSubcontractor(id, payload as unknown as Record<string, unknown>, organizationId)
     if (!mapped) return
     const { subcontractors } = get()
+    // A firm save never carries its documents (1.80.0); keep the ones on screen until the listener sends them.
+    mapped.documents = subcontractors.find((s) => s.id === id)?.documents ?? mapped.documents
     set({
       subcontractors: [...subcontractors.filter((s) => s.id !== id), mapped].sort((a, b) =>
         a.name.localeCompare(b.name)

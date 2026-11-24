@@ -14,6 +14,14 @@ export const FEEDBACK_SOUNDS = ['success', 'sent', 'approved', 'resolved', 'remo
 export type FeedbackSound = (typeof FEEDBACK_SOUNDS)[number]
 
 /**
+ * Sounds made in code with the Web Audio API, no file (guide §2.1). `welcome`: the slow chord after signing in
+ * (owner 24 Nov, "a nice slow harmony when you first log in — unique, generated").
+ */
+export const FEEDBACK_SYNTH_SOUNDS = ['welcome'] as const
+export type FeedbackSynthSound = (typeof FEEDBACK_SYNTH_SOUNDS)[number]
+export type FeedbackSoundName = FeedbackSound | FeedbackSynthSound
+
+/**
  * Guide §4: every event and its sound (null = no sound; `warningShown` is an iOS haptic only, `savedOffline` is the
  * iOS offline queue). `satisfies` keeps the table exhaustive: a new event without a row does not compile, and the unit
  * test compares this table with the guide's own table.
@@ -43,7 +51,8 @@ export const FEEDBACK_EVENT_SOUNDS = {
   savedOffline: 'queued',
   actionRefused: 'error',
   warningShown: null,
-} as const satisfies Record<string, FeedbackSound | null>
+  signedIn: 'welcome',
+} as const satisfies Record<string, FeedbackSoundName | null>
 
 export type FeedbackEvent = keyof typeof FEEDBACK_EVENT_SOUNDS
 
@@ -63,7 +72,7 @@ export const FEEDBACK_SETTING_HELP = 'Applies to this browser only.'
 export const FEEDBACK_SAMPLE_LABEL = 'Play a sample'
 
 /** The sound an event plays (null: none). */
-export function feedbackSoundFor(event: FeedbackEvent): FeedbackSound | null {
+export function feedbackSoundFor(event: FeedbackEvent): FeedbackSoundName | null {
   return FEEDBACK_EVENT_SOUNDS[event] ?? null
 }
 
@@ -79,6 +88,91 @@ export function warningResolvedEvent(activeWarningsLeft: number): FeedbackEvent 
 export function claimsReviewEvent(writes: ReadonlyArray<{ fields: Record<string, unknown> }>): FeedbackEvent | null {
   if (writes.length === 0) return null
   return writes.some((write) => write.fields?.decision === 'approved') ? 'claimsApproved' : 'claimsDeclined'
+}
+
+// ─── The welcome chord (guide §2.1) ────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The sign-in chord: five soft sine voices of a D major 9 chord (D3, A3, F♯4, C♯5, E5) entering one after another and
+ * swelling, then fading out. Made in code at play time (no audio file, no samples), so it is ours and licence-free.
+ * iOS makes the same notes from these numbers (guide §2.1).
+ */
+export const WELCOME_CHORD = {
+  /** Hz, lowest first. */
+  notes: [146.83, 220.0, 369.99, 554.37, 659.25],
+  /** Each voice's relative level (the low notes softer so the chord stays light). */
+  levels: [0.55, 0.7, 0.85, 0.8, 0.65],
+  /** Seconds between one voice entering and the next. */
+  staggerSec: 0.16,
+  /** Seconds each voice takes to swell to its level. */
+  attackSec: 0.55,
+  /** Second partial (an octave up) relative to the voice. */
+  octaveLevel: 0.12,
+  /** Whole sound, first voice in to silence. */
+  totalSec: 2.6,
+  /** Master level relative to `FEEDBACK_GAIN`. */
+  masterScale: 0.75,
+} as const
+
+type WelcomeParam = {
+  value: number
+  setValueAtTime: (value: number, when: number) => unknown
+  linearRampToValueAtTime: (value: number, when: number) => unknown
+  exponentialRampToValueAtTime: (value: number, when: number) => unknown
+}
+
+/** The Web Audio parts the chord uses (so tests can stand in for them). */
+export type WelcomeAudioContext = {
+  currentTime: number
+  destination: unknown
+  createGain: () => { gain: WelcomeParam; connect: (node: unknown) => unknown }
+  createOscillator: () => {
+    type: string
+    frequency: { value: number }
+    connect: (node: unknown) => unknown
+    start: (when?: number) => void
+    stop: (when?: number) => void
+  }
+}
+
+/** Schedules the welcome chord on `ctx` from `startAt` (seconds, context time). Returns the number of oscillators. */
+export function scheduleWelcomeChord(ctx: WelcomeAudioContext, startAt: number, gain = FEEDBACK_GAIN): number {
+  const chord = WELCOME_CHORD
+  const end = startAt + chord.totalSec
+  const master = ctx.createGain()
+  master.gain.setValueAtTime(gain * chord.masterScale, startAt)
+  master.connect(ctx.destination)
+  let oscillators = 0
+  chord.notes.forEach((frequency, index) => {
+    const enter = startAt + index * chord.staggerSec
+    const level = (chord.levels[index] ?? 0.6) / chord.notes.length
+    const voice = ctx.createGain()
+    voice.gain.setValueAtTime(0.0001, enter)
+    voice.gain.linearRampToValueAtTime(level, enter + chord.attackSec)
+    // A long, smooth fade to silence at the end (never a click).
+    voice.gain.exponentialRampToValueAtTime(0.0001, end)
+    voice.connect(master)
+    for (const [multiple, partial] of [
+      [1, 1],
+      [2, chord.octaveLevel],
+    ] as const) {
+      const osc = ctx.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.value = frequency * multiple
+      if (partial === 1) {
+        osc.connect(voice)
+      } else {
+        const partialGain = ctx.createGain()
+        partialGain.gain.setValueAtTime(partial, enter)
+        partialGain.connect(voice)
+        osc.connect(partialGain)
+      }
+      osc.start(enter)
+      osc.stop(end + 0.05)
+      oscillators += 1
+    }
+  })
+  return oscillators
 }
 
 // ─── Setting ───────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -146,7 +240,7 @@ export type FeedbackPlayerDeps = {
 export type FeedbackPlayer = {
   play: (event: FeedbackEvent) => void
   /** Plays a sound directly, ignoring the setting (the Settings "Play a sample" button). */
-  sample: (sound?: FeedbackSound) => void
+  sample: (sound?: FeedbackSoundName) => void
   /** Creates / resumes the context inside a user gesture (browser autoplay rules) and schedules loading. */
   unlock: () => void
   /** True once the context is running (the gesture listeners can then come off). */
@@ -242,9 +336,37 @@ export function createFeedbackPlayer(deps: FeedbackPlayerDeps): FeedbackPlayer {
     debug(`feedback: played ${sound}`)
   }
 
-  const playSound = (sound: FeedbackSound) => {
+  const playWelcome = (ctx: FeedbackAudioContext) => {
+    const askedAt = deps.now()
+    const go = () => {
+      try {
+        // Only with audio actually running: a page the browser has not let play stays silent (never queued for later).
+        if (ctx.state !== 'running' || deps.now() - askedAt > FEEDBACK_LATE_LIMIT_MS) return
+        const synth = ctx as unknown as Partial<WelcomeAudioContext>
+        if (typeof synth.createOscillator !== 'function') return
+        scheduleWelcomeChord(ctx as unknown as WelcomeAudioContext, ctx.currentTime + 0.02)
+        debug('feedback: played welcome')
+      } catch (error) {
+        debug('feedback: welcome failed', error)
+      }
+    }
+    if (ctx.state === 'suspended') {
+      void ctx
+        .resume()
+        .then(go)
+        .catch((error) => debug('feedback: resume refused', error))
+      return
+    }
+    go()
+  }
+
+  const playSound = (sound: FeedbackSoundName) => {
     const ctx = ensureContext()
     if (!ctx) return
+    if (sound === 'welcome') {
+      playWelcome(ctx)
+      return
+    }
     if (ctx.state === 'suspended') void ctx.resume().catch((error) => debug('feedback: resume refused', error))
     const ready = buffers.get(sound)
     if (ready) {
@@ -493,5 +615,67 @@ export function unlockFeedbackSounds(): void {
     player()?.unlock()
   } catch {
     // never throw
+  }
+}
+
+// ─── The sign-in chord ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Owner 24 Nov: the welcome chord plays once when the person finishes signing in on this device, never on a reload.
+ * Browsers let audio start only inside the person's own press, and the code screen leaves with a full page load
+ * (which stops any sound), so the chord is played on the sign-in page itself: the press arms it (`primeWelcomeSound`,
+ * which also starts audio), and once the server confirms the sign-in the screen plays it (`playPrimedWelcomeSound`)
+ * and holds the page for `WELCOME_NAVIGATION_HOLD_MS` before moving on. The arm lives in this page's memory only, so
+ * a reload (or a sign-in that finishes without a press in this page) plays nothing; an arm older than
+ * `WELCOME_PRIMED_MAX_AGE_MS` is dropped rather than played late.
+ */
+export const WELCOME_PRIMED_MAX_AGE_MS = 30_000
+/** How long the sign-in page waits after starting the chord before it navigates (the chord is cut by the page load). */
+export const WELCOME_NAVIGATION_HOLD_MS = 1_200
+
+/** A press arms the chord; one success plays it at most once. Pure, so tests can drive it. */
+export function createWelcomeGate() {
+  let armedAt: number | null = null
+  return {
+    arm(now: number) {
+      armedAt = now
+    },
+    /** True once for an arm made within the limit; always clears it. */
+    take(now: number): boolean {
+      const at = armedAt
+      armedAt = null
+      return at != null && now - at >= 0 && now - at <= WELCOME_PRIMED_MAX_AGE_MS
+    },
+  }
+}
+
+const welcomeGate = createWelcomeGate()
+
+/**
+ * Call inside the person's sign-in press (the submit, passkey or code button): arms the chord and creates / resumes
+ * audio while the browser allows it, only when sounds are on in this browser. Never throws.
+ */
+export function primeWelcomeSound(): void {
+  try {
+    if (!feedbackSoundsEnabled()) return
+    welcomeGate.arm(Date.now())
+    player()?.unlock()
+  } catch {
+    // never throw
+  }
+}
+
+/**
+ * The server confirmed the sign-in: plays the chord now if a press in this page armed it (and sounds are on).
+ * Returns true when it played, so the caller can hold the page briefly before it navigates. Never throws.
+ */
+export function playPrimedWelcomeSound(): boolean {
+  try {
+    if (!welcomeGate.take(Date.now())) return false
+    if (!feedbackSoundsEnabled()) return false
+    player()?.play('signedIn')
+    return true
+  } catch {
+    return false
   }
 }

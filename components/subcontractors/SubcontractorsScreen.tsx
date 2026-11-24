@@ -14,6 +14,7 @@ import { canManageSubcontractors } from '@/lib/permissions'
 import { consumeCreateQuery } from '@/lib/navigation/createMenu'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { IosFormModal } from '@/components/ios/primitives'
+import { SubcontractorDocumentsSection } from '@/components/subcontractors/SubcontractorDocumentsSection'
 
 const POSITIONS = ['Finance', 'Contract Manager', 'Project Manager', 'Site Manager', 'Supervisor', 'Installer']
 
@@ -219,11 +220,19 @@ function SubcontractorsScreenInner({ selectedId }: { selectedId?: string }) {
           ))}
         </div>
       )}
+      {organization?.id && user ? (
+        <SubcontractorDocumentsSection
+          organizationId={organization.id}
+          subcontractorId={selected.id}
+          documents={selected.documents}
+          user={user}
+        />
+      ) : null}
     </section>
   ) : (
     <div className="empty card pad">
       <h3>Select a firm</h3>
-      <p>See its roster, add operatives, and edit firm details.</p>
+      <p>See its roster, add operatives, upload its insurance and RAMS, and edit firm details.</p>
     </div>
   )
 
