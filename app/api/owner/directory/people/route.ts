@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isFirebaseUser, jsonError } from '@/lib/security/apiGuard'
 import { bearerToken } from '@/lib/owner/firestoreRest'
+import { isValidDocumentId } from '@/lib/security/validation'
 import { OWNER_PEOPLE_FILTERS, OWNER_PEOPLE_SORTS, oneOf, selectOwnerPeople } from '@/lib/owner/directory'
 import { loadOwnerDirectory } from '@/lib/owner/directoryServer'
 import { CONSOLE_PERIODS, resolveConsolePeriod, type ConsolePeriodId } from '@/lib/analytics/consolePeriod'
@@ -9,8 +10,9 @@ import { OWNER_READ_FAILED_MESSAGE, includeTestDataParam, ownerJson, ownerReadGu
 export const runtime = 'nodejs'
 
 /**
- * GET /api/owner/directory/people?q=&filter=&sort=&cursor=&limit=&includeTestData=&seen=&joined= — one page of people: one row per
- * email across every organisation (rulebook `rosterPeople`). Emails are masked; Auth facts come with the person page.
+ * GET /api/owner/directory/people?q=&filter=&sort=&cursor=&limit=&includeTestData=&seen=&joined=&org= — one page of people: one row
+ * per email across every organisation (rulebook `rosterPeople`). `org` keeps the members of one organisation (the People
+ * page's organisation picker). Emails are masked; Auth facts come with the person page.
  */
 export async function GET(request: NextRequest) {
   const owner = await ownerReadGuard(request, 'owner-directory-people')
@@ -24,6 +26,8 @@ export async function GET(request: NextRequest) {
     seen: null,
     joined: null,
   }
+  const org = (params.get('org') || '').trim()
+  if (org && !isValidDocumentId(org)) return jsonError('That organisation id is not valid.', 400)
   const now = new Date()
   for (const key of ['seen', 'joined'] as const) {
     const raw = params.get(key)
@@ -42,6 +46,7 @@ export async function GET(request: NextRequest) {
       limit: Number(params.get('limit') || 0),
       seenIn: windows.seen,
       joinedIn: windows.joined,
+      organizationId: org || null,
     })
     return ownerJson({
       ...page,

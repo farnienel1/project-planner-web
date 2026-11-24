@@ -10,6 +10,7 @@
  * Emails leave the server masked; pay, tax ids and push tokens never leave it (only a count of tokens).
  */
 import { displayNameInOrganization, type MemberNames } from '@/lib/canonical/memberNames'
+import { lineManagerSummary, type LineManagerRosterPerson, type LineManagerSubject } from '@/lib/canonical/lineManagers'
 import { documentOrganizationId } from '@/lib/canonical/peopleDocuments'
 import { organizationLevelFor } from '@/lib/canonical/orgRoster'
 import { personIdSet } from '@/lib/canonical/personIds'
@@ -142,6 +143,31 @@ export type OwnerPersonOrganisation = {
   nameFromOrganization: boolean
   /** Active in this organisation: the users document of this organisation, else the membership here (`accountActive`). */
   active: boolean
+  /**
+   * The line manager here (rulebook `lineManagerSummary` over this organisation's users documents), read from the
+   * person's users document of this organisation. `recorded` is false when they have none here (a member through a
+   * membership only, whose line manager is not stored on a document the owner reads), and null when the caller did not
+   * pass the organisation's people.
+   */
+  lineManager: { label: string; names: string[]; recorded: boolean } | null
+}
+
+/** The users documents whose organisation is `orgId` (the roster a line manager is resolved on). */
+export function usersOfOrganisation(userDocs: readonly PlainDoc[], orgId: string): PlainDoc[] {
+  return userDocs.filter((doc) => (documentOrganizationId(doc.data?.organizationId) || '') === orgId)
+}
+
+export const LINE_MANAGER_NOT_RECORDED_LABEL = 'Not recorded here'
+
+/** The line manager of the person in one organisation, from their users document there (none → not recorded). */
+export function ownerLineManagerHere(
+  homeDoc: PlainDoc | null,
+  roster: readonly PlainDoc[]
+): { label: string; names: string[]; recorded: boolean } {
+  if (!homeDoc) return { label: LINE_MANAGER_NOT_RECORDED_LABEL, names: [], recorded: false }
+  const rows = roster.map((doc) => ({ ...(doc.data || {}), id: doc.id }) as unknown as LineManagerRosterPerson)
+  const summary = lineManagerSummary({ ...(homeDoc.data || {}), id: homeDoc.id } as LineManagerSubject, rows)
+  return { label: summary.label, names: summary.ids.map((entry) => entry.name), recorded: true }
 }
 
 /**
@@ -158,6 +184,8 @@ export function ownerPersonOrganisations(input: {
   memberships: ReadonlyMap<string, Record<string, unknown>>
   /** 1.82.0: `orgId` → the organisation's `memberNames` entries for the person's ids (read by id). */
   memberNames?: ReadonlyMap<string, MemberNames>
+  /** Every users document the directory read; when given, each organisation's line manager is resolved on it. */
+  allUserDocs?: readonly PlainDoc[]
 }): OwnerPersonOrganisation[] {
   const rowById = new Map(input.orgRows.map((row) => [row.id, row]))
   const docById = new Map(input.orgDocs.map((doc) => [doc.id, doc]))
@@ -188,6 +216,7 @@ export function ownerPersonOrganisations(input: {
         ? (membership.accountActive ?? membership.isActive) !== false
         : true
     return {
+      lineManager: input.allUserDocs ? ownerLineManagerHere(homeDoc, usersOfOrganisation(input.allUserDocs, orgId)) : null,
       nameHere: name.displayName,
       nameFromOrganization: name.source === 'organization',
       active,
