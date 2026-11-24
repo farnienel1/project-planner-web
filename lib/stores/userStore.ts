@@ -51,6 +51,7 @@ import {
   memberNameEditTarget,
   memberNameValidationError,
   memberNameWriteFields,
+  documentOrganizationId,
 } from '@/lib/canonical'
 import { currentMemberNames, overlayMemberName } from '@/lib/staff/memberNamesLive'
 
@@ -273,6 +274,9 @@ const prepareSaveUserImpl: UserStoreState['prepareSaveUser'] = async (user, orga
   // Always a partial update (rulebook §1, §11, `userProfileWriteFields`): against the copy the editor
   // loaded, else the stored document read now. Never a whole-document rewrite from a possibly stale copy.
   let baseline = options?.baseline && options.baseline.id === user.id ? options.baseline : null
+  // Rulebook 1.81.0 §11 (review of #439): a name edit is judged only against the copy the editor loaded (§1), never a
+  // copy read now — an editor opened before this company's names arrived holds the users-document name.
+  const editorBaseline = baseline
   if (!baseline) {
     const stored = await getDoc(doc(db, 'users', user.id))
     if (stored.exists()) {
@@ -283,14 +287,11 @@ const prepareSaveUserImpl: UserStoreState['prepareSaveUser'] = async (user, orga
         stored.id,
         stored.data() as Record<string, unknown>
       )
-      baseline = overlayMemberName(
-        parseOrgUser(stored.id, {
-          ...data,
-          organizationId: (typeof data.organizationId === 'string' && data.organizationId.trim()) || user.organizationId,
-          email: (typeof data.email === 'string' && data.email.trim()) || user.email,
-        }),
-        currentMemberNames(organizationId?.trim() || user.organizationId)
-      )
+      baseline = parseOrgUser(stored.id, {
+        ...data,
+        organizationId: (typeof data.organizationId === 'string' && data.organizationId.trim()) || user.organizationId,
+        email: (typeof data.email === 'string' && data.email.trim()) || user.email,
+      })
     }
   }
   let payload = full
@@ -332,11 +333,11 @@ const prepareSaveUserImpl: UserStoreState['prepareSaveUser'] = async (user, orga
   // company reads; in the home organisation it stays on the users document and this company's entry is removed.
   const homeOrganizationId = (baseline ?? user).organizationId
   const nameTarget = memberNameEditTarget({ organizationId: orgId, homeOrganizationId })
-  const nameBefore = baseline ? identityFields(baseline) : null
-  const nameChanged = !nameBefore || nameBefore.firstName !== names.firstName || nameBefore.surname !== names.surname
+  const nameBefore = editorBaseline ? identityFields(editorBaseline) : null
+  const nameChanged = Boolean(nameBefore) && (nameBefore!.firstName !== names.firstName || nameBefore!.surname !== names.surname)
   const nameWriter = canWriteMemberName({ writerUserId: saverId, subjectUserId: user.id, writerIsAdmin: saverIsAdmin })
   let memberNameWrite: 'set' | 'delete' | null = null
-  if (orgId && nameChanged && baseline) {
+  if (orgId && nameChanged) {
     if (nameTarget === 'organization') {
       const nameError = memberNameValidationError({ firstName: names.firstName, surname: names.surname })
       if (nameError) throw new Error(nameError)
@@ -467,7 +468,8 @@ export const useUserStore = create<UserStoreState>(() => ({
     const snap = await getDoc(doc(db, 'users', userId))
     if (!snap.exists()) return null
     const stored = snap.data() as Record<string, unknown>
-    const orgOnDoc = typeof stored.organizationId === 'string' ? stored.organizationId.trim() : ''
+    // 1.81.0 (review of #439): an organisation stored as a path or reference is read as its id (`documentOrganizationId`).
+    const orgOnDoc = documentOrganizationId(stored.organizationId) || ''
     // Read after the users document, exactly as before.
     const openOrgId = useAuthStore.getState().organization?.id || ''
     // Rulebook 1.26.1 §8 (`payEditorStartingValues`): a pay editor's copy has the pay profile laid over only while
@@ -475,7 +477,7 @@ export const useUserStore = create<UserStoreState>(() => ({
     const data = options?.payEditor ? await payEditorRecord(openOrgId || orgOnDoc, snap.id, stored, loadProfile) : stored
     // Rulebook 1.81.0 §11: the person's name in the open organisation (`memberNameFor`); none → the users document's.
     const named = (user: User | null) => overlayMemberName(user, currentMemberNames(openOrgId))
-    if (orgOnDoc) return named(parseOrgUser(snap.id, data))
+    if (orgOnDoc) return named(parseOrgUser(snap.id, { ...data, organizationId: orgOnDoc }))
     const fallback = openOrgId || useAuthStore.getState().user?.organizationId || ''
     if (!fallback) return named(parseOrgUser(snap.id, data))
     return named(parseOrgUser(snap.id, { ...data, organizationId: fallback }))

@@ -92,6 +92,21 @@ function displayNameOf(canonical, id, data, memberName) {
   return [trimmed(user.firstName), trimmed(user.surname)].filter(Boolean).join(' ') || trimmed(user.email)
 }
 
+/** Words compared without case or extra spaces (the rule's own name comparison). */
+function sameNameWords(a, b) {
+  const norm = (v) => trimmed(v).toLowerCase().replace(/\s+/g, ' ')
+  return norm(a) !== '' && norm(a) === norm(b)
+}
+
+/**
+ * Rulebook 1.81.0 §11 (review of #439): a report printed before an organisation name was set, or by an app before
+ * 1.81, carries the users-document name. Either name is the person's: the one the report printed is checked.
+ */
+function nameOnReport(printed, names) {
+  const known = names.filter((name) => name != null)
+  return known.find((name) => sameNameWords(printed, name)) ?? (known.length ? known[0] : null)
+}
+
 /**
  * `store`: { getDoc(path) → data | null, query(collectionPath, field, value, fields?) → [{ id, data }],
  * list(collectionPath, fields?) → [{ id, data }], setDoc(path, data) }. `fields` is a field mask (only those fields).
@@ -159,7 +174,13 @@ function createReportIntegrityCheck({ store, canonical, logger, serverTimestamp 
         { id: orgId, creatorUserId: trimmed(((await orgPromise) || {}).org?.creatorUserId) }
       ) === true
     const hasLineManager = superAdmin ? false : canonical.hasActiveLineManager(user, [user, ...managers.filter(Boolean)])
-    return { raw, ids: ids.length ? ids : [userId], hasLineManager, name: displayNameOf(canonical, userId, raw, await nameRead) }
+    return {
+      raw,
+      ids: ids.length ? ids : [userId],
+      hasLineManager,
+      name: displayNameOf(canonical, userId, raw, await nameRead),
+      accountName: displayNameOf(canonical, userId, raw),
+    }
   }
 
   /** Every document of a collection (`store.list`, with a field mask), else none. */
@@ -199,8 +220,10 @@ function createReportIntegrityCheck({ store, canonical, logger, serverTimestamp 
         if (DOC_ID.test(deciderId)) {
           const [doc, memberName] = await Promise.all([store.getDoc(`users/${deciderId}`).catch(() => null), memberNameOf(orgId, deciderId)])
           const name = displayNameOf(canonical, deciderId, doc, memberName)
+          const accountName = displayNameOf(canonical, deciderId, doc)
+          const printed = lines.find((line) => trimmed(line && line.bookingId) === id)
           // An unreadable decider is left out: the rule then leaves the name unchecked (with a note).
-          if (name != null) decider = [deciderId, name]
+          if (name != null) decider = [deciderId, nameOnReport(printed && printed.declinedByName, [name, accountName])]
         }
         return { id: reviewId, bookingId: id, review, labour, site, decider }
       })
@@ -256,7 +279,7 @@ function createReportIntegrityCheck({ store, canonical, logger, serverTimestamp 
       timeZone,
       personIds: person.ids,
       personHasLineManager: person.hasLineManager,
-      personName: person.name,
+      personName: nameOnReport(report.userName, [person.name, person.accountName]),
       organizationName: canonical.parseOrganizationName(org) || null,
     })
   }
@@ -294,7 +317,7 @@ function createReportIntegrityCheck({ store, canonical, logger, serverTimestamp 
       organizationId: orgId,
       organization: plain(org),
       personIds: person.ids,
-      personName: person.name,
+      personName: nameOnReport(report.userName, [person.name, person.accountName]),
       organizationName: canonical.parseOrganizationName(org) || null,
     })
   }

@@ -123,7 +123,7 @@ export async function POST(request: NextRequest) {
         unread.push(path)
       }
     }
-    if (scope === 'all') {
+    if (scope === 'all' || organizationId === scopedOrgId) {
       const path = `organizations/${organizationId}/memberNames`
       try {
         for (const row of await firestoreListCollection(token, path, 5000)) existingMemberNames.add(`${organizationId}/${row.id}`.toLowerCase())

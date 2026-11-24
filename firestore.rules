@@ -2423,7 +2423,7 @@ service cloud.firestore {
       match /memberNames/{nameUid} {
         function nameWriter(d) {
           let c = callerOrg(organizationId);
-          return (isPlatformOwner() || request.auth != null && orgBillingOpen(organizationId) && ('H' in c || request.auth.uid == nameUid && 'c' in c)) &&
+          return (isPlatformOwner() || request.auth != null && orgBillingOpen(organizationId) && ('E' in c || request.auth.uid == nameUid && 'c' in c)) &&
             (d == null || d.data.keys().hasOnly(['firstName', 'surname', 'updatedAt', 'updatedBy', 'updatedFrom']) && d.data.firstName is string &&
               d.data.firstName.trim() != '' && d.data.firstName.size() <= 100 && d.data.get('surname', '') is string &&
               d.data.get('surname', '').size() <= 100 && d.data.get('updatedBy', request.auth.uid) == request.auth.uid);

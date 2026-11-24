@@ -29,6 +29,7 @@ const MGR = 'mn-mgr'
 const OP = 'mn-op'
 const VISITOR = 'mn-visitor' // home company HOME, a manager in ORG through the members map
 const STRANGER = 'mn-stranger' // admin of HOME only
+const VADMIN = 'mn-vadmin' // home company HOME, an admin of ORG through the members map only
 
 let env: RulesTestEnvironment
 
@@ -57,9 +58,9 @@ test.beforeEach(async () => {
     const d = ctx.firestore()
     await setDoc(doc(d, 'organizations', ORG), {
       name: 'Names Co', creatorUserId: ADMIN,
-      members: { [ADMIN]: 'admin', [OPSMGR]: 'manager', [MGR]: 'manager', [OP]: 'operative', [VISITOR]: 'manager' },
+      members: { [ADMIN]: 'admin', [OPSMGR]: 'manager', [MGR]: 'manager', [OP]: 'operative', [VISITOR]: 'manager', [VADMIN]: 'admin' },
     })
-    await setDoc(doc(d, 'organizations', HOME), { name: 'Home Co', creatorUserId: STRANGER, members: { [STRANGER]: 'admin', [VISITOR]: 'manager' } })
+    await setDoc(doc(d, 'organizations', HOME), { name: 'Home Co', creatorUserId: STRANGER, members: { [STRANGER]: 'admin', [VISITOR]: 'manager', [VADMIN]: 'manager' } })
     const user = (id: string, fields: Record<string, unknown>) =>
       setDoc(doc(d, 'users', id), { email: `${id}@test.com`, organizationId: ORG, passwordSet: true, isActive: true, firstName: 'First', surname: id, ...fields })
     await user(ADMIN, { role: 'admin', adminAccess: true, isSuperAdmin: true })
@@ -67,6 +68,7 @@ test.beforeEach(async () => {
     await user(MGR, { role: 'manager', manager: true, assignedManagerUserIds: [ADMIN] })
     await user(OP, { role: 'operative', operativeMode: true, assignedManagerUserIds: [MGR] })
     await user(VISITOR, { role: 'manager', manager: true, organizationId: HOME, firstName: 'Farnie', surname: 'Nel' })
+    await user(VADMIN, { role: 'manager', manager: true, organizationId: HOME })
     await user(STRANGER, { role: 'admin', adminAccess: true, isSuperAdmin: true, organizationId: HOME })
     await setDoc(doc(d, 'organizations', ORG, 'memberNames', OP), { firstName: 'Ollie', surname: 'Op' })
   })
@@ -91,6 +93,14 @@ test('an admin of the organisation writes and removes anyone\'s entry', async ()
   await assertSucceeds(setDoc(ref(d, VISITOR), entry(ADMIN)))
   await assertSucceeds(deleteDoc(ref(d, VISITOR)))
   await assertSucceeds(setDoc(ref(d, OP), entry(ADMIN, 'Oliver', 'Op')))
+})
+
+test('a members-list-only admin (home company elsewhere) writes and removes anyone\'s entry here', async () => {
+  const d = await db(VADMIN)
+  await assertSucceeds(setDoc(ref(d, VISITOR), entry(VADMIN)))
+  await assertSucceeds(deleteDoc(ref(d, VISITOR)))
+  await assertSucceeds(setDoc(ref(d, OP), entry(VADMIN, 'Oliver', 'Op')))
+  await assertFails(setDoc(ref(d, STRANGER, HOME), entry(VADMIN)))
 })
 
 test('a person writes and removes their own entry (a member from another company too)', async () => {
