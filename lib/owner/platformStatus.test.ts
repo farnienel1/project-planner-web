@@ -11,6 +11,7 @@ import {
   platformConfigStatus,
 } from './platformStatus.ts'
 import { CONSOLE_NAV, visibleConsoleNav } from './consoleNav.ts'
+import { liveRulesForTarget } from './statusServer.ts'
 
 const sha = 'a'.repeat(40)
 
@@ -106,4 +107,29 @@ test('console links and the Status menu item', () => {
   )
   const platform = visibleConsoleNav(CONSOLE_NAV).find((group) => group.id === 'platform')
   assert.ok(platform?.items.some((item) => item.label === 'Status' && item.href === '/developer/status'))
+})
+
+test('live rules: only 200 or 404 are answers; 429, 5xx, network and refusals are Not connected (review of #445, 3)', async () => {
+  const target = { label: 'Firestore' as const, releaseId: 'cloud.firestore', buildSha: 'x' }
+  const answer = (map: Record<string, { status: number; body: Record<string, unknown> | null }>) => async (url: string) =>
+    map[url.includes('/rulesets/') ? 'ruleset' : 'release']
+  const ok = { status: 200, body: { rulesetName: 'projects/p/rulesets/r1', updateTime: '2026-11-24T00:00:00Z' } }
+  for (const status of [0, 429, 500, 503]) {
+    const viaRelease = await liveRulesForTarget(answer({ release: { status, body: null }, ruleset: { status: 200, body: {} } }), 'p', target)
+    assert.deepEqual('connected' in viaRelease && viaRelease.connected, false, `release ${status}`)
+    const viaRuleset = await liveRulesForTarget(answer({ release: ok, ruleset: { status, body: null } }), 'p', target)
+    assert.deepEqual('connected' in viaRuleset && viaRuleset.connected, false, `ruleset ${status}`)
+  }
+  const refused = await liveRulesForTarget(answer({ release: { status: 403, body: null }, ruleset: ok }), 'p', target)
+  assert.match('reason' in refused ? refused.reason : '', /Rules Viewer/)
+  const none = await liveRulesForTarget(answer({ release: { status: 404, body: null }, ruleset: ok }), 'p', target)
+  assert.ok(!('connected' in none) && none.matches === null && /No live release/.test(none.note || ''))
+  const content = 'rules_version = "2";'
+  const { createHash } = await import('node:crypto')
+  const match = await liveRulesForTarget(
+    answer({ release: ok, ruleset: { status: 200, body: { source: { files: [{ content }] } } } }),
+    'p',
+    { ...target, buildSha: createHash('sha256').update(content, 'utf8').digest('hex') }
+  )
+  assert.ok(!('connected' in match) && match.matches === true)
 })

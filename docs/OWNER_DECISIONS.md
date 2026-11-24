@@ -944,9 +944,9 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 
 | Date | Choice | Status |
 |---|---|---|
-| 24 Nov | A person's line manager in an organisation is read from their users document there. A member who belongs to an organisation only through a membership (their users document names another company) shows "Not recorded here": the console does not read line managers from anywhere else. Line managers are named with their account name, not each company's own name for them. | done (draft PR), owner to confirm |
+| 24 Nov | A person's line manager in an organisation is read from their users document there and resolved on that organisation's roster, anchored members included (`rosterMembersForOrganization`), named with that organisation's own name for them (1.82.0). A member who belongs to an organisation only through a membership (their users document names another company) shows "Not recorded here". When the directory read was cut short, an unresolved line manager says the list is incomplete. | done (draft PR), owner to confirm |
 | 24 Nov | Opening a row on the People list writes no audit entry (no email is revealed; the reveal stays the logged one on the person page). | done (draft PR), owner to confirm |
-| 24 Nov | Email failures show "Not connected" until something writes `emailLog` (nothing does on main yet: owner console PR 11), rather than "0 failed". Cloud Functions errors show "Not connected" unless the server key has the Logs Viewer role; no log message text is shown, only function names, counts and times. | done (draft PR), owner to confirm |
+| 24 Nov | Email failures show "Not connected" until something writes `emailLog` (nothing does on main yet: owner console PR 11), rather than "0 failed". Cloud Functions and Cloud Run errors (2nd-gen functions run on Cloud Run) show "Not connected" unless the server key has the Logs Viewer role; no log message text is shown, only function names, counts and times. | done (draft PR), owner to confirm |
 | 24 Nov | The rules tile compares the live rules with the rules files the running web build was made from (main, for a production deploy), by sha256, as the rules publish workflow does; it does not call GitHub. | done (draft PR), owner to confirm |
 
 ## PR 5 judgement calls (owner to confirm)

@@ -3,7 +3,7 @@
 import { LONDON_TIME_ZONE } from '@/lib/orgTime/zoneTime'
 import Link from 'next/link'
 import { Fragment, useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { DeveloperShell } from '@/components/developer/DeveloperShell'
 import { EmptyState, LoadingSpinner, SearchField } from '@/components/dashboard/PageShell'
 import { useConsolePrefs } from '@/lib/analytics/consolePrefs'
@@ -27,6 +27,7 @@ type OrganisationsResponse = {
   membershipsRead: boolean
   serverKey: boolean
   membershipsError: string | null
+  truncated: boolean
 }
 type Expanded = { loading: boolean; error: string; data: OrganisationsResponse | null }
 
@@ -67,7 +68,18 @@ export function DeveloperUsersScreen() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [tick, setTick] = useState(0)
-  const [org, setOrg] = useState(searchParams.get('org') || '')
+  const router = useRouter()
+  const pathname = usePathname()
+  const [org, setOrgState] = useState(searchParams.get('org') || '')
+  // The picked organisation is written back to the address, so the view can be shared or reloaded.
+  const setOrg = (value: string) => {
+    setOrgState(value)
+    const next = new URLSearchParams(searchParams.toString())
+    if (value) next.set('org', value)
+    else next.delete('org')
+    const query = next.toString()
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false })
+  }
   const [orgOptions, setOrgOptions] = useState<OrgOption[]>([])
   const [orgOptionsError, setOrgOptionsError] = useState('')
   const [expanded, setExpanded] = useState<Record<string, Expanded>>({})
@@ -257,7 +269,14 @@ export function DeveloperUsersScreen() {
         {page ? `${page.total} ${page.total === 1 ? 'person' : 'people'}` : ''}
       </p>
       {page && page.total === 0 ? (
-        <EmptyState title="No matching people" description="Try a different name, email or filter." />
+        <EmptyState
+          title="No matching people"
+          description={
+            org && !includeTestData && !orgOptions.some((option) => option.id === org)
+              ? 'This organisation is not in the picker. If it is a test organisation, turn on Include test data to see its people.'
+              : 'Try a different name, email or filter.'
+          }
+        />
       ) : (
         <div className="card overflow-x-auto">
           <table className="w-full whitespace-nowrap text-left text-sm">
@@ -395,9 +414,14 @@ function PersonOrganisations({ personId, state }: { personId: string; state: Exp
                 <td className="py-2 pr-4">{org.active ? 'Active' : 'Inactive'}</td>
                 <td className="py-2 pr-4">
                   {org.lineManager ? (
-                    <span className={org.lineManager.recorded ? '' : 'text-(--ink3)'} title={org.lineManager.names.join(', ') || undefined}>
-                      {org.lineManager.label}
-                    </span>
+                    <>
+                      <span className={org.lineManager.recorded ? '' : 'text-(--ink3)'} title={org.lineManager.names.join(', ') || undefined}>
+                        {org.lineManager.label}
+                      </span>
+                      {org.lineManager.incomplete ? (
+                        <span className="ml-1 text-xs text-(--ink3)">(not everyone was read; this may be someone the list did not reach)</span>
+                      ) : null}
+                    </>
                   ) : (
                     '—'
                   )}
@@ -413,6 +437,11 @@ function PersonOrganisations({ personId, state }: { personId: string; state: Exp
         </table>
       )}
       {data.membershipsError ? <p className="text-xs text-(--ink3)">{data.membershipsError}</p> : null}
+      {data.truncated ? (
+        <p className="text-xs text-(--ink3)">
+          The platform has more people than one read covers, so a name or line manager here may be missing.
+        </p>
+      ) : null}
       <Link href={person} className="pu-link text-sm">
         Open the person page (reveal email, actions, audit)
       </Link>

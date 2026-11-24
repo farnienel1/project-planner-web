@@ -11,8 +11,11 @@ import {
   PERSON_USER_DOCS_MAX,
   findDirectoryPerson,
   ownerPersonOrganisations,
+  storedLineManagerIds,
   type OwnerPersonOrganisation,
 } from '@/lib/owner/person360'
+import { documentOrganizationId } from '@/lib/canonical/peopleDocuments'
+import { isValidDocumentId } from '@/lib/security/validation'
 import { adminGetDocumentFields, adminListDocumentIds, firebaseAdminConfigured } from '@/lib/owner/identityToolkitAdmin'
 
 export type OwnerPersonContext = {
@@ -72,6 +75,8 @@ export type OwnerPersonOrganisationsRead = {
   serverKey: boolean
   /** Why the memberships could not be read (no server key, or the read failed), else null. */
   membershipsError: string | null
+  /** The directory read stopped at DIRECTORY_SCAN_CAP: names and line managers may be missing people. */
+  truncated: boolean
 }
 
 /**
@@ -115,15 +120,18 @@ export async function readOwnerPersonOrganisations(
       })
     )
   ).filter((doc): doc is PlainDoc => Boolean(doc))
-  // Rulebook 1.82.0 §11: the person's name in each organisation — its `memberNames` entries for their ids, read by id
-  // (a refused or failed read shows the account name, never a blank).
+  // Rulebook 1.82.0 §11: the person's name in each organisation — its `memberNames` entries for their ids — and their
+  // line managers' names there (the ids stored on their users document of that organisation), read by id (a refused
+  // or failed read shows the account name, never a blank).
   const memberNames = new Map<string, MemberNames>()
   await Promise.all(
     allOrgIds.map(async (orgId) => {
+      const homeDoc = person.userDocs.find((doc) => (documentOrganizationId(doc.data?.organizationId) || '') === orgId)
+      const ids = [...new Set([...person.userDocs.map((doc) => doc.id), ...storedLineManagerIds(homeDoc?.data)])].filter((id) => isValidDocumentId(id))
       const docs = await Promise.all(
-        person.userDocs.map(async (userDoc) => {
-          const found = await firestoreGet(token, `organizations/${orgId}/${MEMBER_NAMES_COLLECTION}/${userDoc.id}`).catch(() => null)
-          return found ? { id: userDoc.id, data: restFieldsToPlain(found.fields) } : null
+        ids.map(async (id) => {
+          const found = await firestoreGet(token, `organizations/${orgId}/${MEMBER_NAMES_COLLECTION}/${encodeURIComponent(id)}`).catch(() => null)
+          return found ? { id, data: restFieldsToPlain(found.fields) } : null
         })
       )
       memberNames.set(orgId, parseMemberNameDocuments(docs.filter((row): row is { id: string; data: Record<string, unknown> } => Boolean(row))))
@@ -139,7 +147,9 @@ export async function readOwnerPersonOrganisations(
       memberships,
       memberNames,
       allUserDocs: person.allUserDocs,
+      truncated: person.truncated,
     }),
+    truncated: person.truncated,
     membershipsRead,
     serverKey,
     membershipsError,

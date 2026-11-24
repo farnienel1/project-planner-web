@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { ownerPeopleRows, selectOwnerPeople } from './directory.ts'
-import { LINE_MANAGER_NOT_RECORDED_LABEL, ownerLineManagerHere, ownerPersonIds, ownerPersonOrganisations, usersOfOrganisation } from './person360.ts'
+import { LINE_MANAGER_NOT_RECORDED_LABEL, organisationRoster, ownerLineManagerHere, ownerPersonIds, ownerPersonOrganisations } from './person360.ts'
 import type { OwnerPersonRow } from './directory.ts'
 
 const users = [
@@ -30,12 +30,43 @@ test('people: one row per email, filtered by organisation', () => {
   assert.equal(selectOwnerPeople(rows, {}).total, 3)
 })
 
-test('line manager here: resolved on that organisation\'s people; none stored, none chosen, or no record here', () => {
-  assert.deepEqual(usersOfOrganisation(users, 'org-a').map((doc) => doc.id), ['jane-a', 'boss-a'])
-  assert.deepEqual(ownerLineManagerHere(users[0], usersOfOrganisation(users, 'org-a')), { label: 'Bob Boss', names: ['Bob Boss'], recorded: true })
-  assert.deepEqual(ownerLineManagerHere(users[1], usersOfOrganisation(users, 'org-b')), { label: 'No line manager', names: [], recorded: true })
-  assert.equal(ownerLineManagerHere(users[3], usersOfOrganisation(users, 'org-b')).label, 'Not set')
-  assert.deepEqual(ownerLineManagerHere(null, []), { label: LINE_MANAGER_NOT_RECORDED_LABEL, names: [], recorded: false })
+test('line manager here: resolved on that organisation\'s roster; none stored, none chosen, or no record here', () => {
+  const rosterA = organisationRoster({ orgId: 'org-a', orgData: {}, allUserDocs: users })
+  assert.deepEqual(rosterA.map((row) => row.id).sort(), ['boss-a', 'jane-a'])
+  assert.deepEqual(ownerLineManagerHere(users[0], rosterA), { label: 'Bob Boss', names: ['Bob Boss'], recorded: true, incomplete: false })
+  const rosterB = organisationRoster({ orgId: 'org-b', orgData: {}, allUserDocs: users })
+  assert.deepEqual(ownerLineManagerHere(users[1], rosterB), { label: 'No line manager', names: [], recorded: true, incomplete: false })
+  assert.equal(ownerLineManagerHere(users[3], rosterB).label, 'Not set')
+  assert.deepEqual(ownerLineManagerHere(null, []), { label: LINE_MANAGER_NOT_RECORDED_LABEL, names: [], recorded: false, incomplete: false })
+})
+
+test('line manager here: an anchored member (users doc in another company) resolves, with this organisation\'s name for them', () => {
+  // Jane is in org-a; her line manager "remote" belongs to org-z but is listed in org-a's members map (review of #445, 1).
+  const docs = [
+    { id: 'jane', data: { email: 'jane@x.com', firstName: 'Jane', surname: 'Smith', organizationId: 'org-a', passwordSet: true, assignedManagerUserIds: ['remote'] } },
+    { id: 'remote', data: { email: 'r@x.com', firstName: 'Rita', surname: 'Home', organizationId: 'org-z', passwordSet: true, manager: true } },
+  ]
+  const orgData = { members: { remote: 'manager', jane: 'operative' } }
+  const plain = ownerLineManagerHere(docs[0], organisationRoster({ orgId: 'org-a', orgData, allUserDocs: docs }))
+  assert.equal(plain.label, 'Rita Home')
+  // Without the members map she is not on org-a's roster: "Unknown person", flagged only when the read was cut short.
+  const unanchored = ownerLineManagerHere(docs[0], organisationRoster({ orgId: 'org-a', orgData: {}, allUserDocs: docs }))
+  assert.equal(unanchored.label, 'Unknown person')
+  assert.equal(unanchored.incomplete, false)
+  assert.equal(ownerLineManagerHere(docs[0], organisationRoster({ orgId: 'org-a', orgData: {}, allUserDocs: docs }), { truncated: true }).incomplete, true)
+  // 1.82.0: org-a's own name for her wins (the same source as the "Name there" column).
+  const named = ownerPersonOrganisations({
+    organizationIds: ['org-a'],
+    userDocs: [docs[0]],
+    personIds: ['jane'],
+    orgRows: [],
+    orgDocs: [{ id: 'org-a', data: orgData }],
+    memberships: new Map(),
+    memberNames: new Map([['org-a', { remote: { firstName: 'Rita', surname: 'Alpha', displayName: 'Rita Alpha' } }]]),
+    allUserDocs: docs,
+  })
+  assert.equal(named[0].lineManager?.label, 'Rita Alpha')
+  assert.equal(named[0].nameHere, 'Jane Smith')
 })
 
 test('person organisations: name, level, active and line manager per organisation', () => {

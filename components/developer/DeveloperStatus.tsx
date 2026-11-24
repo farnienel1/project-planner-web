@@ -99,7 +99,7 @@ export function DeveloperStatusScreen() {
 
   const notConnected: { title: string; reason: string }[] = []
   if (data && !data.rules.connected) notConnected.push({ title: 'Live rules', reason: data.rules.reason })
-  if (data && !data.functionErrors.connected) notConnected.push({ title: 'Cloud Functions errors', reason: data.functionErrors.reason })
+  if (data && !data.functionErrors.connected) notConnected.push({ title: 'Cloud Functions and Cloud Run errors', reason: data.functionErrors.reason })
   if (data && !data.emails.connected) notConnected.push({ title: 'Email failures', reason: data.emails.reason })
   if (data && !data.clientErrors.connected) notConnected.push({ title: 'Client errors', reason: data.clientErrors.reason })
   if (data && !data.platformConfig.connected) notConnected.push({ title: 'Minimum builds and switches', reason: data.platformConfig.reason })
@@ -185,7 +185,7 @@ export function DeveloperStatusScreen() {
 
             {data.functionErrors.connected ? (
               <Tile
-                title="Cloud Functions errors"
+                title="Cloud Functions and Cloud Run errors"
                 testId="status-functions"
                 link={data.logsUrl ? { href: data.logsUrl, label: 'Open the logs', external: true } : null}
               >

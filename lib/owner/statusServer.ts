@@ -29,6 +29,8 @@ function notConnected(reason: string): NotConnected {
   return { connected: false, reason }
 }
 
+const RULES_UNREADABLE = 'The live rules could not be read just now. Try Refresh.'
+
 const sha256 = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex')
 
 export async function readPlatformConfig(token: string): Promise<{ connected: true; config: PlatformConfigStatus } | NotConnected> {
@@ -41,10 +43,58 @@ export async function readPlatformConfig(token: string): Promise<{ connected: tr
   }
 }
 
-async function googleGet(url: string, token: string): Promise<{ status: number; body: Record<string, unknown> | null }> {
-  const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' })
+/** A GET to a Google API; a network failure reads as status 0 (never as a 404). */
+export async function googleGet(
+  url: string,
+  token: string,
+  fetchImpl: typeof fetch = fetch
+): Promise<{ status: number; body: Record<string, unknown> | null }> {
+  let response: Response
+  try {
+    response = await fetchImpl(url, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' })
+  } catch {
+    return { status: 0, body: null }
+  }
   const body = (await response.json().catch(() => null)) as Record<string, unknown> | null
   return { status: response.status, body }
+}
+
+type RulesTarget = { label: RulesCompare['label']; releaseId: string; buildSha: string | null }
+type GoogleGetFn = (url: string) => Promise<{ status: number; body: Record<string, unknown> | null }>
+
+/**
+ * One live release (Firestore or Storage) compared with the build's rules file. Only a 200 release with a 200 ruleset,
+ * or a 404 release (none published), is an answer; a refusal is "needs a role", and 429, 5xx or a network failure is
+ * "could not read" — never "No live release was found" or a red Differs (review of #445).
+ */
+export async function liveRulesForTarget(get: GoogleGetFn, projectId: string, target: RulesTarget): Promise<RulesCompare | NotConnected> {
+  const api = 'https://firebaserules.googleapis.com/v1'
+  const release = await get(`${api}/projects/${projectId}/releases/${target.releaseId}`)
+  if (release.status === 403 || release.status === 401) {
+    return notConnected('The server key may not read the Firebase rules (it needs the Firebase Rules Viewer role).')
+  }
+  if (release.status !== 200 && release.status !== 404) return notConnected(RULES_UNREADABLE)
+  const rulesetName = release.status === 200 && typeof release.body?.rulesetName === 'string' ? release.body.rulesetName : ''
+  let liveSha: string | null = null
+  let fileCount = 0
+  if (rulesetName.startsWith(`projects/${projectId}/rulesets/`)) {
+    const ruleset = await get(`${api}/${rulesetName}`)
+    if (ruleset.status === 403 || ruleset.status === 401) {
+      return notConnected('The server key may not read the Firebase rules (it needs the Firebase Rules Viewer role).')
+    }
+    if (ruleset.status !== 200 || !ruleset.body) return notConnected(RULES_UNREADABLE)
+    const files = (ruleset.body.source as { files?: { content?: unknown }[] } | undefined)?.files
+    fileCount = Array.isArray(files) ? files.length : 0
+    if (fileCount === 1 && typeof files?.[0]?.content === 'string') liveSha = sha256(files[0].content)
+  }
+  return compareLiveRules({
+    label: target.label,
+    releaseId: target.releaseId,
+    release: release.status === 200 ? release.body : null,
+    liveContentSha: liveSha,
+    liveFileCount: fileCount,
+    buildSha: target.buildSha,
+  })
 }
 
 /**
@@ -61,41 +111,20 @@ export async function readLiveRules(input: {
   try {
     const { token, projectId } = await adminGoogleAccessToken(['https://www.googleapis.com/auth/firebase.readonly'])
     if (!projectId) return notConnected('The Firebase project id is missing on the server.')
-    const api = 'https://firebaserules.googleapis.com/v1'
-    const targets: { label: RulesCompare['label']; releaseId: string; buildSha: string | null }[] = [
+    const targets: RulesTarget[] = [
       { label: 'Firestore', releaseId: 'cloud.firestore', buildSha: input.firestoreBuildSha },
     ]
     if (input.bucket) targets.push({ label: 'Storage', releaseId: `firebase.storage/${input.bucket}`, buildSha: input.storageBuildSha })
     const rules: RulesCompare[] = []
     for (const target of targets) {
-      const release = await googleGet(`${api}/projects/${projectId}/releases/${target.releaseId}`, token)
-      if (release.status === 403 || release.status === 401) {
-        return notConnected('The server key may not read the Firebase rules (it needs the Firebase Rules Viewer role).')
-      }
-      const rulesetName = typeof release.body?.rulesetName === 'string' ? release.body.rulesetName : ''
-      let liveSha: string | null = null
-      let fileCount = 0
-      if (rulesetName.startsWith(`projects/${projectId}/rulesets/`)) {
-        const ruleset = await googleGet(`${api}/${rulesetName}`, token)
-        const files = (ruleset.body?.source as { files?: { content?: unknown }[] } | undefined)?.files
-        fileCount = Array.isArray(files) ? files.length : 0
-        if (fileCount === 1 && typeof files?.[0]?.content === 'string') liveSha = sha256(files[0].content)
-      }
-      rules.push(
-        compareLiveRules({
-          label: target.label,
-          releaseId: target.releaseId,
-          release: release.status === 200 ? release.body : null,
-          liveContentSha: liveSha,
-          liveFileCount: fileCount,
-          buildSha: target.buildSha,
-        })
-      )
+      const result = await liveRulesForTarget((url) => googleGet(url, token), projectId, target)
+      if ('connected' in result) return result
+      rules.push(result)
     }
     return { connected: true, rules }
   } catch (error) {
     console.error('[owner/status] rules', error instanceof Error ? error.name : 'error')
-    return notConnected('The live rules could not be read just now. Try Refresh.')
+    return notConnected(RULES_UNREADABLE)
   }
 }
 

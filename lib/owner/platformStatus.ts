@@ -257,7 +257,11 @@ export function functionErrorsSummary(entries: readonly Record<string, unknown>[
   }
 }
 
-/** The Cloud Logging filter for the window: Cloud Functions (1st and 2nd gen) at ERROR or worse. */
+/**
+ * The Cloud Logging filter for the window: Cloud Functions (1st gen) and Cloud Run revisions (2nd-gen functions run
+ * there, and so would any other Cloud Run service in the project) at ERROR or worse. The tile is labelled
+ * "Cloud Functions and Cloud Run errors" for that reason (review of #445).
+ */
 export function functionErrorsFilter(since: Date): string {
   return `(resource.type="cloud_function" OR resource.type="cloud_run_revision") AND severity>=ERROR AND timestamp>="${since.toISOString()}"`
 }

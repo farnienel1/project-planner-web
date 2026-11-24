@@ -90,7 +90,12 @@ export function DeveloperPersonScreen({ uid }: { uid: string }) {
   useEffect(() => {
     if (!data || !changeNameAsked) return
     setChangeNameAsked(null)
-    if (data.isPlatformOwner || !data.organisations.some((org) => org.id === changeNameAsked)) return
+    if (data.isPlatformOwner) return
+    if (!data.organisations.some((org) => org.id === changeNameAsked)) {
+      setNotice('')
+      setError(`Organisation ${changeNameAsked} is not one of their organisations, so no name change was opened. Use Change name to pick one.`)
+      return
+    }
     setNameOrgId(changeNameAsked)
     setAction('name')
   }, [data, changeNameAsked])
@@ -218,6 +223,7 @@ export function DeveloperPersonScreen({ uid }: { uid: string }) {
                 {org.lineManager ? (
                   <span className="text-xs" data-testid="person-organisation-line-manager">
                     Line manager: {org.lineManager.label}
+                    {org.lineManager.incomplete ? ' (not everyone was read; this may be someone the directory did not reach)' : ''}
                   </span>
                 ) : null}
                 {org.deletion === 'scheduled' ? <span className="chip">Scheduled for deletion</span> : null}
