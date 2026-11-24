@@ -93,6 +93,8 @@ export const UPLOAD_ALLOWED_TYPES: Readonly<Record<UploadKind, UploadKindPolicy>
   personal_site_audit: photosOnly(10 * MB),
   // 1.80.0: subcontractor insurance and RAMS documents.
   subcontractor_document: photosAndPdf(10 * MB),
+  // 1.83.0 (§31): organisation insurance and accreditation certificates.
+  org_compliance_document: photosAndPdf(10 * MB),
   // The 1.48.0 §28 catalogue import (`materialCatalogueCsvFileError` / `materialCatalogueCsvTextError` keep their own
   // messages on the import screens); listed here so the one table names every upload.
   material_catalogue_import: {

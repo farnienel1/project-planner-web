@@ -117,6 +117,18 @@ async function googleAccessToken(scopes: string[]): Promise<{ token: string; pro
   }
 }
 
+/**
+ * Signs `data` (RSA-SHA256) with the service account's own key, for V4 signed Storage URLs (rulebook 1.83.0 §31).
+ * Null when no key is configured. The key never leaves this function.
+ */
+export function signWithServiceAccount(data: string): { clientEmail: string; signatureHex: string } | null {
+  const sa = readServiceAccount()
+  if (!sa) return null
+  const signer = createSign('RSA-SHA256')
+  signer.update(data)
+  return { clientEmail: sa.client_email, signatureHex: signer.sign(sa.private_key.replace(/\\n/g, '\n'), 'hex') }
+}
+
 export async function adminGoogleAccessToken(scopes: string[]) {
   return googleAccessToken(scopes)
 }

@@ -1114,6 +1114,31 @@ The owner's answers to `docs/owner-console/PLAN.md` §5 (D1–D17, all recommend
 | 24 Nov | With an office pin the map opens on it and does not jump back when the day changes; without one it fits all jobs as before. Maintenance jobs are blue (projects); the old orange pin is gone. | done, owner to confirm |
 | 24 Nov | The sign-in chord is D major 9, about 2.6 s. After the emailed code the page fully reloads; browsers that need a new tap before audio (Safari) then play nothing rather than later. | done, owner to confirm |
 
+## 24 Nov decisions (for 1.83, insurance & accreditations)
+
+| Date | Decision | Status |
+|---|---|---|
+| 24 Nov | **Build Insurance & accreditations now, before launch, lean** (owner rejected the 12–16 day plan as far too big): Settings › Organisation › Compliance › Insurance & accreditations on web and iPhone, reusing the 1.80.0 subcontractor-documents pattern — three sections (PI & PL insurance, trade accreditations, quality / ISO), each document with a type, name, optional insurer / reference / cover and an optional expiry, a file (photo or PDF); upload, view, edit details, replace file, remove; status worked out once (`orgComplianceExpiryStatus`). Rulebook §31 (`lib/canonical/orgCompliance.ts`). | done web + rulebook (1.83.0, w183-accreditations, draft); iOS (ios-1.83-accreditations, draft); Firestore + Storage rules publish pending |
+| 24 Nov | **Only admins** see and change it (row, page, document and files); managers and operatives never. `canManageOrganizationCompliance`; firestore.rules `orgAdminEither`; storage.rules `orgFileAdmin`. | done (1.83.0) |
+| 24 Nov | **Removed or replaced files are recoverable for 30 days** (the bucket's soft delete, §24). | done (1.83.0); owner to confirm soft delete is on with 30-day retention |
+| 24 Nov | **Build the deferred parts before launch too, on both apps:** 7-day read-only share links with a public page (server routes, 60-second signed file links, token stored hashed, admin creates and turns off, audit, rate limits, only the company's documents on the page); zip download of ticked documents; an admin reminder on Home when a document has expired or expires within 30 days (same status rule). Uses the existing server key; nothing new from the owner. | done web + rulebook (1.83.0, #441); iOS (#288) |
+
+## 1.83.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 24 Nov | Stored as one document `organizations/{orgId}/orgCompliance/documents` (three lists), not a list on the organisation document (every member reads that) and not one document per certificate (more rules). Adds one small admin-only rule. | done, owner to confirm |
+| 24 Nov | Files are photos or PDF up to **10 MB** (the brief said 20 MB; every other upload is 10 MB since 15 Nov), at most 50 per section. | done, owner to confirm |
+| 24 Nov | Viewing opens the file's Storage download link (as subcontractor documents), not a 5-minute signed link — only admins can read the object, but a link once opened works until the file is replaced or removed. iPhone shares the downloaded file through the share sheet. | done, owner to confirm |
+| 24 Nov | Not built (follow-ups): a server check of each entry's fields (the rules check who writes, not the shape), a fourth section (CHAS, SafeContractor), emailing a share link from the app. | follow-up |
+| 24 Nov | Share link: at most 20 documents per link; a link shows only the company name and each document's section, type, name, issuer, reference, cover, expiry and status (no uploader, no person's name); a document removed or replaced after sharing is no longer offered; each file opens through a 60-second signed link; a link stops when the company is scheduled for deletion or its subscription has lapsed. | done, owner to confirm |
+| 24 Nov | Share link limits: an admin can create 20 links an hour (30 a day); a link can be opened 60 times a minute from one address. Old link and audit rows are kept until an optional TTL policy removes them (link 30 days after expiry, audit 2 years). | done, owner to confirm |
+| 24 Nov | Zip: at most 50 documents, built on the device from files the admin can already read; nothing stored. Reminder: web adds an item to Home "Waiting for you"; iPhone a card on Home; no Warnings row (Warnings are about people and jobs). | done, owner to confirm |
+| 24 Nov | Inside the app, viewing still opens the file's Storage download link (admins only can read the object); the 60-second signed links are used for the public share page. | done, owner to confirm |
+| 24 Nov | Security review of #441: a share link serves the document's **current** file — if an admin replaces (renews) a certificate, an existing link shows the new file. | done, owner to confirm |
+| 24 Nov | Security review of #441: a link stops working when the admin who made it is no longer an active admin (demoted, deactivated, removed) — checked on every open, as if they had turned it off (`orgComplianceShareCreatorActive`). The admins' links list still shows such a link as active until it expires or is turned off. | done, owner to confirm |
+| 24 Nov | A zip is at most 200 MB; the iPhone deletes its temporary zip files when the share sheet closes and at start. | done, owner to confirm |
+
 ## 24 Nov decisions (for 1.80, subcontractor documents)
 
 | Date | Decision | Status |

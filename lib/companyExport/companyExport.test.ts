@@ -383,3 +383,7 @@ test('1.71.0: former people, report checks and material contacts have their own 
   assert.ok(EXCLUDED_COLLECTIONS.worksListPicks)
   assert.equal(escapeCsvCell('\n=cmd'), `"'\n=cmd"`)
 })
+
+test('1.83.0: insurance & accreditations have their own file', () => {
+  assert.equal(fileForDocument('orgCompliance', 'documents'), 'insuranceAccreditations')
+})

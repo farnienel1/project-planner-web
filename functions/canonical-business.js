@@ -344,6 +344,31 @@ var ProjectPlannerCanonical = (() => {
     ORGANIZATION_DELETE_TITLE: () => ORGANIZATION_DELETE_TITLE,
     ORGANIZATION_DOCUMENT_FIELDS: () => ORGANIZATION_DOCUMENT_FIELDS,
     ORGANIZATION_RESTORED_MESSAGE: () => ORGANIZATION_RESTORED_MESSAGE,
+    ORG_COMPLIANCE_AUDIT_COLLECTION: () => ORG_COMPLIANCE_AUDIT_COLLECTION,
+    ORG_COMPLIANCE_COLLECTION: () => ORG_COMPLIANCE_COLLECTION,
+    ORG_COMPLIANCE_COVER_MAX: () => ORG_COMPLIANCE_COVER_MAX,
+    ORG_COMPLIANCE_DOCUMENT_ID: () => ORG_COMPLIANCE_DOCUMENT_ID,
+    ORG_COMPLIANCE_EXPIRING_SOON_DAYS: () => ORG_COMPLIANCE_EXPIRING_SOON_DAYS,
+    ORG_COMPLIANCE_FIELD_LIMITS: () => ORG_COMPLIANCE_FIELD_LIMITS,
+    ORG_COMPLIANCE_HUB_GROUP: () => ORG_COMPLIANCE_HUB_GROUP,
+    ORG_COMPLIANCE_LABELS: () => ORG_COMPLIANCE_LABELS,
+    ORG_COMPLIANCE_MAX_PER_SECTION: () => ORG_COMPLIANCE_MAX_PER_SECTION,
+    ORG_COMPLIANCE_MAX_YEARS_AHEAD: () => ORG_COMPLIANCE_MAX_YEARS_AHEAD,
+    ORG_COMPLIANCE_MESSAGES: () => ORG_COMPLIANCE_MESSAGES,
+    ORG_COMPLIANCE_ORG_ID_PATTERN: () => ORG_COMPLIANCE_ORG_ID_PATTERN,
+    ORG_COMPLIANCE_PAGE_SUBTITLE: () => ORG_COMPLIANCE_PAGE_SUBTITLE,
+    ORG_COMPLIANCE_PAGE_TITLE: () => ORG_COMPLIANCE_PAGE_TITLE,
+    ORG_COMPLIANCE_SECTIONS: () => ORG_COMPLIANCE_SECTIONS,
+    ORG_COMPLIANCE_SECTION_KEYS: () => ORG_COMPLIANCE_SECTION_KEYS,
+    ORG_COMPLIANCE_SHARE_LINKS_COLLECTION: () => ORG_COMPLIANCE_SHARE_LINKS_COLLECTION,
+    ORG_COMPLIANCE_SHARE_LINK_DAYS: () => ORG_COMPLIANCE_SHARE_LINK_DAYS,
+    ORG_COMPLIANCE_SHARE_MAX_DOCUMENTS: () => ORG_COMPLIANCE_SHARE_MAX_DOCUMENTS,
+    ORG_COMPLIANCE_SHARE_MESSAGES: () => ORG_COMPLIANCE_SHARE_MESSAGES,
+    ORG_COMPLIANCE_SIGNED_URL_SECONDS: () => ORG_COMPLIANCE_SIGNED_URL_SECONDS,
+    ORG_COMPLIANCE_STATUS_ORDER: () => ORG_COMPLIANCE_STATUS_ORDER,
+    ORG_COMPLIANCE_ZIP_MAX_BYTES: () => ORG_COMPLIANCE_ZIP_MAX_BYTES,
+    ORG_COMPLIANCE_ZIP_MAX_DOCUMENTS: () => ORG_COMPLIANCE_ZIP_MAX_DOCUMENTS,
+    ORG_COMPLIANCE_ZIP_TOO_LARGE_MESSAGE: () => ORG_COMPLIANCE_ZIP_TOO_LARGE_MESSAGE,
     ORG_MEMBERSHIP_ADMIN_FIELDS: () => ORG_MEMBERSHIP_ADMIN_FIELDS,
     ORG_MEMBERSHIP_DEFAULT_ON: () => ORG_MEMBERSHIP_DEFAULT_ON,
     ORG_MEMBERSHIP_PERMISSION_KEYS: () => ORG_MEMBERSHIP_PERMISSION_KEYS,
@@ -903,6 +928,7 @@ var ProjectPlannerCanonical = (() => {
     canGenerateOvertimeReport: () => canGenerateOvertimeReport,
     canManageMaterialCatalogue: () => canManageMaterialCatalogue,
     canManageOperatives: () => canManageOperatives,
+    canManageOrganizationCompliance: () => canManageOrganizationCompliance,
     canManageSubcontractors: () => canManageSubcontractors,
     canManageVariationTracker: () => canManageVariationTracker,
     canOpenUserTimesheets: () => canOpenUserTimesheets,
@@ -1139,6 +1165,7 @@ var ProjectPlannerCanonical = (() => {
     isKnownNotificationType: () => isKnownNotificationType,
     isLegacyPlaceholderDocumentId: () => isLegacyPlaceholderDocumentId,
     isOpenBookingStatus: () => isOpenBookingStatus,
+    isOrgComplianceSectionKey: () => isOrgComplianceSectionKey,
     isOrganizationSuperAdmin: () => isOrganizationSuperAdmin,
     isPayeAccount: () => isPayeAccount,
     isPayrollTimePolicyState: () => isPayrollTimePolicyState,
@@ -1372,6 +1399,8 @@ var ProjectPlannerCanonical = (() => {
     normalizeMaterialSearchText: () => normalizeMaterialSearchText,
     normalizeMaterialUnit: () => normalizeMaterialUnit,
     normalizeMaterialWorkflowStatus: () => normalizeMaterialWorkflowStatus,
+    normalizeOrgComplianceCover: () => normalizeOrgComplianceCover,
+    normalizeOrgComplianceExpiry: () => normalizeOrgComplianceExpiry,
     normalizePaymentRunRange: () => normalizePaymentRunRange,
     normalizePersonNamePart: () => normalizePersonNamePart,
     normalizeProjectTaskPriority: () => normalizeProjectTaskPriority,
@@ -1412,6 +1441,39 @@ var ProjectPlannerCanonical = (() => {
     operativeRowsForPerson: () => operativeRowsForPerson,
     operativesManagerMayDeleteBooking: () => operativesManagerMayDeleteBooking,
     orgAccessProbeFromReads: () => orgAccessProbeFromReads,
+    orgComplianceAddWriteFields: () => orgComplianceAddWriteFields,
+    orgComplianceCounts: () => orgComplianceCounts,
+    orgComplianceCoverText: () => orgComplianceCoverText,
+    orgComplianceDetailsError: () => orgComplianceDetailsError,
+    orgComplianceDocTypeLabel: () => orgComplianceDocTypeLabel,
+    orgComplianceDocumentPath: () => orgComplianceDocumentPath,
+    orgComplianceDocumentRefKey: () => orgComplianceDocumentRefKey,
+    orgComplianceExpiryStatus: () => orgComplianceExpiryStatus,
+    orgComplianceFileName: () => orgComplianceFileName,
+    orgComplianceFolder: () => orgComplianceFolder,
+    orgComplianceHubSubtitle: () => orgComplianceHubSubtitle,
+    orgComplianceMergePayload: () => orgComplianceMergePayload,
+    orgComplianceOrganizationId: () => orgComplianceOrganizationId,
+    orgCompliancePathBelongsTo: () => orgCompliancePathBelongsTo,
+    orgCompliancePathLinked: () => orgCompliancePathLinked,
+    orgCompliancePublicDocuments: () => orgCompliancePublicDocuments,
+    orgComplianceReminder: () => orgComplianceReminder,
+    orgComplianceRemoveWriteFields: () => orgComplianceRemoveWriteFields,
+    orgComplianceReplaceWriteFields: () => orgComplianceReplaceWriteFields,
+    orgComplianceSection: () => orgComplianceSection,
+    orgComplianceShareCreatorActive: () => orgComplianceShareCreatorActive,
+    orgComplianceShareLinkCreateFields: () => orgComplianceShareLinkCreateFields,
+    orgComplianceShareLinkState: () => orgComplianceShareLinkState,
+    orgComplianceShareOpen: () => orgComplianceShareOpen,
+    orgComplianceSharePath: () => orgComplianceSharePath,
+    orgComplianceShareSelection: () => orgComplianceShareSelection,
+    orgComplianceSharedEntry: () => orgComplianceSharedEntry,
+    orgComplianceSortedEntries: () => orgComplianceSortedEntries,
+    orgComplianceStoragePath: () => orgComplianceStoragePath,
+    orgComplianceTodayKey: () => orgComplianceTodayKey,
+    orgComplianceUpdateWriteFields: () => orgComplianceUpdateWriteFields,
+    orgComplianceZipEntryNames: () => orgComplianceZipEntryNames,
+    orgComplianceZipFileName: () => orgComplianceZipFileName,
     orgDayHours: () => orgDayHours,
     orgMembershipWriteFields: () => orgMembershipWriteFields,
     organizationCreateFields: () => organizationCreateFields,
@@ -1545,6 +1607,9 @@ var ProjectPlannerCanonical = (() => {
     parseNotificationDocument: () => parseNotificationDocument,
     parseOperativeDocument: () => parseOperativeDocument,
     parseOperativeProfileDocument: () => parseOperativeProfileDocument,
+    parseOrgComplianceDocumentRef: () => parseOrgComplianceDocumentRef,
+    parseOrgComplianceDocuments: () => parseOrgComplianceDocuments,
+    parseOrgComplianceShareLink: () => parseOrgComplianceShareLink,
     parseOrgMembershipDocument: () => parseOrgMembershipDocument,
     parseOrganizationDeletion: () => parseOrganizationDeletion,
     parseOrganizationName: () => parseOrganizationName,
@@ -2436,8 +2501,8 @@ var ProjectPlannerCanonical = (() => {
     if (typeof value === "number") {
       return Number.isFinite(value) && value >= 0 && value <= 24 * 60 ? Math.round(value) : null;
     }
-    const text57 = String(value ?? "").trim();
-    const match = /^(\d{1,2}):(\d{2})$/.exec(text57);
+    const text58 = String(value ?? "").trim();
+    const match = /^(\d{1,2}):(\d{2})$/.exec(text58);
     if (!match) return null;
     const hours2 = Number(match[1]);
     const minutes = Number(match[2]);
@@ -3531,11 +3596,11 @@ var ProjectPlannerCanonical = (() => {
     const note = text(value);
     return note ? note : null;
   }
-  function leaveRecordDayKeys(record19, timeZone, nonWorkingDayKeys) {
+  function leaveRecordDayKeys(record20, timeZone, nonWorkingDayKeys) {
     const zone3 = zoneOrLondon(timeZone);
-    const start = text(record19.startDayKey);
+    const start = text(record20.startDayKey);
     if (!DAY_KEY.test(start)) return [];
-    const endRaw = text(record19.endDayKey);
+    const endRaw = text(record20.endDayKey);
     const end = DAY_KEY.test(endRaw) && endRaw >= start ? endRaw : start;
     if (end === start) return [start];
     const skip = new Set((nonWorkingDayKeys || []).map(text));
@@ -3544,12 +3609,12 @@ var ProjectPlannerCanonical = (() => {
       return iso !== 6 && iso !== 7 && !skip.has(key8);
     });
   }
-  function leaveDaysInRange(record19, range, timeZone, nonWorkingDayKeys) {
+  function leaveDaysInRange(record20, range, timeZone, nonWorkingDayKeys) {
     const from = text(range?.startDayKey);
     const to = text(range?.endDayKey);
     if (!DAY_KEY.test(from) || !DAY_KEY.test(to) || to < from) return 0;
-    const each = normalizeHolidayTimeSlot(record19?.timeSlot) === "FULL DAY" ? 1 : 0.5;
-    const days = leaveRecordDayKeys(record19, timeZone, nonWorkingDayKeys).filter((key8) => key8 >= from && key8 <= to);
+    const each = normalizeHolidayTimeSlot(record20?.timeSlot) === "FULL DAY" ? 1 : 0.5;
+    const days = leaveRecordDayKeys(record20, timeZone, nonWorkingDayKeys).filter((key8) => key8 >= from && key8 <= to);
     return Math.round(days.length * each * 100) / 100;
   }
   function holidayRequestRanges(picks, timeZone) {
@@ -5246,6 +5311,8 @@ var ProjectPlannerCanonical = (() => {
     materialContacts: "organizations/{orgId}/materialContacts",
     /** 1.81.0 (§11): a person's name in this organisation (`memberNameWriteFields`). */
     memberNames: "organizations/{orgId}/memberNames",
+    /** 1.83.0 (§31): insurance & accreditations, one document (`orgComplianceMergePayload`); admins only. */
+    orgCompliance: "organizations/{orgId}/orgCompliance",
     /** 1.65.0 (§25, §26): one server check per saved overtime / claims report (`reportCheckWriteFields`). */
     reportChecks: "organizations/{orgId}/reportChecks"
   };
@@ -5634,46 +5701,46 @@ var ProjectPlannerCanonical = (() => {
     if (mode === "endOfWorkingWeek" || mode === "week") return "endOfWorkingWeek";
     return DEFAULT_WARNING_DETECTION.clashLookaheadMode;
   }
-  function excludedUnbookedUserIds(record19) {
-    if (Array.isArray(record19.excludedUserIdsFromUnbookedWarnings)) {
-      return stringIdList(record19.excludedUserIdsFromUnbookedWarnings);
+  function excludedUnbookedUserIds(record20) {
+    if (Array.isArray(record20.excludedUserIdsFromUnbookedWarnings)) {
+      return stringIdList(record20.excludedUserIdsFromUnbookedWarnings);
     }
     for (const key8 of ["excludedUserIds", "excludedUsers", "excludedUserIdsFromWarnings", "unbookedWarningExcludedUserIds"]) {
-      if (Array.isArray(record19[key8])) return stringIdList(record19[key8]);
+      if (Array.isArray(record20[key8])) return stringIdList(record20[key8]);
     }
     return [];
   }
   function parseWarningDetection(data) {
-    const record19 = asSettingsRecord(data);
-    if (!record19) return { ...DEFAULT_WARNING_DETECTION, excludedUserIdsFromUnbookedWarnings: [] };
-    const daysRaw = record19.clashLookaheadDays ?? record19.lookaheadDays ?? record19.lookAheadDays ?? record19.numberOfDays ?? record19.daysAhead;
+    const record20 = asSettingsRecord(data);
+    if (!record20) return { ...DEFAULT_WARNING_DETECTION, excludedUserIdsFromUnbookedWarnings: [] };
+    const daysRaw = record20.clashLookaheadDays ?? record20.lookaheadDays ?? record20.lookAheadDays ?? record20.numberOfDays ?? record20.daysAhead;
     const days = daysRaw === void 0 || daysRaw === null ? DEFAULT_WARNING_DETECTION.clashLookaheadDays : daysRaw;
     const clashLookaheadMode = parseClashLookaheadMode(
-      record19.clashLookaheadMode ?? record19.lookAheadMode ?? record19.lookaheadMode
+      record20.clashLookaheadMode ?? record20.lookAheadMode ?? record20.lookaheadMode
     );
     const fallback = lookaheadDaysFallback(daysRaw);
     const parsed = {
-      detectClashes: record19.detectClashes !== false,
+      detectClashes: record20.detectClashes !== false,
       clashLookaheadMode,
       clashLookaheadDays: fallback ? DEFAULT_WARNING_DETECTION.clashLookaheadDays : clampClashLookaheadDays(days),
-      includeWeekendsForUnbookedLabour: Boolean(record19.includeWeekendsForUnbookedLabour),
-      excludedUserIdsFromUnbookedWarnings: excludedUnbookedUserIds(record19),
-      weekendCoverage: parseWeekendCoverage(record19.weekendCoverage, Boolean(record19.includeWeekendsForUnbookedLabour))
+      includeWeekendsForUnbookedLabour: Boolean(record20.includeWeekendsForUnbookedLabour),
+      excludedUserIdsFromUnbookedWarnings: excludedUnbookedUserIds(record20),
+      weekendCoverage: parseWeekendCoverage(record20.weekendCoverage, Boolean(record20.includeWeekendsForUnbookedLabour))
     };
     if (fallback && clashLookaheadMode === "numberOfDays") parsed.clashLookaheadDaysFallback = fallback;
     return parsed;
   }
   var COVERAGE_CLOCK_RE = /^\d{1,2}:\d{2}$/;
   function clockMinutesOf(value) {
-    const text57 = coverageClock(value);
-    if (!text57) return null;
-    const [h4, m] = text57.split(":").map(Number);
+    const text58 = coverageClock(value);
+    if (!text58) return null;
+    const [h4, m] = text58.split(":").map(Number);
     return h4 * 60 + m;
   }
   function coverageClock(value) {
-    const text57 = typeof value === "string" ? value.trim() : "";
-    if (!COVERAGE_CLOCK_RE.test(text57)) return null;
-    const [h4, m] = text57.split(":").map(Number);
+    const text58 = typeof value === "string" ? value.trim() : "";
+    if (!COVERAGE_CLOCK_RE.test(text58)) return null;
+    const [h4, m] = text58.split(":").map(Number);
     return h4 >= 0 && h4 < 24 && m >= 0 && m < 60 ? `${String(h4).padStart(2, "0")}:${String(m).padStart(2, "0")}` : null;
   }
   function parseWeekendCoverage(value, includeWeekends) {
@@ -6013,8 +6080,8 @@ var ProjectPlannerCanonical = (() => {
     const total = plainHoursText(Math.max(0, clock5 * n - brk));
     return roundHundredths(brk) > 0 ? `${multiplied} \u2212 ${plainHoursText(brk)} break = ${total}` : `${multiplied} = ${total}`;
   }
-  function parseMultipliedHoursText(text57) {
-    const match = /(\d+(?:\.\d+)?)h × (\d+(?:\.\d+)?)(?: − (\d+(?:\.\d+)?)h break)? = \d+(?:\.\d+)?h/.exec(String(text57 ?? ""));
+  function parseMultipliedHoursText(text58) {
+    const match = /(\d+(?:\.\d+)?)h × (\d+(?:\.\d+)?)(?: − (\d+(?:\.\d+)?)h break)? = \d+(?:\.\d+)?h/.exec(String(text58 ?? ""));
     if (!match) return null;
     const clockHours = Number(match[1]);
     const multiplier = Number(match[2]);
@@ -6060,9 +6127,9 @@ var ProjectPlannerCanonical = (() => {
     return { standard, overtime, standardText: standard.join(" + "), overtimeText: overtime.join(" + ") };
   }
   function timesheetLineClockText(details) {
-    const text57 = String(details ?? "").trim();
-    const cut = text57.indexOf(" \xB7 OT ");
-    return cut >= 0 ? text57.slice(0, cut).trim() : text57;
+    const text58 = String(details ?? "").trim();
+    const cut = text58.indexOf(" \xB7 OT ");
+    return cut >= 0 ? text58.slice(0, cut).trim() : text58;
   }
   function result(segments, outsideMultiplier) {
     let total = 0;
@@ -7274,8 +7341,8 @@ var ProjectPlannerCanonical = (() => {
   }
   function formatHours(hours2) {
     const rounded = Math.round(hours2 * 4) / 4;
-    const text57 = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, "");
-    return `${text57} hour${rounded === 1 ? "" : "s"}`;
+    const text58 = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, "");
+    return `${text58} hour${rounded === 1 ? "" : "s"}`;
   }
   function joinRanges(intervals) {
     const labels = intervals.map(rangeLabel);
@@ -7285,7 +7352,7 @@ var ProjectPlannerCanonical = (() => {
   function leaveCoverageRows(input) {
     const timeZone = zoneOrLondon(input.timeZone);
     const excluded = new Set((input.excludedUserIds || []).map(idKey).filter(Boolean));
-    const approvedLeave = input.leave.filter((record19) => record19.approved && record19.startDayKey && record19.endDayKey);
+    const approvedLeave = input.leave.filter((record20) => record20.approved && record20.startDayKey && record20.endDayKey);
     if (approvedLeave.length === 0) return [];
     const peopleByUserId = /* @__PURE__ */ new Map();
     const peopleByOperativeId = /* @__PURE__ */ new Map();
@@ -7302,10 +7369,10 @@ var ProjectPlannerCanonical = (() => {
         if (key8 && !peopleByOperativeId.has(key8)) peopleByOperativeId.set(key8, person);
       }
     }
-    const personForLeave = (record19) => {
-      const userId = idKey(record19.userId);
+    const personForLeave = (record20) => {
+      const userId = idKey(record20.userId);
       if (userId && peopleByUserId.has(userId)) return peopleByUserId.get(userId);
-      const operativeId = idKey(record19.operativeId);
+      const operativeId = idKey(record20.operativeId);
       if (operativeId && peopleByOperativeId.has(operativeId)) return peopleByOperativeId.get(operativeId);
       return void 0;
     };
@@ -7331,20 +7398,20 @@ var ProjectPlannerCanonical = (() => {
       const day = bookingStandardDayOn(input.day, dayKey);
       const windows = leaveHalfDayWindows(day);
       const lunch = standardBreakWindow(day);
-      for (const record19 of approvedLeave) {
-        if (dayKey < record19.startDayKey || dayKey > record19.endDayKey) continue;
-        const person = personForLeave(record19);
+      for (const record20 of approvedLeave) {
+        if (dayKey < record20.startDayKey || dayKey > record20.endDayKey) continue;
+        const person = personForLeave(record20);
         if (!person) continue;
-        const dedupe = `${person.personKey}|${dayKey}|${record19.id}`;
+        const dedupe = `${person.personKey}|${dayKey}|${record20.id}`;
         if (seen.has(dedupe)) continue;
         seen.add(dedupe);
-        const leaveSlot2 = leaveSlotKind(record19.timeSlot);
+        const leaveSlot2 = leaveSlotKind(record20.timeSlot);
         const leaveWindow = leaveSlot2 === "AM" ? windows.am : leaveSlot2 === "PM" ? windows.pm : windows.day;
         const dayBookings = bookingsByPersonDay.get(`${person.personKey}|${dayKey}`) || [];
         const intervals = dayBookings.map((booking) => ({ booking, interval: leaveComparableInterval(booking, day) })).filter((entry) => entry.interval !== null);
         const personName = String(person.name || "").trim() || person.personKey;
         const userId = String(person.userId || "").trim() || void 0;
-        const operativeId = String(record19.operativeId || person.operativeIds?.[0] || "").trim() || void 0;
+        const operativeId = String(record20.operativeId || person.operativeIds?.[0] || "").trim() || void 0;
         const longDay = formatLongDayKey(dayKey, timeZone);
         const leaveLabel = leaveLabelFor(leaveSlot2);
         const clashes = intervals.filter(({ interval: interval2 }) => intervalsOverlap(interval2, leaveWindow)).map(({ booking, interval: interval2 }) => ({
@@ -7360,14 +7427,14 @@ var ProjectPlannerCanonical = (() => {
           const bookedText = clashes.map((clash) => `${clash.label} ${formatClockMinutes(clash.start)}\u2013${formatClockMinutes(clash.end)}`).join(", ");
           const leaveText = leaveSlot2 === "FULL_DAY" ? "full-day annual leave" : `${leaveLabel} annual leave (${rangeLabel(leaveWindow)})`;
           rows3.push({
-            id: `leave-clash-${dayKey}-${person.personKey}-${record19.id}`,
+            id: `leave-clash-${dayKey}-${person.personKey}-${record20.id}`,
             kind: "leave_clash",
             personKey: person.personKey,
             personName,
             userId,
             operativeId,
             dayKey,
-            leaveId: record19.id,
+            leaveId: record20.id,
             leaveSlot: leaveSlot2,
             leaveLabel,
             leaveWindow: { ...leaveWindow },
@@ -7400,14 +7467,14 @@ var ProjectPlannerCanonical = (() => {
         const bookedHours = hoursOf(bookedInWorking);
         const message = bookedHours > 0 ? `${personName} has ${leaveLabel} annual leave on ${longDay}. The ${workingLabel} (${rangeLabel(workingWindow)}) is only booked ${joinRanges(bookedInWorking)}; ${joinRanges(missing)} (${formatHours(missingHours)}) is not booked.` : `${personName} has ${leaveLabel} annual leave on ${longDay} but is not booked for the ${workingLabel} (${rangeLabel(workingWindow)}, ${formatHours(missingHours)}).`;
         rows3.push({
-          id: `leave-cover-${dayKey}-${person.personKey}-${record19.id}`,
+          id: `leave-cover-${dayKey}-${person.personKey}-${record20.id}`,
           kind: "leave_cover",
           personKey: person.personKey,
           personName,
           userId,
           operativeId,
           dayKey,
-          leaveId: record19.id,
+          leaveId: record20.id,
           leaveSlot: leaveSlot2,
           leaveLabel,
           leaveWindow: { ...leaveWindow },
@@ -8218,16 +8285,16 @@ var ProjectPlannerCanonical = (() => {
   }
   function annualLeaveEmploymentInput(input) {
     const person = input.person ?? {};
-    let record19 = person;
+    let record20 = person;
     if (input.privatePay) {
       if (!input.payProfileRead) return null;
-      if (input.payProfile) record19 = { ...person, ...input.payProfile.fields };
+      if (input.payProfile) record20 = { ...person, ...input.payProfile.fields };
     }
     const str2 = (value) => typeof value === "string" && value.trim() ? value : null;
-    const at = record19.employmentTypeEffectiveAt;
+    const at = record20.employmentTypeEffectiveAt;
     return {
-      employmentType: str2(record19.employmentType),
-      employmentTypeTransitionFrom: str2(record19.employmentTypeTransitionFrom),
+      employmentType: str2(record20.employmentType),
+      employmentTypeTransitionFrom: str2(record20.employmentTypeTransitionFrom),
       employmentTypeEffectiveAt: at instanceof Date || typeof at === "string" || typeof at === "number" ? at : documentInstant(at)
     };
   }
@@ -8331,22 +8398,22 @@ var ProjectPlannerCanonical = (() => {
     }
     return null;
   }
-  function recordFields(record19) {
+  function recordFields(record20) {
     return {
-      name: fieldTokens(record19.name),
-      brand: fieldTokens(record19.brand),
-      code: fieldTokens(record19.productCode),
+      name: fieldTokens(record20.name),
+      brand: fieldTokens(record20.brand),
+      code: fieldTokens(record20.productCode),
       extra: [
-        ...fieldTokens(record19.category),
-        ...fieldTokens(record19.size),
-        ...fieldTokens(record19.length)
+        ...fieldTokens(record20.category),
+        ...fieldTokens(record20.size),
+        ...fieldTokens(record20.length)
       ]
     };
   }
-  function materialSearchScore(query, record19) {
+  function materialSearchScore(query, record20) {
     const tokens = tokenizeMaterialSearch(query);
     if (tokens.length === 0) return 1;
-    const fields = recordFields(record19);
+    const fields = recordFields(record20);
     const all = [...fields.name, ...fields.brand, ...fields.code, ...fields.extra];
     let score = 0;
     for (const token of tokens) {
@@ -8362,7 +8429,7 @@ var ProjectPlannerCanonical = (() => {
       if (coded) score += 18;
       if (named) score += 8;
     }
-    const name = normalizeMaterialSearchText(record19.name);
+    const name = normalizeMaterialSearchText(record20.name);
     const joined = tokens.join(" ");
     if (name.startsWith(joined)) score += 24;
     else if (name.includes(joined)) score += 10;
@@ -8370,8 +8437,8 @@ var ProjectPlannerCanonical = (() => {
     if (nameLength > 0) score += Math.max(0, 20 - Math.floor(nameLength / 8));
     return score;
   }
-  function materialRecordMatches(query, record19) {
-    return materialSearchScore(query, record19) > 0;
+  function materialRecordMatches(query, record20) {
+    return materialSearchScore(query, record20) > 0;
   }
   function rankMaterialRecords(query, records, limit) {
     const tokens = tokenizeMaterialSearch(query);
@@ -8457,22 +8524,22 @@ var ProjectPlannerCanonical = (() => {
     }
     return null;
   }
-  function recordFields2(record19) {
+  function recordFields2(record20) {
     return {
-      name: fieldTokens2(record19.name),
-      code: fieldTokens2(record19.code),
-      body: fieldTokens2(record19.awardingBody),
+      name: fieldTokens2(record20.name),
+      code: fieldTokens2(record20.code),
+      body: fieldTokens2(record20.awardingBody),
       extra: [
-        ...fieldTokens2(record19.section),
-        ...fieldTokens2(record19.subsection),
-        ...fieldTokens2(record19.notes)
+        ...fieldTokens2(record20.section),
+        ...fieldTokens2(record20.subsection),
+        ...fieldTokens2(record20.notes)
       ]
     };
   }
-  function qualificationSearchScore(query, record19) {
+  function qualificationSearchScore(query, record20) {
     const tokens = tokenizeQualificationSearch(query);
     if (tokens.length === 0) return 1;
-    const fields = recordFields2(record19);
+    const fields = recordFields2(record20);
     const all = [...fields.name, ...fields.code, ...fields.body, ...fields.extra];
     let score = 0;
     for (const token of tokens) {
@@ -8488,20 +8555,20 @@ var ProjectPlannerCanonical = (() => {
       if (coded) score += 18;
       if (named) score += 8;
     }
-    const name = normalizeQualificationSearchText(record19.name);
+    const name = normalizeQualificationSearchText(record20.name);
     const joined = tokens.join(" ");
     if (name.startsWith(joined)) score += 24;
     else if (name.includes(joined)) score += 10;
     if (name.length > 0) score += Math.max(0, 20 - Math.floor(name.length / 8));
     return score;
   }
-  function qualificationRecordMatches(query, record19) {
-    return qualificationSearchScore(query, record19) > 0;
+  function qualificationRecordMatches(query, record20) {
+    return qualificationSearchScore(query, record20) > 0;
   }
-  function qualificationMatchesSection(record19, section) {
+  function qualificationMatchesSection(record20, section) {
     const wanted = String(section || "").trim();
     if (!wanted || wanted === QUALIFICATION_FILTER_ALL) return true;
-    const value = String(record19.section || "").trim();
+    const value = String(record20.section || "").trim();
     if (wanted === QUALIFICATION_FILTER_OTHER) return value.length === 0;
     return value === wanted;
   }
@@ -8512,8 +8579,8 @@ var ProjectPlannerCanonical = (() => {
   function qualificationLibraryFilterChips(records) {
     const counts = /* @__PURE__ */ new Map();
     let other = 0;
-    for (const record19 of records) {
-      const section = String(record19.section || "").trim();
+    for (const record20 of records) {
+      const section = String(record20.section || "").trim();
       if (!section) {
         other += 1;
         continue;
@@ -10765,16 +10832,16 @@ var ProjectPlannerCanonical = (() => {
       return Number.isNaN(parsed) ? null : parsed;
     }
     if (typeof value === "object") {
-      const record19 = value;
-      if (typeof record19.toDate === "function") {
+      const record20 = value;
+      if (typeof record20.toDate === "function") {
         try {
-          const parsed = record19.toDate();
+          const parsed = record20.toDate();
           const ms = timestampMs(parsed);
           if (ms != null) return ms;
         } catch {
         }
       }
-      const seconds = typeof record19.seconds === "number" ? record19.seconds : record19._seconds;
+      const seconds = typeof record20.seconds === "number" ? record20.seconds : record20._seconds;
       if (typeof seconds === "number" && Number.isFinite(seconds)) return Math.round(seconds * 1e3);
     }
     return null;
@@ -11651,7 +11718,7 @@ var ProjectPlannerCanonical = (() => {
     const email = emailKey2(account?.email);
     if (email) ids.add(email);
     const has2 = (value) => typeof value === "string" && value.trim() !== "" && ids.has(value.trim().toLowerCase());
-    return (records || []).filter((record19) => has2(record19?.userId) || has2(record19?.operativeId));
+    return (records || []).filter((record20) => has2(record20?.userId) || has2(record20?.operativeId));
   }
 
   // lib/canonical/lineManagers.ts
@@ -12010,8 +12077,8 @@ var ProjectPlannerCanonical = (() => {
     return typeof value === "string" ? value.trim().toLowerCase() : "";
   }
   function dayKeyText(value) {
-    const text57 = typeof value === "string" ? value.trim() : "";
-    return DAY_KEY2.test(text57) ? text57 : null;
+    const text58 = typeof value === "string" ? value.trim() : "";
+    return DAY_KEY2.test(text58) ? text58 : null;
   }
   function compareText(a, b) {
     if (a === b) return 0;
@@ -12139,8 +12206,8 @@ var ProjectPlannerCanonical = (() => {
   function personDayItems(input) {
     const managerIdByKey = /* @__PURE__ */ new Map();
     for (const id2 of input?.managerIds || []) {
-      const text57 = idText2(id2);
-      if (text57) managerIdByKey.set(text57.toLowerCase(), text57);
+      const text58 = idText2(id2);
+      if (text58) managerIdByKey.set(text58.toLowerCase(), text58);
     }
     const people = input?.people || { accounts: [], operatives: [] };
     const managerIdByEmail = /* @__PURE__ */ new Map();
@@ -12241,9 +12308,9 @@ var ProjectPlannerCanonical = (() => {
     return [idText2(bookingAId), idText2(bookingBId)].sort(compareText).join("|");
   }
   function comparableKey(key8) {
-    const text57 = normalizeDocumentId(key8);
-    const parts3 = text57.split("|");
-    return parts3.length === 2 && parts3[0] && parts3[1] ? [...parts3].sort(compareText).join("|") : text57;
+    const text58 = normalizeDocumentId(key8);
+    const parts3 = text58.split("|");
+    return parts3.length === 2 && parts3[0] && parts3[1] ? [...parts3].sort(compareText).join("|") : text58;
   }
   function isClashAccepted(bookingAId, bookingBId, accepted) {
     const a = idKey7(bookingAId);
@@ -12292,11 +12359,11 @@ var ProjectPlannerCanonical = (() => {
   }
   function warningResolutionKeys(records, statuses) {
     const keys = /* @__PURE__ */ new Map();
-    for (const record19 of records || []) {
-      if (!record19) continue;
-      const status = typeof record19.status === "string" ? record19.status.trim().toLowerCase() : "";
+    for (const record20 of records || []) {
+      if (!record20) continue;
+      const status = typeof record20.status === "string" ? record20.status.trim().toLowerCase() : "";
       if (!statuses.includes(status)) continue;
-      const key8 = idText2(record19.resolutionKey) || idText2(record19.id);
+      const key8 = idText2(record20.resolutionKey) || idText2(record20.id);
       if (key8 && !keys.has(normalizeDocumentId(key8))) keys.set(normalizeDocumentId(key8), key8);
     }
     return [...keys.values()].sort(compareText);
@@ -12549,7 +12616,9 @@ var ProjectPlannerCanonical = (() => {
     "paye_claim_evidence",
     "personal_site_audit",
     // 1.80.0: subcontractor insurance and RAMS documents (staff only).
-    "subcontractor_document"
+    "subcontractor_document",
+    // 1.83.0 (§31): organisation insurance and accreditation certificates (admins only).
+    "org_compliance_document"
   ];
   function text11(value) {
     return typeof value === "string" ? value.trim() : "";
@@ -12579,6 +12648,7 @@ var ProjectPlannerCanonical = (() => {
     if (rest.length === 4 && rest[0] === "subcontractors" && rest[1] && rest[2] === "documents") {
       return { ...base, kind: "subcontractor_document" };
     }
+    if (rest.length === 2 && rest[0] === "compliance" && rest[1]) return { ...base, kind: "org_compliance_document" };
     if (rest.length >= 2 && rest[0] === "siteAudits") return { ...base, kind: "site_audit_photo" };
     if (rest.length >= 2 && rest[0] === "tasks") return { ...base, kind: "task_attachment" };
     if (rest.length >= 2 && rest[0] === "healthSafety") return { ...base, kind: "health_safety" };
@@ -12625,7 +12695,9 @@ var ProjectPlannerCanonical = (() => {
     if (parsed.kind === "profile_photo") {
       return parsed.ownerUserId === viewer ? { allowed: true, reason: "own_profile_photo", undoEndsAtMs: null } : deny("not_uploader");
     }
-    if (parsed.kind === "company_logo" || parsed.kind === "timesheet_export") return deny("admin_only");
+    if (parsed.kind === "company_logo" || parsed.kind === "timesheet_export" || parsed.kind === "org_compliance_document") {
+      return deny("admin_only");
+    }
     const uploader = storedFileUploader(input.storagePath);
     if (!uploader || uploader.uploaderUserId !== viewer) return deny("not_uploader");
     const given = Number(input.uploadedAtMs);
@@ -12806,8 +12878,8 @@ var ProjectPlannerCanonical = (() => {
       let id2 = "";
       if (typeof item === "string") id2 = item.trim();
       else if (item && typeof item === "object") {
-        const record19 = item;
-        id2 = text13(record19.id) || text13(record19.contactId);
+        const record20 = item;
+        id2 = text13(record20.id) || text13(record20.contactId);
       }
       const key8 = normalizeDocumentId(id2);
       if (!id2 || seen.has(key8)) continue;
@@ -14087,9 +14159,9 @@ var ProjectPlannerCanonical = (() => {
     return "apply";
   }
   function offlineDeleteRefusalDecision(code) {
-    const text57 = errorCodeText(code);
-    if (text57 === "not-found" || text57 === "5") return "alreadyGone";
-    if (text57 === "permission-denied" || text57 === "7") return "refusePermission";
+    const text58 = errorCodeText(code);
+    if (text58 === "not-found" || text58 === "5") return "alreadyGone";
+    if (text58 === "permission-denied" || text58 === "7") return "refusePermission";
     return "retry";
   }
   function bookingDeleteSignedTimesheetWarning(dayKey, sheets) {
@@ -16425,12 +16497,12 @@ var ProjectPlannerCanonical = (() => {
     const recordAtMs = realMs(sheet.operativeSignedBookingsAt);
     const recordSignedAtMs = realMs(sheet.operativeSignedBookingsSignedAt);
     const recordCurrent = operativeSignedMs != null && (recordSignedAtMs != null ? Math.abs(operativeSignedMs - recordSignedAtMs) <= RECORD_SIGNED_AT_MATCH_MS : recordAtMs != null && operativeSignedMs <= recordAtMs + RECORD_SIGNATURE_TOLERANCE_MS);
-    const record19 = recordCurrent ? recordSide(sheet.operativeSignedBookings) : null;
+    const record20 = recordCurrent ? recordSide(sheet.operativeSignedBookings) : null;
     const recordReferenceMs = recordAtMs ?? operativeSignedMs;
     const recordAddedAfter = recordReferenceMs == null ? null : recordReferenceMs - SIGNED_TIMESHEET_ADDITION_WINDOW_MS;
     const reviewerEdits = currentReviewerEdits(sheet.reviewerBookingEdits, operativeSignedMs);
     let personDiff;
-    if (record19) personDiff = diffSides(record19, live, documents, recordAddedAfter, reviewerEdits);
+    if (record20) personDiff = diffSides(record20, live, documents, recordAddedAfter, reviewerEdits);
     else if (snapshotDiff && reviewerEdits && override) {
       const snapshotAtMs = realMs(override.approvedAt) ?? realMs(sheet.managerSignedAt) ?? realMs(sheet.approvedAt) ?? operativeSignedMs;
       personDiff = diffSides(
@@ -16443,13 +16515,13 @@ var ProjectPlannerCanonical = (() => {
     } else personDiff = snapshotDiff;
     const gap = [];
     const gapAllowed = SNAPSHOT_GAP_FROM_MS == null || operativeSignedMs != null && operativeSignedMs >= SNAPSHOT_GAP_FROM_MS;
-    if (record19 && snapshotDiff && gapAllowed) {
+    if (record20 && snapshotDiff && gapAllowed) {
       const snapshotKeys = groupLines(Array.isArray(override?.lines) ? override.lines : []).byKey;
       const optionPlace = new Set(
         (input.liveLines ?? []).filter((line) => line && line.scheduleOptionPlace === true).map((line) => signedTimesheetLineBookingKey(line)).filter(Boolean)
       );
       const already = new Set([...snapshotDiff.added, ...personDiff?.added ?? []].map((id2) => normalizeDocumentId(id2)));
-      for (const [key8, row3] of record19) {
+      for (const [key8, row3] of record20) {
         if (!live.has(key8) || snapshotKeys.has(key8) || optionPlace.has(key8)) continue;
         const id2 = normalizeDocumentId(row3.bookingId);
         if (already.has(id2)) continue;
@@ -16463,7 +16535,7 @@ var ProjectPlannerCanonical = (() => {
     if (!personChanged && !snapshotChanged && !gapChanged) return base;
     const gapFields = { snapshotGapBookingIds: gap, snapshotGapOnly: gapChanged && !personChanged && !snapshotChanged };
     if (!personChanged && !snapshotChanged) {
-      const ids2 = { basis: record19 ? "fingerprint" : "bookingIds", changedBookingIds: [], addedBookingIds: [], removedBookingIds: [] };
+      const ids2 = { basis: record20 ? "fingerprint" : "bookingIds", changedBookingIds: [], addedBookingIds: [], removedBookingIds: [] };
       if (exported) return { ...base, ...ids2, ...gapFields, changed: true, reviewerMessage: SIGNED_TIMESHEET_EXPORTED_CHANGED_MESSAGE };
       const waitingFor2 = input.selfSigned === true ? "person" : "lineManager";
       return {
@@ -16525,12 +16597,12 @@ var ProjectPlannerCanonical = (() => {
     const recordAtMs = realMs(sheet.operativeSignedBookingsAt);
     const recordSignedAtMs = realMs(sheet.operativeSignedBookingsSignedAt);
     const recordCurrent = operativeSignedMs != null && (recordSignedAtMs != null ? Math.abs(operativeSignedMs - recordSignedAtMs) <= RECORD_SIGNED_AT_MATCH_MS : recordAtMs != null && operativeSignedMs <= recordAtMs + RECORD_SIGNATURE_TOLERANCE_MS);
-    const record19 = recordCurrent ? recordSide(sheet.operativeSignedBookings) : null;
+    const record20 = recordCurrent ? recordSide(sheet.operativeSignedBookings) : null;
     let reference = null;
     let addedAfter = null;
     let used = "none";
-    if (record19) {
-      reference = record19;
+    if (record20) {
+      reference = record20;
       used = "record";
       const referenceMs = recordAtMs ?? operativeSignedMs;
       addedAfter = referenceMs == null ? null : referenceMs - SIGNED_TIMESHEET_ADDITION_WINDOW_MS;
@@ -16828,11 +16900,11 @@ var ProjectPlannerCanonical = (() => {
   }
   function payEditorStartingValues(person, profile, options) {
     const overlaid = options?.privatePay === true && profile ? overlayPayProfile(person, profile) : person;
-    const record19 = overlaid || {};
-    const pay = readStoredRates(record19);
+    const record20 = overlaid || {};
+    const pay = readStoredRates(record20);
     const rate = pay.payBasis === "hourly" ? pay.hourlyRate : pay.dayRate;
-    const employmentType = Object.prototype.hasOwnProperty.call(record19, "employmentType") ? record19.employmentType ?? null : null;
-    return { record: record19, pay, rate, employmentType, source: overlaid !== person ? "payProfile" : "users" };
+    const employmentType = Object.prototype.hasOwnProperty.call(record20, "employmentType") ? record20.employmentType ?? null : null;
+    return { record: record20, pay, rate, employmentType, source: overlaid !== person ? "payProfile" : "users" };
   }
 
   // lib/canonical/reportPay.ts
@@ -17278,8 +17350,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.82.0" : "",
-      sha256: true ? "06a9fac2d84c9f5002c196aa2edd18f11311613e3ae0798d27e80faf65de742f" : ""
+      version: true ? "1.83.0" : "",
+      sha256: true ? "628c13c24d92d052247d59b201d79c885510f023075d7bd431ae8093d7952c1a" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -17410,15 +17482,15 @@ var ProjectPlannerCanonical = (() => {
     }
     return out;
   }
-  function labourHolidayInput(record19) {
+  function labourHolidayInput(record20) {
     return {
-      id: record19.id,
-      userId: record19.userId,
-      operativeId: record19.operativeId,
-      startDayKey: record19.startDayKey,
-      endDayKey: record19.endDayKey,
-      timeSlot: record19.timeSlot,
-      approved: record19.approved
+      id: record20.id,
+      userId: record20.userId,
+      operativeId: record20.operativeId,
+      startDayKey: record20.startDayKey,
+      endDayKey: record20.endDayKey,
+      timeSlot: record20.timeSlot,
+      approved: record20.approved
     };
   }
 
@@ -17481,18 +17553,18 @@ var ProjectPlannerCanonical = (() => {
     const end = String(period?.endDayKey || "").trim();
     if (!start || !end || start > end) return [];
     const byDay = /* @__PURE__ */ new Map();
-    for (const record19 of leaveRecords || []) {
-      if (!record19) continue;
-      const approved = record19.approved === true || record19.approved == null && normalizeHolidayStatus(record19.status) === "approved";
+    for (const record20 of leaveRecords || []) {
+      if (!record20) continue;
+      const approved = record20.approved === true || record20.approved == null && normalizeHolidayStatus(record20.status) === "approved";
       if (!approved) continue;
-      const slot = normalizeHolidayTimeSlot(record19.timeSlot);
-      for (const dayKey of leaveRecordDayKeys(record19, timeZone, nonWorkingDayKeys)) {
+      const slot = normalizeHolidayTimeSlot(record20.timeSlot);
+      for (const dayKey of leaveRecordDayKeys(record20, timeZone, nonWorkingDayKeys)) {
         if (dayKey < start || dayKey > end) continue;
         const list = byDay.get(dayKey) || [];
         if (list.some((line2) => line2.timeSlot === slot || line2.timeSlot === "FULL DAY")) continue;
         const line = {
-          id: `leave-${String(record19.id)}-${dayKey}`,
-          leaveId: String(record19.id),
+          id: `leave-${String(record20.id)}-${dayKey}`,
+          leaveId: String(record20.id),
           dayKey,
           timeSlot: slot,
           label: timesheetLeaveLabel(slot)
@@ -17588,8 +17660,8 @@ var ProjectPlannerCanonical = (() => {
     return Math.round(value * 1e4) / 1e4;
   }
   function basisOf(value) {
-    const text57 = String(value ?? "").trim().toLowerCase();
-    return text57 === "hourly" || text57 === "hour" ? "hourly" : "day";
+    const text58 = String(value ?? "").trim().toLowerCase();
+    return text58 === "hourly" || text58 === "hour" ? "hourly" : "day";
   }
   var PAYROLL_LINE_EDIT_TIMES_MESSAGE = "Enter a start and a finish time that are different.";
   function clockMinutes2(value) {
@@ -19067,13 +19139,13 @@ var ProjectPlannerCanonical = (() => {
   }
   function orderedMaterialIds(records) {
     const ids = /* @__PURE__ */ new Set();
-    for (const record19 of records || []) {
-      if (!record19 || normalizeMaterialRequestType(record19.requestType) !== "Order") continue;
-      for (const id2 of record19.materialIds || []) {
+    for (const record20 of records || []) {
+      if (!record20 || normalizeMaterialRequestType(record20.requestType) !== "Order") continue;
+      for (const id2 of record20.materialIds || []) {
         const value = normalizeDocumentId(id2);
         if (value) ids.add(value);
       }
-      for (const line of record19.lines || []) {
+      for (const line of record20.lines || []) {
         const value = normalizeDocumentId(line?.materialId);
         if (value) ids.add(value);
       }
@@ -20819,6 +20891,7 @@ var ProjectPlannerCanonical = (() => {
     { id: "annualLeaveAdjustments", path: "organizations/{orgId}/annualLeaveAdjustments", scope: "organization", listen: true, note: "1.40.0: manual annual-leave adjustments (parseAnnualLeaveAdjustmentDocument), written once and never changed; the person's own, or the people an admin or line manager may adjust, while an annual leave screen is open." },
     { id: "deletedPeople", path: "organizations/{orgId}/deletedPeople", scope: "organization", listen: false, note: "1.59.0: former people on old bookings (parseFormerPersonDocument), written once by a person delete and never changed; staff read them when a job week, Data health or Add user opens." },
     { id: "memberNames", path: "organizations/{orgId}/memberNames/{uid}", scope: "organization", listen: true, note: "1.81.0: a person's name in this organisation (parseMemberNameDocuments, displayNameInOrganization); every screen showing people listens with the roster." },
+    { id: "orgCompliance", path: "organizations/{orgId}/orgCompliance/documents", scope: "organization", listen: true, note: "1.83.0 \xA731: insurance & accreditations (parseOrgComplianceDocuments); admins only, while Settings \u203A Organisation or its Compliance page is open." },
     { id: "reportChecks", path: "organizations/{orgId}/reportChecks", scope: "organization", listen: false, note: "1.65.0: one server check per saved overtime / price work / expenses report (parseReportCheckDocument); written by the server only, admins read them when Data health opens." },
     { id: "materialContacts", path: "organizations/{orgId}/materialContacts", scope: "organization", listen: false, note: "1.59.0: addresses the organisation has emailed a quote or order to (the safe-sender box); read by id and written once by the send route and the email function, never shown." },
     { id: "deletedBookings", path: "organizations/{orgId}/deletedBookings", scope: "organization", listen: false, note: "Write-only tombstones; never shown." }
@@ -21106,13 +21179,13 @@ var ProjectPlannerCanonical = (() => {
     for (const writes of bookingWrites) steps.push({ step: "bookings", writes });
     if (rosterRows.length > 0) {
       const rowRecord = (row3) => {
-        const record19 = input.formerRows?.[`${row3.collection}/${row3.id}`];
-        if (!record19 || key4(row3.id) === key4(uid)) return null;
+        const record20 = input.formerRows?.[`${row3.collection}/${row3.id}`];
+        if (!record20 || key4(row3.id) === key4(uid)) return null;
         return {
           op: "set",
           path: `organizations/${org}/deletedPeople/${row3.id}`,
-          fields: { ...record19.fields },
-          serverTimestampFields: [...record19.serverTimestampFields],
+          fields: { ...record20.fields },
+          serverTimestampFields: [...record20.serverTimestampFields],
           optional: true
         };
       };
@@ -21124,11 +21197,11 @@ var ProjectPlannerCanonical = (() => {
         });
       }
       for (const row3 of rosterRows) {
-        const record19 = rowRecord(row3);
-        if (!record19) continue;
+        const record20 = rowRecord(row3);
+        if (!record20) continue;
         steps.push({
           step: "rosterRows",
-          writes: [{ op: "delete", path: `organizations/${org}/${row3.collection}/${row3.id}` }, record19]
+          writes: [{ op: "delete", path: `organizations/${org}/${row3.collection}/${row3.id}` }, record20]
         });
       }
     }
@@ -22518,10 +22591,10 @@ var ProjectPlannerCanonical = (() => {
   var WEEKEND_TIME_SLOTS = ["CUSTOM"];
   function isoWeekdayOf(day, timeZone) {
     if (typeof day === "number") return day;
-    const text57 = String(day || "").trim().toLowerCase();
-    if (text57 === "saturday") return 6;
-    if (text57 === "sunday") return 7;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(text57)) return isoWeekdayOfDayKey(text57, zoneOrLondon(timeZone));
+    const text58 = String(day || "").trim().toLowerCase();
+    if (text58 === "saturday") return 6;
+    if (text58 === "sunday") return 7;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text58)) return isoWeekdayOfDayKey(text58, zoneOrLondon(timeZone));
     return 0;
   }
   function isWeekendDayKey(dayKey, timeZone) {
@@ -22913,8 +22986,8 @@ var ProjectPlannerCanonical = (() => {
         return "Full day";
     }
   }
-  function spoken(text57) {
-    return text57.replace(/–/g, " to ").replace(/ − /g, " less ").replace(/×(\d+(?:\.\d+)?)/g, "$1 times").replace(/(\d+(?:\.\d+)?)h\b/g, (_, n) => `${n} ${n === "1" ? "hour" : "hours"}`);
+  function spoken(text58) {
+    return text58.replace(/–/g, " to ").replace(/ − /g, " less ").replace(/×(\d+(?:\.\d+)?)/g, "$1 times").replace(/(\d+(?:\.\d+)?)h\b/g, (_, n) => `${n} ${n === "1" ? "hour" : "hours"}`);
   }
   function row2(kind, label, details, hours2) {
     const value = h2(hours2);
@@ -23081,8 +23154,8 @@ var ProjectPlannerCanonical = (() => {
     return round5(brk) > 0 ? `${h3(clock5)} OT \xD7 ${round5(n)} \u2212 ${h3(brk)} break = ${total}` : `${h3(clock5)} OT \xD7 ${round5(n)} = ${total}`;
   }
   function overtimeIncludedText(input) {
-    const text57 = overtimeTotalText(input);
-    return text57 ? `incl. ${text57}` : "";
+    const text58 = overtimeTotalText(input);
+    return text58 ? `incl. ${text58}` : "";
   }
   function bookedWithOvertimeText(input) {
     const booked = `${h3(Math.max(0, Number(input?.bookedHours) || 0))} booked`;
@@ -24196,8 +24269,8 @@ var ProjectPlannerCanonical = (() => {
   }
 
   // lib/canonical/leaveReport.ts
-  function leaveReportDayCount(record19, range, timeZone, nonWorkingDayKeys) {
-    return snapLeaveDays(leaveDaysInRange(record19, range, timeZone, nonWorkingDayKeys));
+  function leaveReportDayCount(record20, range, timeZone, nonWorkingDayKeys) {
+    return snapLeaveDays(leaveDaysInRange(record20, range, timeZone, nonWorkingDayKeys));
   }
   function leaveReportRows(input) {
     const zone3 = zoneOrLondon(input.timeZone);
@@ -24207,18 +24280,18 @@ var ProjectPlannerCanonical = (() => {
     const nonWorking = input.nonWorkingDayKeys ?? [];
     const range = { startDayKey: year.startDayKey, endDayKey: year.endDayKey };
     const rows3 = [];
-    for (const record19 of input.records || []) {
-      if (!record19) continue;
-      const mine = record19.userId != null && ids.has(normalizeDocumentId(record19.userId)) || record19.operativeId != null && ids.has(normalizeDocumentId(record19.operativeId));
+    for (const record20 of input.records || []) {
+      if (!record20) continue;
+      const mine = record20.userId != null && ids.has(normalizeDocumentId(record20.userId)) || record20.operativeId != null && ids.has(normalizeDocumentId(record20.operativeId));
       if (!mine) continue;
-      const status = normalizeHolidayStatus(record19.status);
+      const status = normalizeHolidayStatus(record20.status);
       if (!statuses.has(status)) continue;
-      const start = String(record19.startDayKey || "").trim();
-      const endRaw = String(record19.endDayKey || "").trim();
+      const start = String(record20.startDayKey || "").trim();
+      const endRaw = String(record20.endDayKey || "").trim();
       const end = endRaw && endRaw >= start ? endRaw : start;
       if (!start || end < range.startDayKey || start > range.endDayKey) continue;
-      const days = leaveReportDayCount({ startDayKey: start, endDayKey: end, timeSlot: record19.timeSlot }, range, zone3, nonWorking);
-      rows3.push({ id: String(record19.id ?? ""), startDayKey: start, endDayKey: end, timeSlot: normalizeHolidayTimeSlot(record19.timeSlot), status, days });
+      const days = leaveReportDayCount({ startDayKey: start, endDayKey: end, timeSlot: record20.timeSlot }, range, zone3, nonWorking);
+      rows3.push({ id: String(record20.id ?? ""), startDayKey: start, endDayKey: end, timeSlot: normalizeHolidayTimeSlot(record20.timeSlot), status, days });
     }
     rows3.sort((a, b) => a.startDayKey === b.startDayKey ? a.id.localeCompare(b.id) : a.startDayKey < b.startDayKey ? 1 : -1);
     return {
@@ -24745,24 +24818,24 @@ var ProjectPlannerCanonical = (() => {
   function leaveDayKind(records, dayKey, timeZone, nonWorkingDayKeys) {
     let best = "none";
     let recordId = null;
-    for (const record19 of records || []) {
-      if (!record19) continue;
-      const status = normalizeHolidayStatus(record19.status);
+    for (const record20 of records || []) {
+      if (!record20) continue;
+      const status = normalizeHolidayStatus(record20.status);
       if (status !== "approved" && status !== "pending") continue;
-      if (!leaveRecordDayKeys(record19, timeZone, nonWorkingDayKeys).includes(dayKey)) continue;
-      const slot = normalizeHolidayTimeSlot(record19.timeSlot);
+      if (!leaveRecordDayKeys(record20, timeZone, nonWorkingDayKeys).includes(dayKey)) continue;
+      const slot = normalizeHolidayTimeSlot(record20.timeSlot);
       const half = slot === "AM" || slot === "PM";
       const kind = status === "pending" ? half ? "pendingHalf" : "pendingFull" : half ? "approvedHalf" : "approvedFull";
       if (RANK[kind] > RANK[best]) {
         best = kind;
-        recordId = String(record19.id ?? "").trim() || null;
+        recordId = String(record20.id ?? "").trim() || null;
       }
     }
     return { kind: best, recordId, isLocked: best === "approvedFull" || best === "pendingFull" };
   }
   function dailyOverviewLeaveRows(records, dayKey, timeZone, nonWorkingDayKeys) {
     return (records || []).filter(
-      (record19) => Boolean(record19) && normalizeHolidayStatus(record19.status) === "approved" && leaveRecordDayKeys(record19, timeZone, nonWorkingDayKeys).includes(dayKey)
+      (record20) => Boolean(record20) && normalizeHolidayStatus(record20.status) === "approved" && leaveRecordDayKeys(record20, timeZone, nonWorkingDayKeys).includes(dayKey)
     );
   }
 
@@ -24783,8 +24856,8 @@ var ProjectPlannerCanonical = (() => {
     }
     const operativeById = /* @__PURE__ */ new Map();
     for (const row3 of input.operatives || []) if (row3 && idKey(row3.id)) operativeById.set(idKey(row3.id), row3);
-    const resolve = (record19) => {
-      for (const raw of [record19.userId, record19.operativeId]) {
+    const resolve = (record20) => {
+      for (const raw of [record20.userId, record20.operativeId]) {
         const k = idKey(raw);
         if (!k) continue;
         const hit = byId.get(k) ?? byEmail.get(k);
@@ -24796,14 +24869,14 @@ var ProjectPlannerCanonical = (() => {
           return { key: `operative:${k}`, name: (operative.name ?? "").trim() || null };
         }
       }
-      const fallback = idKey(record19.userId) || idKey(record19.operativeId);
+      const fallback = idKey(record20.userId) || idKey(record20.operativeId);
       return fallback ? { key: `id:${fallback}`, name: null } : null;
     };
     const people = [];
     const index = /* @__PURE__ */ new Map();
-    onDay.forEach((record19, position) => {
-      const owner = resolve(record19) ?? { key: `record:${String(record19.id ?? position)}`, name: null };
-      const recordId = String(record19.id ?? "").trim();
+    onDay.forEach((record20, position) => {
+      const owner = resolve(record20) ?? { key: `record:${String(record20.id ?? position)}`, name: null };
+      const recordId = String(record20.id ?? "").trim();
       const at = index.get(owner.key);
       if (at === void 0) {
         index.set(owner.key, people.length);
@@ -24900,11 +24973,11 @@ var ProjectPlannerCanonical = (() => {
         }
         const pending = kind === "pendingFull" || kind === "pendingHalf";
         const half = kind === "approvedHalf" || kind === "pendingHalf";
-        const record19 = (result2.recordId ? mine.find((h4) => String(h4.id ?? "").trim() === result2.recordId) : void 0) ?? mine.find((h4) => {
+        const record20 = (result2.recordId ? mine.find((h4) => String(h4.id ?? "").trim() === result2.recordId) : void 0) ?? mine.find((h4) => {
           const slot2 = normalizeHolidayTimeSlot(h4.timeSlot);
           return half ? slot2 !== "FULL DAY" : slot2 === "FULL DAY";
         });
-        const slot = mixedSlot ?? (half ? normalizeHolidayTimeSlot(record19?.timeSlot) === "PM" ? "PM" : "AM" : "FULL DAY");
+        const slot = mixedSlot ?? (half ? normalizeHolidayTimeSlot(record20?.timeSlot) === "PM" ? "PM" : "AM" : "FULL DAY");
         const base = pending ? JOB_SCHEDULE_LEAVE_PENDING_LABEL : JOB_SCHEDULE_LEAVE_LABEL;
         const dayInput2 = standardDayOn(input?.day, dayKey);
         const state = pending ? "pending" : "approved";
@@ -25171,7 +25244,7 @@ var ProjectPlannerCanonical = (() => {
   function splitCsvRecords(textValue) {
     const records = [];
     let field = "";
-    let record19 = [];
+    let record20 = [];
     let quoted = false;
     const value = textValue.replace(/^﻿/, "");
     for (let i = 0; i < value.length; i += 1) {
@@ -25192,21 +25265,21 @@ var ProjectPlannerCanonical = (() => {
       if (char === '"') {
         quoted = true;
       } else if (char === ",") {
-        record19.push(field);
+        record20.push(field);
         field = "";
       } else if (char === "\n" || char === "\r") {
         if (char === "\r" && value[i + 1] === "\n") i += 1;
-        record19.push(field);
-        records.push(record19);
-        record19 = [];
+        record20.push(field);
+        records.push(record20);
+        record20 = [];
         field = "";
       } else {
         field += char;
       }
     }
-    if (field !== "" || record19.length > 0) {
-      record19.push(field);
-      records.push(record19);
+    if (field !== "" || record20.length > 0) {
+      record20.push(field);
+      records.push(record20);
     }
     return records;
   }
@@ -25434,6 +25507,8 @@ var ProjectPlannerCanonical = (() => {
     personal_site_audit: photosOnly(10 * MB),
     // 1.80.0: subcontractor insurance and RAMS documents.
     subcontractor_document: photosAndPdf(10 * MB),
+    // 1.83.0 (§31): organisation insurance and accreditation certificates.
+    org_compliance_document: photosAndPdf(10 * MB),
     // The 1.48.0 §28 catalogue import (`materialCatalogueCsvFileError` / `materialCatalogueCsvTextError` keep their own
     // messages on the import screens); listed here so the one table names every upload.
     material_catalogue_import: {
@@ -25567,13 +25642,13 @@ var ProjectPlannerCanonical = (() => {
     if (startsWith(bytes, [208, 207, 17, 224, 161, 177, 26, 225])) return "application/x-ole-storage";
     if (startsWith(bytes, [66, 77])) return "image/bmp";
     if (startsWith(bytes, [73, 73, 42, 0]) || startsWith(bytes, [77, 77, 0, 42])) return "image/tiff";
-    const text57 = ascii(bytes, 0, bytes.length);
-    const lead = text57.replace(/^(\uFEFF|\xEF\xBB\xBF)/, "").trimStart().toLowerCase();
+    const text58 = ascii(bytes, 0, bytes.length);
+    const lead = text58.replace(/^(\uFEFF|\xEF\xBB\xBF)/, "").trimStart().toLowerCase();
     if (lead.startsWith("<")) {
       return lead.includes("<svg") ? "image/svg+xml" : "text/html";
     }
-    const pdfAt = text57.indexOf("%PDF-");
-    if (pdfAt >= 0 && !text57.slice(0, pdfAt).includes("<")) return "application/pdf";
+    const pdfAt = text58.indexOf("%PDF-");
+    if (pdfAt >= 0 && !text58.slice(0, pdfAt).includes("<")) return "application/pdf";
     if (!bytes.includes(0)) {
       if (lead.includes("<svg")) return "image/svg+xml";
       if (lead.includes("<html") || lead.includes("<script")) return "text/html";
@@ -27357,9 +27432,9 @@ var ProjectPlannerCanonical = (() => {
   var SQUARE = { width: 1280, height: 1280 };
   var PANORAMA = { width: 4e3, height: 600 };
   var AT = Date.UTC(2026, 10, 17, 9, 30);
-  var repeat = (text57, length) => {
+  var repeat = (text58, length) => {
     let out = "";
-    while (out.length < length) out += text57;
+    while (out.length < length) out += text58;
     return out.slice(0, length);
   };
   var SITE_AUDIT_REPORT_FIXTURE_INPUTS = [
@@ -27590,7 +27665,7 @@ var ProjectPlannerCanonical = (() => {
   var EXTRA_LATIN = { \u0142: "l", \u0141: "L", \u0111: "d", \u0110: "D", \u0127: "h", \u0126: "H", \u0131: "i", \u00F8: "\xF8", \u00D8: "\xD8" };
   function siteAuditReportText(value) {
     const table = widthTable(false);
-    const drawable = (text57) => text57.length > 0 && Array.from(text57).every((c) => table.has(c.codePointAt(0) ?? 0));
+    const drawable = (text58) => text58.length > 0 && Array.from(text58).every((c) => table.has(c.codePointAt(0) ?? 0));
     const source = String(value ?? "").normalize("NFC").replace(/\r\n?/g, "\n").replace(/\t/g, " ");
     let out = "";
     for (const cluster of siteAuditGraphemes(source)) {
@@ -27633,23 +27708,23 @@ var ProjectPlannerCanonical = (() => {
     return out;
   }
   function siteAuditReportFitLine(value, size, maxWidth, bold = false) {
-    const text57 = siteAuditReportText(value).replace(/\n/g, " ");
-    if (siteAuditReportTextWidth(text57, size, bold) <= maxWidth + 0.01) return text57;
-    const chars = Array.from(text57);
+    const text58 = siteAuditReportText(value).replace(/\n/g, " ");
+    if (siteAuditReportTextWidth(text58, size, bold) <= maxWidth + 0.01) return text58;
+    const chars = Array.from(text58);
     while (chars.length > 0 && siteAuditReportTextWidth(chars.join("") + "\u2026", size, bold) > maxWidth + 0.01) chars.pop();
     return chars.join("").trimEnd() + "\u2026";
   }
-  function siteAuditReportTextWidth(text57, size, bold = false) {
+  function siteAuditReportTextWidth(text58, size, bold = false) {
     const table = widthTable(bold);
     let units = 0;
-    for (const ch of Array.from(text57)) units += table.get(ch.codePointAt(0) ?? 0) ?? 556;
+    for (const ch of Array.from(text58)) units += table.get(ch.codePointAt(0) ?? 0) ?? 556;
     return units * size / 1e3;
   }
   function wrapSiteAuditReportText(value, size, maxWidth, bold = false) {
-    const text57 = siteAuditReportText(value);
+    const text58 = siteAuditReportText(value);
     const fits = (line) => siteAuditReportTextWidth(line, size, bold) <= maxWidth + 0.01;
     const lines = [];
-    for (const paragraph of text57.split("\n")) {
+    for (const paragraph of text58.split("\n")) {
       const words = paragraph.split(" ");
       let line = "";
       for (const word of words) {
@@ -27754,9 +27829,9 @@ var ProjectPlannerCanonical = (() => {
     });
     return top + lines.length * lineHeight;
   }
-  function flowLine(b, text57, x, size, lineHeight, bold, color) {
+  function flowLine(b, text58, x, size, lineHeight, bold, color) {
     if (b.y + lineHeight > BODY_BOTTOM) b.newPage();
-    textOps(b.ops, [text57], x, b.y, size, lineHeight, bold, color);
+    textOps(b.ops, [text58], x, b.y, size, lineHeight, bold, color);
     b.y += lineHeight;
   }
   var SITE_AUDIT_REPORT_LOGO_BOX = Object.freeze({
@@ -27805,10 +27880,10 @@ var ProjectPlannerCanonical = (() => {
     const headerTextW = W - MARGIN - 150;
     const subtitle = `${jobNumber} \xB7 ${str(input.siteAddress) || str(audit.projectName)}`;
     const leftLines = [{ text: "SITE AUDIT REPORT", size: 9, lh: 14, bold: true, color: C.whiteSoft, gap: 0 }];
-    wrapSiteAuditReportText(type, 22, headerTextW, true).forEach((text57, i) => leftLines.push({ text: text57, size: 22, lh: 26, bold: true, color: C.white, gap: i === 0 ? 2 : 0 }));
-    wrapSiteAuditReportText(subtitle, 12, headerTextW).forEach((text57, i) => leftLines.push({ text: text57, size: 12, lh: 15, bold: false, color: C.whiteSoft, gap: i === 0 ? 4 : 0 }));
+    wrapSiteAuditReportText(type, 22, headerTextW, true).forEach((text58, i) => leftLines.push({ text: text58, size: 22, lh: 26, bold: true, color: C.white, gap: i === 0 ? 2 : 0 }));
+    wrapSiteAuditReportText(subtitle, 12, headerTextW).forEach((text58, i) => leftLines.push({ text: text58, size: 12, lh: 15, bold: false, color: C.whiteSoft, gap: i === 0 ? 4 : 0 }));
     if (str(audit.customTitle)) {
-      wrapSiteAuditReportText(str(audit.customTitle), 10.5, headerTextW).forEach((text57) => leftLines.push({ text: text57, size: 10.5, lh: 13, bold: false, color: C.whiteSoft, gap: 0 }));
+      wrapSiteAuditReportText(str(audit.customTitle), 10.5, headerTextW).forEach((text58) => leftLines.push({ text: text58, size: 10.5, lh: 13, bold: false, color: C.whiteSoft, gap: 0 }));
     }
     const orgLines = wrapSiteAuditReportText(orgName, 10, 110, true);
     const leftHeight = 24 + leftLines.reduce((sum, line) => sum + line.gap + line.lh, 0) + 20;
@@ -28962,12 +29037,12 @@ var ProjectPlannerCanonical = (() => {
       tombstonedBookingIds: input.tombstonedBookingIds,
       personIds: input.personIds
     });
-    const record19 = /* @__PURE__ */ new Map();
+    const record20 = /* @__PURE__ */ new Map();
     for (const raw of Array.isArray(sheet?.operativeSignedBookings) ? sheet?.operativeSignedBookings : []) {
       if (!raw || typeof raw !== "object") continue;
       const row3 = raw;
       const id2 = normalizeDocumentId(text50(row3.bookingId));
-      if (id2 && !record19.has(id2)) record19.set(id2, { fingerprint: text50(row3.fingerprint), place: text50(row3.place), storedText: null, dayKey: "", storedJob: "" });
+      if (id2 && !record20.has(id2)) record20.set(id2, { fingerprint: text50(row3.fingerprint), place: text50(row3.place), storedText: null, dayKey: "", storedJob: "" });
     }
     const snapshot = /* @__PURE__ */ new Map();
     const override = sheet?.weeklyReportOverride;
@@ -29004,7 +29079,7 @@ var ProjectPlannerCanonical = (() => {
     }
     const preferSnapshot = change.waitingFor === "lineManager";
     const beforeOf = (id2) => {
-      const fromRecord = record19.get(id2);
+      const fromRecord = record20.get(id2);
       const fromSnapshot = snapshot.get(id2);
       const first = preferSnapshot ? fromSnapshot ?? fromRecord : fromRecord ?? fromSnapshot;
       if (!first) return null;
@@ -29655,10 +29730,10 @@ var ProjectPlannerCanonical = (() => {
     if (!isPlainMap(perms)) return false;
     return truthy(get(perms, kind, get(m, kind, false)));
   }
-  function utf8Bytes2(text57) {
+  function utf8Bytes2(text58) {
     let bytes = 0;
-    for (let i = 0; i < text57.length; i += 1) {
-      const code = text57.charCodeAt(i);
+    for (let i = 0; i < text58.length; i += 1) {
+      const code = text58.charCodeAt(i);
       if (code < 128) bytes += 1;
       else if (code < 2048) bytes += 2;
       else if (code >= 55296 && code <= 56319) {
@@ -31347,26 +31422,26 @@ var ProjectPlannerCanonical = (() => {
     const personFor = leavePersonMatcher(input.people);
     const rows3 = /* @__PURE__ */ new Map();
     const unmatched = [];
-    for (const record19 of input.records || []) {
-      if (!record19 || String(record19.status ?? "approved").toLowerCase() !== "approved") continue;
+    for (const record20 of input.records || []) {
+      if (!record20 || String(record20.status ?? "approved").toLowerCase() !== "approved") continue;
       const days = leaveDaysInRange(
-        { startDayKey: record19.startDayKey, endDayKey: record19.endDayKey, timeSlot: record19.timeSlot ?? "FULL DAY" },
+        { startDayKey: record20.startDayKey, endDayKey: record20.endDayKey, timeSlot: record20.timeSlot ?? "FULL DAY" },
         { startDayKey: input.range.start, endDayKey: input.range.end },
         zone3,
         input.nonWorkingDayKeys ?? null
       );
       if (!(days > 0)) continue;
-      const person = personFor(record19);
+      const person = personFor(record20);
       if (!person) {
-        const missingId = String(record19.userId || record19.operativeId || record19.id || "").trim();
-        const former = leaveRecordFormerPerson(record19, input.formerPeople);
+        const missingId = String(record20.userId || record20.operativeId || record20.id || "").trim();
+        const former = leaveRecordFormerPerson(record20, input.formerPeople);
         unmatched.push({
-          recordId: record19.id,
-          userId: record19.userId ?? null,
-          operativeId: record19.operativeId ?? null,
+          recordId: record20.id,
+          userId: record20.userId ?? null,
+          operativeId: record20.operativeId ?? null,
           ...former ? { formerPersonId: former.id } : {}
         });
-        const stored = String(record19.userName ?? "").trim();
+        const stored = String(record20.userName ?? "").trim();
         const name = former ? formerPersonLabel(former.displayName) : stored || `${WEEKLY_REPORT_PERSON_NOT_FOUND} (id ${missingId})`;
         const key8 = former ? `former:${idKey9(former.id)}` : `missing:${idKey9(missingId)}`;
         const row4 = rows3.get(key8) ?? { personId: null, person: name, role: "\u2014", days: 0, type: "Approved", found: false };
@@ -31390,13 +31465,13 @@ var ProjectPlannerCanonical = (() => {
         if (key8 && !byId.has(key8)) byId.set(key8, person);
       }
     }
-    return (record19) => byId.get(idKey9(record19.userId)) ?? byId.get(idKey9(record19.operativeId)) ?? null;
+    return (record20) => byId.get(idKey9(record20.userId)) ?? byId.get(idKey9(record20.operativeId)) ?? null;
   }
-  function leaveRecordFormerPerson(record19, formerPeople) {
-    if (!record19 || !formerPeople?.length) return null;
-    const byId = formerPersonForId(record19.userId, formerPeople) ?? formerPersonForId(record19.operativeId, formerPeople);
+  function leaveRecordFormerPerson(record20, formerPeople) {
+    if (!record20 || !formerPeople?.length) return null;
+    const byId = formerPersonForId(record20.userId, formerPeople) ?? formerPersonForId(record20.operativeId, formerPeople);
     if (byId) return byId;
-    const email = String(record19.userId ?? "").trim().toLowerCase();
+    const email = String(record20.userId ?? "").trim().toLowerCase();
     if (!email.includes("@")) return null;
     let found = null;
     for (const person of formerPeople) {
@@ -31407,7 +31482,7 @@ var ProjectPlannerCanonical = (() => {
   }
   function leaveRecordsWithoutPerson(input) {
     const personFor = leavePersonMatcher(input.people);
-    return (input.records || []).filter((record19) => record19 && !personFor(record19));
+    return (input.records || []).filter((record20) => record20 && !personFor(record20));
   }
   var WEEKLY_REPORT_WARNING_OPEN = "Open";
   function weeklyReportClashDetail(input) {
@@ -31683,8 +31758,8 @@ var ProjectPlannerCanonical = (() => {
       };
     });
     const findings = [];
-    for (const { entry, record: record19 } of parsed) {
-      const owners = plans.filter((plan) => leaveRecordsForAccount([record19], plan.account, operatives).length > 0);
+    for (const { entry, record: record20 } of parsed) {
+      const owners = plans.filter((plan) => leaveRecordsForAccount([record20], plan.account, operatives).length > 0);
       if (owners.length === 0) continue;
       const storedUserId = storedText(entry.data?.userId);
       const storedOperativeId = storedText(entry.data?.operativeId);
@@ -31697,8 +31772,8 @@ var ProjectPlannerCanonical = (() => {
           personEmail: owners[0].email,
           storedUserId,
           storedOperativeId,
-          readerUserId: record19.userId,
-          readerOperativeId: record19.operativeId,
+          readerUserId: record20.userId,
+          readerOperativeId: record20.operativeId,
           reason: "conflict",
           otherPersonIds: owners.slice(1).map((plan) => plan.person.id),
           fix: `Decide whose leave organizations/{orgId}/holidayBookings/${entry.id} is (${owners.map((plan) => plan.person.id).join(", ")}) and set its userId to that person's users id.`
@@ -31708,7 +31783,7 @@ var ProjectPlannerCanonical = (() => {
       const owner = owners[0];
       if (queriedBy(owner)) continue;
       const spelling = owner.userKeys.has(key7(storedUserId)) || owner.operativeKeys.has(key7(storedOperativeId));
-      const sameEmail = owner.sameEmailKeys.has(key7(record19.userId)) || owner.sameEmailKeys.has(key7(record19.operativeId));
+      const sameEmail = owner.sameEmailKeys.has(key7(record20.userId)) || owner.sameEmailKeys.has(key7(record20.operativeId));
       const reason = spelling ? "letterCase" : sameEmail ? "sameEmailAccount" : "legacyKey";
       findings.push({
         leaveId: entry.id,
@@ -31716,8 +31791,8 @@ var ProjectPlannerCanonical = (() => {
         personEmail: owner.email,
         storedUserId,
         storedOperativeId,
-        readerUserId: record19.userId,
-        readerOperativeId: record19.operativeId,
+        readerUserId: record20.userId,
+        readerOperativeId: record20.operativeId,
         reason,
         otherPersonIds: [],
         fix: `Set userId to "${owner.person.id}" on organizations/{orgId}/holidayBookings/${entry.id} (keep every other field).`
@@ -31784,8 +31859,8 @@ var ProjectPlannerCanonical = (() => {
   }
   function materialSendRecordRecipientEmails(records) {
     const out = /* @__PURE__ */ new Set();
-    for (const record19 of records || []) {
-      for (const recipient of record19 && Array.isArray(record19.recipients) ? record19.recipients : []) {
+    for (const record20 of records || []) {
+      for (const recipient of record20 && Array.isArray(record20.recipients) ? record20.recipients : []) {
         const email = emailKey6(recipient?.email);
         if (email) out.add(email);
       }
@@ -32345,6 +32420,603 @@ var ProjectPlannerCanonical = (() => {
     const end = text56(input?.endDayKey);
     if (!org || !recipient || !DAY_KEY14.test(start) || !DAY_KEY14.test(end)) return null;
     return derivedDocumentId(`timesheetSignOffReminder|${org}|${recipient}|${start}|${end}`);
+  }
+
+  // lib/canonical/orgCompliance.ts
+  var ORG_COMPLIANCE_COLLECTION = "orgCompliance";
+  var ORG_COMPLIANCE_DOCUMENT_ID = "documents";
+  var ORG_COMPLIANCE_SECTION_KEYS = ["insurance", "trade", "quality"];
+  var ORG_COMPLIANCE_SECTIONS = [
+    {
+      key: "insurance",
+      title: "PI & PL insurance",
+      helper: "Public liability, professional indemnity and employer\u2019s liability",
+      issuerLabel: "Insurer",
+      referenceLabel: "Policy number",
+      coverLabel: "Limit of indemnity",
+      emptyTitle: "No insurance certificates yet",
+      emptyBody: "Upload your PL and PI certificates so they\u2019re ready to send.",
+      documentTypes: [
+        { key: "public_liability", label: "Public liability", short: "PL" },
+        { key: "professional_indemnity", label: "Professional indemnity", short: "PI" },
+        { key: "employers_liability", label: "Employer\u2019s liability", short: "EL" },
+        { key: "contractors_all_risks", label: "Contractor\u2019s all risks", short: "CAR" },
+        { key: "other_insurance", label: "Other insurance", short: "Other" }
+      ]
+    },
+    {
+      key: "trade",
+      title: "Trade-specific accreditations",
+      helper: "e.g. NICEIC, NAPIT, ECA, Gas Safe, F-Gas, BESA",
+      issuerLabel: "Scheme or body",
+      referenceLabel: "Registration number",
+      coverLabel: null,
+      emptyTitle: "No trade accreditations yet",
+      emptyBody: "Upload scheme certificates such as NICEIC, Gas Safe or F-Gas.",
+      documentTypes: [
+        { key: "niceic", label: "NICEIC Approved Contractor", short: "NICEIC" },
+        { key: "napit", label: "NAPIT registration", short: "NAPIT" },
+        { key: "eca", label: "ECA membership", short: "ECA" },
+        { key: "gas_safe", label: "Gas Safe registration", short: "Gas Safe" },
+        { key: "f_gas", label: "F-Gas company certificate", short: "F-Gas" },
+        { key: "besa", label: "BESA membership", short: "BESA" },
+        { key: "other_trade", label: "Other accreditation", short: "Other" }
+      ]
+    },
+    {
+      key: "quality",
+      title: "Quality, information & process management",
+      helper: "ISO 9001, ISO 14001, ISO 27001, ISO 45001",
+      issuerLabel: "Certification body",
+      referenceLabel: "Certificate number",
+      coverLabel: null,
+      emptyTitle: "No quality certificates yet",
+      emptyBody: "Upload ISO 9001, ISO 27001 or similar certificates.",
+      documentTypes: [
+        { key: "iso_9001", label: "ISO 9001 \u2013 Quality management", short: "ISO 9001" },
+        { key: "iso_14001", label: "ISO 14001 \u2013 Environmental management", short: "ISO 14001" },
+        { key: "iso_27001", label: "ISO 27001 \u2013 Information security", short: "ISO 27001" },
+        { key: "iso_45001", label: "ISO 45001 \u2013 Health & safety management", short: "ISO 45001" },
+        { key: "other_quality", label: "Other certificate", short: "Other" }
+      ]
+    }
+  ];
+  var ORG_COMPLIANCE_PAGE_TITLE = "Insurance & accreditations";
+  var ORG_COMPLIANCE_PAGE_SUBTITLE = "Your organisation\u2019s certificates, ready to view and share.";
+  var ORG_COMPLIANCE_HUB_GROUP = "Compliance";
+  var ORG_COMPLIANCE_EXPIRING_SOON_DAYS = 30;
+  var ORG_COMPLIANCE_MAX_YEARS_AHEAD = 10;
+  var ORG_COMPLIANCE_MAX_PER_SECTION = 50;
+  var ORG_COMPLIANCE_FIELD_LIMITS = { title: 120, issuer: 120, reference: 60 };
+  var ORG_COMPLIANCE_COVER_MAX = 1e9;
+  var ORG_COMPLIANCE_LABELS = {
+    docType: "Document type",
+    title: "Name",
+    titlePlaceholder: "e.g. Public liability 2026\u201327",
+    expiryToggle: "Has an expiry date",
+    expiry: "Expiry date",
+    expiryHelper: `Optional. Shows as expiring ${ORG_COMPLIANCE_EXPIRING_SOON_DAYS} days before.`,
+    upload: "Upload",
+    view: "View",
+    replace: "Replace file",
+    edit: "Edit details",
+    remove: "Remove",
+    save: "Save",
+    cancel: "Cancel",
+    replaceHelper: "The new file replaces the current one. Update the expiry date if it\u2019s changed. The old file can be recovered for 30 days.",
+    removeConfirm: "Remove this document? The file can be recovered for 30 days by asking support."
+  };
+  var ORG_COMPLIANCE_MESSAGES = {
+    noAccess: "Only an admin can open insurance & accreditations.",
+    sectionFull: `A section can hold up to ${ORG_COMPLIANCE_MAX_PER_SECTION} documents. Remove an old one first.`,
+    missing: "This document was removed on another device.",
+    docType: "Choose a document type.",
+    title: "Enter a name.",
+    titleLong: `Name can be up to ${ORG_COMPLIANCE_FIELD_LIMITS.title} characters.`,
+    issuerLong: `This can be up to ${ORG_COMPLIANCE_FIELD_LIMITS.issuer} characters.`,
+    referenceLong: `This can be up to ${ORG_COMPLIANCE_FIELD_LIMITS.reference} characters.`,
+    cover: "Enter the cover as a whole amount, or leave it empty.",
+    expiry: "Enter the expiry date as a date, or turn off \u201CHas an expiry date\u201D.",
+    expiryFar: `The expiry date can be at most ${ORG_COMPLIANCE_MAX_YEARS_AHEAD} years ahead.`
+  };
+  var ORG_COMPLIANCE_STATUS_ORDER = ["expired", "expiring_soon", "valid", "no_expiry"];
+  function text57(value) {
+    return typeof value === "string" ? value.trim() : "";
+  }
+  function record19(value) {
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  }
+  var DAY_KEY15 = /^\d{4}-\d{2}-\d{2}$/;
+  function validDayKey4(value) {
+    if (!DAY_KEY15.test(value)) return false;
+    const [y, m, d] = value.split("-").map(Number);
+    const date = new Date(Date.UTC(y, m - 1, d));
+    return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
+  }
+  function graphemeLength(value) {
+    return Array.from(value).length;
+  }
+  function isOrgComplianceSectionKey(value) {
+    return typeof value === "string" && ORG_COMPLIANCE_SECTION_KEYS.includes(value);
+  }
+  function orgComplianceSection(key8) {
+    return ORG_COMPLIANCE_SECTIONS.find((section) => section.key === key8) ?? null;
+  }
+  function orgComplianceDocTypeLabel(section, docType) {
+    const type = orgComplianceSection(section)?.documentTypes.find((t) => t.key === docType);
+    return type?.label ?? (text57(docType) || "Document");
+  }
+  function canManageOrganizationCompliance(user) {
+    if (!user || typeof user !== "object") return false;
+    return permissionLevelOf(user) === "admin";
+  }
+  var ORG_COMPLIANCE_ORG_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+  function orgComplianceOrganizationId(organizationId) {
+    const org = text57(organizationId);
+    return ORG_COMPLIANCE_ORG_ID_PATTERN.test(org) ? org : null;
+  }
+  function orgComplianceDocumentPath(organizationId) {
+    const org = orgComplianceOrganizationId(organizationId);
+    if (!org) return null;
+    return `organizations/${encodeURIComponent(org)}/${ORG_COMPLIANCE_COLLECTION}/${ORG_COMPLIANCE_DOCUMENT_ID}`;
+  }
+  function orgComplianceFolder(organizationId) {
+    const org = orgComplianceOrganizationId(organizationId);
+    if (!org) return null;
+    return `organizations/${encodeURIComponent(org)}/compliance`;
+  }
+  function orgComplianceStoragePath(input) {
+    const folder = orgComplianceFolder(input.organizationId);
+    const uid = text57(input.uid);
+    if (!folder || !uid || !/^[A-Za-z0-9-]+$/.test(uid)) return null;
+    const ms = Math.floor(Number(input.unixMs));
+    if (!Number.isFinite(ms) || ms < 0) return null;
+    const ext = text57(input.extension).toLowerCase().replace(/^\.+/, "").replace(/[^a-z0-9]/g, "");
+    return ext ? `${folder}/${uid}_${ms}.${ext}` : `${folder}/${uid}_${ms}`;
+  }
+  function orgCompliancePathBelongsTo(path, organizationId) {
+    const value = text57(path);
+    if (!value || value.includes("..") || value.includes("//")) return false;
+    const parts3 = value.split("/");
+    if (parts3.length !== 4 || parts3[0] !== "organizations" || parts3[2] !== "compliance" || !parts3[3]) return false;
+    if (!ORG_COMPLIANCE_ORG_ID_PATTERN.test(parts3[1])) return false;
+    const org = text57(organizationId);
+    return !org || normalizeDocumentId(parts3[1]) === normalizeDocumentId(org);
+  }
+  function normalizeOrgComplianceExpiry(value) {
+    if (value === null || value === void 0) return null;
+    const raw = text57(value);
+    if (!raw) return null;
+    return validDayKey4(raw) ? raw : void 0;
+  }
+  function normalizeOrgComplianceCover(value) {
+    if (value === null || value === void 0) return null;
+    if (typeof value === "string") {
+      const raw = value.replace(/[£$€,\s]/g, "");
+      if (!raw) return null;
+      if (!/^\d+$/.test(raw)) return void 0;
+      value = Number(raw);
+    }
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > ORG_COMPLIANCE_COVER_MAX) return void 0;
+    return value;
+  }
+  function orgComplianceDetailsError(section, details, todayKey4) {
+    const sec = orgComplianceSection(section);
+    if (!sec) return ORG_COMPLIANCE_MESSAGES.docType;
+    if (!sec.documentTypes.some((t) => t.key === details.docType)) return ORG_COMPLIANCE_MESSAGES.docType;
+    const title = text57(details.title);
+    if (!title) return ORG_COMPLIANCE_MESSAGES.title;
+    if (graphemeLength(title) > ORG_COMPLIANCE_FIELD_LIMITS.title) return ORG_COMPLIANCE_MESSAGES.titleLong;
+    if (graphemeLength(text57(details.issuer)) > ORG_COMPLIANCE_FIELD_LIMITS.issuer) return ORG_COMPLIANCE_MESSAGES.issuerLong;
+    if (graphemeLength(text57(details.reference)) > ORG_COMPLIANCE_FIELD_LIMITS.reference) return ORG_COMPLIANCE_MESSAGES.referenceLong;
+    if (sec.coverLabel && normalizeOrgComplianceCover(details.coverAmount) === void 0) return ORG_COMPLIANCE_MESSAGES.cover;
+    const expiry = normalizeOrgComplianceExpiry(details.expiresOn);
+    if (expiry === void 0) return ORG_COMPLIANCE_MESSAGES.expiry;
+    if (expiry && validDayKey4(todayKey4)) {
+      const limit = `${Number(todayKey4.slice(0, 4)) + ORG_COMPLIANCE_MAX_YEARS_AHEAD}${todayKey4.slice(4)}`;
+      if (expiry > limit) return ORG_COMPLIANCE_MESSAGES.expiryFar;
+    }
+    return null;
+  }
+  function cleanDetails(section, details) {
+    return {
+      docType: text57(details.docType),
+      title: text57(details.title),
+      issuer: text57(details.issuer),
+      reference: text57(details.reference),
+      coverAmount: section.coverLabel ? normalizeOrgComplianceCover(details.coverAmount) ?? null : null,
+      expiresOn: normalizeOrgComplianceExpiry(details.expiresOn) ?? null
+    };
+  }
+  function parseEntry2(entry, index, section, organizationId) {
+    const row3 = record19(entry);
+    const path = text57(row3.path);
+    if (!orgCompliancePathBelongsTo(path, organizationId)) return null;
+    const size = Number(row3.sizeBytes);
+    const cover = section.coverLabel ? normalizeOrgComplianceCover(row3.coverAmount) : null;
+    const docType = text57(row3.docType) || section.documentTypes[section.documentTypes.length - 1].key;
+    return {
+      id: text57(row3.id) || derivedRowId(organizationId ?? "", `documents.${section.key}`, index, [path]),
+      section: section.key,
+      docType,
+      title: text57(row3.title) || orgComplianceDocTypeLabel(section.key, docType),
+      issuer: text57(row3.issuer),
+      reference: text57(row3.reference),
+      coverAmount: cover ?? null,
+      // A stored expiry that is not a date reads as none (never drops the row).
+      expiresOn: normalizeOrgComplianceExpiry(row3.expiresOn) ?? null,
+      path,
+      fileName: text57(row3.fileName) || path.split("/").pop() || "Document",
+      contentType: text57(row3.contentType),
+      sizeBytes: Number.isFinite(size) && size >= 0 ? size : null,
+      uploadedAtMs: documentInstantMs(row3.uploadedAtMs),
+      uploadedBy: text57(row3.uploadedBy),
+      updatedAtMs: documentInstantMs(row3.updatedAtMs),
+      updatedBy: text57(row3.updatedBy)
+    };
+  }
+  function parseOrgComplianceDocuments(data, options) {
+    const out = { insurance: [], trade: [], quality: [] };
+    const documents = record19(record19(data).documents);
+    const org = text57(options?.organizationId) || null;
+    for (const section of ORG_COMPLIANCE_SECTIONS) {
+      const list = Array.isArray(documents[section.key]) ? documents[section.key] : [];
+      const seen = /* @__PURE__ */ new Set();
+      list.forEach((entry, index) => {
+        const parsed = parseEntry2(entry, index, section, org);
+        if (!parsed || seen.has(parsed.path)) return;
+        seen.add(parsed.path);
+        out[section.key].push(parsed);
+      });
+    }
+    return out;
+  }
+  function storedList2(stored, section) {
+    const list = record19(record19(stored).documents)[section];
+    return Array.isArray(list) ? list.map((row3) => record19(row3)) : [];
+  }
+  function indexOfEntry(list, section, organizationId, entryId) {
+    return list.findIndex((row3, i) => {
+      const id2 = text57(row3.id) || derivedRowId(organizationId, `documents.${section}`, i, [text57(row3.path)]);
+      return normalizeDocumentId(id2) === normalizeDocumentId(entryId);
+    });
+  }
+  function fileFields(file) {
+    const size = Number(file.sizeBytes);
+    const at = Math.floor(Number(file.uploadedAtMs));
+    return {
+      path: text57(file.path),
+      fileName: text57(file.fileName) || text57(file.path).split("/").pop() || "Document",
+      contentType: text57(file.contentType),
+      sizeBytes: Number.isFinite(size) && size >= 0 ? size : null,
+      uploadedAtMs: Number.isFinite(at) ? at : null,
+      uploadedBy: text57(file.uploadedBy)
+    };
+  }
+  function orgComplianceAddWriteFields(stored, input) {
+    const section = orgComplianceSection(input.section);
+    if (!section) return { set: null, outcome: "invalid", error: ORG_COMPLIANCE_MESSAGES.docType };
+    const error = orgComplianceDetailsError(section.key, input.details, input.todayKey);
+    if (error) return { set: null, outcome: "invalid", error };
+    const file = fileFields(input.file);
+    if (!orgCompliancePathBelongsTo(file.path, input.organizationId) || !file.uploadedBy) return { set: null, outcome: "invalid", error: null };
+    const list = storedList2(stored, section.key);
+    if (list.some((row3) => text57(row3.path) === file.path)) return { set: null, outcome: "alreadyLinked", error: null };
+    if (list.length >= ORG_COMPLIANCE_MAX_PER_SECTION) return { set: null, outcome: "refused", error: ORG_COMPLIANCE_MESSAGES.sectionFull };
+    const entry = {
+      id: text57(input.id) || derivedRowId(input.organizationId, `documents.${section.key}`, list.length, [file.path]),
+      ...cleanDetails(section, input.details),
+      ...file,
+      updatedAtMs: file.uploadedAtMs,
+      updatedBy: file.uploadedBy
+    };
+    return { set: { section: section.key, value: [...list, entry] }, outcome: "added", error: null };
+  }
+  function orgComplianceUpdateWriteFields(stored, input) {
+    const section = orgComplianceSection(input.section);
+    if (!section) return { set: null, outcome: "invalid", error: ORG_COMPLIANCE_MESSAGES.docType };
+    const error = orgComplianceDetailsError(section.key, input.details, input.todayKey);
+    if (error) return { set: null, outcome: "invalid", error };
+    const list = storedList2(stored, section.key);
+    const index = indexOfEntry(list, section.key, input.organizationId, input.entryId);
+    if (index < 0) return { set: null, outcome: "missing", error: ORG_COMPLIANCE_MESSAGES.missing };
+    const line = list[index];
+    const next = cleanDetails(section, input.details);
+    const current = cleanDetails(section, line);
+    if (JSON.stringify(current) === JSON.stringify(next)) return { set: null, outcome: "unchanged", error: null };
+    const value = [...list];
+    value[index] = { ...line, ...next, updatedAtMs: Math.floor(Number(input.updatedAtMs)) || null, updatedBy: text57(input.updatedBy) };
+    return { set: { section: section.key, value }, outcome: "changed", error: null };
+  }
+  function orgComplianceReplaceWriteFields(stored, input) {
+    const section = orgComplianceSection(input.section);
+    if (!section) return { set: null, outcome: "invalid", replacedPath: null, error: ORG_COMPLIANCE_MESSAGES.docType };
+    const error = orgComplianceDetailsError(section.key, input.details, input.todayKey);
+    if (error) return { set: null, outcome: "invalid", replacedPath: null, error };
+    const file = fileFields(input.file);
+    if (!orgCompliancePathBelongsTo(file.path, input.organizationId) || !file.uploadedBy) {
+      return { set: null, outcome: "invalid", replacedPath: null, error: null };
+    }
+    const list = storedList2(stored, section.key);
+    const index = indexOfEntry(list, section.key, input.organizationId, input.entryId);
+    if (index < 0) return { set: null, outcome: "missing", replacedPath: null, error: ORG_COMPLIANCE_MESSAGES.missing };
+    const line = list[index];
+    if (text57(line.path) === file.path) return { set: null, outcome: "alreadyLinked", replacedPath: null, error: null };
+    const value = [...list];
+    const id2 = text57(line.id) || derivedRowId(input.organizationId, `documents.${section.key}`, index, [text57(line.path)]);
+    value[index] = { ...line, id: id2, ...cleanDetails(section, input.details), ...file, updatedAtMs: file.uploadedAtMs, updatedBy: file.uploadedBy };
+    return { set: { section: section.key, value }, outcome: "replaced", replacedPath: text57(line.path) || null, error: null };
+  }
+  function orgComplianceRemoveWriteFields(stored, input) {
+    if (!isOrgComplianceSectionKey(input.section)) return { set: null, removedPath: null };
+    const list = storedList2(stored, input.section);
+    const index = indexOfEntry(list, input.section, input.organizationId, input.entryId);
+    if (index < 0) return { set: null, removedPath: null };
+    return {
+      set: { section: input.section, value: list.filter((_, i) => i !== index) },
+      removedPath: text57(list[index].path) || null
+    };
+  }
+  function orgComplianceMergePayload(write) {
+    return { documents: { [write.section]: write.value } };
+  }
+  function orgComplianceTodayKey(nowMs2, timeZone) {
+    return holidayDocumentDayKey(Number.isFinite(nowMs2) ? nowMs2 : Date.now(), timeZone);
+  }
+  function orgComplianceExpiryStatus(expiresOn, todayKey4) {
+    const expiry = normalizeOrgComplianceExpiry(expiresOn);
+    if (!expiry || !validDayKey4(todayKey4)) return { status: "no_expiry", tone: "grey", daysToExpiry: null, label: "No expiry date" };
+    const days = calendarDaysBetween(todayKey4, expiry);
+    const date = subcontractorDocumentExpiryDateText(expiry);
+    if (days < 0) return { status: "expired", tone: "red", daysToExpiry: days, label: `Expired ${date}` };
+    if (days <= ORG_COMPLIANCE_EXPIRING_SOON_DAYS) {
+      const label = days === 0 ? "Expires today" : days === 1 ? `1 day left \xB7 ${date}` : `${days} days left \xB7 ${date}`;
+      return { status: "expiring_soon", tone: "amber", daysToExpiry: days, label };
+    }
+    return { status: "valid", tone: "green", daysToExpiry: days, label: `Valid to ${date}` };
+  }
+  function orgComplianceSortedEntries(entries, todayKey4) {
+    const rank = (entry) => ORG_COMPLIANCE_STATUS_ORDER.indexOf(orgComplianceExpiryStatus(entry.expiresOn, todayKey4).status);
+    return [...entries].sort(
+      (a, b) => rank(a) - rank(b) || (a.expiresOn ?? "").localeCompare(b.expiresOn ?? "") || a.title.localeCompare(b.title, "en-GB", { sensitivity: "base" })
+    );
+  }
+  function orgComplianceCounts(documents, todayKey4) {
+    const counts = { total: 0, expiringSoon: 0, expired: 0, attention: 0 };
+    for (const key8 of ORG_COMPLIANCE_SECTION_KEYS) {
+      for (const entry of documents?.[key8] ?? []) {
+        counts.total += 1;
+        const status = orgComplianceExpiryStatus(entry.expiresOn, todayKey4).status;
+        if (status === "expiring_soon") counts.expiringSoon += 1;
+        if (status === "expired") counts.expired += 1;
+      }
+    }
+    counts.attention = counts.expiringSoon + counts.expired;
+    return counts;
+  }
+  function orgComplianceHubSubtitle(counts) {
+    const total = counts?.total ?? 0;
+    if (!total) return "PI, PL, trade and ISO certificates";
+    const docs = `${total} document${total === 1 ? "" : "s"}`;
+    const attention = counts?.attention ?? 0;
+    return attention ? `${docs} \xB7 ${attention} need${attention === 1 ? "s" : ""} attention` : docs;
+  }
+  function orgComplianceCoverText(amount, currency) {
+    return typeof amount === "number" && Number.isFinite(amount) ? formatMoney(amount, currency, { decimals: 0 }) : "";
+  }
+  function orgComplianceFileName(pickedName, storedPath) {
+    const objectName = text57(storedPath).split("/").pop() || "Document";
+    const picked = text57(pickedName).split(/[\\/]/).pop()?.trim() ?? "";
+    if (!picked) return objectName;
+    const ext = (name2) => {
+      const dot = name2.lastIndexOf(".");
+      return dot > 0 ? name2.slice(dot + 1).toLowerCase() : "";
+    };
+    const storedExt = ext(objectName);
+    const ownExt = ext(picked);
+    const norm = (e) => e === "jpeg" ? "jpg" : e;
+    let name = picked;
+    if (storedExt && norm(ownExt) !== norm(storedExt)) {
+      const base = ownExt ? picked.slice(0, picked.length - ownExt.length - 1) : picked;
+      name = `${base}.${storedExt}`;
+    }
+    return Array.from(name).slice(0, 200).join("");
+  }
+  function orgComplianceReminder(counts) {
+    const expired = counts?.expired ?? 0;
+    const expiringSoon = counts?.expiringSoon ?? 0;
+    const count = expired + expiringSoon;
+    if (!count) return null;
+    const parts3 = [
+      expired ? `${expired} expired` : "",
+      expiringSoon ? `${expiringSoon} expiring within ${ORG_COMPLIANCE_EXPIRING_SOON_DAYS} days` : ""
+    ].filter(Boolean);
+    return {
+      count,
+      expired,
+      expiringSoon,
+      title: `${count} insurance or accreditation certificate${count === 1 ? "" : "s"} need${count === 1 ? "s" : ""} attention`,
+      detail: parts3.join(" \xB7 ")
+    };
+  }
+  var ORG_COMPLIANCE_ZIP_MAX_DOCUMENTS = 50;
+  var ORG_COMPLIANCE_ZIP_MAX_BYTES = 200 * 1024 * 1024;
+  var ORG_COMPLIANCE_ZIP_TOO_LARGE_MESSAGE = "These documents are too large for one zip (200 MB). Choose fewer.";
+  function orgComplianceZipEntryNames(entries) {
+    const used = /* @__PURE__ */ new Set();
+    return entries.map((entry) => {
+      const raw = text57(entry.fileName) || text57(entry.title) || "Document";
+      const safe = raw.replace(/[\u0000-\u001f\u007f/\\:*?"<>|]/g, "_").replace(/^\.+/, "_").slice(0, 150) || "Document";
+      const dot = safe.lastIndexOf(".");
+      const base = dot > 0 ? safe.slice(0, dot) : safe;
+      const ext = dot > 0 ? safe.slice(dot) : "";
+      let name = safe;
+      for (let n = 2; used.has(name.toLowerCase()); n += 1) name = `${base} (${n})${ext}`;
+      used.add(name.toLowerCase());
+      return name;
+    });
+  }
+  function orgComplianceZipFileName(todayKey4) {
+    return `Insurance-and-accreditations-${validDayKey4(todayKey4) ? todayKey4 : "documents"}.zip`;
+  }
+  var ORG_COMPLIANCE_SHARE_LINK_DAYS = 7;
+  var ORG_COMPLIANCE_SHARE_MAX_DOCUMENTS = 20;
+  var ORG_COMPLIANCE_SHARE_LINKS_COLLECTION = "complianceShareLinks";
+  var ORG_COMPLIANCE_AUDIT_COLLECTION = "complianceAudit";
+  var ORG_COMPLIANCE_SIGNED_URL_SECONDS = 60;
+  var ORG_COMPLIANCE_SHARE_MESSAGES = {
+    none: "Choose at least one document to share.",
+    tooMany: `Share up to ${ORG_COMPLIANCE_SHARE_MAX_DOCUMENTS} documents in one link.`,
+    gone: "This link has expired or been turned off. Ask the company for a new one.",
+    helper: `Anyone with the link can view and download the chosen documents for ${ORG_COMPLIANCE_SHARE_LINK_DAYS} days, or until you turn the link off.`
+  };
+  function parseOrgComplianceDocumentRef(value) {
+    if (value && typeof value === "object") {
+      const row3 = value;
+      if (isOrgComplianceSectionKey(row3.section) && text57(row3.id) && !text57(row3.id).includes("/")) return { section: row3.section, id: text57(row3.id) };
+      return null;
+    }
+    const raw = text57(value);
+    const at = raw.indexOf(":");
+    if (at < 0) return null;
+    const section = raw.slice(0, at);
+    const id2 = raw.slice(at + 1);
+    return isOrgComplianceSectionKey(section) && id2 && !id2.includes("/") && id2.length <= 200 ? { section, id: id2 } : null;
+  }
+  function orgComplianceDocumentRefKey(ref) {
+    return `${ref.section}:${ref.id}`;
+  }
+  function findEntry(documents, ref) {
+    return documents[ref.section].find((entry) => normalizeDocumentId(entry.id) === normalizeDocumentId(ref.id)) ?? null;
+  }
+  function orgComplianceShareSelection(documents, refs) {
+    if (refs.length > ORG_COMPLIANCE_SHARE_MAX_DOCUMENTS) return { refs: [], error: ORG_COMPLIANCE_SHARE_MESSAGES.tooMany };
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const value of refs) {
+      const ref = parseOrgComplianceDocumentRef(value);
+      const entry = ref ? findEntry(documents, ref) : null;
+      if (!ref || !entry) continue;
+      const key8 = orgComplianceDocumentRefKey({ section: ref.section, id: entry.id });
+      if (seen.has(key8)) continue;
+      seen.add(key8);
+      out.push({ section: ref.section, id: entry.id });
+    }
+    return { refs: out, error: out.length ? null : ORG_COMPLIANCE_SHARE_MESSAGES.none };
+  }
+  function parseOrgComplianceShareLink(id2, data) {
+    const row3 = record19(data);
+    const org = text57(row3.organizationId);
+    if (!text57(id2) || !org) return null;
+    const docs = Array.isArray(row3.documents) ? row3.documents.map(parseOrgComplianceDocumentRef).filter((r) => r !== null) : [];
+    const num2 = (value) => typeof value === "number" && Number.isFinite(value) ? value : documentInstantMs(value);
+    return {
+      id: text57(id2),
+      organizationId: org,
+      documents: docs,
+      createdBy: text57(row3.createdBy),
+      createdAtMs: num2(row3.createdAtMs),
+      expiresAtMs: num2(row3.expiresAtMs),
+      revokedAtMs: num2(row3.revokedAtMs),
+      openCount: Number.isFinite(Number(row3.openCount)) ? Math.max(0, Math.floor(Number(row3.openCount))) : 0,
+      lastOpenedAtMs: num2(row3.lastOpenedAtMs)
+    };
+  }
+  function orgComplianceShareLinkState(link, nowMs2) {
+    if (!link || link.expiresAtMs == null) return "expired";
+    if (link.revokedAtMs != null) return "revoked";
+    return nowMs2 < link.expiresAtMs ? "active" : "expired";
+  }
+  function orgComplianceShareLinkCreateFields(input) {
+    const expiresAtMs = input.nowMs + ORG_COMPLIANCE_SHARE_LINK_DAYS * 24 * 60 * 60 * 1e3;
+    return {
+      organizationId: input.organizationId,
+      documents: input.documents.map(orgComplianceDocumentRefKey),
+      createdBy: input.createdBy,
+      createdAtMs: input.nowMs,
+      expiresAtMs,
+      revokedAtMs: null,
+      openCount: 0,
+      lastOpenedAtMs: null
+    };
+  }
+  function orgComplianceSharePath(token) {
+    return `/shared/compliance/${encodeURIComponent(token)}`;
+  }
+  function orgCompliancePublicDocuments(documents, refs, todayKey4, currency) {
+    const out = [];
+    for (const ref of refs) {
+      const entry = findEntry(documents, ref);
+      const section = orgComplianceSection(ref.section);
+      if (!entry || !section) continue;
+      const status = orgComplianceExpiryStatus(entry.expiresOn, todayKey4);
+      out.push({
+        key: orgComplianceDocumentRefKey({ section: section.key, id: entry.id }),
+        sectionTitle: section.title,
+        typeLabel: orgComplianceDocTypeLabel(section.key, entry.docType),
+        title: entry.title,
+        issuer: entry.issuer,
+        issuerLabel: section.issuerLabel,
+        reference: entry.reference,
+        referenceLabel: section.referenceLabel,
+        cover: section.coverLabel ? orgComplianceCoverText(entry.coverAmount, currency) : "",
+        coverLabel: section.coverLabel,
+        statusLabel: status.label,
+        tone: status.tone,
+        contentType: entry.contentType
+      });
+    }
+    return out;
+  }
+  function orgComplianceSharedEntry(documents, link, key8) {
+    const ref = parseOrgComplianceDocumentRef(key8);
+    if (!ref) return null;
+    const shared = link.documents.some(
+      (item) => item.section === ref.section && normalizeDocumentId(item.id) === normalizeDocumentId(ref.id)
+    );
+    return shared ? findEntry(documents, ref) : null;
+  }
+  function orgCompliancePathLinked(stored, path) {
+    const target = text57(path);
+    if (!target) return false;
+    const documents = record19(record19(stored).documents);
+    return ORG_COMPLIANCE_SECTION_KEYS.some((key8) => {
+      const list = documents[key8];
+      return Array.isArray(list) && list.some((row3) => text57(record19(row3).path) === target);
+    });
+  }
+  function orgComplianceShareOpen(org, nowMs2) {
+    if (!org || typeof org !== "object") return false;
+    if (organizationDeletionState(org, nowMs2).state !== "active") return false;
+    const raw = org.billing;
+    const billing = record19(raw);
+    if (raw && typeof raw === "object" && !hasAccess(billing, nowMs2)) return false;
+    if (billing.accessOpen === false) return false;
+    const closes = documentInstantMs(billing.accessClosesAt);
+    return !(closes != null && nowMs2 >= closes);
+  }
+  function orgComplianceShareCreatorActive(input) {
+    const uid = text57(input.createdBy);
+    const org = record19(input.organization);
+    if (!uid || !input.organization) return false;
+    const members = record19(org.members);
+    const level = organizationLevelFor({
+      organizationId: input.organizationId,
+      userId: uid,
+      user: input.user ?? null,
+      membership: input.membership ?? null,
+      membersRole: members[uid],
+      creatorUserId: text57(org.creatorUserId) || null
+    });
+    if (level.level !== "admin") return false;
+    const user = input.user ? record19(input.user) : null;
+    if (user && text57(user.organizationId).toLowerCase() === text57(input.organizationId).toLowerCase() && user.isActive === false) return false;
+    const membership = input.membership ? record19(input.membership) : null;
+    if (membership) {
+      const active = "accountActive" in membership ? membership.accountActive : membership.isActive;
+      if (active === false) return false;
+    }
+    return true;
   }
   return __toCommonJS(bundleEntry_exports);
 })();

@@ -87,6 +87,15 @@ const nextConfig = {
         source: '/interest/unsubscribe',
         headers: [{ key: 'Cache-Control', value: 'private, no-store, must-revalidate' }],
       },
+      {
+        // Rulebook 1.83.0 §31: a public share page is never cached and never sends its token on in a Referer.
+        source: '/shared/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'private, no-store, must-revalidate' },
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+        ],
+      },
     ]
   },
   async rewrites() {

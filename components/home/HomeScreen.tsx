@@ -23,6 +23,8 @@ import { WhosOnTodayCard } from '@/components/home/dashboard/WhosOnTodayCard'
 import { whosOnRows } from '@/components/home/dashboard/whosOnRows'
 import { TASKS_SHOWN, TasksToDoCard } from '@/components/home/dashboard/TasksToDoCard'
 import { WaitingForYouCard, type WaitingItem } from '@/components/home/dashboard/WaitingForYouCard'
+import { canManageOrganizationCompliance, orgComplianceCounts, orgComplianceReminder } from '@/lib/canonical/orgCompliance'
+import { useComplianceTodayKey, useOrgComplianceDocuments } from '@/components/settings/panels/InsuranceAccreditationsPanel'
 import { QuickActionsCard } from '@/components/home/dashboard/QuickActionsCard'
 import { UpNextCard } from '@/components/home/dashboard/UpNextCard'
 import { canViewSiteMap } from '@/lib/navigation/menuPermissions'
@@ -647,6 +649,15 @@ export function HomeScreen() {
     return { rows, total: list.length }
   }, [tasksReady, tasks, displayUser, operatives, managers, operative, projects, smallWorks])
 
+  // Rulebook 1.83.0 §31: one listener on the compliance document, admins only (the rules refuse everyone else).
+  const complianceAllowed = Boolean(displayUser) && canManageOrganizationCompliance(displayUser) && !pauseHomeLoads
+  const { documents: complianceDocuments } = useOrgComplianceDocuments(complianceAllowed)
+  const complianceTodayKey = useComplianceTodayKey()
+  const complianceReminder = useMemo(
+    () => (complianceAllowed ? orgComplianceReminder(orgComplianceCounts(complianceDocuments, complianceTodayKey)) : null),
+    [complianceAllowed, complianceDocuments, complianceTodayKey]
+  )
+
   // ---- Waiting for you (owner decision 12): only items whose data Home already has. ----
   const waitingItems = useMemo<WaitingItem[]>(() => {
     if (!displayUser || pauseHomeLoads) return []
@@ -693,6 +704,17 @@ export function HomeScreen() {
         items.push({ key: 'paye-payday', label: 'PAYE payday not set', detail: payday, count: null, href: '/dashboard/settings/payment-runs' })
       }
     }
+    // Rulebook 1.83.0 §31: insurance & accreditation certificates expired or expiring within 30 days (admins only;
+    // `orgComplianceReminder` over the one status rule).
+    if (complianceReminder) {
+      items.push({
+        key: 'compliance',
+        label: complianceReminder.title,
+        detail: `${complianceReminder.detail} · Settings → Insurance & accreditations`,
+        count: complianceReminder.count,
+        href: '/dashboard/settings/insurance-accreditations',
+      })
+    }
     const peopleHref = peopleManagementHref(displayUser)
     if (peopleHref && rosterReady) {
       // The Pending rows of the page this viewer manages people on: admins Manage users (every tab); an Operatives
@@ -728,6 +750,7 @@ export function HomeScreen() {
     liveOrganization.error,
     orgId,
     claimedEmails,
+    complianceReminder,
   ])
 
   if (!displayUser || !user) return null

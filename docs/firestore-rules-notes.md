@@ -1470,3 +1470,27 @@ Measurements: see the PR body (static compile cost, bytes, type check, suites, s
 - The apps' query (`leaveQueryPlan`: one `or` of `userId in` and `operativeId in`) is evaluated per disjunct. Lookups: the organisation (billing), `platformConfig/app`, the caller's users document (former / same-email ids) and one `operatives/{id}` per row id that reaches the row branch. Measured on emulator 1.22.0: up to seven row ids pass with 14 ids in total; eight are refused by the 10-lookup budget (known limit, owner decisions 1.73.2). **Fixed in the same release (owner 23 Nov):** probe with every id an `operatives` row (home company, and a member from another company): 7 row ids in one query pass, 8 are refused (evaluation error, the budget), so the rule's own lookups are 3; `OWN_LEAVE_IDS_PER_QUERY` is now 6 (one lookup spare), so `leaveQueryPlan` chunks into 6-id queries and an operative with 10 or 14 rows reads all their own leave (suite cases). With 14 per query the 10- and 14-row cases fail. Former and same-email ids on the caller's users document cost no lookup; an id that is neither (not one of theirs) is refused.
 - Static compile cost 228,188 → 228,987 (+799: `callerOwnsBookingId` is inlined twice); 155,745 → 156,587 bytes (budget 156,672, not raised; the rule's comment lives here). Writing out `hbCallerIsOperative` would save 63 and was left as it is.
 - Offsets (independent review, no allow / deny change, no new `let` over a document): `invitationOpsManagerWrite` regrouped so delete and the non-privileged update share one `invitationSentByCaller(resource.data) && invitationIsOperativeOnly(resource.data)` (each method evaluates the same checks as before, none more); `overtimeLineManagerBookingUpdate` reaches `callerLineManagesUser(person)` from one place (`collection != 'bookings' || <valid person> && exists(users/person) ? callerLineManagesUser(person) && <not a ghost on bookings> : bookings && <valid person> && callerLineManagesRowPerson(person)`); `tsReviewer` binds `tsUid()` once (`let u`, already evaluated by the `hp0` path). Result: static compile cost 228,188 (main) → **226,799** (−1,389 below main; −2,188 against the unoffset branch); bytes 156,608 (budget 156,672, not raised). Emulator type check 0 errors; all 27 rules suites pass (475, 1 skipped); `RULES_STRICT_BUDGET=1` on a fresh emulator per suite: 7 refusals, the same as main (none in `leaveOwnRead`).
+
+## 1.83.0 insurance & accreditations
+
+`match /orgCompliance/{docId} { allow read, write: if orgAdminEither(organizationId); }` and `'orgCompliance'` in the
+catch-all exclusion (otherwise every member would read the admins' certificates through the catch-all). The new allow
+costs about 150 in the static compile cost (`metric.total2`); four redundant parenthesis pairs were removed to pay for
+it, with no allow / deny change: `staffFlag` (the ternary inside `truthyBool(...)`), `manageableOperative` (the
+`&&` operand of `||`), the overtime request write (`(request.method == 'create') ?`) and the holiday booking write
+(`? ((`, `)) :`, the delete branch). 225,015 → 224,995; 156,533 → 156,638 bytes (budget 156,672 unchanged). The rule
+checks who writes, not the entry shape (a lean choice: admins already write the organisation document freely); the
+readers drop any entry whose file is not in this organisation's `compliance/` folder.
+
+Review of #441 (same version): the rule is now
+`allow read, write: if docId == 'documents' && 'c' in callerOrg(organizationId) && orgAdminEither(organizationId) && (request.method == 'get' || request.resource.data.keys().hasOnly(['documents', 'updatedAt', 'updatedBy', 'updatedFrom']))`
+— only the one document id, only those top-level keys, no delete (a delete has no `request.resource`), and the `c`
+claim so a deactivated members-map admin is refused. To pay for it, 150 redundant parenthesis pairs were removed
+across the file with a script that keeps every paren that holds `||`, `?` or `,`, every `!(`, every call, and every
+paren whose removal could change precedence; every rules suite passes unchanged. 224,167 static cost (main 225,015),
+156,496 bytes. Storage: `allow read, delete` uses `adminLike` (a stray operative-mode admin is still an admin, as
+`orgAdminEither`), and `create` needs the object name to start with the caller's uid + `_`.
+
+Merged onto 1.82.0 (24 Nov): main's rewritten `firestore.rules` taken as is, with only the `orgCompliance` match and
+the catch-all exclusion added (+220 static cost). To keep below main (225,001), the first 18 redundant parenthesis pairs
+the same script finds were removed (no allow / deny change; every rules suite passes): 224,751, 155,533 bytes.

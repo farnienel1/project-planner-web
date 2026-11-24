@@ -20119,3 +20119,16 @@ test('1.82.0 an older toolbox talk notice (issue id) finds its job from the heal
   assert.equal(R112.healthSafetyIssueJob({ issueId: '', candidates }), null)
   assert.equal(R112.healthSafetyIssueJob({ issueId: 'x', candidates: null }), null)
 })
+
+test('1.83.0 insurance & accreditations are in the packed rulebook (full cases in orgCompliance.test.ts)', () => {
+  const path = R112.orgComplianceStoragePath({ organizationId: 'o1', uid: 'u1', unixMs: 5, extension: 'pdf' })
+  assert.equal(path, 'organizations/o1/compliance/u1_5.pdf')
+  assert.equal(R112.storedFileKind(path)?.kind, 'org_compliance_document')
+  assert.equal(R112.orgComplianceExpiryStatus('2026-12-14', '2026-11-24').label, '20 days left · 14 Dec 2026')
+  assert.deepEqual(R112.parseOrgComplianceDocuments(null), { insurance: [], trade: [], quality: [] })
+  const firestoreRules = readFileSync(new URL('../../firestore.rules', import.meta.url), 'utf8')
+  assert.match(firestoreRules, /match \/orgCompliance\/\{docId\} \{\n\s+allow read, write: if docId == 'documents' && 'c' in callerOrg\(organizationId\) && orgAdminEither\(organizationId\) &&/)
+  assert.match(firestoreRules, /'reportChecks', 'holidayBookings', 'orgCompliance'\]\);/)
+  const storageRules = readFileSync(new URL('../../storage.rules', import.meta.url), 'utf8')
+  assert.match(storageRules, /match \/organizations\/\{orgId\}\/compliance\/\{fileName\} \{\n(?:\s*\/\/[^\n]*\n)?\s+allow read, delete: if orgMember\(orgId\) && adminLike\(orgId\);/)
+})

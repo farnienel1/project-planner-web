@@ -15,7 +15,7 @@ service cloud.firestore {
     return truthyBool(userData.get('isSuperAdmin', false)) ||
            truthyBool(userData.get('adminAccess', false)) ||
            'permissions' in userData && userData.permissions is map &&
-             ('adminAccess' in userData.permissions && truthyBool(userData.permissions.adminAccess)) ||
+             'adminAccess' in userData.permissions && truthyBool(userData.permissions.adminAccess) ||
            userData.get('role', '') == 'admin';
   }
 
@@ -100,19 +100,19 @@ service cloud.firestore {
   function privilegeWriteTyped(next, prev, checkRole) {
     return next.diff(prev).affectedKeys().hasAny(['isSuperAdmin', 'adminAccess', 'manager', 'operatives', 'operativeMode',
         'annualLeaveSelfBook', 'timesheetSelfSign', 'permissions', 'role'])
-      ? (privilegeKeysTyped(next, prev) &&
+      ? privilegeKeysTyped(next, prev) &&
       (next.get('permissions', null) == prev.get('permissions', null) || next.get('permissions', {}) is map &&
         privilegeKeysTyped(next.get('permissions', {}), prev.get('permissions', {}) is map ? prev.get('permissions', {}) : {})) &&
       (!checkRole || next.get('role', null) == prev.get('role', null) ||
-        next.get('role', null) in [null, 'admin', 'manager', 'operative', 'member', 'basic', 'viewer'])) : true;
+        next.get('role', null) in [null, 'admin', 'manager', 'operative', 'member', 'basic', 'viewer']) : true;
   }
 
   function membersValuesTyped(next, prev) {
     let nm = next.get('members', {}) is map ? next.get('members', {}).values() : ['-'];
     let pm = prev.get('members', {}) is map ? prev.get('members', {}).values() : [];
     let ok = ['admin', 'manager', 'operative', 'member'];
-    return !next.diff(prev).affectedKeys().hasAny(['members']) ? true : (
-      nm.removeAll(ok).size() <= pm.removeAll(ok).size() && nm.toSet().difference(pm.toSet()).hasOnly(ok));
+    return !next.diff(prev).affectedKeys().hasAny(['members']) ? true :
+      nm.removeAll(ok).size() <= pm.removeAll(ok).size() && nm.toSet().difference(pm.toSet()).hasOnly(ok);
   }
 
   function privilegeFlag(d, key) {
@@ -145,28 +145,28 @@ service cloud.firestore {
     let claimPath = /databases/(default)/documents/organizations/$(organizationId)/userEmails/$(emailKey);
     return (
       inviteClaimIsPendingPlaceholder(organizationId, emailKey) ? (
-        inviteBeingAccepted(request.resource.data.get('invitationId', ''), organizationId) ? (
+        inviteBeingAccepted(request.resource.data.get('invitationId', ''), organizationId) ?
           selfCreateWithinInvitationLevel(request.resource.data,
             get(/databases/(default)/documents/invitations/$(request.resource.data.invitationId)).data) &&
-          selfCreateCopiesPlaceholder(get(claimPath).data.userId)) : false
+          selfCreateCopiesPlaceholder(get(claimPath).data.userId) : false
       ) : false
     ) || (
-      (exists(claimPath) && get(claimPath).data.userId == request.auth.uid) ? (
-        (request.auth != null &&
+      exists(claimPath) && get(claimPath).data.userId == request.auth.uid ? (
+        request.auth != null &&
            exists(hp0) &&
            'members' in get(hp0).data &&
-           get(hp0).data.members[request.auth.uid] != null) ? (
-          selfCreateKeepsManagedFields(get(hp0).data.members[request.auth.uid]) ? (
+           get(hp0).data.members[request.auth.uid] != null ? (
+          selfCreateKeepsManagedFields(get(hp0).data.members[request.auth.uid]) ?
             privilegeCreateTyped(request.resource.data, true) &&
             selfCreateAliasesWithin(request.resource.data, {}, '') &&
-            ((!privilegeFlag(request.resource.data, 'annualLeaveSelfBook') &&
-            !privilegeFlag(request.resource.data, 'timesheetSelfSign')) ||
+            (!privilegeFlag(request.resource.data, 'annualLeaveSelfBook') &&
+            !privilegeFlag(request.resource.data, 'timesheetSelfSign') ||
            orgCreatorIs(organizationId, request.auth.uid)) &&
             (
               !raisesPrivileges(request.resource.data) ||
               get(hp0).data.members[request.auth.uid] == 'admin'
             )
-          ) : false
+           : false
         ) : false
       ) : false
     );
@@ -217,7 +217,7 @@ service cloud.firestore {
 
   function isAdminOfCompany(organizationId) {
     return organizationId is string &&
-           (orgAdminEither(organizationId));
+           orgAdminEither(organizationId);
   }
 
   function enforcedReadsOn(organizationId) {
@@ -359,12 +359,12 @@ service cloud.firestore {
     return affected.hasOnly(['status', 'lastSentAt', 'lastSentRequestType', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
            (!('updatedBy' in affected) || request.resource.data.updatedBy == request.auth.uid) &&
            (!('updatedFrom' in affected) || request.resource.data.updatedFrom in ['web', 'ios', 'android']) &&
-           (request.auth != null &&
+           request.auth != null &&
            canAccessOrganization(organizationId) &&
-           (request.auth != null && (
+           request.auth != null && (
       callerOrgRole(organizationId) in ['admin', 'manager'] ||
       'h' in callerOrg(organizationId) && !('p' in callerHomeFlags())
-    )));
+    );
   }
 
   function orgAdminEither(organizationId) {
@@ -376,8 +376,8 @@ service cloud.firestore {
     let u = get(p).data;
     return request.auth != null && exists(p) &&
            !('operativeMode' in u && truthyBool(u.operativeMode)) &&
-           ('manager' in u && truthyBool(u.manager)) &&
-           ('operatives' in u && truthyBool(u.operatives));
+           'manager' in u && truthyBool(u.manager) &&
+           'operatives' in u && truthyBool(u.operatives);
   }
 
   function opsManagerEmailFree(org, email) {
@@ -423,20 +423,20 @@ service cloud.firestore {
 
   function managerMayManageOperative(targetUserId, targetData) {
     let home = callerHomeData();
-    return (request.auth.uid != targetUserId && (!('operativeMode' in home && truthyBool(home.operativeMode)) &&
-           ('manager' in home && truthyBool(home.manager)) &&
-           ('operatives' in home && truthyBool(home.operatives)))) ? (
+    return (request.auth.uid != targetUserId && !('operativeMode' in home && truthyBool(home.operativeMode)) &&
+           'manager' in home && truthyBool(home.manager) &&
+           'operatives' in home && truthyBool(home.operatives)) ?
       'organizationId' in home && 'organizationId' in targetData &&
       orgIdsMatch(home.organizationId, targetData.organizationId) &&
       manageableOperative(targetData)
-    ) : false;
+     : false;
   }
 
   function manageableOperative(t) {
     let p = t.get('permissions', {}) is map ? t.get('permissions', {}) : {};
     let v = [t.get('isSuperAdmin', false), t.get('adminAccess', false), t.get('manager', false),
       p.get('isSuperAdmin', false), p.get('adminAccess', false), p.get('manager', false)];
-    return (('operativeMode' in t && truthyBool(t.operativeMode)) ||
+    return ('operativeMode' in t && truthyBool(t.operativeMode) ||
            'permissions' in t && t.permissions is map && 'operativeMode' in t.permissions && truthyBool(t.permissions.operativeMode) ||
            'role' in t && t.role == 'operative') && !(t.get('role', '') in ['admin', 'manager']) && !v.hasAny([true, 1, 1.0]);
   }
@@ -2505,6 +2505,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /orgCompliance/{docId} {
+      allow read, write: if docId == 'documents' && 'c' in callerOrg(organizationId) && orgAdminEither(organizationId) &&
+        (request.method == 'get' || request.resource.data.keys().hasOnly(['documents', 'updatedAt', 'updatedBy', 'updatedFrom']));
+    }
+
     match /{collection}/{document=**} {
       allow read: if canAccessOrganization(organizationId) &&
         !(collection in ['variations', 'variationTrackers', 'notifications', 'materialSendRecords', 'fileReports',
@@ -2512,7 +2517,7 @@ service cloud.firestore {
           'payProfiles', 'operativeDayRateHistory', 'operativeProfiles', 'settings',
           'overtimeRequests', 'overtimeReviews', 'overtimeReports', 'priceWorkItems', 'expenseItems',
           'payeClaimReports', 'payeClaimReviews', 'personalSiteAudits', 'worksListPicks', 'annualLeaveAdjustments', 'deletedPeople', 'materialContacts',
-          'reportChecks', 'holidayBookings']);
+          'reportChecks', 'holidayBookings', 'orgCompliance']);
     }
   }
 

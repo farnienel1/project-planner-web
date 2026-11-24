@@ -21,7 +21,8 @@ export const AUTH_EMAIL_BUDGET_COLLECTION = 'authEmailBudgets'
 /** Kept a day past the window so a document never vanishes while its window still counts. */
 const EXPIRE_AFTER_WINDOW_MS = 24 * 60 * 60 * 1000
 
-export type AuthEmailBudgetScope = 'password-reset' | 'verify-email' | 'change-email'
+// 1.83.0 §31: the same shared counter limits share-link opens (per address) and share-link creation (per account).
+export type AuthEmailBudgetScope = 'password-reset' | 'verify-email' | 'change-email' | 'compliance-share-open' | 'compliance-share-create'
 
 export function authEmailBudgetDocId(scope: AuthEmailBudgetScope, key: string): string {
   return createHash('sha256').update(`${scope}:${key.trim().toLowerCase()}`).digest('hex')

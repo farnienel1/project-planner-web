@@ -302,6 +302,8 @@ export const OPERATIONAL_COLLECTION_PATHS = {
   materialContacts: 'organizations/{orgId}/materialContacts',
   /** 1.81.0 (§11): a person's name in this organisation (`memberNameWriteFields`). */
   memberNames: 'organizations/{orgId}/memberNames',
+  /** 1.83.0 (§31): insurance & accreditations, one document (`orgComplianceMergePayload`); admins only. */
+  orgCompliance: 'organizations/{orgId}/orgCompliance',
   /** 1.65.0 (§25, §26): one server check per saved overtime / claims report (`reportCheckWriteFields`). */
   reportChecks: 'organizations/{orgId}/reportChecks',
 } as const

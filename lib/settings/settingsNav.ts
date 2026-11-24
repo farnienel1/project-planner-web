@@ -5,6 +5,7 @@ export type SettingsPanel =
   | 'notifications'
   | 'organisation'
   | 'company-details'
+  | 'insurance-accreditations'
   | 'working-hours'
   | 'annual-leave-defaults'
   | 'schedule-options'
@@ -61,6 +62,16 @@ export const SETTINGS_NAV: SettingsNavItem[] = [
     href: '/dashboard/settings/company-details',
     icon: 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4',
     hue: 'blue',
+    group: 'company',
+  },
+  {
+    // Rulebook 1.83.0 §31: admins only (the whole company group is admin-only).
+    id: 'insurance-accreditations',
+    label: 'Insurance & accreditations',
+    description: 'PI, PL, trade and ISO certificates',
+    href: '/dashboard/settings/insurance-accreditations',
+    icon: 'M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z',
+    hue: 'green',
     group: 'company',
   },
   {
