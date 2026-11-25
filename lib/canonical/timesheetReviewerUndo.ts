@@ -37,6 +37,9 @@ export const TIMESHEET_REVIEWER_CANCEL_CHANGES_DONE_MESSAGE = 'Changes cancelled
 export const TIMESHEET_REVIEWER_UNDO_CHANGED_SINCE_MESSAGE = 'This booking has been changed again since — not undone.'
 export const TIMESHEET_REVIEWER_UNDO_GONE_MESSAGE = 'This booking was removed elsewhere since — not undone.'
 export const TIMESHEET_REVIEWER_UNDO_NO_BEFORE_MESSAGE = 'This change was made before Cancel changes existed, so its old values are not known — not undone.'
+/** Review of #457 (finding 1): a removed booking whose stored values lack its person or day is never re-created half-made. */
+export const TIMESHEET_REVIEWER_UNDO_INCOMPLETE_MESSAGE =
+  "This removed booking's details were not all kept, so it can't be put back safely — not undone. Book it again in scheduling."
 export const TIMESHEET_REVIEWER_UNDO_NOT_ALLOWED_MESSAGE =
   "You can't book this job, so this removed booking can't be put back. Ask an admin or the job's manager to book it again."
 /** The key prefix of a price work / expense decision's record in `reviewerBookingEdits` (no booking id: never compared). */
@@ -107,9 +110,15 @@ export function timesheetReviewerSessionRecords(sheet: Record<string, unknown> |
   if (resolveTimesheetExportedAtMs(row) != null) return []
   const session = timesheetReviewerSession(row)
   const out: TimesheetReviewerSessionRecord[] = []
+  // Review of #457 (finding 2): a late extra's decision (1.54.0) is never part of a making-changes session — a record an
+  // earlier build wrote for one is ignored, so it never offers Cancel changes or puts a late extra's review back.
+  const lateIds = new Set(
+    (Array.isArray(row.lateExtras) ? row.lateExtras : []).map((entry) => normalizeDocumentId(text(record(entry).id))).filter(Boolean)
+  )
   for (const [key, raw] of Object.entries(record(row.reviewerBookingEdits))) {
     const value = record(raw)
     if (text(value.restoredAs) || text(value.restoredFrom)) continue
+    if (value.kind === 'extraReview' && (value.lateExtra === true || lateIds.has(normalizeDocumentId(text(value.entryId))))) continue
     const inSession = session.draft
       ? value.forRevisionDraft === true
       : session.forManagerSignedAtMs > 0 &&
@@ -150,6 +159,14 @@ export function timesheetReviewerReviewRecord(input: {
   entryId: unknown
   before: Record<string, unknown> | null | undefined
   editedBy: unknown
+  /**
+   * Review of #457 (finding 2): the reviewer pressed Make changes on this counter-signature and the session is open on
+   * screen. Without it a decision is recorded only on a draft revision, or when the session already holds a record
+   * (its first booking change ended the on-screen mode but the session goes on until the next sign-off).
+   */
+  makingChanges?: boolean
+  /** The review being written; a late extra's (`lateExtra: true`, 1.54.0) is never recorded. */
+  after?: Record<string, unknown> | null
 }): { key: string; value: Record<string, unknown> } | null {
   const row = record(input?.sheet)
   if (resolveTimesheetExportedAtMs(row) != null) return null
@@ -157,6 +174,10 @@ export function timesheetReviewerReviewRecord(input: {
   if (!session.draft && session.forManagerSignedAtMs === 0) return null
   const id = text(input.entryId)
   if (!id) return null
+  if (record(input.after).lateExtra === true || record(input.before).lateExtra === true) return null
+  const lateIds = (Array.isArray(row.lateExtras) ? row.lateExtras : []).map((entry) => normalizeDocumentId(text(record(entry).id)))
+  if (lateIds.includes(normalizeDocumentId(id))) return null
+  if (!session.draft && input.makingChanges !== true && timesheetReviewerSessionRecords(row).length === 0) return null
   const key = `${TIMESHEET_REVIEWER_REVIEW_RECORD_PREFIX}${normalizeDocumentId(id)}`.replace(/[^A-Za-z0-9_-]/g, '_')
   const existing = record(record(row.reviewerBookingEdits)[key])
   if (Object.keys(existing).length > 0 && timesheetReviewerSessionRecords(row).some((r) => r.key === key)) return null
@@ -177,7 +198,7 @@ export function timesheetReviewerReviewRecord(input: {
 export type TimesheetReviewerUndoAction =
   | { kind: 'restore'; key: string; collection: string; bookingId: string; set: Record<string, unknown>; remove: string[] }
   | { kind: 'recreate'; key: string; collection: string; oldBookingId: string; data: Record<string, unknown> }
-  | { kind: 'refuse'; key: string; collection: string; bookingId: string; reason: 'changedSince' | 'gone' | 'noBefore' | 'reappeared'; message: string }
+  | { kind: 'refuse'; key: string; collection: string; bookingId: string; reason: 'changedSince' | 'gone' | 'noBefore' | 'reappeared' | 'incomplete'; message: string }
 
 export type TimesheetReviewerUndoPlan = {
   actions: TimesheetReviewerUndoAction[]
@@ -223,7 +244,7 @@ export function timesheetReviewerUndoPlan(input: {
     const collection = text(value.collection) || 'bookings'
     const bookingId = text(value.bookingId)
     if (!bookingId) continue
-    const refuse = (reason: 'changedSince' | 'gone' | 'noBefore' | 'reappeared', message: string) =>
+    const refuse = (reason: 'changedSince' | 'gone' | 'noBefore' | 'reappeared' | 'incomplete', message: string) =>
       actions.push({ kind: 'refuse', key: entry.key, collection, bookingId, reason, message })
     const before = value.before && typeof value.before === 'object' ? (value.before as Record<string, unknown>) : null
     const now = live.get(timesheetReviewerBookingEditKey(collection, bookingId))
@@ -234,6 +255,12 @@ export function timesheetReviewerUndoPlan(input: {
     if (value.deleted === true) {
       if (now?.data && !now.tombstoned) {
         refuse('reappeared', TIMESHEET_REVIEWER_UNDO_CHANGED_SINCE_MESSAGE)
+        continue
+      }
+      // Review of #457 (finding 1): never write a booking without its person or its day.
+      const personField = collection === 'managerSiteBookings' ? 'userId' : 'operativeId'
+      if (!text(before[personField]) || before.date == null || text(before.date) === '') {
+        refuse('incomplete', TIMESHEET_REVIEWER_UNDO_INCOMPLETE_MESSAGE)
         continue
       }
       actions.push({ kind: 'recreate', key: entry.key, collection, oldBookingId: bookingId, data: { ...before } })

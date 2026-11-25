@@ -14,7 +14,8 @@ import test from 'node:test'
 import { assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing'
 import { assertFails } from './rulesAssert.ts'
 import { claimsContext } from './authClaimsContext.ts'
-import { deleteField, doc, serverTimestamp, setDoc, Timestamp, updateDoc, writeBatch, type Firestore } from 'firebase/firestore'
+import { collection, deleteField, doc, getDoc, getDocs, serverTimestamp, setDoc, Timestamp, updateDoc, writeBatch, type Firestore } from 'firebase/firestore'
+import { cancelTimesheetReviewerChanges } from '../lib/timesheets/timesheetReviewerUndoWrite.ts'
 import { timesheetReviewerEditBefore, timesheetReviewerUndoPlan } from '../lib/canonical/timesheetReviewerUndo.ts'
 import { signedTimesheetBookingPlace, timesheetReviewBookingDocument, timesheetReviewerBookingFingerprint } from '../lib/canonical/index.ts'
 
@@ -137,4 +138,46 @@ test('the job manager re-creates with the two sheet records in one batch', async
 
 test('the person never writes the reviewer records (no forged before-values)', async () => {
   await assertFails(updateDoc(doc(await db(OP), 'organizations', ORG, 'settings', SHEET), { 'reviewerBookingEdits.review__extra__e1': { kind: 'extraReview', entryId: 'e1', before: { decision: 'edited', revisedAmount: 9999 } } }))
+})
+
+// Review of #457 (finding 4): the web Cancel changes writer runs each undo in a transaction that re-reads the sheet,
+// the booking and its tombstone — two runs at once re-create a removed booking once, and a booking changed since the
+// plan was made is left as it is.
+test('Cancel changes in a transaction: two runs at once re-create a removed booking once; a later change is never overwritten', async () => {
+  const left = timesheetReviewBookingDocument({ collection: 'bookings', id: 'B1', data: labour('B1', '19:00'), timeZone: 'Europe/London' })
+  if (!left) throw new Error('no doc')
+  const fixed = { forSignedAtMs: SIGNED.toMillis(), forManagerSignedAtMs: COUNTER.toMillis(), editedBy: ADMIN }
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const d = ctx.firestore()
+    await updateDoc(doc(d, 'organizations', ORG, 'settings', SHEET), {
+      'reviewerBookingEdits.bookings__b1': {
+        bookingId: 'B1', collection: 'bookings', deleted: false, place: signedTimesheetBookingPlace(left),
+        fingerprint: timesheetReviewerBookingFingerprint(left), ...fixed,
+        before: timesheetReviewerEditBefore({ data: labour('B1', '16:00'), deleted: false }),
+      },
+      'reviewerBookingEdits.bookings__b2': {
+        bookingId: 'B2', collection: 'bookings', deleted: true, fingerprint: '', place: '', ...fixed,
+        before: timesheetReviewerEditBefore({ data: labour('B2', '12:00'), deleted: true }),
+      },
+    })
+    // Someone else changes B1 again after the reviewer: Cancel changes must leave it.
+    await updateDoc(doc(d, 'organizations', ORG, 'bookings', 'B1'), { workEndTime: '20:00' })
+  })
+  const a = await db(ADMIN)
+  const [first, second] = await Promise.all([
+    cancelTimesheetReviewerChanges(a, { organizationId: ORG, userId: ADMIN, documentId: SHEET, timeZone: 'Europe/London' }),
+    cancelTimesheetReviewerChanges(a, { organizationId: ORG, userId: ADMIN, documentId: SHEET, timeZone: 'Europe/London' }),
+  ])
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const d = ctx.firestore()
+    const all = await getDocs(collection(d, 'organizations', ORG, 'bookings'))
+    const recreated = all.docs.filter((d) => d.id !== 'B1')
+    if (recreated.length !== 1) throw new Error(`expected one re-created booking, got ${recreated.length}`)
+    const data = recreated[0].data()
+    if (data.operativeId !== OP || data.projectId !== 'job1' || !data.date) throw new Error(`re-created booking is incomplete: ${JSON.stringify(data)}`)
+    const b1 = (await getDoc(doc(d, 'organizations', ORG, 'bookings', 'B1'))).data()
+    if (b1?.workEndTime !== '20:00') throw new Error('a later change was overwritten')
+  })
+  const refusedB1 = [...first.refused, ...second.refused].filter((r) => r.bookingId === 'B1')
+  if (refusedB1.length === 0) throw new Error('the changed booking was not reported')
 })

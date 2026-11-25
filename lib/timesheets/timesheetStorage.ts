@@ -1340,7 +1340,12 @@ export async function saveTimesheetDraft({
   timeZone?: string
   documentId?: string | null
   weekEnd?: Date | null
-  access?: { reviewer?: boolean; subjectHasLineManager?: boolean }
+  access?: {
+    reviewer?: boolean
+    subjectHasLineManager?: boolean
+    /** Rulebook 1.90.0 (review of #457 finding 2): the reviewer has Make changes open on screen for this sheet. */
+    makingChanges?: boolean
+  }
   /**
    * Rulebook 1.9.0 `timesheetChangedFields`: the sheet as this editor loaded it. Only fields that differ from it are
    * written, so changes saved on another device since the load (an owner's signature, expenses, price work) stay.
@@ -1481,11 +1486,15 @@ export async function saveTimesheetDraft({
           if (!key.startsWith(prefix)) continue
           const entryId = key.slice(prefix.length)
           const prior = storedReviews[entryId]
+          const next = reviewFields[key]
           const rec = timesheetReviewerReviewRecord({
             sheet: stored,
             entryId,
             before: prior && typeof prior === 'object' ? (prior as Record<string, unknown>) : null,
             editedBy: writerId,
+            // Review of #457 (finding 2): only while making changes, never a late extra's decision.
+            makingChanges: access?.makingChanges === true,
+            after: next && typeof next === 'object' ? (next as Record<string, unknown>) : null,
           })
           if (rec) undoRecords[`${TIMESHEET_REVIEWER_BOOKING_EDITS_FIELD}.${rec.key}`] = rec.value
         }

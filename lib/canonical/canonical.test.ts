@@ -20449,7 +20449,7 @@ test('1.90.0 Cancel changes: the undo plan restores, re-creates and refuses with
   const r1 = R112.timesheetReviewerBookingEditRecord({ sheet: sheet0, booking: { collection: 'bookings', bookingId: 'b1' }, after: edited, editedBy: 'lm', before: { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:00', workEndTime: '19:00', isBreakRemoved: true } })!
   const r2 = R112.timesheetReviewerBookingEditRecord({ sheet: sheet0, booking: { collection: 'bookings', bookingId: 'b2' }, after: null, deleted: true, editedBy: 'lm', before: { ...base, workEndTime: '12:00' } })!
   const r3 = R112.timesheetReviewerBookingEditRecord({ sheet: sheet0, booking: { collection: 'bookings', bookingId: 'b3' }, after: edited, editedBy: 'lm', before: { workEndTime: '18:00' } })!
-  const review = R112.timesheetReviewerReviewRecord({ sheet: sheet0, entryId: 'e1', before: { decision: 'approved' }, editedBy: 'lm' })!
+  const review = R112.timesheetReviewerReviewRecord({ sheet: sheet0, entryId: 'e1', before: { decision: 'approved' }, editedBy: 'lm', makingChanges: true })!
   const sheet = { ...sheet0, reviewerBookingEdits: { [r1.key]: r1.value, [r2.key]: r2.value, [r3.key]: r3.value, [review.key]: review.value } }
   assert.equal(R112.timesheetReviewerCancelChangesOffered({ sheet, viewerIsReviewer: true, viewerIsSubject: false }), true)
   assert.equal(R112.timesheetReviewerCancelChangesOffered({ sheet, viewerIsReviewer: false, viewerIsSubject: true }), false)
@@ -20508,6 +20508,138 @@ test('1.90.0 Cancel changes: a re-created booking is not an addition the person 
   const change = R112.signedTimesheetBookingChanges({ sheet, liveLines: [line], liveBookings: [created], liveLoaded: true, selfSigned: false } as never)
   assert.equal(change.addedBookingIds.length, 0)
   void tz
+})
+
+test('1.90.0 review of #457 (1): ⚙ then ✕ on one booking keeps the whole booking for the undo; a half record is refused', () => {
+  const tz = 'Europe/London'
+  const sheet = { operativeSignedAt: { seconds: 1763400000, nanoseconds: 0 }, managerSignedAt: { seconds: 1763500000, nanoseconds: 0 } }
+  const stored = { date: { seconds: 1763337600, nanoseconds: 0 }, operativeId: 'op1', projectId: 'J1', jobCollection: 'projects', timeSlot: 'CUSTOM_HOURS', workStartTime: '07:00', workEndTime: '19:00', status: 'Confirmed', id: 'b1' }
+  const booking = { collection: 'bookings', bookingId: 'b1' }
+  // ⚙: 19:00 → 16:00.
+  const gear = R112.timesheetReviewerBookingEditRecord({
+    sheet, booking, editedBy: 'lm',
+    after: R112.timesheetReviewBookingDocument({ collection: 'bookings', id: 'b1', data: { ...stored, workEndTime: '16:00' }, timeZone: tz }),
+    before: R112.timesheetReviewerEditBefore({ data: stored, deleted: false }),
+  })!
+  // ✕ of the edited booking in the same session.
+  const editedStored = { ...stored, workEndTime: '16:00' }
+  const cross = R112.timesheetReviewerBookingEditRecord({
+    sheet, booking, editedBy: 'lm', after: null, deleted: true, existing: gear.value,
+    before: R112.timesheetReviewerEditBefore({ data: editedStored, deleted: true }),
+  })!
+  const before = cross.value.before as Record<string, unknown>
+  assert.equal(before.workEndTime, '19:00', 'the first edit value wins')
+  assert.equal(before.operativeId, 'op1')
+  assert.equal(before.projectId, 'J1')
+  assert.equal(before.jobCollection, 'projects')
+  assert.equal(before.status, 'Confirmed')
+  assert.ok(before.date, 'the day is kept')
+  // Undo re-creates the WHOLE original booking.
+  const plan = R112.timesheetReviewerUndoPlan({ sheet: { ...sheet, reviewerBookingEdits: { [cross.key]: cross.value } }, bookings: [{ ...booking, data: null, tombstoned: true }], timeZone: tz })
+  const recreate = plan.actions[0] as { kind: string; data: Record<string, unknown> }
+  assert.equal(recreate.kind, 'recreate')
+  assert.equal(recreate.data.operativeId, 'op1')
+  assert.equal(recreate.data.workEndTime, '19:00')
+  // A ✕ record whose before lacks the person or the day (written by the 1.90.0 draft) is refused, never half-written.
+  for (const half of [{ workEndTime: '19:00' }, { operativeId: 'op1' }, { date: 1, operativeId: '' }]) {
+    const bad = { ...cross.value, before: half }
+    const refused = R112.timesheetReviewerUndoPlan({ sheet: { ...sheet, reviewerBookingEdits: { [cross.key]: bad } }, bookings: [{ ...booking, data: null, tombstoned: true }], timeZone: tz })
+    assert.equal(refused.actions[0].kind, 'refuse')
+    assert.equal((refused.actions[0] as { reason: string }).reason, 'incomplete')
+    assert.equal((refused.actions[0] as { message: string }).message, R112.TIMESHEET_REVIEWER_UNDO_INCOMPLETE_MESSAGE)
+  }
+  // A manager site booking needs its userId.
+  const mgr = { ...cross.value, collection: 'managerSiteBookings', before: { date: 1, operativeId: 'op1' } }
+  const mgrPlan = R112.timesheetReviewerUndoPlan({ sheet: { ...sheet, reviewerBookingEdits: { m: mgr } }, bookings: [{ collection: 'managerSiteBookings', bookingId: 'b1', data: null, tombstoned: true }], timeZone: tz })
+  assert.equal((mgrPlan.actions[0] as { reason: string }).reason, 'incomplete')
+})
+
+test('1.90.0 review of #457 (2): a late extra approval after sign-off is never a Cancel changes session', () => {
+  const sheet = { operativeSignedAt: { seconds: 1763400000, nanoseconds: 0 }, managerSignedAt: { seconds: 1763500000, nanoseconds: 0 }, lateExtras: [{ id: 'L1', kind: 'expense', title: 'Parking' }] }
+  // Outside Make changes, no session yet: nothing recorded.
+  assert.equal(R112.timesheetReviewerReviewRecord({ sheet, entryId: 'e1', before: null, editedBy: 'lm' }), null)
+  // A late extra's decision is never recorded, even while making changes.
+  assert.equal(R112.timesheetReviewerReviewRecord({ sheet, entryId: 'L1', before: null, editedBy: 'lm', makingChanges: true }), null)
+  assert.equal(R112.timesheetReviewerReviewRecord({ sheet, entryId: 'x9', before: null, editedBy: 'lm', makingChanges: true, after: { decision: 'approved', lateExtra: true } }), null)
+  // A signed entry's decision while making changes is recorded.
+  const rec = R112.timesheetReviewerReviewRecord({ sheet, entryId: 'e1', before: { decision: 'approved' }, editedBy: 'lm', makingChanges: true })!
+  assert.ok(rec)
+  // Once the session holds a record it goes on after the on-screen mode ends (the first change reopened the review).
+  const withRec = { ...sheet, reviewerBookingEdits: { [rec.key]: rec.value } }
+  assert.ok(R112.timesheetReviewerReviewRecord({ sheet: withRec, entryId: 'e2', before: null, editedBy: 'lm' }))
+  // A late-extra record an earlier build wrote is ignored: no Cancel changes offered for it.
+  const legacy = { ...sheet, reviewerBookingEdits: { review__extra__l1: { kind: 'extraReview', entryId: 'L1', before: null, forSignedAtMs: 1763400000000, forManagerSignedAtMs: 1763500000000 } } }
+  assert.equal(R112.timesheetReviewerSessionRecords(legacy).length, 0)
+  assert.equal(R112.timesheetReviewerCancelChangesOffered({ sheet: legacy, viewerIsReviewer: true, viewerIsSubject: false }), false)
+})
+
+test('1.90.0 review of #457 (3, 6, 7): a draft revision can be sent when the bookings were changed in scheduling', () => {
+  const draft = { revision: 1, revisionOf: 'timesheet_op1_1', revisionDraft: true }
+  const base = { viewerIsReviewer: true, viewerIsSubject: false, personName: 'Sam Jones', revisionLabel: 'REV 1' }
+  const idle = R112.timesheetRevisionDraftState({ sheet: draft, ...base })
+  assert.equal(idle.canSend, false)
+  assert.match(R112.TIMESHEET_REVISION_DRAFT_SEND_WAITING_HELP, /scheduling/)
+  const fromScheduling = R112.timesheetRevisionDraftState({ sheet: draft, ...base, liveDiffersFromPrevious: true })
+  assert.equal(fromScheduling.canSend, true)
+  assert.equal(fromScheduling.help, 'Sends REV 1 to Sam to review and sign. You sign it off after.')
+  assert.equal(R112.timesheetRevisionDraftState({ sheet: draft, viewerIsReviewer: false, viewerIsSubject: true, liveDiffersFromPrevious: true }).canSend, false)
+  // (7) settled records (an undo already ran) are not changes left on the draft.
+  const settled = { ...draft, reviewerBookingEdits: { a: { bookingId: 'b2', deleted: true, restoredAs: 'b2new' }, b: { bookingId: 'b2new', restoredFrom: 'b2' } } }
+  assert.equal(R112.timesheetRevisionDraftChanges({ draft: settled }).bookingEdits, 0)
+  // (6) the confirm says the changes are undone first, and when a removed booking comes back under a new id.
+  const msg = R112.timesheetRevisionCancelConfirmMessage('REV 1', 2, 1)
+  assert.match(msg, /undone first/)
+  assert.match(msg, /put back as a new booking/)
+  assert.doesNotMatch(msg, /stay in scheduling/)
+  assert.equal(R112.timesheetRevisionCancelConfirmMessage('REV 1', 0), 'Cancel REV 1? The revision is deleted and nothing is sent.')
+})
+
+test('1.90.0 review of #457 (5): undoing a ✕ on a signed-off sheet leaves it signed off (snapshot side)', () => {
+  const signedAt = 1763400000000
+  const counterAt = 1763500000000
+  const mk = (id: string) => ({ bookingId: id, collection: 'bookings', dayKey: '2026-11-17', timeSlot: 'CUSTOM_HOURS', workStartTime: '07:00', workEndTime: '12:00', status: 'Confirmed', personId: 'op1', projectId: 'J1', createdAtMs: counterAt + 3600000, updatedAtMs: counterAt + 3600000 })
+  const original = mk('b2')
+  const recreated = mk('b2new')
+  const fp = R112.timesheetReviewerBookingFingerprint(original as never)
+  const place = R112.signedTimesheetBookingPlace(original as never)
+  const baseSheet = {
+    operativeSignedAt: signedAt,
+    operativeSignedBookings: [{ bookingId: 'b2', collection: 'bookings', fingerprint: fp, personId: 'op1', place }],
+    operativeSignedBookingsSignedAt: signedAt,
+    operativeSignedBookingsAt: signedAt,
+    managerSignedAt: counterAt,
+    weeklyReportOverride: { approvedAt: counterAt, lines: [{ id: 'op-b2-normal', bookingId: 'b2', bookingCollection: 'bookings', bookingFingerprint: fp }] },
+  }
+  const line = { id: 'op-b2new-normal', bookingId: 'b2new', bookingCollection: 'bookings', bookingFingerprint: fp, bookingCreatedAt: recreated.createdAtMs, bookingUpdatedAt: recreated.updatedAtMs }
+  const run = (edits: Record<string, unknown>) =>
+    R112.signedTimesheetBookingChanges({
+      sheet: { ...baseSheet, reviewerBookingEdits: edits },
+      liveLines: [line],
+      liveBookings: [recreated],
+      tombstonedBookingIds: [{ collection: 'bookings', bookingId: 'b2' }],
+      liveLoaded: true,
+      selfSigned: false,
+    } as never)
+  const settled = {
+    bookings__b2: { bookingId: 'b2', collection: 'bookings', fingerprint: '', place: '', deleted: true, forSignedAtMs: signedAt, forManagerSignedAtMs: counterAt, restoredAs: 'b2new' },
+    bookings__b2new: { bookingId: 'b2new', collection: 'bookings', fingerprint: fp, place, deleted: false, forSignedAtMs: signedAt, forManagerSignedAtMs: counterAt, restoredFrom: 'b2' },
+  }
+  const after = run(settled)
+  assert.equal(after.changed, false, 'the re-created booking is the signed one: signed off again')
+  // Without the pair (only the ✕) it reads removed and waits for the line manager, as before.
+  const crossed = run({ bookings__b2: settled.bookings__b2 })
+  assert.equal(crossed.changed, true)
+  // Re-created with other times (the re-create was then changed): still a change.
+  const otherFp = R112.timesheetReviewerBookingFingerprint({ ...recreated, workEndTime: '13:00' } as never)
+  const moved = R112.signedTimesheetBookingChanges({
+    sheet: { ...baseSheet, reviewerBookingEdits: settled },
+    liveLines: [{ ...line, bookingFingerprint: otherFp }],
+    liveBookings: [{ ...recreated, workEndTime: '13:00' }],
+    tombstonedBookingIds: [{ collection: 'bookings', bookingId: 'b2' }],
+    liveLoaded: true,
+    selfSigned: false,
+  } as never)
+  assert.equal(moved.changed, true)
 })
 
 test('1.88.0 line managers per organisation: home reads the users document, elsewhere the memberLineManagers record', () => {

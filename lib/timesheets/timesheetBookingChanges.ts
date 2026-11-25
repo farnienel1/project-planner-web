@@ -173,6 +173,35 @@ export function draftBookingChanges(input: {
 }
 
 /**
+ * Rulebook 1.90.0 (review of #457 finding 3): whether the live bookings differ from a stored exported version (a draft
+ * revision's previous version) — `signedTimesheetBookingChanges` of that version's stored document (`changed`). The
+ * same comparison that makes a revision due after export; nothing is compared here.
+ */
+export function storedVersionBookingsChanged(input: {
+  data: Record<string, unknown> | null | undefined
+  lines: ReadonlyArray<TimesheetPayrollLineItem>
+  bookings?: ReadonlyArray<Booking> | null
+  managerSiteBookings?: ReadonlyArray<ManagerSiteBooking> | null
+  timeZone?: string
+  personIds?: ReadonlyArray<string> | null
+  liveLoaded: boolean
+  selfSigned: boolean
+}): boolean {
+  if (!input.data) return false
+  return signedTimesheetBookingChanges({
+    sheet: input.data as unknown as SignedTimesheetSheet,
+    liveLines: signedTimesheetLiveLines(input.lines),
+    liveBookings:
+      input.bookings && input.managerSiteBookings
+        ? signedTimesheetBookingDocuments(input.bookings, input.managerSiteBookings, input.timeZone)
+        : null,
+    personIds: input.personIds ?? null,
+    liveLoaded: input.liveLoaded,
+    selfSigned: input.selfSigned,
+  }).changed
+}
+
+/**
  * Rulebook 1.54.0 §8: where the draft's late extras stand (`timesheetLateExtrasSummary`) — pending ones, and whether
  * the signed snapshot holds exactly the approved ones.
  */

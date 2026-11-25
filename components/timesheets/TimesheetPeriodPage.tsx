@@ -41,6 +41,7 @@ import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride
 import {
   clearSignedBookingsPending,
   draftBookingChanges,
+  storedVersionBookingsChanged,
   draftChangeDetails,
   signedTimesheetSheetFromDraft,
   draftForFigures,
@@ -737,6 +738,19 @@ export function TimesheetPeriodPage({
     viewerIsSubject: mode === 'mine',
     personName: subjectName,
     revisionLabel: revisionCopy.label,
+    // Review of #457 (finding 3): bookings changed in scheduling first (no record on the draft) still let it be sent.
+    liveDiffersFromPrevious:
+      draft.revisionDraft === true &&
+      storedVersionBookingsChanged({
+        data: previousVersionData,
+        lines: payroll.lineItems,
+        bookings,
+        managerSiteBookings,
+        timeZone,
+        personIds: timesheetPersonIds(subjectUser, users, operatives),
+        liveLoaded: bookingsLoaded && !bookingsFailed && operativesLoaded,
+        selfSigned: sheetSelfSigned,
+      }),
   })
   // Rulebook 1.90.0 (owner 24 Nov): Cancel changes undoes the reviewer's making-changes session (not on a draft
   // revision, whose Cancel revision does the same restore and then deletes the draft).
@@ -807,7 +821,8 @@ export function TimesheetPeriodPage({
         timeZone,
         documentId: sourceDocumentId.current,
         base: baseDraft.current,
-        access: { reviewer, subjectHasLineManager: !userTimesheetSelfSigned(subjectUser, users) },
+        // Rulebook 1.90.0 (review of #457 finding 2): decisions are recorded for Cancel changes only while making changes.
+        access: { reviewer, subjectHasLineManager: !userTimesheetSelfSigned(subjectUser, users), makingChanges },
       })
       // 1.47.0: the record's server time was written once with this save; later saves never re-stamp it.
       // Third review #325: cleared on the draft as it is now, also when it changed during this save.
@@ -842,6 +857,7 @@ export function TimesheetPeriodPage({
       scheduleOptions,
       timeZone,
       users,
+      makingChanges,
     ]
   )
 
@@ -1593,7 +1609,10 @@ export function TimesheetPeriodPage({
   const handleCancelRevision = async () => {
     const documentId = sourceDocumentId.current
     if (!organization?.id || !documentId || !viewer || !revisionDraftState.canCancel || busy) return
-    if (!window.confirm(timesheetRevisionCancelConfirmMessage(revisionCopy.label, revisionDraftState.changes.bookingEdits))) return
+    const removedCount = Object.values((draft.reviewerBookingEdits ?? {}) as Record<string, { deleted?: unknown; restoredAs?: unknown }>).filter(
+      (row) => row && row.deleted === true && !row.restoredAs
+    ).length
+    if (!window.confirm(timesheetRevisionCancelConfirmMessage(revisionCopy.label, revisionDraftState.changes.bookingEdits, removedCount))) return
     setBusy(true)
     setError(null)
     try {

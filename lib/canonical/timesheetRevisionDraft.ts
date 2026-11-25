@@ -11,9 +11,10 @@
  * - "Save changes and send timesheet to {name}" is grey until the draft holds a change (`timesheetRevisionDraftChanges`,
  *   derived from the stored draft and the version it corrects — never a screen-only flag) and then blue; pressing it
  *   removes `revisionDraft` (`timesheetRevisionDraftSendWriteFields`) and sends the notice;
- * - "Cancel revision" (red, after a confirm) deletes the unexported draft. Booking changes already made stay in
- *   scheduling (they were written to the bookings), so the exported version then reads "Revision due" and the person
- *   can create their own revision (1.55.0).
+ * - "Cancel revision" (red, after a confirm) first undoes the draft's booking changes (`timesheetReviewerUndoPlan`, as
+ *   Cancel changes), then deletes the unexported draft. A booking changed again by someone else since is left as it is;
+ *   a removed booking comes back under a new id, so the exported version then reads "Revision due" and the person can
+ *   create their own revision (1.55.0).
  * A revision the person creates ("Review and sign again") is never a draft. A revision stored without the field (every
  * revision before 1.90.0, and those made by an app that does not pass `draft`) behaves exactly as before.
  *
@@ -28,7 +29,7 @@ export const TIMESHEET_REVISION_DRAFT_FIELD = 'revisionDraft'
 export const TIMESHEET_REVISION_CANCEL_LABEL = 'Cancel revision'
 /** Under a grey Send button. */
 export const TIMESHEET_REVISION_DRAFT_SEND_WAITING_HELP =
-  'Change a booking with ⚙ or ✕ first. The button turns blue once you have made a change.'
+  'Change a booking with ⚙ or ✕ here, or in scheduling, first. The button turns blue once the bookings differ from the exported timesheet.'
 /** The person's line while a draft is open. */
 export const TIMESHEET_REVISION_DRAFT_PERSON_MESSAGE =
   'Your line manager is making changes to this timesheet. You can review and sign it once they send it to you.'
@@ -70,13 +71,20 @@ export function timesheetRevisionSendReadyHelp(revisionLabel?: string | null, pe
 }
 
 /** The confirm before Cancel revision. */
-export function timesheetRevisionCancelConfirmMessage(revisionLabel?: string | null, changeCount = 0): string {
+export function timesheetRevisionCancelConfirmMessage(revisionLabel?: string | null, changeCount = 0, removedCount = 0): string {
   const rev = text(revisionLabel) || 'this revision'
-  const kept =
+  // Review of #457 (finding 6): Cancel revision first undoes the draft's booking changes (as Cancel changes), then
+  // deletes it. A booking changed again by someone else since stays as it is; a removed booking comes back under a new
+  // id, so the exported timesheet then shows an update is due.
+  const undone =
     changeCount > 0
-      ? ' The booking changes you made stay in scheduling, so the exported timesheet will show an update is due and the person can review and sign it.'
+      ? ' The booking changes you made are undone first; a booking changed again by someone else since stays as it is.'
       : ''
-  return `Cancel ${rev}? The revision is deleted and nothing is sent.${kept}`
+  const recreated =
+    removedCount > 0
+      ? ' A removed booking is put back as a new booking, so the exported timesheet will show an update is due and the person can review and sign it.'
+      : ''
+  return `Cancel ${rev}? The revision is deleted and nothing is sent.${undone}${recreated}`
 }
 
 function sameReview(a: unknown, b: unknown): boolean {
@@ -127,7 +135,10 @@ export function timesheetRevisionDraftChanges(input: {
   const previous = record(input?.previous)
   let bookingEdits = 0
   for (const value of Object.values(record(draft.reviewerBookingEdits))) {
-    if (text(record(value).bookingId)) bookingEdits += 1
+    const row = record(value)
+    // Review of #457 (finding 7): a record an undo settled (`restoredAs` / `restoredFrom`) is no change left on the draft.
+    if (text(row.restoredAs) || text(row.restoredFrom)) continue
+    if (text(row.bookingId)) bookingEdits += 1
   }
   const reviewChanges = hasPrevious
     ? reviewMapChanges(draft.payrollLineReviews, previous.payrollLineReviews) + reviewMapChanges(draft.extraEntryReviews, previous.extraEntryReviews)
@@ -164,21 +175,28 @@ export function timesheetRevisionDraftState(input: {
   viewerIsSubject: boolean
   personName?: string | null
   revisionLabel?: string | null
+  /**
+   * Review of #457 (finding 3): the live bookings differ from the version this draft corrects
+   * (`signedTimesheetBookingChanges` of that exported version: `changed`) — e.g. the reviewer changed them in scheduling
+   * first, as the 1.71.0 help says, so the draft holds no record of its own. Send is offered then too.
+   */
+  liveDiffersFromPrevious?: boolean | null
 }): TimesheetRevisionDraftState {
   const draft = timesheetRevisionIsDraft(input?.sheet)
   const changes = draft
     ? timesheetRevisionDraftChanges({ draft: input.sheet, previous: input.previous })
     : { bookingEdits: 0, reviewChanges: 0, count: 0, changed: false }
   const reviewerActs = draft && input.viewerIsReviewer === true && input.viewerIsSubject !== true
+  const ready = changes.changed || input.liveDiffersFromPrevious === true
   return {
     draft,
     reviewerActs,
     changes,
-    canSend: reviewerActs && changes.changed,
+    canSend: reviewerActs && ready,
     canCancel: reviewerActs,
     personMaySign: !draft,
     sendLabel: timesheetRevisionSendLabel(input.personName),
-    help: !reviewerActs ? null : changes.changed ? timesheetRevisionSendReadyHelp(input.revisionLabel, input.personName) : TIMESHEET_REVISION_DRAFT_SEND_WAITING_HELP,
+    help: !reviewerActs ? null : ready ? timesheetRevisionSendReadyHelp(input.revisionLabel, input.personName) : TIMESHEET_REVISION_DRAFT_SEND_WAITING_HELP,
     cancelLabel: TIMESHEET_REVISION_CANCEL_LABEL,
     personMessage: draft && input.viewerIsSubject === true ? TIMESHEET_REVISION_DRAFT_PERSON_MESSAGE : null,
   }

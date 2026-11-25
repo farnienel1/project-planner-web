@@ -7,9 +7,10 @@
  *   that stop the sheet reading as changed (`timesheetReviewerRestoredRecords`); refused by the security rules for a
  *   line manager who does not manage the job — reported, never retried another way;
  * - price work / expense decisions: put back (or removed) in one update with their records removed.
- * Every booking that cannot be undone safely is left as it is and named in the result.
+ * Every booking that cannot be undone safely is left as it is and named in the result. Each write runs in a transaction
+ * that re-reads the sheet record, the booking and its tombstone (review of #457, finding 4).
  */
-import { collection, deleteField, doc, FieldPath, getDoc, serverTimestamp, updateDoc, writeBatch, type Firestore } from 'firebase/firestore'
+import { collection, deleteField, doc, FieldPath, getDoc, runTransaction, serverTimestamp, type Firestore } from 'firebase/firestore'
 import {
   BOOKING_TOMBSTONE_COLLECTION,
   TIMESHEET_REVIEWER_BOOKING_EDITS_FIELD,
@@ -41,98 +42,106 @@ export async function cancelTimesheetReviewerChanges(
   const sheetRef = orgRef('settings', input.documentId)
   const sheetSnap = await getDoc(sheetRef)
   if (!sheetSnap.exists()) return { undone: 0, refused: [] }
-  const sheet = sheetSnap.data() as Record<string, unknown>
-  const records = timesheetReviewerSessionRecords(sheet)
-  const bookings = await Promise.all(
-    records
-      .filter((r) => r.kind === 'booking')
-      .map(async (r) => {
-        const collectionName = String(r.value.collection || 'bookings')
-        const bookingId = String(r.value.bookingId || '')
-        if (!bookingId) return null
-        const [booking, tombstone] = await Promise.all([
-          getDoc(orgRef(collectionName, bookingId)).catch(() => null),
-          getDoc(orgRef(BOOKING_TOMBSTONE_COLLECTION, bookingId)).catch(() => null),
-        ])
-        return {
-          collection: collectionName,
-          bookingId,
-          data: booking?.exists() ? (booking.data() as Record<string, unknown>) : null,
-          tombstoned: tombstone?.exists() === true,
-        }
-      })
-  )
-  const plan = timesheetReviewerUndoPlan({
-    sheet,
-    bookings: bookings.filter((b): b is NonNullable<typeof b> => b != null),
-    timeZone: input.timeZone ?? null,
-  })
+  const records = timesheetReviewerSessionRecords(sheetSnap.data() as Record<string, unknown>)
   const metadata = writeMetadataFields(input.userId, 'web') ?? {}
   const metaPairs = ['updatedAt', serverTimestamp(), ...Object.entries(metadata).flat()]
   const refused: TimesheetReviewerUndoResult['refused'] = []
   let undone = 0
-  for (const action of plan.actions) {
-    if (action.kind === 'refuse') {
-      refused.push({ bookingId: action.bookingId, message: action.message })
-      continue
-    }
-    const batch = writeBatch(db)
-    if (action.kind === 'restore') {
-      batch.update(orgRef(action.collection, action.bookingId), {
-        ...firestoreUpdateFields({ set: action.set, remove: action.remove }),
-        updatedAt: serverTimestamp(),
-        ...metadata,
-      })
-      batch.update(sheetRef, new FieldPath(TIMESHEET_REVIEWER_BOOKING_EDITS_FIELD, action.key), deleteField(), ...metaPairs)
-    } else {
-      const newRef = doc(collection(db, 'organizations', input.organizationId, action.collection))
-      const created = { ...action.data, id: newRef.id }
-      const oldRecord = (sheet[TIMESHEET_REVIEWER_BOOKING_EDITS_FIELD] as Record<string, Record<string, unknown>>)[action.key] ?? {}
-      const restored = timesheetReviewerRestoredRecords({
-        sheet,
-        oldKey: action.key,
-        oldRecord,
-        collection: action.collection,
-        newBookingId: newRef.id,
-        createdDoc: created,
-        editedBy: input.userId,
-        timeZone: input.timeZone ?? null,
-      })
-      if (!restored) {
-        refused.push({ bookingId: action.oldBookingId, message: TIMESHEET_REVIEWER_UNDO_NOT_ALLOWED_MESSAGE })
-        continue
-      }
-      batch.set(newRef, { ...created, createdAt: serverTimestamp(), updatedAt: serverTimestamp(), ...metadata })
-      batch.update(
-        sheetRef,
-        new FieldPath(TIMESHEET_REVIEWER_BOOKING_EDITS_FIELD, restored.old.key),
-        restored.old.value,
-        new FieldPath(TIMESHEET_REVIEWER_BOOKING_EDITS_FIELD, restored.created.key),
-        { ...restored.created.value, editedAt: serverTimestamp() },
-        ...metaPairs
-      )
-    }
+  // Review of #457 (finding 4): each booking is undone in its own transaction that re-reads the sheet, the booking and
+  // its tombstone and plans again from them (`timesheetReviewerUndoPlan`), so a change made meanwhile is never
+  // overwritten and two Cancel runs at once never re-create a booking twice (the second sees `restoredAs` and skips).
+  for (const entry of records) {
+    if (entry.kind !== 'booking') continue
+    const collectionName = String(entry.value.collection || 'bookings')
+    const bookingId = String(entry.value.bookingId || '')
+    if (!bookingId) continue
+    const bookingRef = orgRef(collectionName, bookingId)
+    const tombstoneRef = orgRef(BOOKING_TOMBSTONE_COLLECTION, bookingId)
+    let outcome: { kind: 'done' } | { kind: 'skip' } | { kind: 'refused'; message: string }
     try {
-      await batch.commit()
-      undone += 1
+      outcome = await runTransaction(db, async (transaction) => {
+        const [sheetNow, booking, tombstone] = await Promise.all([
+          transaction.get(sheetRef),
+          transaction.get(bookingRef),
+          transaction.get(tombstoneRef),
+        ])
+        if (!sheetNow.exists()) return { kind: 'skip' as const }
+        const sheet = sheetNow.data() as Record<string, unknown>
+        const plan = timesheetReviewerUndoPlan({
+          sheet,
+          bookings: [
+            {
+              collection: collectionName,
+              bookingId,
+              data: booking.exists() ? (booking.data() as Record<string, unknown>) : null,
+              tombstoned: tombstone.exists(),
+            },
+          ],
+          timeZone: input.timeZone ?? null,
+        })
+        // Gone from the session (undone elsewhere, `restoredAs`, or the sheet was signed again): nothing to do.
+        const action = plan.actions.find((a) => a.key === entry.key)
+        if (!action) return { kind: 'skip' as const }
+        if (action.kind === 'refuse') return { kind: 'refused' as const, message: action.message }
+        if (action.kind === 'restore') {
+          transaction.update(bookingRef, {
+            ...firestoreUpdateFields({ set: action.set, remove: action.remove }),
+            updatedAt: serverTimestamp(),
+            ...metadata,
+          })
+          transaction.update(sheetRef, new FieldPath(TIMESHEET_REVIEWER_BOOKING_EDITS_FIELD, action.key), deleteField(), ...metaPairs)
+          return { kind: 'done' as const }
+        }
+        const newRef = doc(collection(db, 'organizations', input.organizationId, action.collection))
+        const created = { ...action.data, id: newRef.id }
+        const oldRecord = ((sheet[TIMESHEET_REVIEWER_BOOKING_EDITS_FIELD] ?? {}) as Record<string, Record<string, unknown>>)[action.key] ?? {}
+        const restored = timesheetReviewerRestoredRecords({
+          sheet,
+          oldKey: action.key,
+          oldRecord,
+          collection: action.collection,
+          newBookingId: newRef.id,
+          createdDoc: created,
+          editedBy: input.userId,
+          timeZone: input.timeZone ?? null,
+        })
+        if (!restored) return { kind: 'refused' as const, message: TIMESHEET_REVIEWER_UNDO_NOT_ALLOWED_MESSAGE }
+        transaction.set(newRef, { ...created, createdAt: serverTimestamp(), updatedAt: serverTimestamp(), ...metadata })
+        transaction.update(
+          sheetRef,
+          new FieldPath(TIMESHEET_REVIEWER_BOOKING_EDITS_FIELD, restored.old.key),
+          restored.old.value,
+          new FieldPath(TIMESHEET_REVIEWER_BOOKING_EDITS_FIELD, restored.created.key),
+          { ...restored.created.value, editedAt: serverTimestamp() },
+          ...metaPairs
+        )
+        return { kind: 'done' as const }
+      })
     } catch (error) {
       if (!isPermissionDenied(error)) throw error
-      refused.push({
-        bookingId: action.kind === 'restore' ? action.bookingId : action.oldBookingId,
-        message: action.kind === 'restore' ? 'You are not allowed to change this booking — not undone.' : TIMESHEET_REVIEWER_UNDO_NOT_ALLOWED_MESSAGE,
-      })
+      outcome = {
+        kind: 'refused',
+        message: entry.value.deleted === true ? TIMESHEET_REVIEWER_UNDO_NOT_ALLOWED_MESSAGE : 'You are not allowed to change this booking — not undone.',
+      }
     }
+    if (outcome.kind === 'done') undone += 1
+    else if (outcome.kind === 'refused') refused.push({ bookingId, message: outcome.message })
   }
-  // Price work / expense decisions and their records: one update.
-  const reviewKeys = plan.removeRecordKeys.filter((key) => !plan.actions.some((a) => a.key === key))
-  const reviewPairs: unknown[] = []
-  for (const [path, value] of Object.entries(plan.reviews.set)) reviewPairs.push(new FieldPath(...path.split(/\.(.+)/).filter(Boolean)), value)
-  for (const path of plan.reviews.remove) reviewPairs.push(new FieldPath(...path.split(/\.(.+)/).filter(Boolean)), deleteField())
-  for (const key of reviewKeys) reviewPairs.push(new FieldPath(TIMESHEET_REVIEWER_BOOKING_EDITS_FIELD, key), deleteField())
-  if (reviewPairs.length > 0) {
-    const [first, firstValue, ...rest] = reviewPairs
-    await updateDoc(sheetRef, first as FieldPath, firstValue, ...rest, ...metaPairs)
-    undone += plan.reviews.remove.length + Object.keys(plan.reviews.set).length
-  }
+  // Price work / expense decisions and their records: one transaction, planned from the sheet read again.
+  const reviewsUndone = await runTransaction(db, async (transaction) => {
+    const sheetNow = await transaction.get(sheetRef)
+    if (!sheetNow.exists()) return 0
+    const plan = timesheetReviewerUndoPlan({ sheet: sheetNow.data() as Record<string, unknown>, bookings: [], timeZone: input.timeZone ?? null })
+    const reviewKeys = plan.removeRecordKeys.filter((key) => !plan.actions.some((a) => a.key === key))
+    const pairs: unknown[] = []
+    for (const [path, value] of Object.entries(plan.reviews.set)) pairs.push(new FieldPath(...path.split(/\.(.+)/).filter(Boolean)), value)
+    for (const path of plan.reviews.remove) pairs.push(new FieldPath(...path.split(/\.(.+)/).filter(Boolean)), deleteField())
+    for (const key of reviewKeys) pairs.push(new FieldPath(TIMESHEET_REVIEWER_BOOKING_EDITS_FIELD, key), deleteField())
+    if (pairs.length === 0) return 0
+    const [first, firstValue, ...rest] = pairs
+    transaction.update(sheetRef, first as FieldPath, firstValue, ...rest, ...metaPairs)
+    return plan.reviews.remove.length + Object.keys(plan.reviews.set).length
+  })
+  undone += reviewsUndone
   return { undone, refused }
 }

@@ -733,6 +733,7 @@ var ProjectPlannerCanonical = (() => {
     TIMESHEET_REVIEWER_REVIEW_RECORD_PREFIX: () => TIMESHEET_REVIEWER_REVIEW_RECORD_PREFIX,
     TIMESHEET_REVIEWER_UNDO_CHANGED_SINCE_MESSAGE: () => TIMESHEET_REVIEWER_UNDO_CHANGED_SINCE_MESSAGE,
     TIMESHEET_REVIEWER_UNDO_GONE_MESSAGE: () => TIMESHEET_REVIEWER_UNDO_GONE_MESSAGE,
+    TIMESHEET_REVIEWER_UNDO_INCOMPLETE_MESSAGE: () => TIMESHEET_REVIEWER_UNDO_INCOMPLETE_MESSAGE,
     TIMESHEET_REVIEWER_UNDO_NOT_ALLOWED_MESSAGE: () => TIMESHEET_REVIEWER_UNDO_NOT_ALLOWED_MESSAGE,
     TIMESHEET_REVIEWER_UNDO_NO_BEFORE_MESSAGE: () => TIMESHEET_REVIEWER_UNDO_NO_BEFORE_MESSAGE,
     TIMESHEET_REVIEW_AND_SIGN_REVISION_LABEL: () => TIMESHEET_REVIEW_AND_SIGN_REVISION_LABEL,
@@ -16366,7 +16367,7 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/timesheetRevisionDraft.ts
   var TIMESHEET_REVISION_DRAFT_FIELD = "revisionDraft";
   var TIMESHEET_REVISION_CANCEL_LABEL = "Cancel revision";
-  var TIMESHEET_REVISION_DRAFT_SEND_WAITING_HELP = "Change a booking with \u2699 or \u2715 first. The button turns blue once you have made a change.";
+  var TIMESHEET_REVISION_DRAFT_SEND_WAITING_HELP = "Change a booking with \u2699 or \u2715 here, or in scheduling, first. The button turns blue once the bookings differ from the exported timesheet.";
   var TIMESHEET_REVISION_DRAFT_PERSON_MESSAGE = "Your line manager is making changes to this timesheet. You can review and sign it once they send it to you.";
   var TIMESHEET_REVISION_DRAFT_REFUSED_MESSAGE = "This revision is still being prepared by your line manager. You can sign it once they send it to you.";
   var TIMESHEET_REVISION_DRAFT_SENT_MESSAGE = "Sent. They have been told the revision is ready to sign.";
@@ -16393,10 +16394,11 @@ var ProjectPlannerCanonical = (() => {
     const rev = text18(revisionLabel) || "the revision";
     return `Sends ${rev} to ${firstName(personName) || "the person"} to review and sign. You sign it off after.`;
   }
-  function timesheetRevisionCancelConfirmMessage(revisionLabel, changeCount = 0) {
+  function timesheetRevisionCancelConfirmMessage(revisionLabel, changeCount = 0, removedCount = 0) {
     const rev = text18(revisionLabel) || "this revision";
-    const kept = changeCount > 0 ? " The booking changes you made stay in scheduling, so the exported timesheet will show an update is due and the person can review and sign it." : "";
-    return `Cancel ${rev}? The revision is deleted and nothing is sent.${kept}`;
+    const undone = changeCount > 0 ? " The booking changes you made are undone first; a booking changed again by someone else since stays as it is." : "";
+    const recreated = removedCount > 0 ? " A removed booking is put back as a new booking, so the exported timesheet will show an update is due and the person can review and sign it." : "";
+    return `Cancel ${rev}? The revision is deleted and nothing is sent.${undone}${recreated}`;
   }
   function sameReview(a, b) {
     const x = record6(a);
@@ -16423,7 +16425,9 @@ var ProjectPlannerCanonical = (() => {
     const previous = record6(input?.previous);
     let bookingEdits = 0;
     for (const value of Object.values(record6(draft.reviewerBookingEdits))) {
-      if (text18(record6(value).bookingId)) bookingEdits += 1;
+      const row3 = record6(value);
+      if (text18(row3.restoredAs) || text18(row3.restoredFrom)) continue;
+      if (text18(row3.bookingId)) bookingEdits += 1;
     }
     const reviewChanges = hasPrevious ? reviewMapChanges(draft.payrollLineReviews, previous.payrollLineReviews) + reviewMapChanges(draft.extraEntryReviews, previous.extraEntryReviews) : 0;
     const count2 = bookingEdits + reviewChanges;
@@ -16433,15 +16437,16 @@ var ProjectPlannerCanonical = (() => {
     const draft = timesheetRevisionIsDraft(input?.sheet);
     const changes = draft ? timesheetRevisionDraftChanges({ draft: input.sheet, previous: input.previous }) : { bookingEdits: 0, reviewChanges: 0, count: 0, changed: false };
     const reviewerActs = draft && input.viewerIsReviewer === true && input.viewerIsSubject !== true;
+    const ready = changes.changed || input.liveDiffersFromPrevious === true;
     return {
       draft,
       reviewerActs,
       changes,
-      canSend: reviewerActs && changes.changed,
+      canSend: reviewerActs && ready,
       canCancel: reviewerActs,
       personMaySign: !draft,
       sendLabel: timesheetRevisionSendLabel(input.personName),
-      help: !reviewerActs ? null : changes.changed ? timesheetRevisionSendReadyHelp(input.revisionLabel, input.personName) : TIMESHEET_REVISION_DRAFT_SEND_WAITING_HELP,
+      help: !reviewerActs ? null : ready ? timesheetRevisionSendReadyHelp(input.revisionLabel, input.personName) : TIMESHEET_REVISION_DRAFT_SEND_WAITING_HELP,
       cancelLabel: TIMESHEET_REVISION_CANCEL_LABEL,
       personMessage: draft && input.viewerIsSubject === true ? TIMESHEET_REVISION_DRAFT_PERSON_MESSAGE : null
     };
@@ -16582,11 +16587,12 @@ var ProjectPlannerCanonical = (() => {
   function statusTakesItOff(status) {
     return text19(status) !== "" && !bookingOccupiesDay(status);
   }
-  function diffSides(signed, live, documents, addedAfterMs, reviewerEdits = null) {
+  function diffSides(signed, live, documents, addedAfterMs, reviewerEdits = null, restorePairs = null) {
     const fingerprinted = Array.from(signed.values()).some((row3) => row3.fingerprint !== "");
     const changed = [];
     const added = [];
     const removed = [];
+    const covered = /* @__PURE__ */ new Set();
     for (const [key8, row3] of signed) {
       const now = live.get(key8);
       const doc = documents?.byKey.get(key8);
@@ -16599,6 +16605,14 @@ var ProjectPlannerCanonical = (() => {
       if (now) {
         if (row3.fingerprint && now.fingerprint && !sameBooking(row3.fingerprint, now.fingerprint) || placeChanged) changed.push(row3.bookingId);
         continue;
+      }
+      const pair = restorePairs?.get(key8);
+      if (pair) {
+        const nowNew = live.get(pair.newKey);
+        if (nowNew && pair.fingerprint && sameBooking(pair.fingerprint, nowNew.fingerprint) && (!row3.fingerprint || sameBooking(row3.fingerprint, nowNew.fingerprint)) && (!row3.place || !pair.place || row3.place === pair.place)) {
+          covered.add(pair.newKey);
+          continue;
+        }
       }
       if (!documents) continue;
       if (documents.tombstoned.has(key8)) {
@@ -16618,7 +16632,7 @@ var ProjectPlannerCanonical = (() => {
       if (row3.fingerprint && !sameBooking(row3.fingerprint, documentFingerprint(doc)) || placeChanged) changed.push(row3.bookingId);
     }
     for (const [key8, row3] of live) {
-      if (signed.has(key8)) continue;
+      if (signed.has(key8) || covered.has(key8)) continue;
       const restored = reviewerEdits?.get(key8);
       if (restored?.restoredFrom && !restored.deleted && restored.fingerprint && sameBooking(restored.fingerprint, row3.fingerprint)) continue;
       if (addedAfterMs == null || row3.writtenMs == null || row3.writtenMs <= addedAfterMs) continue;
@@ -16630,6 +16644,15 @@ var ProjectPlannerCanonical = (() => {
     return !diff || diff.changed.length === 0 && diff.added.length === 0 && diff.removed.length === 0;
   }
   var TIMESHEET_REVIEWER_BOOKING_EDITS_FIELD = "reviewerBookingEdits";
+  function restorePairsOf(edits) {
+    if (!edits) return null;
+    const out = /* @__PURE__ */ new Map();
+    for (const [newKey, edit] of edits) {
+      if (!edit.restoredFrom || edit.deleted) continue;
+      out.set(keyOf(edit.collection, edit.restoredFrom), { newKey, fingerprint: edit.fingerprint, place: edit.place });
+    }
+    return out.size > 0 ? out : null;
+  }
   function timesheetReviewerBookingEditKey(collection, bookingId) {
     const id2 = normalizeDocumentId(text19(bookingId));
     if (!id2) return "";
@@ -16697,7 +16720,8 @@ var ProjectPlannerCanonical = (() => {
     const priorFor = prior ? typeof prior.forSignedAtMs === "number" ? prior.forSignedAtMs : realMs(prior.forSignedAtMs) ?? 0 : null;
     const priorManager = prior ? typeof prior.forManagerSignedAtMs === "number" ? prior.forManagerSignedAtMs : 0 : null;
     const sameSession = prior != null && Math.abs((priorFor ?? -1) - (signedMs ?? 0)) <= RECORD_SIGNED_AT_MATCH_MS && Math.abs((priorManager ?? -1) - managerMs) <= RECORD_SIGNED_AT_MATCH_MS && prior.before && typeof prior.before === "object";
-    const before = sameSession ? prior.before : input.before && typeof input.before === "object" ? input.before : null;
+    const given = input.before && typeof input.before === "object" ? input.before : null;
+    const before = sameSession ? deleted && given ? { ...given, ...prior.before } : prior.before : given;
     return {
       key: key8,
       value: {
@@ -16781,7 +16805,8 @@ var ProjectPlannerCanonical = (() => {
       );
       const snapshotAtMs = realMs(override.approvedAt) ?? realMs(sheet.managerSignedAt) ?? realMs(sheet.approvedAt) ?? operativeSignedMs;
       const snapshotAddedAfter = snapshotAtMs == null ? null : snapshotAtMs - SIGNED_TIMESHEET_ADDITION_WINDOW_MS;
-      if (!repairable && !(grouped.byKey.size === 0 && grouped.keyless > 0)) snapshotDiff = diffSides(grouped.byKey, live, documents, snapshotAddedAfter);
+      const snapshotPairs = restorePairsOf(currentReviewerEdits(sheet.reviewerBookingEdits, operativeSignedMs));
+      if (!repairable && !(grouped.byKey.size === 0 && grouped.keyless > 0)) snapshotDiff = diffSides(grouped.byKey, live, documents, snapshotAddedAfter, null, snapshotPairs);
     }
     const recordAtMs = realMs(sheet.operativeSignedBookingsAt);
     const recordSignedAtMs = realMs(sheet.operativeSignedBookingsSignedAt);
@@ -16791,7 +16816,8 @@ var ProjectPlannerCanonical = (() => {
     const recordAddedAfter = recordReferenceMs == null ? null : recordReferenceMs - SIGNED_TIMESHEET_ADDITION_WINDOW_MS;
     const reviewerEdits = currentReviewerEdits(sheet.reviewerBookingEdits, operativeSignedMs);
     let personDiff;
-    if (record24) personDiff = diffSides(record24, live, documents, recordAddedAfter, reviewerEdits);
+    const pairs = restorePairsOf(reviewerEdits);
+    if (record24) personDiff = diffSides(record24, live, documents, recordAddedAfter, reviewerEdits, pairs);
     else if (snapshotDiff && reviewerEdits && override) {
       const snapshotAtMs = realMs(override.approvedAt) ?? realMs(sheet.managerSignedAt) ?? realMs(sheet.approvedAt) ?? operativeSignedMs;
       personDiff = diffSides(
@@ -16799,7 +16825,8 @@ var ProjectPlannerCanonical = (() => {
         live,
         documents,
         snapshotAtMs == null ? null : snapshotAtMs - SIGNED_TIMESHEET_ADDITION_WINDOW_MS,
-        reviewerEdits
+        reviewerEdits,
+        pairs
       );
     } else personDiff = snapshotDiff;
     const gap = [];
@@ -17639,8 +17666,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.90.0" : "",
-      sha256: true ? "fae0956eadba16eb6f3ad556e0407f7580ee208aa7d626cca7cd9675e3214df4" : ""
+      version: true ? "1.90.1" : "",
+      sha256: true ? "fcf3ea1c6945e4158b9e4644a6d26851f68e45b9b0d8981ddc6170a849d3d582" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -34658,6 +34685,7 @@ var ProjectPlannerCanonical = (() => {
   var TIMESHEET_REVIEWER_UNDO_CHANGED_SINCE_MESSAGE = "This booking has been changed again since \u2014 not undone.";
   var TIMESHEET_REVIEWER_UNDO_GONE_MESSAGE = "This booking was removed elsewhere since \u2014 not undone.";
   var TIMESHEET_REVIEWER_UNDO_NO_BEFORE_MESSAGE = "This change was made before Cancel changes existed, so its old values are not known \u2014 not undone.";
+  var TIMESHEET_REVIEWER_UNDO_INCOMPLETE_MESSAGE = "This removed booking's details were not all kept, so it can't be put back safely \u2014 not undone. Book it again in scheduling.";
   var TIMESHEET_REVIEWER_UNDO_NOT_ALLOWED_MESSAGE = "You can't book this job, so this removed booking can't be put back. Ask an admin or the job's manager to book it again.";
   var TIMESHEET_REVIEWER_REVIEW_RECORD_PREFIX = "review__extra__";
   var RECREATE_DROP_FIELDS = ["id", "createdAt", "updatedAt", "updatedBy", "updatedFrom", "deletedAt", "deletedBy"];
@@ -34701,9 +34729,13 @@ var ProjectPlannerCanonical = (() => {
     if (resolveTimesheetExportedAtMs(row3) != null) return [];
     const session = timesheetReviewerSession(row3);
     const out = [];
+    const lateIds = new Set(
+      (Array.isArray(row3.lateExtras) ? row3.lateExtras : []).map((entry) => normalizeDocumentId(text64(record23(entry).id))).filter(Boolean)
+    );
     for (const [key8, raw] of Object.entries(record23(row3.reviewerBookingEdits))) {
       const value = record23(raw);
       if (text64(value.restoredAs) || text64(value.restoredFrom)) continue;
+      if (value.kind === "extraReview" && (value.lateExtra === true || lateIds.has(normalizeDocumentId(text64(value.entryId))))) continue;
       const inSession = session.draft ? value.forRevisionDraft === true : session.forManagerSignedAtMs > 0 && Math.abs(recordMs(value.forSignedAtMs) - session.forSignedAtMs) <= MATCH_MS && Math.abs(recordMs(value.forManagerSignedAtMs) - session.forManagerSignedAtMs) <= MATCH_MS;
       if (!inSession) continue;
       out.push({ key: key8, kind: value.kind === "extraReview" ? "review" : "booking", value });
@@ -34725,6 +34757,10 @@ var ProjectPlannerCanonical = (() => {
     if (!session.draft && session.forManagerSignedAtMs === 0) return null;
     const id2 = text64(input.entryId);
     if (!id2) return null;
+    if (record23(input.after).lateExtra === true || record23(input.before).lateExtra === true) return null;
+    const lateIds = (Array.isArray(row3.lateExtras) ? row3.lateExtras : []).map((entry) => normalizeDocumentId(text64(record23(entry).id)));
+    if (lateIds.includes(normalizeDocumentId(id2))) return null;
+    if (!session.draft && input.makingChanges !== true && timesheetReviewerSessionRecords(row3).length === 0) return null;
     const key8 = `${TIMESHEET_REVIEWER_REVIEW_RECORD_PREFIX}${normalizeDocumentId(id2)}`.replace(/[^A-Za-z0-9_-]/g, "_");
     const existing = record23(record23(row3.reviewerBookingEdits)[key8]);
     if (Object.keys(existing).length > 0 && timesheetReviewerSessionRecords(row3).some((r) => r.key === key8)) return null;
@@ -34776,6 +34812,11 @@ var ProjectPlannerCanonical = (() => {
       if (value.deleted === true) {
         if (now?.data && !now.tombstoned) {
           refuse("reappeared", TIMESHEET_REVIEWER_UNDO_CHANGED_SINCE_MESSAGE);
+          continue;
+        }
+        const personField = collection === "managerSiteBookings" ? "userId" : "operativeId";
+        if (!text64(before[personField]) || before.date == null || text64(before.date) === "") {
+          refuse("incomplete", TIMESHEET_REVIEWER_UNDO_INCOMPLETE_MESSAGE);
           continue;
         }
         actions.push({ kind: "recreate", key: entry.key, collection, oldBookingId: bookingId, data: { ...before } });
