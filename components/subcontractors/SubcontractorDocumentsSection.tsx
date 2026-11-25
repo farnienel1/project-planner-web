@@ -6,7 +6,7 @@
  * (`lib/canonical/subcontractorDocuments.ts`, `uploadPolicy.ts`, `storedFiles.ts`); this file only shows them.
  */
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getDownloadURL, ref } from 'firebase/storage'
 import { storage } from '@/lib/firebase/config'
 import { useToast } from '@/components/ui/ToastProvider'
@@ -51,11 +51,14 @@ function dateText(ms: number | null, timeZone: string): string {
 export function SubcontractorDocumentsSection({
   organizationId,
   subcontractorId,
+  firmName,
   documents,
   user,
 }: {
   organizationId: string
   subcontractorId: string
+  /** Named in the message when an upload finishes after the person has moved to another firm or page. */
+  firmName: string
   documents: SubcontractorDocuments | undefined
   user: User
 }) {
@@ -67,6 +70,7 @@ export function SubcontractorDocumentsSection({
           kind={kind}
           organizationId={organizationId}
           subcontractorId={subcontractorId}
+          firmName={firmName}
           entries={documents?.[kind] ?? []}
           user={user}
         />
@@ -79,12 +83,14 @@ function DocumentKindBlock({
   kind,
   organizationId,
   subcontractorId,
+  firmName,
   entries,
   user,
 }: {
   kind: SubcontractorDocumentKind
   organizationId: string
   subcontractorId: string
+  firmName: string
   entries: SubcontractorDocumentEntry[]
   user: User
 }) {
@@ -97,6 +103,16 @@ function DocumentKindBlock({
   const [error, setError] = useState<string | null>(null)
   const label = SUBCONTRACTOR_DOCUMENT_LABELS[kind]
   const inputId = `sub-doc-expiry-${kind}`
+  // Owner report 25 Nov: an upload kept running after the person left the firm, and its result then showed on another
+  // firm's panel (or nowhere). The block is now one per firm (keyed by the firm id); a result that arrives after it
+  // has gone is a message naming the firm instead.
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
 
   async function onPick(file: File | undefined) {
     if (!file) return
@@ -116,15 +132,21 @@ function DocumentKindBlock({
         file,
         expiresOn: expiry || null,
         actorUid: user.id,
-        onProgress: (fraction) => setProgress(fraction),
+        onProgress: (fraction) => {
+          if (mounted.current) setProgress(fraction)
+        },
       })
-      setExpiry('')
-      toast(`${label} document uploaded.`)
+      toast(mounted.current ? `${label} document uploaded.` : `${label} document uploaded for ${firmName}.`)
+      if (mounted.current) setExpiry('')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'The upload did not finish. Try again.')
+      const message = err instanceof Error ? err.message : 'The upload did not finish. Try again.'
+      if (mounted.current) setError(message)
+      else toast(`${label} for ${firmName}: ${message}`)
     } finally {
-      setBusy(false)
-      setProgress(null)
+      if (mounted.current) {
+        setBusy(false)
+        setProgress(null)
+      }
       if (fileInput.current) fileInput.current.value = ''
     }
   }

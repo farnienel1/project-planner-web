@@ -223,8 +223,10 @@ function SubcontractorsScreenInner({ selectedId }: { selectedId?: string }) {
       )}
       {organization?.id && user ? (
         <SubcontractorDocumentsSection
+          key={selected.id}
           organizationId={organization.id}
           subcontractorId={selected.id}
+          firmName={selected.name}
           documents={selected.documents}
           user={user}
         />
@@ -295,7 +297,14 @@ function SubcontractorsScreenInner({ selectedId }: { selectedId?: string }) {
             if (!organization?.id) return
             await saveSubcontractor(organization.id, next)
             setEditor(null)
-            router.push(firmHref(next.id, trade))
+            // A firm the current trade chip or search would hide is not selectable, so the page used to jump to
+            // another firm and its documents panel (owner report 25 Nov). Show the saved firm.
+            const query = search.trim().toLowerCase()
+            if (query && !next.name.toLowerCase().includes(query) && !next.subcontractorType.toLowerCase().includes(query)) {
+              setSearch('')
+            }
+            const keepTrade = trade === 'All' || next.subcontractorType.toLowerCase() === trade.toLowerCase()
+            router.push(firmHref(next.id, keepTrade ? trade : 'All'))
           }}
           onDelete={
             subcontractors.some((row) => row.id === editor.id)

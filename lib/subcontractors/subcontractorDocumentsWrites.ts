@@ -12,6 +12,7 @@ import { db, storage } from '@/lib/firebase/config'
 import { uploadFile } from '@/lib/firebase/storageUtils'
 import { prepareClientUpload } from '@/lib/security/stripPhotoLocation'
 import { assertUploadAllowed } from '@/lib/security/uploadGuard'
+import { isTimeoutError, withTimeout } from '@/lib/client/withTimeout'
 import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
 import { uploadFileExtension } from '@/lib/canonical/uploadPolicy'
 import { EDIT_OF_MISSING_DOCUMENT_MESSAGE } from '@/lib/canonical/liveSources'
@@ -53,6 +54,16 @@ async function writeList(
     return result
   })
 }
+
+/**
+ * How long the link write waits for the server. A Firestore transaction that cannot reach the server is retried
+ * with back-off and can keep the button on "Uploading…" for minutes (owner report 25 Nov). After this the screen stops
+ * waiting; the write may still arrive (the live list then shows the document), so the file is kept, never deleted.
+ */
+export const SUBCONTRACTOR_DOCUMENT_LINK_CONFIRM_MS = 20_000
+
+export const SUBCONTRACTOR_DOCUMENT_LINK_UNCONFIRMED_MESSAGE =
+  'The file uploaded, but the server has not confirmed it on this sub contractor yet. Check your connection — it will appear here once it arrives. If it does not, upload it again.'
 
 async function deleteObjectQuietly(path: string) {
   if (!storage || !path) return
@@ -111,7 +122,7 @@ export async function uploadSubcontractorDocument(input: {
   await uploadFile(path, file, contentType, { onProgress: input.onProgress })
   let outcome: string
   try {
-    const result = await writeList(input.organizationId, input.subcontractorId, input.actorUid, (stored) =>
+    const result = await withTimeout(writeList(input.organizationId, input.subcontractorId, input.actorUid, (stored) =>
       subcontractorDocumentAddWriteFields(stored, {
         kind: input.kind,
         subcontractorId: input.subcontractorId,
@@ -126,9 +137,12 @@ export async function uploadSubcontractorDocument(input: {
           expiresOn: input.expiresOn,
         },
       })
-    )
+    ), SUBCONTRACTOR_DOCUMENT_LINK_CONFIRM_MS, SUBCONTRACTOR_DOCUMENT_LINK_UNCONFIRMED_MESSAGE)
     outcome = String(result.outcome)
   } catch (error) {
+    // Not confirmed in time: the transaction may still commit, so the file is kept (a linked entry whose file is gone
+    // is worse than an unlinked file the §24 recovery keeps).
+    if (isTimeoutError(error)) throw error
     await deleteUnlinkedUpload(input.organizationId, input.subcontractorId, path)
     throw error
   }

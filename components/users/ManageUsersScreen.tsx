@@ -10,6 +10,7 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { resendInvitationEmail } from '@/lib/orgSetup/resendInvitation'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useUserStore } from '@/lib/stores/userStore'
+import { usePayStatusOf } from '@/lib/pay/usePayProfilesStatus'
 import { canManageUsers, getAddUserLabel, getManageUsersLabel, manageUsersAddButtonShown } from '@/lib/navigation/menuPermissions'
 import {
   filterUsersForManageTab,
@@ -342,9 +343,18 @@ export function ManageUsersScreen({ scope = 'all' }: { scope?: ManageUsersScope 
   )
 
   // Rulebook 1.14.0 `usersMissingPayRate`: active self-employed people saved before the pay-rate rule with no rate.
+  // 25 Nov (owner: a ghost with a day rate was listed): while `privatePay` is on a person's rate is on their pay
+  // profile, laid over the roster only once it has been read. Nobody is listed until their pay is known
+  // (`payProfilesStatusForPerson` ready), so a stripped users document is never read as "no rate".
+  const payStatusOf = usePayStatusOf(organization?.id)
   const missingPayRate = useMemo(
-    () => (isAdminViewer ? usersWithoutPayRate(users).filter((user) => matchesRosterSegment(user, 'active')) : []),
-    [isAdminViewer, users]
+    () =>
+      isAdminViewer
+        ? usersWithoutPayRate(users).filter(
+            (user) => matchesRosterSegment(user, 'active') && payStatusOf(user) === 'ready'
+          )
+        : [],
+    [isAdminViewer, users, payStatusOf]
   )
 
   const listPhase = manageUsersListPhase({

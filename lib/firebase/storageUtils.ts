@@ -73,15 +73,34 @@ export async function uploadFile(
       onProgress: options.onProgress ? (sent, total) => options.onProgress?.(total > 0 ? sent / total : 0) : undefined,
     }).done
   try {
-    return await once()
-  } catch (first) {
-    if (isStoragePermissionError(first) || isTimeoutError(first)) throw first
     try {
       return await once()
-    } catch {
-      throw first
+    } catch (first) {
+      if (isStoragePermissionError(first) || isTimeoutError(first)) throw first
+      try {
+        return await once()
+      } catch {
+        throw first
+      }
     }
+  } catch (error) {
+    reportUploadFailure(error)
+    throw error
   }
+}
+
+/**
+ * 25 Nov (owner: web uploads failing while iOS works): a failed upload is sent to the error reports (rulebook §32,
+ * the owner console's Errors page) with its Firebase code (`storage/unauthorized`, `storage/unknown`, …) — never the
+ * file or its name — so the real cause can be read without a browser console. Refusals of the file itself and the
+ * person's own cancel are not reported. Never throws.
+ */
+function reportUploadFailure(error: unknown): void {
+  if (error instanceof UploadCancelledError) return
+  if (error && typeof error === 'object' && (error as { name?: string }).name === 'UploadRefusedError') return
+  void import('@/lib/clientErrors/reportClientError')
+    .then(({ reportClientError }) => reportClientError('caught', error))
+    .catch(() => undefined)
 }
 
 /** A task upload in progress: cancel it, read its progress. */

@@ -316,7 +316,7 @@ export function OperativeQualificationsEditor({
                       ),
                     }))
                   }}
-                  className={pv ? 'pp-in' : 'mt-1 w-full rounded-[13px] border-[1.5px] border-(--line2) bg-(--card) px-3.5 py-2.5'}
+                  className={pv ? 'pp-in' : 'mt-1 w-full rounded-[13px] border-[1.5px] border-(--line2) bg-(--card) px-3.5 py-2.5 text-[15px] font-medium text-(--ink)'}
                 />
               </label>
               {pv ? null : <p className="mt-3 text-[12px] text-(--ink3)">{QUALIFICATION_CERT_HINT}</p>}
