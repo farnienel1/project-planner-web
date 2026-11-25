@@ -1,0 +1,111 @@
+{
+  "$schema": "./theme.tokens.schema.json",
+  "tokensKey": "theme",
+  "version": 1,
+  "updatedAt": "2026-11-24",
+
+  "appearance": {
+    "options": ["system", "light", "dark"],
+    "labels": { "system": "Match device", "light": "Light", "dark": "Dark" },
+    "default": "system",
+    "scope": "device",
+    "settingLocation": "Settings › Appearance",
+    "note": "Stored on the device, not the account, so a phone can be dark while the office PC is light. Applies instantly, no restart."
+  },
+
+  "color": {
+    "bg.page":            { "light": "#F7F8FA", "dark": "#000000", "use": "Page / sheet background behind cards" },
+    "bg.surface":         { "light": "#FFFFFF", "dark": "#141B29", "use": "Cards, popups, panels, table rows" },
+    "bg.surfaceSubtle":   { "light": "#F4F6FA", "dark": "#1A2233", "use": "Row hover, popup footer, drop zones" },
+    "bg.group":           { "light": "#FFFFFF", "dark": "#1C1C1E", "use": "iOS grouped lists and form groups" },
+    "bg.input":           { "light": "#FFFFFF", "dark": "#2C2C2E", "use": "Text inputs, selects, segmented controls (iOS dark uses the system grey)" },
+    "bg.inputMuted":      { "light": "#EEF0F4", "dark": "#1F2635", "use": "Locked/read-only fields, segmented control track" },
+
+    "border.default":     { "light": "#E3E7EE", "dark": "#283247", "use": "Card and panel borders" },
+    "border.subtle":      { "light": "#EEF1F5", "dark": "#1F2839", "use": "Dividers inside cards and lists" },
+    "border.strong":      { "light": "#C9D0DB", "dark": "#3A4560", "use": "Input borders, dashed drop zones, unticked checkboxes" },
+
+    "text.primary":       { "light": "#101828", "dark": "#FFFFFF", "use": "Titles, body" },
+    "text.secondary":     { "light": "#475467", "dark": "#B4BCC9", "use": "Descriptions, labels" },
+    "text.tertiary":      { "light": "#5F6B7C", "dark": "#98A2B3", "use": "Meta, helper text, placeholders (min 13 px)" },
+    "text.link":          { "light": "#3D4FD8", "dark": "#7FA2FF", "use": "Links, text buttons" },
+
+    "primary.bg":         { "light": "#3D4FD8", "dark": "#6B93FF", "use": "Primary buttons" },
+    "primary.bgHover":    { "light": "#3443C2", "dark": "#85A6FF", "use": "Primary hover/pressed" },
+    "primary.fg":         { "light": "#FFFFFF", "dark": "#0B1530", "use": "Text/icons on primary buttons" },
+    "primary.soft":       { "light": "#ECEEFD", "dark": "#1F2E5C", "use": "Selected tab/option background" },
+    "primary.softFg":     { "light": "#3443C2", "dark": "#CFDCFF", "use": "Text on primary.soft" },
+
+    "secondary.bg":       { "light": "#FFFFFF", "dark": "#222A39", "use": "Secondary buttons" },
+    "secondary.fg":       { "light": "#101828", "dark": "#DCE1EA", "use": "Text on secondary buttons" },
+
+    "brand.navy":         { "light": "#0A1530", "dark": "#0A1530", "use": "Web sidebar, project header card. Same in both modes" },
+    "brand.navyHeader":   { "light": "#101A2B", "dark": "#101A2B", "use": "iOS navy grid header band. Same in both modes" },
+    "brand.navyRaised":   { "light": "#1B263F", "dark": "#1B263F", "use": "Selected item on navy" },
+    "brand.navyFg":       { "light": "#FFFFFF", "dark": "#FFFFFF", "use": "Text on navy" },
+    "brand.navyFgMuted":  { "light": "#C6CFDF", "dark": "#C6CFDF", "use": "Secondary text on navy" },
+    "brand.navyGrid":     { "light": "rgba(255,255,255,0.035)", "dark": "rgba(255,255,255,0.035)", "use": "Grid lines on navy" },
+
+    "tone.red.fg":        { "light": "#B42318", "dark": "#FF7A7A" },
+    "tone.red.bg":        { "light": "#FDECEC", "dark": "#3B1518" },
+    "tone.amber.fg":      { "light": "#8A4B05", "dark": "#F5B83D" },
+    "tone.amber.bg":      { "light": "#FFF2D9", "dark": "#3A2A0C" },
+    "tone.green.fg":      { "light": "#0F6B4A", "dark": "#34D27B" },
+    "tone.green.bg":      { "light": "#E1F3EA", "dark": "#11301E" },
+    "tone.blue.fg":       { "light": "#2C50CC", "dark": "#8FB0FF" },
+    "tone.blue.bg":       { "light": "#E8EDFD", "dark": "#18284F" },
+    "tone.grey.fg":       { "light": "#475467", "dark": "#AEB5C1" },
+    "tone.grey.bg":       { "light": "#EEF0F4", "dark": "#222A38" },
+    "tone.teal.fg":       { "light": "#0E6B63", "dark": "#35D5C1" },
+    "tone.teal.bg":       { "light": "#DDF4F1", "dark": "#113634" },
+    "tone.purple.fg":     { "light": "#5B45C8", "dark": "#A690FF" },
+    "tone.purple.bg":     { "light": "#EEEAFE", "dark": "#272150" },
+
+    "tone.red.solid":     { "light": "#D92D20", "dark": "#E5484D", "use": "Destructive buttons (white text)" },
+    "tone.red.rail":      { "light": "#E06363", "dark": "#E06363", "use": "Overdue left edge" },
+    "tone.amber.rail":    { "light": "#E7A93A", "dark": "#E7A93A", "use": "Due-soon left edge" },
+    "tone.green.solid":   { "light": "#12805C", "dark": "#34D27B", "use": "Ticked checkbox fill" },
+    "tone.green.solidFg": { "light": "#FFFFFF", "dark": "#06210F", "use": "Tick on green.solid" },
+
+    "overlay.scrim":      { "light": "rgba(10,18,36,0.48)", "dark": "rgba(0,0,0,0.62)", "use": "Behind popups and sheets" },
+    "focus.ring":         { "light": "#7C8AF0", "dark": "#9DB6FF", "use": "Keyboard focus outline (3 px)" },
+    "shadow.popup":       { "light": "0 30px 80px rgba(10,18,36,0.35)", "dark": "0 30px 80px rgba(0,0,0,0.7)" }
+  },
+
+  "fixedColours": {
+    "note": "These do NOT change with mode, on purpose.",
+    "items": [
+      "Avatar colours (white initials on a per-person colour)",
+      "Gradient icon tiles in settings and quick actions",
+      "Photos, certificate and document previews (paper stays white)",
+      "brand.* navy elements (web sidebar, iOS header band, project header card)",
+      "Priority and status dots inside chips (they use the tone fg colour of the current mode)"
+    ]
+  },
+
+  "contrastPairs": [
+    { "fg": "text.primary", "bg": "bg.surface", "min": 4.5 },
+    { "fg": "text.primary", "bg": "bg.page", "min": 4.5 },
+    { "fg": "text.secondary", "bg": "bg.surface", "min": 4.5 },
+    { "fg": "text.tertiary", "bg": "bg.surface", "min": 4.5 },
+    { "fg": "text.tertiary", "bg": "bg.page", "min": 4.5 },
+    { "fg": "text.secondary", "bg": "bg.group", "min": 4.5 },
+    { "fg": "text.link", "bg": "bg.surface", "min": 4.5 },
+    { "fg": "primary.fg", "bg": "primary.bg", "min": 4.5 },
+    { "fg": "primary.softFg", "bg": "primary.soft", "min": 4.5 },
+    { "fg": "secondary.fg", "bg": "secondary.bg", "min": 4.5 },
+    { "fg": "brand.navyFg", "bg": "brand.navy", "min": 4.5 },
+    { "fg": "brand.navyFgMuted", "bg": "brand.navy", "min": 4.5 },
+    { "fg": "tone.red.fg", "bg": "tone.red.bg", "min": 4.5 },
+    { "fg": "tone.amber.fg", "bg": "tone.amber.bg", "min": 4.5 },
+    { "fg": "tone.green.fg", "bg": "tone.green.bg", "min": 4.5 },
+    { "fg": "tone.blue.fg", "bg": "tone.blue.bg", "min": 4.5 },
+    { "fg": "tone.grey.fg", "bg": "tone.grey.bg", "min": 4.5 },
+    { "fg": "tone.teal.fg", "bg": "tone.teal.bg", "min": 4.5 },
+    { "fg": "tone.purple.fg", "bg": "tone.purple.bg", "min": 4.5 },
+    { "fg": "tone.red.fg", "bg": "bg.surface", "min": 4.5 },
+    { "fg": "tone.amber.fg", "bg": "bg.surface", "min": 4.5 },
+    { "fg": "tone.green.fg", "bg": "bg.surface", "min": 4.5 },
+    { "fg": "tone.green.solidFg", "bg": "tone.green.solid", "min": 4.5 }
+  ]
+}

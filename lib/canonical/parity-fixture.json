@@ -25916,6 +25916,909 @@
         "awaiting": 6,
         "signed": 3
       }
+    },
+    {
+      "name": "Tasks 1.89.0: due label — 70 days overdue",
+      "function": "taskDueLabel",
+      "args": [
+        {
+          "status": "to_do",
+          "dueDate": "2026-09-15",
+          "completedAt": null
+        },
+        1795521600000,
+        "Europe/London"
+      ],
+      "expected": {
+        "label": "70 days overdue",
+        "secondary": "15 Sep 2026",
+        "tone": "red",
+        "overdue": true,
+        "dueDayKey": "2026-09-15",
+        "days": -70
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: due label — 1 day overdue",
+      "function": "taskDueLabel",
+      "args": [
+        {
+          "status": "in_progress",
+          "dueDate": "2026-11-23",
+          "completedAt": null
+        },
+        1795521600000,
+        "Europe/London"
+      ],
+      "expected": {
+        "label": "1 day overdue",
+        "secondary": "23 Nov 2026",
+        "tone": "red",
+        "overdue": true,
+        "dueDayKey": "2026-11-23",
+        "days": -1
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: due label — due today",
+      "function": "taskDueLabel",
+      "args": [
+        {
+          "status": "to_do",
+          "dueDate": "2026-11-24",
+          "completedAt": null
+        },
+        1795521600000,
+        "Europe/London"
+      ],
+      "expected": {
+        "label": "Due today",
+        "secondary": "24 Nov 2026",
+        "tone": "amber",
+        "overdue": false,
+        "dueDayKey": "2026-11-24",
+        "days": 0
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: due label — due tomorrow",
+      "function": "taskDueLabel",
+      "args": [
+        {
+          "status": "to_do",
+          "dueDate": "2026-11-25",
+          "completedAt": null
+        },
+        1795521600000,
+        "Europe/London"
+      ],
+      "expected": {
+        "label": "Due tomorrow",
+        "secondary": "25 Nov 2026",
+        "tone": "amber",
+        "overdue": false,
+        "dueDayKey": "2026-11-25",
+        "days": 1
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: due label — due in 2 days shows weekday",
+      "function": "taskDueLabel",
+      "args": [
+        {
+          "status": "to_do",
+          "dueDate": "2026-11-26",
+          "completedAt": null
+        },
+        1795521600000,
+        "Europe/London"
+      ],
+      "expected": {
+        "label": "Due Thu",
+        "secondary": "26 Nov 2026",
+        "tone": "amber",
+        "overdue": false,
+        "dueDayKey": "2026-11-26",
+        "days": 2
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: due label — due in 3 days shows weekday",
+      "function": "taskDueLabel",
+      "args": [
+        {
+          "status": "to_do",
+          "dueDate": "2026-11-27",
+          "completedAt": null
+        },
+        1795521600000,
+        "Europe/London"
+      ],
+      "expected": {
+        "label": "Due Fri",
+        "secondary": "27 Nov 2026",
+        "tone": "amber",
+        "overdue": false,
+        "dueDayKey": "2026-11-27",
+        "days": 3
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: due label — due in 4 days shows date",
+      "function": "taskDueLabel",
+      "args": [
+        {
+          "status": "to_do",
+          "dueDate": "2026-11-28",
+          "completedAt": null
+        },
+        1795521600000,
+        "Europe/London"
+      ],
+      "expected": {
+        "label": "Due 28 Nov",
+        "secondary": "in 4 days",
+        "tone": "grey",
+        "overdue": false,
+        "dueDayKey": "2026-11-28",
+        "days": 4
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: due label — no due date",
+      "function": "taskDueLabel",
+      "args": [
+        {
+          "status": "to_do",
+          "dueDate": null,
+          "completedAt": null
+        },
+        1795521600000,
+        "Europe/London"
+      ],
+      "expected": {
+        "label": "No due date",
+        "secondary": null,
+        "tone": "grey",
+        "overdue": false,
+        "dueDayKey": "",
+        "days": null
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: due label — completed ignores due date",
+      "function": "taskDueLabel",
+      "args": [
+        {
+          "status": "completed",
+          "dueDate": "2026-09-15",
+          "completedAt": "2026-11-20T15:04:00Z"
+        },
+        1795521600000,
+        "Europe/London"
+      ],
+      "expected": {
+        "label": "Completed 20 Nov",
+        "secondary": null,
+        "tone": "grey",
+        "overdue": false,
+        "dueDayKey": "2026-09-15",
+        "days": null
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: due label — device in another time zone still uses the UK date",
+      "function": "taskDueLabel",
+      "args": [
+        {
+          "status": "to_do",
+          "dueDate": "2026-11-24",
+          "completedAt": null
+        },
+        1795591800000,
+        "Europe/London"
+      ],
+      "expected": {
+        "label": "1 day overdue",
+        "secondary": "24 Nov 2026",
+        "tone": "red",
+        "overdue": true,
+        "dueDayKey": "2026-11-24",
+        "days": -1
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: tabs — to do and overdue",
+      "function": "taskTabKeys",
+      "args": [
+        {
+          "status": "to_do",
+          "dueDate": "2026-09-15"
+        },
+        1795521600000,
+        "Europe/London"
+      ],
+      "expected": [
+        "active",
+        "overdue"
+      ]
+    },
+    {
+      "name": "Tasks 1.89.0: tabs — in progress not overdue",
+      "function": "taskTabKeys",
+      "args": [
+        {
+          "status": "in_progress",
+          "dueDate": "2026-12-02"
+        },
+        1795521600000,
+        "Europe/London"
+      ],
+      "expected": [
+        "active"
+      ]
+    },
+    {
+      "name": "Tasks 1.89.0: tabs — completed",
+      "function": "taskTabKeys",
+      "args": [
+        {
+          "status": "completed",
+          "dueDate": "2026-09-15"
+        },
+        1795521600000,
+        "Europe/London"
+      ],
+      "expected": [
+        "completed"
+      ]
+    },
+    {
+      "name": "Tasks 1.89.0: tabs — no due date never overdue",
+      "function": "taskTabKeys",
+      "args": [
+        {
+          "status": "to_do",
+          "dueDate": null
+        },
+        1795521600000,
+        "Europe/London"
+      ],
+      "expected": [
+        "active"
+      ]
+    },
+    {
+      "name": "Tasks 1.89.0: legacy priority medium",
+      "function": "taskPriorityKey",
+      "args": [
+        "medium"
+      ],
+      "expected": "normal"
+    },
+    {
+      "name": "Tasks 1.89.0: legacy priority Normal",
+      "function": "taskPriorityKey",
+      "args": [
+        "Normal"
+      ],
+      "expected": "normal"
+    },
+    {
+      "name": "Tasks 1.89.0: legacy priority URGENT",
+      "function": "taskPriorityKey",
+      "args": [
+        "URGENT"
+      ],
+      "expected": "urgent"
+    },
+    {
+      "name": "Tasks 1.89.0: legacy status done",
+      "function": "taskStatusKey",
+      "args": [
+        "done"
+      ],
+      "expected": "completed"
+    },
+    {
+      "name": "Tasks 1.89.0: legacy status todo",
+      "function": "taskStatusKey",
+      "args": [
+        "todo"
+      ],
+      "expected": "to_do"
+    },
+    {
+      "name": "Tasks 1.89.0: legacy status inprogress",
+      "function": "taskStatusKey",
+      "args": [
+        "inprogress"
+      ],
+      "expected": "in_progress"
+    },
+    {
+      "name": "Tasks 1.89.0: actions — to_do",
+      "function": "taskActions",
+      "args": [
+        "to_do"
+      ],
+      "expected": {
+        "primary": "start",
+        "available": [
+          "start",
+          "complete"
+        ]
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: actions — in_progress",
+      "function": "taskActions",
+      "args": [
+        "in_progress"
+      ],
+      "expected": {
+        "primary": "complete",
+        "available": [
+          "complete"
+        ]
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: actions — completed",
+      "function": "taskActions",
+      "args": [
+        "completed"
+      ],
+      "expected": {
+        "primary": "reopen",
+        "available": [
+          "reopen"
+        ]
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: Edit keeps a completed task completed",
+      "function": "taskEditStatus",
+      "args": [
+        "Completed",
+        "To Do"
+      ],
+      "expected": "Completed"
+    },
+    {
+      "name": "Tasks 1.89.0: Edit never sets Completed",
+      "function": "taskEditStatus",
+      "args": [
+        "In Progress",
+        "Completed"
+      ],
+      "expected": "In Progress"
+    },
+    {
+      "name": "Tasks 1.89.0: complete step 1",
+      "function": "taskCompleteStep",
+      "args": [
+        {
+          "items": [
+            {
+              "id": "i0"
+            },
+            {
+              "id": "i1"
+            },
+            {
+              "id": "i2"
+            }
+          ],
+          "completedItemIds": [
+            "i0",
+            "i1"
+          ]
+        }
+      ],
+      "expected": {
+        "total": 3,
+        "done": 2,
+        "remaining": 1,
+        "completeEnabled": false,
+        "saveProgressEnabled": true,
+        "hint": "Tick 1 more to complete",
+        "showChecklist": true
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: complete step 2",
+      "function": "taskCompleteStep",
+      "args": [
+        {
+          "items": [
+            {
+              "id": "i0"
+            },
+            {
+              "id": "i1"
+            },
+            {
+              "id": "i2"
+            }
+          ],
+          "completedItemIds": [
+            "i0"
+          ]
+        }
+      ],
+      "expected": {
+        "total": 3,
+        "done": 1,
+        "remaining": 2,
+        "completeEnabled": false,
+        "saveProgressEnabled": true,
+        "hint": "Tick 2 more to complete",
+        "showChecklist": true
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: complete step 3",
+      "function": "taskCompleteStep",
+      "args": [
+        {
+          "items": [
+            {
+              "id": "i0"
+            },
+            {
+              "id": "i1"
+            }
+          ],
+          "completedItemIds": [
+            "i0",
+            "i1"
+          ]
+        }
+      ],
+      "expected": {
+        "total": 2,
+        "done": 2,
+        "remaining": 0,
+        "completeEnabled": true,
+        "saveProgressEnabled": true,
+        "hint": null,
+        "showChecklist": true
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: complete step 4",
+      "function": "taskCompleteStep",
+      "args": [
+        {
+          "items": [],
+          "completedItemIds": []
+        }
+      ],
+      "expected": {
+        "total": 0,
+        "done": 0,
+        "remaining": 0,
+        "completeEnabled": true,
+        "saveProgressEnabled": true,
+        "hint": null,
+        "showChecklist": false
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: attachment sources — iOS",
+      "function": "taskAttachmentSources",
+      "args": [
+        "ios"
+      ],
+      "expected": [
+        "camera",
+        "library",
+        "files",
+        "site_audit"
+      ]
+    },
+    {
+      "name": "Tasks 1.89.0: attachment sources — web (no camera)",
+      "function": "taskAttachmentSources",
+      "args": [
+        "web"
+      ],
+      "expected": [
+        "files",
+        "site_audit"
+      ]
+    },
+    {
+      "name": "Tasks 1.89.0: attachment — photo ok",
+      "function": "taskAttachmentCheck",
+      "args": [
+        {
+          "name": "file",
+          "mime": "image/jpeg",
+          "sizeBytes": 4404019.2,
+          "existingFiles": 0
+        }
+      ],
+      "expected": {
+        "result": "ok",
+        "storedMime": "image/jpeg",
+        "message": null
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: attachment — heic converted",
+      "function": "taskAttachmentCheck",
+      "args": [
+        {
+          "name": "file",
+          "mime": "image/heic",
+          "sizeBytes": 3250585.6,
+          "existingFiles": 0
+        }
+      ],
+      "expected": {
+        "result": "ok",
+        "storedMime": "image/jpeg",
+        "message": null
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: attachment — pdf ok",
+      "function": "taskAttachmentCheck",
+      "args": [
+        {
+          "name": "file",
+          "mime": "application/pdf",
+          "sizeBytes": 2097152,
+          "existingFiles": 0
+        }
+      ],
+      "expected": {
+        "result": "ok",
+        "storedMime": "application/pdf",
+        "message": null
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: attachment — too big after resize",
+      "function": "taskAttachmentCheck",
+      "args": [
+        {
+          "name": "file",
+          "mime": "application/pdf",
+          "sizeBytes": 14680064,
+          "existingFiles": 0
+        }
+      ],
+      "expected": {
+        "result": "tooBig",
+        "storedMime": null,
+        "message": "file is 14 MB. The limit is 10 MB."
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: attachment — wrong type",
+      "function": "taskAttachmentCheck",
+      "args": [
+        {
+          "name": "file",
+          "mime": "application/zip",
+          "sizeBytes": 1048576,
+          "existingFiles": 0
+        }
+      ],
+      "expected": {
+        "result": "wrongType",
+        "storedMime": null,
+        "message": "file can’t be attached. Use a photo or PDF."
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: attachment — eleventh file",
+      "function": "taskAttachmentCheck",
+      "args": [
+        {
+          "name": "file",
+          "mime": "image/jpeg",
+          "sizeBytes": 1048576,
+          "existingFiles": 10
+        }
+      ],
+      "expected": {
+        "result": "tooMany",
+        "storedMime": null,
+        "message": "You can attach up to 10 files."
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: active sort order",
+      "function": "sortTasksForTab",
+      "args": [
+        [
+          {
+            "id": "a",
+            "status": "to_do",
+            "dueDate": "2026-12-02",
+            "priority": "high",
+            "title": "Commission BMS points"
+          },
+          {
+            "id": "b",
+            "status": "in_progress",
+            "dueDate": "2026-09-15",
+            "priority": "urgent",
+            "title": "Replace distribution board DB-2"
+          },
+          {
+            "id": "c",
+            "status": "to_do",
+            "dueDate": null,
+            "priority": "urgent",
+            "title": "Check riser labels"
+          },
+          {
+            "id": "d",
+            "status": "to_do",
+            "dueDate": "2026-06-27",
+            "priority": "high",
+            "title": "Install 12 m gutter at rear"
+          },
+          {
+            "id": "e",
+            "status": "to_do",
+            "dueDate": "2026-12-02",
+            "priority": "low",
+            "title": "Bag up offcuts"
+          },
+          {
+            "id": "f",
+            "status": "in_progress",
+            "dueDate": "2026-11-24",
+            "priority": "normal",
+            "title": "Lighting adaptations, level 2"
+          }
+        ],
+        "active",
+        1795521600000,
+        "Europe/London"
+      ],
+      "expected": [
+        {
+          "id": "d",
+          "status": "to_do",
+          "dueDate": "2026-06-27",
+          "priority": "high",
+          "title": "Install 12 m gutter at rear"
+        },
+        {
+          "id": "b",
+          "status": "in_progress",
+          "dueDate": "2026-09-15",
+          "priority": "urgent",
+          "title": "Replace distribution board DB-2"
+        },
+        {
+          "id": "f",
+          "status": "in_progress",
+          "dueDate": "2026-11-24",
+          "priority": "normal",
+          "title": "Lighting adaptations, level 2"
+        },
+        {
+          "id": "a",
+          "status": "to_do",
+          "dueDate": "2026-12-02",
+          "priority": "high",
+          "title": "Commission BMS points"
+        },
+        {
+          "id": "e",
+          "status": "to_do",
+          "dueDate": "2026-12-02",
+          "priority": "low",
+          "title": "Bag up offcuts"
+        },
+        {
+          "id": "c",
+          "status": "to_do",
+          "dueDate": null,
+          "priority": "urgent",
+          "title": "Check riser labels"
+        }
+      ]
+    },
+    {
+      "name": "Tasks 1.89.0: default scope — operative",
+      "function": "taskDefaultScope",
+      "args": [
+        {
+          "isSuperAdmin": false,
+          "isAdmin": false,
+          "isManager": false,
+          "isOperativeMode": true
+        }
+      ],
+      "expected": "mine"
+    },
+    {
+      "name": "Tasks 1.89.0: default scope — manager",
+      "function": "taskDefaultScope",
+      "args": [
+        {
+          "isSuperAdmin": false,
+          "isAdmin": false,
+          "isManager": true,
+          "isOperativeMode": false
+        }
+      ],
+      "expected": "everyone"
+    },
+    {
+      "name": "Tasks 1.89.0: default scope — admin",
+      "function": "taskDefaultScope",
+      "args": [
+        {
+          "isSuperAdmin": false,
+          "isAdmin": true,
+          "isManager": false,
+          "isOperativeMode": false
+        }
+      ],
+      "expected": "everyone"
+    },
+    {
+      "name": "Tasks 1.89.0: access — manager cannot delete",
+      "function": "taskAccess",
+      "args": [
+        {
+          "isSuperAdmin": false,
+          "isAdmin": false,
+          "isManager": true,
+          "isOperativeMode": false
+        },
+        {
+          "isAssignee": false
+        }
+      ],
+      "expected": {
+        "seesEveryone": true,
+        "canCreate": true,
+        "canEdit": true,
+        "canDelete": false,
+        "canAct": true
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: access — assigned operative acts",
+      "function": "taskAccess",
+      "args": [
+        {
+          "isSuperAdmin": false,
+          "isAdmin": false,
+          "isManager": false,
+          "isOperativeMode": true
+        },
+        {
+          "isAssignee": true
+        }
+      ],
+      "expected": {
+        "seesEveryone": false,
+        "canCreate": true,
+        "canEdit": false,
+        "canDelete": false,
+        "canAct": true
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: Edit keeps ticks of items still listed",
+      "function": "taskChecklistAfterEdit",
+      "args": [
+        {
+          "items": [
+            {
+              "id": "A"
+            },
+            {
+              "id": "b"
+            }
+          ],
+          "completedItemIds": [
+            "a",
+            "B",
+            "gone",
+            "00000000-0000-4000-8000-000000000001"
+          ]
+        }
+      ],
+      "expected": [
+        "a",
+        "B",
+        "00000000-0000-4000-8000-000000000001"
+      ]
+    },
+    {
+      "name": "Tasks 1.89.0: removed assignee",
+      "function": "taskAssigneeDisplay",
+      "args": [
+        null
+      ],
+      "expected": {
+        "name": "Removed user",
+        "removed": true
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: tab counts",
+      "function": "taskTabCounts",
+      "args": [
+        [
+          {
+            "status": "to_do",
+            "dueDate": "2026-12-02"
+          },
+          {
+            "status": "in_progress",
+            "dueDate": "2026-09-15"
+          },
+          {
+            "status": "to_do",
+            "dueDate": null
+          },
+          {
+            "status": "to_do",
+            "dueDate": "2026-06-27"
+          },
+          {
+            "status": "to_do",
+            "dueDate": "2026-12-02"
+          },
+          {
+            "status": "in_progress",
+            "dueDate": "2026-11-24"
+          }
+        ],
+        1795521600000,
+        "Europe/London"
+      ],
+      "expected": {
+        "active": 6,
+        "overdue": 2,
+        "completed": 0
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: viewer role — a legacy user with no level flag is a manager",
+      "function": "taskViewerRole",
+      "args": [
+        {
+          "id": "u1",
+          "email": "old@x.co"
+        }
+      ],
+      "expected": {
+        "isSuperAdmin": false,
+        "isAdmin": false,
+        "isManager": true,
+        "isOperativeMode": false
+      }
+    },
+    {
+      "name": "Tasks 1.89.0: viewer role — an admin with a stray operative-mode flag stays an admin",
+      "function": "taskViewerRole",
+      "args": [
+        {
+          "adminAccess": true,
+          "operativeMode": true
+        }
+      ],
+      "expected": {
+        "isSuperAdmin": false,
+        "isAdmin": true,
+        "isManager": false,
+        "isOperativeMode": false
+      }
     }
   ]
 }

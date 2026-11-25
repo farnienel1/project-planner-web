@@ -20142,6 +20142,19 @@ test('1.83.0 insurance & accreditations are in the packed rulebook (full cases i
   assert.match(storageRules, /match \/organizations\/\{orgId\}\/compliance\/\{fileName\} \{\n(?:\s*\/\/[^\n]*\n)?\s+allow read, delete: if orgMember\(orgId\) && adminLike\(orgId\);/)
 })
 
+test('1.89.0 §34: tasks — Done reads Completed, Medium reads Normal, Edit never completes, the pack cases are in the parity fixture', () => {
+  assert.equal(R112.taskStatusLabel('done'), 'Completed')
+  assert.equal(R112.taskPriorityLabel('Medium'), 'Normal')
+  assert.equal(R112.taskEditStatus('To Do', 'Completed'), 'To Do')
+  assert.deepEqual(R112.taskAttachmentSources('web'), ['files', 'site_audit'])
+  assert.equal(R112.taskAccess({ isSuperAdmin: false, isAdmin: false, isManager: true, isOperativeMode: false }).canDelete, false)
+  const fixture = JSON.parse(readFileSync(new URL('./parity-fixture.json', import.meta.url), 'utf8'))
+  const names = new Set(fixture.cases.map((entry: { function: string }) => entry.function))
+  for (const fn of ['taskDueLabel', 'taskTabKeys', 'taskActions', 'taskCompleteStep', 'taskAttachmentCheck', 'sortTasksForTab', 'taskDefaultScope', 'taskAccess', 'taskChecklistAfterEdit']) {
+    assert.ok(names.has(fn), `${fn} has a parity case`)
+  }
+})
+
 test('1.86.0 offlineReplaceReplayDecision: one outcome for each owner case', () => {
   const zone = 'Europe/London'
   const old = { operativeId: 'OP-1', projectId: 'JOB-1', dayKey: '2026-11-09', timeSlot: 'FULL_DAY', status: 'Confirmed' }

@@ -1669,6 +1669,28 @@ The owner's answers of 24 Nov (items 1, 2, 5, 9 of the list sent that day) and c
 |---|---|---|
 | 24 Nov | **Bug: the line manager's ✕ / ⚙ on a timesheet line did nothing and showed "This was deleted on another device."** (owner testing a REV 1 in Awaiting sign-off, and a Signed-off sheet in Make changes). Cause: web used the timesheet line's prefixed booking id (`op-{id}`) as the booking's document id, so ⚙ / overtime ✕ read a booking that never exists and a standard ✕ tried to delete it. Every sheet since 1.72.0 (23 Nov): plain, revision, Make changes. Fixed (`timesheetLineBooking` gives the stored id). No rules change: the rules already allow the batch on an unexported REV 1 and refuse it once exported (emulator test). iOS checked: uses the bare booking id (not affected). | done web (1.87.0, w-ts-review-revision-fix) |
 | 24 Nov | **Wording:** the ⚙ dialog note reads "… scheduling, daily Overview and the weekly report …" ("Daily" → "daily"), on both apps (`TIMESHEET_REVIEW_EDIT_BOOKING_NOTE`). | done web + rulebook (1.87.0); iOS (sync + fallback text, ios-ts-review-revision-fix) |
+## 24 Nov, Tasks pack (1.89.0; owner to confirm)
+
+The owner's Tasks pack (`docs/features/tasks-upgrade/`) was built on web and iOS in one sweep (branches `w189-tasks`, `ios-1.89-tasks`). Where the pack and the repo rules disagreed, the repo rules were followed; each choice is below.
+
+| Date | Choice | Status |
+|---|---|---|
+| 24 Nov | The pack's `tasks.rules.json` (labels, tabs, actions, upload limits) is rulebook functions in `lib/canonical/taskRules.ts` (§34), packed for iOS, not a JSON file served at run time. Changing a label needs a release, not a live edit. | done, owner to confirm |
+| 24 Nov | No data migration: tasks keep today's stored shape (status `To Do` / `In Progress` / `Completed`, priorities Low / Normal / High / Urgent, `items` + `completedItemIds`, photos and one PDF). Old tasks read and show exactly as before. | done, owner to confirm |
+| 24 Nov | Who may do what is kept as today, not the pack's proposal: anyone in the company creates a task; admins and managers edit any task; assignees (and staff) start, save progress and complete; **only admins delete** (the security rules already refuse anyone else — web used to show Delete to managers and fail). No security rules, index or Storage change. | done, owner to confirm |
+| 24 Nov | Guardrail 3 — who sees more: managers now see **every** task (Everyone) on the Tasks page and a job's Tasks tab on both apps, like admins; before, the iPhone hub showed all tasks to admins only. Operatives still see only tasks assigned to them. Nobody sees fewer tasks. | done, owner to confirm |
+| 24 Nov | Attachments: at most 10 files a task, one of them a PDF (today's stored shape holds one document); photos go through the existing photo step (§24: up to 2560 px, location removed) rather than the pack's 0.82 quality setting; Storage path unchanged. | done, owner to confirm |
+| 24 Nov | Uploads: three at a time, a file that sends nothing for 45 s is cancelled and can be retried, each file shows its progress, and the task is written once after every file has uploaded (issue 1). | done web; iOS follow-up (see PR) |
+| 24 Nov | A HEIC photo the browser cannot convert is uploaded as it is (iPhones and Safari open it; Chrome may not). | done, owner to confirm |
+| 24 Nov | "Reopen" sets the task back to **In progress** (the pack) and clears who completed it and when (rulebook 1.59 `taskCompletionFields`). Web used to reopen to To do. | done, owner to confirm |
+| 24 Nov | Activity shows only "Created" and "Completed": who ticked each checklist item, and when, is not stored today and is not added (it would be a new field). | done, owner to confirm |
+| 24 Nov | Deleting a task keeps its files in Storage (§24: files are never deleted outright). There is no clean-up of files from a task that was never saved. | done, owner to confirm |
+| 24 Nov | No "someone else changed this task" check when two people edit the same task; the last save wins, as before. | follow-up |
+| 24 Nov | Colours use the app's existing tokens in light and dark mode; there is no separate theme or Appearance switch from the pack. | done, owner to confirm |
+| 24 Nov | A new task's due date starts on today (as before); the pack left it blank. | done, owner to confirm |
+| 24 Nov | The Mine / Everyone choice is remembered on the device (browser or phone), not on the account. | done, owner to confirm |
+| 24 Nov | "Approvals" on the Tasks page stays the annual leave approvals list (rulebook §9 `leaveDecisionQueue`); its tab shows only when there is something to approve. | done, owner to confirm |
+| 24 Nov | The edit screen offers To do and In progress only; Completed is greyed with "Use Complete task to finish" so a task is never completed without who and when (bug B7 on iOS). | done, owner to confirm |
 
 ## 24 Nov evening decisions (session lead)
 

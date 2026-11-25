@@ -2,6 +2,7 @@ import type { Manager, Operative } from '@/types'
 import { dedupeOperativesByEmail } from '@/lib/operatives/operativeRosterUtils'
 import { isCurrentLabourNamedPerson } from '@/lib/staff/userRosterUtils'
 import { bookingPersonIdHint } from '@/lib/canonical/unresolvedBookingPeople'
+import { taskAssigneeDisplay } from '@/lib/canonical/taskRules'
 // Rulebook 1.59.0 §21: who each task assignee row is (`taskPersonIndex`, one key per person across every record) is
 // the rulebook's, shared with iOS; this file only builds the web picker rows from it.
 import {
@@ -123,23 +124,33 @@ export function foldTaskFilterPeople<T extends { id: string; email?: string; isA
 }
 
 /**
- * The names of a task's assignees (with the kind of row that named them), one per person (two stored ids of one person show one name), managers first.
- * Ids match their row without case. An id whose row is gone is left out, as before.
+ * The names of a task's assignees (with the kind of row that named them), one per person (two stored ids of one person
+ * show one name), managers first. Ids match their row without case. 1.89.0 bug B11: an id whose row is gone, or an
+ * anonymised deleted profile, is listed as "Removed user" (`taskAssigneeDisplay`, `removed: true`) so a manager can
+ * reassign the task — before, it was left out (or read "Deleted user") with no way forward. One "Removed user" entry per
+ * missing id.
  */
 export function taskAssigneeNames(
   ids: { managerIds: ReadonlyArray<string>; operativeIds: ReadonlyArray<string> },
-  people: { managers: ReadonlyArray<Manager>; operatives: ReadonlyArray<Operative>; index: TaskPersonIndex }
-): Array<{ kind: TaskPersonKind; name: string }> {
+  people: {
+    managers: ReadonlyArray<Manager>
+    operatives: ReadonlyArray<Operative>
+    index: TaskPersonIndex
+    /** Review of #452: false while the rosters are still loading — nobody is shown (never a false "Removed user"). */
+    loaded?: boolean
+  }
+): Array<{ kind: TaskPersonKind; name: string; removed: boolean; id: string }> {
+  if (people.loaded === false) return []
   const seen = new Set<string>()
-  const names: Array<{ kind: TaskPersonKind; name: string }> = []
+  const names: Array<{ kind: TaskPersonKind; name: string; removed: boolean; id: string }> = []
   const add = (kind: TaskPersonKind, id: string) => {
     const rows: ReadonlyArray<Manager | Operative> = kind === 'manager' ? people.managers : people.operatives
     const row = rows.find((entry) => idKey(entry.id) === idKey(id))
-    if (!row) return
-    const key = people.index.keyOf(kind, row.id)
-    if (seen.has(key)) return
+    const key = row ? people.index.keyOf(kind, row.id) : `missing:${kind}:${idKey(id)}`
+    if (!idKey(id) || seen.has(key)) return
     seen.add(key)
-    names.push({ kind, name: `${row.firstName || ''} ${row.lastName || ''}`.trim() || row.email })
+    const display = taskAssigneeDisplay(row ?? null)
+    names.push({ kind, name: display.name, removed: display.removed, id })
   }
   for (const id of ids.managerIds) add('manager', id)
   for (const id of ids.operativeIds) add('operative', id)

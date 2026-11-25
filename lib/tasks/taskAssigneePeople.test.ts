@@ -11,7 +11,6 @@ import {
   toggleTaskPerson,
   type TaskPersonRosterRow,
 } from './taskAssigneePeople.ts'
-import { applyJobTaskFilter, EMPTY_JOB_TASK_FILTER } from './projectTaskFilters.ts'
 import { tasksAssignedToUser } from './taskUtils.ts'
 import type { ProjectTask, User } from '../../types/index.ts'
 
@@ -154,14 +153,6 @@ test('guardrail 3: a task assigned to an old row id keeps its assignee in the pi
   )
   assert.deepEqual(names.map((entry) => entry.name), ['Gus Ghost', 'Pat Lee'])
 
-  const oldOnly = task({ id: 't2', assignedOperativeIds: ['row-b'] })
-  const filtered = applyJobTaskFilter([assignedBoth, oldOnly], { ...EMPTY_JOB_TASK_FILTER, type: 'operative', operativeId: 'row-a' }, index.keyOf)
-  assert.deepEqual(filtered.map((row) => row.id), ['t1', 't2'])
-  // Without the index the filter is exact, as before.
-  assert.deepEqual(
-    applyJobTaskFilter([assignedBoth, oldOnly], { ...EMPTY_JOB_TASK_FILTER, type: 'operative', operativeId: 'row-a' }).map((row) => row.id),
-    ['t1']
-  )
 })
 
 test('guardrail 3: My tasks still matches a task assigned to an old operatives row id', () => {

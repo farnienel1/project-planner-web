@@ -1,0 +1,219 @@
+{
+  "$schema": "./tasks.rules.schema.json",
+  "rulebookKey": "tasks",
+  "rulebookVersion": 1,
+  "updatedAt": "2026-11-24",
+
+  "statuses": [
+    { "key": "to_do", "label": "To do", "tone": "grey" },
+    { "key": "in_progress", "label": "In progress", "tone": "blue" },
+    { "key": "completed", "label": "Completed", "tone": "green" }
+  ],
+  "legacyStatusMap": { "todo": "to_do", "inprogress": "in_progress", "done": "completed" },
+
+  "actions": {
+    "start": { "label": "Start", "from": ["to_do"], "to": "in_progress", "opensCompleteStep": false },
+    "complete": { "label": "Complete", "from": ["to_do", "in_progress"], "to": "completed", "opensCompleteStep": true },
+    "reopen": { "label": "Reopen", "from": ["completed"], "to": "in_progress", "opensCompleteStep": false }
+  },
+  "editFormStatuses": ["to_do", "in_progress"],
+
+  "priorities": [
+    { "key": "low", "label": "Low", "tone": "grey", "rank": 1 },
+    { "key": "normal", "label": "Normal", "tone": "blue", "rank": 2, "default": true },
+    { "key": "high", "label": "High", "tone": "amber", "rank": 3 },
+    { "key": "urgent", "label": "Urgent", "tone": "red", "rank": 4 }
+  ],
+  "legacyPriorityMap": { "medium": "normal" },
+
+  "due": {
+    "requiredForNewTasks": true,
+    "dueSoonDays": 3,
+    "timezone": "organisation",
+    "dateFormat": "d MMM yyyy",
+    "shortDateFormat": "d MMM",
+    "labels": {
+      "overdue": "{days} days overdue",
+      "overdueOne": "1 day overdue",
+      "today": "Due today",
+      "tomorrow": "Due tomorrow",
+      "soon": "Due {weekday}",
+      "later": "Due {shortDate}",
+      "completed": "Completed {shortDate}",
+      "none": "No due date"
+    }
+  },
+
+  "fields": {
+    "title": { "kind": "text", "label": "Task", "required": true, "maxLength": 120, "placeholder": "What needs doing? e.g. Replace fuse board" },
+    "description": { "kind": "longtext", "label": "Details", "required": false, "maxLength": 2000, "placeholder": "Anything the team needs to know first" },
+    "location": { "kind": "location", "label": "Project or small works", "required": true, "lockedWhenOpenedFromLocation": true },
+    "assignees": { "kind": "people", "label": "Assign to", "required": true, "min": 1, "max": 20, "quickPickMe": true, "groups": ["managers", "operatives"], "tradeFilter": true },
+    "due_date": { "kind": "date", "label": "Due date", "required": true },
+    "priority": { "kind": "priority", "label": "Priority", "required": true },
+    "checklist": { "kind": "checklist", "label": "Checklist", "required": false, "maxItems": 30, "itemMaxLength": 120, "noteMaxLength": 300, "helper": "Assignees tick every item before they can complete the task." },
+    "attachments": { "kind": "attachments", "label": "Attachments", "required": false },
+    "status": { "kind": "status", "label": "Status", "required": true, "editOnly": true }
+  },
+  "formOrder": ["title", "description", "location", "assignees", "due_date", "priority", "checklist", "attachments", "status"],
+
+  "attachments": {
+    "maxFiles": 10,
+    "maxSizeMb": 10,
+    "accepted": [
+      { "mime": "image/jpeg", "extensions": ["jpg", "jpeg"], "label": "JPG" },
+      { "mime": "image/png", "extensions": ["png"], "label": "PNG" },
+      { "mime": "image/webp", "extensions": ["webp"], "label": "WebP" },
+      { "mime": "image/heic", "extensions": ["heic", "heif"], "label": "HEIC", "storeAs": "image/jpeg" },
+      { "mime": "application/pdf", "extensions": ["pdf"], "label": "PDF" }
+    ],
+    "image": { "maxLongEdgePx": 2560, "jpegQuality": 0.82, "stripLocation": false },
+    "upload": { "parallel": 3, "stallTimeoutSeconds": 45, "maxRetries": 2, "sdkMaxUploadRetrySeconds": 60 },
+    "storagePath": "organisations/{orgId}/tasks/{taskId}/attachments/{attachmentId}.{ext}",
+    "sources": {
+      "ios": ["camera", "library", "files", "site_audit"],
+      "android": ["camera", "library", "files", "site_audit"],
+      "web": ["files", "site_audit"]
+    },
+    "sourceLabels": {
+      "camera": "Take photo",
+      "library": "Photo library",
+      "files": "Files",
+      "files_web": "Upload files",
+      "site_audit": "Site audit"
+    }
+  },
+
+  "completeStep": {
+    "checklistMustBeComplete": true,
+    "proofOfWork": { "required": false, "label": "Proof of work" },
+    "notes": { "required": false, "label": "Notes for the manager", "maxLength": 2000, "placeholder": "Anything the manager should know about how the job went" },
+    "allowSaveProgress": true
+  },
+
+  "views": {
+    "scopes": [
+      { "key": "mine", "label": "My tasks" },
+      { "key": "everyone", "label": "Everyone", "managersOnly": true }
+    ],
+    "defaultScope": { "operative": "mine", "manager": "everyone", "admin": "everyone" },
+    "tabs": [
+      { "key": "active", "label": "Active", "statuses": ["to_do", "in_progress"] },
+      { "key": "overdue", "label": "Overdue", "statuses": ["to_do", "in_progress"], "overdueOnly": true },
+      { "key": "completed", "label": "Completed", "statuses": ["completed"] },
+      { "key": "approvals", "label": "Approvals", "source": "existing-approvals", "hideWhenZero": true }
+    ],
+    "defaultTab": "active",
+    "groupBy": { "main": "location", "project": "none", "small_works": "none" },
+    "sortActive": ["overdue_first", "due_date_asc", "priority_desc", "title_asc"],
+    "sortCompleted": ["completed_at_desc"],
+    "pageSize": 50,
+    "locationHeaderCount": "active"
+  },
+
+  "copy": {
+    "page": {
+      "title": "Tasks",
+      "subtitle": "Work across your projects and small works",
+      "newTask": "New task",
+      "searchPlaceholder": "Search tasks, projects or people"
+    },
+    "list": {
+      "checklistProgress": "{done}/{total}",
+      "noChecklist": "No checklist",
+      "attachmentsCount": "{count}",
+      "overdueBanner": "{count} overdue",
+      "showOverdue": "Show overdue"
+    },
+    "empty": {
+      "active_mine": { "title": "Nothing assigned to you", "body": "Tasks assigned to you will show here." },
+      "active_everyone": { "title": "No active tasks", "body": "Create a task to get work moving." },
+      "overdue": { "title": "Nothing overdue", "body": "Every active task is on time." },
+      "completed": { "title": "No completed tasks yet", "body": "Completed tasks show here with who finished them." },
+      "search": { "title": "No tasks match \"{query}\"", "body": "Try a different word or clear the filters." }
+    },
+    "form": {
+      "titleNew": "New task",
+      "titleEdit": "Edit task",
+      "create": "Create task",
+      "save": "Save changes",
+      "cancel": "Cancel",
+      "me": "Me",
+      "addPeople": "Add people",
+      "addChecklistItem": "Add item",
+      "addNote": "Add note",
+      "statusCompletedHint": "To complete a task, use Complete so the checklist and proof of work are captured.",
+      "unsavedTitle": "Discard changes?",
+      "unsavedBody": "Your changes to this task haven’t been saved.",
+      "discard": "Discard"
+    },
+    "attachments": {
+      "help": "Photos ({imageTypes}) or PDF, up to {maxSizeMb} MB each, {maxFiles} files max",
+      "dropHint": "Drag photos or PDFs here",
+      "preparing": "Preparing {name}",
+      "uploading": "Uploading {done} of {total} · {percent}%",
+      "failed": "{name} didn’t upload",
+      "retry": "Retry",
+      "remove": "Remove",
+      "reportProblem": "Report a problem with this file"
+    },
+    "detail": {
+      "assigned": "Assigned to",
+      "createdBy": "Created by {name} · {date}",
+      "completedBy": "Completed by {name} · {date}",
+      "activity": "Activity",
+      "edit": "Edit",
+      "delete": "Delete task",
+      "copyLink": "Copy link",
+      "openLocation": "Open {locationType}"
+    },
+    "complete": {
+      "title": "Complete task",
+      "checklistRemaining": "Tick {count} more to complete",
+      "checklistRemainingOne": "Tick 1 more to complete",
+      "saveProgress": "Save progress",
+      "confirm": "Complete task",
+      "back": "Back"
+    },
+    "delete": {
+      "title": "Delete {title}?",
+      "body": "This removes the task, its checklist and attachments for everyone on iOS and web.",
+      "confirm": "Delete"
+    },
+    "toasts": {
+      "created": "Task created",
+      "saved": "Changes saved",
+      "started": "Task started",
+      "completed": "Task completed",
+      "reopened": "Task reopened",
+      "deleted": "Task deleted",
+      "progressSaved": "Progress saved",
+      "linkCopied": "Link copied"
+    },
+    "errors": {
+      "titleRequired": "Add a task name.",
+      "locationRequired": "Choose a project or small works.",
+      "assigneeRequired": "Assign at least one person.",
+      "dueRequired": "Pick a due date.",
+      "tooBig": "{name} is {size}. The limit is {maxSizeMb} MB.",
+      "wrongType": "{name} can’t be attached. Use a photo or PDF.",
+      "tooMany": "You can attach up to {maxFiles} files.",
+      "uploadStalled": "{name} stopped uploading. Check your connection and retry.",
+      "saveFailed": "The task wasn’t saved. Check your connection and try again.",
+      "conflict": "{name} changed this task on another device. Reload to see the latest.",
+      "noAccess": "You don’t have access to this task."
+    }
+  },
+
+  "permissions": {
+    "_status": "PROPOSAL: Claude Code must compare with current behaviour in Phase 1 and report differences before applying",
+    "view": ["admin", "manager", "assignee"],
+    "create": ["admin", "manager"],
+    "edit": ["admin", "manager", "creator"],
+    "delete": ["admin", "manager", "creator"],
+    "start": ["admin", "manager", "assignee"],
+    "tickChecklist": ["admin", "manager", "assignee"],
+    "complete": ["admin", "manager", "assignee"],
+    "reopen": ["admin", "manager", "creator"]
+  }
+}

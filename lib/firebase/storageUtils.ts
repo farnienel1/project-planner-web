@@ -1,4 +1,4 @@
-import { ref, uploadBytesResumable, getDownloadURL, getMetadata } from 'firebase/storage'
+import { ref, uploadBytesResumable, getDownloadURL, getMetadata, deleteObject } from 'firebase/storage'
 import { qualificationCertificateStoragePath } from '@/lib/canonical/operativeQualifications'
 import { timesheetExportStoragePath } from '@/lib/canonical/timesheetPeriod'
 import { storage, auth } from '@/lib/firebase/config'
@@ -120,6 +120,120 @@ export async function uploadFile(
     } catch {
       throw first
     }
+  }
+}
+
+/** A task upload in progress: cancel it, read its progress. */
+export type TrackedUpload = {
+  /** Resolves with the download URL; rejects with the SDK error, a `TimeoutError` (stalled) or an `UploadCancelledError`. */
+  done: Promise<string>
+  cancel: () => void
+}
+
+export class UploadCancelledError extends Error {
+  readonly cancelled = true as const
+  constructor() {
+    super('Upload cancelled.')
+    this.name = 'UploadCancelledError'
+  }
+}
+
+/**
+ * Rulebook 1.89.0 §34 (tasks, issue 1): one upload with progress, cancel and a stall watchdog. It never hangs: no
+ * progress for `stallMs` cancels it (a `TimeoutError`), and the SDK is told to stop retrying a failing request after
+ * `sdkRetryMs` (it retries for 10 minutes by default, which looked like "Saving… for ages"). The bytes are checked
+ * first (`assertUploadAllowed`, §24) and written with the detected type.
+ */
+export function startTrackedUpload(
+  storagePath: string,
+  file: Blob,
+  claimedContentType: string | null | undefined,
+  options: { stallMs: number; sdkRetryMs: number; onProgress?: (sent: number, total: number) => void }
+): TrackedUpload {
+  let task: ReturnType<typeof uploadBytesResumable> | null = null
+  let cancelled = false
+  let rejectNow: ((error: unknown) => void) | null = null
+  const done = (async () => {
+    if (!storage) throw new Error('File storage is not configured.')
+    const contentType = await assertUploadAllowed(storagePath, file, claimedContentType)
+    await ensureStorageAuth()
+    if (cancelled) throw new UploadCancelledError()
+    const storageRef = ref(storage, storagePath)
+    const sharedStorage = storage
+    return await new Promise<string>((resolve, reject) => {
+      let settled = false
+      let stall: ReturnType<typeof setTimeout> | null = null
+      const finish = (outcome: () => void) => {
+        if (settled) return
+        settled = true
+        if (stall) clearTimeout(stall)
+        outcome()
+      }
+      rejectNow = (error) => finish(() => reject(error))
+      // The upload task copies `maxUploadRetryTime` (its retry back-off limit) from the shared Storage instance when it
+      // is made; set it for this one task and put it straight back, so no other upload in the session gets the short
+      // retry (review of #452). Each request's own timeout keeps the default; the stall watchdog below stops a hung
+      // task either way.
+      const previousRetry = sharedStorage.maxUploadRetryTime
+      sharedStorage.maxUploadRetryTime = options.sdkRetryMs
+      try {
+        task = uploadBytesResumable(storageRef, file, { contentType })
+      } finally {
+        sharedStorage.maxUploadRetryTime = previousRetry
+      }
+      const arm = () => {
+        if (stall) clearTimeout(stall)
+        stall = setTimeout(() => {
+          try {
+            task?.cancel()
+          } catch {
+            /* already finished */
+          }
+          finish(() => reject(new TimeoutError(UPLOAD_STALLED_MESSAGE)))
+        }, options.stallMs)
+      }
+      arm()
+      task.on(
+        'state_changed',
+        (snap) => {
+          arm()
+          options.onProgress?.(snap.bytesTransferred, snap.totalBytes)
+        },
+        (error) => finish(() => reject(cancelled ? new UploadCancelledError() : error)),
+        () => {
+          if (stall) clearTimeout(stall)
+          stall = null
+          getDownloadURL(storageRef)
+            .then((url) => finish(() => resolve(url)))
+            .catch((error) => finish(() => reject(error)))
+        }
+      )
+    })
+  })()
+  return {
+    done,
+    cancel: () => {
+      cancelled = true
+      try {
+        ;(task as { cancel: () => boolean } | null)?.cancel()
+      } catch {
+        /* already finished */
+      }
+      rejectNow?.(new UploadCancelledError())
+    },
+  }
+}
+
+/**
+ * Best-effort delete of an object this person just uploaded (cancel, remove before save). The Storage rules allow
+ * it for the uploader within 15 minutes (§24); anything older is kept for recovery. Never throws.
+ */
+export async function deleteJustUploadedFile(downloadUrl: string): Promise<void> {
+  if (!storage || !downloadUrl) return
+  try {
+    await deleteObject(ref(storage, downloadUrl))
+  } catch {
+    /* kept: the rules refuse, or it is already gone */
   }
 }
 

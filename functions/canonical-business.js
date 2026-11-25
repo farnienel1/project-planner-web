@@ -642,10 +642,29 @@ var ProjectPlannerCanonical = (() => {
     SUGGESTED_MAX_CARRY_OVER_DAYS: () => SUGGESTED_MAX_CARRY_OVER_DAYS,
     SUPER_ADMIN_SELF_MANAGE_MESSAGE: () => SUPER_ADMIN_SELF_MANAGE_MESSAGE,
     SYNC_WRITE_TRIGGERS: () => SYNC_WRITE_TRIGGERS,
+    TASK_ACTION_LABELS: () => TASK_ACTION_LABELS,
+    TASK_ATTACHMENT_HELP: () => TASK_ATTACHMENT_HELP,
+    TASK_ATTACHMENT_RULES: () => TASK_ATTACHMENT_RULES,
+    TASK_ATTACHMENT_SOURCES: () => TASK_ATTACHMENT_SOURCES,
+    TASK_ATTACHMENT_SOURCE_LABELS: () => TASK_ATTACHMENT_SOURCE_LABELS,
     TASK_COMPLETION_WRITE_GROUP: () => TASK_COMPLETION_WRITE_GROUP,
+    TASK_COPY: () => TASK_COPY,
+    TASK_DEFAULT_PRIORITY: () => TASK_DEFAULT_PRIORITY,
+    TASK_DEFAULT_TAB: () => TASK_DEFAULT_TAB,
+    TASK_DUE_SOON_DAYS: () => TASK_DUE_SOON_DAYS,
+    TASK_EDIT_STATUS_OPTIONS: () => TASK_EDIT_STATUS_OPTIONS,
+    TASK_FIELD_LIMITS: () => TASK_FIELD_LIMITS,
+    TASK_FORM_ORDER: () => TASK_FORM_ORDER,
     TASK_ITEMS_WRITE_GROUP: () => TASK_ITEMS_WRITE_GROUP,
+    TASK_LEGACY_PRIMARY_ITEM_ID: () => TASK_LEGACY_PRIMARY_ITEM_ID,
     TASK_MANAGER_WRITE_GROUP: () => TASK_MANAGER_WRITE_GROUP,
     TASK_OPERATIVE_WRITE_GROUP: () => TASK_OPERATIVE_WRITE_GROUP,
+    TASK_PRIORITY_OPTIONS: () => TASK_PRIORITY_OPTIONS,
+    TASK_REMOVED_USER_LABEL: () => TASK_REMOVED_USER_LABEL,
+    TASK_RULES_PACK_VERSION: () => TASK_RULES_PACK_VERSION,
+    TASK_SCOPES: () => TASK_SCOPES,
+    TASK_STATUS_OPTIONS: () => TASK_STATUS_OPTIONS,
+    TASK_TABS: () => TASK_TABS,
     TIMESHEETS_HALF_SIGNED_HEADING: () => TIMESHEETS_HALF_SIGNED_HEADING,
     TIMESHEETS_HALF_SIGNED_HELP: () => TIMESHEETS_HALF_SIGNED_HELP,
     TIMESHEETS_HALF_SIGNED_NONE: () => TIMESHEETS_HALF_SIGNED_NONE,
@@ -1238,6 +1257,7 @@ var ProjectPlannerCanonical = (() => {
     isStandardWorkingWeekday: () => isStandardWorkingWeekday,
     isSubcontractorDocumentKind: () => isSubcontractorDocumentKind,
     isSuperAdminAccount: () => isSuperAdminAccount,
+    isTaskActive: () => isTaskActive,
     isTaskCompleted: () => isTaskCompleted,
     isTaskOverdue: () => isTaskOverdue,
     isTaskPersonSelected: () => isTaskPersonSelected,
@@ -1988,6 +2008,7 @@ var ProjectPlannerCanonical = (() => {
     skillsCatalogueWrites: () => skillsCatalogueWrites,
     slotInterval: () => slotInterval,
     snapLeaveDays: () => snapLeaveDays,
+    sortTasksForTab: () => sortTasksForTab,
     sortWarningsByDate: () => sortWarningsByDate,
     splitCsvRecords: () => splitCsvRecords,
     stableManagerId: () => stableManagerId,
@@ -2022,11 +2043,42 @@ var ProjectPlannerCanonical = (() => {
     subtractMinuteIntervals: () => subtractMinuteIntervals,
     superAdminTransferWrites: () => superAdminTransferWrites,
     syncWriteAllowed: () => syncWriteAllowed,
+    taskAccess: () => taskAccess,
+    taskActionStatus: () => taskActionStatus,
+    taskActions: () => taskActions,
+    taskAssigneeDisplay: () => taskAssigneeDisplay,
+    taskAttachmentCheck: () => taskAttachmentCheck,
+    taskAttachmentSources: () => taskAttachmentSources,
+    taskChecklistAfterEdit: () => taskChecklistAfterEdit,
+    taskCompleteStep: () => taskCompleteStep,
     taskCompletedRecipients: () => taskCompletedRecipients,
     taskCompletionFields: () => taskCompletionFields,
+    taskCopyText: () => taskCopyText,
+    taskDateText: () => taskDateText,
+    taskDefaultScope: () => taskDefaultScope,
+    taskDueLabel: () => taskDueLabel,
+    taskEditStatus: () => taskEditStatus,
     taskFields: () => taskFields,
+    taskFormErrors: () => taskFormErrors,
+    taskInTab: () => taskInTab,
+    taskItemTicked: () => taskItemTicked,
     taskPersonIndex: () => taskPersonIndex,
     taskPersonKeys: () => taskPersonKeys,
+    taskPriorityKey: () => taskPriorityKey,
+    taskPriorityLabel: () => taskPriorityLabel,
+    taskPriorityRank: () => taskPriorityRank,
+    taskPriorityTone: () => taskPriorityTone,
+    taskScopeFor: () => taskScopeFor,
+    taskShortDateText: () => taskShortDateText,
+    taskStatusChangeFields: () => taskStatusChangeFields,
+    taskStatusKey: () => taskStatusKey,
+    taskStatusLabel: () => taskStatusLabel,
+    taskStatusTone: () => taskStatusTone,
+    taskTabCounts: () => taskTabCounts,
+    taskTabKeys: () => taskTabKeys,
+    taskToggleChecklistItem: () => taskToggleChecklistItem,
+    taskUploadProgressText: () => taskUploadProgressText,
+    taskViewerRole: () => taskViewerRole,
     taskWriteFields: () => taskWriteFields,
     tasksAssignedToViewer: () => tasksAssignedToViewer,
     taxIdsDocumentFields: () => taxIdsDocumentFields,
@@ -2362,8 +2414,8 @@ var ProjectPlannerCanonical = (() => {
     const { y, m, d } = partsInZone(date, timeZone);
     return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
   }
-  function zoneOffsetMs(instantMs6, timeZone) {
-    const floored = Math.floor(instantMs6 / 6e4) * 6e4;
+  function zoneOffsetMs(instantMs7, timeZone) {
+    const floored = Math.floor(instantMs7 / 6e4) * 6e4;
     const p = partsInZone(new Date(floored), timeZone);
     return Date.UTC(p.y, p.m - 1, p.d, p.h, p.min) - floored;
   }
@@ -17448,8 +17500,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.88.0" : "",
-      sha256: true ? "26102a02d4a539f3b86cfd6d8a7c3dbe4a978a34fbb7f556c91b4c09dc217017" : ""
+      version: true ? "1.89.0" : "",
+      sha256: true ? "d582c10f644888b8f757c202f2cd84cd2daa7c27b2ef50e624e7331581c27ab8" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -32065,6 +32117,455 @@ var ProjectPlannerCanonical = (() => {
     return blocks;
   }
 
+  // lib/canonical/taskRules.ts
+  var TASK_RULES_PACK_VERSION = 1;
+  var TASK_STATUS_OPTIONS = [
+    { token: "To Do", key: "to_do", label: "To do", tone: "grey" },
+    { token: "In Progress", key: "in_progress", label: "In progress", tone: "blue" },
+    { token: "Completed", key: "completed", label: "Completed", tone: "green" }
+  ];
+  function statusOption(raw) {
+    const token = normalizeProjectTaskStatus(raw);
+    return TASK_STATUS_OPTIONS.find((option) => option.token === token) ?? TASK_STATUS_OPTIONS[0];
+  }
+  function taskStatusLabel(raw) {
+    return statusOption(raw).label;
+  }
+  function taskStatusKey(raw) {
+    return statusOption(raw).key;
+  }
+  function taskStatusTone(raw) {
+    return statusOption(raw).tone;
+  }
+  var TASK_PRIORITY_OPTIONS = [
+    { token: "Low", key: "low", label: "Low", tone: "grey", rank: 1 },
+    { token: "Normal", key: "normal", label: "Normal", tone: "blue", rank: 2 },
+    { token: "High", key: "high", label: "High", tone: "amber", rank: 3 },
+    { token: "Urgent", key: "urgent", label: "Urgent", tone: "red", rank: 4 }
+  ];
+  var TASK_DEFAULT_PRIORITY = "Normal";
+  function priorityOption(raw) {
+    const token = normalizeProjectTaskPriority(raw);
+    return TASK_PRIORITY_OPTIONS.find((option) => option.token === token) ?? TASK_PRIORITY_OPTIONS[1];
+  }
+  function taskPriorityLabel(raw) {
+    return priorityOption(raw).label;
+  }
+  function taskPriorityKey(raw) {
+    return priorityOption(raw).key;
+  }
+  function taskPriorityTone(raw) {
+    return priorityOption(raw).tone;
+  }
+  function taskPriorityRank(raw) {
+    return priorityOption(raw).rank;
+  }
+  var TASK_DUE_SOON_DAYS = 3;
+  var MONTHS6 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  var WEEKDAYS4 = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  function keyParts(dayKey) {
+    const [y, m, d] = dayKey.split("-").map(Number);
+    return { y, m, d };
+  }
+  function taskDateText(dayKey) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dayKey)) return "";
+    const { y, m, d } = keyParts(dayKey);
+    return `${d} ${MONTHS6[m - 1]} ${y}`;
+  }
+  function taskShortDateText(dayKey) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dayKey)) return "";
+    const { m, d } = keyParts(dayKey);
+    return `${d} ${MONTHS6[m - 1]}`;
+  }
+  function weekdayText2(dayKey) {
+    const { y, m, d } = keyParts(dayKey);
+    return WEEKDAYS4[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  }
+  function taskDueLabel(task, nowMs2, timeZone) {
+    const now = Number.isFinite(nowMs2) ? nowMs2 : Date.now();
+    const due = dueDayKey(task?.dueDate, timeZone);
+    if (isTaskCompleted({ status: task?.status })) {
+      const done = dueDayKey(task?.completedAt, timeZone);
+      return {
+        label: done ? `Completed ${taskShortDateText(done)}` : "Completed",
+        secondary: null,
+        tone: "grey",
+        overdue: false,
+        dueDayKey: due,
+        days: null
+      };
+    }
+    if (!due) return { label: "No due date", secondary: null, tone: "grey", overdue: false, dueDayKey: "", days: null };
+    const today = dueDayKey(now, timeZone);
+    const days = calendarDaysBetween(today, due);
+    if (days < 0) {
+      const late = -days;
+      return {
+        label: late === 1 ? "1 day overdue" : `${late} days overdue`,
+        secondary: taskDateText(due),
+        tone: "red",
+        overdue: true,
+        dueDayKey: due,
+        days
+      };
+    }
+    if (days === 0) return { label: "Due today", secondary: taskDateText(due), tone: "amber", overdue: false, dueDayKey: due, days };
+    if (days === 1) return { label: "Due tomorrow", secondary: taskDateText(due), tone: "amber", overdue: false, dueDayKey: due, days };
+    if (days <= TASK_DUE_SOON_DAYS) {
+      return { label: `Due ${weekdayText2(due)}`, secondary: taskDateText(due), tone: "amber", overdue: false, dueDayKey: due, days };
+    }
+    return {
+      label: `Due ${taskShortDateText(due)}`,
+      secondary: `in ${days} days`,
+      tone: "grey",
+      overdue: false,
+      dueDayKey: due,
+      days
+    };
+  }
+  var TASK_TABS = [
+    { key: "active", label: "Active" },
+    { key: "overdue", label: "Overdue" },
+    { key: "completed", label: "Completed" }
+  ];
+  var TASK_DEFAULT_TAB = "active";
+  function isTaskActive(task) {
+    return Boolean(task) && !isTaskCompleted({ status: task?.status });
+  }
+  function taskTabKeys(task, nowMs2, timeZone) {
+    if (!task) return [];
+    if (!isTaskActive(task)) return ["completed"];
+    return isTaskOverdue({ status: task.status, dueDate: task.dueDate }, nowMs2, timeZone) ? ["active", "overdue"] : ["active"];
+  }
+  function taskInTab(task, tab, nowMs2, timeZone) {
+    return taskTabKeys(task, nowMs2, timeZone).includes(tab);
+  }
+  function taskTabCounts(tasks, nowMs2, timeZone) {
+    const counts = { active: 0, overdue: 0, completed: 0 };
+    for (const task of tasks || []) for (const key8 of taskTabKeys(task, nowMs2, timeZone)) counts[key8] += 1;
+    return counts;
+  }
+  function instantMs5(raw) {
+    if (raw == null) return 0;
+    if (raw instanceof Date) return raw.getTime() || 0;
+    if (typeof raw === "number") return raw > 1e10 ? raw : raw * 1e3;
+    if (typeof raw === "string") return Date.parse(raw) || 0;
+    if (typeof raw === "object") {
+      const row3 = raw;
+      const seconds = typeof row3.seconds === "number" ? row3.seconds : typeof row3._seconds === "number" ? row3._seconds : null;
+      if (seconds != null) return seconds * 1e3;
+      if (typeof row3.toDate === "function") {
+        const date = row3.toDate();
+        if (date instanceof Date) return date.getTime() || 0;
+      }
+    }
+    return 0;
+  }
+  function sortTasksForTab(tasks, tab, nowMs2, timeZone) {
+    const rows3 = [...tasks || []].filter(Boolean);
+    const title = (row3) => String(row3.title ?? "").toLowerCase();
+    if (tab === "completed") {
+      return rows3.sort((a, b) => {
+        const diff = (instantMs5(b.completedAt) || instantMs5(b.updatedAt)) - (instantMs5(a.completedAt) || instantMs5(a.updatedAt));
+        return diff !== 0 ? diff : title(a).localeCompare(title(b));
+      });
+    }
+    const keyed = rows3.map((row3) => ({
+      row: row3,
+      due: dueDayKey(row3.dueDate, timeZone),
+      overdue: isTaskOverdue({ status: row3.status, dueDate: row3.dueDate }, nowMs2, timeZone),
+      rank: taskPriorityRank(row3.priority)
+    }));
+    keyed.sort((a, b) => {
+      if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
+      if (!a.due !== !b.due) return a.due ? -1 : 1;
+      if (a.due !== b.due) return a.due < b.due ? -1 : 1;
+      if (a.rank !== b.rank) return b.rank - a.rank;
+      return title(a.row).localeCompare(title(b.row));
+    });
+    return keyed.map((entry) => entry.row);
+  }
+  var TASK_ACTION_LABELS = {
+    start: "Start",
+    complete: "Complete",
+    reopen: "Reopen"
+  };
+  function taskActions(status) {
+    const token = normalizeProjectTaskStatus(status);
+    if (token === "Completed") return { primary: "reopen", available: ["reopen"] };
+    if (token === "In Progress") return { primary: "complete", available: ["complete"] };
+    return { primary: "start", available: ["start", "complete"] };
+  }
+  function taskActionStatus(action) {
+    return action === "complete" ? "Completed" : "In Progress";
+  }
+  function taskStatusChangeFields(task, status, input) {
+    return { status: normalizeProjectTaskStatus(status), ...taskCompletionFields(task, status, input) };
+  }
+  var TASK_EDIT_STATUS_OPTIONS = ["To Do", "In Progress"];
+  function taskEditStatus(stored, chosen) {
+    const current = normalizeProjectTaskStatus(stored);
+    if (current === "Completed") return current;
+    const next = normalizeProjectTaskStatus(chosen);
+    return TASK_EDIT_STATUS_OPTIONS.includes(next) ? next : current;
+  }
+  var TASK_LEGACY_PRIMARY_ITEM_ID = "00000000-0000-4000-8000-000000000001";
+  function idKey10(value) {
+    return String(value ?? "").trim().toLowerCase();
+  }
+  function taskItemTicked(task, itemId) {
+    const key8 = idKey10(itemId);
+    return Boolean(key8) && (task?.completedItemIds || []).some((id2) => idKey10(id2) === key8);
+  }
+  function taskToggleChecklistItem(completedItemIds, itemId) {
+    const key8 = idKey10(itemId);
+    const list = (completedItemIds || []).map((id2) => String(id2 ?? "").trim()).filter(Boolean);
+    if (!key8) return list;
+    if (list.some((id2) => idKey10(id2) === key8)) return list.filter((id2) => idKey10(id2) !== key8);
+    return [...list, String(itemId).trim()];
+  }
+  function taskChecklistAfterEdit(input) {
+    const keep = new Set((input?.items || []).map((item) => idKey10(item?.id)).filter(Boolean));
+    keep.add(idKey10(TASK_LEGACY_PRIMARY_ITEM_ID));
+    const seen = /* @__PURE__ */ new Set();
+    const out = [];
+    for (const raw of input?.completedItemIds || []) {
+      const id2 = String(raw ?? "").trim();
+      const key8 = idKey10(id2);
+      if (!key8 || !keep.has(key8) || seen.has(key8)) continue;
+      seen.add(key8);
+      out.push(id2);
+    }
+    return out;
+  }
+  function taskCompleteStep(task) {
+    const items = (task?.items || []).map((item) => idKey10(item?.id)).filter(Boolean);
+    const ticked = new Set((task?.completedItemIds || []).map(idKey10));
+    const done = items.filter((id2) => ticked.has(id2)).length;
+    const remaining = items.length - done;
+    return {
+      total: items.length,
+      done,
+      remaining,
+      completeEnabled: remaining === 0,
+      saveProgressEnabled: true,
+      hint: remaining === 0 ? null : remaining === 1 ? "Tick 1 more to complete" : `Tick ${remaining} more to complete`,
+      showChecklist: items.length > 0
+    };
+  }
+  function taskAccess(role, input) {
+    const staff = Boolean(role) && isStaffAccount(role);
+    const admin = Boolean(role) && !role.isOperativeMode && (role.isAdmin || role.isSuperAdmin);
+    return {
+      seesEveryone: staff,
+      canCreate: Boolean(role),
+      canEdit: staff,
+      canDelete: admin,
+      canAct: staff || input?.isAssignee === true
+    };
+  }
+  function taskViewerRole(user) {
+    if (!user || typeof user !== "object") return null;
+    const level = permissionLevelOf(user);
+    const row3 = user;
+    const superAdmin = level === "admin" && (row3.organizationSuperAdmin === true || row3.organizationSuperAdmin !== false && row3.isSuperAdmin === true);
+    return {
+      isSuperAdmin: superAdmin,
+      isAdmin: level === "admin",
+      isManager: level === "manager",
+      isOperativeMode: level === "operative"
+    };
+  }
+  var TASK_SCOPES = [
+    { key: "mine", label: "My tasks" },
+    { key: "everyone", label: "Everyone" }
+  ];
+  function taskDefaultScope(role) {
+    return taskAccess(role).seesEveryone ? "everyone" : "mine";
+  }
+  function taskScopeFor(role, remembered) {
+    if (!taskAccess(role).seesEveryone) return "mine";
+    return remembered === "mine" || remembered === "everyone" ? remembered : taskDefaultScope(role);
+  }
+  var TASK_REMOVED_USER_LABEL = "Removed user";
+  function taskAssigneeDisplay(row3) {
+    if (!row3) return { name: TASK_REMOVED_USER_LABEL, removed: true };
+    const name = `${String(row3.firstName ?? "").trim()} ${String(row3.lastName ?? "").trim()}`.trim() || String(row3.name ?? "").trim();
+    const email = String(row3.email ?? "").trim();
+    if (!email && (!name || name.toLowerCase() === "deleted user")) return { name: TASK_REMOVED_USER_LABEL, removed: true };
+    return { name: name || email, removed: false };
+  }
+  var TASK_ATTACHMENT_SOURCES = {
+    ios: ["camera", "library", "files", "site_audit"],
+    android: ["camera", "library", "files", "site_audit"],
+    web: ["files", "site_audit"]
+  };
+  var TASK_ATTACHMENT_SOURCE_LABELS = {
+    camera: "Take photo",
+    library: "Photo library",
+    files: "Files",
+    files_web: "Upload files",
+    site_audit: "Site audit"
+  };
+  function taskAttachmentSources(platform) {
+    const key8 = String(platform ?? "").toLowerCase();
+    return [...TASK_ATTACHMENT_SOURCES[key8] ?? TASK_ATTACHMENT_SOURCES.web];
+  }
+  var TASK_ATTACHMENT_RULES = {
+    maxFiles: 10,
+    maxDocuments: 1,
+    maxSizeMb: 10,
+    accepted: [
+      { mime: "image/jpeg", extensions: ["jpg", "jpeg"], label: "JPG" },
+      { mime: "image/png", extensions: ["png"], label: "PNG" },
+      { mime: "image/webp", extensions: ["webp"], label: "WebP" },
+      // HEIC is stored as JPEG when the device can redraw it (iPhone always; a browser that can read HEIC); a browser
+      // that cannot read HEIC uploads it as it is (§24 allows HEIC), so `storeAs` is the preferred type, not a promise.
+      { mime: "image/heic", extensions: ["heic", "heif"], label: "HEIC", storeAs: "image/jpeg" },
+      { mime: "application/pdf", extensions: ["pdf"], label: "PDF" }
+    ],
+    upload: { parallel: 3, stallTimeoutSeconds: 45, maxRetries: 2, sdkMaxUploadRetrySeconds: 60 }
+  };
+  function sizeText(bytes) {
+    return `${(bytes / (1024 * 1024)).toFixed(1).replace(/\.0$/, "")} MB`;
+  }
+  function taskAttachmentCheck(input) {
+    const name = String(input?.name ?? "").trim() || "This file";
+    const mime = String(input?.mime ?? "").trim().toLowerCase().replace("image/jpg", "image/jpeg").replace("image/heif", "image/heic");
+    const existing = Number(input?.existingFiles) || 0;
+    if (existing >= TASK_ATTACHMENT_RULES.maxFiles) {
+      return { result: "tooMany", storedMime: null, message: `You can attach up to ${TASK_ATTACHMENT_RULES.maxFiles} files.` };
+    }
+    const accepted = TASK_ATTACHMENT_RULES.accepted.find((row3) => row3.mime === mime);
+    if (!accepted) return { result: "wrongType", storedMime: null, message: `${name} can\u2019t be attached. Use a photo or PDF.` };
+    if (mime === "application/pdf" && (Number(input?.existingDocuments) || 0) >= TASK_ATTACHMENT_RULES.maxDocuments) {
+      return { result: "tooMany", storedMime: null, message: "You can attach one PDF to a task. Remove the one there first." };
+    }
+    const bytes = Number(input?.sizeBytes) || 0;
+    if (bytes > TASK_ATTACHMENT_RULES.maxSizeMb * 1024 * 1024) {
+      return {
+        result: "tooBig",
+        storedMime: null,
+        message: `${name} is ${sizeText(bytes)}. The limit is ${TASK_ATTACHMENT_RULES.maxSizeMb} MB.`
+      };
+    }
+    return { result: "ok", storedMime: "storeAs" in accepted ? accepted.storeAs : accepted.mime, message: null };
+  }
+  var TASK_ATTACHMENT_HELP = `Photos (JPG, PNG, WebP, HEIC) or PDF, up to ${TASK_ATTACHMENT_RULES.maxSizeMb} MB each, ${TASK_ATTACHMENT_RULES.maxFiles} files max`;
+  function taskUploadProgressText(done, total, percent) {
+    const p = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
+    return `Uploading ${Math.min(done + 1, total)} of ${total} \xB7 ${p}%`;
+  }
+  var TASK_FORM_ORDER = ["title", "description", "location", "assignees", "dueDate", "priority", "checklist", "attachments", "status"];
+  var TASK_FIELD_LIMITS = { titleMax: 120, descriptionMax: 2e3, checklistMaxItems: 30, itemMax: 120, completionNotesMax: 2e3 };
+  function taskFormErrors(draft) {
+    const out = {};
+    const title = String(draft?.title ?? "").trim();
+    if (!title) out.title = "Add a task name.";
+    else if (title.length > TASK_FIELD_LIMITS.titleMax) out.title = `Keep the task name to ${TASK_FIELD_LIMITS.titleMax} characters.`;
+    if (!String(draft?.locationId ?? "").trim()) out.location = "Choose a project or small works.";
+    if (!(Number(draft?.assigneeCount) > 0)) out.assignees = "Assign at least one person.";
+    if (!dueDayKey(draft?.dueDate)) out.dueDate = "Pick a due date.";
+    if ((Number(draft?.checklistCount) || 0) > TASK_FIELD_LIMITS.checklistMaxItems) {
+      out.checklist = `A checklist can have up to ${TASK_FIELD_LIMITS.checklistMaxItems} items.`;
+    }
+    return out;
+  }
+  var TASK_COPY = {
+    page: {
+      title: "Tasks",
+      subtitle: "Work across your projects and small works",
+      newTask: "New task",
+      searchPlaceholder: "Search tasks, projects or people",
+      searchPlaceholderLocation: "Search tasks or people"
+    },
+    empty: {
+      active_mine: { title: "Nothing assigned to you", body: "Tasks assigned to you will show here." },
+      active_everyone: { title: "No active tasks", body: "Create a task to get work moving." },
+      overdue: { title: "Nothing overdue", body: "Every active task is on time." },
+      completed: { title: "No completed tasks yet", body: "Completed tasks show here with who finished them." },
+      search: { title: 'No tasks match "{query}"', body: "Try a different word or clear the filters." }
+    },
+    form: {
+      titleNew: "New task",
+      titleEdit: "Edit task",
+      create: "Create task",
+      save: "Save changes",
+      cancel: "Cancel",
+      me: "Me",
+      addPeople: "Add people",
+      addChecklistItem: "Add item",
+      titleLabel: "Task",
+      titlePlaceholder: "What needs doing? e.g. Replace fuse board",
+      descriptionLabel: "Details",
+      descriptionPlaceholder: "Anything the team needs to know first",
+      locationLabel: "Project or small works",
+      assigneesLabel: "Assign to",
+      dueDateLabel: "Due date",
+      priorityLabel: "Priority",
+      checklistLabel: "Checklist",
+      checklistHelper: "Assignees tick every item before they can complete the task.",
+      checklistEditHelper: "Ticked items stay ticked when you save. Untick one here if the work needs redoing.",
+      attachmentsLabel: "Attachments",
+      statusLabel: "Status",
+      statusCompletedHint: "To complete a task, use Complete so the checklist and proof of work are captured.",
+      unsavedTitle: "Discard changes?",
+      unsavedBody: "Your changes to this task haven\u2019t been saved.",
+      discard: "Discard",
+      keepEditing: "Keep editing"
+    },
+    attachments: {
+      dropHint: "Drag photos or PDFs here",
+      failed: "{name} didn\u2019t upload",
+      retry: "Retry",
+      remove: "Remove",
+      reportProblem: "Report a problem with this file"
+    },
+    detail: {
+      assigned: "Assigned to",
+      details: "Details",
+      activity: "Activity",
+      edit: "Edit",
+      delete: "Delete task",
+      copyLink: "Copy link",
+      completion: "Completion",
+      reassign: "Someone on this task was removed. Edit the task to assign someone else."
+    },
+    complete: {
+      title: "Complete task",
+      proofOfWork: "Proof of work",
+      notesLabel: "Notes for the manager",
+      notesPlaceholder: "Anything the manager should know about how the job went",
+      saveProgress: "Save progress",
+      confirm: "Complete task",
+      back: "Back"
+    },
+    delete: {
+      title: "Delete {title}?",
+      body: "This removes the task and its checklist for everyone on iOS and web. Its files are kept for recovery for 30 days.",
+      confirm: "Delete"
+    },
+    toasts: {
+      created: "Task created",
+      saved: "Changes saved",
+      started: "Task started",
+      completed: "Task completed",
+      reopened: "Task reopened",
+      deleted: "Task deleted",
+      progressSaved: "Progress saved",
+      linkCopied: "Link copied"
+    },
+    errors: {
+      uploadStalled: "{name} stopped uploading. Check your connection and retry.",
+      saveFailed: "The task wasn\u2019t saved. Check your connection and try again.",
+      noAccess: "You don\u2019t have access to this task.",
+      deleteRefused: "Only an admin can delete a task."
+    }
+  };
+  function taskCopyText(template, values) {
+    return String(template ?? "").replace(/\{(\w+)\}/g, (_, key8) => String(values?.[key8] ?? ""));
+  }
+
   // lib/canonical/materialSafeSender.ts
   var MATERIAL_REQUEST_SAFE_SENDER_NOTICE = "Please add this email address to your safe senders list, or mark it as not spam, so you receive all quote and order requests from us.";
   var MATERIAL_CONTACTS_COLLECTION = "materialContacts";
@@ -32185,14 +32686,14 @@ var ProjectPlannerCanonical = (() => {
 
   // lib/canonical/userTimesheetQueue.ts
   var DAY_KEY13 = /^\d{4}-\d{2}-\d{2}$/;
-  function idKey10(value) {
+  function idKey11(value) {
     return typeof value === "string" ? value.trim().toLowerCase() : "";
   }
   function text56(value) {
     return typeof value === "string" ? value.trim() : "";
   }
   function sheetOwnerKey(sheet) {
-    return idKey10(sheet.userId) || idKey10(timesheetDocumentSubjectId(sheet.documentId ?? ""));
+    return idKey11(sheet.userId) || idKey11(timesheetDocumentSubjectId(sheet.documentId ?? ""));
   }
   function filled(value) {
     if (value == null || value === false) return false;
@@ -32219,25 +32720,25 @@ var ProjectPlannerCanonical = (() => {
     return DAY_KEY13.test(end) ? end : text56(sheet.startDayKey);
   }
   function userTimesheetQueue(input) {
-    const members = (input?.members ?? []).filter((member) => member && idKey10(member.id));
+    const members = (input?.members ?? []).filter((member) => member && idKey11(member.id));
     const sheets = input?.sheets ?? [];
     const timeZone = input?.timeZone ?? null;
     const viewer = input?.viewer;
     if (!viewer) return [];
-    const subjectIds = new Set(userTimesheetSubjects({ viewer, members }).map((row3) => idKey10(row3.userId)));
-    const subjects = members.filter((member) => subjectIds.has(idKey10(member.id)));
+    const subjectIds = new Set(userTimesheetSubjects({ viewer, members }).map((row3) => idKey11(row3.userId)));
+    const subjects = members.filter((member) => subjectIds.has(idKey11(member.id)));
     if (subjects.length === 0) return [];
     const viewerKeys = new Set(
       personIdSet(
         { id: viewer.id, formerUserIds: [...viewer.formerIds ?? []], sameEmailUserIds: [...viewer.aliasIds ?? []] },
         members
-      ).map(idKey10)
+      ).map(idKey11)
     );
-    for (const id2 of [viewer.id, ...viewer.formerIds ?? [], ...viewer.aliasIds ?? []]) if (idKey10(id2)) viewerKeys.add(idKey10(id2));
+    for (const id2 of [viewer.id, ...viewer.formerIds ?? [], ...viewer.aliasIds ?? []]) if (idKey11(id2)) viewerKeys.add(idKey11(id2));
     const people = [];
     for (const member of subjects) {
-      const keys = new Set(personIdSet(member, members).map(idKey10).filter(Boolean));
-      keys.add(idKey10(member.id));
+      const keys = new Set(personIdSet(member, members).map(idKey11).filter(Boolean));
+      keys.add(idKey11(member.id));
       for (const key8 of viewerKeys) keys.delete(key8);
       const meeting = people.filter((person) => [...keys].some((key8) => person.keys.has(key8)));
       const target = meeting[0] ?? { members: [], keys: /* @__PURE__ */ new Set() };
@@ -32275,7 +32776,7 @@ var ProjectPlannerCanonical = (() => {
         picked.add(at);
         const { sheet, index } = own[at];
         const sheetKey = sheetOwnerKey(sheet);
-        const member = person.members.find((row3) => idKey10(row3.id) === sheetKey) ?? person.members[0];
+        const member = person.members.find((row3) => idKey11(row3.id) === sheetKey) ?? person.members[0];
         if (!showsMyTimesheets(member, run, timeZone)) continue;
         const status = sheet.status ?? parseTimesheetStatusFields(sheet.data ?? {});
         const selfSigned = typeof member.timesheetSelfSigned === "boolean" ? member.timesheetSelfSigned : timesheetSelfSigned(member);
@@ -33359,8 +33860,8 @@ var ProjectPlannerCanonical = (() => {
   var OFFLINE_SYNC_RESULT_DETAIL_CHANGED = "changed on another device";
   var OFFLINE_SYNC_RESULT_KINDS = ["replace", "delete", "edit"];
   var OFFLINE_SYNC_RESULT_REASONS = ["changed", "permission", "missing"];
-  var MONTHS6 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  var WEEKDAYS4 = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  var MONTHS7 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  var WEEKDAYS5 = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   function text60(value) {
     return typeof value === "string" ? value.trim() : "";
   }
@@ -33370,8 +33871,8 @@ var ProjectPlannerCanonical = (() => {
     const y = Number(m[1]);
     const mo = Number(m[2]);
     const d = Number(m[3]);
-    const weekday2 = WEEKDAYS4[new Date(Date.UTC(y, mo - 1, d)).getUTCDay()];
-    return `${weekday2} ${d} ${MONTHS6[mo - 1]}`;
+    const weekday2 = WEEKDAYS5[new Date(Date.UTC(y, mo - 1, d)).getUTCDay()];
+    return `${weekday2} ${d} ${MONTHS7[mo - 1]}`;
   }
   function clock5(value) {
     const m = /^(\d{1,2}):(\d{2})/.exec(text60(value));
@@ -33394,7 +33895,7 @@ var ProjectPlannerCanonical = (() => {
   function whenText(atMs, timeZone) {
     if (typeof atMs !== "number" || !Number.isFinite(atMs)) return "";
     const p = partsInZone(new Date(atMs), zoneOrLondon(timeZone));
-    return `${p.d} ${MONTHS6[p.m - 1]}, ${String(p.h).padStart(2, "0")}:${String(p.min).padStart(2, "0")}`;
+    return `${p.d} ${MONTHS7[p.m - 1]}, ${String(p.h).padStart(2, "0")}:${String(p.min).padStart(2, "0")}`;
   }
   function changedText(before, live) {
     const out = [];
@@ -33614,7 +34115,7 @@ var ProjectPlannerCanonical = (() => {
       expireAtMs: input.nowMs + CLIENT_ERROR_TTL_DAYS * CLIENT_ERROR_DAY_MS
     };
   }
-  function instantMs5(value) {
+  function instantMs6(value) {
     if (value == null) return null;
     if (typeof value === "number" && Number.isFinite(value)) return value;
     if (value instanceof Date) return Number.isFinite(value.getTime()) ? value.getTime() : null;
@@ -33644,7 +34145,7 @@ var ProjectPlannerCanonical = (() => {
       messageKey: text63("messageKey") || CLIENT_ERROR_OTHER_MESSAGE_KEY,
       messageHash: text63("messageHash"),
       organizationId: text63("organizationId"),
-      createdAtMs: instantMs5(d.createdAt)
+      createdAtMs: instantMs6(d.createdAt)
     };
   }
   function clientErrorGroups(records, filter = {}) {
