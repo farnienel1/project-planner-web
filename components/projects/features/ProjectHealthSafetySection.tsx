@@ -70,6 +70,8 @@ import {
 } from '@/components/projects/features/hsUi'
 
 import { loadExportModule } from '@/lib/pdf/loadExportModule'
+import { personIdSet } from '@/lib/canonical'
+import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 
 // The PDF builder (pdf-lib) loads only when a talk PDF is downloaded.
 const buildToolboxTalkPdf = (input: import('@/lib/healthSafety/toolboxTalkPdf').ToolboxTalkPdfInput) =>
@@ -219,20 +221,21 @@ export function ProjectHealthSafetySection({
     return projectIssues.filter((i) => !i.publishAt || i.publishAt.getTime() <= now)
   }, [projectIssues])
 
+  // Rulebook §1 (`personIdSet`): every id the signed-in person goes by (own, former invite and same-email ids), lower
+  // case, so a toolbox talk signed on iPhone, under an older id or in another letter case still shows as theirs.
   const userAliasIds = useMemo(() => {
     if (!user) return [] as string[]
-    const email = user.email.trim().toLowerCase()
-    const ids = new Set<string>([user.id])
+    const ids = new Set<string>([user.id, ...personIdSet(rulebookPerson(user, users), rulebookRoster(users))])
     for (const row of users) {
-      if (row.email.trim().toLowerCase() === email) ids.add(row.id)
+      if (row.email.trim().toLowerCase() === user.email.trim().toLowerCase()) ids.add(row.id)
     }
-    return [...ids]
+    return [...ids].map((id) => id.trim().toLowerCase()).filter(Boolean)
   }, [user, users])
 
   const myAssigned = useMemo(() => {
     if (!user || !data) return []
     return data.signatures
-      .filter((sig) => userAliasIds.includes(sig.userId))
+      .filter((sig) => userAliasIds.includes(sig.userId.trim().toLowerCase()))
       .map((sig) => {
         const issue = data.issues.find((i) => i.id === sig.issueId)
         if (!issue || !projectIdsMatch(issue.projectId, project.id)) return null
@@ -268,10 +271,10 @@ export function ProjectHealthSafetySection({
   )
 
   const pendingForCurrentUser = (signatures: { userId: string; status: string }[]) =>
-    signatures.find((signature) => userAliasIds.includes(signature.userId) && signature.status !== 'signed')
+    signatures.find((signature) => userAliasIds.includes(signature.userId.trim().toLowerCase()) && signature.status !== 'signed')
 
   const signedForCurrentUser = (signatures: { userId: string; status: string }[]) =>
-    signatures.find((signature) => userAliasIds.includes(signature.userId) && signature.status === 'signed')
+    signatures.find((signature) => userAliasIds.includes(signature.userId.trim().toLowerCase()) && signature.status === 'signed')
 
   const selectedIssueTalk = libraryTalks.find((talk) => talk.id === issueTalkId)
   const selectedScheduleTalk = libraryTalks.find((talk) => talk.id === scheduleTalkId)
