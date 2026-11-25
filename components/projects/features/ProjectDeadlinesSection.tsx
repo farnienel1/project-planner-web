@@ -191,6 +191,15 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
   const openItem = items.find((item) => item.id === openId) || null
   const rescheduleItem = items.find((item) => item.id === rescheduleId) || null
   const empty = emptyDeadlineCopy(filter, canManage, contextKind)
+  const filtersActive =
+    search.trim() !== '' || tradeFilter !== 'All trades' || locationFilter !== ALL_LOCATIONS || responsibleFilter !== EVERYONE || criticalOnly
+  const clearFilters = () => {
+    setSearch('')
+    setTradeFilter('All trades')
+    setLocationFilter(ALL_LOCATIONS)
+    setResponsibleFilter(EVERYONE)
+    setCriticalOnly(false)
+  }
 
   async function persist(nextItems: Deadline[], notifyFrom: Deadline | null, draftId: string) {
     if (!organization?.id) return
@@ -404,6 +413,14 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
 
       {mode === 'timeline' ? (
         <Timeline rows={timeline} now={now} onOpen={setOpenId} />
+      ) : groups.length === 0 && filtersActive ? (
+        <div className="tk-empty">
+          <h3>No deadlines match these filters</h3>
+          <p>Change or clear the filters to see more.</p>
+          <button type="button" className="tk-btn mt-4" onClick={clearFilters}>
+            Clear filters
+          </button>
+        </div>
       ) : groups.length === 0 ? (
         <div className="tk-empty">
           <h3>{empty.title}</h3>
