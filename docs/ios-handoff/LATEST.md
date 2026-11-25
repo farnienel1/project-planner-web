@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.94.0
+# iOS follow-on — rulebook 1.94.1
 
 Generated 2026-11-25 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.94.0 → 1.94.0
-Packed hash: bd61fb618a28f7fde10ad3f0b475a938e2170c6a056b096632d5799281a958d4
-Rulebook sha256: bf5549d0d9bfb132373878558110318f2354898063b518d631b462628c4df44f
+Rulebook version: 1.94.0 → 1.94.1
+Packed hash: a6c8f3bc46c0272203f503126d828b6edb073bf3adfb25740570ef23d2604a21
+Rulebook sha256: 960cbc0f857732de9047114e9f26e9d078e55a452463f1689f9d33c008f121b8
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -24,20 +24,23 @@ Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e
 Call: CanonicalBusinessEngine — no second calculator in Swift.
 Exports added: none
 Exports removed: none
-Web files that changed the rules: lib/canonical/deadlineDisplay.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/canonical.test.ts, lib/canonical/workDocumentReaders.ts
 Done when:
-- [ ] Packed hash in iOS equals bd61fb618a28f7fde10ad3f0b475a938e2170c6a056b096632d5799281a958d4
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 bf5549d0d9bfb132373878558110318f2354898063b518d631b462628c4df44f)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.94.0)
+- [ ] Packed hash in iOS equals a6c8f3bc46c0272203f503126d828b6edb073bf3adfb25740570ef23d2604a21
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 960cbc0f857732de9047114e9f26e9d078e55a452463f1689f9d33c008f121b8)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.94.1)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.94.0
+## What changed in 1.94.1
 
-- **How a deadline reads** (§23, owner decision 25 Nov, deadlines UI upgrade): new `deadlineDisplay`, `deadlineTabCounts`, `deadlineSummaryLine`, `deadlineMovedNote`, `deadlineDayText`, `DEADLINE_TABS`, `DEADLINE_GROUPS`, `DEADLINE_BEHIND_PACE_POINTS` (`lib/canonical/deadlineDisplay.ts`). Behind pace is 10 points below a straight line from start to due (web used 15 and counted blocked); display only, nothing stored changes.
+- **"Multiple floors" chip** (§1 1.93.0 floor groups, owner 25 Nov): a deadline whose only floor is "Multiple floors" (any letter case, older iOS "Multiple Floors") is listed in the Multiple floors section (`deadlineFloorGroup`); both apps offer it as a floor chip.
 
+## New rulebook sections
+
+- 1.94.1 — 2026-11-25
 
 ## Workflow for the iOS agent
 

@@ -37,6 +37,8 @@ export const DEADLINE_LOCATION_PRESETS = [
   'Risers',
   'External',
   'Basement',
+  // Rulebook 1.94.1: the "Multiple floors" chip (DEADLINE_MULTIPLE_FLOORS_GROUP) lists the deadline under that section.
+  'Multiple floors',
 ] as const
 
 export const DEADLINE_RESCHEDULE_REASONS = [

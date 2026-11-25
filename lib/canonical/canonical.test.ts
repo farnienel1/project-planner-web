@@ -21070,3 +21070,9 @@ test('1.94.0 deadline summary, tab counts and moved note', () => {
   assert.equal(R112.deadlineDayText('2026-11-27', true), 'Fri 27 Nov 2026')
   assert.deepEqual(R112.DEADLINE_TABS.map((t) => t.label), ['All', 'Overdue', 'This week', 'Behind pace', 'Completed'])
 })
+
+test('1.94.1 deadlineFloorGroup: the Multiple floors chip is the Multiple floors section', () => {
+  assert.equal(R112.deadlineFloorGroup({ locations: ['Multiple floors'] }), 'Multiple floors')
+  assert.equal(R112.deadlineFloorGroup({ location: 'Multiple Floors' }), 'Multiple floors')
+  assert.equal(R112.deadlineFloorGroup({ locations: ['Roof'] }), 'Roof')
+})
