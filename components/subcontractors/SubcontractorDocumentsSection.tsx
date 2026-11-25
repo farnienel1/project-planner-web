@@ -93,6 +93,7 @@ function DocumentKindBlock({
   const fileInput = useRef<HTMLInputElement>(null)
   const [expiry, setExpiry] = useState('')
   const [busy, setBusy] = useState(false)
+  const [progress, setProgress] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const label = SUBCONTRACTOR_DOCUMENT_LABELS[kind]
   const inputId = `sub-doc-expiry-${kind}`
@@ -105,15 +106,25 @@ function DocumentKindBlock({
       return
     }
     setBusy(true)
+    setProgress(null)
     setError(null)
     try {
-      await uploadSubcontractorDocument({ organizationId, subcontractorId, kind, file, expiresOn: expiry || null, actorUid: user.id })
+      await uploadSubcontractorDocument({
+        organizationId,
+        subcontractorId,
+        kind,
+        file,
+        expiresOn: expiry || null,
+        actorUid: user.id,
+        onProgress: (fraction) => setProgress(fraction),
+      })
       setExpiry('')
       toast(`${label} document uploaded.`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'The upload did not finish. Try again.')
     } finally {
       setBusy(false)
+      setProgress(null)
       if (fileInput.current) fileInput.current.value = ''
     }
   }
@@ -213,7 +224,7 @@ function DocumentKindBlock({
           <input id={inputId} type="date" className="in" style={{ maxWidth: 190 }} value={expiry} onChange={(e) => setExpiry(e.target.value)} />
         </label>
         <button type="button" className="btn sm tint" disabled={busy} onClick={() => fileInput.current?.click()}>
-          {busy ? 'Uploading…' : `Upload ${label}`}
+          {busy ? (progress != null && progress > 0 ? `Uploading ${Math.min(99, Math.round(progress * 100))}%…` : 'Uploading…') : `Upload ${label}`}
         </button>
         <input
           ref={fileInput}
