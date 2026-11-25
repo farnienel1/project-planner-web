@@ -1,6 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  ALL_LOCATIONS,
+  EVERYONE,
+  applyDeadlineToolbarFilters,
+  deadlineLocationOptions,
+  deadlineResponsibleOptions,
+  sortDeadlineGroups,
+  sortDeadlines,
   applyCreatedHistory,
   applyEditHistory,
   completeDeadline,
@@ -236,4 +243,50 @@ test('owner 25 Nov: the save keeps the person own edit when the stored list move
   const kept = mergeDeadlinesFirstWriterWins([remote], [local], ['x'])[0]
   assert.equal(kept.title, 'New')
   assert.equal(kept.fileURL, 'https://example.test/f')
+})
+
+test('toolbar: location options once each, a several-floor deadline matches each of its floors', () => {
+  const a = item({ id: 'a', title: 'A', due: NOW, locations: ['Ground floor', '1st floor'] })
+  const b = item({ id: 'b', title: 'B', due: NOW, location: 'Roof' })
+  const c = item({ id: 'c', title: 'C', due: NOW, locations: ['ground floor'] })
+  assert.deepEqual(deadlineLocationOptions([a, b, c]), [ALL_LOCATIONS, '1st floor', 'Ground floor', 'Roof'])
+  const keep = (location: string) =>
+    applyDeadlineToolbarFilters([a, b, c], { location, responsible: EVERYONE, criticalOnly: false }).map((row) => row.id)
+  assert.deepEqual(keep('1st floor'), ['a'])
+  assert.deepEqual(keep('Ground floor'), ['a', 'c'])
+  assert.deepEqual(keep('roof'), ['b'])
+  assert.deepEqual(keep(ALL_LOCATIONS), ['a', 'b', 'c'])
+})
+
+test('toolbar: responsible by user id (without case), else by name; critical path only', () => {
+  const a = item({ id: 'a', title: 'A', due: NOW, assignees: ['Sam Jones'], assigneeUserIds: ['U1'], isCritical: true })
+  const b = item({ id: 'b', title: 'B', due: NOW, assignees: ['Sam Jones', 'Pat Lee'], assigneeUserIds: ['u1', 'u2'] })
+  const c = item({ id: 'c', title: 'C', due: NOW, assignees: ['Old Name'], assigneeUserIds: [] })
+  const options = deadlineResponsibleOptions([a, b, c])
+  assert.deepEqual(options, [
+    { value: EVERYONE, label: EVERYONE },
+    { value: 'name:old name', label: 'Old Name' },
+    { value: 'id:u2', label: 'Pat Lee' },
+    { value: 'id:u1', label: 'Sam Jones' },
+  ])
+  const run = (responsible: string, criticalOnly = false) =>
+    applyDeadlineToolbarFilters([a, b, c], { location: ALL_LOCATIONS, responsible, criticalOnly }).map((row) => row.id)
+  assert.deepEqual(run('id:u1'), ['a', 'b'])
+  assert.deepEqual(run('name:old name'), ['c'])
+  assert.deepEqual(run(EVERYONE, true), ['a'])
+})
+
+test('toolbar: sort keeps due order by default, otherwise stable with ties by due', () => {
+  const d = (day: number) => new Date(Date.UTC(2026, 5, day, 11))
+  const a = item({ id: 'a', title: 'A', due: d(12), progress: 0.5, trade: 'Electrical', assignees: ['Zed'] })
+  const b = item({ id: 'b', title: 'B', due: d(14), progress: 0, isCritical: true, trade: null, assignees: [] })
+  const c = item({ id: 'c', title: 'C', due: d(13), progress: 0, trade: 'Carpentry', assignees: ['Amy'] })
+  const list = [a, b, c]
+  assert.equal(sortDeadlines(list, 'due'), list)
+  assert.deepEqual(sortDeadlines(list, 'critical').map((row) => row.id), ['b', 'a', 'c'])
+  assert.deepEqual(sortDeadlines(list, 'leastProgress').map((row) => row.id), ['c', 'b', 'a'])
+  assert.deepEqual(sortDeadlines(list, 'trade').map((row) => row.id), ['c', 'a', 'b'])
+  assert.deepEqual(sortDeadlines(list, 'responsible').map((row) => row.id), ['c', 'a', 'b'])
+  const groups = sortDeadlineGroups([{ id: 'g', title: 'G', tone: null, items: list }], 'critical')
+  assert.deepEqual(groups[0].items.map((row) => row.id), ['b', 'a', 'c'])
 })

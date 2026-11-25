@@ -36,6 +36,7 @@ import { StoredFileLink } from '@/components/projects/features/StoredFileLink'
 import { storedFileDirectHref } from '@/lib/healthSafety/storedFile'
 import { safeExternalUrl } from '@/lib/canonical/uploadPolicy'
 import { deadlineLocationWriteFields } from '@/lib/canonical/workDocumentReaders'
+import { TaskDialog } from '@/components/tasks/upgrade/TaskDialog'
 
 export type DeadlinePerson = { id: string; name: string; subtitle: string; isLive: boolean }
 
@@ -61,7 +62,7 @@ export function Sheet({
   const backdropArmed = useRef(false)
   return (
     <div
-      className="fixed inset-0 z-80 flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
+      className="fixed inset-0 z-110 flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       onPointerDown={(event) => {
@@ -181,14 +182,36 @@ export function DetailSheet({
   const before = predecessors(items, item)
   const after = dependents(items, item)
   const audit = audits.find((row) => row.id === item.siteAuditId)
+  const chipTone = view.tone === 'primary' ? 'blue' : view.tone
   return (
-    <Sheet
-      title="Deadline"
-      subtitle={projectLabel || undefined}
+    <TaskDialog
+      open
+      title={item.title}
       onClose={onClose}
+      subtitle={
+        <div className="tk-chips" style={{ alignItems: 'center' }} data-dl-tone={view.tone}>
+          {projectLabel ? <span className="tk-muted">{projectLabel}</span> : null}
+          <span className="tk-chip" data-tone={chipTone}>
+            {view.statusLabel}
+          </span>
+          <span className="tk-chip" data-tone={chipTone}>
+            {view.dueText}
+            {view.group !== 'completed' ? ` · ${deadlineDayLabel(item.due)}` : ''}
+          </span>
+          {item.isCritical ? (
+            <span className="tk-chip" data-tone="red">
+              Critical path
+            </span>
+          ) : null}
+        </div>
+      }
       footer={
         canManage ? (
-          <div className="flex flex-wrap gap-2">
+          <>
+            <button type="button" className="tk-btn" onClick={onEdit}>
+              Edit
+            </button>
+            <span className="grow" />
             <button type="button" className="tk-btn" onClick={onReschedule}>
               Reschedule
             </button>
@@ -197,22 +220,11 @@ export function DetailSheet({
                 Mark complete
               </button>
             ) : null}
-          </div>
+          </>
         ) : null
       }
     >
       <div className="space-y-4">
-        <div className="card pad" data-dl-tone={view.tone}>
-          <h2 className="font-(family-name:--head) text-xl font-extrabold">{item.title}</h2>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            <span className="dl-status">{view.statusLabel}</span>
-            <span className="dl-tag">
-              {view.dueText}
-              {view.group !== 'completed' ? ` · ${deadlineDayLabel(item.due)}` : ''}
-            </span>
-            {item.isCritical ? <span className="dl-tag critical">Critical path</span> : null}
-          </div>
-        </div>
         <div className="card pad">
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-[11px] font-bold tracking-[0.08em] text-(--ink3)">PROGRESS</h3>
@@ -341,13 +353,8 @@ export function DetailSheet({
             </p>
           </section>
         ) : null}
-        {canManage ? (
-          <button type="button" className="btn" onClick={onEdit}>
-            Edit deadline
-          </button>
-        ) : null}
       </div>
-    </Sheet>
+    </TaskDialog>
   )
 }
 

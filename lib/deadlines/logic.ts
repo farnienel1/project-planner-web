@@ -11,6 +11,7 @@ import {
   deadlineDisplay,
   deadlineFloorGroup,
   deadlineMovedNote,
+  deadlineOnLocation,
   deadlineUrgency,
   dueDayKey,
 } from '@/lib/canonical'
@@ -231,6 +232,104 @@ export function filterDeadlines(params: {
       .toLowerCase()
     return hay.includes(query)
   })
+}
+
+export const ALL_LOCATIONS = 'All locations'
+export const EVERYONE = 'Everyone'
+
+/** Every floor / area used by the deadlines, once each (ignoring case), sorted; the first option is "All locations". */
+export function deadlineLocationOptions(items: Deadline[]): string[] {
+  const seen = new Map<string, string>()
+  for (const item of items) {
+    for (const floor of deadlineLocationList(item)) {
+      const name = floor.trim()
+      if (name && !seen.has(name.toLowerCase())) seen.set(name.toLowerCase(), name)
+    }
+  }
+  return [ALL_LOCATIONS, ...[...seen.values()].sort((a, b) => a.localeCompare(b))]
+}
+
+export type DeadlineResponsibleOption = { value: string; label: string }
+
+/**
+ * The people responsible across the deadlines, once each. A person is their user id (without case) when the deadline
+ * stores ids beside the names, else their name (without case). The first option is "Everyone".
+ */
+export function deadlineResponsibleOptions(items: Deadline[]): DeadlineResponsibleOption[] {
+  const seen = new Map<string, string>()
+  for (const item of items) {
+    const paired = item.assigneeUserIds.length === item.assignees.length
+    item.assignees.forEach((name, index) => {
+      const label = name.trim()
+      if (!label) return
+      const id = paired ? item.assigneeUserIds[index]?.trim().toLowerCase() : ''
+      const value = id ? `id:${id}` : `name:${label.toLowerCase()}`
+      if (!seen.has(value)) seen.set(value, label)
+    })
+  }
+  const people = [...seen.entries()].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label))
+  return [{ value: EVERYONE, label: EVERYONE }, ...people]
+}
+
+function hasResponsible(item: Deadline, value: string): boolean {
+  if (value.startsWith('id:')) {
+    const want = value.slice(3)
+    return item.assigneeUserIds.some((id) => id.trim().toLowerCase() === want)
+  }
+  if (value.startsWith('name:')) {
+    const want = value.slice(5)
+    return item.assignees.some((name) => name.trim().toLowerCase() === want)
+  }
+  return true
+}
+
+export type DeadlineToolbarFilters = { location: string; responsible: string; criticalOnly: boolean }
+
+/**
+ * Location (a deadline on several floors matches each of its floors, rulebook `deadlineOnLocation`), Responsible and
+ * Critical path only. Narrows the list and the timeline; the tab counts and summary never read it.
+ */
+export function applyDeadlineToolbarFilters(items: Deadline[], filters: DeadlineToolbarFilters): Deadline[] {
+  return items.filter((item) => {
+    if (filters.criticalOnly && !item.isCritical) return false
+    if (filters.location !== ALL_LOCATIONS && !deadlineOnLocation(item, filters.location)) return false
+    if (filters.responsible !== EVERYONE && !hasResponsible(item, filters.responsible)) return false
+    return true
+  })
+}
+
+export type DeadlineSort = 'due' | 'critical' | 'leastProgress' | 'trade' | 'responsible'
+
+export const DEADLINE_SORTS: { id: DeadlineSort; label: string }[] = [
+  { id: 'due', label: 'Due date' },
+  { id: 'critical', label: 'Critical first' },
+  { id: 'leastProgress', label: 'Least progress first' },
+  { id: 'trade', label: 'Trade' },
+  { id: 'responsible', label: 'Responsible' },
+]
+
+/**
+ * Orders the rows of a group. "Due date" (the default) keeps the order the grouping already gives; the others are a
+ * stable sort, ties by due date. Rows with no trade / nobody responsible go last.
+ */
+export function sortDeadlines(items: Deadline[], sort: DeadlineSort): Deadline[] {
+  if (sort === 'due') return items
+  const byDue = (a: Deadline, b: Deadline) => a.due.getTime() - b.due.getTime()
+  const text = (value: string | null | undefined) => (value || '').trim().toLowerCase()
+  const lastIfBlank = (a: string, b: string) => (a === b ? 0 : !a ? 1 : !b ? -1 : a.localeCompare(b))
+  const compare: Record<Exclude<DeadlineSort, 'due'>, (a: Deadline, b: Deadline) => number> = {
+    critical: (a, b) => Number(b.isCritical) - Number(a.isCritical),
+    leastProgress: (a, b) => a.progress - b.progress,
+    trade: (a, b) => lastIfBlank(text(a.trade), text(b.trade)),
+    responsible: (a, b) => lastIfBlank(text(a.assignees[0]), text(b.assignees[0])),
+  }
+  return [...items].sort((a, b) => compare[sort](a, b) || byDue(a, b))
+}
+
+/** `sortDeadlines` inside every group (groups keep their order). */
+export function sortDeadlineGroups(groups: DeadlineGroup[], sort: DeadlineSort): DeadlineGroup[] {
+  if (sort === 'due') return groups
+  return groups.map((group) => ({ ...group, items: sortDeadlines(group.items, sort) }))
 }
 
 const GROUP_TONES: Record<string, DeadlineGroup['tone']> = {

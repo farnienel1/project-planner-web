@@ -25,10 +25,16 @@ import { prepareClientUpload } from '@/lib/security/stripPhotoLocation'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { notifyNewDeadlineAssignees } from '@/lib/deadlines/notify'
 import {
+  ALL_LOCATIONS,
+  DEADLINE_SORTS,
+  EVERYONE,
+  applyDeadlineToolbarFilters,
   assigneeInitials,
   completeDeadline,
   deadlineDayLabel,
   deadlineLocationList,
+  deadlineLocationOptions,
+  deadlineResponsibleOptions,
   deadlineTrades,
   deadlineView,
   emptyDeadlineCopy,
@@ -42,11 +48,13 @@ import {
   scopedDeadlines,
   setDeadlineProgress,
   slippageDays,
+  sortDeadlineGroups,
   timelineItems,
   timelineWindowStart,
   timesRescheduled,
   withFileAttached,
 } from '@/lib/deadlines/logic'
+import type { DeadlineSort } from '@/lib/deadlines/logic'
 import type { Deadline, DeadlineGroup, DeadlineGrouping } from '@/lib/deadlines/types'
 import type { Project, User } from '@/types'
 import { DetailSheet, EditorSheet, ProgressBar, ProgressRing, RescheduleSheet } from '@/components/projects/features/deadlines/DeadlinePanels'
@@ -82,6 +90,10 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
   const [grouping, setGrouping] = useState<DeadlineGrouping>('date')
   const [search, setSearch] = useState('')
   const [tradeFilter, setTradeFilter] = useState('All trades')
+  const [locationFilter, setLocationFilter] = useState(ALL_LOCATIONS)
+  const [responsibleFilter, setResponsibleFilter] = useState(EVERYONE)
+  const [criticalOnly, setCriticalOnly] = useState(false)
+  const [sort, setSort] = useState<DeadlineSort>('due')
   const [showCompleted, setShowCompleted] = useState(true)
   const [openId, setOpenId] = useState<string | null>(null)
   const [editing, setEditing] = useState<Deadline | 'new' | null>(null)
@@ -121,10 +133,17 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
   const myIds = useMemo(() => (user ? personIdSet(rulebookPerson(user, users), rulebookRoster(users)) : []), [user, users])
   const scoped = useMemo(() => scopedDeadlines(items, canManage ? null : myIds), [items, canManage, myIds])
   const trades = useMemo(() => deadlineTrades(scoped), [scoped])
+  const locations = useMemo(() => deadlineLocationOptions(scoped), [scoped])
+  const responsibleOptions = useMemo(() => deadlineResponsibleOptions(scoped), [scoped])
   // Rulebook 1.94.0 §23: tabs, counts, groups and the summary all read `deadlineDisplay` (via `deadlineView`).
   const searched = useMemo(
-    () => filterDeadlines({ items: scoped, tab: 'all', tradeFilter, search, now }),
-    [scoped, tradeFilter, search, now]
+    () =>
+      applyDeadlineToolbarFilters(filterDeadlines({ items: scoped, tab: 'all', tradeFilter, search, now }), {
+        location: locationFilter,
+        responsible: responsibleFilter,
+        criticalOnly,
+      }),
+    [scoped, tradeFilter, search, now, locationFilter, responsibleFilter, criticalOnly]
   )
   // Counts and the summary read every deadline the viewer sees (not the search / trade filter), as on iOS.
   const displayInputs = useMemo(
@@ -143,7 +162,7 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
   const tabCounts = useMemo(() => deadlineTabCounts(displayInputs, now.getTime(), organizationZoneOr()), [displayInputs, now])
   const summary = useMemo(() => deadlineSummaryLine(displayInputs, now.getTime(), organizationZoneOr()), [displayInputs, now])
   const filtered = useMemo(() => searched.filter((item) => deadlineView(item, now).tabs.includes(filter)), [searched, filter, now])
-  const groups = useMemo(() => groupDeadlines(filtered, grouping, now), [filtered, grouping, now])
+  const groups = useMemo(() => sortDeadlineGroups(groupDeadlines(filtered, grouping, now), sort), [filtered, grouping, now, sort])
   const timeline = useMemo(() => timelineItems(filtered), [filtered])
   const people = useMemo(() => {
     const live = liveUserIdsOnJob({
@@ -325,13 +344,45 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
             onChange={(event) => setSearch(event.target.value)}
           />
         </label>
-        <select className="tk-select" aria-label="Trade" value={tradeFilter} onChange={(event) => setTradeFilter(event.target.value)}>
-          {trades.map((trade) => (
-            <option key={trade} value={trade}>
-              {trade}
-            </option>
-          ))}
-        </select>
+        <label className="tk-sort">
+          <span>Trade</span>
+          <select className="tk-select" aria-label="Trade" value={tradeFilter} onChange={(event) => setTradeFilter(event.target.value)}>
+            {trades.map((trade) => (
+              <option key={trade} value={trade}>
+                {trade}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="tk-sort">
+          <span>Location</span>
+          <select className="tk-select" aria-label="Location" value={locationFilter} onChange={(event) => setLocationFilter(event.target.value)}>
+            {locations.map((floor) => (
+              <option key={floor} value={floor}>
+                {floor}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="tk-sort">
+          <span>Responsible</span>
+          <select
+            className="tk-select"
+            aria-label="Responsible"
+            value={responsibleFilter}
+            onChange={(event) => setResponsibleFilter(event.target.value)}
+          >
+            {responsibleOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="tk-sort dl-check">
+          <input type="checkbox" checked={criticalOnly} onChange={(event) => setCriticalOnly(event.target.checked)} />
+          <span>Critical path only</span>
+        </label>
         <select className="tk-select" aria-label="Group deadlines" value={grouping} onChange={(event) => setGrouping(event.target.value as DeadlineGrouping)}>
           {GROUP_LABELS.map((option) => (
             <option key={option.id} value={option.id}>
@@ -339,6 +390,16 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
             </option>
           ))}
         </select>
+        <label className="tk-sort">
+          <span>Sort</span>
+          <select className="tk-select" aria-label="Sort" value={sort} onChange={(event) => setSort(event.target.value as DeadlineSort)}>
+            {DEADLINE_SORTS.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {mode === 'timeline' ? (
