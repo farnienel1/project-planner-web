@@ -605,6 +605,10 @@ export function SiteAuditScreen() {
   const [view, setView] = useState<View>({ type: 'hub' })
   // Rulebook 1.30.0 §26: the signed-in person's own personal audits (owner only).
   const personal = usePersonalSiteAudits()
+  // Back from the Create Personal Site Audit page (`?view=personal`): open the Personal list.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('view') === 'personal') setView({ type: 'personal' })
+  }, [])
 
   useEffect(() => {
     if (!organization?.id) return

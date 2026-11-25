@@ -8,12 +8,11 @@ import { useNotificationStore } from '@/lib/stores/notificationStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { inboxOwnerIds } from '@/lib/staff/rulebookPeople'
 import { EmptyState } from '@/components/ios/primitives'
-import { inboxNotificationHref } from '@/lib/notifications/notificationHref'
+import { notificationOpenHref } from '@/lib/notifications/notificationHref'
 import { loadOrganizationDetails } from '@/lib/settings/organizationSettings'
 import { organizationTimeZone } from '@/lib/canonical'
 import {
   DEFAULT_USER_NOTIFICATION_PREFERENCES,
-  notificationOrganizationSwitch,
   notificationShowsInInbox,
 } from '@/lib/canonical'
 import { loadUserNotificationPreferences } from '@/lib/settings/notificationPreferences'
@@ -103,16 +102,8 @@ export default function NotificationsPage() {
       ) : (
         <div className="rows">
           {rows.map((row) => {
-            // 1.16.0 (§13, interim): a row of another company the person belongs to opens that company first
-            // (`notificationOrganizationSwitch`; the ?switchOrg= sign-in path checks membership again).
-            const switchTo = notificationOrganizationSwitch({
-              rowOrganizationId: row.organizationId,
-              openOrganizationId: organization?.id,
-              membershipIds: [organization?.id, user?.organizationId].filter((id): id is string => Boolean(id)),
-            })
-            const href = switchTo
-              ? `/dashboard?switchOrg=${encodeURIComponent(switchTo)}`
-              : inboxNotificationHref(row, user, timeZone)
+            // 1.16.0 (§13, interim): another company's row opens that company first (`notificationOpenHref`).
+            const href = notificationOpenHref(row, { user, openOrganizationId: organization?.id, timeZone })
             return (
               <article key={row.id} className="ritem">
                 <Link href={href} className="block">

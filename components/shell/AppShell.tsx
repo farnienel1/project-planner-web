@@ -48,6 +48,8 @@ import { AppLogoMark } from '@/components/ui/AppLogoMark'
 import { AccountMenu } from '@/components/shell/AccountMenu'
 import { CommandPalette } from '@/components/shell/CommandPalette'
 import { NotificationsPopover } from '@/components/shell/NotificationsPopover'
+import { NotificationArrivalToasts } from '@/components/notifications/NotificationArrivalToasts'
+import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { ToastProvider, useToast } from '@/components/ui/ToastProvider'
 import { BookingDeleteNotice } from '@/components/schedule/BookingDeleteNotice'
 import { Button, IconChip } from '@/components/ui'
@@ -211,6 +213,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
   const markAllAsRead = useNotificationStore((s) => s.markAllAsRead)
   // Every id of the signed-in person (`personIdSet`): the inbox owner ids.
   const ownerIds = useMemo(() => inboxOwnerIds(user, users), [user, users])
+  const organizationTimeZone = useOrganizationTimeZone()
   const [notificationPrefs, setNotificationPrefs] = useState(DEFAULT_USER_NOTIFICATION_PREFERENCES)
   // The browser's offline flag can stick at false; the hook confirms it with a real request (lib/onlineStatus.ts).
   const online = useOnlineStatus()
@@ -570,6 +573,13 @@ function AppShellInner({ children }: { children: ReactNode }) {
     <div className="app-frame min-h-screen text-(--ink)">
       <TeamOnboardingPrompt />
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} items={paletteItems} />
+      <NotificationArrivalToasts
+        notifications={visibleNotifications}
+        ownerIds={ownerIds}
+        user={user}
+        organizationId={organization?.id}
+        timeZone={organizationTimeZone}
+      />
       {customiseOpen ? (
         <CustomiseNavigateSheet
           config={effectiveNavigateConfig}

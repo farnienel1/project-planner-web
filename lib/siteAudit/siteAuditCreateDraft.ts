@@ -1,5 +1,6 @@
 import {
   dayKeyInOrganizationZone,
+  personalSiteAuditValidationError,
   seesEveryJob,
   siteAuditFieldLimitError,
   visibleJobs,
@@ -157,6 +158,98 @@ export function siteAuditOutboxRecord(input: {
       comments: item.comments.trim(),
       assignee: item.assignee.trim(),
       annotations: item.annotations.trim(),
+      takenAtMs: item.takenAt.getTime(),
+      photo: item.photo,
+      fileName: item.photo.name,
+      upload: uploads[item.id] ?? { itemId: item.id, status: 'pending', progress: 0, attempts: 0 },
+    })),
+  }
+}
+
+/**
+ * Personal site audits (rulebook §26, owner request 25 Nov): the New personal site audit page's first step is the
+ * free-text job number and job name. Why that step cannot go on yet: the rulebook's own check
+ * (`personalSiteAuditValidationError`: a job name, the field limits), asked with a valid date and a placeholder photo
+ * so only the job fields can fail here; the full check runs again on save.
+ */
+export function personalSiteAuditJobProblem(input: { jobNumber: string; jobName: string }): string | null {
+  return personalSiteAuditValidationError({
+    jobNumber: input.jobNumber,
+    jobName: input.jobName,
+    date: '2000-01-01',
+    items: [{ id: 'job-step', title: 'job-step' }],
+  })
+}
+
+/**
+ * The full save check of a personal audit, exactly the former dialog's: `personalSiteAuditValidationError` on the job
+ * fields, date and photo titles, then the field limits of the audit title and each photo's title, location and
+ * comments. Null when it may be saved.
+ */
+export function personalSiteAuditDraftProblem(input: {
+  jobNumber: string
+  jobName: string
+  customTitle: string
+  auditDate: string
+  items: ReadonlyArray<Pick<SiteAuditDraftItem, 'id' | 'title' | 'location' | 'comments'>>
+}): string | null {
+  const shape = personalSiteAuditValidationError({
+    jobNumber: input.jobNumber,
+    jobName: input.jobName,
+    date: input.auditDate,
+    items: input.items.map((item) => ({ id: item.id, title: item.title })),
+  })
+  if (shape) return shape
+  return (
+    siteAuditFieldLimitError({ customTitle: input.customTitle }) ??
+    input.items
+      .map((item) => siteAuditFieldLimitError({ title: item.title, location: item.location, comments: item.comments }))
+      .find((message) => message) ??
+    null
+  )
+}
+
+/**
+ * The personal audit kept on this device before any upload: the former dialog's record, unchanged. Free-text job
+ * number and name in `meta`, no job, no assignee or annotations (a personal audit stores neither).
+ */
+export function personalSiteAuditOutboxRecord(input: {
+  auditId: string
+  organizationId: string
+  userId: string
+  nowMs: number
+  jobNumber: string
+  jobName: string
+  auditType: string
+  customTitle: string
+  auditDate: string
+  authorName: string
+  items: ReadonlyArray<SiteAuditDraftItem>
+  uploads: Record<string, PhotoUpload>
+}): SiteAuditOutboxRecord {
+  const { uploads } = input
+  return {
+    id: input.auditId,
+    kind: 'personal',
+    organizationId: input.organizationId,
+    userId: input.userId,
+    createdAtMs: input.nowMs,
+    updatedAtMs: input.nowMs,
+    meta: {
+      type: input.auditType,
+      customTitle: input.customTitle,
+      date: input.auditDate,
+      authorName: input.authorName,
+      jobNumber: input.jobNumber,
+      jobName: input.jobName,
+    },
+    items: input.items.map((item) => ({
+      id: item.id,
+      title: item.title,
+      location: item.location,
+      comments: item.comments,
+      assignee: '',
+      annotations: '',
       takenAtMs: item.takenAt.getTime(),
       photo: item.photo,
       fileName: item.photo.name,

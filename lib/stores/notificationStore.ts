@@ -19,6 +19,7 @@ import { retainParsedRows } from '@/lib/staff/rosterRetain'
 import {
   compareInboxNotificationsByCreatedAt,
   inboxNotificationVisibleToUser,
+  notificationReadWriteFields,
   unreadNotificationBadgeCount,
 } from '@/lib/canonical'
 import {
@@ -39,6 +40,8 @@ interface NotificationState {
    */
   loadNotifications: (organizationId: string, userId: string, ownerIds?: ReadonlyArray<string>) => void
   markAllAsRead: (organizationId: string) => Promise<void>
+  /** Marks one row read (`notificationReadWriteFields`: `isRead` only, nothing when it is already read). */
+  markAsRead: (organizationId: string, notificationId: string) => Promise<void>
   /** Stops the listener and clears the inbox (sign-out, organisation switch). */
   reset: () => void
 }
@@ -212,6 +215,13 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     inboxOwnedRows = []
     inboxRetryAttempt = 0
     set({ notifications: [], unreadCount: 0, loading: false, error: null })
+  },
+
+  markAsRead: async (organizationId, notificationId) => {
+    const row = get().notifications.find((item) => item.id === notificationId)
+    const fields = notificationReadWriteFields(row ? { isRead: row.isRead } : null)
+    if (!row || !fields || !db) return
+    await updateDoc(doc(db, 'organizations', organizationId, 'notifications', row.id), fields.set)
   },
 
   markAllAsRead: async (organizationId) => {

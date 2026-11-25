@@ -1759,7 +1759,6 @@ The owner's Tasks pack (`docs/features/tasks-upgrade/`) was built on web and iOS
 | 25 Nov | Re-check of #459 fixes: a failed load, or no answer within 15 s, shows "Tasks did not finish loading. Check the connection and try again." with Retry on the task list, the `?task=` popup and Home's "Tasks to do" — never an endless "Loading tasks…"; the task-store error wins over the spinner. Remembered filters are pruned (in render, saved after) only once tasks, projects, small works, the Managers / Operatives rows and the server roster have all loaded, for admins too. A job page's Tasks figure waits for the same ("Loading tasks…"). | done web (1.91.0, `w191-tasks-filters-v2`) |
 | 25 Nov | **Question (review of #458, nit 5, guardrail 3):** tasks stored before 1.10.0 record their creator by name only (`createdBy`). A manager who created such a task on a job they don't manage no longer sees it (unless assigned). Options: (a) keep as built; (b) also count it as theirs when exactly one active person has that name (the `taskCompletedRecipients` fallback). Recommended (a): name matching can show a task to the wrong person. | **answered 25 Nov: (a)**, keep as built (1.91.0) |
 
-
 ## 25 Nov decisions (deadlines, 1.92)
 
 | Date | Decision | Status |
@@ -1769,3 +1768,10 @@ The owner's Tasks pack (`docs/features/tasks-upgrade/`) was built on web and iOS
 | 25 Nov | **Timeline shows completed deadlines** (marked Complete, struck through) whenever the filter keeps them; "All" is all. | done web; iOS to check (`DLModels.swift` `timelineItems` drops complete) |
 | 25 Nov | **List "All" shows every deadline**: choosing a filter chip or tile clears a day picked on the rail, and a picked day shows "Showing deadlines due … only · Show all". | done web; iOS to check |
 | 25 Nov | **A deadline can be on several floors** (multi-select). Stored as `locations` with the first floor kept in `location` for older builds; grouping by floor lists it under each floor and search matches any of them. Rule: `deadlineLocationWriteFields`, `parseDeadlineItem` `locations`, `deadlineOnLocation` (§1). | done web + rulebook (1.92.0); iOS open (hand-off v1.92.0) |
+
+## 25 Nov decisions (personal site audit page, notification pop-ups; web UI only)
+
+| Date | Decision | Status |
+|---|---|---|
+| 25 Nov | **Create Personal Site Audit works like New site audit**: its own step-by-step page (`/dashboard/site-audit/personal/new`): Job (free-text job number and job name) → Details → Photos → Review & save, the same photo cards, live counters, leave warning and device-first save as the project audit. Saves exactly what the old dialog saved (`personalSiteAuditValidationError`, the same `personalSiteAudits` shape); no assignee, annotations or "Visible to operatives" (a personal audit stores none). The dialog is removed. | done web (branch `w-personal-audit-toasts`, draft PR); iOS n/a |
+| 25 Nov | **In-app notification pop-up** (web only): a new notification arriving while the app is open (created after the page loaded, never the first load or a reconnect) shows a small card at the top right — title and up to two lines of the message — for 6 s with ✕, up to three stacked; clicking opens it like the notification centre and marks only that one read. A short chime plays (new feedback event `notificationReceived`, sound `chime`, made in code, follows the Sounds setting; guide 1.3). It is the one sound not caused by the person's own action. | done web (branch `w-personal-audit-toasts`, draft PR); iOS n/a |
