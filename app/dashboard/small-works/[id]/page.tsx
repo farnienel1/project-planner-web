@@ -10,12 +10,13 @@ import { ProjectHub } from '@/components/projects/ProjectHub'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
 import type { Project } from '@/types'
 import { jobTileBadges } from '@/lib/canonical'
+import { useVisibleTasks } from '@/lib/tasks/useVisibleTasks'
 
 export default function SmallWorkDetailPage() {
   const params = useParams()
   const { organization } = useAuthStore()
   const { getProject } = useProjectStore()
-  const { tasks, loadTasks } = useTaskStore()
+  const { loadTasks } = useTaskStore()
   const [work, setWork] = useState<Project | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -28,6 +29,9 @@ export default function SmallWorkDetailPage() {
     loadTasks(organization.id)
   }, [organization, params.id, getProject, loadTasks])
 
+  // Rulebook 1.91.0 §34 decision A: the job's Tasks figure counts the tasks this person may see.
+  const jobs = useMemo(() => (work ? [work] : []), [work])
+  const tasks = useVisibleTasks(jobs)
   const openTaskCount = useMemo(
     () => jobTileBadges({ jobId: String(params.id), tasks }).openTasks,
     [tasks, params.id]

@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  assignableProjectManagers,
   choiceIdForRoster,
   projectManagerChoiceSelected,
   projectManagerChoices,
@@ -100,8 +99,6 @@ test('stable manager ids match iOS for UUID documents and hashed user ids', () =
 test('the project manager picker omits inactive, pending, operative, and other-org people', () => {
   const labels = projectManagerChoices(roster, users, org).map((choice) => choice.label)
   assert.deepEqual(labels, ['Test Admin', 'Test Manager'])
-  assert.equal(assignableProjectManagers(roster, users, org).some((row) => row.email === 'pn@raccord.test'), false)
-  assert.equal(assignableProjectManagers(roster, users, org).some((row) => row.email === 'p@ekecteic.con'), false)
 })
 
 test('a deactivated assignment is dropped and every other assignment is kept', () => {

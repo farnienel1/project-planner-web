@@ -16,6 +16,7 @@ import { DataParityCheck } from '@/components/dataHealth/DataParityCheck'
 import { dataCheckPanelVisible } from '@/lib/canonical'
 import { dataCheckPanelEnabledFor, onPlatformConfigChange } from '@/lib/access/securitySwitches'
 import { GhostsToCheck } from '@/components/dataHealth/GhostsToCheck'
+import { CatalogueRowsWithoutPerson } from '@/components/dataHealth/CatalogueRowsWithoutPerson'
 import { QualificationsMissingOwnExpiry } from '@/components/dataHealth/QualificationsMissingOwnExpiry'
 import { LeaveNotLinkedToPerson } from '@/components/dataHealth/LeaveNotLinkedToPerson'
 import { BookingsNotLinkedToPerson } from '@/components/dataHealth/BookingsNotLinkedToPerson'
@@ -142,6 +143,7 @@ export default function DataHealthPage() {
         <UsersMissingLineManager organizationId={organization.id} />
         {/* Rulebook 1.34.0 §11: ghost operatives to check (`ghostsToCheck`). */}
         <GhostsToCheck organizationId={organization.id} />
+        <CatalogueRowsWithoutPerson organizationId={organization.id} />
         {/* Rulebook 1.75.0 §5 (owner 23 Nov, C12): a library end date but no expiry of their own (`qualificationsMissingOwnExpiry`). */}
         <QualificationsMissingOwnExpiry organizationId={organization.id} />
         {/* Rulebook 1.51.0 §7 (Q4b): annual leave whose person matches nobody (`leaveRecordsWithoutPerson`). */}

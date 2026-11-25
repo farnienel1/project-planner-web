@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { activePeopleForAssignment, peopleForTaskPicker } from './taskAssigneePeople.ts'
+import { peopleForTaskPicker } from './taskAssigneePeople.ts'
 import type { Manager, Operative } from '../../types/index.ts'
 import {
   foldTaskFilterPeople,
@@ -72,10 +72,6 @@ test('an anonymised Deleted user is not a task assignee', () => {
   const picker = peopleForTaskPicker([deletedMgr], [deletedOp, liveOp], 'combined')
   assert.equal(picker.managers.length, 0)
   assert.equal(picker.operatives.map((row) => row.id).join(','), 'OP-LIVE')
-  assert.deepEqual(
-    activePeopleForAssignment([deletedOp, liveOp]).map((row) => row.id),
-    ['OP-LIVE']
-  )
 })
 
 // A converted ghost (rulebook §11): users/ROW-A is the ghost; its old operatives row keeps the id with the email
@@ -110,7 +106,7 @@ test('a converted ghost and its duplicate row are one person', () => {
 })
 
 test('the new-task picker never offers a ghost and lists each person once', () => {
-  const active = activePeopleForAssignment([ghostRow, ghostDuplicate, patRow])
+  const active = [ghostRow, ghostDuplicate, patRow].filter((row) => row.isActive !== false)
   const index = taskPersonIndex({ managers: [], operatives: [ghostRow, ghostDuplicate, patRow], roster: ghostRoster })
   const picker = peopleForTaskPicker([], active, 'operatives', ghostRoster, index)
   assert.deepEqual(picker.operatives.map((row) => row.id), ['op-pat'])
@@ -198,4 +194,21 @@ test('review of #364: a person is a ghost only when every account is a ghost', (
 
   const ghostOnly = taskPersonIndex({ managers: [], operatives: [opC], roster: [{ id: 'g1', email: 'c@x', ghost: true }] })
   assert.equal(ghostOnly.isGhost(ghostOnly.keyOf('operative', 'op-c')), true)
+})
+
+test('1.91.0: an assignee whose person no longer exists (a leftover managers row) reads "Removed user"', () => {
+  const leftover = manager({ id: 'm-deleted', email: 'deleted.person@site.com', firstName: 'Del', lastName: 'Eted' })
+  const live = manager({ id: 'm-live', email: 'live@site.com', firstName: 'Liv', lastName: 'Ing' })
+  const index = taskPersonIndex({ managers: [leftover, live], operatives: [], roster: [{ id: 'u-live', email: 'live@site.com' }] })
+  const names = taskAssigneeNames(
+    { managerIds: ['M-DELETED', 'm-live'], operativeIds: [] },
+    { managers: [leftover, live], operatives: [], index, goneIds: new Set(['m-deleted']) }
+  )
+  assert.deepEqual(
+    names.map((entry) => [entry.name, entry.removed]),
+    [
+      ['Removed user', true],
+      ['Liv Ing', false],
+    ]
+  )
 })
