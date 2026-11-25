@@ -1,7 +1,7 @@
 {
-  "rulebookVersion": "1.92.0",
-  "rulebookSha256": "3db87f7a498fa81e98d68eb6c7fbd15e50bc1b69049cad1d8e9536bba1bf1ec2",
-  "bundleSha256": "6fcc565bfd30fc55d174182abb636dfbd82fee33aaef93bc2e38cf1c826f73d3",
+  "rulebookVersion": "1.93.0",
+  "rulebookSha256": "bca55b9cb48521c0b950697b0b7f7ed427d77b5b9737d03eb411c75bf0dd6f51",
+  "bundleSha256": "40a029b665f90475118f774a5775c5f02da5a22f703802ab67802240f3f99d10",
   "crossPlatformContractSha256": "713114761ecf204c48aba9480e004c0e725c00286dc2c9818f2574d36c98cf92",
   "dataParityFixtureSha256": "c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f",
   "exports": [
@@ -100,6 +100,7 @@
     "DATA_PARITY_TRIGGERS",
     "DAY_RATE_OVERTIME_ROUNDED_NOTE",
     "DEADLINE_ASSIGNMENTS_DOCUMENT_ID",
+    "DEADLINE_MULTIPLE_FLOORS_GROUP",
     "DEADLINE_STATUSES",
     "DEFAULT_ANNUAL_LEAVE",
     "DEFAULT_ANNUAL_LEAVE_DAYS",
@@ -1090,6 +1091,7 @@
     "deadlineAssignedRecipients",
     "deadlineAssignmentWriteFields",
     "deadlineDaysRemaining",
+    "deadlineFloorGroup",
     "deadlineLocationWriteFields",
     "deadlineOnLocation",
     "deadlineProjectKey",

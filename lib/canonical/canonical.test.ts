@@ -21015,3 +21015,13 @@ test('1.92.0 deadlines: several floors, older data and older builds', async () =
   assert.equal(deadlineOnLocation(both!, 'Roof'), false)
   assert.equal(deadlineOnLocation({ location: 'Roof' }, 'roof'), true)
 })
+
+test('1.93.0 deadlines: two or more floors are one "Multiple floors" section', async () => {
+  const { deadlineFloorGroup, DEADLINE_MULTIPLE_FLOORS_GROUP } = await import('./workDocumentReaders.ts')
+  assert.equal(DEADLINE_MULTIPLE_FLOORS_GROUP, 'Multiple floors')
+  assert.equal(deadlineFloorGroup({ location: 'Ground Floor', locations: ['Ground Floor', '1st Floor'] }), 'Multiple floors')
+  assert.equal(deadlineFloorGroup({ location: 'Roof', locations: ['Roof'] }), 'Roof')
+  assert.equal(deadlineFloorGroup({ location: 'Roof' }), 'Roof')
+  assert.equal(deadlineFloorGroup({ locations: ['Roof', ' roof '] }), 'Roof')
+  assert.equal(deadlineFloorGroup({ location: '', locations: [] }), null)
+})

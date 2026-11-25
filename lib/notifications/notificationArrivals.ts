@@ -8,6 +8,8 @@ import { inboxNotificationVisibleToUser } from '@/lib/canonical'
 
 /** At most this many pop-ups are shown at once (the newest). */
 export const NOTIFICATION_TOAST_MAX = 3
+/** Owner 25 Nov: rows kept in the one grouped pop-up when several arrive at once (the newest). */
+export const NOTIFICATION_TOAST_LIST_MAX = 8
 /** A pop-up hides itself after this long. */
 export const NOTIFICATION_TOAST_MS = 6_000
 

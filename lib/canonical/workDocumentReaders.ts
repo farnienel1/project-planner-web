@@ -895,6 +895,21 @@ export function deadlineOnLocation(item: { locations?: ReadonlyArray<string> | n
   return list.some((name) => name.trim().toLowerCase() === want)
 }
 
+/** Rulebook 1.93.0 (owner 25 Nov): the floor-grouping section title for a deadline on two or more floors. */
+export const DEADLINE_MULTIPLE_FLOORS_GROUP = 'Multiple floors'
+
+/**
+ * Rulebook 1.93.0 (owner 25 Nov): the one floor-grouping section a deadline is listed in — its floor when it has
+ * exactly one, `DEADLINE_MULTIPLE_FLOORS_GROUP` when it has two or more (listed once, never under each floor), and
+ * null when it has none (the screen's "no area" section). Floors are compared ignoring case and spaces.
+ */
+export function deadlineFloorGroup(item: { locations?: ReadonlyArray<string> | null; location?: string | null }): string | null {
+  const raw = item.locations && item.locations.length > 0 ? item.locations : item.location ? [item.location] : []
+  const list = uniqueLocations([...raw])
+  if (list.length === 0) return null
+  return list.length === 1 ? list[0] : DEADLINE_MULTIPLE_FLOORS_GROUP
+}
+
 /** One item of a `settings/deadlines_*` document's `items` array. Null without an id. */
 export function parseDeadlineItem(
   raw: unknown,

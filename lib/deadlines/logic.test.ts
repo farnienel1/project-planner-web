@@ -206,10 +206,13 @@ test('owner 25 Nov: the timeline keeps completed deadlines the filter keeps', ()
   assert.deepEqual(timelineItems(rows).map((row) => row.id), ['done', 'open'])
 })
 
-test('1.92.0: a deadline on several floors is grouped under each and found by any', () => {
-  const rows = [item({ id: 'f', title: 'First fix', due: new Date('2026-06-20T09:00:00Z'), location: 'Ground Floor', locations: ['Ground Floor', '2nd Floor'] })]
+test('1.93.0: a deadline on several floors is listed once under Multiple floors and found by any', () => {
+  const rows = [
+    item({ id: 'f', title: 'First fix', due: new Date('2026-06-20T09:00:00Z'), location: 'Ground Floor', locations: ['Ground Floor', '2nd Floor'] }),
+    item({ id: 'g', title: 'Second fix', due: new Date('2026-06-20T09:00:00Z'), location: 'Ground Floor', locations: ['Ground Floor'] }),
+  ]
   const groups = groupDeadlines(rows, 'location', NOW)
-  assert.deepEqual(groups.map((group) => group.title).sort(), ['2nd Floor', 'Ground Floor'])
+  assert.deepEqual(groups.map((group) => [group.title, group.items.map((row) => row.id)]).sort(), [['Ground Floor', ['g']], ['Multiple floors', ['f']]])
   const found = filterDeadlines({ items: rows, filter: 'all', tradeFilter: 'All trades', search: '2nd floor', now: NOW })
   assert.equal(found.length, 1)
 })
