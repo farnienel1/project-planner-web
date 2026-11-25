@@ -211,6 +211,11 @@ export type TimesheetDraft = {
    * `parseTimesheetRevisionDocId`). Read only, never written.
    */
   revision?: number
+  /**
+   * Rulebook 1.90.0 §8: `true` while a reviewer's revision is a draft (stored `revisionDraft`). Read only — never
+   * written by a draft save (Send removes it with `timesheetRevisionDraftSendWriteFields`).
+   */
+  revisionDraft?: boolean
 }
 
 export function emptyTimesheetDraft(): TimesheetDraft {

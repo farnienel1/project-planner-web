@@ -27,6 +27,7 @@
  * Price work for that person and range; the red cells have none. Both apps only render these rows.
  */
 
+import { timesheetRevisionIsDraft } from './timesheetRevisionDraft'
 import { dateFromDayKeyInZone } from '../orgTime/zoneTime'
 import { zoneOrLondon } from './dayKeys'
 import { hasActiveLineManager, isSuperAdminAccount, timesheetSelfSigned, type LeaveSelfBookUser } from './leaveRequests'
@@ -192,6 +193,8 @@ export type PayrunSnapshotSheet = {
   documentId?: string | null
   /** 1.55.0 (review of #344): `timesheetVersionSignedOff` of the stored sheet (a self-signed sheet with its snapshot too). */
   signedOff?: boolean | null
+  /** 1.90.0: a reviewer's draft revision (`timesheetRevisionIsDraft`) — it waits for the line manager, not the person. */
+  revisionDraft?: boolean | null
 }
 
 /** The request fields the Snapshot reads (`parseOvertimeRequestDocument`). */
@@ -333,7 +336,7 @@ export function parsePayrunSnapshotSheet(docId: string, data: Record<string, unk
   if (!userId || !DAY_KEY.test(startDayKey)) return null
   const endKey = text(row.weekEndKey)
   const endDayKey = DAY_KEY.test(endKey) ? endKey : timesheetStoredStartDayKey(row.weekEnd, timeZone)
-  return { userId, startDayKey, endDayKey: DAY_KEY.test(endDayKey) ? endDayKey : '', status: parseTimesheetStatusFields(row), documentId: text(docId), signedOff: timesheetVersionSignedOff(row) }
+  return { userId, startDayKey, endDayKey: DAY_KEY.test(endDayKey) ? endDayKey : '', status: parseTimesheetStatusFields(row), documentId: text(docId), signedOff: timesheetVersionSignedOff(row), ...(timesheetRevisionIsDraft(row) ? { revisionDraft: true } : {}) }
 }
 
 // MARK: - Rows
@@ -413,7 +416,7 @@ function timesheetCell(
     // 1.77.0 (point 6, owner chose (a)): back with the person to sign again, or waiting for the line manager's approval.
     const personSigned = sheet ? sheet.status.operativeSignedAtMs != null : false
     const waiting = sheet
-      ? timesheetReportWaiting(sheet.bookingsChange, { state: revision?.state ?? 'none', personSigned })
+      ? timesheetReportWaiting(sheet.bookingsChange, { state: revision?.state ?? 'none', personSigned, draft: sheet.revisionDraft === true })
       : null
     // 1.79.0 (owner decision 24 Nov): an open revision says whose signature it waits for — the person's, or (once they
     // have signed) the line manager's counter-signature. A self-signed person who has signed waits for nobody's
@@ -422,7 +425,7 @@ function timesheetCell(
     const revisionLabel = revisionOpen
       ? timesheetRevisionWaitingForLabel(
           parseTimesheetRevisionDocId(sheet?.documentId)?.revision ?? 0,
-          personSigned ? (selfSigned ? null : 'lineManager') : 'person',
+          sheet?.revisionDraft === true ? 'lineManager' : personSigned ? (selfSigned ? null : 'lineManager') : 'person',
           person.firstName || person.name || person.displayName
         )
       : revision?.label ?? ''

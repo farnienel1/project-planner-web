@@ -33,6 +33,7 @@ import {
 import { timesheetSignedEntryChanges, type TimesheetSignedEntryChange } from './timesheetLateExtras'
 import { isTimesheetManagerSigned, isTimesheetOperativeSigned, parseTimesheetStatusFields, resolveTimesheetExportedAtMs } from './timesheetPeriod'
 import { timesheetMakeChangesAction, TIMESHEET_MAKE_CHANGES_REOPEN_HELP } from './timesheetMakeChanges'
+import { timesheetRevisionIsDraft } from './timesheetRevisionDraft'
 import { dayKeyInZone } from '../orgTime/zoneTime'
 
 function text(value: unknown): string {
@@ -622,6 +623,13 @@ export function timesheetNextStep(input: {
     return step('nobody', TIMESHEET_NEXT_STEP_EXPORTED_TEXT)
   }
   if (!personSigned) {
+    // Rulebook 1.90.0 (owner 24 Nov, point 4): a reviewer's draft revision is with the reviewer until they send it.
+    if (timesheetRevisionIsDraft(sheet)) {
+      const draftName = rev || 'this timesheet'
+      return isPerson
+        ? step('lineManager', `${lineManager.charAt(0).toUpperCase()}${lineManager.slice(1)} is making changes to ${draftName} — you can sign it once it is sent to you`)
+        : step('lineManager', `Your turn: make your changes to ${draftName}, then send it to ${person}`)
+    }
     if (rev) return isPerson ? step('person', `Your turn: sign ${rev}`) : step('person', `${rev} waiting for ${person} to sign`)
     return isPerson ? step('person', 'Your turn: sign your timesheet') : step('person', `Waiting for ${person} to sign`)
   }
@@ -700,6 +708,11 @@ export function timesheetCorrectionOption(input: {
   lineManagerName?: string | null
   /** As `timesheetNextStep`: false names "an admin" in place of the line manager. */
   hasLineManager?: boolean | null
+  /**
+   * Rulebook 1.90.0: the app creates the reviewer's revision as a draft (`timesheetRevisionCreateFields({ draft: true })`),
+   * so the help says nothing is sent until they send it. Missing: the 1.77.0 wording (an app without drafts).
+   */
+  revisionDraft?: boolean | null
 }): TimesheetCorrectionOption {
   const none: TimesheetCorrectionOption = { action: null, label: TIMESHEET_CORRECTION_LABEL, help: null, hasButton: false }
   const sheet = input.sheet ?? null
@@ -724,6 +737,9 @@ export function timesheetCorrectionOption(input: {
     })
     if (action === 'reopenReview') return option('makeChanges', TIMESHEET_MAKE_CHANGES_REOPEN_HELP)
     if (action === 'createRevision') {
+      if (input.revisionDraft === true) {
+        return option('createRevision', `This creates ${next} as a draft: change its bookings, then send it to ${person} to sign. Nothing is sent until you do.`)
+      }
       return option('createRevision', `This creates ${next} — ${person} signs it, then you sign it off. ${TIMESHEET_CORRECTION_REVISION_BOOKINGS_HELP}`)
     }
     return none
@@ -812,9 +828,11 @@ export function timesheetReportWaiting(
     | (Parameters<typeof timesheetReportKeepsSignedFigures>[0] & { waitingFor?: 'person' | 'lineManager' | null })
     | null
     | undefined,
-  revision: { state?: 'none' | 'due' | 'open' | null; personSigned?: boolean | null } | null = null
+  revision: { state?: 'none' | 'due' | 'open' | null; personSigned?: boolean | null; draft?: boolean | null } | null = null
 ): TimesheetReportWaiting {
   if (revision?.state === 'due') return 'person'
+  // 1.90.0: a reviewer's draft revision waits for the line manager to send it, not for the person.
+  if (revision?.state === 'open' && revision.draft === true) return 'lineManager'
   if (revision?.state === 'open' && revision.personSigned !== true) return 'person'
   if (timesheetReportKeepsSignedFigures(change)) return 'lineManager'
   if (change && change.exported !== true && change.reopened === true && change.waitingFor === 'person') return 'person'

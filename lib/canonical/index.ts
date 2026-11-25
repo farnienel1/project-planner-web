@@ -2202,6 +2202,8 @@ export {
   signedTimesheetBookingPlace,
   signedTimesheetBookingRecord,
   timesheetReviewerBookingEditRecord,
+  timesheetReviewerBookingFingerprint,
+  timesheetReviewerEditStillAsLeft,
   timesheetReviewerBookingEditKey,
   timesheetSheetChangedByReviewer,
   timesheetSignedNoticeText,
@@ -2708,3 +2710,6 @@ export {
   withOrganizationLineManager,
 } from './orgLineManagers'
 export type { OrgLineManagerEditTarget, OrgLineManagerFields, OrgLineManagerSource } from './orgLineManagers'
+// 1.90.0: draft revisions (§8, owner 24 Nov point 4).
+export * from './timesheetRevisionDraft'
+export * from './timesheetReviewerUndo'

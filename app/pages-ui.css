@@ -445,6 +445,39 @@ button.pu-item:disabled { cursor: not-allowed; opacity: 0.55; }
 .pu-correct { display: flex; flex-direction: column; gap: 6px; margin: 0 0 12px; }
 .pu-correct-t { color: var(--pu-ink); }
 
+/* Rulebook 1.90.0 (owner 24 Nov, points 3–5): the timesheet's one status card and one notes card. Existing tokens only
+   (light and dark come from them; ink on card colours is AA in both). */
+.pu-status { margin: 0 0 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.pu-status.action { border-color: var(--pu-primary); box-shadow: inset 4px 0 0 var(--pu-primary); }
+.pu-status.waiting { box-shadow: inset 4px 0 0 var(--pu-c-amber-ink); }
+.pu-status.done { box-shadow: inset 4px 0 0 var(--pu-c-green-ink); }
+.pu-status.action .pu-nextstep-dot { background: var(--pu-primary); }
+.pu-status.waiting .pu-nextstep-dot { background: var(--pu-c-amber-ink); }
+.pu-status.done .pu-nextstep-dot { background: var(--pu-c-green-ink); }
+.pu-status-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; min-width: 0; }
+.pu-status-error { padding: 10px 12px; border-radius: 10px; background: var(--pu-note-red-bg); color: var(--pu-note-red-ink); font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+.pu-status-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.pu-status-actions > .pu-btn { flex: 1 1 220px; min-height: 44px; white-space: normal; text-align: center; }
+.pu-status-help { margin: 0; font-size: 13px; color: var(--pu-muted); overflow-wrap: anywhere; }
+.pu-btn.danger { border: 0; background: var(--pu-c-red-ink); color: var(--pu-card); }
+.pu-btn.primary:disabled { background: var(--pu-c-slate-bg); color: var(--pu-c-slate-ink); opacity: 1; }
+.pu-notices { margin: 0 0 12px; }
+.pu-notices-list { list-style: none; margin: 0; padding: 0; }
+.pu-notice-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 16px; font-size: 13.5px; line-height: 1.45; color: var(--pu-ink); }
+.pu-notice-row + .pu-notice-row { border-top: 1px solid var(--pu-line-2); }
+.pu-notice-mark { width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; flex: none; background: var(--pu-blue); }
+.pu-notice-row.amber .pu-notice-mark { background: var(--pu-c-amber-ink); }
+.pu-notice-row.green .pu-notice-mark { background: var(--pu-c-green-ink); }
+.pu-notice-text { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+/* 1.90.0 (owner 24 Nov): the changes list and notices inside the one status card. */
+.pu-changes.embedded, .pu-notices.embedded { margin: 0; border-top: 1px solid var(--pu-line-2); padding-top: 10px; }
+.pu-changes.embedded .pu-card-h { padding-left: 0; padding-right: 0; }
+.pu-notices.embedded .pu-notice-row { padding-left: 0; padding-right: 0; }
+.pu-notices-foot { padding: 4px 16px 12px; border-top: 1px solid var(--pu-line-2); }
+.pu-notices-list:empty + .pu-notices-foot, .pu-notices > .pu-notices-foot:first-child { border-top: 0; padding-top: 12px; }
+.pu-changes.embedded .pu-change { padding-left: 0; padding-right: 0; }
+.pu-changes.embedded .pu-change-more { padding-left: 0; padding-right: 0; }
+.pu-versions { margin: 0 0 12px; padding: 4px 16px 12px; }
 /* User Timesheets → Exported (owner 24 Nov): every column fits at 100% zoom on a 1280–1440px laptop; versions collapsed
    by default. Tokens only, light and dark. Narrower screens keep the table's own sideways scroll (`.pu-tw`). */
 .pu-x-list .pu-table { font-size: 13px; }

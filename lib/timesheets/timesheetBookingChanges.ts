@@ -42,6 +42,9 @@ export function signedTimesheetSheetFromDraft(draft: TimesheetDraft): SignedTime
     // Rulebook 1.74.0: the reviewer's own edits from this sheet's review never send it back to the person.
     reviewerBookingEdits: draft.reviewerBookingEdits ?? null,
     exportedAt: draft.exportedAt ?? null,
+    // Rulebook 1.90.0: a draft revision records the reviewer's booking edits too (`timesheetReviewerBookingEditRecord`).
+    revision: draft.revision ?? null,
+    revisionDraft: draft.revisionDraft === true,
     weeklyReportOverride: draft.weeklyReportOverride
       ? {
           approvedAt: draft.weeklyReportOverride.approvedAt,
@@ -167,6 +170,35 @@ export function draftBookingChanges(input: {
     selfSigned: input.selfSigned,
   })
   return timesheetChangesWithLateExtras(bookingChange, draftLateExtrasSummary(input.draft)) as TimesheetChanges
+}
+
+/**
+ * Rulebook 1.90.0 (review of #457 finding 3): whether the live bookings differ from a stored exported version (a draft
+ * revision's previous version) — `signedTimesheetBookingChanges` of that version's stored document (`changed`). The
+ * same comparison that makes a revision due after export; nothing is compared here.
+ */
+export function storedVersionBookingsChanged(input: {
+  data: Record<string, unknown> | null | undefined
+  lines: ReadonlyArray<TimesheetPayrollLineItem>
+  bookings?: ReadonlyArray<Booking> | null
+  managerSiteBookings?: ReadonlyArray<ManagerSiteBooking> | null
+  timeZone?: string
+  personIds?: ReadonlyArray<string> | null
+  liveLoaded: boolean
+  selfSigned: boolean
+}): boolean {
+  if (!input.data) return false
+  return signedTimesheetBookingChanges({
+    sheet: input.data as unknown as SignedTimesheetSheet,
+    liveLines: signedTimesheetLiveLines(input.lines),
+    liveBookings:
+      input.bookings && input.managerSiteBookings
+        ? signedTimesheetBookingDocuments(input.bookings, input.managerSiteBookings, input.timeZone)
+        : null,
+    personIds: input.personIds ?? null,
+    liveLoaded: input.liveLoaded,
+    selfSigned: input.selfSigned,
+  }).changed
 }
 
 /**

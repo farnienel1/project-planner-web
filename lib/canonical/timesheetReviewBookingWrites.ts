@@ -49,18 +49,18 @@ export const TIMESHEET_REVIEW_BOOKING_FIELDS = [
 ] as const
 
 export const TIMESHEET_REVIEW_EDIT_BOOKING_NOTE =
-  'Saving changes the booking itself, so scheduling, daily Overview and the weekly report show the new hours. You can keep reviewing; the person sees the change when you counter-sign.'
+  'Saving changes the booking itself, so scheduling, daily overview and the weekly report show the new hours. You can keep reviewing; the person sees the change when you counter-sign.'
 export const TIMESHEET_REVIEW_DELETE_BOOKING_TITLE = 'Remove this booking?'
 export const TIMESHEET_REVIEW_DELETE_BOOKING_CONFIRM_LABEL = 'Remove booking'
 export const TIMESHEET_REVIEW_DELETE_BOOKING_CANCEL_LABEL = 'Go back'
 export const TIMESHEET_REVIEW_DELETE_BOOKING_MESSAGE =
-  'This deletes the booking from the schedule, not just from this timesheet. Scheduling, Daily Overview and the weekly report will no longer show it. You can keep reviewing; the person sees the change when you counter-sign.'
+  'This deletes the booking from the schedule, not just from this timesheet. Scheduling, daily overview and the weekly report will no longer show it. You can keep reviewing; the person sees the change when you counter-sign.'
 export const TIMESHEET_REVIEW_DELETE_OVERTIME_NOTE =
   'This booking is all overtime (it has no hours inside the working day), so removing the overtime removes the whole booking.'
 export const TIMESHEET_REVIEW_REMOVE_OVERTIME_TITLE = 'Remove the overtime from this booking?'
 export const TIMESHEET_REVIEW_REMOVE_OVERTIME_CONFIRM_LABEL = 'Remove overtime'
 export const TIMESHEET_REVIEW_REMOVE_OVERTIME_MESSAGE =
-  'This changes the booking itself, so scheduling, Daily Overview and the weekly report show the new hours. The standard hours stay. You can keep reviewing; the person sees the change when you counter-sign.'
+  'This changes the booking itself, so scheduling, daily overview and the weekly report show the new hours. The standard hours stay. You can keep reviewing; the person sees the change when you counter-sign.'
 export const TIMESHEET_REVIEW_DELETE_BOOKING_UNDO_NOTE = 'This cannot be undone. A manager can book it again.'
 export const TIMESHEET_REVIEW_BOOKING_REFUSED_MESSAGE =
   "You can't change this booking from the timesheet. Ask an admin or the job's manager to change it in projects or small works."
