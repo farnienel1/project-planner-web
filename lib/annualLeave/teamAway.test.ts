@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { HolidayBooking } from '@/types'
 import type { AnnualLeavePerson } from './annualLeavePerson'
-import { teamAwayCaption, teamAwayInitials, teamAwayOnDay, teamAwayTone } from './teamAway'
+import { teamAwayCaption, teamAwayInitials, teamAwayOnDay, teamAwayTone, teamLeaveOnDay } from './teamAway'
 
 const person = (id: string, displayName: string, leaveIds: string[] = [id]): AnnualLeavePerson => ({
   id,
@@ -91,4 +91,17 @@ test('caption: initials of up to the first two people away', () => {
   assert.equal(teamAwayCaption(['Amy Bell']), 'AB')
   assert.equal(teamAwayCaption(['Amy Bell', 'Ben Cole', 'Cal Dunn']), 'AB BC')
   assert.equal(teamAwayInitials('Madonna'), 'MA')
+})
+
+test('day summary (25 Nov): each person with leave that day, Full day / AM / PM, Approved or Pending; rejected never', () => {
+  const bookings = [
+    leave('1', 'amy', 'approved', '2026-11-24'),
+    leave('2', 'BEN-OLD', 'pending', '2026-11-24', '2026-11-24', 'PM'),
+    leave('3', 'cal', 'rejected', '2026-11-24'),
+  ]
+  assert.deepEqual(teamLeaveOnDay(day('2026-11-24'), people, bookings), [
+    { personId: 'amy', name: 'Amy Bell', slot: 'Full day', status: 'Approved' },
+    { personId: 'ben', name: 'Ben Cole', slot: 'PM', status: 'Pending' },
+  ])
+  assert.deepEqual(teamLeaveOnDay(day('2026-11-25'), people, bookings), [])
 })
