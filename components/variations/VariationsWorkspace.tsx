@@ -129,6 +129,8 @@ export function VariationsWorkspace({
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<Variation | null | 'new'>(null)
   const [openId, setOpenId] = useState<string | null>(null)
+  // Owner 25 Nov: a status picked on the summary and not saved there is saved with the next Edit's Save.
+  const [editStatus, setEditStatus] = useState<VariationStatus | null>(null)
   const [trades, setTrades] = useState<string[]>([])
   const [uploads, setUploads] = useState<UploadJob[]>([])
   const [exporting, setExporting] = useState(false)
@@ -448,7 +450,10 @@ export function VariationsWorkspace({
           trades={trades}
           subcontractors={subcontractors.map((row) => ({ id: row.id, name: row.name }))}
           currency={currency}
-          onClose={() => setEditing(null)}
+          onClose={() => {
+            setEditing(null)
+            setEditStatus(null)
+          }}
           onSave={async (draft, files) => {
             if (!organization.id) return
             let saved: Variation
@@ -489,8 +494,24 @@ export function VariationsWorkspace({
               console.error('[variations] save failed', err)
               throw new Error(readableVariationError(err))
             }
+            // A status picked on the summary before Edit is saved now, after the edits (owner 25 Nov), from the copy
+            // just saved, so only the status fields are written.
+            if (editing !== 'new' && editStatus && editStatus !== saved.status) {
+              try {
+                saved = await setVariationStatus({
+                  organizationId: organization.id,
+                  variation: saved,
+                  status: editStatus,
+                  actor: { uid: user.id, name: displayUser(user) },
+                })
+              } catch (err) {
+                console.error('[variations] status save failed', err)
+                warning = `${saved.voNumber} updated, but its status was not changed: ${readableVariationError(err)}`
+              }
+            }
             // The sheet closes now; evidence carries on uploading with its progress on the list.
             setEditing(null)
+            setEditStatus(null)
             toast(warning || (editing === 'new' ? `${saved.voNumber} saved as open` : `${saved.voNumber} updated`))
             if (files.length) void runUploads(saved, files)
             try {
@@ -521,20 +542,26 @@ export function VariationsWorkspace({
             return person ? displayUser(person) : id || 'Unknown'
           }}
           onClose={() => setOpenId(null)}
-          onEdit={() => {
+          onEdit={(status) => {
+            setEditStatus(status !== selected.status ? status : null)
             setEditing(selected)
             setOpenId(null)
           }}
           onStatus={async (status) => {
             if (!organization?.id) return
-            if (status === 'submitted' && !window.confirm('This variation has gone to the client. Its number will be locked.')) return
-            const next = await setVariationStatus({
-              organizationId: organization.id,
-              variation: selected,
-              status,
-              actor: { uid: user.id, name: displayUser(user) },
-            })
-            setOpenId(next.id)
+            try {
+              await setVariationStatus({
+                organizationId: organization.id,
+                variation: selected,
+                status,
+                actor: { uid: user.id, name: displayUser(user) },
+              })
+            } catch (err) {
+              console.error('[variations] status save failed', err)
+              throw new Error(readableVariationError(err))
+            }
+            toast(`${selected.voNumber} saved`)
+            setOpenId(null)
           }}
           onDelete={async () => {
             if (!organization?.id || !window.confirm(`Remove ${selected.voNumber} from the list? Its number is retired and never reused.`)) return
@@ -909,12 +936,41 @@ function VariationDrawer({
   showRemovedEvidence: boolean
   personName: (userId: string) => string
   onClose: () => void
-  onEdit: () => void
+  /** Opens the editor; a status picked here and not saved is passed on and saved with the editor's Save. */
+  onEdit: (status: VariationStatus) => void
+  /** Saves the status picked here and closes the summary. */
   onStatus: (status: VariationStatus) => Promise<void>
   onDelete: () => Promise<void>
   onRemoveEvidence: (evidenceId: string) => Promise<void>
 }) {
   const t = variationTotals(row)
+  // Owner 25 Nov: the status buttons pick a status; Save (grey until it differs from the stored one) writes it.
+  const [draftStatus, setDraftStatus] = useState<VariationStatus>(row.status)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  useEffect(() => {
+    setDraftStatus(row.status)
+    setSaveError(null)
+  }, [row.id, row.status])
+  const statusChanged = draftStatus !== row.status
+  const confirmSubmitted = () =>
+    draftStatus !== 'submitted' || window.confirm('This variation has gone to the client. Its number will be locked.')
+  const close = () => {
+    if (statusChanged && !window.confirm('Discard the status change?')) return
+    onClose()
+  }
+  const save = async () => {
+    if (!statusChanged || saving || !confirmSubmitted()) return
+    setSaving(true)
+    setSaveError(null)
+    try {
+      await onStatus(draftStatus)
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'The status was not saved. Try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
   const when = (date: Date | null | undefined) => (date ? variationDateText(date.getTime(), timeZone) : '')
   const section = (title: string, empty: boolean, children: React.ReactNode) => (
     <section className="mt-4">
@@ -928,7 +984,7 @@ function VariationDrawer({
         <div className="row" style={{ alignItems: 'center', gap: 8 }}>
           <h2 className="h2 grow">{row.voNumber}</h2>
           <span className="pill dot" data-hue={STATUS_HUE[row.status]}>{STATUS_LABEL[row.status]}</span>
-          <button type="button" className="btn sm ghost" onClick={onClose}>Close</button>
+          <button type="button" className="btn sm ghost" onClick={close}>Close</button>
         </div>
         <p className="mt-2 font-semibold">{row.heading}</p>
         {row.description ? <p className="muted" style={{ whiteSpace: 'pre-wrap' }}>{row.description}</p> : null}
@@ -940,10 +996,11 @@ function VariationDrawer({
         {canStatus ? (
           <div className="stack mt-3" style={{ gap: 4 }}>
             <span className="eyebrow">Status</span>
-            <VariationStatusButtons label={`Status of ${row.voNumber}`} value={row.status} onChange={(status) => void onStatus(status)} />
+            <VariationStatusButtons label={`Status of ${row.voNumber}`} value={draftStatus} onChange={setDraftStatus} disabled={saving} />
           </div>
         ) : null}
-        <p className="mt-2 small">{VARIATION_STATUS_COPY[row.status]}</p>
+        <p className="mt-2 small">{VARIATION_STATUS_COPY[draftStatus]}</p>
+        {saveError ? <p className="mt-2 small" role="alert" style={{ color: 'var(--red, #b42318)' }}>{saveError}</p> : null}
         {section(
           'Labour',
           row.labour.length === 0,
@@ -1035,7 +1092,28 @@ function VariationDrawer({
           <p key={`${item.from}-${index}`}>Renumbered {item.from} → {item.to} · {when(item.at)}</p>
         ))}
         <div className="row mt-4" style={{ gap: 8 }}>
-          {canEdit ? <button type="button" className="btn sm primary" onClick={onEdit}>Edit</button> : null}
+          {canStatus ? (
+            <button
+              type="button"
+              className="btn sm primary"
+              disabled={!statusChanged || saving}
+              onClick={() => void save()}
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          ) : null}
+          {canEdit ? (
+            <button
+              type="button"
+              className="btn sm"
+              onClick={() => {
+                if (statusChanged && !confirmSubmitted()) return
+                onEdit(draftStatus)
+              }}
+            >
+              Edit
+            </button>
+          ) : null}
           {canEdit ? <button type="button" className="btn sm ghost" onClick={() => void onDelete()}>Remove</button> : null}
         </div>
       </aside>
