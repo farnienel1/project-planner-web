@@ -1,6 +1,6 @@
 # Project Planner: sound and haptic feedback guide (web + iOS)
 
-**Version 1.2, 24 Nov 2026.** This is the single shared spec for feedback sounds (web and iOS) and haptics (iOS only).
+**Version 1.3, 25 Nov 2026.** This is the single shared spec for feedback sounds (web and iOS) and haptics (iOS only).
 
 Put an identical copy in both repos at `docs/design/feedback/feedback-sounds-haptics-guide.md`. Web is the source; iOS copies it, the same way it mirrors the rulebook.
 
@@ -67,6 +67,23 @@ When: once, when the person finishes signing in on this device (the emailed code
 
 Web source: `lib/feedbackSounds/feedback.ts` (`WELCOME_CHORD`, `scheduleWelcomeChord`).
 
+### 2.2 The notification chime (`chime`, made in code)
+
+Owner 25 Nov: a short pleasant sound when a new notification pops up. Made in code like §2.1 (no file, no samples): two soft sine notes a fourth apart.
+
+| Parameter | Value |
+|---|---|
+| Notes | E5 then A5 (659.25 Hz, 880.00 Hz) |
+| Waveform | sine, plus a second sine one octave up at 0.15 of the note |
+| Gap | the second note starts 0.14 s after the first |
+| Attack | linear rise from 0.0001 to web gain 0.35 × 0.6 over 0.015 s |
+| Release | exponential fall to 0.0001 over 0.5 s; oscillators stop 0.05 s later |
+| Length | about 0.7 s |
+
+When: web only (iOS has system push sounds), when a new inbox row for the signed-in person arrives while the app is open and its pop-up shows — a row created after the page loaded, never on the first load or a reconnect. The one sound not caused by the person's own action. Follows the **Sounds** setting and the throttle. No haptic.
+
+Web source: `lib/feedbackSounds/feedback.ts` (`NOTIFICATION_CHIME`, `scheduleNotificationChime`, `notificationArrivedSound`).
+
 ---
 
 ## 3. Haptics (iOS)
@@ -117,8 +134,9 @@ Each platform calls **one** function with a named event, for example `Feedback.p
 | `actionRefused` | The server or rules refused a save, request or approval, or it failed | error | error |
 | `warningShown` | A blocking warning is shown on save (e.g. unpaid break, clash) | none | warn |
 | `signedIn` | The person signs in on this device: password with no code step, a passkey, or the emailed code (owner 24 Nov; once, never on a reload; §2.1) | welcome | none |
+| `notificationReceived` | Web only: a new notification arrives for the signed-in person while the app is open and its pop-up shows (owner 25 Nov; never on load or reconnect; §2.2) | chime | none |
 
-**Not in v1:** navigation, tab switches, pull-to-refresh, typing, toggles in settings, sign out, push notifications (sign in is `signedIn` from 1.2). Anything new is added to this table first, in both repos.
+**Not in v1:** navigation, tab switches, pull-to-refresh, typing, toggles in settings, sign out, device push notifications (sign in is `signedIn` from 1.2; the in-app pop-up is `notificationReceived` from 1.3). Anything new is added to this table first, in both repos.
 
 ---
 
@@ -208,6 +226,7 @@ if __name__ == '__main__':
 
 ## Changelog
 
+- **1.3, 25 Nov 2026** (owner request 25 Nov). New event `notificationReceived` with a new sound `chime` (§2.2), made in code, played on web when a new notification pops up while the app is open. iOS copies this file again (no iOS change needed: iOS has no in-app pop-up).
 - **1.2, 24 Nov 2026** (owner request 24 Nov). New event `signedIn` with a new sound `welcome`, the sign-in chord of §2.1: made in code (no file), about 2.6 s, played once after the person signs in on this device, following the Sounds setting. iOS builds the same notes from §2.1 and copies this file again.
 - **1.1, 16 Nov 2026** (owner decisions 1–13, 16 Nov, recorded in web `docs/OWNER_DECISIONS.md`). Six events added to §4 for features that exist today: `leaveEdited`, `leaveRemoved`, `overtimeSent`, `overtimeReturned`, `claimsApproved`, `claimsDeclined`. They reuse the existing sounds; no new sound file. `bookingRequested`, `bookingApproved` and `bookingDeclined` stay in the table but have no feature yet (there is no booking-request flow). A sound plays only after the person's own action on this device, never from a listener, another person's change, page load or autosave. A partly saved bulk action plays `actionRefused`; "nothing new to save" plays no sound. Web default: Sounds **on**. iOS copies this file again (it is the source).
 - **1.0, 16 Nov 2026.** First version.

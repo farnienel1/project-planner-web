@@ -21,6 +21,8 @@ import {
   siteAuditDraftProblem,
   siteAuditHasUnsavedWork,
   siteAuditOutboxRecord,
+  personalSiteAuditDraftProblem,
+  personalSiteAuditOutboxRecord,
   type SiteAuditDraftItem,
 } from '@/lib/siteAudit/siteAuditCreateDraft'
 import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
@@ -30,7 +32,10 @@ import { useUnsavedChangesGuard } from '@/lib/navigation/useUnsavedChangesGuard'
 type DraftItem = SiteAuditDraftItem
 
 type Props = {
-  project: Project
+  /** A project or small works audit: the job picked on step 1. */
+  project?: Project
+  /** A personal audit (rulebook §26): the free-text job number and name typed on step 1, not linked to any job. */
+  personal?: { jobNumber: string; jobName: string }
   /** Leave the page (Cancel, or after the audit is saved). */
   onClose: () => void
   onCreated: () => void
@@ -45,7 +50,7 @@ type Props = {
  * the page's. Fields, checks, the record and the save are exactly the former dialog's (`siteAuditDraftProblem`,
  * `siteAuditOutboxRecord`, `sendSiteAudit`).
  */
-export function SiteAuditCreateFlow({ project, onClose, onCreated, onChangeJob, onUnsavedChange }: Props) {
+export function SiteAuditCreateFlow({ project, personal, onClose, onCreated, onChangeJob, onUnsavedChange }: Props) {
   const { organization, user } = useAuthStore()
 
   const [step, setStep] = useState<2 | 3 | 4>(2)
@@ -61,7 +66,7 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated, onChangeJob, 
   /** One id per audit, kept across Retry so photos already uploaded are not sent again. */
   const [auditId] = useState(() => newUuid())
   const [uploads, setUploads] = useState<Record<string, PhotoUpload>>({})
-  const outbox = useSiteAuditOutbox(organization?.id, user?.id)
+  const outbox = useSiteAuditOutbox(organization?.id, user?.id, personal ? { kind: 'personal' } : undefined)
   const sending = outbox.find((record) => record.id === auditId)
   const livePhotos = sending ? sending.items.map((item) => item.upload) : Object.values(uploads)
   const liveSummary = uploadSummary(livePhotos)
@@ -200,7 +205,16 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated, onChangeJob, 
   /** The save's own checks; a photo without a title takes the person back to it. */
   const blockingProblem = () => {
     const problem = siteAuditDraftProblem({ items, customTitle, auditDate })
-    if (!problem) return false
+    if (!problem) {
+      // A personal audit also passes the rulebook's own check (job name, date, photo titles, field limits).
+      const personalProblem = personal
+        ? personalSiteAuditDraftProblem({ jobNumber: personal.jobNumber, jobName: personal.jobName, customTitle, auditDate, items })
+        : null
+      if (!personalProblem) return false
+      setStep(2)
+      setError(personalProblem)
+      return true
+    }
     // Back to the step holding the field: Details for the audit title and date, Photos for the photos.
     setStep(problem.step)
     if (problem.itemId) {
@@ -225,20 +239,16 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated, onChangeJob, 
     setError(null)
     // Owner bug 17 Nov: the audit (text, items, photos) is kept in this browser BEFORE any upload, so a stuck or
     // failed photo never loses it. It stays listed as "Not sent" with Retry until the save succeeds.
-    const record = siteAuditOutboxRecord({
-      auditId,
-      organizationId: organization.id,
-      userId: user.id,
-      nowMs: Date.now(),
-      project,
-      auditType,
-      customTitle,
-      auditDate,
-      authorName,
-      visibleToOperatives,
-      items,
-      uploads,
-    })
+    const base = { auditId, organizationId: organization.id, userId: user.id, nowMs: Date.now(), auditType, customTitle, auditDate, authorName, items, uploads }
+    let record
+    if (personal) {
+      record = personalSiteAuditOutboxRecord({ ...base, jobNumber: personal.jobNumber, jobName: personal.jobName })
+    } else if (project) {
+      record = siteAuditOutboxRecord({ ...base, project, visibleToOperatives })
+    } else {
+      setSaving(false)
+      return
+    }
     const result = await sendSiteAudit(record)
     setSaving(false)
     if (result.saved) {
@@ -260,8 +270,9 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated, onChangeJob, 
           <div className="min-w-0">
             <p className="text-xs font-semibold text-(--ink3)">Job</p>
             <p className="truncate text-sm font-bold text-(--ink)">
-              {project.jobNumber ? `${project.jobNumber} · ` : ''}
-              {project.siteName}
+              {personal
+                ? `${personal.jobNumber.trim() ? `${personal.jobNumber.trim()} · ` : ''}${personal.jobName.trim()}`
+                : `${project?.jobNumber ? `${project.jobNumber} · ` : ''}${project?.siteName ?? ''}`}
             </p>
           </div>
           {onChangeJob && step === 2 ? (
@@ -309,15 +320,19 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated, onChangeJob, 
               <FormLabel>Date</FormLabel>
               <FormInput type="date" value={auditDate} onChange={(e) => setAuditDate(e.target.value)} />
             </div>
-            <label className="flex items-center gap-2 text-sm text-(--ink2)">
-              <input
-                type="checkbox"
-                checked={visibleToOperatives}
-                onChange={(e) => setVisibleToOperatives(e.target.checked)}
-              />
-              Visible to operatives
-            </label>
-            <p className="text-xs text-(--ink3)">Ops working on this job can view it.</p>
+            {personal ? null : (
+              <>
+                <label className="flex items-center gap-2 text-sm text-(--ink2)">
+                  <input
+                    type="checkbox"
+                    checked={visibleToOperatives}
+                    onChange={(e) => setVisibleToOperatives(e.target.checked)}
+                  />
+                  Visible to operatives
+                </label>
+                <p className="text-xs text-(--ink3)">Ops working on this job can view it.</p>
+              </>
+            )}
             <div className="flex gap-2">
               <button type="button" onClick={cancel} className="rounded-xl border border-(--line) px-4 py-2.5 text-sm text-(--ink2)">
                 Cancel
@@ -369,12 +384,17 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated, onChangeJob, 
                     <FormLabel>{SITE_AUDIT_FIELD_LABELS.comments}</FormLabel>
                     <FormTextarea value={item.comments} onChange={(e) => patch(item.id, { comments: e.target.value })} rows={3} />
                     <SiteAuditFieldCounter field="comments" value={item.comments} />
-                    <FormLabel>{SITE_AUDIT_FIELD_LABELS.assignee}</FormLabel>
-                    <FormInput value={item.assignee} onChange={(e) => patch(item.id, { assignee: e.target.value })} placeholder="Assignee name" />
-                    <SiteAuditFieldCounter field="assignee" value={item.assignee} />
-                    <FormLabel>{SITE_AUDIT_FIELD_LABELS.annotations}</FormLabel>
-                    <FormTextarea value={item.annotations} onChange={(e) => patch(item.id, { annotations: e.target.value })} rows={2} />
-                    <SiteAuditFieldCounter field="annotations" value={item.annotations} />
+                    {/* A personal audit stores no assignee or annotations (rulebook §26), so they are not asked. */}
+                    {personal ? null : (
+                      <>
+                        <FormLabel>{SITE_AUDIT_FIELD_LABELS.assignee}</FormLabel>
+                        <FormInput value={item.assignee} onChange={(e) => patch(item.id, { assignee: e.target.value })} placeholder="Assignee name" />
+                        <SiteAuditFieldCounter field="assignee" value={item.assignee} />
+                        <FormLabel>{SITE_AUDIT_FIELD_LABELS.annotations}</FormLabel>
+                        <FormTextarea value={item.annotations} onChange={(e) => patch(item.id, { annotations: e.target.value })} rows={2} />
+                        <SiteAuditFieldCounter field="annotations" value={item.annotations} />
+                      </>
+                    )}
                     <div className="flex items-center justify-between gap-2">
                       <button type="button" className="text-sm font-semibold text-(--red)" onClick={() => removeItem(item.id)}>
                         Remove
@@ -459,10 +479,12 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated, onChangeJob, 
                 <dt>Date</dt>
                 <dd>{siteAuditDateText(auditDate, timeZone)}</dd>
               </div>
-              <div>
-                <dt>Visible to operatives</dt>
-                <dd>{visibleToOperatives ? 'Yes' : 'No'}</dd>
-              </div>
+              {personal ? null : (
+                <div>
+                  <dt>Visible to operatives</dt>
+                  <dd>{visibleToOperatives ? 'Yes' : 'No'}</dd>
+                </div>
+              )}
             </dl>
             <h3 className="text-sm font-bold text-(--ink)">Items · {items.length}</h3>
             <ul className="space-y-2">

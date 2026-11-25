@@ -1,6 +1,7 @@
 import {
   accountKindFromFlags,
   notificationDestination,
+  notificationOrganizationSwitch,
   type AccountKind,
   type NotificationDestination,
 } from '@/lib/canonical'
@@ -135,6 +136,24 @@ export function inboxNotificationHref(
   timeZone?: string
 ): string {
   return hrefForNotificationDestination(destinationFromInboxRow(row, accountKindForNotifications(user), timeZone))
+}
+
+/**
+ * Where opening an inbox row goes — the notification centre's rule, shared with the in-app pop-up (owner 25 Nov).
+ * 1.16.0 (§13, interim): a row of another company the person belongs to opens that company first
+ * (`notificationOrganizationSwitch`; the ?switchOrg= sign-in path checks membership again); otherwise the row's
+ * destination (`inboxNotificationHref`).
+ */
+export function notificationOpenHref(
+  row: Parameters<typeof inboxNotificationHref>[0] & { organizationId?: string | null },
+  context: { user: User | null | undefined; openOrganizationId: string | null | undefined; timeZone?: string }
+): string {
+  const switchTo = notificationOrganizationSwitch({
+    rowOrganizationId: row.organizationId,
+    openOrganizationId: context.openOrganizationId,
+    membershipIds: [context.openOrganizationId, context.user?.organizationId].filter((id): id is string => Boolean(id)),
+  })
+  return switchTo ? `/dashboard?switchOrg=${encodeURIComponent(switchTo)}` : inboxNotificationHref(row, context.user, context.timeZone)
 }
 
 export function isTimesheetDestinationKind(kind: NotificationDestination['kind']): boolean {

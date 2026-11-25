@@ -5,30 +5,26 @@
  * number and job name are free text, not linked to any job, and print on the audit. Rules and shapes are
  * `personalSiteAudits.ts`; this file only shows them.
  */
-import { useEffect, useRef, useState } from 'react'
-import { format } from 'date-fns'
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   PERSONAL_SITE_AUDIT_CREATE_LABEL,
   PERSONAL_SITE_AUDIT_PRIVATE_NOTE,
   PERSONAL_SITE_AUDIT_SECTION_LABEL,
   personalSiteAuditTitle,
-  personalSiteAuditValidationError,
   personalSiteAuditsFor,
   type PersonalSiteAudit,
 } from '@/lib/canonical'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
-import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
-import { newUuid } from '@/lib/firebase/firestoreUtils'
-import { prepareAuditPhoto } from '@/lib/siteAudit/prepareAuditPhoto'
-import { uploadLimitError, uploadPickError } from '@/lib/security/uploadLimits'
-import { SITE_AUDIT_TYPES } from '@/components/projects/features/featureUi'
 import { listenPersonalSiteAudits, storedFileBytes, storedFileUrl } from '@/lib/payeClaims/payeClaimsData'
-import { sendSiteAudit, useSiteAuditOutbox } from '@/lib/siteAudit/siteAuditSender'
-import { outboxSummary, type SiteAuditOutboxRecord } from '@/lib/siteAudit/siteAuditOutbox'
 import { UnsentSiteAudits } from '@/components/site-audit/UnsentSiteAudits'
 import { SiteAuditFieldCounter } from '@/components/site-audit/SiteAuditFieldCounter'
-import { siteAuditFieldLimitError } from '@/lib/canonical'
+import { SiteAuditSteps } from '@/components/site-audit/SiteAuditSteps'
+import { SiteAuditCreateFlow } from '@/components/projects/siteAudit/SiteAuditCreateFlow'
+import { FormInput, FormLabel } from '@/components/forms/FormShell'
+import { PageBand, PageShell } from '@/components/ui/page'
+import { SITE_AUDIT_LEAVE_CONFIRM_MESSAGE, personalSiteAuditJobProblem } from '@/lib/siteAudit/siteAuditCreateDraft'
 
 import { downloadPdf } from '@/lib/pdf/downloadPdf'
 import { loadExportModule } from '@/lib/pdf/loadExportModule'
@@ -124,7 +120,7 @@ function PersonalAuditDetail({ audit, onClose }: { audit: PersonalSiteAudit; onC
 /** The Personal list: Create Personal Site Audit, then the person's audits, newest first. */
 export function PersonalSiteAuditsView({ onBack }: { onBack: () => void }) {
   const { audits, loaded, error } = usePersonalSiteAudits()
-  const [creating, setCreating] = useState(false)
+  const router = useRouter()
   const [open, setOpen] = useState<PersonalSiteAudit | null>(null)
   return (
     <div className="space-y-4">
@@ -135,7 +131,7 @@ export function PersonalSiteAuditsView({ onBack }: { onBack: () => void }) {
         <h2 className="text-lg font-bold">{PERSONAL_SITE_AUDIT_SECTION_LABEL}</h2>
       </div>
       <p className="muted small">{PERSONAL_SITE_AUDIT_PRIVATE_NOTE}</p>
-      <button type="button" className="btn primary w-full" onClick={() => setCreating(true)}>
+      <button type="button" className="btn primary w-full" onClick={() => router.push(PERSONAL_SITE_AUDIT_NEW_PATH)}>
         {PERSONAL_SITE_AUDIT_CREATE_LABEL}
       </button>
       <UnsentSiteAudits kind="personal" />
@@ -152,178 +148,90 @@ export function PersonalSiteAuditsView({ onBack }: { onBack: () => void }) {
           </button>
         ))}
       </div>
-      {creating ? <PersonalSiteAuditCreateFlow onClose={() => setCreating(false)} /> : null}
       {open ? <PersonalAuditDetail audit={open} onClose={() => setOpen(null)} /> : null}
     </div>
   )
 }
 
-type DraftItem = { id: string; title: string; location: string; comments: string; photo: File; previewUrl: string; takenAt: Date }
+/** Where Create Personal Site Audit opens, and where a saved or cancelled one returns (the Personal list). */
+export const PERSONAL_SITE_AUDIT_NEW_PATH = '/dashboard/site-audit/personal/new'
+export const PERSONAL_SITE_AUDIT_LIST_PATH = '/dashboard/site-audit?view=personal'
 
-/** Create Personal Site Audit: free-text job number and job name, type, date, then photos with a title each. */
-export function PersonalSiteAuditCreateFlow({ onClose }: { onClose: () => void }) {
-  const { organization, user } = useAuthStore()
-  const timeZone = useOrganizationTimeZone()
+/**
+ * Create Personal Site Audit as its own page (owner request 25 Nov), step by step like New site audit: 1 the free-text
+ * job number and job name (not linked to any job), then the shared create flow's Details, Photos and Review & save.
+ * Checks and the saved record are the former dialog's (`personalSiteAuditValidationError`, `sendSiteAudit`).
+ */
+export function PersonalSiteAuditNewScreen() {
+  const router = useRouter()
+  const { organization } = useAuthStore()
   const [jobNumber, setJobNumber] = useState('')
   const [jobName, setJobName] = useState('')
-  const [type, setType] = useState('General')
-  const [customTitle, setCustomTitle] = useState('')
-  const [date, setDate] = useState(() => dayKeyInZone(new Date(), timeZone))
-  const [items, setItems] = useState<DraftItem[]>([])
+  const [job, setJob] = useState<{ jobNumber: string; jobName: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [saving, setSaving] = useState<string | null>(null)
-  const [auditId] = useState(() => newUuid())
-  const outbox = useSiteAuditOutbox(organization?.id, user?.id, { kind: 'personal' })
-  const sending = outbox.find((record) => record.id === auditId)
-  const itemsRef = useRef(items)
-  itemsRef.current = items
-  useEffect(() => () => itemsRef.current.forEach((item) => URL.revokeObjectURL(item.previewUrl)), [])
-  const authorName = user ? `${user.firstName} ${user.surname}`.trim() || user.email : ''
-
-  const addPhotos = async (list: FileList | null) => {
-    if (!list?.length) return
-    setError(null)
-    const next: DraftItem[] = []
-    for (const file of Array.from(list)) {
-      const limit = uploadPickError(file, 'siteAudit')
-      if (limit) {
-        setError(limit)
-        return
-      }
-      let prepared: Awaited<ReturnType<typeof prepareAuditPhoto>>
-      try {
-        prepared = await prepareAuditPhoto(file)
-      } catch (error) {
-        setError(error instanceof Error ? error.message : 'This photo could not be added.')
-        return
-      }
-      const afterLimit = uploadLimitError(prepared.file, 'siteAudit')
-      if (afterLimit) {
-        setError(afterLimit)
-        return
-      }
-      next.push({ id: newUuid(), title: '', location: '', comments: '', photo: prepared.file, previewUrl: prepared.previewUrl, takenAt: prepared.takenAt })
-    }
-    setItems((current) => [...current, ...next])
+  const [unsaved, setUnsaved] = useState(false)
+  const leave = () => router.push(PERSONAL_SITE_AUDIT_LIST_PATH)
+  const backToList = () => {
+    if (unsaved && !window.confirm(SITE_AUDIT_LEAVE_CONFIRM_MESSAGE)) return
+    leave()
   }
-
-  const patch = (id: string, partial: Partial<DraftItem>) => setItems((current) => current.map((item) => (item.id === id ? { ...item, ...partial } : item)))
-
-  const submit = async () => {
-    if (!organization?.id || !user) return
-    const shapeError = personalSiteAuditValidationError({
-      jobNumber,
-      jobName,
-      date,
-      items: items.map((item) => ({ id: item.id, title: item.title })),
-    })
-    if (shapeError) {
-      setError(shapeError)
-      return
-    }
-    const limitError =
-      siteAuditFieldLimitError({ customTitle }) ?? items.map((item) => siteAuditFieldLimitError({ title: item.title, location: item.location, comments: item.comments })).find((m) => m) ?? null
-    if (limitError) {
-      setError(limitError)
+  const next = () => {
+    const problem = personalSiteAuditJobProblem({ jobNumber, jobName })
+    if (problem) {
+      setError(problem)
       return
     }
     setError(null)
-    // Owner bug 17 Nov: kept in this browser before any upload; listed as "Not sent" with Retry until saved.
-    const record: SiteAuditOutboxRecord = {
-      id: auditId,
-      kind: 'personal',
-      organizationId: organization.id,
-      userId: user.id,
-      createdAtMs: Date.now(),
-      updatedAtMs: Date.now(),
-      meta: { type, customTitle, date, authorName, jobNumber, jobName },
-      items: items.map((item) => ({
-        id: item.id,
-        title: item.title,
-        location: item.location,
-        comments: item.comments,
-        assignee: '',
-        annotations: '',
-        takenAtMs: item.takenAt.getTime(),
-        photo: item.photo,
-        fileName: item.photo.name,
-        upload: { itemId: item.id, status: 'pending', progress: 0, attempts: 0 },
-      })),
-    }
-    setSaving('Uploading photos')
-    const result = await sendSiteAudit(record)
-    setSaving(null)
-    if (result.saved) {
-      onClose()
-      return
-    }
-    setError(`${result.error ?? 'The audit was not sent.'} It is kept on this device as "Not sent" — you can close this and retry from the list.`)
+    setJob({ jobNumber: jobNumber.trim(), jobName: jobName.trim() })
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center" role="dialog" aria-label={PERSONAL_SITE_AUDIT_CREATE_LABEL}>
-      <div className="card pad stack w-full max-w-lg" style={{ gap: 10, maxHeight: '92vh', overflowY: 'auto' }}>
-        <div className="flex items-center justify-between">
-          <button type="button" className="btn sm ghost" onClick={onClose}>
-            Cancel
-          </button>
-          <b>{PERSONAL_SITE_AUDIT_CREATE_LABEL}</b>
-          <span style={{ width: 60 }} />
-        </div>
-        <p className="muted small">{PERSONAL_SITE_AUDIT_PRIVATE_NOTE} Not linked to any job.</p>
-        {error ? <p className="small" style={{ color: 'var(--red)' }}>{error}</p> : null}
-        <label className="small">
-          Job number
-          <input className="input" value={jobNumber} onChange={(e) => setJobNumber(e.target.value)} />
-          <SiteAuditFieldCounter field="jobNumber" value={jobNumber} />
-        </label>
-        <label className="small">
-          Job name
-          <input className="input" value={jobName} onChange={(e) => setJobName(e.target.value)} />
-          <SiteAuditFieldCounter field="jobName" value={jobName} />
-        </label>
-        <label className="small">
-          Audit type
-          <select className="input" value={type} onChange={(e) => setType(e.target.value)}>
-            {SITE_AUDIT_TYPES.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="small">
-          Title (optional)
-          <input className="input" value={customTitle} onChange={(e) => setCustomTitle(e.target.value)} />
-          <SiteAuditFieldCounter field="customTitle" value={customTitle} />
-        </label>
-        <label className="small">
-          Date
-          <input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-        </label>
-        {items.map((item, index) => (
-          <div key={item.id} className="card pad stack" style={{ gap: 6 }}>
-            <span className="small muted">PHOTO {index + 1} · Taken {format(item.takenAt, 'd MMM yyyy, HH:mm')}</span>
-            <img src={item.previewUrl} alt="" className="w-full rounded-xl object-cover" style={{ maxHeight: 220 }} />
-            <input className="input" placeholder="Title" aria-label="Title" value={item.title} onChange={(e) => patch(item.id, { title: e.target.value })} />
-            <SiteAuditFieldCounter field="title" value={item.title} />
-            <input className="input" placeholder="Location" aria-label="Location" value={item.location} onChange={(e) => patch(item.id, { location: e.target.value })} />
-            <SiteAuditFieldCounter field="location" value={item.location} />
-            <textarea className="input" placeholder="Comments" aria-label="Comments" rows={2} value={item.comments} onChange={(e) => patch(item.id, { comments: e.target.value })} />
-            <SiteAuditFieldCounter field="comments" value={item.comments} />
-            <button type="button" className="btn sm ghost" style={{ color: 'var(--red)' }} onClick={() => setItems((current) => current.filter((row) => row.id !== item.id))}>
-              Remove
-            </button>
+    <PageShell>
+      <PageBand
+        eyebrow={PERSONAL_SITE_AUDIT_SECTION_LABEL}
+        title={PERSONAL_SITE_AUDIT_CREATE_LABEL}
+        subtitle={job ? undefined : `${PERSONAL_SITE_AUDIT_PRIVATE_NOTE} Not linked to any job.`}
+        back={{ label: PERSONAL_SITE_AUDIT_SECTION_LABEL, onClick: backToList }}
+      />
+      {job && organization?.id ? (
+        <SiteAuditCreateFlow
+          personal={job}
+          onClose={leave}
+          onChangeJob={() => setJob(null)}
+          onUnsavedChange={setUnsaved}
+          onCreated={() => undefined}
+        />
+      ) : (
+        <div className="space-y-4">
+          <SiteAuditSteps current={1} />
+          <div className="pu-card sa-new-card space-y-4">
+            {error ? (
+              <p className="rounded-lg bg-(--red-t) px-3 py-2 text-xs font-medium text-(--red)" role="alert">
+                {error}
+              </p>
+            ) : null}
+            <div>
+              <FormLabel>Job number</FormLabel>
+              <FormInput value={jobNumber} onChange={(e) => setJobNumber(e.target.value)} placeholder="e.g. J-1042" aria-label="Job number" />
+              <SiteAuditFieldCounter field="jobNumber" value={jobNumber} />
+            </div>
+            <div>
+              <FormLabel required>Job name</FormLabel>
+              <FormInput value={jobName} onChange={(e) => setJobName(e.target.value)} placeholder="e.g. Station Road" aria-label="Job name" />
+              <SiteAuditFieldCounter field="jobName" value={jobName} />
+            </div>
+            <div className="flex gap-2">
+              <button type="button" onClick={leave} className="rounded-xl border border-(--line) px-4 py-2.5 text-sm text-(--ink2)">
+                Cancel
+              </button>
+              <button type="button" onClick={next} className="flex-1 rounded-xl bg-(--blue) py-2.5 text-sm font-bold text-white">
+                Next: details
+              </button>
+            </div>
           </div>
-        ))}
-        <label className="btn">
-          + Add photos
-          <input type="file" accept="image/*" multiple className="sr-only" onChange={(e) => { void addPhotos(e.target.files); e.target.value = '' }} />
-        </label>
-        <button type="button" className="btn primary" disabled={Boolean(saving)} onClick={() => void submit()}>
-          {saving ? (sending ? outboxSummary(sending).label : saving) : 'Save audit'}
-        </button>
-      </div>
-    </div>
+        </div>
+      )}
+    </PageShell>
   )
 }
+

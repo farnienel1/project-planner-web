@@ -15,9 +15,10 @@ export type FeedbackSound = (typeof FEEDBACK_SOUNDS)[number]
 
 /**
  * Sounds made in code with the Web Audio API, no file (guide §2.1). `welcome`: the slow chord after signing in
- * (owner 24 Nov, "a nice slow harmony when you first log in — unique, generated").
+ * (owner 24 Nov, "a nice slow harmony when you first log in — unique, generated"). `chime`: a short two-note tone when
+ * a new notification arrives while the app is open (owner 25 Nov, guide §2.2).
  */
-export const FEEDBACK_SYNTH_SOUNDS = ['welcome'] as const
+export const FEEDBACK_SYNTH_SOUNDS = ['welcome', 'chime'] as const
 export type FeedbackSynthSound = (typeof FEEDBACK_SYNTH_SOUNDS)[number]
 export type FeedbackSoundName = FeedbackSound | FeedbackSynthSound
 
@@ -52,6 +53,7 @@ export const FEEDBACK_EVENT_SOUNDS = {
   actionRefused: 'error',
   warningShown: null,
   signedIn: 'welcome',
+  notificationReceived: 'chime',
 } as const satisfies Record<string, FeedbackSoundName | null>
 
 export type FeedbackEvent = keyof typeof FEEDBACK_EVENT_SOUNDS
@@ -155,6 +157,62 @@ export function scheduleWelcomeChord(ctx: WelcomeAudioContext, startAt: number, 
     for (const [multiple, partial] of [
       [1, 1],
       [2, chord.octaveLevel],
+    ] as const) {
+      const osc = ctx.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.value = frequency * multiple
+      if (partial === 1) {
+        osc.connect(voice)
+      } else {
+        const partialGain = ctx.createGain()
+        partialGain.gain.setValueAtTime(partial, enter)
+        partialGain.connect(voice)
+        osc.connect(partialGain)
+      }
+      osc.start(enter)
+      osc.stop(end + 0.05)
+      oscillators += 1
+    }
+  })
+  return oscillators
+}
+
+// ─── The notification chime (guide §2.2) ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * The new-notification tone (owner 25 Nov): two soft sine notes a fourth apart (E5 then A5), each with a quick rise
+ * and a gentle fade, about 0.7 s in all. Made in code at play time (no file, no samples), so it is ours.
+ */
+export const NOTIFICATION_CHIME = {
+  /** Hz, in the order played. */
+  notes: [659.25, 880.0],
+  /** Seconds between the first note and the second. */
+  gapSec: 0.14,
+  /** Seconds each note takes to rise. */
+  attackSec: 0.015,
+  /** Seconds each note takes to fade to silence. */
+  releaseSec: 0.5,
+  /** Second partial (an octave up) relative to the note. */
+  octaveLevel: 0.15,
+  /** Each note's level relative to `FEEDBACK_GAIN`. */
+  noteScale: 0.6,
+} as const
+
+/** Schedules the chime on `ctx` from `startAt` (seconds, context time). Returns the number of oscillators. */
+export function scheduleNotificationChime(ctx: WelcomeAudioContext, startAt: number, gain = FEEDBACK_GAIN): number {
+  const chime = NOTIFICATION_CHIME
+  let oscillators = 0
+  chime.notes.forEach((frequency, index) => {
+    const enter = startAt + index * chime.gapSec
+    const end = enter + chime.attackSec + chime.releaseSec
+    const voice = ctx.createGain()
+    voice.gain.setValueAtTime(0.0001, enter)
+    voice.gain.linearRampToValueAtTime(gain * chime.noteScale, enter + chime.attackSec)
+    voice.gain.exponentialRampToValueAtTime(0.0001, end)
+    voice.connect(ctx.destination)
+    for (const [multiple, partial] of [
+      [1, 1],
+      [2, chime.octaveLevel],
     ] as const) {
       const osc = ctx.createOscillator()
       osc.type = 'sine'
@@ -336,7 +394,7 @@ export function createFeedbackPlayer(deps: FeedbackPlayerDeps): FeedbackPlayer {
     debug(`feedback: played ${sound}`)
   }
 
-  const playWelcome = (ctx: FeedbackAudioContext) => {
+  const playSynth = (ctx: FeedbackAudioContext, sound: FeedbackSynthSound) => {
     const askedAt = deps.now()
     const go = () => {
       try {
@@ -344,10 +402,11 @@ export function createFeedbackPlayer(deps: FeedbackPlayerDeps): FeedbackPlayer {
         if (ctx.state !== 'running' || deps.now() - askedAt > FEEDBACK_LATE_LIMIT_MS) return
         const synth = ctx as unknown as Partial<WelcomeAudioContext>
         if (typeof synth.createOscillator !== 'function') return
-        scheduleWelcomeChord(ctx as unknown as WelcomeAudioContext, ctx.currentTime + 0.02)
-        debug('feedback: played welcome')
+        const schedule = sound === 'chime' ? scheduleNotificationChime : scheduleWelcomeChord
+        schedule(ctx as unknown as WelcomeAudioContext, ctx.currentTime + 0.02)
+        debug(`feedback: played ${sound}`)
       } catch (error) {
-        debug('feedback: welcome failed', error)
+        debug(`feedback: ${sound} failed`, error)
       }
     }
     if (ctx.state === 'suspended') {
@@ -363,8 +422,8 @@ export function createFeedbackPlayer(deps: FeedbackPlayerDeps): FeedbackPlayer {
   const playSound = (sound: FeedbackSoundName) => {
     const ctx = ensureContext()
     if (!ctx) return
-    if (sound === 'welcome') {
-      playWelcome(ctx)
+    if (sound === 'welcome' || sound === 'chime') {
+      playSynth(ctx, sound)
       return
     }
     if (ctx.state === 'suspended') void ctx.resume().catch((error) => debug('feedback: resume refused', error))
@@ -485,6 +544,19 @@ export function feedback(event: FeedbackEvent): void {
     player()?.play(event)
   } catch {
     // Feedback can never break an action (guide §7).
+  }
+}
+
+/**
+ * The one sound not caused by the person's own action (owner 25 Nov, guide §4 `notificationReceived`): a new inbox row
+ * arrived while the app is open. Called only by the notification pop-up for a row created after the page loaded —
+ * never on the inbox's first load or a reconnect. Follows the Sounds setting and the throttle. Never throws.
+ */
+export function notificationArrivedSound(): void {
+  try {
+    player()?.play('notificationReceived')
+  } catch {
+    // never throw
   }
 }
 
