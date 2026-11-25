@@ -23,6 +23,9 @@ import { ScheduleSelectedDates } from '@/components/projects/scheduling/Schedule
 import { useScheduleDateRules } from '@/lib/scheduling/useOrganizationPayrollPolicy'
 import type { Project } from '@/types'
 import { feedback } from '@/lib/feedbackSounds/feedback'
+import { scheduleReturnHref } from '@/lib/scheduling/scheduleReturnWeek'
+import { calendarDayKey } from '@/lib/orgTime/organizationWeek'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 export function ScheduleSubcontractorForm({
   project,
@@ -195,7 +198,8 @@ export function ScheduleSubcontractorForm({
           )
         })
       )
-      router.push(scheduleBasePath)
+      // Owner decision 25 Nov: back to the week holding the first booked day (several weeks: the earliest).
+      router.push(scheduleReturnHref(scheduleBasePath, slotsList.map((slot) => calendarDayKey(slot.date)), organizationZoneOr()))
       feedback('bookingSaved')
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to create bookings')
