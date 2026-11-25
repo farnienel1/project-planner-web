@@ -51,7 +51,6 @@ export const DEADLINE_RESCHEDULE_REASONS = [
 ] as const
 
 export type DeadlineGrouping = 'date' | 'location' | 'trade' | 'assignee'
-export type DeadlineFilter = 'all' | 'overdue' | 'thisWeek' | 'atRisk' | 'complete'
 
 export type DeadlineChangeKind =
   | { type: 'created'; due: Date }

@@ -4,12 +4,21 @@
  */
 
 import { newUuid } from '@/lib/firebase/firestoreUtils'
-import { calendarDaysBetween, deadlineFloorGroup, deadlineUrgency, dueDayKey } from '@/lib/canonical'
+import {
+  DEADLINE_GROUPS,
+  calendarDaysBetween,
+  deadlineDayText,
+  deadlineDisplay,
+  deadlineFloorGroup,
+  deadlineMovedNote,
+  deadlineUrgency,
+  dueDayKey,
+} from '@/lib/canonical'
+import type { DeadlineDisplay, DeadlineTabKey } from '@/lib/canonical'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import type {
   Deadline,
   DeadlineChange,
-  DeadlineFilter,
   DeadlineGroup,
   DeadlineGrouping,
   DeadlineStatus,
@@ -43,8 +52,29 @@ export function urgency(item: Pick<Deadline, 'status' | 'due'>, now: Date): Dead
   return deadlineUrgency({ status: item.status, due: item.due }, now.getTime(), organizationZoneOr()) as DeadlineUrgency
 }
 
-export function isOverdue(value: DeadlineUrgency): boolean {
-  return value.kind === 'overdue'
+/**
+ * Rulebook 1.94.0 §23 `deadlineDisplay` for one stored deadline, on the organisation day: status, colour, tab, group
+ * and words. The start is the start date, else the day it was created (its `created` history entry).
+ */
+export function deadlineView(item: Deadline, now: Date): DeadlineDisplay {
+  const created = item.history.find((entry) => entry.kind.type === 'created')
+  return deadlineDisplay(
+    {
+      status: item.status,
+      progress: item.progress,
+      due: item.due,
+      start: item.start,
+      createdAt: created?.at ?? null,
+      completedAt: item.completedAt,
+    },
+    now.getTime(),
+    organizationZoneOr()
+  )
+}
+
+/** Rulebook 1.94.0 §23 `deadlineDayText` of a date's organisation day: "Fri 27 Nov" ("Fri 27 Nov 2026"). */
+export function deadlineDayLabel(date: Date | null | undefined, withYear = false): string {
+  return date ? deadlineDayText(dayKey(date), withYear) : ''
 }
 
 export function urgencyRank(value: DeadlineUrgency): number {
@@ -66,86 +96,6 @@ export function urgencyRank(value: DeadlineUrgency): number {
     case 'complete':
       return 7
   }
-}
-
-export function urgencyPhrase(value: DeadlineUrgency): string {
-  switch (value.kind) {
-    case 'complete':
-      return 'Complete'
-    case 'blocked':
-      return 'Blocked'
-    case 'overdue':
-      return value.days === 1 ? '1 day overdue' : `${value.days} days overdue`
-    case 'today':
-      return 'Due today'
-    case 'tomorrow':
-      return 'Due tomorrow'
-    case 'soon':
-    case 'thisWeek':
-      return `Due in ${value.days} days`
-    case 'later':
-      return value.days > 60 ? `Due in ${Math.floor(value.days / 7)} weeks` : `Due in ${value.days} days`
-  }
-}
-
-export function urgencyPill(value: DeadlineUrgency): string {
-  switch (value.kind) {
-    case 'complete':
-      return 'Done'
-    case 'blocked':
-      return 'Held'
-    case 'overdue':
-      return `+${value.days}d`
-    case 'today':
-      return 'Today'
-    case 'tomorrow':
-      return '1d'
-    case 'soon':
-    case 'thisWeek':
-      return `${value.days}d`
-    case 'later':
-      return value.days > 60 ? `${Math.floor(value.days / 7)}w` : `${value.days}d`
-  }
-}
-
-export function urgencyTone(value: DeadlineUrgency): 'red' | 'amber' | 'blue' | 'green' | 'slate' | 'leave' {
-  switch (value.kind) {
-    case 'complete':
-      return 'green'
-    case 'blocked':
-      return 'leave'
-    case 'overdue':
-      return 'red'
-    case 'today':
-    case 'tomorrow':
-    case 'soon':
-      return 'amber'
-    case 'thisWeek':
-      return 'blue'
-    case 'later':
-      return 'slate'
-  }
-}
-
-export function expectedProgress(item: Pick<Deadline, 'start' | 'due'>, now: Date): number | null {
-  if (!item.start || item.due.getTime() <= item.start.getTime()) return null
-  const total = item.due.getTime() - item.start.getTime()
-  const done = now.getTime() - item.start.getTime()
-  return Math.min(Math.max(done / total, 0), 1)
-}
-
-export function isAtRisk(item: Deadline, now: Date): boolean {
-  if (item.status === 'complete') return false
-  if (item.status === 'blocked' && daysRemaining(item, now) <= 7) return true
-  const expected = expectedProgress(item, now)
-  if (expected == null) return false
-  return expected - item.progress > 0.15 && daysRemaining(item, now) >= 0
-}
-
-export function pacingGap(item: Deadline, now: Date): number | null {
-  const expected = expectedProgress(item, now)
-  if (expected == null || expected <= item.progress) return null
-  return Math.round((expected - item.progress) * 100)
 }
 
 export function slippageDays(item: Deadline): number {
@@ -192,18 +142,6 @@ export function formatDay(date: Date): string {
   return londonDate(date, { day: 'numeric', month: 'short' })
 }
 
-export function formatFullDay(date: Date): string {
-  return londonDate(date, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
-}
-
-export function formatWeekdayLetter(date: Date): string {
-  return londonDate(date, { weekday: 'narrow' })
-}
-
-export function formatDayNumber(date: Date): string {
-  return londonDate(date, { day: 'numeric' })
-}
-
 export function formatStamp(date: Date): string {
   const day = formatDay(date)
   const time = londonDate(date, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
@@ -225,8 +163,9 @@ export function historyLine(change: DeadlineChange): string {
     case 'created':
       return `Created, due ${formatDay(kind.due)}`
     case 'rescheduled': {
-      const dir = kind.to.getTime() > kind.from.getTime() ? 'Pushed' : 'Pulled forward'
-      return `${dir} ${formatDay(kind.from)} → ${formatDay(kind.to)} · ${kind.reason}`
+      // Rulebook 1.94.0 §23 `deadlineMovedNote`: "Moved 1 day from 27 Nov" (never "1 days").
+      const note = deadlineMovedNote(kind.from, kind.to, organizationZoneOr())
+      return `${note || 'Moved'} → ${formatDay(kind.to)} · ${kind.reason}`
     }
     case 'progress':
       return `Progress updated to ${kind.progress}%`
@@ -271,65 +210,20 @@ export function scopedDeadlines(items: Deadline[], restrictToAssigneeUserIds?: s
   return items.filter((item) => item.assigneeUserIds.some((id) => ids.has(id.trim().toLowerCase())))
 }
 
-export function deadlineStats(items: Deadline[], now: Date) {
-  const overdueCount = items.filter((item) => isOverdue(urgency(item, now))).length
-  const thisWeekCount = items.filter((item) => {
-    const d = daysRemaining(item, now)
-    return item.status !== 'complete' && d >= 0 && d <= 7
-  }).length
-  const atRiskCount = items.filter((item) => isAtRisk(item, now)).length
-  const completeCount = items.filter((item) => item.status === 'complete').length
-  const criticalOpen = items.filter((item) => item.isCritical && item.status !== 'complete').length
-  const completionRatio = items.length === 0 ? 0 : completeCount / items.length
-  return { overdueCount, thisWeekCount, atRiskCount, completeCount, criticalOpen, completionRatio }
-}
-
 export function deadlineTrades(items: Deadline[]): string[] {
   return ['All trades', ...Array.from(new Set(items.map((item) => item.trade).filter((trade): trade is string => Boolean(trade)))).sort()]
 }
 
-export function loadOnDay(items: Deadline[], day: Date): number {
-  const key = dayKey(day)
-  return items.filter((item) => item.status !== 'complete' && dayKey(item.due) === key).length
-}
-
-export function hasOverdueOnDay(items: Deadline[], day: Date, now: Date): boolean {
-  const key = dayKey(day)
-  return items.some((item) => isOverdue(urgency(item, now)) && dayKey(item.due) === key)
-}
-
-export function railDays(now: Date, count = 21, lead = 3): Date[] {
-  const startIndex = dayIndex(now) - lead
-  return Array.from({ length: count }, (_, offset) => new Date((startIndex + offset) * DAY_MS + 12 * 60 * 60 * 1000))
-}
-
-function matchesFilter(item: Deadline, filter: DeadlineFilter, now: Date): boolean {
-  switch (filter) {
-    case 'all':
-      return true
-    case 'overdue':
-      return isOverdue(urgency(item, now))
-    case 'thisWeek': {
-      const d = daysRemaining(item, now)
-      return item.status !== 'complete' && d >= 0 && d <= 7
-    }
-    case 'atRisk':
-      return isAtRisk(item, now)
-    case 'complete':
-      return item.status === 'complete'
-  }
-}
-
 export function filterDeadlines(params: {
   items: Deadline[]
-  filter: DeadlineFilter
+  tab: DeadlineTabKey
   tradeFilter: string
   search: string
   now: Date
 }): Deadline[] {
   const query = params.search.trim().toLowerCase()
   return params.items.filter((item) => {
-    if (!matchesFilter(item, params.filter, params.now)) return false
+    if (!deadlineView(item, params.now).tabs.includes(params.tab)) return false
     if (params.tradeFilter !== 'All trades' && item.trade !== params.tradeFilter) return false
     if (!query) return true
     const hay = [item.title, deadlineLocationList(item).join(' '), item.trade || '', item.company || '', item.assignees.join(' ')]
@@ -339,35 +233,22 @@ export function filterDeadlines(params: {
   })
 }
 
+const GROUP_TONES: Record<string, DeadlineGroup['tone']> = {
+  overdue: 'red',
+  thisWeek: 'amber',
+  nextWeek: null,
+  later: null,
+  completed: 'green',
+}
+
+/** Rulebook 1.94.0 §23: the date groups are `deadlineDisplay(...).group`, in `DEADLINE_GROUPS` order. */
 function dateGroups(list: Deadline[], now: Date): DeadlineGroup[] {
-  const buckets: { id: string; tone: DeadlineGroup['tone']; items: Deadline[] }[] = [
-    { id: 'Overdue', tone: 'red', items: [] },
-    { id: 'Today', tone: 'amber', items: [] },
-    { id: 'Tomorrow', tone: 'amber', items: [] },
-    { id: 'This week', tone: 'blue', items: [] },
-    { id: 'Next week', tone: 'slate', items: [] },
-    { id: 'Later', tone: 'slate', items: [] },
-    { id: 'Complete', tone: 'green', items: [] },
-  ]
-  for (const item of list) {
-    const d = daysRemaining(item, now)
-    let idx = 5
-    if (item.status === 'complete') idx = 6
-    else if (d < 0) idx = 0
-    else if (d === 0) idx = 1
-    else if (d === 1) idx = 2
-    else if (d <= 7) idx = 3
-    else if (d <= 14) idx = 4
-    buckets[idx].items.push(item)
-  }
-  return buckets
-    .filter((bucket) => bucket.items.length > 0)
-    .map((bucket) => ({
-      id: bucket.id,
-      title: bucket.id,
-      tone: bucket.tone,
-      items: [...bucket.items].sort((a, b) => a.due.getTime() - b.due.getTime()),
-    }))
+  return DEADLINE_GROUPS.map((group) => ({
+    id: group.key,
+    title: group.label,
+    tone: GROUP_TONES[group.key] ?? null,
+    items: list.filter((item) => deadlineView(item, now).group === group.key).sort((a, b) => a.due.getTime() - b.due.getTime()),
+  })).filter((group) => group.items.length > 0)
 }
 
 function keyedGroups(list: Deadline[], now: Date, keysOf: (item: Deadline) => string[]): DeadlineGroup[] {
@@ -409,15 +290,6 @@ export function groupDeadlines(list: Deadline[], grouping: DeadlineGrouping, now
     case 'assignee':
       return keyedGroups(list, now, (item) => [item.assignees[0] || 'Unassigned'])
   }
-}
-
-export function visibleGroups(groups: DeadlineGroup[], selectedDay: Date | null): DeadlineGroup[] {
-  if (!selectedDay) return groups
-  const key = dayKey(selectedDay)
-  return groups.flatMap((group) => {
-    const items = group.items.filter((item) => dayKey(item.due) === key)
-    return items.length === 0 ? [] : [{ ...group, items }]
-  })
 }
 
 /**
@@ -540,30 +412,6 @@ export function mergeDeadlinesFirstWriterWins(remote: Deadline[], local: Deadlin
   return [...byId.values()].sort((a, b) => a.due.getTime() - b.due.getTime())
 }
 
-export function riskBannerMessage(stats: {
-  overdueCount: number
-  atRiskCount: number
-  criticalOpen: number
-}): string | null {
-  if (stats.overdueCount > 0 && stats.criticalOpen > 0) {
-    return `${stats.overdueCount} overdue, ${stats.criticalOpen} on the critical path`
-  }
-  if (stats.overdueCount > 0) {
-    return stats.overdueCount === 1 ? '1 deadline is overdue' : `${stats.overdueCount} deadlines are overdue`
-  }
-  if (stats.atRiskCount > 0) {
-    return stats.atRiskCount === 1 ? '1 deadline is behind pace' : `${stats.atRiskCount} deadlines are behind pace`
-  }
-  return null
-}
-
-export function projectedFinish(item: Deadline, now: Date): Date {
-  if (!item.start || item.progress <= 0.02) return item.due
-  const elapsed = now.getTime() - item.start.getTime()
-  const total = elapsed / item.progress
-  return new Date(item.start.getTime() + total)
-}
-
 export function projectNotificationName(siteName: string, jobNumber: string): string {
   const site = siteName.trim()
   const job = jobNumber.trim()
@@ -572,16 +420,16 @@ export function projectNotificationName(siteName: string, jobNumber: string): st
   return `${site} · ${job}`
 }
 
-export function emptyDeadlineCopy(filter: DeadlineFilter, canManage: boolean, contextKind: string): { title: string; message: string } {
+export function emptyDeadlineCopy(filter: DeadlineTabKey, canManage: boolean, contextKind: string): { title: string; message: string } {
   const kind = contextKind.toLowerCase()
   switch (filter) {
     case 'overdue':
       return { title: 'Nothing overdue', message: 'Nothing matches this filter right now. Switch back to All to see the full programme.' }
-    case 'atRisk':
+    case 'behindPace':
       return { title: 'Everything on pace', message: 'Nothing matches this filter right now. Switch back to All to see the full programme.' }
     case 'thisWeek':
       return { title: 'Nothing due this week', message: 'Nothing matches this filter right now. Switch back to All to see the full programme.' }
-    case 'complete':
+    case 'completed':
       return { title: 'Nothing completed yet', message: 'Nothing matches this filter right now. Switch back to All to see the full programme.' }
     case 'all':
       return {

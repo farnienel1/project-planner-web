@@ -4,3 +4,8 @@ a3ae43e881e4d0bab81b878fd2c7373094a8feb5:lib/canonical/parity-fixture.json:gener
 2c21bee03a6464ce9bba93177d059f4d681cfc71:lib/auth/mfa/mfaSessionCookie.test.ts:private-key:459
 # Test data, not a secret: a sample warning resolution key in a dismiss test (since built from parts, #372).
 a926ef050f8321a2a757afcfb3a9df59f08c1a1a:lib/warnings/warningDismiss.test.ts:generic-api-key:90
+# Not a secret: the packing tool renamed a local helper in the packed rulebook, which read like a key; undone in 83655ca.
+# The same false match in the first version of this comment:
+01dfeff08bd2ffd880a51b386be93d9f5de6f5e7:.gitleaksignore:generic-api-key:7
+7a1e356bc30116fd339942a525e089657e5e7836:functions/canonical-business.js:generic-api-key:4804
+7a1e356bc30116fd339942a525e089657e5e7836:lib/canonical/dist/canonical-business.js:generic-api-key:4804

@@ -17,22 +17,19 @@ import {
   formatStamp,
   formatWeekCommencing,
   historyLine,
-  pacingGap,
+  deadlineDayLabel,
+  deadlineView,
   predecessors,
   progressPercent,
-  projectedFinish,
   statusLabel,
-  urgency,
-  urgencyPhrase,
-  urgencyPill,
-  urgencyTone,
 } from '@/lib/deadlines/logic'
+import type { DeadlineDisplay } from '@/lib/canonical'
 import {
   DEADLINE_LOCATION_PRESETS,
   DEADLINE_RESCHEDULE_REASONS,
   DEADLINE_TRADE_OPTIONS,
 } from '@/lib/deadlines/types'
-import type { Deadline, DeadlineUrgency } from '@/lib/deadlines/types'
+import type { Deadline } from '@/lib/deadlines/types'
 import type { SiteAudit } from '@/types'
 import { ReportFileLink } from '@/components/fileReports/ReportFileLink'
 import { StoredFileLink } from '@/components/projects/features/StoredFileLink'
@@ -96,38 +93,46 @@ export function Sheet({
   )
 }
 
-export function Countdown({ value }: { value: DeadlineUrgency }) {
+/** Rulebook 1.94.0 §23: the 30 px progress ring in the deadline's colour (a check once completed). */
+export function ProgressRing({ view }: { view: DeadlineDisplay }) {
+  const r = 12
+  const length = 2 * Math.PI * r
+  const done = view.group === 'completed'
   return (
-    <span className="pill shrink-0" data-hue={urgencyTone(value)} style={{ background: 'var(--ht)', color: 'var(--h)' }}>
-      {urgencyPill(value)}
+    <span className="dl-ring" data-dl-tone={view.tone} aria-hidden>
+      <svg viewBox="0 0 30 30">
+        <circle className="track" cx="15" cy="15" r={r} fill="none" strokeWidth="3" />
+        <circle
+          className="fill"
+          cx="15"
+          cy="15"
+          r={r}
+          fill="none"
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeDasharray={`${(view.progressPercent / 100) * length} ${length}`}
+          transform="rotate(-90 15 15)"
+        />
+        {done ? <path d="M10 15.5l3.2 3.2L20 12" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /> : null}
+      </svg>
     </span>
   )
 }
 
-export function Pacing({ item, now }: { item: Deadline; now: Date }) {
-  const tone = urgencyTone(urgency(item, now))
-  const expected = item.start && item.due.getTime() > item.start.getTime()
-    ? Math.min(Math.max((now.getTime() - item.start.getTime()) / (item.due.getTime() - item.start.getTime()), 0), 1)
-    : null
-  const gap = pacingGap(item, now)
+/** Rulebook 1.94.0 §23: the progress bar with a tick where progress should be by today, and its words. */
+export function ProgressBar({ view, big = false }: { view: DeadlineDisplay; big?: boolean }) {
+  const label = view.paceText ?? `${view.progressPercent}% complete`
   return (
-    <div>
-      <div className="relative h-2 overflow-hidden rounded-full bg-(--soft2)">
-        <div
-          className="h-full rounded-full"
-          data-hue={tone}
-          style={{ width: `${Math.min(100, Math.max(0, item.progress * 100))}%`, background: 'var(--h)' }}
-        />
-        {expected != null ? (
-          <span className="absolute top-[-2px] h-3 w-[2px] bg-(--ink)" style={{ left: `${Math.min(100, expected * 100)}%` }} />
-        ) : null}
+    <div data-dl-tone={view.tone}>
+      <div
+        className={`dl-bar${big ? ' big' : ''}`}
+        role="img"
+        aria-label={view.expectedPercent != null && view.group !== 'completed' ? `${view.progressPercent}% complete, expected ${view.expectedPercent}%` : `${view.progressPercent}% complete`}
+      >
+        <span className="fill" style={{ width: `${view.progressPercent}%` }} />
+        {view.expectedPercent != null && view.group !== 'completed' ? <span className="tick" style={{ left: `${view.expectedPercent}%` }} /> : null}
       </div>
-      <p className="mt-1 text-[11.5px] font-semibold text-(--ink3)">
-        {progressPercent(item)}% complete
-        {gap != null && gap >= 5 && item.status !== 'complete' ? (
-          <span className="font-bold text-(--red)"> · {gap}% behind pace</span>
-        ) : null}
-      </p>
+      <p className={`dl-bar-text${view.paceText ? ' behind' : ''}`}>{label}</p>
     </div>
   )
 }
@@ -144,6 +149,7 @@ function Field({ label, value }: { label: string; value: string }) {
 export function DetailSheet({
   item,
   items,
+  projectLabel,
   now,
   canManage,
   audits,
@@ -156,6 +162,8 @@ export function DetailSheet({
 }: {
   item: Deadline
   items: Deadline[]
+  /** The project or small works the deadline is on ("Site · J-1042"), never the floor. */
+  projectLabel: string
   now: Date
   canManage: boolean
   audits: SiteAudit[]
@@ -168,25 +176,24 @@ export function DetailSheet({
 }) {
   const [percent, setPercent] = useState(progressPercent(item))
   useEffect(() => setPercent(progressPercent(item)), [item])
-  const value = urgency(item, now)
-  const gap = pacingGap(item, now)
+  const view = deadlineView(item, now)
+  const completed = view.group === 'completed'
   const before = predecessors(items, item)
   const after = dependents(items, item)
   const audit = audits.find((row) => row.id === item.siteAuditId)
-  const finish = projectedFinish(item, now)
   return (
     <Sheet
       title="Deadline"
-      subtitle={deadlineLocationText(item) || undefined}
+      subtitle={projectLabel || undefined}
       onClose={onClose}
       footer={
         canManage ? (
           <div className="flex flex-wrap gap-2">
-            <button type="button" className="btn" onClick={onReschedule}>
+            <button type="button" className="tk-btn" onClick={onReschedule}>
               Reschedule
             </button>
             {item.status !== 'complete' ? (
-              <button type="button" className="btn primary" onClick={onComplete}>
+              <button type="button" className="tk-btn primary" onClick={onComplete}>
                 Mark complete
               </button>
             ) : null}
@@ -195,20 +202,24 @@ export function DetailSheet({
       }
     >
       <div className="space-y-4">
-        <div className="card pad" data-hue={urgencyTone(value)}>
-          <div className="flex items-start gap-3">
-            <h2 className="min-w-0 grow font-(family-name:--head) text-xl font-extrabold">{item.title}</h2>
-            <Countdown value={value} />
+        <div className="card pad" data-dl-tone={view.tone}>
+          <h2 className="font-(family-name:--head) text-xl font-extrabold">{item.title}</h2>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <span className="dl-status">{view.statusLabel}</span>
+            <span className="dl-tag">
+              {view.dueText}
+              {view.group !== 'completed' ? ` · ${deadlineDayLabel(item.due)}` : ''}
+            </span>
+            {item.isCritical ? <span className="dl-tag critical">Critical path</span> : null}
           </div>
-          <p className="mt-1 text-sm text-(--ink3)">{urgencyPhrase(value)}</p>
         </div>
         <div className="card pad">
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-[11px] font-bold tracking-[0.08em] text-(--ink3)">PROGRESS</h3>
             <span className="pill">{statusLabel(item.status)}</span>
           </div>
-          <Pacing item={item} now={now} />
-          {canManage ? (
+          <ProgressBar view={view} big />
+          {canManage && !completed ? (
             <div className="mt-3 grid grid-cols-5 gap-2">
               {PROGRESS_STEPS.map((step) => (
                 <button key={step} type="button" className={`btn sm ${percent === step ? 'primary' : ''}`} onClick={() => setPercent(step)}>
@@ -217,20 +228,18 @@ export function DetailSheet({
               ))}
             </div>
           ) : null}
-          {canManage && percent !== progressPercent(item) ? (
+          {canManage && !completed && percent !== progressPercent(item) ? (
             <button type="button" className="btn primary mt-3" onClick={() => onProgress(percent)}>
               Save progress
             </button>
-          ) : null}
-          {gap != null && gap >= 5 && item.status !== 'complete' ? (
-            <p className="mt-3 rounded-xl bg-(--warn-t) p-3 text-[12.5px]">
-              At the current rate this finishes around {formatDay(finish)}. That is {gap}% behind where the programme expects it to be today.
-            </p>
           ) : null}
         </div>
         <div className="card divide-y divide-(--line)">
           <Field label="Location" value={deadlineLocationText(item) || 'Not set'} />
           <Field label="Trade" value={item.trade || 'Not set'} />
+          <Field label="Critical path" value={item.isCritical ? 'Yes — slipping this pushes the whole programme' : 'No'} />
+          <Field label="Work starts" value={item.start ? deadlineDayLabel(item.start, true) : 'Not set'} />
+          <Field label="Due" value={deadlineDayLabel(item.due, true)} />
           <Field
             label="Responsible"
             value={item.assignees.length === 0 ? 'Unassigned' : `${item.assignees.join(', ')}${item.company ? ` · ${item.company}` : ''}`}
@@ -296,13 +305,13 @@ export function DetailSheet({
               {before.map((dep) => (
                 <button key={dep.id} type="button" className="block w-full px-4 py-3 text-left" onClick={() => onOpen(dep.id)}>
                   <span className="block text-sm font-semibold">{dep.title}</span>
-                  <span className="text-xs text-(--ink3)">Must finish first · {urgencyPhrase(urgency(dep, now))}</span>
+                  <span className="text-xs text-(--ink3)">Must finish first · {deadlineView(dep, now).dueText}</span>
                 </button>
               ))}
               {after.map((dep) => (
                 <button key={dep.id} type="button" className="block w-full px-4 py-3 text-left" onClick={() => onOpen(dep.id)}>
                   <span className="block text-sm font-semibold">{dep.title}</span>
-                  <span className="text-xs text-(--ink3)">Waits on this · due {formatDay(dep.due)}</span>
+                  <span className="text-xs text-(--ink3)">Waits on this · due {deadlineDayLabel(dep.due)}</span>
                 </button>
               ))}
             </div>

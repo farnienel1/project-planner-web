@@ -21025,3 +21025,48 @@ test('1.93.0 deadlines: two or more floors are one "Multiple floors" section', a
   assert.equal(deadlineFloorGroup({ locations: ['Roof', ' roof '] }), 'Roof')
   assert.equal(deadlineFloorGroup({ location: '', locations: [] }), null)
 })
+
+test('1.94.0 deadlineDisplay: status, tone, tabs, groups and words on the organisation day', () => {
+  // Wednesday 25 Nov 2026, London. Week = Mon 23 – Sun 29 Nov.
+  const now = Date.parse('2026-11-25T10:00:00Z')
+  const tz = 'Europe/London'
+  const v = (item: Record<string, unknown>) => R112.deadlineDisplay(item, now, tz)
+  const overdue = v({ status: 'inProgress', progress: 0.5, due: '2026-11-23', start: '2026-11-01' })
+  assert.equal(overdue.status, 'overdue'); assert.equal(overdue.tone, 'red'); assert.equal(overdue.group, 'overdue')
+  assert.deepEqual(overdue.tabs, ['all', 'overdue']); assert.equal(overdue.dueText, '2 days overdue'); assert.equal(overdue.pill, '+2d')
+  const thisWeek = v({ status: 'inProgress', progress: 50, due: '2026-11-27', start: '2026-11-21' })
+  assert.equal(thisWeek.group, 'thisWeek'); assert.equal(thisWeek.tone, 'amber'); assert.equal(thisWeek.dueText, 'Due in 2 days')
+  assert.equal(thisWeek.expectedPercent, 67); assert.equal(thisWeek.status, 'behindPace')
+  assert.equal(thisWeek.paceText, '50% · expected 67%'); assert.deepEqual(thisWeek.tabs, ['all', 'thisWeek', 'behindPace'])
+  const onTrack = v({ status: 'inProgress', progress: 0.6, due: '2026-12-01', start: '2026-11-19' })
+  assert.equal(onTrack.status, 'onTrack'); assert.equal(onTrack.group, 'nextWeek'); assert.equal(onTrack.tone, 'primary')
+  assert.equal(v({ status: 'notStarted', due: '2026-12-20', createdAt: '2026-11-25' }).group, 'later')
+  assert.equal(v({ status: 'notStarted', due: '2026-11-25' }).dueText, 'Due today')
+  assert.equal(v({ status: 'notStarted', due: '2026-11-26' }).dueText, 'Due tomorrow')
+  assert.equal(v({ status: 'blocked', due: '2026-12-20' }).status, 'blocked')
+  const met = v({ status: 'complete', progress: 0.5, due: '2026-11-27', completedAt: '2026-11-27T20:00:00Z' })
+  assert.equal(met.status, 'met'); assert.equal(met.progressPercent, 100); assert.equal(met.dueText, 'Met on time'); assert.equal(met.tone, 'green')
+  const late = v({ status: 'complete', due: '2026-11-20', completedAt: '2026-11-23' })
+  assert.equal(late.status, 'late'); assert.equal(late.dueText, 'Done 3 days late'); assert.deepEqual(late.tabs, ['all', 'completed'])
+  assert.equal(v({ status: 'notStarted' }).dueText, 'No due date')
+  // due ≤ start: 100 once due has arrived, else 0.
+  assert.equal(v({ status: 'notStarted', due: '2026-11-25', start: '2026-11-25' }).expectedPercent, 100)
+})
+
+test('1.94.0 deadline summary, tab counts and moved note', () => {
+  const now = Date.parse('2026-11-25T10:00:00Z')
+  const tz = 'Europe/London'
+  const items = [
+    { title: 'Fit-out', status: 'inProgress', progress: 0.2, due: '2026-11-27', start: '2026-11-20' },
+    { title: 'BMS', status: 'complete', due: '2026-11-27', completedAt: '2026-11-26' },
+    { title: 'Roof', status: 'complete', due: '2026-11-20', completedAt: '2026-11-22' },
+    { title: 'Old', status: 'notStarted', due: '2026-11-24' },
+  ]
+  assert.equal(R112.deadlineSummaryLine(items, now, tz), '2 of 4 complete · 1 on time · Next: Old, Tue 24 Nov')
+  assert.deepEqual(R112.deadlineTabCounts(items, now, tz), { all: 4, overdue: 1, thisWeek: 1, behindPace: 1, completed: 2 })
+  assert.equal(R112.deadlineMovedNote('2026-11-27', '2026-11-28', tz), 'Moved 1 day from 27 Nov')
+  assert.equal(R112.deadlineMovedNote('2026-11-27', '2026-11-25', tz), 'Brought forward 2 days from 27 Nov')
+  assert.equal(R112.deadlineMovedNote('2026-11-27', '2026-11-27', tz), '')
+  assert.equal(R112.deadlineDayText('2026-11-27', true), 'Fri 27 Nov 2026')
+  assert.deepEqual(R112.DEADLINE_TABS.map((t) => t.label), ['All', 'Overdue', 'This week', 'Behind pace', 'Completed'])
+})

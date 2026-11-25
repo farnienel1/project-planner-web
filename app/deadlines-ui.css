@@ -1,0 +1,74 @@
+/*
+ * Deadlines tab (rulebook 1.94.0 §23, owner decision 25 Nov). Visual only, on top of app/pages-ui.css (`--pu-*`) and
+ * app/tasks-ui.css (`tk-*`, shared tabs / toolbar / chips). Colour means one thing (`deadlineDisplay(...).tone`):
+ * red overdue, amber this week / behind pace / blocked, primary on track, green met, grey the rest. Every text
+ * colour is a `--pu-c-*-ink` token (AA on the card in light and dark); fills are the matching solid tokens.
+ * Classes are prefixed `dl-`.
+ */
+
+[data-dl-tone='red'] { --dl-c: var(--pu-red); --dl-ink: var(--pu-c-red-ink); --dl-bg: var(--pu-c-red-bg); }
+[data-dl-tone='amber'] { --dl-c: var(--pu-amber); --dl-ink: var(--pu-c-amber-ink); --dl-bg: var(--pu-c-amber-bg); }
+[data-dl-tone='primary'] { --dl-c: var(--pu-primary); --dl-ink: var(--pu-c-blue-ink); --dl-bg: var(--pu-c-blue-bg); }
+[data-dl-tone='green'] { --dl-c: var(--pu-c-green-ink); --dl-ink: var(--pu-c-green-ink); --dl-bg: var(--pu-c-green-bg); }
+[data-dl-tone='grey'] { --dl-c: var(--pu-muted); --dl-ink: var(--pu-c-slate-ink); --dl-bg: var(--pu-c-slate-bg); }
+
+.dl-summary { margin: 4px 0 0; color: var(--pu-muted); font-size: 14.5px; }
+.dl-summary b { color: var(--pu-ink); font-weight: 600; }
+.tk-tab .n.amber { background: var(--pu-c-amber-bg); color: var(--pu-c-amber-ink); }
+
+.dl-tag { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 999px; font-size: 13px; font-weight: 600; background: var(--pu-c-slate-bg); color: var(--pu-c-slate-ink); }
+.dl-tag.critical { background: transparent; border: 1px solid currentColor; color: var(--pu-c-red-ink); }
+.dl-status { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; background: var(--dl-bg); color: var(--dl-ink); white-space: nowrap; }
+
+.dl-group-h { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--pu-line-2); font-size: 13.5px; font-weight: 700; letter-spacing: 0.02em; color: var(--dl-ink, var(--pu-ink-2)); }
+.dl-group-h .count { color: var(--pu-muted); font-weight: 600; }
+.dl-group-h .grow { flex: 1; }
+.dl-group-h button { border: 0; background: none; color: var(--pu-c-blue-ink); font-weight: 600; font-size: 13.5px; cursor: pointer; }
+
+.dl-row {
+  position: relative; display: grid; grid-template-columns: 32px minmax(0, 1fr) minmax(150px, 220px) 130px auto auto; align-items: center;
+  gap: 14px; min-height: 64px; padding: 12px 14px 12px 18px; border-top: 1px solid var(--pu-line-2); cursor: pointer;
+}
+.dl-row:first-of-type { border-top: 0; }
+.dl-row:hover { background: var(--pu-row-hover); }
+.dl-row::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: transparent; }
+.dl-row[data-edge='red']::before { background: var(--pu-red); }
+.dl-row[data-edge='amber']::before { background: var(--pu-amber); }
+.dl-row.done .title { color: var(--pu-muted); }
+.dl-row .title { font-size: 15.5px; font-weight: 600; color: var(--pu-ink); overflow-wrap: anywhere; }
+.dl-row .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.dl-row .due { font-size: 13.5px; line-height: 1.3; }
+.dl-row .due b { display: block; font-weight: 600; color: var(--dl-ink); }
+.dl-row .due span { color: var(--pu-muted); font-size: 13px; }
+@media (max-width: 980px) {
+  .dl-row { grid-template-columns: 32px minmax(0, 1fr) auto; }
+  .dl-row > .bar-cell, .dl-row > .people { display: none; }
+}
+
+.dl-ring { width: 30px; height: 30px; display: grid; place-items: center; color: var(--dl-c); }
+.dl-ring svg { width: 30px; height: 30px; }
+.dl-ring .track { stroke: var(--pu-line); }
+.dl-ring .fill { stroke: var(--dl-c); }
+
+.dl-bar { position: relative; height: 7px; border-radius: 999px; background: var(--pu-line); }
+.dl-bar.big { height: 12px; }
+.dl-bar .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: var(--dl-c); }
+.dl-bar .tick { position: absolute; top: -3px; bottom: -3px; width: 2px; border-radius: 1px; background: var(--pu-ink); transform: translateX(-1px); }
+.dl-bar-text { margin-top: 4px; font-size: 13px; color: var(--pu-muted); }
+.dl-bar-text.behind { color: var(--pu-c-amber-ink); font-weight: 600; }
+
+/* Timeline */
+.dl-tl { position: relative; border: 1px solid var(--pu-line); border-radius: 16px; background: var(--pu-card); overflow: hidden; }
+.dl-tl-head { display: flex; padding: 10px 12px 6px; font-size: 13px; font-weight: 600; color: var(--pu-muted); }
+.dl-tl-today { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--dash-teal); pointer-events: none; z-index: 1; }
+.dl-tl-today span { position: absolute; top: 4px; left: 4px; font-size: 12px; font-weight: 700; color: var(--pu-ink); background: var(--pu-card); padding: 0 4px; border-radius: 4px; }
+.dl-tl-row { display: block; width: 100%; padding: 8px 12px; text-align: left; border: 0; border-top: 1px solid var(--pu-line-2); background: none; cursor: pointer; color: var(--pu-ink); }
+.dl-tl-row:hover { background: var(--pu-row-hover); }
+.dl-tl-label { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 14px; font-weight: 600; }
+.dl-tl-label .when { margin-left: auto; color: var(--dl-ink); font-weight: 600; font-size: 13px; white-space: nowrap; }
+.dl-tl-track { position: relative; display: block; height: 14px; }
+.dl-tl-bar { position: absolute; top: 0; height: 14px; border-radius: 7px; background: var(--dl-bg); overflow: hidden; }
+.dl-tl-bar .done { position: absolute; left: 0; top: 0; bottom: 0; background: var(--dl-c); }
+.dl-tl-due { position: absolute; top: 1px; width: 12px; height: 12px; margin-left: -6px; transform: rotate(45deg); background: var(--dl-c); border: 2px solid var(--pu-card); }
+.dl-tl-note { margin-top: 8px; font-size: 13px; color: var(--pu-muted); }
+.dl-page .tk-head h1 { font-size: 22px; }
