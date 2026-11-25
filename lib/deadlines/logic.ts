@@ -9,6 +9,7 @@ import {
   calendarDaysBetween,
   deadlineDayText,
   deadlineDisplay,
+  deadlineReopenFields,
   deadlineFloorGroup,
   deadlineMovedNote,
   deadlineOnLocation,
@@ -456,6 +457,26 @@ export function completeDeadline(item: Deadline, author: string, now: Date): Dea
     progress: 1,
     completedAt: now,
     history: [change(author, now, { type: 'completed', completedOn: now }), ...item.history],
+  }
+}
+
+/**
+ * Rulebook 1.95.0 §23 `deadlineReopenFields`: a completed deadline goes back to the last progress recorded before it
+ * was completed (else 0) and In progress / Not started. Web history is newest first; the rulebook reads oldest first.
+ * The history line is a `note` entry ("Reopened at 50%"), an existing stored kind.
+ */
+export function reopenDeadline(item: Deadline, author: string, now: Date): Deadline {
+  const oldestFirst = [...item.history].reverse().map((entry) => ({
+    type: entry.kind.type,
+    progress: entry.kind.type === 'progress' ? entry.kind.progress : null,
+  }))
+  const reopened = deadlineReopenFields(oldestFirst)
+  return {
+    ...item,
+    status: reopened.status,
+    progress: reopened.progressPercent / 100,
+    completedAt: null,
+    history: [change(author, now, { type: 'note', note: reopened.note }), ...item.history],
   }
 }
 

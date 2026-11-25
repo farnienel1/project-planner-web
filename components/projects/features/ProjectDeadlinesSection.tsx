@@ -31,6 +31,7 @@ import {
   applyDeadlineToolbarFilters,
   assigneeInitials,
   completeDeadline,
+  reopenDeadline,
   deadlineDayLabel,
   deadlineLocationList,
   deadlineLocationOptions,
@@ -477,6 +478,7 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
           onOpen={setOpenId}
           onProgress={(pct) => mutate(setDeadlineProgress(openItem, pct, authorName, new Date()))}
           onComplete={() => mutate(completeDeadline(openItem, authorName, new Date()))}
+          onReopen={() => mutate(reopenDeadline(openItem, authorName, new Date()))}
         />
       ) : null}
       {editing ? (

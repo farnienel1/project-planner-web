@@ -11,6 +11,7 @@ import {
   applyCreatedHistory,
   applyEditHistory,
   completeDeadline,
+  reopenDeadline,
   daysRemaining,
   deadlineView,
   emptyDeadlineCopy,
@@ -289,4 +290,18 @@ test('toolbar: sort keeps due order by default, otherwise stable with ties by du
   assert.deepEqual(sortDeadlines(list, 'responsible').map((row) => row.id), ['c', 'a', 'b'])
   const groups = sortDeadlineGroups([{ id: 'g', title: 'G', tone: null, items: list }], 'critical')
   assert.deepEqual(groups[0].items.map((row) => row.id), ['b', 'a', 'c'])
+})
+
+test('reopening a completed deadline goes back to the last progress before it was completed', () => {
+  const row = item({ id: 'r', title: 'Board', due: new Date('2026-06-20T11:00:00Z') })
+  const half = setDeadlineProgress(setDeadlineProgress(row, 25, 'Ada', NOW), 50, 'Ada', NOW)
+  const done = completeDeadline(half, 'Ada', NOW)
+  const reopened = reopenDeadline(done, 'Ada', NOW)
+  assert.equal(reopened.status, 'inProgress')
+  assert.equal(reopened.progress, 0.5)
+  assert.equal(reopened.completedAt, null)
+  assert.deepEqual(reopened.history[0]?.kind, { type: 'note', note: 'Reopened at 50%' })
+  const never = reopenDeadline(completeDeadline(row, 'Ada', NOW), 'Ada', NOW)
+  assert.equal(never.status, 'notStarted')
+  assert.equal(never.progress, 0)
 })

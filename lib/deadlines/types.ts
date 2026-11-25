@@ -41,17 +41,6 @@ export const DEADLINE_LOCATION_PRESETS = [
   'Multiple floors',
 ] as const
 
-export const DEADLINE_RESCHEDULE_REASONS = [
-  'Materials',
-  'Preceding trade',
-  'Access',
-  'Weather',
-  'Labour',
-  'Client change',
-  'Design change',
-  'Inspection',
-] as const
-
 export type DeadlineGrouping = 'date' | 'location' | 'trade' | 'assignee'
 
 export type DeadlineChangeKind =
