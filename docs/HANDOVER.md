@@ -1,4 +1,30 @@
-# Handover — 24 Nov 2026 (night) — READ THIS FIRST
+# Handover — 25 Nov 2026 (launch day, 17:00 UTC) — READ THIS FIRST
+
+> Read this, then `docs/OWNER_DECISIONS.md` (the "25 Nov" rows), then `docs/agent-rules/owner-working-style.md`. Launch checklist: https://claude.ai/artifact/7Q7erHuNW9RBFFK4VuiAcR (collection `items`; rows 1.165–1.171 are today's work).
+
+## The one rule the owner cares about most
+Every change is done on web AND iPhone AND checked against the one rulebook (`lib/canonical`), in the same piece of work. Never a second rulebook (the owner rejected the upgrade pack's `rules/*.json`: "use the existing one").
+
+## Where things stand [Certain at 16:55 UTC 25 Nov]
+- **Web main:** rulebook **1.95.0**, everything merged: #461 (uploads), #462 (scheduling back to booked week), #463/#465 (deadline fixes, Multiple floors section), #464 (personal site audit page, notification pop-ups), #466 (leave calendar summary + colours, 1.93.1), #467 (deadlines UI, 1.94.0), #468 (Tasks-style popup, filters, Multiple floors chip, Reopen, reschedule reasons; 1.94.1–1.95.0).
+- **iOS main:** rulebook mirror **1.95.0**, everything merged: #307 (uploads), #308 (scheduling week), #309 (deadline fixes, date pickers close on tap), #312 (leave calendar + deadlines UI + filters + Reopen; #310 and #311 were folded into it and closed).
+- **Owner settings done today:** Netlify `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` = `project-planner-f986c.firebasestorage.app` (the cause of stuck web uploads); `minimumIosBuild` = 16; `operativeOwnLeave: true` (every company; undo = false).
+- **Nothing to deploy** for today's changes (no rules, indexes or functions changed).
+
+## Next
+1. Owner makes **build 17** from iOS main and runs the short test list (deadlines: summary/tabs, Multiple floors, complete → Reopen, reschedule reason, filters; leave calendar day summary + colours; an upload; iPhone scheduling week). Fix only what they find.
+2. Owner steps still owed (not blocking): push-token clean-up script (double pushes to line managers), reminder-email function deploy, feedback sounds re-confirm, pay strip test.
+
+## After launch (agreed, not started)
+- Deadlines: ⋯ menu (Copy link, Delete), two-column details; iOS reschedule day count when the phone is in another time zone near midnight; web timeline today line near midnight; web/iOS history differ slightly on Reopen (iOS also writes a status line); the pack's colour tokens, server-recorded history events, reminder changes, several responsible people.
+- iOS: task link no-access message, edit-task photo speed, Home error card, unlinked file left when a deadline save is refused, `DLStore` `Calendar.current`.
+- Web: Retry on the job tasks card.
+
+## Gotchas found today
+- gitleaks flags packed-bundle renames like `x2.length` next to a "key" identifier; name rulebook helpers uniquely, and never quote the flagged text in `.gitleaksignore` comments (the comment itself matched).
+- iOS screen checks run one PR at a time (~40 min); fold stacked iOS PRs into one to save time.
+
+## Earlier: handover of 24 Nov 2026 (night), kept for history
 
 > Launch is **25 Nov**. Read this section, then `docs/OWNER_DECISIONS.md` (from "24 Nov" down, especially "24 Nov evening decisions"), then `docs/agent-rules/owner-working-style.md`. Launch checklist (single status page): https://claude.ai/artifact/7Q7erHuNW9RBFFK4VuiAcR (collection `items`; rows 1.148–1.160 are tonight's work).
 
