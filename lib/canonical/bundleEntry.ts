@@ -2173,3 +2173,14 @@ export type {
 // 1.90.0: draft revisions (§8, owner 24 Nov point 4).
 export * from './timesheetRevisionDraft'
 export * from './timesheetReviewerUndo'
+export {
+  DEADLINE_BEHIND_PACE_POINTS,
+  DEADLINE_GROUPS,
+  DEADLINE_TABS,
+  deadlineDayText,
+  deadlineDisplay,
+  deadlineMovedNote,
+  deadlineSummaryLine,
+  deadlineTabCounts,
+} from './deadlineDisplay'
+export type { DeadlineDisplay, DeadlineDisplayInput, DeadlineDisplayStatus, DeadlineGroupKey, DeadlineTabKey, DeadlineTone } from './deadlineDisplay'
