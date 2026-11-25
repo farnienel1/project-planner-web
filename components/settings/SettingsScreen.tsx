@@ -11,7 +11,6 @@ import { confirmChosenSignOut } from '@/lib/siteAudit/siteAuditSignOut'
 import { uploadFile, profilePhotoPath } from '@/lib/firebase/storageUtils'
 import { PROFILE_PHOTO_ACCEPT, validateProfilePhotoFile } from '@/lib/settings/profilePhotoUpload'
 import { ProfilePhotoCropModal } from '@/components/settings/ProfilePhotoCropModal'
-import { withTimeout } from '@/lib/client/withTimeout'
 import { prepareClientUpload } from '@/lib/security/stripPhotoLocation'
 import { UserAvatar } from '@/components/users/UserAvatar'
 import { canAccessOrganisationSettingsHub, hasAdminAccess } from '@/lib/navigation/menuPermissions'
@@ -128,6 +127,7 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const [photoProgress, setPhotoProgress] = useState<number | null>(null)
   const [photoToCrop, setPhotoToCrop] = useState<File | null>(null)
   const snapshot = JSON.stringify({ firstName, surname, mobile, vatNumber, utrNumber })
   const dirty = settingsDraftIsDirty(baseline, snapshot)
@@ -266,6 +266,7 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
     if (!user?.id) return
     setPhotoToCrop(null)
     setUploadingPhoto(true)
+    setPhotoProgress(null)
     setError('')
     try {
       if (!organization?.id) throw new Error('Missing organisation for profile photo')
@@ -274,14 +275,12 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
         setError(prepared.error)
         return
       }
-      const url = await withTimeout(
-        uploadFile(
-          profilePhotoPath(organization.id, user.id),
-          prepared.file,
-          prepared.file.type
-        ),
-        45_000,
-        'The photo did not finish uploading. Check the connection and try a smaller image.'
+      // 25 Nov: no overall time limit — uploadFile cancels only a stalled upload (60 s with nothing sent).
+      const url = await uploadFile(
+        profilePhotoPath(organization.id, user.id),
+        prepared.file,
+        prepared.file.type,
+        { onProgress: (fraction) => setPhotoProgress(fraction) }
       )
       // The download URL carries the new object's token, so it differs from every older copy.
       // profilePhotoUpdatedAt tells other screens and iOS the photo changed.
@@ -319,7 +318,7 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
             <p className="text-xs text-(--ink3)">Used across Home and Settings. Image only · max 2MB. Same photo as iOS.</p>
           </div>
           <label className={`btn sm ${uploadingPhoto ? 'opacity-50' : ''}`}>
-            {uploadingPhoto ? 'Uploading…' : 'Change photo'}
+            {uploadingPhoto ? (photoProgress != null && photoProgress > 0 ? `Uploading ${Math.min(99, Math.round(photoProgress * 100))}%…` : 'Uploading…') : 'Change photo'}
             <input
               type="file"
               accept={PROFILE_PHOTO_ACCEPT}

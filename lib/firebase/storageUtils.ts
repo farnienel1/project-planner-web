@@ -7,11 +7,11 @@ import { generatedStorageFileName } from '@/lib/security/uploadLimits'
 import { assertUploadAllowed } from '@/lib/security/uploadGuard'
 import { variationUploadStallReason } from '@/lib/variations/variationUploadStall'
 
-const UPLOAD_TIMEOUT_MS = 180_000
 /**
  * An upload that sends nothing for this long is cancelled (owner issue 16, 23 Nov: a certificate renewal sat on
- * "Saving…"). The Firebase SDK silently retries a request that gets no reply for up to 10 minutes; before this, only
- * the 3-minute cap stopped it, and `uploadFile` then started the whole upload again for another 3 minutes.
+ * "Saving…"). The Firebase SDK silently retries a request that gets no reply for up to 10 minutes. 25 Nov (owner:
+ * uploads solid everywhere before launch): this stall check is the only limit — an upload that is still sending is
+ * never cancelled for taking long, so a large file on a slow site connection finishes.
  */
 export const UPLOAD_STALL_MS = 60_000
 
@@ -33,50 +33,6 @@ async function ensureStorageAuth(): Promise<void> {
     throw new Error('You must be signed in to upload files.')
   }
   await withTimeout(user.getIdToken(), 15_000, 'Sign-in did not finish. Try the upload again.')
-}
-
-function uploadOnce(storagePath: string, file: Blob, contentType: string): Promise<string> {
-  const storageRef = ref(storage, storagePath)
-  return new Promise((resolve, reject) => {
-    let settled = false
-    const task = uploadBytesResumable(storageRef, file, { contentType })
-    let stall: ReturnType<typeof setTimeout> | null = null
-    const finish = (outcome: () => void) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      if (stall) clearTimeout(stall)
-      outcome()
-    }
-    // A time-out is a TimeoutError, so `uploadFile` never starts the same upload again after it.
-    const cancel = (message: string) => {
-      try {
-        task.cancel()
-      } catch {
-        /* already finished */
-      }
-      finish(() => reject(new TimeoutError(message)))
-    }
-    const armStall = () => {
-      if (stall) clearTimeout(stall)
-      stall = setTimeout(() => cancel(UPLOAD_STALLED_MESSAGE), UPLOAD_STALL_MS)
-    }
-    const timer = setTimeout(() => cancel(UPLOAD_TOO_SLOW_MESSAGE), UPLOAD_TIMEOUT_MS)
-    armStall()
-    task.on(
-      'state_changed',
-      () => armStall(),
-      (error) => finish(() => reject(error)),
-      () => {
-        // Uploaded: the stall timer must not cancel it while the link is fetched (the overall cap still applies).
-        if (stall) clearTimeout(stall)
-        stall = null
-        getDownloadURL(storageRef)
-          .then((url) => finish(() => resolve(url)))
-          .catch((error) => finish(() => reject(error)))
-      }
-    )
-  })
 }
 
 /**
@@ -103,24 +59,48 @@ function isStoragePermissionError(error: unknown): boolean {
 export async function uploadFile(
   storagePath: string,
   file: Blob,
-  claimedContentType?: string | null
+  claimedContentType?: string | null,
+  options: { onProgress?: (fraction: number) => void } = {}
 ): Promise<string> {
   if (!storage) {
     throw new Error('File storage is not configured.')
   }
   const contentType = await assertUploadAllowed(storagePath, file, claimedContentType)
-  await ensureStorageAuth()
+  const once = () =>
+    startTrackedUpload(storagePath, file, contentType, {
+      stallMs: UPLOAD_STALL_MS,
+      sdkRetryMs: UPLOAD_STALL_MS,
+      onProgress: options.onProgress ? (sent, total) => options.onProgress?.(total > 0 ? sent / total : 0) : undefined,
+    }).done
   try {
-    return await uploadOnce(storagePath, file, contentType)
-  } catch (first) {
-    if (isStoragePermissionError(first) || isTimeoutError(first)) throw first
-    await ensureStorageAuth()
     try {
-      return await uploadOnce(storagePath, file, contentType)
-    } catch {
-      throw first
+      return await once()
+    } catch (first) {
+      if (isStoragePermissionError(first) || isTimeoutError(first)) throw first
+      try {
+        return await once()
+      } catch {
+        throw first
+      }
     }
+  } catch (error) {
+    reportUploadFailure(error)
+    throw error
   }
+}
+
+/**
+ * 25 Nov (owner: web uploads failing while iOS works): a failed upload is sent to the error reports (rulebook §32,
+ * the owner console's Errors page) with its Firebase code (`storage/unauthorized`, `storage/unknown`, …) — never the
+ * file or its name — so the real cause can be read without a browser console. Refusals of the file itself and the
+ * person's own cancel are not reported. Never throws.
+ */
+function reportUploadFailure(error: unknown): void {
+  if (error instanceof UploadCancelledError) return
+  if (error && typeof error === 'object' && (error as { name?: string }).name === 'UploadRefusedError') return
+  void import('@/lib/clientErrors/reportClientError')
+    .then(({ reportClientError }) => reportClientError('caught', error))
+    .catch(() => undefined)
 }
 
 /** A task upload in progress: cancel it, read its progress. */
@@ -203,7 +183,7 @@ export function startTrackedUpload(
         () => {
           if (stall) clearTimeout(stall)
           stall = null
-          getDownloadURL(storageRef)
+          withTimeout(getDownloadURL(storageRef), 15_000, 'The file uploaded but its link could not be created. Try again.')
             .then((url) => finish(() => resolve(url)))
             .catch((error) => finish(() => reject(error)))
         }
@@ -246,11 +226,11 @@ export type VariationEvidenceUpload = {
 }
 
 export const VARIATION_UPLOAD_STALL_MS = 60_000
-export const VARIATION_UPLOAD_MAX_MS = 5 * 60_000
 
 /**
  * Variation evidence (rulebook 1.52.0): a resumable upload that reports progress and IS cancelled when it stalls for
- * 60 seconds or runs past 5 minutes, so a timed-out file never lands in Storage later, unlinked. Resolves with what
+ * 60 seconds (25 Nov: no overall cap — a slow upload that is still sending finishes), so a timed-out file never lands
+ * in Storage later, unlinked. Resolves with what
  * was really uploaded (the checked content type and the size of the prepared file). Errors keep their Storage code.
  */
 export async function uploadVariationEvidenceFile(
@@ -297,12 +277,10 @@ export async function uploadVariationEvidenceFile(
         })
       }, VARIATION_UPLOAD_STALL_MS)
     }
-    const overall = setTimeout(() => cancel('The evidence upload took too long and was cancelled. Add the file again.'), VARIATION_UPLOAD_MAX_MS)
     const finish = (outcome: () => void) => {
       if (settled) return
       settled = true
       if (stall) clearTimeout(stall)
-      clearTimeout(overall)
       options.signal?.removeEventListener('abort', onAbort)
       outcome()
     }

@@ -6,16 +6,19 @@
  * the firm document inside a transaction (so an entry added on another device meanwhile is kept).
  */
 
-import { doc, runTransaction, serverTimestamp } from 'firebase/firestore'
+import { doc, getDocFromServer, runTransaction, serverTimestamp } from 'firebase/firestore'
 import { deleteObject, ref } from 'firebase/storage'
 import { db, storage } from '@/lib/firebase/config'
 import { uploadFile } from '@/lib/firebase/storageUtils'
+import { prepareClientUpload } from '@/lib/security/stripPhotoLocation'
 import { assertUploadAllowed } from '@/lib/security/uploadGuard'
+import { isTimeoutError, withTimeout } from '@/lib/client/withTimeout'
 import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
 import { uploadFileExtension } from '@/lib/canonical/uploadPolicy'
 import { EDIT_OF_MISSING_DOCUMENT_MESSAGE } from '@/lib/canonical/liveSources'
 import {
   SUBCONTRACTOR_DOCUMENTS_FULL_MESSAGE,
+  parseSubcontractorDocuments,
   subcontractorDocumentAddWriteFields,
   subcontractorDocumentExpiryWriteFields,
   subcontractorDocumentRemoveWriteFields,
@@ -52,14 +55,45 @@ async function writeList(
   })
 }
 
+/**
+ * How long the link write waits for the server. A Firestore transaction that cannot reach the server is retried
+ * with back-off and can keep the button on "Uploading…" for minutes (owner report 25 Nov). After this the screen stops
+ * waiting; the write may still arrive (the live list then shows the document), so the file is kept, never deleted.
+ */
+export const SUBCONTRACTOR_DOCUMENT_LINK_CONFIRM_MS = 20_000
+
+export const SUBCONTRACTOR_DOCUMENT_LINK_UNCONFIRMED_MESSAGE =
+  'The file uploaded, but the server has not confirmed it on this sub contractor yet. Check your connection — it will appear here once it arrives. If it does not, upload it again.'
+
 async function deleteObjectQuietly(path: string) {
   if (!storage || !path) return
   await deleteObject(ref(storage, path)).catch(() => {})
 }
 
 /**
- * Upload one file and link it. A file uploaded but refused (list full) or not linked because the save failed is
- * deleted again by its uploader (inside the §24 undo window), so no unlinked file is left.
+ * After a failed save: re-read the firm from the server and delete the new file only when no entry names it (a save
+ * that committed while the app saw an error keeps its file, as org compliance and variation evidence). When the
+ * re-read fails too, the file is kept: an unlinked file is safer than a linked entry whose file is gone.
+ */
+async function deleteUnlinkedUpload(organizationId: string, subcontractorId: string, path: string) {
+  try {
+    const snap = await getDocFromServer(firmRef(organizationId, subcontractorId))
+    if (snap.exists()) {
+      const lists = parseSubcontractorDocuments(subcontractorId, snap.data() as Record<string, unknown>, { organizationId })
+      if ([...lists.insurance, ...lists.rams].some((entry) => entry.path === path)) return
+    }
+  } catch {
+    return
+  }
+  await deleteObjectQuietly(path)
+}
+
+/**
+ * Upload one file and link it. Photos are redrawn first (§24: location dropped, scaled so a phone photo fits the
+ * 10 MB cap), as org compliance does. The upload reports progress and is cancelled only when it stops sending for a
+ * minute (no overall time cap, so a large PDF on a slow connection still finishes). A file uploaded but refused (list
+ * full) or not linked because the save failed is deleted again by its uploader (inside the §24 undo window), so no
+ * unlinked file is left.
  */
 export async function uploadSubcontractorDocument(input: {
   organizationId: string
@@ -68,41 +102,48 @@ export async function uploadSubcontractorDocument(input: {
   file: File
   expiresOn: string | null
   actorUid: string
+  onProgress?: (fraction: number) => void
 }): Promise<void> {
+  const prepared = await prepareClientUpload(input.file, 'certificate')
+  if (prepared.error) throw new Error(prepared.error)
+  const file = prepared.file
   const nowMs = Date.now()
   const path = subcontractorDocumentStoragePath({
     organizationId: input.organizationId,
     subcontractorId: input.subcontractorId,
     uid: input.actorUid,
     unixMs: nowMs,
-    extension: uploadFileExtension(input.file.name),
+    extension: uploadFileExtension(file.name),
   })
   if (!path) throw new Error('This file cannot be uploaded here.')
   // §24: the type stored on the entry is the one the bytes were checked as (and the object is written with), never
   // the browser's guess from the file name.
-  const contentType = await assertUploadAllowed(path, input.file, input.file.type)
-  await uploadFile(path, input.file, contentType)
+  const contentType = await assertUploadAllowed(path, file, file.type)
+  await uploadFile(path, file, contentType, { onProgress: input.onProgress })
   let outcome: string
   try {
-    const result = await writeList(input.organizationId, input.subcontractorId, input.actorUid, (stored) =>
+    const result = await withTimeout(writeList(input.organizationId, input.subcontractorId, input.actorUid, (stored) =>
       subcontractorDocumentAddWriteFields(stored, {
         kind: input.kind,
         subcontractorId: input.subcontractorId,
         organizationId: input.organizationId,
         entry: {
           path,
-          name: input.file.name,
+          name: file.name || input.file.name,
           contentType,
-          sizeBytes: input.file.size,
+          sizeBytes: file.size,
           uploadedAtMs: nowMs,
           uploadedBy: input.actorUid,
           expiresOn: input.expiresOn,
         },
       })
-    )
+    ), SUBCONTRACTOR_DOCUMENT_LINK_CONFIRM_MS, SUBCONTRACTOR_DOCUMENT_LINK_UNCONFIRMED_MESSAGE)
     outcome = String(result.outcome)
   } catch (error) {
-    await deleteObjectQuietly(path)
+    // Not confirmed in time: the transaction may still commit, so the file is kept (a linked entry whose file is gone
+    // is worse than an unlinked file the §24 recovery keeps).
+    if (isTimeoutError(error)) throw error
+    await deleteUnlinkedUpload(input.organizationId, input.subcontractorId, path)
     throw error
   }
   if (outcome === 'refused') {
