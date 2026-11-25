@@ -11,14 +11,25 @@
 import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { CheckIcon, EllipsisHorizontalIcon, MagnifyingGlassIcon, PlusIcon } from '@heroicons/react/24/outline'
+import { AdjustmentsHorizontalIcon, CheckIcon, EllipsisHorizontalIcon, MagnifyingGlassIcon, PlusIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import {
   TASK_ACTION_LABELS,
   TASK_COPY,
+  TASK_DUE_FILTERS,
+  TASK_NO_FILTERS,
+  TASK_SORTS,
+  taskSortLabel,
+  filterTasks,
+  parseTaskFilters,
+  parseTaskSort,
+  sortTasks,
+  taskActiveFilterCount,
+  taskFilterOptions,
+  type TaskFilters,
+  type TaskSortKey,
   TASK_PRIORITY_OPTIONS,
   TASK_SCOPES,
   TASK_TABS,
-  sortTasksForTab,
   taskActions,
   taskCompleteStep,
   taskCopyText,
@@ -34,12 +45,14 @@ import {
   type TaskTabKey,
 } from '@/lib/canonical'
 import { LoadingSpinner, ErrorBanner } from '@/components/dashboard/PageShell'
+import { TASK_VISIBILITY_FAILED_MESSAGE } from '@/lib/tasks/taskVisibilityReady'
 import { useToast } from '@/components/ui/ToastProvider'
 import { allAssignedManagerIds, allAssignedOperativeIds } from '@/lib/tasks/projectTaskFilters'
 import { foldTaskFilterPeople, taskAssigneeNames } from '@/lib/tasks/taskAssigneePeople'
 import type { ProjectTask } from '@/types'
 import { ConfirmDialog } from './TaskDialog'
 import { TaskPopup, type TaskPopupMode } from './TaskPopup'
+import { TaskLoadFailed } from './TaskLoadFailed'
 import { initialsOf } from './TaskPeopleField'
 import { deleteTaskById, personDisplay, runStatusAction } from './taskActions'
 import { useTaskWorkspace, type TaskLocation, type TaskWorkspace } from './useTaskWorkspace'
@@ -47,8 +60,10 @@ import '@/app/pages-ui.css'
 import '@/app/tasks-ui.css'
 
 const SCOPE_KEY = 'pp.tasks.scope'
+/** 1.91.0 decision B: filters and sort are remembered on this device, per page kind (like the scope). */
+const FILTERS_KEY = 'pp.tasks.filters'
+const SORT_KEY = 'pp.tasks.sort'
 
-type DueFilter = '' | 'overdue' | 'today' | 'week' | 'none'
 type TabKey = TaskTabKey | 'approvals'
 
 export type TaskListProps = {
@@ -67,13 +82,51 @@ export function TaskList(props: TaskListProps) {
   )
 }
 
-function readScope(): unknown {
+function readStored(key: string): string | null {
   if (typeof window === 'undefined') return null
   try {
-    return window.localStorage.getItem(SCOPE_KEY)
+    return window.localStorage.getItem(key)
   } catch {
     return null
   }
+}
+
+function writeStored(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value)
+  } catch {
+    /* this device does not keep it */
+  }
+}
+
+function readScope(): unknown {
+  return readStored(SCOPE_KEY)
+}
+
+function readFilters(mode: 'main' | 'location'): Required<TaskFilters> {
+  try {
+    const parsed = parseTaskFilters(JSON.parse(readStored(`${FILTERS_KEY}.${mode}`) || 'null'))
+    // A location tab is already one job: its project / small works filters never apply.
+    return mode === 'location' ? { ...parsed, projectId: '', smallWorksId: '' } : parsed
+  } catch {
+    return { ...TASK_NO_FILTERS }
+  }
+}
+
+/**
+ * Review of #458: the select never shows "All" while a remembered value still applies — a value that exists but has
+ * no task in this tab stays listed with a count of 0.
+ */
+function withSelected(
+  list: ReadonlyArray<{ value: string; label: string; count: number }>,
+  value: string,
+  source: ReadonlyArray<{ value: string; label: string }> | ReadonlyArray<{ id: string; code: string; name: string }>
+): ReadonlyArray<{ value: string; label: string; count: number }> {
+  if (!value || list.some((row) => row.value === value)) return list
+  const found = (source as ReadonlyArray<Record<string, string>>).find((row) => (row.value ?? row.id) === value)
+  if (!found) return list
+  const label = found.label ?? ([found.code, found.name].filter(Boolean).join(' · ') || 'Untitled')
+  return [{ value, label, count: 0 }, ...list]
 }
 
 function TaskListInner({ mode, location, approvals }: TaskListProps) {
@@ -89,10 +142,18 @@ function TaskListInner({ mode, location, approvals }: TaskListProps) {
   const [tabChoice, setTab] = useState<TabKey>('active')
   const [scopeChoice, setScopeChoice] = useState<unknown>(() => readScope())
   const [search, setSearch] = useState('')
-  const [assignee, setAssignee] = useState('')
-  const [priority, setPriority] = useState('')
-  const [dueFilter, setDueFilter] = useState<DueFilter>('')
-  const [locationFilter, setLocationFilter] = useState('')
+  const [filters, setFiltersState] = useState<Required<TaskFilters>>(() => readFilters(mode))
+  const [sort, setSortState] = useState<TaskSortKey>(() => parseTaskSort(readStored(`${SORT_KEY}.${mode}`)))
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const setFilters = (next: Required<TaskFilters>) => {
+    setFiltersState(next)
+    writeStored(`${FILTERS_KEY}.${mode}`, JSON.stringify(next))
+  }
+  const setFilter = <K extends keyof TaskFilters>(key: K, value: Required<TaskFilters>[K]) => setFilters({ ...prunedFilters, [key]: value })
+  const chooseSort = (next: TaskSortKey) => {
+    setSortState(next)
+    writeStored(`${SORT_KEY}.${mode}`, next)
+  }
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
@@ -151,33 +212,77 @@ function TaskListInner({ mode, location, approvals }: TaskListProps) {
     const ops = foldTaskFilterPeople(ws.operatives, 'operative', ws.personIndex).map((row) => ({ kind: 'operative' as const, row }))
     const mgrs = foldTaskFilterPeople(ws.managers, 'manager', ws.personIndex).map((row) => ({ kind: 'manager' as const, row }))
     const seen = new Set<string>()
+    const keyOf = (id: string) => ws.personKeys[id.toLowerCase()] || `id:${id.toLowerCase()}`
     return [...mgrs, ...ops]
-      .map(({ kind, row }) => ({ key: ws.personIndex.keyOf(kind, row.id), name: `${row.firstName || ''} ${row.lastName || ''}`.trim() || row.email }))
+      .map(({ row }) => ({ key: keyOf(row.id), name: `${row.firstName || ''} ${row.lastName || ''}`.trim() || row.email }))
       .filter((option) => option.name && !seen.has(option.key) && seen.add(option.key))
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [ws.operatives, ws.managers, ws.personIndex])
+  }, [ws.operatives, ws.managers, ws.personIndex, ws.personKeys])
 
-  const filtered = useMemo(() => {
-    return inScope.filter((task) => {
-      if (priority && task.priority !== priority) return false
-      if (locationFilter && (task.projectId || '').toLowerCase() !== locationFilter.toLowerCase()) return false
-      if (assignee) {
-        const keys = [
-          ...allAssignedManagerIds(task).map((id) => ws.personIndex.keyOf('manager', id)),
-          ...allAssignedOperativeIds(task).map((id) => ws.personIndex.keyOf('operative', id)),
-        ]
-        if (!keys.includes(assignee)) return false
-      }
-      if (dueFilter) {
-        const due = taskDueLabel(task, now, ws.timeZone)
-        if (dueFilter === 'overdue' && !due.overdue) return false
-        if (dueFilter === 'today' && due.days !== 0) return false
-        if (dueFilter === 'week' && (due.days == null || due.days < 0 || due.days > 6)) return false
-        if (dueFilter === 'none' && due.dueDayKey) return false
-      }
-      return true
-    })
-  }, [inScope, priority, locationFilter, assignee, dueFilter, now, ws.timeZone, ws.personIndex])
+  // Rulebook 1.91.0 §34 decision B: projects, small works and who assigned the tasks, with counts over this list.
+  const filterLocations = useMemo(
+    () => ws.locations.map((row) => ({ id: row.id, kind: row.kind, code: row.code, name: row.name })),
+    [ws.locations]
+  )
+  const options = useMemo(
+    () => taskFilterOptions({ tasks: inScope, locations: filterLocations, personKeys: ws.personKeys, roster: ws.namesRoster as never }),
+    [inScope, filterLocations, ws.personKeys, ws.namesRoster]
+  )
+  // Review of #458 / re-check of #459: a remembered project, small works or "assigned by" that no longer exists (a
+  // deleted job, a person key changed by a roster fold) is dropped — in render, so it never applies for a frame — and
+  // saved again. Judged only once every input has loaded, for every role (`filterInputsLoaded`), against every task the
+  // person can see and every job, not only this tab.
+  const allOptions = useMemo(
+    () => taskFilterOptions({ tasks: ws.tasks, locations: filterLocations, personKeys: ws.personKeys, roster: ws.namesRoster as never }),
+    [ws.tasks, filterLocations, ws.personKeys, ws.namesRoster]
+  )
+  const prunedFilters = useMemo(() => {
+    if (!ws.filterInputsLoaded) return filters
+    const locationKnown = (value: string, kind: 'project' | 'smallWorks') =>
+      !value || filterLocations.some((row) => row.kind === kind && row.id === value)
+    const creatorKnown = !filters.creatorKey || allOptions.creators.some((row) => row.value === filters.creatorKey)
+    const next = {
+      ...filters,
+      projectId: locationKnown(filters.projectId, 'project') ? filters.projectId : '',
+      smallWorksId: locationKnown(filters.smallWorksId, 'smallWorks') ? filters.smallWorksId : '',
+      creatorKey: creatorKnown ? filters.creatorKey : '',
+    }
+    const same = next.projectId === filters.projectId && next.smallWorksId === filters.smallWorksId && next.creatorKey === filters.creatorKey
+    return same ? filters : next
+  }, [ws.filterInputsLoaded, filters, filterLocations, allOptions])
+  useEffect(() => {
+    if (prunedFilters !== filters) setFilters(prunedFilters)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setFilters is a plain setter that also saves
+  }, [prunedFilters, filters])
+  const effectiveFilters = mode === 'location' ? { ...prunedFilters, projectId: '', smallWorksId: '' } : prunedFilters
+  const activeCount = taskActiveFilterCount(effectiveFilters)
+
+  const filtered = useMemo(
+    () => filterTasks(inScope, effectiveFilters, { locations: filterLocations, personKeys: ws.personKeys, nowMs: now, timeZone: ws.timeZone }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- effectiveFilters is derived from filters and mode
+    [inScope, prunedFilters, mode, filterLocations, ws.personKeys, now, ws.timeZone]
+  )
+
+  /** The chips of the filters that are on, each with its own ✕. */
+  const activeChips = (() => {
+    const chips: Array<{ key: keyof TaskFilters; label: string }> = []
+    const label = (list: ReadonlyArray<{ value: string; label: string }>, value: string, fallback: string) =>
+      list.find((row) => row.value === value)?.label ?? fallback
+    if (!ws.filterInputsLoaded) return chips
+    const locationLabel = (value: string, fallback: string) => {
+      const row = filterLocations.find((loc) => loc.id === value)
+      return row ? [row.code, row.name].filter(Boolean).join(' · ') || 'Untitled' : fallback
+    }
+    if (effectiveFilters.projectId) chips.push({ key: 'projectId', label: `Project: ${locationLabel(effectiveFilters.projectId, 'Project')}` })
+    if (effectiveFilters.smallWorksId) chips.push({ key: 'smallWorksId', label: `Small works: ${locationLabel(effectiveFilters.smallWorksId, 'Small works')}` })
+    if (effectiveFilters.creatorKey) chips.push({ key: 'creatorKey', label: `Assigned by: ${label(allOptions.creators, effectiveFilters.creatorKey, 'Unknown person')}` })
+    if (effectiveFilters.assigneeKey) {
+      chips.push({ key: 'assigneeKey', label: `Assignee: ${assigneeOptions.find((row) => row.key === effectiveFilters.assigneeKey)?.name ?? 'Unknown person'}` })
+    }
+    if (effectiveFilters.priority) chips.push({ key: 'priority', label: `Priority: ${taskPriorityLabel(effectiveFilters.priority)}` })
+    if (effectiveFilters.due) chips.push({ key: 'due', label: TASK_DUE_FILTERS.find((row) => row.key === effectiveFilters.due)?.label ?? 'Due' })
+    return chips
+  })()
 
   const searched = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -199,8 +304,8 @@ function TaskListInner({ mode, location, approvals }: TaskListProps) {
   const tab: TabKey = tabChoice === 'approvals' && !showApprovals ? 'active' : tabChoice
   const taskTab: TaskTabKey = tab === 'approvals' ? 'active' : tab
   const rows = useMemo(
-    () => sortTasksForTab(searched.filter((task) => taskInTab(task, taskTab, now, ws.timeZone)), taskTab, now, ws.timeZone),
-    [searched, taskTab, now, ws.timeZone]
+    () => sortTasks(searched.filter((task) => taskInTab(task, taskTab, now, ws.timeZone)), sort, taskTab, now, ws.timeZone),
+    [searched, sort, taskTab, now, ws.timeZone]
   )
 
   const groups = useMemo(() => {
@@ -220,8 +325,12 @@ function TaskListInner({ mode, location, approvals }: TaskListProps) {
     return out
   }, [mode, rows, ws])
 
-  if (ws.loading && ws.tasks.length === 0) return <LoadingSpinner label="Loading tasks…" />
-  if (ws.error && ws.tasks.length === 0) return <ErrorBanner message={ws.error} />
+  // Review of #458: a non-admin's list waits for the jobs, the Managers / Operatives rows and the users roster, so it
+  // never shows a short list or "No tasks" first.
+  // Re-check of #459: the task-store error wins over the spinner; a failed or unanswered load says so with Retry.
+  if (ws.error && ws.tasks.length === 0) return <TaskLoadFailed message={ws.error} onRetry={ws.retryVisibility} />
+  if (ws.visibilityPhase === 'failed') return <TaskLoadFailed message={TASK_VISIBILITY_FAILED_MESSAGE} onRetry={ws.retryVisibility} />
+  if ((ws.loading && ws.tasks.length === 0) || ws.visibilityPhase !== 'ready') return <LoadingSpinner label="Loading tasks…" />
 
   const emptyCopy = (() => {
     if (search.trim()) return { title: taskCopyText(TASK_COPY.empty.search.title, { query: search.trim() }), body: TASK_COPY.empty.search.body }
@@ -296,40 +405,131 @@ function TaskListInner({ mode, location, approvals }: TaskListProps) {
                 aria-label="Search tasks"
               />
             </label>
-            <select className="tk-select" value={assignee} onChange={(e) => setAssignee(e.target.value)} aria-label="Assignee">
-              <option value="">Assignee</option>
-              {assigneeOptions.map((option) => (
-                <option key={option.key} value={option.key}>
-                  {option.name}
-                </option>
-              ))}
-            </select>
-            <select className="tk-select" value={priority} onChange={(e) => setPriority(e.target.value)} aria-label="Priority">
-              <option value="">Priority</option>
-              {TASK_PRIORITY_OPTIONS.map((option) => (
-                <option key={option.token} value={option.token}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <select className="tk-select" value={dueFilter} onChange={(e) => setDueFilter(e.target.value as DueFilter)} aria-label="Due">
-              <option value="">Due</option>
-              <option value="overdue">Overdue</option>
-              <option value="today">Due today</option>
-              <option value="week">Next 7 days</option>
-              <option value="none">No due date</option>
-            </select>
-            {mode === 'main' ? (
-              <select className="tk-select" value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} aria-label="Project or small works">
-                <option value="">Project or small works</option>
-                {ws.locations.map((row) => (
-                  <option key={row.id} value={row.id}>
-                    {[row.code, row.name].filter(Boolean).join(' ')}
+            <button
+              type="button"
+              className="tk-btn"
+              aria-expanded={filtersOpen}
+              aria-controls="tk-filter-panel"
+              onClick={() => setFiltersOpen((v) => !v)}
+            >
+              <AdjustmentsHorizontalIcon width={18} height={18} aria-hidden />
+              {activeCount > 0 ? `Filters (${activeCount})` : 'Filters'}
+            </button>
+            <label className="tk-sort">
+              <span>Sort</span>
+              <select className="tk-select" value={sort} onChange={(e) => chooseSort(parseTaskSort(e.target.value))} aria-label="Sort tasks">
+                {TASK_SORTS.map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {taskSortLabel(option.key, taskTab)}
                   </option>
                 ))}
               </select>
-            ) : null}
+            </label>
           </div>
+
+          {filtersOpen ? (
+            <div className="tk-filter-panel" id="tk-filter-panel" role="region" aria-label="Filter tasks">
+              {mode === 'main' ? (
+                <>
+                  <label className="tk-filter-field">
+                    <span>Project</span>
+                    <select className="tk-select" value={effectiveFilters.projectId} onChange={(e) => setFilter('projectId', e.target.value)}>
+                      <option value="">All projects</option>
+                      {withSelected(options.projects, effectiveFilters.projectId, filterLocations).map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label} ({option.count})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="tk-filter-field">
+                    <span>Small works</span>
+                    <select className="tk-select" value={effectiveFilters.smallWorksId} onChange={(e) => setFilter('smallWorksId', e.target.value)}>
+                      <option value="">All small works</option>
+                      {withSelected(options.smallWorks, effectiveFilters.smallWorksId, filterLocations).map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label} ({option.count})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </>
+              ) : null}
+              <label className="tk-filter-field">
+                <span>Assigned by</span>
+                <select className="tk-select" value={effectiveFilters.creatorKey} onChange={(e) => setFilter('creatorKey', e.target.value)}>
+                  <option value="">Anyone</option>
+                  {withSelected(options.creators, effectiveFilters.creatorKey, allOptions.creators).map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label} ({option.count})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="tk-filter-field">
+                <span>Assigned to</span>
+                <select className="tk-select" value={effectiveFilters.assigneeKey} onChange={(e) => setFilter('assigneeKey', e.target.value)}>
+                  <option value="">Anyone</option>
+                  {assigneeOptions.map((option) => (
+                    <option key={option.key} value={option.key}>
+                      {option.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <fieldset className="tk-filter-field">
+                <legend>Priority</legend>
+                <div className="tk-chips">
+                  {TASK_PRIORITY_OPTIONS.map((option) => (
+                    <button
+                      key={option.token}
+                      type="button"
+                      className="tk-filter-chip"
+                      aria-pressed={effectiveFilters.priority === option.token}
+                      onClick={() => setFilter('priority', effectiveFilters.priority === option.token ? '' : option.token)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+              <fieldset className="tk-filter-field">
+                <legend>Due</legend>
+                <div className="tk-chips">
+                  {TASK_DUE_FILTERS.map((option) => (
+                    <button
+                      key={option.key}
+                      type="button"
+                      className="tk-filter-chip"
+                      aria-pressed={effectiveFilters.due === option.key}
+                      onClick={() => setFilter('due', effectiveFilters.due === option.key ? '' : option.key)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+            </div>
+          ) : null}
+
+          {activeChips.length > 0 ? (
+            <div className="tk-active-filters" aria-label="Filters on">
+              {activeChips.map((chip) => (
+                <span key={chip.key} className="tk-filter-chip on">
+                  {chip.label}
+                  <button type="button" className="x" aria-label={`Remove ${chip.label}`} onClick={() => setFilter(chip.key, '' as never)}>
+                    <XMarkIcon width={16} height={16} aria-hidden />
+                  </button>
+                </span>
+              ))}
+              <button type="button" className="tk-btn sm ghost" onClick={() => setFilters({ ...TASK_NO_FILTERS })}>
+                Clear all
+              </button>
+              <span className="tk-muted" role="status">
+                {filtered.length} {filtered.length === 1 ? 'task' : 'tasks'} match
+              </span>
+            </div>
+          ) : null}
 
           {rows.length === 0 ? (
             <div className="tk-empty">

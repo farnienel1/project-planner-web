@@ -1318,7 +1318,7 @@ export {
   isTaskOverdue,
 } from './dueDates'
 export type { DeadlineUrgency, DueTask } from './dueDates'
-export { homeBookingDayKey, homeOverviewMetrics, isSiteLocationType, qualificationExpiryCount, tasksAssignedToViewer } from './homeOverview'
+export { homeBookingDayKey, homeOverviewMetrics, isSiteLocationType, qualificationExpiryCount, taskViewerIdKeys, tasksAssignedToViewer } from './homeOverview'
 export { homeUpNextRows } from './homeUpNext'
 export type { HomeUpNextBooking, HomeUpNextInput, HomeUpNextResult, HomeUpNextRow } from './homeUpNext'
 export type { FoldPersonRow, HomeOverviewInput, HomeOverviewMetrics, HomeOverviewTask, QualificationExpiryCountInput } from './homeOverview'
@@ -2130,6 +2130,42 @@ export {
   withOrganizationLineManager,
 } from './orgLineManagers'
 export type { OrgLineManagerEditTarget, OrgLineManagerFields, OrgLineManagerSource } from './orgLineManagers'
+
+// Rulebook 1.91.0 §34: who sees which task, the Tasks page filters and sorts, and the task assignee candidates.
+export {
+  TASK_DEFAULT_SORT,
+  TASK_DUE_FILTERS,
+  TASK_NO_FILTERS,
+  TASK_SORTS,
+  TASK_SORT_COMPLETED_DEFAULT_LABEL,
+  taskSortLabel,
+  filterTasks,
+  parseTaskFilters,
+  parseTaskSort,
+  sortTasks,
+  taskActiveFilterCount,
+  taskAssigneeCandidates,
+  taskCreatorKey,
+  taskFilterOptions,
+  taskVisibility,
+  visibleTasksForViewer,
+} from './taskViewing'
+export type {
+  TaskAssigneeCandidates,
+  TaskCandidateRosterRow,
+  TaskCandidateRow,
+  TaskDueFilter,
+  TaskFilterLocation,
+  TaskFilterOption,
+  TaskFilterTask,
+  TaskFilters,
+  TaskLeftoverRow,
+  TaskSortKey,
+  TaskVisibilityInput,
+  TaskVisibilityJob,
+  TaskVisibilityReason,
+  TaskVisibilityTask,
+} from './taskViewing'
 // 1.90.0: draft revisions (§8, owner 24 Nov point 4).
 export * from './timesheetRevisionDraft'
 export * from './timesheetReviewerUndo'

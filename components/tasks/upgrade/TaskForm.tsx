@@ -334,6 +334,8 @@ export function TaskForm({
           managers={ws.assignableManagers}
           allManagers={ws.nameRows.managers}
           operatives={ws.operatives}
+          offeredOperatives={ws.assignableOperatives}
+          goneIds={ws.nameRows.goneIds}
           index={ws.personIndex}
           loaded={ws.rostersLoaded}
           selectedManagers={managers}

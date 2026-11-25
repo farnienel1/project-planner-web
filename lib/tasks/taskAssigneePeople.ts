@@ -2,7 +2,7 @@ import type { Manager, Operative } from '@/types'
 import { dedupeOperativesByEmail } from '@/lib/operatives/operativeRosterUtils'
 import { isCurrentLabourNamedPerson } from '@/lib/staff/userRosterUtils'
 import { bookingPersonIdHint } from '@/lib/canonical/unresolvedBookingPeople'
-import { taskAssigneeDisplay } from '@/lib/canonical/taskRules'
+import { TASK_REMOVED_USER_LABEL, taskAssigneeDisplay } from '@/lib/canonical/taskRules'
 // Rulebook 1.59.0 §21: who each task assignee row is (`taskPersonIndex`, one key per person across every record) is
 // the rulebook's, shared with iOS; this file only builds the web picker rows from it.
 import {
@@ -138,6 +138,11 @@ export function taskAssigneeNames(
     index: TaskPersonIndex
     /** Review of #452: false while the rosters are still loading — nobody is shown (never a false "Removed user"). */
     loaded?: boolean
+    /**
+     * Rulebook 1.91.0 §34 (`taskAssigneeCandidates().goneIds`, lower case): rows whose person no longer exists (a
+     * `managers` row left behind by a delete, an anonymised row). They read "Removed user", so the task can be reassigned.
+     */
+    goneIds?: ReadonlySet<string>
   }
 ): Array<{ kind: TaskPersonKind; name: string; removed: boolean; id: string }> {
   if (people.loaded === false) return []
@@ -149,18 +154,11 @@ export function taskAssigneeNames(
     const key = row ? people.index.keyOf(kind, row.id) : `missing:${kind}:${idKey(id)}`
     if (!idKey(id) || seen.has(key)) return
     seen.add(key)
-    const display = taskAssigneeDisplay(row ?? null)
+    const gone = Boolean(row && people.goneIds?.has(idKey(row.id)))
+    const display = gone ? { name: TASK_REMOVED_USER_LABEL, removed: true } : taskAssigneeDisplay(row ?? null)
     names.push({ kind, name: display.name, removed: display.removed, id })
   }
   for (const id of ids.managerIds) add('manager', id)
   for (const id of ids.operativeIds) add('operative', id)
   return names
 }
-
-/** Active catalogue rows for a new assignment. Historic task rows keep the stored name. */
-export function activePeopleForAssignment<T extends { email?: string; firstName?: string; lastName?: string; name?: string; isActive?: boolean }>(
-  rows: readonly T[]
-): T[] {
-  return rows.filter((row) => row.isActive !== false && isCurrentLabourNamedPerson(row))
-}
-

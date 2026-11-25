@@ -112,6 +112,8 @@ import { dailyOverviewMayPublish, overviewFormatHours } from '@/lib/daily-overvi
 import { bookLabourList } from '@/lib/book-labour/bookLabourList'
 import { dateFromDayKey } from '@/lib/ios-parity/londonTime'
 import { filterTasksForView, getTaskDetailHref, resolveProjectName } from '@/lib/tasks/taskUtils'
+import { useVisibleTasksState } from '@/lib/tasks/useVisibleTasks'
+import { TASK_VISIBILITY_FAILED_MESSAGE } from '@/lib/tasks/taskVisibilityReady'
 import { teamLeaveBookings, teamLeaveDecisionQueue, teamLeavePeople, teamLeaveTab } from '@/lib/annualLeave/teamLeaveQueue'
 import { getPendingHolidayApprovalsForUser, usersWithoutRequiredLineManager } from '@/lib/annualLeave/holidayApprovalUtils'
 import { getOperativeModeUsers, matchesRosterSegment } from '@/lib/staff/userRosterUtils'
@@ -148,6 +150,10 @@ export function HomeScreen() {
     error: managerBookingsError,
   } = useManagerScheduleStore()
   const { tasks, loadTasks, tasksLoadedOrgId } = useTaskStore()
+  // Rulebook 1.91.0 §34 decision A: the task figures and list count the tasks this person may see (as the Tasks page).
+  const { tasks: visibleTasks, ready: visibleTasksReady, phase: visibleTasksPhase, retry: retryVisibleTasks } = useVisibleTasksState(null, {
+    load: false,
+  })
   const {
     bookings: holidays,
     loadBookings: loadHolidays,
@@ -351,7 +357,7 @@ export function HomeScreen() {
   const metrics = useMemo(
     () =>
       computeHomeOverviewMetrics({
-        tasks,
+        tasks: visibleTasks,
         userId: displayUser?.id,
         userEmail: displayUser?.email,
         operatives,
@@ -373,12 +379,13 @@ export function HomeScreen() {
         }),
         bankHolidayDayKeys: homeBankDayKeys,
       }),
-    [tasks, displayUser, operatives, managers, bookings, managerSiteBookings, holidays, users, userIdAliases, liveCount, homeTimeZone, now, homeBankDayKeys]
+    [visibleTasks, displayUser, operatives, managers, bookings, managerSiteBookings, holidays, users, userIdAliases, liveCount, homeTimeZone, now, homeBankDayKeys]
   )
 
   const orgId = organization?.id || ''
   const projectsReady = Boolean(orgId) && projectsLoadedOrgId === orgId && smallWorksLoadedOrgId === orgId
-  const tasksReady = Boolean(orgId) && tasksLoadedOrgId === orgId
+  // Review of #458: a manager's task figures wait until the visible list can be trusted (jobs, rows, server roster).
+  const tasksReady = Boolean(orgId) && tasksLoadedOrgId === orgId && visibleTasksReady
   const warningLanes = warningScanLanes({
     detectionReady: Boolean(orgId) && orgDetails?.id === orgId,
     bookingsReady: bookingsReady && !bookingsLoading,
@@ -636,7 +643,7 @@ export function HomeScreen() {
   // ---- Tasks: the Tasks page's "To do" list (owner decision 9). ----
   const taskRows = useMemo(() => {
     if (!tasksReady) return null
-    const list = filterTasksForView(tasks, 'todo', displayUser, operatives, managers ?? [], !operative)
+    const list = filterTasksForView(visibleTasks, 'todo', displayUser, operatives, managers ?? [], !operative)
     // Only the rows the card shows are resolved; `total` is the whole "To do" list.
     const rows = list.slice(0, TASKS_SHOWN).map((task) => {
       const projectName = resolveProjectName(task, projects, smallWorks)
@@ -649,7 +656,7 @@ export function HomeScreen() {
       }
     })
     return { rows, total: list.length }
-  }, [tasksReady, tasks, displayUser, operatives, managers, operative, projects, smallWorks])
+  }, [tasksReady, visibleTasks, displayUser, operatives, managers, operative, projects, smallWorks])
 
   // Rulebook 1.83.0 §31: one listener on the compliance document, admins only (the rules refuse everyone else).
   const complianceAllowed = Boolean(displayUser) && canManageOrganizationCompliance(displayUser) && !pauseHomeLoads
@@ -914,7 +921,12 @@ export function HomeScreen() {
       ) : null}
 
       <div className={waitingItems.length > 0 ? 'dash-row' : 'dash-row single'}>
-        <TasksToDoCard pending={tasksPending == null ? '…' : String(tasksPending)} rows={taskRows?.rows ?? null} total={taskRows?.total ?? 0} />
+        <TasksToDoCard
+          pending={tasksPending == null ? '…' : String(tasksPending)}
+          rows={taskRows?.rows ?? null}
+          total={taskRows?.total ?? 0}
+          failed={visibleTasksPhase === 'failed' ? { message: TASK_VISIBILITY_FAILED_MESSAGE, onRetry: retryVisibleTasks } : null}
+        />
         <WaitingForYouCard items={waitingItems} />
       </div>
 

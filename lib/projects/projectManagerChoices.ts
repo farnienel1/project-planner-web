@@ -157,18 +157,6 @@ export function projectManagerChoices(
   })
 }
 
-/** Catalogue rows of people who are job-manager candidates (task assignment uses the catalogue). */
-export function assignableProjectManagers<T extends ProjectManagerRosterRow>(
-  managers: readonly T[],
-  users: readonly ProjectManagerAccount[],
-  organizationId?: string
-): T[] {
-  const emails = new Set(
-    jobManagerCandidates(rosterRows(users, organizationId)).map((candidate) => normalizeManagerEmail(candidate.email))
-  )
-  return managers.filter((row) => row.isActive !== false && emails.has(normalizeManagerEmail(row.email)))
-}
-
 /** Each stored manager as it reads now (`jobManagerAssignments`). */
 export function projectManagerAssignments(
   project: { managerId?: string | null; managerIds?: readonly string[] | null },

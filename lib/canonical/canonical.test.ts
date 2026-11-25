@@ -20860,3 +20860,135 @@ test('1.88.0 a new account accepting an invitation keeps the line manager on its
   const visitor = R112.inviteMembershipWrites({ invitation, invitationId: 'inv-1', authUid: 'u1', now: 1 })
   assert.deepEqual(visitor?.lineManagerRecord, { assignedManagerUserIds: ['carol'], assignedManagerUserId: 'carol', hasNoLineManager: false })
 })
+
+// MARK: - 1.91.0 §34 Tasks follow-ups (owner decisions 25 Nov)
+
+{
+  const NOW = Date.parse('2026-11-25T10:00:00Z')
+  const roster191 = [
+    { id: 'u-admin', email: 'admin@x.test', adminAccess: true, isActive: true, passwordSet: true, firstName: 'Ada', surname: 'Admin' },
+    { id: 'u-mgr', email: 'mgr@x.test', manager: true, isActive: true, passwordSet: true, firstName: 'Max', surname: 'Manager' },
+    { id: 'u-flag', email: 'flag@x.test', isActive: true, passwordSet: true, firstName: 'Fay', surname: 'Flagless' },
+    { id: 'u-op', email: 'op@x.test', operativeMode: true, isActive: true, passwordSet: true, firstName: 'Ola', surname: 'Op' },
+  ]
+  const managers191 = [
+    { id: 'm-max', email: 'mgr@x.test', firstName: 'Max', lastName: 'Manager' },
+    { id: 'm-fay', email: 'flag@x.test', firstName: 'Fay', lastName: 'Flagless' },
+  ]
+  const operatives191 = [{ id: 'o-ola', email: 'op@x.test', firstName: 'Ola', lastName: 'Op' }]
+  const jobs191 = [
+    { id: 'J-MAX', managerIds: ['m-max'] },
+    { id: 'J-OTHER', managerIds: ['m-fay'] },
+  ]
+  const tasks191 = [
+    { id: 't-max-job', projectId: 'j-max', status: 'To Do', dueDate: '2026-11-20' },
+    { id: 't-other', projectId: 'J-OTHER', status: 'To Do', dueDate: '2026-12-01' },
+    { id: 't-other-assigned', projectId: 'J-OTHER', status: 'To Do', assignedManagerIds: ['M-MAX'], dueDate: '2026-11-26' },
+    { id: 't-other-created', projectId: 'J-OTHER', status: 'To Do', createdByUserId: 'U-MGR' },
+    { id: 't-op', projectId: 'J-OTHER', status: 'To Do', assignedOperativeIds: ['o-ola'], priority: 'High', dueDate: '2026-11-26' },
+  ]
+  const visible = (viewer: Record<string, unknown>) =>
+    R112.visibleTasksForViewer({ viewer, tasks: tasks191, jobs: jobs191, roster: roster191, operatives: operatives191, managers: managers191 }).map(
+      (task) => task.id
+    )
+
+  test('1.91.0 visibility: admins see every task', () => {
+    assert.deepEqual(visible(roster191[0]), tasks191.map((t) => t.id))
+  })
+
+  test('1.91.0 visibility: a manager sees tasks on jobs they manage, assigned to them or created by them only', () => {
+    assert.deepEqual(visible(roster191[1]), ['t-max-job', 't-other-assigned', 't-other-created'])
+    const reasons = R112.taskVisibility({ viewer: roster191[1], tasks: tasks191, jobs: jobs191, roster: roster191, operatives: operatives191, managers: managers191 }).reasons
+    assert.equal(reasons['t-max-job'], 'managesJob')
+    assert.equal(reasons['t-other-assigned'], 'assigned')
+    assert.equal(reasons['t-other-created'], 'created')
+    assert.equal(reasons['t-other'], undefined)
+  })
+
+  test('1.91.0 visibility: a legacy user with no level flag reads as a manager', () => {
+    assert.deepEqual(visible(roster191[2]), ['t-other', 't-other-assigned', 't-other-created', 't-op'])
+  })
+
+  test('1.91.0 visibility: operatives see only their own tasks; no viewer sees nothing', () => {
+    assert.deepEqual(visible(roster191[3]), ['t-op'])
+    assert.deepEqual(R112.visibleTasksForViewer({ viewer: null, tasks: tasks191 }), [])
+  })
+
+  const locations191 = [
+    { id: 'J-MAX', kind: 'project' as const, code: 'P1', name: 'Max job' },
+    { id: 'J-OTHER', kind: 'smallWorks' as const, code: 'S1', name: 'Other job' },
+  ]
+  const keys191 = R112.taskPersonKeys({ managers: managers191, operatives: operatives191, roster: roster191 }).keys
+
+  test('1.91.0 filters: project, small works, creator, assignee, priority and due', () => {
+    const ctx = { locations: locations191, personKeys: keys191, nowMs: NOW, timeZone: 'Europe/London' }
+    const ids = (filters: Record<string, string>) => R112.filterTasks(tasks191, filters, ctx).map((t) => t.id)
+    assert.deepEqual(ids({ projectId: 'j-max' }), ['t-max-job'])
+    assert.deepEqual(ids({ smallWorksId: 'J-MAX' }), [])
+    assert.deepEqual(ids({ smallWorksId: 'J-OTHER' }), ['t-other', 't-other-assigned', 't-other-created', 't-op'])
+    const creator = R112.taskCreatorKey({ createdByUserId: 'u-mgr' }, keys191)
+    assert.deepEqual(ids({ creatorKey: creator }), ['t-other-created'])
+    assert.deepEqual(ids({ assigneeKey: keys191['m-max'] }), ['t-other-assigned'])
+    assert.deepEqual(ids({ priority: 'high' }), ['t-op'])
+    assert.deepEqual(ids({ due: 'overdue' }), ['t-max-job'])
+    assert.equal(R112.taskActiveFilterCount({ projectId: 'x', due: 'today' }), 2)
+    assert.deepEqual(R112.parseTaskFilters({ due: 'nonsense', priority: 'medium', junk: 1 }), { ...R112.TASK_NO_FILTERS, priority: 'Normal' })
+  })
+
+  test('1.91.0 filter options count the given tasks and name the creator from the roster', () => {
+    const options = R112.taskFilterOptions({ tasks: tasks191, locations: locations191, personKeys: keys191, roster: roster191 })
+    assert.deepEqual(options.projects, [{ value: 'J-MAX', label: 'P1 · Max job', count: 1 }])
+    assert.deepEqual(options.smallWorks, [{ value: 'J-OTHER', label: 'S1 · Other job', count: 4 }])
+    assert.deepEqual(options.creators.map((c) => [c.label, c.count]), [['Max Manager', 1]])
+    const legacy = R112.taskFilterOptions({ tasks: [{ id: 'x', createdBy: 'Old  Name' }], locations: [], personKeys: {} })
+    assert.deepEqual(legacy.creators, [{ value: 'name:old name', label: 'Old  Name', count: 1 }])
+  })
+
+  test('1.91.0 sorts: overdue first, due earliest, due latest (no due date last)', () => {
+    const ids = (sort: string) => R112.sortTasks(tasks191, sort as never, 'active', NOW, 'Europe/London').map((t) => t.id)
+    assert.equal(ids('overdue_first')[0], 't-max-job')
+    assert.deepEqual(ids('due_earliest'), ['t-max-job', 't-op', 't-other-assigned', 't-other', 't-other-created'])
+    assert.deepEqual(ids('due_latest'), ['t-other', 't-op', 't-other-assigned', 't-max-job', 't-other-created'])
+    assert.equal(R112.parseTaskSort('bogus'), 'overdue_first')
+  })
+
+  test('1.91.0 assignee candidates: only current people; a deleted person’s leftover managers row is never offered', () => {
+    const roster = [
+      ...roster191,
+      { id: 'u-inactive', email: 'gone@x.test', manager: true, isActive: false, passwordSet: true },
+      { id: 'u-pending', email: 'pend@x.test', manager: true, isActive: true, passwordSet: false },
+      { id: 'u-ghost', email: '', ghost: true, operativeMode: true, isActive: true, passwordSet: false, firstName: 'Gus' },
+    ]
+    const managers = [
+      ...managers191,
+      { id: 'm-deleted', email: 'deleted.person@x.test', firstName: 'Del', lastName: 'Eted' },
+      { id: 'm-inactive', email: 'gone@x.test', firstName: 'In', lastName: 'Active' },
+      { id: 'm-pending', email: 'pend@x.test', firstName: 'Pen', lastName: 'Ding' },
+      { id: 'm-placeholder', email: 'placeholder@x.test', firstName: 'Placeholder', lastName: 'Row' },
+      { id: 'm-anon', email: '', firstName: 'Deleted', lastName: 'user' },
+      { id: 'm-op', email: 'op@x.test', firstName: 'Ola', lastName: 'Op' },
+    ]
+    const operatives = [
+      ...operatives191,
+      { id: 'o-ghost', email: '', linkedUserId: 'u-ghost', firstName: 'Gus' },
+      { id: 'o-off', email: 'op@x.test', isActive: false },
+    ]
+    const result = R112.taskAssigneeCandidates({ managers, operatives, roster })
+    assert.deepEqual(result.managerIds, ['m-max', 'm-fay'])
+    assert.deepEqual(result.operativeIds, ['o-ola'])
+    assert.deepEqual(result.goneIds, ['m-anon', 'm-deleted'])
+    assert.deepEqual(
+      result.leftovers.map((row) => [row.kind, row.id, row.reason]),
+      [
+        ['manager', 'm-deleted', 'noAccount'],
+        ['manager', 'm-anon', 'deletedAccount'],
+      ]
+    )
+  })
+}
+
+test('1.91.0 review of #458: taskSortLabel names the Completed tab order honestly', () => {
+  assert.equal(R112.taskSortLabel('overdue_first', 'active'), 'Overdue first')
+  assert.equal(R112.taskSortLabel('overdue_first', 'completed'), 'Most recently completed')
+  assert.equal(R112.taskSortLabel('due_latest', 'completed'), 'Due date, latest first')
+})

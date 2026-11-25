@@ -10,12 +10,13 @@ import { ProjectHub } from '@/components/projects/ProjectHub'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
 import type { Project } from '@/types'
 import { jobTileBadges } from '@/lib/canonical'
+import { useVisibleTasksState } from '@/lib/tasks/useVisibleTasks'
 
 export default function SmallWorkDetailPage() {
   const params = useParams()
   const { organization } = useAuthStore()
   const { getProject } = useProjectStore()
-  const { tasks, loadTasks } = useTaskStore()
+  const { loadTasks } = useTaskStore()
   const [work, setWork] = useState<Project | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -28,6 +29,10 @@ export default function SmallWorkDetailPage() {
     loadTasks(organization.id)
   }, [organization, params.id, getProject, loadTasks])
 
+  // Rulebook 1.91.0 §34 decision A: the job's Tasks figure counts the tasks this person may see.
+  const jobs = useMemo(() => (work ? [work] : []), [work])
+  // Re-check of #459: the figure waits until the visible list can be trusted (none shown before).
+  const { tasks, ready: tasksReady } = useVisibleTasksState(jobs)
   const openTaskCount = useMemo(
     () => jobTileBadges({ jobId: String(params.id), tasks }).openTasks,
     [tasks, params.id]
@@ -50,5 +55,5 @@ export default function SmallWorkDetailPage() {
 
   const basePath = `/dashboard/small-works/${work.id}`
 
-  return <ProjectHub project={work} basePath={basePath} taskCount={openTaskCount} />
+  return <ProjectHub project={work} basePath={basePath} taskCount={tasksReady ? openTaskCount : undefined} />
 }
