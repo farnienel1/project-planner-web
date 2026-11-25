@@ -70,7 +70,7 @@ export function useSiteAuditJobContext(enabled = true): SiteAuditJobContext {
       loadTasks(orgId),
       loadOperatives(orgId),
       loadManagers(orgId),
-      loadAssignedProjectIds(orgId, user.id),
+      loadAssignedProjectIds(orgId, [user.id, ...(user.formerUserIds ?? [])]),
     ]).then(() => {
       if (!cancelled) setReadsDone(key)
     })
@@ -78,7 +78,7 @@ export function useSiteAuditJobContext(enabled = true): SiteAuditJobContext {
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [attempt, enabled, everyJob, operativeMode, orgId, user?.id, loadBookings, loadManagerSiteBookings, loadTasks, loadOperatives, loadManagers, loadAssignedProjectIds])
+  }, [attempt, enabled, everyJob, operativeMode, orgId, user?.id, user?.formerUserIds, loadBookings, loadManagerSiteBookings, loadTasks, loadOperatives, loadManagers, loadAssignedProjectIds])
 
   const context = useMemo(
     () =>

@@ -10,6 +10,8 @@ import {
   applyCreatedHistory,
   applyEditHistory,
   daysRemaining,
+  deadlineLocationList,
+  deadlineLocationText,
   dependents,
   formatDay,
   formatStamp,
@@ -36,6 +38,7 @@ import { ReportFileLink } from '@/components/fileReports/ReportFileLink'
 import { StoredFileLink } from '@/components/projects/features/StoredFileLink'
 import { storedFileDirectHref } from '@/lib/healthSafety/storedFile'
 import { safeExternalUrl } from '@/lib/canonical/uploadPolicy'
+import { deadlineLocationWriteFields } from '@/lib/canonical/workDocumentReaders'
 
 export type DeadlinePerson = { id: string; name: string; subtitle: string; isLive: boolean }
 
@@ -174,7 +177,7 @@ export function DetailSheet({
   return (
     <Sheet
       title="Deadline"
-      subtitle={item.location || undefined}
+      subtitle={deadlineLocationText(item) || undefined}
       onClose={onClose}
       footer={
         canManage ? (
@@ -226,7 +229,7 @@ export function DetailSheet({
           ) : null}
         </div>
         <div className="card divide-y divide-(--line)">
-          <Field label="Location" value={item.location || 'Not set'} />
+          <Field label="Location" value={deadlineLocationText(item) || 'Not set'} />
           <Field label="Trade" value={item.trade || 'Not set'} />
           <Field
             label="Responsible"
@@ -388,10 +391,10 @@ export function EditorSheet({
   onSave: (draft: Deadline, file: File | null) => void | Promise<void>
 }) {
   const [title, setTitle] = useState(existing?.title || '')
-  const [location, setLocation] = useState(existing?.location || '')
-  const [customLocation, setCustomLocation] = useState(
-    Boolean(existing?.location && !(DEADLINE_LOCATION_PRESETS as readonly string[]).includes(existing.location))
-  )
+  // Rulebook 1.92.0: a deadline may be on several floors / areas (presets and typed ones).
+  const [locations, setLocations] = useState<string[]>(existing ? deadlineLocationList(existing) : [])
+  const [customLocation, setCustomLocation] = useState('')
+  const customLocations = locations.filter((name) => !(DEADLINE_LOCATION_PRESETS as readonly string[]).includes(name))
   const [trade, setTrade] = useState(existing?.trade || 'General')
   const [due, setDue] = useState(dayKey(existing?.due || new Date()))
   const [hasStart, setHasStart] = useState(existing ? existing.start != null : true)
@@ -413,6 +416,21 @@ export function EditorSheet({
     return person.name.toLowerCase().includes(q) || person.subtitle.toLowerCase().includes(q)
   })
   const tradeChoices = Array.from(new Set([...(existing?.trade ? [existing.trade] : []), ...DEADLINE_TRADE_OPTIONS]))
+
+  function toggleLocation(name: string) {
+    setLocations((current) =>
+      current.some((row) => row.toLowerCase() === name.toLowerCase())
+        ? current.filter((row) => row.toLowerCase() !== name.toLowerCase())
+        : [...current, name]
+    )
+  }
+
+  function addCustomLocation() {
+    const name = customLocation.trim()
+    if (!name) return
+    setLocations((current) => (current.some((row) => row.toLowerCase() === name.toLowerCase()) ? current : [...current, name]))
+    setCustomLocation('')
+  }
 
   function toggle(id: string) {
     setSelected((current) => (current.includes(id) ? current.filter((row) => row !== id) : [...current, id]))
@@ -479,7 +497,10 @@ export function EditorSheet({
     const next: Deadline = {
       ...base,
       title: title.trim(),
-      location: location.trim() || null,
+      ...(() => {
+        const floors = deadlineLocationWriteFields([...locations, customLocation])
+        return { location: floors.location || null, locations: floors.locations }
+      })(),
       trade,
       detail: detail.trim() || null,
       start: hasStart && isPlausibleDayKey(start) ? dateFromDayKey(start) : null,
@@ -537,34 +558,39 @@ export function EditorSheet({
         </section>
         <section>
           <h3 className="mb-2 text-[11px] font-bold tracking-[0.08em] text-(--ink3)">WHERE</h3>
+          <p className="mb-2 text-xs text-(--ink3)">Pick every floor or area this deadline covers.</p>
           <div className="chips">
-            <button
-              type="button"
-              className={`chip ${customLocation ? 'on' : ''}`}
-              onClick={() => {
-                if (!customLocation && (DEADLINE_LOCATION_PRESETS as readonly string[]).includes(location)) setLocation('')
-                setCustomLocation(true)
-              }}
-            >
-              Custom
-            </button>
-            {DEADLINE_LOCATION_PRESETS.map((area) => (
-              <button
-                key={area}
-                type="button"
-                className={`chip ${!customLocation && location === area ? 'on' : ''}`}
-                onClick={() => {
-                  setCustomLocation(false)
-                  setLocation(area)
-                }}
-              >
-                {area}
+            {DEADLINE_LOCATION_PRESETS.map((area) => {
+              const on = locations.some((row) => row.toLowerCase() === area.toLowerCase())
+              return (
+                <button key={area} type="button" aria-pressed={on} className={`chip ${on ? 'on' : ''}`} onClick={() => toggleLocation(area)}>
+                  {area}
+                </button>
+              )
+            })}
+            {customLocations.map((area) => (
+              <button key={area} type="button" aria-pressed className="chip on" onClick={() => toggleLocation(area)} aria-label={`Remove ${area}`}>
+                {area} ✕
               </button>
             ))}
           </div>
-          {customLocation ? (
-            <input className="pp-in mt-2 w-full" placeholder="Type floor or area" value={location} onChange={(e) => setLocation(e.target.value)} />
-          ) : null}
+          <div className="mt-2 flex gap-2">
+            <input
+              className="pp-in min-w-0 grow"
+              placeholder="Type another floor or area"
+              value={customLocation}
+              onChange={(e) => setCustomLocation(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  addCustomLocation()
+                }
+              }}
+            />
+            <button type="button" className="btn sm" disabled={!customLocation.trim()} onClick={addCustomLocation}>
+              Add
+            </button>
+          </div>
         </section>
         <section>
           <h3 className="mb-2 text-[11px] font-bold tracking-[0.08em] text-(--ink3)">WHEN</h3>
