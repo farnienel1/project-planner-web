@@ -82,7 +82,7 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
   const [grouping, setGrouping] = useState<DeadlineGrouping>('date')
   const [search, setSearch] = useState('')
   const [tradeFilter, setTradeFilter] = useState('All trades')
-  const [showCompleted, setShowCompleted] = useState(false)
+  const [showCompleted, setShowCompleted] = useState(true)
   const [openId, setOpenId] = useState<string | null>(null)
   const [editing, setEditing] = useState<Deadline | 'new' | null>(null)
   const [rescheduleId, setRescheduleId] = useState<string | null>(null)
@@ -126,9 +126,10 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
     () => filterDeadlines({ items: scoped, tab: 'all', tradeFilter, search, now }),
     [scoped, tradeFilter, search, now]
   )
+  // Counts and the summary read every deadline the viewer sees (not the search / trade filter), as on iOS.
   const displayInputs = useMemo(
     () =>
-      searched.map((item) => ({
+      scoped.map((item) => ({
         title: item.title,
         status: item.status,
         progress: item.progress,
@@ -137,7 +138,7 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
         createdAt: item.history.find((entry) => entry.kind.type === 'created')?.at ?? null,
         completedAt: item.completedAt,
       })),
-    [searched]
+    [scoped]
   )
   const tabCounts = useMemo(() => deadlineTabCounts(displayInputs, now.getTime(), organizationZoneOr()), [displayInputs, now])
   const summary = useMemo(() => deadlineSummaryLine(displayInputs, now.getTime(), organizationZoneOr()), [displayInputs, now])
