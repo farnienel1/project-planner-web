@@ -6,6 +6,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { FlagIcon } from '@heroicons/react/24/solid'
+import { MagnifyingGlassIcon } from '@heroicons/react/24/outline'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
@@ -16,53 +17,47 @@ import { useDeadlineStore } from '@/lib/stores/deadlineStore'
 import { isOperativeMode } from '@/lib/permissions'
 import { liveUserIdsOnJob } from '@/lib/access/workAccess'
 import { isPendingPerson } from '@/lib/staff/pendingPeople'
-import { DEADLINE_MULTIPLE_FLOORS_GROUP, personIdSet } from '@/lib/canonical'
+import { DEADLINE_MULTIPLE_FLOORS_GROUP, DEADLINE_TABS, deadlineSummaryLine, deadlineTabCounts, personIdSet } from '@/lib/canonical'
+import type { DeadlineTabKey } from '@/lib/canonical'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import { healthSafetyFilePath, uploadFile } from '@/lib/firebase/storageUtils'
 import { prepareClientUpload } from '@/lib/security/stripPhotoLocation'
-import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { notifyNewDeadlineAssignees } from '@/lib/deadlines/notify'
 import {
   assigneeInitials,
   completeDeadline,
+  deadlineDayLabel,
   deadlineLocationList,
-  deadlineStats,
   deadlineTrades,
+  deadlineView,
   emptyDeadlineCopy,
   filterDeadlines,
   formatDay,
-  formatDayNumber,
-  formatFullDay,
-  formatWeekdayLetter,
   groupDeadlines,
-  hasOverdueOnDay,
-  isAtRisk,
-  loadOnDay,
   offsetDays,
   projectNotificationName,
-  railDays,
   replaceDeadline,
   rescheduleDeadline,
-  riskBannerMessage,
   scopedDeadlines,
   setDeadlineProgress,
   slippageDays,
   timelineItems,
   timelineWindowStart,
   timesRescheduled,
-  urgency,
-  urgencyTone,
-  visibleGroups,
   withFileAttached,
 } from '@/lib/deadlines/logic'
-import type { Deadline, DeadlineFilter, DeadlineGrouping } from '@/lib/deadlines/types'
+import type { Deadline, DeadlineGroup, DeadlineGrouping } from '@/lib/deadlines/types'
 import type { Project, User } from '@/types'
-import { Countdown, DetailSheet, EditorSheet, Pacing, RescheduleSheet } from '@/components/projects/features/deadlines/DeadlinePanels'
+import { DetailSheet, EditorSheet, ProgressBar, ProgressRing, RescheduleSheet } from '@/components/projects/features/deadlines/DeadlinePanels'
+import '@/app/pages-ui.css'
+import '@/app/tasks-ui.css'
+import '@/app/deadlines-ui.css'
 
 type Mode = 'list' | 'timeline'
 
 const GROUP_LABELS: { id: DeadlineGrouping; label: string }[] = [
-  { id: 'date', label: 'Date' },
+  { id: 'date', label: 'Due date' },
   { id: 'location', label: 'Floor / area' },
   { id: 'trade', label: 'Trade' },
   { id: 'assignee', label: 'Who' },
@@ -83,11 +78,11 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
   const { items, loading, loaded, error, load, save } = useDeadlineStore()
   const [now] = useState(() => new Date())
   const [mode, setMode] = useState<Mode>('list')
-  const [filter, setFilter] = useState<DeadlineFilter>('all')
+  const [filter, setFilter] = useState<DeadlineTabKey>('all')
   const [grouping, setGrouping] = useState<DeadlineGrouping>('date')
   const [search, setSearch] = useState('')
   const [tradeFilter, setTradeFilter] = useState('All trades')
-  const [selectedDay, setSelectedDay] = useState<string | null>(null)
+  const [showCompleted, setShowCompleted] = useState(false)
   const [openId, setOpenId] = useState<string | null>(null)
   const [editing, setEditing] = useState<Deadline | 'new' | null>(null)
   const [rescheduleId, setRescheduleId] = useState<string | null>(null)
@@ -125,18 +120,30 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
   // deadlines filed under the ghost id, which accepting puts on `formerUserIds`).
   const myIds = useMemo(() => (user ? personIdSet(rulebookPerson(user, users), rulebookRoster(users)) : []), [user, users])
   const scoped = useMemo(() => scopedDeadlines(items, canManage ? null : myIds), [items, canManage, myIds])
-  const stats = useMemo(() => deadlineStats(scoped, now), [scoped, now])
   const trades = useMemo(() => deadlineTrades(scoped), [scoped])
-  const filtered = useMemo(
-    () => filterDeadlines({ items: scoped, filter, tradeFilter, search, now }),
-    [scoped, filter, tradeFilter, search, now]
+  // Rulebook 1.94.0 §23: tabs, counts, groups and the summary all read `deadlineDisplay` (via `deadlineView`).
+  const searched = useMemo(
+    () => filterDeadlines({ items: scoped, tab: 'all', tradeFilter, search, now }),
+    [scoped, tradeFilter, search, now]
   )
-  const groups = useMemo(() => {
-    const selected = selectedDay ? dateFromDayKey(selectedDay) : null
-    return visibleGroups(groupDeadlines(filtered, grouping, now), selected)
-  }, [filtered, grouping, now, selectedDay])
+  const displayInputs = useMemo(
+    () =>
+      searched.map((item) => ({
+        title: item.title,
+        status: item.status,
+        progress: item.progress,
+        due: item.due,
+        start: item.start,
+        createdAt: item.history.find((entry) => entry.kind.type === 'created')?.at ?? null,
+        completedAt: item.completedAt,
+      })),
+    [searched]
+  )
+  const tabCounts = useMemo(() => deadlineTabCounts(displayInputs, now.getTime(), organizationZoneOr()), [displayInputs, now])
+  const summary = useMemo(() => deadlineSummaryLine(displayInputs, now.getTime(), organizationZoneOr()), [displayInputs, now])
+  const filtered = useMemo(() => searched.filter((item) => deadlineView(item, now).tabs.includes(filter)), [searched, filter, now])
+  const groups = useMemo(() => groupDeadlines(filtered, grouping, now), [filtered, grouping, now])
   const timeline = useMemo(() => timelineItems(filtered), [filtered])
-  const days = useMemo(() => railDays(now), [now])
   const people = useMemo(() => {
     const live = liveUserIdsOnJob({
       projectId: project.id,
@@ -163,7 +170,6 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
   )
   const openItem = items.find((item) => item.id === openId) || null
   const rescheduleItem = items.find((item) => item.id === rescheduleId) || null
-  const risk = riskBannerMessage(stats)
   const empty = emptyDeadlineCopy(filter, canManage, contextKind)
 
   async function persist(nextItems: Deadline[], notifyFrom: Deadline | null, draftId: string) {
@@ -234,12 +240,6 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
     }
   }
 
-  /** Owner 25 Nov: choosing a filter shows everything it keeps — a day picked on the rail no longer narrows it. */
-  function chooseFilter(next: DeadlineFilter) {
-    setFilter(next)
-    setSelectedDay(null)
-  }
-
   async function mutate(next: Deadline) {
     const previous = items.find((item) => item.id === next.id) || null
     try {
@@ -249,24 +249,42 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
     }
   }
 
+  const summaryParts = summary.split(' · ')
+
   return (
-    <div className="stack" data-hue="red">
-      <header className="phead">
-        <span className="badge-ico">
-          <FlagIcon className="h-6 w-6" />
-        </span>
-        <div className="min-w-0 grow">
-          <h1>Deadlines</h1>
-          <p className="sub">
-            {stats.completeCount} of {scoped.length} deadlines met
-          </p>
+    <div className="tk-page dl-page">
+      <header className="tk-head">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="badge-ico" data-hue="red">
+            <FlagIcon className="h-6 w-6" />
+          </span>
+          <div className="min-w-0">
+            <h1>Deadlines</h1>
+            {scoped.length > 0 ? (
+              <p className="dl-summary">
+                <b>{summaryParts[0]}</b>
+                {summaryParts[1] ? (
+                  <>
+                    {' · '}
+                    <b>{summaryParts[1]}</b>
+                  </>
+                ) : null}
+                {summaryParts.slice(2).map((part) => ` · ${part}`)}
+              </p>
+            ) : null}
+          </div>
         </div>
-        <div className="ml-auto flex max-w-full flex-wrap gap-2">
-          <button type="button" className="btn sm" onClick={() => setMode(mode === 'list' ? 'timeline' : 'list')}>
-            {mode === 'list' ? 'Timeline' : 'List'}
-          </button>
+        <div className="flex max-w-full flex-wrap items-center gap-2">
+          <div className="tk-seg" role="group" aria-label="View">
+            <button type="button" aria-pressed={mode === 'list'} onClick={() => setMode('list')}>
+              List
+            </button>
+            <button type="button" aria-pressed={mode === 'timeline'} onClick={() => setMode('timeline')}>
+              Timeline
+            </button>
+          </div>
           {canManage ? (
-            <button type="button" className="btn sm primary" onClick={() => setEditing('new')}>
+            <button type="button" className="tk-btn primary" onClick={() => setEditing('new')}>
               Add deadline
             </button>
           ) : null}
@@ -276,182 +294,101 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
       {loading && !loaded ? <p className="text-sm text-(--ink3)">Loading deadlines…</p> : null}
       {banner || error ? <p className="text-sm font-semibold text-(--red)">{banner || error}</p> : null}
       {error && !loaded && organization?.id ? (
-        <button type="button" className="btn sm" onClick={() => void load(organization.id, project.id, isSmallWorks)}>
+        <button type="button" className="tk-btn sm" onClick={() => void load(organization.id, project.id, isSmallWorks)}>
           Try again
         </button>
       ) : null}
 
-      <div className="grid grid-cols-2 gap-3">
-        {(
-          [
-            ['overdue', String(stats.overdueCount), 'Overdue', 'red'],
-            ['thisWeek', String(stats.thisWeekCount), 'Due this week', 'warn'],
-            ['atRisk', String(stats.atRiskCount), 'Behind pace', 'leave'],
-            ['complete', String(stats.completeCount), 'Completed', 'green'],
-          ] as const
-        ).map(([key, value, label, hue]) => (
-          <button
-            key={key}
-            type="button"
-            className="card pad text-left"
-            data-hue={hue}
-            onClick={() => {
-              chooseFilter(key)
-              setMode('list')
-            }}
-          >
-            <p className="font-(family-name:--head) text-2xl font-extrabold" style={{ color: 'var(--h)' }}>
-              {value}
-            </p>
-            <p className="text-sm text-(--ink2)">{label}</p>
+      <div className="tk-tabs" role="tablist" aria-label="Deadline lists">
+        {DEADLINE_TABS.map((tab) => (
+          <button key={tab.key} type="button" role="tab" className="tk-tab" aria-selected={filter === tab.key} onClick={() => setFilter(tab.key)}>
+            {tab.label}
+            <span
+              className={`n${tab.key === 'overdue' && tabCounts.overdue > 0 ? ' red' : ''}${
+                tab.key === 'behindPace' && tabCounts.behindPace > 0 ? ' amber' : ''
+              }`}
+            >
+              {tabCounts[tab.key]}
+            </span>
           </button>
         ))}
       </div>
 
-      {risk ? (
-        <button
-          type="button"
-          className="card flex w-full items-center gap-3 p-3 text-left"
-          data-hue={stats.overdueCount > 0 ? 'red' : 'warn'}
-          onClick={() => {
-            chooseFilter(stats.overdueCount > 0 ? 'overdue' : 'atRisk')
-            setMode('list')
-          }}
-        >
-          <span className="grid h-9 w-9 place-items-center rounded-full" style={{ background: 'var(--ht)', color: 'var(--h)' }}>
-            <FlagIcon className="h-4 w-4" />
-          </span>
-          <span>
-            <span className="block text-sm font-bold">{risk}</span>
-            <span className="text-xs text-(--ink3)">Review</span>
-          </span>
-        </button>
-      ) : null}
-
-      <section>
-        <div className="mb-2 flex items-center gap-2">
-          <h2 className="text-[11px] font-bold tracking-[0.08em] text-(--ink3)">NEXT THREE WEEKS</h2>
-          {selectedDay ? (
-            <button type="button" className="ml-auto text-xs font-bold text-(--blue)" onClick={() => setSelectedDay(null)}>
-              Clear
-            </button>
-          ) : null}
-        </div>
-        <div className="flex gap-1.5 overflow-x-auto pb-1">
-          {days.map((day) => {
-            const key = dayKey(day)
-            const count = loadOnDay(scoped, day)
-            const bad = hasOverdueOnDay(scoped, day, now)
-            const today = key === dayKey(now)
-            const selected = selectedDay === key
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setSelectedDay(selected ? null : key)}
-                className="flex w-11 shrink-0 flex-col items-center rounded-xl px-1 py-2"
-                data-hue={bad ? 'red' : count > 0 ? 'hs' : 'lib'}
-                style={{ background: selected ? 'var(--h)' : today ? 'var(--ht)' : 'transparent', color: selected ? '#fff' : undefined }}
-              >
-                <span className="text-[10px] font-bold opacity-70">{formatWeekdayLetter(day)}</span>
-                <span className="text-[15px] font-extrabold">{formatDayNumber(day)}</span>
-                <span
-                  className="mt-1 block rounded-full"
-                  style={{
-                    width: 14,
-                    height: count === 0 ? 3 : Math.min(count, 4) * 3.5 + 2,
-                    background: count === 0 ? 'transparent' : selected ? '#fff' : 'var(--h)',
-                  }}
-                />
-              </button>
-            )
-          })}
-        </div>
-      </section>
-
-      <div className="chips">
-        {(
-          [
-            ['all', 'All', scoped.length],
-            ['overdue', 'Overdue', stats.overdueCount],
-            ['thisWeek', 'This week', stats.thisWeekCount],
-            ['atRisk', 'At risk', stats.atRiskCount],
-            ['complete', 'Complete', stats.completeCount],
-          ] as const
-        ).map(([id, label, count]) => (
-          <button key={id} type="button" className={`chip ${filter === id && !selectedDay ? 'on' : ''}`} onClick={() => chooseFilter(id)}>
-            {label}
-            <span className="n">{count}</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <input
-          className="pp-in min-w-[220px] grow"
-          placeholder="Search deadlines, floors, trades"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-        />
-        <select className="pp-in" aria-label="Group deadlines" value={grouping} onChange={(event) => setGrouping(event.target.value as DeadlineGrouping)}>
+      <div className="tk-toolbar">
+        <label className="tk-search">
+          <MagnifyingGlassIcon aria-hidden />
+          <input
+            placeholder="Search deadlines, floors, trades"
+            aria-label="Search deadlines"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </label>
+        <select className="tk-select" aria-label="Trade" value={tradeFilter} onChange={(event) => setTradeFilter(event.target.value)}>
+          {trades.map((trade) => (
+            <option key={trade} value={trade}>
+              {trade}
+            </option>
+          ))}
+        </select>
+        <select className="tk-select" aria-label="Group deadlines" value={grouping} onChange={(event) => setGrouping(event.target.value as DeadlineGrouping)}>
           {GROUP_LABELS.map((option) => (
             <option key={option.id} value={option.id}>
-              {option.label}
+              Group: {option.label}
             </option>
           ))}
         </select>
       </div>
 
-      <div className="chips">
-        {trades.map((trade) => (
-          <button key={trade} type="button" className={`chip ${tradeFilter === trade ? 'on' : ''}`} onClick={() => setTradeFilter(trade)}>
-            {trade}
-          </button>
-        ))}
-      </div>
-
-      {selectedDay && mode === 'list' ? (
-        <div className="card flex items-center gap-3 p-3 text-sm">
-          <span className="grow">Showing deadlines due {formatFullDay(dateFromDayKey(selectedDay))} only.</span>
-          <button type="button" className="btn sm" onClick={() => setSelectedDay(null)}>
-            Show all
-          </button>
-        </div>
-      ) : null}
-
       {mode === 'timeline' ? (
         <Timeline rows={timeline} now={now} onOpen={setOpenId} />
       ) : groups.length === 0 ? (
-        <div className="card pad">
-          <h2 className="font-(family-name:--head) text-lg font-extrabold">{empty.title}</h2>
-          <p className="mt-1 text-sm text-(--ink3)">{empty.message}</p>
+        <div className="tk-empty">
+          <h3>{empty.title}</h3>
+          <p>{empty.message}</p>
           {canManage && filter === 'all' ? (
-            <button type="button" className="btn primary mt-4" onClick={() => setEditing('new')}>
-              Add a deadline
+            <button type="button" className="tk-btn primary mt-4" onClick={() => setEditing('new')}>
+              Add deadline
             </button>
           ) : null}
         </div>
       ) : (
-        groups.map((group) => (
-          <section key={group.id}>
-            <h2 className="mb-2 flex items-center gap-2 text-[11px] font-bold tracking-[0.08em]" data-hue={group.tone || 'lib'} style={{ color: 'var(--h)' }}>
-              <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: 'var(--h)' }} />
-              {group.title.toUpperCase()}
-              <span className="text-(--ink3)">{group.items.length}</span>
-            </h2>
-            <div className="space-y-2">
-              {group.items.map((item) => (
-                <DeadlineCard key={item.id} item={item} now={now} showLocation={grouping !== 'location' || group.id === DEADLINE_MULTIPLE_FLOORS_GROUP} canManage={canManage} onOpen={() => setOpenId(item.id)} />
-              ))}
-            </div>
-          </section>
-        ))
+        groups.map((group) => {
+          const collapsed = grouping === 'date' && group.id === 'completed' && filter === 'all' && !showCompleted
+          return (
+            <section key={group.id} className="tk-group">
+              <h3 className="dl-group-h" data-dl-tone={groupTone(group)}>
+                {group.title}
+                <span className="count">{group.items.length}</span>
+                <span className="grow" />
+                {grouping === 'date' && group.id === 'completed' && filter === 'all' ? (
+                  <button type="button" aria-expanded={!collapsed} onClick={() => setShowCompleted(!showCompleted)}>
+                    {collapsed ? 'Show' : 'Hide'}
+                  </button>
+                ) : null}
+              </h3>
+              {collapsed
+                ? null
+                : group.items.map((item) => (
+                    <DeadlineRow
+                      key={item.id}
+                      item={item}
+                      now={now}
+                      showLocation={grouping !== 'location' || group.id === DEADLINE_MULTIPLE_FLOORS_GROUP}
+                      canManage={canManage}
+                      onOpen={() => setOpenId(item.id)}
+                    />
+                  ))}
+            </section>
+          )
+        })
       )}
 
       {openItem ? (
         <DetailSheet
           item={openItem}
           items={items}
+          projectLabel={projectNotificationName(project.siteName, project.jobNumber) || contextKind}
           now={now}
           canManage={canManage}
           audits={jobAudits}
@@ -499,7 +436,15 @@ function deadlineErrorText(err: unknown, fallback: string): string {
   return code && !message.includes(code) ? `${message} (${code})` : message
 }
 
-function DeadlineCard({
+/** The group heading colour: overdue red, this week amber, completed green, the rest plain. */
+function groupTone(group: DeadlineGroup): string | undefined {
+  if (group.tone === 'red') return 'red'
+  if (group.tone === 'amber') return 'amber'
+  if (group.tone === 'green') return 'green'
+  return undefined
+}
+
+function DeadlineRow({
   item,
   now,
   showLocation,
@@ -512,76 +457,75 @@ function DeadlineCard({
   canManage: boolean
   onOpen: () => void
 }) {
-  const value = urgency(item, now)
-  const atRisk = isAtRisk(item, now)
+  const view = deadlineView(item, now)
   const slip = slippageDays(item)
   const initials = assigneeInitials(item.assignees)
+  const edge = view.status === 'overdue' ? 'red' : view.tone === 'amber' ? 'amber' : undefined
+  const done = view.group === 'completed'
+  const dueDay = done && item.completedAt ? deadlineDayLabel(item.completedAt) : deadlineDayLabel(item.due, true)
   return (
-    <article className="card relative cursor-pointer overflow-hidden p-4 pl-5" style={{ opacity: item.status === 'complete' ? 0.72 : 1 }} data-hue={urgencyTone(value)} onClick={onOpen}>
-      <span className="absolute bottom-3 left-1.5 top-3 w-1 rounded-full" style={{ background: 'var(--h)' }} />
-      {item.isCritical || atRisk || timesRescheduled(item) > 0 ? (
-        <div className="mb-2 flex flex-wrap gap-1.5">
-          {item.isCritical ? <span className="pill solid">Critical path</span> : null}
-          {atRisk ? (
-            <span className="pill" data-hue="red" style={{ background: 'var(--ht)', color: 'var(--h)' }}>
-              At risk
-            </span>
-          ) : null}
-          {timesRescheduled(item) > 0 ? (
-            <span className="pill" data-hue="warn" style={{ background: 'var(--ht)', color: 'var(--h)' }}>
-              {slip > 0 ? `+${slip}d slip` : 'moved'}
-            </span>
-          ) : null}
+    <div
+      className={`dl-row${done ? ' done' : ''}`}
+      data-edge={edge}
+      data-dl-tone={view.tone}
+      role="button"
+      tabIndex={0}
+      aria-label={`${item.title}, ${view.statusLabel}, ${view.dueText}`}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onOpen()
+        }
+      }}
+    >
+      <ProgressRing view={view} />
+      <div className="min-w-0">
+        <div className="title">{item.title}</div>
+        <div className="tags">
+          {item.isCritical ? <span className="dl-tag critical">Critical path</span> : null}
+          {view.status === 'blocked' ? <span className="dl-status">Blocked</span> : null}
+          {showLocation
+            ? deadlineLocationList(item).map((floor) => (
+                <span key={floor} className="dl-tag">
+                  {floor}
+                </span>
+              ))
+            : null}
+          {item.trade ? <span className="dl-tag">{item.trade}</span> : null}
+          {timesRescheduled(item) > 0 ? <span className="dl-tag">{slip > 0 ? `+${slip}d slip` : 'moved'}</span> : null}
         </div>
-      ) : null}
-      <div className="flex items-start gap-3">
-        <h3 className="min-w-0 grow font-(family-name:--head) text-base font-extrabold">{item.title}</h3>
-        <Countdown value={value} />
+        {item.status === 'blocked' && item.blockedReason ? <p className="mt-1 text-[13px] text-(--ink2)">{item.blockedReason}</p> : null}
       </div>
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {showLocation
-          ? deadlineLocationList(item).map((floor) => (
-              <span key={floor} className="pill">
-                {floor}
-              </span>
-            ))
-          : null}
-        {item.trade ? <span className="pill">{item.trade}</span> : null}
+      <div className="bar-cell">
+        <ProgressBar view={view} />
       </div>
-      {item.status === 'blocked' && item.blockedReason ? (
-        <p className="mt-2 rounded-xl bg-(--leave-t) px-3 py-2 text-[12.5px] text-(--ink2)">{item.blockedReason}</p>
-      ) : item.status !== 'complete' ? (
-        <div className="mt-2">
-          <Pacing item={item} now={now} />
-        </div>
-      ) : null}
-      <div className="mt-3 flex items-center gap-2 border-t border-(--line) pt-3 text-xs text-(--ink3)">
-        <span>{item.status === 'complete' ? `Done ${formatDay(item.completedAt || item.due)}` : formatFullDay(item.due)}</span>
-        <span className="ml-auto flex">
-          {initials.slice(0, 3).map((letters, index) => (
-            <span
-              key={`${letters}-${index}`}
-              className="grid h-6 w-6 place-items-center rounded-full bg-(--blue-t) text-[10px] font-bold text-(--blue)"
-              style={{ marginLeft: index === 0 ? 0 : -6 }}
-            >
-              {letters}
-            </span>
-          ))}
-        </span>
-        {canManage && item.status !== 'complete' ? (
-          <button
-            type="button"
-            className="btn sm"
-            onClick={(event) => {
-              event.stopPropagation()
-              onOpen()
-            }}
-          >
-            Update
-          </button>
-        ) : null}
+      <div className="due">
+        <b>{view.dueText}</b>
+        <span>{dueDay}</span>
       </div>
-    </article>
+      <div className="people tk-avatars">
+        {initials.slice(0, 3).map((letters, index) => (
+          <span key={`${letters}-${index}`} className="tk-avatar">
+            {letters}
+          </span>
+        ))}
+      </div>
+      {canManage && !done ? (
+        <button
+          type="button"
+          className="tk-btn sm"
+          onClick={(event) => {
+            event.stopPropagation()
+            onOpen()
+          }}
+        >
+          Update
+        </button>
+      ) : (
+        <span />
+      )}
+    </div>
   )
 }
 
@@ -590,62 +534,61 @@ function Timeline({ rows, now, onOpen }: { rows: Deadline[]; now: Date; onOpen: 
   const windowDays = 42
   if (rows.length === 0) {
     return (
-      <div className="card pad">
-        <h2 className="font-(family-name:--head) text-lg font-extrabold">Nothing to plot</h2>
-        <p className="mt-1 text-sm text-(--ink3)">Deadlines with a start and due date appear here as bars.</p>
+      <div className="tk-empty">
+        <h3>Nothing to plot</h3>
+        <p>Deadlines with a due date appear here as bars.</p>
       </div>
     )
   }
+  const todayAt = (offsetDays(start, now) + 0.5) / windowDays
   return (
     <section>
-      <h2 className="mb-2 text-[11px] font-bold tracking-[0.08em] text-(--ink3)">SIX WEEK VIEW</h2>
-      <div className="card relative overflow-hidden">
-        <div className="relative px-3 pt-3">
-          <div className="mb-1 flex text-[10px] font-bold text-(--ink3)">
-            {Array.from({ length: 6 }, (_, week) => (
-              <span key={week} style={{ width: `${(7 / windowDays) * 100}%` }}>
-                {formatDay(new Date(start.getTime() + week * 7 * 86_400_000))}
-              </span>
-            ))}
-          </div>
-          <span className="absolute bottom-0 top-6 w-px bg-(--hs)" style={{ left: `calc(12px + (100% - 24px) * ${7 / windowDays})` }} />
+      <div className="dl-tl">
+        <div className="dl-tl-today" style={{ left: `calc(12px + (100% - 24px) * ${todayAt})` }} aria-hidden>
+          <span>Today</span>
+        </div>
+        <div className="dl-tl-head" aria-hidden>
+          {Array.from({ length: 6 }, (_, week) => (
+            <span key={week} style={{ width: `${(7 / windowDays) * 100}%` }}>
+              w/c {formatDay(new Date(start.getTime() + week * 7 * 86_400_000))}
+            </span>
+          ))}
         </div>
         {rows.map((item) => {
+          const view = deadlineView(item, now)
           const s = Math.max(offsetDays(start, item.start || item.due), 0)
           const e = Math.min(offsetDays(start, item.due) + 1, windowDays)
           const span = Math.max(e - s, 0.6)
-          const tone = urgencyTone(urgency(item, now))
+          const dueAt = offsetDays(start, item.due) + 0.5
+          const when = view.status === 'overdue' || view.group === 'completed' ? view.dueText : deadlineDayLabel(item.due)
           return (
-            <button key={item.id} type="button" className="block w-full px-3 py-2 text-left" onClick={() => onOpen(item.id)}>
-              <span className="mb-1 flex items-center gap-2 text-[13.5px] font-semibold">
-                {item.isCritical ? <FlagIcon className="h-3 w-3" /> : null}
-                <span className="min-w-0 grow truncate" style={{ textDecoration: item.status === 'complete' ? 'line-through' : undefined }}>
-                  {item.title}
-                </span>
-                {item.status === 'complete' ? (
-                  <span className="pill" data-hue="green" style={{ background: 'var(--ht)', color: 'var(--h)' }}>
-                    Complete
+            <button
+              key={item.id}
+              type="button"
+              className="dl-tl-row"
+              data-dl-tone={view.tone}
+              aria-label={`${item.title}, ${view.progressPercent}% complete, due ${deadlineDayLabel(item.due)}, ${view.statusLabel}`}
+              onClick={() => onOpen(item.id)}
+            >
+              <span className="dl-tl-label">
+                {item.isCritical ? <FlagIcon className="h-3 w-3 text-(--red)" aria-label="Critical path" /> : null}
+                <span className="min-w-0 truncate">{item.title}</span>
+                <span className="when">{when}</span>
+              </span>
+              <span className="dl-tl-track">
+                {e > 0 && s < windowDays ? (
+                  <span className="dl-tl-bar" style={{ left: `${(s / windowDays) * 100}%`, width: `${(span / windowDays) * 100}%` }}>
+                    <span className="done" style={{ width: `${view.progressPercent}%` }} />
                   </span>
                 ) : null}
-                <span data-hue={tone} style={{ color: 'var(--h)' }}>
-                  {formatDay(item.due)}
-                </span>
-              </span>
-              <span className="relative block h-[18px] rounded-md bg-(--soft2)">
-                <span
-                  className="absolute top-0 h-[18px] overflow-hidden rounded-md"
-                  data-hue={tone}
-                  style={{ left: `${(s / windowDays) * 100}%`, width: `${(span / windowDays) * 100}%`, background: 'var(--h)' }}
-                >
-                  <span className="absolute inset-y-0 right-0 bg-white/30" style={{ width: `${(1 - item.progress) * 100}%` }} />
-                </span>
+                {dueAt >= 0 && dueAt <= windowDays ? <span className="dl-tl-due" style={{ left: `${(dueAt / windowDays) * 100}%` }} /> : null}
               </span>
             </button>
           )
         })}
       </div>
-      <p className="mt-2 text-[11.5px] text-(--ink3)">
-        Bars run start to due. The pale end of a bar is work still outstanding; the teal line is today.
+      <p className="dl-tl-note">
+        Bars run start to due: the solid part is progress, the pale part is still to do, and ◆ is the due date. The teal line is today.
       </p>
     </section>
   )

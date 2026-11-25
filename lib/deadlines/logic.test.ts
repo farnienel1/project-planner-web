@@ -5,20 +5,16 @@ import {
   applyEditHistory,
   completeDeadline,
   daysRemaining,
+  deadlineView,
   emptyDeadlineCopy,
   filterDeadlines,
   groupDeadlines,
-  isAtRisk,
+  historyLine,
   mergeDeadlinesFirstWriterWins,
   scopedDeadlines,
   timelineItems,
-  pacingGap,
   rescheduleDeadline,
-  riskBannerMessage,
   setDeadlineProgress,
-  urgency,
-  urgencyPhrase,
-  urgencyPill,
 } from './logic.ts'
 import type { Deadline } from './types.ts'
 
@@ -53,30 +49,26 @@ function item(partial: Partial<Deadline> & Pick<Deadline, 'id' | 'title' | 'due'
   }
 }
 
-test('urgency phrases match iOS for overdue, today, blocked and later weeks', () => {
+test('1.94.0: a deadline reads through deadlineDisplay (overdue, today, blocked, far)', () => {
   const overdue = item({ id: '1', title: 'Late', due: new Date('2026-06-08T11:00:00Z'), status: 'blocked' })
   assert.equal(daysRemaining(overdue, NOW), -3)
-  assert.equal(urgencyPhrase(urgency(overdue, NOW)), '3 days overdue')
-  assert.equal(urgencyPill(urgency(overdue, NOW)), '+3d')
+  assert.equal(deadlineView(overdue, NOW).dueText, '3 days overdue')
+  assert.equal(deadlineView(overdue, NOW).pill, '+3d')
+  assert.equal(deadlineView(overdue, NOW).tone, 'red')
 
   const today = item({ id: '2', title: 'Today', due: new Date('2026-06-11T18:00:00Z') })
-  assert.equal(urgencyPhrase(urgency(today, NOW)), 'Due today')
+  assert.equal(deadlineView(today, NOW).dueText, 'Due today')
 
   const held = item({ id: '3', title: 'Held', due: new Date('2026-06-14T11:00:00Z'), status: 'blocked' })
-  assert.equal(urgency(held, NOW).kind, 'blocked')
-  assert.equal(urgencyPill(urgency(held, NOW)), 'Held')
-  assert.equal(isAtRisk(held, NOW), true)
-
-  const heldLater = item({ id: '4', title: 'Held later', due: new Date('2026-06-25T11:00:00Z'), status: 'blocked' })
-  assert.equal(isAtRisk(heldLater, NOW), false)
+  assert.equal(deadlineView(held, NOW).status, 'blocked')
+  assert.equal(deadlineView(held, NOW).group, 'thisWeek')
 
   const far = item({ id: '5', title: 'Far', due: new Date('2026-08-20T11:00:00Z') })
-  const farDays = daysRemaining(far, NOW)
-  assert.ok(farDays > 60)
-  assert.equal(urgencyPhrase(urgency(far, NOW)), `Due in ${Math.floor(farDays / 7)} weeks`)
+  assert.equal(deadlineView(far, NOW).group, 'later')
+  assert.equal(deadlineView(far, NOW).tone, 'primary')
 })
 
-test('pace gap of more than 15 points marks an open deadline at risk', () => {
+test('1.94.0: behind pace is more than 10 points below the straight line, with the expected figure', () => {
   const paced = item({
     id: 'p',
     title: '1st fix',
@@ -85,24 +77,36 @@ test('pace gap of more than 15 points marks an open deadline at risk', () => {
     status: 'inProgress',
     progress: 0.45,
   })
-  assert.ok((pacingGap(paced, NOW) ?? 0) > 15)
-  assert.equal(isAtRisk(paced, NOW), true)
-  assert.equal(daysRemaining(paced, NOW), 4)
+  const view = deadlineView(paced, NOW)
+  assert.equal(view.status, 'behindPace')
+  assert.equal(view.expectedPercent, 71)
+  assert.equal(view.paceText, '45% · expected 71%')
+  assert.ok(view.tabs.includes('behindPace'))
 })
 
-test('date buckets drop empty groups and keep overdue ahead of this week', () => {
+test('1.94.0: date groups follow DEADLINE_GROUPS and drop empty ones', () => {
   const rows = [
     item({ id: 'a', title: 'Late', due: new Date('2026-06-08T11:00:00Z'), status: 'inProgress' }),
-    item({ id: 'b', title: 'Soon', due: new Date('2026-06-15T11:00:00Z'), status: 'notStarted' }),
+    item({ id: 'b', title: 'Soon', due: new Date('2026-06-13T11:00:00Z'), status: 'notStarted' }),
     item({ id: 'c', title: 'Done', due: new Date('2026-06-01T11:00:00Z'), status: 'complete' }),
   ]
   const groups = groupDeadlines(rows, 'date', NOW)
   assert.deepEqual(
     groups.map((group) => group.title),
-    ['Overdue', 'This week', 'Complete']
+    ['Overdue', 'This week', 'Completed']
   )
-  const week = filterDeadlines({ items: rows, filter: 'thisWeek', tradeFilter: 'All trades', search: '', now: NOW })
+  const week = filterDeadlines({ items: rows, tab: 'thisWeek', tradeFilter: 'All trades', search: '', now: NOW })
   assert.deepEqual(week.map((row) => row.id), ['b'])
+})
+
+test('1.94.0: a reschedule history line says "1 day", never "1 days"', () => {
+  const line = historyLine({
+    id: 'h',
+    at: NOW,
+    author: 'Sam',
+    kind: { type: 'rescheduled', from: new Date('2026-11-27T12:00:00Z'), to: new Date('2026-11-28T12:00:00Z'), reason: 'Preceding trade' },
+  })
+  assert.equal(line, 'Moved 1 day from 27 Nov → 28 Nov · Preceding trade')
 })
 
 test('reschedule requires a new date and a reason, and keeps the first due date', () => {
@@ -177,7 +181,6 @@ test('first writer wins keeps the remote copy and only adds local ids that are m
 test('empty copy matches the operative and manager programmes', () => {
   assert.match(emptyDeadlineCopy('all', true, 'Project').message, /first fix, sign-offs, handovers/)
   assert.match(emptyDeadlineCopy('all', false, 'Small Work').message, /assigned to you on this small work/)
-  assert.equal(riskBannerMessage({ overdueCount: 2, atRiskCount: 1, criticalOpen: 1 }), '2 overdue, 1 on the critical path')
 })
 
 
@@ -188,13 +191,13 @@ test('owner 25 Nov: All lists every deadline, past, this week, future and comple
     item({ id: 'later', title: 'Later', due: new Date('2026-09-01T09:00:00Z') }),
     item({ id: 'done', title: 'Done', due: new Date('2026-06-12T09:00:00Z'), status: 'complete' }),
   ]
-  const all = filterDeadlines({ items: rows, filter: 'all', tradeFilter: 'All trades', search: '', now: NOW })
+  const all = filterDeadlines({ items: rows, tab: 'all', tradeFilter: 'All trades', search: '', now: NOW })
   assert.deepEqual(all.map((row) => row.id).sort(), ['done', 'later', 'past', 'week'])
   const listed = groupDeadlines(all, 'date', NOW).flatMap((group) => group.items.map((row) => row.id))
   assert.deepEqual(listed.sort(), ['done', 'later', 'past', 'week'])
-  const week = filterDeadlines({ items: rows, filter: 'thisWeek', tradeFilter: 'All trades', search: '', now: NOW })
+  const week = filterDeadlines({ items: rows, tab: 'thisWeek', tradeFilter: 'All trades', search: '', now: NOW })
   assert.deepEqual(week.map((row) => row.id), ['week'])
-  const complete = filterDeadlines({ items: rows, filter: 'complete', tradeFilter: 'All trades', search: '', now: NOW })
+  const complete = filterDeadlines({ items: rows, tab: 'completed', tradeFilter: 'All trades', search: '', now: NOW })
   assert.deepEqual(complete.map((row) => row.id), ['done'])
 })
 
@@ -213,7 +216,7 @@ test('1.93.0: a deadline on several floors is listed once under Multiple floors 
   ]
   const groups = groupDeadlines(rows, 'location', NOW)
   assert.deepEqual(groups.map((group) => [group.title, group.items.map((row) => row.id)]).sort(), [['Ground Floor', ['g']], ['Multiple floors', ['f']]])
-  const found = filterDeadlines({ items: rows, filter: 'all', tradeFilter: 'All trades', search: '2nd floor', now: NOW })
+  const found = filterDeadlines({ items: rows, tab: 'all', tradeFilter: 'All trades', search: '2nd floor', now: NOW })
   assert.equal(found.length, 1)
 })
 
