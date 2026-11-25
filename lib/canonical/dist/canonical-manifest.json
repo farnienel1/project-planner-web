@@ -1,8 +1,8 @@
 {
-  "rulebookVersion": "1.91.0",
-  "rulebookSha256": "94a8cb4a3399525d6ca670ca6bc976634a12663253b7127fb524318c77bdd6ac",
-  "bundleSha256": "55c244010e407804ff333570449fd383f950eac7192628e614ee0037be55c1a2",
-  "crossPlatformContractSha256": "d2d465abcf0ab7c7747385346b87d2b47226412b1014602c5a26bff8e951c0ca",
+  "rulebookVersion": "1.92.0",
+  "rulebookSha256": "3db87f7a498fa81e98d68eb6c7fbd15e50bc1b69049cad1d8e9536bba1bf1ec2",
+  "bundleSha256": "6fcc565bfd30fc55d174182abb636dfbd82fee33aaef93bc2e38cf1c826f73d3",
+  "crossPlatformContractSha256": "713114761ecf204c48aba9480e004c0e725c00286dc2c9818f2574d36c98cf92",
   "dataParityFixtureSha256": "c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f",
   "exports": [
     "ACCOUNT_DELETE_WITH_COMPANY_MESSAGE",
@@ -1090,6 +1090,8 @@
     "deadlineAssignedRecipients",
     "deadlineAssignmentWriteFields",
     "deadlineDaysRemaining",
+    "deadlineLocationWriteFields",
+    "deadlineOnLocation",
     "deadlineProjectKey",
     "deadlineUrgency",
     "deadlinesDocumentId",

@@ -16,7 +16,8 @@ import { useDeadlineStore } from '@/lib/stores/deadlineStore'
 import { isOperativeMode } from '@/lib/permissions'
 import { liveUserIdsOnJob } from '@/lib/access/workAccess'
 import { isPendingPerson } from '@/lib/staff/pendingPeople'
-import { isGhostUser } from '@/lib/canonical/userRosterSegment'
+import { personIdSet } from '@/lib/canonical'
+import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import { healthSafetyFilePath, uploadFile } from '@/lib/firebase/storageUtils'
 import { prepareClientUpload } from '@/lib/security/stripPhotoLocation'
 import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
@@ -24,6 +25,7 @@ import { notifyNewDeadlineAssignees } from '@/lib/deadlines/notify'
 import {
   assigneeInitials,
   completeDeadline,
+  deadlineLocationList,
   deadlineStats,
   deadlineTrades,
   emptyDeadlineCopy,
@@ -119,7 +121,10 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
     loadAudits,
   ])
 
-  const scoped = useMemo(() => scopedDeadlines(items, canManage ? null : user?.id), [items, canManage, user?.id])
+  // Rulebook §8 `personIdSet`: a person's deadlines under every id they go by (a ghost given app access keeps the
+  // deadlines filed under the ghost id, which accepting puts on `formerUserIds`).
+  const myIds = useMemo(() => (user ? personIdSet(rulebookPerson(user, users), rulebookRoster(users)) : []), [user, users])
+  const scoped = useMemo(() => scopedDeadlines(items, canManage ? null : myIds), [items, canManage, myIds])
   const stats = useMemo(() => deadlineStats(scoped, now), [scoped, now])
   const trades = useMemo(() => deadlineTrades(scoped), [scoped])
   const filtered = useMemo(
@@ -142,8 +147,9 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
       users,
     })
     return users
-      // Rulebook 1.34.0 (J2): a ghost operative (no login) is never a deadline assignee.
-      .filter((member) => member.isActive !== false && !isPendingPerson(member) && !isGhostUser(member))
+      // Owner 25 Nov (reverses 1.34.0 J2 for deadlines): a ghost operative (no login) may be a deadline assignee, as
+      // on iOS. It is never notified: `deadlineAssignedRecipients` drops ghosts (rulebook §13).
+      .filter((member) => member.isActive !== false && !isPendingPerson(member))
       .map((member) => ({
         id: member.id,
         name: displayName(member),
@@ -180,8 +186,7 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
   async function commit(draft: Deadline, file: File | null) {
     if (!organization?.id || !user) throw new Error('Sign in again, then add the deadline.')
     setBanner(null)
-    if (!loaded) await load(organization.id, project.id, isSmallWorks)
-    const currentItems = useDeadlineStore.getState().items
+    if (!useDeadlineStore.getState().loaded) await load(organization.id, project.id, isSmallWorks)
     let next = { ...draft, projectId: project.id, contextKind }
     if (!next.createdByUserId) next.createdByUserId = user.id
     if (file) {
@@ -194,18 +199,21 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
         next = withFileAttached(next, file.name, url, authorName, new Date())
         setBanner(null)
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Could not attach the file.'
+        const message = deadlineErrorText(err, 'The file could not be attached, so the deadline was not saved.')
         setBanner(message)
         throw new Error(message)
       }
     }
+    // Owner 25 Nov: read the list after the upload, never the copy from before it — the upload can take a while and
+    // the live list may have moved on (a save then wrote a stale list or lost this edit).
+    if (!useDeadlineStore.getState().loaded) await load(organization.id, project.id, isSmallWorks)
+    const currentItems = useDeadlineStore.getState().items
     const previous = currentItems.find((item) => item.id === next.id) || null
     try {
-      const written = await save(organization.id, project.id, isSmallWorks, replaceDeadline(currentItems, next))
-      if (!written.some((item) => item.id === next.id)) {
-        throw new Error('The deadline did not stay on the list. Try saving it again.')
-      }
+      const written = await save(organization.id, project.id, isSmallWorks, replaceDeadline(currentItems, next), [next.id])
       const saved = written.find((item) => item.id === next.id)
+      if (!saved) throw new Error('The deadline did not stay on the list. Try saving it again.')
+      if (file && !saved.fileURL) throw new Error('The file uploaded but was not saved on the deadline. Try saving it again.')
       if (saved) {
         void notifyNewDeadlineAssignees({
           organizationId: organization.id,
@@ -220,10 +228,16 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
       setBanner(null)
       setEditing(null)
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Could not save the deadline.'
+      const message = deadlineErrorText(err, 'Could not save the deadline.')
       setBanner(message)
       throw new Error(message)
     }
+  }
+
+  /** Owner 25 Nov: choosing a filter shows everything it keeps — a day picked on the rail no longer narrows it. */
+  function chooseFilter(next: DeadlineFilter) {
+    setFilter(next)
+    setSelectedDay(null)
   }
 
   async function mutate(next: Deadline) {
@@ -282,7 +296,7 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
             className="card pad text-left"
             data-hue={hue}
             onClick={() => {
-              setFilter(key)
+              chooseFilter(key)
               setMode('list')
             }}
           >
@@ -300,7 +314,7 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
           className="card flex w-full items-center gap-3 p-3 text-left"
           data-hue={stats.overdueCount > 0 ? 'red' : 'warn'}
           onClick={() => {
-            setFilter(stats.overdueCount > 0 ? 'overdue' : 'atRisk')
+            chooseFilter(stats.overdueCount > 0 ? 'overdue' : 'atRisk')
             setMode('list')
           }}
         >
@@ -365,7 +379,7 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
             ['complete', 'Complete', stats.completeCount],
           ] as const
         ).map(([id, label, count]) => (
-          <button key={id} type="button" className={`chip ${filter === id ? 'on' : ''}`} onClick={() => setFilter(id)}>
+          <button key={id} type="button" className={`chip ${filter === id && !selectedDay ? 'on' : ''}`} onClick={() => chooseFilter(id)}>
             {label}
             <span className="n">{count}</span>
           </button>
@@ -395,6 +409,15 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
           </button>
         ))}
       </div>
+
+      {selectedDay && mode === 'list' ? (
+        <div className="card flex items-center gap-3 p-3 text-sm">
+          <span className="grow">Showing deadlines due {formatFullDay(dateFromDayKey(selectedDay))} only.</span>
+          <button type="button" className="btn sm" onClick={() => setSelectedDay(null)}>
+            Show all
+          </button>
+        </div>
+      ) : null}
 
       {mode === 'timeline' ? (
         <Timeline rows={timeline} now={now} onOpen={setOpenId} />
@@ -468,6 +491,14 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
   )
 }
 
+/** The real reason a save failed (Firebase code included), never a generic line alone. */
+function deadlineErrorText(err: unknown, fallback: string): string {
+  const message = err instanceof Error ? err.message.trim() : ''
+  const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code?: unknown }).code || '') : ''
+  if (!message) return code ? `${fallback} (${code})` : fallback
+  return code && !message.includes(code) ? `${message} (${code})` : message
+}
+
 function DeadlineCard({
   item,
   now,
@@ -508,7 +539,13 @@ function DeadlineCard({
         <Countdown value={value} />
       </div>
       <div className="mt-2 flex flex-wrap gap-1.5">
-        {showLocation && item.location ? <span className="pill">{item.location}</span> : null}
+        {showLocation
+          ? deadlineLocationList(item).map((floor) => (
+              <span key={floor} className="pill">
+                {floor}
+              </span>
+            ))
+          : null}
         {item.trade ? <span className="pill">{item.trade}</span> : null}
       </div>
       {item.status === 'blocked' && item.blockedReason ? (
@@ -555,7 +592,7 @@ function Timeline({ rows, now, onOpen }: { rows: Deadline[]; now: Date; onOpen: 
     return (
       <div className="card pad">
         <h2 className="font-(family-name:--head) text-lg font-extrabold">Nothing to plot</h2>
-        <p className="mt-1 text-sm text-(--ink3)">Open deadlines with a start and due date appear here as bars.</p>
+        <p className="mt-1 text-sm text-(--ink3)">Deadlines with a start and due date appear here as bars.</p>
       </div>
     )
   }
@@ -582,7 +619,14 @@ function Timeline({ rows, now, onOpen }: { rows: Deadline[]; now: Date; onOpen: 
             <button key={item.id} type="button" className="block w-full px-3 py-2 text-left" onClick={() => onOpen(item.id)}>
               <span className="mb-1 flex items-center gap-2 text-[13.5px] font-semibold">
                 {item.isCritical ? <FlagIcon className="h-3 w-3" /> : null}
-                <span className="min-w-0 grow truncate">{item.title}</span>
+                <span className="min-w-0 grow truncate" style={{ textDecoration: item.status === 'complete' ? 'line-through' : undefined }}>
+                  {item.title}
+                </span>
+                {item.status === 'complete' ? (
+                  <span className="pill" data-hue="green" style={{ background: 'var(--ht)', color: 'var(--h)' }}>
+                    Complete
+                  </span>
+                ) : null}
                 <span data-hue={tone} style={{ color: 'var(--h)' }}>
                   {formatDay(item.due)}
                 </span>

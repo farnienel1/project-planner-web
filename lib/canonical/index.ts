@@ -1095,6 +1095,8 @@ export {
   SUBCONTRACTOR_BOOKING_PEOPLE_WRITE_GROUP,
   bookingUpdateWriteFields,
   deadlineAssignedProjectIds,
+  deadlineLocationWriteFields,
+  deadlineOnLocation,
   deadlineAssignmentWriteFields,
   deadlineProjectKey,
   deadlinesDocumentId,

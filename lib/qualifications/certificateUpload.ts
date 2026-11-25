@@ -182,11 +182,12 @@ export function formatCertificateSaveError(err: unknown): string {
     text.includes('permission-denied') ||
     text.includes('storage/unauthorized')
   ) {
-    return 'Could not upload the certificate. Storage permissions blocked this file. Stay signed in and try a PDF or photo under 10 MB.'
+    return `Could not upload the certificate. Storage permissions blocked this file (${code || 'permission'}). Stay signed in and try a PDF or photo under 10 MB.`
   }
   if (text.includes('storage/retry-limit-exceeded') || text.includes('network-request-failed')) {
     return 'Could not upload the certificate. Check your connection and try again.'
   }
-  if (raw.trim()) return raw
+  // 25 Nov: say the Firebase code (e.g. storage/unknown) so a report from the owner names the real cause.
+  if (raw.trim()) return code && !raw.includes(code) ? `${raw} (${code})` : raw
   return 'Could not save qualifications. Try again.'
 }

@@ -52,6 +52,8 @@ import { ScheduleDatesStep } from '@/components/projects/scheduling/ScheduleDate
 import { SchedulePersonPickerStep } from '@/components/projects/scheduling/SchedulePersonPickerStep'
 import type { Project } from '@/types'
 import { feedback } from '@/lib/feedbackSounds/feedback'
+import { scheduleReturnHref } from '@/lib/scheduling/scheduleReturnWeek'
+import { calendarDayKey } from '@/lib/orgTime/organizationWeek'
 
 const STEP_LABELS: Record<WizardStep, string> = {
   dates: 'Dates',
@@ -366,7 +368,8 @@ export function ScheduleOperativeForm({
           }
         }
       }
-      router.push(scheduleBasePath)
+      // Owner decision 25 Nov: back to the week holding the first booked day (several weeks: the earliest).
+      router.push(scheduleReturnHref(scheduleBasePath, bookedSlots.map((slot) => calendarDayKey(slot.date)), timeZone))
       // Feedback sounds: one sound for the whole request; every day already booked plays nothing (owner decision 4).
       if (savedDays.length > 0) feedback('bookingSaved')
     } catch (e: unknown) {

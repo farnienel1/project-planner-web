@@ -74,7 +74,10 @@ export type DeadlineChange = {
 export type Deadline = {
   id: string
   title: string
+  /** The first floor / area (older builds read only this). */
   location: string | null
+  /** Rulebook 1.92.0: every floor / area picked (first = `location`). Missing on a draft = `[location]`. */
+  locations?: string[]
   trade: string | null
   detail: string | null
   start: Date | null

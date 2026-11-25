@@ -245,9 +245,30 @@ export function historyLine(change: DeadlineChange): string {
   }
 }
 
-export function scopedDeadlines(items: Deadline[], restrictToAssigneeUserId?: string | null): Deadline[] {
-  if (!restrictToAssigneeUserId) return items
-  return items.filter((item) => item.assigneeUserIds.includes(restrictToAssigneeUserId))
+/** Rulebook 1.92.0: every floor / area of the deadline (older data: its one `location`). */
+export function deadlineLocationList(item: Pick<Deadline, 'location' | 'locations'>): string[] {
+  if (item.locations && item.locations.length > 0) return item.locations
+  return item.location ? [item.location] : []
+}
+
+/** "Ground Floor, 1st Floor" — every floor of the deadline, for cards and the detail sheet. */
+export function deadlineLocationText(item: Pick<Deadline, 'location' | 'locations'>): string {
+  return deadlineLocationList(item).join(', ')
+}
+
+/**
+ * The deadlines a non-manager sees: those assigned to them under any id they go by (rulebook §8 `personIdSet`, so a
+ * ghost given app access later keeps the deadlines filed under the ghost id, now on `formerUserIds`). Ids compare
+ * without case.
+ */
+export function scopedDeadlines(items: Deadline[], restrictToAssigneeUserIds?: string | ReadonlyArray<string> | null): Deadline[] {
+  if (!restrictToAssigneeUserIds || restrictToAssigneeUserIds.length === 0) return items
+  const ids = new Set(
+    (typeof restrictToAssigneeUserIds === 'string' ? [restrictToAssigneeUserIds] : restrictToAssigneeUserIds)
+      .map((id) => id.trim().toLowerCase())
+      .filter(Boolean)
+  )
+  return items.filter((item) => item.assigneeUserIds.some((id) => ids.has(id.trim().toLowerCase())))
 }
 
 export function deadlineStats(items: Deadline[], now: Date) {
@@ -311,7 +332,7 @@ export function filterDeadlines(params: {
     if (!matchesFilter(item, params.filter, params.now)) return false
     if (params.tradeFilter !== 'All trades' && item.trade !== params.tradeFilter) return false
     if (!query) return true
-    const hay = [item.title, item.location || '', item.trade || '', item.company || '', item.assignees.join(' ')]
+    const hay = [item.title, deadlineLocationList(item).join(' '), item.trade || '', item.company || '', item.assignees.join(' ')]
       .join(' ')
       .toLowerCase()
     return hay.includes(query)
@@ -349,13 +370,14 @@ function dateGroups(list: Deadline[], now: Date): DeadlineGroup[] {
     }))
 }
 
-function keyedGroups(list: Deadline[], now: Date, keyOf: (item: Deadline) => string): DeadlineGroup[] {
+function keyedGroups(list: Deadline[], now: Date, keysOf: (item: Deadline) => string[]): DeadlineGroup[] {
   const map = new Map<string, Deadline[]>()
   for (const item of list) {
-    const key = keyOf(item)
-    const rows = map.get(key) || []
-    rows.push(item)
-    map.set(key, rows)
+    for (const key of keysOf(item)) {
+      const rows = map.get(key) || []
+      rows.push(item)
+      map.set(key, rows)
+    }
   }
   return [...map.entries()]
     .map(([title, rows]) => ({
@@ -380,11 +402,15 @@ export function groupDeadlines(list: Deadline[], grouping: DeadlineGrouping, now
     case 'date':
       return dateGroups(list, now)
     case 'location':
-      return keyedGroups(list, now, (item) => item.location || 'Unassigned area')
+      // Rulebook 1.92.0: a deadline on several floors is listed under each of them.
+      return keyedGroups(list, now, (item) => {
+        const floors = deadlineLocationList(item)
+        return floors.length > 0 ? floors : ['Unassigned area']
+      })
     case 'trade':
-      return keyedGroups(list, now, (item) => item.trade || 'No trade')
+      return keyedGroups(list, now, (item) => [item.trade || 'No trade'])
     case 'assignee':
-      return keyedGroups(list, now, (item) => item.assignees[0] || 'Unassigned')
+      return keyedGroups(list, now, (item) => [item.assignees[0] || 'Unassigned'])
   }
 }
 
@@ -397,9 +423,12 @@ export function visibleGroups(groups: DeadlineGroup[], selectedDay: Date | null)
   })
 }
 
+/**
+ * Owner 25 Nov: the timeline plots every deadline the filter keeps — completed ones too (drawn as complete), so
+ * "All" is all. Before, completed deadlines were always dropped from the timeline.
+ */
 export function timelineItems(list: Deadline[]): Deadline[] {
-  return list
-    .filter((item) => item.status !== 'complete')
+  return [...list]
     .sort((a, b) => (a.start ?? a.due).getTime() - (b.start ?? b.due).getTime())
 }
 
@@ -500,10 +529,16 @@ export function withFileAttached(item: Deadline, fileName: string, fileURL: stri
   }
 }
 
-export function mergeDeadlinesFirstWriterWins(remote: Deadline[], local: Deadline[]): Deadline[] {
+/**
+ * Another device saved the list after this screen loaded it: its versions win, except the deadlines this save is for
+ * (`ownIds`) — the person's own edit is written, never silently dropped (owner 25 Nov: a deadline saved with a file
+ * attached lost the file and the edits when the list changed during the upload).
+ */
+export function mergeDeadlinesFirstWriterWins(remote: Deadline[], local: Deadline[], ownIds: ReadonlyArray<string> = []): Deadline[] {
+  const own = new Set(ownIds)
   const byId = new Map(remote.map((item) => [item.id, item]))
   for (const item of local) {
-    if (!byId.has(item.id)) byId.set(item.id, item)
+    if (!byId.has(item.id) || own.has(item.id)) byId.set(item.id, item)
   }
   return [...byId.values()].sort((a, b) => a.due.getTime() - b.due.getTime())
 }

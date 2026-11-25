@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { addDays, format, isSameDay } from 'date-fns'
 import { organizationCalendarWeekEnd, organizationCurrentWeekStart, organizationTodayCalendarDate } from '@/lib/orgTime/organizationWeek'
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { SCHEDULE_WEEK_PARAM, scheduleWeekFromParam } from '@/lib/scheduling/scheduleReturnWeek'
 import { useBookingStore, type BookingReplaceOptions } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
@@ -285,7 +287,18 @@ export function ProjectScheduleWeekOverview({
   // Rulebook 1.37.0: annual leave on this job's week (live `holidayBookings` listener, rulebook §1).
   const { bookings: holidays, loadBookings: loadHolidays } = useHolidayStore()
   // Rulebook §1 (1.36.0, FU-4): the organisation's current week and today, not the browser's.
-  const [weekStart, setWeekStart] = useState(() => organizationCurrentWeekStart())
+  // Owner decision 25 Nov: after a booking is saved, the grid opens on the week of the first booked day
+  // (`?week=` from `scheduleReturnHref`); otherwise the current week.
+  const searchParams = useSearchParams()
+  const weekParam = searchParams?.get(SCHEDULE_WEEK_PARAM) ?? null
+  const [weekStart, setWeekStart] = useState(() => scheduleWeekFromParam(weekParam) ?? organizationCurrentWeekStart())
+  // A later save from the same page (client navigation keeps this component) moves the grid to the new week.
+  const [seenWeekParam, setSeenWeekParam] = useState(weekParam)
+  if (seenWeekParam !== weekParam) {
+    setSeenWeekParam(weekParam)
+    const fromParam = scheduleWeekFromParam(weekParam)
+    if (fromParam) setWeekStart(fromParam)
+  }
   // An earlier week reaches before the launch booking download.
   useBookingHistoryFrom(organizationId, weekStart)
   const [subBookings, setSubBookings] = useState<SubBooking[]>([])
