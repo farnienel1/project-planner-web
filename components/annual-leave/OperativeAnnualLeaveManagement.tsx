@@ -21,8 +21,10 @@ import {
   holidayDecisionActorName,
   notifyHolidayRequestDecisionToUser,
 } from '@/lib/annualLeave/notifyHolidayRequestDecision'
+import { format } from 'date-fns'
 import { bookingDayCount, daysLabel, formatLeaveRange } from '@/lib/annualLeave/formatLeaveDays'
-import { teamAwayCaption, teamAwayOnDay } from '@/lib/annualLeave/teamAway'
+import { teamAwayCaption, teamLeaveOnDay } from '@/lib/annualLeave/teamAway'
+import { calendarDayKey } from '@/lib/orgTime/organizationWeek'
 import type { HolidayBooking } from '@/types'
 import { OperativeAnnualLeaveCalendar } from './OperativeAnnualLeaveCalendar'
 import { AnnualLeaveLegend, LeaveDayCalendar } from './LeaveDayCalendar'
@@ -168,10 +170,14 @@ export function OperativeAnnualLeaveManagement({
   // Rulebook 1.53.0 (B7): the region's bank holidays — a bank holiday inside a multi-day record is not a leave day.
   const bankDayKeys = bank.holidays.map((holiday) => holiday.date)
 
-  // Owner decision 23 Nov (iOS `HolidayView.teamAway(on:)`): approved leave only, via rulebook `leaveDayKind`.
+  // Owner request 25 Nov: approved and pending leave (rejected never), via rulebook `leaveDayKind` (`teamLeaveOnDay`);
+  // pending is shown in its own colour and named in the summary. Display only.
+  const [summaryDay, setSummaryDay] = useState<Date | null>(null)
+  const teamLeaveFor = (day: Date) => teamLeaveOnDay(day, people, teamBookings, bankDayKeys)
   const teamAwayNames = (day: Date) =>
-    teamAwayOnDay(day, people, teamBookings, bankDayKeys).map((person) => person.displayName)
-  const awayCaption = (day: Date) => teamAwayCaption(teamAwayNames(day))
+    teamLeaveFor(day).map((entry) => ({ name: entry.name, pending: entry.status === 'Pending' }))
+  const awayCaption = (day: Date) => teamAwayCaption(teamLeaveFor(day).map((entry) => entry.name))
+  const summaryEntries = summaryDay ? teamLeaveFor(summaryDay) : []
 
   const updateStatus = async (booking: HolidayBooking, status: 'approved' | 'rejected', decisionNote?: string) => {
     if (!organization?.id || !user) return
@@ -340,13 +346,19 @@ export function OperativeAnnualLeaveManagement({
 
           <div className="card pad">
             <p className="text-sm font-bold text-slate-900">Who is off</p>
-            <p className="mt-0.5 text-xs text-slate-500">Initials show people with approved leave on that day.</p>
+            <p className="mt-0.5 text-xs text-slate-500">Initials show people on leave that day. Tap a day to see who is off.</p>
             <div className="mt-3">
               <LeaveDayCalendar
                 month={awayMonth}
                 onMonthChange={setAwayMonth}
                 getDayKind={() => 'none'}
-                onDayClick={() => {}}
+                onDayClick={(day) => {
+                  setHolidayNote(null)
+                  setSummaryDay((current) =>
+                    current && calendarDayKey(current) === calendarDayKey(day) ? null : day
+                  )
+                }}
+                teamSelectedDay={summaryDay}
                 bankHolidayName={bank.nameOn}
                 onBankHoliday={(name) =>
                   setHolidayNote(
@@ -357,6 +369,34 @@ export function OperativeAnnualLeaveManagement({
                 teamAway={teamAwayNames}
               />
             </div>
+            {summaryDay ? (
+              <div className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5" aria-live="polite">
+                <p className="text-sm font-bold text-slate-900">{format(summaryDay, 'EEEE d MMMM')}</p>
+                {summaryEntries.length === 0 ? (
+                  <p className="mt-1 text-sm text-slate-600">No annual leave</p>
+                ) : (
+                  <ul className="mt-1.5 space-y-1">
+                    {summaryEntries.map((entry) => (
+                      <li key={entry.personId} className="flex items-center justify-between gap-3 text-sm">
+                        <span className="font-medium text-slate-800">{entry.name}</span>
+                        <span className="flex shrink-0 items-center gap-2 text-xs">
+                          <span className="text-slate-600">{entry.slot}</span>
+                          <span
+                            className={
+                              entry.status === 'Pending'
+                                ? 'rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-950'
+                                : 'rounded-full bg-emerald-100 px-2 py-0.5 font-semibold text-emerald-900'
+                            }
+                          >
+                            {entry.status}
+                          </span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ) : null}
             <div className="mt-3">
               <AnnualLeaveLegend showTwoOrMoreAway />
             </div>

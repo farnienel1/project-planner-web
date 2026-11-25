@@ -20,8 +20,13 @@ import { teamAwayTone, type TeamAwayTone } from '@/lib/annualLeave/teamAway'
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
-/** Team "Who is off" calendar: two or more people away (iOS `AnnualLeavePalette.blue` at ~20%). */
-const TEAM_MANY_AWAY_FILL = 'bg-(--blue)/20'
+/**
+ * Team "Who is off" calendar: two or more people on leave — solid blue with white text (owner request 25 Nov; fixed
+ * colours, 5.2:1 in both themes; the same blue on iOS). Weekends: the neutral muted grey (`bg-slate-100` / `text-slate-600`,
+ * themed in dark mode).
+ */
+const TEAM_MANY_AWAY_FILL = 'bg-blue-600'
+const WEEKEND_FILL = 'bg-slate-100 text-slate-600'
 
 export function AnnualLeaveLegend({ showTwoOrMoreAway = false }: { showTwoOrMoreAway?: boolean } = {}) {
   const items: ReadonlyArray<readonly [string, string]> = [
@@ -29,8 +34,8 @@ export function AnnualLeaveLegend({ showTwoOrMoreAway = false }: { showTwoOrMore
     ['bg-emerald-300', 'Half day'],
     ['bg-amber-400', 'Pending'],
     ['bg-violet-400', 'Bank holiday'],
-    ['bg-slate-300', 'Weekend'],
-    ...(showTwoOrMoreAway ? ([[TEAM_MANY_AWAY_FILL, 'Two or more away']] as const) : []),
+    ['bg-slate-200', 'Weekend'],
+    ...(showTwoOrMoreAway ? ([[TEAM_MANY_AWAY_FILL, 'Two or more on leave']] as const) : []),
   ]
   return (
     <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-(--ink3)">
@@ -54,23 +59,34 @@ function dayStyles(
     weekend: boolean
     bankHoliday: boolean
     teamTone?: TeamAwayTone
+    /** Team calendar: someone's leave that day is a pending request. */
+    teamPending?: boolean
+    /** Team calendar: the day whose summary is shown below the calendar. */
+    teamSelected?: boolean
   }
 ): string {
-  const { inMonth, isSelected, isMultiSelected, todayDay, weekend, bankHoliday, teamTone } = opts
+  const { inMonth, isSelected, isMultiSelected, todayDay, weekend, bankHoliday, teamTone, teamPending, teamSelected } = opts
   let cls =
     'relative flex h-12 w-full flex-col items-center justify-center rounded-lg text-base font-medium transition-all '
 
   if (!inMonth) return cls + 'cursor-default text-slate-300'
   if (todayDay) cls += 'ring-2 ring-slate-900 ring-offset-1 '
+  if (teamSelected) cls += 'outline outline-2 outline-offset-2 outline-blue-600 '
 
   if (isSelected || isMultiSelected) {
     return cls + 'bg-blue-600 font-bold text-white shadow-xs'
   }
 
-  // Team calendar (iOS `teamDayCell`): someone away beats bank holiday / weekend styling. One person: the Approved
-  // green (dark text — fixed colours, AA in both themes); two or more: the blue tint.
-  if (teamTone === 'one') return cls + 'bg-emerald-500 font-semibold text-emerald-950'
-  if (teamTone === 'many') return cls + `${TEAM_MANY_AWAY_FILL} font-semibold text-slate-900`
+  // Team calendar (iOS `teamDayCell`): someone on leave beats bank holiday / weekend styling. One person: the Approved
+  // green (dark text — fixed colours, AA in both themes), or the Pending amber when their leave is a request; two or
+  // more: solid blue, with an amber inner ring when any of it is pending.
+  const pendingRing = teamPending ? ' ring-2 ring-amber-400 ring-inset' : ''
+  if (teamTone === 'one') {
+    return teamPending
+      ? cls + 'bg-amber-100 font-semibold text-amber-950 ring-2 ring-amber-400 ring-inset'
+      : cls + 'bg-emerald-500 font-semibold text-emerald-950'
+  }
+  if (teamTone === 'many') return cls + `${TEAM_MANY_AWAY_FILL} font-semibold text-white${pendingRing}`
 
   if (bankHoliday) return cls + 'bg-violet-100 font-semibold text-violet-800'
 
@@ -87,7 +103,7 @@ function dayStyles(
       break
     default:
       cls += weekend
-        ? 'bg-slate-100 text-slate-400 '
+        ? `${WEEKEND_FILL} `
         : 'cursor-pointer text-slate-700 hover:bg-slate-100 '
   }
 
@@ -116,6 +132,7 @@ export function LeaveDayCalendar({
   onBankHoliday,
   dayCaption,
   teamAway,
+  teamSelectedDay,
 }: {
   month: Date
   onMonthChange: (d: Date) => void
@@ -127,8 +144,10 @@ export function LeaveDayCalendar({
   bankHolidayName?: (day: Date) => string | null
   onBankHoliday?: (name: string, day: Date) => void
   dayCaption?: (day: Date) => string | null
-  /** Team "Who is off" calendar: the names of the people away on the day (approved leave only, `teamAwayOnDay`). */
-  teamAway?: (day: Date) => ReadonlyArray<string>
+  /** Team "Who is off" calendar: the people on leave that day (approved and pending, `teamLeaveOnDay`). */
+  teamAway?: (day: Date) => ReadonlyArray<{ name: string; pending: boolean }>
+  /** Team calendar: the day whose summary is shown (outlined). */
+  teamSelectedDay?: Date | null
 }) {
   // Rulebook §1 (1.36.0, FU-4): the Monday–Sunday organisation week and the organisation's today, not the browser's.
   const start = organizationCalendarWeekStart(startOfMonth(month))
@@ -193,11 +212,13 @@ export function LeaveDayCalendar({
             weekend,
             bankHoliday: Boolean(holiday),
             teamTone: teamAway ? teamAwayTone(awayNames.length) : undefined,
+            teamPending: awayNames.some((entry) => entry.pending),
+            teamSelected: Boolean(inMonth && teamSelectedDay && isSameDay(day, teamSelectedDay)),
           })
           const label = !inMonth
             ? undefined
             : awayNames.length > 0
-              ? `${format(day, 'd MMMM')}, ${awayNames.join(', ')} away${holiday ? `, ${holiday}, bank holiday` : ''}`
+              ? `${format(day, 'd MMMM')}, ${awayNames.map((entry) => (entry.pending ? `${entry.name} (pending)` : entry.name)).join(', ')} on leave${holiday ? `, ${holiday}, bank holiday` : ''}`
               : spokenLabel(day, kind, holiday, isSelected || isMultiSelected)
 
           return (

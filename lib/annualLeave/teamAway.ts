@@ -1,6 +1,9 @@
 import type { HolidayBooking } from '@/types'
 import { calendarDayKey } from '@/lib/orgTime/organizationWeek'
 import { bookingMatchesPerson, type AnnualLeavePerson } from './annualLeavePerson'
+import { leaveDayKind, normalizeDocumentId } from '@/lib/canonical'
+import { holidayBookingDayKeys } from './holidayDayKeys'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { getDayKindForBookingsOnDayKey } from './dayStatus'
 
 /**
@@ -24,6 +27,45 @@ export function teamAwayOnDay(
     const kind = getDayKindForBookingsOnDayKey(dayKey, own, nonWorkingDayKeys)
     return kind === 'approvedFull' || kind === 'approvedHalf'
   })
+}
+
+/** One person's leave on a team calendar day (display only). */
+export type TeamLeaveEntry = {
+  personId: string
+  name: string
+  slot: 'Full day' | 'AM' | 'PM'
+  status: 'Approved' | 'Pending'
+}
+
+/**
+ * Owner request 25 Nov: the summary under the Team calendar for a tapped day — each listed person (the calendar's own
+ * list, `annualLeaveTeamPeople` via `teamLeavePeople`) whose records (every id they go by, `bookingMatchesPerson`) give
+ * rulebook §9 `leaveDayKind` a leave kind that day (approved or pending; rejected never; weekends and bank holidays
+ * inside a multi-day record are not leave days). The slot is the shown record's own (`recordId`). Display only.
+ */
+export function teamLeaveOnDay(
+  day: Date,
+  people: ReadonlyArray<AnnualLeavePerson>,
+  bookings: ReadonlyArray<HolidayBooking>,
+  nonWorkingDayKeys: ReadonlyArray<string> = []
+): TeamLeaveEntry[] {
+  const dayKey = calendarDayKey(day)
+  const zone = organizationZoneOr()
+  const out: TeamLeaveEntry[] = []
+  for (const person of people) {
+    const own = bookings.filter((booking) => bookingMatchesPerson(booking, person))
+    if (own.length === 0) continue
+    const records = own.map((b) => ({ id: b.id, ...holidayBookingDayKeys(b, zone), timeSlot: b.timeSlot, status: b.status }))
+    const result = leaveDayKind(records, dayKey, zone, nonWorkingDayKeys)
+    if (result.kind === 'none') continue
+    const record = own.find((b) => normalizeDocumentId(b.id) === normalizeDocumentId(result.recordId ?? ''))
+    const rawSlot = String(record?.timeSlot ?? '').toUpperCase()
+    const full = result.kind === 'approvedFull' || result.kind === 'pendingFull'
+    const slot: TeamLeaveEntry['slot'] = full ? 'Full day' : rawSlot === 'PM' ? 'PM' : 'AM'
+    const status: TeamLeaveEntry['status'] = result.kind.startsWith('pending') ? 'Pending' : 'Approved'
+    out.push({ personId: person.id, name: person.displayName, slot, status })
+  }
+  return out
 }
 
 /** How a team calendar day is coloured: nobody away, one person (approved green), two or more (blue tint). */
