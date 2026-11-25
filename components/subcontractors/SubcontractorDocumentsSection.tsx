@@ -97,6 +97,9 @@ function DocumentKindBlock({
   const toast = useToast()
   const timeZone = useOrganizationTimeZone()
   const fileInput = useRef<HTMLInputElement>(null)
+  // Owner 25 Nov: pick one or more files first, then an optional expiry date for them, then Upload.
+  const [picked, setPicked] = useState<File[] | null>(null)
+  const [withExpiry, setWithExpiry] = useState(false)
   const [expiry, setExpiry] = useState('')
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<number | null>(null)
@@ -114,9 +117,31 @@ function DocumentKindBlock({
     }
   }, [])
 
-  async function onPick(file: File | undefined) {
-    if (!file) return
-    const expiryError = subcontractorDocumentExpiryError(expiry)
+  function onPick(files: FileList | null) {
+    const list = files ? Array.from(files) : []
+    if (fileInput.current) fileInput.current.value = ''
+    if (list.length === 0) return
+    setError(null)
+    setWithExpiry(false)
+    setExpiry('')
+    setPicked(list)
+  }
+
+  function cancelPicked() {
+    setPicked(null)
+    setWithExpiry(false)
+    setExpiry('')
+  }
+
+  async function uploadPicked() {
+    const files = picked ?? []
+    if (files.length === 0) return
+    const expiresOn = withExpiry ? expiry : ''
+    if (withExpiry && !expiresOn) {
+      setError('Choose the expiry date, or turn off the expiry date.')
+      return
+    }
+    const expiryError = subcontractorDocumentExpiryError(expiresOn)
     if (expiryError) {
       setError(expiryError)
       return
@@ -124,30 +149,42 @@ function DocumentKindBlock({
     setBusy(true)
     setProgress(null)
     setError(null)
-    try {
-      await uploadSubcontractorDocument({
-        organizationId,
-        subcontractorId,
-        kind,
-        file,
-        expiresOn: expiry || null,
-        actorUid: user.id,
-        onProgress: (fraction) => {
-          if (mounted.current) setProgress(fraction)
-        },
-      })
-      toast(mounted.current ? `${label} document uploaded.` : `${label} document uploaded for ${firmName}.`)
-      if (mounted.current) setExpiry('')
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'The upload did not finish. Try again.'
+    const failed: string[] = []
+    let saved = 0
+    for (const file of files) {
+      try {
+        await uploadSubcontractorDocument({
+          organizationId,
+          subcontractorId,
+          kind,
+          file,
+          expiresOn: expiresOn || null,
+          actorUid: user.id,
+          onProgress: (fraction) => {
+            if (mounted.current) setProgress(fraction)
+          },
+        })
+        saved += 1
+      } catch (err) {
+        failed.push(`${file.name}: ${err instanceof Error ? err.message : 'the upload did not finish'}`)
+      }
+    }
+    if (saved > 0) {
+      const what = saved === 1 ? `${label} document uploaded` : `${saved} ${label} documents uploaded`
+      toast(mounted.current ? `${what}.` : `${what} for ${firmName}.`)
+    }
+    if (failed.length > 0) {
+      // Files that saved stay on the list; the ones that did not are named (retrying them is a new pick).
+      const message = `Not uploaded — ${failed.join(' · ')}`
       if (mounted.current) setError(message)
       else toast(`${label} for ${firmName}: ${message}`)
-    } finally {
-      if (mounted.current) {
-        setBusy(false)
-        setProgress(null)
-      }
-      if (fileInput.current) fileInput.current.value = ''
+    }
+    if (mounted.current) {
+      setBusy(false)
+      setProgress(null)
+      setPicked(null)
+      setWithExpiry(false)
+      setExpiry('')
     }
   }
 
@@ -240,22 +277,53 @@ function DocumentKindBlock({
           })}
         </div>
       )}
-      <div className="row wrap" style={{ gap: 8, marginTop: 10, alignItems: 'flex-end' }}>
-        <label htmlFor={inputId} className="small" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {SUBCONTRACTOR_DOCUMENT_EXPIRY_LABEL}
-          <input id={inputId} type="date" className="in" style={{ maxWidth: 190 }} value={expiry} onChange={(e) => setExpiry(e.target.value)} />
-        </label>
-        <button type="button" className="btn sm tint" disabled={busy} onClick={() => fileInput.current?.click()}>
-          {busy ? (progress != null && progress > 0 ? `Uploading ${Math.min(99, Math.round(progress * 100))}%…` : 'Uploading…') : `Upload ${label}`}
-        </button>
-        <input
-          ref={fileInput}
-          type="file"
-          hidden
-          accept={uploadAcceptAttribute('subcontractor_document')}
-          onChange={(e) => void onPick(e.target.files?.[0])}
-        />
-      </div>
+      {picked ? (
+        <div className="card" style={{ marginTop: 10, padding: 12, display: 'grid', gap: 8 }}>
+          <div className="small" style={{ fontWeight: 600 }}>
+            {picked.length === 1 ? `Upload 1 ${label} document` : `Upload ${picked.length} ${label} documents`}
+          </div>
+          <ul className="small" style={{ margin: 0, paddingLeft: 18, overflowWrap: 'anywhere' }}>
+            {picked.map((file, index) => (
+              <li key={`${file.name}-${index}`}>{file.name}</li>
+            ))}
+          </ul>
+          <label className="small" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input type="checkbox" checked={withExpiry} disabled={busy} onChange={(e) => setWithExpiry(e.target.checked)} />
+            {SUBCONTRACTOR_DOCUMENT_EXPIRY_LABEL}
+          </label>
+          {withExpiry ? (
+            <label htmlFor={inputId} className="small" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              Expiry date
+              <input id={inputId} type="date" className="in" style={{ maxWidth: 190 }} value={expiry} disabled={busy} onChange={(e) => setExpiry(e.target.value)} />
+            </label>
+          ) : null}
+          {withExpiry && picked.length > 1 ? (
+            <p className="muted small" style={{ margin: 0 }}>The date applies to all {picked.length} files. Change one later on its row.</p>
+          ) : null}
+          <div className="row wrap" style={{ gap: 8 }}>
+            <button type="button" className="btn sm tint" disabled={busy} onClick={() => void uploadPicked()}>
+              {busy ? (progress != null && progress > 0 ? `Uploading ${Math.min(99, Math.round(progress * 100))}%…` : 'Uploading…') : 'Upload'}
+            </button>
+            <button type="button" className="btn sm" disabled={busy} onClick={cancelPicked}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="row wrap" style={{ gap: 8, marginTop: 10, alignItems: 'flex-end' }}>
+          <button type="button" className="btn sm tint" disabled={busy} onClick={() => fileInput.current?.click()}>
+            {`Upload ${label}`}
+          </button>
+        </div>
+      )}
+      <input
+        ref={fileInput}
+        type="file"
+        hidden
+        multiple
+        accept={uploadAcceptAttribute('subcontractor_document')}
+        onChange={(e) => onPick(e.target.files)}
+      />
       <p className="muted small" style={{ marginTop: 4 }}>{uploadAllowedHint('subcontractor_document')}</p>
       {error ? (
         <p className="banner" data-hue="red" role="alert">
