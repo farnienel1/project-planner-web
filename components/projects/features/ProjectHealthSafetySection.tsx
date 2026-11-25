@@ -165,6 +165,8 @@ export function ProjectHealthSafetySection({
   const [otherTrade, setOtherTrade] = useState('General')
   const [otherFile, setOtherFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
+  const onUploadProgress = (fraction: number) => setUploadProgress(fraction)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [extraRecipients, setExtraRecipients] = useState<string[]>([])
   const [showAddRecipients, setShowAddRecipients] = useState(false)
@@ -324,6 +326,7 @@ export function ProjectHealthSafetySection({
     e.preventDefault()
     if (!organization?.id || !uploadTitle.trim()) return
     setUploading(true)
+    setUploadProgress(null)
     setUploadError(null)
     try {
       let fileURL: string | undefined
@@ -331,11 +334,7 @@ export function ProjectHealthSafetySection({
         const prepared = await prepareClientUpload(uploadTalkFile, 'work')
         if (prepared.error) throw new Error(prepared.error)
         const path = healthSafetyFilePath(organization.id, project.id, 'talks', prepared.file.name)
-        fileURL = await uploadHsFile(
-          path,
-          prepared.file,
-          prepared.file.type
-        )
+        fileURL = await uploadHsFile(path, prepared.file, prepared.file.type, { onProgress: onUploadProgress })
       }
       await addToolboxTalk(organization.id, project.id, isSmallWorks, {
         title: uploadTitle.trim(),
@@ -396,6 +395,7 @@ export function ProjectHealthSafetySection({
     e.preventDefault()
     if (!organization?.id || !data || !ramsTitle.trim()) return
     setUploading(true)
+    setUploadProgress(null)
     setUploadError(null)
     try {
       let fileURL: string | undefined
@@ -403,7 +403,7 @@ export function ProjectHealthSafetySection({
         const prepared = await prepareClientUpload(ramsFile, 'work')
         if (prepared.error) throw new Error(prepared.error)
         const path = healthSafetyFilePath(organization.id, project.id, 'rams', prepared.file.name)
-        fileURL = await uploadHsFile(path, prepared.file, prepared.file.type)
+        fileURL = await uploadHsFile(path, prepared.file, prepared.file.type, { onProgress: onUploadProgress })
       }
       const version = nextRamsVersion(data.ramsDocuments, ramsTitle)
       await save(organization.id, project.id, isSmallWorks, {
@@ -437,6 +437,7 @@ export function ProjectHealthSafetySection({
     e.preventDefault()
     if (!organization?.id || !data || !otherTitle.trim()) return
     setUploading(true)
+    setUploadProgress(null)
     setUploadError(null)
     try {
       let fileURL: string | undefined
@@ -444,7 +445,7 @@ export function ProjectHealthSafetySection({
         const prepared = await prepareClientUpload(otherFile, 'work')
         if (prepared.error) throw new Error(prepared.error)
         const path = healthSafetyFilePath(organization.id, project.id, 'other', prepared.file.name)
-        fileURL = await uploadHsFile(path, prepared.file, prepared.file.type)
+        fileURL = await uploadHsFile(path, prepared.file, prepared.file.type, { onProgress: onUploadProgress })
       }
       await save(organization.id, project.id, isSmallWorks, {
         ...data,
@@ -1104,7 +1105,7 @@ export function ProjectHealthSafetySection({
                 form?.requestSubmit()
               }}
             >
-              {uploading ? 'Saving…' : 'Save to library'}
+              {uploading ? (uploadProgress != null && uploadProgress > 0 ? `Uploading ${Math.min(99, Math.round(uploadProgress * 100))}%…` : 'Saving…') : 'Save to library'}
             </HsPrimaryButton>
           }
         >
@@ -1326,7 +1327,7 @@ export function ProjectHealthSafetySection({
                 form?.requestSubmit()
               }}
             >
-              {uploading ? 'Uploading…' : 'Upload RAMS'}
+              {uploading ? (uploadProgress != null && uploadProgress > 0 ? `Uploading ${Math.min(99, Math.round(uploadProgress * 100))}%…` : 'Uploading…') : 'Upload RAMS'}
             </HsPrimaryButton>
           }
         >
@@ -1364,7 +1365,7 @@ export function ProjectHealthSafetySection({
                 form?.requestSubmit()
               }}
             >
-              {uploading ? 'Uploading…' : 'Add document'}
+              {uploading ? (uploadProgress != null && uploadProgress > 0 ? `Uploading ${Math.min(99, Math.round(uploadProgress * 100))}%…` : 'Uploading…') : 'Add document'}
             </HsPrimaryButton>
           }
         >

@@ -9,7 +9,7 @@
 import { doc, getDocFromServer, runTransaction, serverTimestamp } from 'firebase/firestore'
 import { deleteObject, ref } from 'firebase/storage'
 import { db, storage } from '@/lib/firebase/config'
-import { UPLOAD_STALL_MS, startTrackedUpload } from '@/lib/firebase/storageUtils'
+import { uploadFile } from '@/lib/firebase/storageUtils'
 import { prepareClientUpload } from '@/lib/security/stripPhotoLocation'
 import { assertUploadAllowed } from '@/lib/security/uploadGuard'
 import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
@@ -108,12 +108,7 @@ export async function uploadSubcontractorDocument(input: {
   // §24: the type stored on the entry is the one the bytes were checked as (and the object is written with), never
   // the browser's guess from the file name.
   const contentType = await assertUploadAllowed(path, file, file.type)
-  const upload = startTrackedUpload(path, file, contentType, {
-    stallMs: UPLOAD_STALL_MS,
-    sdkRetryMs: UPLOAD_STALL_MS,
-    onProgress: (sent, total) => input.onProgress?.(total > 0 ? sent / total : 0),
-  })
-  await upload.done
+  await uploadFile(path, file, contentType, { onProgress: input.onProgress })
   let outcome: string
   try {
     const result = await writeList(input.organizationId, input.subcontractorId, input.actorUid, (stored) =>
