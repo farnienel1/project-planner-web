@@ -84,7 +84,7 @@ export function deadlineDayText(dayKey: string | null | undefined, withYear = fa
   return withYear ? `${base} ${date.getUTCFullYear()}` : base
 }
 
-function days(n: number): string {
+function deadlineDayCount(n: number): string {
   return n === 1 ? '1 day' : `${n} days`
 }
 
@@ -139,7 +139,7 @@ export function deadlineDisplay(item: DeadlineDisplayInput | null | undefined, n
       group: 'completed',
       tabs: ['all', 'completed'],
       daysRemaining,
-      dueText: late ? `Done ${days(lateBy)} late` : 'Met on time',
+      dueText: late ? `Done ${deadlineDayCount(lateBy)} late` : 'Met on time',
       pill: 'Done',
       progressPercent,
       expectedPercent,
@@ -171,12 +171,12 @@ export function deadlineDisplay(item: DeadlineDisplayInput | null | undefined, n
     daysRemaining == null
       ? 'No due date'
       : overdue
-        ? `${days(-daysRemaining)} overdue`
+        ? `${deadlineDayCount(-daysRemaining)} overdue`
         : daysRemaining === 0
           ? 'Due today'
           : daysRemaining === 1
             ? 'Due tomorrow'
-            : `Due in ${days(daysRemaining)}`
+            : `Due in ${deadlineDayCount(daysRemaining)}`
   const pill = daysRemaining == null ? '—' : overdue ? `+${-daysRemaining}d` : daysRemaining === 0 ? 'Today' : `${daysRemaining}d`
   return {
     status: displayStatus,
@@ -239,5 +239,5 @@ export function deadlineMovedNote(fromDue: unknown, toDue: unknown, timeZone?: s
   const shift = calendarDaysBetween(from, to)
   const date = keyDate(from)
   const fromText = `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]}`
-  return shift > 0 ? `Moved ${days(shift)} from ${fromText}` : `Brought forward ${days(-shift)} from ${fromText}`
+  return shift > 0 ? `Moved ${deadlineDayCount(shift)} from ${fromText}` : `Brought forward ${deadlineDayCount(-shift)} from ${fromText}`
 }

@@ -8,8 +8,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.93.1 → 1.94.0
-Packed hash: 111e9cf500a12c43e24f66f88fa9a9ec1971f8567650962d3c1706b0a2697f99
+Rulebook version: 1.94.0 → 1.94.0
+Packed hash: bd61fb618a28f7fde10ad3f0b475a938e2170c6a056b096632d5799281a958d4
 Rulebook sha256: bf5549d0d9bfb132373878558110318f2354898063b518d631b462628c4df44f
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
@@ -22,11 +22,11 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 713114761ecf204c48aba9480e004c0e725c00286dc2c9818f2574d36c98cf92
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: DEADLINE_BEHIND_PACE_POINTS, DEADLINE_GROUPS, DEADLINE_TABS, deadlineDayText, deadlineDisplay, deadlineMovedNote, deadlineSummaryLine, deadlineTabCounts
+Exports added: none
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/deadlineDisplay.ts
+Web files that changed the rules: lib/canonical/deadlineDisplay.ts
 Done when:
-- [ ] Packed hash in iOS equals 111e9cf500a12c43e24f66f88fa9a9ec1971f8567650962d3c1706b0a2697f99
+- [ ] Packed hash in iOS equals bd61fb618a28f7fde10ad3f0b475a938e2170c6a056b096632d5799281a958d4
 - [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 bf5549d0d9bfb132373878558110318f2354898063b518d631b462628c4df44f)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.94.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
@@ -38,9 +38,6 @@ Done when:
 
 - **How a deadline reads** (§23, owner decision 25 Nov, deadlines UI upgrade): new `deadlineDisplay`, `deadlineTabCounts`, `deadlineSummaryLine`, `deadlineMovedNote`, `deadlineDayText`, `DEADLINE_TABS`, `DEADLINE_GROUPS`, `DEADLINE_BEHIND_PACE_POINTS` (`lib/canonical/deadlineDisplay.ts`). Behind pace is 10 points below a straight line from start to due (web used 15 and counted blocked); display only, nothing stored changes.
 
-## New rulebook sections
-
-- 1.94.0 — 2026-11-25
 
 ## Workflow for the iOS agent
 
