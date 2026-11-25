@@ -16,7 +16,8 @@ import test from 'node:test'
 import { assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing'
 import { assertFails } from './rulesAssert.ts'
 import { claimsContext } from './authClaimsContext.ts'
-import { deleteDoc, doc, serverTimestamp, setDoc, Timestamp, updateDoc } from 'firebase/firestore'
+import { deleteDoc, deleteField, doc, serverTimestamp, setDoc, Timestamp, updateDoc } from 'firebase/firestore'
+import assert from 'node:assert/strict'
 import { timesheetRevisionCreateFields } from '../lib/canonical/timesheetRevisions.ts'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -281,4 +282,66 @@ test('review of #344 (L3): no revision-shaped id or revision field on the ordina
   await assertSucceeds(updateDoc(doc(fs, 'organizations', ORG, 'settings', id), { managerNote: 'hello' }))
   // A non-timesheet settings document is unaffected.
   await assertSucceeds(setDoc(doc(await db(LM), 'organizations', ORG, 'settings', 'deadlines_J9'), { revision: 3 }))
+})
+
+// Rulebook 1.90.0 §8 (owner 24 Nov, point 4): a reviewer's revision starts as a draft held with the reviewer.
+
+function draftPayload(writer: string) {
+  const made = timesheetRevisionCreateFields({ previous: { documentId: ORIGINAL, data: originalData }, writerUserId: writer, draft: true })
+  if (!made) throw new Error('no revision fields')
+  return { id: made.documentId, data: { ...made.fields, revisionCreatedAt: serverTimestamp(), updatedBy: writer, updatedFrom: 'web', updatedAt: serverTimestamp() } }
+}
+
+test('1.90.0: a reviewer creates a draft revision; the person cannot create one marked draft or a false value', async () => {
+  await reset()
+  const draft = draftPayload(LM)
+  assert(draft.data.revisionDraft === true)
+  await assertSucceeds(setDoc(doc(await db(LM), 'organizations', ORG, 'settings', draft.id), draft.data))
+  await reset()
+  const own = revisionPayload(ORIGINAL, originalData, OP, { revisionDraft: true })
+  await assertFails(setDoc(doc(await db(OP), 'organizations', ORG, 'settings', own.id), own.data))
+  const odd = revisionPayload(ORIGINAL, originalData, LM, { revisionDraft: false })
+  await assertFails(setDoc(doc(await db(LM), 'organizations', ORG, 'settings', odd.id), odd.data))
+})
+
+test('1.90.0: the person cannot sign or save a draft revision', async () => {
+  await reset()
+  const draft = draftPayload(LM)
+  await assertSucceeds(setDoc(doc(await db(LM), 'organizations', ORG, 'settings', draft.id), draft.data))
+  const opRef = doc(await db(OP), 'organizations', ORG, 'settings', draft.id)
+  await assertFails(updateDoc(opRef, { operativeSignedAt: signedAt, operativeSignedByName: 'Op', updatedBy: OP, updatedFrom: 'web', updatedAt: serverTimestamp() }))
+  await assertFails(updateDoc(opRef, { operativeSignedAt: signedAt }))
+  await assertFails(updateDoc(opRef, { managerNote: 'hi' }))
+  await assertFails(updateDoc(opRef, { revisionDraft: null }))
+})
+
+test('1.90.0: the reviewer records booking edits on the draft, sends it, and then the person signs', async () => {
+  await reset()
+  const draft = draftPayload(LM)
+  await assertSucceeds(setDoc(doc(await db(LM), 'organizations', ORG, 'settings', draft.id), draft.data))
+  const lmRef = doc(await db(LM), 'organizations', ORG, 'settings', draft.id)
+  await assertSucceeds(updateDoc(lmRef, { 'reviewerBookingEdits.bookings__b1': { bookingId: 'b1', collection: 'bookings', fingerprint: '', place: '', deleted: true, editedBy: LM, forSignedAtMs: 0, forRevisionDraft: true, editedAt: serverTimestamp() } }))
+  // The reviewer never sets the draft again or to another value.
+  await assertFails(updateDoc(lmRef, { revisionDraft: 'yes' }))
+  // Another manager cannot send it.
+  await assertFails(updateDoc(doc(await db(OTHER_LM), 'organizations', ORG, 'settings', draft.id), { revisionDraft: deleteField() }))
+  await assertSucceeds(updateDoc(lmRef, { revisionDraft: deleteField(), updatedBy: LM, updatedFrom: 'web', updatedAt: serverTimestamp() }))
+  await assertFails(updateDoc(lmRef, { revisionDraft: true }))
+  const opRef = doc(await db(OP), 'organizations', ORG, 'settings', draft.id)
+  await assertFails(updateDoc(opRef, { revisionDraft: true }))
+  await assertSucceeds(updateDoc(opRef, { operativeSignedAt: signedAt, operativeSignedByName: 'Op', updatedBy: OP, updatedFrom: 'web', updatedAt: serverTimestamp() }))
+})
+
+test('1.90.0: the reviewer cancels a draft (deletes it); the person cannot', async () => {
+  await reset()
+  const draft = draftPayload(ADMIN)
+  await assertSucceeds(setDoc(doc(await db(ADMIN), 'organizations', ORG, 'settings', draft.id), draft.data))
+  await assertFails(deleteDoc(doc(await db(OP), 'organizations', ORG, 'settings', draft.id)))
+  await assertSucceeds(deleteDoc(doc(await db(LM), 'organizations', ORG, 'settings', draft.id)))
+})
+
+test('1.90.0: no revisionDraft on an ordinary timesheet', async () => {
+  await reset()
+  await assertFails(updateDoc(doc(await db(LM), 'organizations', ORG, 'settings', OPEN_ORIGINAL), { revisionDraft: true }))
+  await assertFails(updateDoc(doc(await db(OP), 'organizations', ORG, 'settings', OPEN_ORIGINAL), { revisionDraft: true }))
 })

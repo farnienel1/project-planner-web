@@ -351,7 +351,7 @@ export function PuButton({
   className,
   ...rest
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: 'primary' | 'green' | 'white' | 'ghost-dark'
+  variant?: 'primary' | 'green' | 'white' | 'ghost-dark' | 'danger'
   size?: 'sm'
   block?: boolean
 }) {

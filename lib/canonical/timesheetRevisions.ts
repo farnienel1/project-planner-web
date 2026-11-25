@@ -30,6 +30,7 @@ import {
 import { excludeActor, type NotificationPerson } from './notificationRecipients'
 import { overtimeFingerprintsMatch } from './bookingFingerprint'
 import { timesheetWriterIsReviewer } from './timesheetEntryReviews'
+import { TIMESHEET_REVISION_DRAFT_FIELD } from './timesheetRevisionDraft'
 
 /** `settings/{original id}{TIMESHEET_REVISION_SUFFIX}{N}`, N = 1, 2, …. */
 export const TIMESHEET_REVISION_SUFFIX = '_rev'
@@ -460,6 +461,12 @@ export function timesheetRevisionCreateFields(input: {
    * every labour decision is dropped (pending again).
    */
   liveLines?: ReadonlyArray<TimesheetRevisionLiveLine | null | undefined> | null
+  /**
+   * Rulebook 1.90.0 (owner 24 Nov, point 4): a reviewer's revision starts as a draft (`revisionDraft: true`) — held with
+   * the reviewer until they send it (`timesheetRevisionDraftSendWriteFields`). Ignored on the person's own revision
+   * (never a draft). Missing or false: no field, as before 1.90.0 (an app without the Send / Cancel controls).
+   */
+  draft?: boolean | null
 }): { documentId: string; revision: number; fields: Record<string, unknown> } | null {
   const ref = parseTimesheetRevisionDocId(input?.previous?.documentId)
   const data = record(input?.previous?.data)
@@ -481,6 +488,7 @@ export function timesheetRevisionCreateFields(input: {
   fields.revision = revision
   fields.previousVersionId = ref.documentId
   fields.revisionCreatedBy = writer
+  if (input.draft === true && input.writerIsSubject !== true) fields[TIMESHEET_REVISION_DRAFT_FIELD] = true
   return { documentId, revision, fields }
 }
 

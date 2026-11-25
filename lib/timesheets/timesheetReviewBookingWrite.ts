@@ -19,7 +19,9 @@ import {
   TIMESHEET_REVIEWER_BOOKING_EDITS_FIELD,
   timesheetReviewBookingAfterEdit,
   timesheetReviewBookingDocument,
+  timesheetReviewerBookingEditKey,
   timesheetReviewerBookingEditRecord,
+  timesheetReviewerEditBefore,
   type SignedTimesheetBookingDocument,
   type SignedTimesheetSheet,
   type TimesheetReviewerBookingEdit,
@@ -53,7 +55,9 @@ function recordOf(
   booking: { bookingId: string; collection: TimesheetReviewBookingCollection },
   /** The stored booking read fresh, and the write; null for a delete. */
   change: { stored: Record<string, unknown>; set: Record<string, unknown>; remove: string[]; timeZone: string | null } | null,
-  userId: string
+  userId: string,
+  /** 1.90.0: the stored booking read fresh before a delete (its before-values, so Cancel changes can re-create it). */
+  storedBeforeDelete?: Record<string, unknown> | null
 ): RecordedReviewerEdit {
   if (!record || !record.documentId || record.documentId.includes('/')) return null
   let after: SignedTimesheetBookingDocument | null = null
@@ -62,7 +66,13 @@ function recordOf(
     if (!before) return null
     after = timesheetReviewBookingAfterEdit(before as unknown as Record<string, unknown>, change) as unknown as SignedTimesheetBookingDocument
   }
-  return timesheetReviewerBookingEditRecord({ sheet: record.sheet, booking, after, deleted: change == null, editedBy: userId })
+  // 1.90.0 (Cancel changes): the booking's values before this edit, and the record already stored for it (whose
+  // before-values are kept within the same session).
+  const before = timesheetReviewerEditBefore({ data: change ? change.stored : storedBeforeDelete ?? null, deleted: change == null })
+  const key = timesheetReviewerBookingEditKey(booking.collection, booking.bookingId)
+  const edits = record.sheet.reviewerBookingEdits
+  const existing = key && edits && typeof edits === 'object' ? (edits as Record<string, unknown>)[key] : undefined
+  return timesheetReviewerBookingEditRecord({ sheet: record.sheet, booking, after, deleted: change == null, editedBy: userId, before, existing })
 }
 
 function addRecord(
@@ -159,7 +169,10 @@ export async function deleteTimesheetReviewBooking(
   const batch = writeBatch(db)
   batch.delete(bookingRef)
   batch.set(tombstoneRef, { ...plan.tombstone, deletedAt: serverTimestamp() })
-  const recorded = recordOf(input.sheetRecord, input.booking, null, input.userId)
+  // 1.90.0: read the booking before deleting it, so its values are recorded for Cancel changes.
+  const storedSnap = input.sheetRecord ? await getDoc(bookingRef).catch(() => null) : null
+  const storedBeforeDelete = storedSnap?.exists() ? (storedSnap.data() as Record<string, unknown>) : null
+  const recorded = recordOf(input.sheetRecord, input.booking, null, input.userId, storedBeforeDelete)
   if (recorded && input.sheetRecord) {
     addRecord(batch, db, { organizationId: input.organizationId, userId: input.userId, record: input.sheetRecord }, recorded)
   }

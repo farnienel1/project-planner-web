@@ -5,7 +5,7 @@
  * Doc id: timesheet_{userId}_{unixStartOfDay} using the organisation origin-country zone.
  * Legacy yyyy-MM-dd / ISO-week keys are still read so older web drafts are not lost.
  */
-import { collection, doc, documentId, getDoc, getDocs, query, runTransaction, serverTimestamp, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore'
+import { collection, deleteField, doc, documentId, getDoc, getDocs, query, runTransaction, serverTimestamp, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase/config'
 import { privatePayFor, securitySwitchesLoaded, securitySwitchesReady } from '@/lib/access/securitySwitches'
 import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
@@ -21,7 +21,7 @@ import { weekStartKey } from '@/lib/timesheets/timesheetWeekUtils'
 import { periodStartKey } from '@/lib/timesheets/paymentRunCopy'
 import { queryIdsSkippingRefused, timesheetMemberIds, timesheetOwnerResolver } from '@/lib/timesheets/timesheetQueue'
 import { newestFirstOwnIdLast, personTimesheetDocs, timesheetLookupPlan, timesheetDocumentOwnerId } from '@/lib/timesheets/personTimesheetDocs'
-import { UNKNOWN_BOOKING_PERSON_LABEL, bookingPersonIdHint, formerPersonForId, formerPersonLabel, type FormerPerson } from '@/lib/canonical'
+import { TIMESHEET_REVIEWER_BOOKING_EDITS_FIELD, timesheetReviewerReviewRecord, UNKNOWN_BOOKING_PERSON_LABEL, bookingPersonIdHint, formerPersonForId, formerPersonLabel, type FormerPerson } from '@/lib/canonical'
 import {
   parseTimesheetEntries,
   parseTimesheetEntryReviews,
@@ -47,6 +47,8 @@ import {
   parseTimesheetRevisionDocId,
   timesheetLatestVersion,
   timesheetRevisionCreateFields,
+  timesheetRevisionDraftSendWriteFields,
+  timesheetRevisionIsDraft,
   timesheetRevisionDocId,
   timesheetVersionsForPeriod,
   type TimesheetVersion,
@@ -614,6 +616,8 @@ export function draftFromFirestoreMap(
     extraEntryReviews: parseTimesheetEntryReviews(data),
     // Rulebook 1.55.0: REV N read from the document id (0 for the original); never written.
     ...(options?.sheetDocId ? { revision: parseTimesheetRevisionDocId(options.sheetDocId)?.revision ?? 0 } : {}),
+    // Rulebook 1.90.0: a reviewer's draft revision (read only).
+    ...(data.revisionDraft === true ? { revisionDraft: true } : {}),
   }
 }
 
@@ -1467,6 +1471,25 @@ export async function saveTimesheetDraft({
         return fields
       }
       const payload = keepStoredUserId(sheetPayload(managerSigned, draft))
+      // Rulebook 1.90.0 (Cancel changes): a price work / expense decision changed while making changes records the
+      // stored review it replaced, once per session (`timesheetReviewerReviewRecord`), in the same write.
+      const undoRecords: Record<string, unknown> = {}
+      if (reviewer && hasReviewFields) {
+        const prefix = `${TIMESHEET_ENTRY_REVIEWS_FIELD}.`
+        const storedReviews = (stored[TIMESHEET_ENTRY_REVIEWS_FIELD] ?? {}) as Record<string, unknown>
+        for (const key of Object.keys(reviewFields)) {
+          if (!key.startsWith(prefix)) continue
+          const entryId = key.slice(prefix.length)
+          const prior = storedReviews[entryId]
+          const rec = timesheetReviewerReviewRecord({
+            sheet: stored,
+            entryId,
+            before: prior && typeof prior === 'object' ? (prior as Record<string, unknown>) : null,
+            editedBy: writerId,
+          })
+          if (rec) undoRecords[`${TIMESHEET_REVIEWER_BOOKING_EDITS_FIELD}.${rec.key}`] = rec.value
+        }
+      }
       if (base) {
         const write = timesheetChangedFields(
           keepStoredUserId(sanitizeForFirestore(sheetPayload(managerSigned, base)) as Record<string, unknown>),
@@ -1477,12 +1500,12 @@ export async function saveTimesheetDraft({
           if (payload[key] !== undefined && stored[key] === undefined) write.set[key] = payload[key]
         }
         if (Object.keys(write.set).length === 0 && write.remove.length === 0 && !hasReviewFields) return
-        await updateDoc(ref, { ...firestoreUpdateFields(write), ...reviewFields, ...metadata })
+        await updateDoc(ref, { ...firestoreUpdateFields(write), ...reviewFields, ...undoRecords, ...metadata })
         return
       }
       const changed = changedFirestoreFields(payload, stored)
       if (Object.keys(changed).length === 0 && !hasReviewFields) return
-      await updateDoc(ref, { ...changed, ...reviewFields, ...metadata })
+      await updateDoc(ref, { ...changed, ...reviewFields, ...undoRecords, ...metadata })
     })
   )
   if (!reviewer) return draft.extraEntryReviews ?? null
@@ -1583,9 +1606,12 @@ export async function createTimesheetRevision({
   previousDocumentId,
   liveLines,
   writerIsSubject = false,
+  draft = false,
 }: {
   organizationId: string
   previousDocumentId: string
+  /** Rulebook 1.90.0: a reviewer's revision starts as a draft (ignored for the person's own). */
+  draft?: boolean
   /** Review of #344 (M1): the person's own revision copies `payrollLineReviews` exactly (the rules require it). */
   writerIsSubject?: boolean
   /**
@@ -1604,6 +1630,7 @@ export async function createTimesheetRevision({
       writerUserId: writerId,
       writerIsSubject,
       liveLines,
+      draft,
     })
     if (!made) return { status: 'not-exported', documentId: null, revision: null }
     const targetRef = doc(db, 'organizations', organizationId, 'settings', made.documentId)
@@ -1616,6 +1643,46 @@ export async function createTimesheetRevision({
       updatedAt: serverTimestamp(),
     })
     return { status: 'created', documentId: made.documentId, revision: made.revision }
+  })
+}
+
+/**
+ * Rulebook 1.90.0 §8: Send — end a reviewer's draft revision so the person can sign it. One transaction re-reads the
+ * revision and removes `revisionDraft` only while it is still a draft (`timesheetRevisionDraftSendWriteFields`).
+ * Returns false when it was no longer a draft (already sent, cancelled or exported elsewhere).
+ */
+export async function sendTimesheetRevisionDraft({ organizationId, documentId }: { organizationId: string; documentId: string }): Promise<boolean> {
+  const writerId = auth?.currentUser?.uid || ''
+  return runTransaction(db, async (transaction) => {
+    const ref = doc(db, 'organizations', organizationId, 'settings', documentId)
+    const snap = await transaction.get(ref)
+    if (!snap.exists()) return false
+    const data = snap.data() as Record<string, unknown>
+    const ref2 = parseTimesheetRevisionDocId(snap.id)
+    const write = timesheetRevisionDraftSendWriteFields({ ...data, revision: data.revision ?? ref2?.revision ?? 0 })
+    if (!write) return false
+    const fields: Record<string, unknown> = { ...write.set, ...(writeMetadataFields(writerId, 'web') ?? {}), updatedAt: serverTimestamp() }
+    for (const key of write.remove) fields[key] = deleteField()
+    transaction.update(ref, fields)
+    return true
+  })
+}
+
+/**
+ * Rulebook 1.90.0 §8: Cancel revision — delete a reviewer's draft revision. One transaction re-reads it and deletes it
+ * only while it is still a draft (never a sent, signed or exported revision). Booking changes already made stay in the
+ * bookings. Returns false when it was no longer a draft.
+ */
+export async function cancelTimesheetRevisionDraft({ organizationId, documentId }: { organizationId: string; documentId: string }): Promise<boolean> {
+  return runTransaction(db, async (transaction) => {
+    const ref = doc(db, 'organizations', organizationId, 'settings', documentId)
+    const snap = await transaction.get(ref)
+    if (!snap.exists()) return false
+    const data = snap.data() as Record<string, unknown>
+    const ref2 = parseTimesheetRevisionDocId(snap.id)
+    if (!timesheetRevisionIsDraft({ ...data, revision: data.revision ?? ref2?.revision ?? 0 })) return false
+    transaction.delete(ref)
+    return true
   })
 }
 

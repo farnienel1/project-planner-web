@@ -92,6 +92,8 @@ import {
   draftFromFirestoreMap,
   draftToFirestoreMap,
   createTimesheetRevision,
+  cancelTimesheetRevisionDraft,
+  sendTimesheetRevisionDraft,
   lateExtrasUnreadAfter,
   loadTimesheetDraft,
   saveTimesheetDraft,
@@ -100,8 +102,23 @@ import {
   timesheetVersionChain,
 } from '@/lib/timesheets/timesheetStorage'
 import { earlierVersionCards, timesheetRevisionCopy } from '@/lib/timesheets/timesheetRevisionCopy'
-import { timesheetCorrectionOption, timesheetNextStep } from '@/lib/canonical'
-import { TimesheetChangesCard, TimesheetCorrectionEntry, TimesheetNextStepLine } from '@/components/timesheets/TimesheetClarity'
+import {
+  lineManagerSummary,
+  timesheetCorrectionOption,
+  timesheetNextStep,
+  timesheetRevisionCancelConfirmMessage,
+  timesheetRevisionDraftState,
+  TIMESHEET_REVISION_DRAFT_CANCELLED_MESSAGE,
+  TIMESHEET_REVIEWER_CANCEL_CHANGES_DONE_MESSAGE,
+  TIMESHEET_REVIEWER_CANCEL_CHANGES_LABEL,
+  timesheetReviewerCancelChangesConfirmMessage,
+  timesheetReviewerCancelChangesOffered,
+  timesheetReviewerSessionRecords,
+  TIMESHEET_REVISION_DRAFT_REFUSED_MESSAGE,
+  TIMESHEET_REVISION_DRAFT_SENT_MESSAGE,
+} from '@/lib/canonical'
+import { cancelTimesheetReviewerChanges, type TimesheetReviewerUndoResult } from '@/lib/timesheets/timesheetReviewerUndoWrite'
+import { TimesheetChangesCard, TimesheetNoticesCard, TimesheetStatusCard, type TimesheetNotice } from '@/components/timesheets/TimesheetClarity'
 import {
   TIMESHEET_MAKE_CHANGES_ACTIVE_NOTE,
   TIMESHEET_MAKE_CHANGES_CANCEL_LABEL,
@@ -572,6 +589,8 @@ export function TimesheetPeriodPage({
     managerSignedByName: draft.managerSignedByName ?? '',
     exportedAt: draft.exportedAt ?? null,
     revision: draft.revision ?? null,
+    // Rulebook 1.90.0: a reviewer's draft revision (with the reviewer until they send it).
+    revisionDraft: draft.revisionDraft === true,
     // Review of #427 (finding 9): a revision is also known by the original it corrects.
     revisionOf: latestVersion && latestVersion.revision > 0 ? latestVersion.baseDocumentId : null,
     // Review of #427 (finding 1): the signed copy's lines — one signed before 1.46.0 cannot tell a changed booking.
@@ -699,7 +718,37 @@ export function TimesheetPeriodPage({
     personName: subjectName,
     lineManagerName,
     hasLineManager: userHasLineManager(subjectUser, users),
+    // Rulebook 1.90.0: web creates the reviewer's revision as a draft.
+    revisionDraft: true,
   })
+  // Rulebook 1.90.0 (owner 24 Nov, point 4): a reviewer's revision is a draft until they send it — Send is grey until the
+  // draft holds a change (derived from the stored draft and the version it corrects), Cancel revision deletes it, and
+  // the person is never offered signing while it is a draft.
+  const previousVersionData = versionChain.length > 1 ? versionChain[versionChain.length - 2]?.data ?? null : null
+  const revisionDraftState = timesheetRevisionDraftState({
+    sheet: {
+      ...makeChangesSheet,
+      reviewerBookingEdits: draft.reviewerBookingEdits ?? null,
+      payrollLineReviews: draft.payrollLineReviews,
+      extraEntryReviews: draft.extraEntryReviews ?? null,
+    },
+    previous: previousVersionData,
+    viewerIsReviewer: mode === 'review' && Boolean(viewer) && viewerIsReviewer,
+    viewerIsSubject: mode === 'mine',
+    personName: subjectName,
+    revisionLabel: revisionCopy.label,
+  })
+  // Rulebook 1.90.0 (owner 24 Nov): Cancel changes undoes the reviewer's making-changes session (not on a draft
+  // revision, whose Cancel revision does the same restore and then deletes the draft).
+  const undoSheet = { ...makeChangesSheet, reviewerBookingEdits: draft.reviewerBookingEdits ?? null }
+  const undoRecordCount = timesheetReviewerSessionRecords(undoSheet).length
+  const cancelChangesOffered =
+    !revisionDraftState.draft &&
+    timesheetReviewerCancelChangesOffered({
+      sheet: undoSheet,
+      viewerIsReviewer: mode === 'review' && Boolean(viewer) && viewerIsReviewer,
+      viewerIsSubject: mode === 'mine',
+    })
   const addExtrasRef = useRef<HTMLDivElement | null>(null)
 
   const persist = useCallback(
@@ -1332,6 +1381,11 @@ export function TimesheetPeriodPage({
   const handleOperativeSign = async () => {
     if (!viewer || !signature) return
     if (signingRef.current) return
+    // Rulebook 1.90.0: a draft revision is with the reviewer — never signed by the person.
+    if (!revisionDraftState.personMaySign) {
+      setError(TIMESHEET_REVISION_DRAFT_REFUSED_MESSAGE)
+      return
+    }
     if (!payInputs.ready) {
       setError(payInputs.message)
       return
@@ -1471,22 +1525,85 @@ export function TimesheetPeriodPage({
         // Review of #344 (M1): the person's own revision copies every labour decision exactly.
         writerIsSubject: mode === 'mine',
         liveLines: payroll.lineItems.map((line) => ({ id: line.id, bookingFingerprint: line.bookingFingerprint ?? null, amount: line.amount, paidHours: line.paidHours })),
+        // Rulebook 1.90.0 (owner 24 Nov, point 4): a reviewer's revision starts as a draft; the person is told only when
+        // the reviewer sends it (`handleSendRevision`), never at create.
+        draft: mode !== 'mine',
       })
-      if (result.status === 'created' && viewer && viewer.id !== subjectUser.id) {
+      if (result.status === 'not-exported' || result.status === 'missing') setError(revisionCheck.message || 'This timesheet could not be revised.')
+      setLoadAttempt((attempt) => attempt + 1)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to create the revision')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** Rulebook 1.90.0: Save changes and send — end the draft, then tell the person (`timesheet_revision_to_sign`). */
+  const handleSendRevision = async () => {
+    const documentId = sourceDocumentId.current
+    if (!organization?.id || !documentId || !revisionDraftState.canSend || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      const sent = await sendTimesheetRevisionDraft({ organizationId: organization.id, documentId })
+      if (sent && viewer && viewer.id !== subjectUser.id) {
         afterPrimaryWrite('notifyTimesheetRevisionToSign', notifyTimesheetRevisionToSign({
           organizationId: organization.id,
           subjectUser,
           actorUserId: viewer.id,
           users,
-          revisionDocumentId: result.documentId,
+          revisionDocumentId: documentId,
           weekStart: periodStart,
           timeZone,
         }))
       }
-      if (result.status === 'not-exported' || result.status === 'missing') setError(revisionCheck.message || 'This timesheet could not be revised.')
+      setReviewNotice(sent ? TIMESHEET_REVISION_DRAFT_SENT_MESSAGE : null)
       setLoadAttempt((attempt) => attempt + 1)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to create the revision')
+      setError(err instanceof Error ? err.message : 'The revision could not be sent.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** The undo's result as one line: done, or which bookings were left as they are and why. */
+  const undoResultText = (result: TimesheetReviewerUndoResult, done: string): string =>
+    result.refused.length === 0 ? done : [done, ...result.refused.map((row) => row.message)].join(' ')
+
+  /** Rulebook 1.90.0 (owner 24 Nov): Cancel changes — undo this making-changes session after a confirm. */
+  const handleCancelChanges = async () => {
+    const documentId = sourceDocumentId.current
+    if (!organization?.id || !documentId || !viewer || !cancelChangesOffered || busy) return
+    if (!window.confirm(timesheetReviewerCancelChangesConfirmMessage(undoRecordCount))) return
+    setBusy(true)
+    setError(null)
+    try {
+      const result = await cancelTimesheetReviewerChanges(firestoreDb, { organizationId: organization.id, userId: viewer.id, documentId, timeZone })
+      setMakingChanges(false)
+      setReviewNotice(undoResultText(result, TIMESHEET_REVIEWER_CANCEL_CHANGES_DONE_MESSAGE))
+      setLoadAttempt((attempt) => attempt + 1)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'The changes could not be cancelled.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** Rulebook 1.90.0: Cancel revision — after a confirm, undo the draft's changes, then delete the draft. */
+  const handleCancelRevision = async () => {
+    const documentId = sourceDocumentId.current
+    if (!organization?.id || !documentId || !viewer || !revisionDraftState.canCancel || busy) return
+    if (!window.confirm(timesheetRevisionCancelConfirmMessage(revisionCopy.label, revisionDraftState.changes.bookingEdits))) return
+    setBusy(true)
+    setError(null)
+    try {
+      // Owner 24 Nov: the same restore as Cancel changes first; a booking that could not be put back stays as it is.
+      const undo = await cancelTimesheetReviewerChanges(firestoreDb, { organizationId: organization.id, userId: viewer.id, documentId, timeZone })
+      const cancelled = await cancelTimesheetRevisionDraft({ organizationId: organization.id, documentId })
+      setReviewNotice(cancelled ? undoResultText(undo, TIMESHEET_REVISION_DRAFT_CANCELLED_MESSAGE) : null)
+      setLoadAttempt((attempt) => attempt + 1)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'The revision could not be cancelled.')
     } finally {
       setBusy(false)
     }
@@ -1772,9 +1889,14 @@ export function TimesheetPeriodPage({
         <StatRow items={bandStats} />
       </PageBand>
       <PayInputsBanner inputs={payInputs} />
-      {/* Rulebook 1.77.0 (point 2): whose turn and what happens next; point 5: Generate invoice right here. */}
-      <TimesheetNextStepLine
+      {/*
+        Rulebook 1.90.0 (owner 24 Nov, point 5): one calm layout under the band — ONE status card (whose turn, any error,
+        this state's actions and one help line), the "Changed since you signed" card when it applies, then ONE notes
+        card (every notice, one row each; Earlier versions at its foot). The handlers and words are unchanged.
+      */}
+      <TimesheetStatusCard
         step={nextStep}
+        error={error}
         invoiceButton={
           mode === 'mine' && fullyApproved ? (
             <PuButton variant="green" disabled={busy || !payInputs.ready || snapshotBeingRebuilt} onClick={() => void handleInvoice()}>
@@ -1782,55 +1904,137 @@ export function TimesheetPeriodPage({
             </PuButton>
           ) : null
         }
-      />
-      {/* Point 3: what changed since it was signed, before → after. */}
-      {showChangeDetails ? <TimesheetChangesCard details={changeDetails} /> : null}
-      {/* Point 1: one "Correct this timesheet" entry over the existing paths (Make changes, revision, late extras). */}
-      <TimesheetCorrectionEntry
-        option={correction}
-        disabled={
-          correction.action === 'makeChanges'
-            ? busy || !payInputs.ready || !bookingsLoaded || bookingsFailed || !operativesLoaded
-            : correction.action === 'createRevision' || correction.action === 'reviewAndSignAgain'
-            ? busy || !signInputsLoaded || !payInputs.ready || !snapshotState.ready
-            : false
-        }
-        active={
-          correction.action === 'makeChanges' && makingChanges ? (
-            <PuButton block onClick={() => setMakingChanges(false)}>
-              {TIMESHEET_MAKE_CHANGES_CANCEL_LABEL}
+        actions={
+          revisionDraftState.reviewerActs ? (
+            <>
+              {/* Grey until the draft holds a change, then blue (owner 24 Nov). */}
+              <PuButton variant="primary" disabled={busy || !revisionDraftState.canSend} onClick={() => void handleSendRevision()}>
+                {revisionDraftState.sendLabel}
+              </PuButton>
+              <PuButton variant="danger" disabled={busy || !revisionDraftState.canCancel} onClick={() => void handleCancelRevision()}>
+                {revisionDraftState.cancelLabel}
+              </PuButton>
+            </>
+          ) : correction.action === 'makeChanges' && makingChanges ? (
+            <>
+              <PuButton onClick={() => setMakingChanges(false)}>{TIMESHEET_MAKE_CHANGES_CANCEL_LABEL}</PuButton>
+              {cancelChangesOffered ? (
+                <PuButton variant="danger" disabled={busy} onClick={() => void handleCancelChanges()}>
+                  {TIMESHEET_REVIEWER_CANCEL_CHANGES_LABEL}
+                </PuButton>
+              ) : null}
+            </>
+          ) : correction.action && correction.hasButton ? (
+            <>
+            {/* Point 1 (1.77.0): one "Correct this timesheet" entry over the existing paths. */}
+            <PuButton
+              variant="primary"
+              disabled={
+                correction.action === 'makeChanges'
+                  ? busy || !payInputs.ready || !bookingsLoaded || bookingsFailed || !operativesLoaded
+                  : correction.action === 'createRevision' || correction.action === 'reviewAndSignAgain'
+                  ? busy || !signInputsLoaded || !payInputs.ready || !snapshotState.ready
+                  : false
+              }
+              onClick={() => {
+                if (correction.action === 'makeChanges') setMakingChanges(true)
+                else if (correction.action === 'createRevision' || correction.action === 'reviewAndSignAgain') void handleCreateRevision()
+                else if (correction.action === 'addLateExtras') {
+                  addExtrasRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                  addExtrasRef.current?.querySelector<HTMLButtonElement>('button:not([disabled])')?.focus({ preventScroll: true })
+                }
+              }}
+            >
+              {correction.label}
             </PuButton>
-          ) : undefined
+              {cancelChangesOffered ? (
+                <PuButton variant="danger" disabled={busy} onClick={() => void handleCancelChanges()}>
+                  {TIMESHEET_REVIEWER_CANCEL_CHANGES_LABEL}
+                </PuButton>
+              ) : null}
+            </>
+          ) : cancelChangesOffered ? (
+            <PuButton variant="danger" disabled={busy} onClick={() => void handleCancelChanges()}>
+              {TIMESHEET_REVIEWER_CANCEL_CHANGES_LABEL}
+            </PuButton>
+          ) : null
         }
-        onCorrect={() => {
-          if (correction.action === 'makeChanges') setMakingChanges(true)
-          else if (correction.action === 'createRevision' || correction.action === 'reviewAndSignAgain') void handleCreateRevision()
-          else if (correction.action === 'addLateExtras') {
-            addExtrasRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-            addExtrasRef.current?.querySelector<HTMLButtonElement>('button:not([disabled])')?.focus({ preventScroll: true })
+        help={
+          revisionDraftState.reviewerActs
+            ? revisionDraftState.help
+            : revisionDraftState.personMessage ?? (correction.action ? (correction.hasButton ? correction.help : [correction.label, correction.help].filter(Boolean).join(' — ')) : null)
+        }
+      >
+        {/* Owner 24 Nov: what changed since it was signed, then every notice, in this same card above the buttons. */}
+        {showChangeDetails ? <TimesheetChangesCard details={changeDetails} embedded /> : null}
+        <TimesheetNoticesCard
+          embedded
+          notices={(() => {
+          const notices: TimesheetNotice[] = []
+          if (snapshotBeingRebuilt) notices.push({ key: 'rebuilt', tone: 'info', content: snapshotRebuiltNote })
+          if (reviewNotice) {
+            notices.push({ key: 'review', tone: reviewNotice === TIMESHEET_REVIEW_BOOKING_NOT_RECORDED_MESSAGE ? 'amber' : 'green', content: reviewNotice })
           }
-        }}
-      />
-      {snapshotBeingRebuilt ? (
-        <Note tone="info" role="status">
-          {snapshotRebuiltNote}
-        </Note>
-      ) : null}
-      {error ? <Note tone="red" role="alert">{error}</Note> : null}
-      {reviewNotice ? <Note tone="green" role="status">{reviewNotice}</Note> : null}
-      {/* Review of #427 (finding 7): while only ⚙ / ✕ are open on a signed-off sheet, say what they do above the lines. */}
-      {makingChanges && makeChangesAction === 'reopenReview' ? (
-        <Note tone="amber" role="status">{TIMESHEET_MAKE_CHANGES_ACTIVE_NOTE}</Note>
-      ) : null}
-      {/* Rulebook 1.76.0 (B1): the reviewer may change an open revision's bookings before the person signs it. */}
-      {reviewerBookingEditsOpen && !canManagerReview && makeChangesAction !== 'reopenReview' ? (
-        <Note tone="info">{TIMESHEET_REVISION_REVIEWER_EDIT_NOTE}</Note>
-      ) : null}
-      {updatedElsewhere ? (
-        <Note tone="amber" role="status">
-          This timesheet was updated on another device. It will refresh when you finish this change.
-        </Note>
-      ) : null}
+          // Review of #427 (finding 7): while only ⚙ / ✕ are open on a signed-off sheet, say what they do.
+          if (makingChanges && makeChangesAction === 'reopenReview') notices.push({ key: 'making', tone: 'amber', content: TIMESHEET_MAKE_CHANGES_ACTIVE_NOTE })
+          // 1.76.0 (B1): the reviewer may change an open revision's bookings before the person signs it.
+          if (reviewerBookingEditsOpen && !canManagerReview && makeChangesAction !== 'reopenReview') {
+            notices.push({ key: 'revedit', tone: 'info', content: TIMESHEET_REVISION_REVIEWER_EDIT_NOTE })
+          }
+          if (updatedElsewhere) {
+            notices.push({ key: 'elsewhere', tone: 'amber', content: 'This timesheet was updated on another device. It will refresh when you finish this change.' })
+          }
+          if (revisionCopy.label) {
+            notices.push({
+              key: 'revision',
+              tone: 'info',
+              content: (
+                <>
+                  <b>{revisionCopy.label}</b>
+                  {revisionCopy.differenceText ? ` · ${revisionCopy.differenceText} from the previous version` : ''}
+                </>
+              ),
+            })
+          }
+          if (revisionDue.due) {
+            notices.push({ key: 'due', tone: 'amber', content: mode === 'mine' ? revisionDue.message : revisionDue.reviewerMessage })
+          }
+          // Point 3 (owner 24 Nov): overlapping bookings are one row here, not a coloured tile on every line.
+          const overlapDays = Array.from(
+            new Set(payroll.lineItems.filter((line) => line.isOverlapping === true).map((line) => abbreviatedDate(line.date, timeZone)))
+          )
+          if (overlapDays.length > 0) {
+            notices.push({
+              key: 'overlap',
+              tone: 'amber',
+              content: (
+                <>
+                  {overlappingBookingNote({ reviewing: mode === 'review' })} <span className="pu-sub">({overlapDays.join(', ')})</span>
+                </>
+              ),
+            })
+          }
+          return notices
+        })()}
+        />
+      </TimesheetStatusCard>
+      {/* Rulebook 1.90.0 (owner 24 Nov): Earlier versions stays its own section, below the one top card. */}
+      {(() => {
+        const earlier = timesheetEarlierVersions(versionChain).length > 0 ? (
+            <TimesheetRevisionPanel
+              mode={mode}
+              revisionLabel=""
+              differenceText={null}
+              due={{ ...revisionDue, due: false }}
+              earlier={timesheetEarlierVersions(versionChain)}
+              chain={versionChain}
+              latestTotal={total}
+              timeZone={timeZone}
+              currency={currency}
+            />
+          ) : null
+        return earlier ? <section className="pu-card pu-versions" aria-label="Earlier versions">{earlier}</section> : null
+      })()}
 
       {managerHasSigned && managerAdjustmentCount(draft) > 0 ? (
         <AdjustmentSummaryCard
@@ -1838,18 +2042,6 @@ export function TimesheetPeriodPage({
           rows={managerAdjustmentRows(draft, currency, payroll.lineItems, timeZone)}
         />
       ) : null}
-
-      <TimesheetRevisionPanel
-        mode={mode}
-        revisionLabel={revisionCopy.label}
-        differenceText={revisionCopy.differenceText}
-        due={revisionDue}
-        earlier={timesheetEarlierVersions(versionChain)}
-        chain={versionChain}
-        latestTotal={total}
-        timeZone={timeZone}
-        currency={currency}
-      />
 
       <div className="pu-grid2">
         <div className="pu-col">
@@ -2090,7 +2282,7 @@ export function TimesheetPeriodPage({
               </Card>
               </div>
 
-              {needsCounterSign ? (
+              {needsCounterSign && revisionDraftState.personMaySign ? (
                 <Card title="Note to manager">
                   <div className="pu-card-b">
                     <textarea
@@ -2119,7 +2311,10 @@ export function TimesheetPeriodPage({
                 <Note tone="info">{bookingChange.reviewerMessage}</Note>
               ) : null}
 
-              {!draft.operativeSignedAt || changeActions.personMaySignAgain ? (
+              {!revisionDraftState.personMaySign ? (
+                // Rulebook 1.90.0: never offer signing on a draft revision (the rules refuse it too).
+                <Note tone="info">{TIMESHEET_REVISION_DRAFT_REFUSED_MESSAGE}</Note>
+              ) : !draft.operativeSignedAt || changeActions.personMaySignAgain ? (
                 <PuButton variant="primary" block disabled={!payInputs.ready} onClick={() => setSignOpen(true)}>
                   {!payInputs.ready && snapshotState.message && !snapshotState.ready
                     ? snapshotState.message
@@ -2666,8 +2861,13 @@ function PayrollLine({
         ) : null}
         {overlapping ? (
           <div style={{ marginTop: 6 }}>
-            {/* Rulebook 1.70.0 §8 (`overlappingBookingNote`): a reviewer reads the schedule wording. */}
-            <Note tone="amber">{overlappingBookingNote({ reviewing })}</Note>
+            {/*
+              Rulebook 1.70.0 §8 (`overlappingBookingNote`): a reviewer reads the schedule wording. 1.90.0 (owner 24 Nov,
+              point 3): a small chip on the line; the sentence is one row in the notes card at the top.
+            */}
+            <Chip tone="amber" title={overlappingBookingNote({ reviewing })}>
+              Overlaps another booking
+            </Chip>
           </div>
         ) : null}
       </td>
@@ -3745,7 +3945,7 @@ function TimesheetRevisionPanel({
       {earlier.length > 0 ? (
         // 17 Nov follow-up (display only): each earlier version as a small card — label, signed (organisation zone) and
         // by whom, total, and what the next version changed (`earlierVersionCards`).
-        <details className="pu-card" style={{ padding: 12 }}>
+        <details style={{ paddingTop: 8 }}>
           <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
             {TIMESHEET_EARLIER_VERSIONS_LABEL} ({earlier.length})
           </summary>

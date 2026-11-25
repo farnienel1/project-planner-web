@@ -18,6 +18,7 @@
  * hourly rate, never multiplied), Pay is the sum of each booking's rounded pay.
  */
 
+import { timesheetRevisionIsDraft } from './timesheetRevisionDraft'
 import { timesheetRevisionReportState } from './timesheetRevisions'
 import { signedTimesheetChangeForReports } from './timesheetBookingChanges'
 import { timesheetReportWaiting, TIMESHEET_REPORT_AWAITING_APPROVAL_LABEL, TIMESHEET_REPORT_AWAITING_RESIGN_LABEL } from './timesheetClarity'
@@ -866,7 +867,7 @@ function checkLine(
       changedSinceSigned = changedSinceSigned || revisionState.state === 'due'
     } else states.push(bucket === 'exported' ? 'exported' : bucket === 'signed' ? 'signed' : bucket === 'awaiting' ? 'submitted' : 'notStarted')
     if (reportChange?.reopened === true || (reportChange?.changed === true && fields.operativeSignedAtMs != null && bucket !== 'exported')) changedSinceSigned = true
-    const waiting = timesheetReportWaiting(row.change, { state: revisionState.state, personSigned: fields.operativeSignedAtMs != null })
+    const waiting = timesheetReportWaiting(row.change, { state: revisionState.state, personSigned: fields.operativeSignedAtMs != null, draft: timesheetRevisionIsDraft((row.sheet as Record<string, unknown> | null) ?? null) })
     if (waiting === 'person') awaitingResign = true
     else if (waiting === 'lineManager') awaitingApproval = true
     const days = eachDayKey(row.startDayKey, row.endDayKey, zone).filter((day) => counted.has(day))
