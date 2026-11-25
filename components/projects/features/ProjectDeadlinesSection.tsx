@@ -16,7 +16,7 @@ import { useDeadlineStore } from '@/lib/stores/deadlineStore'
 import { isOperativeMode } from '@/lib/permissions'
 import { liveUserIdsOnJob } from '@/lib/access/workAccess'
 import { isPendingPerson } from '@/lib/staff/pendingPeople'
-import { personIdSet } from '@/lib/canonical'
+import { DEADLINE_MULTIPLE_FLOORS_GROUP, personIdSet } from '@/lib/canonical'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import { healthSafetyFilePath, uploadFile } from '@/lib/firebase/storageUtils'
 import { prepareClientUpload } from '@/lib/security/stripPhotoLocation'
@@ -441,7 +441,7 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
             </h2>
             <div className="space-y-2">
               {group.items.map((item) => (
-                <DeadlineCard key={item.id} item={item} now={now} showLocation={grouping !== 'location'} canManage={canManage} onOpen={() => setOpenId(item.id)} />
+                <DeadlineCard key={item.id} item={item} now={now} showLocation={grouping !== 'location' || group.id === DEADLINE_MULTIPLE_FLOORS_GROUP} canManage={canManage} onOpen={() => setOpenId(item.id)} />
               ))}
             </div>
           </section>

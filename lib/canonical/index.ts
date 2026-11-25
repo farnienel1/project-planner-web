@@ -1097,6 +1097,8 @@ export {
   deadlineAssignedProjectIds,
   deadlineLocationWriteFields,
   deadlineOnLocation,
+  deadlineFloorGroup,
+  DEADLINE_MULTIPLE_FLOORS_GROUP,
   deadlineAssignmentWriteFields,
   deadlineProjectKey,
   deadlinesDocumentId,

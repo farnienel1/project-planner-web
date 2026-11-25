@@ -4,7 +4,7 @@
  */
 
 import { newUuid } from '@/lib/firebase/firestoreUtils'
-import { calendarDaysBetween, deadlineUrgency, dueDayKey } from '@/lib/canonical'
+import { calendarDaysBetween, deadlineFloorGroup, deadlineUrgency, dueDayKey } from '@/lib/canonical'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import type {
   Deadline,
@@ -402,11 +402,8 @@ export function groupDeadlines(list: Deadline[], grouping: DeadlineGrouping, now
     case 'date':
       return dateGroups(list, now)
     case 'location':
-      // Rulebook 1.92.0: a deadline on several floors is listed under each of them.
-      return keyedGroups(list, now, (item) => {
-        const floors = deadlineLocationList(item)
-        return floors.length > 0 ? floors : ['Unassigned area']
-      })
+      // Rulebook 1.93.0 (owner 25 Nov): a deadline on two or more floors is listed once, under "Multiple floors".
+      return keyedGroups(list, now, (item) => [deadlineFloorGroup(item) ?? 'Unassigned area'])
     case 'trade':
       return keyedGroups(list, now, (item) => [item.trade || 'No trade'])
     case 'assignee':
