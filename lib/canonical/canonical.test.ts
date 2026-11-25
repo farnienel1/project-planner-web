@@ -20502,7 +20502,7 @@ test('1.90.0 Cancel changes: a re-created booking is not an addition the person 
     operativeSignedBookings: [],
     operativeSignedBookingsSignedAt: signedAt,
     operativeSignedBookingsAt: signedAt,
-    reviewerBookingEdits: { bookings__b2new: { bookingId: 'b2new', collection: 'bookings', fingerprint: fp, place: 'project:j1', deleted: false, forSignedAtMs: signedAt, forManagerSignedAtMs: 0, restoredFrom: 'b2' } },
+    reviewerBookingEdits: { bookings__b2new: { bookingId: 'b2new', collection: 'bookings', fingerprint: fp, place: R112.signedTimesheetBookingPlace(created as never), deleted: false, forSignedAtMs: signedAt, forManagerSignedAtMs: 0, restoredFrom: 'b2' } },
   }
   const line = { id: 'op-b2new-normal', bookingId: 'b2new', bookingCollection: 'bookings', bookingFingerprint: fp, bookingCreatedAt: created.createdAtMs, bookingUpdatedAt: created.updatedAtMs }
   const change = R112.signedTimesheetBookingChanges({ sheet, liveLines: [line], liveBookings: [created], liveLoaded: true, selfSigned: false } as never)
@@ -20640,6 +20640,39 @@ test('1.90.0 review of #457 (5): undoing a ✕ on a signed-off sheet leaves it s
     selfSigned: false,
   } as never)
   assert.equal(moved.changed, true)
+  // Re-check of #457 (1): re-created, then moved to another job with the same times — a change on both sides.
+  const otherJob = { ...recreated, projectId: 'J2' }
+  const jobMove = R112.signedTimesheetBookingChanges({
+    sheet: { ...baseSheet, reviewerBookingEdits: settled },
+    liveLines: [line],
+    liveBookings: [otherJob],
+    tombstonedBookingIds: [{ collection: 'bookings', bookingId: 'b2' }],
+    liveLoaded: true,
+    selfSigned: false,
+  } as never)
+  assert.equal(jobMove.changed, true, 'a re-created booking moved to another job is a change')
+  assert.ok(jobMove.removedBookingIds.includes('b2') || jobMove.addedBookingIds.includes('b2new'))
+})
+
+test('1.90.0 re-check of #457 (2): a ✕ after a ⚙ never re-creates an edit field the ⚙ added', () => {
+  const tz = 'Europe/London'
+  const sheet = { operativeSignedAt: { seconds: 1763400000, nanoseconds: 0 }, managerSignedAt: { seconds: 1763500000, nanoseconds: 0 } }
+  const stored = { date: 1, operativeId: 'op1', projectId: 'J1', timeSlot: 'CUSTOM_HOURS', workStartTime: '07:00', workEndTime: '19:00', status: 'Confirmed' }
+  const booking = { collection: 'bookings', bookingId: 'b1' }
+  const gear = R112.timesheetReviewerBookingEditRecord({
+    sheet, booking, editedBy: 'lm',
+    after: R112.timesheetReviewBookingDocument({ collection: 'bookings', id: 'b1', data: { ...stored, otMultiplierOverride: 2 }, timeZone: tz }),
+    before: R112.timesheetReviewerEditBefore({ data: stored, deleted: false }),
+  })!
+  const cross = R112.timesheetReviewerBookingEditRecord({
+    sheet, booking, editedBy: 'lm', after: null, deleted: true, existing: gear.value,
+    before: R112.timesheetReviewerEditBefore({ data: { ...stored, otMultiplierOverride: 2, isBreakRemoved: true }, deleted: true }),
+  })!
+  const before = cross.value.before as Record<string, unknown>
+  assert.equal('otMultiplierOverride' in before, false, 'not stored before the session: left out')
+  assert.equal('isBreakRemoved' in before, false)
+  assert.equal(before.workEndTime, '19:00')
+  assert.equal(before.operativeId, 'op1')
 })
 
 test('1.88.0 line managers per organisation: home reads the users document, elsewhere the memberLineManagers record', () => {

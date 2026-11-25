@@ -39,6 +39,7 @@ import { normalizeDocumentId } from './scheduleSources'
 import { resolveTimesheetExportedAtMs, timesheetTimestampMs, TIMESHEET_SIGNED_AFTER_MS } from './timesheetPeriod'
 import { timesheetSnapshotNeedsRebuild } from './timesheetSnapshot'
 import { timesheetRevisionIsDraft } from './timesheetRevisionDraft'
+import { TIMESHEET_REVIEW_BOOKING_FIELDS } from './timesheetReviewBookingWrites'
 import { bookingOccupiesDay } from './warningRows'
 
 /** The popup on My Timesheets (owner's words, 15 Nov). */
@@ -426,8 +427,13 @@ function diffSides(
     const pair = restorePairs?.get(key)
     if (pair) {
       const nowNew = live.get(pair.newKey)
+      // Re-check of #457 (1): the re-created booking's LIVE job / place must still be the one it was re-created at (the
+      // fingerprint holds no job), so a move to another job afterwards is a change.
+      const docNew = documents?.byKey.get(pair.newKey)
       if (
         nowNew &&
+        docNew &&
+        signedTimesheetBookingPlace(docNew) === pair.place &&
         pair.fingerprint &&
         sameBooking(pair.fingerprint, nowNew.fingerprint) &&
         (!row.fingerprint || sameBooking(row.fingerprint, nowNew.fingerprint)) &&
@@ -465,7 +471,17 @@ function diffSides(
     // 1.90.0 (Cancel changes): a booking the reviewer re-created to undo their own ✕, still exactly as re-created, is
     // not an addition the person must sign again (its deleted original is the removal the ✕ record already covers).
     const restored = reviewerEdits?.get(key)
-    if (restored?.restoredFrom && !restored.deleted && restored.fingerprint && sameBooking(restored.fingerprint, row.fingerprint)) continue
+    const restoredDoc = documents?.byKey.get(key)
+    if (
+      restored?.restoredFrom &&
+      !restored.deleted &&
+      restored.fingerprint &&
+      sameBooking(restored.fingerprint, row.fingerprint) &&
+      // Re-check of #457 (1): still at the job / place it was re-created at.
+      restoredDoc &&
+      signedTimesheetBookingPlace(restoredDoc) === restored.place
+    )
+      continue
     // Added only when the booking was created or last written after the signature less the addition window (a filter
     // switched back on, or a person matched under another id, brings in bookings that were already there: no change).
     // A booking with no write time never counts.
@@ -669,11 +685,17 @@ export function timesheetReviewerBookingEditRecord(input: {
   const given = input.before && typeof input.before === 'object' ? input.before : null
   // Review of #457 (finding 1): a ✕ after a ⚙ in the same session keeps the ⚙'s first values for the edit fields, laid
   // over the WHOLE stored booking the delete read (person, job, day, status…), so Cancel changes can re-create it.
-  const before = sameSession
-    ? deleted && given
-      ? { ...given, ...(prior!.before as Record<string, unknown>) }
-      : (prior!.before as Record<string, unknown>)
-    : given
+  const priorBefore = sameSession ? (prior!.before as Record<string, unknown>) : null
+  let before: Record<string, unknown> | null = given
+  if (priorBefore) {
+    if (deleted && given && prior!.deleted !== true) {
+      // Re-check of #457 (2): an edit field the ⚙ added that was not stored before the session is left out, as the
+      // restore path removes it.
+      const merged: Record<string, unknown> = { ...given, ...priorBefore }
+      for (const field of TIMESHEET_REVIEW_BOOKING_FIELDS) if (priorBefore[field] === undefined) delete merged[field]
+      before = merged
+    } else before = priorBefore
+  }
   return {
     key,
     value: {

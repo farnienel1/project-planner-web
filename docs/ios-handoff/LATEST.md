@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.90.1
+# iOS follow-on — rulebook 1.90.2
 
 Generated 2026-11-25 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.90.0 → 1.90.1
-Packed hash: 202217bd13c4f6e162fec7e4f3a19681b651fdc5c8c618115fbc0781e9335ba2
-Rulebook sha256: fcf3ea1c6945e4158b9e4644a6d26851f68e45b9b0d8981ddc6170a849d3d582
+Rulebook version: 1.90.1 → 1.90.2
+Packed hash: 855a7345ee0f31cea35521f15932dbb568cc263eb84005f560be292205337582
+Rulebook sha256: ac316a9e73a1d2bb46dea0ae283e8ee2c397f19ef443299157daeb83ce25d68f
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,25 +22,25 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: d2d465abcf0ab7c7747385346b87d2b47226412b1014602c5a26bff8e951c0ca
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: TIMESHEET_REVIEWER_UNDO_INCOMPLETE_MESSAGE
+Exports added: none
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/canonical.test.ts, lib/canonical/timesheetBookingChanges.ts, lib/canonical/timesheetReviewerUndo.ts, lib/canonical/timesheetRevisionDraft.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/canonical.test.ts, lib/canonical/timesheetBookingChanges.ts
 Done when:
-- [ ] Packed hash in iOS equals 202217bd13c4f6e162fec7e4f3a19681b651fdc5c8c618115fbc0781e9335ba2
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 fcf3ea1c6945e4158b9e4644a6d26851f68e45b9b0d8981ddc6170a849d3d582)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.90.1)
+- [ ] Packed hash in iOS equals 855a7345ee0f31cea35521f15932dbb568cc263eb84005f560be292205337582
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 ac316a9e73a1d2bb46dea0ae283e8ee2c397f19ef443299157daeb83ce25d68f)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.90.2)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.90.1
+## What changed in 1.90.2
 
-- **Review of #457** (§8, same release as 1.90.0): a ✕ after a ⚙ in one session keeps the whole booking for the undo, and a re-create without the person or day is refused (`TIMESHEET_REVIEWER_UNDO_INCOMPLETE_MESSAGE`); `timesheetReviewerReviewRecord` takes `makingChanges` / `after` and never records a late extra (a stored late-extra record is ignored by `timesheetReviewerSessionRecords`); `timesheetRevisionDraftState` takes `liveDiffersFromPrevious` (Send blue when bookings were changed in scheduling first; new waiting help); `timesheetRevisionCancelConfirmMessage` takes `removedCount` and says the changes are undone first; `timesheetRevisionDraftChanges` skips settled records; `signedTimesheetBookingChanges` pairs `restoredAs` / `restoredFrom` on the snapshot side; web Cancel changes runs each undo in a transaction. Known: Cancel revision on a draft with a re-created ✕ leaves the exported version reading "Revision due" (the re-created booking has a new id and the pair lived on the deleted draft) — the confirm says so.
+- **Re-check of #457** (§8, same release as 1.90.0): `signedTimesheetBookingChanges` pairs a re-created booking with the removed signed one — and skips it as an addition — only while its live job / place (`signedTimesheetBookingPlace`) is the one it was re-created at, so a re-created booking moved to another job with the same times reads as a change; a ✕ after a ⚙ in one session never re-creates an edit field the ⚙ added that was not stored before the session (e.g. `otMultiplierOverride`), as a restore removes it (`timesheetReviewerBookingEditRecord`).
 
-## iOS work for 1.90.1
+## iOS work for 1.90.2
 
-## iPhone work for 1.90.1 (draft revisions and the timesheet header)
+## iPhone work for 1.90.2 (draft revisions and the timesheet header)
 
 1. **The person's app never offers Sign on a draft revision.** In the timesheet screen (`InvoicingView.swift` and the person's period view), ask `timesheetRevisionDraftState({ sheet, previous, viewerIsReviewer, viewerIsSubject, personName, revisionLabel })` through `CanonicalBusinessEngine`. While `personMaySign` is false, hide "Continue to sign" / "Review and sign again", hide or disable the note to manager, and show `personMessage` (`TIMESHEET_REVISION_DRAFT_PERSON_MESSAGE`) in the status card. `timesheetNextStep` already reads "Pat Lee is making changes to REV 1 — you can sign it once it is sent to you". The security rules refuse the person's write while `revisionDraft` is stored `true`; map that refusal to `TIMESHEET_REVISION_DRAFT_REFUSED_MESSAGE`.
 2. **Reviewer: create the draft.** Make changes / Correct this timesheet on an exported sheet calls `timesheetRevisionCreateFields({ …, draft: true })` (the person's own "Review and sign again" never passes it). Do **not** write `timesheet_revision_to_sign` at create any more.
@@ -61,7 +61,7 @@ How a draft looks: the band shows "REV 2"; the status card reads "Your turn: mak
 
 ## New rulebook sections
 
-- 1.90.1 — 2026-11-25
+- 1.90.2 — 2026-11-25
 
 ## Workflow for the iOS agent
 
