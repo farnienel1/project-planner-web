@@ -166,6 +166,15 @@ function homeViewerIds(input: HomeViewerInput) {
 }
 
 /**
+ * Rulebook 1.91.0 §34: every id the viewer goes by, lower case — the same set `tasksAssignedToViewer` matches assignees
+ * against (`personIdSet` of their account and email over the users, `operatives` and `managers` rows). Task visibility
+ * matches job managers and task creators against it.
+ */
+export function taskViewerIdKeys(input: HomeViewerInput): string[] {
+  return [...homeViewerIds(input).viewerIds].sort()
+}
+
+/**
  * Rulebook 1.35.0 §12, §23: the tasks assigned to the viewer — any assignee (operative or manager ids) is one of the
  * viewer's ids (`personIdSet` of their account and email over the users, `operatives` and `managers` rows; without
  * case). The same test `homeOverviewMetrics` uses for its personal task figures. Returned in the given order.

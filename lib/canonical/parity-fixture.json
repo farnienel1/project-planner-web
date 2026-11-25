@@ -26819,6 +26819,903 @@
         "isManager": false,
         "isOperativeMode": false
       }
+    },
+    {
+      "name": "Tasks 1.91.0: visible tasks — admin",
+      "function": "visibleTasksForViewer",
+      "args": [
+        {
+          "viewer": {
+            "id": "u-admin",
+            "email": "admin@x.test",
+            "adminAccess": true,
+            "isActive": true,
+            "passwordSet": true,
+            "firstName": "Ada",
+            "surname": "Admin"
+          },
+          "tasks": [
+            {
+              "id": "t-max-job",
+              "projectId": "j-max",
+              "status": "To Do",
+              "dueDate": "2026-11-20"
+            },
+            {
+              "id": "t-other",
+              "projectId": "J-OTHER",
+              "status": "To Do",
+              "dueDate": "2026-12-01",
+              "createdByUserId": "u-admin"
+            },
+            {
+              "id": "t-created",
+              "projectId": "J-OTHER",
+              "status": "To Do",
+              "createdByUserId": "U-MGR"
+            },
+            {
+              "id": "t-op",
+              "projectId": "J-OTHER",
+              "status": "To Do",
+              "assignedOperativeIds": [
+                "o-ola"
+              ],
+              "priority": "High",
+              "dueDate": "2026-11-26"
+            }
+          ],
+          "jobs": [
+            {
+              "id": "J-MAX",
+              "managerIds": [
+                "m-max"
+              ]
+            },
+            {
+              "id": "J-OTHER",
+              "managerIds": []
+            }
+          ],
+          "roster": [
+            {
+              "id": "u-admin",
+              "email": "admin@x.test",
+              "adminAccess": true,
+              "isActive": true,
+              "passwordSet": true,
+              "firstName": "Ada",
+              "surname": "Admin"
+            },
+            {
+              "id": "u-mgr",
+              "email": "mgr@x.test",
+              "manager": true,
+              "isActive": true,
+              "passwordSet": true,
+              "firstName": "Max",
+              "surname": "Manager"
+            },
+            {
+              "id": "u-op",
+              "email": "op@x.test",
+              "operativeMode": true,
+              "isActive": true,
+              "passwordSet": true,
+              "firstName": "Ola",
+              "surname": "Op"
+            }
+          ],
+          "operatives": [
+            {
+              "id": "o-ola",
+              "email": "op@x.test",
+              "firstName": "Ola",
+              "lastName": "Op"
+            }
+          ],
+          "managers": [
+            {
+              "id": "m-max",
+              "email": "mgr@x.test",
+              "firstName": "Max",
+              "lastName": "Manager"
+            },
+            {
+              "id": "m-deleted",
+              "email": "deleted.person@x.test",
+              "firstName": "Del",
+              "lastName": "Eted"
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "id": "t-max-job",
+          "projectId": "j-max",
+          "status": "To Do",
+          "dueDate": "2026-11-20"
+        },
+        {
+          "id": "t-other",
+          "projectId": "J-OTHER",
+          "status": "To Do",
+          "dueDate": "2026-12-01",
+          "createdByUserId": "u-admin"
+        },
+        {
+          "id": "t-created",
+          "projectId": "J-OTHER",
+          "status": "To Do",
+          "createdByUserId": "U-MGR"
+        },
+        {
+          "id": "t-op",
+          "projectId": "J-OTHER",
+          "status": "To Do",
+          "assignedOperativeIds": [
+            "o-ola"
+          ],
+          "priority": "High",
+          "dueDate": "2026-11-26"
+        }
+      ]
+    },
+    {
+      "name": "Tasks 1.91.0: visible tasks — manager",
+      "function": "visibleTasksForViewer",
+      "args": [
+        {
+          "viewer": {
+            "id": "u-mgr",
+            "email": "mgr@x.test",
+            "manager": true,
+            "isActive": true,
+            "passwordSet": true,
+            "firstName": "Max",
+            "surname": "Manager"
+          },
+          "tasks": [
+            {
+              "id": "t-max-job",
+              "projectId": "j-max",
+              "status": "To Do",
+              "dueDate": "2026-11-20"
+            },
+            {
+              "id": "t-other",
+              "projectId": "J-OTHER",
+              "status": "To Do",
+              "dueDate": "2026-12-01",
+              "createdByUserId": "u-admin"
+            },
+            {
+              "id": "t-created",
+              "projectId": "J-OTHER",
+              "status": "To Do",
+              "createdByUserId": "U-MGR"
+            },
+            {
+              "id": "t-op",
+              "projectId": "J-OTHER",
+              "status": "To Do",
+              "assignedOperativeIds": [
+                "o-ola"
+              ],
+              "priority": "High",
+              "dueDate": "2026-11-26"
+            }
+          ],
+          "jobs": [
+            {
+              "id": "J-MAX",
+              "managerIds": [
+                "m-max"
+              ]
+            },
+            {
+              "id": "J-OTHER",
+              "managerIds": []
+            }
+          ],
+          "roster": [
+            {
+              "id": "u-admin",
+              "email": "admin@x.test",
+              "adminAccess": true,
+              "isActive": true,
+              "passwordSet": true,
+              "firstName": "Ada",
+              "surname": "Admin"
+            },
+            {
+              "id": "u-mgr",
+              "email": "mgr@x.test",
+              "manager": true,
+              "isActive": true,
+              "passwordSet": true,
+              "firstName": "Max",
+              "surname": "Manager"
+            },
+            {
+              "id": "u-op",
+              "email": "op@x.test",
+              "operativeMode": true,
+              "isActive": true,
+              "passwordSet": true,
+              "firstName": "Ola",
+              "surname": "Op"
+            }
+          ],
+          "operatives": [
+            {
+              "id": "o-ola",
+              "email": "op@x.test",
+              "firstName": "Ola",
+              "lastName": "Op"
+            }
+          ],
+          "managers": [
+            {
+              "id": "m-max",
+              "email": "mgr@x.test",
+              "firstName": "Max",
+              "lastName": "Manager"
+            },
+            {
+              "id": "m-deleted",
+              "email": "deleted.person@x.test",
+              "firstName": "Del",
+              "lastName": "Eted"
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "id": "t-max-job",
+          "projectId": "j-max",
+          "status": "To Do",
+          "dueDate": "2026-11-20"
+        },
+        {
+          "id": "t-created",
+          "projectId": "J-OTHER",
+          "status": "To Do",
+          "createdByUserId": "U-MGR"
+        }
+      ]
+    },
+    {
+      "name": "Tasks 1.91.0: visible tasks — operative",
+      "function": "visibleTasksForViewer",
+      "args": [
+        {
+          "viewer": {
+            "id": "u-op",
+            "email": "op@x.test",
+            "operativeMode": true,
+            "isActive": true,
+            "passwordSet": true,
+            "firstName": "Ola",
+            "surname": "Op"
+          },
+          "tasks": [
+            {
+              "id": "t-max-job",
+              "projectId": "j-max",
+              "status": "To Do",
+              "dueDate": "2026-11-20"
+            },
+            {
+              "id": "t-other",
+              "projectId": "J-OTHER",
+              "status": "To Do",
+              "dueDate": "2026-12-01",
+              "createdByUserId": "u-admin"
+            },
+            {
+              "id": "t-created",
+              "projectId": "J-OTHER",
+              "status": "To Do",
+              "createdByUserId": "U-MGR"
+            },
+            {
+              "id": "t-op",
+              "projectId": "J-OTHER",
+              "status": "To Do",
+              "assignedOperativeIds": [
+                "o-ola"
+              ],
+              "priority": "High",
+              "dueDate": "2026-11-26"
+            }
+          ],
+          "jobs": [
+            {
+              "id": "J-MAX",
+              "managerIds": [
+                "m-max"
+              ]
+            },
+            {
+              "id": "J-OTHER",
+              "managerIds": []
+            }
+          ],
+          "roster": [
+            {
+              "id": "u-admin",
+              "email": "admin@x.test",
+              "adminAccess": true,
+              "isActive": true,
+              "passwordSet": true,
+              "firstName": "Ada",
+              "surname": "Admin"
+            },
+            {
+              "id": "u-mgr",
+              "email": "mgr@x.test",
+              "manager": true,
+              "isActive": true,
+              "passwordSet": true,
+              "firstName": "Max",
+              "surname": "Manager"
+            },
+            {
+              "id": "u-op",
+              "email": "op@x.test",
+              "operativeMode": true,
+              "isActive": true,
+              "passwordSet": true,
+              "firstName": "Ola",
+              "surname": "Op"
+            }
+          ],
+          "operatives": [
+            {
+              "id": "o-ola",
+              "email": "op@x.test",
+              "firstName": "Ola",
+              "lastName": "Op"
+            }
+          ],
+          "managers": [
+            {
+              "id": "m-max",
+              "email": "mgr@x.test",
+              "firstName": "Max",
+              "lastName": "Manager"
+            },
+            {
+              "id": "m-deleted",
+              "email": "deleted.person@x.test",
+              "firstName": "Del",
+              "lastName": "Eted"
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "id": "t-op",
+          "projectId": "J-OTHER",
+          "status": "To Do",
+          "assignedOperativeIds": [
+            "o-ola"
+          ],
+          "priority": "High",
+          "dueDate": "2026-11-26"
+        }
+      ]
+    },
+    {
+      "name": "Tasks 1.91.0: filter — small works",
+      "function": "filterTasks",
+      "args": [
+        [
+          {
+            "id": "t-max-job",
+            "projectId": "j-max",
+            "status": "To Do",
+            "dueDate": "2026-11-20"
+          },
+          {
+            "id": "t-other",
+            "projectId": "J-OTHER",
+            "status": "To Do",
+            "dueDate": "2026-12-01",
+            "createdByUserId": "u-admin"
+          },
+          {
+            "id": "t-created",
+            "projectId": "J-OTHER",
+            "status": "To Do",
+            "createdByUserId": "U-MGR"
+          },
+          {
+            "id": "t-op",
+            "projectId": "J-OTHER",
+            "status": "To Do",
+            "assignedOperativeIds": [
+              "o-ola"
+            ],
+            "priority": "High",
+            "dueDate": "2026-11-26"
+          }
+        ],
+        {
+          "smallWorksId": "J-OTHER"
+        },
+        {
+          "locations": [
+            {
+              "id": "J-MAX",
+              "kind": "project",
+              "code": "P1",
+              "name": "Max job"
+            },
+            {
+              "id": "J-OTHER",
+              "kind": "smallWorks",
+              "code": "S1",
+              "name": "Other job"
+            }
+          ],
+          "personKeys": {
+            "u-admin": "account:u-admin",
+            "u-mgr": "account:u-mgr",
+            "u-op": "account:u-op",
+            "m-max": "account:u-mgr",
+            "m-deleted": "email:deleted.person@x.test",
+            "o-ola": "account:u-op"
+          },
+          "nowMs": 1795600800000,
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": [
+        {
+          "id": "t-other",
+          "projectId": "J-OTHER",
+          "status": "To Do",
+          "dueDate": "2026-12-01",
+          "createdByUserId": "u-admin"
+        },
+        {
+          "id": "t-created",
+          "projectId": "J-OTHER",
+          "status": "To Do",
+          "createdByUserId": "U-MGR"
+        },
+        {
+          "id": "t-op",
+          "projectId": "J-OTHER",
+          "status": "To Do",
+          "assignedOperativeIds": [
+            "o-ola"
+          ],
+          "priority": "High",
+          "dueDate": "2026-11-26"
+        }
+      ]
+    },
+    {
+      "name": "Tasks 1.91.0: filter — assigned by",
+      "function": "filterTasks",
+      "args": [
+        [
+          {
+            "id": "t-max-job",
+            "projectId": "j-max",
+            "status": "To Do",
+            "dueDate": "2026-11-20"
+          },
+          {
+            "id": "t-other",
+            "projectId": "J-OTHER",
+            "status": "To Do",
+            "dueDate": "2026-12-01",
+            "createdByUserId": "u-admin"
+          },
+          {
+            "id": "t-created",
+            "projectId": "J-OTHER",
+            "status": "To Do",
+            "createdByUserId": "U-MGR"
+          },
+          {
+            "id": "t-op",
+            "projectId": "J-OTHER",
+            "status": "To Do",
+            "assignedOperativeIds": [
+              "o-ola"
+            ],
+            "priority": "High",
+            "dueDate": "2026-11-26"
+          }
+        ],
+        {
+          "creatorKey": "account:u-mgr"
+        },
+        {
+          "locations": [
+            {
+              "id": "J-MAX",
+              "kind": "project",
+              "code": "P1",
+              "name": "Max job"
+            },
+            {
+              "id": "J-OTHER",
+              "kind": "smallWorks",
+              "code": "S1",
+              "name": "Other job"
+            }
+          ],
+          "personKeys": {
+            "u-admin": "account:u-admin",
+            "u-mgr": "account:u-mgr",
+            "u-op": "account:u-op",
+            "m-max": "account:u-mgr",
+            "m-deleted": "email:deleted.person@x.test",
+            "o-ola": "account:u-op"
+          },
+          "nowMs": 1795600800000,
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": [
+        {
+          "id": "t-created",
+          "projectId": "J-OTHER",
+          "status": "To Do",
+          "createdByUserId": "U-MGR"
+        }
+      ]
+    },
+    {
+      "name": "Tasks 1.91.0: filter options",
+      "function": "taskFilterOptions",
+      "args": [
+        {
+          "tasks": [
+            {
+              "id": "t-max-job",
+              "projectId": "j-max",
+              "status": "To Do",
+              "dueDate": "2026-11-20"
+            },
+            {
+              "id": "t-other",
+              "projectId": "J-OTHER",
+              "status": "To Do",
+              "dueDate": "2026-12-01",
+              "createdByUserId": "u-admin"
+            },
+            {
+              "id": "t-created",
+              "projectId": "J-OTHER",
+              "status": "To Do",
+              "createdByUserId": "U-MGR"
+            },
+            {
+              "id": "t-op",
+              "projectId": "J-OTHER",
+              "status": "To Do",
+              "assignedOperativeIds": [
+                "o-ola"
+              ],
+              "priority": "High",
+              "dueDate": "2026-11-26"
+            }
+          ],
+          "locations": [
+            {
+              "id": "J-MAX",
+              "kind": "project",
+              "code": "P1",
+              "name": "Max job"
+            },
+            {
+              "id": "J-OTHER",
+              "kind": "smallWorks",
+              "code": "S1",
+              "name": "Other job"
+            }
+          ],
+          "personKeys": {
+            "u-admin": "account:u-admin",
+            "u-mgr": "account:u-mgr",
+            "u-op": "account:u-op",
+            "m-max": "account:u-mgr",
+            "m-deleted": "email:deleted.person@x.test",
+            "o-ola": "account:u-op"
+          },
+          "roster": [
+            {
+              "id": "u-admin",
+              "email": "admin@x.test",
+              "adminAccess": true,
+              "isActive": true,
+              "passwordSet": true,
+              "firstName": "Ada",
+              "surname": "Admin"
+            },
+            {
+              "id": "u-mgr",
+              "email": "mgr@x.test",
+              "manager": true,
+              "isActive": true,
+              "passwordSet": true,
+              "firstName": "Max",
+              "surname": "Manager"
+            },
+            {
+              "id": "u-op",
+              "email": "op@x.test",
+              "operativeMode": true,
+              "isActive": true,
+              "passwordSet": true,
+              "firstName": "Ola",
+              "surname": "Op"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "projects": [
+          {
+            "value": "J-MAX",
+            "label": "P1 · Max job",
+            "count": 1
+          }
+        ],
+        "smallWorks": [
+          {
+            "value": "J-OTHER",
+            "label": "S1 · Other job",
+            "count": 3
+          }
+        ],
+        "creators": [
+          {
+            "value": "account:u-admin",
+            "label": "Ada Admin",
+            "count": 1
+          },
+          {
+            "value": "account:u-mgr",
+            "label": "Max Manager",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "Tasks 1.91.0: sort — due earliest",
+      "function": "sortTasks",
+      "args": [
+        [
+          {
+            "id": "t-max-job",
+            "projectId": "j-max",
+            "status": "To Do",
+            "dueDate": "2026-11-20"
+          },
+          {
+            "id": "t-other",
+            "projectId": "J-OTHER",
+            "status": "To Do",
+            "dueDate": "2026-12-01",
+            "createdByUserId": "u-admin"
+          },
+          {
+            "id": "t-created",
+            "projectId": "J-OTHER",
+            "status": "To Do",
+            "createdByUserId": "U-MGR"
+          },
+          {
+            "id": "t-op",
+            "projectId": "J-OTHER",
+            "status": "To Do",
+            "assignedOperativeIds": [
+              "o-ola"
+            ],
+            "priority": "High",
+            "dueDate": "2026-11-26"
+          }
+        ],
+        "due_earliest",
+        "active",
+        1795600800000,
+        "Europe/London"
+      ],
+      "expected": [
+        {
+          "id": "t-max-job",
+          "projectId": "j-max",
+          "status": "To Do",
+          "dueDate": "2026-11-20"
+        },
+        {
+          "id": "t-op",
+          "projectId": "J-OTHER",
+          "status": "To Do",
+          "assignedOperativeIds": [
+            "o-ola"
+          ],
+          "priority": "High",
+          "dueDate": "2026-11-26"
+        },
+        {
+          "id": "t-other",
+          "projectId": "J-OTHER",
+          "status": "To Do",
+          "dueDate": "2026-12-01",
+          "createdByUserId": "u-admin"
+        },
+        {
+          "id": "t-created",
+          "projectId": "J-OTHER",
+          "status": "To Do",
+          "createdByUserId": "U-MGR"
+        }
+      ]
+    },
+    {
+      "name": "Tasks 1.91.0: sort — due latest",
+      "function": "sortTasks",
+      "args": [
+        [
+          {
+            "id": "t-max-job",
+            "projectId": "j-max",
+            "status": "To Do",
+            "dueDate": "2026-11-20"
+          },
+          {
+            "id": "t-other",
+            "projectId": "J-OTHER",
+            "status": "To Do",
+            "dueDate": "2026-12-01",
+            "createdByUserId": "u-admin"
+          },
+          {
+            "id": "t-created",
+            "projectId": "J-OTHER",
+            "status": "To Do",
+            "createdByUserId": "U-MGR"
+          },
+          {
+            "id": "t-op",
+            "projectId": "J-OTHER",
+            "status": "To Do",
+            "assignedOperativeIds": [
+              "o-ola"
+            ],
+            "priority": "High",
+            "dueDate": "2026-11-26"
+          }
+        ],
+        "due_latest",
+        "active",
+        1795600800000,
+        "Europe/London"
+      ],
+      "expected": [
+        {
+          "id": "t-other",
+          "projectId": "J-OTHER",
+          "status": "To Do",
+          "dueDate": "2026-12-01",
+          "createdByUserId": "u-admin"
+        },
+        {
+          "id": "t-op",
+          "projectId": "J-OTHER",
+          "status": "To Do",
+          "assignedOperativeIds": [
+            "o-ola"
+          ],
+          "priority": "High",
+          "dueDate": "2026-11-26"
+        },
+        {
+          "id": "t-max-job",
+          "projectId": "j-max",
+          "status": "To Do",
+          "dueDate": "2026-11-20"
+        },
+        {
+          "id": "t-created",
+          "projectId": "J-OTHER",
+          "status": "To Do",
+          "createdByUserId": "U-MGR"
+        }
+      ]
+    },
+    {
+      "name": "Tasks 1.91.0: assignee candidates — leftover managers row",
+      "function": "taskAssigneeCandidates",
+      "args": [
+        {
+          "managers": [
+            {
+              "id": "m-max",
+              "email": "mgr@x.test",
+              "firstName": "Max",
+              "lastName": "Manager"
+            },
+            {
+              "id": "m-deleted",
+              "email": "deleted.person@x.test",
+              "firstName": "Del",
+              "lastName": "Eted"
+            }
+          ],
+          "operatives": [
+            {
+              "id": "o-ola",
+              "email": "op@x.test",
+              "firstName": "Ola",
+              "lastName": "Op"
+            }
+          ],
+          "roster": [
+            {
+              "id": "u-admin",
+              "email": "admin@x.test",
+              "adminAccess": true,
+              "isActive": true,
+              "passwordSet": true,
+              "firstName": "Ada",
+              "surname": "Admin"
+            },
+            {
+              "id": "u-mgr",
+              "email": "mgr@x.test",
+              "manager": true,
+              "isActive": true,
+              "passwordSet": true,
+              "firstName": "Max",
+              "surname": "Manager"
+            },
+            {
+              "id": "u-op",
+              "email": "op@x.test",
+              "operativeMode": true,
+              "isActive": true,
+              "passwordSet": true,
+              "firstName": "Ola",
+              "surname": "Op"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "managerIds": [
+          "m-max"
+        ],
+        "operativeIds": [
+          "o-ola"
+        ],
+        "goneIds": [
+          "m-deleted"
+        ],
+        "leftovers": [
+          {
+            "kind": "manager",
+            "id": "m-deleted",
+            "name": "Del Eted",
+            "email": "deleted.person@x.test",
+            "active": true,
+            "reason": "noAccount"
+          }
+        ]
+      }
     }
   ]
 }

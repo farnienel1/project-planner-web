@@ -3,7 +3,8 @@
 /**
  * The data every task screen needs (main Tasks page, the Tasks tab of Projects and Small works, the task popup), read
  * from the existing stores. Decisions come from the rulebook (§34 `taskAccess`, §23 `tasksAssignedToViewer` via
- * `tasksAssignedToUser`, §21 `taskPersonIndex`); this hook only gathers inputs.
+ * `tasksAssignedToUser`, §21 `taskPersonIndex`; 1.91.0 `visibleTasksForViewer`, `taskAssigneeCandidates`); this hook only
+ * gathers inputs.
  */
 
 import { useEffect, useMemo } from 'react'
@@ -12,11 +13,10 @@ import { useTaskStore } from '@/lib/stores/taskStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore, useRosterDocuments } from '@/lib/stores/siteAuditStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
-import { assignableProjectManagers } from '@/lib/projects/projectManagerChoices'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { tasksAssignedToUser } from '@/lib/tasks/taskUtils'
 import { taskPersonIndex } from '@/lib/tasks/taskAssigneePeople'
-import { taskAccess, taskViewerRole } from '@/lib/canonical'
+import { taskAccess, taskAssigneeCandidates, taskPersonKeys, taskViewerRole, visibleTasksForViewer } from '@/lib/canonical'
 import type { Project, ProjectTask } from '@/types'
 
 export type TaskLocation = {
@@ -41,10 +41,10 @@ export function taskLocationOf(project: Project, kind: 'project' | 'smallWorks')
 
 export function useTaskWorkspace() {
   const { user, organization } = useAuthStore()
-  const { tasks, loading, error, loadTasks } = useTaskStore()
+  const { tasks: storedTasks, loading, error, loadTasks } = useTaskStore()
   const { operatives, managers, allManagerRows, operativesLoadedOrgId, managersLoadedOrgId, loadOperatives, loadManagers } =
     useOperativeStore()
-  const { users, loadUsers } = useOrgUserStore()
+  const { users, loadUsers, rosterLoadedOrgId } = useOrgUserStore()
   const roster = useRosterDocuments(organization?.id)
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
 
@@ -62,11 +62,39 @@ export function useTaskWorkspace() {
   // manager and keeps seeing every task.
   const role = useMemo(() => taskViewerRole(user), [user])
   const access = useMemo(() => taskAccess(role), [role])
+  const allManagers = allManagerRows.length > 0 ? allManagerRows : managers
   const personIndex = useMemo(() => taskPersonIndex({ managers, operatives, roster }), [managers, operatives, roster])
-  const assignableManagers = useMemo(
-    () => assignableProjectManagers(managers, roster, organization?.id),
-    [managers, roster, organization?.id]
+  const personKeys = useMemo(() => taskPersonKeys({ managers: allManagers, operatives, roster }).keys, [allManagers, operatives, roster])
+  // Rulebook 1.91.0 §34 decision A: admins every task; managers the tasks on jobs they manage plus their own
+  // (assigned or created); operatives their own. Every list and count on the task screens reads this list.
+  const tasks = useMemo(
+    () =>
+      visibleTasksForViewer({
+        viewer: user as unknown as Record<string, unknown>,
+        tasks: storedTasks,
+        jobs: [...projects, ...smallWorks],
+        roster,
+        operatives,
+        managers: allManagers,
+      }),
+    [user, storedTasks, projects, smallWorks, roster, operatives, allManagers]
   )
+  // Rulebook 1.91.0 §34 (owner report 25 Nov): who the assignee pickers offer — current people only.
+  const candidates = useMemo(
+    () => taskAssigneeCandidates({ managers: allManagers, operatives, roster }),
+    [allManagers, operatives, roster]
+  )
+  const assignableManagers = useMemo(() => {
+    const ids = new Set(candidates.managerIds.map((id) => id.toLowerCase()))
+    return allManagers.filter((row) => ids.has(row.id.toLowerCase()))
+  }, [allManagers, candidates])
+  const assignableOperatives = useMemo(() => {
+    const ids = new Set(candidates.operativeIds.map((id) => id.toLowerCase()))
+    return operatives.filter((row) => ids.has(row.id.toLowerCase()))
+  }, [operatives, candidates])
+  // Never a false "Removed user": rows count as gone only once the users roster has loaded.
+  const usersLoaded = Boolean(organization?.id) && rosterLoadedOrgId === organization?.id
+  const goneIds = useMemo(() => new Set(usersLoaded ? candidates.goneIds : []), [candidates, usersLoaded])
   const assignedIds = useMemo(
     () => new Set(tasksAssignedToUser(tasks, user, operatives, managers, users).map((task) => task.id)),
     [tasks, user, operatives, managers, users]
@@ -91,12 +119,13 @@ export function useTaskWorkspace() {
   const rostersLoaded = Boolean(organization?.id) && operativesLoadedOrgId === organization?.id && managersLoadedOrgId === organization?.id
   const nameRows = useMemo(
     () => ({
-      managers: allManagerRows.length > 0 ? allManagerRows : managers,
+      managers: allManagers,
       operatives,
       index: personIndex,
       loaded: rostersLoaded,
+      goneIds,
     }),
-    [allManagerRows, managers, operatives, personIndex, rostersLoaded]
+    [allManagers, operatives, personIndex, rostersLoaded, goneIds]
   )
 
   /** Each person's own access to one task: staff always, anyone else when assigned. */
@@ -116,11 +145,16 @@ export function useTaskWorkspace() {
     user,
     organization,
     tasks,
+    /** Every stored task (before visibility), only to tell "no access" from "not found". */
+    allTasks: storedTasks,
     loading,
     error,
     operatives,
     managers,
     assignableManagers,
+    assignableOperatives,
+    personKeys,
+    candidates,
     roster,
     role,
     access,

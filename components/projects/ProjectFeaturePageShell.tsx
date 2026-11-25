@@ -1,10 +1,11 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ProjectRecordPageShell } from '@/components/projects/ProjectRecordPageShell'
 import { ProjectWorkspaceChrome } from '@/components/projects/ProjectWorkspaceChrome'
 import { useTaskStore } from '@/lib/stores/taskStore'
+import { useVisibleTasks } from '@/lib/tasks/useVisibleTasks'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { jobTileBadges } from '@/lib/canonical'
 
@@ -20,7 +21,7 @@ export function ProjectFeaturePageShell({
   children: (project: import('@/types').Project) => ReactNode
 }) {
   const { organization } = useAuthStore()
-  const { tasks, loadTasks } = useTaskStore()
+  const { loadTasks } = useTaskStore()
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
@@ -33,13 +34,34 @@ export function ProjectFeaturePageShell({
       {(project) => {
         const basePath =
           collection === 'smallWorks' ? `/dashboard/small-works/${project.id}` : `/dashboard/projects/${project.id}`
-        const openTaskCount = jobTileBadges({ jobId: project.id, tasks }).openTasks
         return (
-          <ProjectWorkspaceChrome project={project} basePath={basePath} taskCount={ready ? openTaskCount : undefined}>
+          <JobTasksChrome project={project} basePath={basePath} ready={ready}>
             {children(project)}
-          </ProjectWorkspaceChrome>
+          </JobTasksChrome>
         )
       }}
     </ProjectRecordPageShell>
+  )
+}
+
+/** Rulebook 1.91.0 §34 decision A: the workspace's Tasks figure counts only the tasks this person may see. */
+function JobTasksChrome({
+  project,
+  basePath,
+  ready,
+  children,
+}: {
+  project: import('@/types').Project
+  basePath: string
+  ready: boolean
+  children: ReactNode
+}) {
+  const jobs = useMemo(() => [project], [project])
+  const tasks = useVisibleTasks(jobs)
+  const openTaskCount = jobTileBadges({ jobId: project.id, tasks }).openTasks
+  return (
+    <ProjectWorkspaceChrome project={project} basePath={basePath} taskCount={ready ? openTaskCount : undefined}>
+      {children}
+    </ProjectWorkspaceChrome>
   )
 }

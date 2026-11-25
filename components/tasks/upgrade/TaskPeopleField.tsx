@@ -9,7 +9,6 @@
 import { useMemo, useState } from 'react'
 import { CheckIcon, MagnifyingGlassIcon, PlusIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import {
-  activePeopleForAssignment,
   isTaskPersonSelected,
   peopleForTaskPicker,
   taskAssigneeNames,
@@ -34,6 +33,8 @@ export function TaskPeopleField({
   managers,
   allManagers,
   operatives,
+  offeredOperatives,
+  goneIds,
   index,
   selectedManagers,
   selectedOperatives,
@@ -42,8 +43,12 @@ export function TaskPeopleField({
   error,
   loaded = true,
 }: {
-  /** Managers offered for a new assignment. */
+  /** Managers offered for a new assignment (rulebook 1.91.0 `taskAssigneeCandidates`). */
   managers: Manager[]
+  /** Operatives offered for a new assignment (rulebook 1.91.0 `taskAssigneeCandidates`). */
+  offeredOperatives: Operative[]
+  /** Rows whose person no longer exists ("Removed user"). */
+  goneIds?: ReadonlySet<string>
   /** Every managers row (an existing assignment to a row not offered still shows). */
   allManagers: Manager[]
   operatives: Operative[]
@@ -63,7 +68,7 @@ export function TaskPeopleField({
 
   const chosen = taskAssigneeNames(
     { managerIds: [...selectedManagers], operativeIds: [...selectedOperatives] },
-    { managers: allManagers, operatives, index, loaded }
+    { managers: allManagers, operatives, index, loaded, goneIds }
   )
   const meSelected = me ? isTaskPersonSelected(index, me.kind, me.id, selectedManagers, selectedOperatives) : false
 
@@ -85,8 +90,8 @@ export function TaskPeopleField({
   }
 
   const offered = useMemo(
-    () => peopleForTaskPicker(activePeopleForAssignment(managers), activePeopleForAssignment(operatives), route, [], index),
-    [managers, operatives, route, index]
+    () => peopleForTaskPicker(managers, offeredOperatives, route, [], index),
+    [managers, offeredOperatives, route, index]
   )
   const rows: Array<{ kind: 'manager' | 'operative'; row: Manager | Operative }> =
     route === 'managers'

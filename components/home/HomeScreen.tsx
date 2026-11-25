@@ -112,6 +112,7 @@ import { dailyOverviewMayPublish, overviewFormatHours } from '@/lib/daily-overvi
 import { bookLabourList } from '@/lib/book-labour/bookLabourList'
 import { dateFromDayKey } from '@/lib/ios-parity/londonTime'
 import { filterTasksForView, getTaskDetailHref, resolveProjectName } from '@/lib/tasks/taskUtils'
+import { useVisibleTasks } from '@/lib/tasks/useVisibleTasks'
 import { teamLeaveBookings, teamLeaveDecisionQueue, teamLeavePeople, teamLeaveTab } from '@/lib/annualLeave/teamLeaveQueue'
 import { getPendingHolidayApprovalsForUser, usersWithoutRequiredLineManager } from '@/lib/annualLeave/holidayApprovalUtils'
 import { getOperativeModeUsers, matchesRosterSegment } from '@/lib/staff/userRosterUtils'
@@ -148,6 +149,8 @@ export function HomeScreen() {
     error: managerBookingsError,
   } = useManagerScheduleStore()
   const { tasks, loadTasks, tasksLoadedOrgId } = useTaskStore()
+  // Rulebook 1.91.0 §34 decision A: the task figures and list count the tasks this person may see (as the Tasks page).
+  const visibleTasks = useVisibleTasks(null, { load: false })
   const {
     bookings: holidays,
     loadBookings: loadHolidays,
@@ -351,7 +354,7 @@ export function HomeScreen() {
   const metrics = useMemo(
     () =>
       computeHomeOverviewMetrics({
-        tasks,
+        tasks: visibleTasks,
         userId: displayUser?.id,
         userEmail: displayUser?.email,
         operatives,
@@ -373,7 +376,7 @@ export function HomeScreen() {
         }),
         bankHolidayDayKeys: homeBankDayKeys,
       }),
-    [tasks, displayUser, operatives, managers, bookings, managerSiteBookings, holidays, users, userIdAliases, liveCount, homeTimeZone, now, homeBankDayKeys]
+    [visibleTasks, displayUser, operatives, managers, bookings, managerSiteBookings, holidays, users, userIdAliases, liveCount, homeTimeZone, now, homeBankDayKeys]
   )
 
   const orgId = organization?.id || ''
@@ -636,7 +639,7 @@ export function HomeScreen() {
   // ---- Tasks: the Tasks page's "To do" list (owner decision 9). ----
   const taskRows = useMemo(() => {
     if (!tasksReady) return null
-    const list = filterTasksForView(tasks, 'todo', displayUser, operatives, managers ?? [], !operative)
+    const list = filterTasksForView(visibleTasks, 'todo', displayUser, operatives, managers ?? [], !operative)
     // Only the rows the card shows are resolved; `total` is the whole "To do" list.
     const rows = list.slice(0, TASKS_SHOWN).map((task) => {
       const projectName = resolveProjectName(task, projects, smallWorks)
@@ -649,7 +652,7 @@ export function HomeScreen() {
       }
     })
     return { rows, total: list.length }
-  }, [tasksReady, tasks, displayUser, operatives, managers, operative, projects, smallWorks])
+  }, [tasksReady, visibleTasks, displayUser, operatives, managers, operative, projects, smallWorks])
 
   // Rulebook 1.83.0 §31: one listener on the compliance document, admins only (the rules refuse everyone else).
   const complianceAllowed = Boolean(displayUser) && canManageOrganizationCompliance(displayUser) && !pauseHomeLoads
