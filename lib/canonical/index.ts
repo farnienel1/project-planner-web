@@ -2764,3 +2764,14 @@ export {
   deadlineTabCounts,
 } from './deadlineDisplay'
 export type { DeadlineDisplay, DeadlineDisplayInput, DeadlineDisplayStatus, DeadlineGroupKey, DeadlineTabKey, DeadlineTone } from './deadlineDisplay'
+export {
+  DEADLINE_REOPEN_LABEL,
+  DEADLINE_RESCHEDULE_NOTE_REQUIRED_MESSAGE,
+  DEADLINE_RESCHEDULE_OTHER_REASON,
+  DEADLINE_RESCHEDULE_REASONS,
+  DEADLINE_RESCHEDULE_REASON_REQUIRED_MESSAGE,
+  deadlineReopenFields,
+  deadlineReopenedNote,
+  deadlineRescheduleReasonError,
+  deadlineRescheduleReasonText,
+} from './deadlineDisplay'

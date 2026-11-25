@@ -72,3 +72,5 @@
 .dl-tl-due { position: absolute; top: 1px; width: 12px; height: 12px; margin-left: -6px; transform: rotate(45deg); background: var(--dl-c); border: 2px solid var(--pu-card); }
 .dl-tl-note { margin-top: 8px; font-size: 13px; color: var(--pu-muted); }
 .dl-page .tk-head h1 { font-size: 22px; }
+.dl-page .dl-check { min-height: 44px; cursor: pointer; color: var(--pu-ink); }
+.dl-page .dl-check input { width: 18px; height: 18px; accent-color: var(--pu-c-blue-ink, currentColor); }

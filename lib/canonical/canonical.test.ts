@@ -21070,3 +21070,27 @@ test('1.94.0 deadline summary, tab counts and moved note', () => {
   assert.equal(R112.deadlineDayText('2026-11-27', true), 'Fri 27 Nov 2026')
   assert.deepEqual(R112.DEADLINE_TABS.map((t) => t.label), ['All', 'Overdue', 'This week', 'Behind pace', 'Completed'])
 })
+
+test('1.94.1 deadlineFloorGroup: the Multiple floors chip is the Multiple floors section', () => {
+  assert.equal(R112.deadlineFloorGroup({ locations: ['Multiple floors'] }), 'Multiple floors')
+  assert.equal(R112.deadlineFloorGroup({ location: 'Multiple Floors' }), 'Multiple floors')
+  assert.equal(R112.deadlineFloorGroup({ locations: ['Roof'] }), 'Roof')
+})
+
+test('1.95.0 deadline reopen and reschedule reasons', () => {
+  const h = [
+    { type: 'created' },
+    { type: 'progress', progress: 25 },
+    { type: 'progress', progress: 50 },
+    { type: 'progress', progress: 100 },
+    { type: 'completed' },
+  ]
+  assert.deepEqual(R112.deadlineReopenFields(h), { progressPercent: 50, status: 'inProgress', note: 'Reopened at 50%' })
+  assert.deepEqual(R112.deadlineReopenFields([{ type: 'completed' }]), { progressPercent: 0, status: 'notStarted', note: 'Reopened at 0%' })
+  assert.equal(R112.deadlineRescheduleReasonError('', ''), 'Choose a reason for the new date.')
+  assert.equal(R112.deadlineRescheduleReasonError('Other', ' '), 'Add a note to say why.')
+  assert.equal(R112.deadlineRescheduleReasonError('Weather'), null)
+  assert.equal(R112.deadlineRescheduleReasonText('Weather', 'road closed'), 'Weather — road closed')
+  assert.equal(R112.deadlineRescheduleReasonText('Access'), 'Access')
+  assert.equal(R112.DEADLINE_RESCHEDULE_REASONS.length, 9)
+})

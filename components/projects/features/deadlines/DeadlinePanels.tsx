@@ -25,8 +25,14 @@ import {
 } from '@/lib/deadlines/logic'
 import type { DeadlineDisplay } from '@/lib/canonical'
 import {
-  DEADLINE_LOCATION_PRESETS,
+  DEADLINE_REOPEN_LABEL,
+  DEADLINE_RESCHEDULE_OTHER_REASON,
   DEADLINE_RESCHEDULE_REASONS,
+  deadlineRescheduleReasonError,
+  deadlineRescheduleReasonText,
+} from '@/lib/canonical'
+import {
+  DEADLINE_LOCATION_PRESETS,
   DEADLINE_TRADE_OPTIONS,
 } from '@/lib/deadlines/types'
 import type { Deadline } from '@/lib/deadlines/types'
@@ -36,6 +42,7 @@ import { StoredFileLink } from '@/components/projects/features/StoredFileLink'
 import { storedFileDirectHref } from '@/lib/healthSafety/storedFile'
 import { safeExternalUrl } from '@/lib/canonical/uploadPolicy'
 import { deadlineLocationWriteFields } from '@/lib/canonical/workDocumentReaders'
+import { TaskDialog } from '@/components/tasks/upgrade/TaskDialog'
 
 export type DeadlinePerson = { id: string; name: string; subtitle: string; isLive: boolean }
 
@@ -61,7 +68,7 @@ export function Sheet({
   const backdropArmed = useRef(false)
   return (
     <div
-      className="fixed inset-0 z-80 flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
+      className="fixed inset-0 z-110 flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       onPointerDown={(event) => {
@@ -159,6 +166,7 @@ export function DetailSheet({
   onOpen,
   onProgress,
   onComplete,
+  onReopen,
 }: {
   item: Deadline
   items: Deadline[]
@@ -173,6 +181,7 @@ export function DetailSheet({
   onOpen: (id: string) => void
   onProgress: (pct: number) => void
   onComplete: () => void
+  onReopen: () => void
 }) {
   const [percent, setPercent] = useState(progressPercent(item))
   useEffect(() => setPercent(progressPercent(item)), [item])
@@ -181,14 +190,36 @@ export function DetailSheet({
   const before = predecessors(items, item)
   const after = dependents(items, item)
   const audit = audits.find((row) => row.id === item.siteAuditId)
+  const chipTone = view.tone === 'primary' ? 'blue' : view.tone
   return (
-    <Sheet
-      title="Deadline"
-      subtitle={projectLabel || undefined}
+    <TaskDialog
+      open
+      title={item.title}
       onClose={onClose}
+      subtitle={
+        <div className="tk-chips" style={{ alignItems: 'center' }} data-dl-tone={view.tone}>
+          {projectLabel ? <span className="tk-muted">{projectLabel}</span> : null}
+          <span className="tk-chip" data-tone={chipTone}>
+            {view.statusLabel}
+          </span>
+          <span className="tk-chip" data-tone={chipTone}>
+            {view.dueText}
+            {view.group !== 'completed' ? ` · ${deadlineDayLabel(item.due)}` : ''}
+          </span>
+          {item.isCritical ? (
+            <span className="tk-chip" data-tone="red">
+              Critical path
+            </span>
+          ) : null}
+        </div>
+      }
       footer={
         canManage ? (
-          <div className="flex flex-wrap gap-2">
+          <>
+            <button type="button" className="tk-btn" onClick={onEdit}>
+              Edit
+            </button>
+            <span className="grow" />
             <button type="button" className="tk-btn" onClick={onReschedule}>
               Reschedule
             </button>
@@ -196,23 +227,16 @@ export function DetailSheet({
               <button type="button" className="tk-btn primary" onClick={onComplete}>
                 Mark complete
               </button>
-            ) : null}
-          </div>
+            ) : (
+              <button type="button" className="tk-btn primary" onClick={onReopen}>
+                {DEADLINE_REOPEN_LABEL}
+              </button>
+            )}
+          </>
         ) : null
       }
     >
       <div className="space-y-4">
-        <div className="card pad" data-dl-tone={view.tone}>
-          <h2 className="font-(family-name:--head) text-xl font-extrabold">{item.title}</h2>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            <span className="dl-status">{view.statusLabel}</span>
-            <span className="dl-tag">
-              {view.dueText}
-              {view.group !== 'completed' ? ` · ${deadlineDayLabel(item.due)}` : ''}
-            </span>
-            {item.isCritical ? <span className="dl-tag critical">Critical path</span> : null}
-          </div>
-        </div>
         <div className="card pad">
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-[11px] font-bold tracking-[0.08em] text-(--ink3)">PROGRESS</h3>
@@ -341,13 +365,8 @@ export function DetailSheet({
             </p>
           </section>
         ) : null}
-        {canManage ? (
-          <button type="button" className="btn" onClick={onEdit}>
-            Edit deadline
-          </button>
-        ) : null}
       </div>
-    </Sheet>
+    </TaskDialog>
   )
 }
 
@@ -729,8 +748,9 @@ export function RescheduleSheet({
   const [detail, setDetail] = useState('')
   const next = isPlausibleDayKey(date) ? dateFromDayKey(date) : new Date(NaN)
   const movedDays = Number.isNaN(next.getTime()) ? 0 : daysRemaining({ due: next }, item.due)
-  const reason = [picked, detail.trim() || null].filter(Boolean).join(' — ')
-  const canSave = isPlausibleDayKey(date) && movedDays !== 0 && reason.length > 0
+  const reasonError = deadlineRescheduleReasonError(picked, detail)
+  const reason = deadlineRescheduleReasonText(picked, detail)
+  const canSave = isPlausibleDayKey(date) && movedDays !== 0 && reasonError === null
   const knockOn = dependents(items, item)
   return (
     <Sheet
@@ -740,7 +760,7 @@ export function RescheduleSheet({
       footer={
         <div>
           {!canSave ? (
-            <p className="mb-2 text-xs text-(--ink3)">{movedDays === 0 ? 'Pick a different date to continue' : 'Choose a reason to continue'}</p>
+            <p className="mb-2 text-xs text-(--ink3)">{movedDays === 0 ? 'Pick a different date to continue' : reasonError}</p>
           ) : null}
           <button type="button" className="btn primary" disabled={!canSave} onClick={() => onSave(next, reason)}>
             Confirm new date
@@ -784,12 +804,16 @@ export function RescheduleSheet({
           </div>
         ) : null}
         <section>
-          <h3 className="mb-2 text-[11px] font-bold tracking-[0.08em] text-(--ink3)">REASON — REQUIRED</h3>
-          <div className="chips">
+          <h3 id="dl-reschedule-reason" className="mb-2 text-[11px] font-bold tracking-[0.08em] text-(--ink3)">
+            Reason — required
+          </h3>
+          <div className="chips flex-wrap" role="radiogroup" aria-labelledby="dl-reschedule-reason">
             {DEADLINE_RESCHEDULE_REASONS.map((reasonChip) => (
               <button
                 key={reasonChip}
                 type="button"
+                role="radio"
+                aria-checked={picked === reasonChip}
                 className={`chip ${picked === reasonChip ? 'on' : ''}`}
                 onClick={() => setPicked(picked === reasonChip ? null : reasonChip)}
               >
@@ -797,7 +821,16 @@ export function RescheduleSheet({
               </button>
             ))}
           </div>
-          <textarea className="pp-in mt-2 w-full" rows={3} placeholder="Add detail (optional)" value={detail} onChange={(e) => setDetail(e.target.value)} />
+          <label className="mt-3 block">
+            <span className="mb-1 block text-[11px] font-bold tracking-[0.08em] text-(--ink3)">Note</span>
+            <textarea
+              className="pp-in w-full"
+              rows={3}
+              placeholder={picked === DEADLINE_RESCHEDULE_OTHER_REASON ? 'Say why (required)' : 'Add detail (optional)'}
+              value={detail}
+              onChange={(e) => setDetail(e.target.value)}
+            />
+          </label>
         </section>
       </div>
     </Sheet>

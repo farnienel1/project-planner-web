@@ -907,7 +907,9 @@ export function deadlineFloorGroup(item: { locations?: ReadonlyArray<string> | n
   const raw = item.locations && item.locations.length > 0 ? item.locations : item.location ? [item.location] : []
   const list = uniqueLocations([...raw])
   if (list.length === 0) return null
-  return list.length === 1 ? list[0] : DEADLINE_MULTIPLE_FLOORS_GROUP
+  // 1.94.1: the "Multiple floors" chip (any letter case, older iOS "Multiple Floors") is that same section.
+  if (list.length === 1 && list[0].replace(/\s+/g, ' ').toLowerCase() !== DEADLINE_MULTIPLE_FLOORS_GROUP.toLowerCase()) return list[0]
+  return DEADLINE_MULTIPLE_FLOORS_GROUP
 }
 
 /** One item of a `settings/deadlines_*` document's `items` array. Null without an id. */

@@ -241,3 +241,68 @@ export function deadlineMovedNote(fromDue: unknown, toDue: unknown, timeZone?: s
   const fromText = `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]}`
   return shift > 0 ? `Moved ${deadlineDayCount(shift)} from ${fromText}` : `Brought forward ${deadlineDayCount(-shift)} from ${fromText}`
 }
+
+/** Rulebook 1.95.0 §23 (owner 25 Nov): the reasons a reschedule must give, the same on web and iOS. "Other" needs a note. */
+export const DEADLINE_RESCHEDULE_REASONS = [
+  'Materials',
+  'Preceding trade',
+  'Access',
+  'Weather',
+  'Labour',
+  'Client change',
+  'Design change',
+  'Inspection',
+  'Other',
+] as const
+export const DEADLINE_RESCHEDULE_OTHER_REASON = 'Other'
+export const DEADLINE_RESCHEDULE_REASON_REQUIRED_MESSAGE = 'Choose a reason for the new date.'
+export const DEADLINE_RESCHEDULE_NOTE_REQUIRED_MESSAGE = 'Add a note to say why.'
+
+/** Why a reschedule can't be saved yet, or null: a reason is required, and "Other" needs a note. */
+export function deadlineRescheduleReasonError(reason: string | null | undefined, note?: string | null): string | null {
+  const picked = String(reason ?? '').trim()
+  if (!picked) return DEADLINE_RESCHEDULE_REASON_REQUIRED_MESSAGE
+  if (picked === DEADLINE_RESCHEDULE_OTHER_REASON && !String(note ?? '').trim()) return DEADLINE_RESCHEDULE_NOTE_REQUIRED_MESSAGE
+  return null
+}
+
+/** The reason stored on the reschedule history entry: "Weather", or with a note "Weather — road closed" ("Other — …"). */
+export function deadlineRescheduleReasonText(reason: string | null | undefined, note?: string | null): string {
+  const picked = String(reason ?? '').trim()
+  const detail = String(note ?? '').trim()
+  return detail ? `${picked} — ${detail}` : picked
+}
+
+export const DEADLINE_REOPEN_LABEL = 'Reopen'
+
+/**
+ * Rulebook 1.95.0 §23 (owner 25 Nov): reopening a completed deadline puts its progress back to the last progress
+ * recorded before it was completed (history `progress` entries, 0–100), else 0, and its status to In progress (or Not
+ * started at 0). The history line is `deadlineReopenedNote` ("Reopened at 50%").
+ */
+export function deadlineReopenFields(history: ReadonlyArray<{ type?: string | null; progress?: number | null }> | null | undefined): {
+  progressPercent: number
+  status: 'inProgress' | 'notStarted'
+  note: string
+} {
+  const rows = Array.isArray(history) ? history : []
+  let lastCompleted = -1
+  rows.forEach((row, index) => {
+    if (row?.type === 'completed') lastCompleted = index
+  })
+  let percent = 0
+  const end = lastCompleted >= 0 ? lastCompleted : rows.length
+  for (let i = end - 1; i >= 0; i -= 1) {
+    const value = Number(rows[i]?.progress)
+    if (rows[i]?.type === 'progress' && Number.isFinite(value) && value < 100) {
+      percent = Math.max(0, Math.round(value))
+      break
+    }
+  }
+  return { progressPercent: percent, status: percent > 0 ? 'inProgress' : 'notStarted', note: deadlineReopenedNote(percent) }
+}
+
+/** "Reopened at 50%". */
+export function deadlineReopenedNote(percent: number): string {
+  return `Reopened at ${Math.max(0, Math.min(100, Math.round(Number(percent) || 0)))}%`
+}
