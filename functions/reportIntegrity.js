@@ -137,8 +137,16 @@ function createReportIntegrityCheck({ store, canonical, logger, serverTimestamp 
     const user = canonical.parseUserDocument(userId, raw, {})
     if (!user) return { ...none, raw }
     const listOf = (value) => (Array.isArray(value) ? value.map(trimmed).filter(Boolean) : [])
+    // Rulebook 1.88.0 §8: the person's line manager in THIS organisation for decisions — their users document at home,
+    // else this organisation's `memberLineManagers/{uid}` record, else none (their home company's line manager never
+    // counts here; `organizationLineManagerFields`).
+    const record = canonical.isHomeOrganization(raw, orgId)
+      ? null
+      : await store.getDoc(`organizations/${orgId}/memberLineManagers/${userId}`).catch(() => null)
+    const { source: _lineManagerSource, ...lineManager } = canonical.organizationLineManagerFields({ organizationId: orgId, user: raw, record })
+    void _lineManagerSource
     const managerIds = [
-      ...new Set([...listOf(raw.assignedManagerUserIds), trimmed(raw.assignedManagerUserId)].filter((id) => DOC_ID.test(id))),
+      ...new Set([...listOf(lineManager.assignedManagerUserIds), trimmed(lineManager.assignedManagerUserId)].filter((id) => DOC_ID.test(id))),
     ]
     const [orgUsers, operativeRows, managers] = await Promise.all([
       // Only the fields `personIdSet` / `overtimePersonIds` read (users) and the email (operatives): field masks, no limit.
@@ -173,7 +181,9 @@ function createReportIntegrityCheck({ store, canonical, logger, serverTimestamp 
         { id: userId, isSuperAdmin: raw.isSuperAdmin === true, organizationId: canonical.documentOrganizationId(raw.organizationId) || '' },
         { id: orgId, creatorUserId: trimmed(((await orgPromise) || {}).org?.creatorUserId) }
       ) === true
-    const hasLineManager = superAdmin ? false : canonical.hasActiveLineManager(user, [user, ...managers.filter(Boolean)])
+    const hasLineManager = superAdmin
+      ? false
+      : canonical.hasActiveLineManager({ ...user, ...lineManager }, [user, ...managers.filter(Boolean)])
     return {
       raw,
       ids: ids.length ? ids : [userId],

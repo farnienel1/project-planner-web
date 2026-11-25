@@ -52,6 +52,10 @@ import {
   memberNameValidationError,
   memberNameWriteFields,
   documentOrganizationId,
+  ORG_LINE_MANAGER_HOME_UNKNOWN_MESSAGE,
+  MEMBER_LINE_MANAGERS_COLLECTION,
+  memberLineManagerWriteFields,
+  orgLineManagerEditTarget,
 } from '@/lib/canonical'
 import { currentMemberNames, overlayMemberName } from '@/lib/staff/memberNamesLive'
 import { webWriterManagesOperative } from '@/lib/staff/memberNameOverlay'
@@ -364,6 +368,29 @@ const prepareSaveUserImpl: UserStoreState['prepareSaveUser'] = async (user, orga
   if (!namePlan.writeAccount) {
     for (const field of ['firstName', 'surname', 'lastName', 'name', 'displayName']) delete payload[field]
   }
+  // Rulebook 1.88.0 §8, §11 `orgLineManagerEditTarget`: a line-manager change made in the person's home company is
+  // saved on their users document (as before); in any other company it is that company's own line manager for them —
+  // its record `organizations/{orgId}/memberLineManagers/{uid}` (`memberLineManagerWriteFields`), written by this
+  // company's admin — and the users document's line manager is never touched. Never on the membership (owner decision
+  // 24 Nov, review of #455 fix (a)). An unknown home (a failed read) refuses the change rather than guess.
+  const lineManagerKeys = ['assignedManagerUserIds', 'assignedManagerUserId', 'hasNoLineManager']
+  const lineManagerTarget = orgLineManagerEditTarget({ organizationId: orgId, homeOrganizationId })
+  let lineManagerRecord: Record<string, unknown> | null = null
+  if (lineManagerKeys.some((key) => key in payload) && lineManagerTarget !== 'users') {
+    for (const key of lineManagerKeys) delete payload[key]
+    if (!lineManagerTarget || !orgId) throw new Error(ORG_LINE_MANAGER_HOME_UNKNOWN_MESSAGE)
+    lineManagerRecord = memberLineManagerWriteFields({
+      assignedManagerUserIds: user.assignedManagerUserIds ?? [],
+      assignedManagerUserId: user.assignedManagerUserId ?? null,
+      hasNoLineManager: user.hasNoLineManager === true,
+      writerUserId: saverId,
+      platform: 'web',
+    })
+  }
+  // Outside the person's home company the users document is not this company's to write: with nothing left for it
+  // (only write metadata), it is not updated at all.
+  const accountUpdateNeeded =
+    lineManagerTarget !== 'record' || Object.keys(payload).some((key) => !['updatedAt', 'updatedBy', 'updatedFrom'].includes(key))
   const email = user.email.toLowerCase().trim()
   const [sameEmail, linkedRows] = orgId
     ? await Promise.all([sameEmailUserRefs(user, orgId, previousEmail, saverIsAdmin), linkedStaffRefs(orgId, user, previousEmail)])
@@ -372,7 +399,12 @@ const prepareSaveUserImpl: UserStoreState['prepareSaveUser'] = async (user, orga
   // Rulebook 1.26.0 (`sharedDocumentPayWrite`): with `privatePay` on for this organisation, the users document takes
   // no pay value (the rules refuse it); pay goes to the pay profile and the rate history in the same batch.
   await securitySwitchesReady()
-  batch.update(doc(db, 'users', user.id), sharedDocumentPayWrite(payload, { privatePay: orgId ? privatePayFor(orgId) : false }))
+  if (accountUpdateNeeded) {
+    batch.update(doc(db, 'users', user.id), sharedDocumentPayWrite(payload, { privatePay: orgId ? privatePayFor(orgId) : false }))
+  }
+  if (lineManagerRecord && orgId) {
+    batch.set(doc(db, 'organizations', orgId, MEMBER_LINE_MANAGERS_COLLECTION, user.id), { ...lineManagerRecord, updatedAt: serverTimestamp() })
+  }
   if (orgId) {
     for (const row of historyRows) batch.set(doc(db, 'organizations', orgId, 'operativeDayRateHistory', row.id), row.fields)
     if (payWriter) addPayProfileWrite(batch, orgId, user.id, payload, saverId)

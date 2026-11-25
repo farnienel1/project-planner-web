@@ -2055,3 +2055,21 @@ export * from './clientErrors'
 // 1.85.0: insurance & accreditation expiry reminders (§31) and the onboarding checklist (§32).
 export * from './orgComplianceReminders'
 export * from './onboardingChecklist'
+
+// Rulebook 1.88.0 §8, §11, §14, §16: line managers per organisation.
+export {
+  ORG_LINE_MANAGER_HOME_UNKNOWN_MESSAGE,
+  MEMBER_LINE_MANAGERS_COLLECTION,
+  MEMBER_LINE_MANAGER_FIELDS,
+  invitationLineManagerRecord,
+  isHomeOrganization,
+  memberLineManagerPath,
+  memberLineManagerWriteFields,
+  parseMemberLineManagerDocuments,
+  sameOrgLineManager,
+  orgLineManagerEditTarget,
+  organizationLineManagerFields,
+  parseOrgLineManager,
+  withOrganizationLineManager,
+} from './orgLineManagers'
+export type { OrgLineManagerEditTarget, OrgLineManagerFields, OrgLineManagerSource } from './orgLineManagers'

@@ -109,7 +109,7 @@ test('1.31.1 (S-1): the membership is written in the accept batch, in the invite
   const membership = source.indexOf("batch.set(doc(db, 'users', authUid, 'orgMemberships', membershipWrite.organizationId), membershipWrite.membership)")
   const used = source.indexOf("batch.update(doc(db, 'invitations', params.invitationId), invitationUsedWriteFields(now).set)")
   assert.ok(at > 0 && membership > at && used > membership)
-  assert.match(source, /const membershipWrite = inviteMembershipWrites\(\{ invitation: record\.raw, invitationId: params\.invitationId, authUid, now \}\)/)
+  assert.match(source, /const membershipWrite = inviteMembershipWrites\(\{ invitation: record\.raw, invitationId: params\.invitationId, authUid, now, homeAccount: true \}\)/)
   const later = source.indexOf('await ensurePrimaryOrgMembership(authUid, record.organizationId, plan.role)')
   assert.ok(source.lastIndexOf('try {', later) > used, 'the fallback membership write never stops the setup')
 })

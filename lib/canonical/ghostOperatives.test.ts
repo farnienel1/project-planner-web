@@ -370,7 +370,7 @@ test('delete: the ghost flag never skips a document (review fix B1)', () => {
   assert.ok(flagged.some((write) => write.path === 'users/self1/private/taxIds'))
   assert.ok(flagged.some((write) => write.op === 'update' && write.path === `organizations/${ORG}` && write.deleteFields.includes('members.self1')))
   const ordinary = userDeleteWrites({ orgId: ORG, user: { id: 'op1', role: opRole, email: 'op@x.com' }, actorUserId: 'admin1', platform: 'web', nowIso: '2026-11-07T09:00:00Z' })
-  assert.equal(ordinary[0].writes.length, 6)
+  assert.equal(ordinary[0].writes.length, 7) // 1.88.0: + the optional memberLineManagers delete
 })
 
 test('Payrun Snapshot: a ghost is listed with a grey "No app login" Timesheet cell', () => {

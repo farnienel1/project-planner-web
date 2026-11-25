@@ -37,6 +37,7 @@ import {
 import { isOrganizationSuperAdmin } from './organizationDeletion'
 import { formatPaymentRunDay, paymentRunPayDate } from './paymentRuns'
 import { organizationLevelFor, organizationSelfManageFlags } from './orgRoster'
+import { withOrganizationLineManager } from './orgLineManagers'
 import { documentInstantMs, documentOrganizationId } from './peopleDocuments'
 import { permissionLevelOf } from './permissionLevels'
 import { idKey, personIdSet, rosterMemberFor } from './personIds'
@@ -208,6 +209,8 @@ export function timesheetSignOffReminderRosterMember(
     membersRole?: unknown
     /** `users/{id}/orgMemberships/{orgId}` when read. */
     membership?: Record<string, unknown> | null
+    /** 1.88.0: `organizations/{orgId}/memberLineManagers/{id}` when read (this organisation's line manager for them). */
+    lineManagerRecord?: Record<string, unknown> | null
   }
 ): TimesheetSignOffReminderMember | null {
   const docId = text(id)
@@ -273,7 +276,13 @@ function sharedMemberFields(docId: string, data: Record<string, unknown>) {
 function anchoredMember(
   docId: string,
   data: Record<string, unknown>,
-  org: { organizationId: string; creatorUserId?: string | null; membersRole?: unknown; membership?: Record<string, unknown> | null }
+  org: {
+    organizationId: string
+    creatorUserId?: string | null
+    membersRole?: unknown
+    membership?: Record<string, unknown> | null
+    lineManagerRecord?: Record<string, unknown> | null
+  }
 ): TimesheetSignOffReminderMember {
   const here = organizationLevelFor({
     organizationId: org.organizationId,
@@ -294,7 +303,13 @@ function anchoredMember(
   const level = here.level
   // §14: deactivated here only by their membership here; their home company's `isActive` never counts.
   const membershipActive = flags.source === 'membership' ? flags.active : true
-  const shared = sharedMemberFields(docId, data)
+  // 1.88.0: their line manager here is this organisation's `memberLineManagers` record; with none they have no line
+  // manager here (their home company's never counts), so this organisation's admins are reminded.
+  const shared = withOrganizationLineManager(sharedMemberFields(docId, data), {
+    organizationId: org.organizationId,
+    record: org.lineManagerRecord ?? null,
+    homeOrganizationId: data.organizationId ?? null,
+  })
   return {
     ...shared,
     isActive: membershipActive,
