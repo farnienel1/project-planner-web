@@ -10,6 +10,8 @@ import {
   groupDeadlines,
   isAtRisk,
   mergeDeadlinesFirstWriterWins,
+  scopedDeadlines,
+  timelineItems,
   pacingGap,
   rescheduleDeadline,
   riskBannerMessage,
@@ -176,4 +178,56 @@ test('empty copy matches the operative and manager programmes', () => {
   assert.match(emptyDeadlineCopy('all', true, 'Project').message, /first fix, sign-offs, handovers/)
   assert.match(emptyDeadlineCopy('all', false, 'Small Work').message, /assigned to you on this small work/)
   assert.equal(riskBannerMessage({ overdueCount: 2, atRiskCount: 1, criticalOpen: 1 }), '2 overdue, 1 on the critical path')
+})
+
+
+test('owner 25 Nov: All lists every deadline, past, this week, future and completed', () => {
+  const rows = [
+    item({ id: 'past', title: 'Past', due: new Date('2026-05-01T09:00:00Z') }),
+    item({ id: 'week', title: 'Week', due: new Date('2026-06-13T09:00:00Z') }),
+    item({ id: 'later', title: 'Later', due: new Date('2026-09-01T09:00:00Z') }),
+    item({ id: 'done', title: 'Done', due: new Date('2026-06-12T09:00:00Z'), status: 'complete' }),
+  ]
+  const all = filterDeadlines({ items: rows, filter: 'all', tradeFilter: 'All trades', search: '', now: NOW })
+  assert.deepEqual(all.map((row) => row.id).sort(), ['done', 'later', 'past', 'week'])
+  const listed = groupDeadlines(all, 'date', NOW).flatMap((group) => group.items.map((row) => row.id))
+  assert.deepEqual(listed.sort(), ['done', 'later', 'past', 'week'])
+  const week = filterDeadlines({ items: rows, filter: 'thisWeek', tradeFilter: 'All trades', search: '', now: NOW })
+  assert.deepEqual(week.map((row) => row.id), ['week'])
+  const complete = filterDeadlines({ items: rows, filter: 'complete', tradeFilter: 'All trades', search: '', now: NOW })
+  assert.deepEqual(complete.map((row) => row.id), ['done'])
+})
+
+test('owner 25 Nov: the timeline keeps completed deadlines the filter keeps', () => {
+  const rows = [
+    item({ id: 'open', title: 'Open', due: new Date('2026-06-20T09:00:00Z') }),
+    item({ id: 'done', title: 'Done', due: new Date('2026-06-12T09:00:00Z'), status: 'complete' }),
+  ]
+  assert.deepEqual(timelineItems(rows).map((row) => row.id), ['done', 'open'])
+})
+
+test('1.92.0: a deadline on several floors is grouped under each and found by any', () => {
+  const rows = [item({ id: 'f', title: 'First fix', due: new Date('2026-06-20T09:00:00Z'), location: 'Ground Floor', locations: ['Ground Floor', '2nd Floor'] })]
+  const groups = groupDeadlines(rows, 'location', NOW)
+  assert.deepEqual(groups.map((group) => group.title).sort(), ['2nd Floor', 'Ground Floor'])
+  const found = filterDeadlines({ items: rows, filter: 'all', tradeFilter: 'All trades', search: '2nd floor', now: NOW })
+  assert.equal(found.length, 1)
+})
+
+test('owner 25 Nov: a person sees deadlines under every id they go by, without case', () => {
+  const rows = [
+    item({ id: 'a', title: 'A', due: NOW, assigneeUserIds: ['GHOST-1'] }),
+    item({ id: 'b', title: 'B', due: NOW, assigneeUserIds: ['other'] }),
+  ]
+  assert.deepEqual(scopedDeadlines(rows, ['user-1', 'ghost-1']).map((row) => row.id), ['a'])
+  assert.equal(scopedDeadlines(rows, null).length, 2)
+})
+
+test('owner 25 Nov: the save keeps the person own edit when the stored list moved on', () => {
+  const remote = item({ id: 'x', title: 'Old', due: NOW })
+  const local = item({ id: 'x', title: 'New', due: NOW, fileURL: 'https://example.test/f' })
+  assert.equal(mergeDeadlinesFirstWriterWins([remote], [local])[0].title, 'Old')
+  const kept = mergeDeadlinesFirstWriterWins([remote], [local], ['x'])[0]
+  assert.equal(kept.title, 'New')
+  assert.equal(kept.fileURL, 'https://example.test/f')
 })

@@ -323,7 +323,7 @@ const WEB_STORE_SAMPLES: Record<string, { docId: string; data: Doc; webWriter: s
   deadlines: {
     docId: `deadlines_projects_${WEB_JOB.toUpperCase()}`,
     webWriter: 'deadlineStore save (lib/stores/deadlineStore.ts)',
-    data: { projectId: WEB_JOB, items: [{ id: 'D-1', title: 'Handover', dueDate: ts('2026-12-18T00:00:00.000Z'), assigneeUserIds: ['mgr-web-1'], completed: false }] },
+    data: { projectId: WEB_JOB, items: [{ id: 'D-1', title: 'Handover', location: 'Ground Floor', locations: ['Ground Floor', '1st Floor'], dueDate: ts('2026-12-18T00:00:00.000Z'), assigneeUserIds: ['mgr-web-1'], completed: false }] },
   },
   skills: {
     docId: 'SK-1',

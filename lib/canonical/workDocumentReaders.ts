@@ -764,7 +764,10 @@ export type DeadlineItemDocument = {
   /** Stored id, in stored case (UUID or not). */
   id: string
   title: string
+  /** The first floor / area (older builds read only this). */
   location: string | null
+  /** 1.92.0: every floor / area the deadline is on, first = `location`; older data reads as `[location]`. */
+  locations: string[]
   trade: string | null
   detail: string | null
   startMs: number | null
@@ -848,6 +851,50 @@ function stringList(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.trim() !== '').map((item) => item.trim()) : []
 }
 
+/** The trimmed, non-blank floors / areas, once each ignoring case, in the order given. */
+function uniqueLocations(values: unknown[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const value of values) {
+    const name = typeof value === 'string' ? value.trim() : ''
+    const key = name.toLowerCase()
+    if (!name || seen.has(key)) continue
+    seen.add(key)
+    out.push(name)
+  }
+  return out
+}
+
+function deadlineLocationFields(storedList: unknown, storedSingle: unknown): { location: string | null; locations: string[] } {
+  const single = optionalText(storedSingle)
+  const list = uniqueLocations(Array.isArray(storedList) ? storedList : [])
+  if (list.length === 0) return { location: single, locations: single ? [single] : [] }
+  // `location` must be the list's first floor. When it is not, an older build changed only `location` after the list
+  // was written: that edit is the newer one, so the stored single floor wins (as the 1.48.0 material reader).
+  if (single && list[0].toLowerCase() !== single.toLowerCase()) return { location: single, locations: [single] }
+  return { location: single ?? list[0], locations: list }
+}
+
+/**
+ * Rulebook 1.92.0 §1: the floor / area fields a deadline save writes — `locations` (every floor picked, once each
+ * ignoring case) and `location` (the first, '' when none) beside it for older builds, which read only `location`.
+ */
+export function deadlineLocationWriteFields(locations: ReadonlyArray<string> | null | undefined): {
+  location: string
+  locations: string[]
+} {
+  const list = uniqueLocations([...(locations ?? [])])
+  return { location: list[0] ?? '', locations: list }
+}
+
+/** True when the deadline is on this floor / area (any of its `locations`, ignoring case). */
+export function deadlineOnLocation(item: { locations?: ReadonlyArray<string> | null; location?: string | null }, location: string): boolean {
+  const want = location.trim().toLowerCase()
+  if (!want) return false
+  const list = item.locations && item.locations.length > 0 ? item.locations : item.location ? [item.location] : []
+  return list.some((name) => name.trim().toLowerCase() === want)
+}
+
 /** One item of a `settings/deadlines_*` document's `items` array. Null without an id. */
 export function parseDeadlineItem(
   raw: unknown,
@@ -866,7 +913,7 @@ export function parseDeadlineItem(
   return {
     id,
     title: text(row.title) || 'Untitled deadline',
-    location: optionalText(row.location),
+    ...deadlineLocationFields(row.locations, row.location),
     trade: optionalText(row.trade),
     detail: optionalText(row.detail),
     startMs,

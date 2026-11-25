@@ -14,8 +14,9 @@ export function useDeadlineAssignedProjectIds(): Set<string> | undefined {
 
   useEffect(() => {
     if (!operative || !organization?.id || !user?.id) return
-    void loadAssignedProjectIds(organization.id, user.id)
-  }, [operative, organization?.id, user?.id, loadAssignedProjectIds])
+    // Every id the person goes by (rulebook §8): a ghost given app access keeps deadlines filed under the ghost id.
+    void loadAssignedProjectIds(organization.id, [user.id, ...(user.formerUserIds ?? [])])
+  }, [operative, organization?.id, user?.id, user?.formerUserIds, loadAssignedProjectIds])
 
   if (!operative) return undefined
   return new Set(assignedProjectIds)

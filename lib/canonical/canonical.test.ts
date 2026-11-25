@@ -20992,3 +20992,26 @@ test('1.91.0 review of #458: taskSortLabel names the Completed tab order honestl
   assert.equal(R112.taskSortLabel('overdue_first', 'completed'), 'Most recently completed')
   assert.equal(R112.taskSortLabel('due_latest', 'completed'), 'Due date, latest first')
 })
+
+
+test('1.92.0 deadlines: several floors, older data and older builds', async () => {
+  const { parseDeadlineItem, deadlineLocationWriteFields, deadlineOnLocation } = await import('./workDocumentReaders.ts')
+  assert.deepEqual(deadlineLocationWriteFields([' Ground Floor ', '1st Floor', 'ground floor', '']), { location: 'Ground Floor', locations: ['Ground Floor', '1st Floor'] })
+  assert.deepEqual(deadlineLocationWriteFields([]), { location: '', locations: [] })
+  const both = parseDeadlineItem({ id: 'D1', location: 'Ground Floor', locations: ['Ground Floor', '1st Floor'] })
+  assert.equal(both?.location, 'Ground Floor')
+  assert.deepEqual(both?.locations, ['Ground Floor', '1st Floor'])
+  // Older data: one floor only.
+  assert.deepEqual(parseDeadlineItem({ id: 'D2', location: 'Roof' })?.locations, ['Roof'])
+  assert.deepEqual(parseDeadlineItem({ id: 'D3', location: '' })?.locations, [])
+  // An older build changed only location after the list was written: its edit wins.
+  const stale = parseDeadlineItem({ id: 'D4', location: 'Basement', locations: ['Roof', 'Risers'] })
+  assert.equal(stale?.location, 'Basement')
+  assert.deepEqual(stale?.locations, ['Basement'])
+  // A list with no single floor stored.
+  const listOnly = parseDeadlineItem({ id: 'D5', locations: ['Risers', 'Roof'] })
+  assert.equal(listOnly?.location, 'Risers')
+  assert.equal(deadlineOnLocation(both!, '1st floor'), true)
+  assert.equal(deadlineOnLocation(both!, 'Roof'), false)
+  assert.equal(deadlineOnLocation({ location: 'Roof' }, 'roof'), true)
+})

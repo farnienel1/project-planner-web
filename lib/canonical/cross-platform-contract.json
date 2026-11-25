@@ -3014,6 +3014,11 @@
               {
                 "id": "D-1",
                 "title": "Handover",
+                "location": "Ground Floor",
+                "locations": [
+                  "Ground Floor",
+                  "1st Floor"
+                ],
                 "dueDate": {
                   "seconds": 1797552000,
                   "nanoseconds": 0
@@ -3033,7 +3038,11 @@
               {
                 "id": "D-1",
                 "title": "Handover",
-                "location": null,
+                "location": "Ground Floor",
+                "locations": [
+                  "Ground Floor",
+                  "1st Floor"
+                ],
                 "trade": null,
                 "detail": null,
                 "startMs": null,
@@ -3094,6 +3103,7 @@
                 "id": "D1000-IOS",
                 "title": "Inspection",
                 "location": null,
+                "locations": [],
                 "trade": null,
                 "detail": null,
                 "startMs": null,

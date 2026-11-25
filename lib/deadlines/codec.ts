@@ -6,12 +6,14 @@
 import { Timestamp } from 'firebase/firestore'
 import { asUppercaseUuid, isUuidString } from '@/lib/ios-parity/uuid'
 import {
+  deadlineLocationWriteFields,
   deadlinesDocumentId,
   parseDeadlineItem,
   type DeadlineChangeDocument,
 } from '@/lib/canonical/workDocumentReaders'
 import type { Deadline, DeadlineChange, DeadlineChangeKind, DeadlineStatus } from '@/lib/deadlines/types'
 import { DEADLINE_STATUSES } from '@/lib/deadlines/types'
+import { deadlineLocationList } from '@/lib/deadlines/logic'
 
 /** UUIDs upper case as Swift writes them; any other id exactly as stored (rulebook §1). */
 function storedId(value: string): string {
@@ -123,7 +125,7 @@ export function serializeDeadline(item: Deadline): Record<string, unknown> {
   return {
     id: storedId(item.id),
     title: item.title,
-    location: item.location ?? '',
+    ...deadlineLocationWriteFields(deadlineLocationList(item)),
     trade: item.trade ?? '',
     detail: item.detail ?? '',
     start: item.start ? Timestamp.fromDate(item.start) : null,
@@ -162,6 +164,7 @@ export function parseDeadline(map: Record<string, unknown>, fallbackProjectId: s
     id: item.id,
     title: item.title,
     location: item.location,
+    locations: item.locations,
     trade: item.trade,
     detail: item.detail,
     start: date(item.startMs),

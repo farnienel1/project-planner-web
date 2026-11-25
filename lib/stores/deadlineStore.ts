@@ -60,10 +60,12 @@ interface DeadlineState {
   projectKey: string | null
   assignedProjectIds: string[]
   load: (organizationId: string, projectId: string, isSmallWorks: boolean) => Promise<void>
-  save: (organizationId: string, projectId: string, isSmallWorks: boolean, items: Deadline[]) => Promise<Deadline[]>
+  /** `ownIds`: the deadlines this save is for — their local version is written even when the stored list is newer. */
+  save: (organizationId: string, projectId: string, isSmallWorks: boolean, items: Deadline[], ownIds?: string[]) => Promise<Deadline[]>
   /** Stop listening (the screen closed). */
   stopListening: () => void
-  loadAssignedProjectIds: (organizationId: string, userId: string) => Promise<void>
+  /** `personIds`: every id the person goes by (rulebook `personIdSet`), or one id. */
+  loadAssignedProjectIds: (organizationId: string, personIds: string | ReadonlyArray<string>) => Promise<void>
 }
 
 export const useDeadlineStore = create<DeadlineState>((set, get) => ({
@@ -135,7 +137,7 @@ export const useDeadlineStore = create<DeadlineState>((set, get) => ({
     deadlineListeningKey = ''
   },
 
-  save: async (organizationId, projectId, isSmallWorks, items) => {
+  save: async (organizationId, projectId, isSmallWorks, items, ownIds = []) => {
     const projectKey = `${organizationId}:${deadlinesSettingsDocId(projectId, isSmallWorks)}`
     if (!get().loaded || get().projectKey !== projectKey) {
       throw new Error('Deadlines are still loading.')
@@ -159,7 +161,7 @@ export const useDeadlineStore = create<DeadlineState>((set, get) => ({
             const remoteItems = (raw as unknown[])
               .map((row) => (row && typeof row === 'object' ? parseDeadline(row as Record<string, unknown>, projectId) : null))
               .filter((row): row is Deadline => row !== null)
-            itemsToWrite = mergeDeadlinesFirstWriterWins(remoteItems, items)
+            itemsToWrite = mergeDeadlinesFirstWriterWins(remoteItems, items, ownIds)
           }
         }
       }
@@ -194,9 +196,9 @@ export const useDeadlineStore = create<DeadlineState>((set, get) => ({
     }
   },
 
-  loadAssignedProjectIds: async (organizationId, userId) => {
-    const trimmed = userId.trim()
-    if (!trimmed) {
+  loadAssignedProjectIds: async (organizationId, personIds) => {
+    const trimmed = (typeof personIds === 'string' ? [personIds] : [...personIds]).map((id) => id.trim()).filter(Boolean)
+    if (trimmed.length === 0) {
       set({ assignedProjectIds: [] })
       return
     }
