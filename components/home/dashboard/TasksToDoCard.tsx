@@ -14,8 +14,14 @@ export type TaskRowView = { id: string; title: string; subtitle: string; status:
 export const TASKS_SHOWN = 5
 const LIMIT = TASKS_SHOWN
 
-export function TasksToDoCard(props: { pending: string; rows: TaskRowView[] | null; total: number }) {
-  const { pending, rows, total } = props
+export function TasksToDoCard(props: {
+  pending: string
+  rows: TaskRowView[] | null
+  total: number
+  /** Re-check of #459: the visible-task loads failed or did not answer — say so with Retry, never "Loading" for ever. */
+  failed?: { message: string; onRetry: () => void } | null
+}) {
+  const { pending, rows, total, failed } = props
   return (
     <section className="dash-card" aria-labelledby="tasks-title">
       <div className="dash-ch">
@@ -26,7 +32,14 @@ export function TasksToDoCard(props: { pending: string; rows: TaskRowView[] | nu
           View all
         </Link>
       </div>
-      {rows == null ? (
+      {failed ? (
+        <div className="dash-empty">
+          <p role="alert">{failed.message}</p>
+          <button type="button" className="dash-link" onClick={failed.onRetry}>
+            Retry
+          </button>
+        </div>
+      ) : rows == null ? (
         <p className="dash-empty">Loading tasks…</p>
       ) : rows.length === 0 ? (
         <p className="dash-empty">Nothing to do.</p>

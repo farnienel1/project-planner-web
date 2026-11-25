@@ -6,14 +6,15 @@
  * Only gathers inputs from the stores the screen already loads.
  */
 
-import { useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useTaskStore } from '@/lib/stores/taskStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore, useRosterDocuments } from '@/lib/stores/siteAuditStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { taskViewerRole, visibleTasksForViewer } from '@/lib/canonical'
-import { taskVisibilityReady } from '@/lib/tasks/taskVisibilityReady'
+import { type TaskVisibilityPhase } from '@/lib/tasks/taskVisibilityReady'
+import { useTaskVisibilityPhase } from '@/lib/tasks/useTaskVisibilityPhase'
 import type { ProjectTask } from '@/types'
 
 /**
@@ -35,7 +36,7 @@ export function useVisibleTasks(
 export function useVisibleTasksState(
   extraJobs?: ReadonlyArray<{ id: string }> | null,
   options?: { load?: boolean }
-): { tasks: ProjectTask[]; ready: boolean } {
+): { tasks: ProjectTask[]; ready: boolean; phase: TaskVisibilityPhase; retry: () => void } {
   const { user, organization } = useAuthStore()
   const tasks = useTaskStore((state) => state.tasks)
   const operatives = useOperativeStore((state) => state.operatives)
@@ -48,6 +49,11 @@ export function useVisibleTasksState(
   const operativesLoadedOrgId = useOperativeStore((state) => state.operativesLoadedOrgId)
   const managersLoadedOrgId = useOperativeStore((state) => state.managersLoadedOrgId)
   const rosterServerOrgId = useOrgUserStore((state) => state.rosterServerOrgId ?? null)
+  const jobsError = useProjectStore((state) => state.error)
+  const rowsError = useOperativeStore((state) => state.error)
+  const usersError = useOrgUserStore((state) => state.error)
+  const loadProjects = useProjectStore((state) => state.loadProjects)
+  const loadSmallWorks = useProjectStore((state) => state.loadSmallWorks)
   const roster = useRosterDocuments(organization?.id)
   const loadOperatives = useOperativeStore((state) => state.loadOperatives)
   const loadManagers = useOperativeStore((state) => state.loadManagers)
@@ -61,16 +67,34 @@ export function useVisibleTasksState(
     loadUsers(orgId)
   }, [orgId, load, loadOperatives, loadManagers, loadUsers])
   const allManagers = allManagerRows.length > 0 ? allManagerRows : managers
-  const ready = taskVisibilityReady({
-    role: taskViewerRole(user),
-    orgId,
-    hasOwnJobs: Boolean(extraJobs && extraJobs.length > 0),
-    projectsLoadedOrgId,
-    smallWorksLoadedOrgId,
-    operativesLoadedOrgId,
-    managersLoadedOrgId,
-    rosterServerOrgId,
-  })
+  const hasOwnJobs = Boolean(extraJobs && extraJobs.length > 0)
+  const reload = useCallback(() => {
+    if (!orgId) return
+    const quiet = (p: Promise<unknown>) => void p.catch(() => undefined)
+    quiet(loadOperatives(orgId, { force: true }))
+    quiet(loadManagers(orgId))
+    quiet(loadUsers(orgId, { force: true }))
+    if (!hasOwnJobs) {
+      quiet(loadProjects(orgId, { force: true }))
+      quiet(loadSmallWorks(orgId, { force: true }))
+    }
+  }, [orgId, hasOwnJobs, loadOperatives, loadManagers, loadUsers, loadProjects, loadSmallWorks])
+  // Re-check of #459: a failed or unanswered load reads `failed` (with Retry), never loading for ever.
+  const { phase, retry } = useTaskVisibilityPhase(
+    {
+      role: taskViewerRole(user),
+      orgId,
+      hasOwnJobs,
+      projectsLoadedOrgId,
+      smallWorksLoadedOrgId,
+      operativesLoadedOrgId,
+      managersLoadedOrgId,
+      rosterServerOrgId,
+      loadErrors: [hasOwnJobs ? null : jobsError, rowsError, usersError],
+    },
+    reload
+  )
+  const ready = phase === 'ready'
   const visible = useMemo(
     () =>
       visibleTasksForViewer({
@@ -83,5 +107,5 @@ export function useVisibleTasksState(
       }),
     [user, tasks, extraJobs, projects, smallWorks, roster, operatives, allManagers]
   )
-  return { tasks: visible, ready }
+  return { tasks: visible, ready, phase, retry }
 }

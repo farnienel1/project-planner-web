@@ -9,6 +9,8 @@
  * `taskAccess`).
  */
 
+import { TASK_VISIBILITY_FAILED_MESSAGE } from '@/lib/tasks/taskVisibilityReady'
+import { TaskLoadFailed } from './TaskLoadFailed'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { CheckIcon, EllipsisHorizontalIcon } from '@heroicons/react/24/outline'
@@ -100,10 +102,15 @@ export function TaskPopup({
   // 1.91.0 §34 decision A: only a task in the viewer's visible list (`visibleTasksForViewer`).
   if (!ws.tasks.some((row) => row.id === task.id)) {
     return (
-      <TaskDialog open title={ws.visibilityReady ? 'Task' : 'Loading…'} onClose={onClose} narrow>
-        <p className="tk-text" style={{ margin: 0 }}>
-          {ws.visibilityReady ? TASK_COPY.errors.noAccess : 'Loading the task…'}
-        </p>
+      <TaskDialog open title={ws.visibilityPhase === 'loading' ? 'Loading…' : 'Task'} onClose={onClose} narrow>
+        {ws.visibilityPhase === 'failed' ? (
+          // Re-check of #459: a failed or unanswered load says so with Retry, never "no access" or loading for ever.
+          <TaskLoadFailed message={TASK_VISIBILITY_FAILED_MESSAGE} onRetry={ws.retryVisibility} />
+        ) : (
+          <p className="tk-text" style={{ margin: 0 }}>
+            {ws.visibilityPhase === 'ready' ? TASK_COPY.errors.noAccess : 'Loading the task…'}
+          </p>
+        )}
       </TaskDialog>
     )
   }

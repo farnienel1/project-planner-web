@@ -113,6 +113,7 @@ import { bookLabourList } from '@/lib/book-labour/bookLabourList'
 import { dateFromDayKey } from '@/lib/ios-parity/londonTime'
 import { filterTasksForView, getTaskDetailHref, resolveProjectName } from '@/lib/tasks/taskUtils'
 import { useVisibleTasksState } from '@/lib/tasks/useVisibleTasks'
+import { TASK_VISIBILITY_FAILED_MESSAGE } from '@/lib/tasks/taskVisibilityReady'
 import { teamLeaveBookings, teamLeaveDecisionQueue, teamLeavePeople, teamLeaveTab } from '@/lib/annualLeave/teamLeaveQueue'
 import { getPendingHolidayApprovalsForUser, usersWithoutRequiredLineManager } from '@/lib/annualLeave/holidayApprovalUtils'
 import { getOperativeModeUsers, matchesRosterSegment } from '@/lib/staff/userRosterUtils'
@@ -150,7 +151,9 @@ export function HomeScreen() {
   } = useManagerScheduleStore()
   const { tasks, loadTasks, tasksLoadedOrgId } = useTaskStore()
   // Rulebook 1.91.0 §34 decision A: the task figures and list count the tasks this person may see (as the Tasks page).
-  const { tasks: visibleTasks, ready: visibleTasksReady } = useVisibleTasksState(null, { load: false })
+  const { tasks: visibleTasks, ready: visibleTasksReady, phase: visibleTasksPhase, retry: retryVisibleTasks } = useVisibleTasksState(null, {
+    load: false,
+  })
   const {
     bookings: holidays,
     loadBookings: loadHolidays,
@@ -918,7 +921,12 @@ export function HomeScreen() {
       ) : null}
 
       <div className={waitingItems.length > 0 ? 'dash-row' : 'dash-row single'}>
-        <TasksToDoCard pending={tasksPending == null ? '…' : String(tasksPending)} rows={taskRows?.rows ?? null} total={taskRows?.total ?? 0} />
+        <TasksToDoCard
+          pending={tasksPending == null ? '…' : String(tasksPending)}
+          rows={taskRows?.rows ?? null}
+          total={taskRows?.total ?? 0}
+          failed={visibleTasksPhase === 'failed' ? { message: TASK_VISIBILITY_FAILED_MESSAGE, onRetry: retryVisibleTasks } : null}
+        />
         <WaitingForYouCard items={waitingItems} />
       </div>
 

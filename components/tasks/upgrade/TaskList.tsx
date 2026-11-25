@@ -45,12 +45,14 @@ import {
   type TaskTabKey,
 } from '@/lib/canonical'
 import { LoadingSpinner, ErrorBanner } from '@/components/dashboard/PageShell'
+import { TASK_VISIBILITY_FAILED_MESSAGE } from '@/lib/tasks/taskVisibilityReady'
 import { useToast } from '@/components/ui/ToastProvider'
 import { allAssignedManagerIds, allAssignedOperativeIds } from '@/lib/tasks/projectTaskFilters'
 import { foldTaskFilterPeople, taskAssigneeNames } from '@/lib/tasks/taskAssigneePeople'
 import type { ProjectTask } from '@/types'
 import { ConfirmDialog } from './TaskDialog'
 import { TaskPopup, type TaskPopupMode } from './TaskPopup'
+import { TaskLoadFailed } from './TaskLoadFailed'
 import { initialsOf } from './TaskPeopleField'
 import { deleteTaskById, personDisplay, runStatusAction } from './taskActions'
 import { useTaskWorkspace, type TaskLocation, type TaskWorkspace } from './useTaskWorkspace'
@@ -147,7 +149,7 @@ function TaskListInner({ mode, location, approvals }: TaskListProps) {
     setFiltersState(next)
     writeStored(`${FILTERS_KEY}.${mode}`, JSON.stringify(next))
   }
-  const setFilter = <K extends keyof TaskFilters>(key: K, value: Required<TaskFilters>[K]) => setFilters({ ...filters, [key]: value })
+  const setFilter = <K extends keyof TaskFilters>(key: K, value: Required<TaskFilters>[K]) => setFilters({ ...prunedFilters, [key]: value })
   const chooseSort = (next: TaskSortKey) => {
     setSortState(next)
     writeStored(`${SORT_KEY}.${mode}`, next)
@@ -226,34 +228,39 @@ function TaskListInner({ mode, location, approvals }: TaskListProps) {
     () => taskFilterOptions({ tasks: inScope, locations: filterLocations, personKeys: ws.personKeys, roster: ws.namesRoster as never }),
     [inScope, filterLocations, ws.personKeys, ws.namesRoster]
   )
-  const effectiveFilters = mode === 'location' ? { ...filters, projectId: '', smallWorksId: '' } : filters
-  // Review of #458: a remembered project, small works or "assigned by" that no longer exists (a deleted job, a person
-  // key changed by a roster fold) is dropped once everything has loaded, and saved again — never applied while the
-  // select shows "All". Judged against every task the person can see and every job, not only this tab.
+  // Review of #458 / re-check of #459: a remembered project, small works or "assigned by" that no longer exists (a
+  // deleted job, a person key changed by a roster fold) is dropped — in render, so it never applies for a frame — and
+  // saved again. Judged only once every input has loaded, for every role (`filterInputsLoaded`), against every task the
+  // person can see and every job, not only this tab.
   const allOptions = useMemo(
     () => taskFilterOptions({ tasks: ws.tasks, locations: filterLocations, personKeys: ws.personKeys, roster: ws.namesRoster as never }),
     [ws.tasks, filterLocations, ws.personKeys, ws.namesRoster]
   )
-  useEffect(() => {
-    if (!ws.visibilityReady || ws.loading) return
-    const known = (list: ReadonlyArray<{ value: string }>, value: string) => !value || list.some((row) => row.value === value)
+  const prunedFilters = useMemo(() => {
+    if (!ws.filterInputsLoaded) return filters
     const locationKnown = (value: string, kind: 'project' | 'smallWorks') =>
       !value || filterLocations.some((row) => row.kind === kind && row.id === value)
-    const next = { ...filters }
-    if (!locationKnown(next.projectId, 'project')) next.projectId = ''
-    if (!locationKnown(next.smallWorksId, 'smallWorks')) next.smallWorksId = ''
-    if (!known(allOptions.creators, next.creatorKey)) next.creatorKey = ''
-    if (next.projectId !== filters.projectId || next.smallWorksId !== filters.smallWorksId || next.creatorKey !== filters.creatorKey) {
-      setFilters(next)
+    const creatorKnown = !filters.creatorKey || allOptions.creators.some((row) => row.value === filters.creatorKey)
+    const next = {
+      ...filters,
+      projectId: locationKnown(filters.projectId, 'project') ? filters.projectId : '',
+      smallWorksId: locationKnown(filters.smallWorksId, 'smallWorks') ? filters.smallWorksId : '',
+      creatorKey: creatorKnown ? filters.creatorKey : '',
     }
+    const same = next.projectId === filters.projectId && next.smallWorksId === filters.smallWorksId && next.creatorKey === filters.creatorKey
+    return same ? filters : next
+  }, [ws.filterInputsLoaded, filters, filterLocations, allOptions])
+  useEffect(() => {
+    if (prunedFilters !== filters) setFilters(prunedFilters)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setFilters is a plain setter that also saves
-  }, [ws.visibilityReady, ws.loading, filters, filterLocations, allOptions])
+  }, [prunedFilters, filters])
+  const effectiveFilters = mode === 'location' ? { ...prunedFilters, projectId: '', smallWorksId: '' } : prunedFilters
   const activeCount = taskActiveFilterCount(effectiveFilters)
 
   const filtered = useMemo(
     () => filterTasks(inScope, effectiveFilters, { locations: filterLocations, personKeys: ws.personKeys, nowMs: now, timeZone: ws.timeZone }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- effectiveFilters is derived from filters and mode
-    [inScope, filters, mode, filterLocations, ws.personKeys, now, ws.timeZone]
+    [inScope, prunedFilters, mode, filterLocations, ws.personKeys, now, ws.timeZone]
   )
 
   /** The chips of the filters that are on, each with its own ✕. */
@@ -261,7 +268,7 @@ function TaskListInner({ mode, location, approvals }: TaskListProps) {
     const chips: Array<{ key: keyof TaskFilters; label: string }> = []
     const label = (list: ReadonlyArray<{ value: string; label: string }>, value: string, fallback: string) =>
       list.find((row) => row.value === value)?.label ?? fallback
-    if (!ws.visibilityReady) return chips
+    if (!ws.filterInputsLoaded) return chips
     const locationLabel = (value: string, fallback: string) => {
       const row = filterLocations.find((loc) => loc.id === value)
       return row ? [row.code, row.name].filter(Boolean).join(' · ') || 'Untitled' : fallback
@@ -320,8 +327,10 @@ function TaskListInner({ mode, location, approvals }: TaskListProps) {
 
   // Review of #458: a non-admin's list waits for the jobs, the Managers / Operatives rows and the users roster, so it
   // never shows a short list or "No tasks" first.
-  if ((ws.loading && ws.tasks.length === 0) || !ws.visibilityReady) return <LoadingSpinner label="Loading tasks…" />
-  if (ws.error && ws.tasks.length === 0) return <ErrorBanner message={ws.error} />
+  // Re-check of #459: the task-store error wins over the spinner; a failed or unanswered load says so with Retry.
+  if (ws.error && ws.tasks.length === 0) return <TaskLoadFailed message={ws.error} onRetry={ws.retryVisibility} />
+  if (ws.visibilityPhase === 'failed') return <TaskLoadFailed message={TASK_VISIBILITY_FAILED_MESSAGE} onRetry={ws.retryVisibility} />
+  if ((ws.loading && ws.tasks.length === 0) || ws.visibilityPhase !== 'ready') return <LoadingSpinner label="Loading tasks…" />
 
   const emptyCopy = (() => {
     if (search.trim()) return { title: taskCopyText(TASK_COPY.empty.search.title, { query: search.trim() }), body: TASK_COPY.empty.search.body }

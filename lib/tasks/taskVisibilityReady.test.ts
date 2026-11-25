@@ -36,3 +36,20 @@ test('no org or no role is never ready', () => {
   assert.equal(taskVisibilityReady({ role: manager, ...loaded, orgId: null }), false)
   assert.equal(taskVisibilityReady({ role: null, orgId: 'o1' }), false)
 })
+
+import { taskFilterInputsLoaded, taskVisibilityPhase } from './taskVisibilityReady'
+
+test('a failed or timed-out load is failed, never loading for ever', () => {
+  assert.equal(taskVisibilityPhase({ role: manager, ...loaded, rosterServerOrgId: null }), 'loading')
+  assert.equal(taskVisibilityPhase({ role: manager, ...loaded, rosterServerOrgId: null, loadErrors: [null, 'boom'] }), 'failed')
+  assert.equal(taskVisibilityPhase({ role: manager, ...loaded, projectsLoadedOrgId: null, timedOut: true }), 'failed')
+  assert.equal(taskVisibilityPhase({ role: manager, ...loaded, loadErrors: ['boom'] }), 'ready')
+  assert.equal(taskVisibilityPhase({ role: admin, orgId: 'o1', timedOut: true }), 'ready')
+})
+
+test('filters are pruned only once every input has loaded, admins included', () => {
+  assert.equal(taskFilterInputsLoaded({ ...loaded, tasksLoadedOrgId: 'o1' }), true)
+  assert.equal(taskFilterInputsLoaded({ ...loaded, tasksLoadedOrgId: null }), false)
+  assert.equal(taskFilterInputsLoaded({ ...loaded, tasksLoadedOrgId: 'o1', projectsLoadedOrgId: null }), false)
+  assert.equal(taskFilterInputsLoaded({ ...loaded, tasksLoadedOrgId: 'o1', orgId: null }), false)
+})

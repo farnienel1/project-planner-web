@@ -7,7 +7,7 @@
  * gathers inputs.
  */
 
-import { useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useTaskStore } from '@/lib/stores/taskStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
@@ -16,7 +16,8 @@ import { useProjectStore } from '@/lib/stores/projectStore'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { tasksAssignedToUser } from '@/lib/tasks/taskUtils'
 import { taskPersonIndex } from '@/lib/tasks/taskAssigneePeople'
-import { taskVisibilityReady } from '@/lib/tasks/taskVisibilityReady'
+import { taskFilterInputsLoaded, taskVisibilityReady } from '@/lib/tasks/taskVisibilityReady'
+import { useTaskVisibilityPhase } from '@/lib/tasks/useTaskVisibilityPhase'
 import { taskAccess, taskAssigneeCandidates, taskPersonKeys, taskViewerRole, visibleTasksForViewer } from '@/lib/canonical'
 import type { Project, ProjectTask } from '@/types'
 
@@ -42,12 +43,12 @@ export function taskLocationOf(project: Project, kind: 'project' | 'smallWorks')
 
 export function useTaskWorkspace() {
   const { user, organization } = useAuthStore()
-  const { tasks: storedTasks, loading, error, loadTasks } = useTaskStore()
-  const { operatives, managers, allManagerRows, operativesLoadedOrgId, managersLoadedOrgId, loadOperatives, loadManagers } =
+  const { tasks: storedTasks, loading, error, loadTasks, tasksLoadedOrgId } = useTaskStore()
+  const { operatives, managers, allManagerRows, operativesLoadedOrgId, managersLoadedOrgId, loadOperatives, loadManagers, error: rowsError } =
     useOperativeStore()
-  const { users, loadUsers, rosterServerOrgId } = useOrgUserStore()
+  const { users, loadUsers, rosterServerOrgId, error: usersError } = useOrgUserStore()
   const roster = useRosterDocuments(organization?.id)
-  const { projects, smallWorks, loadProjects, loadSmallWorks, projectsLoadedOrgId, smallWorksLoadedOrgId } = useProjectStore()
+  const { projects, smallWorks, loadProjects, loadSmallWorks, projectsLoadedOrgId, smallWorksLoadedOrgId, error: jobsError } = useProjectStore()
 
   useEffect(() => {
     if (!organization?.id) return
@@ -127,7 +128,7 @@ export function useTaskWorkspace() {
   /** Names on tasks: every managers row as stored (a placeholder a task names still reads by name), once loaded. */
   const rostersLoaded = Boolean(organization?.id) && operativesLoadedOrgId === organization?.id && managersLoadedOrgId === organization?.id
   /** Review of #458: the visible list can be trusted (jobs, rows and the server roster loaded; admins at once). */
-  const visibilityReady = taskVisibilityReady({
+  const visibilityInput = {
     role,
     orgId: organization?.id,
     projectsLoadedOrgId,
@@ -135,7 +136,27 @@ export function useTaskWorkspace() {
     operativesLoadedOrgId,
     managersLoadedOrgId,
     rosterServerOrgId: rosterServerOrgId ?? null,
-  })
+  }
+  const visibilityReady = taskVisibilityReady(visibilityInput)
+  const orgIdForReload = organization?.id
+  const reloadAll = useCallback(() => {
+    if (!orgIdForReload) return
+    const quiet = (p: Promise<unknown>) => void p.catch(() => undefined)
+    quiet(loadTasks(orgIdForReload))
+    quiet(loadOperatives(orgIdForReload, { force: true }))
+    quiet(loadManagers(orgIdForReload))
+    quiet(loadUsers(orgIdForReload, { force: true }))
+    quiet(loadProjects(orgIdForReload, { force: true }))
+    quiet(loadSmallWorks(orgIdForReload, { force: true }))
+  }, [orgIdForReload, loadTasks, loadOperatives, loadManagers, loadUsers, loadProjects, loadSmallWorks])
+  // Re-check of #459: a failed or unanswered load is an error with Retry, never an endless "Loading tasks…".
+  const { phase: visibilityPhase, retry: retryVisibility } = useTaskVisibilityPhase(
+    { ...visibilityInput, loadErrors: [jobsError, rowsError, usersError] },
+    reloadAll
+  )
+  /** Re-check of #459: every input remembered filters are judged against has loaded (every role). */
+  const filterInputsLoaded = taskFilterInputsLoaded({ ...visibilityInput, tasksLoadedOrgId })
+
   const nameRows = useMemo(
     () => ({
       managers: allManagers,
@@ -182,6 +203,9 @@ export function useTaskWorkspace() {
     nameRows,
     rostersLoaded,
     visibilityReady,
+    visibilityPhase,
+    retryVisibility,
+    filterInputsLoaded,
     assignedIds,
     locations,
     liveLocations,

@@ -63,7 +63,7 @@ export function ProjectHub({
             </div>
             <div className="pj-card-b">
               <p className="pj-muted">
-                {taskCount ? `${taskCount} open task${taskCount === 1 ? '' : 's'} on this job.` : 'No open tasks. Create snags, variations and to-dos for this job.'}
+                {taskCount === undefined ? 'Loading tasks…' : taskCount ? `${taskCount} open task${taskCount === 1 ? '' : 's'} on this job.` : 'No open tasks. Create snags, variations and to-dos for this job.'}
               </p>
               <Link href={`${basePath}/tasks`} className="pj-btn">
                 Tasks

@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ProjectRecordPageShell } from '@/components/projects/ProjectRecordPageShell'
 import { ProjectWorkspaceChrome } from '@/components/projects/ProjectWorkspaceChrome'
 import { useTaskStore } from '@/lib/stores/taskStore'
-import { useVisibleTasks } from '@/lib/tasks/useVisibleTasks'
+import { useVisibleTasksState } from '@/lib/tasks/useVisibleTasks'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { jobTileBadges } from '@/lib/canonical'
 
@@ -57,10 +57,10 @@ function JobTasksChrome({
   children: ReactNode
 }) {
   const jobs = useMemo(() => [project], [project])
-  const tasks = useVisibleTasks(jobs)
+  const { tasks, ready: tasksReady } = useVisibleTasksState(jobs)
   const openTaskCount = jobTileBadges({ jobId: project.id, tasks }).openTasks
   return (
-    <ProjectWorkspaceChrome project={project} basePath={basePath} taskCount={ready ? openTaskCount : undefined}>
+    <ProjectWorkspaceChrome project={project} basePath={basePath} taskCount={ready && tasksReady ? openTaskCount : undefined}>
       {children}
     </ProjectWorkspaceChrome>
   )
