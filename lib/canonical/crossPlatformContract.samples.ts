@@ -509,6 +509,7 @@ export const CONTRACT_NO_READER: Readonly<Record<string, string>> = {
   reportChecks: '1.65.0: parseReportCheckDocument; written by the server only (report checks), never by an app.',
   deletedPeople: '1.59.0: parseFormerPersonDocument; web writes it on delete, samples follow once iOS writes it.',
   memberNames: '1.81.0: parseMemberNameDocument; web writes it (Edit user, My profile), samples follow once iOS writes it.',
+  memberLineManagers: '1.88.0: parseOrgLineManager; web writes it (Edit user in a company that is not the person\'s home, invite accept), samples follow once iOS writes it.',
   acceptedBookingClashes: 'Pair keys only (clashPairKey / isClashAccepted read the id); no document reader.',
   dismissedWarnings: 'Dismiss key is the document id; no document reader.',
   qualifications: 'No shared reader yet (known gap).',

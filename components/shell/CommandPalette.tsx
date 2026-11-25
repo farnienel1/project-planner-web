@@ -41,8 +41,8 @@ export function CommandPalette({
 
   return (
     <div className="fixed inset-0 z-70">
-      <button type="button" className="absolute inset-0 bg-[rgba(10,20,40,0.4)] backdrop-blur-[3px]" aria-label="Close search" onClick={onClose} />
-      <div className="absolute left-1/2 top-[11vh] w-[min(640px,94vw)] -translate-x-1/2 overflow-hidden rounded-[22px] bg-(--card) shadow-(--sh-pop)">
+      <button type="button" className="absolute inset-0 bg-[rgba(10,20,40,0.4)]" aria-label="Close search" onClick={onClose} />
+      <div className="absolute inset-x-0 top-[11vh] mx-auto w-[min(640px,94vw)] overflow-hidden rounded-[22px] bg-(--card) shadow-(--sh-pop)">
         <div className="flex items-center gap-3 border-b border-(--line) px-5">
           <MagnifyingGlassIcon className="h-5 w-5 text-(--ink3)" />
           <input

@@ -81,7 +81,7 @@ export function IosModal({
   children: ReactNode
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(10,20,40,.4)] p-4 backdrop-blur-[3px]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(10,20,40,.4)] p-4">
       <div className="flex max-h-[80vh] w-full max-w-[620px] flex-col overflow-hidden rounded-[24px] bg-(--card) shadow-(--sh-pop)">
         <header className="flex items-center justify-between px-6 pb-3 pt-[22px]">
           <h3 className="text-xl font-extrabold">{title}</h3>
@@ -110,7 +110,7 @@ export function IosFormModal({
   width?: 'sm' | 'md'
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(10,20,40,.4)] p-4 backdrop-blur-[3px]" onClick={onCancel}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(10,20,40,.4)] p-4" onClick={onCancel}>
       <div
         role="dialog"
         aria-labelledby="ios-form-title"

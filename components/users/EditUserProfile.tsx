@@ -100,6 +100,9 @@ import {
   canViewPersonPay,
   annualLeaveBalanceNotes,
   lineManagerSelectedIds,
+  lineManagerSummary,
+  isHomeOrganization,
+  withOrganizationLineManager,
   SELF_EMAIL_INVALID_MESSAGE,
   selfEmailChangeAction,
   selfEmailChangeSentMessage,
@@ -121,7 +124,8 @@ import {
   ADMIN_ACCESS_LOCKED_MESSAGE,
 } from '@/lib/staff/userPermissionDescriptions'
 import { SUPER_ADMIN_SUCCESSOR_EMPTY, superAdminSuccessors } from '@/lib/staff/superAdminTransfer'
-import { displayedLineManagerId, userWithLineManagerChoice } from '@/lib/firebase/userPayload'
+import { userWithLineManagerChoice } from '@/lib/firebase/userPayload'
+import { heldLineManagerRecord, useMemberLineManagerRecord } from '@/lib/staff/memberLineManagersLive'
 import { confirmWriteWithin, whenQueued } from '@/lib/works/watchWrite'
 import {
   profileSaveNoticeFor,
@@ -335,6 +339,9 @@ export function EditUserProfile({
   const [target, setTarget] = useState<User | null>(null)
   // The copy last loaded or saved. Saves write only what changed against it.
   const savedUser = useRef<User | null>(null)
+  // Rulebook 1.88.0: the users document as `getUser` returned it, before this company's line-manager record is laid
+  // over (the record can arrive after the form loaded; see the effect below).
+  const loadedAccount = useRef<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   // Owner answer 17 Nov (#371): a save the server has not confirmed within 15 s keeps this page open with an amber note
@@ -441,8 +448,16 @@ export function EditUserProfile({
     // basis / employment type (the rate-history "previous" row) all start from the same copy — the pay profile laid
     // over the users document while `privatePay` is on, the users document as stored while it is off.
     getUser(userId, { payEditor: true })
-      .then((row) => {
+      .then((loaded) => {
         if (generation !== profileLoadGen.current) return
+        // Rulebook 1.88.0: a member whose home is another company is edited with THIS company's line manager (its
+        // `memberLineManagers` record); the save writes it back there (`orgLineManagerEditTarget`).
+        const orgId = useAuthStore.getState().organization?.id
+        loadedAccount.current = loaded ?? null
+        const row =
+          loaded && orgId
+            ? withOrganizationLineManager(loaded, { organizationId: orgId, record: heldLineManagerRecord(orgId, loaded.id) })
+            : loaded
         setTarget(row)
         savedUser.current = row
         setOriginalDayRate(row?.payBasis === 'hourly' ? row?.hourlyRate : row?.dayRate)
@@ -454,6 +469,31 @@ export function EditUserProfile({
         if (generation === profileLoadGen.current) setLoading(false)
       })
   }, [organization?.id, userId, getUser, loadUsers, loadOperatives, loadHolidays])
+
+  // Rulebook 1.88.0 (review of #455, finding 2): this company's line-manager record for a visiting member may arrive
+  // (or change) after the form loaded. Lay it over again — the form, the save baseline and the dirty snapshot — unless
+  // the line manager has been edited on the form (an unsaved choice is never overwritten).
+  const lineManagerRecord = useMemberLineManagerRecord(organization?.id, userId)
+  useEffect(() => {
+    const orgId = organization?.id
+    const account = loadedAccount.current
+    const saved = savedUser.current
+    if (!orgId || !account || !saved) return
+    // Home-company people are edited on their users document; a save there moves `savedUser`, never this effect.
+    if (isHomeOrganization(account as unknown as Record<string, unknown>, orgId)) return
+    const next = withOrganizationLineManager(account, { organizationId: orgId, record: lineManagerRecord })
+    const fields = {
+      assignedManagerUserIds: next.assignedManagerUserIds,
+      assignedManagerUserId: next.assignedManagerUserId,
+      hasNoLineManager: next.hasNoLineManager,
+    }
+    if (!target || target.id !== saved.id || !lineManagerChanged(saved, { ...saved, ...fields })) return
+    if (lineManagerChanged(saved, target)) return
+    const nextSaved = { ...saved, ...fields }
+    savedUser.current = nextSaved
+    setBaseline(profileSnapshot(nextSaved, null, null))
+    setTarget({ ...target, ...fields })
+  }, [lineManagerRecord, organization?.id, target])
 
   // Rulebook 1.26.1 §8 (`payEditorStartingValues`): when `privatePay` changes for the open organisation while this
   // form is open, read the starting record again (`getUser` → `payEditorRecord`), re-seed only the pay fields the
@@ -549,13 +589,24 @@ export function EditUserProfile({
 
 
   // Rulebook §11 `lineManagerCandidates(person, roster)`: the picker list, never the person under any of their ids.
+  // Owner bug 24 Nov: the options and the selected value come from the same rulebook rules over the UNFOLDED roster
+  // (every users document of the organisation), the same input the profile page's `lineManagerSummary` reads, so the
+  // two screens can never disagree.
   const managers = useMemo(() => {
-    const byId = new Map(users.map((row) => [row.id, row]))
-    const subject = target?.id ? users.find((row) => row.id === target.id) ?? { id: target.id } : null
-    return lineManagerCandidates(subject as never, users as never)
+    const byId = new Map(rosterDocs.map((row) => [row.id, row]))
+    const subject = target?.id ? rosterDocs.find((row) => row.id === target.id) ?? { id: target.id } : null
+    return lineManagerCandidates(subject as never, rosterDocs as never)
       .map((candidate) => byId.get(candidate.id))
-      .filter((row): row is (typeof users)[number] => Boolean(row))
-  }, [users, target?.id])
+      .filter((row): row is (typeof rosterDocs)[number] => Boolean(row))
+  }, [rosterDocs, target?.id])
+  const selectedLineManagerId = target ? lineManagerSelectedIds(target as never, rosterDocs as never)[0] ?? '' : ''
+  const storedLineManagerLabel = useMemo(() => {
+    if (!target || !selectedLineManagerId) return ''
+    const row = lineManagerSummary(target as never, rosterDocs as never).ids.find(
+      (entry) => entry.id.toLowerCase() === selectedLineManagerId.toLowerCase()
+    )
+    return `${row?.name || 'Unknown person'} (not a current line manager here)`
+  }, [target, rosterDocs, selectedLineManagerId])
 
   const previousRateEntries = useMemo(() => {
     if (!target) return []
@@ -1719,7 +1770,7 @@ export function EditUserProfile({
                   }
                 >
                   <Select
-                    value={lineManagerSelectedIds(target as never, users as never)[0] ?? displayedLineManagerId(target)}
+                    value={selectedLineManagerId}
                     disabled={!canEdit || !mayChangeLineManager || saving || typeSaving}
                     onChange={(e) => {
                       setLineManagerError(null)
@@ -1735,6 +1786,11 @@ export function EditUserProfile({
                         {manager.firstName} {manager.surname} ({manager.email})
                       </option>
                     ))}
+                    {/* Review of #455 (finding 2): a stored line manager who is not offered (not an active manager or
+                        admin on this company's roster) is still shown as the current choice, never as "No line manager". */}
+                    {selectedLineManagerId && !managers.some((manager) => manager.id === selectedLineManagerId) ? (
+                      <option value={selectedLineManagerId}>{storedLineManagerLabel}</option>
+                    ) : null}
                   </Select>
                   {lineManagerError ? (
                     <p role="alert" className="up-err">

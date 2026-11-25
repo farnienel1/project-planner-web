@@ -23,6 +23,7 @@ import { LEGAL_ENTITY } from '@/lib/legal/customerLegalPack'
 import { WebUpdateGate } from '@/components/client/WebUpdateGate'
 import { PasskeyReminder } from '@/components/auth/PasskeyReminder'
 import { installMemberNames } from '@/lib/staff/memberNamesLive'
+import { installMemberLineManagers } from '@/lib/staff/memberLineManagersLive'
 
 export default function DashboardLayout({
   children,
@@ -36,6 +37,8 @@ export default function DashboardLayout({
   const profileRetryStarted = useRef(false)
   // Rulebook 1.81.0 §11: the open organisation's names for people, laid over the roster and the signed-in user.
   useEffect(() => installMemberNames(), [])
+  // Rulebook 1.88.0 §8, §11: a visiting member's line manager in this company (their membership here).
+  useEffect(() => installMemberLineManagers(), [])
   const needsMfa =
     mfaPending ||
     isMfaGateOpen(user?.id || firebaseUser?.uid) ||

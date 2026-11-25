@@ -75,13 +75,6 @@ export function userWithLineManagerChoice(user: User, managerId: string): User {
   }
 }
 
-export function displayedLineManagerId(user: Pick<User, 'hasNoLineManager' | 'assignedManagerUserId' | 'assignedManagerUserIds'>): string {
-  if (user.hasNoLineManager) return ''
-  const single = user.assignedManagerUserId?.trim()
-  if (single) return single
-  return (user.assignedManagerUserIds ?? []).map((id) => id.trim()).find(Boolean) ?? ''
-}
-
 export function applyLineManagerFields(
   payload: Record<string, unknown>,
   ids?: string[],

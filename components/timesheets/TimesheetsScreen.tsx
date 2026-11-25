@@ -88,7 +88,9 @@ import { timesheetsTeamHref } from '@/lib/timesheets/timesheetRoutes'
 import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
 import { formatStampInZone } from '@/lib/orgTime/zoneTime'
 import { PayInputsBanner } from '@/components/timesheets/PayInputsBanner'
-import { ClockIcon, MagnifyingGlassIcon } from '@heroicons/react/24/solid'
+import { ArrowDownTrayIcon, ChevronRightIcon, ClockIcon, MagnifyingGlassIcon } from '@heroicons/react/24/solid'
+import { expandedVersionRowsForSession, formatCompactPayRun, formatExportedStamp, toggleVersionRow } from '@/lib/timesheets/exportedListFormat'
+import { lineManagerLabelResolver, lineManagerRosterRows } from '@/lib/timesheets/memberLineManagerLabel'
 import {
   Card,
   Chip,
@@ -285,6 +287,17 @@ export function TimesheetsScreen({
   }, [user, users, teamTab])
 
   const roster = useMemo(() => groups.flat(), [groups])
+
+  // Review of #451: the line-manager labels (rulebook `lineManagerSummary` over every users document of this
+  // organisation) are built once per roster, never per row per render. Admins only (the column is admin-only).
+  const rosterDocuments = useOrgUserStore((state) => state.rosterDocuments)
+  const rosterDocumentsOrgId = useOrgUserStore((state) => state.rosterDocumentsOrgId)
+  const openOrganizationId = organization?.id
+  const lineManagerLabelOf = useMemo(() => {
+    if (!hasAdminAccess(user)) return undefined
+    const documents = openOrganizationId && rosterDocumentsOrgId === openOrganizationId ? rosterDocuments : []
+    return lineManagerLabelResolver(lineManagerRosterRows(documents, users))
+  }, [user, openOrganizationId, rosterDocuments, rosterDocumentsOrgId, users])
 
   const reload = useCallback(async () => {
     if (!organization?.id) return
@@ -966,6 +979,7 @@ export function TimesheetsScreen({
         onRunKey={setExportedRunKey}
         emptyTitle={emptyTitle}
         emptyDescription={emptyDescription}
+        lineManagerLabelOf={lineManagerLabelOf}
         summaryFor={summaryFor}
         users={users}
         viewer={user}
@@ -1013,6 +1027,7 @@ export function TimesheetsScreen({
               member={member}
               users={users}
               viewer={user}
+              lineManagerLabelOf={lineManagerLabelOf}
               pill={teamTab === 'signed' ? 'Signed off' : 'Pending'}
               pillHue={teamTab === 'signed' ? 'green' : 'warn'}
               revisionLabel={timesheetRevisionLabel(draft?.revision ?? 0)}
@@ -1086,7 +1101,6 @@ function MemberTable({ viewer, exported, payRun, children }: { viewer: User | nu
 
 function MemberRow({
   member,
-  users,
   viewer,
   pill,
   pillHue,
@@ -1100,7 +1114,13 @@ function MemberRow({
   payStatus = 'ready',
   payRunLine,
   unresolved = false,
+  versionsToggle,
+  lineManagerLabelOf,
 }: {
+  /** 24 Nov (owner): the exported row's "Versions · N" toggle, shown under the name. */
+  versionsToggle?: ReactNode
+  /** Review of #451: the line-manager label, built once per roster by the parent (admins only). */
+  lineManagerLabelOf?: (member: User) => string
   /** 17 Nov follow-up: the row's own pay run (Awaiting / Signed off). */
   payRunLine?: string
   /** 17 Nov follow-up: an exported sheet whose person is nobody in the organisation — no profile to open. */
@@ -1124,13 +1144,13 @@ function MemberRow({
   const currency = useOrganizationCurrency()
   const payUnknown = payStatus !== 'ready'
   const role = unresolved ? '—' : member.permissions?.operativeMode ? 'Operative' : hasAdminAccess(member) ? 'Admin' : 'Manager'
+  // 24 Nov: the rulebook's `lineManagerSummary` over every users document of the organisation (the unfolded roster),
+  // so an id stored under a same-email document, a former invite id or another letter case is named. Display only.
+  // The labels are built once in the parent (`lineManagerLabelOf`, review of #451).
   const lineManager = (() => {
     if (!hasAdminAccess(viewer)) return null
     if (unresolved) return '—'
-    const managerId = member.assignedManagerUserIds?.[0] || member.assignedManagerUserId
-    if (!managerId) return 'Unassigned'
-    const manager = users.find((row) => row.id === managerId)
-    return manager ? displayName(manager) : 'Unknown'
+    return lineManagerLabelOf ? lineManagerLabelOf(member) : '—'
   })()
   const name = displayName(member)
   const exportedColumns = periodLine !== undefined
@@ -1158,6 +1178,7 @@ function MemberRow({
                 <b>{name}</b>
               </button>
             )}
+            {versionsToggle}
           </span>
         </span>
       </td>
@@ -1166,8 +1187,8 @@ function MemberRow({
       ) : null}
       {exportedColumns ? (
         <>
-          <td style={{ color: 'var(--pu-blue)', fontWeight: 600, whiteSpace: 'nowrap' }}>{periodLine}</td>
-          <td style={{ whiteSpace: 'nowrap' }}>{exportedAt && timeZone ? formatStampInZone(exportedAt, timeZone) : ''}</td>
+          <td className="pu-x-run">{periodLine}</td>
+          <td className="pu-x-nowrap">{exportedAt && timeZone ? formatExportedStamp(exportedAt, timeZone) : ''}</td>
         </>
       ) : null}
       <td className="num">{payUnknown ? '—' : formatQueueHours(summary.hours)}</td>
@@ -1177,30 +1198,34 @@ function MemberRow({
       <td>{role}</td>
       {lineManager != null ? <td>{lineManager}</td> : null}
       <td>
-        <Chip tone={pillHue === 'warn' ? 'amber' : pillHue === 'green' ? 'green' : 'slate'}>{pill}</Chip>
-        {revisionLabel ? (
-          <span style={{ marginLeft: 8 }}>
-            <Chip tone="slate">{revisionLabel}</Chip>
-          </span>
-        ) : null}
-        {payStatus === 'failed' ? (
-          <span style={{ marginLeft: 8 }}>
-            <Chip tone="red">{PAY_DETAILS_NOT_LOADED_LABEL}</Chip>
-          </span>
-        ) : null}
-        {onDownload ? (
-          <button
-            type="button"
-            className="pu-rowbtn"
-            style={{ marginLeft: 8, fontWeight: 600, textDecoration: 'underline' }}
-            onClick={(event) => {
-              event.stopPropagation()
-              onDownload()
-            }}
-          >
-            Download PDF
-          </button>
-        ) : null}
+        <span className={exportedColumns ? 'pu-x-status' : undefined}>
+          <Chip tone={pillHue === 'warn' ? 'amber' : pillHue === 'green' ? 'green' : 'slate'}>{pill}</Chip>
+          {revisionLabel ? (
+            <span style={exportedColumns ? undefined : { marginLeft: 8 }}>
+              <Chip tone="slate">{revisionLabel}</Chip>
+            </span>
+          ) : null}
+          {payStatus === 'failed' ? (
+            <span style={exportedColumns ? undefined : { marginLeft: 8 }}>
+              <Chip tone="red">{PAY_DETAILS_NOT_LOADED_LABEL}</Chip>
+            </span>
+          ) : null}
+          {onDownload ? (
+            <button
+              type="button"
+              className="pu-x-pdf"
+              aria-label={`Download PDF of ${[displayName(member), periodLine, revisionLabel].filter(Boolean).join(', ')}`}
+              title="Download PDF"
+              onClick={(event) => {
+                event.stopPropagation()
+                onDownload()
+              }}
+            >
+              <ArrowDownTrayIcon width={14} height={14} aria-hidden="true" />
+              PDF
+            </button>
+          ) : null}
+        </span>
       </td>
     </tr>
   )
@@ -1241,7 +1266,10 @@ function ExportedTimesheetsList({
   onOpen,
   onDownload,
   payStatusOf,
+  lineManagerLabelOf,
 }: {
+  /** Review of #451: the line-manager label, built once per roster by the parent. */
+  lineManagerLabelOf?: (member: User) => string
   rows: ExportedTimesheetHistoryRow[]
   invoicing: OrgInvoicingSettings
   timeZone: string
@@ -1268,6 +1296,8 @@ function ExportedTimesheetsList({
   payStatusOf?: (member: User) => PayProfilesStatus
 }) {
   const currency = useOrganizationCurrency()
+  // 24 Nov (owner): each row's "Versions of this pay run" list starts collapsed; opened rows are kept for the session.
+  const [openVersionRows, setOpenVersionRows] = useState<ReadonlySet<string>>(() => expandedVersionRowsForSession())
   const observed = rows.map((row) => exportedRowPeriod(row, invoicing, timeZone))
   // Owner item 6 (17 Nov follow-up): the picker starts at the organisation's creation day (else the earliest exported
   // sheet); every run with an exported sheet is still listed.
@@ -1290,7 +1320,9 @@ function ExportedTimesheetsList({
       if (!needle) return true
       const name = `${row.user.firstName} ${row.user.surname} ${row.user.email}`.toLowerCase()
       const periodLine = formatPaymentPeriodLine(period.start, period.end, timeZone).toLowerCase()
-      return name.includes(needle) || periodLine.includes(needle)
+      // 24 Nov: the row shows the short form ("16–30 Nov 2026"); either form finds it.
+      const shortLine = formatCompactPayRun(period.start, period.end, timeZone).toLowerCase()
+      return name.includes(needle) || periodLine.includes(needle) || shortLine.includes(needle)
     })
     .sort((left, right) => {
       if (sort === 'firstName') return left.row.user.firstName.localeCompare(right.row.user.firstName)
@@ -1356,20 +1388,42 @@ function ExportedTimesheetsList({
           description={rows.length === 0 ? emptyDescription : 'Try another name, sort, or payment run.'}
         />
       ) : (
+        <div className="pu-x-list">
         <MemberTable viewer={viewer} exported>
           {filtered.map(({ row, period }) => {
             const summary = summaryFor(row.user, row.draft, period.start, period.end)
+            const earlier = row.earlierVersions ?? []
+            const listId = `exported-versions-${row.id}`
+            const versionsOpen = openVersionRows.has(row.id)
+            const versionsToggle =
+              earlier.length > 0 ? (
+                <button
+                  type="button"
+                  className="pu-x-versions"
+                  aria-expanded={versionsOpen}
+                  aria-controls={listId}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setOpenVersionRows((current) => toggleVersionRow(current, row.id))
+                  }}
+                >
+                  Versions · {earlier.length + 1}
+                  <ChevronRightIcon width={12} height={12} aria-hidden="true" data-open={versionsOpen ? 'true' : undefined} />
+                </button>
+              ) : null
             const main = (
               <MemberRow
                 key={row.id}
                 member={row.user}
                 users={users}
                 viewer={viewer}
+                lineManagerLabelOf={lineManagerLabelOf}
                 pill="Exported"
                 pillHue="lib"
                 summary={summary}
-                periodLine={formatPaymentPeriodLine(period.start, period.end, timeZone)}
+                periodLine={formatCompactPayRun(period.start, period.end, timeZone)}
                 exportedAt={row.draft.exportedAt}
+                versionsToggle={versionsToggle}
                 timeZone={timeZone}
                 onClick={() => onOpen(row, period)}
                 onDownload={onDownload ? () => onDownload(row, period) : undefined}
@@ -1378,7 +1432,6 @@ function ExportedTimesheetsList({
                 unresolved={isUnresolvedTimesheetPerson(row.user)}
               />
             )
-            const earlier = row.earlierVersions ?? []
             if (earlier.length === 0) return main
             // Rulebook 1.55.0 §8, owner item 23 (23 Nov): every exported version of this pay run, oldest first — Original,
             // REV 1, REV 2 — each with its invoice number, signed date, total and the difference from the version before,
@@ -1397,7 +1450,6 @@ function ExportedTimesheetsList({
             })
             // Re-review #342 item 1: a person whose pay is not known shows no figures (as the main row's "—").
             const payKnown = (payStatusOf ? payStatusOf(row.user) : 'ready') === 'ready'
-            const listId = `exported-versions-${row.id}`
             const downloadVersion = (documentId: string, revision: number) => {
               if (!onDownload) return
               if (documentId === (row.documentId ?? '') && revision === (row.draft.revision ?? 0)) return onDownload(row, period)
@@ -1407,12 +1459,14 @@ function ExportedTimesheetsList({
             return (
               <Fragment key={row.id}>
                 {main}
-                <tr>
-                  <td colSpan={12} className="pu-sub">
-                    <h3 id={listId} style={{ margin: '0 0 6px', fontWeight: 600, fontSize: 'inherit' }}>
+                <tr id={listId} hidden={!versionsOpen} className="pu-x-versions-row">
+                  {/* 24 Nov: the cell spans the whole row (`.pu-sub` is display: block, which dropped the colSpan). */}
+                  <td colSpan={12}>
+                    <div className="pu-sub">
+                    <h3 id={`${listId}-title`} style={{ margin: '0 0 6px', fontWeight: 600, fontSize: 'inherit' }}>
                       Versions of this pay run · {versions.length}
                     </h3>
-                    <ul aria-labelledby={listId} style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 4 }}>
+                    <ul aria-labelledby={`${listId}-title`} style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 4 }}>
                       {versions.map((version) => (
                         <li
                           key={`${version.documentId}|${version.revision}`}
@@ -1422,30 +1476,33 @@ function ExportedTimesheetsList({
                           {version.latest ? <span>Latest</span> : null}
                           {version.invoiceNumber ? <span>{version.invoiceNumber}</span> : null}
                           {version.signedAtMs != null ? (
-                            <span>Signed {formatStampInZone(new Date(version.signedAtMs), timeZone)}</span>
+                            <span>Signed {formatExportedStamp(new Date(version.signedAtMs), timeZone)}</span>
                           ) : null}
                           <b>{payKnown ? version.totalText : '—'}</b>
                           {payKnown && version.differenceText ? <span>{version.differenceText}</span> : null}
                           {onDownload ? (
                             <button
                               type="button"
-                              className="pu-rowbtn"
-                              style={{ fontWeight: 600, textDecoration: 'underline' }}
-                              aria-label={`Download PDF of ${version.label}`}
+                              className="pu-x-pdf"
+                              aria-label={`Download PDF of ${displayName(row.user)}, ${formatCompactPayRun(period.start, period.end, timeZone)}, ${version.label}`}
+                              title="Download PDF"
                               onClick={() => downloadVersion(version.documentId, version.revision)}
                             >
-                              Download PDF
+                              <ArrowDownTrayIcon width={14} height={14} aria-hidden="true" />
+                              PDF
                             </button>
                           ) : null}
                         </li>
                       ))}
                     </ul>
+                    </div>
                   </td>
                 </tr>
               </Fragment>
             )
           })}
         </MemberTable>
+        </div>
       )}
     </Card>
   )

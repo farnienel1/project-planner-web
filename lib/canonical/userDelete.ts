@@ -105,7 +105,8 @@ export function canDeleteUser(
 /** One write in the plan. `update` is a partial update; `deleteFields` are removed (dotted keys). */
 export type UserDeleteWrite =
   /**
-   * `optional` (1.82.0): the person's `memberNames` entry. Security rules older than 1.82.0 refuse an Operatives
+   * `optional` (1.82.0): the person's `memberNames` entry (and, 1.88.0, their `memberLineManagers` record, which only
+   * this organisation's admins may delete). Security rules older than 1.82.0 refuse an Operatives
    * manager's delete of it; the app then runs the same batch again without it (the delete never fails for it).
    */
   | { op: 'delete'; path: string; optional?: boolean }
@@ -169,7 +170,7 @@ export type UserDeleteInput = {
  * The ordered plan for deleting `user` from `orgId` (1.10.0). Nothing is written unless `canDeleteUser` passed.
  *  1. `account` (one batch, first): delete `users/{uid}`, `users/{uid}/private/taxIds`,
  *     `users/{uid}/orgMemberships/{orgId}`, `organizations/{orgId}/userEmails/{email}`, (1.82.0) the person's
- *     `organizations/{orgId}/memberNames/{uid}` entry, and remove
+ *     `organizations/{orgId}/memberNames/{uid}` entry, (1.88.0) its `memberLineManagers/{uid}` record, and remove
  *     `members.{uid}` from the organisation. A refusal here stops the delete with nothing changed.
  *  2. `bookings` (batches of `BOOKING_TOMBSTONE_BATCH_DELETE_LIMIT`): their labour bookings (every id,
  *     `bookingsToRemoveOnOperativeDelete`) and manager site bookings from today on, each with its tombstone
@@ -198,6 +199,12 @@ export function userDeleteWrites(input: UserDeleteInput): UserDeleteStep[] {
   // 1.82.0 §11 (review of #442): the person's own name in this organisation goes with them (a delete of a missing
   // entry is a no-op). Their past bookings keep a name through the former-person record (1.59.0), not this entry.
   account.push({ op: 'delete', path: `organizations/${org}/memberNames/${uid}`, optional: true })
+  // 1.88.0 §8: this organisation's line-manager record for them goes too (only this organisation's; a delete of a
+  // missing record is a no-op). Only this organisation's admins may delete it, so it is left out of an Operatives
+  // manager's plan (an admin can remove it later); optional, so older rules never stop the delete.
+  if (input.actorManagesOperatives !== true) {
+    account.push({ op: 'delete', path: `organizations/${org}/memberLineManagers/${uid}`, optional: true })
+  }
   if (input.listedInMembers !== false) account.push({ op: 'update', path: `organizations/${org}`, deleteFields: [`members.${uid}`] })
   // 1.59.0 §11: the former-person record goes with the users document's delete (the rules accept it only there).
   const formerWrite: UserDeleteWrite | null = input.formerPerson

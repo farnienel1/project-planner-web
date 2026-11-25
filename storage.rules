@@ -308,23 +308,21 @@ service firebase.storage {
       allow update: if !(folder in ['variations', 'variationEvidence']) && canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
     }
 
-    // Rulebook 1.30.0 §26: a person's line manager — listed on that person's users document, which names this
-    // organisation (never an operatives row) — the same test as Firestore callerLineManagesUser.
+    // Rulebook 1.30.0 §26: a person's line manager — the same test as Firestore callerLineManagesUser (never an
+    // operatives row).
     function callerLineManagesUser(orgId, uid) {
       let path = /databases/(default)/documents/users/$(uid);
+      let mp = /databases/(default)/documents/organizations/$(orgId)/memberLineManagers/$(uid);
+      // 1.88.0: home (or no) company: the users document; elsewhere this company's record (none: refused).
+      let o = firestore.get(path).data.get('organizationId', '');
+      let d = o == null || o is string && (o == '' || o.lower() == orgId.lower()) ? firestore.get(path).data
+            : firestore.exists(mp) ? firestore.get(mp).data : {};
       return signedIn() && uid != request.auth.uid
         // 1.30.0 review: the caller is active (as Firestore canAccessOrganization requires).
         && userDocExists() && userData().get('isActive', true) != false
         && firestore.exists(path)
-        && (
-          (firestore.get(path).data.get('organizationId', '') is string
-            && firestore.get(path).data.get('organizationId', '').lower() == orgId.lower())
-        )
-        && (
-          request.auth.uid in firestore.get(path).data.get('assignedManagerUserIds', [])
-          || firestore.get(path).data.get('assignedManagerUserId', '') == request.auth.uid
-        )
-        && firestore.get(path).data.get('hasNoLineManager', false) != true
+        && (request.auth.uid in d.get('assignedManagerUserIds', []) || d.get('assignedManagerUserId', '') == request.auth.uid)
+        && d.get('hasNoLineManager', false) != true
         // 1.31.0 (no rights carry over on a level change): an operative is nobody's line manager.
         && !(truthyBool(userData().get('operativeMode', false)) || userData().get('role', '') == 'operative');
     }
