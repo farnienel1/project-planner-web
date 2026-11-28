@@ -48,6 +48,22 @@ export function voNumberTaken(
   )
 }
 
+/**
+ * The number a new variation is saved with (owner 26 Nov): the field opens pre-filled with the rulebook's next number
+ * (`nextVariationNumber`, every variation of the job, deleted included) and can be overridden, tracker on or off. What
+ * is saved is exactly what the field shows, trimmed — never recomputed at save. A blank field, or a number another
+ * variation of the job holds or ever held (`variationNumberTaken`, deleted included), is refused.
+ */
+export function newVariationNumberChoice(
+  typed: string | null | undefined,
+  existing: Array<{ id?: string; voNumber: string }>
+): { voNumber: string; error: string | null } {
+  const voNumber = String(typed ?? '').trim()
+  if (!voNumber) return { voNumber, error: 'Enter a VO number.' }
+  if (voNumberTaken(existing, voNumber)) return { voNumber, error: `${voNumber} is already used on this job. Pick another number.` }
+  return { voNumber, error: null }
+}
+
 export function orderForTrackerEnable<T extends { voNumber: string; createdAt: Date }>(rows: T[]): T[] {
   return [...rows].sort((a, b) => {
     const diff = voNumeric(a.voNumber) - voNumeric(b.voNumber)
