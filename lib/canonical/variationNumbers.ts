@@ -31,24 +31,56 @@ export function formatVariationNumber(sequence: number, prefix: string = DEFAULT
   return `${prefix ?? DEFAULT_VARIATION_PREFIX}${String(safe).padStart(width, '0')}`
 }
 
+/** A number ever issued to a variation (1.96.0): its current `voNumber` and each `numberHistory` entry's from / to. */
+export type VariationIssuedNumberRow = {
+  voNumber?: string | null
+  numberHistory?: ReadonlyArray<{ from?: unknown; to?: unknown } | null | undefined> | null
+}
+
 /**
- * The next VO number for a job: one higher than the highest trailing number in `existingNumbers` (every variation of
- * the job, deleted included), with the tracker's `prefix` and `padding`.
+ * Every VO number ever issued on a job (1.96.0): each variation's current number and every number its renumber history
+ * (`numberHistory`) names, deleted variations included. A plain string is a current number.
+ */
+export function variationIssuedNumbers(
+  rows: ReadonlyArray<string | VariationIssuedNumberRow | null | undefined> | null | undefined
+): string[] {
+  const out: string[] = []
+  for (const row of rows || []) {
+    if (row == null) continue
+    if (typeof row === 'string') {
+      out.push(row)
+      continue
+    }
+    if (row.voNumber != null) out.push(String(row.voNumber))
+    for (const entry of row.numberHistory || []) {
+      if (!entry) continue
+      if (entry.from != null) out.push(String(entry.from))
+      if (entry.to != null) out.push(String(entry.to))
+    }
+  }
+  return out
+}
+
+/**
+ * The next VO number for a job: one higher than the highest trailing number ever issued on it, with the tracker's
+ * `prefix` and `padding`. `existing` is every variation of the job, deleted included — current numbers as strings, or
+ * rows with their `numberHistory` (1.96.0: a number freed by a renumber, VO-005 renumbered to VO-003, is never issued
+ * again; `variationRenumberPlan` already counted it).
  */
 export function nextVariationNumber(
-  existingNumbers: ReadonlyArray<string | null | undefined> | null | undefined,
+  existing: ReadonlyArray<string | VariationIssuedNumberRow | null | undefined> | null | undefined,
   prefix: string = DEFAULT_VARIATION_PREFIX,
   padding: number = DEFAULT_VARIATION_PADDING
 ): string {
-  const max = (existingNumbers || []).reduce<number>((highest, value) => Math.max(highest, variationNumberValue(value)), 0)
+  const max = variationIssuedNumbers(existing).reduce<number>((highest, value) => Math.max(highest, variationNumberValue(value)), 0)
   return formatVariationNumber(max + 1, prefix, padding)
 }
 
-export type VariationNumberRow = { id?: string | null; voNumber?: string | null; isDeleted?: boolean | null }
-
 /**
  * Whether `voNumber` is already used on the job by a variation other than `exceptId` (ids compared without case).
- * Deleted variations count. A blank number is never taken.
+ * Deleted variations count. A blank number is never taken. 1.96.0: a number another variation once had (its
+ * `numberHistory`) is taken too — a number ever issued is never reused; the variation being edited (`exceptId`) may
+ * keep its own.
  */
 export function variationNumberTaken(
   existing: ReadonlyArray<VariationNumberRow> | null | undefined,
@@ -61,6 +93,6 @@ export function variationNumberTaken(
   return (existing || []).some((row) => {
     if (!row) return false
     if (skip && row.id != null && normalizeDocumentId(row.id) === skip) return false
-    return String(row.voNumber ?? '').trim().toLowerCase() === needle
+    return variationIssuedNumbers([row]).some((value) => value.trim().toLowerCase() === needle)
   })
 }

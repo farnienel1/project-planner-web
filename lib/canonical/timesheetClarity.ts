@@ -537,7 +537,7 @@ export type TimesheetNextStep = {
   generateInvoice: boolean
 }
 
-export const TIMESHEET_NEXT_STEP_INVOICE_TEXT = 'Signed off — next: generate your invoice'
+export const TIMESHEET_NEXT_STEP_INVOICE_TEXT = 'Signed off — next: generate your timesheet'
 export const TIMESHEET_NEXT_STEP_EXPORTED_TEXT = 'Exported — no further changes (corrections go into a revision)'
 /**
  * Review of 1.77.0 (fix 4): who signs off when the person has no active line manager (and is not self-signed) — the
@@ -545,7 +545,20 @@ export const TIMESHEET_NEXT_STEP_EXPORTED_TEXT = 'Exported — no further change
  */
 export const TIMESHEET_NEXT_STEP_ADMIN_SIGNER = 'an admin'
 /** Point 5: the line on the person's signed-off sheet above Generate invoice. */
-export const TIMESHEET_GENERATE_INVOICE_PROMPT = 'Next: generate your invoice'
+export const TIMESHEET_GENERATE_INVOICE_PROMPT = 'Next: generate your timesheet'
+/**
+ * 1.96.0 (owner 26 Nov, CIS): the person's generated document is a timesheet, not an invoice — wording only. Both apps
+ * label the button, the done dialog, the save / share actions and the document itself with these (the number keeps its
+ * `TS-…` form from `timesheetInvoiceNumber`; stored fields such as `invoiceGeneratedAt` keep their names).
+ */
+export const TIMESHEET_GENERATE_LABEL = 'Generate Timesheet'
+export const TIMESHEET_GENERATED_TITLE = 'Timesheet generated successfully'
+export const TIMESHEET_DOWNLOAD_LABEL = 'Download timesheet'
+export const TIMESHEET_SHARE_LABEL = 'Share timesheet'
+/** The heading at the top of the generated PDF. */
+export const TIMESHEET_DOCUMENT_TITLE = 'Timesheet'
+export const TIMESHEET_DOCUMENT_TOTAL_LABEL = 'Total timesheet amount'
+export const TIMESHEET_DOCUMENT_NUMBER_LABEL = 'Timesheet no.'
 
 /**
  * Rulebook 1.77.0 §8 (point 2): one line on every timesheet saying whose turn it is and what happens next, the same on web

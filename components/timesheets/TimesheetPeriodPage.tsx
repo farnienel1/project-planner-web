@@ -12,6 +12,7 @@ import { lineManagerRosterRows, soleLineManagerName } from '@/lib/timesheets/mem
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Booking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
+import { userCanWriteBooking } from '@/lib/access/bookingAccess'
 import {
   capitalizeDay,
   DEFAULT_MY_SCHEDULE,
@@ -52,7 +53,7 @@ import {
   timesheetPersonIds,
 } from '@/lib/timesheets/timesheetBookingChanges'
 import { BookingsChangedWarning } from '@/components/timesheets/BookingsChangedWarning'
-import { dayKeyInOrganizationZone, organizationOvertimeMultiplier, signedTimesheetActions, SIGNED_TIMESHEET_CHANGED_MESSAGE } from '@/lib/canonical'
+import { dayKeyInOrganizationZone, TIMESHEET_DOCUMENT_TITLE, TIMESHEET_DOWNLOAD_LABEL, TIMESHEET_GENERATE_LABEL, TIMESHEET_GENERATED_TITLE, TIMESHEET_SHARE_LABEL, organizationOvertimeMultiplier, signedTimesheetActions, SIGNED_TIMESHEET_CHANGED_MESSAGE } from '@/lib/canonical'
 import { staffAccountRole } from '@/lib/permissions'
 import {
   SENSITIVE_EXPORT_OPTION_LABEL,
@@ -571,7 +572,11 @@ export function TimesheetPeriodPage({
   // Rulebook 1.54.0: only late extras wait (no booking changed) — the signatures and the snapshot's labour stand.
   const lateOnlyWaiting = bookingChange.reopened && bookingChange.bookingsChanged === false
   const bookingsReopened = bookingChange.reopened && !lateOnlyWaiting
-  const canCounterSignAgain = bookingChange.waitingFor === 'lineManager'
+  // Timesheet flow review (28 Nov), as iOS `lateExtrasOnly`: when only late extras wait (no booking change, no signed
+  // price work / expense changed), the signed lines are not reviewed again and there is no sign-off — the late extras
+  // keep their own ✓ ✕ ⚙ (rulebook §8, 1.54.0: no counter-signature is needed).
+  const lateExtrasOnlyWaiting = lateOnlyWaiting && bookingChange.signedEntriesChanged !== true
+  const canCounterSignAgain = bookingChange.waitingFor === 'lineManager' && !lateExtrasOnlyWaiting
   const canManagerReview = (() => {
     if (mode !== 'review' || !viewer || !viewerIsReviewer) return false
     if (waitingForPerson) return false
@@ -580,6 +585,14 @@ export function TimesheetPeriodPage({
     if (!timesheetLineReviewActionsAllowed({ exportedAt: draft.exportedAt ?? null })) return false
     return needsCounterSign && (!draft.managerSignedAt || canCounterSignAgain) && Boolean(draft.operativeSignedAt)
   })()
+  const canReviewLateExtras =
+    canManagerReview ||
+    (mode === 'review' &&
+      Boolean(viewer) &&
+      viewerIsReviewer &&
+      lateExtrasOnlyWaiting &&
+      Boolean(draft.operativeSignedAt) &&
+      timesheetLineReviewActionsAllowed({ exportedAt: draft.exportedAt ?? null }))
   const managerHasSigned = Boolean(draft.managerSignedAt)
   // Rulebook 1.76.0 (owner decisions 23 Nov, A1 / B1): what "Make changes" does on this sheet for this viewer.
   const makeChangesSheet = {
@@ -1340,6 +1353,32 @@ export function TimesheetPeriodPage({
       .finally(() => setBusy(false))
   }
 
+  // Rulebook 1.96.0: may the viewer book this line's booking again (`canWriteBooking`: admins, the job's managers)? A
+  // person's line manager may delete it from the review (§16) but not re-create it, so "Cancel changes" cannot undo it.
+  const viewerCanRebookLine = (line: TimesheetPayrollLineItem): boolean => {
+    const ref = timesheetLineBooking(line)
+    if (!ref || !viewer) return false
+    const key = ref.bookingId.trim().toLowerCase()
+    const jobs = mergeProjectsAndSmallWorks(projects, smallWorks)
+    const findJob = (id: string | null | undefined) => {
+      const want = (id ?? '').trim().toLowerCase()
+      return want ? jobs.find((job) => job.id.trim().toLowerCase() === want) ?? null : null
+    }
+    if (ref.collection === 'managerSiteBookings') {
+      const doc = managerSiteBookings.find((row) => row.id.trim().toLowerCase() === key)
+      if (!doc) return userCanWriteBooking(viewer, { collection: 'bookings', projectId: null }, null, [])
+      return userCanWriteBooking(
+        viewer,
+        { collection: 'managerSiteBookings', userId: doc.userId, locationType: doc.locationType, locationId: doc.locationId ?? null },
+        doc.locationId ? findJob(doc.locationId) : null,
+        [],
+      )
+    }
+    const doc = bookings.find((row) => row.id.trim().toLowerCase() === key)
+    const projectId = doc?.projectId ?? null
+    return userCanWriteBooking(viewer, { collection: 'bookings', projectId }, findJob(projectId), [])
+  }
+
   // Rulebook 1.72.0 (owner decision 23 Nov, B): ✕ deletes the booking with its tombstone (after the confirm).
   const confirmRemoveBooking = () => {
     const row = removingLine
@@ -1720,15 +1759,15 @@ export function TimesheetPeriodPage({
       void appendTimesheetEvidencePages(pdf, pages, {
         readFile: storedFileBytes,
         currencyCode: currency,
-        footer: [organization.name || 'Organisation', 'Invoice', subject.name].filter(Boolean).join(' · '),
+        footer: [organization.name || 'Organisation', TIMESHEET_DOCUMENT_TITLE, subject.name].filter(Boolean).join(' · '),
       })
         .then(({ bytes, notDrawn }) => {
           setInvoicePdf(bytes)
           setInvoiceEvidenceNote(
-            notDrawn > 0 ? `${notDrawn} piece(s) of evidence could not be shown in the PDF and are listed instead.` : `${pages.length} evidence page(s) added after the invoice.`
+            notDrawn > 0 ? `${notDrawn} piece(s) of evidence could not be shown in the PDF and are listed instead.` : `${pages.length} evidence page(s) added after the timesheet.`
           )
         })
-        .catch(() => setInvoiceEvidenceNote('The evidence pages could not be added. The invoice is ready without them.'))
+        .catch(() => setInvoiceEvidenceNote('The evidence pages could not be added. The timesheet is ready without them.'))
         .finally(() => setInvoiceEvidenceBusy(false))
     }
   }
@@ -1919,7 +1958,7 @@ export function TimesheetPeriodPage({
         invoiceButton={
           mode === 'mine' && fullyApproved ? (
             <PuButton variant="green" disabled={busy || !payInputs.ready || snapshotBeingRebuilt} onClick={() => void handleInvoice()}>
-              Generate Invoice
+              {TIMESHEET_GENERATE_LABEL}
             </PuButton>
           ) : null
         }
@@ -2243,6 +2282,7 @@ export function TimesheetPeriodPage({
             <ReviewExtras
               draft={draft}
               canReview={canManagerReview}
+              canReviewLate={canReviewLateExtras}
               // Rulebook 1.76.0 (owner answer 23 Nov, b): in Make changes mode the line manager may also remove (✕) or
               // change (⚙) the signed price work and expenses; there is nothing to approve (✓).
               canChangeSigned={makingChanges && !canManagerReview}
@@ -2366,14 +2406,14 @@ export function TimesheetPeriodPage({
                   ) : null}
                   {/* 17 Nov follow-up: never an invoice from a snapshot frozen empty — the rebuild saves it first. */}
                   <PuButton variant="green" block disabled={busy || !payInputs.ready || snapshotBeingRebuilt} onClick={() => void handleInvoice()}>
-                    Generate Invoice
+                    {TIMESHEET_GENERATE_LABEL}
                   </PuButton>
                   {snapshotBeingRebuilt ? <p className="pu-sub" style={{ textAlign: 'center' }}>{snapshotRebuiltNote}</p> : null}
                 </>
               ) : (
                 <>
                   <PuButton block disabled aria-disabled="true">
-                    Generate Invoice
+                    {TIMESHEET_GENERATE_LABEL}
                   </PuButton>
                   <p className="pu-sub" style={{ textAlign: 'center' }}>
                     {lateOnlyWaiting && bookingChange.signedEntriesChanged === true
@@ -2382,15 +2422,15 @@ export function TimesheetPeriodPage({
                       ? TIMESHEET_LATE_EXTRA_WAITING_LABEL
                       : bookingChange.reopened
                       ? waitingForPerson
-                        ? 'Bookings changed since you signed — review and sign again to unlock Generate Invoice.'
-                        : 'Timesheet pending manager signature — Generate Invoice unlocks after your line manager counter-signs again.'
+                        ? 'Bookings changed since you signed — review and sign again to unlock Generate Timesheet.'
+                        : 'Timesheet pending manager signature — Generate Timesheet unlocks after your line manager counter-signs again.'
                       : !draft.operativeSignedAt
                       ? needsCounterSign
-                        ? 'Add any expenses or price work, then sign your timesheet. Your line manager will counter-sign before you can invoice.'
-                        : 'Add any expenses or price work, then confirm and approve your timesheet to unlock Generate Invoice.'
+                        ? 'Add any expenses or price work, then sign your timesheet. Your line manager will counter-sign before you can generate it.'
+                        : 'Add any expenses or price work, then confirm and approve your timesheet to unlock Generate Timesheet.'
                       : needsCounterSign
-                        ? 'Timesheet pending manager signature — Generate Invoice unlocks after your line manager counter-signs.'
-                        : 'Re-sign your timesheet to generate an invoice.'}
+                        ? 'Timesheet pending manager signature — Generate Timesheet unlocks after your line manager counter-signs.'
+                        : 'Re-sign your timesheet to generate it.'}
                   </p>
                 </>
               )}
@@ -2561,6 +2601,7 @@ export function TimesheetPeriodPage({
             .filter(Boolean)
             .join(' · '),
           overtimeLine: removingLine.isOvertimeLine,
+          viewerCanRebook: viewerCanRebookLine(removingLine),
         })
         return (
           <Modal
@@ -2581,6 +2622,7 @@ export function TimesheetPeriodPage({
             <p className="pu-sub" style={{ fontSize: 14 }}>{warning.message}</p>
             {warning.overtimeNote ? <Note tone="amber">{warning.overtimeNote}</Note> : null}
             <p className="pu-sub" style={{ fontSize: 14 }}>{warning.undoNote}</p>
+            {warning.rebookNote ? <Note tone="amber">{warning.rebookNote}</Note> : null}
           </Modal>
         )
       })() : null}
@@ -2626,7 +2668,7 @@ export function TimesheetPeriodPage({
         <Modal
           size="sm"
           labelledBy="ts-utr-title"
-          title="Before you invoice"
+          title="Before you generate your timesheet"
           tile={<IconTile tone="amber" size="sm"><WarnIcon /></IconTile>}
           footer={
             <>
@@ -2653,7 +2695,7 @@ export function TimesheetPeriodPage({
         <Modal
           size="sm"
           labelledBy="ts-invoice-done-title"
-          title="Invoice generated successfully"
+          title={TIMESHEET_GENERATED_TITLE}
           tile={<IconTile tone="green" size="sm"><CheckCircleIcon /></IconTile>}
           headerEnd={
             <PuButton
@@ -2671,8 +2713,8 @@ export function TimesheetPeriodPage({
               <PdfFileButtons
                 bytes={invoicePdf}
                 fileName={timesheetInvoicePdfFileName(subjectForUser(subjectUser, operatives).name)}
-                downloadLabel="Download invoice"
-                shareLabel="Share invoice"
+                downloadLabel={TIMESHEET_DOWNLOAD_LABEL}
+                shareLabel={TIMESHEET_SHARE_LABEL}
                 busyLabel="Adding evidence…"
                 disabled={invoiceEvidenceBusy}
               />
@@ -2683,7 +2725,7 @@ export function TimesheetPeriodPage({
                 disabled={invoiceEvidenceBusy}
                 onClick={() => printTimesheetInvoice(invoiceHtml)}
               >
-                {invoiceEvidenceBusy ? 'Adding evidence…' : 'Share invoice'}
+                {invoiceEvidenceBusy ? 'Adding evidence…' : TIMESHEET_SHARE_LABEL}
               </PuButton>
             )
           }
@@ -3094,6 +3136,7 @@ function ExtraList({
 function ReviewExtras({
   draft,
   canReview,
+  canReviewLate,
   canChangeSigned = false,
   timeZone,
   onSave,
@@ -3101,6 +3144,8 @@ function ReviewExtras({
 }: {
   draft: TimesheetDraft
   canReview: boolean
+  /** Late extras' own ✓ ✕ ⚙ — also while only late extras wait (the signed lines are not reviewed then). */
+  canReviewLate?: boolean
   /** 1.76.0: Make changes on a signed-off sheet — ✕ / ⚙ on the signed entries, no ✓ (late extras unchanged). */
   canChangeSigned?: boolean
   timeZone: string
@@ -3118,11 +3163,12 @@ function ReviewExtras({
   // Rulebook 1.54.0 (third review of #337): an exported sheet's late extras are frozen, and an ignored one (its id is a
   // signed entry's) is never decided (`timesheetLateExtraReviewable`).
   const lateExported = draftStoredExported(draft)
+  const lateCanReview = canReviewLate ?? canReview
   if (draft.expenseEntries.length === 0 && draft.priceWorkEntries.length === 0 && lateExtras.length === 0) return null
   return (
     <>
       {lateExtras.length > 0 ? (
-        <Card title={canReview && !lateExported ? 'Added after sign-off — your decision' : 'Added after sign-off'}>
+        <Card title={lateCanReview && !lateExported ? 'Added after sign-off — your decision' : 'Added after sign-off'}>
           {!lateExported ? (
             <div className="pu-card-b" style={{ paddingBottom: 0 }}>
               <Note tone="amber">{TIMESHEET_LATE_EXTRAS_REVIEWER_MESSAGE}</Note>
@@ -3159,7 +3205,7 @@ function ReviewExtras({
                       <LiveReviewExtraAmount amount={entry.amount} decision={entry.managerDecision} revisedAmount={entry.managerRevisedAmount} />
                     )}
                   </span>
-                  {canReview && reviewable ? (
+                  {lateCanReview && reviewable ? (
                     <TickCross
                       decision={entry.managerDecision}
                       undecided={entry.managerDecision === 'pending'}

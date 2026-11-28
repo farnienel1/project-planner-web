@@ -1,10 +1,11 @@
 /**
  * iOS parity source: Views/InvoicingView.swift InvoicePDFBuilder.makePDF
- * Produces a real PDF 1.4 document (A4) so Generate Invoice and manager export
+ * Produces a real PDF 1.4 document (A4) so Generate Timesheet and manager export
  * download .pdf files the same way iOS does.
  */
 import { formatCurrency } from '@/lib/weekly-report/weeklyReportPayroll'
 import { currencySymbol, normalizeCurrencyCode } from '@/lib/canonical/money'
+import { TIMESHEET_DOCUMENT_NUMBER_LABEL, TIMESHEET_DOCUMENT_TITLE, TIMESHEET_DOCUMENT_TOTAL_LABEL } from '@/lib/canonical/timesheetClarity'
 import { currentOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
 import { formatPaymentPeriodLine } from '@/lib/timesheets/paymentRunCopy'
 import { formatStampInZone } from '@/lib/orgTime/zoneTime'
@@ -132,7 +133,7 @@ export function pdfMoneyText(value: string, currencyCode: string): string {
 
 export function timesheetInvoicePdfFileName(userName: string, generatedAt: Date = new Date()): string {
   const cleaned = userName.replace(/[/\\:?%*|<>"]/g, '-').replace(/\s+/g, '_').trim() || 'Timesheet'
-  return `Invoice-${cleaned}-${Math.floor(generatedAt.getTime() / 1000)}.pdf`
+  return `Timesheet-${cleaned}-${Math.floor(generatedAt.getTime() / 1000)}.pdf`
 }
 
 export function timesheetExportPdfFileName(userName: string, paymentRunStamp: string): string {
@@ -142,7 +143,7 @@ export function timesheetExportPdfFileName(userName: string, paymentRunStamp: st
 export function buildTimesheetInvoicePdf(input: InvoicePdfContext): Uint8Array {
   const timeZone = input.timeZone || organizationZoneOr()
   const generatedAt = input.generatedAt || new Date()
-  const title = input.documentTitle || 'Invoice'
+  const title = input.documentTitle || TIMESHEET_DOCUMENT_TITLE
   const period = formatPaymentPeriodLine(input.weekStart, input.weekEnd, timeZone)
   const generated = formatStampInZone(generatedAt, timeZone)
   const currencyCode = input.currencyCode || currentOrganizationCurrency()
@@ -198,10 +199,10 @@ export function buildTimesheetInvoicePdf(input: InvoicePdfContext): Uint8Array {
   stream += meta('Name', input.subject.name, MARGIN + col + 14, y)
   y += 40
   stream += meta('Generated', generated, MARGIN, y)
-  stream += meta(input.periodMetaLabel || 'INVOICE PERIOD', period, MARGIN + col + 14, y)
+  stream += meta(input.periodMetaLabel || 'TIMESHEET PERIOD', period, MARGIN + col + 14, y)
   y += 40
   if (input.invoiceNumber || input.revisionNote) {
-    if (input.invoiceNumber) stream += meta('Invoice no.', input.invoiceNumber, MARGIN, y)
+    if (input.invoiceNumber) stream += meta(TIMESHEET_DOCUMENT_NUMBER_LABEL, input.invoiceNumber, MARGIN, y)
     if (input.revisionNote) stream += meta('Revision', money(input.revisionNote), MARGIN + col + 14, y)
     y += 40
   }
@@ -222,7 +223,7 @@ export function buildTimesheetInvoicePdf(input: InvoicePdfContext): Uint8Array {
   if (lines.length === 0) {
     y += 12
     stream += fill(0.3, 0.3, 0.3)
-    stream += text(input.emptyStateMessage || 'No work entries were found for this invoice period.', MARGIN, y + 12, 11)
+    stream += text(input.emptyStateMessage || 'No work entries were found for this timesheet period.', MARGIN, y + 12, 11)
     y += 24
   } else {
     for (const line of lines) {
@@ -273,7 +274,7 @@ export function buildTimesheetInvoicePdf(input: InvoicePdfContext): Uint8Array {
   stream += rgbOf(INVOICE_PDF_STYLE.totalBox)
   stream += rect(MARGIN, top(y + 46), tableWidth, 46, true)
   stream += fill(1, 1, 1)
-  stream += text(input.totalLabel || 'Total invoice amount', MARGIN + 16, y + 28, 12, true)
+  stream += text(input.totalLabel || TIMESHEET_DOCUMENT_TOTAL_LABEL, MARGIN + 16, y + 28, 12, true)
   stream += text(totalText, MARGIN + tableWidth - 90, y + 28, 14, true, 74)
   y += 58
 

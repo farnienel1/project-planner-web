@@ -792,6 +792,7 @@ export {
   TIMESHEET_REVIEW_DELETE_BOOKING_MESSAGE,
   TIMESHEET_REVIEW_DELETE_OVERTIME_NOTE,
   TIMESHEET_REVIEW_DELETE_BOOKING_UNDO_NOTE,
+  TIMESHEET_REVIEW_DELETE_NOT_JOB_MANAGER_NOTE,
   TIMESHEET_REVIEW_BOOKING_REFUSED_MESSAGE,
   TIMESHEET_REVIEW_BOOKING_MISSING_MESSAGE,
   TIMESHEET_REVIEW_BOOKING_SENT_BACK_MESSAGE,
@@ -995,6 +996,7 @@ export {
 } from './scheduleSources'
 export {
   OFFLINE_ACTIONS,
+  HEALTH_SAFETY_SIGNED_OFFLINE_LABEL,
   OFFLINE_AVAILABILITIES,
   OFFLINE_LAST_UPDATED_PREFIX,
   OFFLINE_ONLINE_ONLY_MESSAGE,
@@ -1779,10 +1781,11 @@ export {
   DEFAULT_VARIATION_PREFIX,
   formatVariationNumber,
   nextVariationNumber,
+  variationIssuedNumbers,
   variationNumberTaken,
   variationNumberValue,
 } from './variationNumbers'
-export type { VariationNumberRow } from './variationNumbers'
+export type { VariationIssuedNumberRow, VariationNumberRow } from './variationNumbers'
 export { bookedWorkedHours, managerCoverageHours } from './managerCoverage'
 export type { CoverageBooking, ManagerCoverageHours } from './managerCoverage'
 
@@ -2552,6 +2555,13 @@ export {
   TIMESHEET_NEXT_STEP_INVOICE_TEXT,
   TIMESHEET_NEXT_STEP_EXPORTED_TEXT,
   TIMESHEET_GENERATE_INVOICE_PROMPT,
+  TIMESHEET_GENERATE_LABEL,
+  TIMESHEET_GENERATED_TITLE,
+  TIMESHEET_DOWNLOAD_LABEL,
+  TIMESHEET_SHARE_LABEL,
+  TIMESHEET_DOCUMENT_TITLE,
+  TIMESHEET_DOCUMENT_TOTAL_LABEL,
+  TIMESHEET_DOCUMENT_NUMBER_LABEL,
   timesheetCorrectionOption,
   TIMESHEET_CORRECTION_LABEL,
   TIMESHEET_CORRECTION_REVISION_BOOKINGS_HELP,

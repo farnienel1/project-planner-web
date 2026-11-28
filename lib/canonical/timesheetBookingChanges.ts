@@ -638,7 +638,7 @@ export function timesheetSignedNoticeText(input: {
 }
 
 /** 1.77.0 §13 (point 5): the last sentence of the counter-signature notice. */
-export const TIMESHEET_SIGNED_NOTICE_INVOICE_NEXT = 'Next: generate your invoice.'
+export const TIMESHEET_SIGNED_NOTICE_INVOICE_NEXT = 'Next: generate your timesheet.'
 
 /**
  * Rulebook 1.74.0 §8 (owner decision 23 Nov, reverses part of 1.72.0): what a reviewer's ⚙ / ✕ from THIS sheet's review
