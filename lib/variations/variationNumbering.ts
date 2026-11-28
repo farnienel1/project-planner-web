@@ -14,18 +14,38 @@ export function formatVoNumber(sequence: number, prefix = 'VO-', padding = 3): s
   return formatVariationNumber(sequence, prefix, padding)
 }
 
-/** Rulebook 1.22.0 (§22): `nextVariationNumber` over every variation of the job, deleted included. */
+type NumberHistory = ReadonlyArray<{ from?: unknown; to?: unknown }> | null
+
+/**
+ * Rulebook 1.22.0 (§22): `nextVariationNumber` over every variation of the job, deleted included; 1.96.0 with each
+ * variation's `numberHistory`, so a number freed by a renumber is never issued again.
+ */
 export function nextFreeVoNumber(
-  existing: Array<{ voNumber: string }>,
+  existing: Array<{ voNumber: string; numberHistory?: NumberHistory }>,
   prefix = 'VO-',
   padding = 3
 ): string {
-  return nextVariationNumber(existing.map((row) => row.voNumber), prefix, padding)
+  return nextVariationNumber(
+    existing.map((row) => ({ voNumber: row.voNumber, numberHistory: row.numberHistory ?? null })),
+    prefix,
+    padding
+  )
 }
 
-/** Rulebook 1.22.0 (§22): `variationNumberTaken` — deleted variations count, so a number is never reused. */
-export function voNumberTaken(existing: Array<{ id?: string; voNumber: string }>, voNumber: string, exceptId?: string): boolean {
-  return variationNumberTaken(existing, voNumber, exceptId ?? null)
+/**
+ * Rulebook 1.22.0 (§22): `variationNumberTaken` — deleted variations count, and (1.96.0) every number in another
+ * variation's `numberHistory`, so a number is never reused.
+ */
+export function voNumberTaken(
+  existing: Array<{ id?: string; voNumber: string; numberHistory?: NumberHistory }>,
+  voNumber: string,
+  exceptId?: string
+): boolean {
+  return variationNumberTaken(
+    existing.map((row) => ({ id: row.id ?? null, voNumber: row.voNumber, numberHistory: row.numberHistory ?? null })),
+    voNumber,
+    exceptId ?? null
+  )
 }
 
 /**
@@ -36,7 +56,7 @@ export function voNumberTaken(existing: Array<{ id?: string; voNumber: string }>
  */
 export function newVariationNumberChoice(
   typed: string | null | undefined,
-  existing: Array<{ id?: string; voNumber: string }>
+  existing: Array<{ id?: string; voNumber: string; numberHistory?: NumberHistory }>
 ): { voNumber: string; error: string | null } {
   const voNumber = String(typed ?? '').trim()
   if (!voNumber) return { voNumber, error: 'Enter a VO number.' }

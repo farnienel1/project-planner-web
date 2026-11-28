@@ -11,7 +11,7 @@ import { parseTimesheetStatusFields, timesheetDocumentSubjectId } from './timesh
 
 export const TIMESHEETS_HALF_SIGNED_HEADING = 'Timesheets half signed'
 export const TIMESHEETS_HALF_SIGNED_HELP =
-  'The line manager signed these timesheets but the person’s own signature is missing (an older app cleared it when price work or expenses were added). They show as not signed and cannot be invoiced or exported. Ask the person to open the timesheet and sign it again — their line manager’s signature is kept.'
+  'The line manager signed these timesheets but the person’s own signature is missing (an older app cleared it when price work or expenses were added). They show as not signed and cannot be generated or exported. Ask the person to open the timesheet and sign it again — their line manager’s signature is kept.'
 export const TIMESHEETS_HALF_SIGNED_NONE = 'No timesheet is missing the person’s signature.'
 
 export type TimesheetHalfSignedRow = {

@@ -869,7 +869,7 @@ function MineTimesheetsList({
         </Card>
       ) : null}
       {pastVisible.length > 0 ? (
-        <Card title="Past timesheets" subtitle="View breakdown, signatures, and generate invoice again.">
+        <Card title="Past timesheets" subtitle="View breakdown, signatures, and generate the timesheet again.">
           <DataTable
             columns={[
               { key: 'period', label: 'Pay run period' },

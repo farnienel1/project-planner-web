@@ -5490,9 +5490,9 @@ test('1.2.0 D9: a not-found edit replay is final; the old call shape is unchange
 
 test('1.2.0 D1 + D7 + D8 + D10 (1.33.0): the offline table matches iOS OfflinePolicy ids; delete is queued, no cancel', () => {
   const ids = Object.keys(rulebook.OFFLINE_ACTIONS)
-  assert.equal(ids.length, 32) // 1.41.0: booking.replace (1.86.0: queued offline)
+  assert.equal(ids.length, 33) // 1.41.0: booking.replace (1.86.0: queued offline); 1.96.0: health_safety.sign_toolbox_talk
   const allowed = ids.filter((id) => rulebook.offlineAvailability(id) === 'allowedOffline')
-  assert.deepEqual(allowed, ['booking.create', 'booking.edit', 'booking.delete', 'booking.replace', 'annual_leave.request', 'profile.own_fields', 'notifications.own_toggles'])
+  assert.deepEqual(allowed, ['booking.create', 'booking.edit', 'booking.delete', 'booking.replace', 'annual_leave.request', 'profile.own_fields', 'notifications.own_toggles', 'health_safety.sign_toolbox_talk'])
   assert.equal(rulebook.offlineAvailability('booking.delete'), 'allowedOffline')
   assert.equal(rulebook.offlineAvailability('booking.delete_subcontractor'), 'onlineOnly')
   assert.equal(rulebook.offlineAvailability('booking.replace'), 'allowedOffline')
@@ -11893,7 +11893,7 @@ test('1.28.0 a PAYE admin needs only Annual Leave Management; Timesheet self-sig
   assert.equal(se.editable, true)
   assert.equal(se.note, null)
   assert.equal(se.label, 'Timesheet self-sign')
-  assert.equal(se.help, "Sign your own timesheet and generate the invoice without a line manager's signature.")
+  assert.equal(se.help, "Sign your own timesheet and generate it without a line manager's signature.")
 })
 
 test('1.28.0 a demoted admin: Timesheet self-sign reads off, is kept underneath, and a line manager is required', () => {
@@ -19234,15 +19234,15 @@ test('1.74.0 (review of #425): an all-overtime booking with no standard row sort
 // MARK: - 1.74.0 owner answer 23 Nov: the person is told when the line manager changed their sheet and signed it off
 
 test('1.74.0: the counter-signature notice says the timesheet was updated when the line manager changed it', () => {
-  assert.deepEqual(R112.timesheetSignedNoticeText({ signedByName: 'Pat Lee' }), { title: 'Timesheet signed', message: 'Pat Lee signed your timesheet. Next: generate your invoice.' })
+  assert.deepEqual(R112.timesheetSignedNoticeText({ signedByName: 'Pat Lee' }), { title: 'Timesheet signed', message: 'Pat Lee signed your timesheet. Next: generate your timesheet.' })
   assert.deepEqual(R112.timesheetSignedNoticeText({ signedByName: 'Pat Lee', changedByReviewer: true }), {
     title: 'Your timesheet was updated and signed off',
-    message: 'Pat Lee changed your timesheet and signed it off. Open it to check the changes. Next: generate your invoice.',
+    message: 'Pat Lee changed your timesheet and signed it off. Open it to check the changes. Next: generate your timesheet.',
   })
   // The signer may be an admin, so the wording never assumes "line manager"; without a name it names nobody.
   assert.deepEqual(R112.timesheetSignedNoticeText({ changedByReviewer: true }), {
     title: 'Your timesheet was updated and signed off',
-    message: 'Your timesheet was changed and signed off. Open it to check the changes. Next: generate your invoice.',
+    message: 'Your timesheet was changed and signed off. Open it to check the changes. Next: generate your timesheet.',
   })
   const rec = r174Record(reopen147Doc('b1', { projectId: 'j1', workEndTime: '19:00' }))
   assert.equal(R112.timesheetSheetChangedByReviewer(r174Sheet({ reviewerBookingEdits: { [rec.key]: rec.value } })), true)
@@ -19655,7 +19655,7 @@ test('1.76.0 (b) review of #427: no clock test — what the entry pays against i
   }
   assert.equal(R112.timesheetSignedEntriesChangedSinceSignOff(exported), false)
   assert.equal(r176bChange(exported), null)
-  assert.equal(R112.TIMESHEET_SIGNED_ENTRIES_CHANGED_PERSON_MESSAGE, 'Your line manager changed your price work or expenses — Generate Invoice unlocks after they sign it off again.')
+  assert.equal(R112.TIMESHEET_SIGNED_ENTRIES_CHANGED_PERSON_MESSAGE, 'Your line manager changed your price work or expenses — Generate Timesheet unlocks after they sign it off again.')
 })
 
 // MARK: - 1.77.0 timesheet clarity (owner 23 Nov: points 1, 2, 3, 5, 6)
@@ -19897,13 +19897,13 @@ test('1.77.0: whose turn — every stage, for the person and the reviewer', () =
   assert.equal(step(signed, { viewerRole: 'person', change: reopened, changedBookingCount: 3 }).text, 'Your turn: sign again — 3 bookings changed')
   const offSigned = { ...signed, managerSignedAt: '2026-11-20T09:00:00Z', managerSignedByName: 'Pat Lee', managerSignatureImageBase64: 'y' }
   const invoice = step(offSigned, { viewerRole: 'person' })
-  assert.equal(invoice.text, 'Signed off — next: generate your invoice')
+  assert.equal(invoice.text, 'Signed off — next: generate your timesheet')
   assert.equal(invoice.generateInvoice, true)
   assert.equal(step(offSigned, { viewerRole: 'reviewer' }).text, 'Signed off — waiting for an admin to export')
   assert.equal(step(offSigned, { viewerRole: 'admin' }).text, 'Signed off — ready to export')
   assert.equal(step(offSigned, { viewerRole: 'admin' }).viewerActs, true)
   // Self-signed: the person's signature completes the sheet.
-  assert.equal(step(signed, { viewerRole: 'person', selfSigned: true }).text, 'Signed off — next: generate your invoice')
+  assert.equal(step(signed, { viewerRole: 'person', selfSigned: true }).text, 'Signed off — next: generate your timesheet')
   // Late extras (1.54.0) and changed signed price work (1.76.0) wait for the line manager.
   const late = { reopened: true, waitingFor: 'lineManager', bookingsChanged: false, lateExtrasWaiting: true }
   assert.equal(step(offSigned, { viewerRole: 'person', change: late }).text, 'Waiting for Pat Lee to review what you added after sign-off')
@@ -21093,4 +21093,34 @@ test('1.95.0 deadline reopen and reschedule reasons', () => {
   assert.equal(R112.deadlineRescheduleReasonText('Weather', 'road closed'), 'Weather — road closed')
   assert.equal(R112.deadlineRescheduleReasonText('Access'), 'Access')
   assert.equal(R112.DEADLINE_RESCHEDULE_REASONS.length, 9)
+})
+
+test('1.96.0: the timesheet document wording, offline toolbox signing, ✕ rebook note, VO history', () => {
+  assert.equal(rulebook.TIMESHEET_GENERATE_LABEL, 'Generate Timesheet')
+  assert.equal(rulebook.TIMESHEET_DOCUMENT_TITLE, 'Timesheet')
+  assert.equal(rulebook.TIMESHEET_GENERATED_TITLE, 'Timesheet generated successfully')
+  assert.equal(rulebook.TIMESHEET_DOWNLOAD_LABEL, 'Download timesheet')
+  assert.equal(rulebook.TIMESHEET_DOCUMENT_NUMBER_LABEL, 'Timesheet no.')
+  assert.equal(rulebook.TIMESHEET_GENERATE_INVOICE_PROMPT, 'Next: generate your timesheet')
+  assert.equal(rulebook.TIMESHEET_SIGNED_NOTICE_INVOICE_NEXT, 'Next: generate your timesheet.')
+
+  assert.equal(rulebook.offlineAvailability('health_safety.sign_toolbox_talk'), 'allowedOffline')
+  assert.equal(rulebook.HEALTH_SAFETY_SIGNED_OFFLINE_LABEL, 'Signed — will sync when online')
+
+  const w = rulebook.timesheetReviewDeleteBookingWarning({ summary: 'x', viewerCanRebook: false })
+  assert.equal(w.rebookNote, "If you don't manage this job, only an admin or the job's manager can bring this booking back.")
+  assert.equal(rulebook.timesheetReviewDeleteBookingWarning({ viewerCanRebook: true }).rebookNote, null)
+  assert.equal(rulebook.timesheetReviewDeleteBookingWarning({}).rebookNote, null)
+
+  // VO-005 renumbered to VO-003: 005 was issued once, so the next is VO-006 and VO-005 is taken.
+  const rows = [
+    { id: 'a', voNumber: 'VO-001' },
+    { id: 'b', voNumber: 'VO-003', numberHistory: [{ from: 'VO-005', to: 'VO-003' }] },
+  ]
+  assert.equal(rulebook.nextVariationNumber(rows), 'VO-006')
+  assert.equal(rulebook.nextVariationNumber(['VO-001', 'VO-003']), 'VO-004')
+  assert.equal(rulebook.variationNumberTaken(rows, 'vo-005'), true)
+  assert.equal(rulebook.variationNumberTaken(rows, 'VO-005', 'B'), false)
+  assert.equal(rulebook.variationNumberTaken(rows, 'VO-004'), false)
+  assert.deepEqual(rulebook.variationIssuedNumbers(rows), ['VO-001', 'VO-003', 'VO-005', 'VO-003'])
 })

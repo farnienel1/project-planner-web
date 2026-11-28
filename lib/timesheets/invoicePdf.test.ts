@@ -33,21 +33,21 @@ test('invoice PDF is a real PDF 1.4 document with iOS title block fields', () =>
   assert.equal(String.fromCharCode(pdf[0], pdf[1], pdf[2], pdf[3], pdf[4]), '%PDF-')
   assert.match(text, /%PDF-1.4/)
   assert.match(text, /%%EOF/)
-  assert.match(text, /Invoice/)
+  assert.match(text, /Timesheet/)
   assert.match(text, /Project Planner/)
   assert.match(text, /Acme Fit-out/)
   assert.match(text, /Date \/ Project/)
   assert.match(text, /J-1/)
   assert.match(text, /Site One/)
   assert.match(text, /Rate change notes/)
-  assert.match(text, /Total invoice amount/)
+  assert.match(text, /Total timesheet amount/)
   assert.ok(text.includes(String.fromCharCode(0xa3)), 'WinAnsi pound sign is encoded as 0xA3')
 })
 
-test('timesheetInvoicePdfFileName uses iOS Invoice-Name-timestamp.pdf', () => {
+test('timesheetInvoicePdfFileName uses Timesheet-Name-timestamp.pdf', () => {
   assert.equal(
     timesheetInvoicePdfFileName('Ada Booked', new Date(1_758_384_000_000)),
-    'Invoice-Ada_Booked-1758384000.pdf'
+    'Timesheet-Ada_Booked-1758384000.pdf'
   )
 })
 

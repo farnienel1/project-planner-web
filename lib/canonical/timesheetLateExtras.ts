@@ -69,7 +69,7 @@ export const TIMESHEET_SIGNED_ENTRIES_CHANGED_REVIEWER_MESSAGE =
   'You changed price work or expenses after signing this timesheet off. Sign it off again to update it — the person does not sign again.'
 /** 1.76.0 (owner answer 23 Nov, b): the person's note while their line manager's change waits for a new sign-off. */
 export const TIMESHEET_SIGNED_ENTRIES_CHANGED_PERSON_MESSAGE =
-  'Your line manager changed your price work or expenses — Generate Invoice unlocks after they sign it off again.'
+  'Your line manager changed your price work or expenses — Generate Timesheet unlocks after they sign it off again.'
 /** Export names a sheet it skipped for this reason. */
 export const TIMESHEET_LATE_EXTRAS_EXPORT_SKIPPED_MESSAGE =
   'Not exported — price work or expenses added after sign-off are waiting for the line manager.'

@@ -4,6 +4,7 @@
  * matches the iOS invoice page layout so Print → Save as PDF is the same content.
  */
 import { formatCurrency } from '@/lib/weekly-report/weeklyReportPayroll'
+import { TIMESHEET_DOCUMENT_NUMBER_LABEL, TIMESHEET_DOCUMENT_TITLE, TIMESHEET_DOCUMENT_TOTAL_LABEL } from '@/lib/canonical/timesheetClarity'
 import { currentOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
 import { orgDayHours, payLineDisplay, readStoredRates } from '@/lib/timesheets/payBasis'
 import { formatPaymentPeriodLine } from '@/lib/timesheets/paymentRunCopy'
@@ -22,7 +23,7 @@ function escapeHtml(value: string): string {
 
 export function timesheetInvoiceFileName(userName: string, generatedAt: Date = new Date()): string {
   const cleaned = userName.replace(/[/\\:?%*|<>"]/g, '-').replace(/\s+/g, '_').trim() || 'Timesheet'
-  return `Invoice-${cleaned}-${Math.floor(generatedAt.getTime() / 1000)}.html`
+  return `Timesheet-${cleaned}-${Math.floor(generatedAt.getTime() / 1000)}.html`
 }
 
 export function buildTimesheetInvoiceHtml({
@@ -39,9 +40,9 @@ export function buildTimesheetInvoiceHtml({
   timeZone = organizationZoneOr(),
   standardDayHours,
   generatedAt = new Date(),
-  documentTitle = 'Invoice',
-  periodMetaLabel = 'INVOICE PERIOD',
-  totalLabel = 'Total invoice amount',
+  documentTitle = TIMESHEET_DOCUMENT_TITLE,
+  periodMetaLabel = 'TIMESHEET PERIOD',
+  totalLabel = TIMESHEET_DOCUMENT_TOTAL_LABEL,
   notes = [],
   currencyCode = currentOrganizationCurrency(),
   invoiceNumber = '',
@@ -173,7 +174,7 @@ export function buildTimesheetInvoiceHtml({
     <div><div class="label">Name</div><div class="value">${escapeHtml(subject.name)}</div></div>
     <div><div class="label">Generated</div><div class="value">${escapeHtml(generated)}</div></div>
     <div><div class="label">${escapeHtml(periodMetaLabel)}</div><div class="value">${escapeHtml(period)}</div></div>
-    ${invoiceNumber ? `<div><div class="label">Invoice no.</div><div class="value">${escapeHtml(invoiceNumber)}</div></div>` : ''}
+    ${invoiceNumber ? `<div><div class="label">${escapeHtml(TIMESHEET_DOCUMENT_NUMBER_LABEL)}</div><div class="value">${escapeHtml(invoiceNumber)}</div></div>` : ''}
     ${revisionNote ? `<div><div class="label">Revision</div><div class="value">${escapeHtml(revisionNote)}</div></div>` : ''}
     ${vatNumber ? `<div><div class="label">VAT number</div><div class="value">${escapeHtml(vatNumber)}</div></div>` : ''}
     ${utrNumber ? `<div><div class="label">UTR number</div><div class="value">${escapeHtml(utrNumber)}</div></div>` : ''}
@@ -183,7 +184,7 @@ export function buildTimesheetInvoiceHtml({
       <tr><th>Date / Project</th><th>Details</th><th style="text-align:right">Amount</th></tr>
     </thead>
     <tbody>
-      ${rows || `<tr><td colspan="3">No work entries were found for this invoice period.</td></tr>`}
+      ${rows || `<tr><td colspan="3">No work entries were found for this timesheet period.</td></tr>`}
     </tbody>
   </table>
   <div class="total"><span>${escapeHtml(totalLabel)}</span><span>${escapeHtml(totalText)}</span></div>
@@ -211,7 +212,7 @@ export function downloadTimesheetInvoice(html: string, filename: string): void {
 export function printTimesheetInvoice(html: string): void {
   const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=900,height=700')
   if (!printWindow) {
-    downloadTimesheetInvoice(html, 'Invoice.html')
+    downloadTimesheetInvoice(html, 'Timesheet.html')
     return
   }
   printWindow.document.open()

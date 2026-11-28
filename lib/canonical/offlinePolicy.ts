@@ -37,6 +37,9 @@ export const OFFLINE_ACTIONS = {
   'annual_leave.request': 'allowedOffline',
   'profile.own_fields': 'allowedOffline',
   'notifications.own_toggles': 'allowedOffline',
+  // 1.96.0 (owner 26 Nov): signing a toolbox talk or RAMS on iOS / Android is queued (`healthSafetySignatureWriteFields`
+  // is a field-path update plus arrayUnion, safe to replay); shows `HEALTH_SAFETY_SIGNED_OFFLINE_LABEL` until confirmed.
+  'health_safety.sign_toolbox_talk': 'allowedOffline',
   // Online only: bookings (1.33.0: subcontractor bookings are deleted online only)
   'booking.delete_subcontractor': 'onlineOnly',
   // Online only: organisation settings
@@ -69,6 +72,9 @@ export const OFFLINE_ACTIONS = {
   'view.weekly_report': 'readOnlyOffline',
   'view.my_schedule': 'readOnlyOffline',
 } as const satisfies Record<string, OfflineAvailability>
+
+/** 1.96.0: shown on a toolbox talk / RAMS signature queued offline until the server confirms it. */
+export const HEALTH_SAFETY_SIGNED_OFFLINE_LABEL = 'Signed — will sync when online'
 
 export type OfflineActionId = keyof typeof OFFLINE_ACTIONS
 

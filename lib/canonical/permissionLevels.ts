@@ -360,7 +360,7 @@ export const PERMISSION_TOGGLE_CATALOGUE: ReadonlyArray<CatalogueRow> = [
   {
     field: 'timesheetSelfSign',
     label: 'Timesheet self-sign',
-    help: "Sign your own timesheet and generate the invoice without a line manager's signature.",
+    help: "Sign your own timesheet and generate it without a line manager's signature.",
     levels: ['admin'],
   },
   {

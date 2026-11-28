@@ -27,20 +27,20 @@ test('invoice HTML matches iOS InvoicePDFBuilder title block and columns', () =>
       },
     ],
   })
-  assert.match(html, />Invoice</)
+  assert.match(html, />Timesheet</)
   assert.match(html, /Project Planner/)
   assert.match(html, /Company/)
   assert.match(html, /Acme Fit-out/)
-  assert.match(html, /INVOICE PERIOD/)
+  assert.match(html, /TIMESHEET PERIOD/)
   assert.match(html, /Date \/ Project/)
   assert.match(html, /J-1/)
   assert.match(html, /Site One/)
   assert.match(html, /VAT number/)
   assert.match(html, /UTR number/)
-  assert.match(html, /Total invoice amount/)
+  assert.match(html, /Total timesheet amount/)
 })
 
 test('timesheetInvoiceFileName sanitises like iOS InvoicePDFBuilder', () => {
-  assert.equal(timesheetInvoiceFileName('Ada Booked', new Date(1_758_384_000_000)), 'Invoice-Ada_Booked-1758384000.html')
-  assert.equal(timesheetInvoiceFileName('A/B:C', new Date(0)), 'Invoice-A-B-C-0.html')
+  assert.equal(timesheetInvoiceFileName('Ada Booked', new Date(1_758_384_000_000)), 'Timesheet-Ada_Booked-1758384000.html')
+  assert.equal(timesheetInvoiceFileName('A/B:C', new Date(0)), 'Timesheet-A-B-C-0.html')
 })

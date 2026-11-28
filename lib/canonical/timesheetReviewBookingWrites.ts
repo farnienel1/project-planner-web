@@ -62,6 +62,12 @@ export const TIMESHEET_REVIEW_REMOVE_OVERTIME_CONFIRM_LABEL = 'Remove overtime'
 export const TIMESHEET_REVIEW_REMOVE_OVERTIME_MESSAGE =
   'This changes the booking itself, so scheduling, daily overview and the weekly report show the new hours. The standard hours stay. You can keep reviewing; the person sees the change when you counter-sign.'
 export const TIMESHEET_REVIEW_DELETE_BOOKING_UNDO_NOTE = 'This cannot be undone. A manager can book it again.'
+/**
+ * 1.96.0 (timesheet flow review): a person's line manager may delete their booking from the review (§16), but only an
+ * admin or the job's managers may book it again (`canWriteBooking`), so "Cancel changes" cannot bring it back for them.
+ */
+export const TIMESHEET_REVIEW_DELETE_NOT_JOB_MANAGER_NOTE =
+  "If you don't manage this job, only an admin or the job's manager can bring this booking back."
 export const TIMESHEET_REVIEW_BOOKING_REFUSED_MESSAGE =
   "You can't change this booking from the timesheet. Ask an admin or the job's manager to change it in projects or small works."
 export const TIMESHEET_REVIEW_BOOKING_MISSING_MESSAGE = 'This booking was deleted on another device.'
@@ -331,13 +337,28 @@ export function timesheetReviewDeleteBookingWarning(input: {
   summary?: string | null
   /** The line is the booking's overtime line: say the whole booking goes. */
   overtimeLine?: boolean | null
-}): { title: string; summary: string; message: string; overtimeNote: string | null; undoNote: string; confirmLabel: string; cancelLabel: string } {
+  /**
+   * 1.96.0: whether the viewer may book it again (`canWriteBooking` on the booking and its job — admins, the job's
+   * managers). `false` adds `rebookNote` (`TIMESHEET_REVIEW_DELETE_NOT_JOB_MANAGER_NOTE`); missing or true adds none.
+   */
+  viewerCanRebook?: boolean | null
+}): {
+  title: string
+  summary: string
+  message: string
+  overtimeNote: string | null
+  undoNote: string
+  rebookNote: string | null
+  confirmLabel: string
+  cancelLabel: string
+} {
   return {
     title: TIMESHEET_REVIEW_DELETE_BOOKING_TITLE,
     summary: text(input.summary),
     message: TIMESHEET_REVIEW_DELETE_BOOKING_MESSAGE,
     overtimeNote: input.overtimeLine ? TIMESHEET_REVIEW_DELETE_OVERTIME_NOTE : null,
     undoNote: TIMESHEET_REVIEW_DELETE_BOOKING_UNDO_NOTE,
+    rebookNote: input.viewerCanRebook === false ? TIMESHEET_REVIEW_DELETE_NOT_JOB_MANAGER_NOTE : null,
     confirmLabel: TIMESHEET_REVIEW_DELETE_BOOKING_CONFIRM_LABEL,
     cancelLabel: TIMESHEET_REVIEW_DELETE_BOOKING_CANCEL_LABEL,
   }
