@@ -32,7 +32,7 @@ import {
   type VariationSubcontractorLine,
   type VariationTracker,
 } from '@/lib/variations/variationModel'
-import { nextFreeVoNumber, voNumberTaken } from '@/lib/variations/variationNumbering'
+import { newVariationNumberChoice, nextFreeVoNumber } from '@/lib/variations/variationNumbering'
 import {
   lineHours,
   NewVariationSheet,
@@ -804,7 +804,11 @@ function VariationEditor({
         <NewVariationSheet
           parentName="this job"
           defaultVoNumber={existing?.voNumber || suggested}
-          voNumberLocked={trackerEnabled || Boolean(existing)}
+          suggestedVoNumber={existing ? undefined : suggested}
+          // Owner 26 Nov: a new variation's number is pre-filled with the next number and can be changed, tracker on
+          // or off; an existing variation keeps its number (renumbering is the tracker's).
+          voNumberLocked={Boolean(existing)}
+          voNumberNote={existing ? 'fixed' : trackerEnabled ? 'next in tracker' : 'next number'}
           trades={tradeOptions}
           recentTrades={tradeOptions.slice(0, 5)}
           initialHeading={existing?.heading || ''}
@@ -823,9 +827,13 @@ function VariationEditor({
             /* persisted from the saved labour line if it is new */
           }}
           onSave={async (draft) => {
-            const voNumber = trackerEnabled ? existing?.voNumber || suggested : (existing?.voNumber || draft.voNumber).trim()
-            if (!trackerEnabled && !existing && voNumberTaken(siblings, voNumber)) {
-              throw new Error(`${voNumber} is already used on this job.`)
+            // What is saved is exactly what the field shows (owner 26 Nov), checked against every variation of the
+            // job, deleted included (`variationNumberTaken`); an existing variation keeps its stored number.
+            let voNumber = existing?.voNumber || ''
+            if (!existing) {
+              const choice = newVariationNumberChoice(draft.voNumber, siblings)
+              if (choice.error) throw new Error(choice.error)
+              voNumber = choice.voNumber
             }
             const files = draft.evidence.map((item) => item.file)
             const problem = files.map((file) => evidenceFileAllowed(file)).find(Boolean)

@@ -68,7 +68,7 @@ import {
   type VariationStatus,
   type VariationTracker,
 } from '@/lib/variations/variationModel'
-import { formatVoNumber, nextFreeVoNumber, orderForTrackerEnable, voNumberTaken } from '@/lib/variations/variationNumbering'
+import { formatVoNumber, newVariationNumberChoice, nextFreeVoNumber, orderForTrackerEnable } from '@/lib/variations/variationNumbering'
 import {
   fallbackItemMaps,
   mergeVariationSources,
@@ -499,13 +499,15 @@ export async function createVariation(input: {
 }): Promise<Variation & { saveOutcome: VariationSaveOutcome }> {
   const allRows = input.existingRows ?? (await listParentVariations(input.organizationId, input.parentId))
   const tracker = input.tracker ?? (await loadVariationTracker(input.organizationId, input.parentId))
-  const voNumber =
-    input.origin === 'tracker' || tracker.enabled
-      ? nextFreeVoNumber(allRows, tracker.prefix, tracker.padding)
-      : (input.voNumber || nextFreeVoNumber(allRows, tracker.prefix, tracker.padding)).trim()
-  if (!tracker.enabled && input.origin !== 'tracker' && voNumberTaken(allRows, voNumber)) {
-    throw new Error(`${voNumber} is already used on this job. Pick another number.`)
-  }
+  // Owner 26 Nov: the number the person saw in the field (pre-filled with the rulebook's next number, editable whether
+  // or not the tracker is on) is saved exactly as typed; only a caller with no field (the tracker's quick add) gets
+  // `nextVariationNumber`. Either way a number held or ever held on the job is refused (`variationNumberTaken`).
+  const choice = newVariationNumberChoice(
+    input.voNumber?.trim() || nextFreeVoNumber(allRows, tracker.prefix, tracker.padding),
+    allRows
+  )
+  if (choice.error) throw new Error(choice.error)
+  const voNumber = choice.voNumber
   const now = new Date()
   const id = newUuid()
   const draft = withCounters({
