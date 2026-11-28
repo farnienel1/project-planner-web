@@ -9,8 +9,10 @@ import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { downloadPdf } from '@/lib/pdf/downloadPdf'
 import { loadCompanyLogo } from '@/lib/pdf/companyLogo'
 import { withTimeout } from '@/lib/client/withTimeout'
+import { fetchStoredFile } from '@/lib/firebase/storageFileFetch'
 import { renderSiteAuditReportPdf, type SiteAuditReportImage } from '@/lib/siteAudit/siteAuditReportPdf'
 import { jpegExifOrientation } from '@/lib/siteAudit/jpegOrientation'
+import { siteAuditPdfPhotosNotice } from '@/lib/siteAudit/siteAuditPdfNotice'
 import type { Project, SiteAudit } from '@/types'
 
 export interface SiteAuditPdfContext {
@@ -36,7 +38,7 @@ export async function loadPicture(url: string): Promise<LoadedPicture | null> {
   let bytes: Uint8Array
   let blob: Blob
   try {
-    const response = await withTimeout(fetch(url), 20_000, 'The photo took too long to load.')
+    const response = await withTimeout(fetchStoredFile(url), 20_000, 'The photo took too long to load.')
     if (!response.ok) return null
     blob = await response.blob()
     bytes = new Uint8Array(await blob.arrayBuffer())
@@ -79,15 +81,21 @@ export async function loadPicture(url: string): Promise<LoadedPicture | null> {
   return { image: { bytes: new Uint8Array(await jpeg.arrayBuffer()), format: 'jpg' }, width, height }
 }
 
-/** Builds the report with the shared input and layout and downloads it. A photo that cannot be loaded keeps its box. */
-export async function downloadSiteAuditPdf(audit: SiteAudit, context: SiteAuditPdfContext = {}): Promise<void> {
+/**
+ * Builds the report with the shared input and layout and downloads it. A photo that cannot be loaded keeps its box;
+ * the result says how many photos are not drawn, so the screen can say so (owner report 26 Nov: never silent).
+ */
+export async function downloadSiteAuditPdf(
+  audit: SiteAudit,
+  context: SiteAuditPdfContext = {}
+): Promise<{ photos: number; photosNotDrawn: number }> {
   const pictures = new Map<string, LoadedPicture | null>()
   const loads: Promise<void>[] = []
   // The company logo (owner request 17 Nov): the shared loader; any failure, a timeout or a PDF logo gives null and
   // the rulebook draws the initials badge instead (the PDF is never blocked).
   if (context.logoUrl) {
     loads.push(
-      loadCompanyLogo(context.logoUrl).then((logo) =>
+      loadCompanyLogo(context.logoUrl, { fetch: fetchStoredFile as typeof fetch }).then((logo) =>
         void pictures.set('logo', logo ? { image: { bytes: logo.bytes, format: logo.format }, width: logo.width, height: logo.height } : null)
       )
     )
@@ -132,11 +140,18 @@ export async function downloadSiteAuditPdf(audit: SiteAudit, context: SiteAuditP
   for (const [ref, picture] of pictures) if (picture?.image) images[ref] = picture.image
   const bytes = await renderSiteAuditReportPdf(layout, images)
   downloadPdf(bytes, layout.fileName)
+  const withPhoto = audit.items.filter((item) => item.imageURL)
+  return { photos: withPhoto.length, photosNotDrawn: withPhoto.filter((item) => !pictures.get(item.id)?.image).length }
 }
 
 /** The PDF button: builds and downloads the report, and says so when it cannot. */
 export function openSiteAuditPdf(audit: SiteAudit, context: SiteAuditPdfContext = {}): void {
-  downloadSiteAuditPdf(audit, context).catch((error: unknown) => {
+  downloadSiteAuditPdf(audit, context)
+    .then((result) => {
+      const notice = siteAuditPdfPhotosNotice(result)
+      if (notice) window.alert(notice)
+    })
+    .catch((error: unknown) => {
     window.alert(error instanceof Error && error.message ? `The PDF could not be made: ${error.message}` : 'The PDF could not be made.')
   })
 }

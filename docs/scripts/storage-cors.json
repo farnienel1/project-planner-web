@@ -1,0 +1,8 @@
+[
+  {
+    "origin": ["https://projectplanner.us", "https://www.projectplanner.us", "https://app.projectplanner.us", "http://localhost:3000"],
+    "method": ["GET", "HEAD"],
+    "responseHeader": ["Content-Type", "Content-Length"],
+    "maxAgeSeconds": 3600
+  }
+]
