@@ -27,7 +27,7 @@ test('invoice HTML matches iOS InvoicePDFBuilder title block and columns', () =>
       },
     ],
   })
-  assert.match(html, />Invoice</)
+  assert.match(html, />Timesheet</)
   assert.match(html, /Project Planner/)
   assert.match(html, /Company/)
   assert.match(html, /Acme Fit-out/)

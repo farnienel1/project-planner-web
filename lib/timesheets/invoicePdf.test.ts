@@ -33,7 +33,7 @@ test('invoice PDF is a real PDF 1.4 document with iOS title block fields', () =>
   assert.equal(String.fromCharCode(pdf[0], pdf[1], pdf[2], pdf[3], pdf[4]), '%PDF-')
   assert.match(text, /%PDF-1.4/)
   assert.match(text, /%%EOF/)
-  assert.match(text, /Invoice/)
+  assert.match(text, /Timesheet/)
   assert.match(text, /Project Planner/)
   assert.match(text, /Acme Fit-out/)
   assert.match(text, /Date \/ Project/)

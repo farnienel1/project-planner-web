@@ -56,7 +56,7 @@ export function voNumberTaken(
  */
 export function newVariationNumberChoice(
   typed: string | null | undefined,
-  existing: Array<{ id?: string; voNumber: string }>
+  existing: Array<{ id?: string; voNumber: string; numberHistory?: NumberHistory }>
 ): { voNumber: string; error: string | null } {
   const voNumber = String(typed ?? '').trim()
   if (!voNumber) return { voNumber, error: 'Enter a VO number.' }

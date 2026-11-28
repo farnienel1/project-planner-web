@@ -76,6 +76,8 @@ export function nextVariationNumber(
   return formatVariationNumber(max + 1, prefix, padding)
 }
 
+export type VariationNumberRow = VariationIssuedNumberRow & { id?: string | null; isDeleted?: boolean | null }
+
 /**
  * Whether `voNumber` is already used on the job by a variation other than `exceptId` (ids compared without case).
  * Deleted variations count. A blank number is never taken. 1.96.0: a number another variation once had (its

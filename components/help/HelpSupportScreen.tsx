@@ -156,15 +156,15 @@ const TOPICS: Topic[] = [
       {
         id: 'mine',
         title: 'My Timesheets',
-        summary: 'Day-by-day hours, extras, sign, then invoice.',
+        summary: 'Day-by-day hours, extras, sign, then generate the timesheet.',
         href: '/dashboard/timesheets/mine',
         body: [
           'Open the current pay run. Each day shows the job number and name, hours, day rate, and overtime for that day.',
           'Add Price Work and Expenses before you sign. Signing after extras means you must re-sign.',
           'If you have a line manager: “If you don’t agree with the hours shown, contact your line manager…”',
           'If you have no line manager (typical admin/founder): amend the booking schedule yourself, then Continue to sign. You do not need a counter-signature.',
-          'Continue to sign is blue. Type your name to sign in handwriting, or draw in the box — you can do both. The web saves that as the same signature image iOS already shows. Generate Invoice stays grey until you have signed, and until your line manager has counter-signed if you have one. It turns green when the timesheet is fully approved.',
-          'Generate Invoice builds a PDF that matches the iOS invoice (company, name, period, day-by-day job, hours and rates). Download invoice saves the PDF to your computer; Share invoice opens the device share sheet and shows only when the browser can share files. Generating an invoice does not export the sheet; line managers export PDFs from Signed off.',
+          'Continue to sign is blue. Type your name to sign in handwriting, or draw in the box — you can do both. The web saves that as the same signature image iOS already shows. Generate Timesheet stays grey until you have signed, and until your line manager has counter-signed if you have one. It turns green when the timesheet is fully approved.',
+          'Generate Timesheet builds a PDF titled Timesheet that matches the iPhone (company, name, period, day-by-day job, hours and rates). Download timesheet saves the PDF to your computer; Share timesheet opens the device share sheet and shows only when the browser can share files. Generating it does not export the sheet; line managers export PDFs from Signed off.',
         ],
       },
       {
@@ -177,7 +177,7 @@ const TOPICS: Topic[] = [
           'Tap a person to open their timesheet on a new page.',
           'Use ✓ to approve, ✕ to decline, or ⚙ Edit Hours on each day (start, finish and break). Expenses and price work open an amount editor. Then Sign off & finalise with your signature.',
           'After you sign off, the person sees a Line manager adjustments card with struck original amounts and the amounts that will be paid.',
-          'On Signed off, Email and export attaches the PDF timesheets to your email for filing, with backup download links. Generating an invoice does not export the sheet.',
+          'On Signed off, Email and export attaches the PDF timesheets to your email for filing, with backup download links. Generating a timesheet does not export the sheet.',
         ],
       },
       {
