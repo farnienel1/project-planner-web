@@ -89,6 +89,10 @@ export interface NewVariationSheetProps {
   parentName: string;
   defaultVoNumber: string;
   voNumberLocked?: boolean;
+  /** The rulebook's next number for a new variation; the field follows it until the person types their own. */
+  suggestedVoNumber?: string;
+  /** Short note beside the number ("next number", "next in tracker", "fixed"). */
+  voNumberNote?: string;
   trades: string[];
   /** most-used trades for this org, in order; falls back to the first five */
   recentTrades?: string[];
@@ -167,6 +171,8 @@ export function NewVariationSheet({
   parentName,
   defaultVoNumber,
   voNumberLocked = false,
+  suggestedVoNumber,
+  voNumberNote,
   trades,
   recentTrades,
   materialCatalogue = [],
@@ -186,7 +192,10 @@ export function NewVariationSheet({
   savedEvidenceCount = 0,
   title = 'New variation',
 }: NewVariationSheetProps) {
-  const [voNumber, setVoNumber] = useState(defaultVoNumber);
+  // Owner 26 Nov: until the person types their own number the field shows the next number (variations that load or
+  // are added elsewhere while the sheet is open move it on); once typed, it is theirs. Saved exactly as shown.
+  const [typedVoNumber, setTypedVoNumber] = useState<string | null>(null);
+  const voNumber = voNumberLocked || typedVoNumber === null ? defaultVoNumber : typedVoNumber;
   const [heading, setHeading] = useState(initialHeading);
   const [description, setDescription] = useState(initialDescription);
   const [descriptionOpen, setDescriptionOpen] = useState(false);
@@ -446,7 +455,7 @@ export function NewVariationSheet({
   };
 
   const evidenceTotal = savedEvidenceCount + evidence.length;
-  const canSave = heading.trim().length > 0 && !saving && !customDraft && !subDraft;
+  const canSave = heading.trim().length > 0 && (voNumberLocked || voNumber.trim().length > 0) && !saving && !customDraft && !subDraft;
 
   /* ------------------------------------------------ custom and subcontractor lines */
 
@@ -554,14 +563,36 @@ export function NewVariationSheet({
         {/* details */}
         <section className={card}>
           <div className="px-4 pb-4 pt-4">
-            <button
-              type="button"
-              disabled={voNumberLocked}
-              onClick={() => { const n = window.prompt('VO number', voNumber); if (n) setVoNumber(n); }}
-              className="inline-flex items-center gap-2 rounded-full bg-(--rep-t) px-3 py-1 text-xs font-extrabold text-(--rep) disabled:opacity-70"
-            >
-              {voNumber} · {voNumberLocked ? 'from tracker' : 'auto'}
-            </button>
+            {voNumberLocked ? (
+              <span className="inline-flex items-center gap-2 rounded-full bg-(--rep-t) px-3 py-1 text-xs font-extrabold text-(--rep)">
+                {voNumber} · {voNumberNote || 'fixed'}
+              </span>
+            ) : (
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="inline-flex items-center gap-2 rounded-full bg-(--rep-t) px-3 py-1 text-xs font-extrabold text-(--rep)">
+                  <span>VO number</span>
+                  <input
+                    value={voNumber}
+                    onChange={(e) => setTypedVoNumber(e.target.value)}
+                    aria-label="VO number"
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="w-24 bg-transparent font-extrabold text-(--rep) outline-hidden"
+                  />
+                </label>
+                {suggestedVoNumber && voNumber.trim() !== suggestedVoNumber ? (
+                  <button
+                    type="button"
+                    onClick={() => setTypedVoNumber(null)}
+                    className="text-xs font-semibold text-(--blue)"
+                  >
+                    Use {suggestedVoNumber}
+                  </button>
+                ) : (
+                  <span className="text-xs text-(--ink3)">{voNumberNote || 'next number'} · you can change it</span>
+                )}
+              </div>
+            )}
             <input
               value={heading}
               onChange={(e) => setHeading(e.target.value)}

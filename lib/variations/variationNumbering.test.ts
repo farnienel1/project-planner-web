@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { nextFreeVoNumber, orderForTrackerEnable, voNumberTaken } from './variationNumbering.ts'
+import { newVariationNumberChoice, nextFreeVoNumber, orderForTrackerEnable, voNumberTaken } from './variationNumbering.ts'
 import { variationRenumberPlan } from '../canonical/variations.ts'
 
 test('next free number skips gaps and retired numbers', () => {
@@ -42,4 +42,17 @@ test('the tracker preview is the rulebook plan: pinned numbers stay, open number
       ['a', 'VO-003', true],
     ]
   )
+})
+
+test('a new variation saves the number the field shows, typed or suggested, never recomputed (owner 26 Nov)', () => {
+  const rows = [
+    { id: 'a', voNumber: 'VO-001' },
+    { id: 'b', voNumber: 'VO-002' },
+    { id: 'c', voNumber: 'VO-004' }, // deleted: its number stays retired
+  ]
+  assert.equal(nextFreeVoNumber(rows), 'VO-005')
+  assert.deepEqual(newVariationNumberChoice('VO-005', rows), { voNumber: 'VO-005', error: null })
+  assert.deepEqual(newVariationNumberChoice('  VO-003 ', rows), { voNumber: 'VO-003', error: null })
+  assert.match(newVariationNumberChoice('vo-004', rows).error ?? '', /already used/)
+  assert.match(newVariationNumberChoice('  ', rows).error ?? '', /Enter a VO number/)
 })
