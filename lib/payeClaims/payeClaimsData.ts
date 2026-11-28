@@ -20,6 +20,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore'
 import { deleteObject, getDownloadURL, ref } from 'firebase/storage'
+import { fetchStoredFile } from '@/lib/firebase/storageFileFetch'
 import {
   EXPENSE_ITEMS_COLLECTION,
   PAYE_CLAIM_REPORTS_COLLECTION,
@@ -412,7 +413,7 @@ export async function storedFileUrl(path: string): Promise<string> {
 
 /** The bytes of a stored file, for the report PDF. */
 export async function storedFileBytes(path: string): Promise<Uint8Array> {
-  const response = await fetch(await getDownloadURL(ref(storage, path)))
+  const response = await fetchStoredFile(await getDownloadURL(ref(storage, path)))
   if (!response.ok) throw new Error(`The file could not be read (${response.status}).`)
   return new Uint8Array(await response.arrayBuffer())
 }

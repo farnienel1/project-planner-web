@@ -9,6 +9,7 @@
 import { zipSync } from 'fflate'
 export { COMPLIANCE_SHARE_CREATOR_STOPPED_TEXT, complianceShareLinkStatusText } from '@/lib/compliance/complianceShareStatus'
 import { getDownloadURL, ref } from 'firebase/storage'
+import { fetchStoredFile } from '@/lib/firebase/storageFileFetch'
 import { storage } from '@/lib/firebase/config'
 import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
 import { safeExternalUrl } from '@/lib/canonical/uploadPolicy'
@@ -73,7 +74,7 @@ export async function downloadComplianceZip(entries: OrgComplianceEntry[], today
   for (const [index, entry] of entries.entries()) {
     const url = safeExternalUrl(await getDownloadURL(ref(storage, entry.path)))
     if (!url) throw new Error(`${entry.title} could not be opened.`)
-    const response = await fetch(url)
+    const response = await fetchStoredFile(url)
     if (!response.ok) throw new Error(`${entry.title} could not be downloaded.`)
     const bytes = new Uint8Array(await response.arrayBuffer())
     total += bytes.byteLength
